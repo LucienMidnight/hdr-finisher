@@ -152,6 +152,10 @@ each module's open work:
   (DETAIL-01), local Clarity cost (CLARITY-01); removing HDR Lift/Gamma/Gain.
 - Linux leftovers, unrecognised TIFF colour profiles, the Releases link.
 
+**Idea for v2 (Steve, October 27, 2026):** a fringe tool in RAW development
+(chromatic aberration and purple/green defringe). See the
+[Import and RAW PRD](modules/import-and-raw.md), open work item 5.
+
 **Later, not planned yet:** AI search and tagging (version 2 at the earliest).
 
 ## 4. How the app is built

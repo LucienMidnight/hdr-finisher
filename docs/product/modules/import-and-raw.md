@@ -396,6 +396,17 @@ colour profiles) are after v1.
 3. Unrecognised TIFF colour profiles: ask, or say clearly what was assumed.
 4. Source workflow checks (Photoshop EXR, GIMP, Adobe and DxO linear DNG)
    as documentation and test work.
+5. **Idea for v2 (Steve, October 27, 2026): a fringe tool in RAW
+   development.** Correct lens colour fringing before any grading, so HSL,
+   hue masks and every later tool see clean edges:
+   - Lateral chromatic aberration: scale the red and blue channels slightly
+     about the lens centre so they line up with green. Automatic (measured from
+     edges) with a manual red/cyan and blue/yellow trim.
+   - Defringe: reduce purple and green colour along high-contrast edges only,
+     with hue ranges and an amount, and a "show affected areas" view.
+   - GPU first with a CPU fallback, like the rest of development.
+   Prompted by HSL work on Balanced Rock, where coloured rims around bright
+   specks made colour selection harsh. Not started; needs its own brief.
 
 ## 7. Detail and history
 
