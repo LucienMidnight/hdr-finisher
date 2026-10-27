@@ -104,7 +104,7 @@
   function colorSettingsNeutral(branch) {
     if ((Number(branch?.white_balance_kelvin) || 6500) !== 6500) return false;
     return [
-      "tint", "saturation", "vibrance",
+      "tint", "saturation", "vibrance", "highlight_desaturation", "shadow_desaturation",
       "red_hue", "red_purity", "green_hue", "green_purity",
       "blue_hue", "blue_purity", "tint_hue", "tint_purity",
     ].every((name) => Math.abs(Number(branch?.[name]) || 0) < 0.000001);
@@ -224,6 +224,10 @@
     params[GPU_PARAMS.SATURATION] = colorActive ? colorSource.saturation || 0 : 0;
     params[GPU_PARAMS.VIBRANCE] = colorActive ? colorSource.vibrance || 0 : 0;
     params[GPU_PARAMS.COLOR_ENABLED] = colorActive ? 1 : 0;
+    params[GPU_PARAMS.HIGHLIGHT_DESATURATION] = colorActive ? (colorSource.highlight_desaturation || 0) / 100 : 0;
+    params[GPU_PARAMS.SHADOW_DESATURATION] = colorActive ? (colorSource.shadow_desaturation || 0) / 100 : 0;
+    params[GPU_PARAMS.HIGHLIGHT_DESATURATION_START] = colorSource.highlight_desaturation_start ?? (lane === "hdr" ? 1 : .5);
+    params[GPU_PARAMS.SHADOW_DESATURATION_START] = colorSource.shadow_desaturation_start ?? .125;
     // BW-01 Black & White: on/off and Reds..Magentas / 100 (blackAndWhiteWgsl).
     const blackAndWhiteOn = branch.black_and_white_section_enabled === true;
     const blackAndWhite = branch.black_and_white || {};

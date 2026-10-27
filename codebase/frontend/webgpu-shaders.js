@@ -14,6 +14,21 @@
 
   const HSL_WGSL = globalThis.HDRHslShader || require("./hsl-shader.js");
   const PEAK_HISTOGRAM_BINS = 4096;
+  function colorDesaturationWgsl(params, name, luma) {
+    return `fn ${name}(rgb: vec3f) -> vec3f {
+      let high = ${params}[${GPU_PARAMS.HIGHLIGHT_DESATURATION}];
+      let low = ${params}[${GPU_PARAMS.SHADOW_DESATURATION}];
+      if (high == 0.0 && low == 0.0) { return rgb; }
+      let y = ${luma}(rgb);
+      let white = select(1.0, 0.18, ${params}[${GPU_PARAMS.HDR_LANE}] > 0.5);
+      var start = ${params}[${GPU_PARAMS.HIGHLIGHT_DESATURATION_START}] * white;
+      var end = start * 4.0;
+      if (${params}[${GPU_PARAMS.HDR_LANE}] < 0.5) { start = min(start, 0.99); end = 1.0; }
+      let shadow = ${params}[${GPU_PARAMS.SHADOW_DESATURATION_START}] * white;
+      let amount = clamp(high * smoothstep(start, end, y) + low * (1.0 - smoothstep(shadow / 4.0, shadow, y)), 0.0, 1.0);
+      return rgb + (vec3f(y) - rgb) * amount;
+    }`;
+  }
 
   // BW-01 Black & White, in WGSL for both the render and the peak shaders
   // (each names its parameter array differently). Mirrors
@@ -138,6 +153,7 @@ fn peakTone(input: vec3f) -> vec3f {
   }
   return rgb;
 }
+${colorDesaturationWgsl("peakParams", "peakColorDesaturation", "peakLuma")}
 fn peakSceneColor(input: vec3f) -> vec3f {
   if (peakParams[${GPU_PARAMS.COLOR_ENABLED}] < 0.5) { return input; }
   let offset = (peakParams[${GPU_PARAMS.WHITE_BALANCE_KELVIN}] - 6500.0) / 6500.0;
@@ -155,7 +171,7 @@ fn peakSceneColor(input: vec3f) -> vec3f {
   let denominator = max(max(abs(maximum), abs(minimum)), max(abs(y), 0.000001));
   let relativeChroma = clamp((maximum - minimum) / denominator, 0.0, 1.0);
   let vibranceWeight = pow(1.0 - relativeChroma, 2.0);
-  return neutral + chroma * max(0.0, 1.0 + peakParams[${GPU_PARAMS.VIBRANCE}] * vibranceWeight) * max(0.0, 1.0 + peakParams[${GPU_PARAMS.SATURATION}]);
+  return peakColorDesaturation(neutral + chroma * max(0.0, 1.0 + peakParams[${GPU_PARAMS.VIBRANCE}] * vibranceWeight) * max(0.0, 1.0 + peakParams[${GPU_PARAMS.SATURATION}]));
 }
 fn peakSdrReferencePrefix(input: vec3f) -> vec3f {
   var rgb = max(input * exp2(peakParams[${GPU_PARAMS.EXPOSURE}]), vec3f(0.0));
@@ -762,6 +778,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let offset = (p[${GPU_PARAMS.WHITE_BALANCE_KELVIN}] - 6500.0) / 6500.0;
       return input * vec3f(1.0 + offset * 0.15, 1.0 + p[${GPU_PARAMS.TINT}] * 0.08, 1.0 - offset * 0.15);
     }
+    ${colorDesaturationWgsl("p", "colorDesaturation", "lumaAces")}
     fn hdrColor(input: vec3f) -> vec3f {
       let rgb = vec3f(
         p[${GPU_PARAMS.PRIMARIES_MATRIX_00}] * input.r + p[${GPU_PARAMS.PRIMARIES_MATRIX_01}] * input.g + p[${GPU_PARAMS.PRIMARIES_MATRIX_02}] * input.b,
@@ -778,7 +795,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let vibranceWeight = pow(1.0 - relativeChroma, 2.0);
       let vibranceFactor = max(0.0, 1.0 + p[${GPU_PARAMS.VIBRANCE}] * vibranceWeight);
       let saturationFactor = max(0.0, 1.0 + p[${GPU_PARAMS.SATURATION}]);
-      return neutral + chroma * vibranceFactor * saturationFactor;
+      return colorDesaturation(neutral + chroma * vibranceFactor * saturationFactor);
     }
     fn hdrBase(input: vec3f) -> vec3f {
       var rgb = input * exp2(p[${GPU_PARAMS.EXPOSURE}]);

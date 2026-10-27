@@ -7,10 +7,11 @@ const { frontendSource } = require("./frontend-source.js");
 
 const { HDRWebGPUShaders } = require("../frontend/webgpu-shaders.js");
 
+// COLOR-DESAT-01 intentionally updates peak colour evaluation with the render.
 // Byte pins for the shaders the viewport work must leave alone: the peak
 // measurement and Denoise. A change to one of them fails here.
 const EXPECTED_SHA256 = Object.freeze({
-  PEAK_REDUCTION_SHADER_SOURCE: "2ee99c34c3f21654730ff6b19a64335c0cdb6e2c9f7500a354a1a67319fdf7eb",
+  PEAK_REDUCTION_SHADER_SOURCE: "79d3464072de384b08b5d312b99d5c9c12690be54d854d4cda1f0152c2606dc5",
   ADAPTIVE_DENOISE_SHADER_SOURCE: "818ec2ddb4523a1208eaa31f2a3bfe943e89d9ec6449e9866ff741bc49a3c807",
 });
 

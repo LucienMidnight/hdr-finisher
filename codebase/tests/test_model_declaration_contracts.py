@@ -22,6 +22,7 @@ HDR_FIELD_ORDER = (
     "tone_equalizer_influence_radius", "tone_equalizer_smoothing", "lift", "gamma", "gain",
     "lift_pivot", "lift_range", "gamma_pivot", "gamma_range", "gain_pivot", "gain_range",
     "contrast", "contrast_pivot", "white_balance_kelvin", "tint", "saturation", "vibrance",
+    "highlight_desaturation", "highlight_desaturation_start", "shadow_desaturation", "shadow_desaturation_start",
     "red_hue", "red_purity", "green_hue", "green_purity", "blue_hue", "blue_purity",
     "tint_hue", "tint_purity", "luma_curve", "red_curve", "green_curve", "blue_curve",
 )
@@ -40,7 +41,8 @@ SDR_FIELD_ORDER = (
     "tone_equalizer_nodes", "tone_equalizer_influence_radius", "tone_equalizer_smoothing",
     "lift", "gamma", "gain", "lift_pivot", "lift_range", "gamma_pivot", "gamma_range",
     "gain_pivot", "gain_range", "contrast", "contrast_pivot", "white_balance_kelvin", "tint",
-    "saturation", "vibrance", "red_hue", "red_purity", "green_hue", "green_purity",
+    "saturation", "vibrance",
+    "highlight_desaturation", "highlight_desaturation_start", "shadow_desaturation", "shadow_desaturation_start", "red_hue", "red_purity", "green_hue", "green_purity",
     "blue_hue", "blue_purity", "tint_hue", "tint_purity", "luma_curve",
     "red_curve", "green_curve", "blue_curve",
 )

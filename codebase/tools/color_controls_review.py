@@ -15,7 +15,7 @@ mode=sys.argv[1]
 out=ROOT/'output'/mode;out.mkdir(parents=True,exist_ok=True)
 # This cached float scene was developed read-only by sharpen_review.py from SOURCE.
 fit=downsample_image(np.asarray(scene),1200)
-x,y=4180,2570
+x,y=(4650,1200) if mode=="color-desat" else (4180,2570)
 native=np.array(scene[y:y+512,x:x+512],copy=True)
 rows=[]
 for size,image in [('fit',fit),('100-percent',native)]:
@@ -33,7 +33,7 @@ for size,image in [('fit',fit),('100-percent',native)]:
     if variant=='after':locals=[local]
    else:
     branch=getattr(state,lane)
-    amount={'off':0,'moderate':.4,'strong':1}[variant]
+    amount={'off':0,'moderate':40,'strong':100}[variant]
     branch.highlight_desaturation=amount;branch.shadow_desaturation=amount
    rendered=apply_adjustments(image,state,kind,local_adjustments=locals)
    for hdr_display in ([False,True] if lane=='hdr' else [False]):
@@ -50,4 +50,4 @@ for lane in ['hdr','sdr']:
    if l==lane and s==size:html+=f'<figure class="{("native" if size=="100-percent" else "fit")}"><figcaption>{v} ({n.split(".")[-1]})</figcaption><img src="{n}"></figure>'
   html+='</section>'
 (out/'index.html').write_text(html,encoding='utf8')
-(out/'recipe.json').write_text(json.dumps({'source':str(SOURCE),'cached_scene':'output/sharpen-review/DSC07147-scene.npy','native_crop':[x,y,512,512],'fit_long_edge':1200,'mode':mode},indent=2))
+(out/'recipe.json').write_text(json.dumps({'source':str(SOURCE),'cached_scene':'output/sharpen-review/DSC07147-scene.npy','native_crop':[x,y,512,512],'fit_long_edge':1200,'mode':mode,'amounts':{'off':0,'moderate':40,'strong':100} if mode=='color-desat' else None},indent=2))

@@ -415,7 +415,7 @@ def _hdr_before_black_and_white(image: np.ndarray, adjustments: AdjustmentState)
     return result
 
 
-def _apply_hdr_color(image: np.ndarray, hdr) -> np.ndarray:
+def _apply_hdr_color(image: np.ndarray, hdr, kind: PreviewKind = PreviewKind.HDR) -> np.ndarray:
     if _color_settings_are_neutral(hdr):
         return image
     result = _apply_white_balance(image, hdr.white_balance_kelvin, hdr.tint)
@@ -430,7 +430,8 @@ def _apply_hdr_color(image: np.ndarray, hdr) -> np.ndarray:
         hdr.tint_purity,
     )
     result = np.einsum("...c,dc->...d", result, primary_matrix, optimize=True).astype(np.float32)
-    return _apply_saturation_vibrance(result, hdr.saturation, hdr.vibrance)
+    result = _apply_saturation_vibrance(result, hdr.saturation, hdr.vibrance)
+    return _apply_color_desaturation(result, hdr, kind)
 
 
 def _color_settings_are_neutral(settings: object) -> bool:
@@ -440,6 +441,8 @@ def _color_settings_are_neutral(settings: object) -> bool:
             "tint",
             "saturation",
             "vibrance",
+            "highlight_desaturation",
+            "shadow_desaturation",
             "red_hue",
             "red_purity",
             "green_hue",
@@ -450,6 +453,25 @@ def _color_settings_are_neutral(settings: object) -> bool:
             "tint_purity",
         )
     )
+
+
+def _apply_color_desaturation(image, settings, kind=PreviewKind.HDR):
+    """COLOR-DESAT-01: neutral-axis mixing retains AP1 luminance and extrema."""
+    high = settings.highlight_desaturation / 100.0
+    low = settings.shadow_desaturation / 100.0
+    if high == 0.0 and low == 0.0:
+        return image
+    y = _acescg_luma(image)
+    white = 0.18 if kind == PreviewKind.HDR else 1.0
+    start = settings.highlight_desaturation_start * white
+    end = start * 4.0
+    if kind == PreviewKind.SDR:
+        start = min(start, 0.99)
+        end = 1.0
+    shadow = settings.shadow_desaturation_start * white
+    amount = np.clip(high * _smoothstep(start, end, y)
+                     + low * (1.0 - _smoothstep(shadow / 4.0, shadow, y)), 0.0, 1.0)
+    return (image + (y[..., None] - image) * amount[..., None]).astype(np.float32)
 
 
 def _apply_saturation_vibrance(image: np.ndarray, saturation: float, vibrance: float) -> np.ndarray:
@@ -751,7 +773,7 @@ def _apply_sdr_color_stage(result: np.ndarray, adjustments: AdjustmentState) -> 
     if not _sdr_color_is_enabled(adjustments):
         return result
     acescg = linear_srgb_to_acescg(result)
-    graded = _apply_hdr_color(acescg, adjustments.sdr)
+    graded = _apply_hdr_color(acescg, adjustments.sdr, PreviewKind.SDR)
     return _compress_to_srgb_gamut(acescg_to_linear_srgb(graded))
 
 
@@ -853,7 +875,7 @@ def _sdr_before_black_and_white(image: np.ndarray, adjustments: AdjustmentState)
         shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _acescg_luma(result))
         result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
     if _sdr_color_is_enabled(adjustments):
-        result = _apply_hdr_color(result, adjustments.sdr)
+        result = _apply_hdr_color(result, adjustments.sdr, PreviewKind.SDR)
     return result
 
 

@@ -447,6 +447,10 @@ class _BranchAdjustments(BaseModel):
     tint: float = Field(default=0.0, ge=-2.0, le=2.0)
     saturation: float = Field(default=0.0, ge=-1.0, le=3.0)
     vibrance: float = Field(default=0.0, ge=-1.0, le=3.0)
+    highlight_desaturation: float = Field(default=0.0, ge=0.0, le=100.0)
+    highlight_desaturation_start: float = Field(default=1.0, ge=0.01, le=16.0)
+    shadow_desaturation: float = Field(default=0.0, ge=0.0, le=100.0)
+    shadow_desaturation_start: float = Field(default=0.125, ge=0.001, le=1.0)
     red_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
     red_purity: float = Field(default=0.0, ge=-99.0, le=400.0)
     green_hue: float = Field(default=0.0, ge=-180.0, le=180.0)
@@ -499,7 +503,7 @@ _COMMON_TONE_FIELD_ORDER = (
     "tone_equalizer_nodes", "tone_equalizer_influence_radius", "tone_equalizer_smoothing",
     "lift", "gamma", "gain", "lift_pivot", "lift_range", "gamma_pivot", "gamma_range",
     "gain_pivot", "gain_range", "contrast", "contrast_pivot", "white_balance_kelvin", "tint",
-    "saturation", "vibrance", "red_hue", "red_purity", "green_hue", "green_purity",
+    "saturation", "vibrance", "highlight_desaturation", "highlight_desaturation_start", "shadow_desaturation", "shadow_desaturation_start", "red_hue", "red_purity", "green_hue", "green_purity",
     "blue_hue", "blue_purity", "tint_hue", "tint_purity",
 )
 _CURVE_FIELD_ORDER = ("luma_curve", "red_curve", "green_curve", "blue_curve")
@@ -560,6 +564,7 @@ class SDRAdjustments(_BranchAdjustments):
         *_CURVE_FIELD_ORDER,
     )
 
+    highlight_desaturation_start: float = Field(default=0.5, ge=0.01, le=0.99)
     use_authored_base: bool = True
     highlight_compression_start_percent: float = Field(default=50.0, ge=1.0, le=99.0)
     highlight_compression_source_peak_percent: float = Field(default=100.0, ge=1.0, le=1_000_000.0)

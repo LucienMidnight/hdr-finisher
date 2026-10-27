@@ -578,10 +578,12 @@ def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndar
 
     for name in (
         "white_balance_kelvin", "tint", "saturation", "vibrance",
+        "highlight_desaturation", "highlight_desaturation_start", "shadow_desaturation", "shadow_desaturation_start",
         "red_hue", "red_purity", "green_hue", "green_purity",
         "blue_hue", "blue_purity", "tint_hue", "tint_purity",
     ):
         setattr(sdr, name, getattr(hdr, name))
+    sdr.highlight_desaturation_start = min(hdr.highlight_desaturation_start, 0.99)
     sdr.detail = hdr.detail.model_copy(deep=True)
     sdr.vignette = hdr.vignette.model_copy(deep=True)
     sdr.film_look = hdr.film_look.model_copy(deep=True)

@@ -78,7 +78,8 @@ every edit must be undoable.
 ## 2. Scope
 
 - The HDR and SDR lanes and their panels: Tone, Highlight Compression,
-  Exposure Bands (tone equalizer), Color, Lift/Gamma/Gain, Base Rendition
+  Exposure Bands (tone equalizer), Color (including Highlight/Shadow
+  Desaturation, built October 27), Lift/Gamma/Gain, Base Rendition
   (SDR), HSL, Curves, Color Grading, Detail, Black & White, Vignette, Denoise.
 - Crop, rotate, straighten, perspective, lens corrections.
 - Local adjustments and masks (brush, gradients, luminance, colour,
@@ -101,6 +102,7 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | Detail (Texture, Clarity, Sharpen) is corrective and separate from Film Look's fixed-scale character. Global Detail runs after the colour grade and before local adjustments; local Detail runs inside each local grade. | 2026-09 |
 | Match entire HDR grade captures the whole HDR recipe (global, locals, Detail, Film Look, vignette, grain) and builds an SDR base from it. SDR controls stay as trims. Rematch and Revert are single history steps. | 2026-09 |
 | HDR Lift/Gamma/Gain is deprecated now that Exposure Bands exists. Remove it after real-photo checks, unless a workflow needs it. The SDR trims stay. | 2026-08, pending |
+| COLOR-DESAT-01 is built in both Color lanes, after Saturation/Vibrance and before HSL; zero amounts are exactly neutral. Starts and fade widths await by-eye review. | Steve’s October 26 brief; built 2026-10-27 |
 | A healing brush in the local adjustment module and hue selection as a local-adjustment mask are required for v1. Hue selection is built October 27; the complete Retouch feature remains open. | Steve, 2026-10-21 |
 | Retouch starts on the CPU, preserving a fallback for later GPU work. Inpaint is the default, targeting PatchMatch with Krita as the main reference; Heal follows darktable/GIMP and Clone shares the brush infrastructure. See the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026). Quality/performance are not yet validated. | Steve, 2026-10-21 |
 | Retouch repairs are shared by HDR/SDR and run before crop/rotation and denoise. Content-dependent selections see the repaired source. After repair changes, show Rematch required and retain existing SDR Match controls until an explicit Rematch. The current Match materializes editable controls, not a separate baked photo; imported authored SDR remains independent until explicitly replaced through Match. | Steve, 2026-10-22 |
@@ -242,9 +244,27 @@ and lens corrections, Denoise, Black & White, SDR Match, group presets
   The focused hue verdict uses ordinary SDR output and HDR Peak Fit.
   Fast suites run once after Part 2.
 
-- **Highlight and Shadow Desaturation** as general Color controls
-  (COLOR-DESAT-01). They were removed from Film Look in the rebuild and
-  are meant to return here. The film-look plan counts on them.
+- **COLOR-DESAT-01 built October 27:** independent Highlight and Shadow
+  Desaturation amounts (0–100%, default 0) and range starts in each lane's
+  Color section. Reuses the old Film Look luminance-neutral mixing, after
+  Saturation/Vibrance and before HSL. Zero amounts bypass exactly. Smoothstep
+  highlight fade runs from 100% to 400% of HDR reference white (scene 0.18),
+  or 50% to 100% SDR white. Shadow fade runs from 12.5% down to 3.125% of
+  lane white. Starts are adjustable; amounts combine with a 100% cap.
+  Mixing preserves AP1 luminance and stays within each pixel's channel
+  extrema; downstream compression retains the exact delivery ceiling.
+  Project/sidecar serialization, normal slider undo/reset/presets and entire
+  HDR Match transfer carry all four fields. Match copies amounts and shadow starts;
+  SDR clamps a copied HDR highlight start above its range to 99% white.
+  GPU preview and peak analysis share the same function; CPU fallback agrees.
+  Focused neutral/luminance/continuity/replay/Match checks and active finished
+  GPU/CPU comparisons cover the change. Proof equals export bytes, and the
+  encoded HDR check remains below 1000 nits. The known accepted JPEG
+  differences remain; strict comparisons use finished float pixels.
+  Review: `codebase/output/color-desat/index.html` (read-only badminton RAW,
+  off/40%/100%, Fit and 100%, HDR AVIF and SDR PNG). Steve should judge the
+  starts and fade widths by eye. Fast-suite results follow below.
+
 - **Presets window management** (PRESETS-01), built October 27 (see section 5): rename, confirmed Update, import and
   selected export are built; Steve’s app check is pending.
 - **Match entire HDR grade fault** reported October 11: a match reported
@@ -316,7 +336,8 @@ reviews) are after v1. Items 6 and 7 are unchanged and not v1 requirements.
   sharpening, edge or noise masking, and darktable’s diffuse-or-sharpen
   approach. Compare quality and processing cost before choosing.
 
-1. Highlight and Shadow Desaturation in Color (COLOR-DESAT-01).
+1. **Built October 27:** Highlight and Shadow Desaturation in Color
+   (COLOR-DESAT-01), awaiting Steve’s by-eye review; see section 4.
 2. Investigate the Match fault once Steve has recorded a photo and message.
 October 27 layout follow-up: the preset search has its own 32px input row
 above the independently scrolling list, with the existing text-field styling.
@@ -759,3 +780,16 @@ expected ValueError not raised). No Library or pixel-processing code changed.
 
 Gamut, brush, grain and Denoise CPU work now share a machine-sized pool instead of half-CPU/eight-worker limits. Nested work runs inline to avoid pool deadlock. Retouch keeps the existing two-ROI memory allowance while allowing independent solves to overlap. Full limits, scratch timings and validation are recorded in
 [Photo Library Part A](photo-library.md#part-a--use-the-whole-machine-october-25-2026).
+
+### October 27 hue masks / Color desaturation batch checks
+
+Fast suites ran once for both parts: JavaScript 636 passed / 3 failed;
+Python 2,621 passed / 3 failed / 3 skipped. One failure in each suite was
+an expected contract update: the peak shader now includes Color desaturation,
+and saved branch ordering includes its four fields. Those expectations were
+updated (no tolerance changes); focused shader/layout checks pass (12),
+serialization contracts pass (2), and Color neutral/Match checks pass (2).
+Four unrelated failures remain: library-scenes; library-single-ready;
+`test_rgb_description_precedes_pixels_and_keeps_publication_guards[None]`;
+`test_library_native_source_uses_same_repair_before_reduction` (CaptureCache
+lacks `defer_store`). No broad GPU sweep or installer build was run.

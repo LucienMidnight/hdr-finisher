@@ -37,8 +37,10 @@ film-by-paper tables for Kodak 2383 and Fujifilm Crystal Archive.
    data sheets (section 5.5). Fujifilm stocks, Ektar, slide films and
    Vision3 are estimates; Verita and pushed-Portra figures are missing.
    Precise per-layer Vision3 grain needs a later renderer phase.
-3. **Highlight and Shadow Desaturation** return as general Color controls
-   (COLOR-DESAT-01, in the [Grade module](grade.md)).
+3. **COLOR-DESAT-01 built October 27:** Highlight and Shadow Desaturation
+   are general Color controls in both lanes, before HSL and Film Look.
+   The film plan can rely on them; default amounts are exactly neutral.
+   Range starts and fade widths await Steve’s eye; see [Grade](grade.md).
 4. **Decision D4** (true grain sub-layers against the cheap approximation)
    is still open.
 5. **Lens filter speed:** +47 ms (Black Pro-Mist) to +84 ms (worst

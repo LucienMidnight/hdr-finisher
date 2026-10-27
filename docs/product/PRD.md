@@ -120,7 +120,8 @@ bug hunt:
 
 - Retouch brush (Inpaint, Heal, Clone), October 21 requirement. Hue-selection
   local mask **built October 27**, awaiting Steve’s by-eye review.
-- Highlight and Shadow Desaturation in Color (COLOR-DESAT-01).
+- Highlight and Shadow Desaturation in Color (COLOR-DESAT-01): **built
+  October 27**, awaiting Steve’s by-eye review.
 - Presets window: rename, edit, import, export (PRESETS-01). Moved up to v1
   by Steve. **Built October 27:** rename, update, export/import, search and
   `<name>-preset.json` file names.
@@ -176,7 +177,7 @@ Working rules for coding agents, including how much to test:
 | Module | Covers | Main code | PRD | State, October 18 |
 | --- | --- | --- | --- | --- |
 | Import and RAW | Input formats, camera RAW and DNG development, source interpretation, starting look | `loader.py`, `raw_import.py`, `linear_dng.py`, `gainmap_decoders.py`, `sessions.py` | [import-and-raw](modules/import-and-raw.md) | Built. **RAW Exposure zero implemented; Library picture agreement and final review open.** |
-| Grade | HDR and SDR controls, curves, Detail, local adjustments and masks, Denoise, Black & White, SDR Match, presets | `adjustments.py`, `local_adjustments.py`, `denoise_adaptive.py`, `sdr_match.py`, `frontend/*` panels | [grade](modules/grade.md) | Built. V1 healing brush and hue-selection mask not built; desaturation controls, preset management and the Match fault open. |
+| Grade | HDR and SDR controls, curves, Detail, local adjustments and masks, Denoise, Black & White, SDR Match, presets | `adjustments.py`, `local_adjustments.py`, `denoise_adaptive.py`, `sdr_match.py`, `frontend/*` panels | [grade](modules/grade.md) | Built, including hue-selection masks, Color desaturation and preset management. Complete v1 Retouch and the Match fault remain open. |
 | Film Look | Stocks, papers, lens filter, grain, halation, Looks | `film_stock.py`, `film_grain.py`, `film_stocks/`, shaders | [film-look](modules/film-look.md) | Rebuild phases 1 to 6 built. Grain data mostly estimates. |
 | Preview and GPU | WebGPU preview, viewport-bounded rendering, zoom, scopes, GPU memory, CPU/GPU parity | `webgpu-*.js`, `gpu-*.js`, `render_cache.py`, `scopes.py` | [preview-and-gpu](modules/preview-and-gpu.md) | Built. Several performance follow-ups open. |
 | Export and Proof | Output formats, settings, presets, batch export, Proof, HDR ceiling, **GPU delivery** | `exporters.py`, `batch_export.py`, `proofing.py`, `hdr_ceiling.py` | [export-and-proof](modules/export-and-proof.md) | CPU export built. **GPU export, Proof and Library pictures not built (top priority).** |
@@ -210,7 +211,7 @@ section 3; the October 18 list below is kept as history.
    deferred to v2 (Steve, October 21, 2026). See
    [photo-library](modules/photo-library.md).
 5. **V1 local adjustments** (Steve, October 21, 2026): add a healing brush
-   and a hue-selection mask. Both are unbuilt v1 requirements; see
+   and a hue-selection mask. Hue selection is built October 27; complete Retouch remains open. See
    [grade](modules/grade.md).
 
 ## 7. Waiting on Steve

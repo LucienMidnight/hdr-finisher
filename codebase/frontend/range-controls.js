@@ -492,6 +492,8 @@ function formatControlValue(path, value) {
   // Purity is typed to one decimal, so a typed 12.5 is not shown as 13.
   if (path.endsWith("_purity")) return `${numeric > 0 ? "+" : ""}${Number.isInteger(numeric) ? numeric : numeric.toFixed(1)}%`;
   if (path.endsWith(".saturation") || path.endsWith(".vibrance")) return `${numeric > 0 ? "+" : ""}${Math.round(numeric * 100)}%`;
+  if (path.endsWith("desaturation_start")) return `${(numeric * 100).toFixed(1)}% white`;
+  if (path.endsWith("_desaturation")) return `${Math.round(numeric)}%`;
   if (path.endsWith(".exposure")) return `${numeric.toFixed(2)} EV`;
   if (path.endsWith("_nits")) return `${Math.round(numeric)} nit`;
   if (path.endsWith("highlight_compression_start_percent") || path.endsWith("highlight_compression_manual_peak_percent")) return `${Math.round(numeric)}%`;

@@ -317,7 +317,7 @@ function resetControlGroup(group) {
 function setSdrColorSliders(source) {
   if (!state.session || !source) return;
   COLOR_CONTROL_KEYS.forEach((key) => {
-    state.adjustments.sdr[key] = source[key];
+    state.adjustments.sdr[key] = key === "highlight_desaturation_start" ? Math.min(source[key], 0.99) : source[key];
   });
   syncControlsFromState();
   invalidatePreview("sdr");
