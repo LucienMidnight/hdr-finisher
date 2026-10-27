@@ -1,5 +1,32 @@
 # Module PRD: Grade
 
+## October 27: Global HSL investigation (Part 2 remains open)
+
+Using a disposable Electron profile and a copy of Balanced Rock, reproduced the
+Global Yellow +0.80 EV report in HDR and SDR at 100% and 272%, with the
+adjustment on and bypassed. The photo starts from default grade. The Local hue
+recheck used hue 109°, range 24°, smoothness 41°, exclude neutrals 4% and
+Local Exposure +1.05 EV; the sampled vegetation appeared smoother. Matched
+whole-window captures and their limits: `codebase/output/hsl-smooth/part2-investigation.html`.
+The capture scripts are `codebase/tools/hsl-smoothing-review.js` and
+`codebase/tools/hsl-smoothing-local-review.js`.
+
+A CPU-only experiment, outside the app, applies the Local hue preparation to
+the actual Global HSL input on one cropped, single-range recipe. On a synthetic
+noisy-colour/neutral/bright-fringe example its selection standard deviation
+inside the patch fell from 0.150 to 0.000, and the fringe mean from 1.000 to
+0.000 (`codebase/tools/hsl_smoothing_probe.py`). This is a candidate, not an
+integrated feature or an acceptance test.
+It does not handle all recipes and has not established GPU/CPU/export agreement,
+native-pixel scale across preview levels, selection-overlay agreement, or the
+24 MP responsiveness target. Global HSL remains pointwise and unfixed.
+The disposable Electron captures and CPU diagnostic ran; no GPU/export
+acceptance check is claimed for the candidate. Fast checks: 637 JavaScript
+and 2,628 Python passed, 3 Python skipped; the four known failures remain
+`library-scenes`, `library-single-ready`,
+`test_rgb_description_precedes_pixels_and_keeps_publication_guards[None]`
+and `test_library_native_source_uses_same_repair_before_reduction`.
+
 ## October 27: Show selection containment repair (Part 1)
 
 Reproduced Steve's Balanced Rock / IMG_0114.CR2 Global HSL Yellow report in
@@ -35,13 +62,13 @@ check initially used a pending Luma row incorrectly; it now authors a valid
 range and commits mask content, and passes.
 
 **Still open from this brief:** Part 2 global HSL smoothing, native selection
-reuse, speed measurements and the Local hue recheck; Part 3 matched ordinary
+reuse and speed measurements; Part 3 matched ordinary
 folder timings and the October 27 12:43 log investigation. The earlier Green
 channel crop observation does not close Steve's Yellow / +0.80 EV report.
 Native HSL guide transport would alter shared shader resources and requires
 strict preview/fallback/export validation. Estimated complete validation,
-including native real-photo checks: 35–45 minutes, beyond this brief's roughly
-30-minute stop limit. No Part 2 rendering change or Part 3 conclusion is claimed.
+including native real-photo checks: 35–45 minutes; Steve subsequently authorized
+continuing Part 2 with that estimate. No Part 2 rendering change or Part 3 conclusion is claimed.
 
 
 ## October 26: GPU Denoise preparation
