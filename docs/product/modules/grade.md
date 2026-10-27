@@ -295,6 +295,16 @@ reviews) are after v1. Items 6 and 7 are unchanged and not v1 requirements.
 
 1. Highlight and Shadow Desaturation in Color (COLOR-DESAT-01).
 2. Investigate the Match fault once Steve has recorded a photo and message.
+October 27 layout follow-up: the preset search has its own 32px input row
+above the independently scrolling list, with the existing text-field styling.
+This corrects the collapsed search row reported in Steve’s screenshot.
+Verified actual dialog HTML/CSS at 1440 × 900 and 640 × 480: input stays
+32px high, list scrolls, and Save current remains visible; screenshots reviewed.
+Fast checks: JavaScript 637 passed / 2 failed; Python 2,608 passed / 2 failed /
+3 skipped. Only the four previously named failures remain: library-scenes,
+library-single-ready, RGB description [None], and native-source CaptureCache.
+No GPU processing check applies to this HTML/CSS layout correction.
+
 3. **PRESETS-01 finishing touches, October 27.** Search opens focused, filters
    built-in and saved names without case sensitivity, and shows a plain empty
    result. Arrows and Enter apply filtered choices; Escape clears then closes.
