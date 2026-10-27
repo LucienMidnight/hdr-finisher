@@ -21,4 +21,4 @@ from hdr_finisher.library_membership import LibraryMembership
 LibraryMarks._write_sidecar = lambda *a, **k: (_ for _ in ()).throw(RuntimeError('Source writes disabled in profile'))
 LibraryMembership.reconcile = lambda *a, **k: None
 """,encoding='utf-8')
-subprocess.run(['node',str(root/'tools/profile_large_folder.cjs'),str(target)],cwd=root,check=True)
+subprocess.run(['node',str(root/'tools/profile_large_folder.cjs'),str(target),*sys.argv[2:]],cwd=root,check=True)

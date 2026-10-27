@@ -167,3 +167,18 @@ def test_visible_camera_previews_extract_independently(tmp_path,monkeypatch):
     with ThreadPoolExecutor(max_workers=2) as pool:
         results=list(pool.map(lambda path:library_pictures.camera_preview(path,640),paths))
     assert all(row["kept"] for row in results)
+
+
+def test_large_extent_pages_are_ordered_and_reserve_full_count(setup):
+    from hdr_finisher.library_folder_stream import OrderedExtent
+    folder,index=setup
+    records=[dict(path=str(folder/f"photo{i}.jpg"),bytes=4,mtime_ns=1) for i in reversed(range(4200))]
+    index.remember_scan(str(folder),records,reconcile=False,removed=[])
+    extent=OrderedExtent(index,None,str(folder),'name',False)
+    try:
+        offset,first=extent.page(256)
+        assert extent.total==4200 and offset==0 and len(first)==256
+        assert [p['name'] for p in first[:12]]==[f'photo{i}.jpg' for i in range(12)]
+        offset,second=extent.page(256)
+        assert offset==256 and second[0]['name']=='photo256.jpg'
+    finally: extent.close()

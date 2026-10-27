@@ -25,7 +25,13 @@ const {_electron}=require(path.join(root,'node_modules/playwright'));
   const seen=new Set();
   const presented=events.filter(e=>e.stage==='page_picture_present' && e.view==='grid' && !seen.has(e.path) && seen.add(e.path));
   result.first_ms=presented.length?(presented[0].time-opened.time)*1000:null;
-  result.picture25_ms=presented.length>=25?(presented[24].time-opened.time)*1000:null;
+  result.picture25_ms=events.find(e=>e.stage==='page_folder_twenty_fifth_picture')?.duration_ms ?? (presented.length>=25?(presented[24].time-opened.time)*1000:null);
+  if(process.argv[3]) {
+   const ordinary=process.argv[3], start=Date.now();
+   await library.evaluate(folder=>HDRLibrary.browse(folder),ordinary);
+   await library.waitForFunction(folder=>HDRLibrary.getSnapshot().path===folder && document.querySelectorAll('#grid-space canvas[data-picture-key],#grid-space img[data-preview="true"]').length>0,ordinary,{timeout:60000});
+   result.ordinary={path:ordinary,count:await library.evaluate(()=>HDRLibrary.getSnapshot().count),first_ms:Date.now()-start};
+  }
  } catch(e){result.error=String(e)} finally {
   fs.writeFileSync(path.join(profile,'result.json'),JSON.stringify(result,null,2));
   console.log(JSON.stringify(result));await app.close();

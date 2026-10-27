@@ -124,7 +124,65 @@ def indexed_snapshot(index, store, root):
     return len(photos), rows
 
 
-async def stream_folder(index, store, request, root, enrich):
+class OrderedExtent:
+    """One read-only WAL snapshot, sorted before bounded row hydration."""
+    def __init__(self, index, store, root, sort, descending):
+        import re
+        import unicodedata
+        self.index, self.store, self.root = index, store, root
+        self.db = sqlite3.connect(index.marks.database.as_uri()+"?mode=ro", uri=True, check_same_thread=False)
+        self.db.execute("BEGIN")
+        prefix = index._prefix(root)
+        bounds = (prefix, prefix[:-1]+chr(ord(prefix[-1])+1))
+        def natural(value):
+            value = ''.join(c for c in unicodedata.normalize('NFD', str(value)).casefold() if not unicodedata.combining(c))
+            return re.sub(r'\d+', lambda m: m[0].lstrip('0').zfill(24), value)
+        self.db.create_function('natural', 1, natural, deterministic=True)
+        self.db.create_function('basename', 1, os.path.basename, deterministic=True)
+        self.db.create_function('extension', 1, lambda p: os.path.splitext(p)[1].upper(), deterministic=True)
+        where = "f.path>=? AND f.path<?"
+        count = self.db.execute("SELECT count(*) FROM files f WHERE "+where, bounds).fetchone()[0]
+        tables = {r[0] for r in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        extra = 0
+        if 'library_copies' in tables and store is not None:
+            for value, in self.db.execute("SELECT c.state FROM library_copies c JOIN files f ON f.path=c.source WHERE "+where, bounds):
+                state = json.loads(value)
+                extra += len(state.get('desired',[]) if state.get('pending') else state.get('baseline',[]))
+        self.total = count + extra
+        direction = ' DESC' if descending else ' ASC'
+        order = ''
+        join = ''
+        if sort == 'time':
+            order = "(json_extract(f.facts,'$.capture_time') IS NULL), json_extract(f.facts,'$.capture_time')"+direction+", "
+        elif sort == 'modified': order = 'f.mtime_ns'+direction+', '
+        elif sort == 'type': order = 'extension(f.path)'+direction+', '
+        elif sort in ('rating','pick'):
+            join = ' LEFT JOIN photos p ON p.path=f.path'
+            field = "coalesce(json_extract(p.marks,'$.rating'),0)" if sort=='rating' else "CASE coalesce(json_extract(p.marks,'$.pick'),'unmarked') WHEN 'pick' THEN 0 WHEN 'reject' THEN 2 ELSE 1 END"
+            order = field+direction+', '
+        elif sort == 'state' and store is not None:
+            edited = store.library_grades.describe([r[0] for r in self.db.execute("SELECT path FROM photo_grades WHERE path>=? AND path<?",bounds)])
+            self.db.create_function('edited',1,lambda p: int(edited.get(p,{}).get('edited',False)))
+            order = 'edited(f.path)'+direction+', '
+        self.cursor = self.db.execute("SELECT f.path,f.bytes,f.mtime_ns,f.facts FROM files f"+join+" WHERE "+where+
+            " ORDER BY "+order+"natural(basename(f.path))"+direction+", natural(f.path)"+direction, bounds)
+        self.offset = 0
+
+    def page(self, limit):
+        photos=[]
+        for path, size, modified, facts in self.cursor.fetchmany(limit):
+            name=os.path.basename(path)
+            photos.append(dict(path=path,name=name,type=os.path.splitext(name)[1][1:].upper(),bytes=size,
+                mtime_ns=modified,indexed=bool(facts),**(json.loads(facts) if facts else {})))
+        rows=cached_rows(self.index,self.store,photos,root=self.root)
+        offset=self.offset; self.offset+=len(rows)
+        return offset,rows
+
+    def close(self):
+        self.db.close()
+
+
+async def stream_folder(index, store, request, root, enrich, sort="time", descending=False):
     worker = index.worker
     token = uuid4().hex
     started = time.perf_counter()
@@ -150,27 +208,36 @@ async def stream_folder(index, store, request, root, enrich):
         finally:
             worker.cancel(job)
     try:
-        # Deliver one complete index snapshot before admitting the disk check
-        # or background EXIF. Hundreds of tiny pages repeated SQL setup, grade
-        # descriptions, full-grid sorting and paints at an ever-moving end.
-        total, rows = await run_in_threadpool(indexed_snapshot, index, store, root)
-        first = not rows
-        if rows:
-            empty_marks = Marks().model_dump()
-            log("folder_open_first_rows",folder=root,request=token,rows=len(rows),duration_ms=(time.perf_counter()-started)*1000,route="index")
-            # The compact extent carries every row's sort/filter facts and identity.
-            # Repeated defaults and derivable labels need not cross the wire 155k times.
-            columns = sorted({key for photo in rows for key in photo if key not in
-                ("name", "type", "albums", "storage", "kept_by_album")})
-            yield event("rows", columns=columns, values=[
-                [photo.get(key) if key != "marks" or photo.get(key) != empty_marks else None
-                 for key in columns] for photo in rows], photos=[])
-            # Visible folder-details hydration supplies presentation-only fields.
-            # Do not send the entire rich snapshot a second time while pictures wait.
-        del rows
-        if total:
-            log("folder_open_all_rows",folder=root,request=token,rows=total,duration_ms=(time.perf_counter()-started)*1000,route="index")
-        yield event("indexed",rows=total)
+        extent = None
+        first = True
+        try:
+            count = len(await run_in_threadpool(indexed_paths,index,root,"",4096))
+            if count < 4096:
+                total, rows = await run_in_threadpool(indexed_snapshot,index,store,root)
+                pages = [(0,rows)]
+            else:
+                extent = await run_in_threadpool(OrderedExtent,index,store,root,sort,descending)
+                total = extent.total
+                pages = None
+            while True:
+                if extent:
+                    offset, rows = await run_in_threadpool(extent.page,256 if first else 4096)
+                elif pages: offset, rows = pages.pop()
+                else: break
+                if not rows: break
+                if first:
+                    log("folder_open_first_rows",folder=root,request=token,rows=len(rows),duration_ms=(time.perf_counter()-started)*1000,route="index")
+                    first=False
+                empty_marks=Marks().model_dump()
+                columns=sorted({key for photo in rows for key in photo if key not in ("name","type","albums","storage","kept_by_album")})
+                yield event("rows",total=total,offset=offset,ordered=bool(extent),columns=columns,values=[
+                    [photo.get(key) if key!="marks" or photo.get(key)!=empty_marks else None for key in columns] for photo in rows],photos=[])
+                await asyncio.sleep(0)
+            if total:
+                log("folder_open_all_rows",folder=root,request=token,rows=total,duration_ms=(time.perf_counter()-started)*1000,route="index")
+            yield event("indexed",rows=total)
+        finally:
+            if extent: await run_in_threadpool(extent.close)
         generation = 0
         while True:
             generation += 1; check_started = time.perf_counter()

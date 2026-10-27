@@ -453,6 +453,30 @@ every photo carrying the name and run the steps above.
 
 ## 8. The helper process
 
+### October 27: ordered progressive extent
+
+**October 27 three-part batch, Part 1:** ordered progressive delivery is built.
+Large folders deliver the first 256 sorted rows, then 4,096-source pages, from
+an independent read-only WAL snapshot. The full count includes virtual copies;
+neutral cells reserve unarrived positions and keep the scrollbar stable. Filters
+and sort changes are explicitly deferred until the extent finishes. Ordinary
+folders below 4,096 sources retain their single-message route. The folder
+stopwatch counts distinct presented photos, including camera previews and pool
+reuses, and logs the 25th picture explicitly.
+
+One before and one after profile each opened D:\Photos (155,877 rows), with
+fresh disposable Library backups and empty isolated caches, source writes and
+reconciliation disabled: **first picture 6.19 s before / 4.20 s after; 25th
+7.26 s / 5.40 s**. First 256 rows reached the page at 3.74 s, usable at 3.81 s.
+The one-second target remains open: ordering the indexed extent still precedes
+the first page. The after-profile also opened a 253-photo ordinary folder,
+`D:\Photos\2010\03\23\20100323-205934`: first picture 1.46 s. No ordinary
+before measurement exists, so no comparative speed claim is made. Artifacts:
+`codebase/output/oct27-three-part/{before,after}`. Fast checks run once after
+all three parts. Steve should open D:\Photos, scroll ahead during loading,
+then try ratings, filters and each sort after the rows finish.
+
+
 ### October 27: draw cells independently of demand
 
 A compact full indexed extent retains the folder count, sort/filter facts and

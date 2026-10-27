@@ -176,6 +176,8 @@ class RawPlanRequest(BaseModel):
 
 class FolderRequest(BaseModel):
     path: str
+    sort: Literal["time", "name", "rating", "pick", "state", "type", "modified"] = "time"
+    descending: bool = False
 
 
 class CameraPreviewRequest(FolderRequest):
@@ -898,7 +900,7 @@ def create_library_router(worker, browser, store=None):
         from .library_folder_stream import stream_folder
         # Normalise lexically; even an offline indexed folder may open.
         root = os.path.abspath(os.path.expanduser(command.path))
-        return StreamingResponse(stream_folder(index, store, request, root, listing),
+        return StreamingResponse(stream_folder(index, store, request, root, listing, command.sort, command.descending),
             media_type="application/x-ndjson", headers={"Cache-Control":"no-store"})
 
     @router.post("/folder-details")

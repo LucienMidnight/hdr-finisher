@@ -57,6 +57,27 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 27, 2026)
 
+**October 27 three-part batch, Part 1:** ordered progressive delivery is built.
+Large folders deliver the first 256 sorted rows, then 4,096-source pages, from
+an independent read-only WAL snapshot. The full count includes virtual copies;
+neutral cells reserve unarrived positions and keep the scrollbar stable. Filters
+and sort changes are explicitly deferred until the extent finishes. Ordinary
+folders below 4,096 sources retain their single-message route. The folder
+stopwatch counts distinct presented photos, including camera previews and pool
+reuses, and logs the 25th picture explicitly.
+
+One before and one after profile each opened D:\Photos (155,877 rows), with
+fresh disposable Library backups and empty isolated caches, source writes and
+reconciliation disabled: **first picture 6.19 s before / 4.20 s after; 25th
+7.26 s / 5.40 s**. First 256 rows reached the page at 3.74 s, usable at 3.81 s.
+The one-second target remains open: ordering the indexed extent still precedes
+the first page. The after-profile also opened a 253-photo ordinary folder,
+`D:\Photos\2010\03\23\20100323-205934`: first picture 1.46 s. No ordinary
+before measurement exists, so no comparative speed claim is made. Artifacts:
+`codebase/output/oct27-three-part/{before,after}`. Fast checks run once after
+all three parts. Steve should open D:\Photos, scroll ahead during loading,
+then try ratings, filters and each sort after the rows finish.
+
 **October 27 four-part batch, Part 3: faster; about-1-s target still missed.**
 Exactly one before and one after profile opened D:\Photos, confirmed in each
 backend log and page snapshot: 155,877 rows including virtual copies. Both
@@ -633,7 +654,9 @@ drag-in pinning).
 **Other open items:**
 
 - **Very large folder: first-screen speed and Steve’s scrolling check remain open.**
-  Latest four-part batch: 17.33 s before / 6.42 s after for the first picture,
+  Ordered pages now draw before completion (three-part batch above); first
+  picture 4.20 s, 25th 5.40 s. One-second target remains open. Historical
+  four-part batch: 17.33 s before / 6.42 s after for the first picture,
   with 155,877 rows; still outside about 1 s. See Start here for stage timings,
   the missing reliable after-25th timing and the two disposable profile paths.
   The older numbers below are historical, superseded by that measured result.
