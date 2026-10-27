@@ -17,10 +17,41 @@ textures, so scratch bytes per pixel do not increase. The packed HSL channel
 stride is 140 floats (32 ranges retained; Edge/Feather in 6/7, detail in 136).
 Missing saved fields use defaults; no migration code.
 
-Checks so far: extended real-GPU shared-selection check passes at full/half
-scale and on halo tiles, including extrema and fractional controls. Focused
-Python selection tests pass, including exact default coverage and saved-value
-round trips. UI, delivery, and Steve's review page are being completed.
+Built: Global channel sliders below Softness, Local hue-leaf sliders, plain
+source-pixel readouts and tooltips, reset/history/saving through the existing
+controls. The Local single hue-leaf Show mask uses the existing applied-mask
+GPU overlay (as Luma already did), with the render's lane and tiles; this path
+requires default geometry. Combined masks and transformed geometry still use
+the existing CPU overlay. Global Show selection includes all controls through
+the shared CPU engine, but remains a 1600-pixel overlay enlarged at zoom; it
+has not yet been made an exact view of the applied GPU selection.
+
+Checks: native GPU/CPU selection passes for full/half scale and halo tiles,
+including maximal/fractional settings. GPU tile interiors equal the whole
+frame exactly (no row/column discontinuity); range and edge edits reuse
+preparation and pass the proposed timing allowance. CPU defaults equal the
+previous formula exactly; saved values and Global/Local equality pass.
+Real-app tiled 423% review captures cover both −2 and +0.8 EV, HSL off,
+defaults, Edge −3/+3, Feather 6, detail 0/100, and Show selection:
+`codebase/output/hsl-edge-controls/index.html`. Inspected crops show no tile
+line. These screenshots are visual evidence, not a numeric full-photo
+preview/export comparison.
+
+Fast checks: JavaScript 639 passed, two unrelated Library failures (decoder
+fallback; missing HDRLibraryScreenPreviews). Python 2640 passed, three skipped,
+three unrelated failures (stale literal PARAM_COUNT assertion, missing Library
+SourceReference luminance fixture, retouch Library mock missing defer_store).
+The focused selection Python tests pass. Before Steve's hold, the non-default
+Global full-photo delivery check passed within the existing perceptual margin,
+with identical Proof/export bytes and the ceiling intact. The Local run was
+interrupted on request; it is not a pass.
+
+**Open (Steve, October 27):** review the page before running final export/Proof
+and ceiling validation once. Hold those checks until Steve approves the look;
+keep the brief active. Also resolve the remaining Global and combined/fallback
+Local overlay fidelity limits above before claiming every overlay route matches
+the applied native selection. Library-specific output validation and cold
+interactive timing on large photos remain unverified for this change.
 
 ## October 27: HSL selection fixes after Steve's review
 
@@ -41,7 +72,7 @@ round trips. UI, delivery, and Steve's review page are being completed.
   overlay and centre handle, and Local mask overlays and handles when Local
   Adjustments is off. Denoise's Show noise already followed its bypass.
 
-**Open:** complete edge-control delivery validation and visual review (see above).
+**Open:** visual review and held output validation, plus overlay fidelity limits (see above).
 
 ## October 27: Local hue mask on the shared selection (Stage 2, validation ongoing)
 

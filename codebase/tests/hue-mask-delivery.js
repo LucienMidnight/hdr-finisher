@@ -33,7 +33,7 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
    const leaf=selectedMaskLeaf(),local=selectedLocal();
    await finishLuminanceSampleGesture({localId:local.id,points:[{x:.25,y:.5}]});
    if(selectedMaskLeaf().hue_center==null||localAdjustments().length!==1)throw Error('Hue sampling failed');
-   const g=selectedLocal();Object.assign(selectedMaskLeaf(),{hue_center:109,hue_width:24,hue_smoothness:41,saturation_floor:.04});g.hdr_grade.exposure=baseline?0:1.05;g.sdr_grade.exposure=baseline?0:1.05;await commitSelectedLocal();
+   const g=selectedLocal();Object.assign(selectedMaskLeaf(),{hue_center:109,hue_width:24,hue_smoothness:41,saturation_floor:.04,edge:3,edge_feather:6,edge_detail:75});g.hdr_grade.exposure=baseline?0:1.05;g.sdr_grade.exposure=baseline?0:1.05;await commitSelectedLocal();
    for(const lane of ['hdr','sdr']){
     const b=state.adjustments[lane];b.highlight_section_enabled=lane==='hdr';b.highlight_compression_mode='peak_fit';
     if(lane==='hdr'){b.highlight_compression_target_nits=1000;b.highlight_compression_start_nits=400;}

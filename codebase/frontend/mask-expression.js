@@ -33,7 +33,7 @@
       };
     }
     if (type === "hue_range") {
-      return { type, hue_center: null, hue_width: 16, hue_smoothness: 12, saturation_floor: 0.04, mask_opacity: 1 };
+      return { type, hue_center: null, hue_width: 16, hue_smoothness: 12, edge: 0, edge_feather: 0, edge_detail: 50, saturation_floor: 0.04, mask_opacity: 1 };
     }
     if (type === "luminance_range") {
       return {

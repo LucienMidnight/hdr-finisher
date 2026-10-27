@@ -42,3 +42,16 @@ test('HSL edge controls survive validation and reach every packed channel',()=>{
   assert.equal(saved.edge_detail,c.recipe.edge_detail);assert.equal(values[at+136],saved.edge_detail);
  }
 });
+
+
+test('edge reach expands the planned halo in processing pixels',()=>{
+ const {HDRGraphScale:scale}=require('../frontend/graph-scale.js');
+ const {geometry}=require('../frontend/hsl-selection-gpu.js');
+ const settings=h.defaultSettings();const r=settings.channels[2].recipe;
+ Object.assign(r,{luminance:.8,edge:-8,edge_feather:16});
+ for(const s of [1,.5,.3]){
+  const params=new Float32Array(layout.count);h.pack(params,settings);
+  params[layout.indices.HSL_SHARED_SELECTION]=1;params[layout.indices.SOURCE_PIXEL_SCALE]=s;
+  assert.equal(scale.hslSelectionReach(params),geometry(s).reach+Math.ceil(8*s)+Math.ceil(32*s));
+ }
+});

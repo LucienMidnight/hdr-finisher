@@ -18,6 +18,21 @@ The packed HSL channel stride is 140 floats, retaining all 32 ranges;
 slots 6/7 hold Edge/Feather and slot 136 holds detail. Selection preparation
 and its cache key stay independent of all three controls.
 
+UI sliders are on Global channels and Local hue leaves (Local HSL recipes
+remain pointwise and do not expose these spatial controls). Single hue leaves
+with default geometry now use the existing `gpuLumaMaskOverlayOptions` route;
+the overlay reads the same GPU mask texture as application, including tiled
+views and the current lane. Global Show selection is still the CPU 1600-edge
+proxy overlay; combined/transformed Local overlays retain their existing CPU
+route. Those fidelity limitations are open, not evidence of native agreement.
+
+Review generator: `node tests/run-in-electron.js tools/hsl-seam-repro.js --review`
+with `HDR_FINISHER_ELECTRON_WINDOW_SIZE=2560x1440`; copies Balanced Rock into
+`output/hsl-edge-controls`, captures both luminance directions and selection
+variants, and writes `index.html`. Numeric tile-join coverage is checked by
+`tests/hsl-selection-engine.js`. On October 27 Steve requested final delivery,
+Proof and ceiling checks be held until he approves that page.
+
 ## October 27: shared pre-HSL selection (Global HSL built)
 
 `HslSelectionGpu` (`frontend/hsl-selection-gpu.js`) and its CPU reference

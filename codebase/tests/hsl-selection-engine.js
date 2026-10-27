@@ -33,13 +33,18 @@ const {_electron}=require('playwright');
     const v=new Float32Array(read.getMappedRange().slice(0));read.unmap();read.destroy();
     return (lane,x,y)=>v[Math.floor(lane/4)*row/4*c.height+y*row/4+x*4+lane%4];
    }
-   const result={cases:{},errors};
+   const result={cases:{},errors,tileSeamMax:0}; let whole=null,wholeCase=null;
    for(const c of f.cases){
     const at=await run(c,c.channels||f.channels),diff=[];
     const [ix,iy,iw,ih]=c.interior||[0,0,c.width,c.height];
     for(let lane=0;lane<2;lane++)for(let y=iy;y<iy+ih;y++)for(let x=ix;x<ix+iw;x++){
      const g=at(lane,x,y);if(!Number.isFinite(g))throw Error('Non-finite coverage');diff.push(Math.abs(g-c.weights[lane][y][x]));
     }
+    if(c.interior && whole && wholeCase.scale===c.scale && c.channels){
+     for(let lane=0;lane<2;lane++)for(let y=iy;y<iy+ih;y++)for(let x=ix;x<ix+iw;x++)
+      result.tileSeamMax=Math.max(result.tileSeamMax,Math.abs(at(lane,x,y)-whole(lane,x+c.x,y+c.y)));
+    }
+    if(!c.interior){whole=at;wholeCase=c;}
     diff.sort((a,b)=>a-b);
     result.cases[c.name]={mean:diff.reduce((a,b)=>a+b,0)/diff.length,p99:diff[Math.floor(diff.length*.99)],max:diff.at(-1)};
    }
@@ -63,7 +68,8 @@ const {_electron}=require('playwright');
   }
   assert.ok(report.equalGlobalLocal,'Equal Global/Local settings produced different coverage');
   assert.ok(report.reused&&report.edgesReused&&report.invalidated,JSON.stringify(report));assert.deepEqual(report.errors,[]);
-  assert.equal(fixture.tile_seam_max,0);
+  assert.equal(fixture.tile_seam_max,0);assert.ok(report.tileSeamMax<.000001,'GPU tile joins: '+report.tileSeamMax);
+  assert.ok(report.edgeEditMs<=report.rangeEditMs*1.2+10,'Edge edit exceeds proposed timing allowance');
   assert.ok(fixture.selected_mean>.8);assert.ok(fixture.noisy_std_after<fixture.noisy_std_before*.3);assert.ok(fixture.fringe_mean>.8);assert.ok(fixture.neutral_mean<.001);
   fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(report,null,2));console.log('PASS shared selection GPU/CPU',JSON.stringify(report));
  }finally{await app.close();}

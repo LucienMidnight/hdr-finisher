@@ -47,10 +47,10 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
   const configure=active=>page.evaluate(async ({local,active})=>{
    for(const lane of ['hdr','sdr']){const b=state.adjustments[lane];b.highlight_section_enabled=true;b.highlight_compression_mode='peak_fit';
     if(lane==='hdr'){b.highlight_compression_target_nits=1000;b.highlight_compression_start_nits=400;}
-    if(!local){const r=b.hsl.channels.find(c=>c.id==='yellow').recipe;r.ranges[0].width=15;r.ranges[0].feather=21;r.luminance=active?.8:0;r.uniformity=0;r.opacity=1;b.hsl_section_enabled=true;}}
+    if(!local){const r=b.hsl.channels.find(c=>c.id==='yellow').recipe;r.ranges[0].width=15;r.ranges[0].feather=21;r.luminance=active?.8:0;r.uniformity=0;r.opacity=1;r.edge=3;r.edge_feather=6;r.edge_detail=75;b.hsl_section_enabled=true;}}
    state.globalEditDirty=true;await syncGlobalEditState();
    if(local&&active){setGradeMode('local');await assignToolToPending('hue_range');
-    Object.assign(selectedMaskLeaf(),{hue_center:109,hue_width:24,hue_smoothness:41,saturation_floor:.04});
+    Object.assign(selectedMaskLeaf(),{hue_center:109,hue_width:24,hue_smoothness:41,saturation_floor:.04,edge:3,edge_feather:6,edge_detail:75});
     selectedLocal().sdr_grade.exposure=1.05;selectedLocal().hdr_grade.exposure=1.05;
     if(!await commitSelectedLocal({maskContent:true}))throw Error('Local mask commit failed');setGradeMode('global');}
    state.previewScheduler?.cancel();while(state.gpuDraftInFlight)await state.gpuDraftInFlight.catch(()=>null);

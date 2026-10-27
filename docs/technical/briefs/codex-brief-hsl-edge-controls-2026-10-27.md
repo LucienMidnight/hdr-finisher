@@ -82,3 +82,19 @@ Proposed before measuring: edge-control selection edits within 20% of Range edit
 with a 10 ms allowance for short runs (GPU queue/readback noise and added bounded
 passes). Preparation must remain cached. Existing coverage and delivery tolerances
 are unchanged.
+
+## October 27 review checkpoint (Steve)
+
+Controls and shared-engine implementation are locally committed. GPU/CPU engine
+and tile-join checks pass; the real-app 423% page is at the requested output path.
+Steve requested the engine/seam checks and review page now, with final full
+export/Proof and ceiling runs held until he approves the look, then run once.
+A preliminary Global delivery run completed before this instruction; the Local
+run was interrupted. Neither replaces the held final group.
+
+Remaining implementation limitation: Global Show selection still uses its
+1600-pixel CPU proxy at magnified zoom. Single default-geometry Local hue masks
+now show their applied GPU texture; combined/transformed Local overlays still
+use their existing CPU route. These are not yet proven identical to the applied
+selection on every overlay route. Keep this brief active until the remaining
+work and held validation are complete.

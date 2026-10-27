@@ -15,12 +15,13 @@ function initializeHslPanels() {
       <button type="button" class="text-button" data-hsl-action="stop">Stop picking</button></div>
       <button type="button" class="text-button hsl-selection-toggle" data-hsl-selection aria-pressed="false">Show selection</button>
       <div class="hsl-sliders"></div><p class="hsl-notice" role="status" aria-live="polite"></p>`;
-    const specs = [['width','Range',1,180,1,16],['feather','Softness',1,90,1,12],['hue','Hue',-180,180,1,0],['saturation','Saturation',-100,100,1,0],['luminance','Luminance',-2,2,.01,0],['uniformity','Uniformity',0,100,1,0],['opacity','Amount',0,1,.01,1]];
-    for (const [key,label,min,max,step,value] of specs) {
+    const specs = [['width','Range',1,180,1,16],['feather','Softness',1,90,1,12],['edge','Edge grow/shrink',-8,8,.25,0],['edge_feather','Feather',0,16,.25,0],['edge_detail','Edge detail',0,100,1,50],['hue','Hue',-180,180,1,0],['saturation','Saturation',-100,100,1,0],['luminance','Luminance',-2,2,.01,0],['uniformity','Uniformity',0,100,1,0],['opacity','Amount',0,1,.01,1]];
+    for (const [key,label,min,max,step,value] of specs.filter(([key]) => scope === 'global' || !['edge','edge_feather','edge_detail'].includes(key))) {
       const row = document.createElement('div'); row.className = 'control-row instrument-slider-control';
       row.innerHTML = `<div class="control-heading"><label>${label}</label><output></output></div><input type="range" aria-label="HSL ${label}" data-hsl-key="${key}" min="${min}" max="${max}" step="${step}" value="${value}">`;
       host.querySelector('.hsl-sliders').append(row);
       const input = row.querySelector('input');
+      input.title = ({edge:'Grow or shrink the selected area.',edge_feather:'Soften the selection boundary.',edge_detail:'Smooth across texture or follow light and dark edges.'})[key] || label;
       input.addEventListener('pointerdown',()=>hslBegin(ui));
       input.addEventListener('input',()=>{
         const channel = hslChannel(ui); if (!channel) return;
@@ -167,9 +168,9 @@ function hslSync(ui){
     const k=input.dataset.hslKey,range=['width','feather'].includes(k),r=c.recipe.ranges[ui.range];
     const stock=defaults.find(v=>v.id===c.id)?.recipe||e.newRecipe();
     input.dataset.defaultValue=String(range?(stock.ranges[0]?.[k]??(k==='width'?16:12)):stock[k]);
-    const value=range?r?.[k]??Number(input.defaultValue):c.recipe[k];input.value=String(value);
+    const value=range?r?.[k]??Number(input.defaultValue):c.recipe[k]??stock[k];input.value=String(value);
     input.disabled=!state.session || (range&&(!r||c.kind==='all')) || (k==='uniformity'&&c.kind==='all');
-    input.closest('.control-row').querySelector('output').textContent=k==='opacity'?`${Math.round(value*100)}%`:k==='luminance'?`${Number(value).toFixed(2)} EV`:['width','feather','hue'].includes(k)?`${Math.round(value)}°`:`${Math.round(value)}%`;
+    input.closest('.control-row').querySelector('output').textContent=['edge','edge_feather'].includes(k)?`${Number(value).toFixed(2)} px`:k==='opacity'?`${Math.round(value*100)}%`:k==='luminance'?`${Number(value).toFixed(2)} EV`:['width','feather','hue'].includes(k)?`${Math.round(value)}°`:`${Math.round(value)}%`;
     updateRangeVisual(input);
   }
   hslWheel(ui);

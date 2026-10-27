@@ -942,7 +942,7 @@ function gpuLumaMaskPreviewActive(local = selectedLocal()) {
   return Boolean(
     state.gpuPreview?.available
     && local?.mask?.operator === "leaf"
-    && local.mask.leaf?.type === "luminance_range"
+    && ["luminance_range", "hue_range"].includes(local.mask.leaf?.type)
     && (!local.mask.children || local.mask.children.length === 0)
     && valuesEqual(state.adjustments.shared?.geometry, defaultGeometry()),
   );
