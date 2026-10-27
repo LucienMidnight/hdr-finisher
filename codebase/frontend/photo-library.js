@@ -601,6 +601,12 @@
     pictureErrors.paint(cell);
     {
       void (async () => {
+        const opening = state.folderOpen;
+        if (container === space && opening && !opening.pictureRequested) {
+          opening.pictureRequested = true;
+          HDRLibraryStopwatch("folder_first_picture_requested", {path:opening.path,request:opening.request,
+            reason:photo.path,duration_ms:performance.now()-opening.started});
+        }
         await hydrateVisible(photo,current,cell.controller.signal);
         if(!current())return;
         cell.identity=pictureIdentity(photo);
@@ -1254,6 +1260,12 @@
   const browseCollection = (kind, name) => openPlace({ kind, name });
   async function openPlace(place) {
     const path = place.path || "";
+    HDRLibraryStopwatch("folder_clicked", {path, kind:place.kind || "folder"});
+    if (!place.kind && !state.collection && state.folderOpen?.path === path
+      && !state.folderOpen.controller.signal.aborted && !state.scanError) {
+      HDRLibraryStopwatch("folder_open_joined", {path,request:state.folderOpen.request});
+      return state.folderOpen.ready;
+    }
     restoreSourceSort(place);
     if(state.folderOpen)HDRLibraryStopwatch("folder_open_cancelled",{path:state.path,request:state.folderOpen.request,reason:"opened another place"});
     state.scan?.abort(); state.single?.abort(); state.native?.abort(); clearPrefetch(); clearCells(state.cells); clearCells(state.filmCells);
@@ -1319,7 +1331,8 @@
           opening.request=event.request;
           if(event.kind === "error")throw Error(event.message);
           if(event.columns) event.photos=event.values.map(values=>{
-            const photo=Object.fromEntries(event.columns.map((key,i)=>[key,values[i]]).filter(([,value])=>value!==null));
+            const photo={};
+            for(let i=0;i<event.columns.length;i++)if(values[i]!==null)photo[event.columns[i]]=values[i];
             photo.name=photo.path.split(/[\\/]/).at(-1);
             photo.type=photo.name.split(".").at(-1).toUpperCase();
             if(photo.copy_id)photo.name += " · " + photo.copy_name;
@@ -1345,11 +1358,13 @@
               first=false;state.reading=false;
               HDRLibraryStopwatch("folder_first_rows",{path,request:event.request,duration_ms:performance.now()-started});
               paint();readyResolve();
+              HDRLibraryStopwatch("folder_rows_usable",{path,request:event.request,count:rows.size,
+                duration_ms:performance.now()-started});
               await new Promise(resolve=>requestAnimationFrame(()=>setTimeout(resolve,0)));
             } else if(event.kind !== "details" && !folderPaintTimer)folderPaintTimer=setTimeout(paint,500);
           }
           if(event.kind === "indexed") {
-            paint();
+            if (first || folderPaintTimer) paint();
             state.reading=rows.size===0;if(first)paint();readyResolve();
             void readDates(controller, [...rows.values()].filter(photo=>!photo.indexed));
             HDRLibraryStopwatch("folder_listed",{path,request:event.request,duration_ms:performance.now()-started});

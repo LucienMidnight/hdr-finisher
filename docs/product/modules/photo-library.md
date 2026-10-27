@@ -57,6 +57,38 @@ measurement change. No matched whole-export before/after is claimed.
 
 ## Start here: Library responsiveness status (October 27, 2026)
 
+**October 27 four-part batch, Part 3: faster; about-1-s target still missed.**
+Exactly one before and one after profile opened D:\Photos, confirmed in each
+backend log and page snapshot: 155,877 rows including virtual copies. Both
+used fresh disposable SQLite backups and empty isolated caches; settings
+writes and source reconciliation were disabled. No photo folder was written.
+First grid picture: **17.33 s before / 6.42 s after**. Before, the 25th distinct
+picture was 18.87 s. After, the screenshot's 25-image condition completed but
+only 24 distinct presentation events reached the retained log; a reliable
+25th-picture time is unavailable. Do not call this a one-second first screen.
+
+Before: three startup opens competed, indexed rows reached the page at 15.57 s,
+then the first picture at 17.33 s. After: one open; backend rows prepared at
+3.79 s, page first rows at 5.26 s, fully sorted usable cells at 5.78 s,
+first picture requested at 5.77 s, first camera preview at 6.42 s. The wait is
+primarily complete-index preparation/transfer, rather than a long picture
+queue. Duplicate same-folder opens now join before resetting the view. Sparse
+marks/grade/copy carriers are enriched rather than describing defaults for all
+155k files; rich rows are no longer transmitted a second time. Compact row
+parsing avoids temporary entry arrays. The full count, ordering facts and
+virtual copies are preserved; visible rows hydrate before drawing. Ordinary
+folders retain their existing enrichment route below 4,096 rows; no ordinary-folder
+profile was run under this batch's two-profile limit.
+
+Logging adds folder click/join, usable rows and first picture request, alongside
+first picture presentation; summarize_library_log.py includes these milestones.
+Reproduce with `tools/profile_large_folder.py <new-output-directory>` from
+codebase. Artifacts: `codebase/output/oct27-four-part/{before,after}/`.
+Fast checks deferred to batch end. Steve should open D:\Photos and drag the
+scrollbar continuously. Remaining work: progressive ordered extent delivery
+without waiting for full rich row construction; the one-second target stays open.
+
+
 **October 27 batch, Part 1: scrolling cells and first-picture logging built;
 1 s first-screen target remains unverified.** Moving viewports now draw neutral
 cells, reuse eligible pool thumbnails and remembered camera previews, and defer
@@ -599,6 +631,10 @@ drag-in pinning).
 **Other open items:**
 
 - **Very large folder: first-screen speed and Steve’s scrolling check remain open.**
+  Latest four-part batch: 17.33 s before / 6.42 s after for the first picture,
+  with 155,877 rows; still outside about 1 s. See Start here for stage timings,
+  the missing reliable after-25th timing and the two disposable profile paths.
+  The older numbers below are historical, superseded by that measured result.
   October 27 cell drawing and telemetry are built; the one cold profile missed
   1 s (21.18 s first / 25.37 s 25th picture). Duplicate-open and stream-yield
   corrections followed, unprofiled. See Start here above. Historical evidence:

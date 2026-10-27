@@ -82,6 +82,48 @@ def cached_rows(index, store, photos, root=None):
     return photos
 
 
+def indexed_snapshot(index, store, root):
+    """Full sort/filter extent; enrich only rows with authored/indexed state.
+
+    Most files have no marks, copies or grade. Query their sparse carriers once
+    instead of opening hundreds of connections and describing 155k defaults.
+    Visible rows still hydrate through folder-details before picture requests.
+    """
+    photos = indexed_page(index, root, limit=2147483647)
+    if not photos:
+        return 0, []
+    if store is None or len(photos) < 4096:
+        return len(photos), cached_rows(index, store, photos, root=root)
+    prefix = index._prefix(root)
+    bounds = (prefix, prefix[:-1]+chr(ord(prefix[-1])+1))
+    db = sqlite3.connect(index.marks.database.as_uri()+"?mode=ro", uri=True)
+    try:
+        carriers = set()
+        for table, column in (("photos", "path"), ("photo_grades", "path")):
+            carriers.update(p for p, in db.execute(
+                f"SELECT {column} FROM {table} WHERE {column}>=? AND {column}<?", bounds))
+        for path, value in db.execute("SELECT source,state FROM library_copies WHERE source>=? AND source<?", bounds):
+            state = json.loads(value)
+            if state.get("desired", []) if state.get("pending") else state.get("baseline", []):
+                carriers.add(path)
+    finally:
+        db.close()
+    exports = getattr(store, "batch_export", None)
+    if exports:
+        carriers.update(exports.read_records())
+    # Non-pinned views need membership descriptions even without authored state.
+    if not index.membership.pinned(root, index.membership.pins()):
+        return len(photos), cached_rows(index, store, photos, root=root)
+    described = cached_rows(index, store, [p for p in photos if p["path"] in carriers], root=root)
+    families = {}
+    for photo in described:
+        families.setdefault(photo.get("source_path", photo["path"]), []).append(photo)
+    rows = []
+    for photo in photos:
+        rows.extend(families.get(photo["path"], [photo]))
+    return len(photos), rows
+
+
 async def stream_folder(index, store, request, root, enrich):
     worker = index.worker
     token = uuid4().hex
@@ -111,10 +153,7 @@ async def stream_folder(index, store, request, root, enrich):
         # Deliver one complete index snapshot before admitting the disk check
         # or background EXIF. Hundreds of tiny pages repeated SQL setup, grade
         # descriptions, full-grid sorting and paints at an ever-moving end.
-        def snapshot():
-            photos = indexed_page(index,root,limit=2147483647)
-            return len(photos), cached_rows(index,store,photos,root=root)
-        total, rows = await run_in_threadpool(snapshot)
+        total, rows = await run_in_threadpool(indexed_snapshot, index, store, root)
         first = not rows
         if rows:
             empty_marks = Marks().model_dump()
@@ -126,9 +165,8 @@ async def stream_folder(index, store, request, root, enrich):
             yield event("rows", columns=columns, values=[
                 [photo.get(key) if key != "marks" or photo.get(key) != empty_marks else None
                  for key in columns] for photo in rows], photos=[])
-            # Rich row descriptions follow without changing the extent or order.
-            for at in range(0, len(rows), 8192):
-                yield event("details", photos=rows[at:at+8192])
+            # Visible folder-details hydration supplies presentation-only fields.
+            # Do not send the entire rich snapshot a second time while pictures wait.
         del rows
         if total:
             log("folder_open_all_rows",folder=root,request=token,rows=total,duration_ms=(time.perf_counter()-started)*1000,route="index")

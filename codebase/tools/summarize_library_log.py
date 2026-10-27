@@ -77,7 +77,7 @@ def main():
         if name == "folder_disk_page": disk_pages[(d.get("folder"),d.get("request"))].append(d)
         if name == "camera_details_read": detail_reads[d.get("demand","unknown")].append(d)
         if name == "recovery_piece": recovery.append(d)
-        if name.startswith("folder_open_") or name in ("page_folder_first_rows","page_folder_first_grid_picture","page_folder_first_camera_preview","page_folder_first_thumbnail","page_folder_complete"):
+        if name.startswith("folder_open_") or name in ("page_folder_rows_usable","page_folder_first_picture_requested","page_folder_first_rows","page_folder_first_grid_picture","page_folder_first_camera_preview","page_folder_first_thumbnail","page_folder_complete"):
             key=d.get("request")
             if key:
                 row=folder_opens.setdefault(key,{"folder":d.get("folder",d.get("path")),"events":{}})
@@ -156,7 +156,7 @@ def main():
     for row in folder_opens.values():
         milestones=row["events"]
         print("folder open:",row["folder"])
-        for event,label in (("folder_open_first_rows","first rows"),("page_folder_first_grid_picture","first grid picture"),("page_folder_first_camera_preview","first camera preview"),("page_folder_first_thumbnail","first finished thumbnail"),("folder_open_all_rows","all indexed rows"),("folder_open_disk_finished","disk check finished"),("folder_open_closed","closed")):
+        for event,label in (("folder_open_first_rows","first rows"),("page_folder_rows_usable","rows usable on page"),("page_folder_first_picture_requested","first picture requested"),("page_folder_first_grid_picture","first grid picture"),("page_folder_first_camera_preview","first camera preview"),("page_folder_first_thumbnail","first finished thumbnail"),("folder_open_all_rows","all indexed rows"),("folder_open_disk_finished","disk check finished"),("folder_open_closed","closed")):
             item=milestones.get(event)
             if item:
                 print(" ",label,f"{item.get('duration_ms',0):.0f}ms", " ".join(f"{field}={item[field]}" for field in ("rows","added","removed","changed","settings","unreadable","reason") if field in item))

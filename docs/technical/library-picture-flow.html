@@ -257,8 +257,8 @@ Words follow the master PRD glossary.</p>
     <div class="meta"><span class="cachetag">Index database</span><span class="cachetag">Settings files (.hdrf)</span></div></div>
 
   <div class="num">3</div>
-  <div class="step gpu"><div class="h">First thumbnail on screen <span class="t ok">0.4–1.0 s ordinary</span> <span class="t slow">4.7 s for 155k</span></div>
-    <div class="d">D:\Photos: first camera preview at 4.7 s, first finished thumbnail at 6.0 s. See stage 3.</div></div>
+  <div class="step gpu"><div class="h">First thumbnail on screen <span class="t ok">0.4–1.0 s ordinary</span> <span class="t slow">6.42 s for 155k (latest cold profile)</span></div>
+    <div class="d">D:\Photos latest disposable cold profile: first camera preview 17.33 s before / 6.42 s after. Backend indexed rows 3.79 s; page rows 5.26 s, usable sorted cells 5.78 s, first picture request 5.77 s. One open replaces three competing opens. Full 155,877-row count/order preserved. About-1-s first-screen target remains open; no reliable after-25th presentation time. See stage 3.</div></div>
 
   <div class="num">4</div>
   <div class="step helper"><div class="h">Camera details (EXIF) <span class="t fast">selected 0.04 s</span> <span class="t fast">visible 0.13 s</span></div>
@@ -436,7 +436,7 @@ Words follow the master PRD glossary.</p>
 
 <div class="note"><strong>Planned, not built:</strong> <em>Build previews</em>: you choose photos or a folder, the app makes stored screen previews for them, and they're kept until you discard them. For now, stored screen previews are made automatically for every photo you view in fullscreen or Single and dropped oldest first. Detail (100%) previews come last.</div>
 
-<div class="note"><strong>October 27 log correction:</strong> <code>summarize_library_log.py</code> now reports first grid picture and first finished thumbnail separately. Ordinary GPU draws notify the folder stopwatch as well as pool reuses. The one cold D:\Photos profile recorded 21.18 s first / 25.37 s 25th picture; final duplicate-open and stream-yield corrections are unprofiled.</div>
+<div class="note"><strong>October 27 log correction:</strong> <code>summarize_library_log.py</code> now reports first grid picture and first finished thumbnail separately. Ordinary GPU draws notify the folder stopwatch as well as pool reuses. The one cold D:\Photos profile recorded 21.18 s first / 25.37 s 25th picture; subsequent four-part batch measured the corrections: 17.33 s before / 6.42 s after first picture, still outside the about-1-s target. Backend row preparation/transfer remains the main wait. The after log contains only 24 distinct picture presentations, so no reliable 25th time is claimed.</div>
 
 <p class="muted" style="margin-top:28px"><small>Sources: <code>%APPDATA%\hdr-finisher-desktop\logs\backend.log</code>, Steve's launches on October 26 at 20:54 and 21:27, read with <code>codebase/tools/summarize_library_log.py</code>; Codex profiles recorded in <code>docs/product/modules/photo-library.md</code>; code in <code>library_worker.py</code>, <code>library_pictures.py</code>, <code>library_cache.py</code>, <code>library_screen_previews.py</code>, <code>library-tile-pool.js</code>, <code>photo-library.js</code>. Update this page when a step's timing or owner changes.</small></p>
 
