@@ -78,9 +78,16 @@ cell size, with no intermediate picture requests. This does not establish a
 30-cell viewport or a screen of finished thumbnails in 1 s. Same-folder joining
 and stream yields were corrected after the profile; **unprofiled**, no second
 run. Steve should try startup and a continuous scrollbar drag with his normal
-cell size. Fast checks deferred to the end of the three-part batch. No pixel
+cell size. Batch fast checks: JavaScript 635 passed / 2 unrelated failures;
+Python 2,608 passed / 2 unrelated failures / 3 skipped (names in Grade section 5).
+The three-part batch is committed locally, without a push. No pixel
 math, GPU limits or tolerances changed. Profile artifacts:
-`codebase/output/oct27-library-profile/`.
+`codebase/output/oct27-library-profile/`. The summary also recovers actual grid draws from
+older logs: the October 26 badminton opens now report first finished thumbnails
+at 0.862/0.861 s, and Play_Raw at 0.924/0.941/0.798 s, rather than later pool
+reuse. D:\Photos reports first grid picture 4.671 s and first finished
+thumbnail 5.990 s in that historical launch. This is a read-only log check,
+not a second profile.
 
 
 **October 26 viewport batch: three parts committed; speed targets partly met.**

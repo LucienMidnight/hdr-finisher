@@ -300,8 +300,8 @@ reviews) are after v1. Items 6 and 7 are unchanged and not v1 requirements.
    no rename/update/delete actions. Import validates every record and group
    before saving. Native buttons, checkboxes, Tab/Space/Enter and existing
    prompt/confirmation dialogs retain keyboard operation. Projects and settings
-   files are unaffected. Small round-trip/clash/identity checks: 3 passed; fast
-   suites deferred to batch end. Steve should select two presets, export/import,
+   files are unaffected. Small round-trip/clash/identity checks: 3 passed; batch fast-check
+   results are recorded below. Steve should select two presets, export/import,
    rename one and confirm/cancel Update.
 4. Decide, with Steve, whether to remove HDR Lift/Gamma/Gain.
 5. Reviews before 1.0: whole-pipeline order (PIPE-01), Texture against
@@ -314,6 +314,116 @@ reviews) are after v1. Items 6 and 7 are unchanged and not v1 requirements.
 9. Claude's design pass on the integrated global/local HSL panel, then
    Steve's real-photo HDR review. The required hue-selection mask remains
    separate open work in item 8.
+
+### Sharpen investigation — October 27, 2026
+
+**Investigation complete; Steve’s visual decision and delivery discrepancy remain
+open. No pixel code or sharpening method changed.** The comparison is
+`codebase/output/sharpen-review/index.html`, with two read-only badminton RAWs,
+DSC07147.ARW and DSC07178.ARW. Off, default, working and strong are matched
+512-pixel crops at 100%, in SDR PNG and true HDR PQ AVIF; a labeled tone-mapped
+PNG fallback is available. The page was opened in Chrome: all 16 images loaded
+at 512 × 512, and the actual layout/crops were inspected. Loader defaults,
+without saved grades or Denoise, are explicit in `recipe.json`; photo folders
+were not written. Scripts under `codebase/tools/sharpen_review*` reproduce it.
+
+**What it does.** Sharpen is a luminance unsharp mask in exposure stops: take
+log2 brightness, subtract a blurred brightness image, and add a scaled portion
+of that difference. The blur approximates a Gaussian using three separable box
+passes, so radius changes are quantized rather than continuously changing every
+sample. Amount (0–200) scales that added contrast; zero is off, and the default
+is zero. Radius (0.3–3 original pixels, default 0.8) sets the width of affected
+edges. Threshold (0–100, default 10) rejects small contrast differences: 100
+means 0.5 EV, default 10 means 0.05 EV, with a smooth 0.04 EV transition. It
+is a contrast gate, not a subject-edge/noise mask. A high-ISO grain sample may
+still qualify. The change is applied as one RGB gain to preserve colour ratios.
+
+A 3 × 3 local-extrema fence bounds the excursion to 12% of the local log range,
+capped at 0.25 EV. This limits halos, but does not promise no visible edging.
+The strong real-photo crops visibly boost noise, especially skin, and edge
+contrast; they do not restore focus or motion detail. The moderate setting is
+Amount 80 / Radius 0.8 / Threshold 10; strong is 200 / 3 / 0. Off and default
+are intentionally identical, not mislabeled active sharpening.
+
+**Order and viewing size.** Source interpretation and Denoise precede grading.
+Global Detail follows Primaries, HSL, Curves and Color Grading, after tone
+controls; Texture and Clarity contributions are computed before Sharpen within
+Detail. The local-grade stack follows, then Film Look and Vignette. Final
+highlight compression follows those effects. Export output sharpening is a
+separate edge-aware, two-scale filter after output resizing; it does not reuse
+Grade’s Sharpen filter. It was disabled in this review’s exports.
+
+HDR uses ACEScg luminance and preserves values above SDR white; SDR uses linear
+sRGB luminance and clamps changed RGB to 0–1. Both use the same contrast method,
+so HDR does not have an independent capture-sharpening algorithm. The final HDR
+compression, when enabled, limits the finished brightness, not the Sharpen
+stage itself. All twelve decoded exports stayed below the 1000-nit target
+(maximum 184.824 nits). These crops do not exercise specular edges near that
+target; this is not a general bright-edge ceiling or halo proof.
+
+At 100%, the detail preview uses native pixels. At Fit, a screen preview scales
+the radius by proxy/source size (with a 0.3-pixel floor); a radius below 0.35
+processing pixels makes the blur a passthrough. For a 7968-pixel photo in a
+2560-pixel screen preview, default Radius 0.8 falls into that cutoff even with
+Amount raised. The Radius 0.3 endpoint also does nothing at native size.
+This shared CPU/GPU behavior explains an apparently dead control at Fit; it is
+a limitation of the current scale/filter policy, not evidence of a disconnected
+slider. A thumbnail quick draw is likewise unsuitable for judging fine detail.
+
+**Checks and disagreement.** The existing Electron `detail-control-reference`
+passed all 80 global/local HDR/SDR cases using its unchanged limits (relative
+luminance p99 ≤2%, maximum ≤5%). A separate production-path check exported
+padded crops through actual GPU and forced CPU delivery: two photos × off,
+working, strong × two renderers, Ultra HDR JPEG quality 100, 4:4:4, full-size
+quality-100 gain map, no dithering/resizing/output sharpening. Renderer labels
+confirmed each route. Decoded HDR and SDR comparisons used the existing finished
+colour limits: mean <1 and p99.9 ≤3, without a per-pixel maximum.
+
+**Export agreement failed even with Sharpen off.** Off HDR mean 1.048–1.217,
+p99.9 5.725–6.816; off SDR mean 0.226–0.246, p99.9 3.044–3.148. Active HDR
+worst mean 1.421 / p99.9 9.070; active SDR worst mean 0.359 / p99.9 3.469.
+All twelve lane comparisons exceeded at least one limit. This is an existing
+production delivery discrepancy demonstrated with a neutral Detail stage;
+the isolated Sharpen check passes. Do not claim GPU preview, CPU fallback and
+export agree end-to-end. Record it as an open delivery issue; no speculative
+pixel fix or tolerance relaxation was made in this investigation. Full numbers
+and decoded brightness checks are beside the crops in `export-agreement.json`.
+
+**Comparison and one recommendation.**
+[darktable’s classic Sharpen](https://docs.darktable.org/usermanual/4.2/en/module-reference/processing-modules/sharpen/)
+uses unsharp mask; its newer
+[diffuse or sharpen](https://docs.darktable.org/usermanual/development/en/module-reference/processing-modules/diffuse/)
+models and reverses blur with iterative, edge-oriented processing, at much
+higher computational cost. [Lightroom’s documentation](https://helpx.adobe.com/lightroom-classic/desktop/process-and-develop-photos/retouch-photos.html)
+describes Amount, Radius, Detail and a separate edge Masking control, and
+recommends judging at 100%; it does not disclose its exact filter there.
+HDR Finisher has a simple contrast threshold rather than that separate masking
+control or deconvolution/capture-sharpening stage.
+
+Recommend **keep the present method for v1**, judged at 100%, pending Steve’s
+view of the crops. Trade-off: fast processing and verified isolated CPU/GPU
+behavior, but limited blur recovery, disappearing small-radius effects at Fit
+and noise amplification. Steve’s decision remains open: accept that trade-off
+for v1 or commission a replacement afterwards. The production delivery
+agreement failure remains separate open work and must not be marked passed.
+
+### October 27 batch validation
+
+Fast suites ran once at batch end: JavaScript 635 passed / 2 failed;
+Python 2,608 passed / 2 failed / 3 skipped. Unrelated failures, unchanged:
+
+- `library-scenes`: selected photo joining development-ahead loses its CPU fallback when the GPU decoder fails (`decoder failed`).
+- `library-single-ready`: the isolated fixture does not define `HDRLibraryScreenPreviews`.
+- `test_rgb_description_precedes_pixels_and_keeps_publication_guards[None]`: RGB SourceReference luminance fixture mismatch.
+- `test_library_native_source_uses_same_repair_before_reduction`: CaptureCache fixture lacks the `defer_store` keyword.
+
+Part 1 used exactly one disposable-database D:\Photos profile; no second
+profile after final corrections. Part 2’s three small portable-preset checks
+passed. Part 3’s existing 80-case Detail reference passed; the twelve decoded
+GPU/CPU export lane comparisons exceeded finished-colour limits even with
+Sharpen off, as reported above. No rendered-pixel change or tolerance change.
+Generated photo crops and logs stay local under ignored `codebase/output/`;
+reproduction scripts and these findings are committed. No push.
 
 ### HSL integration and handoff (October 23, 2026)
 
