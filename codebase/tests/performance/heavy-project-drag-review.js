@@ -9,7 +9,7 @@ const output = path.resolve(opt('--output', 'output/performance/review/drag-revi
 const count = Number(opt('--samples', 10));
 const only = new RegExp(opt('--only', '.*'));
 const native = args.includes('--native');
-const paths = ['exposure', 'contrast_pivot', 'lift', 'lift_range', 'saturation', 'white_balance_kelvin',
+const paths = ['exposure', 'contrast_pivot', 'shadows', 'shadows_width', 'saturation', 'white_balance_kelvin',
   'color_grading.blending', 'black_and_white.reds', 'vignette.amount', 'vignette.feather',
   'film_look.look_strength', 'film_look.red_response', 'detail.clarity_amount', 'detail.microcontrast',
   'film_look.halation_radius', 'film_look.bloom_radius', 'film_look.grain_amount',

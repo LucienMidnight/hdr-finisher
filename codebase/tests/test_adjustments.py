@@ -30,7 +30,6 @@ from hdr_finisher.adjustments import (
     _radius_pixels,
     _compress_scene_highlights,
     _compress_sdr_highlights,
-    _primary_zone_masks,
     apply_adjustments,
 )
 from hdr_finisher.analysis import classify_hdr
@@ -677,26 +676,11 @@ def test_sdr_contrast_is_gentle_for_scene_linear_midtones() -> None:
     assert 0.0 < float(np.max(np.abs(contrasted - baseline))) < 0.08
 
 
-def test_sdr_lift_is_a_fine_perceptual_shadow_adjustment() -> None:
-    image = np.full((2, 2, 3), 0.03, dtype=np.float32)
-    baseline = _apply_sdr_adjustments(
-        image,
-        AdjustmentState(sdr=SDRAdjustments()),
-    )
-    lifted = _apply_sdr_adjustments(
-        image,
-        AdjustmentState(sdr=SDRAdjustments(lift=0.1)),
-    )
-
-    change = float(np.max(lifted - baseline))
-    assert 0.0 < change < 0.02
-
-
-def test_sdr_shadow_multiplier_is_gentle() -> None:
-    state = AdjustmentState(sdr=SDRAdjustments(shadow=1.0))
+def test_sdr_blacks_at_max_stays_in_display_range() -> None:
+    state = AdjustmentState(sdr=SDRAdjustments(blacks=2.0))
     image = np.ones((4, 4, 3), dtype=np.float32) * 0.3
     output = _apply_sdr_adjustments(image, state)
-    assert output.max() <= 1.0, "SDR shadow at max should not clip to above 1.0"
+    assert output.max() <= 1.0, "SDR Blacks at max should not exceed display white"
 
 
 def test_log_domain_hdr_curves_no_infinities_up_to_peak_10() -> None:
@@ -757,22 +741,22 @@ def test_default_curve_has_three_editable_control_points() -> None:
     assert SDRAdjustments().luma_curve == expected
 
 
-def test_hdr_shadow_lift_is_luminance_masked() -> None:
-    state = AdjustmentState(hdr=HDRAdjustments(shadow_lift=0.3))
-    dark_image = np.ones((4, 4, 3), dtype=np.float32) * 0.1
+def test_hdr_blacks_is_luminance_masked() -> None:
+    state = AdjustmentState(hdr=HDRAdjustments(blacks=1.0))
+    dark_image = np.ones((4, 4, 3), dtype=np.float32) * 0.18 * 2 ** -8
     bright_image = np.ones((4, 4, 3), dtype=np.float32) * 2.0
     dark_output = _apply_hdr_adjustments(dark_image, state)
     bright_output = _apply_hdr_adjustments(bright_image, state)
     dark_gain = dark_output.mean() / dark_image.mean()
     bright_gain = bright_output.mean() / bright_image.mean()
-    assert dark_gain > bright_gain, "HDR shadow lift should affect dark areas more than bright ones"
+    assert dark_gain > bright_gain, "HDR Blacks should affect dark areas more than bright ones"
 
 
-def test_hdr_shadow_lift_does_not_clip() -> None:
-    state = AdjustmentState(hdr=HDRAdjustments(shadow_lift=0.5))
+def test_hdr_blacks_does_not_clip() -> None:
+    state = AdjustmentState(hdr=HDRAdjustments(blacks=2.0))
     image = np.ones((4, 4, 3), dtype=np.float32) * 3.0
     output = _apply_hdr_adjustments(image, state)
-    assert not np.any(np.isinf(output)), "HDR shadow lift should not produce infinities"
+    assert not np.any(np.isinf(output)), "HDR Blacks should not produce infinities"
 
 
 def test_neutral_hdr_tone_equalizer_is_identity() -> None:
@@ -812,25 +796,25 @@ def test_direct_entry_headroom_is_accepted_by_adjustment_models() -> None:
         white_balance_kelvin=25000,
         saturation=3,
         red_purity=400,
-        lift_range=24,
-        gain_pivot=12,
+        shadows_width=24,
+        highlights_center=12,
     )
     sdr = SDRAdjustments(
         exposure=-8,
         highlight_compression_start_percent=99,
         highlight_compression_manual_peak_percent=1_000_000,
-        shadow=-2,
+        blacks=-2,
         contrast_pivot=0.999,
         white_balance_kelvin=1000,
         vibrance=3,
-        gamma=-2,
-        gamma_range=24,
+        midtones=-2,
+        midtones_width=24,
     )
 
     assert hdr.highlight_compression_target_nits == 10000
     assert hdr.red_purity == 400
     assert sdr.highlight_compression_manual_peak_percent == 1_000_000
-    assert sdr.gamma_range == 24
+    assert sdr.midtones_width == 24
 
 
 @pytest.mark.parametrize(
@@ -843,7 +827,7 @@ def test_direct_entry_headroom_is_accepted_by_adjustment_models() -> None:
         (SDRAdjustments, {"highlight_compression_start_percent": 100}),
         (SDRAdjustments, {"highlight_compression_manual_peak_percent": 1_000_001}),
         (SDRAdjustments, {"contrast_pivot": 1.0}),
-        (SDRAdjustments, {"gamma_range": 24.01}),
+        (SDRAdjustments, {"midtones_width": 24.01}),
     ],
 )
 def test_direct_entry_safety_caps_reject_out_of_range_api_values(model, values) -> None:
@@ -1060,7 +1044,7 @@ def test_peak_fit_anchor_is_applied_after_other_tone_controls() -> None:
     state = AdjustmentState(
         hdr=HDRAdjustments(
             exposure=-0.85,
-            shadow_lift=-0.455,
+            blacks=-0.5,
             contrast=-0.187,
             contrast_pivot=0.02,
             highlight_compression_mode="peak_fit",
@@ -1406,32 +1390,6 @@ def test_hdr_curve_domain_has_matched_slope_at_reference_white() -> None:
     assert lower_slope == pytest.approx(upper_slope, rel=2e-3)
 
 
-def test_lgg_range_and_pivot_move_zone_masks() -> None:
-    stops = np.linspace(-8, 8, 257, dtype=np.float32)
-    defaults = HDRAdjustments()
-    moved = HDRAdjustments(lift_pivot=1.0, lift_range=2.0, gamma_pivot=2.0, gamma_range=1.0, gain_pivot=4.0, gain_range=2.0)
-    default_lift, default_gamma, default_gain = _primary_zone_masks(stops, defaults)
-    moved_lift, moved_gamma, moved_gain = _primary_zone_masks(stops, moved)
-
-    assert stops[np.argmin(np.abs(moved_lift - 0.5))] > stops[np.argmin(np.abs(default_lift - 0.5))]
-    assert stops[np.argmax(moved_gamma)] > stops[np.argmax(default_gamma)]
-    assert stops[np.argmin(np.abs(moved_gain - 0.5))] > stops[np.argmin(np.abs(default_gain - 0.5))]
-
-
-def test_narrow_gain_range_preserves_useful_strength_inside_transition() -> None:
-    stops = np.linspace(-2, 6, 1025, dtype=np.float32)
-    narrow = HDRAdjustments(gain_pivot=2.0, gain_range=0.5)
-    default = HDRAdjustments(gain_pivot=2.0, gain_range=4.0)
-    narrow_gain = _primary_zone_masks(stops, narrow)[2]
-    default_gain = _primary_zone_masks(stops, default)[2]
-    pivot_index = int(np.argmin(np.abs(stops - 2.0)))
-
-    assert narrow_gain[pivot_index] >= 0.7
-    assert narrow_gain[pivot_index] > default_gain[pivot_index]
-    assert np.all(np.diff(narrow_gain) >= -1e-7)
-    assert narrow_gain[-1] == pytest.approx(1.0)
-
-
 def test_hdr_section_bypass_retains_settings_but_removes_render_effect() -> None:
     image = np.array([[[0.04, 0.08, 0.16], [0.4, 0.7, 1.2], [2.0, 4.0, 8.0]]], dtype=np.float32)
     bypassed = AdjustmentState(
@@ -1440,12 +1398,11 @@ def test_hdr_section_bypass_retains_settings_but_removes_render_effect() -> None
             highlight_section_enabled=False,
             tone_equalizer_section_enabled=False,
             color_section_enabled=False,
-            primaries_section_enabled=False,
             curves_section_enabled=False,
             exposure=2,
             highlight_compression_mode="soft_ceiling",
             highlight_compression_softness=100,
-            shadow_lift=0.4,
+            blacks=0.4,
             tone_equalizer_nodes=[
                 {"input_ev": -6, "adjustment_ev": 1},
                 {"input_ev": 6, "adjustment_ev": -1},
@@ -1458,9 +1415,9 @@ def test_hdr_section_bypass_retains_settings_but_removes_render_effect() -> None
             blue_purity=45,
             tint_hue=-80,
             tint_purity=8,
-            lift=0.3,
-            gamma=-0.4,
-            gain=0.25,
+            shadows=0.6,
+            midtones=-0.8,
+            highlights=0.5,
             luma_curve=[[0, 0], [1, 0.5]],
         )
     )
@@ -1721,10 +1678,10 @@ def test_single_sdr_exposure_step_is_continuous_for_wide_exr() -> None:
     [
         (PreviewKind.HDR, "hdr.exposure", 0.05),
         (PreviewKind.HDR, "hdr.highlight_compression_softness", 1),
-        (PreviewKind.HDR, "hdr.shadow_lift", 0.005),
-        (PreviewKind.HDR, "hdr.lift", 0.005),
-        (PreviewKind.HDR, "hdr.gamma", 0.005),
-        (PreviewKind.HDR, "hdr.gain", 0.005),
+        (PreviewKind.HDR, "hdr.blacks", 0.02),
+        (PreviewKind.HDR, "hdr.shadows", 0.02),
+        (PreviewKind.HDR, "hdr.midtones", 0.02),
+        (PreviewKind.HDR, "hdr.highlights", 0.02),
         (PreviewKind.HDR, "hdr.contrast", 0.001),
         (PreviewKind.HDR, "hdr.white_balance_kelvin", 50),
         (PreviewKind.HDR, "hdr.tint", 0.01),
@@ -1733,10 +1690,10 @@ def test_single_sdr_exposure_step_is_continuous_for_wide_exr() -> None:
         (PreviewKind.HDR, "hdr.red_hue", 0.1),
         (PreviewKind.HDR, "hdr.red_purity", 0.5),
         (PreviewKind.SDR, "sdr.exposure", 0.05),
-        (PreviewKind.SDR, "sdr.shadow", 0.01),
-        (PreviewKind.SDR, "sdr.lift", 0.002),
-        (PreviewKind.SDR, "sdr.gamma", 0.005),
-        (PreviewKind.SDR, "sdr.gain", 0.005),
+        (PreviewKind.SDR, "sdr.blacks", 0.02),
+        (PreviewKind.SDR, "sdr.shadows", 0.02),
+        (PreviewKind.SDR, "sdr.midtones", 0.02),
+        (PreviewKind.SDR, "sdr.highlights", 0.02),
         (PreviewKind.SDR, "sdr.contrast", 0.001),
     ],
 )
@@ -1762,10 +1719,10 @@ def test_one_slider_step_is_finite_ordered_and_gradual(kind: PreviewKind, path: 
     ("path", "step"),
     [
         ("sdr.exposure", 0.05),
-        ("sdr.shadow", 0.01),
-        ("sdr.lift", 0.002),
-        ("sdr.gamma", 0.005),
-        ("sdr.gain", 0.005),
+        ("sdr.blacks", 0.02),
+        ("sdr.shadows", 0.02),
+        ("sdr.midtones", 0.02),
+        ("sdr.highlights", 0.02),
         ("sdr.contrast", 0.001),
     ],
 )
@@ -1793,19 +1750,19 @@ def test_sdr_reference_slider_step_is_finite_ordered_and_gradual(path: str, step
     [
         (PreviewKind.HDR, "hdr", "exposure", (-1.3, 1.3)),
         (PreviewKind.HDR, "hdr", "highlight_compression_softness", (0.0, 75.0)),
-        (PreviewKind.HDR, "hdr", "shadow_lift", (-0.13, 0.13)),
-        (PreviewKind.HDR, "hdr", "lift", (-0.16, 0.16)),
-        (PreviewKind.HDR, "hdr", "gamma", (-0.32, 0.32)),
-        (PreviewKind.HDR, "hdr", "gain", (-0.16, 0.16)),
+        (PreviewKind.HDR, "hdr", "blacks", (-1.0, 1.0)),
+        (PreviewKind.HDR, "hdr", "shadows", (-1.0, 1.0)),
+        (PreviewKind.HDR, "hdr", "midtones", (-1.0, 1.0)),
+        (PreviewKind.HDR, "hdr", "highlights", (-1.0, 1.0)),
         (PreviewKind.HDR, "hdr", "contrast", (-0.32, 0.32)),
         (PreviewKind.HDR, "hdr", "contrast_pivot", (0.08, 0.4)),
         (PreviewKind.HDR, "hdr", "white_balance_kelvin", (3900, 9100)),
         (PreviewKind.HDR, "hdr", "tint", (-0.65, 0.65)),
         (PreviewKind.SDR, "sdr", "exposure", (-1.3, 1.3)),
-        (PreviewKind.SDR, "sdr", "shadow", (-0.32, 0.32)),
-        (PreviewKind.SDR, "sdr", "lift", (-0.16, 0.16)),
-        (PreviewKind.SDR, "sdr", "gamma", (-0.32, 0.32)),
-        (PreviewKind.SDR, "sdr", "gain", (-0.16, 0.16)),
+        (PreviewKind.SDR, "sdr", "blacks", (-1.0, 1.0)),
+        (PreviewKind.SDR, "sdr", "shadows", (-1.0, 1.0)),
+        (PreviewKind.SDR, "sdr", "midtones", (-1.0, 1.0)),
+        (PreviewKind.SDR, "sdr", "highlights", (-1.0, 1.0)),
         (PreviewKind.SDR, "sdr", "contrast", (-0.32, 0.32)),
         (PreviewKind.SDR, "sdr", "contrast_pivot", (0.19, 0.81)),
     ],

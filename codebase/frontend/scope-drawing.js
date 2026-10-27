@@ -194,13 +194,19 @@ function drawZoneScopeOverlay(ctx, scope, isWaveform, plotLeft, plotTop, plotWid
   const overlay = state.scopeZoneOverlay;
   if (!overlay || overlay.lane !== scope.preview_kind) return;
   const settings = state.adjustments[overlay.lane];
-  const pivot = Number(settings?.[`${overlay.zone}_pivot`] ?? 0);
-  const range = Math.max(0.1, Number(settings?.[`${overlay.zone}_range`] ?? 4));
-  const lowerStop = pivot - range * 0.5;
-  const upperStop = pivot + range * 0.5;
+  // Tone zone (Shadows, Midtones or Highlights): Center +/- Width/2, in stops
+  // from middle grey: scene 0.18 in HDR (nit scope), display-linear 0.18 in
+  // SDR (whose scope shows the encoded signal).
+  const center = Number(settings?.[`${overlay.zone}_center`] ?? 0);
+  const width = Math.max(0.1, Number(settings?.[`${overlay.zone}_width`] ?? 4));
+  const lowerStop = center - width * 0.5;
+  const upperStop = center + width * 0.5;
+  const encode = (value) => (value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055);
+  // Scene 0.18 is drawn at the project's reference white (203 nits by default).
+  const greyNits = typeof projectReferenceWhiteNits === "function" ? projectReferenceWhiteNits() : 203;
   const toValue = overlay.lane === "hdr"
-    ? (stop) => 100 * (2 ** stop)
-    : (stop) => clamp(0.5 * (2 ** stop), 0, 1);
+    ? (stop) => greyNits * (2 ** stop)
+    : (stop) => encode(clamp(0.18 * (2 ** stop), 0, 1));
   const lower = clamp(guidePosition(scope, toValue(lowerStop)), 0, 1);
   const upper = clamp(guidePosition(scope, toValue(upperStop)), 0, 1);
   const start = Math.min(lower, upper);

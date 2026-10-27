@@ -516,11 +516,14 @@ function formatControlValue(path, value) {
   if (path.endsWith("highlight_compression_peak_detail")) return `${Math.round(numeric)}%`;
   if (path.endsWith("highlight_compression_attenuation")) return `${Math.round(numeric)}%`;
   if (path.endsWith("highlight_compression_bias")) return `${numeric > 0 ? "+" : ""}${Math.round(numeric)}`;
-  if (path.endsWith("_range") || (path.endsWith("_pivot") && !path.endsWith("contrast_pivot"))) return `${numeric.toFixed(2)} EV`;
+  if (/^(hdr|sdr)\.(blacks|shadows|midtones|highlights)(_center|_width)?$/.test(path)) {
+    const sign = numeric > 0 && !/_(center|width)$/.test(path) ? "+" : "";
+    return `${sign}${numeric.toFixed(2)} EV`;
+  }
   if (path === "shared.overlay_opacity") return `${Math.round(numeric * 100)}%`;
   if (path === "shared.overlay_threshold") return `${Math.round(numeric)} nit`;
   if (path.endsWith("contrast_pivot")) return numeric.toFixed(path.startsWith("hdr.") ? 4 : 3);
-  if (path.endsWith("contrast") || path.endsWith("lift") || path.endsWith("gain") || path.endsWith("gamma") || path.endsWith("shadow_lift")) return numeric.toFixed(3);
+  if (path.endsWith("contrast")) return numeric.toFixed(3);
   return numeric.toFixed(2);
 }
 

@@ -38,7 +38,39 @@ Resolve, darktable, DxO).
   alone and gain Center/Width (this changes Match's fitting).
 - HSL Luminance under this rule (rename to Exposure, add Shadows/Highlights per
   colour) is not decided.
-- Brief: `docs/technical/briefs/codex-brief-tone-zones-2026-10-27.md`.
+- Brief (done, archived): `docs/technical/archive/briefs/codex-brief-tone-zones-2026-10-27.md`.
+
+**Built October 27 (Claude), awaiting Steve's by-eye review.**
+- Maths (CPU `adjustments.py`, GPU `webgpu-shaders.js`, limits in
+  `gpu-params.js`): stops are measured from 0.18 in each lane's working
+  space (scene-linear for HDR and generated SDR; display-linear for the
+  zones in SDR, which run where Lift/Gamma/Gain ran, after SDR highlight
+  placement, so SDR white sits about 2.5 stops above). Blacks multiplies by
+  2^(amount) on the darkest tones, full at -7 stops and none from -3. Each zone
+  adds amount x (1 - smoothstep(0, Width/2, |stop - Center|)) stops.
+- Defaults (same both lanes): Shadows -2.5 / 5, Midtones 0 / 4, Highlights
+  +1.25 / 2.5 (Center / Width, stops). Highlights ends at SDR white and below
+  HDR speculars. Sliders run -2 to +2 stops.
+- Tone order: all three zone amounts shrink together only where the curve
+  would fall below a slope of 0.1. A single slider therefore reaches at most
+  about 1.5 (Shadows), 1.2 (Midtones) and 0.75 (Highlights) stops at default
+  widths; wider zones allow more. Open with Steve: keep stops with these
+  ceilings, or move the zone sliders to a -100..+100 strength scale.
+- Zones are part of Tone (Tone's bypass and Reset). The Lift/Gamma/Gain group,
+  `primaries_section_enabled`, `shadow_lift` and SDR `shadow` are removed; GPU
+  slots 4-7 and 54-59 are renamed, not moved. Hovering a zone tile shows its
+  band on the scope (HDR band now at project reference white x 2^stop, the
+  correct grey placement; SDR on the encoded signal).
+- In HDR, Highlights works under Highlight Compression, so its visible effect
+  is small, especially on an SDR screen. Judge on an HDR display.
+- Affected real projects: one, the virtual copy in
+  `D:\Photos\Play_Raw\Sunset on ferry -silicoid\IMG_3129.CR2.hdrf` (HDR Lift
+  0.105, Gamma 0.555, Gain -0.22). Its HDR grade loses those values on open.
+- Checks: fast JS and Python (known Library failures only); new
+  `tests/test_tone_zones.py`, `tests/tone-zones.test.js` (GPU and CPU limits
+  identical) and `tests/tone-zones-delivery.js` (GPU finished pixels equal CPU:
+  HDR mean dITP 0.03, SDR mean dE2000 0.007; Proof equals export; peak 980
+  nits). Review page: `codebase/output/tone-zones/index.html`.
 
 ## October 27: HSL selection edge controls
 
@@ -809,7 +841,7 @@ No GPU processing check applies to this HTML/CSS layout correction.
    rename one and confirm/cancel Update.
 4. **V1 (Steve, October 27, 2026):** Tone's Blacks, Shadows, Midtones and
    Highlights replace Lift/Gamma/Gain and Shadow / Black in both lanes (see
-   the tone note at the top). Not built yet.
+   the tone note at the top). Built October 27; awaiting Steve's review.
 5. Reviews before 1.0: whole-pipeline order (PIPE-01), Texture against
    Microcontrast (DETAIL-01), local Clarity cost (CLARITY-01).
 6. Local-grade transfer between lanes (its own piece of work).

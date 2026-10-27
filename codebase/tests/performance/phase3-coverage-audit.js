@@ -25,7 +25,7 @@ const GEOMETRIES = {
 };
 const geometries = opt('--geometries', Object.keys(GEOMETRIES).join(',')).split(',');
 // One control per module and processing family, as the control sweep uses.
-const REPRESENTATIVES = ['current.exposure', 'current.contrast_pivot', 'current.lift', 'current.lift_range',
+const REPRESENTATIVES = ['current.exposure', 'current.contrast_pivot', 'current.shadows', 'current.shadows_width',
   'current.saturation', 'current.white_balance_kelvin', 'current.color_grading.highlights.hue',
   'current.color_grading.blending', 'current.black_and_white.reds', 'current.vignette.amount',
   'current.vignette.feather', 'current.film_look.look_strength', 'current.film_look.red_response',

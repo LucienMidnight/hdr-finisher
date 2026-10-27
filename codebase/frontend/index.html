@@ -940,9 +940,42 @@
                 <input id="hdr-pivot" type="range" min="0.02" max="1" step="0.0005" value="0.1845" data-path="hdr.contrast_pivot">
               </div>
             </div>
-            <div class="control-row" data-control-path="hdr.shadow_lift">
-              <div class="control-heading"><label for="hdr-shadow">Shadow / Black</label><output data-value-path="hdr.shadow_lift">0.000</output></div>
-              <input id="hdr-shadow" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.shadow_lift">
+            <div class="control-row" data-control-path="hdr.blacks">
+              <div class="control-heading"><label class="tooltip-trigger" for="hdr-blacks" data-tooltip="Brightens or deepens the darkest tones. Midtones and highlights are not changed.">Blacks</label><output data-value-path="hdr.blacks">0.00 EV</output></div>
+              <input id="hdr-blacks" type="range" min="-2" max="2" step="0.02" value="0" data-path="hdr.blacks">
+            </div>
+            <div class="slider-group-tile" data-slider-relationship="targeting" data-zone-hover="shadows" tabindex="-1">
+            <div class="control-row slider-group-parent" data-control-path="hdr.shadows">
+              <div class="control-heading"><label class="tooltip-trigger" for="hdr-shadows" data-tooltip="Brightens or darkens the shadow tones. Black stays black. Center and Width choose which tones count as shadows.">Shadows</label><output data-value-path="hdr.shadows">0.00 EV</output></div>
+              <input id="hdr-shadows" type="range" min="-2" max="2" step="0.02" value="0" data-path="hdr.shadows">
+            </div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails">
+              <div class="control-row compact-subrail" data-control-path="hdr.shadows_center"><div class="control-heading"><label class="tooltip-trigger" for="hdr-shadows-center" data-tooltip="Where the zone sits, in stops from middle grey.">Center</label><output data-value-path="hdr.shadows_center">-2.50 EV</output></div><input id="hdr-shadows-center" type="range" min="-8" max="8" step="0.25" value="-2.5" data-path="hdr.shadows_center"></div>
+              <div class="control-row compact-subrail" data-control-path="hdr.shadows_width"><div class="control-heading"><label class="tooltip-trigger" for="hdr-shadows-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly to nothing at both ends.">Width</label><output data-value-path="hdr.shadows_width">5.00 EV</output></div><input id="hdr-shadows-width" type="range" min="0.5" max="12" step="0.25" value="5" data-path="hdr.shadows_width"></div>
+            </div>
+            </div>
+            <div class="slider-group-tile" data-slider-relationship="targeting" data-zone-hover="midtones" tabindex="-1">
+            <div class="control-row slider-group-parent" data-control-path="hdr.midtones">
+              <div class="control-heading"><label class="tooltip-trigger" for="hdr-midtones" data-tooltip="Brightens or darkens the middle tones. Black and the brightest tones stay where they are.">Midtones</label><output data-value-path="hdr.midtones">0.00 EV</output></div>
+              <input id="hdr-midtones" type="range" min="-2" max="2" step="0.02" value="0" data-path="hdr.midtones">
+            </div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails">
+              <div class="control-row compact-subrail" data-control-path="hdr.midtones_center"><div class="control-heading"><label class="tooltip-trigger" for="hdr-midtones-center" data-tooltip="Where the zone sits, in stops from middle grey.">Center</label><output data-value-path="hdr.midtones_center">0.00 EV</output></div><input id="hdr-midtones-center" type="range" min="-8" max="8" step="0.25" value="0" data-path="hdr.midtones_center"></div>
+              <div class="control-row compact-subrail" data-control-path="hdr.midtones_width"><div class="control-heading"><label class="tooltip-trigger" for="hdr-midtones-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly to nothing at both ends.">Width</label><output data-value-path="hdr.midtones_width">4.00 EV</output></div><input id="hdr-midtones-width" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.midtones_width"></div>
+            </div>
+            </div>
+            <div class="slider-group-tile" data-slider-relationship="targeting" data-zone-hover="highlights" tabindex="-1">
+            <div class="control-row slider-group-parent" data-control-path="hdr.highlights">
+              <div class="control-heading"><label class="tooltip-trigger" for="hdr-highlights" data-tooltip="Brightens or darkens the bright tones. The very brightest (sun, reflections) stay put; Highlight Compression looks after those.">Highlights</label><output data-value-path="hdr.highlights">0.00 EV</output></div>
+              <input id="hdr-highlights" type="range" min="-2" max="2" step="0.02" value="0" data-path="hdr.highlights">
+            </div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails">
+              <div class="control-row compact-subrail" data-control-path="hdr.highlights_center"><div class="control-heading"><label class="tooltip-trigger" for="hdr-highlights-center" data-tooltip="Where the zone sits, in stops from middle grey.">Center</label><output data-value-path="hdr.highlights_center">1.25 EV</output></div><input id="hdr-highlights-center" type="range" min="-8" max="8" step="0.25" value="1.25" data-path="hdr.highlights_center"></div>
+              <div class="control-row compact-subrail" data-control-path="hdr.highlights_width"><div class="control-heading"><label class="tooltip-trigger" for="hdr-highlights-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly to nothing at both ends.">Width</label><output data-value-path="hdr.highlights_width">2.50 EV</output></div><input id="hdr-highlights-width" type="range" min="0.5" max="12" step="0.25" value="2.5" data-path="hdr.highlights_width"></div>
+            </div>
             </div>
           </div>
         </section>
@@ -1093,48 +1126,6 @@
           </div>
         </section>
 
-        <section class="control-group collapsed" data-group="hdr-zones">
-          <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="false" data-tooltip="Range controls how wide a luminance zone is; Pivot moves that zone through the scene range. Hover or focus a zone to reveal its scope influence.">Lift, Gamma, Gain <span data-modified-count="hdr-zones">Default</span></button>
-            <button class="section-bypass text-button" type="button" data-section-path="hdr.primaries_section_enabled" aria-pressed="true" aria-label="Toggle Lift, Gamma, Gain preview">&#9673;</button>
-            <button class="group-reset text-button" type="button" data-reset-group="hdr-zones">Reset</button>
-          </div>
-          <div class="control-group-body">
-            <div class="slider-group-tile" data-slider-relationship="targeting">
-            <div class="control-row slider-group-parent" data-control-path="hdr.lift">
-              <div class="control-heading"><label for="hdr-lift">Lift</label><output data-value-path="hdr.lift">0.000</output></div>
-              <input id="hdr-lift" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.lift">
-            </div>
-            <div class="slider-group-relationship">Targeting</div>
-            <div class="control-pair zone-targeting compact-subrails" data-zone-hover="lift" tabindex="0">
-              <div class="control-row compact-subrail" data-control-path="hdr.lift_range"><div class="control-heading"><label for="hdr-lift-range">Range</label><output data-value-path="hdr.lift_range">4.00 EV</output></div><input id="hdr-lift-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.lift_range"></div>
-              <div class="control-row compact-subrail" data-control-path="hdr.lift_pivot"><div class="control-heading"><label for="hdr-lift-pivot">Pivot</label><output data-value-path="hdr.lift_pivot">-2.00 EV</output></div><input id="hdr-lift-pivot" type="range" min="-8" max="8" step="0.25" value="-2" data-path="hdr.lift_pivot"></div>
-            </div>
-            </div>
-            <div class="slider-group-tile" data-slider-relationship="targeting">
-            <div class="control-row slider-group-parent" data-control-path="hdr.gamma">
-              <div class="control-heading"><label for="hdr-gamma">Gamma</label><output data-value-path="hdr.gamma">0.000</output></div>
-              <input id="hdr-gamma" type="range" min="-1" max="1" step="0.005" value="0" data-path="hdr.gamma">
-            </div>
-            <div class="slider-group-relationship">Targeting</div>
-            <div class="control-pair zone-targeting compact-subrails" data-zone-hover="gamma" tabindex="0">
-              <div class="control-row compact-subrail" data-control-path="hdr.gamma_range"><div class="control-heading"><label for="hdr-gamma-range">Range</label><output data-value-path="hdr.gamma_range">4.25 EV</output></div><input id="hdr-gamma-range" type="range" min="0.5" max="12" step="0.25" value="4.25" data-path="hdr.gamma_range"></div>
-              <div class="control-row compact-subrail" data-control-path="hdr.gamma_pivot"><div class="control-heading"><label for="hdr-gamma-pivot">Pivot</label><output data-value-path="hdr.gamma_pivot">0.00 EV</output></div><input id="hdr-gamma-pivot" type="range" min="-8" max="8" step="0.25" value="0" data-path="hdr.gamma_pivot"></div>
-            </div>
-            </div>
-            <div class="slider-group-tile" data-slider-relationship="targeting">
-            <div class="control-row slider-group-parent" data-control-path="hdr.gain">
-              <div class="control-heading"><label for="hdr-gain">Gain</label><output data-value-path="hdr.gain">0.000</output></div>
-              <input id="hdr-gain" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="hdr.gain">
-            </div>
-            <div class="slider-group-relationship">Targeting</div>
-            <div class="control-pair zone-targeting compact-subrails" data-zone-hover="gain" tabindex="0">
-              <div class="control-row compact-subrail" data-control-path="hdr.gain_range"><div class="control-heading"><label for="hdr-gain-range">Range</label><output data-value-path="hdr.gain_range">4.00 EV</output></div><input id="hdr-gain-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.gain_range"></div>
-              <div class="control-row compact-subrail" data-control-path="hdr.gain_pivot"><div class="control-heading"><label for="hdr-gain-pivot">Pivot</label><output data-value-path="hdr.gain_pivot">2.00 EV</output></div><input id="hdr-gain-pivot" type="range" min="-8" max="8" step="0.25" value="2" data-path="hdr.gain_pivot"></div>
-            </div>
-            </div>
-          </div>
-        </section>
       </div>
 
       <div class="lane-panel hidden" data-lane-panel="sdr">
@@ -1159,9 +1150,42 @@
                 <input id="sdr-pivot" type="range" min="0.02" max="0.98" step="0.005" value="0.5" data-path="sdr.contrast_pivot">
               </div>
             </div>
-            <div class="control-row" data-control-path="sdr.shadow">
-              <div class="control-heading"><label for="sdr-shadow">Shadow</label><output data-value-path="sdr.shadow">0.00</output></div>
-              <input id="sdr-shadow" type="range" min="-1" max="1" step="0.01" value="0" data-path="sdr.shadow">
+            <div class="control-row" data-control-path="sdr.blacks">
+              <div class="control-heading"><label class="tooltip-trigger" for="sdr-blacks" data-tooltip="Brightens or deepens the darkest tones. Midtones and highlights are not changed.">Blacks</label><output data-value-path="sdr.blacks">0.00 EV</output></div>
+              <input id="sdr-blacks" type="range" min="-2" max="2" step="0.02" value="0" data-path="sdr.blacks">
+            </div>
+            <div class="slider-group-tile" data-slider-relationship="targeting" data-zone-hover="shadows" tabindex="-1">
+            <div class="control-row slider-group-parent" data-control-path="sdr.shadows">
+              <div class="control-heading"><label class="tooltip-trigger" for="sdr-shadows" data-tooltip="Brightens or darkens the shadow tones. Black stays black. Center and Width choose which tones count as shadows.">Shadows</label><output data-value-path="sdr.shadows">0.00 EV</output></div>
+              <input id="sdr-shadows" type="range" min="-2" max="2" step="0.02" value="0" data-path="sdr.shadows">
+            </div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails">
+              <div class="control-row compact-subrail" data-control-path="sdr.shadows_center"><div class="control-heading"><label class="tooltip-trigger" for="sdr-shadows-center" data-tooltip="Where the zone sits, in stops from middle grey.">Center</label><output data-value-path="sdr.shadows_center">-2.50 EV</output></div><input id="sdr-shadows-center" type="range" min="-8" max="8" step="0.25" value="-2.5" data-path="sdr.shadows_center"></div>
+              <div class="control-row compact-subrail" data-control-path="sdr.shadows_width"><div class="control-heading"><label class="tooltip-trigger" for="sdr-shadows-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly to nothing at both ends.">Width</label><output data-value-path="sdr.shadows_width">5.00 EV</output></div><input id="sdr-shadows-width" type="range" min="0.5" max="12" step="0.25" value="5" data-path="sdr.shadows_width"></div>
+            </div>
+            </div>
+            <div class="slider-group-tile" data-slider-relationship="targeting" data-zone-hover="midtones" tabindex="-1">
+            <div class="control-row slider-group-parent" data-control-path="sdr.midtones">
+              <div class="control-heading"><label class="tooltip-trigger" for="sdr-midtones" data-tooltip="Brightens or darkens the middle tones. Black and the brightest tones stay where they are.">Midtones</label><output data-value-path="sdr.midtones">0.00 EV</output></div>
+              <input id="sdr-midtones" type="range" min="-2" max="2" step="0.02" value="0" data-path="sdr.midtones">
+            </div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails">
+              <div class="control-row compact-subrail" data-control-path="sdr.midtones_center"><div class="control-heading"><label class="tooltip-trigger" for="sdr-midtones-center" data-tooltip="Where the zone sits, in stops from middle grey.">Center</label><output data-value-path="sdr.midtones_center">0.00 EV</output></div><input id="sdr-midtones-center" type="range" min="-8" max="8" step="0.25" value="0" data-path="sdr.midtones_center"></div>
+              <div class="control-row compact-subrail" data-control-path="sdr.midtones_width"><div class="control-heading"><label class="tooltip-trigger" for="sdr-midtones-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly to nothing at both ends.">Width</label><output data-value-path="sdr.midtones_width">4.00 EV</output></div><input id="sdr-midtones-width" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.midtones_width"></div>
+            </div>
+            </div>
+            <div class="slider-group-tile" data-slider-relationship="targeting" data-zone-hover="highlights" tabindex="-1">
+            <div class="control-row slider-group-parent" data-control-path="sdr.highlights">
+              <div class="control-heading"><label class="tooltip-trigger" for="sdr-highlights" data-tooltip="Brightens or darkens the bright tones. The very brightest (sun, reflections) stay put; Highlight Compression looks after those.">Highlights</label><output data-value-path="sdr.highlights">0.00 EV</output></div>
+              <input id="sdr-highlights" type="range" min="-2" max="2" step="0.02" value="0" data-path="sdr.highlights">
+            </div>
+            <div class="slider-group-relationship">Targeting</div>
+            <div class="control-pair zone-targeting compact-subrails">
+              <div class="control-row compact-subrail" data-control-path="sdr.highlights_center"><div class="control-heading"><label class="tooltip-trigger" for="sdr-highlights-center" data-tooltip="Where the zone sits, in stops from middle grey.">Center</label><output data-value-path="sdr.highlights_center">1.25 EV</output></div><input id="sdr-highlights-center" type="range" min="-8" max="8" step="0.25" value="1.25" data-path="sdr.highlights_center"></div>
+              <div class="control-row compact-subrail" data-control-path="sdr.highlights_width"><div class="control-heading"><label class="tooltip-trigger" for="sdr-highlights-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly to nothing at both ends.">Width</label><output data-value-path="sdr.highlights_width">2.50 EV</output></div><input id="sdr-highlights-width" type="range" min="0.5" max="12" step="0.25" value="2.5" data-path="sdr.highlights_width"></div>
+            </div>
             </div>
           </div>
         </section>
@@ -1277,48 +1301,6 @@
           </div>
         </section>
 
-        <section class="control-group collapsed" data-group="sdr-zones">
-          <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="false" data-tooltip="Range controls how wide a luminance zone is; Pivot moves that zone through the scene range. Hover or focus a zone to reveal its scope influence.">Lift, Gamma, Gain <span data-modified-count="sdr-zones">Default</span></button>
-            <button class="section-bypass text-button" type="button" data-section-path="sdr.primaries_section_enabled" aria-pressed="true" aria-label="Toggle SDR Lift, Gamma, Gain preview">&#9673;</button>
-            <button class="group-reset text-button" type="button" data-reset-group="sdr-zones">Reset</button>
-          </div>
-          <div class="control-group-body">
-            <div class="slider-group-tile" data-slider-relationship="targeting">
-            <div class="control-row slider-group-parent" data-control-path="sdr.lift">
-              <div class="control-heading"><label for="sdr-lift">Lift</label><output data-value-path="sdr.lift">0.000</output></div>
-              <input id="sdr-lift" type="range" min="-0.5" max="0.5" step="0.002" value="0" data-path="sdr.lift">
-            </div>
-            <div class="slider-group-relationship">Targeting</div>
-            <div class="control-pair zone-targeting compact-subrails" data-zone-hover="lift" tabindex="0">
-              <div class="control-row compact-subrail" data-control-path="sdr.lift_range"><div class="control-heading"><label for="sdr-lift-range">Range</label><output data-value-path="sdr.lift_range">4.00 EV</output></div><input id="sdr-lift-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.lift_range"></div>
-              <div class="control-row compact-subrail" data-control-path="sdr.lift_pivot"><div class="control-heading"><label for="sdr-lift-pivot">Pivot</label><output data-value-path="sdr.lift_pivot">-2.00 EV</output></div><input id="sdr-lift-pivot" type="range" min="-8" max="8" step="0.25" value="-2" data-path="sdr.lift_pivot"></div>
-            </div>
-            </div>
-            <div class="slider-group-tile" data-slider-relationship="targeting">
-            <div class="control-row slider-group-parent" data-control-path="sdr.gamma">
-              <div class="control-heading"><label for="sdr-gamma">Gamma</label><output data-value-path="sdr.gamma">0.000</output></div>
-              <input id="sdr-gamma" type="range" min="-1" max="1" step="0.005" value="0" data-path="sdr.gamma">
-            </div>
-            <div class="slider-group-relationship">Targeting</div>
-            <div class="control-pair zone-targeting compact-subrails" data-zone-hover="gamma" tabindex="0">
-              <div class="control-row compact-subrail" data-control-path="sdr.gamma_range"><div class="control-heading"><label for="sdr-gamma-range">Range</label><output data-value-path="sdr.gamma_range">4.25 EV</output></div><input id="sdr-gamma-range" type="range" min="0.5" max="12" step="0.25" value="4.25" data-path="sdr.gamma_range"></div>
-              <div class="control-row compact-subrail" data-control-path="sdr.gamma_pivot"><div class="control-heading"><label for="sdr-gamma-pivot">Pivot</label><output data-value-path="sdr.gamma_pivot">0.00 EV</output></div><input id="sdr-gamma-pivot" type="range" min="-8" max="8" step="0.25" value="0" data-path="sdr.gamma_pivot"></div>
-            </div>
-            </div>
-            <div class="slider-group-tile" data-slider-relationship="targeting">
-            <div class="control-row slider-group-parent" data-control-path="sdr.gain">
-              <div class="control-heading"><label for="sdr-gain">Gain</label><output data-value-path="sdr.gain">0.000</output></div>
-              <input id="sdr-gain" type="range" min="-0.5" max="0.5" step="0.005" value="0" data-path="sdr.gain">
-            </div>
-            <div class="slider-group-relationship">Targeting</div>
-            <div class="control-pair zone-targeting compact-subrails" data-zone-hover="gain" tabindex="0">
-              <div class="control-row compact-subrail" data-control-path="sdr.gain_range"><div class="control-heading"><label for="sdr-gain-range">Range</label><output data-value-path="sdr.gain_range">4.00 EV</output></div><input id="sdr-gain-range" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.gain_range"></div>
-              <div class="control-row compact-subrail" data-control-path="sdr.gain_pivot"><div class="control-heading"><label for="sdr-gain-pivot">Pivot</label><output data-value-path="sdr.gain_pivot">2.00 EV</output></div><input id="sdr-gain-pivot" type="range" min="-8" max="8" step="0.25" value="2" data-path="sdr.gain_pivot"></div>
-            </div>
-            </div>
-          </div>
-        </section>
       </div>
 
       <section class="control-group collapsed" data-group="hsl">

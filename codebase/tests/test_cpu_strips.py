@@ -88,16 +88,16 @@ def _graded_state(**overrides) -> AdjustmentState:
     state.hdr.exposure = 0.85
     state.hdr.contrast = 0.22
     state.hdr.saturation = 12.0
-    state.hdr.lift = 0.1
-    state.hdr.gamma = -0.15
-    state.hdr.gain = 0.2
+    state.hdr.shadows = 0.2
+    state.hdr.midtones = -0.3
+    state.hdr.highlights = 0.4
     state.hdr.tone_equalizer_section_enabled = True
     state.hdr.tone_equalizer_nodes = _tone_nodes([0.4, 0.2, 0.0, -0.3, 0.5, 0.1, 0.0, -0.2, 0.3, 0.0, 0.1, 0.0, -0.4])
     state.sdr.exposure = -0.4
     state.sdr.contrast = 0.3
     state.sdr.saturation = -8.0
-    state.sdr.shadow = 15
-    state.sdr.gain = 0.25
+    state.sdr.blacks = 0.5
+    state.sdr.highlights = 0.5
     for key, value in overrides.items():
         target, _, field = key.partition("__")
         setattr(getattr(state, target), field, value)

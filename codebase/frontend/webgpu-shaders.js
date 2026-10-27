@@ -137,12 +137,16 @@ fn peakAcescgToBt2020(rgb: vec3f) -> vec3f {
    -0.0051099278 * rgb.r - 0.0216355504 * rgb.g + 1.0267454781 * rgb.b
   );
 }
+// Blacks: amount stops on the darkest tones, full at -7 stops from middle
+// grey, none from -3 (adjustments.py _blacks_factor).
+fn peakBlacksFactor(y: f32, amount: f32) -> f32 {
+  if (amount == 0.0) { return 1.0; }
+  let stops = log2(max(max(y, 0.0), 0.00000001) / 0.18);
+  return exp2(amount * (1.0 - smoothstep(-7.0, -3.0, stops)));
+}
 fn peakTone(input: vec3f) -> vec3f {
   var rgb = input * exp2(peakParams[${GPU_PARAMS.EXPOSURE}]);
-  if (peakParams[${GPU_PARAMS.SHADOW_LIFT}] != 0.0) {
-    let lift = min(peakParams[${GPU_PARAMS.SHADOW_LIFT}] * (1.0 - clamp(peakLuma(rgb), 0.0, 1.0)), 1.0);
-    rgb *= 1.0 + lift;
-  }
+  rgb *= peakBlacksFactor(peakLuma(rgb), peakParams[${GPU_PARAMS.BLACKS}]);
   if (peakParams[${GPU_PARAMS.CONTRAST}] != 0.0) {
     let y = max(peakLuma(rgb), 0.0);
     if (y > 0.00000001) {
@@ -175,19 +179,11 @@ fn peakSceneColor(input: vec3f) -> vec3f {
 }
 fn peakSdrReferencePrefix(input: vec3f) -> vec3f {
   var rgb = max(input * exp2(peakParams[${GPU_PARAMS.EXPOSURE}]), vec3f(0.0));
-  if (peakParams[${GPU_PARAMS.SHADOW_LIFT}] != 0.0) {
-    let mask = 1.0 - smoothstep(0.0, 0.5, peakSrgbLuma(rgb));
-    rgb = max(rgb + vec3f(peakParams[${GPU_PARAMS.SHADOW_LIFT}] * 0.08 * mask), vec3f(0.0));
-  }
-  return rgb;
+  return rgb * peakBlacksFactor(peakSrgbLuma(rgb), peakParams[${GPU_PARAMS.BLACKS}]);
 }
 fn peakSdrScenePrefix(input: vec3f) -> vec3f {
-  var rgb = max(input * exp2(peakParams[${GPU_PARAMS.EXPOSURE}]), vec3f(0.0));
-  if (peakParams[${GPU_PARAMS.SHADOW_LIFT}] != 0.0) {
-    let mask = 1.0 - smoothstep(0.0, 0.5, peakLuma(rgb));
-    rgb = max(rgb + vec3f(peakParams[${GPU_PARAMS.SHADOW_LIFT}] * 0.08 * mask), vec3f(0.0));
-  }
-  return peakSceneColor(rgb);
+  let rgb = max(input * exp2(peakParams[${GPU_PARAMS.EXPOSURE}]), vec3f(0.0));
+  return peakSceneColor(rgb * peakBlacksFactor(peakLuma(rgb), peakParams[${GPU_PARAMS.BLACKS}]));
 }
 fn peakSdrInput(input: vec3f, guideSource: vec3f) -> vec3f {
   let needsGuide = peakBlackAndWhiteNeedsGuide();
@@ -801,13 +797,32 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let saturationFactor = max(0.0, 1.0 + p[${GPU_PARAMS.SATURATION}]);
       return colorDesaturation(neutral + chroma * vibranceFactor * saturationFactor);
     }
+    // Tone sliders (adjustments.py _blacks_factor and _apply_tone_zones).
+    // Blacks: amount stops on the darkest tones, full at -7 stops from middle
+    // grey, none from -3.
+    fn toneBlacksFactor(y: f32, amount: f32) -> f32 {
+      if (amount == 0.0) { return 1.0; }
+      let stops = log2(max(max(y, 0.0), 0.00000001) / 0.18);
+      return exp2(amount * (1.0 - smoothstep(-7.0, -3.0, stops)));
+    }
+    fn toneZoneWeight(stops: f32, center: f32, width: f32) -> f32 {
+      return 1.0 - smoothstep(0.0, max(width * 0.5, 0.001), abs(stops - center));
+    }
+    // Shadows, Midtones and Highlights: stop offsets on bumps of tone around
+    // each Center, zero outside Center +/- Width/2. Amounts arrive already
+    // limited so tones keep their order (gpu-params.js toneZoneAmounts).
+    fn toneZones(input: vec3f, y: f32) -> vec3f {
+      if (p[${GPU_PARAMS.SHADOWS}] == 0.0 && p[${GPU_PARAMS.MIDTONES}] == 0.0 && p[${GPU_PARAMS.HIGHLIGHTS}] == 0.0) { return input; }
+      if (y <= 0.00000001) { return input; }
+      let stops = log2(y / 0.18);
+      let delta = p[${GPU_PARAMS.SHADOWS}] * toneZoneWeight(stops, p[${GPU_PARAMS.SHADOWS_CENTER}], p[${GPU_PARAMS.SHADOWS_WIDTH}])
+        + p[${GPU_PARAMS.MIDTONES}] * toneZoneWeight(stops, p[${GPU_PARAMS.MIDTONES_CENTER}], p[${GPU_PARAMS.MIDTONES_WIDTH}])
+        + p[${GPU_PARAMS.HIGHLIGHTS}] * toneZoneWeight(stops, p[${GPU_PARAMS.HIGHLIGHTS_CENTER}], p[${GPU_PARAMS.HIGHLIGHTS_WIDTH}]);
+      return input * exp2(delta);
+    }
     fn hdrBase(input: vec3f) -> vec3f {
-      var rgb = input * exp2(p[${GPU_PARAMS.EXPOSURE}]);
-      if (p[${GPU_PARAMS.SHADOW_LIFT}] != 0.0) {
-        let lift = min(p[${GPU_PARAMS.SHADOW_LIFT}] * (1.0 - clamp(lumaAces(rgb), 0.0, 1.0)), 1.0);
-        rgb *= 1.0 + lift;
-      }
-      return rgb;
+      let rgb = input * exp2(p[${GPU_PARAMS.EXPOSURE}]);
+      return rgb * toneBlacksFactor(lumaAces(rgb), p[${GPU_PARAMS.BLACKS}]);
     }
     fn hdrContrast(input: vec3f) -> vec3f {
       if (p[${GPU_PARAMS.CONTRAST}] == 0.0) { return input; }
@@ -1122,19 +1137,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return vec3f(targetValue) + (mappedRgb - vec3f(targetValue)) * (1.0 - progress);
     }
     fn hdrPrimaries(input: vec3f) -> vec3f {
-      if (p[${GPU_PARAMS.LIFT}] == 0.0 && p[${GPU_PARAMS.GAMMA}] == 0.0 && p[${GPU_PARAMS.GAIN}] == 0.0) { return input; }
-      let y = max(lumaAces(input), 0.0);
-      let pivot = max(p[${GPU_PARAMS.CONTRAST_PIVOT}], 0.000001);
-      let stops = log2(max(y, 0.00000001) / pivot);
-      var targetStops = stops;
-      targetStops += 2.0 * p[${GPU_PARAMS.LIFT}] * (1.0 - smoothRange(p[${GPU_PARAMS.LIFT_PIVOT}] - p[${GPU_PARAMS.LIFT_RANGE}] * 0.5, p[${GPU_PARAMS.LIFT_PIVOT}] + p[${GPU_PARAMS.LIFT_RANGE}] * 0.5, stops));
-      let gammaSigma = max(p[${GPU_PARAMS.GAMMA_RANGE}] / 2.355, 0.1);
-      targetStops += 2.0 * p[${GPU_PARAMS.GAMMA}] * exp(-0.5 * pow((stops - p[${GPU_PARAMS.GAMMA_PIVOT}]) / gammaSigma, 2.0));
-      let gainMask = smoothRange(p[${GPU_PARAMS.GAIN_PIVOT}] - p[${GPU_PARAMS.GAIN_RANGE}] * 0.5, p[${GPU_PARAMS.GAIN_PIVOT}] + p[${GPU_PARAMS.GAIN_RANGE}] * 0.5, stops);
-      let gainExponent = clamp(sqrt(p[${GPU_PARAMS.GAIN_RANGE}] / 4.0), 0.5, 1.0);
-      targetStops += 2.0 * p[${GPU_PARAMS.GAIN}] * pow(gainMask, gainExponent);
-      if (y <= 0.00000001) { return input; }
-      return input * (pivot * exp2(clamp(targetStops, -32.0, 32.0)) / y);
+      return toneZones(input, max(lumaAces(input), 0.0));
     }
     fn toneEqualizerNodeEv(index: u32) -> f32 { return p[${GPU_PARAMS.TONE_EQUALIZER_INPUT_EV_0}u + index]; }
     fn toneEqualizerTarget(index: u32) -> f32 {
@@ -1210,25 +1213,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return vec3f(targetY);
     }
     fn sdrPrimaries(input: vec3f) -> vec3f {
-      if (p[${GPU_PARAMS.LIFT}] == 0.0 && p[${GPU_PARAMS.GAMMA}] == 0.0 && p[${GPU_PARAMS.GAIN}] == 0.0) { return input; }
-      let rgb = clamp(input, vec3f(0.0), vec3f(1.0));
-      let linearY = clamp(lumaSrgb(rgb), 0.0, 1.0);
-      let encodedY = srgbEncode(linearY);
-      var targetValue = encodedY;
-      let zoneStops = log2(max(encodedY, 0.000001) / 0.5);
-      let shadowMask = 1.0 - smoothRange(p[${GPU_PARAMS.LIFT_PIVOT}] - p[${GPU_PARAMS.LIFT_RANGE}] * 0.5, p[${GPU_PARAMS.LIFT_PIVOT}] + p[${GPU_PARAMS.LIFT_RANGE}] * 0.5, zoneStops);
-      var highlightMask = smoothRange(p[${GPU_PARAMS.GAIN_PIVOT}] - p[${GPU_PARAMS.GAIN_RANGE}] * 0.5, p[${GPU_PARAMS.GAIN_PIVOT}] + p[${GPU_PARAMS.GAIN_RANGE}] * 0.5, zoneStops);
-      let gainExponent = clamp(sqrt(p[${GPU_PARAMS.GAIN_RANGE}] / 4.0), 0.5, 1.0);
-      highlightMask = pow(highlightMask, gainExponent);
-      let gammaSigma = max(p[${GPU_PARAMS.GAMMA_RANGE}] / 2.355, 0.1);
-      let midtoneMask = exp(-0.5 * pow((zoneStops - p[${GPU_PARAMS.GAMMA_PIVOT}]) / gammaSigma, 2.0));
-      targetValue += p[${GPU_PARAMS.LIFT}] * 0.25 * shadowMask;
-      if (p[${GPU_PARAMS.GAMMA}] != 0.0) { targetValue = mix(targetValue, pow(clamp(targetValue, 0.0, 1.0), exp2(-p[${GPU_PARAMS.GAMMA}])), midtoneMask); }
-      if (p[${GPU_PARAMS.GAIN}] > 0.0) { targetValue += p[${GPU_PARAMS.GAIN}] * highlightMask * (1.0 - targetValue); }
-      if (p[${GPU_PARAMS.GAIN}] < 0.0) { targetValue += p[${GPU_PARAMS.GAIN}] * highlightMask * targetValue; }
-      let targetY = srgbDecode(clamp(targetValue, 0.0, 1.0));
-      if (linearY > 0.000001) { return rgb * (targetY / linearY); }
-      return vec3f(targetY);
+      return toneZones(input, max(lumaSrgb(input), 0.0));
     }
     ${blackAndWhiteWgsl("p", "blackAndWhite")}
     // The source-pixel lattice mean for Black & White's guide, filled by
@@ -1268,20 +1253,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return display / (vec3f(1.0) + display);
     }
     fn sdrReferencePrefix(source: vec3f) -> vec3f {
-      var rgb = max(source, vec3f(0.0)) * exp2(p[${GPU_PARAMS.EXPOSURE}]);
-      if (p[${GPU_PARAMS.SHADOW_LIFT}] != 0.0) {
-        let mask = 1.0 - smoothRange(0.0, 0.5, lumaSrgb(rgb));
-        rgb = max(rgb + vec3f(p[${GPU_PARAMS.SHADOW_LIFT}] * 0.08 * mask), vec3f(0.0));
-      }
-      return rgb;
+      let rgb = max(source, vec3f(0.0)) * exp2(p[${GPU_PARAMS.EXPOSURE}]);
+      return rgb * toneBlacksFactor(lumaSrgb(rgb), p[${GPU_PARAMS.BLACKS}]);
     }
     fn sdrScenePrefix(source: vec3f) -> vec3f {
-      var rgb = max(source * exp2(p[${GPU_PARAMS.EXPOSURE}]), vec3f(0.0));
-      if (p[${GPU_PARAMS.SHADOW_LIFT}] != 0.0) {
-        let mask = 1.0 - smoothRange(0.0, 0.5, lumaAces(rgb));
-        rgb = max(rgb + vec3f(p[${GPU_PARAMS.SHADOW_LIFT}] * 0.08 * mask), vec3f(0.0));
-      }
-      return sceneColor(rgb);
+      let rgb = max(source * exp2(p[${GPU_PARAMS.EXPOSURE}]), vec3f(0.0));
+      return sceneColor(rgb * toneBlacksFactor(lumaAces(rgb), p[${GPU_PARAMS.BLACKS}]));
     }
     fn renderSdrBase(source: vec3f) -> vec3f {
       var rgb: vec3f;

@@ -254,7 +254,7 @@ def _apply_hdr_adjustments(
         )
     if hdr.tone_equalizer_section_enabled:
         result = _apply_hdr_tone_equalizer(result, hdr)
-    if hdr.primaries_section_enabled:
+    if hdr.tone_section_enabled:
         result = _apply_luminance_section_controls(
             result, hdr, PreviewKind.HDR, apply_primaries=True, apply_contrast=False
         )
@@ -638,10 +638,8 @@ def _apply_hdr_base_adjustments(image: np.ndarray, adjustments: AdjustmentState)
     hdr = adjustments.hdr
     result = image.astype(np.float32, copy=True)
     result *= np.float32(2.0 ** hdr.exposure)
-    if hdr.shadow_lift != 0:
-        luma = np.clip(_acescg_luma(result), 0.0, 1.0)
-        lift_factor = np.clip(hdr.shadow_lift * (1.0 - luma), None, 1.0)
-        result = result * (1.0 + lift_factor[..., None])
+    if hdr.blacks != 0:
+        result = result * _blacks_factor(_acescg_luma(result), hdr.blacks)[..., None]
     return result
 
 
@@ -686,10 +684,9 @@ def _tone_adjusted_source_peak_nits(
     if not tone_enabled:
         return peak
     peak_linear = float(nits_to_scene_linear(peak, context.hdr_reference_white_nits)) * (2.0 ** float(getattr(hdr, "exposure", 0.0)))
-    shadow_lift = float(getattr(hdr, "shadow_lift", 0.0))
-    if shadow_lift != 0.0:
-        lift_factor = float(np.clip(shadow_lift * (1.0 - np.clip(peak_linear, 0.0, 1.0)), None, 1.0))
-        peak_linear *= 1.0 + lift_factor
+    blacks = float(getattr(hdr, "blacks", 0.0))
+    if blacks != 0.0:
+        peak_linear *= float(_blacks_factor(np.float32(peak_linear), blacks))
     contrast = float(getattr(hdr, "contrast", 0.0))
     if contrast != 0.0 and peak_linear > 1e-8:
         pivot = max(float(getattr(hdr, "contrast_pivot", 0.1845)), 1e-6)
@@ -824,7 +821,7 @@ def _apply_sdr_post_highlight_tail(
         )
     if color_after_tone_controls:
         result = _apply_sdr_color_stage(result, adjustments)
-    if sdr.primaries_section_enabled:
+    if sdr.tone_section_enabled:
         result = _apply_luminance_section_controls(
             result, sdr, PreviewKind.SDR, apply_primaries=True, apply_contrast=False
         )
@@ -887,14 +884,13 @@ def _sdr_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.nd
 
 
 def _sdr_before_black_and_white(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
-    """SDR exposure, shadow and Color in scene-linear ACEScg. All pointwise."""
+    """SDR exposure, Blacks and Color in scene-linear ACEScg. All pointwise."""
     sdr = adjustments.sdr
     result = image
     if sdr.tone_section_enabled:
         result = np.clip(result * np.float32(2.0 ** sdr.exposure), 0.0, None)
-    if sdr.tone_section_enabled and sdr.shadow != 0:
-        shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _acescg_luma(result))
-        result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
+    if sdr.tone_section_enabled and sdr.blacks != 0:
+        result = result * _blacks_factor(_acescg_luma(result), sdr.blacks)[..., None]
     if _sdr_color_is_enabled(adjustments):
         result = _apply_hdr_color(result, adjustments.sdr, PreviewKind.SDR)
     return result
@@ -907,9 +903,8 @@ def _sdr_reference_before_black_and_white(image: np.ndarray, adjustments: Adjust
     result = np.clip(result, 0.0, None)
     if sdr.tone_section_enabled:
         result *= np.float32(2.0 ** sdr.exposure)
-    if sdr.tone_section_enabled and sdr.shadow != 0:
-        shadow_mask = 1.0 - _smoothstep(0.0, 0.5, _linear_luma(result))
-        result = np.clip(result + sdr.shadow * 0.08 * shadow_mask[..., None], 0.0, None)
+    if sdr.tone_section_enabled and sdr.blacks != 0:
+        result = result * _blacks_factor(_linear_luma(result), sdr.blacks)[..., None]
     return result
 
 
@@ -989,6 +984,76 @@ def _apply_white_balance(image: np.ndarray, kelvin: int, tint: float) -> np.ndar
     return image * gains.reshape((1, 1, 3))
 
 
+TONE_GREY = np.float32(0.18)
+# Blacks: full effect at or below -7 stops from middle grey, none from -3 up.
+BLACKS_FULL_STOP = -7.0
+BLACKS_ZERO_STOP = -3.0
+TONE_ZONES = ("shadows", "midtones", "highlights")
+# Tones never swap order: zone amounts shrink together until the response
+# keeps at least this slope (output stops per input stop) everywhere.
+TONE_ZONE_MIN_SLOPE = 0.1
+_TONE_ZONE_GRID = np.linspace(-16.0, 16.0, 1025)
+
+
+def _blacks_factor(luma: np.ndarray, amount: float) -> np.ndarray:
+    """Gain for Blacks: ``amount`` stops on the darkest tones, fading to none by -3 stops."""
+    stops = np.log2(np.maximum(np.clip(luma, 0.0, None), 1e-8) / TONE_GREY)
+    weight = 1.0 - _smoothstep(BLACKS_FULL_STOP, BLACKS_ZERO_STOP, stops)
+    return np.exp2(np.float32(amount) * weight).astype(np.float32)
+
+
+def _tone_zone_shape(branch: object, zone: str) -> tuple[float, float]:
+    center = float(getattr(branch, f"{zone}_center"))
+    half = max(float(getattr(branch, f"{zone}_width")) * 0.5, 1e-3)
+    return center, half
+
+
+def tone_zone_amounts(branch: object) -> tuple[float, float, float]:
+    """Shadows, Midtones and Highlights in stops, as the renderer applies them.
+
+    Each zone adds its amount times a smooth bump (1 at Center, 0 at Center
+    +/- Width/2). Where large amounts meet narrow or opposing zones the
+    response could fold back, so all three shrink together just enough to
+    keep the minimum slope. ``gpu-params.js`` mirrors this exactly.
+    """
+    amounts = [float(getattr(branch, zone, 0.0)) for zone in TONE_ZONES]
+    if not any(amounts):
+        return (0.0, 0.0, 0.0)
+    derivative = np.zeros_like(_TONE_ZONE_GRID)
+    for amount, zone in zip(amounts, TONE_ZONES):
+        if amount == 0.0:
+            continue
+        center, half = _tone_zone_shape(branch, zone)
+        offset = _TONE_ZONE_GRID - center
+        t = np.clip(np.abs(offset) / half, 0.0, 1.0)
+        derivative -= amount * np.sign(offset) * 6.0 * t * (1.0 - t) / half
+    lowest = float(derivative.min())
+    if 1.0 + lowest >= TONE_ZONE_MIN_SLOPE:
+        return tuple(amounts)
+    scale = (1.0 - TONE_ZONE_MIN_SLOPE) / -lowest
+    return tuple(amount * scale for amount in amounts)
+
+
+def _apply_tone_zones(image: np.ndarray, branch: object, kind: PreviewKind) -> np.ndarray:
+    """Shadows, Midtones and Highlights: stop offsets on bumps of tone, never
+    touching tones outside their zones (so black and the brightest tones stay)."""
+    amounts = tone_zone_amounts(branch)
+    if not any(amounts):
+        return image
+    result = image.astype(np.float32, copy=True)
+    luma = _acescg_luma(result) if kind == PreviewKind.HDR else _linear_luma(result)
+    positive = np.clip(luma, 0.0, None)
+    stops = np.log2(np.maximum(positive, 1e-8) / TONE_GREY)
+    delta = np.zeros_like(stops, dtype=np.float32)
+    for amount, zone in zip(amounts, TONE_ZONES):
+        if amount == 0.0:
+            continue
+        center, half = _tone_zone_shape(branch, zone)
+        delta += np.float32(amount) * (1.0 - _smoothstep(0.0, half, np.abs(stops - np.float32(center))))
+    ratio = np.where(positive > 1e-8, np.exp2(delta), 1.0).astype(np.float32)
+    return result * ratio[..., None]
+
+
 def _apply_luminance_section_controls(
     image: np.ndarray,
     branch_adjustments: object,
@@ -997,24 +1062,24 @@ def _apply_luminance_section_controls(
     apply_primaries: bool = True,
     apply_contrast: bool = True,
 ) -> np.ndarray:
-    lift = float(getattr(branch_adjustments, "lift", 0.0)) if apply_primaries else 0.0
-    gamma = float(getattr(branch_adjustments, "gamma", 0.0)) if apply_primaries else 0.0
-    gain = float(getattr(branch_adjustments, "gain", 0.0)) if apply_primaries else 0.0
+    """Tone's contrast (``apply_contrast``) or its zones (``apply_primaries``),
+    each at its own place in the pipeline."""
+    if apply_primaries:
+        image = _apply_tone_zones(image, branch_adjustments, kind)
     contrast = float(getattr(branch_adjustments, "contrast", 0.0)) if apply_contrast else 0.0
-    if lift == 0.0 and gamma == 0.0 and gain == 0.0 and contrast == 0.0:
+    if contrast == 0.0:
         return image
 
     if kind == PreviewKind.HDR:
         return _apply_scene_luminance_controls(
             image,
             branch_adjustments,
-            apply_primaries=apply_primaries,
             apply_contrast=apply_contrast,
         )
 
-    # SDR primaries should feel perceptually uniform even though the pipeline stores
-    # linear-light pixels. Work on an encoded luma signal, then scale linear RGB
-    # together so the adjustment remains hue preserving.
+    # SDR contrast should feel perceptually uniform even though the pipeline
+    # stores linear-light pixels. Work on an encoded luma signal, then scale
+    # linear RGB together so the adjustment remains hue preserving.
     working = np.clip(image.astype(np.float32, copy=True), 0.0, 1.0)
     linear_luma = np.clip(_linear_luma(working), 0.0, 1.0)
     luma = _srgb_encode(linear_luma)
@@ -1026,23 +1091,6 @@ def _apply_luminance_section_controls(
         # one-stop mapping was excessively strong for scene-linear sources.
         slope = np.float32(2.0 ** (contrast * 0.5))
         target_luma = (target_luma - pivot) * slope + pivot
-
-    zone_stops = np.log2(np.maximum(luma, 1e-6) / np.float32(0.5))
-    shadow_mask, midtone_mask, highlight_mask = _primary_zone_masks(zone_stops, branch_adjustments)
-
-    if lift != 0.0:
-        # Lift is an intentionally fine toe offset rather than a direct linear
-        # addition. At full travel it moves the encoded black region by 0.125.
-        target_luma += np.float32(lift * 0.25) * shadow_mask
-    if gamma != 0.0:
-        exponent = np.float32(2.0 ** (-gamma))
-        gamma_mapped = np.power(np.clip(target_luma, 0.0, 1.0), exponent)
-        target_luma = target_luma * (1.0 - midtone_mask) + gamma_mapped * midtone_mask
-    if gain != 0.0:
-        if gain > 0:
-            target_luma += np.float32(gain) * highlight_mask * (1.0 - target_luma)
-        else:
-            target_luma += np.float32(gain) * highlight_mask * target_luma
 
     target_linear_luma = _srgb_decode(np.clip(target_luma, 0.0, 1.0))
     luma_ratio = np.where(
@@ -1061,10 +1109,9 @@ def _apply_scene_luminance_controls(
     image: np.ndarray,
     branch_adjustments: object,
     *,
-    apply_primaries: bool = True,
     apply_contrast: bool = True,
 ) -> np.ndarray:
-    """Apply HDR primary controls as smooth stop offsets in scene-linear light."""
+    """Apply HDR contrast as a stop slope about the pivot, in scene-linear light."""
     result = image.astype(np.float32, copy=True)
     luma = _acescg_luma(result)
     positive_luma = np.clip(luma, 0.0, None)
@@ -1076,13 +1123,6 @@ def _apply_scene_luminance_controls(
     if contrast != 0.0:
         target_stops *= np.float32(2.0 ** contrast)
 
-    shadow_mask, midtone_mask, highlight_mask = _primary_zone_masks(stops, branch_adjustments)
-
-    # One unit represents two stops at the center of each luminance zone.
-    if apply_primaries:
-        target_stops += np.float32(2.0 * float(getattr(branch_adjustments, "lift", 0.0))) * shadow_mask
-        target_stops += np.float32(2.0 * float(getattr(branch_adjustments, "gamma", 0.0))) * midtone_mask
-        target_stops += np.float32(2.0 * float(getattr(branch_adjustments, "gain", 0.0))) * highlight_mask
 
     target_luma = pivot * np.exp2(np.clip(target_stops, -32.0, 32.0))
     ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
@@ -1129,26 +1169,6 @@ def _apply_sdr_tone_equalizer(image: np.ndarray, sdr_adjustments: object) -> np.
     target_luma = np.float32(0.18) * np.exp2(np.clip(target_ev, -32.0, 32.0))
     ratio = np.where(positive_luma > 1e-8, target_luma / np.maximum(positive_luma, 1e-8), 1.0).astype(np.float32)
     return np.where(positive_luma[..., None] > 1e-8, result * ratio[..., None], result)
-
-
-def _primary_zone_masks(stops: np.ndarray, branch_adjustments: object) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    lift_pivot = float(getattr(branch_adjustments, "lift_pivot", -2.0))
-    lift_range = max(float(getattr(branch_adjustments, "lift_range", 4.0)), 0.5)
-    gamma_pivot = float(getattr(branch_adjustments, "gamma_pivot", 0.0))
-    gamma_range = max(float(getattr(branch_adjustments, "gamma_range", 4.25)), 0.5)
-    gain_pivot = float(getattr(branch_adjustments, "gain_pivot", 2.0))
-    gain_range = max(float(getattr(branch_adjustments, "gain_range", 4.0)), 0.5)
-    shadow = 1.0 - _smoothstep(lift_pivot - lift_range / 2.0, lift_pivot + lift_range / 2.0, stops)
-    sigma = np.float32(max(gamma_range / 2.355, 0.1))
-    midtone = np.exp(-0.5 * ((stops - np.float32(gamma_pivot)) / sigma) ** 2).astype(np.float32)
-    highlight = _smoothstep(gain_pivot - gain_range / 2.0, gain_pivot + gain_range / 2.0, stops)
-    # A very narrow transition contains few samples and previously left most
-    # selected tones near the weak foot of smoothstep. Preserve the full upper
-    # plateau while lifting the interior response smoothly; the default and
-    # wider ranges retain the established curve.
-    gain_exponent = np.float32(np.clip(np.sqrt(gain_range / 4.0), 0.5, 1.0))
-    highlight = np.power(highlight, gain_exponent).astype(np.float32)
-    return shadow.astype(np.float32), midtone, highlight.astype(np.float32)
 
 
 def _tone_equalizer_nodes(hdr_adjustments: object) -> tuple[np.ndarray, np.ndarray]:

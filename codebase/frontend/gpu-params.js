@@ -129,12 +129,47 @@
   // measurement across a drag runs it back through the settings it was taken
   // with and forward through the current ones.
   function highlightToneSettings(params) {
-    return { exposure: params[GPU_PARAMS.EXPOSURE] || 0, lift: params[GPU_PARAMS.SHADOW_LIFT] || 0, contrast: params[GPU_PARAMS.CONTRAST] || 0, pivot: params[GPU_PARAMS.CONTRAST_PIVOT] || 0.1845 };
+    return { exposure: params[GPU_PARAMS.EXPOSURE] || 0, blacks: params[GPU_PARAMS.BLACKS] || 0, contrast: params[GPU_PARAMS.CONTRAST] || 0, pivot: params[GPU_PARAMS.CONTRAST_PIVOT] || 0.1845 };
+  }
+
+  // Tone sliders (adjustments.py mirrors these exactly). Blacks: `amount`
+  // stops on the darkest tones, full at -7 stops from middle grey, none from -3.
+  function blacksFactor(luma, amount) {
+    if (!amount) return 1;
+    const stops = Math.log2(Math.max(Math.max(luma, 0), 1e-8) / 0.18);
+    const t = Math.min(1, Math.max(0, (stops + 7) / 4));
+    return Math.pow(2, amount * (1 - t * t * (3 - 2 * t)));
+  }
+
+  // Shadows, Midtones and Highlights in stops as the renderer applies them:
+  // all three shrink together only where the response would otherwise lose
+  // its minimum slope of 0.1, so tones never swap order.
+  const TONE_ZONES = ["shadows", "midtones", "highlights"];
+  function toneZoneAmounts(branch) {
+    const amounts = TONE_ZONES.map((zone) => Number(branch?.[zone]) || 0);
+    if (!amounts.some(Boolean)) return [0, 0, 0];
+    let lowest = Infinity;
+    for (let index = 0; index <= 1024; index += 1) {
+      const stop = -16 + index / 32;
+      let derivative = 0;
+      TONE_ZONES.forEach((zone, zoneIndex) => {
+        const amount = amounts[zoneIndex];
+        if (!amount) return;
+        const half = Math.max(Number(branch[`${zone}_width`]) * 0.5, 1e-3);
+        const offset = stop - Number(branch[`${zone}_center`]);
+        const t = Math.min(1, Math.abs(offset) / half);
+        derivative -= amount * Math.sign(offset) * 6 * t * (1 - t) / half;
+      });
+      lowest = Math.min(lowest, derivative);
+    }
+    if (1 + lowest >= 0.1) return amounts;
+    const scale = 0.9 / -lowest;
+    return amounts.map((amount) => amount * scale);
   }
 
   function applyHighlightTone(value, tone) {
     let rgb = value * Math.pow(2, tone.exposure);
-    if (tone.lift !== 0) rgb *= 1 + Math.min(tone.lift * (1 - Math.min(1, Math.max(0, rgb))), 1);
+    if (tone.blacks !== 0) rgb *= blacksFactor(rgb, tone.blacks);
     if (tone.contrast !== 0 && rgb > 0.00000001) {
       const pivot = Math.max(tone.pivot, 0.000001);
       const stops = Math.log2(rgb / pivot);
@@ -161,11 +196,7 @@
     let peak = Math.max(1, Number(authoredPeak) || 1000) * 0.18 / referenceWhiteNits;
     if (!toneEnabled) return peak;
     peak *= Math.pow(2, Number(branch.exposure) || 0);
-    const shadowLift = Number(branch.shadow_lift) || 0;
-    if (shadowLift !== 0) {
-      const liftFactor = Math.min(1, shadowLift * (1 - Math.min(1, Math.max(0, peak))));
-      peak *= 1 + liftFactor;
-    }
+    peak *= blacksFactor(peak, Number(branch.blacks) || 0);
     const contrast = Number(branch.contrast) || 0;
     if (contrast !== 0 && peak > 0.00000001) {
       const pivot = Math.max(Number(branch.contrast_pivot) || 0.1845, 0.000001);
@@ -189,15 +220,15 @@
     params[GPU_PARAMS.SOURCE_LINEAR_SRGB] = workingSpace === "linear-srgb" ? 1 : 0;
     const toneEnabled = branch.tone_section_enabled !== false;
     const highlightEnabled = branch.highlight_section_enabled !== false;
-    const primariesEnabled = branch.primaries_section_enabled !== false;
     const colorEnabled = branch.color_section_enabled !== false;
     const colorActive = colorEnabled && !colorSettingsNeutral(colorSource);
     params[GPU_PARAMS.EXPOSURE] = toneEnabled ? branch.exposure || 0 : 0;
     params[GPU_PARAMS.HIGHLIGHT_SOFTNESS] = highlightEnabled ? branch.highlight_compression_softness || 0 : 0;
-    params[GPU_PARAMS.SHADOW_LIFT] = toneEnabled ? (lane === "hdr" ? branch.shadow_lift || 0 : branch.shadow || 0) : 0;
-    params[GPU_PARAMS.LIFT] = primariesEnabled ? branch.lift || 0 : 0;
-    params[GPU_PARAMS.GAMMA] = primariesEnabled ? branch.gamma || 0 : 0;
-    params[GPU_PARAMS.GAIN] = primariesEnabled ? branch.gain || 0 : 0;
+    params[GPU_PARAMS.BLACKS] = toneEnabled ? branch.blacks || 0 : 0;
+    const zoneAmounts = toneEnabled ? toneZoneAmounts(branch) : [0, 0, 0];
+    params[GPU_PARAMS.SHADOWS] = zoneAmounts[0];
+    params[GPU_PARAMS.MIDTONES] = zoneAmounts[1];
+    params[GPU_PARAMS.HIGHLIGHTS] = zoneAmounts[2];
     params[GPU_PARAMS.CONTRAST] = toneEnabled ? branch.contrast || 0 : 0;
     params[GPU_PARAMS.CONTRAST_PIVOT] = branch.contrast_pivot || (lane === "hdr" ? 0.1845 : 0.5);
     params[GPU_PARAMS.WHITE_BALANCE_KELVIN] = colorActive ? colorSource.white_balance_kelvin || 6500 : 6500;
@@ -217,12 +248,12 @@
     params[GPU_PARAMS.HIGHLIGHT_START] = lane === "hdr"
       ? ((branch.highlight_compression_start_nits ?? 400) * 0.18 / projectReferenceWhite)
       : (branch.highlight_compression_start_percent ?? 50) / 100;
-    params[GPU_PARAMS.LIFT_PIVOT] = branch.lift_pivot ?? -2;
-    params[GPU_PARAMS.LIFT_RANGE] = branch.lift_range ?? 4;
-    params[GPU_PARAMS.GAMMA_PIVOT] = branch.gamma_pivot ?? 0;
-    params[GPU_PARAMS.GAMMA_RANGE] = branch.gamma_range ?? 4.25;
-    params[GPU_PARAMS.GAIN_PIVOT] = branch.gain_pivot ?? 2;
-    params[GPU_PARAMS.GAIN_RANGE] = branch.gain_range ?? 4;
+    params[GPU_PARAMS.SHADOWS_CENTER] = branch.shadows_center ?? -2.5;
+    params[GPU_PARAMS.SHADOWS_WIDTH] = branch.shadows_width ?? 5;
+    params[GPU_PARAMS.MIDTONES_CENTER] = branch.midtones_center ?? 0;
+    params[GPU_PARAMS.MIDTONES_WIDTH] = branch.midtones_width ?? 4;
+    params[GPU_PARAMS.HIGHLIGHTS_CENTER] = branch.highlights_center ?? 1.25;
+    params[GPU_PARAMS.HIGHLIGHTS_WIDTH] = branch.highlights_width ?? 2.5;
     const colorMatrix = colorActive ? rgbPrimariesAdjustmentMatrix(colorSource) : IDENTITY_3X3;
     colorMatrix.forEach((value, index) => { params[GPU_PARAMS.PRIMARIES_MATRIX_00 + index] = value; });
     params[GPU_PARAMS.SATURATION] = colorActive ? colorSource.saturation || 0 : 0;

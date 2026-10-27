@@ -287,7 +287,7 @@ async function auditHdrHandoff(browser, input) {
     await loadSource(page, input);
     await page.waitForFunction(() => getComputedStyle(document.getElementById("preview-canvas")).display !== "none", null, { timeout: 120000 });
     const cases = [];
-    for (const [control, value] of [["hdr.exposure", 2.6], ["hdr.shadow_lift", -0.16]]) {
+    for (const [control, value] of [["hdr.exposure", 2.6], ["hdr.blacks", -0.16]]) {
       await setControl(page, `[data-path="${control}"]`, value);
       await page.waitForTimeout(1200);
       const visibility = await page.evaluate(() => ({

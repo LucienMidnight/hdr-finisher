@@ -293,8 +293,8 @@ def test_adjustable_module_headers_expose_consistent_modified_and_reset_affordan
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     groups = (
         "raw-highlights", "denoise", "geometry", "perspective",
-        "hdr-tone", "hdr-highlights", "hdr-equalizer", "hdr-color", "hdr-zones",
-        "sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-color", "sdr-zones",
+        "hdr-tone", "hdr-highlights", "hdr-equalizer", "hdr-color",
+        "sdr-tone", "sdr-highlights", "sdr-equalizer", "sdr-color",
         "curves", "color-grading", "detail", "film-look", "vignette",
     )
     for group in groups:

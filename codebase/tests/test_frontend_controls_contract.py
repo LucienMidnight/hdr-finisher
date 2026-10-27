@@ -36,12 +36,16 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     response = TestClient(app).get("/")
     assert response.status_code == 200
     html = response.text
-    assert "Lift, Gamma, Gain" in html
+    # Tone sliders replaced the Lift, Gamma, Gain group (Oct 27 2026).
+    assert "Lift, Gamma, Gain" not in html
+    for lane in ("hdr", "sdr"):
+        for control in ("blacks", "shadows", "midtones", "highlights"):
+            assert f'data-path="{lane}.{control}"' in html
     assert "Legacy Primaries" not in html
     assert 'id="tone-equalizer-add"' in html
     assert 'id="tone-equalizer-remove"' in html
     assert 'id="tone-equalizer-radius"' in html
-    assert html.count("data-section-path=") == 18
+    assert html.count("data-section-path=") == 16
     css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
     assert "--bypass-icon-shape:" in css
     assert "--bypass-icon-visible: var(--accent)" in css
@@ -210,10 +214,10 @@ def test_explanatory_copy_uses_title_hover_without_persistent_helper_rows() -> N
     javascript = frontend_scripts()
 
     assert 'class="disclosure-trigger" type="button" aria-expanded="false" aria-controls="raw-settings-panel" disabled data-tooltip=' in html
-    assert html.count('class="group-toggle" type="button" aria-expanded="false" data-tooltip=') >= 7
+    assert html.count('class="group-toggle" type="button" aria-expanded="false" data-tooltip=') >= 5
     assert 'data-tooltip="Adjust exposure by scene brightness.' in html
     assert 'data-tooltip="Adjust the tone-mapped SDR image by brightness.' in html
-    assert html.count('data-tooltip="Range controls how wide a luminance zone is;') == 2
+    assert html.count('data-tooltip="Where the zone sits, in stops from middle grey."') == 6
     assert 'data-tooltip="Scale-selective detail:' in html
     assert 'data-tooltip="Controls physical enlargement for halation, resolution, and grain.' in html
     assert 'data-tooltip="Strip modes anchor the cross-scan dimension' in html

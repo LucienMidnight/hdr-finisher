@@ -48,10 +48,11 @@ function toneAdjustedHighlightPeakNits(hdr) {
   let peakLinear = Math.max(1, Number(hdr.highlight_compression_source_peak_nits) || 1000) * 0.18 / referenceWhite;
   if (hdr.tone_section_enabled === false) return Math.max(1, peakLinear * referenceWhite / 0.18);
   peakLinear *= 2 ** (Number(hdr.exposure) || 0);
-  const shadowLift = Number(hdr.shadow_lift) || 0;
-  if (shadowLift !== 0) {
-    const liftFactor = clamp(shadowLift * (1 - clamp(peakLinear, 0, 1)), Number.NEGATIVE_INFINITY, 1);
-    peakLinear *= 1 + liftFactor;
+  // Blacks (full at -7 stops, none from -3): mirrors blacksFactor in gpu-params.js.
+  const blacks = Number(hdr.blacks) || 0;
+  if (blacks !== 0) {
+    const t = clamp((Math.log2(Math.max(peakLinear, 1e-8) / 0.18) + 7) / 4, 0, 1);
+    peakLinear *= 2 ** (blacks * (1 - t * t * (3 - 2 * t)));
   }
   const contrast = Number(hdr.contrast) || 0;
   if (contrast !== 0 && peakLinear > 0.00000001) {

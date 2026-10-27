@@ -1481,7 +1481,7 @@
       const key = JSON.stringify([
         [origin.sessionId, origin.geometrySignature, origin.sourceIdentity],
         this.highlightSourceToken(proxy), lane, measurement,
-        params[GPU_PARAMS.EXPOSURE], params[GPU_PARAMS.SHADOW_LIFT], params[GPU_PARAMS.CONTRAST], params[GPU_PARAMS.CONTRAST_PIVOT], params[GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING],
+        params[GPU_PARAMS.EXPOSURE], params[GPU_PARAMS.BLACKS], params[GPU_PARAMS.CONTRAST], params[GPU_PARAMS.CONTRAST_PIVOT], params[GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING],
         ...params.slice(10, 12), ...params.slice(61, 73),
         ...params.slice(BLACK_AND_WHITE_PARAM, BLACK_AND_WHITE_PARAM + 9),
         lane === "hdr" ? [adjustments.hdr, locals] : null,

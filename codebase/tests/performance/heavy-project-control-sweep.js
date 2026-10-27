@@ -30,8 +30,8 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8799";
 const representatives = [
   { batch: "pointwise", module: "Tone", family: "pointwise scalar", path: "current.exposure" },
   { batch: "pointwise", module: "Tone", family: "parameter-dependent pointwise", path: "current.contrast_pivot" },
-  { batch: "pointwise", module: "Lift, Gamma, Gain", family: "pointwise scalar", path: "current.lift" },
-  { batch: "pointwise", module: "Lift, Gamma, Gain", family: "parameter-dependent pointwise", path: "current.lift_range" },
+  { batch: "pointwise", module: "Tone", family: "pointwise scalar", path: "current.shadows" },
+  { batch: "pointwise", module: "Tone", family: "parameter-dependent pointwise", path: "current.shadows_width" },
   { batch: "pointwise", module: "Color / Primaries", family: "pointwise scalar", path: "current.saturation" },
   { batch: "pointwise", module: "Color / Primaries", family: "parameter-dependent pointwise", path: "current.white_balance_kelvin" },
   { batch: "pointwise", module: "Color Grading", family: "pointwise scalar number", path: "current.color_grading.highlights.hue" },

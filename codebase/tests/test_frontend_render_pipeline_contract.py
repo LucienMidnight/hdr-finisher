@@ -27,7 +27,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # and before the SDR highlight stage on both SDR paths.
     assert "let scene = sceneColor(hdrContrast(hdrBase(source)));" in shader
     assert "let balanced = blackAndWhite(scene, guide);" in shader
-    assert "fn sdrScenePrefix(source: vec3f) -> vec3f {" in shader and "return sceneColor(rgb);" in shader
+    assert "fn sdrScenePrefix(source: vec3f) -> vec3f {" in shader and "return sceneColor(rgb * toneBlacksFactor(" in shader
     assert "let grey = blackAndWhite(scene, guide);" in shader
     assert "acescgToSrgb(grey) * ((100.0 / 203.0) / 0.18)" in shader
     assert "rgb = acescgToSrgb(blackAndWhite(srgbToAcescg(rgb), srgbToAcescg(guide)));" in shader
@@ -287,7 +287,7 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'webUtils.getPathForFile(file)' in preload
     assert 'handle("desktop:write-clipboard-text"' in main
     assert "clipboard.writeText(value)" in main
-    assert "var highlightMask = smoothRange" in frontend_scripts()
+    assert "fn toneZones(" in frontend_scripts()
 
 
 def test_export_format_dropdown_does_not_claim_a_provisional_or_alternative_ranking() -> None:

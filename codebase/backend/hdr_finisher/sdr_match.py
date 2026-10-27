@@ -565,7 +565,6 @@ def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndar
     sdr.tone_section_enabled = True
     sdr.tone_equalizer_section_enabled = True
     sdr.color_section_enabled = hdr.color_section_enabled
-    sdr.primaries_section_enabled = hdr.primaries_section_enabled
     sdr.curves_section_enabled = True
     sdr.detail_section_enabled = hdr.detail_section_enabled
     sdr.film_look_section_enabled = hdr.film_look_section_enabled
