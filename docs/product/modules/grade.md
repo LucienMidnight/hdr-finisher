@@ -103,6 +103,22 @@ mock). The stale 1968-parameter literal came from the HSL stride expansion;
 replaced with all-13-channel packing coverage, including the last edge field.
 Native shared selection GPU/CPU check passes, including edge cases and tiles.
 
+Preview pacing built: Global HSL and active Local hue masks now finish an
+exact interactive snapshot, then take the newest pending input. Source, lane,
+geometry and release still cancel obsolete work. No selection mathematics,
+resolution, edge controls, export or Proof code changed. On copied 24 MP SDR
+at 100%, non-default Global range/edge/feather/detail/luminance improved from
+0 completed frames/s to 18–21 (Exposure 24). Local native selection improved
+from 0–2 to 10–14 SDR / 6–8 HDR; Local Exposure remains 50+ frames/s.
+The 24 frames/s non-default target is not yet met consistently. Remaining
+costs: per-tile Global selection and offscreen Local hue selection; a regional
+Local optimization awaits pixel comparison and slow-check approval.
+
+Pacing commit checks: fast suites above; focused pacing, packing and coordinator
+checks pass. Native selection check passes with identical tile interiors. The 423% seam
+reproduction with Edge +3 / Feather 8 / detail 75 completed; image reviewed,
+no tile lines seen.
+
 ## October 27: HSL selection edge controls
 
 The shared selection now accepts Edge grow/shrink (−8..+8 source pixels),

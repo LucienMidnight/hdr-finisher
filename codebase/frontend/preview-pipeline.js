@@ -1,3 +1,17 @@
+// Selection work can outlast an input interval at native zoom. Finish one
+// exact snapshot, then render the scheduler's newest pending edit, as Denoise
+// already does. Source/lane/geometry changes and release still retire it.
+function pacedPreviewInteraction(lane) {
+  if (!state.previewScheduler?.interacting) return false;
+  if (state.denoise?.[lane]?.enabled) return true;
+  const branch = state.adjustments?.[lane];
+  if (branch?.hsl_section_enabled !== false
+    && branch?.hsl?.channels?.some(channel => HDRHSL.active(channel.recipe))) return true;
+  return state.adjustments?.shared?.local_adjustments_enabled !== false
+    && localAdjustments().some(local => local.enabled !== false
+      && HDRMaskExpression.firstLeaf(local.mask, "hue_range"));
+}
+
 function debouncePreview(lane = state.currentView) {
   state.previewWatchdogRearms = 0;
   if (!state.previewScheduler) {
@@ -548,8 +562,7 @@ function renderGpuDraft(lane = state.currentView, options = {}) {
       allowInactive: Boolean(options.allowInactive),
       hideStatus: options.hideStatus !== false,
       coarse: Boolean(options.coarse),
-      interactiveSnapshot: tier === "interactive" && Boolean(state.previewScheduler?.interacting)
-        && Boolean(state.denoise?.[lane]?.enabled),
+      interactiveSnapshot: tier === "interactive" && pacedPreviewInteraction(lane),
     })
     : renderGpuDraftInner(lane, options);
   state.gpuDraftInFlight = pending;
@@ -903,8 +916,7 @@ function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
   const coordinator = state.renderCoordinator;
   if (coordinator) {
     coordinator.noteEdit(lane, {
-      preserveInteractive: Boolean(state.previewScheduler?.interacting)
-        && Boolean(state.denoise?.[lane]?.enabled),
+      preserveInteractive: pacedPreviewInteraction(lane),
     });
     state.previewGeneration[lane] = coordinator.generation(lane, "edit");
   } else {
