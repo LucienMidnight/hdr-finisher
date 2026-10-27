@@ -1,5 +1,42 @@
 # Module PRD: Grade
 
+## October 27: shared colour-selection decision and staged implementation
+
+Steve chose Light from 7489135. Both Global HSL and the Local hue mask must
+select the image immediately before global HSL, after exposure, white balance
+and upstream colour edits (Option A). HSL corrections and Local Exposure reuse
+prepared selection data; upstream changes invalidate it. Existing hue masks may
+change selection before 1.0; no migration is wanted. Keep both control layouts.
+A future Local colour wheel must require only a frontend change.
+
+Stage 1 partial implementation: the isolated GPU component
+`frontend/hsl-selection-gpu.js` accepts a native pre-HSL D65 linear-sRGB
+texture. It area averages relative Oklab chroma at quarter resolution and
+Gaussian smooths it (sigma 1 coarse pixel, about eight source pixels).
+Selection is interpolated to native pixels, refined with a 9x9 luminance-guided
+filter, and protected against bright edges and chroma disagreement. Included
+and subtracted ranges, neutral exclusion and circular targets share that path.
+The CPU reference is `hsl_selection.py`. Neither component is loaded by the
+app; Global HSL still uses the current pointwise shader. This is infrastructure,
+not a completed speckling fix.
+
+The isolated GPU check passes noisy-patch smoothing, neutral boundary and
+bright-fringe rejection, CPU coverage agreement and preparation reuse and
+invalidation. Coverage mean difference was below 0.000001; these engineering
+coverage checks do not establish finished-image perceptual acceptance.
+Shipping shaders, tolerances and Highlight compression are unchanged.
+Fast checks are deferred to the three-stage run's end.
+
+Still required before activation: split the production base pass at pre-HSL;
+native selection ownership, memory admission and cancellation; transport into
+Global HSL, tiles, reduced preview, Show selection, CPU fallback, export, Proof
+and Library pictures. App screenshots at 100%, 272% and 527%, 24/42 MP speed,
+bush lift comparison and strict finished-image checks remain open. Native
+temporary-texture cost and first-preparation latency are not accepted for app
+use. The previous Local comparison compounded smoothing and used different
+settings/lanes; it does not establish that current Local selection is better.
+
+
 ## October 27: Global HSL investigation (Part 2 remains open)
 
 Using a disposable Electron profile and a copy of Balanced Rock, reproduced the

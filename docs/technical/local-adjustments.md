@@ -1,5 +1,26 @@
 # Local adjustments
 
+## October 27: experimental shared pre-HSL selection (inactive)
+
+Steve's Option A replaces the fixed-source requirement for the planned shared
+colour engine: both Global HSL and the Local hue mask will select the native
+image immediately before global HSL, after upstream exposure, white balance
+and colour edits. HSL corrections and Local Exposure must reuse prepared fields.
+Current shipping hue masks still use the fixed-source CPU route until production
+integration is completed.
+
+The isolated `HslSelectionGpu` accepts an owner-supplied native D65 linear-sRGB
+GPU texture and upstream identity. `prepare(texture,key)` retains quarter-size
+smoothed relative Oklab chroma. `select(recipe,floor)` builds native coverage
+and a circular target; correction values are not inputs. Output is rgba32float
+(coverage, target degrees, 0, 1), owned by the caller. The caller retains and
+eventually destroys its input and output textures. `destroy()` releases retained
+preparation. The CPU reference applies the same Light maths. Neither is called
+by the app, export or Proof. Memory admission, cancellation, native ownership
+across preview levels and production scheduling remain required before enabling
+it. The focused native driver `tests/hsl-selection-engine.js` is diagnostic.
+
+
 ## October 27: selection overlay containment (Part 1)
 
 HSL Show selection is an absolute image in `previewPrimaryPane`, positioned

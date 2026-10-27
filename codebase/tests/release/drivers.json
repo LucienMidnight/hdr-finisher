@@ -254,6 +254,7 @@
     }
   ],
   "drivers": [
+    {"path":"tests/hsl-selection-engine.js","areas":["preview","masks"],"tier":"diagnostic","protects":"Disabled native Light selection: real GPU/CPU coverage, fringe rejection and prepared-chroma reuse. No app or delivery integration.","launch":{"method":"native"}},
     {"path":"tests/color-desat-delivery.js","areas":["preview","export-proof","ui"],"tier":"area","protects":"Color desaturation active GPU preview, CPU/GPU finished output, Proof/export agreement and HDR ceiling.","launch":{"method":"electron"}},
     {"path":"tests/hsl-overlay-review.js","areas":["masks","ui"],"tier":"area","protects":"Real-photo selection containment, zoom alignment, disclosure cleanup and Library grid pixels.","launch":{"method":"electron"}},
     {"path":"tests/hue-mask-delivery.js","areas":["masks","export-proof","ui"],"tier":"area","protects":"Sampled fixed-source hue mask GPU preview and GPU/CPU Proof/export agreement and ceiling.","launch":{"method":"electron"}},
