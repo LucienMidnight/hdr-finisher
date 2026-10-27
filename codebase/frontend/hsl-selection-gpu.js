@@ -180,6 +180,17 @@ fn blur(xy:vec2i,axis:vec2i)->vec4f{
       }catch(error){for(const t of owned)t.destroy();throw error;}
       finally{params.destroy();ranges.destroy();}
     }
+    // Local controls are only a frontend adapter; no second selection algorithm.
+    // Expression inversion, combination and opacity remain the mask owner's job.
+    selectHue(leaf) {
+      if(!this.prepared)throw Error("Prepare a native pre-HSL texture first");
+      if(leaf.hue_center==null) {
+        return this.texture(this.prepared.width,this.prepared.height,"Empty unsampled hue selection");
+      }
+      return this.select({ranges:[{
+        center:leaf.hue_center,width:leaf.hue_width,feather:leaf.hue_smoothness,subtract:false,
+      }]},leaf.saturation_floor);
+    }
     clear() {this.prepared?.chroma.destroy();this.prepared=null;}
     destroy() {this.clear();}
   }

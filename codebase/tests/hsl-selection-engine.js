@@ -33,12 +33,34 @@ const {_electron}=require('playwright');
     if(f.weight[y][x]>.01)angles.push(Math.abs(((values[at+1]-f.target[y][x]+540)%360)-180));
    }
    diff.sort((a,b)=>a-b);angles.sort((a,b)=>a-b);
+   const saved=new Float32Array(values);
+   read.unmap();
+   const local=engine.selectHue({hue_center:109,hue_width:15,hue_smoothness:21,saturation_floor:.02});
+   const copy=device.createCommandEncoder();
+   copy.copyTextureToBuffer({texture:local},{buffer:read,bytesPerRow:row},{width:f.width,height:f.height});
+   device.queue.submit([copy.finish()]);await read.mapAsync(GPUMapMode.READ);
+   const localValues=new Float32Array(read.getMappedRange());
+   let equal=true;
+   for(let y=0;y<f.height;y++)for(let x=0;x<f.width;x++) {
+     const at=y*row/4+x*4;if(localValues[at]!==saved[at])equal=false;
+   }
+   if(!equal)throw Error('Equal Global/Local settings produced different coverage');
+   read.unmap();local.destroy();
+   const empty=engine.selectHue({hue_center:null});
+   const emptyCopy=device.createCommandEncoder();
+   emptyCopy.copyTextureToBuffer({texture:empty},{buffer:read,bytesPerRow:row},{width:f.width,height:f.height});
+   device.queue.submit([emptyCopy.finish()]);await read.mapAsync(GPUMapMode.READ);
+   const emptyValues=new Float32Array(read.getMappedRange());
+   for(let y=0;y<f.height;y++)for(let x=0;x<f.width;x++){
+     if(emptyValues[y*row/4+x*4]!==0)throw Error('Unsampled Local hue selected pixels');
+   }
+   empty.destroy();
    const same=engine.prepare(source,'above-HSL:1')===prepared;
    const retained=engine.prepared.serial;
    const second=engine.select({ranges:[{center:109,width:24,feather:41}]},.04);second.destroy();
    if(engine.prepared.serial!==retained)throw Error('Selection controls rebuilt prepared chroma');
    engine.prepare(source,'above-HSL:2');const invalidated=engine.prepared.serial!==retained;
-   const result={mean:diff.reduce((a,b)=>a+b,0)/diff.length,p99:diff[Math.floor(diff.length*.99)],targetP99:angles[Math.floor(angles.length*.99)],cached:same,invalidated,elapsed_ms:performance.now()-start,errors};
+   const result={mean:diff.reduce((a,b)=>a+b,0)/diff.length,p99:diff[Math.floor(diff.length*.99)],targetP99:angles[Math.floor(angles.length*.99)],cached:same,invalidated,equalGlobalLocal:true,unsampledEmpty:true,elapsed_ms:performance.now()-start,errors};
    read.unmap();read.destroy();selection.destroy();engine.destroy();source.destroy();device.destroy();return result;
   },fixture);
   // Engineering coverage check only; final-image perceptual acceptance is still required.

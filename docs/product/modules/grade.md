@@ -2,6 +2,15 @@
 
 ## October 27: shared colour-selection decision and staged implementation
 
+Stage 2 partial implementation: Local hue controls now adapt directly to the
+inactive shared engine through `selectHue(leaf)` / CPU `select_hue`. Hue,
+half-range, smoothness and saturation floor map to one ordinary HSL range.
+The real-GPU driver verifies exact equal coverage at equal Global/Local
+settings and an empty unsampled hue mask, without rebuilding preparation.
+Shipping Local hue-mask compilation remains active on its old CPU source route.
+Replacing that route, stage-input picking, mask algebra, native overlay and
+all delivery consumers remains open; this adapter is not app integration.
+
 Steve chose Light from 7489135. Both Global HSL and the Local hue mask must
 select the image immediately before global HSL, after exposure, white balance
 and upstream colour edits (Option A). HSL corrections and Local Exposure reuse

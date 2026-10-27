@@ -56,3 +56,12 @@ def select(prepared, ranges, floor=.02):
     target=np.where(np.hypot(tx,ty)>1e-5,np.degrees(np.arctan2(ty,tx)),
                     np.degrees(np.arctan2(avg[...,1],avg[...,0])))
     return np.clip(p*protection,0,1).astype(np.float32),target.astype(np.float32)
+
+def select_hue(prepared, leaf):
+    """Adapt Local hue controls; combine/invert/opacity belongs to the owner."""
+    from .hsl import HSLRange
+    if leaf.hue_center is None:
+        return np.zeros(prepared.guide.shape, np.float32)
+    return select(prepared, [HSLRange(center=leaf.hue_center,
+                  width=leaf.hue_width, feather=leaf.hue_smoothness)],
+                  leaf.saturation_floor)[0]
