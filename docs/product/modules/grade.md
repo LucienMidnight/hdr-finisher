@@ -1,5 +1,42 @@
 # Module PRD: Grade
 
+## October 28: Graceful handling of old, damaged and newer grades (Steve, v1)
+
+Prompted by the tone-slider change: every Library thumbnail failed because
+stored grades still carried the removed Lift/Gamma/Gain and Shadow fields.
+Fixed the same day (1b71ced): all saved data reads through one forgiving
+reader (`projects.validate_saved`), and remembered Library errors retry when
+the readable settings change. Steve wants the app to expect breaking changes
+between versions and handle them gracefully. **Required for v1:**
+
+1. **A picture is never blank because of its grade.** If a grade cannot be
+   applied, the Library, Grade and Proof show the photo ungraded (the
+   default look) with a clear warning badge, not an empty error tile.
+2. **Keep what still works, section by section.** A section that cannot be
+   read (a value out of range, a wrong type, a damaged local or mask) falls
+   back to that section's defaults; every other section keeps its settings.
+   The photo records which sections were not read and why.
+3. **The user chooses.** A plain message names the sections and offers:
+   **Continue without them** (save the working remainder), **Revert to
+   original**, or **Leave as is** (keep showing the warning). Nothing is
+   overwritten until the user chooses; the untouched original grade is kept
+   as a backup alongside the photo so a later version can still read it.
+4. **Newer grades are protected from older versions.** Every saved grade
+   records the app version and a per-section format version. When a version
+   opens a grade written by a newer one, it shows what it can, says the
+   grade came from a newer version, and never autosaves over it without the
+   user agreeing; the original is kept.
+5. **Say when a look will change.** When an update removes or reworks a
+   setting that a photo uses (as with Lift/Gamma/Gain on October 27), the
+   photo says so in plain words rather than changing silently. Before 1.0,
+   values are dropped (AGENTS.md); from 1.0, each such change ships a small
+   converter that carries old values across where it can, plus the notice.
+
+Applies everywhere saved grades are read: projects, Library settings files,
+virtual copies, history, presets, stored Library pictures, batch export and
+queued deliveries. Live edits stay strict. Brief:
+`docs/technical/briefs/codex-brief-graceful-grades-2026-10-28.md`.
+
 ## October 27: Tone sliders replace Lift/Gamma/Gain (Steve's decision, v1)
 
 **Naming rule for the whole app.** "Exposure" always means an equal change in

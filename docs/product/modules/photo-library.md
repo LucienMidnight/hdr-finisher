@@ -2026,6 +2026,13 @@ crop route; its move to live native scenes remains open with that cleanup.
 
 ## 5. V1 open work, in order
 
+**V1 (Steve, October 28, 2026): graceful old, damaged and newer grades.**
+A photo whose grade cannot be fully read still shows an ungraded thumbnail
+with a warning badge, keeps the sections it can read, and offers Continue
+without them / Revert to original / Leave as is. Requirements are in the
+[Grade PRD](grade.md) (October 28 note). Done October 28: old grades with
+removed settings load, and remembered errors retry after an update.
+
 **V1 scope (Steve, October 26, 2026):** the "Leftovers" item below (comfort
 cap, indexing settings, dimmed offline drives, drag a folder in to pin it)
 is moved to after v1. Batch-export metadata and the polish pass stay v1.

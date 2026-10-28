@@ -139,6 +139,10 @@ bug hunt:
   Highlights with Center and Width replace Lift/Gamma/Gain and Shadow / Black
   in both lanes, under one app-wide naming rule ("Exposure" is an equal
   change in stops; tone names are curves). See the Grade PRD.
+- Graceful old, damaged and newer grades (Steve, October 28, 2026): no
+  blank pictures, keep the readable sections, let the user choose, protect
+  grades written by newer versions, and say when an update changes a look.
+  See the Grade PRD.
 - Steve's by-eye reviews (RAW exposure sheet, film grain/Looks/lens filter,
   HSL, exposure-warning wording, Black & White sliders) and the Match fault.
 
