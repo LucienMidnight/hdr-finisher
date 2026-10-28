@@ -209,3 +209,29 @@ def test_look_notice_dismissal_survives_library_reopen(library):
     grades.recover_grades([{"path":str(photo),"revision":errors.revision(str(photo))}],"dismiss")
     assert PictureErrors(marks).get(str(photo))["ignored"]
     assert sidecar.read_bytes()==before
+
+
+def test_damaged_denoise_keeps_other_lane():
+    raw=payload({"grade":{"denoise":{"hdr":{"controls":{"amount":99}},"sdr":{"enabled":True,"controls":{"amount":.7}}}}})
+    saved=validate_saved(EditDocument,raw)
+    assert saved.denoise.hdr.controls.amount == .5
+    assert saved.denoise.sdr.enabled and saved.denoise.sdr.controls.amount == .7
+    assert notice(saved)["sections"] == ["HDR Denoise"]
+
+
+def test_broken_project_json_relinks_to_photo_and_preserves_raw_backup(tmp_path):
+    photo=tmp_path/"photo.png"; Image.new("RGB",(32,16)).save(photo)
+    store=SessionStore(); source=store.prepare_session(photo,owns_source_path=False)
+    project=tmp_path/"photo.hdrfinisher"; save_project(source,project)
+    with zipfile.ZipFile(project) as archive:manifest=archive.read("manifest.json")
+    broken='{ damaged grade json'
+    with zipfile.ZipFile(project,"w") as archive:
+        archive.writestr("manifest.json",manifest);archive.writestr("edit-state.json",broken)
+    before=project.read_bytes()
+    opened=open_project(store,project,photo)
+    assert opened.grade_notice and project.read_bytes()==before
+    choose_saved_grade(store,str(opened.session_id),"continue")
+    with zipfile.ZipFile(project) as archive:
+        backup=next(n for n in archive.namelist() if n.startswith("grade-backups/"))
+        assert json.loads(archive.read(backup))==broken
+    store.clear()

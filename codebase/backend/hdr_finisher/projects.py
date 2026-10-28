@@ -50,7 +50,7 @@ def save_project(session: LoadedSession, path: Path, source_path: Path | None = 
         if getattr(session, "grade_project_path", None) == destination and expected and current_hash != expected:
             raise ProjectError("The project changed elsewhere. Open it again before saving.")
         with zipfile.ZipFile(destination) as existing:
-            old = validate_saved_document(json.loads(existing.read(PROJECT_STATE_NAME)))
+            old = validate_saved_document(_read_state(existing))
         if getattr(old, "_saved_grade_notice", None) and getattr(session, "grade_project_consent", None) != current_hash:
             raise ProjectError("This project's grade needs a choice before it can be replaced.")
     document = session.edit_document()
@@ -83,6 +83,14 @@ def save_project(session: LoadedSession, path: Path, source_path: Path | None = 
     return ProjectResponse(path=str(destination), revision=session.edit_revision, document=document)
 
 
+def _read_state(archive):
+    text = archive.read(PROJECT_STATE_NAME).decode("utf-8", errors="replace")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text
+
+
 def open_project(store: SessionStore, path: Path, source_path: Path | None = None) -> LoadedSession:
     project_path = _project_path(path)
     if not project_path.is_file():
@@ -97,7 +105,7 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
             schema_version = manifest.get("schema_version")
             if manifest.get("contains_source_pixels") is not False:
                 raise ProjectError("Invalid project manifest.")
-            state_payload = json.loads(archive.read(PROJECT_STATE_NAME))
+            state_payload = _read_state(archive)
             document = _validate_ignoring_unknown_fields(state_payload)
     except (zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
         raise ProjectError("The project file is malformed or unreadable.") from exc

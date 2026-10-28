@@ -98,7 +98,7 @@ def whole_grade_fallback(report):
 def section(field):
     if field in REMOVED_DEFAULTS:
         return "tone"
-    if field.startswith("highlight_compression") or field == "highlight_section_enabled":
+    if field.startswith("highlight_compression") or field in ("highlight_section_enabled", "highlight_recovery"):
         return "highlight"
     if field.startswith("tone_equalizer"):
         return "tone_equalizer"
@@ -107,7 +107,7 @@ def section(field):
     for name in ("color_grading", "black_and_white", "film_look", "vignette", "detail", "hsl"):
         if field == name or field == name + "_section_enabled":
             return name
-    if field in ("exposure", "contrast", "contrast_pivot", "blacks", "tone_section_enabled") or field.startswith(("shadows", "midtones", "highlights")):
+    if field in ("exposure", "contrast", "contrast_pivot", "blacks", "tone_section_enabled") or field.startswith(("shadows", "midtones", "highlights", "tone_")):
         return "tone"
     return "color"
 
@@ -166,6 +166,8 @@ def _boundary(model, data, loc):
     if name == "EditDocument" and len(loc) > 1 and loc[0] == "source":
         if loc[1] in ("raw_import_settings", "luminance"):
             return ("source",), [loc[1]], "RAW development" if loc[1] == "raw_import_settings" else "Source luminance"
+    if name == "EditDocument" and len(loc) > 1 and loc[0] == "denoise" and loc[1] in ("hdr", "sdr"):
+        return ("denoise",), [loc[1]], loc[1].upper() + " Denoise"
     key = loc[0] if loc else None
     labels = {"denoise": "Denoise", "source": "Source settings", "framing": "Framing",
               "interpretation_override": "Source interpretation", "sdr_match": "SDR Match"}

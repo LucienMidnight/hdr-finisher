@@ -61,6 +61,23 @@ queued deliveries. Live edits stay strict. Brief:
 - Design proposal for Steve: retain the existing attention dialog and badge
   styling, adding the same attention button to Single's caption. No restyling.
 
+### October 28 recovery boundary and scan record
+
+An unreadable project grade JSON now takes the default-photo/relink path rather
+than failing as a grade. Explicit replacement backs up the untouched text.
+Denoise recovery is per rendition, keeping the other lane. Both added checks
+pass. Historical default values only suppress irrelevant notices; they do not
+convert old features or change readable grades.
+
+Read-only scan: 155,879 indexed source paths; 166 settings/project files read;
+2 photo items and 21 projects would show a notice, chiefly used removed Film
+Look/Tone settings and three unreadable grade formats. No file changed during
+the scan. Four historical grades would also warn if restored. The three
+protected projects were included. Full paths, affected panels and reasons are
+in `codebase/output/graceful-grades/scan.json`. The reusable read-only scanner
+is `codebase/tools/scan_saved_grades.py`; it opens SQLite in read-only mode and
+does not start Library services, decode sources or enqueue writes.
+
 ### October 28 preset record
 
 Presets now pass through the same saved-grade reader before application, with
