@@ -5,7 +5,9 @@ const arg=(k,d)=>{const i=process.argv.indexOf(k);return i<0?d:process.argv[i+1]
 const source=arg('--photo','D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2'),local=process.argv.includes('--local'),tag=arg('--tag','before');
 const out=path.resolve('output/hsl-performance');fs.mkdirSync(out,{recursive:true});
 const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.lane===state.currentView&&state.acceptedPresentation.generation===state.previewGeneration[state.currentView]&&viewerState().status==='ready';
-(async()=>{const browser=await chromium.launch(),page=await browser.newPage(),result={photo:path.basename(source),local,tag,notes:'One-second input bursts. Navigation waits two animation frames then exact Ready; Local Show mask also awaits authoritative requests. --baseline restores pre-fix pacing and full-mask selection in the page.',rows:[]};
+const navigationSettled=()=>{const a=state.acceptedPresentation,s=state.renderCoordinator?.state(state.currentView);
+ return !state.zoomRefinementTimer&&!s?.panTimerPending&&!s?.inFlight&&!s?.pending&&a?.exact&&a.lane===state.currentView&&a.generation===state.previewGeneration[state.currentView]&&viewerState().status==='ready';};
+(async()=>{const browser=await chromium.launch(),page=await browser.newPage(),result={photo:path.basename(source),local,tag,notes:'One-second input bursts. Navigation records two-frame response then waits queued pan/zoom refinement and exact Ready; Local Show mask also awaits authoritative requests. --baseline restores pre-fix pacing and full-mask selection in the page.',rows:[]};
 const save=()=>fs.writeFileSync(path.join(out,`${tag}-${local?'local':'global'}-${path.basename(source)}.json`),JSON.stringify(result,null,2));
 try{
  await page.goto(process.env.HDR_FINISHER_URL||'http://127.0.0.1:8765');await page.waitForFunction(()=>state.gpuPreview?.available,null,{timeout:30000});
@@ -63,6 +65,7 @@ try{
    view==='fit'?setZoomMode('fit'):setCustomZoom(Number(view));invalidatePreview(lane);await settlePreview(lane,{});
   },{lane,view,edges,local});await page.waitForFunction(settled,null,{timeout:180000});
   const row={lane,view,edges,actions:{}};result.rows.push(row);
+  await page.waitForFunction(navigationSettled,null,{timeout:180000});
   for(const action of (process.argv.includes('--only-navigation')?[]:['range','edge','feather','detail','luminance','exposure'])){
    await page.evaluate(({local,edges})=>{const r=local?selectedMaskLeaf():state.adjustments[state.currentView].hsl.channels.find(c=>c.id==='yellow').recipe;Object.assign(r,{edge:edges?3:0,edge_feather:edges?8:0,edge_detail:edges?75:50});if(!local)hslSync(hslUI.panels[0]);else renderLocalAdjustments();},{local,edges});
    row.actions[action]=await page.evaluate(async({local,action})=>{
@@ -86,7 +89,7 @@ try{
    if(action==='pan'){els.dropzone.scrollLeft+=73;els.dropzone.scrollTop+=51;}if(action==='zoom')setCustomZoom(view==='fit'?55:Number(view)+5);
    if(action==='overlay'){if(local){document.getElementById('local-show-mask').click();await renderLocalMaskOverlay();await Promise.all([...localAuthoritativeMaskRequests.values()].map(v=>v.request));renderLocalMaskOverlay();}else{const ui=hslUI.panels[0];ui.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed','true');await hslSelection(ui);}}
    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-  },{action,view,local});await page.waitForFunction(settled,null,{timeout:180000});row.actions[action]={settle_ms:Date.now()-t};}
+  },{action,view,local});await page.waitForFunction(settled,null,{timeout:180000});const response=Date.now()-t;await page.waitForFunction(navigationSettled,null,{timeout:180000});row.actions[action]={response_ms:response,settle_ms:Date.now()-t};}
   row.execution=await page.evaluate(()=>state.acceptedPresentation.execution);save();console.log('ROW',JSON.stringify(row));
  }
 }finally{save();await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

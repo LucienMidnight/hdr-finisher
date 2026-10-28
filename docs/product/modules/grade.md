@@ -77,64 +77,94 @@ Resolve, darktable, DxO).
   nits, rerun after the strength scale). Review page:
   `codebase/output/tone-zones/index.html`.
 
-## October 27: HSL performance investigation (in progress)
+## October 28: HSL performance investigation completed
 
-Proposed timing targets before measuring: defaults within 10% of the earlier
-Fit/100% timings; non-default Edge +3, Feather 8, detail 75 at least 24 frames/s
-at Fit and 100% on 24 MP. Treat paired timing changes within 10% as noise.
-Keep the existing GPU/CPU coverage and finished-picture tolerances; no quality
-reduction or new GPU parameter slots. Measure copied Balanced Rock and 42 MP
-in both lanes at Fit, 100% and 400%, including selection controls, grade sliders,
-pan/zoom and overlays.
+Measured first, then fixed two main costs without changing selection mathematics
+or quality. New drag inputs were retiring exact GPU work before a picture could
+finish. Global HSL and active Local hue masks now finish the current interactive
+snapshot, then take the newest input; source, lane, geometry and release still
+cancel obsolete work. Local hue selection also processed offscreen pixels. A
+single hue leaf now processes the requested tiles plus the full supported
+Edge/Feather neighbourhood, with frame-anchored grids and source-relative offsets.
+Fixed maximum padding preserves source preparation during Edge/Feather drags.
+Combined masks retain their existing route. No shader or parameter-slot changes.
 
-Investigation record: the copied Balanced Rock / 42 MP, SDR/HDR Fit/100/400 matrix is in
-`codebase/output/hsl-performance/before-*.json`; the repeatable driver is
-`codebase/tools/hsl-performance.js`. Fit produces 43–52 frames/s, but native
-zoom often produces no completed drag frames: newer inputs retire the work
-before it finishes. Local native hue selection also computes offscreen pixels;
-its range edits take about 0.12–0.29 s while cached Local Exposure stays near
-50 frames/s. Global Show selection uses the CPU and takes about 0.5–1.9 s.
-The pan/zoom/Local-overlay observations include explicit wait floors and are
-not pure rendering latency measurements.
+Targets proposed before measuring: defaults within 10% of earlier Fit/100%
+timings; Edge +3, Feather 8, detail 75 at least 24 frames/s at Fit/100% on 24 MP;
+paired changes within 10% count as noise. Existing picture tolerances unchanged.
+The brief's Balanced Rock is actually 3464 x 5202 (18 MP), so also measured a
+true 6024 x 4024 (24 MP) photo and 7968 x 5320 (42 MP). Both lanes, default and
+non-default edges, Fit/100/400%, selection controls, grade sliders and navigation
+are covered (the additional 24 MP pair covers Fit/100%).
 
-Validation: fast JS 644 pass / 2 unrelated Library failures; Python 2657 pass,
-3 skip / 2 unrelated Library failures (SourceReference fixture and repair-cache
-mock). The stale 1968-parameter literal came from the HSL stride expansion;
-replaced with all-13-channel packing coverage, including the last edge field.
-Native shared selection GPU/CPU check passes, including edge cases and tiles.
+Completed pictures per second during Range/Edge/Feather/detail drags, non-default
+edges, SDR/HDR across the measured photos:
 
-Preview pacing built: Global HSL and active Local hue masks now finish an
-exact interactive snapshot, then take the newest pending input. Source, lane,
-geometry and release still cancel obsolete work. No selection mathematics,
-resolution, edge controls, export or Proof code changed. On copied Balanced Rock SDR
-at 100%, non-default Global range/edge/feather/detail/luminance improved from
-0 completed frames/s to 18–21 (Exposure 24). Local native selection improved
-from 0–2 to 10–14 SDR / 6–8 HDR; Local Exposure remains 50+ frames/s.
-The 24 frames/s non-default target is not yet met consistently. Remaining
-costs: per-tile Global selection and offscreen Local hue selection; a regional
-Local optimization is now validated (below).
+| Action | Before | After |
+| --- | --- | --- |
+| Global HSL at 100% | 0 | 14-20 |
+| Global HSL at 400% | 0-5 | 26-35 |
+| Local hue mask at 100% | 0-2 | 9-14 |
+| Local hue mask at 400% | 0-3 | 51-56 |
 
-Pacing commit checks: fast suites above; focused pacing, packing and coordinator
-checks pass. Native selection check passes with identical tile interiors. The 423% seam
-reproduction with Edge +3 / Feather 8 / detail 75 completed; image reviewed,
-no tile lines seen.
+Fit remains about 50 frames/s (Global 43-50, Local 48-53). Local 400% settled
+selection-edit median fell from 176 to 44 ms; Local 100% from 169 to 130 ms.
+Global 100% settled selection-edit median remains about 61 ms: pacing makes
+completed pictures visible rather than making each calculation faster. For
+example, Balanced Rock Global SDR 100% range previously dispatched 552 copies
+of each selection pass but displayed zero frames; afterwards 504 copies display
+20 frames. On 42 MP HDR, Local selection shrinks from 42.4 MP to 7.1 MP at
+100% and 1.38 MP at 400%, reducing 11 bands to two or one.
 
-October 28: regional Local hue processing built. Select only the requested
-GPU tiles plus the maximum supported Edge/Feather neighbourhood. Keep the
-frame-anchored selection grid and source-relative texture offsets, including
-when a source region is already cached. Fixed padding lets Edge/Feather reuse
-source preparation. Combined masks keep their existing route. No new parameter
-slots, shader mathematics or quality reduction.
+The 100% target is **not met**. True 24 MP non-default Global drags give 18-19
+frames/s (Luminance 18, unrelated Exposure 23); Local selection gives 9-12,
+while Local Exposure reuses the mask at 54. Global Exposure changes the source
+and correctly rebuilds the Local mask (9-10 frames/s). Global per-tile selection
+and Local multi-band preparation remain costly. Defaults also do not consistently
+restore the earlier 27-28 frames/s Luminance result. No coarser preview or skipped
+edge controls were used to meet a target.
 
-Crop commit validation: 24 real-GPU comparisons on copied Balanced Rock and
-42 MP at 100/400%, SDR/HDR, Edge +3/-3/+0.75, Feather 8, detail 75: nonempty
-visible coverage equals the full-mask route exactly (mean/p99 difference zero).
-Global and Local HSL delivery checks pass their existing neutral-relative
-colour limits; Proof equals export and all outputs stay below 1000 nits.
-The hue-mask delivery fixture passes its perceptual colour limits and ceiling.
-Final fast suites: JS 644 pass / same 2 Library failures; Python 2657 pass,
-3 skip / same 2 Library failures. Steve approved the longer checks October 28.
-Final timing matrix is running; see `codebase/output/hsl-performance/after-*.json`.
+Navigation measured separately, including deferred refinement rather than just
+Ready on the old picture: native pan response stays about 13 ms and finishes
+refinement in 149-160 ms, including the existing 140 ms delay. Native zoom
+refinement remains about 180-190 ms. Fit-to-55% zoom varies with source preparation
+(about 0.06-0.49 s with non-default edges; first/default cold runs can exceed 2 s).
+Global CPU Show selection remains slow (roughly 0.5-1.8 s). Local Show mask after
+navigation regressed from a native median 26 to 124 ms (range 25-158 ms); the
+regional cache/overlay handoff needs follow-up. One 42 MP Fit overlay took 550 ms.
+Keep these visible rather than describing every operation as faster.
+
+Commit records:
+
+- Measurement driver and stale packing assertion: registered
+  `codebase/tools/hsl-performance.js`; replaced the obsolete literal PARAM_COUNT
+  assertion with behavioural all-13-channel/32-range coverage, including the last
+  edge field. Baseline matrix saved before changing preview code.
+- Drag pacing: focused pacing/packing/coordinator checks pass. Native shared
+  selection GPU/CPU checks pass; reviewed the non-default 423% seam reproduction,
+  no tile lines seen. Fast suites have only the Library failures named below.
+- Regional Local selection: 24 real-GPU comparisons on 18/42 MP, SDR/HDR,
+  100/400%, Edge +3/-3/+0.75, Feather 8, detail 75 have nonempty visible coverage
+  identical to the full-mask route (mean/p99 difference zero). Global and Local
+  HSL delivery checks pass existing neutral-relative colour limits; hue-mask
+  delivery passes its perceptual limits; Proof equals export and the 1000-nit
+  ceiling holds. Steve approved the longer validation on October 28.
+- Closeout: final before/after matrices and eight navigation-only paired runs
+  complete. Driver now records immediate response and deferred refinement
+  separately; syntax and diff checks pass. Brief archived; unfinished speed
+  targets remain under Open work below.
+
+Final fast checks: JS 644 pass / 2 unrelated failures (library-scenes GPU fallback
+fixture decoder failure; library-single-ready missing HDRLibraryScreenPreviews).
+Python 2657 pass / 3 skip / 2 unrelated failures (RGB SourceReference fixture lacks
+luminance; native-source CaptureCache mock lacks defer_store). No tone code edited.
+
+Repeatable driver: `codebase/tools/hsl-performance.js`. Raw timings, GPU pass
+counts, crop comparisons and check logs: `codebase/output/hsl-performance/`.
+Use `navigation-before/after-*.json` for navigation; original baseline navigation
+had artificial wait floors. True 24 MP baseline uses the same build with old
+pacing and full-mask processing restored in the page (`--baseline`). Archived
+brief: `docs/technical/archive/briefs/codex-brief-hsl-performance-2026-10-27.md`.
 
 ## October 27: HSL selection edge controls
 
@@ -857,6 +887,15 @@ real-photo review remain after the control-panel work. Heal/Clone prototypes
 are now available; their quality review remains open (October 23 note below).
 
 ## 5. Open work, in order
+
+- **HSL performance follow-up, October 28:** the non-default 24 frames/s
+  target at 100% remains unmet (Global 18-19, Local 9-12 on true 24 MP).
+  Reduce Global per-tile repeated selection and Local multi-band preparation
+  while preserving current coverage. Investigate regional-mask cache reuse when
+  showing Local masks after navigation (native median 26 -> 124 ms). Global CPU
+  Show selection still takes 0.5-1.8 s; prefer the applied GPU mask. Combined hue
+  masks still use the old full-region route. Steve's by-eye responsiveness review
+  remains the judge; do not trade picture quality for a timing target.
 
 **V1 scope (Steve, October 26, 2026):** items 1, 3, 8 and 9 and the new
 Sharpen review below are v1. Item 2 waits on Steve's recorded photo. Item 4

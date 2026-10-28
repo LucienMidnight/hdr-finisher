@@ -76,3 +76,15 @@ Tell Steve in plain language:
 - any quality-for-speed choice he needs to make, one at a time.
 
 Update `docs/product/modules/grade.md`.
+
+## Outcome - October 28, 2026
+
+Measured first; built exact drag pacing and regional Local hue selection without
+reducing quality. Completed-frame rates and edit timings improved substantially,
+especially at 400%. Native 100% remains below the proposed 24 frames/s target;
+remaining selection/cache work and the Local Show mask navigation regression
+are recorded under Open work in `docs/product/modules/grade.md`. The same module
+contains before/after timings, checks and known unrelated failures. Steve approved
+the longer GPU/export/Proof checks; they pass existing picture tolerances.
+Balanced Rock was 18 MP, so an additional true 24 MP pair was measured too.
+Four small local commits; no push and no tone code changes.
