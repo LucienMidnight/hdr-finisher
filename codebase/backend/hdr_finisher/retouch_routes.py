@@ -15,12 +15,19 @@ def solve_record(session, record, worker, token, base, checkpoint):
         force_cpu=preferences()['effective_force_cpu']
     except (OSError,ValueError,AttributeError):
         force_cpu=False
+    from .highlight_edge_gpu import _work
+    source_priority,source_cancelled=_work.get()
+    outer_checkpoint=checkpoint
+    def checkpoint():
+        outer_checkpoint()
+        if source_cancelled and source_cancelled():
+            raise CancelledError('Source repair cancelled')
     recipe=record.recipe
     signature=recipe.model_dump_json()
     key='finished:'+hashlib.sha256(json.dumps([token.source,signature,force_cpu]).encode()).hexdigest()
     def solve(check):
         try:
-            return retouch_gpu.solve(recipe,base,check,priority=getattr(session,'delivery_priority',0))
+            return retouch_gpu.solve(recipe,base,check,priority=getattr(session,'delivery_priority',source_priority))
         except CancelledError:
             raise
         except (OSError,ValueError,RuntimeError) as error:

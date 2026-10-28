@@ -803,3 +803,10 @@ Inside-footprint differences have no numerical gate: Steve judges labelled
 DSC04375 native and Fit crops in `codebase/output/retouch-review/index.html`.
 Outside repairs the existing finished-image tolerances remain unchanged. No
 pinned shader, tolerance, budget, saved field or CPU preview path was changed.
+
+Saved-grade opening transfers its successful replay worker/cache into the open
+session instead of closing it. Failed replay still closes the candidate worker.
+Retouch jobs inherit the existing source-work priority/cancellation context:
+interactive 0, Library CPU source fallback 15, batch 20. Cancellation is checked
+before cached-patch reuse and during GPU or CPU work. These are transient owners
+and scheduling values; there are no new saved fields or pixel algorithm changes.

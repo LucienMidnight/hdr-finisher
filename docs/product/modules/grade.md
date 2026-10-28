@@ -1583,5 +1583,49 @@ patch reuse and cancellation checks. Fast checks at the first checkpoint:
 Node 650 passed / 2 existing failures; Python 2687 passed / 3 skipped / 3 existing
 failures. Existing failures are preset-header wording, RGB publication guard,
 repair mock's `defer_store`, selected-source CPU fallback mock, and Single's
-missing screen-preview mock. Final fast checks and the approved 19-driver
-export/Proof group are pending. No installer or push.
+missing screen-preview mock. Final fast checks: Node 650 passed / the same two
+existing failures; Python 2697 passed / three skipped / the same three existing
+failures (431 s). No installer or push.
+
+The approved 19-driver export/Proof group completed in 31.2 minutes at 0980635:
+14 passed; five failed after one retry each. No unfinished checks and no relaxed
+limits. All three protected project hashes stayed unchanged. Failures:
+
+- `proof-grade-diagnostic`: a dialog intercepted the Proof tab click.
+- `export-file-browser-interaction`: export control selection timed out.
+- `preview-export-compare`: a dialog intercepted Fit after HDR region capture;
+  no complete comparison verdict was produced.
+- `library-export-menu`: HDR peak option visibility assertion failed.
+- `edge-colour-raw`: Library GPU edge-colour reconstruction reported 63 invalid
+  pixels, then 65 on retry, and refused that GPU result. These RAW cases have no
+  repairs. The separate GPU edge-colour kernel driver passed.
+
+The runner reports NOT READY for those five; this is not a clean release result.
+The passing checks include HSL Global and Local delivery, tone zones, Color
+desaturation, hue masks, GPU Denoise measurement, presets, export parity, Proof
+sizing, batch UI, GPU smoke, the real-RAW HDR ceiling (GPU and CPU, full Proof
+byte identity), HSL integration and framing. Logs and aggregate outcomes:
+`codebase/output/retouch-export-proof/results.json`. These unrelated failures
+were retained, not repaired or hidden in this Retouch task.
+
+Final follow-up retains the completed replay worker/cache in an opened session,
+with failed candidate replay still cleaned up. Repairs inherit existing source
+priority/cancellation (interactive 0, Library 15, batch 20) rather than always
+requesting interactive priority. Ten focused route/cache/cancellation checks
+pass. The six actual GPU/CPU tool delivery cases passed again after this change,
+including saved batch replay, fallback notices and full Proof/export byte
+identity (`codebase/output/retouch-delivery-final.log`). The HSL driver keeps its
+shared test-photo copy instead of deleting it. The Library stage capture and
+Steve's accepted 0.8 s cold overhead are recorded in the Library module.
+
+Finished SDR differences inside the DSC04375 repair footprints, information only:
+
+| Tool | Mean ΔE 2000 | p99.9 ΔE 2000 |
+| --- | ---: | ---: |
+| Inpaint | 0.000002667 | 0.000009180 |
+| Clone | 0.000001112 | 0.000004504 |
+| Heal | 0.000001460 | 0.000005540 |
+
+The rounded 8-bit crop pairs are identical; Steve's visual judgement remains the
+acceptance criterion inside repairs. The viewer labels native and Fit GPU/CPU
+pictures and states its source recipe and single-spot scope.

@@ -58,7 +58,6 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
   },{local,active});
   await configure(false);const off=await deliver('neutral');
   await configure(true);const on=await deliver(local?'local':'global');
-  fs.rmSync(photo,{force:true});
   for(const lane of ['hdr','sdr']){
    assert.ok(on[lane].mean<=off[lane].mean+.15&&on[lane].p99<=off[lane].p99+.5,
     `${lane}: HSL adds a GPU/CPU difference ${JSON.stringify({off:off[lane],on:on[lane]})}`);

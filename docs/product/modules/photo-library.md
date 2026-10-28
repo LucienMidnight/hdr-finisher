@@ -4106,8 +4106,8 @@ camera, saved workspace layouts.
   controlled repair-only difference. Peak GPU allocation is 1.042 GB within the
   existing lease. The cold no-extra-time goal remains unmet: pipeline reuse
   reduces repeated compilation, but source preparation and repair work add cost.
-  Steve's decision on retaining this overhead or continuing optimization is
-  pending. No CPU full-RAW repair development is required on the supported GPU
+  Steve accepted the roughly 0.8 s cold repair overhead on October 28 and
+  asked to retain the improvement without further optimization. No CPU full-RAW repair development is required on the supported GPU
   path. `codebase/output/retouch-library/result.json` records the measurements.
 - The DSC04375 GPU/CPU native and Fit crop viewer is
   `codebase/output/retouch-review/index.html`. Inside differences are information
@@ -4123,5 +4123,57 @@ mock). No broad GPU sweep, export change or owner-photo write.
 
 GPU delivery checks now also cover full Proof/export byte equality and saved
 batch replay for all three repair modes, on GPU and CPU fallback. Final fast
-checks and the approved 19-driver export/Proof selection are pending. No push or
-installer build.
+checks and the approved 19-driver export/Proof selection are recorded below. No
+push or installer build.
+
+
+**Accepted cold overhead and paired stage capture — October 28.** Steve accepted
+approximately 0.8 s extra GPU development for seven repairs; do not optimize it
+further in this task. The original 10.240 s sample retained 2.977 s GPU
+development and 0.044 s decode, but no complete stage trace. Its other 7.219 s
+cannot honestly be divided between waiting, handoff and first drawing. The
+original 6.295 s plain sample followed the repaired draw and had warm pipelines.
+
+A separate controlled stage capture uses the exact same 42 MP DSC04375 RAW and
+grade, with repairs omitted for the plain case. Each has a fresh disposable test
+profile, empty stored scenes, first draw, 640 px thumbnail and two presentation
+frames. Renderer initialization happens before the timed request, as in the
+original check. OS file cache is uncontrolled; these are scene-cold, not disk-cold.
+Unrelated grid work is excluded. The observation wrappers leave rendering intact.
+
+| Sequential stage | Seven repairs | Repairs omitted |
+| --- | ---: | ---: |
+| Source request/decode and sensor transfer | 0.378 s | 0.387 s |
+| GPU development, including admission | 2.602 s | 1.796 s |
+| Peak quantiles | 0.023 s | 0.027 s |
+| Scene packing and handoff (thumbnail + screen preview) | 2.324 s | 2.317 s |
+| Source finalization and remaining uninstrumented source overhead | 1.454 s | 1.427 s |
+| First draw and two presentation frames | 2.314 s | 2.385 s |
+| **Total** | **9.095 s** | **8.340 s** |
+
+Within GPU development, repair work is 0.787 s; source admission waits are
+0.007/0.009 s. Within first drawing, draw-queue plus lease waits are about
+0.005 s on each, pixels fetch/upload 0.016/0.017 s, and render plus GPU completion
+2.280/2.353 s. GPU completion itself takes 2.272/2.347 s; that includes first-use
+GPU setup and execution and cannot be split into compilation versus execution
+by this trace. These nested times must not be added again. Renderer initialization
+outside the totals is 0.349/0.356 s. Source polling waits are zero on both.
+Most non-repair cost is therefore shared source handoff/finalization and first
+drawing, not repair work. Do not substitute these new stage times into the old
+10.240 s total. Raw traces: `codebase/output/retouch-library/breakdown-repaired.json`
+and `breakdown-plain.json`; reproduce with the registered Library driver using
+`--breakdown` and `--breakdown --plain` in separate default disposable profiles.
+Custom profile names must contain `test-` to select the isolated Library cache.
+
+The approved 19 export/Proof drivers completed in 31.2 minutes at 0980635:
+14 passed and five failed after one retry each. The Grade module lists those
+failures. Retouch-specific delivery checks passed again after retaining the
+saved-replay patch cache and inheriting the existing source priority/cancellation
+context. No Library rendering optimization followed Steve's acceptance.
+
+Final fast checks after the replay-cache/priority follow-up: Node 650 passed,
+two existing failures; Python 2697 passed, three skipped, three existing failures.
+The five unchanged fast-suite failures are listed in the Grade module. All
+focused route/cache/cancellation checks (10) and the six repair delivery cases
+pass. The broad export/Proof group is not clean because of the five failures
+listed above; no push, merge or installer build is claimed.

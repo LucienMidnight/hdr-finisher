@@ -6,23 +6,33 @@ const hash=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex
 const before=[hash(owner),hash(owner+'.hdrf')];fs.mkdirSync(folder,{recursive:true});
 if(!fs.existsSync(copy))fs.copyFileSync(owner,copy);
 fs.copyFileSync(owner+'.hdrf',copy+'.hdrf');
+const breakdown=process.argv.includes('--breakdown'),plain=process.argv.includes('--plain'),savedCopy=fs.readFileSync(copy+'.hdrf');
 (async()=>{
+ if(plain){const doc=JSON.parse(savedCopy);doc.grade.repairs=[];fs.writeFileSync(copy+'.hdrf',JSON.stringify(doc));}
  const browser=await chromium.launch();
  try{
   const page=await browser.newPage();await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
-  const result=await page.locator('#library-frame').evaluate(async(el,{copy,folder})=>{
-   const w=el.contentWindow;await w.HDRLibrary.browse(folder);
-   const gpu=await w.HDRLibraryPictures.initialize();
+  const result=await page.locator('#library-frame').evaluate(async(el,{copy,folder,breakdown})=>{
+   const w=el.contentWindow,events=[],original=w.HDRLibraryStopwatch;
+   if(breakdown)w.HDRLibraryStopwatch=(stage,fields={})=>{events.push({stage,at:w.performance.now(),...fields});original(stage,fields);};
+   // Profile this source alone: browsing also starts unrelated grid work.
+   if(!breakdown)await w.HDRLibrary.browse(folder);
+   const setupAt=w.performance.now(),gpu=await w.HDRLibraryPictures.initialize(),rendererSetupMs=w.performance.now()-setupAt;
    const canvas=w.document.createElement('canvas');w.document.body.append(canvas);
    const draw=async meta=>{await w.HDRLibraryPictures.show(meta,canvas,new AbortController().signal,()=>true,false);await new Promise(w.requestAnimationFrame);await new Promise(w.requestAnimationFrame);};
-   const started=performance.now();
+   const started=w.performance.now();
    const cold=await w.HDRLibraryGpuRaw.liveScene(copy,640);
    if(!cold||cold.renderer!=='gpu')throw Error('Repaired RAW used CPU: '+JSON.stringify(cold));
-   await draw(cold);const coldMs=performance.now()-started;
+   const sourceMs=w.performance.now()-started;
+   if(breakdown)cold.trace=w.HDRLibraryTrace.begin('grid',copy,started);
+   const drawAt=w.performance.now();await draw(cold);const coldMs=w.performance.now()-started;
+   if(breakdown){canvas.remove();return {coldMs,sourceMs,drawAndPresentMs:w.performance.now()-drawAt,rendererSetupMs,fetchMs:gpu.libraryFetchMs,uploadMs:gpu.libraryUploadMs,cold,events:events.filter(e=>e.at>=started).map(e=>({...e,at:e.at-started}))};}
    const again=performance.now(),warm=await w.HDRLibraryGpuRaw.liveScene(copy,640);
    await draw(warm);canvas.remove();return {coldMs,warmMs:performance.now()-again,cold,warm};
-  },{copy,folder});
-  assert.equal(result.cold.renderer,'gpu');assert.equal(result.warm.key,result.cold.key);
+  },{copy,folder,breakdown});
+  assert.equal(result.cold.renderer,'gpu');
+  if(breakdown){const output=path.resolve('output/retouch-library');fs.mkdirSync(output,{recursive:true});fs.writeFileSync(path.join(output,'breakdown-'+(plain?'plain':'repaired')+'.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({plain,coldMs:result.coldMs,sourceMs:result.sourceMs,drawAndPresentMs:result.drawAndPresentMs}));return;}
+  assert.equal(result.warm.key,result.cold.key);
   // Compare source development with the same disposable photo and saved grade,
   // omitting repairs only for the baseline. Never touch the owner sidecar.
   const saved=fs.readFileSync(copy+'.hdrf');
@@ -39,7 +49,8 @@ fs.copyFileSync(owner+'.hdrf',copy+'.hdrf');
   const output=path.resolve('output/retouch-library');fs.mkdirSync(output,{recursive:true});
   fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(result,null,2));
  }finally{
+  fs.writeFileSync(copy+'.hdrf',savedCopy);
   assert.deepEqual([hash(owner),hash(owner+'.hdrf')],before,'Owner files changed');
   await browser.close();
  }
-})().catch(error=>{console.error(error);process.exitCode=1;});
+})().catch(error=>{fs.writeFileSync(copy+'.hdrf',savedCopy);console.error(error);process.exitCode=1;});

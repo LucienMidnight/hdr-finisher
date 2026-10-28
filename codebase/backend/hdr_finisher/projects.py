@@ -169,9 +169,10 @@ def _open_document(store, document, source_path, reuse_session_id):
     try:
         from .saved_grades import recover_repairs
         repaired = recover_repairs(document, candidate_session)
-    finally:
+    except BaseException:
         if candidate_session.retouch_worker is not None:
             candidate_session.retouch_worker.close()
+        raise
     session.grade_notice = getattr(document, "_saved_grade_notice", None)
     session.grade_original = getattr(document, "_saved_grade_original", None)
     from .saved_grades import whole_grade_fallback
@@ -195,6 +196,12 @@ def _open_document(store, document, source_path, reuse_session_id):
     session.history_bytes = 0
     session.render_cache.clear_adjusted()
     install_repaired_source(session, repaired, _source_mip_identity(session))
+    # The successful replay belongs to this open session, including its bounded
+    # completed patches. Later edits can reuse them without another solve.
+    previous_worker = session.retouch_worker
+    session.retouch_worker = candidate_session.retouch_worker
+    if previous_worker is not None:
+        previous_worker.close()
     if not same_decode:
         store.activate_session(session)
     return session

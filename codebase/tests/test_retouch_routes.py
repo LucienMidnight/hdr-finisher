@@ -82,12 +82,18 @@ def test_saved_replay_keeps_cpu_fallback_for_batch_delivery(monkeypatch,tmp_path
         record,_,worker,_,_=setup(monkeypatch)
         worker.close()
         document=session.edit_document().model_copy(update={'repairs':[record]})
-        def fail(*a,**kw):raise RuntimeError('GPU unavailable on replay')
+        calls=[]
+        def fail(*a,**kw):
+            calls.append(1)
+            raise RuntimeError('GPU unavailable on replay')
         monkeypatch.setattr(retouch_gpu,'solve',fail)
         reopened=open_document(store,document,path)
         assert retouch_routes.records(reopened)[0]['renderer']=='cpu'
         report=retouch_routes.delivery_record(reopened,{'renderer':'gpu'})
         assert 'GPU unavailable on replay' in report['fallback_reason']
+        from hdr_finisher.retouch_source import build_repaired_source
+        np.testing.assert_array_equal(build_repaired_source(reopened,reopened.repairs),reopened.image)
+        assert calls==[1], 'Saved replay patches must survive in the open session'
     finally:store.clear()
 
 
@@ -106,3 +112,20 @@ def test_declared_context_matches_whole_photo_preparation(mode):
     np.testing.assert_array_equal(result,full)
     with pytest.raises(ValueError,match='outside'):
         bounded[0:1,0:1]
+
+
+@pytest.mark.parametrize('priority',[0,15,20])
+def test_repair_inherits_source_priority_and_cancellation(monkeypatch,priority):
+    from hdr_finisher.highlight_edge_gpu import source_work
+    record,session,worker,token,patch=setup(monkeypatch)
+    received=[]
+    monkeypatch.setattr(retouch_gpu,'solve',lambda *a,**kw:received.append(kw['priority']) or patch)
+    try:
+        with source_work(priority=priority):
+            assert retouch_routes.solve_record(session,record,worker,token,None,lambda:None) is patch
+        assert received==[priority]
+        with source_work(priority=priority,cancelled=lambda:True):
+            with pytest.raises(CancelledError,match='Source repair cancelled'):
+                retouch_routes.solve_record(session,record,worker,token,None,lambda:None)
+        assert received==[priority]
+    finally:worker.close()
