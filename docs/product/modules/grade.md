@@ -1001,13 +1001,24 @@ an unused draft; another row, mode or photo discards it without a history edit.
 Creation and first content use one create command. New behavior checks cover
 drafts, conversion, repeated tool clicks, row selection and first-content edits;
 they have not been run. Interaction-driver migration and real-app screenshots
-remain pending, so keep the brief open. Tests are deferred until after Steve tunes HSL, explicitly
+were pending at the time. Tests are deferred until after Steve tunes HSL, explicitly
 requested October 23; only JavaScript syntax and diff whitespace were checked.
 All eight reference PNGs were reviewed. The reference server responds on
 127.0.0.1:8139; Codex queued its browser tab, but this chat has no controllable
 browser surface for rendered inspection or app screenshots. HSL design and
 real-photo review remain after the control-panel work. Heal/Clone prototypes
 are now available; their quality review remains open (October 23 note below).
+
+**Done (Steve, October 28, 2026).** Steve confirmed the Control Panel modes
+work is finished. The brief is archived at
+`docs/technical/archive/briefs/codex-brief-control-panel-modes-2026-10-23.md`;
+the approved mock-up and reference screenshots stay in
+`docs/design/control-panel-wireframes/`. Later presentation changes (no More
+menu, full-width tabs, header alignment) are recorded under "Control Panel
+presentation" and "Panel alignment" in section 4. Electron drivers that still
+expect the old panel layout are repaired under the prerelease remediation
+plan (`docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md`,
+groups U1 to U3), not here.
 
 ## 5. Open work, in order
 
