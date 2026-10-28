@@ -740,6 +740,7 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | COLOR-DESAT-01 is built in both Color lanes, after Saturation/Vibrance and before HSL; zero amounts are exactly neutral. Starts and fade widths await by-eye review. | Steve’s October 26 brief; built 2026-10-27 |
 | A healing brush in the local adjustment module and hue selection as a local-adjustment mask are required for v1. Hue selection is built October 27; the complete Retouch feature remains open. | Steve, 2026-10-21 |
 | Retouch starts on the CPU, preserving a fallback for later GPU work. Inpaint is the default, targeting PatchMatch with Krita as the main reference; Heal follows darktable/GIMP and Clone shares the brush infrastructure. See the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026). Quality/performance are not yet validated. | Steve, 2026-10-21 |
+| Retouch (all Inpaint methods, Clone and Heal) moves to GPU execution, replacing the October 21 CPU-first decision. CPU fallback must use the same parallel search, iteration order, seeds and candidate rules; route fallback must be visible and logged per photo. No new saved fields. Outside repair footprints existing finished-image tolerances remain; inside, Steve judges labelled crops, with mean and p99.9 differences reported as information. | Steve, 2026-10-28 |
 | Retouch repairs are shared by HDR/SDR and run before crop/rotation and denoise. Content-dependent selections see the repaired source. After repair changes, show Rematch required and retain existing SDR Match controls until an explicit Rematch. The current Match materializes editable controls, not a separate baked photo; imported authored SDR remains independent until explicitly replaced through Match. | Steve, 2026-10-22 |
 | The inspected v3 PatchMatch examples are accepted for proceeding with implementation. Skip further natural-dust study work; Steve will test natural dust manually when the tool and settings exist. This is not general photographic validation. | Steve, 2026-10-22 |
 | Smoother sun and bright-sky gradients: prototype an AgX-style **Attenuate** Highlight Color mode beside the existing modes so Steve can switch between them, with an Attenuation control; the existing modes stay. Judged by eye on HDR crops (sunset IMG_3129), not by hue metrics. | Steve, 2026-10-22 |
@@ -1530,3 +1531,37 @@ high-precision HDR/SDR export and Proof. The independent real-photo ceiling
 check's unrelated Proof byte mismatch and JPEG stress limitation are recorded
 in the refinement note above. Packaging specifications parse; no installer or
 broad GPU sweep was built/run. Photo and sidecar remained read-only.
+
+### Retouch GPU work — October 28, 2026 (in progress)
+
+The GPU-first decision above is approved; the GPU repair solver and per-photo
+fallback disclosures are not yet built. Bounded GPU jobs may reuse the existing
+delivery queue, with complete donor search/source and boundary context. Their
+results must be tested against whole-photo GPU execution before adoption.
+
+CPU Inpaint candidate scoring now partitions targets across all logical cores,
+with below-normal worker priority, preserving each candidate's reduction order
+and the existing Jacobi iteration and seeded proposal order. A separate lane
+team prevents nested repair work from running serially in the shared CPU pool.
+The two-owned-ROI and completed-patch cache limits are unchanged. Target scores
+and donor ordering are checked against a whole-array reference.
+CPU target checkpoint: warm synthetic 24 MP, 12 px spot, CPU preview forced
+unavailable to the GPU, repair commit through accepted frame plus two animation
+frames. Two measured passes after warm-up: Inpaint 2.582-2.604 s native and
+1.007-1.013 s Fit; Clone 2.500-2.532 s native and 0.900-0.914 s Fit; Heal
+2.491-2.705 s native and 0.913-0.917 s Fit. Repair acknowledgement alone was
+0.288-0.398 s. Native presentation misses the two-second target; this does not
+establish that shared search is the cause or that two seconds is unreachable.
+No separate CPU repair method was introduced. GPU solving, bounded/full-image
+agreement, route disclosure and DSC04375 differences/crops are still pending.
+Results: `codebase/output/retouch-cpu-fallback/result.json`.
+Validation at this checkpoint: exact candidate-score/donor-order and lane
+cancellation checks pass (3); existing repair behavior checks pass (68).
+Fast suites: Node 650 passed / 2 existing failures; Python 2687 passed / 3 skipped /
+3 existing failures. The failures remain the preset-header contract,
+`test_rgb_description_precedes_pixels_and_keeps_publication_guards[None]`,
+`test_library_native_source_uses_same_repair_before_reduction` (`defer_store`),
+selected-source CPU fallback mock, and Single's missing `HDRLibraryScreenPreviews`
+mock. Logs: `codebase/output/retouch-node-check.log` and
+`codebase/output/retouch-python-check.log`. No installer or push; scratch is
+below 0.1 GB after removing generated scroll photos and temporary test profiles.

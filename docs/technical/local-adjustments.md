@@ -769,3 +769,29 @@ stale/refused/truncated updates, held-texture memory accounting and transformed-
 fallback. The Inpaint
 Electron check also compares a refreshed preview sample with a full reload.
 The repair algorithm, project recipes and delivery processing are unchanged.
+
+### Retouch GPU decision — October 28, 2026 (implementation in progress)
+
+GPU first now applies to Inpaint, Clone and Heal; the October 21 CPU-first
+exception is superseded. GPU and CPU must share Jacobi propagation phases,
+seed consumption and candidate acceptance, with only rare floating-point ties
+allowed to change donors. CPU scoring partitions target rows over a machine-sized
+below-normal-priority lane team and joins every lane before releasing ROI owners.
+The coordinator does not occupy that team, avoiding nested-executor deadlock.
+
+The approved GPU transport is a bounded operation on the existing delivery
+queue. Inpaint includes its whole donor search rectangle; Clone/Heal include
+all source samples and Heal's boundary ring. Bounded and whole-photo GPU
+results require a behavior check. This transport, GPU solving, route notices,
+DSC04375 crop review and timings remain open. No saved fields were added.
+The initial CPU feasibility checkpoint misses the two-second native-view target
+at the finished frame: Inpaint 2.582-2.604 s, Clone 2.500-2.532 s, Heal
+2.491-2.705 s. Fit is 0.900-1.013 s. These are warm synthetic 24 MP measurements
+of a 12 px spot, not DSC04375 validation. Repair acknowledgement is 0.288-0.398 s;
+most elapsed time is CPU preview presentation. This does not establish that
+matching GPU search makes the target unreachable. No alternative search has
+been substituted. A first timing run accidentally retained AVIF Full transport
+and is excluded; the reported samples force GPU unavailable and use accepted
+Raw RGBA8 CPU frames. A native-to-Fit navigation wait timed out in the driver;
+Fit was measured independently from a fresh disposable session. The driver now
+starts at Fit before native view, and writes each completed sample immediately.

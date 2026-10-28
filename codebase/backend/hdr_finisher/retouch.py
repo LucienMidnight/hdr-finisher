@@ -311,13 +311,9 @@ class CpuInpaint:
         confidence[defect[ty, tx]] = 0.25
 
         def score(candidate, target):
-            sy = candidate[:, 0, None] + offsets[:, 0]
-            sx = candidate[:, 1, None] + offsets[:, 1]
-            donor_mean = source_mean[candidate[:, 0], candidate[:, 1]]
-            diff = source[sy, sx] - target
-            if align_tone:
-                diff -= donor_mean[:, None, :]
-            return np.sum(diff * diff * confidence[..., None], axis=(1, 2))
+            from .retouch_parallel import score as parallel_score
+            return parallel_score(candidate, target, source, source_mean, offsets,
+                                  confidence, align_tone, checkpoint)
 
         for iteration in range(settings.iterations):
             checkpoint()
