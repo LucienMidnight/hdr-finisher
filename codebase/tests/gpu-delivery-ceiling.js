@@ -6,8 +6,9 @@ const execute=require("node:util").promisify(execFile);
 const output=path.resolve(__dirname,"../output/gpu-delivery-ceiling",String(Date.now()));
 fs.mkdirSync(output,{recursive:true});
 const original=process.env.HDR_CEILING_RAW||"D:/test-photos-delete-later/DSC07060.ARW";
-const source=path.join(output,path.basename(original));
-fs.copyFileSync(original,source);
+const photos=path.resolve('output/test-photos');fs.mkdirSync(photos,{recursive:true});
+const source=path.join(photos,path.basename(original));
+if(!fs.existsSync(source))fs.copyFileSync(original,source);
 const python=path.resolve(__dirname,"../.venv/Scripts/python.exe");
 const pythonEnv={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
 const document=JSON.parse(execFileSync(python,["-c",
