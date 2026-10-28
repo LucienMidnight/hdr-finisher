@@ -10,6 +10,8 @@
       || JSON.stringify(preset.values).length > 200000) throw Error("Invalid grading preset file.");
     return {groupId:preset.groupId,name:preset.name.trim().replace(/\s+/g," "),
       recipeVersion:Number.isInteger(preset.recipeVersion) && preset.recipeVersion > 0 ? preset.recipeVersion : 1,
+      ...(preset.app_version ? {app_version:preset.app_version} : {}),
+      ...(preset.section_versions ? {section_versions:JSON.parse(JSON.stringify(preset.section_versions))} : {}),
       values:JSON.parse(JSON.stringify(preset.values))};
   }
   function encode(presets) {

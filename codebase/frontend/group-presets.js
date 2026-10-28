@@ -108,6 +108,12 @@ async function listSavedGroupPresets(groupId) {
 }
 
 async function persistGroupPreset(preset) {
+  if (!preset.app_version) {
+    const response = await fetch("/api/saved-grade/read", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"adjustments",value:{}})});
+    if (!response.ok) throw Error("Preset version could not be recorded.");
+    const version = await response.json();
+    preset = {...preset,app_version:version.app_version,section_versions:version.section_versions};
+  }
   return window.HDRApplicationShell?.saveGradingPreset(preset);
 }
 
@@ -188,7 +194,7 @@ function appendGroupPresetRow(preset) {
   apply.type = "button";
   apply.className = "button-secondary";
   apply.textContent = "Apply";
-  apply.addEventListener("click", () => applyGroupPreset(preset));
+  apply.addEventListener("click", () => void groupPresetAction(() => applyGroupPreset(preset)));
   row.append(name, apply);
   if (!preset.builtIn) {
     for (const [title, action] of [["Rename", renameGroupPreset], ["Update", updateGroupPreset]]) {
@@ -299,7 +305,7 @@ async function renameGroupPreset(preset) {
   if(name===preset.name)return;
   const existing=[...builtInGroupPresets(context),...await listSavedGroupPresets(context.groupId)];
   if(existing.some(p=>p.id!==preset.id && p.name.toLocaleLowerCase()===name.toLocaleLowerCase()))throw Error("That preset name is already taken.");
-  const saved=await persistGroupPreset({groupId:preset.groupId,name,recipeVersion:preset.recipeVersion,values:preset.values});
+  const saved=await persistGroupPreset({groupId:preset.groupId,name,recipeVersion:preset.recipeVersion,values:preset.values,app_version:preset.app_version,section_versions:preset.section_versions});
   if(saved.id!==preset.id)await removeGroupPreset(preset);
   await renderGroupPresetList();els.groupPresetName.focus();els.groupPresetStatus.textContent=`Renamed to “${name}”.`;
 }
@@ -326,7 +332,7 @@ async function exportGroupPresetFile() {
 async function importGroupPresetText(text,context=state.groupPresetContext) {
   if(!context || state.groupPresetContext!==context)return;
   const imported=HDRGradingPresetFiles.decode(text);
-  if(imported.some(p=>p.groupId!==context.groupId || Object.keys(p.values).some(path=>!context.paths.includes(path))))
+  if(imported.some(p=>p.groupId!==context.groupId || Object.keys(p.values).some(path=>!presetPathAllowed(context,path))))
     throw Error("This file contains presets for another adjustment group. Open that group’s presets to import it.");
   const existing=[...builtInGroupPresets(context),...await listSavedGroupPresets(context.groupId)];
   const planned=HDRGradingPresetFiles.keepBoth(imported,existing);
@@ -348,24 +354,47 @@ async function importGroupPresetFile() {
   }
 }
 
-function applyGroupPreset(preset) {
+function presetPathAllowed(context,path) {
+  const parts=path.split(".");
+  if(parts.some(key=>["__proto__","prototype","constructor"].includes(key)))return false;
+  if(context.paths.includes(path))return true;
+  // Old fields in a known panel still reach the saved reader and its notice.
+  const legacyTone = ["lift","gamma","gain","shadow","shadow_lift","lift_pivot","gamma_pivot","gain_pivot","lift_range","gamma_range","gain_range"];
+  return context.group === "tone" && parts.length === 2 && parts[0] === context.lane && legacyTone.includes(parts[1]);
+}
+
+async function applyGroupPreset(preset) {
   const context = state.groupPresetContext;
   if (!context || preset.groupId !== context.groupId || !preset.values || typeof preset.values !== "object") return;
-  // A preset outlives the settings it was saved with: a setting the app no
-  // longer has is left out, so an older preset still applies.
-  const defaults = context.group === "denoise" ? { denoise: defaultDenoiseDocument() } : defaultAdjustments();
-  context.paths.forEach((path) => {
-    if (!Object.hasOwn(preset.values, path)) return;
-    const value = JSON.parse(JSON.stringify(preset.values[path]));
-    if (context.group === "film-look") {
-      setGroupPresetPathValue(context, path, HDRFilmCharacter.expand(value));
-      return;
+  const isDenoise = context.group === "denoise";
+  const candidate = isDenoise ? {denoise:JSON.parse(JSON.stringify(state.denoise))} : JSON.parse(JSON.stringify(state.adjustments));
+  for (const path of Object.keys(preset.values)) {
+    if (!presetPathAllowed(context,path)) throw Error("This preset contains settings for another group.");
+    const parts = path.split("."); let parent = candidate;
+    for (const key of parts.slice(0,-1)) parent = parent[key] ||= {};
+    parent[parts.at(-1)] = JSON.parse(JSON.stringify(preset.values[path]));
+    if (context.group === "film-look" && parent[parts.at(-1)] && typeof parent[parts.at(-1)] === "object" && !Array.isArray(parent[parts.at(-1)])) {
+      const raw = parent[parts.at(-1)];
+      const expanded = HDRFilmCharacter.expand(raw);
+      parent[parts.at(-1)] = {...raw,...expanded,stock_overrides:[...new Set([...(raw.stock_overrides || []),...expanded.stock_overrides])]};
     }
-    const known = getValueByPath(defaults, path);
-    const plain = (item) => Boolean(item) && typeof item === "object" && !Array.isArray(item);
-    setGroupPresetPathValue(context, path, plain(value) && plain(known)
-      ? Object.fromEntries(Object.entries(value).filter(([key]) => Object.hasOwn(known, key)))
-      : value);
+  }
+  const response = await fetch("/api/saved-grade/read",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({model:isDenoise?"denoise":"adjustments",value:isDenoise?candidate.denoise:candidate,app_version:preset.app_version,section_versions:preset.section_versions})});
+  const saved = await response.json();
+  if (!response.ok) { els.groupPresetStatus.textContent = projectIo.responseErrorMessage(saved,"The preset could not be read."); return; }
+  if (saved.notice) {
+    const action = await window.HDRDialogs.choose(saved.notice.reason + " The preset file stays unchanged.",
+      [{label:"Leave as is",value:"leave",cancel:true},{label:"Revert to original",value:"original"},{label:"Continue without them",value:"continue",primary:true}],
+      {title:"Preset needs attention"});
+    if (action === "original") { await window.HDRGradeSaving?.revertOriginal(); return; }
+    if (action !== "continue") return;
+  }
+  const readable = isDenoise ? {denoise:saved.value} : saved.value;
+  context.paths.forEach((path) => {
+    if (!Object.hasOwn(preset.values, path) && !saved.notice) return;
+    const value = JSON.parse(JSON.stringify(getValueByPath(readable, path)));
+    setGroupPresetPathValue(context, path, value);
   });
   if (context.group === "denoise") {
     const runtime = state.denoiseRuntime[context.lane];

@@ -61,6 +61,15 @@ queued deliveries. Live edits stay strict. Brief:
 - Design proposal for Steve: retain the existing attention dialog and badge
   styling, adding the same attention button to Single's caption. No restyling.
 
+### October 28 preset record
+
+Presets now pass through the same saved-grade reader before application, with
+readable group settings and explicit choices for damaged or newer data. Import,
+export and rename retain writer/section versions; explicit preset replacement
+keeps a content-addressed original file (or a browser preference backup).
+Six portable-preset tests pass, including future-version round trips. The full
+JavaScript run retains the two unrelated failures recorded above.
+
 ## October 27: Tone sliders replace Lift/Gamma/Gain (Steve's decision, v1)
 
 **Naming rule for the whole app.** "Exposure" always means an equal change in

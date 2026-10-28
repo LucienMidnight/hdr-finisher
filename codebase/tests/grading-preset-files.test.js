@@ -32,3 +32,9 @@ test("search narrows built-in and saved names and clearing restores them",()=>{
  assert.deepEqual(files.filter(presets,"absent"),[]);
  assert.deepEqual(files.filter(presets,""),presets);
 });
+
+
+test("portable presets retain newer writer and section format versions", () => {
+  const original = {groupId:"hdr-tone",name:"Future",recipeVersion:1,values:{"hdr.exposure":.5},app_version:"99.0.0",section_versions:{tone:9}};
+  assert.deepEqual(files.decode(files.encode([original]))[0],original);
+});

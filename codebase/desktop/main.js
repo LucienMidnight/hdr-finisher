@@ -155,7 +155,7 @@ function cleanGradingPresetPayload(value) {
   const values = JSON.parse(JSON.stringify(value.values));
   if (JSON.stringify(values).length > 200000) throw new Error("The grading preset is too large.");
   const recipeVersion = Number.isInteger(value?.recipeVersion) && value.recipeVersion > 0 ? value.recipeVersion : 1;
-  return { groupId, name, recipeVersion, values };
+  return { groupId, name, recipeVersion, values, ...(value.app_version ? {app_version:value.app_version} : {}), ...(value.section_versions ? {section_versions:value.section_versions} : {}) };
 }
 
 function gradingPresetFilename(groupId, name) {
@@ -186,6 +186,12 @@ function saveGradingPreset(value) {
   const filename = gradingPresetFilename(preset.groupId, preset.name);
   const destination = path.join(directory, filename);
   const temporary = `${destination}.tmp`;
+  if (fs.existsSync(destination)) {
+    const original = fs.readFileSync(destination);
+    const digest = crypto.createHash("sha256").update(original).digest("hex");
+    const backup = `${destination}.${digest}.backup`;
+    if (!fs.existsSync(backup)) fs.writeFileSync(backup, original, {flag:"wx"});
+  }
   fs.writeFileSync(temporary, JSON.stringify({ schemaVersion: 1, ...preset }, null, 2));
   fs.renameSync(temporary, destination);
   return { id: filename, ...preset };

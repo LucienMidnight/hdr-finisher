@@ -194,7 +194,7 @@ def choose_saved_grade(store, session_id, action):
     """Explicit choice for a project; Library choices use its existing writer."""
     with store._lock:
         session = store.get(session_id)
-        if action == "leave" or not session.grade_notice:
+        if action == "leave" or not session.grade_notice and action != "original":
             return {"session": session.to_payload()}
         if action == "dismiss":
             if any(i["kind"] != "look" for i in session.grade_notice["issues"]):
@@ -213,7 +213,8 @@ def choose_saved_grade(store, session_id, action):
         if _sha256_file(project) != getattr(session, "grade_project_fingerprint", None):
             raise ProjectError("The project changed elsewhere. Open it again before choosing.")
         consent = session.grade_project_fingerprint
-        raw = json.dumps(session.grade_original, ensure_ascii=False).encode("utf-8")
+        original = session.grade_original if session.grade_original is not None else session.edit_document().model_dump(mode="json")
+        raw = json.dumps(original, ensure_ascii=False).encode("utf-8")
         backups = dict(getattr(session, "grade_project_backups", {}))
         backups["grade-backups/" + hashlib.sha256(raw).hexdigest() + ".json"] = raw
         previous_notice = session.grade_notice

@@ -306,7 +306,13 @@
     } finally { asking = false; byId("grade-revert-menu").disabled = false; byId("grade-revert-saved").disabled = false; }
   }
   byId("grade-revert-menu").addEventListener("click",()=>{ revertFlight = revertMenu().catch(error=>status.post({id:"grade-revert",severity:"error",message:error.message})); });
-  window.HDRGradeSaving = { revertOriginal: () => revertMenu("original"), reviewGradeNotice: () => {noticeSession = null; return reviewGradeNotice();}, pauseForProjectOpen, refresh, prepare, open, save, saveProject, leave, render, activated, resolve, offerRecovery,
+  window.HDRGradeSaving = { revertOriginal: async () => {
+    if (current) return revertMenu("original");
+    const response=await fetch(`/api/session/${state.session.session_id}/grade-read-choice`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"original"})});
+    const value=await response.json();
+    if(!response.ok)throw Error(projectIo.responseErrorMessage(value,"The photo could not be reverted."));
+    await activateDesktopSession(value.session,state.projectPath,null,{stayOnTab:true});
+  }, reviewGradeNotice: () => {noticeSession = null; return reviewGradeNotice();}, pauseForProjectOpen, refresh, prepare, open, save, saveProject, leave, render, activated, resolve, offerRecovery,
     item: () => currentPath, ready: () => Boolean(current && readySession === current),
     active: () => Boolean(current && state.session?.session_id === current),
     hasGrade: id => id === current && loadedGrade, conflict: () => Boolean(result.conflict) };

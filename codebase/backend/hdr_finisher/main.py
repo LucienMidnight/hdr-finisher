@@ -851,8 +851,13 @@ def read_saved_grade(request: dict):
     model = models.get(request.get("model"))
     if model is None: raise HTTPException(400, "Choose a saved grade type.")
     try:
-        saved = validate_saved(model, request.get("value"))
-        return {"value": saved.model_dump(mode="json"), "notice": notice(saved)}
+        from .models import EditDocument
+        key = "denoise" if request.get("model") == "denoise" else "global_adjustments"
+        saved = validate_saved(EditDocument, {"source":{"filename":"Preset", "luminance":{"luminance_semantics":"scene_relative","transfer_function":"unknown"}},
+            "hdr_reference_white_nits":203, key:request.get("value"),
+            "app_version":request.get("app_version"), "section_versions":request.get("section_versions", {})})
+        return {"value": getattr(saved, key).model_dump(mode="json"), "notice": notice(saved),
+                "app_version":saved.app_version, "section_versions":saved.section_versions}
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
