@@ -146,3 +146,66 @@ def test_project_choices_and_embedded_original(tmp_path, action):
             assert len(names)==1 and json.loads(archive.read(names[0]))==raw
             assert json.loads(archive.read("edit-state.json"))["global_adjustments"]["hdr"]["exposure"]==0
     store.clear()
+
+def test_virtual_copy_choice_reaches_sidecar(library):
+    from hdr_finisher.library_copies import LibraryCopies
+    photo,store,marks,grades,errors,sidecar,raw=library
+    LibraryCopies(marks)
+    doc=json.loads(sidecar.read_text())
+    doc["grade"]=None
+    doc["virtual_copies"]=[{"photo_id":"copy-one","name":"Copy","marks":{},"grade":raw}]
+    sidecar.write_text(json.dumps(doc),encoding="utf-8")
+    key=str(photo)+"|copy|copy-one"
+    grades.recover_grades([{"path":key,"revision":errors.revision(key)}],"continue")
+    marks.writer.drain()
+    saved=json.loads(sidecar.read_text())
+    assert raw in saved["virtual_copies"][0]["grade_history"]["grade_backups"]
+    assert saved["virtual_copies"][0]["grade"]["global_adjustments"]["hdr"]["exposure"]==0
+
+
+def test_removed_panel_defaults_are_quiet():
+    raw = payload({"grade":{"global_adjustments":{"hdr":{"film_look":{
+        "reference_model":"custom", "bloom_enabled":True, "bloom_sensitivity":80,
+        "bloom_radius":.5, "bloom_highlight_detail":75, "halation_sensitivity":75}}}}})
+    assert notice(validate_saved(EditDocument, raw)) is None
+    raw["global_adjustments"]["hdr"]["film_look"]["bloom_amount"] = 15
+    assert notice(validate_saved(EditDocument, raw))["sections"] == ["HDR Film Look"]
+
+
+def test_standalone_broken_adjustments_have_defaults():
+    value=validate_saved(AdjustmentState, "damaged")
+    assert value == AdjustmentState() and notice(value)
+
+
+def test_replay_failure_skips_frozen_repair_without_changing_original(tmp_path):
+    from hdr_finisher.models import RepairRecord
+    from hdr_finisher.retouch_recipe import InpaintRecipe
+    photo=tmp_path/"photo.png"; Image.new("RGB",(64,32),(70,90,100)).save(photo)
+    store=SessionStore(); source=store.prepare_session(photo,owns_source_path=False)
+    doc=source.edit_document()
+    doc.global_adjustments.hdr.saturation=1.25
+    doc.repairs=[RepairRecord(id="dust",recipe=InpaintRecipe(source_size=(80,64), search_rect=(16,8,64,56),
+        points=[dict(x=.5,y=.5)], radius_px=6, hardness=1,settings=dict(seed=42,iterations=2,patch_radius=2)))]
+    raw=doc.model_dump(mode="json")
+    saved=validate_saved(EditDocument,raw)
+    opened=open_document(store,saved,photo)
+    assert not opened.repairs
+    assert opened.adjustments.hdr.saturation == 1.25
+    assert opened.grade_notice["issues"][0]["repair_id"] == "dust"
+    assert opened.grade_original == raw
+    store.clear()
+
+
+def test_look_notice_dismissal_survives_library_reopen(library):
+    photo,store,marks,grades,errors,sidecar,raw=library
+    raw["global_adjustments"]["hdr"]["exposure"]=0
+    raw["global_adjustments"]["hdr"]["lift"]=.5
+    raw.pop("app_version",None)
+    settings=json.loads(sidecar.read_text());settings["grade"]=raw
+    sidecar.write_text(json.dumps(settings),encoding="utf-8")
+    report=notice(validate_saved(EditDocument,raw))
+    errors.observe_grade(str(photo),report)
+    before=sidecar.read_bytes()
+    grades.recover_grades([{"path":str(photo),"revision":errors.revision(str(photo))}],"dismiss")
+    assert PictureErrors(marks).get(str(photo))["ignored"]
+    assert sidecar.read_bytes()==before

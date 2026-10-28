@@ -163,7 +163,7 @@
   }
   // One thumbnail scene size, scaled to fit any grid or filmstrip cell.
   const thumbnailEdge = () => 640;
-  const pictureErrors = HDRLibraryPictureErrors.create({api, status, changed: async (paths, result = {}, requeue = false) => {
+  const pictureErrors = HDRLibraryPictureErrors.create({api, status, selection: () => [...state.selection], changed: async (paths, result = {}, requeue = false) => {
     invalidateGradePictures(paths);
     for (const [key] of recentPictures) if (paths.some(path => key.startsWith(path + "|"))) recentPictures.delete(key);
     if (result.session) postParent("grade-replaced", {session:result.session});
@@ -182,6 +182,7 @@
   }});
   window.addEventListener("library-picture-errors-changed", () => {
     for (const cell of [...state.cells.values(), ...state.filmCells.values()]) pictureErrors.paint(cell);
+    if (state.view === "single") updateSingleCaption();
   });
   const tilePool = HDRLibraryTilePool.create(undefined, cell => {
     cell.controller.abort(); cell.element.remove();
@@ -947,6 +948,13 @@
     if (compare.enabled()) compare.captions();
     if (!selected()) return;
     $("single-caption").replaceChildren(document.createTextNode(selected().name), culling.strip(selected()));
+    const warning = pictureErrors.get(selected().path);
+    if (warning?.grade_warning && !warning.ignored) {
+      const button = document.createElement("button"); button.type = "button"; button.className = "button-secondary";
+      button.textContent = "Grade needs attention"; button.title = warning.reason;
+      button.addEventListener("click", () => pictureErrors.show(warning));
+      $("single-caption").append(button);
+    }
   }
   function select(index, scroll = false, mode = "single") {
     if(state.folderOpen)state.folderOpen.restore=null;

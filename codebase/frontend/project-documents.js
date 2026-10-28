@@ -27,8 +27,10 @@ function syncProjectBadge() {
   const projectName = state.projectPath
     ? String(state.projectPath).split(/[/\\]/).pop()
     : state.session?.source?.filename || "No project";
-  els.badge.textContent = state.documentDirty ? `${projectName} · Unsaved` : projectName;
-  els.badge.className = `badge ${state.documentDirty ? "warn" : "neutral"}`;
+  els.badge.onclick = () => window.HDRGradeSaving?.reviewGradeNotice();
+  els.badge.title = state.session?.grade_notice?.reason || "";
+  els.badge.textContent = state.session?.grade_notice ? `${projectName} · Grade needs attention` : state.documentDirty ? `${projectName} · Unsaved` : projectName;
+  els.badge.className = `badge ${state.documentDirty || state.session?.grade_notice ? "warn" : "neutral"}`;
 }
 
 function syncDesktopDocumentState() {

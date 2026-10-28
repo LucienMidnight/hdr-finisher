@@ -46,7 +46,20 @@ queued deliveries. Live edits stay strict. Brief:
   existing durable writer, including read-only-folder recovery.
 - Checks for this commit: 22 focused reader/on-disk choice checks passed.
   The intended old rejection expectation now checks section recovery.
-  UI and complete fast/app checks are still in progress.
+- Recovery choices now use the existing Library attention dialog for one photo
+  or selected warnings; Single has an attention button and Grade/Proof share
+  the existing source badge. Saving pauses while a choice is needed. Look-only
+  notices can be dismissed without rewriting the grade. Source defaults are
+  used for an unreadable whole grade; a frozen Retouch recipe that fails replay
+  is individually skipped and named, never regenerated with another fill.
+- Checks: 36 focused reader/choice/Library checks passed, plus four additional
+  default/replay/dismissal checks. Electron shows four real-photo-copy tiles,
+  three warnings, unchanged files on Leave and an original backup on Continue.
+  Required JavaScript checks: 644 passed, two unrelated existing failures in
+  `library-scenes.test.js` (decoder failure) and `library-single-ready.test.js`
+  (missing HDRLibraryScreenPreviews). Full Python checks are still running.
+- Design proposal for Steve: retain the existing attention dialog and badge
+  styling, adding the same attention button to Single's caption. No restyling.
 
 ## October 27: Tone sliders replace Lift/Gamma/Gain (Steve's decision, v1)
 

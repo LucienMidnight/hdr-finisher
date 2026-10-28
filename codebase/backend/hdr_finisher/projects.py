@@ -9,8 +9,6 @@ from pathlib import Path
 import tempfile
 import zipfile
 
-from pydantic import ValidationError
-
 from .models import EditDocument, ProjectResponse
 from .sessions import LoadedSession, SessionStore
 
@@ -108,6 +106,9 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
     session.grade_project_path = project_path
     session.grade_project_backups = backups
     session.grade_project_fingerprint = _sha256_file(project_path)
+    errors = getattr(getattr(getattr(store, "library_grades", None), "marks", None), "picture_errors", None)
+    if errors and session.grade_notice and errors.grade_dismissed(str(project_path), session.grade_original):
+        session.grade_notice = {**session.grade_notice, "dismissed": True}
     return session
 
 
@@ -157,13 +158,15 @@ def _open_document(store, document, source_path, reuse_session_id):
     candidate_session = copy(session)
     candidate_session.retouch_worker = None
     try:
-        repaired = build_repaired_source(candidate_session, document.repairs)
+        from .saved_grades import recover_repairs
+        repaired = recover_repairs(document, candidate_session)
     finally:
         if candidate_session.retouch_worker is not None:
             candidate_session.retouch_worker.close()
     session.grade_notice = getattr(document, "_saved_grade_notice", None)
     session.grade_original = getattr(document, "_saved_grade_original", None)
-    session.adjustments = document.global_adjustments
+    from .saved_grades import whole_grade_fallback
+    session.adjustments = session.starting_adjustments() if whole_grade_fallback(session.grade_notice) else document.global_adjustments
     session.local_adjustments = document.local_adjustments
     session.repairs = document.repairs
     session.denoise = document.denoise
@@ -194,6 +197,11 @@ def choose_saved_grade(store, session_id, action):
         if action == "leave" or not session.grade_notice:
             return {"session": session.to_payload()}
         if action == "dismiss":
+            if any(i["kind"] != "look" for i in session.grade_notice["issues"]):
+                raise ProjectError("Unreadable or newer grades need a choice before dismissing their warning.")
+            errors = getattr(getattr(getattr(store, "library_grades", None), "marks", None), "picture_errors", None)
+            if errors:
+                errors.dismiss_grade(str(getattr(session, "grade_project_path", session.source_path)), session.grade_original)
             session.grade_notice = {**session.grade_notice, "dismissed": True}
             return {"session": session.to_payload()}
         if action not in ("continue", "original"):
@@ -208,6 +216,7 @@ def choose_saved_grade(store, session_id, action):
         raw = json.dumps(session.grade_original, ensure_ascii=False).encode("utf-8")
         backups = dict(getattr(session, "grade_project_backups", {}))
         backups["grade-backups/" + hashlib.sha256(raw).hexdigest() + ".json"] = raw
+        previous_notice = session.grade_notice
         if action == "original":
             clean = session.edit_document().model_copy(deep=True)
             from .models import DenoiseDocumentSettings, PhotoFraming, SdrMatchState
@@ -224,7 +233,6 @@ def choose_saved_grade(store, session_id, action):
         session.grade_project_consent = consent
         session.grade_project_fingerprint = consent
         session.grade_project_backups = backups
-        previous_notice = session.grade_notice
         session.grade_notice = None
         try:
             save_project(session, project)
@@ -238,10 +246,6 @@ def choose_saved_grade(store, session_id, action):
 def _project_path(path: Path) -> Path:
     expanded = path.expanduser().resolve()
     return expanded if expanded.suffix.lower() == ".hdrfinisher" else expanded.with_suffix(".hdrfinisher")
-
-
-# A removed field, and a removed option of a field that still exists.
-_FORGIVEN_ERRORS = frozenset({"extra_forbidden", "literal_error", "enum"})
 
 
 def validate_saved(model, payload: object):
@@ -260,21 +264,6 @@ def _validate_ignoring_unknown_fields(state_payload: object) -> EditDocument:
 
 def validate_saved_document(state_payload: object) -> EditDocument:
     return validate_saved(EditDocument, state_payload)
-
-
-def _drop_field(payload: object, location: tuple) -> bool:
-    """Delete the field a validation error points at; False if it is not there."""
-    container = payload
-    for part in location[:-1]:
-        if isinstance(container, dict) and part in container:
-            container = container[part]
-        elif isinstance(container, list) and isinstance(part, int) and 0 <= part < len(container):
-            container = container[part]
-        # Any other part names a model or union member, not a level of the data.
-    if isinstance(container, dict) and location and location[-1] in container:
-        del container[location[-1]]
-        return True
-    return False
 
 
 def _sha256_file(path: Path) -> str:

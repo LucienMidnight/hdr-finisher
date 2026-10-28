@@ -68,7 +68,7 @@ class PictureErrors:
 
     def all(self):
         with self.marks._lock:
-            paths = self.marks._query("SELECT path FROM picture_errors ORDER BY rowid DESC")
+            paths = self.marks._query("SELECT path FROM picture_errors WHERE path NOT LIKE '@grade:%' ORDER BY rowid DESC")
             return [record for (path,) in paths if (record := self.get(path))]
 
     def save(self, record):
@@ -79,6 +79,15 @@ class PictureErrors:
                            (record["path"], record["revision"], json.dumps(record)))
             db.close()
         return record
+
+    def _grade_receipt(self, path, original):
+        return "@grade:" + sha256(json.dumps([str(path), original, _READER], sort_keys=True).encode()).hexdigest()
+
+    def grade_dismissed(self, path, original):
+        return bool(self.marks._query("SELECT path FROM picture_errors WHERE path=?", (self._grade_receipt(path, original),)))
+
+    def dismiss_grade(self, path, original):
+        self.save(dict(path=self._grade_receipt(path, original), revision=_READER, ignored=True))
 
     def remember(self, path, error, revision):
         if revision != self.revision(path):
@@ -97,9 +106,9 @@ class PictureErrors:
         revision = self.revision(path)
         old = self.get(path)
         if report is None:
-            if old and old.get("grade_warning"): self.clear(path)
+            if old and old.get("grade_warning") and not any("repair_id" in i for i in old.get("notice", {}).get("issues", [])): self.clear(path)
             return None
-        if old and old.get("grade_warning"):
+        if old and old.get("grade_warning") and old.get("notice") == report:
             return old
         return self.save(dict(path=str(path), revision=revision, reason=report["reason"],
                               details="\n".join(item["section"] + ": " + item["reason"] for item in report["issues"]),

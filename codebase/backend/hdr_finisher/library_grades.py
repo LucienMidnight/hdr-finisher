@@ -401,12 +401,15 @@ class LibraryGrades:
                 raw = LibraryDocuments(self.marks).request(path)["grade"]
                 if raw is None: continue
                 saved = validate_saved_document(raw)
-                if not notice(saved): continue
+                report = notice(saved) or (errors.get(path) or {}).get("notice")
+                if not report: continue
+                skipped = {i["repair_id"] for i in report["issues"] if "repair_id" in i}
+                if skipped: saved.repairs = [r for r in saved.repairs if r.id not in skipped]
                 if action in ("leave", "dismiss"):
                     if action == "dismiss":
-                        if any(item["kind"] != "look" for item in notice(saved)["issues"]):
+                        if any(item["kind"] != "look" for item in report["issues"]):
                             raise ValueError("Unreadable or newer grades need a choice before their warning can be dismissed.")
-                        record = errors.observe_grade(path, notice(saved))
+                        record = errors.observe_grade(path, report)
                         errors.save({**record, "ignored": True})
                     continue
                 originals[path] = deepcopy(raw)

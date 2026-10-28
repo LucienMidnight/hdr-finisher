@@ -21,6 +21,80 @@ REMOVED_DEFAULTS = {
     "primaries_section_enabled": True,
 }
 
+# Historical neutral values are used for notices only. No settings are converted.
+PANEL_DEFAULTS = {'FilmLookAdjustments': {'reference_model': 'custom',
+                         'look_strength': 100.0,
+                         'print_strength': 0.0,
+                         'print_contrast': 0.0,
+                         'print_toe': 0.0,
+                         'print_shoulder': 0.0,
+                         'color_density': 0.0,
+                         'red_response': 0.0,
+                         'green_response': 0.0,
+                         'blue_response': 0.0,
+                         'highlight_desaturation': 0.0,
+                         'shadow_desaturation': 0.0,
+                         'grain_enabled': True,
+                         'grain_amount': 0.0,
+                         'grain_size': 50.0,
+                         'grain_softness': 25.0,
+                         'grain_chroma': 0.0,
+                         'grain_film_format': '35mm',
+                         'grain_capture_geometry': 'frame',
+                         'grain_film_type': 'color_negative',
+                         'grain_custom_width_mm': 36.0,
+                         'grain_custom_height_mm': 24.0,
+                         'grain_shadow_response': 100.0,
+                         'grain_midtone_response': 100.0,
+                         'grain_highlight_response': 100.0,
+                         'grain_view_map': False,
+                         'film_resolution': 100.0,
+                         'halation_enabled': True,
+                         'halation_amount': 0.0,
+                         'halation_sensitivity': 75.0,
+                         'halation_radius': 0.2,
+                         'halation_hue_offset': 0.0,
+                         'halation_saturation': 75.0,
+                         'halation_view_map': False,
+                         'bloom_enabled': True,
+                         'bloom_amount': 0.0,
+                         'bloom_sensitivity': 80.0,
+                         'bloom_radius': 0.5,
+                         'bloom_highlight_detail': 75.0,
+                         'image_structure_enabled': True,
+                         'image_softness': 0,
+                         'microcontrast': 0},
+ 'SDRAdjustments': {'rendering_version': 'highlight_v2',
+                    'base_section_enabled': True,
+                    'use_authored_base': True,
+                    'highlight_recovery': 0.6,
+                    'highlight_compression_start_percent': 50.0,
+                    'highlight_compression_source_peak_percent': 100.0,
+                    'highlight_compression_manual_peak_percent': 100.0,
+                    'tone_contrast': 1.0,
+                    'tone_skew': 0.0,
+                    'shadow': 0.0,
+                    'tone_mapper': 'filmic'},
+ 'DenoiseAnalysisSettings': {'algorithm_version': 'adaptive-atrous-v1',
+                             'preset': 'photo_fine',
+                             'levels': 2,
+                             'noise_threshold': 3.0,
+                             'luma_sigma': 0.035,
+                             'chroma_sigma': 0.035}}
+
+def removed_default(original, loc):
+    field = str(loc[-1])
+    if "film_look" in loc:
+        return PANEL_DEFAULTS["FilmLookAdjustments"].get(field)
+    if "denoise" in loc or "analysis" in loc:
+        return PANEL_DEFAULTS["DenoiseAnalysisSettings"].get(field)
+    if "sdr" in loc:
+        return REMOVED_DEFAULTS.get(field, PANEL_DEFAULTS["SDRAdjustments"].get(field))
+    return REMOVED_DEFAULTS.get(field)
+
+def whole_grade_fallback(report):
+    return any(i["section"] == "Saved grade" and i["kind"] == "unreadable" and not i["path"] for i in (report or {}).get("issues", []))
+
 def section(field):
     if field in REMOVED_DEFAULTS:
         return "tone"
@@ -161,13 +235,21 @@ def read_saved(model, original):
                 if _remove(data, loc):
                     dropped.append(".".join(map(str, loc)))
                     field = str(loc[-1])
-                    neutral = REMOVED_DEFAULTS.get(field, None)
+                    neutral = removed_default(original, loc)
                     # Range/centre controls have no effect without their strength.
                     # The strength itself provides the single look-change notice.
                     parent = _at(original, loc[:-1])
-                    inactive = field == "primaries_section_enabled" or field.endswith(("_pivot", "_range")) and field.split("_")[0] in ("lift", "gamma", "gain")
+                    inactive = field in ("primaries_section_enabled", "algorithm_version", "rendering_version") or field.endswith(("_pivot", "_range")) and field.split("_")[0] in ("lift", "gamma", "gain")
                     if field in ("lift", "gamma", "gain") and isinstance(parent, dict) and parent.get("primaries_section_enabled") is False:
                         inactive = True
+                    root = ("global_adjustments",) if model is EditDocument else ()
+                    if "denoise" in loc:
+                        lane = next((key for key in loc if key in ("hdr", "sdr")), None)
+                        inactive |= _at(original, ("denoise", lane, "enabled")) is False
+                    if loc[:1] == ("sdr_match",) and _at(original, ("sdr_match", "active")) is not True:
+                        inactive = True
+                    if "film_look" in loc and isinstance(parent, dict):
+                        inactive |= parent.get("look_strength") == 0
                     if not inactive and old != neutral and old not in (None, False, 0, {}, [], ""):
                         name = "Lift/Gamma/Gain" if field.startswith(("lift", "gamma", "gain")) else field.replace("_", " ").capitalize()
                         issue(label, f"This photo used {name}, which this version replaced. It may look different.", loc, "look")
@@ -194,6 +276,8 @@ def read_saved(model, original):
                     data["hdr_reference_white_nits"] = 203
                 elif not changed:
                     raise
+            elif not loc and model.__name__ in ("AdjustmentState", "DenoiseDocumentSettings", "HDRAdjustments", "SDRAdjustments"):
+                data = {}
             else:
                 # Standalone damaged locals/repairs must be skipped by their list
                 # owner, never fabricated with a different mask or fill.
@@ -202,8 +286,44 @@ def read_saved(model, original):
         raise ValueError("Saved grade recovery did not finish.")
     if issues:
         report = dict(issues=issues, newer=newer, needs_choice=True,
-                      reason=" ".join(dict.fromkeys(item["reason"] for item in issues)),
+                      reason=" ".join(dict.fromkeys(item["section"] + ": " + item["reason"] for item in issues)),
                       sections=list(dict.fromkeys(item["section"] for item in issues)))
         object.__setattr__(value, "_saved_grade_notice", report)
         object.__setattr__(value, "_saved_grade_original", deepcopy(original))
     return value, dropped
+
+
+def recover_repairs(document, session, checkpoint=lambda: None):
+    """Replay saved repairs without allowing one damaged repair to hide a photo.
+
+    The normal successful path is unchanged. A failed saved replay checks each
+    frozen recipe in order; live commands still use the strict replay function.
+    Resource failures and cancellation are never mistaken for damaged recipes.
+    """
+    from .retouch_source import build_repaired_source
+    def replay(records):
+        return build_repaired_source(session, records, checkpoint)
+    try:
+        return replay(document.repairs)
+    except ValueError as error:
+        if any(word in str(error).lower() for word in ("memory", "cancel", "busy")):
+            raise
+    raw = deepcopy(getattr(document, "_saved_grade_original", document.model_dump(mode="json")))
+    report = deepcopy(notice(document)) or dict(issues=[], newer=False, needs_choice=True)
+    readable = []
+    pixels = session.retouch_original
+    for index, repair in enumerate(document.repairs):
+        try:
+            pixels = replay([*readable, repair])
+            readable.append(repair)
+        except ValueError as error:
+            if any(word in str(error).lower() for word in ("memory", "cancel", "busy")):
+                raise
+            report["issues"].append(dict(section="Retouch repair " + str(getattr(repair, "name", None) or repair.id),
+                reason="Could not read this repair; it was skipped: " + str(error), path=f"repairs.{index}", kind="unreadable", repair_id=repair.id))
+    document.repairs = readable
+    report["reason"] = " ".join(dict.fromkeys(i["section"] + ": " + i["reason"] for i in report["issues"]))
+    report["sections"] = list(dict.fromkeys(i["section"] for i in report["issues"]))
+    object.__setattr__(document, "_saved_grade_notice", report)
+    object.__setattr__(document, "_saved_grade_original", raw)
+    return pixels

@@ -22,7 +22,7 @@
     const dirty = state.documentDirty;
     const token = `${state.editRevision}:${state.globalEditGeneration}:${dirty}`;
     if (token !== lastToken) { lastToken = token; lastChange = performance.now(); }
-    byId("grade-save-state").textContent = result.conflict ? "Saving paused — grade changed elsewhere"
+    byId("grade-save-state").textContent = result.grade_notice ? "Saving paused — grade needs attention" : result.conflict ? "Saving paused — grade changed elsewhere"
       : result.reason ? "Waiting to write settings — grade kept safely in the Library"
       : saving || result.pending ? "Saving…" : dirty ? "Unsaved changes"
       : autosave() ? "All changes saved" : "No unsaved changes";
@@ -86,6 +86,7 @@
       await flush();
       const savedToken = `${state.editRevision}:${state.globalEditGeneration}`;
       result = await command("save");
+      if (result.grade_notice) { busy = false; await reviewGradeNotice(); return false; }
       state.documentDirty = Boolean(result.dirty) || result.conflict || savedToken !== `${state.editRevision}:${state.globalEditGeneration}`;
       if (result.conflict && (!automatic || !conflictShown)) {
         busy = false;
@@ -180,7 +181,7 @@
       }
       render();
       if (result.conflict && !conflictShown) { busy = false; await resolve(); return; }
-      if (!result.conflict && state.documentDirty && autosave() && performance.now() - lastChange >= 900) {
+      if (!result.conflict && !result.grade_notice && state.documentDirty && autosave() && performance.now() - lastChange >= 900) {
         busy = false; await save({ automatic: true });
       }
     } catch (error) {
@@ -191,6 +192,39 @@
     readySession = session.session_id;
     if (projectPath || session.session_id !== current) { current = null; result = {}; }
     render();
+    if (session.grade_notice && !session.grade_notice.dismissed) void reviewGradeNotice();
+  }
+  let noticeSession = null;
+  async function reviewGradeNotice() {
+    const session = state.session;
+    const report = result.grade_notice || session?.grade_notice;
+    if (!report || asking || noticeSession === session?.session_id) return;
+    asking = true; noticeSession = session.session_id;
+    try {
+      const choices = [{label:"Leave as is", value:"leave", cancel:true},
+        {label:"Revert to original",value:"original"},
+        {label:"Continue without them",value:"continue",primary:true}];
+      if (report.issues?.every(item => item.kind === "look")) choices.push({label:"Dismiss notice",value:"dismiss"});
+      const action = await window.HDRDialogs.choose(report.reason + " Affected: " + report.sections.join(", ") + ". The original grade is kept when replaced.", choices, {title:"Grade needs attention"});
+      if (!action || action === "leave") return;
+      const url = current ? "/api/library/grade-read-choices" : "/api/session/" + session.session_id + "/grade-read-choice";
+      let body = {action};
+      if (current) {
+        const health = await fetch("/api/library/health").then(r=>r.json());
+        const record = health.picture_errors.find(item=>item.path === currentPath);
+        if (!record) throw Error("Refresh the Library picture to review its latest warning.");
+        body.photos = [{path:currentPath,revision:record.revision}];
+      }
+      const response = await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      const payload = await response.json();
+      if (!response.ok) throw Error(projectIo.responseErrorMessage(payload,"The choice could not be saved."));
+      if (payload.session) {
+        if (current) await refresh(payload.session);
+        else await activateDesktopSession(payload.session, state.projectPath, null, {stayOnTab:true});
+      }
+      result = {}; render(); syncDesktopDocumentState();
+    } catch(error) {status.post({id:"grade-read",severity:"error",message:error.message});}
+    finally {asking = false;}
   }
   async function saveProject() {
     const dirty = state.documentDirty;
@@ -272,7 +306,7 @@
     } finally { asking = false; byId("grade-revert-menu").disabled = false; byId("grade-revert-saved").disabled = false; }
   }
   byId("grade-revert-menu").addEventListener("click",()=>{ revertFlight = revertMenu().catch(error=>status.post({id:"grade-revert",severity:"error",message:error.message})); });
-  window.HDRGradeSaving = { pauseForProjectOpen, refresh, prepare, open, save, saveProject, leave, render, activated, resolve, offerRecovery,
+  window.HDRGradeSaving = { revertOriginal: () => revertMenu("original"), reviewGradeNotice: () => {noticeSession = null; return reviewGradeNotice();}, pauseForProjectOpen, refresh, prepare, open, save, saveProject, leave, render, activated, resolve, offerRecovery,
     item: () => currentPath, ready: () => Boolean(current && readySession === current),
     active: () => Boolean(current && state.session?.session_id === current),
     hasGrade: id => id === current && loadedGrade, conflict: () => Boolean(result.conflict) };

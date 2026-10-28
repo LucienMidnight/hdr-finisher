@@ -127,6 +127,10 @@ def add_grade_routes(router, marks, store):
                 path = grades.path(session_id)
                 document, _ = grades.paste.document(path)
                 session = open_document(store, validate_saved_document(document), marks.source_path(path), reuse_session_id=session_id)
+                errors = getattr(marks, "picture_errors", None)
+                warning = errors.get(path) if errors else None
+                if session.grade_notice and warning and warning.get("ignored"):
+                    session.grade_notice = {**session.grade_notice, "dismissed": True}
                 new_id = str(session.session_id)
                 grades.sessions[new_id] = path
                 grades.starts[new_id] = document
@@ -143,6 +147,10 @@ def add_grade_routes(router, marks, store):
                 state = grades._get(path)
                 document = request.document or state["default"]
                 session = open_document(store, validate_saved_document(document), marks.source_path(path), reuse_session_id=session_id if request.reuse_source else None)
+                errors = getattr(marks, "picture_errors", None)
+                warning = errors.get(path) if errors else None
+                if session.grade_notice and warning and warning.get("ignored"):
+                    session.grade_notice = {**session.grade_notice, "dismissed": True}
                 new_id = str(session.session_id)
                 grades.sessions[new_id] = path
                 grades.starts[new_id] = document

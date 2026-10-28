@@ -69,7 +69,8 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
         if wanted and wanted != source.source_fingerprint_sha256:
             raise ValueError("The source photo changed; its saved grade cannot be shown.")
         if saved.repairs:
-            from .retouch_source import restore_repairs
+            from .retouch_source import install_repaired_source
+            from .saved_grades import recover_repairs
             from .sessions import _source_mip_identity
             source.repairs = saved.repairs
             from concurrent.futures import CancelledError
@@ -77,7 +78,9 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
                 if cancelled is not None and cancelled():
                     raise CancelledError("Library repair cancelled")
             try:
-                restore_repairs(source, _source_mip_identity(source), checkpoint)
+                pixels = recover_repairs(saved, source, checkpoint)
+                source.repairs = saved.repairs
+                install_repaired_source(source, pixels, _source_mip_identity(source))
             finally:
                 if source.retouch_worker is not None:
                     source.retouch_worker.close()
@@ -91,6 +94,8 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
             "source_width": source.image.shape[1], "source_height": source.image.shape[0],
             "source_fingerprint_sha256": source.source_fingerprint_sha256,
             "source_timings_ms": source.metadata.get("import_timings_ms")}
+        if document and getattr(saved, "_saved_grade_notice", None):
+            metadata["grade_notice"] = saved._saved_grade_notice
         if not document:
             metadata["default_document"] = source.edit_document().model_dump(mode="json")
         item = cache.build(path, size, source_quality, cancelled,
@@ -178,12 +183,25 @@ class LivePictures:
         saved = validate_saved(EditDocument, raw)
         errors = getattr(self.marks, "picture_errors", None)
         if errors: errors.observe_grade(path, notice(saved))
-        return saved.model_dump(mode="json")
+        result = saved.model_dump(mode="json")
+        from .saved_grades import whole_grade_fallback
+        if whole_grade_fallback(notice(saved)): result.pop("global_adjustments", None)
+        return result
 
     def describe(self, path, metadata):
         document = self.document(path) or {}
         if metadata["quality"] != quality(document):
             raise ValueError("The source settings changed while the preview was prepared.")
+        if metadata.get("grade_notice"):
+            errors = getattr(self.marks, "picture_errors", None)
+            if errors:
+                old = errors.get(path)
+                report = deepcopy(metadata["grade_notice"])
+                if old and old.get("notice"):
+                    report["issues"] = list({json.dumps(i, sort_keys=True):i for i in old["notice"]["issues"] + report["issues"]}.values())
+                    report["sections"] = list(dict.fromkeys(i["section"] for i in report["issues"]))
+                    report["reason"] = " ".join(dict.fromkeys(i["reason"] for i in report["issues"]))
+                errors.observe_grade(path, report)
         grade_id = sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
         identity = "live-" + sha256((metadata["key"] + grade_id).encode()).hexdigest()[:59]
         result = dict(metadata, route="library-live", source_key=metadata["key"], key=identity,

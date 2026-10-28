@@ -1,5 +1,24 @@
 # Module PRD: Photo Library
 
+## October 28: Graceful saved-grade warnings
+
+Damaged grades now keep readable panel sections and display the actual photo;
+newer grades show what this app understands and hold saving for an explicit
+choice. Existing picture-error records also carry grade warnings, while decoder
+failures retain their normal error handling. Tile and Single warnings open the
+existing attention dialog. For a selection, only selected photos with warnings
+are affected. Continue keeps the readable grade, Original resets it, and Leave
+writes nothing. The untouched JSON is retained in grade history before the
+existing durable writer replaces anything; unwritable photo folders keep that
+backup and pending work in the Library database. Look-only notices can be
+ignored without changing settings files. Virtual-copy backups stay with that
+copy. Normal healthy photo rendering is unchanged.
+
+Checks: 36 focused backend tests passed, plus default/replay/dismissal cases.
+The Electron real-photo-copy check shows healthy and damaged/future-grade tiles,
+checks unchanged bytes on Leave and the backup on Continue. Existing attention
+styling is reused; Single's caption button is proposed for Steve's review.
+
 ## October 26: GPU Denoise preparation
 
 Noise measurement now runs on the renderer's graphics card for Grade, Library,

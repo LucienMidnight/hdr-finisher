@@ -3901,7 +3901,7 @@
       "path": "tests/library-picture-errors.js",
       "areas": ["library", "ui"],
       "tier": "area",
-      "protects": "Failed grades release both source slots, retain clickable errors across reloads and regenerate pictures after a safe reset.",
+      "protects": "Damaged, whole-failure and newer grades keep real-photo pictures visible with warning badges; Leave does not write and Continue retains the untouched backup.",
       "launch": {"method": "electron"}
     },
     {
