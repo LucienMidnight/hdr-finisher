@@ -87,7 +87,7 @@ reduction or new GPU parameter slots. Measure copied Balanced Rock and 42 MP
 in both lanes at Fit, 100% and 400%, including selection controls, grade sliders,
 pan/zoom and overlays.
 
-Investigation record: the copied 24/42 MP, SDR/HDR Fit/100/400 matrix is in
+Investigation record: the copied Balanced Rock / 42 MP, SDR/HDR Fit/100/400 matrix is in
 `codebase/output/hsl-performance/before-*.json`; the repeatable driver is
 `codebase/tools/hsl-performance.js`. Fit produces 43–52 frames/s, but native
 zoom often produces no completed drag frames: newer inputs retire the work
@@ -106,18 +106,35 @@ Native shared selection GPU/CPU check passes, including edge cases and tiles.
 Preview pacing built: Global HSL and active Local hue masks now finish an
 exact interactive snapshot, then take the newest pending input. Source, lane,
 geometry and release still cancel obsolete work. No selection mathematics,
-resolution, edge controls, export or Proof code changed. On copied 24 MP SDR
+resolution, edge controls, export or Proof code changed. On copied Balanced Rock SDR
 at 100%, non-default Global range/edge/feather/detail/luminance improved from
 0 completed frames/s to 18–21 (Exposure 24). Local native selection improved
 from 0–2 to 10–14 SDR / 6–8 HDR; Local Exposure remains 50+ frames/s.
 The 24 frames/s non-default target is not yet met consistently. Remaining
 costs: per-tile Global selection and offscreen Local hue selection; a regional
-Local optimization awaits pixel comparison and slow-check approval.
+Local optimization is now validated (below).
 
 Pacing commit checks: fast suites above; focused pacing, packing and coordinator
 checks pass. Native selection check passes with identical tile interiors. The 423% seam
 reproduction with Edge +3 / Feather 8 / detail 75 completed; image reviewed,
 no tile lines seen.
+
+October 28: regional Local hue processing built. Select only the requested
+GPU tiles plus the maximum supported Edge/Feather neighbourhood. Keep the
+frame-anchored selection grid and source-relative texture offsets, including
+when a source region is already cached. Fixed padding lets Edge/Feather reuse
+source preparation. Combined masks keep their existing route. No new parameter
+slots, shader mathematics or quality reduction.
+
+Crop commit validation: 24 real-GPU comparisons on copied Balanced Rock and
+42 MP at 100/400%, SDR/HDR, Edge +3/-3/+0.75, Feather 8, detail 75: nonempty
+visible coverage equals the full-mask route exactly (mean/p99 difference zero).
+Global and Local HSL delivery checks pass their existing neutral-relative
+colour limits; Proof equals export and all outputs stay below 1000 nits.
+The hue-mask delivery fixture passes its perceptual colour limits and ceiling.
+Final fast suites: JS 644 pass / same 2 Library failures; Python 2657 pass,
+3 skip / same 2 Library failures. Steve approved the longer checks October 28.
+Final timing matrix is running; see `codebase/output/hsl-performance/after-*.json`.
 
 ## October 27: HSL selection edge controls
 

@@ -1798,13 +1798,16 @@
      * inverted. Returns a mask entry, or null when the route is unavailable.
      */
     async loadGpuHueLeaf(sessionId, expression, hue, longEdge, isCurrent = () => true, sourceOverride = null,
-      editingMeasurement = false) {
+      editingMeasurement = false, maskRegion = null) {
       if (!this.hslSelectionTemplate || globalThis.HDRHueMaskSharedSelection === false || !hue?.params) return null;
       const source = sourceOverride || hue.proxy;
       if (!source?.texture || !isCurrent()) return null;
-      const width = source.textureWidth || source.width, height = source.textureHeight || source.height;
-      const ox = source.region?.x || 0, oy = source.region?.y || 0, leaf = expression.leaf || {};
-      const prepareBase = this.hueContextIdentity(hue, source);
+      const width = maskRegion?.width || source.textureWidth || source.width;
+      const height = maskRegion?.height || source.textureHeight || source.height;
+      const region = maskRegion || source.region;
+      const ox = region?.x || 0, oy = region?.y || 0, leaf = expression.leaf || {};
+      const prepareBase = this.hueContextIdentity(hue, source)
+        + (maskRegion ? `|region:${JSON.stringify(maskRegion)}` : "");
       const key = `${sessionId}:gpu-hue:${prepareBase}:${JSON.stringify([leaf.hue_center ?? null, leaf.hue_width,
         leaf.hue_smoothness, leaf.saturation_floor, leaf.edge, leaf.edge_feather, leaf.edge_detail, Boolean(expression.inverted)])}`;
       let entry = this.localMasks.get(key);
@@ -1816,7 +1819,7 @@
         entry = {
           kind: "gpu-hue", texture: this.createMaskTexture(width, height), width, height,
           byteSize: width * height * 2,
-          frameRect: source.region ? [ox / source.width, oy / source.height, width / source.width, height / source.height] : null,
+          frameRect: region ? [ox / source.width, oy / source.height, width / source.width, height / source.height] : null,
         };
         if (leaf.hue_center != null) {
           const engine = (this.hslMaskEngine ||= this.hslSelectionTemplate.fork());
@@ -1827,7 +1830,7 @@
           const channels = [{ ranges: [{ center: leaf.hue_center, width: leaf.hue_width, feather: leaf.hue_smoothness, subtract: false }],
             floor: Number(leaf.saturation_floor ?? 0.04), edge: leaf.edge, edge_feather: leaf.edge_feather, edge_detail: leaf.edge_detail }];
           const pipelines = this.pipelineFor("rgba16float");
-          const scratch = single ? null : this.device.createTexture({
+          const scratch = single && !maskRegion ? null : this.device.createTexture({
             label: "Hue mask band source", size: [width, Math.min(height, bandRows + 2 * reach)],
             format: source.texture.format, usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
           });
@@ -1843,11 +1846,12 @@
           for (let top = 0; top < height; top += bandRows) {
             const y0 = single ? 0 : Math.max(0, top - reach);
             const rows = single ? height : Math.min(height, top + bandRows + reach) - y0;
-            if (!single) {
-              encoder.copyTextureToTexture({ texture: source.texture, origin: { x: 0, y: y0, z: 0 } },
+            if (scratch) {
+              encoder.copyTextureToTexture({ texture: source.texture, origin: { x: maskRegion ? maskRegion.x - (source.region?.x || 0) : 0,
+                y: (maskRegion ? maskRegion.y - (source.region?.y || 0) : 0) + y0, z: 0 } },
                 { texture: scratch, origin: { x: 0, y: 0, z: 0 } }, { width, height: rows, depthOrArrayLayers: 1 });
             }
-            const view = (single ? source.texture : scratch).createView();
+            const view = (scratch || source.texture).createView();
             const values = new Float32Array(hue.params);
             values[GPU_PARAMS.TILE_ORIGIN_X] = ox;
             values[GPU_PARAMS.TILE_ORIGIN_Y] = oy + y0;
@@ -2711,8 +2715,28 @@
       if (hue && proxy && maskHasHueLeaf(batch.local.mask)) {
         // One GPU mask over the region this generation processes, shared by
         // its tiles, made from this lane's picture before HSL.
+        // Crop only a single leaf. Its selection needs neighbours beyond the
+        // grade tiles' halos; keep that full reach and anchor the coarse grid
+        // in frame coordinates, exactly as the whole-source route does.
+        // Reserve the supported maximum edge reach so Edge/Feather drags do
+        // not resize scratch or discard reusable source preparation each input.
+        const halos = batch.tiles.map(tile => tile.haloRect);
+        let maskRegion = null;
+        if (batch.local.mask.operator === "leaf" && halos.length
+          && globalThis.HDRHueMaskRegionalSelection !== false) {
+          const reach = globalThis.HDRHslSelectionGpu.geometry(
+            hue.params[GPU_PARAMS.SOURCE_PIXEL_SCALE] || 1, { edge: 8, edge_feather: 16 }).reach;
+          const sx = proxy.region?.x || 0, sy = proxy.region?.y || 0;
+          const sw = proxy.textureWidth || proxy.width, sh = proxy.textureHeight || proxy.height;
+          const x = Math.max(sx, Math.min(...halos.map(r => r.x)) - reach);
+          const y = Math.max(sy, Math.min(...halos.map(r => r.y)) - reach);
+          const right = Math.min(sx + sw, Math.max(...halos.map(r => r.x + r.width)) + reach);
+          const bottom = Math.min(sy + sh, Math.max(...halos.map(r => r.y + r.height)) + reach);
+          maskRegion = { x, y, width: right - x, height: bottom - y };
+          if (maskRegion.width === sw && maskRegion.height === sh) maskRegion = null;
+        }
         const entry = batch.local.mask.operator === "leaf"
-          ? await this.loadGpuHueLeaf(sessionId, batch.local.mask, hue, longEdge, isCurrent, proxy)
+          ? await this.loadGpuHueLeaf(sessionId, batch.local.mask, hue, longEdge, isCurrent, proxy, false, maskRegion)
           : await this.loadGpuMaskGraph(sessionId, batch.local, longEdge, editRevision, geometrySignature,
             isCurrent, signal, true, proxy, hue);
         if (entry) {

@@ -32,3 +32,23 @@ test('neutral HSL does not opt ordinary editing in; Denoise keeps its existing p
  t.state.previewScheduler.interacting=false;assert.equal(t.invalidate(),false);
 });
 
+// Execute the actual Local-mask adapter with a fake leaf producer. The crop
+// must contain all requested tiles plus the selection's full neighbourhood.
+test('resident Local hue crop covers tile halos plus selection reach and clamps at frame edges',async()=>{
+ const {frontendSource}=require('./frontend-source.js');
+ const {HslSelectionGpu}=require('../frontend/hsl-selection-gpu.js');
+ const c=vm.createContext({window:{},HDRHslSelectionGpu:HslSelectionGpu,performance:{now:()=>0}});
+ for(const f of ['mask-request-coordinator.js','graph-scale.js','mask-loader.js','webgpu-shaders.js','webgpu-preview.js'])vm.runInContext(frontendSource(f),c);
+ const p=new c.window.HDRWebGPUPreview(null),leaf={type:'hue_range',hue_center:109,edge:3,edge_feather:8};
+ const mask={operator:'leaf',leaf},proxy={width:6000,height:4000},hue={params:new Float32Array(require('../frontend/gpu-param-layout.js').HDRGpuParamLayout.count)};
+ let crop;p.loadGpuHueLeaf=async(...args)=>{crop=args[7];return {};};
+ const tiles=[{key:'a',haloRect:{x:1200,y:1400,width:512,height:512}},{key:'b',haloRect:{x:1712,y:1400,width:512,height:512}}];
+ const invoke=()=>p.loadLocalMaskTiles('s',{local:{mask},tiles},6000,1,'g',()=>true,null,proxy,null,hue);
+ await invoke();const reach=HslSelectionGpu.geometry(1,{edge:8,edge_feather:16}).reach;
+ assert.deepEqual(JSON.parse(JSON.stringify(crop)),{x:1200-reach,y:1400-reach,width:1024+2*reach,height:512+2*reach});
+ const firstCrop=JSON.stringify(crop);leaf.edge=-8;leaf.edge_feather=16;await invoke();assert.equal(JSON.stringify(crop),firstCrop);
+ tiles[0].haloRect={x:0,y:0,width:6000,height:4000};await invoke();assert.equal(crop,null);
+ proxy.region={x:100,y:200};proxy.textureWidth=3000;proxy.textureHeight=2000;
+ tiles[0].haloRect={x:1200,y:1400,width:512,height:512};await invoke();
+ assert.deepEqual(JSON.parse(JSON.stringify(crop)),{x:1200-reach,y:1400-reach,width:1024+2*reach,height:512+2*reach});
+});
