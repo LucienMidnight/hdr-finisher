@@ -1,0 +1,116 @@
+[
+  {
+    "name": "removed-default",
+    "grade": {
+      "global_adjustments": {
+        "hdr": {
+          "lift": 0
+        }
+      }
+    },
+    "sections": []
+  },
+  {
+    "name": "removed-used",
+    "grade": {
+      "global_adjustments": {
+        "hdr": {
+          "lift": 0.1
+        }
+      }
+    },
+    "sections": [
+      "HDR Tone"
+    ]
+  },
+  {
+    "name": "damaged-tone",
+    "grade": {
+      "global_adjustments": {
+        "hdr": {
+          "exposure": 999,
+          "contrast": 1.2,
+          "saturation": 1.25
+        },
+        "sdr": {
+          "exposure": 0.4
+        }
+      }
+    },
+    "sections": [
+      "HDR Tone"
+    ]
+  },
+  {
+    "name": "damaged-local",
+    "grade": {
+      "local_adjustments": [
+        {
+          "id": "bad-local",
+          "name": "Sky",
+          "mask": {
+            "type": "future-mask"
+          }
+        }
+      ]
+    },
+    "sections": [
+      "Local adjustment Sky"
+    ]
+  },
+  {
+    "name": "unreadable-repair",
+    "grade": {
+      "repairs": [
+        {
+          "id": "bad-repair",
+          "name": "Dust",
+          "recipe": {
+            "algorithm": "future-fill"
+          }
+        }
+      ]
+    },
+    "sections": [
+      "Retouch repair Dust"
+    ]
+  },
+  {
+    "name": "newer",
+    "grade": {
+      "app_version": "99.0.0",
+      "global_adjustments": {
+        "hdr": {
+          "exposure": 0.75
+        }
+      }
+    },
+    "sections": [
+      "Saved grade"
+    ]
+  },
+  {
+    "name": "whole-grade",
+    "grade": "damaged grade",
+    "sections": [
+      "Saved grade"
+    ]
+  },
+  {
+    "name": "newer-section",
+    "grade": {
+      "section_versions": {
+        "tone": 2
+      },
+      "global_adjustments": {
+        "hdr": {
+          "exposure": 0.75,
+          "saturation": 1.25
+        }
+      }
+    },
+    "sections": [
+      "Tone"
+    ]
+  }
+]

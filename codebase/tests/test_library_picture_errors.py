@@ -52,6 +52,12 @@ def broken(tmp_path):
     return root, path, sidecar
 
 
+def warning_record(api, path):
+    response = api.post("/api/library/live-plan", json={"path": str(path)})
+    assert response.status_code == 200, response.text
+    return next(item for item in api.get("/api/library/health").json()["picture_errors"] if item["path"] == str(path))
+
+
 def test_grade_with_settings_a_newer_version_removed_still_shows_a_picture(tmp_path):
     path = tmp_path / "old.png"
     Image.new("RGB", (64, 32), (100, 120, 80)).save(path)
@@ -70,52 +76,40 @@ def test_grade_with_settings_a_newer_version_removed_still_shows_a_picture(tmp_p
     api = client(root, Helper())
     response = api.post("/api/library/live-plan", json={"path": str(path)})
     assert response.status_code == 200, response.text
-    assert not api.get("/api/library/health").json()["picture_errors"]
+    assert api.get("/api/library/health").json()["picture_errors"][0]["grade_warning"]
 
 
 def test_remembered_error_is_retried_when_the_readable_settings_change(broken, monkeypatch):
     root, path, _ = broken
     api = client(root, Helper())
-    assert api.post("/api/library/live-plan", json={"path": str(path)}).status_code == 422
+    assert api.post("/api/library/live-plan", json={"path": str(path)}).status_code == 200
     assert api.get("/api/library/health").json()["picture_errors"]
     import hdr_finisher.library_picture_errors as errors
     monkeypatch.setattr(errors, "_READER", "a later version")
     assert not api.get("/api/library/health").json()["picture_errors"]
 
 
-def test_all_picture_routes_remember_bad_grade_and_other_photos_continue(broken):
+def test_grade_warnings_do_not_block_plans_and_other_photos_continue(broken):
     root, path, _ = broken
-    helper = Helper()
-    api = client(root, helper)
-    first = api.post("/api/library/live-plan", json={"path": str(path)})
-    assert first.status_code == 422
-    error = first.json()["library_error"]
-    assert "Saved edits" in error["reason"] and "exposure" in error["details"]
-    for route in ("live-scene", "fallback-picture", "live-plan"):
-        response = api.post("/api/library/" + route, json={"path": str(path)})
-        assert response.status_code == 422
-        assert response.json()["library_error"] == error
+    helper = Helper(); api = client(root, helper)
+    record = warning_record(api, path)
+    assert record["grade_warning"] and "HDR Tone" in record["details"]
+    assert warning_record(api, path) == record
     other = path.with_name("healthy.png")
-    Image.new("RGB", (64, 32)).save(other)
-    assert api.post("/api/library/live-plan", json={"path": str(other)}).status_code == 200
+    Image.new("RGB",(64,32)).save(other)
+    assert api.post("/api/library/live-plan",json={"path":str(other)}).status_code == 200
     assert helper.calls == []
-    assert api.get("/api/library/health").json()["picture_errors"] == [error]
-    assert client(root, helper).post("/api/library/live-plan", json={"path": str(path)}).json()["library_error"] == error
+    assert warning_record(client(root,helper),path) == record
 
 
-def test_ignore_survives_restart_and_retry_clears_only_the_error(broken):
-    root, path, sidecar = broken
-    before = sidecar.read_bytes()
-    api = client(root, Helper())
-    record = api.post("/api/library/live-plan", json={"path": str(path)}).json()["library_error"]
-    command = {"path": str(path), "revision": record["revision"], "action": "ignore"}
-    assert api.post("/api/library/picture-error", json=command).json()["error"]["ignored"]
-    api = client(root, Helper())
-    assert api.post("/api/library/live-plan", json={"path": str(path)}).json()["library_error"]["ignored"]
-    command["action"] = "retry"
-    assert api.post("/api/library/picture-error", json=command).status_code == 200
-    assert not api.get("/api/library/health").json()["picture_errors"]
-    assert sidecar.read_bytes() == before
+def test_leave_as_is_survives_restart_without_touching_grade(broken):
+    root,path,sidecar=broken
+    before=sidecar.read_bytes(); api=client(root,Helper())
+    record=warning_record(api,path)
+    command={"path":str(path),"revision":record["revision"],"action":"leave"}
+    assert api.post("/api/library/picture-error",json=command).status_code==200
+    assert warning_record(client(root,Helper()),path)["grade_warning"]
+    assert sidecar.read_bytes()==before
 
 
 def test_revert_preserves_original_marks_and_previous_grade_and_requeues(broken):
@@ -123,7 +117,7 @@ def test_revert_preserves_original_marks_and_previous_grade_and_requeues(broken)
     source = path.read_bytes()
     previous = json.loads(sidecar.read_text())["grade"]
     api = client(root, Helper())
-    record = api.post("/api/library/live-plan", json={"path": str(path)}).json()["library_error"]
+    record = warning_record(api, path)
     response = api.post("/api/library/picture-error", json={"path": str(path), "revision": record["revision"], "action": "original"})
     assert response.status_code == 200, response.text
     assert response.json()["count"] == 1
@@ -144,7 +138,7 @@ def test_revert_preserves_original_marks_and_previous_grade_and_requeues(broken)
 def test_changed_settings_expire_error_and_stale_reset_cannot_overwrite_them(broken):
     root, path, sidecar = broken
     api = client(root, Helper())
-    record = api.post("/api/library/live-plan", json={"path": str(path)}).json()["library_error"]
+    record = warning_record(api, path)
     document = json.loads(sidecar.read_text())
     document["grade"]["global_adjustments"]["hdr"]["exposure"] = 0
     sidecar.write_text(json.dumps(document), encoding="utf-8")

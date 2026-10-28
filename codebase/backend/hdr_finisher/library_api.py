@@ -145,7 +145,7 @@ class LiveSceneRequest(BaseModel):
 class PictureErrorCommand(BaseModel):
     path: str
     revision: str
-    action: Literal["ignore", "retry", "original"]
+    action: Literal["ignore", "retry", "original", "continue", "leave", "dismiss"]
 
 
 class SensorRequest(BaseModel):
@@ -326,6 +326,11 @@ def create_library_router(worker, browser, store=None):
         record = picture_errors.get(command.path)
         if not record or record["revision"] != command.revision:
             raise HTTPException(409, "The photo or settings changed. Refresh its picture before making this choice.")
+        if record.get("grade_warning"):
+            try:
+                return marks.grades.recover_grades([{"path": command.path, "revision": command.revision}], command.action)
+            except (ValueError, OSError) as error:
+                raise HTTPException(409, str(error)) from error
         if command.action == "ignore":
             return {"error": picture_errors.save({**record, "ignored": True})}
         result = {}

@@ -842,6 +842,30 @@ def post_sdr_match(session_id: str, request: SdrMatchActionRequest, response: Re
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/saved-grade/read")
+def read_saved_grade(request: dict):
+    from .projects import validate_saved
+    from .models import AdjustmentState, DenoiseDocumentSettings
+    from .saved_grades import notice
+    models = {"adjustments": AdjustmentState, "denoise": DenoiseDocumentSettings}
+    model = models.get(request.get("model"))
+    if model is None: raise HTTPException(400, "Choose a saved grade type.")
+    try:
+        saved = validate_saved(model, request.get("value"))
+        return {"value": saved.model_dump(mode="json"), "notice": notice(saved)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/session/{session_id}/grade-read-choice")
+def grade_read_choice(session_id: str, request: dict):
+    try:
+        from .projects import choose_saved_grade
+        return choose_saved_grade(store, session_id, request.get("action", "leave"))
+    except (KeyError, ProjectError, OSError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.post("/api/session/{session_id}/project/save", response_model=ProjectResponse)
 def save_project_file(session_id: str, request: ProjectSaveRequest) -> ProjectResponse:
     try:

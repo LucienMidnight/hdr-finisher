@@ -55,7 +55,7 @@ class LibraryHistory:
         if kind not in TARGETS: raise ValueError("Choose a grade to restore.")
         return self.rewrite(values, kind=kind)
 
-    def rewrite(self, values, *, kind=None, targets=None, expected=None, undo=True, save_open=False):
+    def rewrite(self, values, *, kind=None, targets=None, expected=None, undo=True, save_open=False, allow_protected=False):
         grades = self.grades; marks = grades.marks
         with grades.store._lock, marks._lock:
             paths = list(dict.fromkeys(str(marks._path(p)) for p in values))
@@ -64,6 +64,10 @@ class LibraryHistory:
             plans = []
             for path, document, row in zip(paths, documents, records):
                 document = document or {}; state = grades._get(path); session = self.current(path)
+                from .saved_grades import notice
+                raw_grade = document.get("grade")
+                if not allow_protected and kind != "original" and raw_grade is not None and notice(validate_saved(EditDocument, raw_grade)):
+                    raise ValueError("This grade needs a choice before replacing it. Review its warning first.")
                 if state.get("conflict"): raise ValueError("Resolve the grade changed elsewhere before reverting.")
                 online = marks.source_path(path).parent.is_dir()
                 if not online and not document.get("grade"):
@@ -72,6 +76,13 @@ class LibraryHistory:
                     if grades._check(path, state, document.get("grade")): raise ValueError("The grade changed elsewhere; nothing was reverted.")
                 elif not state.get("pending"): state["baseline"] = deepcopy(document.get("grade"))
                 current = session.edit_document().model_dump(mode="json") if session else state.get("desired") if state.get("pending") else document.get("grade")
+                if raw_grade is not None and notice(validate_saved(EditDocument, raw_grade)):
+                    current = deepcopy(raw_grade)
+                    backups = state.setdefault("grade_backups", deepcopy(document.get("grade_history", {}).get("grade_backups", [])))
+                    if raw_grade not in backups: backups.append(deepcopy(raw_grade))
+                    if allow_protected or kind == "original":
+                        from .library_documents import identity
+                        state["grade_read_consent"] = identity(raw_grade)
                 expected_grade = expected[path] if expected is not None else None
                 if expected is not None and session and expected_grade is None:
                     expected_grade = state.get("default")
@@ -81,7 +92,7 @@ class LibraryHistory:
                 try: target = deepcopy(targets[path]) if targets is not None else self.target(state, document, kind, session)
                 except ValueError: continue
                 if session and target is None: target = deepcopy(state.get("default"))
-                if same_grade(current, target, state, document): continue
+                if same_grade(current, target, state, document) and not (allow_protected or kind == "original" and raw_grade is not None and notice(validate_saved(EditDocument, raw_grade))): continue
                 if target is not None: validate_saved(EditDocument, target)
                 plans.append((path, document or None, row, state, session, current, target))
             before = {p: deepcopy(old) for p, _, _, _, _, old, _ in plans}

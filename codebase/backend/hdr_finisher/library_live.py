@@ -26,6 +26,9 @@ _registry_lock = RLock()
 
 
 def recipe(document):
+    if document is not None:
+        from .models import EditDocument
+        document = validate_saved(EditDocument, document).model_dump(mode="json")
     document = document or {}
     return {
         "raw_import_settings": document.get("source", {}).get("raw_import_settings") or RawImportSettings().model_dump(mode="json"),
@@ -167,7 +170,15 @@ class LivePictures:
         self.root, self.marks, self.documents = root, marks, documents
 
     def document(self, path):
-        return self.documents.request(path)["grade"] if self.documents else None
+        raw = self.documents.request(path)["grade"] if self.documents else None
+        if raw is None:
+            return None
+        from .models import EditDocument
+        from .saved_grades import notice
+        saved = validate_saved(EditDocument, raw)
+        errors = getattr(self.marks, "picture_errors", None)
+        if errors: errors.observe_grade(path, notice(saved))
+        return saved.model_dump(mode="json")
 
     def describe(self, path, metadata):
         document = self.document(path) or {}
@@ -230,7 +241,7 @@ class LivePictures:
             source=SimpleNamespace(width=pixels.shape[1], height=pixels.shape[0]),
             adjustments=validate_saved(AdjustmentState, metadata["adjustments"]),
             local_adjustments=[validate_saved(LocalAdjustment, item) for item in metadata["locals"]],
-            denoise=DenoiseDocumentSettings.model_validate(metadata["denoise"]),
+            denoise=validate_saved(DenoiseDocumentSettings, metadata["denoise"]),
             hdr_reference_white_nits=metadata["white"], color_context=context, edit_revision=0,
             render_cache=SessionRenderCache(pixels, reference, color_context=context))
 

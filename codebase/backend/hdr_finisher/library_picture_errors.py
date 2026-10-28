@@ -26,6 +26,7 @@ _READER = _reader_identity()
 class PictureErrors:
     def __init__(self, marks):
         self.marks = marks
+        marks.picture_errors = self
         with marks._lock:
             db = marks._connect()
             with db:
@@ -92,6 +93,18 @@ class PictureErrors:
         log("picture_failed", path=str(path), reason=details, action="error remembered; workers continue with other photos")
         return record
 
+    def observe_grade(self, path, report):
+        revision = self.revision(path)
+        old = self.get(path)
+        if report is None:
+            if old and old.get("grade_warning"): self.clear(path)
+            return None
+        if old and old.get("grade_warning"):
+            return old
+        return self.save(dict(path=str(path), revision=revision, reason=report["reason"],
+                              details="\n".join(item["section"] + ": " + item["reason"] for item in report["issues"]),
+                              grade_warning=True, notice=report, ignored=False, time=time.time()))
+
     @staticmethod
     def response(record):
         return JSONResponse({"detail": record["reason"], "library_error": record}, status_code=422)
@@ -101,7 +114,7 @@ class PictureErrors:
         async def checked(command, *args, **kwargs):
             path = command.path
             cached = await run_in_threadpool(self.get, path)
-            if cached:
+            if cached and not cached.get("grade_warning"):
                 return self.response(cached)
             revision = await run_in_threadpool(self.revision, path)
             try:

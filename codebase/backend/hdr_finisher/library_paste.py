@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from threading import Lock
 from .models import EditDocument
+from .projects import validate_saved
 from .library_grades import grade_key
 from .library_documents import atomic_json
 from .raw_import import RAW_EXTENSIONS
@@ -77,7 +78,9 @@ class LibraryPaste:
                     state=self.grades._get(path)
                     default=state.get('default') or default
                     state['default']=default; self.grades._put(path,state)
-        return deepcopy(current or default),deepcopy(default)
+        from .projects import validate_saved
+        return (validate_saved(EditDocument, current if current is not None else default).model_dump(mode="json"),
+                validate_saved(EditDocument, default).model_dump(mode="json"))
 
     def starting_document(self, path):
         source=self.marks.source_path(path)
@@ -85,7 +88,7 @@ class LibraryPaste:
         # Live scenes retain Grade's starting document for this photo version.
         try:
             document=LibraryPictureCache(self.marks.database.parent).default_document(source)
-            if document: return EditDocument.model_validate(document).model_dump(mode='json')
+            if document: return validate_saved(EditDocument, document).model_dump(mode='json')
         except (OSError,ValueError): pass
         from .sessions import SessionStore
         from .library_diagnostics import log

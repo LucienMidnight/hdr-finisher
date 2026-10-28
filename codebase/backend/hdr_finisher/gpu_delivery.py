@@ -383,6 +383,16 @@ def create_gpu_delivery_router():
         image = memory.attach(value["memory"]["source"])
         reference = memory.attach(value["memory"]["reference"]) if value["memory"]["reference"] else None
         context = RenderColorContext(value["white"])
+        from .models import EditDocument
+        saved = validate_saved(EditDocument, {
+            "source": {"filename": "Queued photo", "luminance": {"luminance_semantics": "scene_relative", "transfer_function": "linear"}},
+            "hdr_reference_white_nits": value["white"], "global_adjustments": value["adjustments"],
+            "local_adjustments": value["locals"], "denoise": value["denoise"]})
+        if getattr(saved, "_saved_grade_notice", None):
+            value["grade_notice"] = saved._saved_grade_notice
+        value.update(adjustments=saved.global_adjustments.model_dump(mode="json"),
+                     locals=[item.model_dump(mode="json") for item in saved.local_adjustments],
+                     denoise=saved.denoise.model_dump(mode="json"))
         frame = SimpleNamespace(_delivery_memory=memory, session_id=value["id"], image=image, sdr_reference_image=reference,
             source=SimpleNamespace(width=value["width"], height=value["height"]),
             adjustments=validate_saved(AdjustmentState, value["adjustments"]),

@@ -33,6 +33,8 @@ class ProjectSourceRelinkRequired(ProjectError):
 
 def save_project(session: LoadedSession, path: Path, source_path: Path | None = None) -> ProjectResponse:
     destination = _project_path(path)
+    if getattr(session, "grade_notice", None):
+        raise ProjectError("This grade needs a choice before saving: Continue without them, Revert to original or Leave as is.")
     destination.parent.mkdir(parents=True, exist_ok=True)
     if source_path is not None:
         durable_source = source_path.expanduser().resolve()
@@ -44,6 +46,15 @@ def save_project(session: LoadedSession, path: Path, source_path: Path | None = 
     elif session.durable_source_path is None and session.owns_source_path:
         raise ProjectError("The first project save requires the durable original source path.")
 
+    if destination.exists():
+        current_hash = _sha256_file(destination)
+        expected = getattr(session, "grade_project_fingerprint", None)
+        if getattr(session, "grade_project_path", None) == destination and expected and current_hash != expected:
+            raise ProjectError("The project changed elsewhere. Open it again before saving.")
+        with zipfile.ZipFile(destination) as existing:
+            old = validate_saved_document(json.loads(existing.read(PROJECT_STATE_NAME)))
+        if getattr(old, "_saved_grade_notice", None) and getattr(session, "grade_project_consent", None) != current_hash:
+            raise ProjectError("This project's grade needs a choice before it can be replaced.")
     document = session.edit_document()
     manifest = {
         "format": "HDR Finisher Project",
@@ -61,6 +72,8 @@ def save_project(session: LoadedSession, path: Path, source_path: Path | None = 
         ) as temporary:
             temporary_path = Path(temporary.name)
         with zipfile.ZipFile(temporary_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+            for name, body in getattr(session, "grade_project_backups", {}).items():
+                archive.writestr(name, body)
             archive.writestr(PROJECT_MANIFEST_NAME, json.dumps(manifest, separators=(",", ":")))
             archive.writestr(PROJECT_STATE_NAME, document.model_dump_json())
         os.replace(temporary_path, destination)
@@ -68,6 +81,7 @@ def save_project(session: LoadedSession, path: Path, source_path: Path | None = 
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
     session.dirty = False
+    session.grade_project_fingerprint = _sha256_file(destination)
     return ProjectResponse(path=str(destination), revision=session.edit_revision, document=document)
 
 
@@ -81,13 +95,8 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
             if PROJECT_STATE_NAME not in names or PROJECT_MANIFEST_NAME not in names:
                 raise ProjectError("The project container is missing required entries.")
             manifest = json.loads(archive.read(PROJECT_MANIFEST_NAME))
+            backups = {name: archive.read(name) for name in names if name.startswith("grade-backups/")}
             schema_version = manifest.get("schema_version")
-            if schema_version in {1, 2, 3}:
-                raise ProjectError(
-                    f"Unsupported project schema v{schema_version}. Migration is not supported; create a new v4 project."
-                )
-            if schema_version != 4:
-                raise ProjectError(f"Unsupported HDR Finisher project schema {schema_version!r}.")
             if manifest.get("contains_source_pixels") is not False:
                 raise ProjectError("Invalid project manifest.")
             state_payload = json.loads(archive.read(PROJECT_STATE_NAME))
@@ -95,7 +104,11 @@ def open_project(store: SessionStore, path: Path, source_path: Path | None = Non
     except (zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
         raise ProjectError("The project file is malformed or unreadable.") from exc
 
-    return open_document(store, document, source_path)
+    session = open_document(store, document, source_path)
+    session.grade_project_path = project_path
+    session.grade_project_backups = backups
+    session.grade_project_fingerprint = _sha256_file(project_path)
+    return session
 
 
 def open_document(store: SessionStore, document: EditDocument, source_path: Path | None = None,
@@ -148,6 +161,8 @@ def _open_document(store, document, source_path, reuse_session_id):
     finally:
         if candidate_session.retouch_worker is not None:
             candidate_session.retouch_worker.close()
+    session.grade_notice = getattr(document, "_saved_grade_notice", None)
+    session.grade_original = getattr(document, "_saved_grade_original", None)
     session.adjustments = document.global_adjustments
     session.local_adjustments = document.local_adjustments
     session.repairs = document.repairs
@@ -172,6 +187,54 @@ def _open_document(store, document, source_path, reuse_session_id):
     return session
 
 
+def choose_saved_grade(store, session_id, action):
+    """Explicit choice for a project; Library choices use its existing writer."""
+    with store._lock:
+        session = store.get(session_id)
+        if action == "leave" or not session.grade_notice:
+            return {"session": session.to_payload()}
+        if action == "dismiss":
+            session.grade_notice = {**session.grade_notice, "dismissed": True}
+            return {"session": session.to_payload()}
+        if action not in ("continue", "original"):
+            raise ProjectError("Choose Continue without them, Revert to original or Leave as is.")
+        project = getattr(session, "grade_project_path", None)
+        if project is None:
+            raise ProjectError("Review this photo's warning in the Library before saving.")
+        # Keep the untouched JSON, including future fields, inside the project.
+        if _sha256_file(project) != getattr(session, "grade_project_fingerprint", None):
+            raise ProjectError("The project changed elsewhere. Open it again before choosing.")
+        consent = session.grade_project_fingerprint
+        raw = json.dumps(session.grade_original, ensure_ascii=False).encode("utf-8")
+        backups = dict(getattr(session, "grade_project_backups", {}))
+        backups["grade-backups/" + hashlib.sha256(raw).hexdigest() + ".json"] = raw
+        if action == "original":
+            clean = session.edit_document().model_copy(deep=True)
+            from .models import DenoiseDocumentSettings, PhotoFraming, SdrMatchState
+            clean.global_adjustments = session.starting_adjustments()
+            clean.local_adjustments = []
+            clean.repairs = []
+            clean.denoise = DenoiseDocumentSettings()
+            clean.framing = PhotoFraming()
+            clean.sdr_match = SdrMatchState()
+            clean.source.raw_import_settings = __import__("hdr_finisher.models", fromlist=["RawImportSettings"]).RawImportSettings()
+            clean.interpretation_override = __import__("hdr_finisher.models", fromlist=["SourceInterpretationOverride"]).SourceInterpretationOverride()
+            session = open_document(store, clean, session.source_path)
+        session.grade_project_path = project
+        session.grade_project_consent = consent
+        session.grade_project_fingerprint = consent
+        session.grade_project_backups = backups
+        previous_notice = session.grade_notice
+        session.grade_notice = None
+        try:
+            save_project(session, project)
+        except Exception:
+            session.grade_notice = previous_notice
+            raise
+        session.grade_original = None
+        return {"session": session.to_payload()}
+
+
 def _project_path(path: Path) -> Path:
     expanded = path.expanduser().resolve()
     return expanded if expanded.suffix.lower() == ".hdrfinisher" else expanded.with_suffix(".hdrfinisher")
@@ -182,65 +245,21 @@ _FORGIVEN_ERRORS = frozenset({"extra_forbidden", "literal_error", "enum"})
 
 
 def validate_saved(model, payload: object):
-    """Any saved model (a grade, a local adjustment, stored Library picture
-    data) read back with project-open leniency: fields and choices this version
-    no longer knows are dropped; everything else stays strict. ``payload`` is
-    not changed."""
-    payload = deepcopy(payload)
-    dropped: list[str] = []
-    while True:
-        try:
-            value = model.model_validate(payload)
-            break
-        except ValidationError as error:
-            unknown = [item["loc"] for item in error.errors() if item["type"] in _FORGIVEN_ERRORS]
-            removed = [location for location in unknown if _drop_field(payload, location)]
-            if not removed:
-                raise
-            dropped.extend(".".join(str(part) for part in location) for location in removed)
+    """The sole saved-data reader. Recover panel sections; live edits stay strict."""
+    from .saved_grades import read_saved
+    value, dropped = read_saved(model, payload)
     if dropped:
-        logger.info("Saved %s read with %d outdated field(s) ignored: %s", model.__name__, len(dropped), ", ".join(sorted(dropped)))
+        logger.info("Saved %s read with %d outdated field(s) ignored: %s",
+                    model.__name__, len(dropped), ", ".join(sorted(dropped)))
     return value
 
 
 def _validate_ignoring_unknown_fields(state_payload: object) -> EditDocument:
-    """Validate a saved document, dropping what this version no longer knows.
-
-    A project outlives the settings it was saved with. A field the app has
-    since removed is dropped here, and so is a field holding a choice the app
-    no longer offers, which then takes its default. Removing a setting or an
-    option therefore never stops an older project opening; the next save
-    writes the file without it. Everything else is validated as strictly as a
-    live edit, and only saved files get this leniency: in a running session an
-    unknown field or choice is a bug and still fails.
-    """
-    dropped: list[str] = []
-    while True:
-        try:
-            document = EditDocument.model_validate(state_payload)
-            break
-        except ValidationError as error:
-            # Repair algorithms/raster versions must never silently default to
-            # a different fill when opening a saved photograph.
-            if any(item["loc"] and item["loc"][0] == "repairs" for item in error.errors()):
-                raise
-            unknown = [item["loc"] for item in error.errors() if item["type"] in _FORGIVEN_ERRORS]
-            removed = [location for location in unknown if _drop_field(state_payload, location)]
-            if not removed:
-                raise
-            dropped.extend(".".join(str(part) for part in location) for location in removed)
-    if dropped:
-        logger.info("Saved grade read with %d outdated field(s) ignored: %s", len(dropped), ", ".join(sorted(dropped)))
-    return document
+    return validate_saved(EditDocument, state_payload)
 
 
 def validate_saved_document(state_payload: object) -> EditDocument:
-    """A grade read from a saved file, such as a Library settings file.
-
-    Gets the same leniency as project open, without changing the payload
-    the caller holds; the next save writes the grade without what was dropped.
-    """
-    return _validate_ignoring_unknown_fields(deepcopy(state_payload))
+    return validate_saved(EditDocument, state_payload)
 
 
 def _drop_field(payload: object, location: tuple) -> bool:

@@ -126,6 +126,8 @@ class LoadedSession:
     raw_import_settings: RawImportSettings = field(default_factory=RawImportSettings)
     edit_revision: int = 0
     dirty: bool = False
+    grade_notice: dict | None = None
+    grade_original: Any = None
     undo_history: list[HistoryEntry] = field(default_factory=list, repr=False)
     redo_history: list[HistoryEntry] = field(default_factory=list, repr=False)
     history_bytes: int = 0
@@ -213,6 +215,7 @@ class LoadedSession:
 
     def to_payload(self) -> SessionPayload:
         return SessionPayload(
+            grade_notice=self.grade_notice,
             session_id=self.session_id,
             source=self.source,
             metadata=extract_metadata(self.source_path, self.metadata),

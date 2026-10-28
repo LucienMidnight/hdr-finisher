@@ -1,0 +1,148 @@
+"""Result checks for damaged and future saved grades. All files are disposable."""
+from copy import deepcopy
+import json
+from pathlib import Path
+import zipfile
+import pytest
+from PIL import Image
+from hdr_finisher.models import EditDocument, AdjustmentState
+from hdr_finisher.projects import validate_saved, open_document, save_project, open_project, choose_saved_grade, ProjectError
+from hdr_finisher.saved_grades import notice
+from hdr_finisher.sessions import SessionStore
+from hdr_finisher.library_marks import LibraryMarks, MarkChange
+from hdr_finisher.library_grades import LibraryGrades
+from hdr_finisher.library_picture_errors import PictureErrors
+
+CASES = json.loads((Path(__file__).parent / "fixtures/graceful-grades.json").read_text())
+
+def payload(case):
+    base = {"source": {"filename":"photo.png", "luminance":{"luminance_semantics":"scene_relative","transfer_function":"linear"}},
+            "hdr_reference_white_nits":203}
+    if not isinstance(case["grade"], dict): return deepcopy(case["grade"])
+    return {**base, **deepcopy(case["grade"])}
+
+@pytest.mark.parametrize("case", CASES, ids=lambda case:case["name"])
+def test_fixture_recovery(case):
+    raw = payload(case); before = deepcopy(raw)
+    doc = validate_saved(EditDocument, raw)
+    assert raw == before
+    assert (notice(doc) or {}).get("sections", []) == case["sections"]
+    assert doc.app_version and doc.section_versions["tone"] == 1
+    if case["name"] == "damaged-tone":
+        assert doc.global_adjustments.hdr.exposure == 0
+        assert doc.global_adjustments.hdr.contrast == 0
+        assert doc.global_adjustments.hdr.saturation == 1.25
+        assert doc.global_adjustments.sdr.exposure == .4
+    if case["name"] == "newer":
+        assert doc.global_adjustments.hdr.exposure == .75
+        assert notice(doc)["newer"]
+    if case["name"] == "newer-section":
+        assert doc.global_adjustments.hdr.exposure == 0
+        assert doc.global_adjustments.hdr.saturation == 1.25
+    assert not doc.repairs and not doc.local_adjustments
+
+def test_live_edits_remain_strict():
+    with pytest.raises(ValueError):
+        AdjustmentState.model_validate({"hdr":{"exposure":999}})
+
+@pytest.mark.parametrize("lane", ["hdr","sdr"])
+def test_each_panel_defaults_independently(lane):
+    for field, broken in (("exposure",999),("hsl",{"channels":"broken"}),("film_look",{"amount":999}),
+                          ("detail",{"sharpening":999}),("vignette",{"amount":999}),
+                          ("luma_curve","broken"),("highlight_compression_softness",999)):
+        raw = payload({"grade":{"global_adjustments":{lane:{field:broken,"saturation":1.25}}}})
+        doc = validate_saved(EditDocument,raw)
+        assert notice(doc), field
+        assert doc.global_adjustments.model_dump()[lane]["saturation"] == 1.25
+
+@pytest.fixture
+def library(tmp_path):
+    photo = tmp_path/"photo.png"
+    Image.new("RGB",(64,32),(100,120,80)).save(photo)
+    store = SessionStore()
+    session = store.prepare_session(photo, owns_source_path=False)
+    raw = session.edit_document().model_dump(mode="json")
+    raw["global_adjustments"]["hdr"].update(exposure=999, saturation=1.25)
+    raw["app_version"] = "99.0.0"
+    marks = LibraryMarks(tmp_path/"app")
+    marks.change([photo],MarkChange(rating=4,add_tag="keep"))
+    marks.writer.drain()
+    sidecar = Path(str(photo)+".hdrf")
+    document = json.loads(sidecar.read_text())
+    document["grade"] = raw
+    sidecar.write_text(json.dumps(document),encoding="utf-8")
+    grades = LibraryGrades(marks,store)
+    errors = PictureErrors(marks)
+    yield photo, store, marks, grades, errors, sidecar, raw
+    marks.writer.drain()
+    store.clear()
+
+@pytest.mark.parametrize("action",["continue","original","leave"])
+def test_choice_changes_only_authorized_files_and_keeps_backup(library, action):
+    photo,store,marks,grades,errors,sidecar,raw = library
+    before = sidecar.read_bytes(); source = photo.read_bytes()
+    opened = open_document(store,validate_saved(EditDocument,raw),photo)
+    grades.attach(str(opened.session_id))
+    revision = errors.revision(str(photo))
+    result = grades.recover_grades([{"path":str(photo),"revision":revision}],action)
+    marks.writer.drain()
+    assert photo.read_bytes() == source
+    if action == "leave":
+        assert sidecar.read_bytes() == before
+        assert opened.grade_notice
+        return
+    saved = json.loads(sidecar.read_text())
+    assert saved["marks"]["rating"] == 4 and saved["marks"]["tags"] == ["keep"]
+    assert raw in saved["grade_history"]["grade_backups"]
+    if action == "original":
+        assert saved.get("grade") is None or saved["grade"]["global_adjustments"]["hdr"]["saturation"] == 0
+    else:
+        assert saved["grade"]["global_adjustments"]["hdr"]["exposure"] == 0
+        assert saved["grade"]["global_adjustments"]["hdr"]["saturation"] == 1.25
+        # A subsequent save does not replace the untouched backup.
+        grades.save(str(store._current.session_id)); marks.writer.drain()
+        assert raw in json.loads(sidecar.read_text())["grade_history"]["grade_backups"]
+
+def test_newer_grade_blocks_autosave_and_stale_choice(library):
+    photo,store,marks,grades,errors,sidecar,raw = library
+    opened = open_document(store,validate_saved(EditDocument,raw),photo)
+    grades.attach(str(opened.session_id))
+    before = sidecar.read_bytes()
+    opened.dirty = True
+    result = grades.save(str(opened.session_id))
+    marks.writer.drain()
+    assert result["grade_notice"] and sidecar.read_bytes() == before
+    revision = errors.revision(str(photo))
+    doc = json.loads(before); doc["grade"]["global_adjustments"]["sdr"]["exposure"] = .5
+    sidecar.write_text(json.dumps(doc),encoding="utf-8")
+    with pytest.raises(ValueError, match="changed"):
+        grades.recover_grades([{"path":str(photo),"revision":revision}],"continue")
+    assert json.loads(sidecar.read_text()) == doc
+
+@pytest.mark.parametrize("action",["continue","original","leave"])
+def test_project_choices_and_embedded_original(tmp_path, action):
+    photo=tmp_path/"photo.png"; Image.new("RGB",(32,16)).save(photo)
+    store=SessionStore(); session=store.prepare_session(photo,owns_source_path=False)
+    project=tmp_path/"photo.hdrfinisher"
+    save_project(session,project)
+    with zipfile.ZipFile(project) as archive:
+        manifest=archive.read("manifest.json")
+        raw=json.loads(archive.read("edit-state.json"))
+    raw["app_version"]="99.0.0"
+    raw["global_adjustments"]["hdr"]["exposure"]=999
+    with zipfile.ZipFile(project,"w") as archive:
+        archive.writestr("manifest.json",manifest)
+        archive.writestr("edit-state.json",json.dumps(raw))
+    before=project.read_bytes()
+    opened=open_project(store,project)
+    with pytest.raises(ProjectError,match="choice"):
+        save_project(opened,project)
+    choose_saved_grade(store,str(opened.session_id),action)
+    if action=="leave":
+        assert project.read_bytes()==before
+    else:
+        with zipfile.ZipFile(project) as archive:
+            names=[name for name in archive.namelist() if name.startswith("grade-backups/")]
+            assert len(names)==1 and json.loads(archive.read(names[0]))==raw
+            assert json.loads(archive.read("edit-state.json"))["global_adjustments"]["hdr"]["exposure"]==0
+    store.clear()

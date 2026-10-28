@@ -13,11 +13,20 @@ def grade_key(value):
     if value is None:
         return None
     grade = deepcopy(value)
+    if not isinstance(grade, dict): return grade
+    grade.pop("app_version", None)
+    grade.pop("section_versions", None)
+    # Malformed saved structures still need a stable identity for warnings.
+    if not isinstance(grade.get("source", {}), dict) or not isinstance(grade.get("global_adjustments", {}), dict):
+        return grade
     source = grade.get("source", {})
     for field in ("durable_path", "filename", "fingerprint_sha256", "byte_size"):
         source.pop(field, None)
     # Viewer choices stay in the saved document, but do not change its grade.
-    shared = grade.get("global_adjustments", {}).get("shared", {})
+    adjustments = grade.get("global_adjustments", {})
+    if any(not isinstance(adjustments.get(key, {}), dict) for key in ("hdr", "sdr", "shared")):
+        return grade
+    shared = adjustments.get("shared", {})
     for field in ("overlay_mode", "overlay_opacity", "overlay_threshold",
                   "false_color_band_anchor", "false_color_ceiling_nits"):
         shared.pop(field, None)
@@ -84,7 +93,10 @@ class LibraryGrades:
             document = self.marks._document(Path(path))
             grade = (document or {}).get("grade")
             if grade is not None:
-                validate_saved_document(grade)
+                from .saved_grades import notice
+                from .library_picture_errors import PictureErrors
+                errors = getattr(self.marks, "picture_errors", None) or PictureErrors(self.marks)
+                errors.observe_grade(path, notice(validate_saved_document(grade)))
             state = self._get(path)
             recovery = state.get("recovery")
             self.sessions[session_id] = path
@@ -213,7 +225,15 @@ class LibraryGrades:
         with self.store._lock, self.marks._lock:
             relocked = perf_counter()
             state = self._get(path)
-            if not unreadable and self._check(path, state, (document or {}).get("grade")):
+            from .saved_grades import notice
+            raw_grade = (document or {}).get("grade")
+            report = notice(validate_saved_document(raw_grade)) if raw_grade is not None else None
+            from .library_documents import identity
+            consented = state.get("grade_read_consent") == identity(raw_grade)
+            if (report or session.grade_notice) and not consented:
+                session.grade_notice = report or session.grade_notice
+                return {**self.status(session_id), "grade_notice": session.grade_notice}
+            if not unreadable and self._check(path, state, raw_grade):
                 return self.status(session_id)
             state.update(desired=desired, pending=True)
             row = self.marks._rows([path]).get(path)
@@ -249,8 +269,17 @@ class LibraryGrades:
             history = deepcopy(document.get("grade_history", {}))
             for field in ("session_start", "previous_grade"):
                 if field in state and (include_history or state.get("pending")): history[field] = deepcopy(state[field])
+            if state.get("grade_backups"):
+                history["grade_backups"] = deepcopy(state["grade_backups"])
             if history: document["grade_history"] = history
             if not state.get("pending"):
+                return document
+            from .saved_grades import notice
+            from .library_documents import identity
+            raw_grade = document.get("grade")
+            if raw_grade is not None and notice(validate_saved_document(raw_grade)) and state.get("grade_read_consent") != identity(raw_grade):
+                state["pending"] = False
+                self._put(path, state)
                 return document
             if self._check(path, state, document.get("grade")):
                 return document  # Marks still save, with the external grade intact.
@@ -284,7 +313,7 @@ class LibraryGrades:
                 except (ValueError, OSError): pass  # Saving/status must still work while settings are unreadable.
             return {"conflict": bool(state.get("conflict")), "pending": bool(state.get("pending")),
                     "dirty": bool(session.dirty), "reason": reason,
-                    "revision": session.edit_revision, **name}
+                    "revision": session.edit_revision, "grade_notice": session.grade_notice, **name}
 
     def check(self, session_id, unsaved=False):
         path = self.path(session_id)
@@ -355,6 +384,53 @@ class LibraryGrades:
                 group["count"] += 1
                 group["photos"].append(path)
         return list(groups.values())
+
+    def recover_grades(self, choices, action):
+        from .library_documents import LibraryDocuments
+        from .saved_grades import notice
+        from .library_picture_errors import PictureErrors
+        if action not in ("continue", "original", "leave", "dismiss"):
+            raise ValueError("Choose Continue without them, Revert to original or Leave as is.")
+        errors = getattr(self.marks, "picture_errors", None) or PictureErrors(self.marks)
+        with self.store._lock, self.marks._lock:
+            targets, originals = {}, {}
+            for choice in choices:
+                path = str(self.marks._path(choice["path"]))
+                if choice["revision"] != errors.revision(path):
+                    raise ValueError("The photo or settings changed. Review it again before choosing.")
+                raw = LibraryDocuments(self.marks).request(path)["grade"]
+                if raw is None: continue
+                saved = validate_saved_document(raw)
+                if not notice(saved): continue
+                if action in ("leave", "dismiss"):
+                    if action == "dismiss":
+                        if any(item["kind"] != "look" for item in notice(saved)["issues"]):
+                            raise ValueError("Unreadable or newer grades need a choice before their warning can be dismissed.")
+                        record = errors.observe_grade(path, notice(saved))
+                        errors.save({**record, "ignored": True})
+                    continue
+                originals[path] = deepcopy(raw)
+                targets[path] = (saved.model_dump(mode="json") if action == "continue" else
+                                 self.store.prepare_session(self.marks.source_path(path), owns_source_path=False).edit_document().model_dump(mode="json") if self.history.current(path) else None)
+            # Durable backup precedes both live-session replacement and writer work.
+            for path, raw in originals.items():
+                state = self._get(path)
+                doc = self.marks._document(Path(path)) or {}
+                backups = state.setdefault("grade_backups", deepcopy(doc.get("grade_history", {}).get("grade_backups", [])))
+                if raw not in backups: backups.append(raw)
+                state["previous_grade"] = deepcopy(raw)
+                from .library_documents import identity
+                state["grade_read_consent"] = identity(raw)
+                self._put(path, state)
+            for path in targets:
+                session = self.history.current(path)
+                if session: session.grade_notice = None; session.grade_original = None
+            result = self.history.rewrite(list(targets), targets=targets, save_open=True, allow_protected=True)
+            for path in targets:
+                session = self.history.current(path)
+                if session: session.grade_notice = None; session.grade_original = None
+                errors.clear(path)
+            return result
 
     def discard_recovery(self, session_id):
         with self.store._lock, self.marks._lock:

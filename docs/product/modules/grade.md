@@ -37,6 +37,17 @@ virtual copies, history, presets, stored Library pictures, batch export and
 queued deliveries. Live edits stay strict. Brief:
 `docs/technical/briefs/codex-brief-graceful-grades-2026-10-28.md`.
 
+### October 28 implementation record
+
+- Saved-grade reader and persistence foundation: recover panel sections through
+  `projects.validate_saved`, skip unreadable locals/repairs, retain notices,
+  record writer/section versions, and block unapproved replacement. Project
+  backups live inside the project; Library backups use grade history and the
+  existing durable writer, including read-only-folder recovery.
+- Checks for this commit: 22 focused reader/on-disk choice checks passed.
+  The intended old rejection expectation now checks section recovery.
+  UI and complete fast/app checks are still in progress.
+
 ## October 27: Tone sliders replace Lift/Gamma/Gain (Steve's decision, v1)
 
 **Naming rule for the whole app.** "Exposure" always means an equal change in

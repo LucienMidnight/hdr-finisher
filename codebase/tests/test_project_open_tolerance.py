@@ -55,12 +55,15 @@ def test_a_removed_choice_falls_back_to_the_default() -> None:
     assert document.denoise.hdr.analysis.algorithm_version == "adaptive-atrous-v1"
 
 
-def test_a_wrong_value_still_refuses_the_project() -> None:
+def test_a_wrong_value_resets_only_its_section() -> None:
     payload = _state()
     payload["global_adjustments"] = {"hdr": {"exposure": 99.0}}
 
-    with pytest.raises(ValidationError):
-        _validate_ignoring_unknown_fields(payload)
+    payload["global_adjustments"]["hdr"]["saturation"] = 1.25
+    document = _validate_ignoring_unknown_fields(payload)
+    assert document.global_adjustments.hdr.exposure == 0
+    assert document.global_adjustments.hdr.saturation == 1.25
+    assert document._saved_grade_notice["sections"] == ["HDR Tone"]
 
 
 def test_a_current_project_is_untouched() -> None:

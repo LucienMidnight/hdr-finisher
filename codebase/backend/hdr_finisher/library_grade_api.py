@@ -74,6 +74,13 @@ def add_grade_routes(router, marks, store):
         except (ValueError, OSError) as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    @router.post("/grade-read-choices")
+    def grade_read_choices(request: dict):
+        try:
+            return grades.recover_grades(request.get("photos", []), request.get("action"))
+        except (ValueError, OSError) as error:
+            raise HTTPException(409, str(error)) from error
+
     @router.get("/grade-recovery")
     def recovery():
         with marks._lock:

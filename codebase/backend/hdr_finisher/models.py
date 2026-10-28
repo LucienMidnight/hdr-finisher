@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_serializer, model_validator
 
+from .config import APP_VERSION
 from .color_context import validate_reference_white
 from .retouch_recipe import InpaintRecipe
 from .hsl import HSLRecipe, HSLSettings
@@ -1038,6 +1039,8 @@ class EditDocument(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[4] = 4
+    app_version: str = APP_VERSION
+    section_versions: dict[str, int] = Field(default_factory=lambda: __import__("hdr_finisher.saved_grades", fromlist=["SECTION_VERSIONS"]).SECTION_VERSIONS.copy())
     hdr_reference_white_nits: Literal[100, 203]
     source: SourceReference
     interpretation_override: "SourceInterpretationOverride" = Field(default_factory=lambda: SourceInterpretationOverride())
@@ -1117,6 +1120,7 @@ class PreviewSettings(BaseModel):
 
 
 class SessionPayload(BaseModel):
+    grade_notice: dict | None = None
     session_id: str
     source: SourceImageDescriptor
     metadata: MetadataPayload

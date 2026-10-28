@@ -213,6 +213,8 @@ def export_photo(photo, preset, directory, sequence, progress=None, cancelled=la
         for version in preset.versions:
             if cancelled(): break
             row = {"photo":photo["path"],"version":version.name}
+            if session.grade_notice:
+                row["grade_warning"] = session.grade_notice["reason"]
             if photo.get("sdr_only") and version.settings.format in {"avif_gain_map","jpeg_ultrahdr","jpegxl_hdr"}:
                 results.append(dict(row,outcome="skipped",reason="SDR only: no HDR grade."))
                 if progress: progress(results)
