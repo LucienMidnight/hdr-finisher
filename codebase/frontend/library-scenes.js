@@ -19,7 +19,11 @@ window.HDRLibraryScenes = (() => {
   const preemptLower = job => job.priority >= 10;
   const cpuLanes = Math.max(1, Math.floor(Math.sqrt(globalThis.navigator?.hardwareConcurrency || 1)));
   const probes = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {onChange:changed,preemptLower});
-  const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {heavyLimit:cpuLanes,onChange:changed,preemptLower:job=>job.priority>0,preemptForCapacity:true});
+  const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {
+    heavyLimit:cpuLanes,onChange:changed,
+    keepRunning:job=>visible.has(job.path)||nearby.has(job.path),
+    preemptLower:(job,priority)=>job.priority>0 && (priority<=5 || !(visible.has(job.path)||nearby.has(job.path))),
+    preemptForCapacity:true});
   const versions = new Map();
   const history = new Map(), generations = new Map();
   let visible = new Set(), nearby = new Set(), reviewPath = null;
@@ -60,7 +64,7 @@ window.HDRLibraryScenes = (() => {
     const cost = elapsed ? elapsed / 1000 : plan.bytes / largeBytes;
     const pending = sources.submit(identity+"|"+version+"|"+generation, async (shared, importance) => {
       const started = performance.now();
-      try { const result = await develop(path, edge, shared, importance, version, options.gpuOnly); if (result && idle) save(result); return result; }
+      try { const result = await develop(path, edge, shared, importance, version, options.gpuOnly); if (result && (idle || signal?.aborted)) save(result); return result; }
       finally {
         if (!shared.aborted) {
           history.delete(path);

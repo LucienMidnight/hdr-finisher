@@ -4078,3 +4078,27 @@ camera, saved workspace layouts.
 - Filter bar simplification:
   [brief, October 13](../archive/Library_Filter_Bar_Simplification_Brief_2026-10-13.md)
 - Library briefs: `docs/technical/archive/briefs/codex-brief-library-*.md`
+
+### October 28, 2026: Retouch Library work
+
+- Source developments now survive a grid scroll while their photo remains visible
+  or nearby, and returning demand reattaches to the same job. Selected-photo work
+  can still preempt them; leaving the nearby window cancels unneeded work. Source
+  slot and memory limits are unchanged.
+- DSC04375's October 28 stored-scene miss was a one-time consequence of the
+  intentional saved-grade normalization change (611c994): omitted repair defaults
+  and the RAW edge-colour default now enter the source recipe consistently. Its
+  old stored key was reproduced from the unchanged sidecar; the current thumbnail
+  and screen scene are stored under the new key. This affects documents missing
+  those source/repair defaults, not all stored photos, and does not recur on each
+  scroll or every update. Writer-version fields and local adjustments do not enter
+  the source recipe. Cache matching is left intact.
+- GPU repair development and CPU/GPU review remain open.
+Validation: the scheduler and returning-viewport behavior tests pass. The
+focused Electron scroll check reused 20 tiles, preserved pixels and made zero
+backend picture requests on return (`codebase/output/retouch-library-scroll-check.log`).
+Fast checks: 650 Node passes, two existing failures; 2687 Python passes, three
+skips and three existing failures. These are the same failures recorded in the
+Grade module (preset-header contract, RGB publication guard, repair mock's
+`defer_store`, selected-source fallback mock and Single's missing screen-preview
+mock). No broad GPU sweep, export change or owner-photo write.

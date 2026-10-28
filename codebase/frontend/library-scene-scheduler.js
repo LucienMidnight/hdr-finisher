@@ -57,7 +57,11 @@
     }
     return Object.freeze({submit,
       promote:(path,priority)=>{for(const job of jobs.values())if(job.path===path){for(const user of job.users)user.priority=Math.min(user.priority,priority);demand(job);}pump();},
-      reprioritize:rank=>{ranking=rank;for(const job of jobs.values())demand(job);},
+      reprioritize:rank=>{ranking=rank;for(const job of [...jobs.values()]){
+        demand(job);
+        const retained=typeof keepRunning==="function"?keepRunning(job):keepRunning;
+        if(job.running&&!job.users.size&&!retained){job.controller.abort();if(jobs.get(job.key)===job)jobs.delete(job.key);onChange(job,"stopping");}
+      }},
       invalidate:predicate=>{for(const job of [...jobs.values()])if(predicate(job.path)){job.controller.abort();const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);settle(job,cancelled());}},
       stage:(path,stage,waiting=false)=>{for(const job of jobs.values())if(job.path===path&&job.running&&(job.stage!==stage||job.resourceWaiting!==waiting)){job.stage=stage;job.resourceWaiting=waiting;onChange(job,"running");}},snapshot:()=>({failures:[...failures],active,waiting:waiting.filter(j=>!j.controller.signal.aborted).length,jobs:[...new Set([...jobs.values(),...runningJobs])].map(j=>({path:j.path,priority:j.priority,stage:j.stage,state:j.controller.signal.aborted?"stopping":j.running&&!j.resourceWaiting?"running":"waiting"}))})});
   }

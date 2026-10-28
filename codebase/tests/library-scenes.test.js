@@ -182,3 +182,17 @@ test('direct scene persistence waits for acceptance and starts after presentatio
  scenes.save(meta,true);await tick();assert.deepEqual(calls,['accept']);
  accepted.resolve();await tick();assert.deepEqual(calls,['accept','/api/library/live-store/current']);
 });
+
+test('nearby viewport retains source preparation across a returning grid scroll',async()=>{
+ const block=gate(),controller=new AbortController();let starts=0,shared;
+ const {scenes}=setup({photo:{bytes:96e6,revision:'same'}},async(path,edge,signal)=>{
+  starts++;shared=signal;await block.promise;return {edge,key:'finished'};
+ });
+ scenes.viewport(['photo'],['photo']);
+ const first=scenes.load('photo',640,controller.signal,10);const rejected=assert.rejects(first,{name:'AbortError'});
+ await tick();scenes.viewport([],['photo']);controller.abort();await rejected;
+ assert.equal(shared.aborted,false);
+ scenes.viewport(['photo'],['photo']);
+ const returning=scenes.load('photo',640,undefined,10);await tick();
+ assert.equal(starts,1);block.resolve();assert.equal((await returning).key,'finished');
+});
