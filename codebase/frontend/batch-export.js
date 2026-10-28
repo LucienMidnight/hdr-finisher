@@ -155,7 +155,7 @@
     $("batch-pause").hidden=$("batch-cancel").hidden=done;$("batch-pause").textContent=j.state==="paused"?"Resume":"Pause";
     $("batch-reveal").hidden=$("batch-close").hidden=!done;
     $("batch-results").hidden=!done;
-    $("batch-results").replaceChildren(...j.results.map(r=>{const item=node("li","","batch-result");item.append(node("span",writtenName(r.output_path,j.directory)),node("span",`${model.photos.find(p=>p.path===r.photo)?.name||r.photo} · ${r.version}`),node("span",(OUTCOMES[r.outcome]||r.outcome)+(r.renderer?` · ${r.renderer.toUpperCase()}`:"")+(r.fallback_reason?` · ${r.fallback_reason}`:"")+(r.reason?` · ${r.reason}`:""),`batch-outcome batch-outcome-${r.outcome}`));return item;}));
+    $("batch-results").replaceChildren(...j.results.map(r=>{const item=node("li","","batch-result");item.append(node("span",writtenName(r.output_path,j.directory)),node("span",`${model.photos.find(p=>p.path===r.photo)?.name||r.photo} · ${r.version}`),node("span",(OUTCOMES[r.outcome]||r.outcome)+(r.renderer?` · ${r.renderer.toUpperCase()}`:"")+(r.fallback_reason?` · ${r.fallback_reason}`:"")+(r.grade_warning?` · Grade needs attention: ${r.grade_warning}`:"")+(r.reason?` · ${r.reason}`:""),`batch-outcome batch-outcome-${r.outcome}`));return item;}));
   }
   // Observation changes demand, while progress polls only update badges.
   const tileJobs=new Map();

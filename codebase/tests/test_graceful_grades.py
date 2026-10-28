@@ -235,3 +235,11 @@ def test_broken_project_json_relinks_to_photo_and_preserves_raw_backup(tmp_path)
         backup=next(n for n in archive.namelist() if n.startswith("grade-backups/"))
         assert json.loads(archive.read(backup))==broken
     store.clear()
+
+
+def test_missing_source_section_keeps_readable_finishing():
+    from hdr_finisher.saved_grades import whole_grade_fallback
+    saved=validate_saved(EditDocument,{"global_adjustments":{"hdr":{"exposure":.7}}})
+    assert saved.global_adjustments.hdr.exposure == .7
+    assert not whole_grade_fallback(notice(saved))
+    assert notice(saved)["sections"] == ["Source settings"]

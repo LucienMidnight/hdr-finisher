@@ -84,7 +84,7 @@ def test_match_status_and_metrics_are_stored_together() -> None:
         SdrMatchState(materialized_status="matched")
 
 
-def test_schema_v3_is_rejected_by_model_and_project_gate(tmp_path: Path) -> None:
+def test_live_schema_v3_is_rejected_but_saved_project_shows_defaults(tmp_path: Path) -> None:
     store, session_id = _store_with_source(tmp_path)
     legacy_document = store.get(session_id).edit_document().model_dump(mode="json")
     legacy_document["schema_version"] = 3
@@ -101,8 +101,12 @@ def test_schema_v3_is_rejected_by_model_and_project_gate(tmp_path: Path) -> None
         }))
         archive.writestr("edit-state.json", json.dumps(legacy_document))
 
-    with pytest.raises(ProjectError, match="create a new v4 project"):
-        open_project(store, project)
+    before = project.read_bytes()
+    opened = open_project(store, project)
+    assert opened.grade_notice["sections"] == ["Saved grade"]
+    assert opened.grade_original == legacy_document
+    assert opened.adjustments == opened.starting_adjustments()
+    assert project.read_bytes() == before
 
 
 def test_set_sdr_match_is_one_deterministic_undo_step(tmp_path: Path) -> None:

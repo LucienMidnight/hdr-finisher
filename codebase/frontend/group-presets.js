@@ -373,7 +373,7 @@ async function applyGroupPreset(preset) {
     const parts = path.split("."); let parent = candidate;
     for (const key of parts.slice(0,-1)) parent = parent[key] ||= {};
     parent[parts.at(-1)] = JSON.parse(JSON.stringify(preset.values[path]));
-    if (context.group === "film-look" && parent[parts.at(-1)] && typeof parent[parts.at(-1)] === "object" && !Array.isArray(parent[parts.at(-1)])) {
+    if (context.group === "film-look" && parent[parts.at(-1)] && typeof parent[parts.at(-1)] === "object" && !Array.isArray(parent[parts.at(-1)]) && (parent[parts.at(-1)].stock_overrides === undefined || Array.isArray(parent[parts.at(-1)].stock_overrides))) {
       const raw = parent[parts.at(-1)];
       const expanded = HDRFilmCharacter.expand(raw);
       parent[parts.at(-1)] = {...raw,...expanded,stock_overrides:[...new Set([...(raw.stock_overrides || []),...expanded.stock_overrides])]};
@@ -387,7 +387,7 @@ async function applyGroupPreset(preset) {
     const action = await window.HDRDialogs.choose(saved.notice.reason + " The preset file stays unchanged.",
       [{label:"Leave as is",value:"leave",cancel:true},{label:"Revert to original",value:"original"},{label:"Continue without them",value:"continue",primary:true}],
       {title:"Preset needs attention"});
-    if (action === "original") { await window.HDRGradeSaving?.revertOriginal(); return; }
+    if (action === "original") { closeGroupPresetDialog(); await window.HDRGradeSaving?.revertOriginal(); return; }
     if (action !== "continue") return;
   }
   const readable = isDenoise ? {denoise:saved.value} : saved.value;

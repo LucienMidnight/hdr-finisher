@@ -154,8 +154,15 @@ def test_unknown_engine_cannot_silently_change_a_saved_repair(photo):
     document = session.edit_document().model_dump(mode="json")
     document["repairs"] = [record().model_dump(mode="json")]
     document["repairs"][0]["recipe"]["settings"]["algorithm"] = "another-engine"
+    before = __import__("copy").deepcopy(document)
+    recovered = _validate_ignoring_unknown_fields(document)
+    assert not recovered.repairs
+    assert any(record().name in section for section in recovered._saved_grade_notice["sections"])
+    assert recovered._saved_grade_original == before and document == before
+    # A saved recipe is skipped; a live recipe still cannot pick another engine.
+    from hdr_finisher.models import EditDocument
     with pytest.raises(ValueError):
-        _validate_ignoring_unknown_fields(document)
+        EditDocument.model_validate(document)
 
 
 def test_library_native_source_uses_same_repair_before_reduction(photo, tmp_path):

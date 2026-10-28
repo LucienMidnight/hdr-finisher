@@ -216,10 +216,13 @@ def read_saved(model, original):
         # Source lookup remains the caller's responsibility. Placeholder facts
         # allow a wholly damaged grade to display the actual selected photo.
         data.setdefault("hdr_reference_white_nits", 203)
-        if "source" not in data:
-            issue("Saved grade", "The grade has no readable source settings. Showing the default look.", ())
+        if "source" not in data and not issues:
+            issue("Source settings", "The grade has no readable source settings. Using the selected photo defaults.", ("source",))
         data.setdefault("source", {"filename": "Photo", "luminance": {
             "luminance_semantics": "scene_relative", "transfer_function": "unknown"}})
+        if isinstance(data.get("source"), dict):
+            data["source"].setdefault("filename", "Photo")
+            data["source"].setdefault("luminance", {"luminance_semantics":"scene_relative", "transfer_function":"unknown"})
         data["app_version"] = APP_VERSION
         data["section_versions"] = dict(SECTION_VERSIONS)
     for attempt in range(4096):

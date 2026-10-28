@@ -35,7 +35,7 @@ between versions and handle them gracefully. **Required for v1:**
 Applies everywhere saved grades are read: projects, Library settings files,
 virtual copies, history, presets, stored Library pictures, batch export and
 queued deliveries. Live edits stay strict. Brief:
-`docs/technical/briefs/codex-brief-graceful-grades-2026-10-28.md`.
+`docs/technical/archive/briefs/codex-brief-graceful-grades-2026-10-28.md`.
 
 ### October 28 implementation record
 
@@ -57,9 +57,45 @@ queued deliveries. Live edits stay strict. Brief:
   three warnings, unchanged files on Leave and an original backup on Continue.
   Required JavaScript checks: 644 passed, two unrelated existing failures in
   `library-scenes.test.js` (decoder failure) and `library-single-ready.test.js`
-  (missing HDRLibraryScreenPreviews). Full Python checks are still running.
+  (missing HDRLibraryScreenPreviews). Final full-suite results are below.
 - Design proposal for Steve: retain the existing attention dialog and badge
   styling, adding the same attention button to Single's caption. No restyling.
+
+### October 28 completion record
+
+Built the v1 graceful-grade mechanism and choices. Missing source metadata
+keeps readable finishing settings; malformed Film Look preset values reach the
+reader before frontend expansion. Batch results display the grade warning using
+their existing results text; output rendering/encoding was not changed.
+
+Final checks: 46 relevant recovery/project/Library checks pass (45 in the last
+focused run, plus the named repair check after correcting its fixture name).
+Three result-based preset UI checks and six portable-file checks pass. The
+Electron driver passes with all four copied-photo tiles, three warning badges,
+unchanged Leave bytes, and a backed-up Continue. Live repair engines and live
+schema validation remain strict; saved unknown repairs now skip with their
+original retained, and saved old schema projects show defaults with a warning.
+Those two former rejection assertions were updated for this intended behavior.
+
+Required full checks: JavaScript 648 passed, 2 unrelated failures remain
+(`library-scenes.test.js` and `library-single-ready.test.js`). Python 2,664
+passed, 3 skipped, 15 failed in the full run; the three relevant failures now
+pass (source identity handling and the two intentionally changed expectations).
+The remaining 12 are unrelated: five Windows timestamp/LRU cases, two alternate
+stream cases, two Recycle Bin recovery cases, GPU nanosecond identity, the
+already-known missing SourceReference luminance fixture, and the already-known
+CaptureCache missing `defer_store` fixture. They were not modified or rerun.
+No tolerances were changed, no installer was built and nothing was pushed.
+
+Small review and logs: `codebase/output/graceful-grades/` (`grid.png`,
+`warning.png`, `scan.json`, `js-tests.log`, `python-tests.log`,
+`focused-tests.log`, `app-check.log`). This is the only review folder retained;
+it can be deleted after Steve's review. The one downscaled shared photo is in
+`codebase/output/test-photos/graceful-grades/` for reuse. Disposable test profiles
+and scratch folders are removed. The final output-size result is recorded with
+the local completion commit. Design remains proposed for Steve's review: the
+existing-style attention button in Single's caption; all other warning surfaces
+reuse existing badges/dialogs.
 
 ### October 28 recovery boundary and scan record
 

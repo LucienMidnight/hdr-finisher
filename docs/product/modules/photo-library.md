@@ -19,6 +19,16 @@ The Electron real-photo-copy check shows healthy and damaged/future-grade tiles,
 checks unchanged bytes on Leave and the backup on Continue. Existing attention
 styling is reused; Single's caption button is proposed for Steve's review.
 
+Completion: 46 relevant recovery checks and the Electron copied-photo check
+pass. Final fast suites retain 2 unrelated JavaScript and 12 unrelated Python
+failures; the full-run counts and names are recorded in the Grade PRD. A
+read-only scan of 155,879 indexed paths/166 settings and projects found 2 photo
+items and 21 projects that would warn, chiefly for used removed Film Look/Tone
+settings or an unreadable format; none changed. The protected village project
+`D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher`
+would warn for Film Look and Tone; the two protected DSC00264 projects do not.
+The completed brief is archived under `docs/technical/archive/briefs/`.
+
 ## October 26: GPU Denoise preparation
 
 Noise measurement now runs on the renderer's graphics card for Grade, Library,
@@ -2044,13 +2054,6 @@ effects remain open. Compare's detail view still uses the legacy native
 crop route; its move to live native scenes remains open with that cleanup.
 
 ## 5. V1 open work, in order
-
-**V1 (Steve, October 28, 2026): graceful old, damaged and newer grades.**
-A photo whose grade cannot be fully read still shows an ungraded thumbnail
-with a warning badge, keeps the sections it can read, and offers Continue
-without them / Revert to original / Leave as is. Requirements are in the
-[Grade PRD](grade.md) (October 28 note). Done October 28: old grades with
-removed settings load, and remembered errors retry after an update.
 
 **V1 scope (Steve, October 26, 2026):** the "Leftovers" item below (comfort
 cap, indexing settings, dimmed offline drives, drag a folder in to pin it)
