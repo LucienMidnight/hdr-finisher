@@ -119,9 +119,9 @@ test('real subprocess run resumes completed work, retries once, classifies failu
   assert.equal(second.status,1,second.stderr+second.stdout);
   const state=fixture.states()[0];assert.equal(state.completed,true);
   assert.deepEqual(Object.fromEntries(Object.entries(state.results).map(([key,value])=>[key,value.classification])),{'tests/pass.js':'passed','tests/flaky.js':'flaky','tests/known.js':'known','tests/new.js':'new'});
-  const history=fs.readFileSync(path.join(fixture.root,'output/release-checks/history.jsonl'),'utf8').trim().split('\n');assert.equal(history.length,7);
+  const history=fs.readFileSync(path.join(fixture.root,'output/release-checks/history.jsonl'),'utf8').trim().split('\n');assert.equal(history.length,6);
   const third=fixture.run('--tier','core');assert.equal(third.status,1);assert.equal(fixture.states().length,1);
-  assert.equal(fs.readFileSync(path.join(fixture.root,'output/release-checks/history.jsonl'),'utf8').trim().split('\n').length,7);
+  assert.equal(fs.readFileSync(path.join(fixture.root,'output/release-checks/history.jsonl'),'utf8').trim().split('\n').length,6);
   for(const file of fixture.projects) assert.equal(fs.readFileSync(file,'utf8'),'protected');
 });
 test('runner refuses dirty tracked files and reports mid-run revision and fixture changes', t => {
@@ -136,4 +136,43 @@ test('another active runner blocks GPU work across selections', t => {
   const fixture=isolatedRunner(t),out=path.join(fixture.root,'output/release-checks');fs.mkdirSync(out,{recursive:true});
   fs.writeFileSync(path.join(out,'active.lock'),String(process.pid));
   const result=fixture.run('--tier','core');assert.equal(result.status,1);assert.match(result.stderr,/owns the GPU/);
+});
+
+test('known signatures do not hide a second failure in a combined invocation', () => {
+  const known={failures:[{driver:'film',messages:['Error: exact numerical failure']}]};
+  assert.equal(runner.knownMessage('Error: exact numerical failure',known,'film'),true);
+  assert.equal(runner.knownMessage('Error: exact numerical failure\npage.evaluate: Error: preset await',known,'film'),false);
+  assert.equal(runner.knownMessage('Error: changed numerical failure',known,'film'),false);
+});
+test('unfinished selection includes only incomplete work plus explicit reruns', () => {
+  const previous={drivers:['tests/pass.js','tests/incomplete.js','tests/failed.js'],results:{'tests/pass.js':{classification:'passed'},'tests/incomplete.js':{attempts:[]},'tests/failed.js':{classification:'new'}}};
+  const tiny={drivers:previous.drivers.map(path=>({path,tier:'core',launch:{method:'node'}}))};
+  assert.deepEqual(runner.unfinishedSelection(tiny,previous,['tests/failed.js']).rows.map(r=>r.path),['tests/incomplete.js','tests/failed.js']);
+  assert.throws(()=>runner.unfinishedSelection(tiny,previous,['missing']),/missing or not runnable/);
+});
+test('an exact known failure runs once while an unfamiliar failure still retries', t => {
+  const fixture=isolatedRunner(t);
+  const result=fixture.run('--tier','core');
+  assert.equal(result.status,1,result.stdout+result.stderr);
+  const state=fixture.states()[0];
+  assert.equal(state.results['tests/known.js'].attempts.length,1);
+  assert.equal(state.results['tests/new.js'].attempts.length,2);
+});
+test('cross-revision continuation starts fresh and leaves prior evidence untouched', t => {
+  const fixture=isolatedRunner(t);
+  fixture.run('--tier','core','--stop-after','1');
+  const parent=fs.readdirSync(path.join(fixture.root,'output/release-checks'),{withFileTypes:true}).find(e=>e.isDirectory()).name;
+  const source=path.join(fixture.root,'output/release-checks',parent);
+  const before=fs.readFileSync(path.join(source,'state.json'),'utf8');
+  fixture.git('commit','--allow-empty','-qm','new application revision');
+  const plan=fixture.run('--full','--unfinished-from',source,'--also-driver','tests/pass.js','--plan');
+  assert.equal(plan.status,0,plan.stdout+plan.stderr);
+  assert.match(plan.stdout,/4 drivers/);
+  assert.equal(fixture.states().length,1);
+  const run=fixture.run('--full','--unfinished-from',source,'--also-driver','tests/pass.js');
+  assert.equal(run.status,1,run.stdout+run.stderr);
+  assert.equal(fs.readFileSync(path.join(source,'state.json'),'utf8'),before);
+  const next=fixture.states().find(s=>s.revision!==JSON.parse(before).revision);
+  assert.equal(Object.keys(next.results).length,4);
+  assert.equal(next.results['tests/pass.js'].attempts.length,1);
 });

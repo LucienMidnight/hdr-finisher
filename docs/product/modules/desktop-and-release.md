@@ -96,3 +96,15 @@ installer and a methodical bug hunt.
   [HDR_Finisher_PRD_v1.2 sections 10 and 13](../archive/HDR_Finisher_PRD_v1.2.md)
 - Setup guides: [Windows](../../setup/windows.md), [macOS](../../setup/macos.md),
   [Linux](../../setup/linux.md)
+
+
+**October 28, 2026: certification continuation tooling.** The release runner
+can select unfinished driver names from an older run plus an explicit rerun,
+starting fresh results at the committed current revision. It preserves the old
+evidence and verifies ancestry and protected hashes. Registered exact-message
+reproductions stop without a retry; additional errors remain open, including
+Film's preset-await failure alongside its known numerical case. Desktop smoke's
+101 px header failure also stays open. Retouch Library's test sends the same
+full scene bytes as Blob uploads to keep DevTools from embedding the raw body
+past its 256 MB message limit; application pixels, workload and limits stay
+unchanged. Validation and the requested continuation approval are pending.

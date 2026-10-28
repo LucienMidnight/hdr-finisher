@@ -15,6 +15,19 @@ const breakdown=process.argv.includes('--breakdown'),plain=process.argv.includes
   const result=await page.locator('#library-frame').evaluate(async(el,{copy,folder,breakdown})=>{
    const w=el.contentWindow,events=[],original=w.HDRLibraryStopwatch;
    if(breakdown)w.HDRLibraryStopwatch=(stage,fields={})=>{events.push({stage,at:w.performance.now(),...fields});original(stage,fields);};
+   // DevTools copies ArrayBuffer POST bodies into request events, escaping a
+   // full RAW scene past its 256 MB message ceiling. Blob uploads carry the
+   // identical bytes without embedding the picture in that protocol event.
+   const fetch=w.fetch;
+   w.__retouchUpload={count:0,bytes:0,restore:()=>{w.fetch=fetch;delete w.__retouchUpload;}};
+   w.fetch=function(input,init){
+    const body=init?.body,url=new URL(typeof input==='string'?input:input.url,w.location.href);
+    if(url.pathname==='/api/library/live-developed' && (body instanceof w.ArrayBuffer || w.ArrayBuffer.isView(body))){
+     w.__retouchUpload.count++;w.__retouchUpload.bytes+=body.byteLength;
+     init={...init,body:new w.Blob([body],{type:'application/octet-stream'})};
+    }
+    return fetch.call(this,input,init);
+   };
    // Profile this source alone: browsing also starts unrelated grid work.
    if(!breakdown)await w.HDRLibrary.browse(folder);
    const setupAt=w.performance.now(),gpu=await w.HDRLibraryPictures.initialize(),rendererSetupMs=w.performance.now()-setupAt;
@@ -45,9 +58,12 @@ const breakdown=process.argv.includes('--breakdown'),plain=process.argv.includes
     return {ms:performance.now()-started,meta:plain};
    },copy);
   }finally{fs.writeFileSync(copy+'.hdrf',saved);}
-  console.log(JSON.stringify({coldMs:result.coldMs,warmMs:result.warmMs,withoutRepairsMs:result.withoutRepairs.ms}));
+  const uploads=await page.locator('#library-frame').evaluate(el=>({count:el.contentWindow.__retouchUpload.count,bytes:el.contentWindow.__retouchUpload.bytes}));
+  assert.ok(uploads.count>0 && uploads.bytes>0,'Full scene upload did not exercise the Blob transport');
+  console.log(JSON.stringify({uploads,coldMs:result.coldMs,warmMs:result.warmMs,withoutRepairsMs:result.withoutRepairs.ms}));
   const output=path.resolve('output/retouch-library');fs.mkdirSync(output,{recursive:true});
   fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(result,null,2));
+  console.log('retouch-library-gpu PASS');
  }finally{
   fs.writeFileSync(copy+'.hdrf',savedCopy);
   assert.deepEqual([hash(owner),hash(owner+'.hdrf')],before,'Owner files changed');

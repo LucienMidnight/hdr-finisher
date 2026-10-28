@@ -76,9 +76,9 @@ per attempt, fixture hashes and `summary.txt`/`summary.json`. Exit 0 means pass
 (including clearly labeled flaky checks), 1 means a failure/safety stop, and
 130 means interrupted or unfinished. Known failures still produce NOT READY.
 `output/release-checks/history.jsonl` appends durations, results, revision and
-log paths from every attempt, including interrupted attempts. Completed failures
-get exactly one retry. Flaky means the retry passed; known requires the same
-committed message signature on both attempts; every other failure is new.
+log paths from every attempt, including interrupted attempts. Unfamiliar failures get exactly one retry. Flaky means the retry passed.
+A committed exact-message known failure stops after its first reproduction;
+an additional error in the combined log remains new and still gets a retry.
 
 The runner also reads the ignored 0.9.0 and 0.9.1 results when present, as timing
 evidence only. A fresh checkout without that output honestly reports no history.
@@ -157,7 +157,10 @@ or the sidecar uses the real Library cache in `%LOCALAPPDATA%`.
 
 Add a `known-failures.json` entry only for an already documented unresolved
 failure. Include its driver, exact stable error message(s), documentation source
-and original log evidence. All messages must occur in both failed attempts.
+and original log evidence. Before registration, all messages must occur in both recorded failed attempts.
+Future exact reproductions do not spend a retry. Every error header must be
+covered by the registered signatures, so Film's separate preset-await error
+remains open even alongside its known numerical case.
 Keep numeric error details exact when they identify the recorded failure; do
 not match a broad word like `Timeout` or a driver name alone. Different output
 from the same driver is new. Two entries remain after the 0.9.1 fixes: the extreme Film HDR range and
@@ -324,3 +327,22 @@ Run: codebase/output/release-checks/2026-10-17T02-33-19-058Z-57fa337ef9f32ffe962
 Final fast checks: 519 Node tests passed; 2,205 Python tests passed with three
 skips (436 seconds). The added observer tests are behavioral; the application
 limit and all existing pixel, timing and parity tolerances remain unchanged.
+
+## Unfinished work at a later revision (October 28, 2026)
+
+Use `npm run test:release -- --full --unfinished-from output/release-checks/<old-run> --also-driver tests/retouch-library-gpu.js --plan`.
+The old state supplies driver names only: unfinished entries plus explicit
+`--also-driver` additions. No old pass or failed attempt is certified at the
+new HEAD. The old revision must be an ancestor, all protected hashes must still
+match, and all selected drivers must remain runnable. Remove `--plan` only
+after Steve approves the printed selection and estimate. `--full` explicitly
+allows a long continuation; it does not add other full-tier drivers to this
+selection. The saved old evidence stays unchanged. The new run still requires
+a clean committed checkout and stops if HEAD or protected projects change.
+
+October 28 registrations reproduce the October 24 control-panel hidden preset
+input, export-browser hidden JPEG selector, and four undefined import helper
+failures; exact messages and both logs are in known-failures.json. Film's
+Neutral maximum paper gain retains its full numeric signature. Desktop smoke
+(header now 101 px) and Film's `hdr clean-cinema replacement film_stock`
+preset-await finding remain open, and the combined Film result is new.

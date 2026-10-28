@@ -7,7 +7,10 @@
         "Error: Film stock preview and export disagree: [{\"lane\":\"hdr\",\"label\":\"Neutral maximum paper gain\",\"mean\":3.2009965277764834,\"p999\":250,\"worst\":[{\"d\":255,\"x\":421,\"y\":1,\"gpu\":[209,255,0],\"cpu\":[25,255,255]},{\"d\":255,\"x\":1175,\"y\":1,\"gpu\":[255,0,255],\"cpu\":[255,255,255]},{\"d\":255,\"x\":1131,\"y\":2,\"gpu\":[255,0,255],\"cpu\":[255,255,255]},{\"d\":255,\"x\":1075,\"y\":3,\"gpu\":[255,0,255],\"cpu\":[255,255,255]},{\"d\":255,\"x\":1119,\"y\":3,\"gpu\":[255,0,255],\"cpu\":[255,255,255]},{\"d\":255,\"x\":1121,\"y\":3,\"gpu\":[255,0,255],\"cpu\":[255,255,255]},{\"d\":255,\"x\":423,\"y\":4,\"gpu\":[165,255,0],\"cpu\":[51,255,255]},{\"d\":255,\"x\":1113,\"y\":4,\"gpu\":[255,0,255],\"cpu\":[255,255,255]}]}]"
       ],
       "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
-      "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__film-stock-parity.js.attempt-3.log"
+      "evidence": [
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__film-stock-parity.js.1.1793196494400.log",
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__film-stock-parity.js.2.1793197065978.log"
+      ]
     },
     {
       "driver": "tests/performance/tier-film-consistency.js",
@@ -16,6 +19,75 @@
       ],
       "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
       "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__performance__tier-film-consistency.js.attempt-2.log"
+    },
+    {
+      "driver": "tests/control-panel-polish.js",
+      "messages": [
+        "page.waitForSelector: Timeout 30000ms exceeded.",
+        "  - waiting for locator('#batch-preset-name') to be visible"
+      ],
+      "source": "docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md: H1 / U1; reproduced October 28, 2026",
+      "evidence": [
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__control-panel-polish.js.1.1793195605852.log",
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__control-panel-polish.js.2.1793195647835.log"
+      ]
+    },
+    {
+      "driver": "tests/export-file-browser-interaction.js",
+      "messages": [
+        "locator.selectOption: Timeout 30000ms exceeded.",
+        "  - waiting for locator('#jpeg-chroma-subsampling')",
+        "      - element is not visible"
+      ],
+      "source": "docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md: H1 / U1; reproduced October 28, 2026",
+      "evidence": [
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__export-file-browser-interaction.js.1.1793196397577.log",
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__export-file-browser-interaction.js.2.1793196440184.log"
+      ]
+    },
+    {
+      "driver": "tests/geometry-transactions.js",
+      "messages": [
+        "ReferenceError: importTestPattern is not defined"
+      ],
+      "source": "docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md: H1 / U1; reproduced October 28, 2026",
+      "evidence": [
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__geometry-transactions.js.1.1793197637818.log",
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__geometry-transactions.js.2.1793197645075.log"
+      ]
+    },
+    {
+      "driver": "tests/gpu-highlight-compression-parity.js",
+      "messages": [
+        "ReferenceError: importTestPattern is not defined"
+      ],
+      "source": "docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md: H1 / U1; reproduced October 28, 2026",
+      "evidence": [
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__gpu-highlight-compression-parity.js.1.1793197652474.log",
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__gpu-highlight-compression-parity.js.2.1793197659891.log"
+      ]
+    },
+    {
+      "driver": "tests/gpu-scope-parity.js",
+      "messages": [
+        "ReferenceError: importTestPattern is not defined"
+      ],
+      "source": "docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md: H1 / U1; reproduced October 28, 2026",
+      "evidence": [
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__gpu-scope-parity.js.1.1793197705272.log",
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__gpu-scope-parity.js.2.1793197713141.log"
+      ]
+    },
+    {
+      "driver": "tests/grading-value-entry.js",
+      "messages": [
+        "ReferenceError: importTestPattern is not defined"
+      ],
+      "source": "docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md: H1 / U1; reproduced October 28, 2026",
+      "evidence": [
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__grading-value-entry.js.1.1793197720882.log",
+        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__grading-value-entry.js.2.1793197728638.log"
+      ]
     }
   ]
 }
