@@ -4,12 +4,12 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def _write_acescg_exr(path: Path, image) -> None:
+def _write_exr(path: Path, image, interop_id: str = "lin_ap1_scene") -> None:
     import OpenEXR
     import numpy as np
 
     pixels = np.asarray(image, dtype=np.float32)
-    header = {"type": OpenEXR.scanlineimage, "colorInteropID": "lin_ap1_scene"}
+    header = {"type": OpenEXR.scanlineimage, "colorInteropID": interop_id}
     channels = {name: np.ascontiguousarray(pixels[..., index]) for index, name in enumerate(("R", "G", "B"))}
     OpenEXR.File(header, channels).write(str(path))
 
@@ -22,15 +22,16 @@ def set_test_patterns_enabled(browser, enabled: bool) -> dict[str, object]:
     changed = False
     if enabled:
         folder.mkdir(parents=True, exist_ok=True)
-        from .test_pattern import build_delivery_proof_pattern, build_hdr_test_pattern
+        from .test_pattern import build_delivery_proof_pattern, build_hdr_test_pattern, build_hue_exposure_sweep
 
         patterns = (
-            (folder / "HDR test pattern.exr", build_hdr_test_pattern),
-            (folder / "Delivery proof test pattern.exr", build_delivery_proof_pattern),
+            (folder / "HDR test pattern.exr", build_hdr_test_pattern, "lin_ap1_scene"),
+            (folder / "Delivery proof test pattern.exr", build_delivery_proof_pattern, "lin_ap1_scene"),
+            (folder / "Hue and exposure sweep.exr", build_hue_exposure_sweep, "lin_rec709_scene"),
         )
-        for path, build in patterns:
+        for path, build, interop_id in patterns:
             if not path.exists():
-                _write_acescg_exr(path, build())
+                _write_exr(path, build(), interop_id)
                 changed = True
         if folder_path not in pinned:
             browser.add_pin(folder_path)
