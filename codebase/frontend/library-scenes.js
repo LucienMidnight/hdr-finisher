@@ -14,16 +14,16 @@ window.HDRLibraryScenes = (() => {
       ...window.HDRLibraryPictureLog?.(job),work_stage:job.stage,duration_ms:performance.now()-(job.loggedAt || performance.now()),reason:error?.message});
     job.loggedAt=performance.now();
   };
-  // Draws finish in flight. Developments yield to the selected photo,
-  // including unfinished neighbours (priority 5).
-  const preemptLower = job => job.priority >= 10;
+  // Source and cache work with a requester must finish. Priority orders the
+  // next admission; only abandoned viewport work may be cancelled.
+  // Draw scheduling is independent of source ownership.
   const cpuLanes = Math.max(1, Math.floor(Math.sqrt(globalThis.navigator?.hardwareConcurrency || 1)));
-  const probes = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {onChange:changed,preemptLower});
+  const probes = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {onChange:changed});
+  // Explicit preparations finish their cache even if the immediate waiter
+  // detaches. Grid/filmstrip and speculative demand use viewport ownership.
   const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {
     heavyLimit:cpuLanes,onChange:changed,
-    keepRunning:job=>visible.has(job.path)||nearby.has(job.path),
-    preemptLower:(job,priority)=>job.priority>0 && (priority<=5 || !(visible.has(job.path)||nearby.has(job.path))),
-    preemptForCapacity:true});
+    keepRunning:job=>job.retainDetached||visible.has(job.path)||nearby.has(job.path)});
   const versions = new Map();
   const history = new Map(), generations = new Map();
   let visible = new Set(), nearby = new Set(), reviewPath = null;
@@ -43,7 +43,7 @@ window.HDRLibraryScenes = (() => {
       const result = await response.json();
       if (!response.ok) throw failure(result);
       return result;
-    }, signal, priority, {path,edge,log_view:trace?.view,stage:edge <= 640 ? "Checking thumbnail cache" : edge === 100000 ? "Checking detail preview cache" : "Checking screen preview cache"});
+    }, signal, priority, {path,edge,viewport:!!options.viewportDemand||idle,log_view:trace?.view,stage:edge <= 640 ? "Checking thumbnail cache" : edge === 100000 ? "Checking detail preview cache" : "Checking screen preview cache"});
     window.HDRLibraryTrace?.mark(trace,"picture_cache_check",checked,{cache_hit:!!plan.cached});
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     if (generation!==(generations.get(path)||0)) throw new DOMException("Invalidated", "AbortError");
@@ -72,14 +72,14 @@ window.HDRLibraryScenes = (() => {
           if (history.size > 256) history.delete(history.keys().next().value);
         }
       }
-    }, signal, priority, {heavy,cost,path,edge,log_view:trace?.view,stage:"Developing photo"});
+    }, signal, priority, {heavy,cost,path,edge,viewport:!!options.viewportDemand||idle,retainDetached:!options.viewportDemand&&!idle,log_view:trace?.view,stage:"Developing photo"});
     options.onSourceDemand?.();
     return pending;
   }
   // Selected work follows at most the single sharp draw already in flight.
   // Quick draws use thumbnails and their own renderer and priority queue.
-  const draws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed,preemptLower});
-  const quickDraws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed,preemptLower});
+  const draws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed});
+  const quickDraws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed});
   async function load(path, edge, signal, priority = 10, idle = false, trace = null, options = {}) {
     const generation=generations.get(path)||0;
     const identity = path + (edge === 100000 ? "|native" : "");

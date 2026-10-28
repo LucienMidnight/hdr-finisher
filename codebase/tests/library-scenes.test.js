@@ -106,7 +106,7 @@ test('departed tile cancels its source job and invalidation rejects a fresh requ
  const {scenes}=setup({photo:{bytes:10,revision:'1'}},async(path,edge,signal)=>{
   shared=signal;started.push(path);await block.promise;return {edge,key:'stored'};
  });
- const cancel=new AbortController(),first=scenes.load('photo',640,cancel.signal);
+ const cancel=new AbortController(),first=scenes.load('photo',640,cancel.signal,10,false,null,{viewportDemand:true});
  await tick();cancel.abort();await assert.rejects(first,{name:'AbortError'});assert.equal(shared.aborted,true);
  const returned=scenes.load('photo',640);await tick();assert.deepEqual(started,['photo','photo']);
  scenes.invalidate(['photo']);await assert.rejects(returned,{name:'AbortError'});assert.equal(shared.aborted,true);
@@ -189,10 +189,55 @@ test('nearby viewport retains source preparation across a returning grid scroll'
   starts++;shared=signal;await block.promise;return {edge,key:'finished'};
  });
  scenes.viewport(['photo'],['photo']);
- const first=scenes.load('photo',640,controller.signal,10);const rejected=assert.rejects(first,{name:'AbortError'});
+ const first=scenes.load('photo',640,controller.signal,10,false,null,{viewportDemand:true});const rejected=assert.rejects(first,{name:'AbortError'});
  await tick();scenes.viewport([],['photo']);controller.abort();await rejected;
  assert.equal(shared.aborted,false);
  scenes.viewport(['photo'],['photo']);
  const returning=scenes.load('photo',640,undefined,10);await tick();
  assert.equal(starts,1);block.resolve();assert.equal((await returning).key,'finished');
+});
+
+
+test('needed explicit and viewport sources survive reranking and competing demand; abandoned viewport work stops',async()=>{
+ const block=gate(),started=[],signals={};
+ const plans=Object.fromEntries(['build','tile','selected'].map(p=>[p,{bytes:1,revision:'1'}]));
+ const {scenes}=setup(plans,async(path,edge,signal)=>{
+  started.push(path);signals[path]=signal;await block.promise;return {edge,key:path};
+ });
+ scenes.viewport(['tile'],['tile']);
+ const controller=new AbortController();
+ const build=scenes.load('build',2560,undefined,99);
+ const tile=scenes.load('tile',640,controller.signal,10,false,null,{viewportDemand:true});
+ const cancelled=assert.rejects(tile,{name:'AbortError'});
+ await tick();scenes.viewport([],[]);
+ const selected=scenes.load('selected',2560,undefined,0);
+ await tick();assert.equal(signals.build.aborted,false);assert.equal(signals.tile.aborted,false);
+ assert.deepEqual(started,['build','tile']);
+ scenes.viewport([],['tile']);controller.abort();await cancelled;assert.equal(signals.tile.aborted,false);
+ scenes.viewport([],[]);assert.equal(signals.tile.aborted,true);assert.equal(signals.build.aborted,false);
+ block.resolve();assert.equal((await build).key,'build');assert.equal((await selected).key,'selected');
+});
+
+test('returning explicit demand outside the viewport reuses detached preparation and both finished sizes',async()=>{
+ const block=gate(),controller=new AbortController(),plans={photo:{bytes:1,revision:'1'}};let starts=0,shared;
+ const {scenes,context}=setup(plans,async(path,edge,signal)=>{
+  starts++;shared=signal;await block.promise;
+  context.HDRLibraryGpuRaw.cachedDirect=(p,e)=>({path:p,edge:e,key:'finished'});
+  return {path,edge,key:'finished'};
+ });
+ const first=scenes.load('photo',640,controller.signal);const cancelled=assert.rejects(first,{name:'AbortError'});
+ await tick();controller.abort();await cancelled;scenes.viewport([],[]);
+ assert.equal(shared.aborted,false);
+ const returning=scenes.load('photo',2560,undefined,0);await tick();assert.equal(starts,1);
+ block.resolve();assert.equal((await returning).edge,2560);
+ assert.equal((await scenes.load('photo',640)).key,'finished');assert.equal(starts,1);
+});
+
+
+test('Build previews drawing survives a new grid draw while its caller still needs it',async()=>{
+ const {scenes}=setup({},()=>assert.fail('No source expected')),block=gate();let shared;
+ const build=scenes.draw(async signal=>{shared=signal;await block.promise;return 'built';},undefined,99,'build');
+ await tick();const grid=scenes.draw(async()=> 'grid',undefined,10,'tile');
+ scenes.viewport(['tile'],['tile']);await tick();assert.equal(shared.aborted,false);
+ block.resolve();assert.equal(await build,'built');assert.equal(await grid,'grid');
 });

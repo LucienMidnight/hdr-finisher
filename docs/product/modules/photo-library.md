@@ -4082,8 +4082,9 @@ camera, saved workspace layouts.
 ### October 28, 2026: Retouch Library work
 
 - Source developments now survive a grid scroll while their photo remains visible
-  or nearby, and returning demand reattaches to the same job. Selected-photo work
-  can still preempt them; leaving the nearby window cancels unneeded work. Source
+  or nearby, and returning demand reattaches to the same job. The October 29
+  correction below removes preemption of needed work; leaving the nearby window
+  cancels unneeded viewport work. Source
   slot and memory limits are unchanged.
 - DSC04375's October 28 stored-scene miss was a one-time consequence of the
   intentional saved-grade normalization change (611c994): omitted repair defaults
@@ -4177,3 +4178,43 @@ The five unchanged fast-suite failures are listed in the Grade module. All
 focused route/cache/cancellation checks (10) and the six repair delivery cases
 pass. The broad export/Proof group is not clean because of the five failures
 listed above; no push, merge or installer build is claimed.
+
+
+### October 29, 2026: Preserve needed Library preparation
+
+The October 28 source-driver AbortError stack points at scheduler priority
+preemption, not the orphan-only reprioritize cancellation. Viewport re-ranking
+could demote explicit off-grid work and a competing request could abort it while
+it still had subscribers. Separately, cancelling an explicit waiter outside the
+viewport aborted its source immediately, so returning demand developed it twice.
+Both faults reproduce in fast behavior checks against the prior implementation.
+
+Cache probes and source jobs now finish while requested; priority orders the
+next free slot instead of aborting needed work. Explicit preparation keeps its
+priority through viewport changes and finishes its reusable cache if detached.
+Grid/filmstrip and speculative neighbours declare viewport ownership: nearby
+running work remains reusable, and detached work stops when it leaves that
+window. Source invalidation still cancels obsolete pixels. Slots, GPU budgets,
+rendering, image tolerances and timeouts are unchanged.
+
+App audit: Build previews uses these source queues and its priority-99 drawing
+could also be preempted by a grid draw. In-flight Library draws now finish while
+requested. Export-page batch tiles use Library sources and receive the same
+protection. Actual export, Proof and batch output run through delivery workers,
+not the Library scene scheduler; shared GPU permits retry yielded work. No output
+pipeline changes were needed.
+
+Validation in this first commit: three new app-behavior checks pass (needed and
+abandoned demand, detached explicit reuse of both sizes, Build draw survival).
+The first two fail against the preceding app implementation. Full Node suite:
+657 passed, the same two recorded failures (selected-source CPU-fallback mock;
+Single screen-preview mock). Python: 2715 passed, three skipped and the same three recorded failures
+(preset headers, RGB publication guard, repair mock missing defer_store). Logs:
+`codebase/output/scheduler-fix/fast-node.log` and `fast-python.log`.
+Steve approved the branch checks and needed main comparisons, capped at 95
+minutes total and 15 minutes without a verdict per driver; stalled work retains
+backend logs and queue state. Results and classification are pending. Only the
+drivers in this brief run, sequentially at 2560x1440; the documented Single
+readiness timeout remains excluded unless it differs. The original assessment
+records browser closure for library-rgb-native, not the AbortError recorded for
+the five source drivers; its cause still needs a rerun. No push or merge.

@@ -7,7 +7,7 @@
     const score=job=>job.cost-Math.min(5,(now()-job.created)/1000);
     const order=(a,b)=>a.priority-b.priority||score(a)-score(b)||a.sequence-b.sequence;
     let ranking=null;
-    const demand=job=>{job.priority=Math.min(80,...[...job.users].map(user=>user.priority<=5?user.priority:ranking?ranking(job.path):user.priority));};
+    const demand=job=>{job.priority=Math.min(80,...[...job.users].map(user=>user.priority<=5||!user.viewport?user.priority:ranking?ranking(job.path):user.priority));};
     let borrowPending=false;
     function pump(borrow=false){
       while(active<limit&&waiting.length){
@@ -38,13 +38,14 @@
       for(const user of job.users){user.signal?.removeEventListener("abort",user.stop);error?user.reject(error):user.resolve(value);}
       job.users.clear();
     }
-    function submit(key,task,signal,priority=10,{heavy=false,cost=0,path=key,stage="Preparing photo",edge,log_view,log_step}={}){
+    function submit(key,task,signal,priority=10,{heavy=false,cost=0,path=key,stage="Preparing photo",edge,log_view,log_step,viewport=true,retainDetached=false}={}){
       if(signal?.aborted)return Promise.reject(cancelled());
       let job=jobs.get(key);
       if (job?.controller.signal.aborted) { jobs.delete(key); job = null; }
       if(!job){for(let i=failures.length-1;i>=0;i--)if(failures[i].path===path)failures.splice(i,1);job={key,path,stage,edge,log_view,log_step,task,priority,heavy,cost:Math.max(0,Math.min(5,cost)),created:now(),sequence:sequence++,controller:new AbortController(),users:new Set()};jobs.set(key,job);waiting.push(job);onChange(job,"waiting");}
       const result=new Promise((resolve,reject)=>{
-        const user={signal,resolve,reject,priority};
+        const user={signal,resolve,reject,priority,viewport};
+        if(retainDetached)job.retainDetached=true;
         user.stop=()=>{const retained=typeof keepRunning==="function"?keepRunning(job):keepRunning;job.users.delete(user);reject(cancelled());demand(job);if(!job.users.size&&!(retained&&job.running)){job.controller.abort();if(!job.running){const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);}onChange(job,job.running?"stopping":"cancelled");if(jobs.get(key)===job)jobs.delete(key);}};
         job.users.add(user);demand(job);signal?.addEventListener("abort",user.stop,{once:true});
       });
