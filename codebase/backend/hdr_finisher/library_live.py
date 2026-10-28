@@ -18,6 +18,7 @@ import numpy as np
 from .color_context import RenderColorContext
 from .library_pictures import LibraryPictureCache, reduce_picture
 from .models import AdjustmentState, DenoiseDocumentSettings, LocalAdjustment, RawImportSettings, SourceInterpretationOverride
+from .projects import validate_saved
 from .render_cache import SessionRenderCache, encode_rgba_proxy_rows
 
 _registry = OrderedDict()
@@ -60,7 +61,7 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
             hdr_reference_white_nits=inputs["hdr_reference_white_nits"])
     preparation_ms = (perf_counter() - prepared_at) * 1000
     if document:
-        saved = EditDocument.model_validate(document)
+        saved = validate_saved(EditDocument, document)
         wanted = saved.source.fingerprint_sha256
         if wanted and wanted != source.source_fingerprint_sha256:
             raise ValueError("The source photo changed; its saved grade cannot be shown.")
@@ -180,7 +181,7 @@ class LivePictures:
             framing=document.get("framing"),
             white=document.get("hdr_reference_white_nits", 203), grade_identity=grade_id)
         from .finishing import geometry_output_dimensions
-        adjustments = AdjustmentState.model_validate(result["adjustments"])
+        adjustments = validate_saved(AdjustmentState, result["adjustments"])
         result["scene_width"], result["scene_height"] = metadata["width"], metadata["height"]
         result["width"], result["height"] = geometry_output_dimensions(metadata["width"], metadata["height"], adjustments.shared.geometry)
         result["source_width"], result["source_height"] = geometry_output_dimensions(metadata["source_width"], metadata["source_height"], adjustments.shared.geometry)
@@ -197,7 +198,7 @@ class LivePictures:
         if owner is not self:
             raise ValueError("Preview data belongs to another Library.")
         from .models import GeometryAdjustments
-        adjustments = AdjustmentState.model_validate(metadata["adjustments"])
+        adjustments = validate_saved(AdjustmentState, metadata["adjustments"])
         if adjustments.shared.geometry == GeometryAdjustments():
             # Stored scenes already have this edge. Pack the chosen half-float lane
             # directly; avoid float32 expansion and loading an unused SDR reference.
@@ -227,8 +228,8 @@ class LivePictures:
         context = RenderColorContext(metadata["white"])
         return SimpleNamespace(session_id=metadata["key"], image=pixels, sdr_reference_image=reference,
             source=SimpleNamespace(width=pixels.shape[1], height=pixels.shape[0]),
-            adjustments=AdjustmentState.model_validate(metadata["adjustments"]),
-            local_adjustments=[LocalAdjustment.model_validate(item) for item in metadata["locals"]],
+            adjustments=validate_saved(AdjustmentState, metadata["adjustments"]),
+            local_adjustments=[validate_saved(LocalAdjustment, item) for item in metadata["locals"]],
             denoise=DenoiseDocumentSettings.model_validate(metadata["denoise"]),
             hdr_reference_white_nits=metadata["white"], color_context=context, edit_revision=0,
             render_cache=SessionRenderCache(pixels, reference, color_context=context))

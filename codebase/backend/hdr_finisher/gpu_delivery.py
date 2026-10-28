@@ -20,6 +20,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, Request, Response
 from .color_context import RenderColorContext
 from .models import AdjustmentState, DenoiseDocumentSettings, LocalAdjustment
+from .projects import validate_saved
 from .render_cache import SessionRenderCache
 from .delivery_memory import DeliveryMemory
 
@@ -384,9 +385,9 @@ def create_gpu_delivery_router():
         context = RenderColorContext(value["white"])
         frame = SimpleNamespace(_delivery_memory=memory, session_id=value["id"], image=image, sdr_reference_image=reference,
             source=SimpleNamespace(width=value["width"], height=value["height"]),
-            adjustments=AdjustmentState.model_validate(value["adjustments"]),
-            local_adjustments=[LocalAdjustment.model_validate(v) for v in value["locals"]],
-            denoise=DenoiseDocumentSettings.model_validate(value["denoise"]),
+            adjustments=validate_saved(AdjustmentState, value["adjustments"]),
+            local_adjustments=[validate_saved(LocalAdjustment, v) for v in value["locals"]],
+            denoise=validate_saved(DenoiseDocumentSettings, value["denoise"]),
             hdr_reference_white_nits=value["white"], color_context=context, edit_revision=0,
             denoise_source_identity=value.get("denoise_source_identity"),
             render_cache=SessionRenderCache(image, reference, color_context=context))

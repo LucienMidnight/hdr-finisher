@@ -181,6 +181,28 @@ def _project_path(path: Path) -> Path:
 _FORGIVEN_ERRORS = frozenset({"extra_forbidden", "literal_error", "enum"})
 
 
+def validate_saved(model, payload: object):
+    """Any saved model (a grade, a local adjustment, stored Library picture
+    data) read back with project-open leniency: fields and choices this version
+    no longer knows are dropped; everything else stays strict. ``payload`` is
+    not changed."""
+    payload = deepcopy(payload)
+    dropped: list[str] = []
+    while True:
+        try:
+            value = model.model_validate(payload)
+            break
+        except ValidationError as error:
+            unknown = [item["loc"] for item in error.errors() if item["type"] in _FORGIVEN_ERRORS]
+            removed = [location for location in unknown if _drop_field(payload, location)]
+            if not removed:
+                raise
+            dropped.extend(".".join(str(part) for part in location) for location in removed)
+    if dropped:
+        logger.info("Saved %s read with %d outdated field(s) ignored: %s", model.__name__, len(dropped), ", ".join(sorted(dropped)))
+    return value
+
+
 def _validate_ignoring_unknown_fields(state_payload: object) -> EditDocument:
     """Validate a saved document, dropping what this version no longer knows.
 

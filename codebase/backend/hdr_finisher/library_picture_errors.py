@@ -12,6 +12,17 @@ from starlette.concurrency import run_in_threadpool
 from .library_diagnostics import log
 
 
+def _reader_identity():
+    """Changes whenever the grade settings this version can read change, so a
+    remembered failure (often an old grade an earlier version wrote) is retried
+    after an update instead of staying stuck until the photo changes."""
+    from .models import EditDocument
+    return sha256(json.dumps(EditDocument.model_json_schema(), sort_keys=True).encode()).hexdigest()
+
+
+_READER = _reader_identity()
+
+
 class PictureErrors:
     def __init__(self, marks):
         self.marks = marks
@@ -33,7 +44,7 @@ class PictureErrors:
             grades = getattr(self.marks, "grades", None)
             state = grades._get(str(path)) if grades else {}
             pending = {"grade": state.get("desired")} if state.get("pending") else None
-            data = [str(source), stamp(source), stamp(self.marks._sidecar(source)), pending]
+            data = [str(source), stamp(source), stamp(self.marks._sidecar(source)), pending, _READER]
             return sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
 
     def get(self, path):

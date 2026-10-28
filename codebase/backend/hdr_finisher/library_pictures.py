@@ -23,6 +23,7 @@ from .analysis import classify_hdr
 from .color import display_referred_sdr, map_negative_acescg, normalize_to_acescg, sdr_file_renditions
 from .desktop_security import SOURCE_EXTENSIONS
 from .models import AdjustmentState
+from .projects import validate_saved
 from .render_cache import encode_rgba_proxy_rows
 
 SIDECAR_SUFFIX = ".hdrf"
@@ -193,7 +194,7 @@ class LibraryPictureCache:
                 self.keep_default_document(path, default_document)
             look_started = perf_counter()
             starting_look = metadata.pop("starting_look", None)
-            grade = AdjustmentState.model_validate(starting_look) if starting_look else default_look(
+            grade = validate_saved(AdjustmentState, starting_look) if starting_look else default_look(
                 pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
             metadata.update(path=str(path), width=pixels.shape[1], height=pixels.shape[0],
                 edge=edge, quality=quality, adjustments=grade.model_dump(mode="json"),
@@ -291,7 +292,7 @@ class LibraryPictureCache:
                 if picture_key(path, 100000, "native") != identity:
                     raise ValueError("Photo changed while its native picture was being read.")
                 starting_look = metadata.pop("starting_look", None)
-                grade = AdjustmentState.model_validate(starting_look) if starting_look else default_look(
+                grade = validate_saved(AdjustmentState, starting_look) if starting_look else default_look(
                     pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
                 source = (identity, pixels, reference, metadata, grade.model_dump(mode="json"))
                 if not self._native_paused:

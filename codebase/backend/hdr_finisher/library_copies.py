@@ -5,7 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 from .library_marks import Marks, clean_names
 from .models import EditDocument
-from .projects import validate_saved_document
+from .projects import validate_saved, validate_saved_document
 from .library_diagnostics import log, problem
 
 SEPARATOR = "|copy|"
@@ -202,7 +202,7 @@ class LibraryCopies:
                 session = grades.history.current(key)
                 current = session.edit_document().model_dump(mode="json") if session else state.get("desired") if state.get("pending") else document.get("grade")
                 chosen = deepcopy(grade if grade is not None else current if start == "current" else default)
-                if chosen is not None: EditDocument.model_validate(chosen)
+                if chosen is not None: validate_saved(EditDocument, chosen)
                 names = {i["name"] for i in items}; number = 1
                 while f"Copy {number}" in names: number += 1
                 item = {"photo_id":uuid4().hex, "name":name or f"Copy {number}", "marks":deepcopy(row["marks"]),

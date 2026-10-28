@@ -317,7 +317,8 @@ def create_library_router(worker, browser, store=None):
         document = live.document(path)
         if document:
             from .models import EditDocument
-            EditDocument.model_validate(document)
+            from .projects import validate_saved
+            validate_saved(EditDocument, document)
         return document
 
     @router.post("/picture-error")
@@ -565,7 +566,8 @@ def create_library_router(worker, browser, store=None):
             described = await run_in_threadpool(live.describe, item, result)
             if header.get("describe_only"):
                 from .models import GeometryAdjustments, AdjustmentState
-                adjustments = AdjustmentState.model_validate(described["adjustments"])
+                from .projects import validate_saved
+                adjustments = validate_saved(AdjustmentState, described["adjustments"])
                 described["direct_supported"] = (adjustments.shared.geometry == GeometryAdjustments()
                     and not described["locals"]
                     and not any(v.get("enabled") for v in described["denoise"].values() if isinstance(v, dict)))

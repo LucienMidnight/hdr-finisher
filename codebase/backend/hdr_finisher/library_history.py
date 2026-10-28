@@ -3,6 +3,7 @@ from copy import deepcopy
 from pathlib import Path
 from uuid import uuid4
 from .models import EditDocument
+from .projects import validate_saved
 from .library_grades import grade_key
 from .library_marks import Marks
 from .library_diagnostics import log
@@ -81,7 +82,7 @@ class LibraryHistory:
                 except ValueError: continue
                 if session and target is None: target = deepcopy(state.get("default"))
                 if same_grade(current, target, state, document): continue
-                if target is not None: EditDocument.model_validate(target)
+                if target is not None: validate_saved(EditDocument, target)
                 plans.append((path, document or None, row, state, session, current, target))
             before = {p: deepcopy(old) for p, _, _, _, _, old, _ in plans}
             after = {p: deepcopy(target) for p, _, _, _, _, _, target in plans}
@@ -96,7 +97,7 @@ class LibraryHistory:
             rows, docs = [], []; payload = None; pending = {}
             for path, document, row, state, session, current, target in plans:
                 if session:
-                    model = EditDocument.model_validate(target)
+                    model = validate_saved(EditDocument, target)
                     if model.source == session.source_reference() and model.interpretation_override == session.interpretation_override:
                         grades.store.replace_edit_document(str(session.session_id), model, session.edit_revision)
                     else:

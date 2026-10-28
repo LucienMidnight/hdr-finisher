@@ -45,9 +45,42 @@ def broken(tmp_path):
     sidecar = Path(str(path) + ".hdrf")
     document = json.loads(sidecar.read_text())
     document["grade"] = SessionStore().prepare_session(path, owns_source_path=False).edit_document().model_dump(mode="json")
-    document["grade"]["global_adjustments"]["hdr"]["film_look"]["removed_control"] = 1
+    # A value no version can read. (A setting a later version removed is not
+    # an error: saved grades drop what they no longer know.)
+    document["grade"]["global_adjustments"]["hdr"]["exposure"] = 999
     sidecar.write_text(json.dumps(document), encoding="utf-8")
     return root, path, sidecar
+
+
+def test_grade_with_settings_a_newer_version_removed_still_shows_a_picture(tmp_path):
+    path = tmp_path / "old.png"
+    Image.new("RGB", (64, 32), (100, 120, 80)).save(path)
+    root = tmp_path / "app"
+    marks = LibraryMarks(root)
+    marks.change([path], MarkChange(rating=2))
+    marks.writer.drain()
+    sidecar = Path(str(path) + ".hdrf")
+    document = json.loads(sidecar.read_text())
+    grade = SessionStore().prepare_session(path, owns_source_path=False).edit_document().model_dump(mode="json")
+    # Lift/Gamma/Gain and Shadow were removed on 2026-10-27; old sidecars still carry them.
+    grade["global_adjustments"]["hdr"].update(lift=0.1, gamma=0.5, gain=-0.2, shadow_lift=0.2, primaries_section_enabled=True)
+    grade["global_adjustments"]["sdr"].update(shadow=0.3, lift_pivot=-2.0)
+    document["grade"] = grade
+    sidecar.write_text(json.dumps(document), encoding="utf-8")
+    api = client(root, Helper())
+    response = api.post("/api/library/live-plan", json={"path": str(path)})
+    assert response.status_code == 200, response.text
+    assert not api.get("/api/library/health").json()["picture_errors"]
+
+
+def test_remembered_error_is_retried_when_the_readable_settings_change(broken, monkeypatch):
+    root, path, _ = broken
+    api = client(root, Helper())
+    assert api.post("/api/library/live-plan", json={"path": str(path)}).status_code == 422
+    assert api.get("/api/library/health").json()["picture_errors"]
+    import hdr_finisher.library_picture_errors as errors
+    monkeypatch.setattr(errors, "_READER", "a later version")
+    assert not api.get("/api/library/health").json()["picture_errors"]
 
 
 def test_all_picture_routes_remember_bad_grade_and_other_photos_continue(broken):
@@ -57,7 +90,7 @@ def test_all_picture_routes_remember_bad_grade_and_other_photos_continue(broken)
     first = api.post("/api/library/live-plan", json={"path": str(path)})
     assert first.status_code == 422
     error = first.json()["library_error"]
-    assert "Saved edits" in error["reason"] and "removed_control" in error["details"]
+    assert "Saved edits" in error["reason"] and "exposure" in error["details"]
     for route in ("live-scene", "fallback-picture", "live-plan"):
         response = api.post("/api/library/" + route, json={"path": str(path)})
         assert response.status_code == 422
@@ -113,7 +146,7 @@ def test_changed_settings_expire_error_and_stale_reset_cannot_overwrite_them(bro
     api = client(root, Helper())
     record = api.post("/api/library/live-plan", json={"path": str(path)}).json()["library_error"]
     document = json.loads(sidecar.read_text())
-    del document["grade"]["global_adjustments"]["hdr"]["film_look"]["removed_control"]
+    document["grade"]["global_adjustments"]["hdr"]["exposure"] = 0
     sidecar.write_text(json.dumps(document), encoding="utf-8")
     assert api.post("/api/library/picture-error", json={"path": str(path), "revision": record["revision"], "action": "original"}).status_code == 409
     assert api.post("/api/library/live-plan", json={"path": str(path)}).status_code == 200
