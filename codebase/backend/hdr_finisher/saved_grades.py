@@ -247,14 +247,27 @@ def read_saved(model, original):
                     inactive = field in ("primaries_section_enabled", "algorithm_version", "rendering_version") or field.endswith(("_pivot", "_range")) and field.split("_")[0] in ("lift", "gamma", "gain")
                     if field in ("lift", "gamma", "gain") and isinstance(parent, dict) and parent.get("primaries_section_enabled") is False:
                         inactive = True
-                    root = ("global_adjustments",) if model is EditDocument else ()
                     if "denoise" in loc:
                         lane = next((key for key in loc if key in ("hdr", "sdr")), None)
                         inactive |= _at(original, ("denoise", lane, "enabled")) is False
                     if loc[:1] == ("sdr_match",) and _at(original, ("sdr_match", "active")) is not True:
                         inactive = True
                     if "film_look" in loc and isinstance(parent, dict):
+                        grade = _at(original, loc[:loc.index("film_look")])
                         inactive |= parent.get("look_strength") == 0
+                        if isinstance(grade, dict):
+                            inactive |= grade.get("film_look_section_enabled") is False
+                        if field in ("print_toe", "print_shoulder"):
+                            inactive |= parent.get("print_strength", 0) == 0
+                        if field.startswith("bloom_"):
+                            inactive |= (parent.get("bloom_enabled") is False
+                                         or parent.get("bloom_amount", 0) == 0
+                                         or parent.get("bloom_radius", .5) == 0)
+                        if field == "halation_sensitivity":
+                            inactive |= (parent.get("halation_enabled") is False
+                                         or not parent.get("halation_view_map") and (
+                                             parent.get("halation_amount", 0) == 0
+                                             or parent.get("halation_radius", .2) == 0))
                     if not inactive and old != neutral and old not in (None, False, 0, {}, [], ""):
                         name = "Lift/Gamma/Gain" if field.startswith(("lift", "gamma", "gain")) else field.replace("_", " ").capitalize()
                         issue(label, f"This photo used {name}, which this version replaced. It may look different.", loc, "look")

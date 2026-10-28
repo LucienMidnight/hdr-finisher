@@ -123,6 +123,54 @@ keeps a content-addressed original file (or a browser preference backup).
 Six portable-preset tests pass, including future-version round trips. The full
 JavaScript run retains the two unrelated failures recorded above.
 
+### October 28 export/Proof grade-notice follow-up
+
+The two blocked protected-project drivers opened
+`D:/Photos/Play_Raw/Fantastic light over village - AdamFromCanada/DSC00950.hdrfinisher`.
+An isolated Electron observation confirmed the **Grade needs attention** dialog
+and its Leave as is / Revert to original / Continue without them choices.
+The active retired fields were `global_adjustments.{hdr,sdr}.film_look.` plus
+`print_strength`, `print_toe`, `print_shoulder`, `color_density`, `red_response`,
+`green_response`, `blue_response`, `highlight_desaturation`, `shadow_desaturation`,
+`bloom_amount`, `bloom_sensitivity`, `bloom_highlight_detail`; also HDR
+`film_look.halation_sensitivity` and HDR `lift`, `gamma`, `gain`.
+Both Film Look sections are enabled at strength 100; print strength is 62,
+HDR bloom amount 8, SDR bloom amount about 6.44. The notice is warranted.
+
+The saved-grade reader now excludes retired Film Look warnings when the section
+is off, and excludes print toe/shoulder, bloom and halation sensitivity when
+their historical effect gates were off. Strength zero remains quiet. This
+changes notice accuracy only; it restores no retired processing or migration.
+The two drivers share one role-and-choices helper that clicks **Leave as is**,
+without saving or dismissing the warning permanently. Proof now prints its own
+PASS line after completing its diagnostic and records the observed notice.
+
+`export-file-browser-interaction` imports a disposable fresh `hdr_headroom.tiff`;
+its failure is a hidden `#jpeg-chroma-subsampling` select, not a popup. It remains
+unchanged under U1 in the October 24 remediation plan. No Retouch, export or
+Proof processing, timeout, limit, or dialog design changed.
+
+Validation: required JavaScript checks: 650 passed, the same two Library
+failures (`library-scenes` decoder failure and missing `HDRLibraryScreenPreviews`).
+Python: 2,715 passed, 3 skipped, 3 unrelated failures: preset header source
+contract, Library RGB publication guard, and the Retouch Library cache test's
+missing `defer_store` keyword. The 18 new active/inactive Film Look cases pass.
+Only the three requested drivers ran, one at a time in 2560x1440 Electron:
+
+- Proof: `PASS proof-grade-diagnostic`, both AVIF gain map and Ultra HDR JPEG.
+- Preview/export: `status: complete`; `pixelsPaired`, `tone`, `masks`, `peak`
+  all true, `projectUnchanged: true` (with `--enforce`).
+- Export/file-browser: U1 remains; `selectOption` times out because the JPEG
+  subsampling control is not visible. No dialog intercepts it.
+
+Logs and comparison result: `codebase/output/grade-notice-fix/`. All three
+protected project SHA-256 hashes match their pre-run values. DSC00950 still
+shows its warranted notice; both protected DSC00264 test projects and the
+fresh disposable export TIFF are quiet. Large captures, temporary source/cache
+copies, the disposable export fixture and this run's pytest TEMP tree were
+removed; referenced comparison crops and result files remain. Scratch output
+is below 1 GB after cleanup.
+
 ## October 27: Tone sliders replace Lift/Gamma/Gain (Steve's decision, v1)
 
 **Naming rule for the whole app.** "Exposure" always means an equal change in

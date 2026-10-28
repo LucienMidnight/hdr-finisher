@@ -29,6 +29,7 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 const c = require('./heavy-project-review-common');
+const { leaveSavedGradeAsIs } = require('../helpers/saved-grade-notice');
 
 const ROOT = path.join(__dirname, '..', '..');
 const STRIP_ROWS = 192;
@@ -79,6 +80,7 @@ async function main() {
   const manifest = { project, lanes: [] };
   try {
     await c.open(page, project, false);
+    report.gradeNotice = await leaveSavedGradeAsIs(page);
     // Settled scopes always include the bounded editing peak estimate.
     await page.evaluate(() => refreshScopes(scopeLongEdge('settled'), { tier: 'settled' }));
     report.viewport = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, devicePixelRatio }));
