@@ -41,6 +41,24 @@
       await initialize();
       if(gpu.adapterInfo?.fallback)throw Error("No hardware GPU is available.");
       gpu.resetSession(job.id);
+      if(job.operation === "retouch") {
+        const m=job.retouch;
+        const required=(m.input_count+m.scratch_count+2*m.output_count)*4+4*1024*1024;
+        if(required>job.budget)throw Error("GPU repair exceeds the existing shared memory budget.");
+        const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
+          headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:required})});
+        if(!lease.ok)throw Error("Grade needs the shared GPU memory budget.");
+        await permit();
+        const response=await fetch(`/api/delivery/gpu/${job.id}/retouch-source`);
+        if(!response.ok)throw Error("GPU repair input handoff failed.");
+        const result=await HDRRetouchGPU.run(gpu.device,m,await response.arrayBuffer(),permit,job.budget);
+        await permit();
+        const stored=await fetch(`/api/delivery/gpu/${job.id}/pixels/retouch`,{method:"POST",body:new Blob([result.pixels])});
+        if(!stored.ok)throw Error("GPU repair result handoff failed.");
+        await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({reserved_bytes:result.reservedBytes,total_ms:performance.now()-started})});
+        continue;
+      }
       if(job.operation === "dng_correction") {
         const required=HDRLibraryGpuRaw.rawBudget(job.dng,[100000]);
         if(required>job.budget)throw Error("GPU DNG correction exceeds the available shared memory budget.");

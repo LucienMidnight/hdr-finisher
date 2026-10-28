@@ -95,6 +95,9 @@ class RepairPatch:
     tone_aligned: bool = False
     texture_offset: tuple[int, int] | None = None  # Native-source (dx,dy).
 
+    renderer: str = "cpu"
+    fallback_reason: str | None = None
+
     @property
     def nbytes(self):
         return self.pixels.nbytes + self.source_centres.nbytes + self.target_centres.nbytes
@@ -296,8 +299,8 @@ class CpuInpaint:
         tx = np.clip(targets[:, 1, None] + offsets[:, 1], 0, w - 1)
         lookup = np.full((h, w), -1, dtype=np.int32)
         lookup[targets[:, 0], targets[:, 1]] = np.arange(len(targets))
-        rng = np.random.Generator(np.random.PCG64(settings.seed))
-        field = sources[rng.integers(len(sources), size=len(targets))]
+        from .retouch_search import proposals
+        field, phases = proposals(settings, (h, w), sources, len(targets))
         known = ~excluded
         work, align_tone = _tone_guide(image, defect, excluded, r)
         guide_mean = _patch_mean(work, r)[targets[:, 0], targets[:, 1]]
@@ -332,23 +335,19 @@ class CpuInpaint:
                 field[better] = safe[better]
                 distance[better] = trial[better]
 
-            direction = 1 if iteration % 2 == 0 else -1
-            for shift in ((direction, 0), (0, direction)):
-                neighbour = targets - shift
-                inside = ((neighbour[:, 0] >= 0) & (neighbour[:, 0] < h)
-                          & (neighbour[:, 1] >= 0) & (neighbour[:, 1] < w))
-                ni = lookup[np.clip(neighbour[:, 0], 0, h - 1), np.clip(neighbour[:, 1], 0, w - 1)]
-                candidate = field[np.maximum(ni, 0)] + shift
-                candidate[~inside | (ni < 0)] = -1
-                consider(candidate)
-            # One global proposal prevents a poor initial neighbourhood trapping
-            # a link; subsequent searches halve their radius around the best.
-            consider(sources[rng.integers(len(sources), size=len(targets))])
-            radius = max(h, w)
-            while radius >= 1:
+            for kind, proposal in phases[iteration]:
                 checkpoint()
-                consider(field + rng.integers(-radius, radius + 1, size=field.shape))
-                radius //= 2
+                if kind <= 4:
+                    shift = ((1, 0), (0, 1), (-1, 0), (0, -1))[kind - 1]
+                    neighbour = targets - shift
+                    inside = ((neighbour[:, 0] >= 0) & (neighbour[:, 0] < h)
+                              & (neighbour[:, 1] >= 0) & (neighbour[:, 1] < w))
+                    ni = lookup[np.clip(neighbour[:, 0], 0, h - 1), np.clip(neighbour[:, 1], 0, w - 1)]
+                    candidate = field[np.maximum(ni, 0)] + shift
+                    candidate[~inside | (ni < 0)] = -1
+                else:
+                    candidate = proposal if kind == 5 else field + proposal
+                consider(candidate)
             # Overlapping patches reconstruct only the defect. Rejecting full
             # source patches above means no vote can contain any marked defect.
             votes = np.zeros_like(work)

@@ -770,28 +770,36 @@ fallback. The Inpaint
 Electron check also compares a refreshed preview sample with a full reload.
 The repair algorithm, project recipes and delivery processing are unchanged.
 
-### Retouch GPU decision — October 28, 2026 (implementation in progress)
+### Retouch GPU execution — October 28, 2026
 
-GPU first now applies to Inpaint, Clone and Heal; the October 21 CPU-first
-exception is superseded. GPU and CPU must share Jacobi propagation phases,
-seed consumption and candidate acceptance, with only rare floating-point ties
-allowed to change donors. CPU scoring partitions target rows over a machine-sized
-below-normal-priority lane team and joins every lane before releasing ROI owners.
-The coordinator does not occupy that team, avoiding nested-executor deadlock.
+GPU first replaces the October 21 CPU-first decision. CPU and GPU use the same
+seeded proposals, Jacobi propagation order and candidate acceptance rules. CPU
+candidate scores partition across all logical cores, preserving each reduction
+order. Clone sampling and native texture finishing also use below-normal lanes.
+The shared CPU preview renderer is unchanged. Steve accepted three seconds warm
+native and two seconds Fit; GPU retains the one-second target. Accepted actual
+paint-to-frame samples and the two Clone misses are in the Grade module PRD.
 
-The approved GPU transport is a bounded operation on the existing delivery
-queue. Inpaint includes its whole donor search rectangle; Clone/Heal include
-all source samples and Heal's boundary ring. Bounded and whole-photo GPU
-results require a behavior check. This transport, GPU solving, route notices,
-DSC04375 crop review and timings remain open. No saved fields were added.
-The initial CPU feasibility checkpoint misses the two-second native-view target
-at the finished frame: Inpaint 2.582-2.604 s, Clone 2.500-2.532 s, Heal
-2.491-2.705 s. Fit is 0.900-1.013 s. These are warm synthetic 24 MP measurements
-of a 12 px spot, not DSC04375 validation. Repair acknowledgement is 0.288-0.398 s;
-most elapsed time is CPU preview presentation. This does not establish that
-matching GPU search makes the target unreachable. No alternative search has
-been substituted. A first timing run accidentally retained AVIF Full transport
-and is excluded; the reported samples force GPU unavailable and use accepted
-Raw RGBA8 CPU frames. A native-to-Fit navigation wait timed out in the driver;
-Fit was measured independently from a fresh disposable session. The driver now
-starts at Fit before native view, and writes each completed sample immediately.
+Bounded Retouch jobs reuse the delivery queue's cancellation, priority and memory
+controls. Inpaint transfers the entire donor search rectangle. Clone and Heal
+include full source sample rectangles and Heal's boundary ring. A region reader
+rejects undeclared dependencies; preparation matches whole-photo input exactly.
+Seven real GPU cases compare bounded jobs with whole-photo GPU reads exactly and
+verify deterministic replay. No new saved field or algorithm token was added.
+Numerical recipe parameters travel in uniforms, allowing spots with different
+bounds to reuse compiled pipelines without changing arithmetic or phase order.
+
+Session patches retain the existing two-owned-ROI/cache limits. The source is
+composited only where the stroke mask is nonzero, in saved order; frozen donor
+exclusions remain per recipe. Proof/export and selections consume that source.
+Each transient route record follows a completed patch and saved-grade replay;
+CPU fallback is visible and logged for the photo, including mixed repair and
+finishing routes. Full Proof equals the delivered bytes for all three tools on
+GPU and CPU. Library repair work runs inside its existing source-development
+lease, reading the immutable unrepaired planes and scattering masked patches
+before measurements/reduction. Tiled DNG repairs retain an explicit CPU fallback.
+
+Inside-footprint differences have no numerical gate: Steve judges labelled
+DSC04375 native and Fit crops in `codebase/output/retouch-review/index.html`.
+Outside repairs the existing finished-image tolerances remain unchanged. No
+pinned shader, tolerance, budget, saved field or CPU preview path was changed.

@@ -248,7 +248,8 @@ def _execute_export(
         )
         _require_overwrite_permission(output_path, settings)
         prepared = prepare()
-        rendering = getattr(session, "_delivery_record", rendering)
+        from .retouch_routes import delivery_record
+        rendering = delivery_record(session, getattr(session, "_delivery_record", rendering))
         with NamedTemporaryFile(
             prefix=f".{output_path.stem}.",
             suffix=prepared.staging_suffix,

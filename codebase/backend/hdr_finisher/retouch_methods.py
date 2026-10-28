@@ -6,6 +6,7 @@ structure using the same clean PatchMatch correspondences as the tone solve.
 """
 from dataclasses import replace
 import numpy as np
+from .retouch_parallel import ordered, bands
 
 
 def _detail_at(image, yy, xx):
@@ -46,9 +47,9 @@ def finish_repair(recipe, request, patch, alpha, checkpoint=lambda: None):
     amount = recipe.texture_amount if recipe.method in ("original-detail", "donor-detail") else 0
     field, scale = _donor_field(request, patch) if amount and recipe.method == "donor-detail" else (None, None)
     xx = np.arange(width)[None, :]
-    for top in range(0, height, 64):
+    def lane(part):
         checkpoint()
-        bottom = min(height, top+64)
+        top,bottom=part.start,part.stop
         yy = np.arange(top, bottom)[:, None]
         filled = patch.pixels[top:bottom].astype(np.float64)
         if amount:
@@ -71,6 +72,7 @@ def finish_repair(recipe, request, patch, alpha, checkpoint=lambda: None):
             filled += amount * (detail - filled_detail)
         blend = a[top:bottom, :, None]
         result[top:bottom] = original[top:bottom] * (1-blend) + filled * blend
+    ordered(lane,bands(height))
     checkpoint()
     if not np.isfinite(result).all():
         raise ValueError("Repair texture finishing produced non-finite pixels")

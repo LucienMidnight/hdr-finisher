@@ -375,7 +375,7 @@ def create_gpu_delivery_router():
                (_effective_priority(value, now), value["created"]) for v in raw_jobs.values()):
             return None
         (directory / "claimed").touch()
-        if value.get("operation") in {"edge_colour", "dng_correction"}:
+        if value.get("operation") in {"edge_colour", "dng_correction", "retouch"}:
             active[value["id"]] = (directory, value)
             value["budget"] = max(0, _activity["budget"] - _activity["bytes"])
             return {key: item for key, item in value.items() if key != "memory"}
@@ -413,6 +413,15 @@ def create_gpu_delivery_router():
             raise HTTPException(404, "GPU DNG job expired.")
         with DeliveryMemory() as memory:
             body = memory.attach(item[1]["memory"]["dng_input"]).tobytes()
+        return Response(body, media_type="application/octet-stream")
+
+    @router.get("/{identity}/retouch-source")
+    def retouch_source(identity: str):
+        item = active.get(identity)
+        if item is None or item[1].get("operation") != "retouch":
+            raise HTTPException(404, "GPU repair job expired.")
+        with DeliveryMemory() as memory:
+            body = memory.attach(item[1]["memory"]["retouch_input"]).tobytes()
         return Response(body, media_type="application/octet-stream")
 
     @router.get("/{identity}/edge-source")
@@ -467,7 +476,7 @@ def create_gpu_delivery_router():
 
     @router.post("/{identity}/pixels/{lane}")
     async def pixels(identity: str, lane: str, request: Request):
-        if identity not in active or lane not in {"hdr", "sdr", "edge", "dng"}:
+        if identity not in active or lane not in {"hdr", "sdr", "edge", "dng", "retouch"}:
             raise HTTPException(404, "GPU delivery job expired.")
         directory, value = active[identity]
         if lane not in value["memory"]:
@@ -497,7 +506,7 @@ def create_gpu_delivery_router():
                     reply = {"error": "GPU RAW development was incomplete."}
                 else:
                     reply["raw_measurements"] = value["raw_measurements"]
-            expected = {"dng"} if value.get("operation") == "dng_correction" else {"edge"} if value.get("operation") == "edge_colour" else {"hdr", "sdr"}
+            expected = {"retouch"} if value.get("operation") == "retouch" else {"dng"} if value.get("operation") == "dng_correction" else {"edge"} if value.get("operation") == "edge_colour" else {"hdr", "sdr"}
             if not reply.get("error") and set(value.get("received", [])) != expected:
                 reply = {"error": "GPU delivery returned incomplete lanes."}
             # Batch workers are separate processes whose log lines don't reach

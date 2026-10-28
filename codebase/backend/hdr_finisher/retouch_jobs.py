@@ -122,6 +122,44 @@ class RepairWorker:
         future.add_done_callback(release)
         return future, cancel
 
+    def completed_recipe(self, key, token, solve, checkpoint=lambda: None):
+        """Cache a finished GPU/CPU patch under the same byte and ROI limits."""
+        if not self._slots.acquire(blocking=False):
+            raise RuntimeError("Repair worker is full; cancel or wait before submitting")
+        cancel = Event()
+        with self._lock:
+            self._events.add(cancel)
+        def check():
+            checkpoint()
+            with self._lock:
+                if cancel.is_set() or self._closed or token != self._current:
+                    raise CancelledError("Cancelled or superseded repair")
+        try:
+            check()
+            with self._lock:
+                cached = self._cache.get(key)
+                if cached is not None:
+                    self._cache.move_to_end(key)
+            if cached is not None:
+                return cached
+            patch = solve(check)
+            with self._lock:
+                check()
+                if patch.nbytes <= self.cache_bytes:
+                    previous = self._cache.pop(key, None)
+                    if previous is not None:
+                        self._bytes -= previous.nbytes
+                    self._cache[key] = patch
+                    self._bytes += patch.nbytes
+                    while self._bytes > self.cache_bytes:
+                        _, old = self._cache.popitem(last=False)
+                        self._bytes -= old.nbytes
+            return patch
+        finally:
+            with self._lock:
+                self._events.discard(cancel)
+            self._slots.release()
+
     def accept(self, completion):
         """Recheck at consumption, even if the job was current when it ended."""
         with self._lock:

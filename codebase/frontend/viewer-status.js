@@ -93,6 +93,7 @@ function viewerStatusLabel(viewer = viewerState()) {
 }
 
 function renderViewerStatus() {
+  if (typeof renderRetouchRoute === "function") renderRetouchRoute();
   const viewer = viewerState();
   const label = state.perspectiveApplyOperation && state.perspectivePhase === "applying"
     ? `Applying perspective — ${previewResolutionLabel(viewer.tier)}`

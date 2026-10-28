@@ -1107,6 +1107,7 @@ class SdrMatchActionRequest(BaseModel):
 
 
 class EditStateResponse(BaseModel):
+    repair_rendering: list[dict] = Field(default_factory=list)
     revision: int = Field(ge=0)
     document: EditDocument
     dirty: bool = False
@@ -1120,6 +1121,7 @@ class PreviewSettings(BaseModel):
 
 
 class SessionPayload(BaseModel):
+    repair_rendering: list[dict] = Field(default_factory=list)
     grade_notice: dict | None = None
     session_id: str
     source: SourceImageDescriptor

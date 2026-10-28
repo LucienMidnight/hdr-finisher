@@ -165,6 +165,7 @@ def _open_document(store, document, source_path, reuse_session_id):
     from .sessions import _source_mip_identity
     candidate_session = copy(session)
     candidate_session.retouch_worker = None
+    candidate_session._repair_routes = {}
     try:
         from .saved_grades import recover_repairs
         repaired = recover_repairs(document, candidate_session)
@@ -177,6 +178,7 @@ def _open_document(store, document, source_path, reuse_session_id):
     session.adjustments = session.starting_adjustments() if whole_grade_fallback(session.grade_notice) else document.global_adjustments
     session.local_adjustments = document.local_adjustments
     session.repairs = document.repairs
+    session._repair_routes = candidate_session._repair_routes
     session.denoise = document.denoise
     session.sdr_match = document.sdr_match
     session.framing = document.framing

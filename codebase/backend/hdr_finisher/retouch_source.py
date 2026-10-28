@@ -81,36 +81,17 @@ def build_repaired_source(session, records, checkpoint=lambda: None, *, previous
         session.edit_revision)
     worker.set_current(token)
     patches = []
+    from .retouch_routes import solve_record
     for record in needed:
         checkpoint()
         # Immutable original pixels and frozen donor footprints keep every
         # completed correction independent of later additions/removals.
-        if record.recipe.mode != "inpaint":
-            patches.append(transfer_repair(record.recipe, base, checkpoint))
-            continue
-        request = prepare_repair(record.recipe, lambda t, l, b, r: base[t:b, l:r], checkpoint=checkpoint)
-        future, cancel = worker.submit(request, record.recipe.settings, token=token)
-        # Waiting outside the session lock lets edits/cancel supersede work.
-        from concurrent.futures import TimeoutError
-        try:
-            while True:
-                checkpoint()
-                try:
-                    completion = future.result(timeout=.05)
-                    break
-                except TimeoutError:
-                    pass
-            patch = worker.accept(completion)
-            alpha = stroke_mask(record.recipe, checkpoint)
-            patch = finish_repair(record.recipe, request, patch, alpha, checkpoint)
-            mask = alpha > 0
-            ox = patch.origin[0] - record.recipe.search_rect[0]
-            oy = patch.origin[1] - record.recipe.search_rect[1]
-            ph, pw = patch.pixels.shape[:2]
-            patches.append((patch, mask[oy:oy+ph, ox:ox+pw]))
-        except BaseException:
-            cancel.set()
-            raise
+        patch = solve_record(session, record, worker, token, base, checkpoint)
+        alpha = stroke_mask(record.recipe, checkpoint)
+        ox = patch.origin[0] - record.recipe.search_rect[0]
+        oy = patch.origin[1] - record.recipe.search_rect[1]
+        ph, pw = patch.pixels.shape[:2]
+        patches.append((patch, alpha[oy:oy+ph, ox:ox+pw] > 0))
     result = np.empty_like(base)
     source = session.image if incremental else base
     for top in range(0, base.shape[0], 128):
