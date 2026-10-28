@@ -545,7 +545,7 @@
     return new Blob([prefix, ...planes]);
   }
 
-  async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity }) {
+  async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity, signal = null }) {
     const { device, pipelines, errors } = await gpu();
     const errorStart = errors.length;
     const w = meta.width, h = meta.height, n = w * h;
@@ -676,6 +676,11 @@
       }
       await stage("combine_colour_measure");
 
+      if(meta.repairs?.length){
+        const repaired=await root.HDRLibraryRetouch({device,meta,planes,make,release,read,
+          budget:()=>memoryBudget-liveBytes,permit:beforeSubmit|| (async()=>{}),signal,peaks,samples});
+        planes.forEach(release);planes.splice(0,3,...repaired);await stage("retouch");
+      }
       const reduced = {};
       for (const edge of edges) {
         const [rh, rw] = reducedSize(meta, edge);
@@ -780,7 +785,7 @@
           edgePermitAt=performance.now();
         };
         root.HDRLibraryScenes?.stage(meta.path,"Developing photo");
-        try { return await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy}); }
+        try { return await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, signal, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy}); }
         catch (error) { if (!error.yieldRaw) throw error; }
         // developRaw's finally has freed every buffer before Grade sees zero.
         await lease(true); await wait(50, signal);

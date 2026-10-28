@@ -4093,7 +4093,25 @@ camera, saved workspace layouts.
   those source/repair defaults, not all stored photos, and does not recur on each
   scroll or every update. Writer-version fields and local adjustments do not enter
   the source recipe. Cache matching is left intact.
-- GPU repair development and CPU/GPU review remain open.
+- Repaired RAW and RGB scenes now develop on the GPU. Bounded repair work uses
+  the existing source lease and immutable native planes before measurement and
+  reduction. All Inpaint methods, Clone and Heal share the Grade solver; masked
+  writes preserve pixels outside repairs and saved ordering. Tiled DNG with
+  repairs explicitly falls back to the CPU. Fallback labels travel with CPU
+  scene metadata and are visible per picture; logs identify the photo.
+- DSC04375 hardware check: seven saved repairs, 10.240 s cold through drawn
+  thumbnail, 0.837 s stored-scene reuse through drawing. GPU development alone
+  is 2.977 s with repairs versus 2.159 s without. The full un-repaired comparison
+  is 6.295 s, measured later with first-draw pipelines already warm; it is not a
+  controlled repair-only difference. Peak GPU allocation is 1.042 GB within the
+  existing lease. The cold no-extra-time goal remains unmet: pipeline reuse
+  reduces repeated compilation, but source preparation and repair work add cost.
+  Steve's decision on retaining this overhead or continuing optimization is
+  pending. No CPU full-RAW repair development is required on the supported GPU
+  path. `codebase/output/retouch-library/result.json` records the measurements.
+- The DSC04375 GPU/CPU native and Fit crop viewer is
+  `codebase/output/retouch-review/index.html`. Inside differences are information
+  only, next to each tool's pictures. Owner RAW/sidecar hashes are unchanged.
 Validation: the scheduler and returning-viewport behavior tests pass. The
 focused Electron scroll check reused 20 tiles, preserved pixels and made zero
 backend picture requests on return (`codebase/output/retouch-library-scroll-check.log`).
@@ -4102,3 +4120,8 @@ skips and three existing failures. These are the same failures recorded in the
 Grade module (preset-header contract, RGB publication guard, repair mock's
 `defer_store`, selected-source fallback mock and Single's missing screen-preview
 mock). No broad GPU sweep, export change or owner-photo write.
+
+GPU delivery checks now also cover full Proof/export byte equality and saved
+batch replay for all three repair modes, on GPU and CPU fallback. Final fast
+checks and the approved 19-driver export/Proof selection are pending. No push or
+installer build.

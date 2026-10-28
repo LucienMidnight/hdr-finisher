@@ -455,8 +455,6 @@ def create_library_router(worker, browser, store=None):
                 from .models import RawImportSettings, SourceInterpretationOverride
                 inputs = live_recipe(document)
                 try:
-                    if inputs.get("repairs"):
-                        raise library_gpu_raw.NotEligible("CPU Inpaint repairs require the native repaired source")
                     if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
                         header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs)
                     elif Path(path).suffix.lower() == ".dng":
@@ -473,9 +471,16 @@ def create_library_router(worker, browser, store=None):
                             raise library_gpu_raw.NotEligible("source interpretation uses Grade's CPU development")
                         header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_gpu_raw.sensor, Path(path),
                             RawImportSettings.model_validate(inputs["raw_import_settings"]))
+                    if inputs.get("repairs") and header.get("dng_warp"):
+                        raise library_gpu_raw.NotEligible("Tiled DNG repair context exceeds the bounded GPU development route")
                 except library_gpu_raw.NotEligible as error:
                     log("picture_source_cpu_fallback", path=path, reason=str(error), discarded_decode_ms=(time.perf_counter()-claimed_at)*1000)
                     return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
+                if inputs.get("repairs"):
+                    from .models import RepairRecord
+                    from .retouch_gpu import context_rectangles
+                    header["repairs"] = [dict(id=r.id,rectangles=context_rectangles(r.recipe))
+                        for r in map(RepairRecord.model_validate,inputs["repairs"]) if r.enabled]
                 source_jobs.check(token, file_commands.epoch)
                 if await request.is_disconnected():
                     raise HTTPException(499, "Library request cancelled.")
@@ -502,6 +507,32 @@ def create_library_router(worker, browser, store=None):
         finally:
             if not transfer:
                 source_jobs.release(token)
+
+    @router.post("/retouch-packet")
+    async def retouch_packet(request: Request):
+        from . import library_gpu_raw
+        from .models import RepairRecord
+        from .retouch_gpu import packet, context_rectangles, BoundedSource
+        import numpy as np
+        header, body = library_gpu_raw.unframe(await request.body())
+        owner = source_jobs.check(header['source_job'],file_commands.epoch)
+        path = str(marks.source_path(header['item_path']))
+        document = await run_in_threadpool(live.document,header['item_path'])
+        if owner['path'] != path or owner['quality'] != live_quality(document):
+            raise HTTPException(409,'Repair source changed during development')
+        records = [RepairRecord.model_validate(r) for r in live_recipe(document).get('repairs',[])]
+        record = next((r for r in records if r.id == header['repair'] and r.enabled),None)
+        if record is None:raise HTTPException(409,'Repair changed during development')
+        rectangles = context_rectangles(record.recipe)
+        source = BoundedSource(rectangles,np.frombuffer(body,dtype='<f4'))
+        def build():
+            (meta,values),_ = packet(record.recipe,source,
+                lambda:source_jobs.check(header['source_job'],file_commands.epoch))
+            return library_gpu_raw.frame(meta,values.tobytes())
+        result = await run_in_threadpool(build)
+        source_jobs.check(header['source_job'],file_commands.epoch)
+        log('retouch_route',path=path,repair=record.id,mode=record.recipe.mode,renderer='gpu',consumer='library')
+        return Response(result,media_type='application/octet-stream')
 
     @router.post("/live-developed")
     async def live_developed(request: Request):

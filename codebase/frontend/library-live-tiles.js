@@ -10,7 +10,7 @@ window.HDRLibraryLiveTiles = Object.freeze({
       const timer=setTimeout(()=>{signal.removeEventListener("abort",stop);resolve();},ms);
       signal.addEventListener("abort",stop,{once:true});
     });
-    let fallback;
+    let fallback, fallbackNotice;
     try {
       while(current()&&!signal.aborted){
         try {
@@ -19,7 +19,7 @@ window.HDRLibraryLiveTiles = Object.freeze({
           if(!current())return;
           await HDRLibraryPictures.show(meta,canvas,signal,current,hdr);
           if(!current())return;
-          fallback?.remove();fallback=null;canvas.hidden=false;canvas.dataset.liveTile=meta.key;
+          fallback?.remove();fallbackNotice?.remove();fallback=null;canvas.hidden=false;canvas.dataset.liveTile=meta.key;
           return meta;
         }catch(error){
           if(signal.aborted||!current()||error.name==="AbortError")return;
@@ -34,10 +34,11 @@ window.HDRLibraryLiveTiles = Object.freeze({
             fallback=canvas.ownerDocument.createElement("img");fallback.alt="";fallback.src=meta.url;
             await fallback.decode();if(!current())return;
             fallback.dataset.cpuFallback="true";canvas.after(fallback);canvas.hidden=true;
+            if(meta.repair_fallback_reason){const label=fallbackNotice=document.createElement('figcaption');label.textContent=path.split(/[\\/]/).at(-1)+' · '+meta.repair_fallback_reason;fallback.after(label);}
           }
           await wait(2000);
         }
       }
-    }finally{fallback?.remove();}
+    }finally{fallback?.remove();fallbackNotice?.remove();}
   }
 });

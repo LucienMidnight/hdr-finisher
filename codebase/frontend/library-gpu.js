@@ -255,6 +255,11 @@ const HDRLibraryPictureFactory = (quick = false) => {
       if (!result?.rendered && result?.execution !== "direct") throw new Error("The Library preview could not be drawn: " + (result?.reason || refusal || "render refused"));
       window.HDRLibraryTrace?.mark(meta.trace,"picture_draw_complete",started,{...window.HDRLibraryPictureLog?.(meta),key:meta.key,route:meta.route,cache_hit:!!meta.cache_hit});
       HDRLibraryStopwatch("picture_drawn", { ...window.HDRLibraryPictureLog?.(meta), key: meta.key, duration_ms: performance.now() - started, first: draws++ === 0, kept: false });
+      let route=canvas.parentElement?.querySelector('.library-retouch-route');
+      if(meta.repair_fallback_reason){
+        if(!route){route=document.createElement('span');route.className='library-retouch-route';route.style.cssText='position:absolute;bottom:0;left:0;right:0;background:#332819;color:#fff;font:12px system-ui;padding:4px;z-index:2';canvas.after(route);}
+        route.textContent=meta.path.split(/[\\/]/).at(-1)+' · '+meta.repair_fallback_reason;
+      }else route?.remove();
       canvas.dataset.rendition = hdr ? "hdr" : "sdr";
       canvas.dataset.surface = gpu.surfaceKeys.get(canvas);
       canvas.dataset.peakNits = hdr ? "1000" : "203";
