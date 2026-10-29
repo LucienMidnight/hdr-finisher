@@ -4594,3 +4594,74 @@ CaptureCache deferred-store fixture. JavaScript failures remain the selected
 CPU decoder fixture and missing Single screen-preview stub. No shares changed.
 Tests that formerly forced independent frame/mask limits now force eviction
 through an injected smaller owner budget and preserve live-mask priority.
+
+
+**Resumed gate, `f56075a`: STOP at 162.212 seconds of scrolling.** The
+independent observer measured **4,425,675,331 bytes**, above the exact
+4,000,000,000-byte ceiling. It stopped the app and skipped disposable Delete
+and all six drivers, as instructed. There is no ten-minute plateau result.
+The last sample is also the peak. No finished grid canvas was counted in 161
+responsive scroll replies (longest reply gap 1,020 ms), with 11,089 listed
+photos. This does not establish usable visible/nearby redraw behavior.
+
+The process curve below uses GB (1e9 bytes) and seconds from observer start;
+startup precedes scrolling by about 13 seconds. Full individual-PID samples
+are in `codebase/output/big-folder/budget-validation-resumed/process-curve.csv`.
+
+| Observer seconds | Main | Tabs combined | GPU host | Backend | Helpers combined | Total |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 0.049 | 0.150 | 0.400 | 0.094 | 0.239 | 0.960 |
+| 30 | 0.120 | 0.287 | 0.951 | 0.142 | 0.256 | 1.784 |
+| 60 | 0.234 | 0.325 | 0.939 | 0.315 | 0.256 | 2.098 |
+| 90 | 0.089 | 0.326 | 0.863 | 0.277 | 0.256 | 1.841 |
+| 120 | 0.090 | 0.466 | 0.899 | 0.284 | 0.257 | 2.026 |
+| 150 | 0.106 | 0.450 | 0.918 | 0.281 | 0.257 | 2.041 |
+| 175.5 (peak/end) | 0.109 | 0.339 | 0.908 | 0.289 | 2.750 | 4.426 |
+
+Total also includes the utility, Python launcher, crash handler and console.
+At peak/end the four helper PIDs charge 2,562,018,742 (39240), 62,469,266
+(5728), 62,521,929 (44116), and 62,771,785 (18680) bytes. Backend 47364 charges
+289,033,654; main 14656 109,026,157; tabs 47944/3908 291,900,854/46,738,285;
+GPU 15124 907,769,563. The sharp spike is in helper 39240, coincident with a
+`live-scene` job for `_DSC3289.ARW` starting about five seconds earlier.
+This is a temporary-allocation failure while the 600 MB working reservation
+is held, not evidence that a cache share should increase. Its allocation path
+remains to be bounded within the agreed working room.
+
+| Owner cache | Bytes at peak and end | Share bytes |
+| --- | --- | --- |
+| Thumbnails | 2,160,000 | 536,870,912 |
+| Sharp surfaces/direct scenes | 0 | 512,000,000 |
+| Camera previews | 5,635,374 | 64,000,000 |
+| RAW read-ahead | 0 | 768,000,000 |
+| Hand-off | 140,049,380 | 256,000,000 |
+| Retained working caches | 0 | 600,000,000 |
+
+The owner telemetry is 374 ms older than the peak process sample. The latest
+renderer thumbnail estimate is 25,200,000 bytes (sharp zero), showing that
+asynchronous reports can differ; both readings are retained in JSONL. Working
+reservations separately total 600,000,000 bytes. Reported cache bytes are well
+inside their shares despite the helper's excess temporary allocation.
+
+Main's maximum charge was 237,823,122 bytes, maximum ordinary working set
+306,454,528, and its largest observed byte upload 15,102 bytes. The former
+0.90 GB rise did not recur in this short run; this is not a ten-minute bound
+or a complete explanation of the historical spike.
+
+Lock maxima: `marks_read` 110 ms, `marks_read_copies` 125 ms, `index_scan`
+31 ms (`index_batch` 0 ms). The longest remaining hold was **734 ms in
+reconcile**, still over the approximately 250 ms requirement, at shutdown
+immediately after the ceiling sample. Splitting to one photo is insufficient
+for that database/filesystem scope. The historic Delete/morning-freeze
+causation remains unproven as described above.
+
+Delete confirmation: **not run**. `library-scroll-cache`,
+`library-precision-source`, `library-rgb-native`, `library-live-native`,
+`library-codec-native`, and `library-background-activity`: **all not run after
+this commit because the preceding ceiling gate stopped**. Earlier results
+are historical, not validation of `f56075a`. The protected project hashes
+remain unchanged; the owned C: profile and disposable Delete fixture are
+removed. D:/Photos was only read. Output remains 2.0 GB, below 100 GB.
+Evidence: `measurement.json`, `measurement-memory.jsonl`, `process-curve.csv`,
+`cache-peak-end.csv`, `analysis.json`, and `measurement-backend.log` in
+`codebase/output/big-folder/budget-validation-resumed/`.
