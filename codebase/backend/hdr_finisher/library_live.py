@@ -55,6 +55,11 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     if cached:
         return cached
     inputs = recipe(document)
+    highlights = inputs["raw_import_settings"].get("highlight_reconstruction", {})
+    if (Path(path).suffix.lower() == ".arw" and edge <= 2560 and not inputs.get("repairs")
+            and highlights.get("method", "opposed_color_v1") == "opposed_color_v1"):
+        from .library_cpu_bands import develop
+        return develop(root, path, document, edge, cancelled, cache, progress, draw_first)
     from .highlight_edge_gpu import source_work
     prepared_at = perf_counter()
     with source_work(priority=15, cancelled=cancelled):

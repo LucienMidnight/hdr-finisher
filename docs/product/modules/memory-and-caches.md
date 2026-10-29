@@ -342,7 +342,35 @@ Evidence: `measurement.json`, `measurement-memory.jsonl`, `process-curve.csv`,
 `cache-peak-end.csv`, `analysis.json`, and `measurement-backend.log` in
 `codebase/output/big-folder/budget-validation-resumed/`.
 
+
+### October 29: bounded CPU ARW picture
+
+The no-GPU ordinary ARW thumbnail/screen development now processes full-resolution
+sensor bands with 32-row halos and temporary planar files. It retains only the
+640/2560 reductions in memory. Opposed-colour highlight coordinates are scanned
+in bounded batches. This is a working-allocation change; no share or total changed.
+
+With GPU delivery explicitly disabled, the complete visible CPU fallback for
+`DSC07060.ARW` (7968 x 5320, 42.4 MP) returned a finished picture in 25.61 s.
+The helper's proportional resident peak, including its baseline, was
+**328,528,456 bytes**, within the **600,000,000-byte** working room.
+Before comparing pixels, the proposed finished-SDR tolerance was average colour
+difference below 1 and p99 below 2. Against the former full-image CPU route,
+mean Delta E 76 was 0.0584 and p99 0.1948: inside those limits.
+
+Qualification covers ordinary ARW, opposed-colour highlights, no saved repairs,
+and edges at most 2560. Other formats, edge-colour, saved repairs and native CPU
+inspection still use the previous development path and are **not qualified within
+600 MB**. This is not a claim that every no-GPU recipe is bounded.
+Evidence: `codebase/output/big-folder/cpu-bands-validation.json` and
+`cpu-bands-parity.json`. Fast Python: 2734 passed, three existing failures,
+three skipped. The existing failures are the scoped-preset source contract,
+RGB publication fixture and retouch CaptureCache fixture. CPU-focused numerical
+checks pass. No protected project was saved over.
+
 ## 8. Open work
+
+- Bound and qualify the remaining no-GPU CPU recipes listed above; only the ordinary ARW path has the measured 600 MB result.
 
 The resumed run stopped at the ceiling. Await Steve before further work; do
 not increase shares. Bound the live-scene helper temporary allocation and the

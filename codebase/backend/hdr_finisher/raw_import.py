@@ -786,14 +786,11 @@ def _apply_raw_highlight_reconstruction(
     diagnostics["chrominance_correction_per_rgb"] = chrominance.astype(float).tolist()
     diagnostics["chrominance_sample_count_per_rgb"] = chrominance_counts.astype(int).tolist()
 
-    rows_all, columns_all = np.nonzero(clipped)
     reconstructed_counts = np.zeros(3, dtype=np.int64)
     overflow_count = 0
     chunk_size = 250_000
-    for start in range(0, rows_all.size, chunk_size):
+    for rows, columns in _nonzero_chunks(clipped, chunk_size):
         _raise_if_cancelled(cancelled)
-        rows = rows_all[start : start + chunk_size]
-        columns = columns_all[start : start + chunk_size]
         target_rgb = rgb_pattern[rows % pattern_height, columns % pattern_width]
         reference = _opposed_reference(normalized, rows, columns, target_rgb, rgb_pattern)
         original = normalized[rows, columns]
@@ -843,6 +840,15 @@ def _normalize_raw_mosaic_float32(
     return output
 
 
+def _nonzero_chunks(mask, size=250_000):
+    """Bound coordinate storage even when every sensor sample is clipped."""
+    flat = mask.reshape(-1)
+    for start in range(0, flat.size, size):
+        indices = np.flatnonzero(flat[start:start+size]) + start
+        if indices.size:
+            yield indices // mask.shape[1], indices % mask.shape[1]
+
+
 def _estimate_opposed_chrominance(
     normalized: np.ndarray,
     clipped: np.ndarray,
@@ -857,18 +863,13 @@ def _estimate_opposed_chrominance(
     coarse_height = (height + 2) // 3
     coarse_width = (width + 2) // 3
     near_clipping = np.zeros((3, coarse_height, coarse_width), dtype=bool)
-    clipped_rows, clipped_columns = np.nonzero(clipped)
-    clipped_rgb = rgb_pattern[
-        clipped_rows % pattern_height,
-        clipped_columns % pattern_width,
-    ]
-    for rgb_channel in range(3):
-        selected = clipped_rgb == rgb_channel
-        if np.any(selected):
+    for clipped_rows, clipped_columns in _nonzero_chunks(clipped):
+        clipped_rgb = rgb_pattern[clipped_rows % pattern_height, clipped_columns % pattern_width]
+        for rgb_channel in range(3):
+            selected = clipped_rgb == rgb_channel
             near_clipping[rgb_channel, clipped_rows[selected] // 3, clipped_columns[selected] // 3] = True
-            near_clipping[rgb_channel] = _dilate_boolean_mask(
-                near_clipping[rgb_channel], radius=3
-            )
+    for rgb_channel in range(3):
+        near_clipping[rgb_channel] = _dilate_boolean_mask(near_clipping[rgb_channel], radius=3)
 
     residual_sum = np.zeros(3, dtype=np.float64)
     residual_count = np.zeros(3, dtype=np.int64)
@@ -887,11 +888,10 @@ def _estimate_opposed_chrominance(
             ]
             candidate &= values >= np.float32(0.2) * channel_thresholds[rgb_channel]
             candidate &= values < channel_thresholds[rgb_channel]
-            local_rows, local_columns = np.nonzero(candidate)
-            for start in range(0, local_rows.size, chunk_size):
+            for local_rows, local_columns in _nonzero_chunks(candidate, chunk_size):
                 _raise_if_cancelled(cancelled)
-                rows = global_rows[local_rows[start : start + chunk_size]]
-                columns = global_columns[local_columns[start : start + chunk_size]]
+                rows = global_rows[local_rows]
+                columns = global_columns[local_columns]
                 targets = np.full(rows.shape, rgb_channel, dtype=np.int8)
                 reference = _opposed_reference(
                     normalized, rows, columns, targets, rgb_pattern
