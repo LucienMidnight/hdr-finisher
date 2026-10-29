@@ -96,3 +96,34 @@ installer and a methodical bug hunt.
   [HDR_Finisher_PRD_v1.2 sections 10 and 13](../archive/HDR_Finisher_PRD_v1.2.md)
 - Setup guides: [Windows](../../setup/windows.md), [macOS](../../setup/macos.md),
   [Linux](../../setup/linux.md)
+
+
+**October 28, 2026: certification continuation tooling.** The release runner
+can select unfinished driver names from an older run plus an explicit rerun,
+starting fresh results at the committed current revision. It preserves the old
+evidence and verifies ancestry and protected hashes. Registered exact-message
+reproductions stop without a retry; additional errors remain open, including
+Film's preset-await failure alongside its known numerical case. Desktop smoke's
+101 px header failure also stays open. Retouch Library's test sends the same
+full scene bytes as Blob uploads to keep DevTools from embedding the raw body
+past its 256 MB message limit; application pixels, workload and limits stay
+unchanged.
+
+Validation: `retouch-library-gpu` reached its assertions and printed its own
+PASS (364,177,588 uploaded bytes; all three protected hashes unchanged).
+Runner behavioral tests: 16 passed. Full fast Node: 654 passed, two failures
+(`library-scenes` decoder-fallback fixture; `library-single-ready` missing
+`HDRLibraryScreenPreviews`). Python: 2,715 passed, three skipped, three failures
+(`test_frontend_local_scope_contract` source-text expectation,
+`test_library_rgb` missing source luminance, `test_retouch_integration` mock
+missing `defer_store`). These tests/application files were unchanged by this
+harness repair; no unrelated repair or extra GPU check was attempted.
+Logs: `codebase/output/release-fast-node.log`, `release-fast-python.log` and
+`release-checks/2026-10-28T14-55-19-034Z-c0b89745fbf37b820554/` beneath that output.
+The tested application code is b8f9d6b; 108fd2b contains test tooling and this
+record only. No 2050496 pass is claimed at b8f9d6b. The prepared 55-driver
+selection is the earlier 54 unfinished drivers plus retouch-library-gpu;
+12 have 15.2 minutes of measured history including retries, 43 lack surviving
+history. Allow roughly 75–120 minutes as a scheduling estimate, not a complete
+measurement. Continuation approval is pending; no merge or push performed.
+Task scratch was cleaned; project output remained 0.7 GB.

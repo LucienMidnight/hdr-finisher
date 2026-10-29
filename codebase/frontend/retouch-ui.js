@@ -19,7 +19,7 @@ function constrainRetouchSize() {
     ? Math.min(1024, Math.max(1, typed)) : 12;
   if (input.value.trim() === "" || typed !== size) {
     input.value = String(size);
-    retouchMessage(`Size set to ${size} native pixels. This prototype supports sizes from 1 to 1024.`);
+    retouchMessage(`Size set to ${size} native pixels. Retouch supports sizes from 1 to 1024.`);
   }
 }
 
@@ -85,7 +85,17 @@ async function commitRetouch(records) {
   }
 }
 
+function renderRetouchRoute() {
+  if (typeof status === "undefined" || !status.post) return;
+  const cpu=(state.session?.repair_rendering || []).filter(r=>r.renderer==="cpu");
+  if (!cpu.length) { status.clear("retouch-route"); return; }
+  const photo=state.session?.source?.filename || "Photo";
+  const message=`${photo} · Retouch CPU fallback: ${cpu.map(r=>`${r.name} (${r.mode}): ${r.fallback_reason}`).join("; ")}`;
+  if(status.get("retouch-route")?.message!==message)status.post({id:"retouch-route",severity:"attention",message,dismissible:false});
+}
+
 function renderRetouchControls() {
+  renderRetouchRoute();
   if (!retouchInput("brush")) return;
   const sessionId = state.session?.session_id;
   if (retouchUI.session !== sessionId) {

@@ -94,6 +94,9 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
             "source_width": source.image.shape[1], "source_height": source.image.shape[0],
             "source_fingerprint_sha256": source.source_fingerprint_sha256,
             "source_timings_ms": source.metadata.get("import_timings_ms")}
+        from .retouch_routes import records, notice
+        metadata["repair_rendering"] = records(source)
+        metadata["repair_fallback_reason"] = notice(source)
         if document and getattr(saved, "_saved_grade_notice", None):
             metadata["grade_notice"] = saved._saved_grade_notice
         if not document:
@@ -320,4 +323,5 @@ def fallback_picture(root, path, document, edge, cancelled=None, progress=None):
             if kind == PreviewKind.HDR else apply_sdr_output_highlight_compression(image, adjustments))
     body = encode(render(PreviewKind.HDR), render(PreviewKind.SDR), frame.hdr_reference_white_nits)
     check_cancelled(cancelled)
-    return {"url":"data:image/jpeg;base64," + base64.b64encode(body).decode()}
+    return {"url":"data:image/jpeg;base64," + base64.b64encode(body).decode(),
+        "repair_fallback_reason": metadata.get("repair_fallback_reason")}

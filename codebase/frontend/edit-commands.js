@@ -98,6 +98,7 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     const previousRepairs = JSON.stringify(state.editDocument?.repairs || []);
     state.editRevision = result.revision;
     state.editDocument = result.document;
+    state.session.repair_rendering = result.repair_rendering || [];
     await resetRepairSource(previousRepairs, result.document);
     if (state.session?.session_id !== sessionId || state.editRevision !== result.revision) return false;
     recordAcknowledgedLocals(result.document);

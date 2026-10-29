@@ -254,6 +254,12 @@
     }
   ],
   "drivers": [
+    {"path":"tests/retouch-photo-review.js","areas":["preview","ui"],"tier":"diagnostic","protects":"DSC04375 labelled GPU/CPU native and Fit repair crops with informational finished-colour differences.","launch":{"method":"electron"}},
+    {"path":"tests/retouch-library-gpu.js","areas":["library"],"tier":"area","protects":"A saved repaired RAW uses GPU development before thumbnail reduction, with bounded frozen source regions and warm reuse.","launch":{"method":"electron"}},
+    {"path":"tests/retouch_gpu_cases.py","areas":["preview"],"tier":"area","protects":"Deterministic bounded and whole-photo input fixtures for the hardware repair check.","launch":{"method":"helper","via":["tests/retouch-gpu-kernels.js"]}},
+    {"path":"tests/retouch-gpu-kernels.js","areas":["preview","ui"],"tier":"area","protects":"Retouch GPU kernel results, donor correspondence and native finishing against CPU behavior.","launch":{"method":"electron"}},
+    {"path":"tests/retouch-delivery.js","areas":["export-proof","preview"],"tier":"diagnostic","launch":{"method":"electron"}},
+
     {"path":"tools/hsl-performance.js","areas":["preview","masks","ui"],"tier":"diagnostic","protects":"Paired Global and Local hue input throughput and settle latency, edge defaults/non-defaults, both lanes at Fit/100/400, copied RAWs, per-pass counts and full/regional mask coverage.","launch":{"method":"electron","requires":"Choose --tag and --photo; run Global then --local serially. --local --compare-region compares kept GPU pixels with the full mask. --baseline --only-navigation measures old-path navigation. Default photo is a disposable Balanced Rock copy."}},
     {"path":"tools/hsl-seam-repro.js","areas":["preview","masks","ui"],"tier":"diagnostic","protects":"Balanced Rock copy at 423%: non-default selection edges and a review page for both luminance directions with Show selection.","launch":{"method":"electron","args":["--review"]}},
     {"path":"tests/hsl-selection-engine.js","areas":["preview","masks"],"tier":"area","protects":"Shared Light colour selection: real GPU against CPU coverage at full and reduced scale, halo tile equals the whole frame, fringe/neutral rejection, Global/Local equality and preparation reuse.","launch":{"method":"native"}},
@@ -265,6 +271,8 @@
     {"path":"tests/workspace-panel-alignment.js","areas":["ui","library"],"tier":"area","protects":"Aligned workflow panel headers and pointer/keyboard panel resizing.","launch":{"method":"electron"}},
     {"path":"tests/retouch-transfer-interaction.js","areas":["masks","preview","ui"],"tier":"area","protects":"Clone and Heal source picking, source editing, opacity, history, native preview and optional saved-grade RAW comparison.","launch":{"method":"electron"}},
     {"path":"tests/control-panel-polish.js","areas":["ui","masks"],"tier":"area","protects":"Control Panel title tokens, stable rendition tabs, brush actions and export field presentation.","launch":{"method":"electron"}},
+    {"path":"tests/performance/retouch-cpu-fallback.js","areas":["preview","ui"],"tier":"area",
+      "protects":"Warm 24 MP Inpaint, Clone and Heal CPU fallback through accepted native and Fit presentation, against the accepted three-second native and two-second Fit targets.","launch":{"method":"electron"}},
     {"path":"tests/performance/retouch-latency.js","areas":["preview","ui"],"tier":"area",
       "protects":"Warm native Inpaint click-to-preview latency and bounded source transfers.","launch":{"method":"electron"}},
     {"path":"tests/retouch-interaction.js","areas":["masks","preview","ui"],"tier":"area",

@@ -123,6 +123,54 @@ keeps a content-addressed original file (or a browser preference backup).
 Six portable-preset tests pass, including future-version round trips. The full
 JavaScript run retains the two unrelated failures recorded above.
 
+### October 28 export/Proof grade-notice follow-up
+
+The two blocked protected-project drivers opened
+`D:/Photos/Play_Raw/Fantastic light over village - AdamFromCanada/DSC00950.hdrfinisher`.
+An isolated Electron observation confirmed the **Grade needs attention** dialog
+and its Leave as is / Revert to original / Continue without them choices.
+The active retired fields were `global_adjustments.{hdr,sdr}.film_look.` plus
+`print_strength`, `print_toe`, `print_shoulder`, `color_density`, `red_response`,
+`green_response`, `blue_response`, `highlight_desaturation`, `shadow_desaturation`,
+`bloom_amount`, `bloom_sensitivity`, `bloom_highlight_detail`; also HDR
+`film_look.halation_sensitivity` and HDR `lift`, `gamma`, `gain`.
+Both Film Look sections are enabled at strength 100; print strength is 62,
+HDR bloom amount 8, SDR bloom amount about 6.44. The notice is warranted.
+
+The saved-grade reader now excludes retired Film Look warnings when the section
+is off, and excludes print toe/shoulder, bloom and halation sensitivity when
+their historical effect gates were off. Strength zero remains quiet. This
+changes notice accuracy only; it restores no retired processing or migration.
+The two drivers share one role-and-choices helper that clicks **Leave as is**,
+without saving or dismissing the warning permanently. Proof now prints its own
+PASS line after completing its diagnostic and records the observed notice.
+
+`export-file-browser-interaction` imports a disposable fresh `hdr_headroom.tiff`;
+its failure is a hidden `#jpeg-chroma-subsampling` select, not a popup. It remains
+unchanged under U1 in the October 24 remediation plan. No Retouch, export or
+Proof processing, timeout, limit, or dialog design changed.
+
+Validation: required JavaScript checks: 650 passed, the same two Library
+failures (`library-scenes` decoder failure and missing `HDRLibraryScreenPreviews`).
+Python: 2,715 passed, 3 skipped, 3 unrelated failures: preset header source
+contract, Library RGB publication guard, and the Retouch Library cache test's
+missing `defer_store` keyword. The 18 new active/inactive Film Look cases pass.
+Only the three requested drivers ran, one at a time in 2560x1440 Electron:
+
+- Proof: `PASS proof-grade-diagnostic`, both AVIF gain map and Ultra HDR JPEG.
+- Preview/export: `status: complete`; `pixelsPaired`, `tone`, `masks`, `peak`
+  all true, `projectUnchanged: true` (with `--enforce`).
+- Export/file-browser: U1 remains; `selectOption` times out because the JPEG
+  subsampling control is not visible. No dialog intercepts it.
+
+Logs and comparison result: `codebase/output/grade-notice-fix/`. All three
+protected project SHA-256 hashes match their pre-run values. DSC00950 still
+shows its warranted notice; both protected DSC00264 test projects and the
+fresh disposable export TIFF are quiet. Large captures, temporary source/cache
+copies, the disposable export fixture and this run's pytest TEMP tree were
+removed; referenced comparison crops and result files remain. Scratch output
+is below 1 GB after cleanup.
+
 ## October 27: Tone sliders replace Lift/Gamma/Gain (Steve's decision, v1)
 
 **Naming rule for the whole app.** "Exposure" always means an equal change in
@@ -740,6 +788,8 @@ that draws the preview belongs to [preview-and-gpu](preview-and-gpu.md).
 | COLOR-DESAT-01 is built in both Color lanes, after Saturation/Vibrance and before HSL; zero amounts are exactly neutral. Starts and fade widths await by-eye review. | Steve’s October 26 brief; built 2026-10-27 |
 | A healing brush in the local adjustment module and hue selection as a local-adjustment mask are required for v1. Hue selection is built October 27; the complete Retouch feature remains open. | Steve, 2026-10-21 |
 | Retouch starts on the CPU, preserving a fallback for later GPU work. Inpaint is the default, targeting PatchMatch with Krita as the main reference; Heal follows darktable/GIMP and Clone shares the brush infrastructure. See the [development plan](../../technical/local-adjustments.md#retouch-brush-development-plan-october-21-2026). Quality/performance are not yet validated. | Steve, 2026-10-21 |
+| Retouch (all Inpaint methods, Clone and Heal) moves to GPU execution, replacing the October 21 CPU-first decision. CPU fallback must use the same parallel search, iteration order, seeds and candidate rules; route fallback must be visible and logged per photo. No new saved fields. Outside repair footprints existing finished-image tolerances remain; inside, Steve judges labelled crops, with mean and p99.9 differences reported as information. | Steve, 2026-10-28 |
+| Warm CPU fallback targets: three seconds native, two seconds Fit on 24 MP. Keep shared CPU preview unchanged; GPU target remains one second native and Fit. Retain the reported Clone timing misses as usable. | Steve, 2026-10-28 |
 | Retouch repairs are shared by HDR/SDR and run before crop/rotation and denoise. Content-dependent selections see the repaired source. After repair changes, show Rematch required and retain existing SDR Match controls until an explicit Rematch. The current Match materializes editable controls, not a separate baked photo; imported authored SDR remains independent until explicitly replaced through Match. | Steve, 2026-10-22 |
 | The inspected v3 PatchMatch examples are accepted for proceeding with implementation. Skip further natural-dust study work; Steve will test natural dust manually when the tool and settings exist. This is not general photographic validation. | Steve, 2026-10-22 |
 | Smoother sun and bright-sky gradients: prototype an AgX-style **Attenuate** Highlight Color mode beside the existing modes so Steve can switch between them, with an Attenuation control; the existing modes stay. Judged by eye on HDR crops (sunset IMG_3129), not by hue metrics. | Steve, 2026-10-22 |
@@ -1530,3 +1580,100 @@ high-precision HDR/SDR export and Proof. The independent real-photo ceiling
 check's unrelated Proof byte mismatch and JPEG stress limitation are recorded
 in the refinement note above. Packaging specifications parse; no installer or
 broad GPU sweep was built/run. Photo and sidecar remained read-only.
+
+### Retouch GPU execution — October 28, 2026
+
+All four Inpaint methods, Clone sampling and Heal boundary correction now run
+on the GPU through bounded jobs in the existing delivery queue. Jobs contain
+the complete Inpaint donor rectangle, source samples and Heal boundary ring.
+Seven hardware cases (including exclusions, native reduction and all methods)
+are deterministic on replay and exactly match whole-photo GPU reads. The CPU
+and GPU share seeded proposal generation, Jacobi phase order and candidate rules;
+all measured donor choices agree. CPU scoring, sampling and finish work use
+machine-sized below-normal-priority lanes. Shared CPU preview is unchanged.
+
+Completed patches are reused in the session under the existing cache limits.
+No saved fields were added. Preview, Proof, export and batch export disclose
+CPU repair fallback per photo in the app and log, including a reused CPU patch
+with GPU finishing. Saved-grade reopening preserves those transient route
+records. Full Proof and export files are identical for all three tools on both
+routes; saved-grade batch exports use the requested route and disclose fallback.
+Heal remains labelled a prototype pending Steve's visual review.
+
+Warm synthetic 24 MP, 12 px spot, actual pointer-down through accepted frame
+plus two animation frames (two passes after warm-up):
+
+| Tool | GPU native | GPU Fit | CPU native | CPU Fit |
+| --- | --- | --- | --- | --- |
+| Inpaint | 0.558–0.590 s | 0.805–0.846 s | 2.890–2.988 s | 1.158 s |
+| Clone | 0.426–0.488 s | 0.851–1.348 s | 2.884–3.084 s | 1.043–1.048 s |
+| Heal | 0.517–0.596 s | 0.805–0.923 s | 2.838–2.899 s | 1.040–1.114 s |
+
+Steve accepted these timings as usable on October 28. GPU target remains one
+second; CPU targets are three seconds native and two seconds Fit. The two Clone
+misses are retained, with no separate CPU search or shared-preview optimization.
+A later shader parameter change lets different spots reuse compiled pipelines;
+these accepted timing samples precede that change and were not rerun to chase
+numbers. Results: `codebase/output/retouch-gpu-latency/result.json` and
+`codebase/output/retouch-cpu-fallback/result.json`.
+
+DSC04375 review: `codebase/output/retouch-review/index.html`, labelled GPU/CPU
+native and Fit pictures of each tool on one disposable copy. Finished SDR
+inside-footprint mean and p99.9 ΔE 2000 are reported next to the crops as
+information only; no inside numeric gate. Existing finished-image limits apply
+outside repairs. Owner photo and sidecar hashes are unchanged. Old saved repair
+recipes can replay with different donors because both routes now use the shared
+parallel search; this includes the DSC04375 copy and repair test fixtures.
+
+Validation: seven GPU kernel cases; GPU/CPU delivery, full Proof byte identity
+and batch route/disclosure checks for all three modes; bounded context tests,
+patch reuse and cancellation checks. Fast checks at the first checkpoint:
+Node 650 passed / 2 existing failures; Python 2687 passed / 3 skipped / 3 existing
+failures. Existing failures are preset-header wording, RGB publication guard,
+repair mock's `defer_store`, selected-source CPU fallback mock, and Single's
+missing screen-preview mock. Final fast checks: Node 650 passed / the same two
+existing failures; Python 2697 passed / three skipped / the same three existing
+failures (431 s). No installer or push.
+
+The approved 19-driver export/Proof group completed in 31.2 minutes at 0980635:
+14 passed; five failed after one retry each. No unfinished checks and no relaxed
+limits. All three protected project hashes stayed unchanged. Failures:
+
+- `proof-grade-diagnostic`: a dialog intercepted the Proof tab click.
+- `export-file-browser-interaction`: export control selection timed out.
+- `preview-export-compare`: a dialog intercepted Fit after HDR region capture;
+  no complete comparison verdict was produced.
+- `library-export-menu`: HDR peak option visibility assertion failed.
+- `edge-colour-raw`: Library GPU edge-colour reconstruction reported 63 invalid
+  pixels, then 65 on retry, and refused that GPU result. These RAW cases have no
+  repairs. The separate GPU edge-colour kernel driver passed.
+
+The runner reports NOT READY for those five; this is not a clean release result.
+The passing checks include HSL Global and Local delivery, tone zones, Color
+desaturation, hue masks, GPU Denoise measurement, presets, export parity, Proof
+sizing, batch UI, GPU smoke, the real-RAW HDR ceiling (GPU and CPU, full Proof
+byte identity), HSL integration and framing. Logs and aggregate outcomes:
+`codebase/output/retouch-export-proof/results.json`. These unrelated failures
+were retained, not repaired or hidden in this Retouch task.
+
+Final follow-up retains the completed replay worker/cache in an opened session,
+with failed candidate replay still cleaned up. Repairs inherit existing source
+priority/cancellation (interactive 0, Library 15, batch 20) rather than always
+requesting interactive priority. Ten focused route/cache/cancellation checks
+pass. The six actual GPU/CPU tool delivery cases passed again after this change,
+including saved batch replay, fallback notices and full Proof/export byte
+identity (`codebase/output/retouch-delivery-final.log`). The HSL driver keeps its
+shared test-photo copy instead of deleting it. The Library stage capture and
+Steve's accepted 0.8 s cold overhead are recorded in the Library module.
+
+Finished SDR differences inside the DSC04375 repair footprints, information only:
+
+| Tool | Mean ΔE 2000 | p99.9 ΔE 2000 |
+| --- | ---: | ---: |
+| Inpaint | 0.000002667 | 0.000009180 |
+| Clone | 0.000001112 | 0.000004504 |
+| Heal | 0.000001460 | 0.000005540 |
+
+The rounded 8-bit crop pairs are identical; Steve's visual judgement remains the
+acceptance criterion inside repairs. The viewer labels native and Fit GPU/CPU
+pictures and states its source recipe and single-spot scope.

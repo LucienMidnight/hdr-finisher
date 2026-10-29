@@ -6,7 +6,8 @@ from hdr_finisher.library_api import create_library_router
 from hdr_finisher.loader import load_image
 from hdr_finisher.library_test_patterns import set_test_patterns_enabled
 from hdr_finisher.media_browser import MediaBrowserStore
-from hdr_finisher.test_pattern import build_delivery_proof_pattern, build_hdr_test_pattern
+from hdr_finisher.color import normalize_to_acescg
+from hdr_finisher.test_pattern import build_delivery_proof_pattern, build_hdr_test_pattern, build_hue_exposure_sweep
 
 
 def test_test_patterns_are_generated_and_pinned_only_when_enabled(tmp_path):
@@ -20,14 +21,21 @@ def test_test_patterns_are_generated_and_pinned_only_when_enabled(tmp_path):
     patterns = sorted(folder.glob("*.exr"))
 
     assert enabled == {"enabled": True, "folder": str(folder.resolve()), "pinned": True, "changed": True}
-    assert [path.name for path in patterns] == ["Delivery proof test pattern.exr", "HDR test pattern.exr"]
+    assert [path.name for path in patterns] == [
+        "Delivery proof test pattern.exr", "HDR test pattern.exr", "Hue and exposure sweep.exr"]
     assert len(browser.pinned()) == 2
-    for path, expected in zip(patterns, (build_delivery_proof_pattern(), build_hdr_test_pattern())):
+    for path, expected in zip(patterns[:2], (build_delivery_proof_pattern(), build_hdr_test_pattern())):
         decoded, _descriptor, metadata, _analysis, _sdr = load_image(path)
         assert metadata["color_space"] == "ACEScg"
         assert metadata["transfer_function"] == "LINEAR"
         assert metadata["needs_color_override"] is False
         np.testing.assert_array_equal(decoded, expected)
+    # The sweep is authored in linear Rec.709 and opens without a colour review.
+    decoded, _descriptor, metadata, _analysis, _sdr = load_image(patterns[2])
+    assert metadata["color_space"] == "sRGB"
+    assert metadata["transfer_function"] == "LINEAR"
+    assert metadata["needs_color_override"] is False
+    np.testing.assert_allclose(decoded, normalize_to_acescg(build_hue_exposure_sweep(), "sRGB", "LINEAR"), rtol=1e-5, atol=1e-7)
 
     disabled = set_test_patterns_enabled(browser, False)
 
@@ -68,4 +76,4 @@ def test_settings_endpoint_pins_and_hides_managed_folder_without_touching_other_
 
     assert response.status_code == 200
     assert [pin["path"] for pin in browser.pinned()] == [str(user_folder.resolve())]
-    assert len(list(folder.glob("*.exr"))) == 2
+    assert len(list(folder.glob("*.exr"))) == 3

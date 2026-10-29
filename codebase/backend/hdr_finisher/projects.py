@@ -165,18 +165,21 @@ def _open_document(store, document, source_path, reuse_session_id):
     from .sessions import _source_mip_identity
     candidate_session = copy(session)
     candidate_session.retouch_worker = None
+    candidate_session._repair_routes = {}
     try:
         from .saved_grades import recover_repairs
         repaired = recover_repairs(document, candidate_session)
-    finally:
+    except BaseException:
         if candidate_session.retouch_worker is not None:
             candidate_session.retouch_worker.close()
+        raise
     session.grade_notice = getattr(document, "_saved_grade_notice", None)
     session.grade_original = getattr(document, "_saved_grade_original", None)
     from .saved_grades import whole_grade_fallback
     session.adjustments = session.starting_adjustments() if whole_grade_fallback(session.grade_notice) else document.global_adjustments
     session.local_adjustments = document.local_adjustments
     session.repairs = document.repairs
+    session._repair_routes = candidate_session._repair_routes
     session.denoise = document.denoise
     session.sdr_match = document.sdr_match
     session.framing = document.framing
@@ -193,6 +196,12 @@ def _open_document(store, document, source_path, reuse_session_id):
     session.history_bytes = 0
     session.render_cache.clear_adjusted()
     install_repaired_source(session, repaired, _source_mip_identity(session))
+    # The successful replay belongs to this open session, including its bounded
+    # completed patches. Later edits can reuse them without another solve.
+    previous_worker = session.retouch_worker
+    session.retouch_worker = candidate_session.retouch_worker
+    if previous_worker is not None:
+        previous_worker.close()
     if not same_decode:
         store.activate_session(session)
     return session

@@ -769,3 +769,44 @@ stale/refused/truncated updates, held-texture memory accounting and transformed-
 fallback. The Inpaint
 Electron check also compares a refreshed preview sample with a full reload.
 The repair algorithm, project recipes and delivery processing are unchanged.
+
+### Retouch GPU execution — October 28, 2026
+
+GPU first replaces the October 21 CPU-first decision. CPU and GPU use the same
+seeded proposals, Jacobi propagation order and candidate acceptance rules. CPU
+candidate scores partition across all logical cores, preserving each reduction
+order. Clone sampling and native texture finishing also use below-normal lanes.
+The shared CPU preview renderer is unchanged. Steve accepted three seconds warm
+native and two seconds Fit; GPU retains the one-second target. Accepted actual
+paint-to-frame samples and the two Clone misses are in the Grade module PRD.
+
+Bounded Retouch jobs reuse the delivery queue's cancellation, priority and memory
+controls. Inpaint transfers the entire donor search rectangle. Clone and Heal
+include full source sample rectangles and Heal's boundary ring. A region reader
+rejects undeclared dependencies; preparation matches whole-photo input exactly.
+Seven real GPU cases compare bounded jobs with whole-photo GPU reads exactly and
+verify deterministic replay. No new saved field or algorithm token was added.
+Numerical recipe parameters travel in uniforms, allowing spots with different
+bounds to reuse compiled pipelines without changing arithmetic or phase order.
+
+Session patches retain the existing two-owned-ROI/cache limits. The source is
+composited only where the stroke mask is nonzero, in saved order; frozen donor
+exclusions remain per recipe. Proof/export and selections consume that source.
+Each transient route record follows a completed patch and saved-grade replay;
+CPU fallback is visible and logged for the photo, including mixed repair and
+finishing routes. Full Proof equals the delivered bytes for all three tools on
+GPU and CPU. Library repair work runs inside its existing source-development
+lease, reading the immutable unrepaired planes and scattering masked patches
+before measurements/reduction. Tiled DNG repairs retain an explicit CPU fallback.
+
+Inside-footprint differences have no numerical gate: Steve judges labelled
+DSC04375 native and Fit crops in `codebase/output/retouch-review/index.html`.
+Outside repairs the existing finished-image tolerances remain unchanged. No
+pinned shader, tolerance, budget, saved field or CPU preview path was changed.
+
+Saved-grade opening transfers its successful replay worker/cache into the open
+session instead of closing it. Failed replay still closes the candidate worker.
+Retouch jobs inherit the existing source-work priority/cancellation context:
+interactive 0, Library CPU source fallback 15, batch 20. Cancellation is checked
+before cached-patch reuse and during GPU or CPU work. These are transient owners
+and scheduling values; there are no new saved fields or pixel algorithm changes.

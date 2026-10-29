@@ -5,6 +5,7 @@ axis); donor detail stays at native resolution. This is an independent
 implementation of boundary-difference interpolation, not copied GIMP code.
 """
 import numpy as np
+from .retouch_parallel import bands, ordered
 from .retouch import RepairPatch
 from .retouch_recipe import stroke_mask, InpaintRecipe
 
@@ -96,22 +97,24 @@ def transfer_repair(recipe, base, checkpoint=lambda: None):
         raise ValueError("The source brush crosses the photo edge; choose a source farther inside")
     original=base[top:top+h,left:left+w]
     donor=np.empty_like(original)
-    for row in range(0,h,64):
+    def sample_lane(part):
         checkpoint()
-        donor[row:row+64]=_sample(base,sy[row:row+64],sx)
+        donor[part]=_sample(base,sy[part],sx)
+    ordered(sample_lane,bands(h))
     field=None
     if recipe.mode=="heal":
         field=_healing_field(original.astype(np.float64)-donor,alpha,checkpoint)
     result=np.empty_like(original)
-    for row in range(0,h,64):
+    def finish_lane(part):
         checkpoint()
-        filled=donor[row:row+64].astype(np.float64)
+        filled=donor[part].astype(np.float64)
         if field is not None:
-            fy=np.arange(row,min(row+64,h))[:,None]*(field.shape[0]-1)/max(h-1,1)
+            fy=np.arange(part.start,part.stop)[:,None]*(field.shape[0]-1)/max(h-1,1)
             fx=np.arange(w)[None,:]*(field.shape[1]-1)/max(w-1,1)
             filled+=_sample(field,fy,fx)
-        blend=alpha[row:row+64,:,None].astype(np.float64)*recipe.strength
-        result[row:row+64]=original[row:row+64].astype(np.float64)*(1-blend)+filled*blend
+        blend=alpha[part,:,None].astype(np.float64)*recipe.strength
+        result[part]=original[part].astype(np.float64)*(1-blend)+filled*blend
+    ordered(finish_lane,bands(h))
     checkpoint()
     if not np.isfinite(result).all(): raise ValueError("Repair produced non-finite pixels")
     result.setflags(write=False)

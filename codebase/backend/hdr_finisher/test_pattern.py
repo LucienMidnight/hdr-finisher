@@ -67,3 +67,22 @@ def build_delivery_proof_pattern(width: int = 1280, height: int = 720, reference
     gradient = np.geomspace(0.0018, 5.76, width - 2 * margin, dtype=np.float32)
     image[gradient_y0:height - margin, margin:width - margin] = gradient[None, :, None]
     return image
+
+
+def build_hue_exposure_sweep(width: int = 1200, height: int = 800) -> np.ndarray:
+    """Hue sweep across a 12-stop exposure ramp, linear Rec.709 primaries.
+
+    Columns run through every hue at 70% saturation; rows run from +4 stops
+    at the top to -8 stops at the bottom. The left strip is neutral grey at
+    the same exposure, as a reference. Same chart as the Film Look parity
+    driver (tests/film-stock-parity.js).
+    """
+    import colorsys
+
+    x = np.arange(width) / width
+    hue = np.array([colorsys.hsv_to_rgb(v, 0.7, 1.0) for v in x], np.float32)
+    y = np.arange(height)[:, None, None] / height
+    level = np.float32(2.0) ** (4.0 - 12.0 * y)
+    image = (hue[None, :, :] * level).astype(np.float32)
+    image[:, : width * 80 // 1200] = level * np.float32(0.8)
+    return image

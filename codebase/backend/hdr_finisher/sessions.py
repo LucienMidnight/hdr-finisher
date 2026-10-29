@@ -205,7 +205,9 @@ class LoadedSession:
         )
 
     def edit_state(self) -> EditStateResponse:
+        from .retouch_routes import records
         return EditStateResponse(
+            repair_rendering=records(self),
             revision=self.edit_revision,
             document=self.edit_document(),
             dirty=self.dirty,
@@ -214,7 +216,9 @@ class LoadedSession:
         )
 
     def to_payload(self) -> SessionPayload:
+        from .retouch_routes import records
         return SessionPayload(
+            repair_rendering=records(self),
             grade_notice=self.grade_notice,
             session_id=self.session_id,
             source=self.source,

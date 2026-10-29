@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const { leaveSavedGradeAsIs } = require("../../tests/helpers/saved-grade-notice");
 const { _electron: electron, chromium } = require("playwright");
 
 const project = process.env.HDR_FINISHER_TEST_PROJECT || "C:\\Users\\Steve\\Desktop\\_DSC2743.hdrfinisher";
@@ -35,6 +36,7 @@ const project = process.env.HDR_FINISHER_TEST_PROJECT || "C:\\Users\\Steve\\Desk
       }, project);
     }
     await page.waitForFunction(() => typeof state !== "undefined" && state.session?.session_id && state.acceptedPresentation, null, { timeout: 180000 });
+    const gradeNotice = await leaveSavedGradeAsIs(page);
     await page.evaluate(() => applyPreviewResolution("1024"));
     await page.waitForFunction(() => state.acceptedPresentation?.lane === "hdr"
       && state.acceptedPresentation?.generation === state.previewGeneration.hdr, null, { timeout: 120000 });
@@ -45,6 +47,7 @@ const project = process.env.HDR_FINISHER_TEST_PROJECT || "C:\\Users\\Steve\\Desk
     await page.locator("#chrome-proof-target").selectOption("1000");
     const formats = ["avif_gain_map", "jpeg_ultrahdr"];
     const results = {
+      gradeNotice,
       environment: await page.evaluate(() => ({
         userAgent: navigator.userAgent,
         dynamicRangeHigh: matchMedia("(dynamic-range: high)").matches,
@@ -77,13 +80,14 @@ const project = process.env.HDR_FINISHER_TEST_PROJECT || "C:\\Users\\Steve\\Desk
       }));
     }
     fs.writeFileSync(path.join(output, "results.json"), JSON.stringify(results, null, 2));
-    console.log(output);
+    console.log("PASS proof-grade-diagnostic", JSON.stringify({ formats: formats.filter(format => results[format]), output }));
   } finally {
     if (browser) await browser.close();
     if (app) {
       await app.evaluate(({ app }) => app.exit(0)).catch(() => {});
       if (!app.process().killed) app.process().kill();
     }
+    fs.rmSync(userData, { recursive: true, force: true });
   }
   process.exit(0);
 })().catch((error) => {

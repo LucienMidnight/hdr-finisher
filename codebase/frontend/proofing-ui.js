@@ -412,6 +412,7 @@
     const details = [proofSizeLabel(), `${proofFormatLabel()} · ${proofPreviewLabel()}`];
     details.push(...(state.proofArtifact?.measurement_warnings || []));
     details.push(...(state.proofArtifact?.delivery_notes || []));
+    if (state.proofArtifact?.fallback_reason) details.push(state.proofArtifact.fallback_reason);
     if (state.proofPreview !== "hdr") details.push(`reference ${result.target_label}`);
     details.push(`${result.resolved_headroom.toFixed(2)} stops`);
     if (result.display_label) details.push(result.display_label);

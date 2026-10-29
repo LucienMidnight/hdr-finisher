@@ -6,7 +6,8 @@ const {execFileSync}=require('node:child_process'),{chromium}=require('playwrigh
 const root=path.resolve(__dirname,'..'),python=path.join(root,'.venv/Scripts/python.exe');
 const folder=path.join(root,'output/edge-colour-raw',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
 const samples=['D:/Photos/HDR Test Images/DSC00264.ARW','D:/Photos/Play_Raw/Sunset on ferry -silicoid/IMG_3129.CR2'];
-const photos=samples.filter(p=>fs.existsSync(p)).map(p=>{const copy=path.join(folder,path.basename(p));fs.copyFileSync(p,copy);return copy;});
+const shared=path.join(root,'output/test-photos');fs.mkdirSync(shared,{recursive:true});
+const photos=samples.filter(p=>fs.existsSync(p)).map(p=>{const copy=path.join(shared,path.basename(p));if(!fs.existsSync(copy))fs.copyFileSync(p,copy);return copy;});
 assert.equal(photos.length,2,'Both requested clipped-highlight photos must be available');
 (async()=>{
  const browser=await chromium.launch();const page=await browser.newPage(),rows=[];

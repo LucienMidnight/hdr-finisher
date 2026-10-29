@@ -257,7 +257,7 @@ async function exportCurrentSession() {
     const completedMessage = Number.isFinite(totalExportMs)
       ? `Export completed in ${(totalExportMs / 1000).toFixed(1)}s.`
       : "Export completed.";
-    const measurementWarning = (payload.measurement_warnings || []).join(" ");
+    const measurementWarning = [...(payload.measurement_warnings || []), payload.fallback_reason].filter(Boolean).join(" ");
     status.post({ id: "export", severity: measurementWarning ? "attention" : "success",
       message: measurementWarning ? `${completedMessage} See the Export panel for a measurement warning.` : completedMessage,
       dismissible: Boolean(measurementWarning) });

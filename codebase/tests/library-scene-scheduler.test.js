@@ -211,3 +211,18 @@ test('selected source borrows idle capacity and preempts only one neighbour when
  const next=queue.submit('next',async()=>42,null,0);assert.equal(signals.filter(s=>s.aborted).length,1);assert.equal(signals[2].aborted,false);
  blocks[0].resolve();blocks[1].resolve();blocks[2].resolve();await Promise.all([a,b,c]);assert.equal(await next,42);
 });
+
+test('nearby source survives a scroll, reattaches once, and stops after leaving the nearby window',async()=>{
+ let nearby=new Set(['photo']);const block=gate(),controller=new AbortController();let starts=0,shared;
+ const queue=create(1,undefined,{keepRunning:job=>nearby.has(job.path)});
+ const task=async signal=>{starts++;shared=signal;await block.promise;return 42;};
+ const first=queue.submit('photo-v1',task,controller.signal,10,{path:'photo'});
+ const cancelled=assert.rejects(first,{name:'AbortError'});await Promise.resolve();controller.abort();await cancelled;
+ assert.equal(shared.aborted,false);
+ const again=new AbortController(),second=queue.submit('photo-v1',task,again.signal,10,{path:'photo'});
+ await Promise.resolve();assert.equal(starts,1);block.resolve();assert.equal(await second,42);
+ const last=new AbortController(),finish=gate();let orphan;
+ const third=queue.submit('photo-v2',async signal=>{orphan=signal;await finish.promise;},last.signal,10,{path:'photo'});
+ const rejected=assert.rejects(third,{name:'AbortError'});await new Promise(resolve=>setImmediate(resolve));last.abort();await rejected;
+ nearby=new Set();queue.reprioritize(()=>80);assert.equal(orphan.aborted,true);finish.resolve();
+});

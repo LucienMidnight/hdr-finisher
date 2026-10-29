@@ -85,14 +85,32 @@ function history(output = OUTPUT, root = ROOT) {
   if (fs.existsSync(file)) for (const line of fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean)) records.push(JSON.parse(line));
   return records;
 }
-function estimate(rows, records) {
+function knownMessage(log, known, driver) {
+  const failures = known.failures.filter(f => f.driver === driver && f.messages.every(m => log.includes(m)));
+  if (!failures.length) return false;
+  // A combined driver may also report a different failure (notably Film's UI
+  // follow-up). Every error header must be covered before suppressing a retry.
+  const errors = log.split('\n').filter(line => /^(?:[\w.]+: )?(?:\w*Error(?: \[[^\]]+\])?:|.*Timeout \d+ms exceeded\.)/.test(line));
+  return errors.length > 0 && errors.every(line => failures.some(f => f.messages.some(m => m.includes(line.trim()))));
+}
+function unfinishedSelection(list, previous, additional = []) {
+  const paths = [...new Set([...previous.drivers.filter(file => !previous.results[file]?.classification), ...additional])];
+  const rows = paths.map(file => {
+    const row = list.drivers.find(row => row.path === file);
+    if (!row || row.launch.method === 'helper' || row.tier === 'diagnostic') throw Error(`Unfinished driver missing or not runnable: ${file}`);
+    return row;
+  });
+  return {rows, areas:[], unmapped:[]};
+}
+function estimate(rows, records, known = {failures:[]}) {
   let seconds = 0, retrySeconds = 0;
   const unknown = [], evidence = [];
   for (const row of rows) {
     const prior = records.filter(record => record.driver === row.path && !record.interrupted).at(-1);
     if (!prior) { unknown.push(row.path); continue; }
     seconds += prior.durationSeconds;
-    if (prior.exitCode !== 0) retrySeconds += prior.durationSeconds;
+    const recordedKnown = prior.log && fs.existsSync(prior.log) && knownMessage(cleanLog(fs.readFileSync(prior.log, 'utf8')), known, row.path);
+    if (prior.exitCode !== 0 && !recordedKnown) retrySeconds += prior.durationSeconds;
     evidence.push({ driver: row.path, seconds: prior.durationSeconds, source: prior.source || 'runner history' });
   }
   return { seconds, retrySeconds, unknown, evidence };
@@ -101,7 +119,7 @@ function classify(attempts, known, driver) {
   if (attempts[0]?.exitCode === 0) return 'passed';
   if (attempts.at(-1)?.exitCode === 0) return 'flaky';
   const logs = attempts.map(attempt => cleanLog(fs.readFileSync(attempt.log, 'utf8')));
-  return known.failures.some(failure => failure.driver === driver && logs.every(log => failure.messages.every(message => log.includes(message)))) ? 'known' : 'new';
+  return logs.every(log => knownMessage(log, known, driver)) ? 'known' : 'new';
 }
 function hashProjects(projects) {
   return projects.map(file => ({ file: path.resolve(ROOT, file), hash: digest(fs.readFileSync(path.resolve(ROOT, file))) }));
@@ -119,7 +137,7 @@ function stopTree(child) {
     try { execFileSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }); } catch { /* already exited */ }
   } else { try { process.kill(-child.pid, 'SIGTERM'); } catch { /* already exited */ } }
 }
-async function execute(row, state, out, list, hooks, deadline) {
+async function execute(row, state, out, list, hooks, deadline, known) {
   const attempts = state.results[row.path]?.attempts || [];
   state.results[row.path] = { attempts };
   while (attempts.length < 2 && !attempts.some(a => a.exitCode === 0)) {
@@ -152,6 +170,7 @@ async function execute(row, state, out, list, hooks, deadline) {
     if (hooks.stopped()) { state.interruptedAttempt = { driver: row.path, ...record }; return false; }
     attempts.push(record);
     write(path.join(out, 'state.json'), state);
+    if (record.exitCode !== 0 && knownMessage(cleanLog(fs.readFileSync(log, 'utf8')), known, row.path)) break;
   }
   return true;
 }
@@ -166,11 +185,19 @@ function parse(args) {
       selected = true; options.mode = name;
       if (['area', 'tier', 'driver'].includes(name)) { options.value = args[++i]; if (!options.value || options.value.startsWith('--')) throw Error(`Missing value for --${name}`); }
     } else if (name === 'plan') options.plan = true;
+    else if (['unfinished-from', 'also-driver'].includes(name)) {
+      const value = args[++i];
+      if (!value || value.startsWith('--')) throw Error(`Missing value for --${name}`);
+      if (name === 'unfinished-from') options.unfinishedFrom = value;
+      else (options.alsoDrivers ||= []).push(value);
+    }
     else if (name === 'fresh') options.fresh = true;
     else if (name === 'limit-minutes') { options.limitMinutes = Number(args[++i]); if (!Number.isFinite(options.limitMinutes) || options.limitMinutes <= 0) throw Error('--limit-minutes needs a positive number'); }
     else if (name === 'stop-after') { options.stopAfter = Number(args[++i]); if (!Number.isInteger(options.stopAfter) || options.stopAfter < 1) throw Error('--stop-after needs a positive driver count'); }
     else throw Error(`Unknown option: ${args[i]}`);
   }
+  if (options.alsoDrivers && !options.unfinishedFrom) throw Error('--also-driver requires --unfinished-from');
+  if (options.unfinishedFrom && options.mode !== 'full') throw Error('--unfinished-from requires explicit --full selection');
   return options;
 }
 async function main(args = process.argv.slice(2)) {
@@ -183,7 +210,14 @@ async function main(args = process.argv.slice(2)) {
     catch { throw Error('No reachable v* release tag; add a release tag before selecting changes.'); }
     changed = git('diff', '--name-only', base, 'HEAD').split('\n').filter(Boolean);
   }
-  const selection = select(list, options.mode, options.value, changed), timing = estimate(selection.rows, history());
+  const previous = options.unfinishedFrom ? read(path.resolve(ROOT, options.unfinishedFrom, 'state.json')) : null;
+  if (previous) {
+    git('merge-base', '--is-ancestor', previous.revision, revision);
+    checkProjects(previous.fixtures);
+    console.log(`Unfinished selection from ${previous.revision}; completed results are NOT carried forward.`);
+  }
+  const selection = previous ? unfinishedSelection(list, previous, options.alsoDrivers) : select(list, options.mode, options.value, changed);
+  const timing = estimate(selection.rows, history(), known);
   const minutes = (timing.seconds + timing.retrySeconds) / 60;
   console.log(`${options.mode}${options.value ? ` ${options.value}` : ''}: ${selection.rows.length} drivers at ${revision.slice(0, 12)}${base ? `; changes since ${base}` : ''}`);
   if (base) console.log(`Changed areas: ${selection.areas.join(', ') || 'none'}`);
@@ -199,7 +233,7 @@ async function main(args = process.argv.slice(2)) {
   if (!selection.rows.length) throw Error('No drivers selected.');
   for (const row of selection.rows) if (row.launch.requires) throw Error(`Manual diagnostic invocation required for ${row.path}: ${row.launch.requires}`);
   fs.mkdirSync(OUTPUT, { recursive: true });
-  const key = digest(JSON.stringify({ revision, mode: options.mode, value: options.value, rows: selection.rows, fixtures: list.protectedProjects, known })).slice(0, 20);
+  const key = digest(JSON.stringify({ revision, mode: options.mode, value: options.value, rows: selection.rows, unfinishedFrom: options.unfinishedFrom, fixtures: list.protectedProjects, known })).slice(0, 20);
   const pointer = path.join(OUTPUT, `${key}.json`);
   let out = !options.fresh && fs.existsSync(pointer) ? read(pointer).directory : null;
   let state = out && fs.existsSync(path.join(out, 'state.json')) ? read(path.join(out, 'state.json')) : null;
@@ -239,7 +273,7 @@ async function main(args = process.argv.slice(2)) {
     for (const row of selection.rows) {
       if (state.results[row.path]?.classification) continue;
       if (stopped || Date.now() >= deadline) { capReached ||= Date.now() >= deadline; break; }
-      const complete = await execute(row, state, out, list, { stopped: () => stopped, child: child => { active = child; fs.writeFileSync(lock, JSON.stringify({pid: process.pid, childPid: child?.pid || null})); }, cap: () => { stopped = true; capReached = true; } }, deadline);
+      const complete = await execute(row, state, out, list, { stopped: () => stopped, child: child => { active = child; fs.writeFileSync(lock, JSON.stringify({pid: process.pid, childPid: child?.pid || null})); }, cap: () => { stopped = true; capReached = true; } }, deadline, known);
       if (!complete) break;
       state.results[row.path].classification = classify(state.results[row.path].attempts, known, row.path);
       state.elapsedMs = previousElapsed + Date.now() - started; write(path.join(out, 'state.json'), state);
@@ -274,5 +308,5 @@ async function main(args = process.argv.slice(2)) {
   process.exitCode = fatal || counts.new || counts.known ? 1 : counts.unfinished ? 130 : 0;
   return { out, state, counts };
 }
-module.exports = { inventory, validate, changedAreas, select, command, history, estimate, classify, hashProjects, checkProjects, parse, main };
+module.exports = { inventory, validate, changedAreas, select, command, history, estimate, classify, knownMessage, unfinishedSelection, hashProjects, checkProjects, parse, main };
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });

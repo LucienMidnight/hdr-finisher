@@ -4078,3 +4078,210 @@ camera, saved workspace layouts.
 - Filter bar simplification:
   [brief, October 13](../archive/Library_Filter_Bar_Simplification_Brief_2026-10-13.md)
 - Library briefs: `docs/technical/archive/briefs/codex-brief-library-*.md`
+
+### October 28, 2026: Retouch Library work
+
+- Source developments now survive a grid scroll while their photo remains visible
+  or nearby, and returning demand reattaches to the same job. The October 29
+  correction below removes preemption of needed work; leaving the nearby window
+  cancels unneeded viewport work. Source
+  slot and memory limits are unchanged.
+- DSC04375's October 28 stored-scene miss was a one-time consequence of the
+  intentional saved-grade normalization change (611c994): omitted repair defaults
+  and the RAW edge-colour default now enter the source recipe consistently. Its
+  old stored key was reproduced from the unchanged sidecar; the current thumbnail
+  and screen scene are stored under the new key. This affects documents missing
+  those source/repair defaults, not all stored photos, and does not recur on each
+  scroll or every update. Writer-version fields and local adjustments do not enter
+  the source recipe. Cache matching is left intact.
+- Repaired RAW and RGB scenes now develop on the GPU. Bounded repair work uses
+  the existing source lease and immutable native planes before measurement and
+  reduction. All Inpaint methods, Clone and Heal share the Grade solver; masked
+  writes preserve pixels outside repairs and saved ordering. Tiled DNG with
+  repairs explicitly falls back to the CPU. Fallback labels travel with CPU
+  scene metadata and are visible per picture; logs identify the photo.
+- DSC04375 hardware check: seven saved repairs, 10.240 s cold through drawn
+  thumbnail, 0.837 s stored-scene reuse through drawing. GPU development alone
+  is 2.977 s with repairs versus 2.159 s without. The full un-repaired comparison
+  is 6.295 s, measured later with first-draw pipelines already warm; it is not a
+  controlled repair-only difference. Peak GPU allocation is 1.042 GB within the
+  existing lease. The cold no-extra-time goal remains unmet: pipeline reuse
+  reduces repeated compilation, but source preparation and repair work add cost.
+  Steve accepted the roughly 0.8 s cold repair overhead on October 28 and
+  asked to retain the improvement without further optimization. No CPU full-RAW repair development is required on the supported GPU
+  path. `codebase/output/retouch-library/result.json` records the measurements.
+- The DSC04375 GPU/CPU native and Fit crop viewer is
+  `codebase/output/retouch-review/index.html`. Inside differences are information
+  only, next to each tool's pictures. Owner RAW/sidecar hashes are unchanged.
+Validation: the scheduler and returning-viewport behavior tests pass. The
+focused Electron scroll check reused 20 tiles, preserved pixels and made zero
+backend picture requests on return (`codebase/output/retouch-library-scroll-check.log`).
+Fast checks: 650 Node passes, two existing failures; 2687 Python passes, three
+skips and three existing failures. These are the same failures recorded in the
+Grade module (preset-header contract, RGB publication guard, repair mock's
+`defer_store`, selected-source fallback mock and Single's missing screen-preview
+mock). No broad GPU sweep, export change or owner-photo write.
+
+GPU delivery checks now also cover full Proof/export byte equality and saved
+batch replay for all three repair modes, on GPU and CPU fallback. Final fast
+checks and the approved 19-driver export/Proof selection are recorded below. No
+push or installer build.
+
+
+**Accepted cold overhead and paired stage capture — October 28.** Steve accepted
+approximately 0.8 s extra GPU development for seven repairs; do not optimize it
+further in this task. The original 10.240 s sample retained 2.977 s GPU
+development and 0.044 s decode, but no complete stage trace. Its other 7.219 s
+cannot honestly be divided between waiting, handoff and first drawing. The
+original 6.295 s plain sample followed the repaired draw and had warm pipelines.
+
+A separate controlled stage capture uses the exact same 42 MP DSC04375 RAW and
+grade, with repairs omitted for the plain case. Each has a fresh disposable test
+profile, empty stored scenes, first draw, 640 px thumbnail and two presentation
+frames. Renderer initialization happens before the timed request, as in the
+original check. OS file cache is uncontrolled; these are scene-cold, not disk-cold.
+Unrelated grid work is excluded. The observation wrappers leave rendering intact.
+
+| Sequential stage | Seven repairs | Repairs omitted |
+| --- | ---: | ---: |
+| Source request/decode and sensor transfer | 0.378 s | 0.387 s |
+| GPU development, including admission | 2.602 s | 1.796 s |
+| Peak quantiles | 0.023 s | 0.027 s |
+| Scene packing and handoff (thumbnail + screen preview) | 2.324 s | 2.317 s |
+| Source finalization and remaining uninstrumented source overhead | 1.454 s | 1.427 s |
+| First draw and two presentation frames | 2.314 s | 2.385 s |
+| **Total** | **9.095 s** | **8.340 s** |
+
+Within GPU development, repair work is 0.787 s; source admission waits are
+0.007/0.009 s. Within first drawing, draw-queue plus lease waits are about
+0.005 s on each, pixels fetch/upload 0.016/0.017 s, and render plus GPU completion
+2.280/2.353 s. GPU completion itself takes 2.272/2.347 s; that includes first-use
+GPU setup and execution and cannot be split into compilation versus execution
+by this trace. These nested times must not be added again. Renderer initialization
+outside the totals is 0.349/0.356 s. Source polling waits are zero on both.
+Most non-repair cost is therefore shared source handoff/finalization and first
+drawing, not repair work. Do not substitute these new stage times into the old
+10.240 s total. Raw traces: `codebase/output/retouch-library/breakdown-repaired.json`
+and `breakdown-plain.json`; reproduce with the registered Library driver using
+`--breakdown` and `--breakdown --plain` in separate default disposable profiles.
+Custom profile names must contain `test-` to select the isolated Library cache.
+
+The approved 19 export/Proof drivers completed in 31.2 minutes at 0980635:
+14 passed and five failed after one retry each. The Grade module lists those
+failures. Retouch-specific delivery checks passed again after retaining the
+saved-replay patch cache and inheriting the existing source priority/cancellation
+context. No Library rendering optimization followed Steve's acceptance.
+
+Final fast checks after the replay-cache/priority follow-up: Node 650 passed,
+two existing failures; Python 2697 passed, three skipped, three existing failures.
+The five unchanged fast-suite failures are listed in the Grade module. All
+focused route/cache/cancellation checks (10) and the six repair delivery cases
+pass. The broad export/Proof group is not clean because of the five failures
+listed above; no push, merge or installer build is claimed.
+
+
+### October 29, 2026: Preserve needed Library preparation
+
+The October 28 source-driver AbortError stack points at scheduler priority
+preemption, not the orphan-only reprioritize cancellation. Viewport re-ranking
+could demote explicit off-grid work and a competing request could abort it while
+it still had subscribers. Separately, cancelling an explicit waiter outside the
+viewport aborted its source immediately, so returning demand developed it twice.
+Both faults reproduce in fast behavior checks against the prior implementation.
+
+Cache probes and source jobs now finish while requested; priority orders the
+next free slot instead of aborting needed work. Explicit preparation keeps its
+priority through viewport changes and finishes its reusable cache if detached.
+Grid/filmstrip and speculative neighbours declare viewport ownership: nearby
+running work remains reusable, and detached work stops when it leaves that
+window. Source invalidation still cancels obsolete pixels. Slots, GPU budgets,
+rendering, image tolerances and timeouts are unchanged.
+
+App audit: Build previews uses these source queues and its priority-99 drawing
+could also be preempted by a grid draw. In-flight Library draws now finish while
+requested. Export-page batch tiles use Library sources and receive the same
+protection. Actual export, Proof and batch output run through delivery workers,
+not the Library scene scheduler; shared GPU permits retry yielded work. No output
+pipeline changes were needed.
+
+Validation in this first commit: three new app-behavior checks pass (needed and
+abandoned demand, detached explicit reuse of both sizes, Build draw survival).
+The first two fail against the preceding app implementation. Full Node suite:
+657 passed, the same two recorded failures (selected-source CPU-fallback mock;
+Single screen-preview mock). Python: 2715 passed, three skipped and the same three recorded failures
+(preset headers, RGB publication guard, repair mock missing defer_store). Logs:
+`codebase/output/scheduler-fix/fast-node.log` and `fast-python.log`.
+Steve approved the branch checks and needed main comparisons, capped at 95
+minutes total and 15 minutes without a verdict per driver; stalled work retains
+backend logs and queue state. Results and classification follow below. Only the
+drivers in this brief run, sequentially at 2560x1440; the documented Single
+readiness timeout remains excluded unless it differs. The original assessment
+records browser closure for library-rgb-native, not the AbortError recorded for
+the five source drivers; its cause still needs a rerun. No push or merge.
+
+
+The original source-driver stack was matched to `probes.submit` in
+`prepared`, before source development. Parallel thumbnail/screen lookups outside
+the viewport were re-ranked from priority 10 to 80; a later priority-10 submit
+preempted a still-needed lookup. This preemption path also exists on main;
+6d833aa's source retention change is the separate cause of detached explicit
+preparation restarting. The additional exact probe regression fails against the
+preceding app code loaded in memory and passes with the fix. Node now has 658
+passes and the same two existing failures. Evidence:
+`codebase/output/scheduler-fix/original-probe-regression.log` and `fast-node.log`.
+Application code remains c3b0bd8 throughout the branch driver runs; this follow-up
+adds only the exact regression and explanation. Full driver classification follows below from the approved branch/main comparisons.
+
+
+October 29 driver comparison (application c3b0bd8; main b63a975): the
+scheduler faults are fixed, but no full slow driver has passed yet. The five
+source checks all reproduce their original cache-probe AbortError on main;
+the fixed branch reaches later route/cache assertions or renderer memory
+failure. Main does not reach those later assertions, so their causes are
+unresolved. Live-grid reproduces the two-start detached-demand failure on
+main; the fixed branch passes that assertion and the two-size cache assertion,
+then fails the later real-source cache reuse assertion.
+
+| Driver | Fixed branch | Unmodified main | Classification |
+| --- | --- | --- | --- |
+| library-iso-source | Later GPU source/rendition route assertion | Original AbortError | Scheduler fault fixed; full driver also fails on main; later fault unresolved |
+| library-rgb-source | Later cached reopen redeveloped | Original AbortError | Scheduler fault fixed; full driver also fails on main; later fault unresolved |
+| library-precision-rendition | Later cached reopen redeveloped | Original AbortError | Scheduler fault fixed; full driver also fails on main; later fault unresolved |
+| library-precision-source | Renderer out of memory | Original AbortError | Scheduler fault fixed; full driver also fails on main; later fault unresolved |
+| library-codec-source | Later cached reopen redeveloped | Original AbortError | Scheduler fault fixed; full driver also fails on main; later fault unresolved |
+| library-rgb-native | Browser closed at initial grid | Same initial grid closure | Also failing on main |
+| library-live-grid | Reuse assertion fixed; later source-cache assertion fails | Two preparation starts | Scheduler fault fixed; full driver also fails on main; later fault unresolved |
+| library-live-native | Browser closed at initial grid | Same initial grid closure | Also failing on main |
+| library-codec-native | Browser closed at initial grid | Same initial grid closure | Also failing on main |
+| library-dng-warp | Warp error 0.6139725523627355, limit 0.0001 | Exact same error | Also failing on main |
+| local-adjustments-interaction | Loaded-source creation-tools assertion | Same assertion | Also failing on main |
+| library-background-activity | Stalled at 15-minute cutoff | Same stall, three paused writes and one paused helper request | Also failing on main |
+| library-scroll-cache | Own timeout after 729 seconds; main process about 7.3 GB | Stalled at 15-minute cutoff; main process about 10.9 GB | Also failing on main |
+
+Evidence lives in `codebase/output/scheduler-fix/slow-results.json` with
+per-driver logs, backend logs, queue/health snapshots and any renderer-crash
+record. There are no slow-driver PASS lines to claim. The local-adjustments
+first attempt used its hard-coded smaller viewport and is excluded; the
+record under `branch-2560` uses the enforced 2560x1440 viewport. All main
+comparisons use the same observer and viewport enforcement, with no app-code
+edits. The documented library-gpu-raw-single readiness timeout remains outside
+this stage. No output, tolerance or timeout changes were made to pass a driver.
+
+All 13 eligible named drivers completed or were stopped under Steve's per-driver
+rule on each revision. Testing finished in about 77 minutes of the approved
+95-minute window. Background activity stalled for 15 minutes on both revisions;
+its scene queues were empty, with three paused writer requests and one paused
+helper request. Main scroll-cache also stopped at 15 minutes, with an
+unresponsive renderer and main-process working set about 10.9 GB. Its backend
+health, last responsive scene queues, snapshot timeout and memory observation
+were retained. No additional branch-only failure was established; remaining
+main failures are recorded for the next stage. The later source/cache failures
+remain unresolved because main fails earlier. The temporary main worktree was
+removed after comparison; shared dependency junctions were unlinked first.
+
+Final cleanup removed disposable photo copies, Electron profiles and the main
+comparison checkout while retaining diagnostic logs. `tools/output_size.py`
+reported 1.3 GB both before and after the task, below the 100 GB limit. The
+three protected read-only project hashes remained unchanged after every driver.
+Fast totals remain Node 658 passed / 2 existing failures; Python 2715 passed /
+3 existing failures / 3 skipped. No merge or push was made.

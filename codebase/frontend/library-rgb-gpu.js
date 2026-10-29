@@ -215,7 +215,7 @@ window.HDRLibraryRGB = (() => {
       let subnormal=(base+increment)/16777216.0;
       textureStore(out,vec2i(p.xy),vec4f(select(subnormal,normal,v>=vec3f(0.00006103515625)),1));
     }`;
-  async function developFrame({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity, direct = false }) {
+  async function developFrame({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity, direct = false, signal = null }) {
     const shared = await gpu(), {device,errors} = shared;
     let pipelines=compiled.get(device);
     if(!pipelines){
@@ -322,6 +322,11 @@ window.HDRLibraryRGB = (() => {
       await device.queue.onSubmittedWorkDone(); release(mosaicBuf);
       await stage(meta.dng_warp?"warp_colour_measure":"colour_measure");
       window.HDRLibraryScenes?.stage(meta.path,"Reducing Library pictures on GPU");
+      if(meta.repairs?.length&&!meta.reference_only){
+        const repaired=await root.HDRLibraryRetouch({device,meta,planes:planes.slice(0,3),make,release,read,
+          budget:()=>memoryBudget-liveBytes,permit:beforeSubmit|| (async()=>{}),signal,peaks,samples});
+        planes.slice(0,3).forEach(release);planes.splice(0,3,...repaired);await stage("retouch");
+      }
       const reduced = {};
       for (const edge of edges) {
         const [rh, rw] = reducedSize(meta, edge);

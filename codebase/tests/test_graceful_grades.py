@@ -243,3 +243,38 @@ def test_missing_source_section_keeps_readable_finishing():
     assert saved.global_adjustments.hdr.exposure == .7
     assert not whole_grade_fallback(notice(saved))
     assert notice(saved)["sections"] == ["Source settings"]
+
+
+@pytest.mark.parametrize("lane", ["hdr", "sdr"])
+@pytest.mark.parametrize("off", ["strength", "section", "bloom", "bloom-amount", "bloom-radius",
+                                  "halation", "halation-amount", "halation-radius", "print"])
+def test_retired_film_controls_only_warn_when_they_affected_the_picture(lane, off):
+    film = {"look_strength": 100, "print_strength": 62, "print_toe": 12,
+            "bloom_enabled": True, "bloom_amount": 8, "bloom_sensitivity": 78,
+            "halation_enabled": True, "halation_amount": 13, "halation_sensitivity": 72}
+    raw = payload({"grade": {"global_adjustments": {lane: {"film_look": film}}}})
+    branch = raw["global_adjustments"][lane]
+    film = branch["film_look"]
+    prefix = f"global_adjustments.{lane}.film_look."
+    active = {i["path"] for i in notice(validate_saved(EditDocument, raw))["issues"]}
+    assert active == {prefix + f for f in ("print_strength", "print_toe", "bloom_amount",
+                                         "bloom_sensitivity", "halation_sensitivity")}
+    if off == "strength": film["look_strength"] = 0
+    elif off == "section": branch["film_look_section_enabled"] = False
+    elif off == "bloom": film["bloom_enabled"] = False
+    elif off == "bloom-amount": film["bloom_amount"] = 0
+    elif off == "bloom-radius": film["bloom_radius"] = 0
+    elif off == "halation": film["halation_enabled"] = False
+    elif off == "halation-amount": film["halation_amount"] = 0
+    elif off == "halation-radius": film["halation_radius"] = 0
+    elif off == "print": film["print_strength"] = 0
+    before = deepcopy(raw)
+    saved = validate_saved(EditDocument, raw)
+    paths = {i["path"] for i in (notice(saved) or {}).get("issues", [])}
+    if off in ("strength", "section"):
+        assert not paths
+    else:
+        effect = off.split("-")[0]
+        assert paths == {p for p in active if not p.startswith(prefix + effect + "_")}
+    assert raw == before
+    assert saved.global_adjustments.model_dump()[lane]["film_look"]["halation_amount"] == film["halation_amount"]

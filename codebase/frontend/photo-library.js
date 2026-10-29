@@ -225,7 +225,7 @@
       for (const item of photos) {
         if (!current()) break;
         try {
-          const meta = await HDRLibraryScenes.load(item.path,2560,controller.signal,item.path===photo.path?0:50);
+          const meta = await HDRLibraryScenes.load(item.path,2560,controller.signal,item.path===photo.path?0:50,false,null,{viewportDemand:true});
           if (!current()) break;
           if (meta?.route === "gpu-raw-thumbnail") await HDRLibraryPictures.prepare(meta,controller.signal,current);
           if (!current()) break;
@@ -239,7 +239,7 @@
     key: (photo, edge) => `${pictureIdentity(photo)}|${edge}`,
     load: (photo, edge, signal) => {
       const cached = recentPictures.get(pictureIdentity(photo));
-      return cached?.edge >= edge ? Promise.resolve(cached) : HDRLibraryScenes.load(photo.path,edge,signal,5,false,null,{gpuOnly:true});
+      return cached?.edge >= edge ? Promise.resolve(cached) : HDRLibraryScenes.load(photo.path,edge,signal,5,false,null,{gpuOnly:true,viewportDemand:true});
     },
   });
   function developmentNeighbours() {
@@ -636,7 +636,7 @@
             if (gpu.adapterInfo?.fallback) throw Error("Hardware GPU unavailable.");
             const trace = HDRLibraryTrace.begin(container === space ? "grid" : "filmstrip",photo.path,started);
             const meta = await HDRLibraryScenes.load(photo.path, cell.edge, cell.controller.signal,10,false,trace,
-              {beforeSource:async()=>{
+              {viewportDemand:true,beforeSource:async()=>{
                 // Fullscreen's own quick/sharp request gets source slots before the filmstrip.
                 while (state.view === "single" && !readyWindow.has(selected() || {})) await sleep(50,cell.controller.signal);
                 if (state.view === "single") await navigationGate.settled(cell.controller.signal);
