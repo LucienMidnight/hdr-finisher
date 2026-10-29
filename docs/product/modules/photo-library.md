@@ -4218,3 +4218,17 @@ drivers in this brief run, sequentially at 2560x1440; the documented Single
 readiness timeout remains excluded unless it differs. The original assessment
 records browser closure for library-rgb-native, not the AbortError recorded for
 the five source drivers; its cause still needs a rerun. No push or merge.
+
+
+The original source-driver stack was matched to `probes.submit` in
+`prepared`, before source development. Parallel thumbnail/screen lookups outside
+the viewport were re-ranked from priority 10 to 80; a later priority-10 submit
+preempted a still-needed lookup. This preemption path also exists on main;
+6d833aa's source retention change is the separate cause of detached explicit
+preparation restarting. The additional exact probe regression fails against the
+preceding app code loaded in memory and passes with the fix. Node now has 658
+passes and the same two existing failures. Evidence:
+`codebase/output/scheduler-fix/original-probe-regression.log` and `fast-node.log`.
+Application code remains c3b0bd8 throughout the branch driver runs; this follow-up
+adds only the exact regression and explanation. Full driver classification is
+still pending the approved branch/main comparisons.

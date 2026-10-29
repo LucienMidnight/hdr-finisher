@@ -241,3 +241,28 @@ test('Build previews drawing survives a new grid draw while its caller still nee
  scenes.viewport(['tile'],['tile']);await tick();assert.equal(shared.aborted,false);
  block.resolve();assert.equal(await build,'built');assert.equal(await grid,'grid');
 });
+
+
+test('parallel thumbnail and screen cache lookups retain both callers after viewport reranking',async()=>{
+ const block=gate(),signals=[];
+ const {scenes,context}=setup({photo:{bytes:1,revision:'1'}},async(path,edge)=>{
+  context.HDRLibraryGpuRaw.cachedDirect=(p,e)=>({path:p,edge:e,key:'finished'});
+  return {path,edge,key:'finished'};
+ });
+ const fetch=context.fetch;
+ context.fetch=async(url,options)=>{
+  signals.push(options.signal);
+  await new Promise((resolve,reject)=>{
+   const stop=()=>reject(new DOMException('Cancelled','AbortError'));
+   options.signal.addEventListener('abort',stop,{once:true});
+   block.promise.then(()=>{options.signal.removeEventListener('abort',stop);resolve();});
+  });
+  return fetch(url,options);
+ };
+ scenes.viewport([],[]);
+ const small=scenes.load('photo',640),large=scenes.load('photo',2560);
+ small.catch(()=>{});large.catch(()=>{});
+ try{await tick();assert.equal(signals.length,2);assert.ok(signals.every(s=>!s.aborted));}
+ finally{block.resolve();await Promise.allSettled([small,large]);}
+ assert.equal((await small).edge,640);assert.equal((await large).edge,2560);
+});
