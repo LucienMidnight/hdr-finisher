@@ -64,8 +64,26 @@ window.HDRLibraryScenes = (() => {
     const cost = elapsed ? elapsed / 1000 : plan.bytes / largeBytes;
     const pending = sources.submit(identity+"|"+version+"|"+generation, async (shared, importance) => {
       const started = performance.now();
-      try { const result = await develop(path, edge, shared, importance, version, options.gpuOnly); if (result && (idle || signal?.aborted)) save(result); return result; }
+      const admission = crypto.randomUUID();
+      const request = release => fetch("/api/library/memory-admission", {method:"POST",
+        ...(release?{}:{signal:shared}), headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:admission,bytes:Math.max(700_000_000,plan.bytes*8),release})});
+      let renew;
+      try {
+        for (;;) {
+          const response = await request(false);
+          if (!response.ok) throw Error("Application memory accounting is unavailable.");
+          if ((await response.json()).granted) break;
+          sources.stage(path,"Reclaiming older pictures",true);
+          await wait(250,shared);
+        }
+        renew = setInterval(()=>{void request(false).catch(()=>{});},10000);
+        const result = await develop(path, edge, shared, importance, version, options.gpuOnly);
+        if (result && (idle || signal?.aborted)) save(result);
+        return result;
+      }
       finally {
+        clearInterval(renew); await request(true).catch(()=>{});
         if (!shared.aborted) {
           history.delete(path);
           history.set(path, {revision:plan.revision,ms:performance.now()-started});

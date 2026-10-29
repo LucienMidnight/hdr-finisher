@@ -100,10 +100,13 @@ class FileCommands:
     @file_event("plan")
     def plan(self,request):
         if not FILE_COMMANDS_SUPPORTED: raise ValueError(PLATFORM_MESSAGE)
-        with timed_lock(self._lane, "file_command_lane"), timed_lock(self.marks.writer._lane, "file_command_writer"), timed_lock(self.marks._lock, "file_command_marks"):
-            if request.action in {'delete','delete_rejected'}:
+        if request.action in {'delete','delete_rejected'}:
+            # Hashes and Windows Recycle Bin probing can block for seconds.
+            # The delete planner captures its settings snapshot in a short scope.
+            with timed_lock(self._lane, "file_command_lane"), timed_lock(self.marks.writer._lane, "file_command_writer"):
                 from .library_file_delete import plan
                 return plan(self,request)
+        with timed_lock(self._lane, "file_command_lane"), timed_lock(self.marks.writer._lane, "file_command_writer"), timed_lock(self.marks._lock, "file_command_marks"):
             if request.action in {'folder_rename','folder_move'}:
                 from .library_file_folders import plan
                 return plan(self,request)

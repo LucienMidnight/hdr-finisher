@@ -138,3 +138,50 @@ def startup_imports():
         yield
     finally:
         builtins.__import__ = original
+
+
+class MarksLock:
+    """RLock with the outer owner's call site, including unlabelled callers."""
+    def __init__(self):
+        self._lock = RLock()
+        self._depth = 0
+        self._owner = None
+
+    def acquire(self, *args, **kwargs):
+        import threading
+        started = time.monotonic()
+        previous = self._owner
+        acquired = self._lock.acquire(*args, **kwargs)
+        if not acquired: return False
+        if not self._depth:
+            # Read frame metadata only; traceback/linecache can read source
+            # files from disk, which would itself extend this critical section.
+            frame, stack = sys._getframe(1), []
+            for _ in range(6):
+                if frame is None: break
+                stack.append(f"{Path(frame.f_code.co_filename).name}:{frame.f_lineno}:{frame.f_code.co_name}")
+                frame = frame.f_back
+            del frame
+            self._owner = {"thread":threading.current_thread().name,
+                "stack":stack,"since":time.monotonic()}
+        self._depth += 1
+        waited = time.monotonic()-started
+        if waited >= .25:
+            log("marks_lock_wait",wait_ms=round(waited*1000,3),holder=previous)
+        return True
+
+    def release(self):
+        self._depth -= 1
+        owner = self._owner if not self._depth else None
+        if owner: self._owner = None
+        held = time.monotonic()-owner["since"] if owner else 0
+        self._lock.release()
+        if owner and held >= .25:
+            log("marks_lock_hold",hold_ms=round(held*1000,3),holder=owner)
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, *args):
+        self.release()

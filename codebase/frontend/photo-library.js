@@ -187,7 +187,8 @@
   const tilePool = HDRLibraryTilePool.create(undefined, cell => {
     cell.controller.abort(); cell.element.remove();
     // Explicitly release the detached canvas backing store on eviction.
-    if (cell.fallback) cell.fallback.width = cell.fallback.height = 0;
+    if (cell.fallback) { cell.fallback.getContext("webgpu")?.unconfigure(); cell.fallback.width = cell.fallback.height = 0; }
+    cell.canvas.removeAttribute("src");
   });
   const tileKey = (map, identity) => `${map === state.cells ? "grid" : "film"}|${identity}|${state.hdr}|${thumbnailEdge()}`;
   const cacheChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('hdr-library-cache') : null;
@@ -573,7 +574,23 @@
     updateDetails(); paintGrid(); paintFilm();
     status(`${state.photos.length.toLocaleString()} photos · ${state.hiddenFiles} unreadable files hidden`);
   }
-  const cameraCells = new Map();
+  let hostReclaim = false;
+  window.addEventListener("message", async event => {
+    if (event.origin !== location.origin || event.data?.type !== "hdr-memory-pressure" || !event.data.value.reclaim || hostReclaim) return;
+    hostReclaim = true;
+    try {
+      // Detached surfaces are FIFO/LRU: visible and the nearby live window
+      // survive; older surfaces will be redrawn when revisited.
+      const needed = Math.max(32*1024**2,event.data.value.totalBytes-event.data.value.targetBytes);
+      const before = tilePool.snapshot().bytes;
+      while (before-tilePool.snapshot().bytes < needed && tilePool.evictOne(cell=>cell.fallback?.dataset.standIn!=="true")) {}
+      const other = photo => photo.path !== selected()?.path;
+      readyWindow.evictFinished(other); quickWindow.evictFinished(other);
+      recentPictures.clear();
+      await HDRLibraryPictures.reclaimHost();
+      await HDRLibraryQuickPictures.reclaimHost();
+    } finally { hostReclaim = false; }
+  });
   function makeCell(photo, container, index, defer = false) {
     const element = document.createElement("div");
     element.className = "library-cell loading"; element.setAttribute("role", "option"); element.dataset.path = photo.path;
@@ -592,8 +609,11 @@
       if (!state.selection.has(photo.path)) select(state.photos.findIndex(item => item.path === photo.path));
       event.dataTransfer.setData(HDRLibraryAlbums.DRAG, String(state.selection.size)); event.dataTransfer.effectAllowed = "copyMove";
     });
-    const remembered = cameraCells.get(cell.identity);
-    if (remembered) { canvas.src = remembered; canvas.style.visibility = ""; }
+    // Abort owns all native presentation resources, including unfinished cells.
+    cell.controller.signal.addEventListener("abort", () => {
+      canvas.removeAttribute("src");
+      if (cell.fallback) { cell.fallback.getContext("webgpu")?.unconfigure(); cell.fallback.width = cell.fallback.height = 0; }
+    }, {once:true});
     cell.start = () => {
     if (cell.started) return;
     cell.started = true;
@@ -614,19 +634,19 @@
         const fallback = document.createElement("canvas"); cell.fallback = fallback;
         fallback.hidden = true; frame.append(fallback);
         const preview = fetch("/api/library/preview", {method:"POST", signal:cell.controller.signal,
-          headers:{"Content-Type":"application/json"},body:JSON.stringify({path:photo.path})}).then(async response => {
+          headers:{"Content-Type":"application/json","Accept":"image/png"},body:JSON.stringify({path:photo.path})}).then(async response => {
           if (response.status !== 200) return;
-          const meta = await response.json();
-          if (!current() || cell.meta || !meta.url) return;
-          canvas.src = meta.url; canvas.dataset.preview = "true";
-          await canvas.decode();
+          const blob = await response.blob();
+          if (!current() || cell.meta) return;
+          const url = URL.createObjectURL(blob);
+          canvas.src = url; canvas.dataset.preview = "true";
+          try { await canvas.decode(); } finally { URL.revokeObjectURL(url); }
           if (current() && !cell.meta) {
-            cameraCells.delete(cell.identity); cameraCells.set(cell.identity, meta.url);
-            while ([...cameraCells.values()].reduce((sum,url)=>sum+url.length*2,0) > 64*1024**2) cameraCells.delete(cameraCells.keys().next().value);
+
             canvas.style.visibility=""; element.classList.remove("loading");
             const baseline = HDRLibraryTrace.begin(container === space ? "grid" : "filmstrip",photo.path,started);
-            HDRLibraryTrace.mark(baseline,"picture_camera_preview_decoded",started,{picture_size:"camera preview",route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : meta.route});
-            HDRLibraryTrace.present(baseline,()=>current() && !cell.meta,{picture_size:"camera preview",route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : meta.route});
+            HDRLibraryTrace.mark(baseline,"picture_camera_preview_decoded",started,{picture_size:"camera preview",route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : "original-preview-placeholder"});
+            HDRLibraryTrace.present(baseline,()=>current() && !cell.meta,{picture_size:"camera preview",route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : "original-preview-placeholder"});
           }
         }).catch(()=>{});
         let cpuShown = false;

@@ -204,6 +204,11 @@ class LibraryIndex:
 
     @audited("index_remember_facts")
     def remember_facts(self, records, *, epoch=None, generation=None, foreground=False):
+        if len(records) > 8:
+            for start in range(0,len(records),8):
+                self.remember_facts(records[start:start+8],epoch=epoch,generation=generation,foreground=foreground)
+                time.sleep(.001)
+            return
         for record in records:
             record["indexed"] = record.get("mtime_ns") is not None
         with timed_lock(self.marks._lock, "index_batch"):
@@ -374,8 +379,8 @@ class LibraryIndex:
             self.marks.conflicts.scan([photo["path"] for photo in photos])
             # Settings files rebuild marks, tags and albums for unvisited folders.
             prefix = self._prefix(pin["path"])
-            with self.marks._lock:
-                recorded = [row[0] for row in self.marks._query("SELECT path FROM photos WHERE path>=? AND path<?", (prefix, prefix[:-1] + chr(ord(prefix[-1])+1)))]
+            # Independent WAL reader; no full-folder marks lock.
+            recorded = [row[0] for row in self.marks._query("SELECT path FROM photos WHERE path>=? AND path<?", (prefix, prefix[:-1] + chr(ord(prefix[-1])+1)))]
             settings = list(dict.fromkeys([*[photo["path"] for photo in photos if photo.get("sidecar")], *recorded]))
             for path in settings:
                 self._check(generation)

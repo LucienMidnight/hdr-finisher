@@ -307,11 +307,13 @@ async function startBackend() {
   fs.mkdirSync(logsDirectory, { recursive: true });
   const logPath = path.join(logsDirectory, "backend.log");
   const log = fs.createWriteStream(logPath, { flags: "a" });
+  const writeBackendLog = require("./lib/backend-log").create(log);
   const child = spawn(command.executable, command.args, {
     cwd: command.cwd,
     env: {
       ...process.env,
       HDR_FINISHER_DESKTOP_SECRET: authoringSecret,
+      HDR_FINISHER_DESKTOP_PID: String(process.pid),
       HDR_FINISHER_DESKTOP_CONTROL_SECRET: controlSecret,
       HDR_FINISHER_APP_DATA_DIR: app.getPath("userData"),
       PYTHONUNBUFFERED: "1",
@@ -321,13 +323,13 @@ async function startBackend() {
   });
   const backendStarted = Date.now();
   libraryStage("backend_process_started", { pid: child.pid });
-  readline.createInterface({ input: child.stderr }).on("line", line => log.write(`${line}\n`));
+  readline.createInterface({ input: child.stderr }).on("line", line => writeBackendLog(line));
 
   const ready = await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("The image-processing backend did not become ready in time.")), 30000);
     const lines = readline.createInterface({ input: child.stdout });
     lines.on("line", (line) => {
-      log.write(`${line}\n`);
+      writeBackendLog(line);
       if (!line.startsWith("HDR_FINISHER_READY ")) return;
       try {
         const record = JSON.parse(line.slice("HDR_FINISHER_READY ".length));
@@ -1300,6 +1302,31 @@ if (!gotLock) {
         callback({ requestHeaders: details.requestHeaders });
       });
       registerIpc();
+      // One non-overlapping observer counts Electron (including GPU host RAM),
+      // Python and late helpers together, before the hard four-GB limit.
+      let memorySampling = false, memoryLastLog = 0;
+      const memoryTimer = setInterval(async () => {
+        if (memorySampling || shuttingDown) return;
+        memorySampling = true;
+        try {
+          const response = await fetch(`${activeBackend.url}/api/library/memory`, {
+            headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret}, signal:AbortSignal.timeout(2000)});
+          if (!response.ok) throw Error(`Memory sampling failed (${response.status})`);
+          const value = await response.json();
+          if (Date.now()-memoryLastLog > 5000) {
+            memoryLastLog = Date.now();
+            libraryStage("app_memory", {...value, main:process.memoryUsage(),
+              electron:app.getAppMetrics().map(item=>({pid:item.pid,type:item.type,bytes:item.memory.workingSetSize*1024}))});
+          }
+          for (const record of windows.values()) if (!record.window.isDestroyed()) record.window.webContents.send("desktop:memory-pressure",value);
+          if (value.reclaim) {
+            await fetch(`${activeBackend.url}/api/library/memory-reclaim`, {method:"POST",
+              headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret},signal:AbortSignal.timeout(2000)});
+          }
+        } catch (error) { console.error("Memory controller:",error.message); }
+        finally { memorySampling = false; }
+      }, 500);
+      memoryTimer.unref();
       for (const eventName of ["display-added", "display-removed", "display-metrics-changed"]) {
         screen.on(eventName, scheduleDisplayState);
       }

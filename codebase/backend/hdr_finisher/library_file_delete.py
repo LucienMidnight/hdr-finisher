@@ -23,16 +23,19 @@ def plan(service,request):
                 raise ValueError('More than one settings file was found. This photo was left alone.')
             doc=service.marks._document(old);row=service.marks.read([str(old)])['photos'][0]
             if request.action=='delete_rejected' and row['marks']['pick']!='reject': continue
-            payload=deepcopy(doc)
-            if row['storage']=='database':
-                payload=payload or service.marks._new_document(row);payload['marks']=row['marks'];payload['albums']=row['albums']
-                if getattr(service.marks,'grades',None): payload=service.marks.grades.merge(str(old),payload)
+            with service.marks._lock:
+                row=service.marks._rows([str(old)]).get(str(old)) or row
+                payload=deepcopy(doc)
+                if row['storage']=='database':
+                    payload=payload or service.marks._new_document(row);payload['marks']=row['marks'];payload['albums']=row['albums']
+                    if getattr(service.marks,'grades',None): payload=service.marks.grades.merge(str(old),payload)
+                rows=snapshot(service.marks,str(old))
             side=service.marks._sidecar(old);key=uuid4().hex
             if side.exists(): check_streams(side)
             items.append({'old':str(old),'new':'Recycle Bin' if library_recycle.available(old) else 'Gone for good',
                 'delete':True,'settings_target':str(old),'cross':False,'stamp':signature(old),'checksum':digest(old),
                 'side_stamp':signature(side) if side.exists() else None,'side_hash':digest(side) if side.exists() else None,
-                'payload':payload,'rows':snapshot(service.marks,str(old)),
+                'payload':payload,'rows':rows,
                 'settings_old':str(old.parent/('.hdr-old-settings-'+key+'.tmp')),
                 'side_stage':str(old.parent/('.hdr-settings-'+key+'.tmp')),'done':False})
         except (OSError,ValueError) as e: warnings.append(f'{Path(value).name}: {e}')

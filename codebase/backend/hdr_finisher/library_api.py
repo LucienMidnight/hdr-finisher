@@ -379,6 +379,10 @@ def create_library_router(worker, browser, store=None):
             if await request.is_disconnected(): return Response(status_code=499)
             if not await run_in_threadpool(eligible):
                 return Response(status_code=204)
+            if request.headers.get("accept") == "image/png":
+                import base64
+                return Response(base64.b64decode(preview["url"].split(",", 1)[1]), media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
             return preview
         except (ValueError, OSError):
             return Response(status_code=204)
@@ -657,6 +661,24 @@ def create_library_router(worker, browser, store=None):
 
     from .library_file_commands import add_file_routes
     file_commands = add_file_routes(router, marks, browser, index, worker, store)
+
+    @router.get("/memory")
+    def memory_snapshot():
+        from .app_memory import snapshot
+        return snapshot()
+
+    @router.post("/memory-admission")
+    def memory_admission(command: dict):
+        from .app_memory import admit
+        return admit(str(command["id"]), command.get("bytes", 700_000_000), command.get("release", False))
+
+    @router.post("/memory-reclaim")
+    def memory_reclaim():
+        import gc
+        from .library_pictures import _CAMERA_PREVIEWS, _CAMERA_PREVIEW_LOCK
+        with _CAMERA_PREVIEW_LOCK: _CAMERA_PREVIEWS.clear()
+        gc.collect()
+        return {"reclaimed": True}
 
     @router.get("/health")
     def health():
@@ -978,9 +1000,7 @@ def create_library_router(worker, browser, store=None):
         records = {"photos":[],"warnings":[],"undo_available":bool(marks._undo)}
         documents = {}
         for start in range(0,len(result["photos"]),16):
-            with marks._lock:
-                page=marks.read([photo["path"] for photo in result["photos"][start:start+16]])
-                documents.update(marks.recent_documents)
+            page=marks.read([photo["path"] for photo in result["photos"][start:start+16]], observed=documents)
             records["photos"].extend(page["photos"])
             records["warnings"].extend(page["warnings"])
             records["undo_available"]=page["undo_available"]

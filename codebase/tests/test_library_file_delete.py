@@ -174,3 +174,23 @@ def test_delete_confirmation_counts_only_eligible_originals_and_their_copies(set
     preview=c.plan(FileRequest(action='delete',paths=[str(photo)]))
     assert preview['count']==0 and preview['attached_copies']==0
     assert preview['warnings'] and photo.exists() and Path(str(photo)+'.hdrf').exists()
+
+
+def test_slow_bin_probe_does_not_own_marks_lock(setup,monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    photo,_,service,_=setup
+    entered,release=Event(),Event()
+    def probe(path):
+        entered.set();assert release.wait(5)
+        return True
+    monkeypatch.setattr(library_recycle,'available',probe)
+    with ThreadPoolExecutor(1) as pool:
+        task=pool.submit(service.plan,FileRequest(action='delete',paths=[str(photo)]))
+        try:
+            assert entered.wait(5)
+            assert service.marks._lock.acquire(timeout=.2)
+            service.marks._lock.release()
+        finally:release.set()
+        assert task.result()['count']==1
+        assert photo.exists()

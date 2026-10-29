@@ -6,6 +6,7 @@ from hashlib import sha256
 import os
 import time
 from pathlib import Path
+from threading import Lock
 from .library_documents import atomic_json
 from .library_copies import source
 
@@ -17,6 +18,9 @@ class LibraryMembership:
         self.index, self.marks = index, index.marks
         self.path = Path(index.browser.root) / "kept-photos.json"
         self._busy = False
+        self._publish = Lock()
+        self._pending_lock = Lock()
+        self._pending = set()
         self._saved = None
         self._saved_records = {}
         self.records = self.path.parent / "library-kept-records"
@@ -114,6 +118,25 @@ class LibraryMembership:
     def reconcile(self, paths=None, *, background=False):
         if paths is None:
             return self._reconcile_all(background=background)
+        with self._pending_lock:
+            self._pending.update(source(p) for p in paths)
+        if not self._publish.acquire(blocking=False): return
+        held = True
+        try:
+            while True:
+                with self._pending_lock:
+                    if not self._pending:
+                        self._publish.release()
+                        held = False
+                        return
+                    current = sorted(self._pending)
+                    self._pending.clear()
+                for start in range(0,len(current),8):
+                    self._reconcile_piece(current[start:start+8])
+        finally:
+            if held: self._publish.release()
+
+    def _reconcile_piece(self, paths):
         with timed_lock(self.marks._lock, "reconcile"):
             if self._busy or not self.marks.database.exists():
                 return
@@ -178,37 +201,38 @@ class LibraryMembership:
                             key = source(row[1] if table == "album_photos" else row[0])
                             name = sha256(key.encode()).hexdigest()
                             records.setdefault(name,{}).setdefault(table,[]).append(row)
-                    for name, record in records.items():
-                        if record != self._saved_records.get(name):
-                            atomic_json(self.records / (name+".json"),record)
-                    if paths is None:
-                        removed = self._saved_records.keys() - records.keys()
-                        names = sorted(records)
-                    else:
-                        touched = {sha256(p.encode()).hexdigest() for p in paths}
-                        removed = touched - records.keys()
-                        names_changed = (self._saved is None or
-                            any(name not in self._saved_records for name in records) or
-                            any(name in self._saved_records for name in removed))
-                        names = (sorted((self._saved_records.keys() - removed) | records.keys())
-                            if names_changed else self._saved["records"])
-                    manifest = {"records":names,"albums":snapshot.get("albums",[]),"tags":snapshot.get("tags",[])}
-                    if manifest != self._saved:
-                        atomic_json(self.path, manifest)
-                        self._saved = manifest
-                    # Publish the manifest before removing old records, just as
-                    # in a full pass: a crash must never leave dangling names.
-                    for name in removed:
-                        (self.records / (name+".json")).unlink(missing_ok=True)
-                    if paths is None:
-                        self._saved_records = records
-                    else:
-                        for name in removed: self._saved_records.pop(name, None)
-                        self._saved_records.update(records)
                 finally:
                     db.close()
             finally:
                 self._busy = False
+
+        for name, record in records.items():
+            if record != self._saved_records.get(name):
+                atomic_json(self.records / (name+".json"),record)
+        if paths is None:
+            removed = self._saved_records.keys() - records.keys()
+            names = sorted(records)
+        else:
+            touched = {sha256(p.encode()).hexdigest() for p in paths}
+            removed = touched - records.keys()
+            names_changed = (self._saved is None or
+                any(name not in self._saved_records for name in records) or
+                any(name in self._saved_records for name in removed))
+            names = (sorted((self._saved_records.keys() - removed) | records.keys())
+                if names_changed else self._saved["records"])
+        manifest = {"records":names,"albums":snapshot.get("albums",[]),"tags":snapshot.get("tags",[])}
+        if manifest != self._saved:
+            atomic_json(self.path, manifest)
+            self._saved = manifest
+        # Publish the manifest before removing old records, just as
+        # in a full pass: a crash must never leave dangling names.
+        for name in removed:
+            (self.records / (name+".json")).unlink(missing_ok=True)
+        if paths is None:
+            self._saved_records = records
+        else:
+            for name in removed: self._saved_records.pop(name, None)
+            self._saved_records.update(records)
 
     def maintain(self, paths, *, background=True):
         """Background recovery work yields after each physical photo family."""

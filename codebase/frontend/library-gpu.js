@@ -346,7 +346,16 @@ const HDRLibraryPictureFactory = (quick = false) => {
     });
     window.HDRLibraryTrace?.mark(typeof trace === "function" ? trace() : trace,"picture_denoise_prepare",started,{...window.HDRLibraryPictureLog?.(meta),key:meta.key,cache_hit:cached});
   }
-  return Object.freeze({ show, initialize, prepare, prepareDenoise, readyMemory,
+  async function reclaimHost() {
+    if (!renderer || foreground) return;
+    const idle = queue;
+    await idle.catch(()=>{});
+    if (foreground || queue !== idle) return;
+    renderer.rawPictures?.clear();
+    renderer.resetSession(null);
+    renderer.libraryMeta = null;
+  }
+  return Object.freeze({ show, initialize, prepare, prepareDenoise, readyMemory, reclaimHost,
     configure: async limits => { configuredLimits = limits; if (renderer) renderer.libraryLimits = limits; },
     usable: () => !!renderer?.available && !renderer.deviceLost && !renderer.adapterInfo?.fallback,
     resident: key => !!renderer?.rawPictures?.get(key),

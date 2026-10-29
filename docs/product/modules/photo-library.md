@@ -4381,3 +4381,108 @@ focused backend checks and two new locking regressions also passed. No further
 slow checks ran after the stop condition. Startup/test profiles and disposable
 photo copies were removed after preserving logs; output_size.py reported 1.3 GB
 at both start and end, below 100 GB. No merge, push or installer build was made.
+
+
+### October 29 follow-up: combined host memory and marks lock ownership
+
+Steve's ceiling is 4,000,000,000 bytes of combined process-tree host working
+set, including Electron main, renderers, GPU-process host RAM, backend and
+helpers. Dedicated VRAM is separate. Older pictures may be discarded and
+redrawn; visible and nearby pictures retain priority. Background work should
+release the shared marks lock within about 250 ms. Validation is the real-folder
+ten-minute measurement before the six named drivers, stopping on a memory
+ceiling breach, with a fifteen-minute driver cutoff and a seventy-five-minute
+active validation cap. An approval-service outage interrupted validation;
+its idle period is excluded, with both measurement attempts and driver attempts
+retained in the validation history.
+
+The prior measurement was still rising at its stopping peak: 2.902 GB at
+299.9 seconds of sampling became 4.027 GB at 343.2 seconds. Electron main rose
+from 0.130 to 0.902 GB and its primary renderer from 0.792 to 1.059 GB in that
+interval. The original samples remain unchanged; the separate per-process curve
+is codebase/output/big-folder/prior-curve.json.
+
+The desktop now samples the complete application tree twice a second. Memory
+pressure starts at 2.4 GB, and source jobs reserve shared headroom before
+allocating. Parallel work has a stricter admission budget; one bounded source
+job may use the remaining ceiling headroom so retained visible pictures cannot
+permanently prevent progress. Old detached canvases, ready neighbours, recent
+pictures, camera previews and idle renderer buffers are reclaimed. Disposed
+WebGPU canvases are explicitly unconfigured. Grid camera previews use blobs
+with revoked object URLs rather than retaining data URLs. Backend log
+backpressure is bounded to prevent an unbounded desktop write queue. These
+changes address concrete retention paths; the old samples alone do not prove
+which allocation caused the former main-process spike.
+
+The reproduced 3,328 ms marks_read scope included conflict-folder scans and
+settings-file reads. Disk preparation now runs outside the lock, with each
+photo applied against its observed database version; a newer mark wins.
+Recovery publication also runs outside the marks lock and has its own serial
+publication gate. Index facts are applied in bounded batches. Every long outer
+marks-lock owner is now logged, including previously unlabelled scopes.
+
+The original October 29 08:17:32--08:17:50 log proves 18,266 ms and 18,235 ms
+waits by reconcile and index_batch, but omitted the outer holder. Its exact
+historical call site cannot be recovered. New owner logging additionally
+reproduced Delete planning holding marks for 33,516 ms and settings status for
+4,235 ms. Delete's Recycle Bin probe and file hashes now run outside marks,
+settings status performs independent WAL reads outside marks, and file-command
+snapshots query only the selected original/copies instead of every table row.
+A short protected snapshot still prevents pending marks being lost.
+
+The scroll-cache driver now accepts rebuilding an evicted older picture,
+while retaining its exact finished-pixel assertion. Selected drivers reuse one
+physical copy of each large test source with disposable hard links and remove
+their temporary photo folders. No source file in D:/Photos is written.
+
+Fast validation: Node 660 passed / the same two existing failures (selected
+source fallback and Single-ready test harness). Python 2724 passed / the same
+three existing failures (local-scope wording, RGB description route, retouch
+CaptureCache mock) / 3 skipped. Focused file/settings checks: 111 passed;
+memory and slow-disk regressions: 38 passed. The regressions verify another
+thread acquires marks within 200 ms while conflict scans, recovery publication,
+status SQL reads and Recycle Bin probing are deliberately blocked.
+
+Final validation stopped on Steve's memory gate. The latest run reached
+4,233,019,392 bytes after 255.309 seconds of scrolling (925 photo rows), so it
+is not a ten-minute PASS. At the stopping peak, main was 0.337 GB, primary
+renderer 1.127 GB, GPU-process host RAM 1.126 GB, backend 1.050 GB, other
+Electron processes 0.261 GB and Python helpers 0.324 GB, plus 0.008 GB console
+host. The final rise was simultaneous renderer/backend growth; the 700 MB
+reservation shown near the peak did not contain that transient. The ceiling
+controller is partial and remains Open work, including source-admission sizing,
+progress when retained visible pictures consume the admission budget, and
+reclaiming the remaining buffers. No claim of a proven former leak root cause
+or a universal memory bound is made.
+
+The first complete ten-minute attempt, before the final admission/lock fixes,
+peaked at 3.931 GB and ended at 2.832 GB. Its scroll-cache driver then failed
+its 180-second visible-finished-picture wait, with source work waiting for
+memory admission. The precision driver was interrupted to correct admission
+and locks. The latest changes were measured again before attempting drivers;
+the repeated memory breach stopped all further slow checks. Thus all six
+final-version drivers are NOT RUN: library-scroll-cache,
+library-precision-source, library-rgb-native, library-live-native,
+library-codec-native and library-background-activity. The earlier attempt is
+retained separately, not presented as final-version coverage.
+
+Delete confirmation in the final run appeared in 811 ms; Cancel preserved the
+disposable photo. The longest final outer marks hold was 594 ms in marks_read,
+and index_batch held marks for 531 ms. The earlier 33.516-second Delete and
+4.235-second settings-status holders were removed, but the approximately
+250 ms background-lock requirement remains Open work. A scroll reply gap of
+42.761 seconds also remains a responsiveness limitation; it must not be
+reported as a marks-lock duration.
+
+Evidence: codebase/output/big-folder/ceiling-final/measurement.json,
+measurement-memory.jsonl, measurement-backend.log, curve.json, peak.json and
+locks.json. Prior full-run evidence is in ceiling-scroll/; both driver attempts
+and the approval-service idle exclusion are in slow-results.json. The three
+protected-project hashes matched. No writes targeted D:/Photos. Fast checks
+above completed on the final backend changes before the final measurement;
+no further slow test ran after the stop. These changes are committed locally
+as unfinished work on library-big-folder; no merge, push or installer build.
+
+Scratch output was 1.3 GB at the end, below the 100 GB limit. Disposable
+profiles and interrupted precision-photo copies were removed after retaining
+logs; existing user fixtures and design files were left alone.

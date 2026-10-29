@@ -84,3 +84,9 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   onDisplayStateChanged: (callback) => subscribe("desktop:display-state", callback),
   onOpenRequest: (callback) => subscribe("desktop:open-request", callback),
 }));
+
+// Relay the trusted desktop sample into the same-origin Library iframe too.
+ipcRenderer.on("desktop:memory-pressure", (_event, value) => {
+  window.postMessage({type:"hdr-memory-pressure",value},location.origin);
+  for (const frame of document.querySelectorAll("iframe")) frame.contentWindow?.postMessage({type:"hdr-memory-pressure",value},location.origin);
+});

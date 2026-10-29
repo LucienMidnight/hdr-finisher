@@ -176,24 +176,24 @@ class LibrarySettingsWriter:
         return removed
 
     def status(self, paths=()):
+        waiting = self.marks._query("SELECT COUNT(*) FROM photos WHERE pending=1")
+        problems = self.marks._query("SELECT reason, COUNT(*) FROM settings_writes JOIN photos USING(path) WHERE pending=1 AND reason!='' GROUP BY reason")
+        count = waiting[0][0] if waiting else 0
         with self.marks._lock:
-            waiting = self.marks._query("SELECT COUNT(*) FROM photos WHERE pending=1")
-            problems = self.marks._query("SELECT reason, COUNT(*) FROM settings_writes JOIN photos USING(path) WHERE pending=1 AND reason!='' GROUP BY reason")
-            count = waiting[0][0] if waiting else 0
             if not count:
                 self._completed = self._progress_total = 0
             self._progress_total = max(self._progress_total, self._completed + count)
-            groups = {}
-            for path, reason in self.marks._query("SELECT path, reason FROM settings_writes JOIN photos USING(path) WHERE pending=1 AND reason!=''"):
-                key = (str(Path(path).parent), reason)
-                item = groups.setdefault(key, {"folder": key[0], "reason": reason, "count": 0, "photos": [], "explanation": REASONS[reason]})
-                item["count"] += 1
-                if len(item["photos"]) < 3:
-                    item["photos"].append(path)
-            return {"waiting": count, "done": self._completed, "total": self._progress_total,
-                "attention": list(groups.values()) + (self.marks.grades.attention() if getattr(self.marks, "grades", None) else []), "busy": bool(self._busy()), "paused": self._paused,
-                "reasons": dict(problems), "events": list(self._events),
-                "photos": (self.marks.membership.status_rows(list(paths)) if getattr(self.marks,"membership",None) else list(self.marks._rows(list(paths)).values())) if paths else []}
+        groups = {}
+        for path, reason in self.marks._query("SELECT path, reason FROM settings_writes JOIN photos USING(path) WHERE pending=1 AND reason!=''"):
+            key = (str(Path(path).parent), reason)
+            item = groups.setdefault(key, {"folder": key[0], "reason": reason, "count": 0, "photos": [], "explanation": REASONS[reason]})
+            item["count"] += 1
+            if len(item["photos"]) < 3:
+                item["photos"].append(path)
+        return {"waiting": count, "done": self._completed, "total": self._progress_total,
+            "attention": list(groups.values()) + (self.marks.grades.attention() if getattr(self.marks, "grades", None) else []), "busy": bool(self._busy()), "paused": self._paused,
+            "reasons": dict(problems), "events": list(self._events),
+            "photos": (self.marks.membership.status_rows(list(paths)) if getattr(self.marks,"membership",None) else list(self.marks._rows(list(paths)).values())) if paths else []}
 
     def retry(self, folder, reason):
         """Retry only the selected live folder/reason group; retain its failure until success."""

@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 from .desktop_security import SOURCE_EXTENSIONS
 from .library_pictures import SIDECAR_SUFFIX
 from .library_settings_writer import LibrarySettingsWriter
-from .library_diagnostics import audited, problem, timed_lock
+from .library_diagnostics import audited, problem, timed_lock, MarksLock
 from .library_conflicts import LibraryConflicts
 
 
@@ -86,7 +86,7 @@ class _LibraryConnection(sqlite3.Connection):
 class LibraryMarks:
     def __init__(self, root: Path):
         self.database = Path(root) / "library.sqlite3"
-        self._lock = RLock()
+        self._lock = MarksLock()
         self._schema_ready = False
         self._revision = 0
         self._undo = deque(maxlen=100)
@@ -242,25 +242,47 @@ class LibraryMarks:
             db.execute("INSERT OR IGNORE INTO album_photos VALUES (?, ?)", (album, row["path"]))
 
     @audited("settings_read")
-    def read(self, values, *, documents=None, canonical=False, connected=False):
+    def read(self, values, *, documents=None, canonical=False, connected=False, observed=None):
+        # Folder enumeration, conflict scans and settings reads can take seconds
+        # on removable disks. They must never own the shared writer lock.
+        paths = [str(value) for value in values] if canonical else [str(Path(value).resolve()) for value in values]
+        baseline = self._rows(paths)
+        self.conflicts.scan(paths)
+        prepared = []
+        listings = {}
+        for position, value in enumerate(paths):
+            try:
+                if documents is not None:
+                    document = documents[position]
+                else:
+                    path = Path(value)
+                    if path.parent not in listings:
+                        try: listings[path.parent] = {entry.name for entry in path.parent.iterdir()}
+                        except OSError: listings[path.parent] = None
+                    names = listings[path.parent]
+                    document = self._document(path) if "|copy|" in value or names is None or self._sidecar(path).name in names else None
+                prepared.append(document)
+            except ValueError as error:
+                prepared.append(error)
+        result = {"photos": [], "warnings": [], "undo_available": bool(self._undo)}
+        seen = {}
+        for value, document in zip(paths, prepared):
+            page = self._read_prepared([value], documents=[document], canonical=True, connected=connected, expected=baseline.get(value))
+            seen.update(page.pop("_documents"))
+            result["photos"].extend(page["photos"])
+            result["warnings"].extend(page["warnings"])
+            result["undo_available"] = page["undo_available"]
+        self.recent_documents = seen
+        if observed is not None: observed.update(seen)
+        return result
+
+    def _read_prepared(self, values, *, documents=None, canonical=False, connected=False, expected=None):
         """Rebuild visited sidecar records; unmarked browsing creates no files."""
         with timed_lock(self._lock, "marks_read"):
             paths = [str(value) for value in values] if canonical else [str(Path(value).resolve()) for value in values]
             cached = self._rows(paths)
             photos, warnings, rebuilt, removed = [], [], [], []
             observed_paths, observed_documents = [], []
-            self.conflicts.scan(paths)
-            # One directory read per folder tells which photos have settings,
-            # instead of a failed file open for every photo without one.
-            listings = {}
-            def absent(path):
-                if "|copy|" in str(path): return False
-                folder = path.parent
-                if folder not in listings:
-                    try: listings[folder] = {entry.name for entry in folder.iterdir()}
-                    except OSError: listings[folder] = None
-                names = listings[folder]
-                return names is not None and self._sidecar(path).name not in names
             for position, value in enumerate(paths):
                 path, row = Path(value), cached.get(value)
                 files = getattr(self, "file_commands", None)
@@ -269,15 +291,20 @@ class LibraryMarks:
                     continue
                 invalid = False
                 try:
-                    document = documents[position] if documents is not None else (None if absent(path) else self._document(path))
+                    document = documents[position]
+                    if isinstance(document, ValueError): raise document
                 except ValueError as error:
                     problem("settings_read_failed", path, error, "settings left untouched; database marks retained")
                     document = None
                     invalid = True
                     warnings.append(str(error))
+                if row != expected:
+                    invalid = True  # A newer command owns this database row.
                 if not invalid:
                     observed_paths.append(value); observed_documents.append(document)
-                if row and (row["storage"] == "database" or (not connected and not path.parent.exists())):
+                if invalid:
+                    pass
+                elif row and (row["storage"] == "database" or (not connected and not path.parent.exists())):
                     pass  # A failed sidecar write is retained across visits/restarts.
                 elif document:
                     current = {"path": value, "photo_id": document["photo_id"], "marks": Marks.model_validate(document.get("marks", {})).model_dump(), "albums": self._albums(document, path), "storage": "sidecar"}
@@ -302,17 +329,17 @@ class LibraryMarks:
                     db.close()
             # The folder listing reuses these under the same lock instead of
             # reading every settings file a second time.
-            self.recent_documents = dict(zip(observed_paths, observed_documents))
+            seen = dict(zip(observed_paths, observed_documents))
             if getattr(self, "grades", None): self.grades.observe_documents(observed_paths, observed_documents)
             if getattr(self, "copies", None):
                 states = self.copies.states([value for value in observed_paths if "|copy|" not in value])
                 for value, document in zip(observed_paths, observed_documents):
                     self.copies.observe(value, document, states.get(value, {}))
-            if getattr(self, "membership", None):
-                self.membership.reconcile(paths)
-                self.membership.describe(photos)
-                self.membership.remember(photos)
-            return {"photos": photos, "warnings": warnings, "undo_available": bool(self._undo)}
+        if getattr(self, "membership", None):
+            self.membership.reconcile(paths)
+            self.membership.describe(photos)
+            self.membership.remember(photos)
+        return {"photos": photos, "warnings": warnings, "undo_available": bool(self._undo), "_documents": seen}
 
     def _write_sidecar(self, path, document, *, revision=None, fingerprint=None, owner_id=None):
         destination, temporary = self._sidecar(path), None
