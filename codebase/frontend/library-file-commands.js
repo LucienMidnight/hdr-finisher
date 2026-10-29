@@ -6,14 +6,14 @@
   async function command(body) {
    options.status(body.token ? 'Finishing file command… Waiting for any current background work.' : 'Checking selected files… Waiting for any current background work.');
    const started=performance.now();
-   window.HDRLibraryStopwatch?.('file_command_request',{action:body.action,stage:body.token?'execute':'plan'});
+   window.HDRLibraryStopwatch?.('file_command_request',{route:body.action,step:body.token?'execute':'plan'});
    try { return await options.api('/api/library/file-command',body); }
-   catch(error) { window.HDRLibraryStopwatch?.('file_command_request_failed',{action:body.action,reason:error.message,duration_ms:performance.now()-started});throw error; }
+   catch(error) { window.HDRLibraryStopwatch?.('file_command_request_failed',{route:body.action,reason:error.message,duration_ms:performance.now()-started});throw error; }
   }
   async function confirm(details) {
-   window.HDRLibraryStopwatch?.('file_command_confirmation_shown',{title:details.title});
+   window.HDRLibraryStopwatch?.('file_command_confirmation_shown',{route:details.title});
    const answer=await ask(details);
-   window.HDRLibraryStopwatch?.('file_command_confirmation_decision',{title:details.title,accepted:!!answer});
+   window.HDRLibraryStopwatch?.('file_command_confirmation_decision',{route:details.title,reason:answer?'accepted':'cancelled'});
    return answer;
   }
   async function destination(title='Move to folder') {

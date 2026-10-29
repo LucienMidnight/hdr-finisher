@@ -4315,3 +4315,69 @@ pending photos. Fast checks: Node 658 passed / 2 existing failures (source
 fallback and Single mock); Python 2717 passed / 3 existing failures (preset
 headers, RGB publication guard, retouch defer_store mock) / 3 skipped.
 Real-folder validation outcomes follow in the measurement record below.
+
+
+### October 29, 2026: real-folder validation stopped at the memory gate
+
+Steve approved the ten-minute read-only D:/Photos scroll and disposable Delete
+timing first, followed by six sequential 2560x1440 drivers only if peak memory
+stayed within 4 GB and Delete confirmed within about a second. Each driver had
+a 15-minute stall cutoff and the validation group a 75-minute cap.
+
+The corrected observer stopped automatically after 326.567 seconds of scrolling
+when total process-tree working set reached 4,026,507,264 bytes (4.027 GB), above
+the conservative 4,000,000,000-byte ceiling. Even excluding the console host,
+application memory reached 4,018,782,208 bytes and exceeded the ceiling. The
+Library had presented 1,701 real-folder photo rows. No full ten-minute PASS is
+claimed. Delete confirmation appeared in 306 ms while health reported indexing
+active; Cancel preserved the disposable PNG. The earlier incomplete observer
+attempt measured 322 ms but ended on an observer-only five-second UI timeout;
+its logs are retained separately and are not a ten-minute verdict. The corrected
+observer keeps measuring memory through renderer pauses without accumulating
+page requests. All runs used 2560x1440 and completed far inside the 75-minute cap.
+
+At the stopping peak, Electron main used about 0.902 GB, the main renderer
+1.059 GB, GPU-process host RAM 1.156 GB, with the other renderers/services and
+Python backend/helpers making up the rest. This is host memory, not VRAM.
+The log also shows marks_read holding the shared marks lock for 3,328 ms,
+index_scan waiting 4,515 ms, and scroll replies separated by up to 19,747 ms.
+Thus marks-reading is a reproduced long lock holder; the original morning
+18-second holder still cannot be identified from its incomplete log. The new
+responsiveness changes are partial: marks reading still needs a smaller lock
+scope, and the automatic combined-process memory ceiling is not implemented.
+Both remain Open work. No output-pixel or scheduler-retention change was made.
+
+| Named driver | Result |
+| --- | --- |
+| library-scroll-cache | NOT RUN: memory gate stopped validation |
+| library-precision-source | NOT RUN: memory gate stopped validation |
+| library-rgb-native | NOT RUN: memory gate stopped validation |
+| library-live-native | NOT RUN: memory gate stopped validation |
+| library-codec-native | NOT RUN: memory gate stopped validation |
+| library-background-activity | NOT RUN: memory gate stopped validation |
+
+Reproduce with tools/measure-library-big-folder.js through
+`node tests/run-in-electron.js tools/measure-library-big-folder.js`, setting
+HDR_FINISHER_ELECTRON_WINDOW_SIZE=2560x1440 and creating an empty absolute
+HDR_FINISHER_ELECTRON_TEST_USER_DATA path at
+codebase/output/big-folder/measurement-profile. The tool waits for startup
+cleanup to finish against its empty profile before any real-folder access,
+begins normal recursive indexing/browsing without adding exclusions, and tests
+Delete only on codebase/output/test-photos/big-folder-delete. It cancels the
+confirmation. OS sampling refreshes the process tree to include late helpers.
+Evidence is in codebase/output/big-folder/measurement.json, measurement-memory.jsonl,
+measurement-peak.json, measurement-locks.json and measurement-backend.log; the
+incomplete first attempt is under attempt1/. Short diagnostic memory profiles
+and their backend logs are also retained there. All three protected-project
+hashes matched after each measurement attempt. No six-driver PASS lines exist.
+
+Final Node fast checks: 659 passed / the same 2 existing failures, including a
+new behavior check exercising immediate waiting feedback and real page-event
+serialization of Cancel. A small logging correction uses fields already
+accepted by the page-event schema so action, planning stage and cancellation
+survive ingestion. Backend Python checks remain 2717 passed / the same 3
+existing failures / 3 skipped; no backend changes followed that run. The 91
+focused backend checks and two new locking regressions also passed. No further
+slow checks ran after the stop condition. Startup/test profiles and disposable
+photo copies were removed after preserving logs; output_size.py reported 1.3 GB
+at both start and end, below 100 GB. No merge, push or installer build was made.
