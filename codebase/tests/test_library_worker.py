@@ -135,3 +135,19 @@ def test_paused_http_thumbnail_releases_connection_and_retries(worker, tmp_path,
     response = client.get("/api/media-browser/thumbnail", params={"path": str(image), "size": 128})
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
+
+
+def test_native_helper_retention_is_charged_to_parent_owner_and_pressure_releases_it(worker,tmp_path):
+    from hdr_finisher import app_memory
+    image=source(tmp_path)
+    _,future=worker.submit_library('native',path=str(image),center_x=.5,center_y=.5,width=100,height=100)
+    future.result(timeout=15)
+    prefix='helper-'+str(worker._process.pid)+'-'
+    def retained():
+        with app_memory._lock:
+            return sum(v['bytes'] for k,v in app_memory._caches.items() if k.startswith(prefix))
+    assert retained()>0
+    worker._send(dict(command='memory-pressure',level='critical'))
+    until=time.monotonic()+5
+    while retained() and time.monotonic()<until:time.sleep(.01)
+    assert retained()==0

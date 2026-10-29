@@ -1,4 +1,11 @@
 import os
+import pytest
+
+@pytest.fixture(autouse=True)
+def reset_budget(monkeypatch):
+    monkeypatch.setattr(app_memory,'_sample',(0,None))
+    monkeypatch.setattr(app_memory,'_caches',{})
+    monkeypatch.setattr(app_memory,'_reservations',{})
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 from hdr_finisher import app_memory
@@ -88,3 +95,35 @@ def test_status_database_reads_do_not_own_marks_lock(tmp_path,monkeypatch):
             marks._lock.release()
         finally:release.set()
         assert task.result()['waiting']==0
+
+
+def test_fixed_shares_and_small_machine_ceiling():
+    ceiling,shares=app_memory.budgets(64*1024**3)
+    assert ceiling==4_000_000_000
+    assert shares['raw']==768_000_000
+    assert shares['handoff']==256_000_000
+    assert shares['working']==600_000_000
+    small,cache=app_memory.budgets(8*1024**3)
+    assert small==2_500_000_000
+    assert cache['working']==shares['working']
+    assert cache['thumbnails']==shares['thumbnails']
+    assert cache['raw']<shares['raw']
+
+
+def test_shared_pages_charged_once_and_aggregate_cache_limit(monkeypatch):
+    monkeypatch.setattr(app_memory,'process_tree',lambda root:[dict(pid=1,workingSetBytes=200,chargedBytes=150),dict(pid=2,workingSetBytes=200,chargedBytes=150)])
+    assert app_memory.snapshot()['totalBytes']==300
+    assert app_memory.claim('a','handoff',200_000_000)
+    assert not app_memory.claim('b','handoff',100_000_000)
+    assert app_memory.claim('a','handoff',0)
+    assert app_memory.claim('b','handoff',100_000_000)
+
+
+def test_pressure_trims_old_entries_to_half_then_zero():
+    class Cache:
+        def __init__(self):self.bytes=100
+        def trim(self,target):self.bytes=target;app_memory.claim('cache','camera',target)
+    cache=Cache();app_memory.register('cache','camera',cache.trim)
+    assert app_memory.claim('cache','camera',100)
+    app_memory.reclaim('moderate');assert cache.bytes==50
+    app_memory.reclaim('critical');assert cache.bytes==0

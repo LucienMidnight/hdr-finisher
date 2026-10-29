@@ -205,6 +205,9 @@ class SourceMipStore:
         self._inflight: dict[tuple[str, int], Event] = {}
         self._build_progress: dict[tuple[str, int], tuple[int, int]] = {}
         self._memory_bytes = 0
+        from . import app_memory
+        self._ram_key='grade-mips-'+str(id(self))
+        app_memory.register(self._ram_key,'working',self.trim_memory)
         self._cleaned = False
         self._last_failure: dict[str, str] | None = None
         self._logged_failures: set[str] = set()
@@ -364,11 +367,15 @@ class SourceMipStore:
         with self._lock:
             for key in [item for item in self._memory if item[0] == digest]:
                 self._memory_bytes -= int(self._memory.pop(key).nbytes)
+            from . import app_memory
+            app_memory.claim(self._ram_key,'working',self._memory_bytes)
 
     def clear_memory(self) -> None:
         with self._lock:
             self._memory.clear()
             self._memory_bytes = 0
+            from . import app_memory
+            app_memory.claim(self._ram_key,'working',0)
 
     def diagnostics(self) -> dict[str, Any]:
         with self._lock:
@@ -565,15 +572,21 @@ class SourceMipStore:
             self._memory_bytes -= int(existing.nbytes)
         self._memory[key] = array
         self._memory_bytes += int(array.nbytes)
-        # The two most recent levels stay resident whatever their size. A level
-        # larger than the budget is the one a magnified view is reading for
-        # every tile, mask and pan (a 36-megapixel source at 66.67% is 258 MiB),
-        # and a lane's HDR and SDR levels are requested together; refusing to
-        # hold them meant a full read from disk per request.
-        while self._memory_bytes > self.memory_budget_bytes and len(self._memory) > 2:
-            _evicted_key, evicted = self._memory.popitem(last=False)
-            self._memory_bytes -= int(evicted.nbytes)
-            self._counters["memory_evictions"] += 1
+        from . import app_memory
+        while self._memory and (self._memory_bytes>self.memory_budget_bytes or
+                not app_memory.claim(self._ram_key,'working',self._memory_bytes)):
+            _,evicted=self._memory.popitem(last=False)
+            self._memory_bytes-=int(evicted.nbytes)
+            self._counters['memory_evictions']+=1
+        app_memory.claim(self._ram_key,'working',self._memory_bytes)
+
+    def trim_memory(self,target):
+        from . import app_memory
+        with self._lock:
+            while self._memory and self._memory_bytes>target:
+                _,entry=self._memory.popitem(last=False)
+                self._memory_bytes-=int(entry.nbytes)
+            app_memory.claim(self._ram_key,'working',self._memory_bytes)
 
     def _ensure_cleaned(self) -> None:
         with self._lock:

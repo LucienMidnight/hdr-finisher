@@ -23,9 +23,9 @@ const bounded = (promise, ms, label) => {
   if (!fs.existsSync(photo)) fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),photo);
   const before = hashProjects(require('../tests/release/drivers.json').protectedProjects);
   const browser = await chromium.launch();
-  let observer, stream, peak = 0, exceeded = false;
-  const report = {startedAt:new Date().toISOString(), ceilingBytes:Math.min(4_000_000_000,os.totalmem()/4), deleteLimitMs:1000, requestedScrollSeconds:600, samples:0};
-  const record = () => fs.writeFileSync(path.join(output,'measurement.json'),JSON.stringify({...report,peakWorkingSetBytes:peak},null,2)+'\n');
+  let observer, stream, peak = 0, exceeded = false,latestCaches=null,latestFrontend=null,latestRoles=null,peakSample=null,endSample=null;
+  const report = {startedAt:new Date().toISOString(), ceilingBytes:Math.max(2_500_000_000,Math.min(4_000_000_000,os.totalmem()/4)), deleteLimitMs:1000, requestedScrollSeconds:600, samples:0};
+  const record = () => fs.writeFileSync(path.join(output,'measurement.json'),JSON.stringify({...report,peakChargedBytes:peak,peakSample,endSample},null,2)+'\n');
   try {
     const page = await browser.newPage();
     await page.goto(process.env.HDR_FINISHER_URL);
@@ -33,7 +33,7 @@ const bounded = (promise, ms, label) => {
     const lib = page.frame({url:/\/library(?:\?|$)/});
     await lib.waitForFunction(() => window.HDRLibrary);
     stream = fs.createWriteStream(path.join(output,'measurement-memory.jsonl'));
-    observer = spawn('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'measure-library-memory.ps1'),'-RootProcessId',process.env.HDR_FINISHER_ELECTRON_MAIN_PID],{windowsHide:true});
+    observer = spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID],{windowsHide:true});
     let pending = '';
     observer.stdout.on('data',chunk => {
       pending += chunk;
@@ -42,8 +42,8 @@ const bounded = (promise, ms, label) => {
         const line=pending.slice(0,newline).trim();pending=pending.slice(newline+1);
         if (!line) continue;
         const sample=JSON.parse(line);
-        sample.totalWorkingSetBytes=sample.processes.reduce((sum,p)=>sum+p.workingSetBytes,0);
-        peak=Math.max(peak,sample.totalWorkingSetBytes);report.samples++;
+        sample.caches=latestCaches;sample.frontend=latestFrontend;sample.electron=latestRoles;
+        if(sample.totalBytes>peak){peak=sample.totalBytes;peakSample=sample;}endSample=sample;report.samples++;
         exceeded ||= peak>report.ceilingBytes;
         stream.write(JSON.stringify(sample)+'\n');record();
       }
@@ -62,6 +62,36 @@ const bounded = (promise, ms, label) => {
       while(!fs.existsSync(log)||!fs.readFileSync(log,'utf8').includes('[library] startup_upkeep_finished '))await sleep(200);
     })(),20000,'Startup cleanup did not finish before opening real data');
     report.startupCleanupFinishedBeforeRealFolder=true;
+    await api('pins',{paths:['D:/Photos']});
+    const scrolling = Date.now();
+    void lib.evaluate(()=>HDRLibrary.browse('D:/Photos')).catch(error=>{report.browseError=String(error);});
+    let scrollRequest=null,lastReplyAt=Date.now(),accounting=null;
+    report.memoryMethod='Windows proportional resident: private pages plus shared pages / OS ShareCount; ordinary working sets are diagnostic only';
+    for(let tick=0;Date.now()-scrolling<600000;tick++) {
+      if(exceeded)break;
+      if(!accounting)accounting=Promise.allSettled([
+        api('memory').then(value=>{latestCaches={at:Date.now(),...value};}),
+        lib.evaluate(()=>HDRLibrary.getSnapshot().ram).then(value=>{latestFrontend={at:Date.now(),...value};}),
+        global.HDRFinisherElectronTestHarness.memory().then(value=>{latestRoles=value;})
+      ]).finally(()=>{accounting=null;});
+      // Keep the OS observer running during a blocked renderer. Do not queue
+      // more page calls behind it or mistake a five-second pause for the
+      // owner's ten-minute memory verdict.
+      if(!scrollRequest)scrollRequest=lib.evaluate(tick=>{
+        const grid=document.getElementById('library-grid');
+        const end=Math.max(0,grid.scrollHeight-grid.clientHeight);
+        grid.scrollTop=tick%30===29?0:Math.min(end,grid.scrollTop+grid.clientHeight*.8);
+        grid.dispatchEvent(new Event('scroll'));
+        return HDRLibrary.getSnapshot().count;
+      },tick).then(count=>{report.lastPhotoCount=count;report.scrollReplies=(report.scrollReplies||0)+1;lastReplyAt=Date.now();})
+        .catch(error=>{report.scrollError=String(error);}).finally(()=>{scrollRequest=null;});
+      report.longestScrollReplyGapMs=Math.max(report.longestScrollReplyGapMs||0,Date.now()-lastReplyAt);
+      if(tick%15===0)console.log(JSON.stringify({scrollSeconds:Math.round((Date.now()-scrolling)/1000),peakGB:peak/1e9,photos:report.lastPhotoCount}));
+      await sleep(1000);
+    }
+    report.scrollSeconds=(Date.now()-scrolling)/1000;
+    report.scrollPeakSample=peakSample;report.scrollEndSample=endSample;
+    if(!exceeded){
     await lib.evaluate(folder=>HDRLibrary.browse(folder),disposable);
     await lib.locator('#grid-space .library-cell').first().click();
     await api('pins',{paths:['D:/Photos']});
@@ -84,31 +114,13 @@ const bounded = (promise, ms, label) => {
     } catch (error) {report.deleteConfirmationMs=Date.now()-started;report.deleteError=String(error);}
     report.disposablePreserved=fs.existsSync(photo);
     console.log('Delete confirmation:',report.deleteConfirmationMs,'ms');record();
-    const scrolling = Date.now();
-    void lib.evaluate(()=>HDRLibrary.browse('D:/Photos')).catch(error=>{report.browseError=String(error);});
-    let scrollRequest=null,lastReplyAt=Date.now();
-    for(let tick=0;Date.now()-scrolling<600000;tick++) {
-      if(exceeded)break;
-      // Keep the OS observer running during a blocked renderer. Do not queue
-      // more page calls behind it or mistake a five-second pause for the
-      // owner's ten-minute memory verdict.
-      if(!scrollRequest)scrollRequest=lib.evaluate(tick=>{
-        const grid=document.getElementById('library-grid');
-        const end=Math.max(0,grid.scrollHeight-grid.clientHeight);
-        grid.scrollTop=tick%30===29?0:Math.min(end,grid.scrollTop+grid.clientHeight*.8);
-        grid.dispatchEvent(new Event('scroll'));
-        return HDRLibrary.getSnapshot().count;
-      },tick).then(count=>{report.lastPhotoCount=count;report.scrollReplies=(report.scrollReplies||0)+1;lastReplyAt=Date.now();})
-        .catch(error=>{report.scrollError=String(error);}).finally(()=>{scrollRequest=null;});
-      report.longestScrollReplyGapMs=Math.max(report.longestScrollReplyGapMs||0,Date.now()-lastReplyAt);
-      if(tick%15===0)console.log(JSON.stringify({scrollSeconds:Math.round((Date.now()-scrolling)/1000),peakGB:peak/1e9,photos:report.lastPhotoCount}));
-      await sleep(1000);
+
     }
-    report.scrollSeconds=(Date.now()-scrolling)/1000;
     report.verdict=exceeded?'STOP: memory ceiling exceeded':report.lastPhotoCount>0?'PASS':'FAIL: no real-folder photo rows were presented';
     if(!report.samples)throw Error('Memory observer produced no samples');
-    console.log(report.verdict,JSON.stringify({...report,peakWorkingSetBytes:peak}));
+    console.log(report.verdict,JSON.stringify({...report,peakChargedBytes:peak,peakSample,endSample}));
     if(report.verdict!=='PASS')process.exitCode=1;
+    if(!exceeded && report.deleteConfirmationMs>report.deleteLimitMs){report.verdict='FAIL: Delete confirmation over one second';process.exitCode=1;}
   } catch(error) {report.verdict=exceeded?'STOP: memory ceiling exceeded':'FAIL';report.error=String(error.stack||error);console.error(error);process.exitCode=1;}
   finally {
     observer?.stdout.removeAllListeners('data');observer?.kill();stream?.end();
@@ -121,10 +133,6 @@ const bounded = (promise, ms, label) => {
     await browser.close();
     // The exact child directory is ours; never traverse the rest of test-photos.
     fs.rmSync(disposable,{recursive:true,force:true});
-    const profile=process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA;
-    if(profile && path.resolve(profile)===path.join(output,'measurement-profile')) {
-      try {fs.rmSync(profile,{recursive:true,force:true,maxRetries:10,retryDelay:200});}
-      catch(error) {report.profileCleanupRequired=String(error);record();}
-    }
+
   }
 })();

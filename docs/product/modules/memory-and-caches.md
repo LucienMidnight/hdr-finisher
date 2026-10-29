@@ -3,7 +3,7 @@
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
 - **Last status check:** October 29, 2026, against the code on
-  `library-big-folder` (`0d32e0b`).
+  `library-big-folder` (implementation based on `c57c4ee`; validation below).
 - **Code:** backend `app_memory.py` (whole-app measurement and admission),
   `library_raw.py` (RAW reader and hand-off allowances), `library_pictures.py`
   (picture cache, hand-off, camera previews), `library_cache.py` and
@@ -75,17 +75,25 @@ Shares of the 4 GB total. On a smaller total, the cache shares (marked
 "scales") shrink in proportion. The starting memory and the working room do
 not shrink.
 
-| Part | Process | Share of 4 GB | Scales | Code today | Gap |
-| --- | --- | --- | --- | --- | --- |
-| App's own starting memory (code, page, GPU process) | all | about 1.3 GB, measured | no | about 1.33 GB at the start of the October 29 scroll (GPU-process host 0.89 GB) | Not a cache; measure, don't budget. |
-| Finished thumbnails (recent pool) | renderer / GPU process | 512 MB | no (Steve's fixed decision) | `library-tile-pool.js`: 512 MiB | Matches. |
-| Sharp pictures around the selected photo (Single and fullscreen ready window, direct RAW scenes) | renderer / GPU process | 512 MB | yes | `library-ready-window.js` keeps the selected photo and neighbours by count, not bytes; direct RAW scenes 256 MiB in `library-gpu-raw.js` | Needs a byte limit. |
-| Camera previews | backend | 64 MB | yes | `library_pictures.py` `_CAMERA_PREVIEW_BYTES`: 64 MiB | Matches. |
-| RAW files read ahead | backend | 768 MB (about 12 files) | yes | `library_raw.py` `allowances()`: 1/16 of RAM up to 4 GiB, up to 40 files | Over: 4 GiB on a 64 GB machine. |
-| Hand-off between processes (in flight only) | backend / helpers | 256 MB | yes | `library_raw.py`: 1/32 of RAM up to 2 GiB, keeps up to 40 delivered outputs; `library_pictures.py` transient: 256 MiB | Over, and keeps delivered pictures (principle 4). |
-| Grade source cache | backend | inside working room | — | `render_cache.py`: 256 MiB source mips | Count it when Grade is open. |
-| Working room (photo being developed, Delete planning, Grade import) | all | about 600 MB | no | `app_memory.py` reserves 700 MB to 1.2 GB per source job | Reservation larger than the share. |
-| **Total** | | **about 4.0 GB** | | **about 8.4 GB allowed on a 64 GB machine** | |
+| Part | Process | Share of 4 GB | Scales | Implementation |
+| --- | --- | --- | --- | --- |
+| App starting memory | all | about 1.3 GB, measured | no | Observed process charge, never claimed as cache bytes. |
+| Finished thumbnails | renderer / GPU host | fixed 512 MiB (existing fixed pool) | no | Pool plus visible/nearby canvas estimates report to `thumbnails`; oldest detached cells go first. |
+| Sharp selected/nearby pictures | renderer / GPU host | 512,000,000 bytes | yes | Ready surfaces and direct scenes share one byte cap; older finished surfaces/scenes are evicted. |
+| Camera previews | backend / helper | 64,000,000 bytes | yes | Aggregate preview LRU claims `camera`. |
+| RAW read-ahead | backend | 768,000,000 bytes, at most 12 files | yes | Reader admits actual file/shared-section bytes, including partial reads. |
+| Picture hand-off | backend / helper | 256,000,000 bytes | yes | RAW outputs and transient picture bodies share `handoff`; delivered bodies are released. |
+| Grade source mips / retained native source | backend / helper | inside working room | — | Strict retained-byte admission; oversized levels can be served without being cached. |
+| Working room | all | 600,000,000 bytes | no | One aggregate reservation envelope, including retained working caches, replacing 700 MB–1.2 GB per-job requests. |
+| **Total** | | **ceiling 4,000,000,000 bytes** | | Actual process charge is the final gate; shares are approximate and cannot override it. |
+
+The fixed thumbnail decision preserves the existing 512 MiB implementation.
+All other cache shares scale by `(ceiling − 1.3 GB − 600 MB − 512 MiB) /
+(4 GB − 1.3 GB − 600 MB − 512 MiB)`. Starting memory, working room and the
+fixed thumbnail pool stay unchanged. No share or ceiling was enlarged.
+`app_memory.py` is the backend owner. Helper cache growth is admitted over
+IPC by that owner; renderer caches use its returned share limits and report
+actual retained bytes every 500 ms. Disk and dedicated VRAM remain separate.
 
 With the 2.5 GB minimum, an 8 GB machine has about 0.6 GB left for the cache
 shares after starting memory and working room. That machine redraws more
@@ -122,47 +130,76 @@ Library GPU RAW keeps at most 384 MiB of developed scenes
 GPU-process **host** RAM (Chromium's copies of uploads and canvases) does
 count toward the RAM total, and grows with the number of live canvases.
 
-## 7. Current state (October 29, 2026)
+## 7. Current state and measurement (October 29, 2026)
 
-**Not built to this budget yet.** The shares in section 4 were agreed on
-October 29; the code still uses the older per-cache sizes.
+Budget implementation is in progress on `library-big-folder`. Validation is
+not a pass until the ten-minute gate below completes.
 
-- `library-big-folder` adds `app_memory.py`, which samples the whole process
-  tree twice a second, starts reclaiming at 2.4 GB, and admits source jobs
-  against the ceiling. It sits on top of the old allowances rather than
-  replacing them, so the caches still try to grow to their old sizes.
-- Real-folder measurements (D:\Photos, 2560×1440, read-only):
-  - Before the big-folder work: 7–11 GB.
-  - First big-folder run: 4.027 GB after 327 s, still rising.
-  - One later run peaked at 3.931 GB and ended at 2.832 GB.
-  - Latest run: 4.233 GB after 255 s. At the peak, the renderer used
-    1.127 GB, GPU-process host RAM 1.126 GB, the backend 1.050 GB, Electron
-    main 0.337 GB and the helpers 0.324 GB.
-- Unexplained: Electron main jumped from 0.13 to 0.90 GB in one run. It holds no
-  pictures, so it should stay small. Backend log backpressure was bounded as a
-  suspected cause; not proven.
-- Measurement method: the total is the sum of each process's working set.
-  Memory shared between processes (Chromium shared memory, the backend-helper
-  hand-off) may be counted more than once. Choose and document one method
-  (for example private bytes plus shared sections counted once) before using
-  the total as a pass/fail gate.
+**Windows gate:** sum proportional resident bytes for Electron main and its
+complete descendant process tree (renderers, GPU host, backend and helpers).
+For every resident page from `QueryWorkingSet`, charge a private page once;
+charge a shared page as page size divided by its OS ShareCount. This avoids
+adding Chromium mappings and backend/helper shared sections as full copies
+in each process. This is proportional attribution, not private commit bytes
+and not the sum of working sets. Pages shared with other applications are
+attributed proportionally too. Windows saturates ShareCount at seven, so
+heavily shared pages can be overcharged; this is conservative. Dedicated VRAM
+is absent from this measurement. Ordinary working sets are retained only as
+diagnostics. See Microsoft's [working-set flags](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-psapi_working_set_block).
 
-Evidence: `codebase/output/big-folder/` (measurement JSON and logs) and the
-October 29 sections of [photo-library](photo-library.md).
+The independent Python observer samples approximately every 500 ms, outside
+the app's process tree, even when renderer/backend requests stall. It records
+per-process charge, ordinary working set, Electron role, latest owner cache
+bytes/share and renderer estimates. Cache telemetry carries its own timestamp:
+it is asynchronous, not a simultaneous heap census. An unreadable live
+process fails measurement rather than being charged zero. The gate stops at
+the first sample above the exact ceiling. Plateau assessment requires no
+sustained rise in the final two minutes, allowing a 5% band for OS/allocator
+variation; this tolerance never applies to the ceiling. Cache bytes explain allocations;
+they are not added to process bytes a second time.
+
+On macOS the implemented sampler uses the kernel's `proc_pid_rusage` physical
+footprint charge, with resident bytes alongside it, and libdispatch memory
+pressure events. This platform path has not been validated on this Windows
+machine. See Apple's [rusage structure](https://github.com/apple/darwin-xnu/blob/main/bsd/sys/resource.h).
+Windows pressure uses memory resource notifications. Moderate pressure trims
+oldest reconstructible entries toward half; critical pressure drops them.
+
+**Electron main investigation:** the earlier 1.040 GB resident sample had only
+8.1 MB of live JavaScript heap (and 4.3 MB external). The large increase was
+outside the JS heap. Live picture uploads converted Blob bodies to
+ArrayBuffers; Electron's auth `webRequest` hook exposes byte uploads in main.
+Uploads now retain Blob backing and the hook records any remaining byte
+uploads. This removes the identified bulk-copy path; its effect and the main
+process high-water mark must be established by the scroll gate. It is not yet
+a proven explanation of every historical spike. See [Electron request details](https://www.electronjs.org/docs/latest/api/web-request).
+
+Earlier scroll numbers used summed working sets (latest 4.233 GB at 255 s)
+and cannot be compared directly with this gate. Historical records remain in
+`codebase/output/big-folder/`.
+
+**Fast checks:** Python 2,729 passed / 3 failed / 3 skipped; JavaScript
+662 passed / 2 failed. The five failures are previously recorded: adjustment
+preset source contract, RGB publication fixture, retouch capture-cache fixture;
+selected fallback and Single ready-window JS fixtures. The 91 focused
+cache/helper checks pass. The combined run also covers restoring the helper
+adapter after its in-process test. Real-folder scroll remains pending.
 
 ## 8. Open work
 
-1. Replace the RAM-scaled RAW reader and hand-off allowances with the fixed
-   shares in section 4; release delivered hand-off pictures.
-2. Give the ready window and direct RAW scenes byte limits.
-3. Make every RAM cache report its bytes to one budget owner, with the shares
-   above, and size the working-room reservation to its share.
-4. Respond to system memory pressure (Windows memory resource notifications;
-   macOS memory pressure events) by trimming caches early.
-5. Explain or bound the Electron main-process jump.
-6. Settle the measurement method (section 7).
-7. Validate: the 10-minute D:\Photos scroll levels off below the ceiling, then
-   the six Library drivers.
+- Complete the ordered ten-minute read-only scroll, disposable Delete timing,
+  then six sequential Library drivers. Stop if process charge crosses the
+  ceiling. Record peak/end cache shares and per-process curve here.
+- Confirm Electron main levels off after removing the byte-upload copy path.
+- Validate macOS measurement/pressure on a Mac before claiming parity.
+- Lock changes move path probes and grade/copy observation outside the outer
+  marks read lock, and split index writes into single-row scopes. Measure the
+  longest remaining hold; a slow filesystem/database call can still exceed
+  250 ms, which must remain open if observed.
+- The 33.516-second Delete planning hold was a later reproduction, not an
+  identified holder in the October 29 08:17:32–08:17:50 incident. That incident
+  recorded waits around 18.2 s without the outer holder's stack. The later
+  hold can explain such a wait in principle, but cannot establish causation.
 
 ## 9. Rules for agents
 

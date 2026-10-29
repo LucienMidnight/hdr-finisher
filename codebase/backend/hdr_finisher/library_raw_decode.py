@@ -15,11 +15,13 @@ def decode(path, raw_name, size):
     from .library_pictures import default_look, map_negative_acescg
 
     started = time.perf_counter()
-    memory = SharedMemory(name=raw_name)
-    try:
-        source = BytesIO(memory.buf[:size])
-    finally:
-        memory.close()
+    source=str(path)
+    if raw_name is not None:
+        memory = SharedMemory(name=raw_name)
+        try:
+            source = BytesIO(memory.buf[:size])
+        finally:
+            memory.close()
     with rawpy.imread(source) as raw:
         raw.raw_image_visible  # Force LibRaw's lazy unpack before timing it.
         unpack = (time.perf_counter() - started) * 1000

@@ -7,6 +7,8 @@ from hdr_finisher import library_worker, library_overlays, library_folders
 
 
 def test_running_map_and_queued_map_do_not_deadlock_folder_check(tmp_path, monkeypatch):
+    from hdr_finisher import app_memory
+    previous_claim=app_memory._remote_claim
     incoming, outgoing = Queue(), Queue()
     map_started, check_started, release_map = Event(), Event(), Event()
 
@@ -62,6 +64,7 @@ def test_running_map_and_queued_map_do_not_deadlock_folder_check(tmp_path, monke
         incoming.put({"command": "stop"})
         release_map.set()
         thread.join(timeout=3)
+        assert app_memory._remote_claim is previous_claim
         # This test runs the helper in-process; restore its diagnostic sink.
         from hdr_finisher import library_diagnostics
         library_diagnostics._sink = None

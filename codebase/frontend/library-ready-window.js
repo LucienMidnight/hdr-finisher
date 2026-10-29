@@ -1,8 +1,14 @@
 /* Finished Single surfaces; identity and cancellation own every publication. */
 (function(root) {
   "use strict";
-  function create({key, load, dispose, promote = () => {}}) {
+  function create({key, load, dispose, promote = () => {}, memoryKey = "ready", manageBytes = true}) {
     const entries = new Map(); let wanted = null;
+    const bytes=()=>[...entries.values()].reduce((n,e)=>n+(e.value?.bytes || 0),0);
+    function trim(target) {
+      const oldest=[...entries].sort((a,b)=>b[1].priority-a[1].priority);
+      for(const [id,entry] of oldest){if(bytes()<=target)break;if(entry.value)remove(id);}
+    }
+    if(manageBytes)root.HDRLibraryRAM?.register(memoryKey,'sharp',bytes,trim);
     function remove(id) {
       const entry = entries.get(id); if (!entry) return;
       entries.delete(id); entry.controller.abort();
@@ -30,7 +36,10 @@
       entry.promise = Promise.resolve().then(() => load(photo, entry.controller.signal, current, entry.priority, trace, () => entry.priority, options, () => entry.trace)).then(value => {
         if (!current()) { if (value) dispose(value); throw new DOMException("Invalidated", "AbortError"); }
         if (!value) { entries.delete(id); return null; }
-        entry.value = value; return value;
+        entry.value = value;
+        root.HDRLibraryRAM?.enforce();
+        if(!entries.has(id))throw new DOMException('RAM share full','AbortError');
+        return value;
       }).catch(error => { if (entries.get(id) === entry) remove(id); throw error; });
       return entry.promise;
     }

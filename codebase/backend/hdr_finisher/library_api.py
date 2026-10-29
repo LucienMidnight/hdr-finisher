@@ -655,8 +655,8 @@ def create_library_router(worker, browser, store=None):
     @router.post("/cache-clear")
     def clear_library_cache(change: dict):
         source_jobs.invalidate()
-        cache.transient.clear()
-        live.cache.transient.clear()
+        cache.trim_memory(0)
+        live.cache.trim_memory(0)
         return command(cache.managed.clear, change.get("location"))
 
     from .library_file_commands import add_file_routes
@@ -670,14 +670,26 @@ def create_library_router(worker, browser, store=None):
     @router.post("/memory-admission")
     def memory_admission(command: dict):
         from .app_memory import admit
-        return admit(str(command["id"]), command.get("bytes", 700_000_000), command.get("release", False))
+        return admit(str(command["id"]), command.get("bytes", 600_000_000), command.get("release", False))
+
+    @router.post('/memory-report')
+    def memory_report(report: dict):
+        from . import app_memory
+        # Names are fixed, so a reload cannot accumulate report identities.
+        accepted={}
+        for share in ('thumbnails','sharp'):
+            app_memory.report('renderer-'+share,share,report.get(share,0))
+            accepted[share]=report.get(share,0)<=app_memory.limit(share)
+        value=app_memory.snapshot()
+        return dict(value,accepted=accepted)
 
     @router.post("/memory-reclaim")
-    def memory_reclaim():
-        import gc
-        from .library_pictures import _CAMERA_PREVIEWS, _CAMERA_PREVIEW_LOCK
-        with _CAMERA_PREVIEW_LOCK: _CAMERA_PREVIEWS.clear()
-        gc.collect()
+    def memory_reclaim(command: dict = {}):
+        from . import app_memory
+        level=command.get('pressure','moderate')
+        if level not in ('moderate','critical'): level='moderate'
+        app_memory.reclaim(level)
+        worker._send(dict(command='memory-pressure',level=level))
         return {"reclaimed": True}
 
     @router.get("/health")

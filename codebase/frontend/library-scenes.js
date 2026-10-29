@@ -67,7 +67,7 @@ window.HDRLibraryScenes = (() => {
       const admission = crypto.randomUUID();
       const request = release => fetch("/api/library/memory-admission", {method:"POST",
         ...(release?{}:{signal:shared}), headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({id:admission,bytes:Math.max(700_000_000,plan.bytes*8),release})});
+        body:JSON.stringify({id:admission,bytes:600_000_000,release})});
       let renew;
       try {
         for (;;) {

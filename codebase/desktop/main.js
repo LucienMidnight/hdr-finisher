@@ -1298,6 +1298,8 @@ if (!gotLock) {
       if (shuttingDown || !mainWindow || mainWindow.isDestroyed()) return;
       const activeBackend = backend;
       session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${activeBackend.url}/*`] }, (details, callback) => {
+        const uploadBytes=(details.uploadData || []).reduce((n,item)=>n+(item.bytes?.byteLength || 0),0);
+        if(uploadBytes>0)libraryStage('main_upload_copy',{bytes:uploadBytes,main:process.memoryUsage()});
         details.requestHeaders["X-HDR-Finisher-Token"] = activeBackend.authoringSecret;
         callback({ requestHeaders: details.requestHeaders });
       });
@@ -1320,8 +1322,10 @@ if (!gotLock) {
           }
           for (const record of windows.values()) if (!record.window.isDestroyed()) record.window.webContents.send("desktop:memory-pressure",value);
           if (value.reclaim) {
-            await fetch(`${activeBackend.url}/api/library/memory-reclaim`, {method:"POST",
-              headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret},signal:AbortSignal.timeout(2000)});
+            const reclaimed=await fetch(`${activeBackend.url}/api/library/memory-reclaim`, {method:"POST",
+              headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret,"Content-Type":"application/json"},
+              body:JSON.stringify({pressure:value.pressure==='critical'?'critical':'moderate'}),signal:AbortSignal.timeout(2000)});
+            await reclaimed.arrayBuffer();
           }
         } catch (error) { console.error("Memory controller:",error.message); }
         finally { memorySampling = false; }

@@ -278,15 +278,17 @@ class LibraryMarks:
 
     def _read_prepared(self, values, *, documents=None, canonical=False, connected=False, expected=None):
         """Rebuild visited sidecar records; unmarked browsing creates no files."""
+        paths = [str(value) for value in values] if canonical else [str(Path(value).resolve()) for value in values]
+        present={value:Path(value).exists() for value in paths}
+        parents={value:Path(value).parent.exists() for value in paths}
         with timed_lock(self._lock, "marks_read"):
-            paths = [str(value) for value in values] if canonical else [str(Path(value).resolve()) for value in values]
             cached = self._rows(paths)
             photos, warnings, rebuilt, removed = [], [], [], []
             observed_paths, observed_documents = [], []
             for position, value in enumerate(paths):
                 path, row = Path(value), cached.get(value)
                 files = getattr(self, "file_commands", None)
-                if files and (files.blocked(value) or value in files.retired and not path.exists()):
+                if files and (files.blocked(value) or value in files.retired and not present[value]):
                     photos.append(row or {"path":value,"photo_id":None,"marks":Marks().model_dump(),"albums":[],"storage":"none"})
                     continue
                 invalid = False
@@ -304,7 +306,7 @@ class LibraryMarks:
                     observed_paths.append(value); observed_documents.append(document)
                 if invalid:
                     pass
-                elif row and (row["storage"] == "database" or (not connected and not path.parent.exists())):
+                elif row and (row["storage"] == "database" or (not connected and not parents[value])):
                     pass  # A failed sidecar write is retained across visits/restarts.
                 elif document:
                     current = {"path": value, "photo_id": document["photo_id"], "marks": Marks.model_validate(document.get("marks", {})).model_dump(), "albums": self._albums(document, path), "storage": "sidecar"}
@@ -330,11 +332,11 @@ class LibraryMarks:
             # The folder listing reuses these under the same lock instead of
             # reading every settings file a second time.
             seen = dict(zip(observed_paths, observed_documents))
-            if getattr(self, "grades", None): self.grades.observe_documents(observed_paths, observed_documents)
-            if getattr(self, "copies", None):
-                states = self.copies.states([value for value in observed_paths if "|copy|" not in value])
-                for value, document in zip(observed_paths, observed_documents):
-                    self.copies.observe(value, document, states.get(value, {}))
+        if getattr(self, "grades", None): self.grades.observe_documents(observed_paths, observed_documents)
+        if getattr(self, "copies", None):
+            for value, document in zip(observed_paths, observed_documents):
+                with timed_lock(self._lock,'marks_read_copies'):
+                    self.copies.observe(value, document)
         if getattr(self, "membership", None):
             self.membership.reconcile(paths)
             self.membership.describe(photos)

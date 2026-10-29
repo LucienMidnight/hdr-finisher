@@ -262,6 +262,16 @@ class LibraryWorker:
                         raise RuntimeError("helper did not report ready within 30 seconds")
                     continue
                 message = connection.recv()
+                if message.get('event')=='memory-claim':
+                    from . import app_memory
+                    key='helper-'+str(self._process.pid)+'-'+message['key']
+                    granted=app_memory.claim(key,message['share'],message['bytes'])
+                    if message.get('request'):
+                        with self._lock:
+                            self._send(dict(command='memory-result',request=message['request'],granted=granted))
+                    continue
+                if message.get('event')=='memory':
+                    continue
                 if message.get("event") == "diagnostic":
                     record = message["record"]
                     log(record.pop("event"), **record)
@@ -307,6 +317,11 @@ class LibraryWorker:
                         exception = MediaBrowserError(error)
                     future.set_exception(exception)
         finally:
+            from . import app_memory
+            prefix='helper-'+str(self._process.pid)+'-'
+            with app_memory._lock:
+                for key in list(app_memory._caches):
+                    if key.startswith(prefix):app_memory.forget(key)
             if self._closed:
                 self._ready.set()
 
@@ -404,6 +419,24 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
         with write_lock:
             connection.send(message)
 
+    from . import app_memory
+    memory_waiters={}
+    memory_lock=RLock()
+    def remote_claim(key,share,size):
+        # Reductions never wait for a response; pressure callbacks can run on
+        # the helper's message thread. Growth is admitted by the backend owner.
+        if size<=app_memory._caches.get(key,{}).get('bytes',0):
+            reply(dict(event='memory-claim',key=key,share=share,bytes=size))
+            return True
+        request=uuid4().hex;done=Event();value={}
+        with memory_lock:memory_waiters[request]=(done,value)
+        try:
+            reply(dict(event='memory-claim',key=key,share=share,bytes=size,request=request))
+            return done.wait(5) and value.get('granted',False)
+        finally:
+            with memory_lock:memory_waiters.pop(request,None)
+    previous_claim=app_memory._remote_claim
+    app_memory._remote_claim=remote_claim
     from . import library_diagnostics
     library_diagnostics._sink = lambda record: reply({"event": "diagnostic", "record": record})
 
@@ -535,6 +568,11 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
             if not cancelled.is_set() and not stopping.is_set():
                 try:
                     reply(result)
+                    from . import app_memory
+                    # The pipe has delivered these bytes; retain source caches until
+                    # their working share or an explicit pressure event trims them.
+                    pictures.trim_memory(0)
+                    reply(dict(event='memory',bytes={k:v['bytes'] for k,v in app_memory.cache_snapshot().items()}))
                 except (EOFError, OSError) as error:
                     library_diagnostics._sink = None
                     log("picture_helper_reply_failed" if kind == "picture" else "helper_reply_failed", operation=job["command"], edge=job.get("edge"), path=job.get("path"), reason=str(error), action="lane exits; parent detects closed helper")
@@ -560,10 +598,19 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
             if not connection.poll(0.25):
                 continue
             message = connection.recv()
+            if message['command']=='memory-result':
+                with memory_lock:waiting=memory_waiters.get(message['request'])
+                if waiting:
+                    waiting[1]['granted']=message['granted'];waiting[0].set()
+                continue
             with condition:
                 if message["command"] == "stop":
                     break
-                if message["command"] == "pause":
+                if message['command']=='memory-pressure':
+                    from . import app_memory
+                    # Keep receiving owner replies while a cache waits for its lock.
+                    Thread(target=app_memory.reclaim,args=(message['level'],),daemon=True).start()
+                elif message["command"] == "pause":
                     state["paused"] = message["paused"]
                     pictures.pause_native(message["paused"])
                 elif message["command"] == "source-busy":
@@ -590,6 +637,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
         log("helper_pipe_closed", reason=str(error), action="helper exits")
     finally:
         stopping.set()
+        app_memory._remote_claim=previous_claim
         from .library_metadata import close_readers
         close_readers()
         with condition:

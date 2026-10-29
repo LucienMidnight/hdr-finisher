@@ -190,6 +190,7 @@
     if (cell.fallback) { cell.fallback.getContext("webgpu")?.unconfigure(); cell.fallback.width = cell.fallback.height = 0; }
     cell.canvas.removeAttribute("src");
   });
+  HDRLibraryRAM.register('visible-thumbnails','thumbnails',()=>[...state.cells.values(),...state.filmCells.values()].reduce((n,c)=>n+(c.fallback?c.fallback.width*c.fallback.height*16:0),0),()=>{});
   const tileKey = (map, identity) => `${map === state.cells ? "grid" : "film"}|${identity}|${state.hdr}|${thumbnailEdge()}`;
   const cacheChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('hdr-library-cache') : null;
   cacheChannel?.addEventListener('message', () => { tilePool.clear(); clearCells(state.cells); clearCells(state.filmCells); paintGrid(); paintFilm(); });
@@ -279,10 +280,10 @@
   const readySurfaces = new Map();
   let readyBytes = 0, readyPolling = false;
   const readyKey = photo => `${pictureIdentity(photo)}|${state.hdr}|${state.displayEpoch}|${JSON.stringify(HDRLibraryScreenPreviews.display())}`;
-  function releaseReady(value) {
+  function releaseReady(value, force = false) {
     // Keep the previous selection until a replacement can be published in the
     // same turn. It retains its own identity and is never reported as the new photo.
-    if (state.active && state.view === "single" && value.canvas.id === "single-picture" &&
+    if (!force && state.active && state.view === "single" && value.canvas.id === "single-picture" &&
         value.canvas.dataset.picturePath !== selected()?.path && readyWindow.has(selected() || {})) { value.retired = true; return; }
     if (!readySurfaces.delete(value.canvas)) return;
     readyBytes -= value.bytes;
@@ -291,6 +292,14 @@
     value.canvas.getContext("webgpu")?.unconfigure();
     void HDRLibraryPictures.readyMemory(readyBytes).catch(() => {});
   }
+  HDRLibraryRAM.register('ready-surfaces','sharp',()=>readyBytes,target=>{
+    const other=photo=>photo.path!==selected()?.path;
+    readyWindow.evictFinished(other);quickWindow.evictFinished(other);
+    if(readyBytes>target)for(const value of readySurfaces.values()){
+      if(readyBytes<=target)break;
+      if(value.retired || target===0)releaseReady(value,true);
+    }
+  });
   const navigationGate = HDRLibraryReadyWindow.navigationGate({wait:sleep});
   async function beforeSource(photo,signal,importance) {
     await navigationGate.settled(signal);
@@ -298,7 +307,7 @@
       throw new DOMException("Passed during navigation","AbortError");
   }
   function pictureWindow(edge) {
-    return HDRLibraryReadyWindow.create({key:readyKey, dispose:releaseReady,
+    return HDRLibraryReadyWindow.create({key:readyKey, dispose:releaseReady,manageBytes:false,memoryKey:"ready-"+edge,
       promote:(photo,priority)=>HDRLibraryScenes.promote(photo.path,priority),
       load:async (photo, signal, current, priority, trace, importance, options, getTrace = () => trace) => {
         const epoch = state.displayEpoch, hdr = state.hdr;
@@ -308,11 +317,12 @@
           let meta;
           try { meta = await HDRLibraryScreenPreviews.load(photo,canvas,signal,current,hdr,async meta=>{
             value={canvas,meta,bytes:meta.width*meta.height*8};
+            HDRLibraryRAM.enforce();
             readySurfaces.set(canvas,value);readyBytes+=value.bytes;
             const upload=meta.width*meta.height*8;
             await HDRLibraryScenes.reclaim(upload);
             const budget=await HDRLibraryPictures.readyMemory(readyBytes+tilePool.snapshot().bytes);
-            if(readyBytes+tilePool.snapshot().bytes>tilePool.snapshot().limit || readyBytes+tilePool.snapshot().bytes+upload>budget){
+            if(readyBytes+(HDRLibraryGpuRaw.directBytes?.() || 0)>HDRLibraryRAM.limit('sharp') || readyBytes+tilePool.snapshot().bytes+upload>budget){
               const error=Error('Stored screen preview yielded its memory budget.');error.libraryYield=true;throw error;
             }
           }); } catch(error) {if(value)releaseReady(value);throw error;}
@@ -348,7 +358,7 @@
           await HDRLibraryScenes.reclaim(graph);
           const budget = await HDRLibraryPictures.readyMemory(readyBytes + tilePool.snapshot().bytes);
           if (!current()) throw new DOMException("Invalidated","AbortError");
-          if (readyBytes + tilePool.snapshot().bytes > tilePool.snapshot().limit || readyBytes + tilePool.snapshot().bytes + graph > budget) {
+          if (readyBytes+(HDRLibraryGpuRaw.directBytes?.() || 0)>HDRLibraryRAM.limit('sharp') || readyBytes + tilePool.snapshot().bytes + graph > budget) {
             const error = Error("Ready window yielded its memory budget."); error.libraryYield = true; throw error;
           }
           for (;;) {
@@ -576,16 +586,11 @@
   }
   let hostReclaim = false;
   window.addEventListener("message", async event => {
-    if (event.origin !== location.origin || event.data?.type !== "hdr-memory-pressure" || !event.data.value.reclaim || hostReclaim) return;
+    if(event.origin!==location.origin || event.data?.type!=='hdr-memory-pressure')return;
+    HDRLibraryRAM.apply(event.data.value);
+    if(!event.data.value.reclaim || hostReclaim)return;
     hostReclaim = true;
     try {
-      // Detached surfaces are FIFO/LRU: visible and the nearby live window
-      // survive; older surfaces will be redrawn when revisited.
-      const needed = Math.max(32*1024**2,event.data.value.totalBytes-event.data.value.targetBytes);
-      const before = tilePool.snapshot().bytes;
-      while (before-tilePool.snapshot().bytes < needed && tilePool.evictOne(cell=>cell.fallback?.dataset.standIn!=="true")) {}
-      const other = photo => photo.path !== selected()?.path;
-      readyWindow.evictFinished(other); quickWindow.evictFinished(other);
       recentPictures.clear();
       await HDRLibraryPictures.reclaimHost();
       await HDRLibraryQuickPictures.reclaimHost();
@@ -2053,7 +2058,7 @@
   }
   // Read-only status for the focused interaction driver; no test-only behavior.
   HDRLibraryStopwatch("ready");
-  window.HDRLibrary = Object.freeze({ browse, refreshPins, getSnapshot: () => ({ path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,
+  window.HDRLibrary = Object.freeze({ browse, refreshPins, getSnapshot: () => ({ ram:HDRLibraryRAM.snapshot(), path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,
     overlays: overlays.snapshot(), compare: compare.snapshot(), selected: selected()?.path, selection: [...state.selection], marks: selected()?.marks, view: state.view, review: state.review, visible: shownCells(state.cells).length,
     filmVisible: shownCells(state.filmCells).length, active: state.active, hdr: state.hdr, zoom: state.zoom, zoomScale: state.zoomScale, zoomCenter: [state.zoomX, state.zoomY], nativeLoading: state.nativeLoading, native: state.nativeMeta ? { width: state.nativeMeta.source_width, height: state.nativeMeta.source_height, x: state.nativeMeta.crop_x, y: state.nativeMeta.crop_y } : null, reading: state.reading, total: state.allPhotos.length, sort: state.sort, descending: state.descending, paths: state.photos.map(photo => photo.path) }) });
   (async () => {

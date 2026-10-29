@@ -4493,3 +4493,20 @@ as unfinished work on library-big-folder; no merge, push or installer build.
 Scratch output was 1.3 GB at the end, below the 100 GB limit. Disposable
 profiles and interrupted precision-photo copies were removed after retaining
 logs; existing user fixtures and design files were left alone.
+
+### October 29: fixed whole-app memory implementation (validation pending)
+
+The memory owner now admits cache growth by the shares in
+[memory-and-caches](memory-and-caches.md): fixed RAW read-ahead and hand-off,
+shared byte limits for ready/direct scenes, delivered hand-off release, and
+one 600 MB working envelope. Helper claims go to the backend owner; renderer
+limits and reports use that owner. Pressure trims oldest reconstructible
+entries. The gate now uses proportional resident Windows pages rather than
+summed working sets. Live picture uploads retain Blob backing to remove a
+suspected Electron-main copy path. Marks observation and index batches have
+shorter lock scopes. Final fast checks and the ordered real-folder gate are
+pending; this is not a memory-ceiling pass. No sizes were increased.
+
+Fast-check result for this implementation: Python 2,729 passed, three known
+failures, three skipped; JavaScript 662 passed, two known failures. The focused
+cache/helper group passed 91 checks. Real-folder validation is pending.

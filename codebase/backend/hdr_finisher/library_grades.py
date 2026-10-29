@@ -116,12 +116,16 @@ class LibraryGrades:
                     "recovery": recovery if not state.get("pending") else None, "conflict": bool(state.get("conflict")), "path": path, "name": (document or {}).get("name")}
 
     def observe_documents(self, paths, documents):
+        if len(paths)>1:
+            for path,document in zip(paths,documents):self.observe_documents([path],[document])
+            return
+        connected={str(path):self.marks.source_path(path).parent.is_dir() for path in paths}
         with self.marks._lock:
             db = self.marks._connect()
             try:
                 with db:
                     for path, document in zip(paths, documents):
-                        if document is None and not self.marks.source_path(path).parent.is_dir(): continue
+                        if document is None and not connected[str(path)]: continue
                         # Read through this connection: once its write grows past the
                         # page cache it holds the file exclusively, and a second
                         # connection would wait on it until "database is locked".

@@ -795,6 +795,9 @@
 
   const directScenes = new Map();
   const directBytes = () => [...directScenes.values()].reduce((n,entry)=>n+entry.bytes,0);
+  root.HDRLibraryRAM?.register('direct','sharp',directBytes,target=>{
+    for(const [key,entry] of directScenes){if(directBytes()<=target)break;entry.dispose();directScenes.delete(key);}
+  });
   function forgetDirect(path = null) {
     for(const [key,entry] of directScenes)if(path===null || entry.path===path){entry.dispose();directScenes.delete(key);}
   }
@@ -868,7 +871,9 @@
     const send = async (entry, describeOnly = false) => {
       const {header,picture}=entry, packedAt=performance.now();
       const framed=handoffBody(describeOnly ? {...header,describe_only:true} : header,describeOnly ? [] : picture.planes);
-      const payload=liveScene ? await framed.arrayBuffer() : framed, sentAt=performance.now();
+      // Keep a Blob-backed upload: ArrayBuffer bodies are copied into Electron
+      // main's webRequest uploadData when it adds the desktop auth header.
+      const payload=framed, sentAt=performance.now();
       const stored=await fetch(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed",{
         method:"POST",signal,headers:{"Content-Type":"application/octet-stream"},body:payload});
       root.HDRLibraryStopwatch?.(describeOnly ? "picture_scene_description" : "picture_scene_handoff",{
@@ -880,7 +885,7 @@
     if(liveScene && meta.rgb && !nativeMode && !root.HDRLibraryProfileLegacy && entries.every(({picture})=>picture.textures?.length)){
       const variants={};
       for(const entry of entries)variants[entry.header.edge]=await send(entry,true);
-      if(Object.values(variants).every(value=>value.direct_supported && value.grade_identity===sceneIdentity.split(":").at(-1)) && entries.reduce((n,{picture})=>n+picture.planes.reduce((m,p)=>m+p.byteLength,0)+picture.width*picture.height*8*(picture.textures?.length || 0),0)<=256*1024**2){
+      if(Object.values(variants).every(value=>value.direct_supported && value.grade_identity===sceneIdentity.split(":").at(-1)) && entries.reduce((n,{picture})=>n+picture.planes.reduce((m,p)=>m+p.byteLength,0)+picture.width*picture.height*8*(picture.textures?.length || 0),0)<=(root.HDRLibraryRAM?.limit('sharp') ?? 512_000_000)){
         const poolKey=path+"|"+sceneIdentity;
         let storing, disposed=false;
         const release=()=>fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
@@ -908,7 +913,8 @@
         timer.unref?.();
         directScenes.get(poolKey)?.dispose();
         directScenes.set(poolKey,{path,variants,bytes,dispose});
-        while(directBytes()>256*1024**2 && directScenes.size>1){const key=directScenes.keys().next().value;directScenes.get(key).dispose();directScenes.delete(key);}
+        root.HDRLibraryRAM?.enforce();
+        while(directBytes()>(root.HDRLibraryRAM?.limit('sharp') ?? 512_000_000) && directScenes.size>1){const key=directScenes.keys().next().value;directScenes.get(key).dispose();directScenes.delete(key);}
         retainedSource=true;
         selectedResult=variants[edge];
       }

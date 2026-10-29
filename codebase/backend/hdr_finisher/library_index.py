@@ -204,18 +204,20 @@ class LibraryIndex:
 
     @audited("index_remember_facts")
     def remember_facts(self, records, *, epoch=None, generation=None, foreground=False):
-        if len(records) > 8:
-            for start in range(0,len(records),8):
-                self.remember_facts(records[start:start+8],epoch=epoch,generation=generation,foreground=foreground)
+        if len(records) > 1:
+            for start in range(0,len(records),1):
+                self.remember_facts(records[start:start+1],epoch=epoch,generation=generation,foreground=foreground)
                 time.sleep(.001)
             return
         for record in records:
             record["indexed"] = record.get("mtime_ns") is not None
+        present={r['path']:Path(r['path']).exists() for r in records}
+        prepared=[(r,r["path"], r["bytes"], r["mtime_ns"], json.dumps({name:r.get(name) for name in FACT_FIELDS})) for r in records]
         with timed_lock(self.marks._lock, "index_batch"):
             self.accept_read(epoch, generation)
             commands = getattr(self.marks, "file_commands", None)
-            rows = [(r["path"], r["bytes"], r["mtime_ns"], json.dumps({name: r.get(name) for name in FACT_FIELDS}))
-                for r in records if r.get("mtime_ns") is not None and not (commands and (commands.blocked(r["path"]) or r["path"] in commands.retired and not Path(r["path"]).exists()))]
+            rows = [(path,size,stamp,facts) for r,path,size,stamp,facts in prepared
+                if stamp is not None and not (commands and (commands.blocked(path) or path in commands.retired and not present[path]))]
             if not rows: return
             db = self.marks._connect()
             try:

@@ -16,7 +16,7 @@ from time import perf_counter
 import numpy as np
 from PIL import Image, ImageCms, ImageOps
 
-from . import loader, raw_import
+from . import loader, raw_import, app_memory
 from .import_defaults import calibrate_camera_raw, starting_adjustments
 from .library_diagnostics import audited, problem, log
 from .analysis import classify_hdr
@@ -60,10 +60,26 @@ class LibraryPictureCache:
         self.managed = LibraryCache(root)
         self.transient = OrderedDict()
         self.transient_lock = RLock()
+        self.memory_key='picture-handoff-'+str(id(self))
+        app_memory.register(self.memory_key,'handoff',self.trim_memory)
+        self.native_key='native-'+str(id(self))
+        app_memory.register(self.native_key,'working',self.trim_native)
         self.pending_stores = {}
         self._native_lock = RLock()
         self._native_source = None
         self._native_paused = False
+
+    def trim_memory(self,target):
+        with self.transient_lock:
+            while self.transient and sum(map(len,self.transient.values()))>target:
+                key,_=self.transient.popitem(last=False)
+                self.pending_stores.pop(key,None)
+            app_memory.claim(self.memory_key,'handoff',sum(map(len,self.transient.values())))
+
+    def delivered(self,key):
+        with self.transient_lock:
+            if key not in self.pending_stores: self.transient.pop(key,None)
+            app_memory.claim(self.memory_key,'handoff',sum(map(len,self.transient.values())))
 
     def accept_transient(self, result):
         body = result.pop('_transient', None)
@@ -71,9 +87,10 @@ class LibraryPictureCache:
             with self.transient_lock:
                 self.transient[result['key']] = base64.b64decode(body)
                 self.transient.move_to_end(result['key'])
-                while sum(map(len, self.transient.values())) > 256 * 1024**2:
+                while self.transient and not app_memory.claim(self.memory_key,'handoff',sum(map(len,self.transient.values()))):
                     expired, _ = self.transient.popitem(last=False)
                     self.pending_stores.pop(expired, None)
+                app_memory.report(self.memory_key,'handoff',sum(map(len,self.transient.values())))
         return result
 
     def transient_result(self, key, arrays, metadata, validate=None):
@@ -83,7 +100,7 @@ class LibraryPictureCache:
             validate()
         result = metadata | {'key': key, 'cache_hit': False, 'stored_bytes': 0,
             '_transient': base64.b64encode(stream.getvalue()).decode()}
-        # Also retain it in this helper for repeat requests; transport stays in RAM.
+        # Only deferred disk publication needs local ownership before delivery.
         self.accept_transient(dict(result))
         return result
 
@@ -270,6 +287,7 @@ class LibraryPictureCache:
             if default is not None:
                 metadata["default_document"] = default
             self.build(source, edge, quality, checkpoint, (pixels, reference, metadata), persist=True)
+            self.delivered(key)
 
     @audited("picture_cache_build_native")
     def build_native(self, path, center_x, center_y, width, height, cancelled=None):
@@ -287,6 +305,7 @@ class LibraryPictureCache:
             source = self._native_source
             if source is None or source[0] != identity:
                 self._native_source = None
+                app_memory.report(self.native_key,'working',0)
                 pixels, reference, metadata = decode_picture(path, 100000, "native")
                 check_cancelled(cancelled)
                 if picture_key(path, 100000, "native") != identity:
@@ -295,7 +314,8 @@ class LibraryPictureCache:
                 grade = validate_saved(AdjustmentState, starting_look) if starting_look else default_look(
                     pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
                 source = (identity, pixels, reference, metadata, grade.model_dump(mode="json"))
-                if not self._native_paused:
+                size=pixels.nbytes+(reference.nbytes if reference is not None else 0)
+                if not self._native_paused and app_memory.claim(self.native_key,'working',size):
                     self._native_source = source
             _, pixels, reference, metadata, grade = source
             source_height, source_width = pixels.shape[:2]
@@ -316,12 +336,18 @@ class LibraryPictureCache:
 
     def retain_gpu_native(self, path, pixels, metadata, grade):
         with self._native_lock:
-            self._native_source = (picture_key(path, 100000, "native"), pixels, None, metadata, grade)
+            if app_memory.claim(self.native_key,'working',pixels.nbytes):
+                self._native_source = (picture_key(path, 100000, "native"), pixels, None, metadata, grade)
+
+    def trim_native(self,target):
+        with self._native_lock:
+            self._native_source=None
+            app_memory.claim(self.native_key,'working',0)
 
     def pause_native(self, paused):
         self._native_paused = bool(paused)
         if paused:
-            self._native_source = None
+            self.trim_native(0)
 
     @audited("picture_cache_pixels")
     def pixels(self, key, lane="hdr"):
@@ -331,6 +357,7 @@ class LibraryPictureCache:
             pixels = stored["reference" if reference else "pixels"].astype(np.float32)
         if path.exists(): os.utime(path, None)
         body, stride = encode_rgba_proxy_rows(pixels, 0, pixels.shape[0], prefer_half=True, pixel_format="rgba16float")
+        self.delivered(key)
         return body, pixels.shape[1], pixels.shape[0], stride, "linear-srgb" if reference else "acescg"
 
     @audited("picture_cache_trim")
@@ -376,7 +403,18 @@ def original_preview(path, edge):
 
 _CAMERA_PREVIEWS = OrderedDict()
 _CAMERA_PREVIEW_LOCK = RLock()
-_CAMERA_PREVIEW_BYTES = 64 * 1024**2
+_CAMERA_PREVIEW_BYTES = app_memory.limit('camera')
+
+
+def _trim_camera(target):
+    with _CAMERA_PREVIEW_LOCK:
+        while _CAMERA_PREVIEWS and sum(len(row['url'].encode('utf-8')) for row in _CAMERA_PREVIEWS.values())>target:
+            _CAMERA_PREVIEWS.popitem(last=False)
+        app_memory.claim('camera-previews','camera',sum(len(row['url'].encode('utf-8')) for row in _CAMERA_PREVIEWS.values()))
+
+
+# Module function is deliberately strong; instance callbacks use weak methods.
+app_memory.register('camera-previews','camera',_trim_camera)
 
 
 def camera_preview(path, edge):
@@ -401,7 +439,7 @@ def camera_preview(path, edge):
     result["kept"] = True
     with _CAMERA_PREVIEW_LOCK:
         _CAMERA_PREVIEWS[key] = result
-        while sum(len(row["url"]) for row in _CAMERA_PREVIEWS.values()) > _CAMERA_PREVIEW_BYTES:
+        while _CAMERA_PREVIEWS and not app_memory.claim('camera-previews','camera',sum(len(row['url'].encode('utf-8')) for row in _CAMERA_PREVIEWS.values())):
             _CAMERA_PREVIEWS.popitem(last=False)
         return dict(result)
 
