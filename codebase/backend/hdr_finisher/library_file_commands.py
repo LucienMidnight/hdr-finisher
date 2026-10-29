@@ -11,7 +11,10 @@ from pydantic import BaseModel, ConfigDict
 from .library_file_io import digest, signature, same, rename, durable, occupied, relocated, stable_ids, check_streams
 from .library_file_state import snapshot, retarget, pictures, document_paths, mapped
 from .library_folder_commands import folder_name
-from .library_diagnostics import log
+from .library_diagnostics import log, timed_lock
+from functools import wraps
+import asyncio
+import time
 
 OPEN_MESSAGE = 'Open another photo before changing this one. Nothing was changed for it.'
 # Removing an original safely relies on Windows file locks. Elsewhere these
@@ -29,6 +32,30 @@ class FileRequest(BaseModel):
     choices: dict[str,str] = {}
     token: str = ''
     confirmation: str = ''
+
+
+def file_event(stage):
+    def decorate(function):
+        @wraps(function)
+        def call(self, *args, **kwargs):
+            started = time.perf_counter()
+            request = args[0] if args else None
+            operation = getattr(request, 'action', None)
+            token = request if isinstance(request, str) else None
+            log('file_command_' + stage + '_started', operation=operation, token=token,
+                count=len(getattr(request, 'paths', ())))
+            try:
+                result = function(self, *args, **kwargs)
+            except Exception as error:
+                log('file_command_' + stage + '_failed', operation=operation, token=token,
+                    reason=str(error), duration_ms=(time.perf_counter()-started)*1000)
+                raise
+            log('file_command_' + stage + '_finished', operation=operation,
+                token=result.get('token', token), count=result.get('count'),
+                warnings=result.get('warnings', []), duration_ms=(time.perf_counter()-started)*1000)
+            return result
+        return call
+    return decorate
 
 
 class FileCommands:
@@ -70,9 +97,10 @@ class FileCommands:
         with self.index._state: self.index._generation+=1
         with self.index.checks.lock: self.index.checks.revision+=1
 
+    @file_event("plan")
     def plan(self,request):
         if not FILE_COMMANDS_SUPPORTED: raise ValueError(PLATFORM_MESSAGE)
-        with self._lane,self.marks.writer._lane,self.marks._lock:
+        with timed_lock(self._lane, "file_command_lane"), timed_lock(self.marks.writer._lane, "file_command_writer"), timed_lock(self.marks._lock, "file_command_marks"):
             if request.action in {'delete','delete_rejected'}:
                 from .library_file_delete import plan
                 return plan(self,request)
@@ -142,8 +170,9 @@ class FileCommands:
             self.plans[token]=record
             return {'token':token,'count':len(items),'warnings':warnings,'clashes':[], 'destination':str(destination or '')}
 
+    @file_event("confirmation")
     def execute(self,token,confirmation=''):
-        with self._lane,self.marks.writer._lane,self.marks._lock:
+        with timed_lock(self._lane, "file_command_lane"), timed_lock(self.marks.writer._lane, "file_command_writer"), timed_lock(self.marks._lock, "file_command_marks"):
             record=self.plans.get(token)
             if record is None: raise ValueError('The command preview expired. Open it again; nothing was changed.')
             if record['action'] in {'delete','delete_rejected'}:
@@ -375,8 +404,12 @@ class FileCommands:
 def add_file_routes(router,marks,browser,index,worker,store):
     service=FileCommands(marks,browser,index,worker,store)
     @router.post('/file-command')
-    def command(request:FileRequest):
-        try: return service.execute(request.token,request.confirmation) if request.token else service.plan(request)
+    async def command(request:FileRequest):
+        # The asyncio executor is separate from Starlette's request pool. A
+        # file command waiting for the writer must leave health/log/pixel
+        # requests their request threads, and never block the event loop.
+        try:
+            return await asyncio.to_thread(service.execute, request.token, request.confirmation) if request.token else await asyncio.to_thread(service.plan, request)
         except (OSError,ValueError) as e: raise HTTPException(400,str(e)) from e
     class Job(BaseModel):
         id:str

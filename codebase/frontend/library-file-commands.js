@@ -3,6 +3,19 @@
  'use strict';
  const {make,ask}=HDRLibraryDialogs;
  function create(options) {
+  async function command(body) {
+   options.status(body.token ? 'Finishing file command… Waiting for any current background work.' : 'Checking selected files… Waiting for any current background work.');
+   const started=performance.now();
+   window.HDRLibraryStopwatch?.('file_command_request',{action:body.action,stage:body.token?'execute':'plan'});
+   try { return await options.api('/api/library/file-command',body); }
+   catch(error) { window.HDRLibraryStopwatch?.('file_command_request_failed',{action:body.action,reason:error.message,duration_ms:performance.now()-started});throw error; }
+  }
+  async function confirm(details) {
+   window.HDRLibraryStopwatch?.('file_command_confirmation_shown',{title:details.title});
+   const answer=await ask(details);
+   window.HDRLibraryStopwatch?.('file_command_confirmation_decision',{title:details.title,accepted:!!answer});
+   return answer;
+  }
   async function destination(title='Move to folder') {
    return new Promise(resolve=>{
     const dialog=make('dialog','application-dialog library-ask'),form=make('form'),body=make('div','library-ask-body'),actions=make('div','app-dialog-actions');
@@ -29,21 +42,21 @@
   async function finish(plan,action,confirmation=true) {
    if(!plan.token)return;
    if(!plan.count){options.status(plan.warnings.join(' ')||'Nothing changed.');return;}
-   if(confirmation && !await ask({title:'Move photos',message:`Move ${plan.count} photos, with their settings, grades and virtual copies, to ${plan.destination}? ${plan.warnings.join(' ')}`,confirm:'Move photos'}))return;
-   const result=await options.api('/api/library/file-command',{action,paths:[],token:plan.token});await options.changed(result);
+   if(confirmation && !await confirm({title:'Move photos',message:`Move ${plan.count} photos, with their settings, grades and virtual copies, to ${plan.destination}? ${plan.warnings.join(' ')}`,confirm:'Move photos'}))return;
+   const result=await command({action,paths:[],token:plan.token});await options.changed(result);
    options.status(result.queued?'Move recorded. Activity shows progress, Pause and Cancel.':`${result.count} photos ${action==='rename'?'renamed':'moved'}. ${result.warnings.join(' ')}${result.undo_available?' Ctrl+Z undoes it.':''}`);
   }
   async function rename(photo) {
    let message=`The file ending stays ${photo.name.slice(photo.name.lastIndexOf('.'))}.`,name=photo.name.slice(0,photo.name.lastIndexOf('.'));
-   for(;;){const answer=await ask({title:'Rename photo',message,fields:[{name:'name',label:'Photo name',value:name}],confirm:'Rename photo'});if(!answer)return;name=answer.name;
-    try{const plan=await options.api('/api/library/file-command',{action:'rename',paths:[photo.path],name});await finish(plan,'rename',false);return;}catch(e){message=e.message;}
+   for(;;){const answer=await confirm({title:'Rename photo',message,fields:[{name:'name',label:'Photo name',value:name}],confirm:'Rename photo'});if(!answer)return;name=answer.name;
+    try{const plan=await command({action:'rename',paths:[photo.path],name});await finish(plan,'rename',false);return;}catch(e){message=e.message;}
    }
   }
   async function move(photos,target=null) {
    const paths=photos.filter(p=>!p.copy_id).map(p=>p.path);if(!paths.length){options.status('Select original photos to move. Virtual copies stay with their original.');return;}
    target ||= await destination();if(!target)return;
    const choices={};let plan;
-   for(;;){plan=await options.api('/api/library/file-command',{action:'move',paths,destination:target,choices});if(!plan.clashes?.length)break;
+   for(;;){plan=await command({action:'move',paths,destination:target,choices});if(!plan.clashes?.length)break;
     for(const item of plan.clashes){const choice=await clash(item);if(choice==='cancel'){options.status('Move cancelled. Nothing was moved.');return;}choices[item.path]=choice;}
    }
    await finish(plan,'move');
@@ -51,25 +64,25 @@
   async function folder(action,paths) {
    if(action==='folder_rename') {
     let name=paths[0].split(/[\\/]/).pop(),message='Everything inside follows the new folder name.';
-    for(;;){const answer=await ask({title:'Rename folder',message,fields:[{name:'name',label:'Folder name',value:name}],confirm:'Rename folder'});if(!answer)return;name=answer.name;
-     try{const plan=await options.api('/api/library/file-command',{action,paths,name});await folderFinish(plan,action);return;}catch(e){message=e.message;}
+    for(;;){const answer=await confirm({title:'Rename folder',message,fields:[{name:'name',label:'Folder name',value:name}],confirm:'Rename folder'});if(!answer)return;name=answer.name;
+     try{const plan=await command({action,paths,name});await folderFinish(plan,action);return;}catch(e){message=e.message;}
     }
    }
    const target=await destination('Move folder');if(!target)return;
-   const plan=await options.api('/api/library/file-command',{action,paths,destination:target});
+   const plan=await command({action,paths,destination:target});
    if(!plan.count){options.status(plan.warnings.join(' ')||'Nothing moved.');return;}
-   if(!await ask({title:'Move folders',message:`Move ${plan.count} folders, including every file inside, to ${plan.destination}? ${plan.warnings.join(' ')}`,confirm:'Move folders'}))return;
+   if(!await confirm({title:'Move folders',message:`Move ${plan.count} folders, including every file inside, to ${plan.destination}? ${plan.warnings.join(' ')}`,confirm:'Move folders'}))return;
    await folderFinish(plan,action);
   }
   async function folderFinish(plan,action){
    if(!plan.count){options.status(plan.warnings.join(' ')||'Nothing changed.');return;}
-   const result=await options.api('/api/library/file-command',{action,paths:[],token:plan.token});await options.changed(result);
+   const result=await command({action,paths:[],token:plan.token});await options.changed(result);
    options.status(`${result.count} folders ${action==='folder_rename'?'renamed':'moved'}. ${result.warnings.join(' ')}${result.undo_available?' Ctrl+Z undoes it.':''}`);
   }
   async function remove(photos,rejected=false) {
    if(!photos.length){options.status(rejected?'No rejected photos or copies here.':'Select photos to delete.');return;}
    if(photos.every(p=>p.copy_id) && !rejected){await options.removeCopies(photos);return;}
-   const action=rejected?'delete_rejected':'delete',plan=await options.api('/api/library/file-command',{action,paths:photos.map(p=>p.path)});
+   const action=rejected?'delete_rejected':'delete',plan=await command({action,paths:photos.map(p=>p.path)});
    if(!plan.count && !plan.copy_paths?.length){options.status(plan.warnings.join(' ')||'Nothing to delete.');return;}
    const parts=[];
    if(rejected)parts.push('All rejected items in this folder or album are included, even when hidden by the current filters.');
@@ -79,8 +92,8 @@
    if(plan.copy_paths?.length)parts.push(`${plan.copy_paths.length} separately selected virtual copies will be removed. Their original photos stay on disk.`);
    if(plan.warnings.length)parts.push(plan.warnings.join(' '));
    const confirmation=plan.permanent?'permanent':'recycle';
-   if(!await ask({title:rejected?'Delete all rejected':'Delete photos',message:parts.join(' '),confirm:plan.permanent?'Delete permanently':plan.count?'Move to Recycle Bin':'Remove copies',danger:true}))return;
-   const result=await options.api('/api/library/file-command',{action,paths:[],token:plan.token,confirmation});await options.changed(result);
+   if(!await confirm({title:rejected?'Delete all rejected':'Delete photos',message:parts.join(' '),confirm:plan.permanent?'Delete permanently':plan.count?'Move to Recycle Bin':'Remove copies',danger:true}))return;
+   const result=await command({action,paths:[],token:plan.token,confirmation});await options.changed(result);
    options.status(`${result.count} photos deleted.${result.copies_count?` ${result.copies_count} separate virtual copies removed.`:''} ${result.warnings.join(' ')}${plan.recycle?' Restore photos and settings together from the Recycle Bin to bring them back.':''}`);
   }
   return Object.freeze({rename,move,folder,remove,destination,clash});

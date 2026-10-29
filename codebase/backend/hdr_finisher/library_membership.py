@@ -111,9 +111,9 @@ class LibraryMembership:
             rows.extend(db.execute(f"SELECT * FROM {table} WHERE " + " OR ".join(clauses), args))
         return sorted(rows, key=lambda row: row[1] if table == "album_photos" else row[0]) if ordered else rows
 
-    def reconcile(self, paths=None):
+    def reconcile(self, paths=None, *, background=False):
         if paths is None:
-            return self._reconcile_all()
+            return self._reconcile_all(background=background)
         with timed_lock(self.marks._lock, "reconcile"):
             if self._busy or not self.marks.database.exists():
                 return
@@ -210,18 +210,18 @@ class LibraryMembership:
             finally:
                 self._busy = False
 
-    def maintain(self, paths):
+    def maintain(self, paths, *, background=True):
         """Background recovery work yields after each physical photo family."""
         paths = sorted({source(p) for p in paths})
         for at in range(0,len(paths),16):
-            self.index.wait_for_upkeep()
+            if background: self.index.wait_for_upkeep()
             started=time.perf_counter()
             self.reconcile(paths[at:at+16])
             from .library_diagnostics import log
             log("recovery_piece",count=len(paths[at:at+16]),duration_ms=(time.perf_counter()-started)*1000)
             time.sleep(.005)
 
-    def _reconcile_all(self):
+    def _reconcile_all(self, *, background=False):
         # Key-only, indexed pages. No facts snapshot or lock spans the pass.
         # Include durable grades/copies and album paths, even without a file row.
         if not self.marks.database.exists():
@@ -235,14 +235,14 @@ class LibraryMembership:
         recovery_paths = sorted({source(row[1] if table == "album_photos" else row[0])
             for record in list(self._saved_records.values()) for table, rows in record.items() for row in rows})
         for start in range(0, len(recovery_paths), 32):
-            self.maintain(recovery_paths[start:start+32])
+            self.maintain(recovery_paths[start:start+32], background=background)
             time.sleep(.001)
         for table in ("files", "photos", "album_photos", "photo_grades", "library_copies"):
             if table not in tables: continue
             column = "source" if table == "library_copies" else "path"
             after = ""
             while True:
-                self.index.wait_for_upkeep()
+                if background: self.index.wait_for_upkeep()
                 with self.marks._lock:
                     db = self.marks._connect()
                     try:
@@ -254,7 +254,7 @@ class LibraryMembership:
                 pins = self.pins()
                 paths = batch if table != "files" else [p for p in batch if not self.pinned(p, pins)]
                 for start in range(0, len(paths), 32):
-                    self.maintain(paths[start:start+32])
+                    self.maintain(paths[start:start+32], background=background)
                     time.sleep(.001)
                 after = batch[-1]
                 # A waiting foreground request can acquire the lock before the

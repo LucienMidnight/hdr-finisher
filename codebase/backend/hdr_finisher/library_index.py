@@ -72,7 +72,7 @@ class LibraryIndex:
                 self.cache_upkeep(self.wait_for_upkeep)
             self.marks.writer.startup_cleanup(self.wait_for_upkeep)
             self.wait_for_upkeep()
-            self.membership.reconcile()
+            self.membership.reconcile(background=True)
             log("startup_upkeep_finished", duration_ms=round((time.monotonic()-started)*1000, 2))
         except CancelledError:
             log("startup_upkeep_cancelled", duration_ms=round((time.monotonic()-started)*1000, 2))

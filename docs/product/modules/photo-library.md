@@ -4285,3 +4285,33 @@ reported 1.3 GB both before and after the task, below the 100 GB limit. The
 three protected read-only project hashes remained unchanged after every driver.
 Fast totals remain Node 658 passed / 2 existing failures; Python 2715 passed /
 3 existing failures / 3 skipped. No merge or push was made.
+
+
+### October 29, 2026: large-folder request responsiveness
+
+Pin/unpin recovery no longer waits for a paused helper. Background startup
+recovery still yields to foreground demand. This removes the circular wait in
+which Activity pauses the helper, then waits for the pin request before it can
+resume that helper. The settings writer releases its lane after each photo,
+rather than retaining it for the complete pending queue. Cached full-folder
+SQLite/WAL reads no longer hold the global marks lock while materializing all
+rows. The existing log proves two roughly 18-second waits, but does not identify
+the holder; these blocking scopes were found by inspection, not established as
+the exact holder in Steve's incident.
+
+File-command planning/execution uses the asyncio executor, leaving the shared
+request pool available while it waits for locks. Commands immediately show a
+waiting message. Logs include plan/execute starts, failures, completion timings,
+lock wait/hold times, visible confirmations and accepted/cancelled decisions.
+No pixels, saved formats, scheduler retention rules or existing test limits
+change. The automatic total-app memory ceiling remains open: short profiles
+showed native Electron main-process growth while its JavaScript heap stayed
+about 7–8 MB; forced JavaScript collection and the experimental transfer change
+did not resolve it. The transfer experiment was removed.
+
+Focused backend coverage: 91 existing checks passed; two new behavior checks
+passed for foreground recovery while paused and writer-lane access between
+pending photos. Fast checks: Node 658 passed / 2 existing failures (source
+fallback and Single mock); Python 2717 passed / 3 existing failures (preset
+headers, RGB publication guard, retouch defer_store mock) / 3 skipped.
+Real-folder validation outcomes follow in the measurement record below.

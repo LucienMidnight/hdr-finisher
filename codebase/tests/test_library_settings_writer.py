@@ -468,3 +468,31 @@ def test_deferred_cleanup_visits_folders_and_retains_unrelated_files(tmp_path):
     assert not owned.exists()
     assert unrelated.read_text() == "leave alone"
     assert yields
+
+
+def test_file_command_can_take_writer_lane_between_pending_photos(tmp_path):
+    from threading import Event, Thread
+    from hdr_finisher.library_marks import LibraryMarks
+    marks = LibraryMarks(tmp_path / "app")
+    writer = marks.writer
+    acquired = Event()
+    attempted = []
+    threads = []
+    def command():
+        with writer._lane:
+            acquired.set()
+    def pending():
+        yield "first"
+        thread = Thread(target=command, daemon=True)
+        threads.append(thread)
+        thread.start()
+        assert acquired.wait(1), "A file command waited for the entire settings queue"
+        yield "second"
+    writer._pending = pending
+    writer._attempt = lambda path: attempted.append(path)
+    try:
+        writer.drain()
+        assert attempted == ["first", "second"]
+    finally:
+        for thread in threads:
+            thread.join(2)

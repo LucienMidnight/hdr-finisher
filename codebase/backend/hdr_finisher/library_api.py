@@ -847,21 +847,22 @@ def create_library_router(worker, browser, store=None):
         from .library_marks import Marks
         photos = result["photos"]
         paths = [p["path"] for p in photos]
-        with marks._lock:
-            rows = marks._rows(paths)
-            if marks.database.exists():
-                db = marks._connect()
-                try:
-                    for start in range(0, len(paths), 800):
-                        chunk = paths[start:start + 800]
-                        facts = {path: (size, modified, data) for path, size, modified, data in db.execute(
-                            "SELECT path, bytes, mtime_ns, facts FROM files WHERE path IN (" + ",".join("?" for _ in chunk) + ")", chunk)}
-                        for photo in photos[start:start + 800]:
-                            row = facts.get(photo["path"])
-                            if row and row[:2] == (photo["bytes"], photo["mtime_ns"]) and row[2]:
-                                photo.update(json.loads(row[2]), indexed=True)
-                finally:
-                    db.close()
+        # Cached UI rows read committed SQLite/WAL data. Materializing a
+        # whole folder must not hold the global marks/writer lock.
+        rows = marks._rows(paths)
+        if marks.database.exists():
+            db = marks._connect()
+            try:
+                for start in range(0, len(paths), 800):
+                    chunk = paths[start:start + 800]
+                    facts = {path: (size, modified, data) for path, size, modified, data in db.execute(
+                        "SELECT path, bytes, mtime_ns, facts FROM files WHERE path IN (" + ",".join("?" for _ in chunk) + ")", chunk)}
+                    for photo in photos[start:start + 800]:
+                        row = facts.get(photo["path"])
+                        if row and row[:2] == (photo["bytes"], photo["mtime_ns"]) and row[2]:
+                            photo.update(json.loads(row[2]), indexed=True)
+            finally:
+                db.close()
         for photo in photos:
             photo.update(rows.get(photo["path"], {"marks": Marks().model_dump(), "albums": [], "storage": "none"}))
             if store is not None:

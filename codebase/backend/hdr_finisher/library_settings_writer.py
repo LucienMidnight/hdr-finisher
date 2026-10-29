@@ -355,8 +355,8 @@ class LibrarySettingsWriter:
             self.log("writer_pause" if busy else "writer_resume", reason="Grade/import/export")
             self._busy_state = busy
         counts, examples, visible = Counter(), {}, set()
-        with self._lane:
-            for path in self._pending():
+        for path in self._pending():
+            with self._lane:
                 if getattr(self.marks, "file_commands", None) and self.marks.file_commands.blocked(path): continue
                 if self._stop.is_set() or self._paused or self._busy():
                     break
@@ -370,31 +370,31 @@ class LibrarySettingsWriter:
                         samples.append({"photo": photo, "reason": detail})
                     if report:
                         visible.add(key)
-            with self.marks._lock:
-                for (reason, group), count in counts.items():
-                    self.log("writer_" + reason, folder=group, count=count, examples=examples[(reason, group)],
-                        action="removed from library" if reason == "deleted" else "current marks written; other fields kept" if reason in ("external_change", "baseline_unknown") else "settings written" if reason == "recovered" else "kept pending; automatic retry")
-                    if (reason, group) not in visible:
-                        continue
-                    if reason == "deleted":
-                        message = f"{count} photos could no longer be found in {group}; their library entries were removed."
-                    elif reason == "recovered":
-                        message = f"Finished writing settings for {count} photos in {group}."
-                    elif reason == "baseline_unknown":
-                        message = f"Restored pending settings for {count} photos in {group}. Earlier file changes could not be checked; the library's marks were written and every other setting was kept."
-                    elif reason == "external_change":
-                        names = ", ".join(Path(item["photo"]).name for item in examples[(reason, group)])
-                        message = f"Settings changed elsewhere for {count} photos in {group} ({names}). The library's marks were written; every other setting was kept."
-                    elif reason == "unreadable":
-                        names = ", ".join(Path(item["photo"]).name for item in examples[(reason, group)])
-                        message = f"Settings for {names} cannot be read and were left untouched. Marks are safe in the library."
-                    else:
-                        message = f"Settings are waiting in {group}: {REASONS[reason]}. Marks are safe in the library; writing will retry automatically."
-                    self.notify(message)
-                if self._recovery_done and not self._recovered:
-                    self.notify(f"Finished writing settings for {self._recovery_done} photos from the last session.")
-                    self.log("writer_recovery_finished", count=self._recovery_done)
-                    self._recovery_done = 0
+        with self.marks._lock:
+            for (reason, group), count in counts.items():
+                self.log("writer_" + reason, folder=group, count=count, examples=examples[(reason, group)],
+                    action="removed from library" if reason == "deleted" else "current marks written; other fields kept" if reason in ("external_change", "baseline_unknown") else "settings written" if reason == "recovered" else "kept pending; automatic retry")
+                if (reason, group) not in visible:
+                    continue
+                if reason == "deleted":
+                    message = f"{count} photos could no longer be found in {group}; their library entries were removed."
+                elif reason == "recovered":
+                    message = f"Finished writing settings for {count} photos in {group}."
+                elif reason == "baseline_unknown":
+                    message = f"Restored pending settings for {count} photos in {group}. Earlier file changes could not be checked; the library's marks were written and every other setting was kept."
+                elif reason == "external_change":
+                    names = ", ".join(Path(item["photo"]).name for item in examples[(reason, group)])
+                    message = f"Settings changed elsewhere for {count} photos in {group} ({names}). The library's marks were written; every other setting was kept."
+                elif reason == "unreadable":
+                    names = ", ".join(Path(item["photo"]).name for item in examples[(reason, group)])
+                    message = f"Settings for {names} cannot be read and were left untouched. Marks are safe in the library."
+                else:
+                    message = f"Settings are waiting in {group}: {REASONS[reason]}. Marks are safe in the library; writing will retry automatically."
+                self.notify(message)
+            if self._recovery_done and not self._recovered:
+                self.notify(f"Finished writing settings for {self._recovery_done} photos from the last session.")
+                self.log("writer_recovery_finished", count=self._recovery_done)
+                self._recovery_done = 0
         return self.status()
 
     def _run(self):
