@@ -4213,7 +4213,7 @@ Single screen-preview mock). Python: 2715 passed, three skipped and the same thr
 `codebase/output/scheduler-fix/fast-node.log` and `fast-python.log`.
 Steve approved the branch checks and needed main comparisons, capped at 95
 minutes total and 15 minutes without a verdict per driver; stalled work retains
-backend logs and queue state. Results and classification are pending. Only the
+backend logs and queue state. Results and classification follow below. Only the
 drivers in this brief run, sequentially at 2560x1440; the documented Single
 readiness timeout remains excluded unless it differs. The original assessment
 records browser closure for library-rgb-native, not the AbortError recorded for
@@ -4230,5 +4230,58 @@ preceding app code loaded in memory and passes with the fix. Node now has 658
 passes and the same two existing failures. Evidence:
 `codebase/output/scheduler-fix/original-probe-regression.log` and `fast-node.log`.
 Application code remains c3b0bd8 throughout the branch driver runs; this follow-up
-adds only the exact regression and explanation. Full driver classification is
-still pending the approved branch/main comparisons.
+adds only the exact regression and explanation. Full driver classification follows below from the approved branch/main comparisons.
+
+
+October 29 driver comparison (application c3b0bd8; main b63a975): the
+scheduler faults are fixed, but no full slow driver has passed yet. The five
+source checks all reproduce their original cache-probe AbortError on main;
+the fixed branch reaches later route/cache assertions or renderer memory
+failure. Main does not reach those later assertions, so their causes are
+unresolved. Live-grid reproduces the two-start detached-demand failure on
+main; the fixed branch passes that assertion and the two-size cache assertion,
+then fails the later real-source cache reuse assertion.
+
+| Driver | Fixed branch | Unmodified main | Classification |
+| --- | --- | --- | --- |
+| library-iso-source | Later GPU source/rendition route assertion | Original AbortError | Scheduler fault fixed; full driver also fails on main; later fault unresolved |
+| library-rgb-source | Later cached reopen redeveloped | Original AbortError | Scheduler fault fixed; full driver also fails on main; later fault unresolved |
+| library-precision-rendition | Later cached reopen redeveloped | Original AbortError | Scheduler fault fixed; full driver also fails on main; later fault unresolved |
+| library-precision-source | Renderer out of memory | Original AbortError | Scheduler fault fixed; full driver also fails on main; later fault unresolved |
+| library-codec-source | Later cached reopen redeveloped | Original AbortError | Scheduler fault fixed; full driver also fails on main; later fault unresolved |
+| library-rgb-native | Browser closed at initial grid | Same initial grid closure | Also failing on main |
+| library-live-grid | Reuse assertion fixed; later source-cache assertion fails | Two preparation starts | Scheduler fault fixed; full driver also fails on main; later fault unresolved |
+| library-live-native | Browser closed at initial grid | Same initial grid closure | Also failing on main |
+| library-codec-native | Browser closed at initial grid | Same initial grid closure | Also failing on main |
+| library-dng-warp | Warp error 0.6139725523627355, limit 0.0001 | Exact same error | Also failing on main |
+| local-adjustments-interaction | Loaded-source creation-tools assertion | Same assertion | Also failing on main |
+| library-background-activity | Stalled at 15-minute cutoff | Same stall, three paused writes and one paused helper request | Also failing on main |
+| library-scroll-cache | Own timeout after 729 seconds; main process about 7.3 GB | Stalled at 15-minute cutoff; main process about 10.9 GB | Also failing on main |
+
+Evidence lives in `codebase/output/scheduler-fix/slow-results.json` with
+per-driver logs, backend logs, queue/health snapshots and any renderer-crash
+record. There are no slow-driver PASS lines to claim. The local-adjustments
+first attempt used its hard-coded smaller viewport and is excluded; the
+record under `branch-2560` uses the enforced 2560x1440 viewport. All main
+comparisons use the same observer and viewport enforcement, with no app-code
+edits. The documented library-gpu-raw-single readiness timeout remains outside
+this stage. No output, tolerance or timeout changes were made to pass a driver.
+
+All 13 eligible named drivers completed or were stopped under Steve's per-driver
+rule on each revision. Testing finished in about 77 minutes of the approved
+95-minute window. Background activity stalled for 15 minutes on both revisions;
+its scene queues were empty, with three paused writer requests and one paused
+helper request. Main scroll-cache also stopped at 15 minutes, with an
+unresponsive renderer and main-process working set about 10.9 GB. Its backend
+health, last responsive scene queues, snapshot timeout and memory observation
+were retained. No additional branch-only failure was established; remaining
+main failures are recorded for the next stage. The later source/cache failures
+remain unresolved because main fails earlier. The temporary main worktree was
+removed after comparison; shared dependency junctions were unlinked first.
+
+Final cleanup removed disposable photo copies, Electron profiles and the main
+comparison checkout while retaining diagnostic logs. `tools/output_size.py`
+reported 1.3 GB both before and after the task, below the 100 GB limit. The
+three protected read-only project hashes remained unchanged after every driver.
+Fast totals remain Node 658 passed / 2 existing failures; Python 2715 passed /
+3 existing failures / 3 skipped. No merge or push was made.
