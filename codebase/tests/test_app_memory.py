@@ -136,3 +136,19 @@ def test_busy_working_slot_does_not_reclaim_inflight_pictures(monkeypatch):
     assert app_memory.admit('drawing',app_memory.WORKING)['granted']
     assert not app_memory.admit('queued',app_memory.WORKING)['granted']
     assert not app_memory.snapshot()['reclaim']
+
+
+def test_grade_sessions_share_working_room_and_pressure_discards_frames(monkeypatch):
+    import numpy as np
+    from hdr_finisher.render_cache import SessionRenderCache
+    from hdr_finisher.models import AdjustmentState, PreviewKind
+    monkeypatch.setattr(app_memory, 'LIMITS', dict(app_memory.LIMITS, working=130_000))
+    a = SessionRenderCache(np.full((64,64,3), .18, dtype=np.float32), None)
+    b = SessionRenderCache(np.full((64,64,3), .18, dtype=np.float32), None)
+    a.adjusted_frame(AdjustmentState(), PreviewKind.HDR, 256)
+    b.adjusted_frame(AdjustmentState(), PreviewKind.HDR, 256)
+    assert 0 < app_memory.cache_snapshot()['working']['bytes'] <= 130_000
+    app_memory.reclaim('critical')
+    assert app_memory.cache_snapshot()['working']['bytes'] == 0
+    assert not a._frames and not b._frames
+    assert a.adjusted_frame(AdjustmentState(), PreviewKind.HDR, 256).shape == (64,64,3)

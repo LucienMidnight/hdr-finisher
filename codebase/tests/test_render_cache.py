@@ -509,7 +509,7 @@ def test_source_mip_cold_builds_do_not_invalidate_on_grade_changes(tmp_path) -> 
     diagnostics = store.diagnostics()
     assert diagnostics["cold_builds"] == 1
     assert diagnostics["memory_hits"] == 1
-    assert first._source_proxies[256] is second._source_proxies[256]
+    assert first.source_proxy(PreviewKind.HDR, 256)[0] is second.source_proxy(PreviewKind.HDR, 256)[0]
 
 
 def test_source_mip_serves_disk_after_memory_is_dropped(tmp_path) -> None:

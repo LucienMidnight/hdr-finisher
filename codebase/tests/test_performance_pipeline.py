@@ -68,9 +68,11 @@ def test_adjusted_frame_singleflight_shares_expensive_work(monkeypatch) -> None:
     assert cache.diagnostics()["singleflight_waits"] == 3
 
 
-def test_cache_budget_evicts_old_frames_and_reports_managed_bytes() -> None:
+def test_cache_budget_evicts_old_frames_and_reports_managed_bytes(monkeypatch) -> None:
     source = np.full((64, 64, 3), 0.18, dtype=np.float32)
-    cache = SessionRenderCache(source, None, max_frames=12, max_cache_bytes=130_000)
+    from hdr_finisher import app_memory
+    monkeypatch.setattr(app_memory, 'LIMITS', dict(app_memory.LIMITS, working=130_000))
+    cache = SessionRenderCache(source, None, max_frames=12)
     for exposure in range(5):
         adjustments = AdjustmentState()
         adjustments.hdr.exposure = float(exposure)
@@ -78,7 +80,7 @@ def test_cache_budget_evicts_old_frames_and_reports_managed_bytes() -> None:
 
     diagnostics = cache.diagnostics()
     assert diagnostics["evictions"] >= 1
-    assert diagnostics["frame_bytes"] + diagnostics["proxy_bytes"] <= cache.max_cache_bytes
+    assert cache._retained_bytes_locked() <= app_memory.limit('working')
     assert diagnostics["managed_bytes"] >= diagnostics["source_bytes"]
     assert diagnostics["entries"] >= 1
 

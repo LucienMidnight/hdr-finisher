@@ -1306,7 +1306,7 @@ if (!gotLock) {
       registerIpc();
       // One non-overlapping observer counts Electron (including GPU host RAM),
       // Python and late helpers together, before the hard four-GB limit.
-      let memorySampling = false, memoryLastLog = 0;
+      let memorySampling = false, memoryLastLog = 0, memoryPressure = "none";
       const memoryTimer = setInterval(async () => {
         if (memorySampling || shuttingDown) return;
         memorySampling = true;
@@ -1315,6 +1315,10 @@ if (!gotLock) {
             headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret}, signal:AbortSignal.timeout(2000)});
           if (!response.ok) throw Error(`Memory sampling failed (${response.status})`);
           const value = await response.json();
+          // Sustained OS pressure trims once on entry; an actual budget overrun
+          // keeps reclaiming until there is working room again.
+          value.reclaim = value.budgetPressure || (value.pressure !== "none" && value.pressure !== memoryPressure);
+          memoryPressure = value.pressure;
           if (Date.now()-memoryLastLog > 5000) {
             memoryLastLog = Date.now();
             libraryStage("app_memory", {...value, main:process.memoryUsage(),

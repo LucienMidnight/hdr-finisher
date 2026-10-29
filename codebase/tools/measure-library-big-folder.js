@@ -49,6 +49,8 @@ const bounded = (promise, ms, label) => {
       }
     });
     observer.stderr.on('data',chunk=>fs.appendFileSync(path.join(output,'measurement-observer.log'),chunk));
+    observer.on('error',error=>{report.observerError=String(error);});
+    observer.on('exit',(code,signal)=>{report.observerError=`Observer stopped before the gate finished (${code ?? signal})`;});
     const api = async (route,body) => {
       const r=await global.HDRFinisherElectronTestHarness.fetch('/api/library/'+route,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
       if(!r.ok)throw Error(await r.text());return r.json();
@@ -77,6 +79,7 @@ const bounded = (promise, ms, label) => {
     report.memoryMethod='Windows proportional resident: private pages plus shared pages / OS ShareCount; ordinary working sets are diagnostic only';
     for(let tick=0;Date.now()-scrolling<600000;tick++) {
       if(exceeded)break;
+      if(report.observerError)throw Error(report.observerError);
       if(!accounting)accounting=Promise.allSettled([
         api('memory').then(value=>{latestCaches={at:Date.now(),...value};}),
         lib.evaluate(()=>HDRLibrary.getSnapshot().ram).then(value=>{latestFrontend={at:Date.now(),...value};}),
@@ -99,6 +102,7 @@ const bounded = (promise, ms, label) => {
     }
     report.scrollSeconds=(Date.now()-scrolling)/1000;
     report.scrollPeakSample=peakSample;report.scrollEndSample=endSample;
+    if(report.observerError)throw Error(report.observerError);
     if(!exceeded){
     await lib.evaluate(folder=>HDRLibrary.browse(folder),disposable);
     await lib.locator('#grid-space .library-cell').first().click();
@@ -131,7 +135,7 @@ const bounded = (promise, ms, label) => {
     if(!exceeded && report.deleteConfirmationMs>report.deleteLimitMs){report.verdict='FAIL: Delete confirmation over one second';process.exitCode=1;}
   } catch(error) {report.verdict=exceeded?'STOP: memory ceiling exceeded':'FAIL';report.error=String(error.stack||error);console.error(error);process.exitCode=1;}
   finally {
-    observer?.stdout.removeAllListeners('data');observer?.kill();stream?.end();
+    observer?.removeAllListeners('exit');observer?.stdout.removeAllListeners('data');observer?.kill();stream?.end();
     try {checkProjects(before);report.protectedProjectsUnchanged=true;}
     catch(error) {report.protectedProjectsUnchanged=false;report.verdict='FAIL';report.error=String(error);process.exitCode=1;}
     report.finishedAt=new Date().toISOString();record();

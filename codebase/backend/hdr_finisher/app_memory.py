@@ -261,10 +261,18 @@ def process_tree(root):
         working = rows.get(pid,(0,0))[1]
         if os.name == 'nt':
             handle = kernel.OpenProcess(0x410,False,pid)
-            if not handle: continue
+            if not handle:
+                error = ctypes.get_last_error()
+                if error == 87: continue  # PID exited after the tree snapshot.
+                raise ctypes.WinError(error)
             try:
                 memory = Memory(); memory.size = ctypes.sizeof(memory)
-                if not psapi.GetProcessMemoryInfo(handle,ctypes.byref(memory),memory.size): continue
+                if not psapi.GetProcessMemoryInfo(handle,ctypes.byref(memory),memory.size):
+                    error = ctypes.get_last_error()
+                    status = wintypes.DWORD()
+                    kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+                    if kernel.GetExitCodeProcess(handle,ctypes.byref(status)) and status.value != 259: continue
+                    raise ctypes.WinError(error)
                 working = memory.working
                 try:charged = proportional_resident(handle, working, psapi)
                 except OSError:
@@ -297,7 +305,8 @@ def snapshot(refresh=False):
     return dict(totalBytes=total,workingSetBytes=sum(r['workingSetBytes'] for r in rows),
                 measurement='physical-footprint' if sys.platform=='darwin' else 'proportional-resident',processes=rows,ceilingBytes=CEILING,
                 targetBytes=TARGET,reservedBytes=reserved,caches=cache_snapshot(),
-                pressure=pressure,reclaim=total>TARGET or waiting or pressure!='none')
+                pressure=pressure,budgetPressure=total>TARGET or waiting,
+                reclaim=total>TARGET or waiting or pressure!='none')
 
 
 def admit(key,size,release=False):

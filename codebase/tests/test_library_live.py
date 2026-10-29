@@ -307,6 +307,7 @@ def test_fresh_scene_draws_from_memory_before_atomic_store(tmp_path, invalidate)
         cache.persist_pending(str(path.resolve()), lambda _: None)
         assert cache.file(result["key"]).is_file()
         assert cache.cached(path, 640, quality(None))["key"] == result["key"]
+    assert result["key"] not in cache.transient
     assert not list((tmp_path / "profile").rglob("*.tmp"))
 
 

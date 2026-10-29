@@ -131,8 +131,9 @@ class LibraryMembership:
                         return
                     current = sorted(self._pending)
                     self._pending.clear()
-                for start in range(0,len(current),8):
-                    self._reconcile_piece(current[start:start+8])
+                for path in current:
+                    self._reconcile_piece([path])
+                    time.sleep(.001)
         finally:
             if held: self._publish.release()
 

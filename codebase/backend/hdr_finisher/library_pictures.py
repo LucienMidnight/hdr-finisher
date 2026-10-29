@@ -278,16 +278,18 @@ class LibraryPictureCache:
                 if picture_key(source, edge, quality) != key:
                     raise ValueError("Photo changed before saving preview data.")
                 return False
-            checkpoint()
-            with np.load(BytesIO(body), allow_pickle=False) as stored:
-                pixels = stored["pixels"].astype(np.float32)
-                reference = stored["reference"].astype(np.float32) if "reference" in stored else None
-                metadata = json.loads(str(stored["metadata"]))
-            metadata["starting_look"] = metadata["adjustments"]
-            if default is not None:
-                metadata["default_document"] = default
-            self.build(source, edge, quality, checkpoint, (pixels, reference, metadata), persist=True)
-            self.delivered(key)
+            try:
+                checkpoint()
+                with np.load(BytesIO(body), allow_pickle=False) as stored:
+                    pixels = stored["pixels"].astype(np.float32)
+                    reference = stored["reference"].astype(np.float32) if "reference" in stored else None
+                    metadata = json.loads(str(stored["metadata"]))
+                metadata["starting_look"] = metadata["adjustments"]
+                if default is not None:
+                    metadata["default_document"] = default
+                self.build(source, edge, quality, checkpoint, (pixels, reference, metadata), persist=True)
+            finally:
+                self.delivered(key)
 
     @audited("picture_cache_build_native")
     def build_native(self, path, center_x, center_y, width, height, cancelled=None):
@@ -415,6 +417,18 @@ def _trim_camera(target):
 
 # Module function is deliberately strong; instance callbacks use weak methods.
 app_memory.register('camera-previews','camera',_trim_camera)
+
+
+def cached_camera_preview(path, edge):
+    path = Path(path).resolve(strict=True)
+    stat = path.stat()
+    key = (str(path), stat.st_size, stat.st_mtime_ns, edge)
+    with _CAMERA_PREVIEW_LOCK:
+        cached = _CAMERA_PREVIEWS.get(key)
+        if cached is not None:
+            _CAMERA_PREVIEWS.move_to_end(key)
+            return dict(cached)
+    return None
 
 
 def camera_preview(path, edge):

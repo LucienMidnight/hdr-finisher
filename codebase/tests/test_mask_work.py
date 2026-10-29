@@ -319,7 +319,9 @@ def test_grade_edit_keeps_mask_flights_and_mask_clear_detaches_them():
     assert mask_flight.is_set() and not cache._inflight
 
 
-def test_mask_eviction_drops_superseded_shapes_before_live_masks():
+def test_mask_eviction_drops_superseded_shapes_before_live_masks(monkeypatch):
+    from hdr_finisher import app_memory
+    monkeypatch.setattr(app_memory, 'LIMITS', dict(app_memory.LIMITS, working=160 * 1024**2))
     cache = SessionRenderCache(np.ones((32, 48, 3), dtype=np.float32), None)
     megabyte = 1024 * 1024
     def put(edge, local, signature, size):
@@ -332,8 +334,8 @@ def test_mask_eviction_drops_superseded_shapes_before_live_masks():
     put(7362, 'edited', 'v3', 40)
     put(1600, 'edited', 'v3', 1)
     with cache._lock:
-        # A Fit-sized insert does not shrink the budget under native masks.
-        assert cache._mask_budget_locked() == 160 * megabyte
+        # Smaller inserts use the same aggregate owner allowance.
+        assert cache._mask_budget_locked() == app_memory.limit('working')
         cache._evict_masks_locked(cache._mask_budget_locked())
     remaining = {(key[3], key[4]) for key in cache._masks if key[1] == 7362}
     assert remaining == {('untouched-a', 'a'), ('untouched-b', 'b'), ('edited', 'v3')}
@@ -341,7 +343,7 @@ def test_mask_eviction_drops_superseded_shapes_before_live_masks():
     with cache._lock:
         cache._masks.clear()
         put(1600, 'edited', 'v3', 1)
-        assert cache._mask_budget_locked() == 96 * megabyte
+        assert cache._mask_budget_locked() == app_memory.limit('working')
 
 
 def test_http_wrapper_preserves_query_binding_and_reports_worker_queue():

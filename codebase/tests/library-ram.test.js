@@ -9,6 +9,8 @@ test('ready surfaces and direct scenes share one byte ceiling',()=>{
 test('moderate pressure halves each share and critical pressure drops reconstructible pictures',()=>{
  const ram=owner();let a=100,b=100;
  ram.register('a','thumbnails',()=>a,n=>{a=n;});ram.register('b','sharp',()=>b,n=>{b=n;});
- ram.apply({pressure:'moderate'});assert.equal(a,50);assert.equal(b,50);
+ ram.apply({pressure:'moderate',reclaim:true,budgetPressure:false});assert.equal(a,50);assert.equal(b,50);
+ ram.apply({pressure:'moderate',reclaim:true,budgetPressure:false});assert.equal(a,50);assert.equal(b,50);
+ ram.apply({pressure:'moderate',reclaim:true,budgetPressure:true});assert.equal(a,25);assert.equal(b,25);
  ram.apply({pressure:'critical'});assert.equal(a,0);assert.equal(b,0);
 });

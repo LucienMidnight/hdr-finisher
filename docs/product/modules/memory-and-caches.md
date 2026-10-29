@@ -83,7 +83,7 @@ not shrink.
 | Camera previews | backend / helper | 64,000,000 bytes | yes | Aggregate preview LRU claims `camera`. |
 | RAW read-ahead | backend | 768,000,000 bytes, at most 12 files | yes | Reader admits actual file/shared-section bytes, including partial reads. |
 | Picture hand-off | backend / helper | 256,000,000 bytes | yes | RAW outputs and transient picture bodies share `handoff`; delivered bodies are released. |
-| Grade source mips / retained native source | backend / helper | inside working room | — | Strict retained-byte admission; oversized levels can be served without being cached. |
+| Grade source mips / session frames, masks, hue stages / retained native source | backend / helper | inside working room | — | One aggregate working share replaces the separate 256 MiB mip, 192 MiB frame and 96/160 MiB mask limits. Unique array backing is counted once within a session; persistent mips have one retaining owner. Oversized levels are served without being cached. |
 | Working room | all | 600,000,000 bytes | no | One aggregate reservation envelope, including retained working caches, replacing 700 MB–1.2 GB per-job requests. |
 | **Total** | | **ceiling 4,000,000,000 bytes** | | Actual process charge is the final gate; shares are approximate and cannot override it. |
 
@@ -242,11 +242,39 @@ Evidence is retained under `codebase/output/big-folder/budget-validation/`
 and `budget-validation-repeat/` (JSONL plus per-PID CSV, cache peak/end CSV for
 the completed first run, backend logs and each driver result). Temporary
 measurement profiles and driver photo scratch are removed. The three original
-untracked items were left untouched. No background validation should resume
-until Steve asks to continue.
+untracked items were left untouched. Steve asked to resume; the next gate will run after the follow-up fast checks.
+
+Resume follow-up: camera/original quick-preview extraction now obtains the
+existing 600 MB working reservation before allocating; queued previews wait
+asynchronously rather than occupying the request worker pool. Cache hits bypass
+decoding and admission. Grade session caches now register with the same owner;
+the old independent frame/mask/mip defaults are removed. Critical pressure can
+discard those cached levels and rebuild them. Failed deferred publication
+releases its hand-off payload in `finally`. Unreadable live Windows processes
+now fail measurement also when opening/querying the process fails. Reconcile
+yields between individual photos, and photos with no virtual-copy state no
+longer create an empty baseline transaction. Shares remain unchanged.
+Forty focused memory/Grade/live checks passed; the broader 111-check group had
+110 passes and the previously known RGB publication fixture failure. Full
+fast checks and the ordered gate are in progress; these changes have not yet
+established the ten-minute goal.
+
+Sustained OS moderate pressure trims once when entered, rather than halving
+every sampling tick. Actual budget overruns continue reclaiming until working
+room is available; critical pressure still clears reconstructible caches.
+
+Follow-up fast checks: Python 2,731 passed / three known failures / three
+skipped (481 s); JavaScript 662 passed / two known failures. Python failures
+remain the scoped-preset contract, RGB publication guard fixture, and retouch
+CaptureCache deferred-store fixture. JavaScript failures remain the selected
+CPU decoder fixture and missing Single screen-preview stub. No shares changed.
+Tests that formerly forced independent frame/mask limits now force eviction
+through an injected smaller owner budget and preserve live-mask priority.
 
 ## 8. Open work
 
+- Camera-preview admission, Grade cache ownership and single-row reconcile
+  scopes are implemented; their whole-app effect still needs the gate below.
 - Complete the ordered ten-minute read-only scroll, disposable Delete timing,
   then six sequential Library drivers. Stop if process charge crosses the
   ceiling. Record peak/end cache shares and per-process curve here.

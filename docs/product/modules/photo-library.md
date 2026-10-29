@@ -4568,5 +4568,29 @@ Evidence is retained under `codebase/output/big-folder/budget-validation/`
 and `budget-validation-repeat/` (JSONL plus per-PID CSV, cache peak/end CSV for
 the completed first run, backend logs and each driver result). Temporary
 measurement profiles and driver photo scratch are removed. The three original
-untracked items were left untouched. No background validation should resume
-until Steve asks to continue.
+untracked items were left untouched. Steve asked to resume; follow-up implementation and validation are in progress.
+
+
+October 29 resumed memory follow-up (library-big-folder): quick camera/original
+preview decodes now wait for the same 600 MB working reservation as scene
+preparation; cache hits remain immediate. Grade session caches share the budget
+owner, without their old independent byte defaults or duplicate retained mip
+references. Failed deferred hand-offs are released, empty virtual-copy baseline
+writes are avoided, and reconciliation yields after each photo. Fixed RAM
+shares and the 4 GB ceiling are unchanged. Forty focused checks passed; 110/111
+broader focused checks passed with the recorded RGB publication fixture failure.
+Full fast checks and the ordered ten-minute scroll/Delete/six-driver validation
+remain pending. Details and peak/end evidence belong to memory-and-caches §§4,
+7 and 8; the prior partial repeat is not a plateau verdict.
+
+Sustained OS moderate pressure trims once when entered, rather than halving
+every sampling tick. Actual budget overruns continue reclaiming until working
+room is available; critical pressure still clears reconstructible caches.
+
+Follow-up fast checks: Python 2,731 passed / three known failures / three
+skipped (481 s); JavaScript 662 passed / two known failures. Python failures
+remain the scoped-preset contract, RGB publication guard fixture, and retouch
+CaptureCache deferred-store fixture. JavaScript failures remain the selected
+CPU decoder fixture and missing Single screen-preview stub. No shares changed.
+Tests that formerly forced independent frame/mask limits now force eviction
+through an injected smaller owner budget and preserve live-mask priority.

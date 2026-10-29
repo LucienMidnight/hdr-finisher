@@ -24,7 +24,7 @@
     for(const share of Object.keys(limits))if(value.caches?.[share])limits[share]=value.caches[share].limitBytes;
     enforce();
     const level=value.pressure==='critical' ? 'critical' : value.pressure==='moderate' || value.reclaim ? 'moderate' : 'none';
-    if(level!=='none' && (pressure!==level || value.reclaim))for(const share of Object.keys(limits))trim(share,level==='critical'?0:used(share)/2);
+    if(level!=='none' && (pressure!==level || value.budgetPressure))for(const share of Object.keys(limits))trim(share,level==='critical'?0:used(share)/2);
     pressure=level;
   }
   root.HDRLibraryRAM={register,admit,enforce,apply,report,limit:share=>limits[share],used,

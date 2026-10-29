@@ -353,6 +353,33 @@ def create_library_router(worker, browser, store=None):
         return await helper_result(request, "live-fallback", path=path, document=document,
             edge=command.edge, priority=command.priority)
 
+    async def quick_preview(preview, path, edge, request):
+        # Wait asynchronously: queued visible previews must not occupy every
+        # request worker while another picture owns the shared working room.
+        from . import app_memory
+        from .library_pictures import camera_preview, cached_camera_preview
+        from uuid import uuid4
+        if preview is camera_preview:
+            cached = await run_in_threadpool(cached_camera_preview, path, edge)
+            if cached is not None: return cached
+        token = 'quick-preview-' + uuid4().hex
+        while True:
+            if await request.is_disconnected():
+                raise HTTPException(499, "Library request cancelled.")
+            if (await run_in_threadpool(app_memory.admit, token, app_memory.WORKING))['granted']:
+                break
+            await asyncio.sleep(.05)
+        async def renew():
+            while True:
+                await asyncio.sleep(10)
+                await run_in_threadpool(app_memory.admit, token, app_memory.WORKING)
+        renewal = asyncio.create_task(renew())
+        try:
+            return await run_in_threadpool(preview, path, edge)
+        finally:
+            renewal.cancel()
+            app_memory.admit(token, 0, release=True)
+
     @router.post("/preview")
     async def live_preview(command: CameraPreviewRequest, request: Request):
         from .library_pictures import camera_preview, original_preview
@@ -375,7 +402,7 @@ def create_library_router(worker, browser, store=None):
             if not await run_in_threadpool(eligible):
                 return Response(status_code=204)
             if await request.is_disconnected(): return Response(status_code=499)
-            preview = await run_in_threadpool(original_preview if original else camera_preview, path, 640)
+            preview = await quick_preview(original_preview if original else camera_preview, path, 640, request)
             if await request.is_disconnected(): return Response(status_code=499)
             if not await run_in_threadpool(eligible):
                 return Response(status_code=204)
@@ -1146,7 +1173,9 @@ def create_library_router(worker, browser, store=None):
                 if command.quality == "fast":
                     from .library_pictures import camera_preview
                     try:
-                        return await run_in_threadpool(camera_preview, command.path, command.edge)
+                        return await quick_preview(camera_preview, command.path, command.edge, request)
+                    except HTTPException:
+                        raise
                     except Exception as error:
                         log("camera_preview_unavailable", path=command.path, reason=str(error))
                 return await helper_result(request, "picture", path=command.path,
@@ -1158,7 +1187,9 @@ def create_library_router(worker, browser, store=None):
             if command.quality == "fast" and command.edge < 1280:
                 from .library_pictures import camera_preview
                 try:
-                    return await run_in_threadpool(camera_preview, command.path, command.edge)
+                    return await quick_preview(camera_preview, command.path, command.edge, request)
+                except HTTPException:
+                    raise
                 except Exception as error:
                     log("camera_preview_unavailable", path=command.path, reason=str(error))
             future = raw_browsing.request(command.path, command.priority)
