@@ -2,7 +2,7 @@
 from pathlib import Path
 from time import perf_counter
 import numpy as np
-from .library_gpu_raw import NotEligible, _identity
+from .library_gpu_raw import NotEligible, MemoryPending, _identity
 from .models import SourceImageDescriptor
 
 
@@ -22,7 +22,7 @@ def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640, m
     # Reject an impossible native binding before decoding/normalizing gigabytes
     # that the browser would discard and then decode again on the CPU.
     if max_storage_bytes is not None and inspection.fingerprint.width * inspection.fingerprint.height * 12 > max_storage_bytes:
-        raise NotEligible("Linear DNG samples exceed this GPU's storage binding limit")
+        raise MemoryPending("Linear DNG samples exceed this GPU's storage binding limit")
     path=Path(path);identity=_identity(path);started=perf_counter()
     report=lambda stage,text: progress(stage,text) if progress else None
     metadata=inspection.metadata;reference=None

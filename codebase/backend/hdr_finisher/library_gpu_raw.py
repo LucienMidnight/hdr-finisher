@@ -6,8 +6,8 @@ the same development on the GPU (frontend/library-gpu-raw.js) and returns the
 reduced scene picture and its full-source peaks. The picture is then stored in
 the Library cache exactly where Grade's CPU development would have put it.
 
-Only ordinary Bayer camera RAWs take this route. X-Trans, DNG and anything the
-camera-linear bridge cannot describe keep the CPU route.
+Only ordinary Bayer camera RAWs take this route. X-Trans and anything the camera-linear
+bridge cannot describe report NotEligible; GPU presence does not select CPU.
 """
 from __future__ import annotations
 
@@ -36,8 +36,12 @@ LENS_FIELDS = ("camera_maker", "camera_model", "lens_maker", "lens_model", "lens
                "focal_length_mm", "aperture", "focus_distance_m")
 
 
+class MemoryPending(Exception):
+    """GPU capacity waits for admission; it never selects CPU development."""
+
+
 class NotEligible(Exception):
-    """This photo keeps Grade's CPU development."""
+    """The current GPU source adapter cannot describe this photo."""
 
 
 def frame(header: dict, *payload) -> bytes:

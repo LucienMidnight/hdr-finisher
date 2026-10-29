@@ -4691,3 +4691,39 @@ three skipped. The existing failures are the scoped-preset source contract,
 RGB publication fixture and retouch CaptureCache fixture. CPU-focused numerical
 checks pass. No protected project was saved over.
 
+
+### October 29: GPU admission and retained-grid manual checkpoint
+
+Memory/budget refusal now waits for GPU admission; only a missing, software or
+lost GPU permits visible CPU fallback. Unsupported GPU source recipes fail
+explicitly. Idle/background demand cannot start CPU development. No shares or
+total changed. Camera-preview admission returns pending rather than holding
+HTTP connections needed by the source owning the working slot. Overlapping grid
+loads survive scroll events. Ordinary Bayer reservations now match the measured
+graph with headroom; complex graphs keep the old estimate. Direct RGB scenes are
+stored before reclaim.
+
+Final 2560 x 1440 D:/Photos scroll: 300.444 s, 3,075,009,385-byte process-tree peak,
+2,737,641,174 bytes at end. Thumbnails retained 335,690,880 of 536,870,912 bytes;
+finished visible grid cells peaked at 30 and ended at 5. No proven plateau yet.
+Disposable Delete confirmation took 40 ms, was cancelled, and preserved the copy.
+The 35-second bin size/count enumeration is removed from planning; recycling
+still has no automatic permanent-delete fallback. D:/Photos was read-only;
+three protected project hashes were unchanged.
+
+This is **not a complete gate pass**: normal-use holds reached 360 ms in marks
+reading and 281 ms in picture-error revision. Those scopes remain open, together
+with the broader no-GPU CPU qualification described above. Reconcile filesystem
+and connection setup/close now sit outside the marks lock (40 focused checks pass).
+The cold JPEG isolated at 2.098 s (upload 42.7 ms, reduce 115.3 ms). Its old
+multi-second stages included admission/network contention; the RGB GPU algorithm
+is unchanged against main. The historical sub-second cold target is not yet
+re-established. See [memory and caches sections 7 and 8](memory-and-caches.md)
+for the per-process curve, every peak/end share, finished-cell counts, diagnosis,
+fast-check exceptions and evidence paths.
+
+Fast checks: JS 665 passed, one existing Single fixture failure; Python 2734
+passed, three existing failures, three skipped. Output is 2.1 GB. Steve shortened
+this round to five minutes and requested a manual try: the full ten-minute
+scroll and all six Library drivers are deferred until before merging to main.
+Local commits only; no merge or push.

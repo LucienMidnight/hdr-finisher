@@ -138,15 +138,25 @@ class LibraryMembership:
             if held: self._publish.release()
 
     def _reconcile_piece(self, paths):
-        with timed_lock(self.marks._lock, "reconcile"):
-            if self._busy or not self.marks.database.exists():
-                return
-            paths = None if paths is None else sorted({source(p) for p in paths})
-            self._busy = True
+        # Filesystem and connection setup must not block marks readers. The
+        # publisher serializes reconciliation; database state is read only after
+        # taking the marks lock. A later pin change schedules its own reconcile.
+        if not self.marks.database.exists(): return
+        paths = None if paths is None else sorted({source(p) for p in paths})
+        pins = self.pins()
+        with self.index.checks.lock:
+            visible = tuple(self.index.checks.streaming)
+        stats = {}
+        for path in paths or ():
             try:
-                db = self.marks._connect()
+                info = Path(path).stat(); stats[path] = (info.st_size, info.st_mtime_ns)
+            except OSError: stats[path] = (0, 0)
+        db = self.marks._connect()
+        try:
+            with timed_lock(self.marks._lock, "reconcile"):
+                if self._busy: return
+                self._busy = True
                 try:
-                    pins = self.pins()
                     members = self._scoped(db, "album_photos", paths)
                     kept = {source(p) for _,p in members}
                     contains = lambda p: source(p) in kept or self.pinned(p, pins)
@@ -161,15 +171,16 @@ class LibraryMembership:
                     with db:
                         # An album may be made from a temporarily browsed or offline photo.
                         for p in kept-files.keys():
-                            try:
-                                info = Path(p).stat(); size, modified = info.st_size, info.st_mtime_ns
-                            except OSError:
-                                size = modified = 0
+                            if p in stats:
+                                size, modified = stats[p]
+                            else:
+                                try:
+                                    info = Path(p).stat(); size, modified = info.st_size, info.st_mtime_ns
+                                except OSError:
+                                    size = modified = 0
                             db.execute("INSERT OR IGNORE INTO files VALUES (?,?,?,NULL)", (p,size,modified))
                         # A streamed, unpinned folder still needs its observed
                         # files until its view closes; this does not pin it.
-                        with self.index.checks.lock:
-                            visible = tuple(self.index.checks.streaming)
                         db.executemany("DELETE FROM files WHERE path=?", [(p,) for p in files
                             if not contains(p) and not any(self.under(p, root) for root in visible)])
                         for p,identifier,marks,pending in rows:
@@ -203,9 +214,9 @@ class LibraryMembership:
                             name = sha256(key.encode()).hexdigest()
                             records.setdefault(name,{}).setdefault(table,[]).append(row)
                 finally:
-                    db.close()
-            finally:
-                self._busy = False
+                    self._busy = False
+        finally:
+            db.close()
 
         for name, record in records.items():
             if record != self._saved_records.get(name):

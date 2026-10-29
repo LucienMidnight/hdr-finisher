@@ -145,7 +145,7 @@ def test_raw_reservation_yields_without_releasing_live_memory(tmp_path, monkeypa
         client.delete('/api/delivery/gpu/raw-budget/first')
         assert post('second')["granted"]
         client.delete('/api/delivery/gpu/raw-budget/second')
-        assert client.post('/api/delivery/gpu/raw-budget/large', json={"bytes":901}).json()["fallback"]
+        assert client.post('/api/delivery/gpu/raw-budget/large', json={"bytes":901}).json()["waiting"] == "memory"
         assert client.post('/api/delivery/gpu/activity', json={"bytes":100,"budget":1000}).json()["reserved"] == 0
 
 

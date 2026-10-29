@@ -301,7 +301,7 @@ def create_gpu_delivery_router():
             available = max(0, _activity["budget"] - _activity["bytes"])
             if value["bytes"] > available:
                 # Resident Grade resources count even when its controls are idle.
-                return {"fallback": "GPU RAW development exceeds the available shared memory budget."}
+                return {"granted": False, "preempt": True, "budget": available, "waiting": "memory"}
             priority = _effective_priority(value, now)
             higher = any(_effective_priority(v, now) < priority for v in waiting_deliveries())
             order = lambda job: (_effective_priority(job, now), job['library_priority'], job['created'])

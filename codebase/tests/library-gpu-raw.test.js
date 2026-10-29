@@ -105,7 +105,8 @@ test('DNG reservation fits one-plane reduction without raising shared budgets',(
  const bytes=HDRLibraryGpuRaw.rawBudget(meta);
  assert.ok(bytes<320*1024*1024);
  assert.ok(bytes>=8000*6000*4+6000*2560*4+1920*2560*8);
- assert.equal(HDRLibraryGpuRaw.rawBudget({...meta,dng_warp:undefined}),8000*6000*44+64*1024*1024);
+ assert.equal(HDRLibraryGpuRaw.rawBudget({...meta,dng_warp:undefined}),8000*6000*28+64*1024*1024);
+ assert.equal(HDRLibraryGpuRaw.rawBudget({...meta,dng_warp:undefined,repairs:[{}]}),8000*6000*44+64*1024*1024);
 });
 
 test('DNG footprints enclose independent per-channel maps across off-centre and non-monotone warps',()=>{
@@ -126,4 +127,19 @@ test('DNG footprints enclose independent per-channel maps across off-centre and 
    }
   }
  }
+});
+
+test('memory admission waits, reclaims and retries the same GPU development',async()=>{
+ const vm=require('node:vm'),fs=require('node:fs');
+ const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+ const fn=source.slice(source.indexOf('  async function scheduledDevelopment('),source.indexOf('  async function develop(path,'));
+ let leases=0,reclaims=0,developments=0;
+ const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
+  gpu:async()=>({state:{lost:false}}),rawBudget:()=>60,wait:async()=>{},forgetDirect(){},
+  root:{HDRLibraryScenes:{reclaim:async()=>{reclaims++;},stage(){},snapshot:()=>({draws:{active:0}})}},
+  fetch:async(_url,options)=>({ok:true,json:async()=>++leases===1?{granted:false,waiting:'memory'}:{granted:true}}),
+  developRaw:async()=>{developments++;return {timings:{}};}};
+ vm.runInNewContext(fn+';this.run=scheduledDevelopment;',context);
+ await context.run({meta:{},edges:[640],background:true},new AbortController().signal);
+ assert.equal(leases,2);assert.equal(reclaims,2);assert.equal(developments,1);
 });

@@ -517,7 +517,7 @@
           prepared = null;
           if (aborted(error) || !isCurrent()) return;
           if (error.libraryYield) { await sleep(50,controller.signal); continue; }
-          if (error.libraryError || HDRLibraryPictures.usable()) throw error;
+          if (error.libraryError || (!error.gpuUnavailable && !HDRLibraryPictures.lost?.())) throw error;
           if (!fallback) {
             const meta = await api("/api/library/fallback-picture",{path:photo.path,edge},controller.signal);
             if (!isCurrent()) return;
@@ -638,9 +638,15 @@
         cell.identity=pictureIdentity(photo);
         const fallback = document.createElement("canvas"); cell.fallback = fallback;
         fallback.hidden = true; frame.append(fallback);
-        const preview = fetch("/api/library/preview", {method:"POST", signal:cell.controller.signal,
-          headers:{"Content-Type":"application/json","Accept":"image/png"},body:JSON.stringify({path:photo.path})}).then(async response => {
-          if (response.status !== 200) return;
+        const preview = (async () => {
+          while (current() && !cell.meta) {
+            const response = await fetch("/api/library/preview", {method:"POST", signal:cell.controller.signal,
+              headers:{"Content-Type":"application/json","Accept":"image/png"},body:JSON.stringify({path:photo.path})});
+            if (response.status !== 202) return response;
+            await sleep(250,cell.controller.signal);
+          }
+        })().then(async response => {
+          if (!response || response.status !== 200) return;
           const blob = await response.blob();
           if (!current() || cell.meta) return;
           const url = URL.createObjectURL(blob);
@@ -658,7 +664,7 @@
         while (current()) {
           try {
             const gpu = await HDRLibraryPictures.initialize();
-            if (gpu.adapterInfo?.fallback) throw Error("Hardware GPU unavailable.");
+            if (gpu.adapterInfo?.fallback) throw Object.assign(Error("Hardware GPU unavailable."),{gpuUnavailable:true});
             const trace = HDRLibraryTrace.begin(container === space ? "grid" : "filmstrip",photo.path,started);
             const meta = await HDRLibraryScenes.load(photo.path, cell.edge, cell.controller.signal,10,false,trace,
               {viewportDemand:true,beforeSource:async()=>{
@@ -679,7 +685,7 @@
           } catch(error) {
             if (aborted(error) || !current()) return;
             if (error.libraryYield) { await sleep(50,cell.controller.signal); continue; }
-            if (error.libraryError || HDRLibraryPictures.usable()) throw error;
+            if (error.libraryError || (!error.gpuUnavailable && !HDRLibraryPictures.lost?.())) throw error;
             if (!cpuShown) {
               const meta = await api("/api/library/fallback-picture",{path:photo.path,edge:cell.edge},cell.controller.signal);
               if (!current()) return;
@@ -1886,8 +1892,8 @@
   let gridFrame = 0, filmFrame = 0;
   grid.addEventListener("scroll", () => {
     if(!gridSettleTimer)gridRequests=0;
-    // Detach loading cells immediately; a settled viewport starts fresh demand.
-    for(const [path,cell] of state.cells)if(!cell.meta && cell.started){cell.controller.abort();cell.element.remove();state.cells.delete(path);}
+    // Reconcile detaches departed cells. Overlapping visible cells keep their
+    // source and draw ownership across scroll events, including unchanged tops.
     idlePictures.touch();
     if (!gridFrame) gridFrame = requestAnimationFrame(() => { gridFrame = 0; paintGrid(); });
     clearTimeout(gridSettleTimer);

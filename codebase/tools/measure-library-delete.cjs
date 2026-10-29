@@ -1,0 +1,20 @@
+const {chromium}=require('playwright');
+const fs=require('fs'),path=require('path');
+const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
+(async()=>{const before=hashProjects(require('../tests/release/drivers.json').protectedProjects);
+ const dir=path.resolve('output/test-photos/big-folder-delete-confirmation'),photo=path.join(dir,'delete-check.png');
+ fs.mkdirSync(dir,{recursive:true});fs.copyFileSync('tests/fixtures/sdr_gradient.png',photo);
+ const browser=await chromium.launch();let report;
+ try {const page=await browser.newPage();await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
+  const frame=page.frame({url:/\/library(?:\?|$)/});await frame.waitForFunction(()=>window.HDRLibrary);
+  await frame.evaluate(folder=>HDRLibrary.browse(folder),dir);
+  await frame.locator('#grid-space .library-cell').first().click();
+  await frame.waitForFunction(photo=>HDRLibrary.getSnapshot().selection.includes(photo),photo);
+  const started=Date.now();await frame.locator('body').press('Delete');
+  const dialog=frame.getByRole('dialog',{name:'Delete photos',exact:true});await dialog.waitFor({state:'visible',timeout:5000});
+  report={milliseconds:Date.now()-started,text:await dialog.innerText()};
+  await dialog.getByRole('button',{name:'Cancel',exact:true}).click();report.preserved=fs.existsSync(photo);checkProjects(before);report.protectedProjectsUnchanged=true;
+  fs.writeFileSync('output/big-folder/delete-confirmation.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+  if(report.milliseconds>1000||!report.preserved)throw Error('Delete confirmation failed');
+ }finally{await browser.close();fs.rmSync(dir,{recursive:true,force:true});}
+})().catch(error=>{console.error(error);process.exitCode=1;});

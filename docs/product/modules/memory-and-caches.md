@@ -132,8 +132,9 @@ count toward the RAM total, and grows with the number of live canvases.
 
 ## 7. Current state and measurement (October 29, 2026)
 
-Budget implementation is in progress on `library-big-folder`. Validation is
-not a pass until the ten-minute gate below completes.
+Budget implementation is in progress on `library-big-folder`. The five-minute
+manual checkpoint below restores retention under the ceiling. The lock criterion
+and broader CPU qualification remain open; full ten-minute/driver validation is deferred.
 
 **Windows gate:** sum proportional resident bytes for Electron main and its
 complete descendant process tree (renderers, GPU host, backend and helpers).
@@ -368,13 +369,120 @@ three skipped. The existing failures are the scoped-preset source contract,
 RGB publication fixture and retouch CaptureCache fixture. CPU-focused numerical
 checks pass. No protected project was saved over.
 
+
+### October 29: five-minute manual checkpoint after afcca55
+
+Steve shortened this round to five minutes and deferred all six Library drivers
+until before merging to main. The code is committed on `library-big-folder`;
+there is no merge or push. Shares and the 4,000,000,000-byte total are unchanged.
+
+Memory shortage now keeps source development on the GPU admission queue. The
+page only selects CPU after a missing/software/lost GPU; generic development,
+transfer and memory errors cannot select it. Capacity refusal in the backend,
+including bounded DNG metadata/storage limits, answers pending. Unsupported GPU
+source recipes report an error rather than silently selecting CPU. Idle and
+speculative requests do not start CPU development; visible work has priority.
+
+The regression had multiple contributing paths. At f56075a, camera-preview
+requests began waiting for the entire working slot while holding browser HTTP
+connections. The GPU source owning that slot needed those connections for
+admission and handoff. Preview refusal now returns 202 immediately, and the
+page retries without occupying a connection. Scrolling also cancelled every
+loading cell, even overlapping ones; reconciliation now cancels only departed
+cells. Finally, the ordinary Bayer reservation charged 44 bytes per photosite
+although measured live allocations fit 28 plus the existing fixed overhead.
+That estimate evicted finished surfaces before actual pressure. Complex graphs
+retain their larger estimate. A 42 MP GPU ARW measured 1,041,881,888 live bytes
+inside the new reservation. Direct RGB scenes are stored before eviction, so
+reclaim does not discard the only finished scene. No share was enlarged.
+
+The first five-minute attempt was **not a retention pass**: thumbnail bytes
+fell to 102,221,440. The final run below is the manual checkpoint: thumbnails
+rose toward their 512 MiB share and remained retained at the end.
+
+**Memory/retention pass, overall gate incomplete.** At 2560 x 1440, the final
+read-only D:/Photos scroll lasted 300.444 seconds. Peak proportional
+resident process-tree charge was **3,075,009,385 bytes**; scroll end was
+**2,737,641,174 bytes**. The maximum finished visible grid-cell count was
+30; the last count was 5. These are visible canvas counts, not a total
+of cached photos. Transient zero counts while moving do not mean empty caches.
+
+| Scroll seconds | Main | Tabs | GPU host | Backend | Helpers | Total GB | Finished visible cells |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | 0.054 | 0.166 | 1.313 | 0.099 | 0.255 | 1.915 | 0 |
+| 60 | 0.196 | 0.472 | 0.978 | 0.291 | 0.256 | 2.223 | 5 |
+| 120 | 0.154 | 0.610 | 1.008 | 0.444 | 0.257 | 2.506 | 18 |
+| 180 | 0.326 | 0.549 | 0.953 | 0.249 | 0.257 | 2.367 | 0 |
+| 240 | 0.120 | 0.609 | 1.077 | 0.396 | 0.257 | 2.492 | 12 |
+| 300 | 0.173 | 0.726 | 1.039 | 0.422 | 0.257 | 2.652 | 5 |
+
+The total includes utility, launcher, crash-handler and console processes in
+addition to the groups shown. It did not cross the ceiling. There is **no proven
+plateau**: five minutes ended while thumbnails were still accumulating. This
+is not the deferred ten-minute endurance result. Full per-PID samples and
+one-second finished-cell counts are in `process-curve.csv` and
+`finished-grid-cells.csv` beside `measurement-memory.jsonl`.
+
+| Share | Bytes at process peak | Bytes at scroll end | Share bytes |
+| --- | --- | --- | --- |
+| thumbnails | 298,760,960 | 335,690,880 | 536,870,912 |
+| sharp | 0 | 0 | 512,000,000 |
+| camera | 50,084,241 | 60,949,335 | 64,000,000 |
+| raw | 0 | 0 | 768,000,000 |
+| handoff | 112,143,180 | 110,408,954 | 256,000,000 |
+| working | 0 | 0 | 600,000,000 |
+
+These are latest asynchronous owner reports: 563 ms before the peak and
+845 ms before scroll end. The working reservation is separately 600,000,000
+bytes at those samples; retained working-cache bytes are zero.
+
+Longest scrolling marks-lock hold: **360 ms**, `marks_read` in accepted listing,
+plus a **281 ms** picture-error revision hold. Both occurred during normal use,
+so the approximately 250 ms criterion **fails**. Reconcile connection open/close,
+pin reads and known-path stat checks now occur outside its marks lock; this does
+not establish that all remaining read/revision scopes are short enough. The
+historic 734 ms shutdown reconcile observation stays open separately.
+
+Disposable-copy Delete confirmation took **40 ms**; it was cancelled and the
+copy remained intact. Earlier, the bin size/count query independently took
+34.97 s. Planning now selects the local-drive RecycleItem route without enumerating
+the bin. Actual recycle failure still leaves the file alone and cannot silently
+permanently delete it. All three protected project hashes were unchanged;
+D:/Photos was read-only. Owned measurement profiles and fixtures are removed.
+
+The isolated cold `_DSC3289_DxO.jpg` development took **2.098 s**, with upload
+42.7 ms and reduction 115.3 ms; the resumed run reported 2.04 s and 4.24 s for
+those stages. Admission request maximum was 4.7 ms in isolation. Those stopwatch
+stages include asynchronous admission/network time, not GPU timestamp intervals.
+The RGB GPU algorithm is unchanged against main 8ff72f8; the newly blocked
+preview/admission path and request contention explain the multi-second stage
+inflation. This is a supported contention diagnosis, not proof that all cold
+latency regressed or recovered: **the earlier sub-second cold target is not yet
+re-established**. The ordinary permit now lasts at most 100 ms instead of one
+HTTP request per band; cancellation still checks each boundary (DNG keeps 20 ms).
+
+Fast checks: JavaScript **665 passed, one existing failure** (Single test lacks
+HDRLibraryScreenPreviews); Python **2734 passed, three existing failures, three
+skipped** (the three exceptions named in the CPU note above). The later reconcile
+change passed 40 focused membership/delete checks, with two real-bin cases
+excluded from that focused rerun; full Python already covered those cases.
+Six Library drivers and the full ten-minute scroll were **not run**, as requested.
+Output ended at 2.1 GB, under 100 GB.
+
+Evidence: `codebase/output/big-folder/five-minute-reviewed/measurement.json`,
+`analysis.json`, `process-curve.csv`, `cache-peak-end.csv`,
+`finished-grid-cells.csv`, `measurement-memory.jsonl`, and `measurement-backend.log`.
+JPEG isolation: `codebase/output/big-folder/jpeg-isolated.json`.
+
 ## 8. Open work
 
 - Bound and qualify the remaining no-GPU CPU recipes listed above; only the ordinary ARW path has the measured 600 MB result.
 
-The resumed run stopped at the ceiling. Await Steve before further work; do
-not increase shares. Bound the live-scene helper temporary allocation and the
-734 ms reconcile scope before attempting the ordered sequence again.
+Steve requested a manual try before the full ten-minute scroll and six drivers.
+Do not run that deferred sequence in this round or increase shares. The latest
+five-minute run passed memory/retention but did not pass the normal-use lock
+criterion: shorten the 360 ms marks-read and 281 ms revision scopes. Broader CPU
+recipes remain unqualified within the working room as listed above.
 
 - Camera-preview admission, Grade cache ownership and single-row reconcile
   scopes are implemented; their whole-app effect still needs the gate below.

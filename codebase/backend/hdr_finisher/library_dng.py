@@ -5,7 +5,7 @@ Correction metadata is shared with Grade; decoding remains Library-owned.
 from pathlib import Path
 from time import perf_counter
 import numpy as np
-from .library_gpu_raw import NotEligible, _identity
+from .library_gpu_raw import NotEligible, MemoryPending, _identity
 from . import raw_import
 from .models import RawImportSettings, SourceImageDescriptor
 
@@ -119,7 +119,7 @@ def correction(image, inspection, cancelled=None):
             if a.bottom>h or a.right>w or a.plane+a.planes>3 or g.map_planes>3:
                 raise NotEligible("GainMap area or planes exceed the decoded image")
             if sum(len(m["gains"]) for m in maps)+g.gains.size>262144:
-                raise NotEligible("GainMap grids exceed the bounded Library GPU metadata allowance")
+                raise MemoryPending("GainMap grids exceed the bounded Library GPU metadata allowance")
             maps.append(dict(area=[a.top,a.left,a.bottom,a.right,a.plane,a.planes,a.row_pitch,a.col_pitch],
                 points=[g.map_points_v,g.map_points_h,g.map_planes],spacing=[g.map_spacing_v,g.map_spacing_h],
                 origin=[g.map_origin_v,g.map_origin_h],gains=g.gains.reshape(-1).tolist()))

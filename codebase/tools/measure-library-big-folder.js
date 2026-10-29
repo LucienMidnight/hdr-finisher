@@ -24,7 +24,7 @@ const bounded = (promise, ms, label) => {
   const before = hashProjects(require('../tests/release/drivers.json').protectedProjects);
   const browser = await chromium.launch();
   let observer, stream, peak = 0, exceeded = false,latestCaches=null,latestFrontend=null,latestRoles=null,peakSample=null,endSample=null;
-  const report = {startedAt:new Date().toISOString(), ceilingBytes:Math.max(2_500_000_000,Math.min(4_000_000_000,os.totalmem()/4)), deleteLimitMs:1000, requestedScrollSeconds:600, samples:0};
+  const report = {startedAt:new Date().toISOString(), ceilingBytes:Math.max(2_500_000_000,Math.min(4_000_000_000,os.totalmem()/4)), deleteLimitMs:1000, requestedScrollSeconds:300, finishedGridCells:[], samples:0};
   const record = () => fs.writeFileSync(path.join(output,'measurement.json'),JSON.stringify({...report,peakChargedBytes:peak,peakSample,endSample},null,2)+'\n');
   try {
     const page = await browser.newPage();
@@ -74,11 +74,13 @@ const bounded = (promise, ms, label) => {
       await sleep(500);
     }
     report.folderStartupMs=Date.now()-opening;
+    await api("lock-metrics",{reset:true});
     const scrolling = Date.now();
     let scrollRequest=null,lastReplyAt=Date.now(),accounting=null;
     report.memoryMethod='Windows proportional resident: private pages plus shared pages / OS ShareCount; ordinary working sets are diagnostic only';
-    for(let tick=0;Date.now()-scrolling<600000;tick++) {
+    for(let tick=0;Date.now()-scrolling<300000;tick++) {
       if(exceeded)break;
+      if(Date.now()-scrolling<120000)report.earlyThumbnailPeakBytes=Math.max(report.earlyThumbnailPeakBytes||0,latestCaches?.caches?.thumbnails?.bytes||0);
       if(report.observerError)throw Error(report.observerError);
       if(!accounting)accounting=Promise.allSettled([
         api('memory').then(value=>{latestCaches={at:Date.now(),...value};}),
@@ -94,14 +96,19 @@ const bounded = (promise, ms, label) => {
         if(tick%3===0)grid.scrollTop=tick%90===87?0:Math.min(end,grid.scrollTop+grid.clientHeight*.5);
         grid.dispatchEvent(new Event('scroll'));
         return {count:HDRLibrary.getSnapshot().count,drawn:document.querySelectorAll('#grid-space canvas[data-picture-key]').length};
-      },tick).then(({count,drawn})=>{report.maxDrawnCells=Math.max(report.maxDrawnCells||0,drawn);report.lastPhotoCount=count;report.scrollReplies=(report.scrollReplies||0)+1;lastReplyAt=Date.now();})
+      },tick).then(({count,drawn})=>{report.finishedGridCells.push({seconds:(Date.now()-scrolling)/1000,count:drawn});report.maxDrawnCells=Math.max(report.maxDrawnCells||0,drawn);report.lastPhotoCount=count;report.scrollReplies=(report.scrollReplies||0)+1;lastReplyAt=Date.now();})
         .catch(error=>{report.scrollError=String(error);}).finally(()=>{scrollRequest=null;});
       report.longestScrollReplyGapMs=Math.max(report.longestScrollReplyGapMs||0,Date.now()-lastReplyAt);
       if(tick%15===0)console.log(JSON.stringify({scrollSeconds:Math.round((Date.now()-scrolling)/1000),peakGB:peak/1e9,photos:report.lastPhotoCount}));
       await sleep(1000);
     }
+    report.scrollEndedAt=new Date().toISOString();
+    report.scrollLock=await bounded(api("lock-metrics",{}),10000,"Lock metrics did not answer");
     report.scrollSeconds=(Date.now()-scrolling)/1000;
     report.scrollPeakSample=peakSample;report.scrollEndSample=endSample;
+    const thumbnailEnd=endSample?.caches?.caches?.thumbnails?.bytes || 0;
+    const recentCells=report.finishedGridCells.filter(row=>row.seconds>=240);
+    report.retention={thumbnailEndBytes:thumbnailEnd,finishedLastMinute:recentCells.some(row=>row.count>0)};
     if(report.observerError)throw Error(report.observerError);
     if(!exceeded){
     await lib.evaluate(folder=>HDRLibrary.browse(folder),disposable);
@@ -128,9 +135,11 @@ const bounded = (promise, ms, label) => {
     console.log('Delete confirmation:',report.deleteConfirmationMs,'ms');record();
 
     }
-    report.verdict=exceeded?'STOP: memory ceiling exceeded':report.lastPhotoCount>0 && report.maxDrawnCells>0?'PASS':'FAIL: no finished real-folder pictures were presented';
+    report.verdict=exceeded?'STOP: memory ceiling exceeded':report.lastPhotoCount>0 && report.retention.finishedLastMinute && report.retention.thumbnailEndBytes>Math.max(0,report.earlyThumbnailPeakBytes||0)?'PASS':'FAIL: finished real-folder pictures were not retained';
     if(!report.samples)throw Error('Memory observer produced no samples');
     console.log(report.verdict,JSON.stringify({...report,peakChargedBytes:peak,peakSample,endSample}));
+    report.memoryRetentionVerdict=report.verdict;
+    if(!exceeded && report.scrollLock.hold_ms>250)report.verdict='FAIL: normal-use marks lock exceeds 250 ms';
     if(report.verdict!=='PASS')process.exitCode=1;
     if(!exceeded && report.deleteConfirmationMs>report.deleteLimitMs){report.verdict='FAIL: Delete confirmation over one second';process.exitCode=1;}
   } catch(error) {report.verdict=exceeded?'STOP: memory ceiling exceeded':'FAIL';report.error=String(error.stack||error);console.error(error);process.exitCode=1;}

@@ -78,7 +78,7 @@ window.HDRLibraryScenes = (() => {
           await wait(250,shared);
         }
         renew = setInterval(()=>{void request(false).catch(()=>{});},10000);
-        const result = await develop(path, edge, shared, importance, version, options.gpuOnly);
+        const result = await develop(path, edge, shared, importance, version, options.gpuOnly || idle || (priority >= 80 && !visible.has(path)));
         if (result && (idle || signal?.aborted)) save(result);
         return result;
       }
@@ -116,6 +116,7 @@ window.HDRLibraryScenes = (() => {
         if (meta) return meta;
       } catch (error) {
         if (error.name === "AbortError" || error.libraryError) throw error;
+        if (!error.gpuUnavailable) throw error;
         window.HDRLibraryStopwatch?.("picture_source_gpu_fallback",{path,reason:error.message});
         // The structured fallback event above carries the picture labels.
       }

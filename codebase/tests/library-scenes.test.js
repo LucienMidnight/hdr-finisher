@@ -95,10 +95,10 @@ test('remembered errors skip both source slots while later pictures finish',asyn
  assert.equal(scenes.snapshot().sources.waiting,0);
 });
 
-test('GPU failures retain their reason in the loading log before CPU fallback',async()=>{
+test('GPU memory shortage never requests CPU development',async()=>{
  const {scenes,events}=setup({photo:{bytes:96e6}},async()=>{throw Error('Source transfer exceeds available GPU memory');});
- await assert.rejects(scenes.load('photo',640),/decoder failed/);
- assert.deepEqual(events.filter(event=>event.stage==="picture_source_gpu_fallback"),[{stage:'picture_source_gpu_fallback',path:'photo',reason:'Source transfer exceeds available GPU memory'}]);
+ await assert.rejects(scenes.load('photo',640),/Source transfer exceeds available GPU memory/);
+ assert.deepEqual(events.filter(event=>event.stage==="picture_source_gpu_fallback"),[]);
 });
 
 test('departed tile cancels its source job and invalidation rejects a fresh request',async()=>{
@@ -147,18 +147,19 @@ test('selected source is admitted before development-ahead demand and both run i
 });
 
 test('development-ahead GPU refusal never starts a background CPU fallback',async()=>{
- const {scenes,requests}=setup({photo:{bytes:96e6}},async()=>{throw Error('GPU memory unavailable');});
+ const {scenes,requests}=setup({photo:{bytes:96e6}},async()=>{throw Object.assign(Error('No hardware GPU'),{gpuUnavailable:true});});
  assert.equal(await scenes.load('photo',2560,null,5,false,null,{gpuOnly:true}),null);
  assert.equal(requests.length,1,'Cache discovery only; no CPU development request');
 });
 
 test('selected photo joining development-ahead keeps its CPU fallback if GPU fails',async()=>{
  const block=gate();
- const {scenes,requests}=setup({photo:{bytes:96e6}},async()=>{await block.promise;throw Error('GPU failed');});
+ const {context,scenes,requests}=setup({photo:{bytes:96e6}},async()=>{await block.promise;throw Object.assign(Error('GPU lost'),{gpuUnavailable:true});});
+ const fetch=context.fetch;context.fetch=async(url,options)=>{const response=await fetch(url,options);return url==='/api/library/live-scene'?{ok:true,json:async()=>({edge:2560,key:'cpu'})}:response;};
  const ahead=scenes.load('photo',2560,null,5,false,null,{gpuOnly:true});await tick();
  const selected=scenes.load('photo',2560,null,0);await tick();block.resolve();
  const [a,b]=await Promise.all([ahead,selected]);assert.ok(a&&b);
- assert.ok(requests.some(request=>request.body?.gpu===false&&request.body.priority===0));
+ assert.ok(requests.some(request=>request.gpu===false&&request.priority===0));
 });
 
 
@@ -265,4 +266,10 @@ test('parallel thumbnail and screen cache lookups retain both callers after view
  try{await tick();assert.equal(signals.length,2);assert.ok(signals.every(s=>!s.aborted));}
  finally{block.resolve();await Promise.allSettled([small,large]);}
  assert.equal((await small).edge,640);assert.equal((await large).edge,2560);
+});
+
+test('idle no-GPU demand never develops on the CPU',async()=>{
+ const {scenes,requests}=setup({photo:{bytes:1,warm_allowed:true}},async()=>{throw Object.assign(Error('No GPU'),{gpuUnavailable:true});});
+ assert.equal(await scenes.load('photo',640,null,80,true),null);
+ assert.ok(!requests.some(request=>request.gpu===false));
 });

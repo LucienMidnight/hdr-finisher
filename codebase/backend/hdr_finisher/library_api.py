@@ -363,12 +363,12 @@ def create_library_router(worker, browser, store=None):
             cached = await run_in_threadpool(cached_camera_preview, path, edge)
             if cached is not None: return cached
         token = 'quick-preview-' + uuid4().hex
-        while True:
-            if await request.is_disconnected():
-                raise HTTPException(499, "Library request cancelled.")
-            if (await run_in_threadpool(app_memory.admit, token, app_memory.WORKING))['granted']:
-                break
-            await asyncio.sleep(.05)
+        if await request.is_disconnected():
+            raise HTTPException(499, "Library request cancelled.")
+        if not (await run_in_threadpool(app_memory.admit, token, app_memory.WORKING))['granted']:
+            # Do not occupy a browser HTTP connection waiting for the source
+            # that owns this slot: its GPU lease/handoff needs a connection.
+            return None
         async def renew():
             while True:
                 await asyncio.sleep(10)
@@ -403,6 +403,7 @@ def create_library_router(worker, browser, store=None):
                 return Response(status_code=204)
             if await request.is_disconnected(): return Response(status_code=499)
             preview = await quick_preview(original_preview if original else camera_preview, path, 640, request)
+            if preview is None: return Response(status_code=202)
             if await request.is_disconnected(): return Response(status_code=499)
             if not await run_in_threadpool(eligible):
                 return Response(status_code=204)
@@ -503,9 +504,12 @@ def create_library_router(worker, browser, store=None):
                         header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_gpu_raw.sensor, Path(path),
                             RawImportSettings.model_validate(inputs["raw_import_settings"]))
                     if inputs.get("repairs") and header.get("dng_warp"):
-                        raise library_gpu_raw.NotEligible("Tiled DNG repair context exceeds the bounded GPU development route")
+                        raise library_gpu_raw.MemoryPending("Tiled DNG repair context exceeds the bounded GPU development route")
+                except library_gpu_raw.MemoryPending as error:
+                    source_jobs.stage(token,"admission",str(error))
+                    return JSONResponse({"detail":"library_pending","waiting":"memory"},status_code=202)
                 except library_gpu_raw.NotEligible as error:
-                    log("picture_source_cpu_fallback", path=path, reason=str(error), discarded_decode_ms=(time.perf_counter()-claimed_at)*1000)
+                    log("picture_source_gpu_unsupported", path=path, reason=str(error), discarded_decode_ms=(time.perf_counter()-claimed_at)*1000)
                     return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
                 if inputs.get("repairs"):
                     from .models import RepairRecord
@@ -718,6 +722,10 @@ def create_library_router(worker, browser, store=None):
         app_memory.reclaim(level)
         worker._send(dict(command='memory-pressure',level=level))
         return {"reclaimed": True}
+
+    @router.post("/lock-metrics")
+    def lock_metrics(command: dict = {}):
+        return marks._lock.metrics(reset=command.get("reset") is True)
 
     @router.get("/health")
     def health():
@@ -1215,7 +1223,7 @@ def create_library_router(worker, browser, store=None):
         return await helper_result(request, "picture", retain_picture=True, **command.model_dump())
 
     # Camera RAW grid thumbnails developed on the GPU by the Library window.
-    # Anything the GPU route does not cover answers 204 and keeps the CPU route.
+    # Unsupported sources answer 204; the page reports them without selecting CPU.
     from . import library_gpu_raw
     @router.post("/raw-sensor")
     async def raw_sensor(command: SensorRequest):

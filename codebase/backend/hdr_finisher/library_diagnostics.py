@@ -146,6 +146,13 @@ class MarksLock:
         self._lock = RLock()
         self._depth = 0
         self._owner = None
+        self._longest_hold = {"hold_ms":0,"holder":None}
+
+    def metrics(self, reset=False):
+        with self._lock:
+            value = dict(self._longest_hold)
+            if reset: self._longest_hold = {"hold_ms":0,"holder":None}
+            return value
 
     def acquire(self, *args, **kwargs):
         import threading
@@ -175,6 +182,8 @@ class MarksLock:
         owner = self._owner if not self._depth else None
         if owner: self._owner = None
         held = time.monotonic()-owner["since"] if owner else 0
+        if owner and held*1000 > self._longest_hold["hold_ms"]:
+            self._longest_hold = {"hold_ms":round(held*1000,3),"holder":owner}
         self._lock.release()
         if owner and held >= .25:
             log("marks_lock_hold",hold_ms=round(held*1000,3),holder=owner)

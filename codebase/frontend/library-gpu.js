@@ -20,7 +20,10 @@ async function libraryDenoiseModel(url, meta = {}, measure) {
   return model;
 }
 class HDRLibraryGPU extends HDRWebGPUPreview {
-  async requestPreviewDevice() { return (await HDRLibraryGpuRaw.shared.gpu()).device; }
+  async requestPreviewDevice() {
+    try { return (await HDRLibraryGpuRaw.shared.gpu()).device; }
+    catch(error) { this.libraryInitializationError=error; throw error; }
+  }
   async fetchDenoiseModel(url) {
     return this.libraryMeta?.fullscreen ? libraryDenoiseModel(url,this.libraryMeta,()=>super.fetchDenoiseModel(url)) : super.fetchDenoiseModel(url);
   }
@@ -156,11 +159,15 @@ const HDRLibraryPictureFactory = (quick = false) => {
       const started = performance.now();
       renderer = new HDRLibraryGPU(surface);
       renderer.libraryLimits = configuredLimits;
-      if (!await renderer.initialize(() => beforeNext(() => initializationDemand))) throw new Error("Library pictures need WebGPU on this computer.");
+      if (!await renderer.initialize(() => beforeNext(() => initializationDemand))) {
+        const error=renderer.libraryInitializationError || new Error(renderer.detail || "Library GPU initialization did not finish.");
+        if (!navigator.gpu || renderer.detail === "No WebGPU adapter was returned" || renderer.deviceLost) error.gpuUnavailable=true;
+        throw error;
+      }
       if (renderer.adapterInfo?.fallback) {
         clearInterval(renderer.deliveryActivityTimer);
         const device = renderer.device; renderer.device = null; device?.destroy();
-        throw Error("Drawing Library previews requires a hardware GPU.");
+        throw Object.assign(Error("Drawing Library previews requires a hardware GPU."),{gpuUnavailable:true});
       }
       HDRLibraryStopwatch("picture_renderer_setup", { duration_ms: performance.now() - started });
       return renderer;
@@ -182,7 +189,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
       // Keep the accepted frame at its own shape while conversion and pixels load.
       // renderTo resizes through its presentation gate when the new frame is ready.
       gpu.liveMode = meta.route === "library-live";
-      if (gpu.liveMode && gpu.adapterInfo?.fallback) throw Error("Drawing Library previews requires a hardware GPU.");
+      if (gpu.liveMode && gpu.adapterInfo?.fallback) throw Object.assign(Error("Drawing Library previews requires a hardware GPU."),{gpuUnavailable:true});
       if (!gpu.liveMode && !gpu.deliveryActivityTimer) {
         gpu.deliveryActivityTimer = setInterval(()=>gpu.reportDeliveryActivity().catch(()=>{}),100);
       }
@@ -357,6 +364,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
   }
   return Object.freeze({ show, initialize, prepare, prepareDenoise, readyMemory, reclaimHost,
     configure: async limits => { configuredLimits = limits; if (renderer) renderer.libraryLimits = limits; },
+    lost: () => !!renderer?.deviceLost,
     usable: () => !!renderer?.available && !renderer.deviceLost && !renderer.adapterInfo?.fallback,
     resident: key => !!renderer?.rawPictures?.get(key),
     snapshot: () => renderer?.rawPictures?.snapshot() || {pictures:0,bytes:0} });
