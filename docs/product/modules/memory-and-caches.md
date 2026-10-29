@@ -198,6 +198,53 @@ busy 600 MB working slot from low total RAM: queued work must not reclaim the
 current picture. A regression check covers that distinction. Shares are unchanged.
 The repeated scroll records finished-cell counts explicitly; validation remains open.
 
+
+**Paused at Steve's request, October 29.** Latest code is `3c446d9`
+(after `b567c15`), still on `library-big-folder`; no push or merge.
+The repeat used a disposable NTFS Windows TEMP profile. It was stopped by
+request after approximately 230 seconds of independent sampling, before
+completing the ten-minute gate or repeating Delete. Peak charge was
+3,919,898,910 bytes; final sample 2,490,635,991 bytes. Two finished grid
+cells were observed, and finished/camera/sharp bytes were retained. This is
+partial evidence only: no plateau verdict. The peak had backend charge about
+1.859 GB, GPU host 1.046 GB, renderer tabs 0.584 GB and main 0.143 GB;
+main ordinary resident was about 0.216 GB at that sample. Backend temporary
+allocations need investigation against the 600 MB working room before claiming
+one enforced whole-app ceiling. No shares were changed.
+
+| Share | Peak sample bytes / limit | Pause sample bytes / limit |
+| --- | ---: | ---: |
+| thumbnails | 51,892,480 / 536,870,912 | 57,945,600 / 536,870,912 |
+| sharp | 0 / 512,000,000 | 80,768,000 / 512,000,000 |
+| camera | 6,796,834 / 64,000,000 | 57,811,826 / 64,000,000 |
+| raw | 0 / 768,000,000 | 0 / 768,000,000 |
+| handoff | 26,310,222 / 256,000,000 | 168,059,324 / 256,000,000 |
+| working | 0 / 600,000,000 | 0 / 600,000,000 |
+
+Longest recorded lock hold in this NTFS repeat: `reconcile`
+375 ms. The earlier exFAT-profile run recorded a 1,344 ms
+startup copy observation, 656 ms during scrolling, and a 547 ms index batch.
+The 250 ms requirement remains open wherever exceeded.
+
+Fast checks after the admission follow-up: Python 2,730 passed / three known
+failures / three skipped; JS 662 passed / two known failures; ten focused
+memory checks passed. The six driver results above predate this follow-up;
+they are not a validation of `3c446d9`. Their total run time was under eight
+minutes, sequentially, with no 15-minute stall or 75-minute cap reached.
+Protected hashes were checked again after stopping and are unchanged.
+
+Resume: inspect the repeat's backend temporary allocations and lock timings;
+finish auditing RAM caches against the single owner (including Grade session
+frames/masks), and resolve hand-off cancellation/delivery lifetimes. Then run
+fast checks and the full ordered scroll/Delete/six-driver sequence. The two
+hard-link fixture drivers require an NTFS fixture strategy; D: is exFAT.
+Evidence is retained under `codebase/output/big-folder/budget-validation/`
+and `budget-validation-repeat/` (JSONL plus per-PID CSV, cache peak/end CSV for
+the completed first run, backend logs and each driver result). Temporary
+measurement profiles and driver photo scratch are removed. The three original
+untracked items were left untouched. No background validation should resume
+until Steve asks to continue.
+
 ## 8. Open work
 
 - Complete the ordered ten-minute read-only scroll, disposable Delete timing,
