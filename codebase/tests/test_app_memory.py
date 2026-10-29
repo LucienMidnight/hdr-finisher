@@ -127,3 +127,12 @@ def test_pressure_trims_old_entries_to_half_then_zero():
     assert app_memory.claim('cache','camera',100)
     app_memory.reclaim('moderate');assert cache.bytes==50
     app_memory.reclaim('critical');assert cache.bytes==0
+
+
+def test_busy_working_slot_does_not_reclaim_inflight_pictures(monkeypatch):
+    monkeypatch.setattr(app_memory,'process_tree',lambda root:[{'pid':1,'workingSetBytes':2_900_000_000}])
+    monkeypatch.setattr(app_memory,'system_pressure',lambda:'none')
+    monkeypatch.setattr(app_memory,'_waiting_until',0)
+    assert app_memory.admit('drawing',app_memory.WORKING)['granted']
+    assert not app_memory.admit('queued',app_memory.WORKING)['granted']
+    assert not app_memory.snapshot()['reclaim']

@@ -4510,3 +4510,16 @@ pending; this is not a memory-ceiling pass. No sizes were increased.
 Fast-check result for this implementation: Python 2,729 passed, three known
 failures, three skipped; JavaScript 662 passed, two known failures. The focused
 cache/helper group passed 91 checks. Real-folder validation is pending.
+
+
+October 29 validation follow-up: the first completed 600.651-second scroll
+stayed below 4 GB (2.585 GB peak, about 2.06 GB at the end), but finished
+picture caches remained empty, so this does not establish the browsing goal.
+Delete confirmation on the disposable PNG was 993 ms and cancelled; protected
+project hashes were unchanged. RGB-native and codec-native passed. Scroll-cache
+failed waiting for finished cells; background-activity failed waiting for its
+Pause indexing control. Precision-source and live-native could not create
+hard-linked fixtures on the exFAT D: volume. Admission now distinguishes a
+busy 600 MB working slot from low total RAM: queued work must not reclaim the
+current picture. A regression check covers that distinction. Shares are unchanged.
+The repeated scroll records finished-cell counts explicitly; validation remains open.

@@ -63,8 +63,16 @@ const bounded = (promise, ms, label) => {
     })(),20000,'Startup cleanup did not finish before opening real data');
     report.startupCleanupFinishedBeforeRealFolder=true;
     await api('pins',{paths:['D:/Photos']});
-    const scrolling = Date.now();
+    const opening = Date.now();
     void lib.evaluate(()=>HDRLibrary.browse('D:/Photos')).catch(error=>{report.browseError=String(error);});
+    while (!exceeded) {
+      const count = await bounded(lib.evaluate(()=>HDRLibrary.getSnapshot().count),10000,'Folder startup did not answer');
+      if (count>0) break;
+      if(Date.now()-opening>180000)throw Error('No real photos after three-minute startup');
+      await sleep(500);
+    }
+    report.folderStartupMs=Date.now()-opening;
+    const scrolling = Date.now();
     let scrollRequest=null,lastReplyAt=Date.now(),accounting=null;
     report.memoryMethod='Windows proportional resident: private pages plus shared pages / OS ShareCount; ordinary working sets are diagnostic only';
     for(let tick=0;Date.now()-scrolling<600000;tick++) {
@@ -80,10 +88,10 @@ const bounded = (promise, ms, label) => {
       if(!scrollRequest)scrollRequest=lib.evaluate(tick=>{
         const grid=document.getElementById('library-grid');
         const end=Math.max(0,grid.scrollHeight-grid.clientHeight);
-        grid.scrollTop=tick%30===29?0:Math.min(end,grid.scrollTop+grid.clientHeight*.8);
+        if(tick%3===0)grid.scrollTop=tick%90===87?0:Math.min(end,grid.scrollTop+grid.clientHeight*.5);
         grid.dispatchEvent(new Event('scroll'));
-        return HDRLibrary.getSnapshot().count;
-      },tick).then(count=>{report.lastPhotoCount=count;report.scrollReplies=(report.scrollReplies||0)+1;lastReplyAt=Date.now();})
+        return {count:HDRLibrary.getSnapshot().count,drawn:document.querySelectorAll('#grid-space canvas[data-picture-key]').length};
+      },tick).then(({count,drawn})=>{report.maxDrawnCells=Math.max(report.maxDrawnCells||0,drawn);report.lastPhotoCount=count;report.scrollReplies=(report.scrollReplies||0)+1;lastReplyAt=Date.now();})
         .catch(error=>{report.scrollError=String(error);}).finally(()=>{scrollRequest=null;});
       report.longestScrollReplyGapMs=Math.max(report.longestScrollReplyGapMs||0,Date.now()-lastReplyAt);
       if(tick%15===0)console.log(JSON.stringify({scrollSeconds:Math.round((Date.now()-scrolling)/1000),peakGB:peak/1e9,photos:report.lastPhotoCount}));
@@ -116,7 +124,7 @@ const bounded = (promise, ms, label) => {
     console.log('Delete confirmation:',report.deleteConfirmationMs,'ms');record();
 
     }
-    report.verdict=exceeded?'STOP: memory ceiling exceeded':report.lastPhotoCount>0?'PASS':'FAIL: no real-folder photo rows were presented';
+    report.verdict=exceeded?'STOP: memory ceiling exceeded':report.lastPhotoCount>0 && report.maxDrawnCells>0?'PASS':'FAIL: no finished real-folder pictures were presented';
     if(!report.samples)throw Error('Memory observer produced no samples');
     console.log(report.verdict,JSON.stringify({...report,peakChargedBytes:peak,peakSample,endSample}));
     if(report.verdict!=='PASS')process.exitCode=1;

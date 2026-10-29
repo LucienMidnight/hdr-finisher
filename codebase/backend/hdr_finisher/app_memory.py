@@ -321,5 +321,8 @@ def admit(key,size,release=False):
         grade=value['caches']['working']['bytes']
         granted=reserved+grade+size<=WORKING and value['totalBytes']+reserved+size<=CEILING
         if granted: _reservations[key]=(size,time.monotonic()+30)
-        else: _waiting_until=time.monotonic()+2
+        elif reserved+grade+size<=WORKING and value['totalBytes']+reserved+size>CEILING:
+            _waiting_until=time.monotonic()+2
+        # A busy working slot is scheduling, not memory pressure. Trimming
+        # here used to discard scenes still being drawn by its current owner.
     return dict(value,granted=granted)
