@@ -369,7 +369,7 @@ what the Library reads.
 | Not empty or too small to be an image | No | Skip files under 1 KB. They are counted in the existing "unreadable files hidden" note. |
 | Contents match a supported format | No | Read the first bytes before decoding. If they are another supported format (phones sometimes save HEIC as `.jpg`), decode it as that format. If they are not an image, show "not a valid photo" once, and don't retry until the file changes. |
 | File is not still being written | No | If the size or modified time changed in the last 2 seconds, list the photo but wait to decode it until it is stable (a card copy in progress). |
-| File is not an online-only cloud placeholder | No | OneDrive, Dropbox, iCloud and Google Drive "online-only" files download when read. Don't read them automatically; show a "not downloaded" cell. **Steve's decision:** download when the photo is opened, or never. |
+| File is not an online-only cloud placeholder | No | OneDrive, Dropbox, iCloud and Google Drive "online-only" files download when read. The grid, filmstrip, pre-warmer and background work never read them; they show a "not downloaded" cell. **Opening one in Single, fullscreen or Grade downloads it (Steve, October 30)**, with progress shown. Neighbours are not downloaded ahead. After the download it is an ordinary local file. |
 | Picture size | No limit | **No size limit (Steve, October 30: support really large images).** Read the dimensions from the header first. Very large pictures run alone through a bounded route (7.3); they are never refused for size. |
 
 Our own temporary files must never end in a photo extension. Exports and
@@ -429,7 +429,7 @@ that proves it.
 | F6 | Not an image at all (HTML error page saved as `.jpg`) | "Not a valid photo" once; no retry until the file changes | 1 | Fixture |
 | F7 | Truncated or corrupt file | Decoder error remembered once (exists) | 1 | Truncated JPEG, ARW and TIFF |
 | F8 | Decoder crash or hang | The helper restarts. After one crash, that file is set aside with a message, not retried in a loop. Each type has a time limit. | 2 | A crafted crashing file and a hanging decoder stub |
-| F9 | Online-only cloud placeholder | Not read automatically; "not downloaded" cell (Steve's decision) | 1 | Placeholder attributes simulated in a unit test |
+| F9 | Online-only cloud placeholder | Not read by the grid or background work; "not downloaded" cell. Opening it downloads it, with progress; a failed or cancelled download is "offline", not a broken photo. | 1 | Placeholder attributes simulated in a unit test |
 | F10 | Supported extension, unsupported variant: multi-page or layered TIFF, CMYK or Lab, palette or 1-bit PNG, animated PNG/AVIF/HEIC, bursts, HEIC depth images, JPEG XL-compressed or lossy DNG, Apple ProRAW, monochrome DNG, a RAW from a camera LibRaw doesn't know, multi-part or deep EXR | Decode what is supported (first page or frame); otherwise a clear "not supported: reason" message, with the embedded preview if there is one | 1 | One fixture per variant that we can make or obtain |
 | F11 | Very large pictures (line scans, panoramas, 1 GB TIFFs) | Supported at any size (7.3): header dimensions before admission; runs alone through a bounded route | 3 | The 297 MP line-scan DNG and a large TIFF, on disposable copies |
 | F12 | Paths: over 260 characters on Windows, Unicode (macOS NFD names), names differing only in case, network shares, symbolic links and junctions (no loops) | The walk handles each; never follows a link loop | 1 | Fixture tree including a junction loop |
@@ -572,12 +572,13 @@ Still to decide:
 
 1. Approve this design direction (option C) and the phase order.
 2. Phase 0 per-type budget table.
-3. Online-only cloud files: download when opened, or never (6.9).
-4. Fast-lane allowance (proposed 64 MB, four at once).
-5. GPU developments at once (proposed two).
+3. Fast-lane allowance (proposed 64 MB, four at once).
+4. GPU developments at once (proposed two).
 
-Decided October 30: no picture size limit; very large pictures are
-supported through bounded routes (7.3).
+Decided October 30:
+- No picture size limit; very large pictures are supported through bounded
+  routes (7.3).
+- Online-only cloud files download only when opened (6.9).
 
 ## 11. Code map (for whoever builds it)
 
