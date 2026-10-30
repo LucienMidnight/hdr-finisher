@@ -24,6 +24,13 @@ memory pressure are behind the October 29–30 stalls. The proposed
 replacement, with research and phases, is
 [library-resource-scheduler-design-2026-10-30](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
 It is waiting on Steve's review; nothing in it is built.
+Steve approved the design and phase order on October 30. Phase 0 measured
+backend memory per job and file type (section 6.11 of the design). A
+full-size non-RAW decode needs 0.5–1.3 GB, more than the 600 MB working room.
+The RAW sensor read needs about 5.5 bytes per pixel. GPU memory runs about
+25 bytes per pixel. The 297 MP line scan peaks at 6 GB on the CPU route. The
+proposed per-type estimates are Steve's decision; no size or share has
+changed.
 
 ## 1. Purpose
 

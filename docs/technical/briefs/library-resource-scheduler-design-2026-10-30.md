@@ -380,9 +380,8 @@ writer for this.
 ### 6.10 Memory budget per file type
 
 Every supported type gets an estimate formula, used by the scheduler (6.5).
-Phase 0 measures each one. The figures below are worked out from the pixel
-sizes (24-megapixel example) and are **not measured yet**. The measured
-table replaces them and becomes Steve's decision.
+**Phase 0 measured them on October 30; see 6.11.** The table immediately
+below is the original rough plan, kept for comparison.
 
 | Type | Extensions | Library route | What uses the memory | 24 MP rough figure (to measure) |
 | --- | --- | --- | --- | --- |
@@ -410,6 +409,107 @@ Rules on top of the formulas:
   are JPEG decoding at 1/2, 1/4 or 1/8 scale, and LibRaw half-size. It can
   cut both memory and time for thumbnails. It is used only where the picture
   stays within the agreed perceptual tolerance.
+
+### 6.11 Phase 0 results (measured October 30, 2026)
+
+**Method.** `codebase/tools/measure_job_memory.py` ran each backend job
+(the camera or original quick preview, the GPU source preparation, and the
+CPU route) once per file, in a fresh process, on copies in
+`codebase/output/test-photos/phase0/`. It ran one warm-up first, because
+the backend is long-running and first-use imports are not a job cost. The
+peak is the extra private memory, sampled every millisecond. Raw results:
+`codebase/output/phase0-memory/backend-jobs.jsonl`.
+
+GPU memory comes from 2,544 developments already stored in Steve's Library
+cache (each stored scene records its `gpu_memory_peak_bytes`). Missing real
+samples: Radiance `.hdr` and `.pfm` (synthetic 24 MP files were used),
+`.heif` (same decoder as HEIC), and NRW, ORI, PEF and SRW (same LibRaw
+sensor route as the other camera RAWs).
+
+**Backend memory per job, measured:**
+
+| Type | Job | Sample | Peak | Per pixel |
+| --- | --- | --- | --- | --- |
+| Camera RAW (ARW, CR2, CR3, NEF, ORF, RW2) | sensor read for the GPU | 16–42 MP | 84–235 MB | about 5.5 bytes |
+| Fujifilm X-Trans RAF | CPU route (GPU route not eligible) | 26 MP | 461 MB | about 18 bytes |
+| JPEG | GPU source decode | 3, 30, 42 MP | 55, 539, 761 MB | about 18 bytes |
+| PNG | GPU source decode | 3, 42 MP | 54, 936 MB | 18–22 bytes |
+| TIFF | GPU source decode | 8, 48 MP | 123, 964 MB | 15–20 bytes |
+| HEIC (iPhone 16 Pro) | GPU source decode | 24.5 MP | 995 MB | about 41 bytes |
+| AVIF | GPU source decode | 10.7 MP / 42 MP gain-map | 192 / 1,268 MB (16 s) | 18–30 bytes |
+| EXR | GPU source decode | 42 MP | 1,027 MB | about 24 bytes |
+| Radiance HDR / PFM (synthetic) | GPU source decode | 24 MP | 433 / 650 MB | 18 / 27 bytes |
+| Linear DNG (DxO) | GPU source decode | 42.5 MP | 933 MB | about 22 bytes |
+| Line-scan linear DNG | CPU route (one GPU buffer can't hold it) | 297 MP | **5,953 MB** (27 s) | about 20 bytes |
+| JPEG XL, EXR without colour tags | CPU route | 6–14 MP | 260–620 MB | — |
+| Camera RAW quick preview | embedded JPEG, full decode (today) | Sony 2 MP / Nikon, Canon, DxO full-size | 14–23 / 218–532 MB | — |
+| Camera RAW quick preview | embedded JPEG, reduced decode | same files | 15–23 MB | — |
+| JPEG/PNG quick preview | original decode (today) | 3–42 MP | 53–762 MB | — |
+| JPEG quick preview | reduced decode | 30, 42 MP | 51, 20 MB | — |
+
+**GPU memory per development, measured** (2,544 stored scenes): camera
+RAW, DNG and EXR about 25 bytes per pixel (a 42 MP RAW about 1.04 GB). JPEG
+about 27 bytes per pixel at full size (48 MP DJI JPEG 1.32 GB). TIFF about
+37 bytes per pixel. Small pictures cost proportionally more because of a
+fixed overhead. The existing GPU estimate (`rawBudget`: 28 bytes per pixel
+plus 64 MB for ordinary RAW) covers the measured RAW peaks.
+
+**What the measurements show:**
+
+1. **The working room is smaller than one ordinary job.** A full-size
+   non-RAW decode needs 0.5–1.3 GB of backend memory. The 600 MB working
+   room cannot hold one, so on a 4 GB ceiling (1.3 GB starting memory plus
+   caches) only one or two can run at once. Estimates must be per job, as
+   designed. A fixed slot cannot work.
+2. **RAW is cheap in the backend; other formats are not.** The RAW sensor
+   read is about 5.5 bytes per pixel, but JPEG, PNG, TIFF, HEIC, AVIF and EXR
+   decoding is 15–41 bytes per pixel. That is 5–10 times what is handed on
+   (2–4 bytes per pixel for 8-bit sources). Making these decoders leaner is
+   the largest memory saving available. It is recorded as open work, not
+   part of this design.
+3. **Some files are decoded and then rejected.** JPEG XL, EXR or TIFF
+   without resolved colour tags is decoded in full (250 MB–2.9 GB, the
+   192 MP TIFF at 2.9 GB) before the GPU route says "not eligible". The CPU
+   route then decodes it again. Eligibility must be decided from the header,
+   before decoding (new edge case F19).
+4. **Quick previews are not always small.** Nikon, Canon and DxO embed
+   full-size JPEGs. A reduced (DCT-scaled) decode cuts the quick preview from
+   218–762 MB to 15–51 MB and makes it 2–3 times faster. The visible
+   difference against today's quick preview is a mean ΔE 2000 of 0.2–0.5
+   (95th percentile 0.8–1.8, at edges), below the just-noticeable level.
+   **Steve's decision**, since it changes what the screen shows, although
+   the change is too small to see.
+5. **Very large pictures:**
+   * JPEG and PNG over about 179 MP are refused today by Pillow's
+     decompression-bomb guard (confirmed with a synthetic 192 MP file).
+   * The 192 MP TIFF decodes at 2.9 GB.
+   * The 297 MP line scan works only because the CPU route is allowed
+     6 GB, 1.5 times the whole-app ceiling. On a machine with 8 or 16 GB
+     of RAM it would fail or swap. The bounded routes in 7.3 are needed,
+     not optional (F11, phase 3).
+6. **A picture that can never fit the GPU route should not wait for it.**
+   For the line scan, the GPU route answers "waiting for memory" because its
+   samples (about 3.6 GB) exceed the GPU's largest buffer. It should go
+   straight to the bounded route (new edge case M26).
+
+**Proposed estimates for the scheduler (Steve's decision).** Measured bytes
+per pixel plus 25%, from header dimensions, with a 64 MB minimum per job:
+
+| Job | Estimate (backend RAM) |
+| --- | --- |
+| Camera RAW sensor read | 7 bytes × pixels |
+| JPEG, Radiance HDR | 23 bytes × pixels |
+| PNG, TIFF, linear DNG | 28 bytes × pixels |
+| EXR, PFM, AVIF | 38 bytes × pixels |
+| HEIC, HEIF, JPEG XL | 52 bytes × pixels |
+| CPU route, any type | 25 bytes × pixels |
+| Quick preview, reduced decode | 64 MB (fast lane) |
+| Quick preview, no reduced decode (PNG, or embedded non-JPEG) | 23 bytes × the preview's pixels |
+| GPU memory per development | existing `rawBudget` formula (matches the measurements) |
+
+Not measured in phase 0: the window's own memory per development (read-back
+and upload copies). From the code it is about the hand-off size plus the
+reduced outputs. Phase 3 adds a per-development log line for it.
 
 ## 7. Edge cases the design must handle
 
@@ -439,6 +539,7 @@ that proves it.
 | F16 | Our own exports or saves inside a Library folder | Temporary name, renamed when complete | 1 | Audit plus a test that a half-written export is not listed |
 | F17 | RAW+JPEG pairs and duplicate copies | Both listed (no stacking in v1); one development each | — | Note only |
 | F18 | Sidecars (`.xmp`, `.hdrfinisher`, `.pp3`, `.dop`) | Never parsed as photos (not on the list) | 1 | Fixture |
+| F19 | A file decoded in full and then rejected by the GPU route (JPEG XL, EXR or TIFF with unresolved colour; measured 250 MB–2.9 GB wasted) | Decide eligibility from the header before decoding; decode once, on the right route | 3 | The phase 0 JPEG XL, EXR and 192 MP TIFF samples |
 
 ### 7.2 Memory and scheduling
 
@@ -469,6 +570,7 @@ that proves it.
 | M23 | The grant channel drops, or the backend restarts | Windows reconnect and resubmit; waiting jobs time out instead of waiting forever | 2 | Kill and restart the channel mid-run |
 | M24 | Startup upkeep on a large library (cache reconciliation measured 31 s, all upkeep 76 s on October 30) | Runs as **eventually** work through the scheduler; never blocks visible work | 2 | Startup with D:\Photos indexed (read-only) |
 | M25 | Logging costs: backend.log is 358 MB and timing lines are frequent | Rotate logs; per-job lines stay, very frequent diagnostics are sampled | 5 | Log size after a ten-minute session |
+| M26 | A picture that can never fit the GPU route (the line scan's samples exceed the GPU's largest buffer) | Goes straight to the bounded route instead of "waiting for memory" | 3 | The line-scan copy |
 
 ### 7.3 Very large pictures (Steve, October 30: support them)
 
@@ -522,10 +624,10 @@ records its numbers in the [performance table](../performance-table.md).
 
 | Phase | What | Removes | Accept when |
 | --- | --- | --- | --- |
-| 0. Measure | Log real RAM and GPU peaks per file type and job type on disposable copies (20241117 RAWs, Aceh JPEGs, one of each supported type, a large TIFF). Try reduced decoding for 640. No behaviour change. | — | Per-type budget table (6.10) written for Steve to approve. |
+| 0. Measure — **done October 30** | Log real RAM and GPU peaks per file type and job type on disposable copies (20241117 RAWs, Aceh JPEGs, one of each supported type, a large TIFF). Try reduced decoding for 640. No behaviour change. | — | Per-type budget table (6.11) written for Steve to approve. |
 | 1. File gate | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
 | 2. Stop the feedback loop | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
-| 3. One scheduler, RAM | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Edge cases F8, F11, F14, F15, M1–M3, M5–M7, M9–M11, M21–M24. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
+| 3. One scheduler, RAM | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
 | 4. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
 | 5. Grid makes 640 only | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
 | 6. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. Edge case M25. | Leftover complexity. | Fast checks pass; less code than before. |
@@ -570,10 +672,12 @@ gets its larger picture only in Single.
 
 Still to decide:
 
-1. Approve this design direction (option C) and the phase order.
-2. Phase 0 per-type budget table.
-3. Fast-lane allowance (proposed 64 MB, four at once).
-4. GPU developments at once (proposed two).
+1. ~~Approve this design direction (option C) and the phase order.~~
+   Approved by Steve, October 30.
+2. Phase 0 per-type estimates (6.11).
+3. Reduced-decode quick previews (6.11, point 4).
+4. Fast-lane allowance (proposed 64 MB, four at once).
+5. GPU developments at once (proposed two).
 
 Decided October 30:
 - No picture size limit; very large pictures are supported through bounded
