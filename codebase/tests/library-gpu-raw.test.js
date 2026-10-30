@@ -144,23 +144,40 @@ test('memory admission waits, reclaims and retries the same GPU development',asy
  assert.equal(leases,2);assert.equal(reclaims,2);assert.equal(developments,1);
 });
 
-test('development restarts are bounded, explained, and release the GPU on failure', async () => {
+test('yields wait their turn, real failures are explained once, cancellations pass through', async () => {
  const vm=require('node:vm'),fs=require('node:fs');
  const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
  const fn=source.slice(source.indexOf('  async function scheduledDevelopment('),source.indexOf('  async function develop(path,'));
- for(const kind of ['yield','memory']){
+ for(const kind of ['yield','memory','abort','readonly']){
   let attempts=0,deletes=0,releases=0;const events=[];
   const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
    gpu:async()=>({state:{lost:false}}),rawBudget:()=>60,wait:async()=>{},
    root:{HDRLibraryScenes:{stage(){}},HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},
    fetch:async(_url,options)=>{if(options.method==='DELETE')deletes++;else if(JSON.parse(options.body).release)releases++;return {ok:true,json:async()=>({granted:true})};},
-   developRaw:async()=>{attempts++;const error=Error(kind==='memory'?'RGB preparation exceeds the reserved memory budget.':'Yielding GPU RAW to shared work.');if(kind==='yield')error.yieldRaw=true;throw error;}};
+   developRaw:async()=>{
+    attempts++;
+    if(kind==='yield'){if(attempts>4)return {developed:true};throw Object.assign(Error('Yielding GPU RAW to shared work.'),{yieldRaw:true});}
+    if(kind==='abort')throw new DOMException('Cancelled','AbortError');
+    if(kind==='readonly')throw new DOMException('mapAsync failed','OperationError');
+    throw Error('RGB preparation exceeds the reserved memory budget.');}};
   vm.runInNewContext(fn+';this.run=scheduledDevelopment;',context);
-  await assert.rejects(context.run({meta:{path:'broken.jpg'},edges:[640]},new AbortController().signal),/Development stopped after/);
-  assert.equal(attempts,kind==='yield'?3:1);assert.equal(deletes,1);assert.equal(releases,attempts-1);
-  const restarts=events.filter(e=>e.stage==='picture_development_restart');assert.equal(restarts.length,attempts-1);
-  assert.ok(restarts.every(e=>e.reason&&e.attempt));assert.equal(events.filter(e=>e.stage==='picture_development_failed').length,1);
-  assert.equal(events.at(-1).stage,'picture_development_outcome');
+  const run=context.run({meta:{path:'photo.arw'},edges:[640]},new AbortController().signal);
+  const failed=events=>events.filter(e=>e.stage==='picture_development_failed').length;
+  if(kind==='yield'){
+   // Four yields to more urgent work are not failures: the fifth turn finishes.
+   assert.deepEqual(await run,{developed:true});
+   assert.equal(attempts,5);assert.equal(releases,4);assert.equal(failed(events),0);
+   const restarts=events.filter(e=>e.stage==='picture_development_restart');
+   assert.equal(restarts.length,4);assert.ok(restarts.every(e=>e.reason&&e.attempt));
+  } else if(kind==='abort'){
+   await assert.rejects(run,error=>error.name==='AbortError'&&error.message==='Cancelled');
+   assert.equal(failed(events),0);assert.equal(events.at(-1).work_stage,'cancelled');
+  } else {
+   await assert.rejects(run,error=>/^Development stopped after 1 attempt: (RGB preparation|mapAsync failed)/.test(error.message)&&!!error.cause?.message);
+   assert.equal(attempts,1);assert.equal(failed(events),1);assert.equal(releases,0);
+   assert.equal(events.at(-1).stage,'picture_development_outcome');
+  }
+  assert.equal(deletes,1);
  }
 });
 

@@ -797,14 +797,19 @@
         try { return await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, signal, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy}); }
         catch (error) {
           if (context.state?.lost) { error.gpuUnavailable=true; throw error; }
-          const retry = !!error.yieldRaw && attempts < 3;
-          root.HDRLibraryStopwatch?.(retry ? "picture_development_restart" : "picture_development_failed",
-            {path:meta.path,attempt:attempts,reason:error.message});
-          // Repeating the same allocation cannot fix an underestimated footprint.
-          // Preemption alone may restart, at most twice, after releasing its lease.
-          if (!retry) {
-            error.message = `Development stopped after ${attempts} attempt${attempts === 1 ? "" : "s"}: ${error.message}`;
-            throw error;
+          // Cancellation is not a failure: pass it through unchanged.
+          if (signal?.aborted || error?.name === "AbortError") throw error;
+          // Yielding to more urgent work is not a failure either: release the
+          // lease and wait for the next turn without spending an attempt.
+          if (error.yieldRaw) {
+            attempts--;
+            root.HDRLibraryStopwatch?.("picture_development_restart", {path:meta.path,attempt:attempts+1,reason:error.message});
+          } else {
+            root.HDRLibraryStopwatch?.("picture_development_failed", {path:meta.path,attempt:attempts,reason:error.message});
+            // Repeating the same allocation cannot fix an underestimated footprint.
+            // DOMException messages are read-only, so wrap rather than rewrite.
+            throw Object.assign(Error(`Development stopped after ${attempts} attempt${attempts === 1 ? "" : "s"}: ${error?.message ?? error}`, {cause:error}),
+              {gpuUnavailable:error?.gpuUnavailable, yieldRaw:false});
           }
         }
         // developRaw's finally has freed every buffer before Grade sees zero.

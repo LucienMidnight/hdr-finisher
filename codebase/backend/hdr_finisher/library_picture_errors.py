@@ -23,6 +23,13 @@ def _reader_identity():
 _READER = _reader_identity()
 
 
+def _listed(path):
+    from pathlib import PureWindowsPath
+    from .desktop_security import is_os_junk_folder, is_photo_name
+    parts = PureWindowsPath(str(path)).parts
+    return bool(parts) and is_photo_name(parts[-1]) and not any(is_os_junk_folder(p) for p in parts[:-1])
+
+
 class PictureErrors:
     def __init__(self, marks):
         self.marks = marks
@@ -69,7 +76,15 @@ class PictureErrors:
     def all(self):
         with self.marks._lock:
             paths = self.marks._query("SELECT path FROM picture_errors WHERE path NOT LIKE '@grade:%' ORDER BY rowid DESC")
-            return [record for (path,) in paths if (record := self.get(path))]
+            records = []
+            for (path,) in paths:
+                # Files the Library no longer lists (macOS "._" companions,
+                # metadata folders) must not stay under Needs attention.
+                if not _listed(path):
+                    self.clear(path)
+                elif record := self.get(path):
+                    records.append(record)
+            return records
 
     def save(self, record):
         with self.marks._lock:

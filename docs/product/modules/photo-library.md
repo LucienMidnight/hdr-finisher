@@ -4,6 +4,45 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 30 (night): slow RAW camera previews and false failures
+
+Steve's 18:18 run (code 1c0d45a; badminton fast, 20241117 and other RAW
+folders slow) showed three problems:
+
+1. **Camera previews wait behind developments.** Extracting a RAW's embedded
+   JPEG takes about 56 ms in the backend, but the grid waited a median 2.1 s
+   (37 of 71 over 2 s, `_DSC6679.ARW` 31 s). Since October 29 every camera or
+   original quick preview reserves the full 600 MB working room before it
+   starts. While two or three developments held 1.2–1.8 GB of reservations
+   on top of 2.1–2.7 GB in use, every quick preview was refused (HTTP 202) and
+   polled every 250 ms. Each refusal also raises budget pressure for 2 s,
+   which reclaims finished thumbnails (29 reclaims in the run).
+2. **Yielding counted as a failed attempt.** A development preempted by more
+   urgent work three times was remembered as a broken photo
+   (`_DSC6679.ARW`: "Development stopped after 3 attempts: Yielding GPU RAW
+   to shared work").
+3. **Cancellation crashed the failure path.** A cancelled development was
+   treated as a failure, and rewriting the read-only DOMException message
+   threw "Cannot set property message" (`_DSC6658.ARW`).
+
+The `._` entries still under Needs attention were saved failures from before
+1c0d45a; no `._` file was touched in the 18:18 run.
+
+**Fixed:** yields no longer use an attempt; cancellations pass through
+unchanged; other failures are wrapped (original kept as `cause`) instead of
+having their message rewritten. Needs attention drops and deletes saved
+failures for files the Library no longer lists (`._` files, OS metadata
+folders). Saved failures from the yield bug (such as `_DSC6679.ARW`) stay until
+retried from Needs attention. Fast checks: JS 672 passed / 3 known failures;
+Python 2,757 passed / 4 known failures / 3 skipped.
+
+**Open, waiting on Steve's decision:** quick previews reserve what they
+need (a RAW's embedded JPEG is a few tens of MB; a full-size JPEG original is
+about 70–250 MB) instead of the 600 MB working room, and a refused quick
+preview stops raising budget pressure. This is a sizing change owned by
+[memory-and-caches](memory-and-caches.md). The grid-scheduler proposal below
+is still open as well.
+
 ## October 30 (evening): thumbnail pipeline root-cause review
 
 Steve's 16:22 Aceh-Wedding run (code 221943a) was traced end to end. What

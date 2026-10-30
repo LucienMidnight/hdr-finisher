@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from hdr_finisher.library_folders import _walk_photos, scan_folder
 from hdr_finisher.media_browser import MediaBrowserStore
 
@@ -25,3 +27,16 @@ def test_add_folder_peek_counts_only_photos(tmp_path):
     root = _folder(tmp_path)
     browser = MediaBrowserStore.__new__(MediaBrowserStore)
     assert browser.folder_peek(str(root))["count"] == 1
+
+
+def test_needs_attention_drops_files_the_library_no_longer_lists(tmp_path):
+    from hdr_finisher.library_marks import LibraryMarks
+    from hdr_finisher.library_picture_errors import PictureErrors
+    root = _folder(tmp_path)
+    errors = PictureErrors(LibraryMarks(root))
+    for name in ("IMG_1.JPG", "._IMG_1.JPG", "__MACOSX/IMG_2.JPG"):
+        path = root / name
+        errors.remember(path, ValueError("cannot identify image file"), errors.revision(path))
+    assert [Path(r["path"]).name for r in errors.all()] == ["IMG_1.JPG"]
+    # The junk rows are removed, not just hidden.
+    assert len(errors.marks._query("SELECT path FROM picture_errors")) == 1
