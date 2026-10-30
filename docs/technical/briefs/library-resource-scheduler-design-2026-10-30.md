@@ -504,7 +504,7 @@ plus 64 MB for ordinary RAW) covers the measured RAW peaks.
    samples (about 3.6 GB) exceed the GPU's largest buffer. It should go
    straight to the bounded route (new edge case M26).
 
-**Proposed estimates for the scheduler (Steve's decision).** Measured bytes
+**Estimates for the scheduler (approved by Steve, October 30).** Measured bytes
 per pixel plus 25%, from header dimensions, with a 64 MB minimum per job:
 
 | Job | Estimate (backend RAM) |
@@ -686,7 +686,8 @@ Still to decide:
 
 1. ~~Approve this design direction (option C) and the phase order.~~
    Approved by Steve, October 30.
-2. Phase 0 per-type estimates (6.11).
+2. ~~Phase 0 per-type estimates (6.11).~~ Approved by Steve, October 30;
+   recorded in memory-and-caches.
 3. Reduced-decode quick previews (6.11, point 4).
 4. Fast-lane allowance (proposed 64 MB, four at once).
 5. GPU developments at once (proposed two).
