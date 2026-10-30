@@ -18,6 +18,13 @@ split between its parts**. The other module PRDs describe what each cache is
 for; the sizes live here. Change a size here first, with Steve's decision, and
 then in the code.
 
+**Open, October 30: one scheduler for memory and GPU work.** The fixed
+600 MB per-job reservation, memory counted twice, and refusals treated as
+memory pressure are behind the October 29–30 stalls. The proposed
+replacement, with research and phases, is
+[library-resource-scheduler-design-2026-10-30](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+It is waiting on Steve's review; nothing in it is built.
+
 ## 1. Purpose
 
 HDR Finisher holds pictures in several processes at once: the Python backend

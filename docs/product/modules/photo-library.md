@@ -4,6 +4,17 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 30 (late): design review before more fixes
+
+Steve asked for a whole-system design before further fixes. The proposal,
+[library-resource-scheduler-design-2026-10-30](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md),
+replaces the separate Library gates (quick-preview and RAW-decode
+reservations, the exclusive GPU lease, draw leases, retry loops) with one
+backend scheduler: priority classes, per-job estimates, a fast lane for
+small jobs, and measured memory as a safety net only. It supersedes the two
+"open, waiting on Steve's decision" items below. Status: draft for review;
+nothing built.
+
 ## October 30 (night): slow RAW camera previews and false failures
 
 Steve's 18:18 run (code 1c0d45a; badminton fast, 20241117 and other RAW
