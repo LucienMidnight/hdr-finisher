@@ -405,10 +405,22 @@ Rules on top of the formulas:
   depth) count every image they decode.
 * **Estimates are logged against measured peaks.** Overruns raise that
   type's estimate (6.5).
-* **Reduced decoding** is checked in phase 0 for the 640 grid size. Examples
-  are JPEG decoding at 1/2, 1/4 or 1/8 scale, and LibRaw half-size. It can
-  cut both memory and time for thumbnails. It is used only where the picture
-  stays within the agreed perceptual tolerance.
+* **Reduced decoding is for quick previews only, never for the real
+  thumbnail.** Real grid thumbnails keep the full-size decode, for two
+  existing reasons:
+  * Steve approved Grade's decoder and full-source measurements for
+    thumbnails. Peaks and other measurements taken from the full source set
+    the starting grade and highlight handling. A shrunk decode averages away
+    small bright highlights, so the thumbnail would not match Single or the
+    export.
+  * A half-size (2×2 binned) RAW development was tried on October 18. It cut
+    preparation from 7.6 s to 2.5 s, but failed the perceptual limits on
+    DSC07216 (HDR ΔE ITP mean 2.37, p99.9 80; SDR ΔE 2000 mean 0.67, p99.9
+    19), mostly in bright highlights, and was removed.
+
+  Quick previews (the camera's embedded JPEG, or an unedited JPEG original)
+  are placeholders with no grade or measurements, so a reduced decode is
+  safe there (6.11, point 4).
 
 ### 6.11 Phase 0 results (measured October 30, 2026)
 
