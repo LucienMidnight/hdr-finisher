@@ -1,16 +1,18 @@
 // Short, disposable cold-open measurement. Originals are only copied/read.
-// node tests/run-in-electron.js tools/measure-library-cold-mixed.cjs [--jpeg]
+// node tests/run-in-electron.js tools/measure-library-cold-mixed.cjs [--jpeg|--probe|--aceh]
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const {spawn}=require('node:child_process');
 const {chromium}=require('playwright');
 const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
-const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe');
-const out=path.join(root,'output/cold-mixed',jpeg?'jpeg':probe?'probe':'final');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'memory.jsonl'),'');
+const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe'),aceh=process.argv.includes('--aceh');
+const out=path.join(root,'output/cold-mixed',jpeg?'jpeg':probe?'probe':aceh?'aceh':'final');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'memory.jsonl'),'');
 const scratch=fs.mkdtempSync(path.join(root,'output/test-photos/cold-mixed-'));
 const photos=path.join(scratch,'photos'),background=path.join(scratch,'index');fs.mkdirSync(photos);fs.mkdirSync(background);
-const source='D:/Photos/2023/11';
+const source=aceh?'D:/Photos/2017/Aceh-Wedding/Pesta':'D:/Photos/2023/11';
 let names=fs.readdirSync(source).filter(n=>/\.(heic|jpg|png|arw)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
-if(jpeg)names=['IMG_0267.JPG'];else{
+let junk=[];
+if(aceh){junk=fs.readdirSync(source).filter(n=>n.startsWith('._')).sort().slice(0,6);names=names.filter(n=>!n.startsWith('._')).slice(0,48);}
+else if(jpeg)names=['IMG_0267.JPG'];else{
  const chosen=probe ? [
   ...names.filter(n=>/\.ARW$/i.test(n)).slice(0,4),...names.filter(n=>/\.HEIC$/i.test(n)).slice(0,8),
   ...names.filter(n=>/\.JPG$/i.test(n)).slice(0,2),...names.filter(n=>/\.PNG$/i.test(n)).slice(0,2)
@@ -19,12 +21,13 @@ if(jpeg)names=['IMG_0267.JPG'];else{
  for(const ext of ['HEIC','JPG','PNG','ARW'])if(!chosen.some(n=>n.toUpperCase().endsWith('.'+ext)))chosen.push(names.find(n=>n.toUpperCase().endsWith('.'+ext)));
  if(!chosen.includes('IMG_0267.JPG'))chosen.push('IMG_0267.JPG');names=chosen;
 }
+for(const name of junk)fs.copyFileSync(path.join(source,name),path.join(photos,name));
 for(const name of names)fs.copyFileSync(path.join(source,name),path.join(photos,name));
 // Small generated-fixture files keep an independent pinned index active;
 // no second copies of Steve's real photos are made.
-if(!jpeg)for(let i=0;i<1200;i++)fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),path.join(background,`index-${String(i).padStart(4,'0')}.png`));
+if(!jpeg&&!aceh)for(let i=0;i<1200;i++)fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),path.join(background,`index-${String(i).padStart(4,'0')}.png`));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const report={mode:jpeg?'IMG_0267':'mixed',files:names,errors:[],memoryRequests:[],screens:[],startedAt:new Date().toISOString()};
+const report={mode:jpeg?'IMG_0267':aceh?'aceh':'mixed',files:names,junk,errors:[],memoryRequests:[],screens:[],startedAt:new Date().toISOString()};
 const before=hashProjects(require('../tests/release/drivers.json').protectedProjects);
 (async()=>{
  let browser,lib,observer,peak=0,pending='',poll,stopping=false,activePoll;
@@ -63,7 +66,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   const cacheSettings=await api('cache-settings');report.cacheSettings=cacheSettings;
   assert.ok(cacheSettings.location.toLowerCase().includes('test-'),'Test must use an isolated disk cache');
   await api('lock-metrics',{reset:true});
-  if(!jpeg)await api('pins',{paths:[background]});
+  if(!jpeg&&!aceh)await api('pins',{paths:[background]});
   const opened=Date.now();void lib.evaluate(folder=>HDRLibrary.browse(folder),photos.replaceAll('\\','/')).catch(e=>report.errors.push(String(e)));
   await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count>0,null,{timeout:20000});
   for(let screen=0;screen<(jpeg||probe?1:2);screen++){
@@ -93,6 +96,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   assert.ok(report.samples>0&&!report.observerError,'Independent memory observer must work');
   assert.ok(peak<=4_000_000_000,'Whole-app memory must remain below ceiling');
   assert.deepEqual(report.errors,[]);
+  if(aceh)assert.equal(report.snapshot.count,names.length,'AppleDouble ._ files must not be listed');
  }catch(e){report.error=String(e.stack||e);process.exitCode=1;
   if(lib)Object.assign(report,await lib.evaluate(()=>({events:coldEvents,allocations:coldAllocations,snapshot:HDRLibrary.getSnapshot(),queue:HDRLibraryScenes.snapshot()})).catch(()=>({})));
  }

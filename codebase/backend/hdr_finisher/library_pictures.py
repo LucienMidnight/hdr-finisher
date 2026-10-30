@@ -21,7 +21,7 @@ from .import_defaults import calibrate_camera_raw, starting_adjustments
 from .library_diagnostics import audited, problem, log
 from .analysis import classify_hdr
 from .color import display_referred_sdr, map_negative_acescg, normalize_to_acescg, sdr_file_renditions
-from .desktop_security import SOURCE_EXTENSIONS
+from .desktop_security import SOURCE_EXTENSIONS, is_photo_name
 from .models import AdjustmentState
 from .projects import validate_saved
 from .render_cache import encode_rgba_proxy_rows
@@ -225,7 +225,7 @@ class LibraryPictureCache:
     @audited("picture_cache_build")
     def build(self, path, edge, quality="quick", cancelled=None, decoded=None, defer_store=False, persist=False, store_validate=None):
         path = Path(path).resolve(strict=True)
-        if path.suffix.lower() not in SOURCE_EXTENSIONS:
+        if not is_photo_name(path.name):
             raise ValueError("Unsupported library file type.")
         key = picture_key(path, edge, quality)
         browsing = path.suffix.lower() not in raw_import.RAW_EXTENSIONS and quality in {"quick", "fast"}

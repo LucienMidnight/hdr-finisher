@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
-from .desktop_security import SOURCE_EXTENSIONS
+from .desktop_security import SOURCE_EXTENSIONS, is_photo_name
 from .library_pictures import SIDECAR_SUFFIX
 from .library_settings_writer import LibrarySettingsWriter
 from .library_diagnostics import audited, problem, timed_lock, MarksLock
@@ -144,7 +144,7 @@ class LibraryMarks:
             if self._query("SELECT 1 FROM photos WHERE path=? UNION SELECT 1 FROM files WHERE path=?", (str(path), str(path))) or (getattr(self,"grades",None) and self.grades._get(str(path))):
                 return path
         path = path.resolve(strict=True)
-        if not path.is_file() or path.suffix.lower() not in SOURCE_EXTENSIONS:
+        if not path.is_file() or not is_photo_name(path.name):
             raise ValueError("Select a supported photo to mark.")
         return path
 

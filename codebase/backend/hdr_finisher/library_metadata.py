@@ -9,7 +9,7 @@ from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
-from .desktop_security import SOURCE_EXTENSIONS
+from .desktop_security import SOURCE_EXTENSIONS, is_photo_name
 from .library_diagnostics import audited, problem
 
 # Every fact is None when the file does not record it; nothing is guessed.
@@ -165,7 +165,7 @@ def read_metadata(paths, cancelled=lambda: False, *, parallel=False):
         path = Path(value).expanduser().resolve()
         record = {"path": str(path), **dict.fromkeys(FACT_FIELDS)}
         try:
-            if path.suffix.lower() in SOURCE_EXTENSIONS and path.is_file():
+            if is_photo_name(path.name) and path.is_file():
                 stat = path.stat()
                 record.update(_facts(str(path), stat.st_size, stat.st_mtime_ns), bytes=stat.st_size, mtime_ns=stat.st_mtime_ns)
         except OSError as error:

@@ -17,7 +17,7 @@ import numpy as np
 
 from .color import acescg_to_linear_srgb
 from .config import APP_DATA_DIR, EXPORTS_DIR
-from .desktop_security import SOURCE_EXTENSIONS
+from .desktop_security import SOURCE_EXTENSIONS, is_photo_name
 from .preview import downsample_image
 from .raw_import import RAW_EXTENSIONS
 
@@ -172,7 +172,7 @@ class MediaBrowserStore:
             source = Path(value).expanduser().resolve(strict=True)
         except OSError as exc:
             raise MediaBrowserError(f"Imported source is not available: {value}") from exc
-        if not source.is_file() or source.suffix.lower() not in SOURCE_EXTENSIONS:
+        if not source.is_file() or not is_photo_name(source.name):
             raise MediaBrowserError(f"Imported source is not a supported image: {source}")
         self._record_recent(source.parent)
         return self.recents()
@@ -199,7 +199,7 @@ class MediaBrowserStore:
                 if cancel_event is not None and cancel_event.is_set():
                     raise CancelledError("Folder peek cancelled.")
                 suffix = Path(entry.name).suffix.lower()
-                if suffix not in SOURCE_EXTENSIONS or not entry.is_file():
+                if not is_photo_name(entry.name) or not entry.is_file():
                     continue
                 count += 1
                 formats.add(suffix[1:].upper())
@@ -210,7 +210,7 @@ class MediaBrowserStore:
 
     def thumbnail(self, value: str, size: int = 256, *, fast_only: bool = False, embedded_only: bool = False, cancel_event=None) -> Path:
         path = Path(value).expanduser().resolve(strict=True)
-        if not path.is_file() or path.suffix.lower() not in SOURCE_EXTENSIONS:
+        if not path.is_file() or not is_photo_name(path.name):
             raise MediaBrowserError("Select a supported image file for a thumbnail.")
         if fast_only and path.suffix.lower() not in FAST_THUMBNAIL_EXTENSIONS:
             raise MediaBrowserError("This format has no cheap staged-preview path.")
@@ -268,7 +268,7 @@ class MediaBrowserStore:
             if birthtime is not None
             else int(stat.st_ctime_ns // 1_000_000) if stat is not None else None
         )
-        supported = suffix == ".hdrfinisher" if mode in {"project_open", "project_save"} else suffix in SOURCE_EXTENSIONS
+        supported = suffix == ".hdrfinisher" if mode in {"project_open", "project_save"} else is_photo_name(path.name)
         return {
             "name": path.name,
             "path": str(path.resolve(strict=False)),
@@ -281,7 +281,7 @@ class MediaBrowserStore:
             "modified_ns": int(stat.st_mtime_ns) if stat is not None else None,
             "thumbnail_key": (
                 hashlib.sha256(f"{path.resolve(strict=False)}\0{stat.st_size}\0{stat.st_mtime_ns}".encode()).hexdigest()
-                if stat is not None and kind == "file" and suffix in SOURCE_EXTENSIONS
+                if stat is not None and kind == "file" and is_photo_name(path.name)
                 else None
             ),
         }

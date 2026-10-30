@@ -236,8 +236,16 @@ window.HDRLibraryRGB = (() => {
     const sampleBytes = direct && typeof Float16Array !== 'undefined' ? 2 : 4;
     const handoffPlane = buffer => {
       if (sampleBytes !== 2) return buffer;
-      return Float16Array.from(new Float32Array(buffer), value =>
-        Number.isFinite(value) ? Math.max(0, Math.min(65504, value)) : value).buffer;
+      // Clamp finite values to [0, 65504] in place, keep NaN/±Infinity, then
+      // let the native constructor round. A per-value callback in
+      // Float16Array.from cost about 1.4 s for one 2560-edge picture.
+      const values = new Float32Array(buffer);
+      for (let i = 0; i < values.length; i++) {
+        const value = values[i];
+        if (value <= 0) { if (value !== -Infinity) values[i] = 0; }
+        else if (value > 65504 && value !== Infinity) values[i] = 65504;
+      }
+      return new Float16Array(values).buffer;
     };
     const owned = new Set(); let liveBytes = 0, peakBytes = 0;
     const own = buffer => { if(liveBytes+buffer.size>memoryBudget){buffer.destroy();throw Error("RGB preparation exceeds the reserved memory budget.");} owned.add(buffer); liveBytes += buffer.size; peakBytes = Math.max(peakBytes, liveBytes); return buffer; };

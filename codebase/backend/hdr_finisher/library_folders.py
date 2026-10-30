@@ -5,7 +5,7 @@ from concurrent.futures import CancelledError
 import os
 from pathlib import Path
 
-from .desktop_security import SOURCE_EXTENSIONS
+from .desktop_security import SOURCE_EXTENSIONS, is_os_junk_folder, is_photo_name
 from .library_diagnostics import audited, problem
 from .library_pictures import SIDECAR_SUFFIX
 
@@ -64,7 +64,7 @@ def scan_folder(value, cancelled=lambda: False, fingerprints=False):
     for parent, directories, files in os.walk(root, followlinks=False, onerror=inaccessible):
         if cancelled():
             raise CancelledError()
-        directories[:] = [name for name in directories if not Path(parent, name).is_symlink()]
+        directories[:] = [name for name in directories if not is_os_junk_folder(name) and not Path(parent, name).is_symlink()]
         folders.append(parent)
         names = set(files)
         if fingerprints:
@@ -81,7 +81,7 @@ def scan_folder(value, cancelled=lambda: False, fingerprints=False):
             if position % 32 == 0 and cancelled():
                 raise CancelledError()
             path = Path(parent, name)
-            if path.suffix.lower() not in SOURCE_EXTENSIONS or path.is_symlink():
+            if not is_photo_name(name) or path.is_symlink():
                 continue
             try:
                 stat = path.stat()
@@ -136,9 +136,10 @@ def _walk_photos(root, warnings, cancellation):
             try:
                 if entry.is_symlink(): continue
                 if entry.is_dir(follow_symlinks=False):
-                    stack.append(directory(entry.path)); continue
+                    if not is_os_junk_folder(entry.name): stack.append(directory(entry.path))
+                    continue
                 path=Path(entry.path)
-                if path.suffix.lower() not in SOURCE_EXTENSIONS: continue
+                if not is_photo_name(entry.name): continue
                 stat=entry.stat(follow_symlinks=False)
                 settings=stack[-1][1].get(os.path.normcase(entry.name+SIDECAR_SUFFIX))
                 yield dict(path=entry.path,name=entry.name,type=path.suffix[1:].upper(),

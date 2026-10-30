@@ -14,6 +14,23 @@ SOURCE_EXTENSIONS = {
     ".cr3", ".nef", ".nrw", ".raf", ".rw2", ".orf", ".ori", ".pef", ".srw",
 }
 EXPORT_EXTENSIONS = {".avif", ".jpg", ".jpeg", ".png", ".jxl"}
+# Folders that operating systems and NAS boxes create beside photos. They hold
+# metadata copies (macOS AppleDouble, Synology thumbnails), never photos.
+OS_JUNK_FOLDERS = {"__macosx", ".appledouble", "@eadir", ".trashes", ".spotlight-v100", ".fseventsd"}
+
+
+def is_photo_name(name: str) -> bool:
+    """True for a file name the Library treats as a photo.
+
+    macOS writes "._NAME" AppleDouble files (resource forks, about 4 KB) next to
+    photos on non-Mac disks. They keep the photo's extension but are not images.
+    """
+    name = str(name)
+    return not name.startswith("._") and Path(name).suffix.lower() in SOURCE_EXTENSIONS
+
+
+def is_os_junk_folder(name: str) -> bool:
+    return str(name).casefold() in OS_JUNK_FOLDERS
 
 
 @dataclass(frozen=True)
@@ -60,7 +77,7 @@ class DesktopPathGrants:
     @staticmethod
     def _validate(path: Path, intent: str) -> None:
         if intent in {"source-open", "source-relink"}:
-            if not path.is_file() or path.suffix.lower() not in SOURCE_EXTENSIONS:
+            if not path.is_file() or not is_photo_name(path.name):
                 raise ValueError("Select a supported HDR Finisher source file.")
             return
         if intent == "project-open":

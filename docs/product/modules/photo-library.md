@@ -4,6 +4,57 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 30 (evening): thumbnail pipeline root-cause review
+
+Steve's 16:22 Aceh-Wedding run (code 221943a) was traced end to end. What
+actually limited the grid, in order of cost:
+
+1. **One GPU development at a time, by construction.** Every Library
+   development asks the GPU scheduler for an unshared lease
+   (`concurrent:false` in `library-gpu-raw.js`), so no second development is
+   ever granted. Finished thumbnails also take that lease to draw, so a
+   finished cell waited 1.8–2.6 s behind the next photo's development.
+2. **A grid thumbnail also builds the 2560 screen preview.** Every grid
+   development makes 640 and 2560 sizes. The 2560 copy is 16 times the bytes
+   of the thumbnail (52 MB against 3 MB for a 12 MP JPEG). It enlarges the GPU
+   reservation, readback, conversion, hand-off and disk save.
+3. **Half-float conversion ran a JavaScript callback per value.** That cost
+   about 1.4 s per 2560 picture and was logged as "readback" (2,485 ms for
+   IMG_3746).
+4. **macOS `._` AppleDouble files were listed as photos.** They took memory
+   admissions and source slots, failed, and were requested again
+   (about 25 files, 117 requests in the run).
+
+Not the cause in this run: app memory peaked at about 2.8 GB against the 4 GB
+ceiling; the longest marks-lock wait was about 125 ms. The once-a-second
+cache checks after the grid finished were the idle pre-warmer (one photo at a
+time after a 1 s pause, by design). Background recovery still logged
+2,041 pieces in three minutes; wasteful but not blocking.
+
+**Fixed in this commit (output unchanged):** half-float conversion now clamps
+in a plain loop and converts natively (bit-identical on 14.7 M test values,
+1.4 s to about 60–80 ms). One shared photo-name check skips `._NAME` files and
+OS metadata folders (`__MACOSX`, `.AppleDouble`, `@eaDir`, `.Trashes`,
+`.Spotlight-V100`, `.fseventsd`) in folder scans, the index walk, add-folder
+browsing and file checks; already-indexed `._` rows are hidden from folder
+views and removed by the next index pass.
+
+Disposable check: 48 Pesta JPEGs plus 6 `._` files copied to a fresh
+profile (`tools/measure-library-cold-mixed.cjs --aceh`). 48 listed (no `._`),
+48/48 cells finished, no failures or restarts. Median readback **138 ms**
+(was 2,485 ms), GPU stage 0.61 s (was 3.3 s), whole development 1.76 s (was
+5.2 s). First screen of 24 finished at 28.7 s, second at 56.5 s; photos still
+finish about one per second, now split between the single GPU lane (0.6 s)
+and the 2560 hand-off (0.67 s median). Memory polls 114, no timeouts, p95
+289 ms; whole-app peak 3.66 GB. Evidence: `codebase/output/cold-mixed/aceh/`.
+
+**Open, waiting on Steve's decision (proposed October 30):** grid cells
+develop only the thumbnail size, with the 2560 screen preview made when Single
+or the filmstrip needs it or by the idle pre-warmer; up to two or three
+developments share the GPU when their reservations fit the existing GPU and
+RAM budgets; finished thumbnails draw without waiting for a development
+lease; visible cells always go first. No budget, share or ceiling changes.
+
 ## October 28: Graceful saved-grade warnings
 
 Damaged grades now keep readable panel sections and display the actual photo;
