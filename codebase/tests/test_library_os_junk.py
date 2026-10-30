@@ -1,17 +1,27 @@
+import pytest
 from pathlib import Path
 
 from hdr_finisher.library_folders import _walk_photos, scan_folder
 from hdr_finisher.media_browser import MediaBrowserStore
 
+# Photos must be at least file_gate.MIN_PHOTO_BYTES to be listed.
+PHOTO = bytes([0xFF, 0xD8, 0xFF]) + b"x" * 2048
+
+
+@pytest.fixture(autouse=True)
+def _real_minimum(monkeypatch):
+    from hdr_finisher import file_gate
+    monkeypatch.setattr(file_gate, "MIN_PHOTO_BYTES", 1024)
+
 
 def _folder(tmp_path):
-    (tmp_path / "IMG_1.JPG").write_bytes(b"photo")
+    (tmp_path / "IMG_1.JPG").write_bytes(PHOTO)
     # macOS AppleDouble companion: same extension, not an image.
     (tmp_path / "._IMG_1.JPG").write_bytes(b"\x00\x05\x16\x07Mac OS X")
     (tmp_path / "__MACOSX").mkdir()
-    (tmp_path / "__MACOSX" / "IMG_2.JPG").write_bytes(b"copy")
+    (tmp_path / "__MACOSX" / "IMG_2.JPG").write_bytes(PHOTO)
     (tmp_path / "Pesta").mkdir()
-    (tmp_path / "Pesta" / "IMG_3.JPG").write_bytes(b"photo")
+    (tmp_path / "Pesta" / "IMG_3.JPG").write_bytes(PHOTO)
     (tmp_path / "Pesta" / "._IMG_3.JPG").write_bytes(b"\x00\x05\x16\x07")
     return tmp_path
 

@@ -20,6 +20,22 @@ Right-click a folder for more: **Check for new photos**, **New folder inside…*
 
 The Library keeps pinned folders up to date in the background. If you copy new photos in, they appear shortly. You can also choose **Check for new photos** from the folder menu or the **…** (More) menu.
 
+### Which files the Library shows
+
+The Library shows these file types: JPEG (`.jpg`, `.jpeg`), PNG, TIFF (`.tif`, `.tiff`), HEIC and HEIF, AVIF, JPEG XL (`.jxl`), OpenEXR (`.exr`), Radiance HDR (`.hdr`), PFM, DNG, and camera RAW files: Sony `.arw`, Canon `.cr2` and `.cr3`, Nikon `.nef` and `.nrw`, Fujifilm `.raf`, Panasonic `.rw2`, Olympus `.orf` and `.ori`, Pentax `.pef` and Samsung `.srw`.
+
+It leaves out files that are not photos, even when they have a photo extension:
+
+- Names that start with `.` or `~`, such as the `._` files macOS leaves on other drives and temporary files from other apps. A name that starts with `_`, like Sony's `_DSC0001.ARW`, is a normal photo.
+- Files and folders that Windows marks as hidden or system.
+- Folders for trash, snapshots and thumbnails, and any folder whose name starts with `.` or `~`. Named ones include `$RECYCLE.BIN`, `System Volume Information`, `#recycle`, `@Recycle`, `@eaDir`, `#snapshot` and `__MACOSX`.
+- Files smaller than 1 KB.
+- Links and shortcuts to other folders (symbolic links and junctions). They are not followed.
+
+A file whose contents turn out not to be a picture (for example, a web page saved with a `.jpg` name) appears once under **Needs attention** as "Not a valid photo". It is not tried again until the file changes. A photo that is still being copied waits until the copy finishes.
+
+**Online-only cloud files.** OneDrive, Dropbox, iCloud and Google Drive can keep a photo online and leave only a placeholder on your computer. The Library shows these as **Not downloaded** and never downloads them while you browse. Open one in Single or Grade to download it.
+
 ## Ways to look at your photos
 
 The buttons at the top of the Library switch the view.

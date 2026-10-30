@@ -705,7 +705,7 @@
             await sleep(2000,cell.controller.signal);
           }
         }
-      })().catch(error=>{if(current()&&!aborted(error)){if(error.folderDetails)status(error.message);else removeUnreadable(photo,error);pictureErrors.paint(cell);cell.controller.abort();}});
+      })().catch(error=>{if(current()&&!aborted(error)){if(error.cloudOnly){element.classList.remove("loading");element.classList.add("cloud-only");element.title="Online-only. Open this photo to download it.";}else if(error.folderDetails)status(error.message);else removeUnreadable(photo,error);pictureErrors.paint(cell);cell.controller.abort();}});
     }
     };
     if (!defer) cell.start();

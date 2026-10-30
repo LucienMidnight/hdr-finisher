@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 from uuid import uuid4
-from .desktop_security import SOURCE_EXTENSIONS, is_photo_name
+from .file_gate import SOURCE_EXTENSIONS, is_photo_name
 from .library_folder_commands import folder_name
 from .library_file_io import signature, digest, same, occupied, rename, durable, relocated, stable_ids, read_guard, check_streams
 from .library_file_state import snapshot, mapped, document_paths, retarget, pictures

@@ -8,29 +8,9 @@ import time
 from uuid import uuid4
 
 
-SOURCE_EXTENSIONS = {
-    ".exr", ".tif", ".tiff", ".hdr", ".pfm", ".heic", ".heif",
-    ".avif", ".jxl", ".png", ".jpg", ".jpeg", ".dng", ".arw", ".cr2",
-    ".cr3", ".nef", ".nrw", ".raf", ".rw2", ".orf", ".ori", ".pef", ".srw",
-}
+# The supported photo list and name rules live in file_gate (one rule set).
+from .file_gate import SOURCE_EXTENSIONS, is_photo_name  # noqa: E402,F401
 EXPORT_EXTENSIONS = {".avif", ".jpg", ".jpeg", ".png", ".jxl"}
-# Folders that operating systems and NAS boxes create beside photos. They hold
-# metadata copies (macOS AppleDouble, Synology thumbnails), never photos.
-OS_JUNK_FOLDERS = {"__macosx", ".appledouble", "@eadir", ".trashes", ".spotlight-v100", ".fseventsd"}
-
-
-def is_photo_name(name: str) -> bool:
-    """True for a file name the Library treats as a photo.
-
-    macOS writes "._NAME" AppleDouble files (resource forks, about 4 KB) next to
-    photos on non-Mac disks. They keep the photo's extension but are not images.
-    """
-    name = str(name)
-    return not name.startswith("._") and Path(name).suffix.lower() in SOURCE_EXTENSIONS
-
-
-def is_os_junk_folder(name: str) -> bool:
-    return str(name).casefold() in OS_JUNK_FOLDERS
 
 
 @dataclass(frozen=True)

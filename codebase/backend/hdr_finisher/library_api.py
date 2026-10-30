@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.exceptions import RequestValidationError
+from .file_gate import is_cloud_placeholder
 from .library_diagnostics import log, recent, timed_lock
 from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
@@ -373,8 +374,27 @@ def create_library_router(worker, browser, store=None):
     async def fallback_picture(command: LiveSceneRequest, request: Request):
         document = await run_in_threadpool(picture_document, command.path)
         path = str(marks.source_path(command.path))
+        refused = await run_in_threadpool(source_gate, path, command.priority)
+        if refused is not None:
+            return refused
         return await helper_result(request, "live-fallback", path=path, document=document,
             edge=command.edge, priority=command.priority)
+
+    def source_gate(path, priority):
+        """Checks before a photo's contents are read for a Library picture.
+
+        Returns a response to send instead, or None to go ahead. A file that is
+        not an image raises NotAPhoto, which the picture-error guard remembers
+        once for this file version."""
+        from .file_gate import check_contents, still_copying
+        info = Path(path).stat()
+        if is_cloud_placeholder(info) and priority != 0:
+            return JSONResponse({"detail": "Not downloaded: this photo is online-only. Open it to download it.",
+                "cloud_only": True}, status_code=409)
+        if still_copying(info):
+            return JSONResponse({"detail": "library_pending", "waiting": "copying"}, status_code=202)
+        check_contents(path)
+        return None
 
     async def quick_preview(preview, path, edge, request):
         # Wait asynchronously: queued visible previews must not occupy every
@@ -413,6 +433,8 @@ def create_library_router(worker, browser, store=None):
             return Response(status_code=204)
         try:
             identity = Path(path).stat()
+            if is_cloud_placeholder(identity):
+                return Response(status_code=204)
             def eligible():
                 stat = Path(path).stat()
                 return ((stat.st_size, stat.st_mtime_ns) == (identity.st_size, identity.st_mtime_ns)
@@ -482,7 +504,9 @@ def create_library_router(worker, browser, store=None):
                 "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}",
                 "source_identity": picture_key(path, 0, live_quality(document)),
                 "render_identity": picture_key(path, 0, live_quality(document)) + ":" + sha256(json.dumps(document or {}, sort_keys=True).encode()).hexdigest(),
-                "warm_allowed": live.cache.managed.can_warm()}
+                "warm_allowed": live.cache.managed.can_warm(),
+                # Online-only sync file: only the opened photo may read (download) it.
+                "cloud_only": is_cloud_placeholder(stat)}
 
     @router.post("/live-scene")
     @picture_errors.guard
@@ -497,6 +521,9 @@ def create_library_router(worker, browser, store=None):
             return await run_in_threadpool(live.describe, command.path, cached)
         if worker.status()["paused"]:
             return JSONResponse({"detail": "library_pending"}, status_code=202)
+        refused = await run_in_threadpool(source_gate, path, command.priority)
+        if refused is not None:
+            return refused
         token = source_jobs.claim(path, source_quality, command.edge, command.priority, file_commands.epoch, command.source_job)
         if token is None:
             return JSONResponse({"detail": "library_pending"}, status_code=202)
@@ -1284,6 +1311,10 @@ def create_library_router(worker, browser, store=None):
         if worker.status()["paused"]:
             return JSONResponse({"detail": "library_pending"}, status_code=202)
         try:
+            if not command.native_mode:
+                refused = await run_in_threadpool(source_gate, command.path, 1)
+                if refused is not None:
+                    return refused
             if command.native_mode and cache.gpu_native_ready(command.path):
                 return {"native_ready": True}
             cached = None if command.native_mode else await run_in_threadpool(cache.cached, command.path, command.edge, "grade-thumbnail")

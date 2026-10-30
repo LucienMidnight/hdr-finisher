@@ -16,14 +16,16 @@ VERSION = "library-rgb-v3"
 
 
 def decoded(path, inputs):
+    from .file_gate import decode_suffix
     path = Path(path).resolve(strict=True)
-    if path.suffix.lower() in {".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
+    suffix = decode_suffix(path)  # by contents when they differ from the extension
+    if suffix in {".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
         return decoded_precision(path, inputs)
-    if path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
+    if suffix not in {".jpg", ".jpeg", ".png"}:
         raise NotEligible("RGB preparation currently supports ordinary JPEG/PNG only")
     if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
         raise NotEligible("RGB interpretation overrides retain Grade's CPU loader")
-    if path.suffix.lower() != ".png" and loader.is_ultrahdr_jpeg(path):
+    if suffix != ".png" and loader.is_ultrahdr_jpeg(path):
         return decoded_precision(path, inputs)
     identity = _identity(path)
     start = perf_counter()
@@ -64,9 +66,10 @@ def decoded(path, inputs):
 def decoded_precision(path, inputs):
     """Use decoder-owned float32 samples, before transfer/gamut preparation."""
     from . import color
+    from .file_gate import decode_suffix
     identity = _identity(path)
     start = perf_counter()
-    suffix = path.suffix.lower()
+    suffix = decode_suffix(path)
     facts = {}
     reference = None
     if suffix in {".jpg", ".jpeg"}:

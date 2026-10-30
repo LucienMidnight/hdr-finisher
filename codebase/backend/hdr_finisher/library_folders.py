@@ -5,7 +5,7 @@ from concurrent.futures import CancelledError
 import os
 from pathlib import Path
 
-from .desktop_security import SOURCE_EXTENSIONS, is_os_junk_folder, is_photo_name
+from .file_gate import SOURCE_EXTENSIONS, is_cloud_placeholder, is_link, is_skipped_folder_name, listed_photo, skip_folder, hidden_or_system
 from .library_diagnostics import audited, problem
 from .library_pictures import SIDECAR_SUFFIX
 
@@ -25,7 +25,7 @@ def folder_tree(value, cancelled=lambda: False):
         for entry in entries:
             if cancelled():
                 raise CancelledError()
-            if entry.is_dir(follow_symlinks=False):
+            if entry.is_dir(follow_symlinks=False) and not skip_folder(entry):
                 children.append({"name": entry.name, "path": entry.path})
     return {"path": str(root), "children": sorted(children, key=lambda item: item["name"].casefold())}
 
@@ -64,7 +64,15 @@ def scan_folder(value, cancelled=lambda: False, fingerprints=False):
     for parent, directories, files in os.walk(root, followlinks=False, onerror=inaccessible):
         if cancelled():
             raise CancelledError()
-        directories[:] = [name for name in directories if not is_os_junk_folder(name) and not Path(parent, name).is_symlink()]
+        def kept(name):
+            folder = Path(parent, name)
+            if is_skipped_folder_name(name) or folder.is_symlink() or folder.is_junction():
+                return False
+            try:
+                return not hidden_or_system(folder.lstat())
+            except OSError:
+                return False
+        directories[:] = [name for name in directories if kept(name)]
         folders.append(parent)
         names = set(files)
         if fingerprints:
@@ -81,16 +89,20 @@ def scan_folder(value, cancelled=lambda: False, fingerprints=False):
             if position % 32 == 0 and cancelled():
                 raise CancelledError()
             path = Path(parent, name)
-            if not is_photo_name(name) or path.is_symlink():
+            if path.suffix.lower() not in SOURCE_EXTENSIONS:
                 continue
             try:
-                stat = path.stat()
+                stat = path.lstat()
             except OSError as error:
                 problem("scan_photo_failed", path, error, "photo skipped; remaining photos read")
                 continue
-            photos.append({"path": str(path), "name": name, "type": path.suffix[1:].upper(),
+            if not listed_photo(name, stat):
+                continue
+            row = {"path": str(path), "name": name, "type": path.suffix[1:].upper(),
                 "bytes": stat.st_size, "mtime_ns": stat.st_mtime_ns,
-                "sidecar": name + SIDECAR_SUFFIX in names})
+                "sidecar": name + SIDECAR_SUFFIX in names}
+            if is_cloud_placeholder(stat): row["cloud"] = True
+            photos.append(row)
     photos.sort(key=lambda item: (item["name"].casefold(), item["path"].casefold()))
     result = {"path": str(root), "photos": photos, "unreadable_folders": unreadable_folders}
     if fingerprints:
@@ -134,16 +146,19 @@ def _walk_photos(root, warnings, cancellation):
             except StopIteration:
                 stack.pop()[0].close(); continue
             try:
-                if entry.is_symlink(): continue
+                if is_link(entry): continue
                 if entry.is_dir(follow_symlinks=False):
-                    if not is_os_junk_folder(entry.name): stack.append(directory(entry.path))
+                    if not skip_folder(entry): stack.append(directory(entry.path))
                     continue
                 path=Path(entry.path)
-                if not is_photo_name(entry.name): continue
-                stat=entry.stat(follow_symlinks=False)
+                if path.suffix.lower() not in SOURCE_EXTENSIONS: continue
+                stat=entry.stat(follow_symlinks=False)  # from enumeration on Windows: no extra read
+                if not listed_photo(entry.name,stat): continue
                 settings=stack[-1][1].get(os.path.normcase(entry.name+SIDECAR_SUFFIX))
-                yield dict(path=entry.path,name=entry.name,type=path.suffix[1:].upper(),
+                row=dict(path=entry.path,name=entry.name,type=path.suffix[1:].upper(),
                     bytes=stat.st_size,mtime_ns=stat.st_mtime_ns,sidecar=settings is not None,settings=settings)
+                if is_cloud_placeholder(stat): row["cloud"]=True
+                yield row
             except OSError as error:
                 warnings.append(str(error.filename or entry.path))
     finally:

@@ -74,6 +74,8 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-cell canvas, .library-cell img { width: 100%; height: 100%; object-fit: contain; }
 .library-cell .library-marks { order: 1; }
 .library-cell .name { order: 2; flex: 0 0 16px; height: 16px; margin-top: -3px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+.library-cell.cloud-only .picture-frame { display: grid; place-items: center; }
+.library-cell.cloud-only .picture-frame::after { content: "Not downloaded"; color: var(--muted); font-size: 11px; }
 .library-footer { position: relative; display: flex; align-items: center; gap: 12px; background: var(--panel); color: var(--muted); padding: 5px 12px; min-height: 27px; font-size: 11px; border-top: 1px solid var(--hairline); }
 #library-status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #index-status { max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; min-height: 0; padding: 0 4px; font-size: 11px; color: var(--muted); }

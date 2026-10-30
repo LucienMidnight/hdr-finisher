@@ -69,7 +69,8 @@ def load_image(
     retained_session_bytes: int = 0,
     hdr_reference_white_nits: int = 203,
 ) -> tuple[np.ndarray, SourceImageDescriptor, dict[str, Any], Any, np.ndarray | None]:
-    suffix = path.suffix.lower()
+    from .file_gate import decode_suffix
+    suffix = decode_suffix(path)  # by contents when they differ from the extension
     total_started = perf_counter()
     decode_started = perf_counter()
     try:

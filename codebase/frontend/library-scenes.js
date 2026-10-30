@@ -64,6 +64,11 @@ window.HDRLibraryScenes = (() => {
     window.HDRLibraryTrace?.mark(trace,"picture_cache_check",checked,{cache_hit:!!plan.cached});
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     if (generation!==(generations.get(path)||0)) throw new DOMException("Invalidated", "AbortError");
+    // An online-only sync file is read (downloaded) only for the opened photo.
+    const urgency = typeof priority === "function" ? priority() : priority;
+    if (plan.cloud_only && !plan.cached && urgency !== 0) {
+      throw Object.assign(Error("Not downloaded: this photo is online-only. Open it to download it."), {cloudOnly:true});
+    }
     const version=plan.render_identity || plan.source_identity || plan.revision;
     if(versions.has(path)&&versions.get(path)!==version)sources.invalidate(candidate=>candidate===path);
     versions.delete(path);versions.set(path,version);

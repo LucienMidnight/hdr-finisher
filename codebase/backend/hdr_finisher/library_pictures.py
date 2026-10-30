@@ -21,7 +21,7 @@ from .import_defaults import calibrate_camera_raw, starting_adjustments
 from .library_diagnostics import audited, problem, log
 from .analysis import classify_hdr
 from .color import display_referred_sdr, map_negative_acescg, normalize_to_acescg, sdr_file_renditions
-from .desktop_security import SOURCE_EXTENSIONS, is_photo_name
+from .file_gate import SOURCE_EXTENSIONS, is_photo_name
 from .models import AdjustmentState
 from .projects import validate_saved
 from .render_cache import encode_rgba_proxy_rows

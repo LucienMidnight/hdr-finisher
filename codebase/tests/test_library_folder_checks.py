@@ -29,6 +29,11 @@ class Helper:
     def cancel(self, job):
         pass
 
+# Stand-in photo bytes over the file gate's 1 KB minimum (the helper process
+# applies the real limit).
+PHOTO = b"photo".ljust(2048, b".")
+
+
 @pytest.fixture
 def library(tmp_path):
     folder = tmp_path / "Intake"
@@ -163,8 +168,8 @@ def test_helper_check_runs_ahead_of_index_and_grade_gate_is_retained(tmp_path):
     large, selected = tmp_path / "large", tmp_path / "selected"
     large.mkdir(); selected.mkdir()
     for i in range(1800):
-        (large / f"{i}.jpg").write_bytes(b"photo")
-    (selected / "new.jpg").write_bytes(b"photo")
+        (large / f"{i}.jpg").write_bytes(PHOTO)
+    (selected / "new.jpg").write_bytes(PHOTO)
     helper = LibraryWorker(tmp_path / "app")
     order = []
     try:
@@ -212,8 +217,8 @@ def test_requested_check_interrupts_a_running_scan_without_restarting_it(tmp_pat
     monkeypatch.setattr(workers, "_worker_main", _controlled_worker)
     large, selected = tmp_path / "long-index", tmp_path / "selected"
     large.mkdir(); selected.mkdir()
-    (large / "old.jpg").write_bytes(b"photo")
-    (selected / "new.jpg").write_bytes(b"photo")
+    (large / "old.jpg").write_bytes(PHOTO)
+    (selected / "new.jpg").write_bytes(PHOTO)
     helper = LibraryWorker(tmp_path / "app")
     try:
         _, background = helper.submit_library("scan", path=str(large), background=True, priority=95)

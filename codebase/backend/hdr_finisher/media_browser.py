@@ -17,7 +17,7 @@ import numpy as np
 
 from .color import acescg_to_linear_srgb
 from .config import APP_DATA_DIR, EXPORTS_DIR
-from .desktop_security import SOURCE_EXTENSIONS, is_photo_name
+from .file_gate import SOURCE_EXTENSIONS, hidden_or_system, is_cloud_placeholder, is_link, is_photo_name, is_skipped_folder_name, listed_photo
 from .preview import downsample_image
 from .raw_import import RAW_EXTENSIONS
 
@@ -60,6 +60,23 @@ class MediaBrowserInterpretationRequired(MediaBrowserError):
         self.profile_name = profile_name
 
 
+def _visible(path: Path) -> bool:
+    """Hide what the Library's file gate hides: hidden, system, temporary and
+    OS/NAS metadata folders, links, and hidden or temporary files."""
+    name = path.name
+    try:
+        if path.is_symlink() or path.is_junction():
+            return False
+        info = path.lstat()
+    except OSError:
+        return False
+    if hidden_or_system(info) or name.startswith((".", "~")):
+        return False
+    if path.is_dir():
+        return not is_skipped_folder_name(name)
+    return True
+
+
 class MediaBrowserStore:
     def __init__(self, root: Path | None = None, *, thumbnail_worker=None) -> None:
         self.root = (root or APP_DATA_DIR).resolve()
@@ -81,7 +98,7 @@ class MediaBrowserStore:
         if not current.is_dir():
             raise MediaBrowserError(f"Not a folder: {current}")
         try:
-            entries = [self._entry(child, mode) for child in current.iterdir()]
+            entries = [self._entry(child, mode) for child in current.iterdir() if _visible(child)]
         except OSError as exc:
             raise MediaBrowserError(f"Could not read folder: {current}") from exc
         entries.sort(key=lambda item: (item["kind"] != "directory", str(item["name"]).casefold()))
@@ -199,7 +216,12 @@ class MediaBrowserStore:
                 if cancel_event is not None and cancel_event.is_set():
                     raise CancelledError("Folder peek cancelled.")
                 suffix = Path(entry.name).suffix.lower()
-                if not is_photo_name(entry.name) or not entry.is_file():
+                if not is_photo_name(entry.name) or is_link(entry) or not entry.is_file(follow_symlinks=False):
+                    continue
+                try:
+                    if not listed_photo(entry.name, entry.stat(follow_symlinks=False)):
+                        continue
+                except OSError:
                     continue
                 count += 1
                 formats.add(suffix[1:].upper())
@@ -216,6 +238,9 @@ class MediaBrowserStore:
             raise MediaBrowserError("This format has no cheap staged-preview path.")
         edge = max(64, min(int(size), 512))
         stat = path.stat()
+        if is_cloud_placeholder(stat):
+            # Reading an online-only sync file downloads it; the browser never does.
+            raise MediaBrowserError("This photo is online-only and not downloaded.")
         variant = "embedded" if embedded_only else "fast" if fast_only else "full"
         key = hashlib.sha256(
             f"{THUMBNAIL_CACHE_VERSION}\0{path}\0{stat.st_size}\0{stat.st_mtime_ns}\0{edge}\0{variant}".encode()
@@ -281,7 +306,7 @@ class MediaBrowserStore:
             "modified_ns": int(stat.st_mtime_ns) if stat is not None else None,
             "thumbnail_key": (
                 hashlib.sha256(f"{path.resolve(strict=False)}\0{stat.st_size}\0{stat.st_mtime_ns}".encode()).hexdigest()
-                if stat is not None and kind == "file" and is_photo_name(path.name)
+                if stat is not None and kind == "file" and is_photo_name(path.name) and not is_cloud_placeholder(stat)
                 else None
             ),
         }

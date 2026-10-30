@@ -24,10 +24,8 @@ _READER = _reader_identity()
 
 
 def _listed(path):
-    from pathlib import PureWindowsPath
-    from .desktop_security import is_os_junk_folder, is_photo_name
-    parts = PureWindowsPath(str(path)).parts
-    return bool(parts) and is_photo_name(parts[-1]) and not any(is_os_junk_folder(p) for p in parts[:-1])
+    from .file_gate import path_listed
+    return path_listed(path)
 
 
 class PictureErrors:

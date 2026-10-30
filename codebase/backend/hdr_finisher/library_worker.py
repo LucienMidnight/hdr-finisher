@@ -533,7 +533,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     result = {"id": job["id"], "result": check_kept(job["paths"], check)}
                 elif job["command"] == "metadata":
                     from .library_metadata import read_metadata
-                    result = {"id": job["id"], "result": read_metadata(job["paths"], check, parallel=bool(job.get("background")))}
+                    result = {"id": job["id"], "result": read_metadata(job["paths"], check, parallel=bool(job.get("background")), allow_cloud=job.get("priority") == 0)}
                 elif job["command"] == "scan-page":
                     from .library_folders import scan_page
                     output = scan_page(job["token"], job["path"], check,

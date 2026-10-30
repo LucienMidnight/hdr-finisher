@@ -4,6 +4,26 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 30 (night): file gate built (scheduler phase 1), awaiting Steve's try
+
+The Library lists and reads only supported photos, through one rule set in
+`file_gate.py`. It skips:
+- hidden, system and temporary names and folders;
+- trash, snapshot, NAS thumbnail and metadata folders;
+- links and junctions;
+- files under 1 KB.
+
+Online-only cloud files show **Not downloaded** and download only when
+opened. A file still being copied waits. A non-image with a photo extension
+is remembered once as "Not a valid photo". A file whose contents are a
+different supported format is decoded by its contents.
+
+Read-only check of D:\Photos: 140,302 of 142,570 photo-type files stay
+listed. 2,267 `._` files and 13 hidden Lightroom data folders are hidden. No
+real photo is hidden by the name rules. Details, and what is not covered, are
+in the design ([section 7.4](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md)).
+The supported-files list is now in the user guide (`docs/user-guide/library.md`).
+
 ## October 30 (late): design review before more fixes
 
 Steve asked for a whole-system design before further fixes. The proposal,

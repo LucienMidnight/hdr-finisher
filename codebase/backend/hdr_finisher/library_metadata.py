@@ -9,7 +9,7 @@ from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
-from .desktop_security import SOURCE_EXTENSIONS, is_photo_name
+from .file_gate import SOURCE_EXTENSIONS, is_cloud_placeholder, is_photo_name
 from .library_diagnostics import audited, problem
 
 # Every fact is None when the file does not record it; nothing is guessed.
@@ -130,7 +130,8 @@ atexit.register(close_readers)
 
 
 @audited("read_metadata")
-def read_metadata(paths, cancelled=lambda: False, *, parallel=False):
+def read_metadata(paths, cancelled=lambda: False, *, parallel=False, allow_cloud=False):
+    """allow_cloud: the user opened this photo, so an online-only file may download."""
     if parallel and len(paths) > 1:
         global _pool
         with _pool_lock:
@@ -167,7 +168,10 @@ def read_metadata(paths, cancelled=lambda: False, *, parallel=False):
         try:
             if is_photo_name(path.name) and path.is_file():
                 stat = path.stat()
-                record.update(_facts(str(path), stat.st_size, stat.st_mtime_ns), bytes=stat.st_size, mtime_ns=stat.st_mtime_ns)
+                if is_cloud_placeholder(stat) and not allow_cloud:
+                    record.update(bytes=stat.st_size, mtime_ns=stat.st_mtime_ns, cloud=True)
+                else:
+                    record.update(_facts(str(path), stat.st_size, stat.st_mtime_ns), bytes=stat.st_size, mtime_ns=stat.st_mtime_ns)
         except OSError as error:
             problem("metadata_stat_failed", path, error, "facts unavailable; photo stays visible")
         photos.append(record)

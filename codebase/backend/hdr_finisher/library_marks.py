@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
 
-from .desktop_security import SOURCE_EXTENSIONS, is_photo_name
+from .file_gate import SOURCE_EXTENSIONS, is_photo_name
 from .library_pictures import SIDECAR_SUFFIX
 from .library_settings_writer import LibrarySettingsWriter
 from .library_diagnostics import audited, problem, timed_lock, MarksLock

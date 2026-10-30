@@ -627,6 +627,67 @@ What the design keeps and adds:
 5. **Single and Grade** use 2560 and the existing native-detail rules.
    Export is unchanged.
 
+### 7.4 Phase 1 as built (October 30)
+
+* `codebase/backend/hdr_finisher/file_gate.py` holds the supported list and
+  every rule. The security module, folder scan, index walk, folder tree,
+  folder stream, add-folder browser, camera details, the picture checks and
+  Needs attention all use it.
+* Windows file details come from the folder listing itself, so the hidden,
+  system and size checks add no extra disk reads.
+* At picture time (`source_gate` in `library_api.py`), before any decoding:
+  * a cloud placeholder is read only for the opened photo (priority 0, the
+    detail view, or the selected photo's camera details); any other request
+    gets "Not downloaded", which is not remembered as a failure, and the
+    grid shows a **Not downloaded** cell;
+  * a file modified in the last 2 seconds waits;
+  * the first 32 bytes must be a supported image, or the file is remembered
+    once as "Not a valid photo".
+* F5 as built: a non-RAW file whose contents are a different supported
+  format than its extension is decoded by its contents (`decode_suffix`,
+  used by Grade's loader and the Library's GPU source decode).
+  * The real case: iPhone edited copies (`IMG_E….HEIC`) that are JPEGs.
+    That is 13 of a 3,000-photo sample of D:\Photos, so probably a few
+    hundred files in all. Before, these failed in both Grade and the Library
+    with "No 'ftyp' box".
+  * The five checked were also damaged: each JPEG ends early, and the bottom
+    10–40% of the picture is missing (grey) in the file itself. They now
+    report "image file is truncated" instead of a misleading HEIC error.
+    Complete files of this kind open.
+  * Camera RAW and DNG files keep their own route.
+* F3 as built: files under 1 KB are skipped silently when listing, not
+  counted.
+* F16: export staging files are named `.<name>.<random>.sdr.tmp.jpg`. The
+  leading-dot rule hides them, so a half-written export is never listed. It
+  could be listed before phase 1.
+* F10: CMYK and greyscale JPEG, and palette, 1-bit, transparent, 16-bit and
+  animated PNG all open (tested). Multi-page and CMYK TIFF without a colour
+  profile go to the CPU route (F19, phase 3). HEIC depth images, ProRAW and
+  JPEG XL-compressed DNG were not tested (no samples).
+* F12: symbolic links and junctions are never followed (junction loops
+  tested). Unicode and decomposed names are tested. Paths over 260
+  characters are not specially handled; they fail as unreadable and the walk
+  continues.
+* F13: unreadable folders keep their existing handling (shown, walk
+  continues). There is no automated test, because denying access in a test
+  folder is not portable.
+* Tests: `codebase/tests/test_file_gate.py`. Other tests write small
+  stand-in photos and use them at once, so `tests/conftest.py` turns off the
+  1 KB minimum and the 2-second wait for them. The gate tests, the
+  `._`-file tests and the add-folder peek test check the real values. Tests
+  whose scans run in the helper process use stand-ins over 1 KB.
+* Read-only check of D:\Photos (October 30). It took 44 s from folder
+  listings alone, with no file opens, plus 3,000 sampled opens:
+  * 142,570 photo-type files; 140,302 still listed;
+  * hidden: 2,267 macOS `._` files, one file under 1 KB (an Aperture face
+    thumbnail), and 13 hidden Lightroom `.lrdata`/`.lrcat-data` folders
+    (Lightroom's own previews);
+  * no real photo was hidden by the `.`/`~` name rules;
+  * the content sample found no non-images and 13 JPEG-in-HEIC files (F5).
+* Not covered: photo-library packages such as `Aperture Library.aplibrary`
+  still list their internal previews, as they did before. Whether to skip
+  app library packages is an open question for Steve.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
@@ -637,7 +698,7 @@ records its numbers in the [performance table](../performance-table.md).
 | Phase | What | Removes | Accept when |
 | --- | --- | --- | --- |
 | 0. Measure — **done October 30** | Log real RAM and GPU peaks per file type and job type on disposable copies (20241117 RAWs, Aceh JPEGs, one of each supported type, a large TIFF). Try reduced decoding for 640. No behaviour change. | — | Per-type budget table (6.11) written for Steve to approve. |
-| 1. File gate | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
+| 1. File gate — **built October 30, awaiting Steve's try** | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
 | 2. Stop the feedback loop | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
 | 3. One scheduler, RAM | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
 | 4. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
