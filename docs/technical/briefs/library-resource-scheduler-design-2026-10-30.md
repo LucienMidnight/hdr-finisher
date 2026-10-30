@@ -313,30 +313,180 @@ requests.
 * A GPU out-of-memory error frees Library work and retries once at the
   front of the line, before any CPU fallback.
 
-### 6.8 What the grid makes
+### 6.8 What each view makes (Steve, October 30: grid makes thumbnails only)
 
-* Grid and filmstrip cells develop only the thumbnail size (640).
-* The screen preview (2560) is made as **now** work when a photo opens in
-  Single, as **soon** work for Single's neighbours, and as **eventually**
-  work by the idle pre-warmer.
-* The camera's embedded JPEG (or the original JPEG) is always shown first,
-  through the fast lane.
+How it works today (checked in code, October 30): the Library develops each
+photo **without** its edit into a stored scene. The edit is applied by
+Grade's shaders **when the picture is drawn**. The grid always draws from
+the 640 scene (`thumbnailEdge()` is 640), so an edited photo's grid
+thumbnail already shows its edit from the 640 scene. The 2560 scene is made
+today only because every development produces both sizes at once.
 
-## 7. Phases
+The rules:
+
+* **Grid and filmstrip:** develop only the 640 scene, for every photo,
+  edited or not. Edited photos keep drawing their edit live on that scene
+  (masks, local adjustments, Film Look, Denoise and so on), exactly as now.
+  This must not regress (see the check below).
+* **Edits that change the source itself** (retouch, lens correction, RAW
+  import settings, anything in the scene identity) still trigger a new
+  640 development: **now** work if the photo is visible.
+* **Single, fullscreen and Compare:** the 2560 scene is made when a photo is
+  opened there (**now**), then for Single's next and previous neighbours
+  (**soon**). An unedited RAW in the grid never gets a 2560 scene until it
+  is opened. The idle pre-warmer makes only 640 scenes while the grid is
+  showing, and 2560 neighbours only while Single is open.
+* **While the 2560 scene is made,** Single shows the photo's own finished
+  grid picture scaled up (the existing October decision). An unedited photo
+  may show its camera preview. An edited photo never does.
+* **Stored screen previews** (the protected JPEG XL files) keep serving
+  Single when they exist. Nothing changes there.
+* **The camera's embedded JPEG** (or the original JPEG) is always shown
+  first in the grid, through the fast lane, for unedited photos only.
+
+**No-regression check for edited photos** (run in phase 5): a disposable
+copy with edited photos covering masks, many local adjustments, Film Look,
+Denoise, retouch and a virtual copy. Its grid and filmstrip pictures must
+match today's pictures (perceptual difference below the just-noticeable
+level). After opening each one in Single, the 2560 picture must match too.
+The read-only test projects are opened from copies only.
+
+### 6.9 Supported files and the file gate (Steve, October 30: be restrictive)
+
+The Library lists a file only if it passes **every** rule below. Anything
+else is ignored silently, or shown once as "unreadable" where noted. The
+supported list is one explicit table in code (`SOURCE_EXTENSIONS`, today 24
+extensions) and is also published in the user guide, so it is always clear
+what the Library reads.
+
+| Rule | Today | Proposed |
+| --- | --- | --- |
+| Extension is on the supported list | Yes | Unchanged; one list used everywhere (scan, index, add-folder browser, file checks). |
+| Not a macOS `._` companion | Yes (October 30) | Unchanged. |
+| Name does not start with `.` or `~` | No | Skip: hidden and temporary names. A `_` start stays allowed (Sony names Adobe RGB files `_DSC…`). |
+| Not marked hidden or system by Windows | No | Skip, for files and whole folders. |
+| Not inside a system, trash, snapshot or thumbnail folder | Six names | Skip the whole folder. Names compared without case: `$RECYCLE.BIN`, `System Volume Information`, `.Trash`, `.Trash-*`, `.Trashes`, `#recycle`, `@Recycle`, `@eaDir`, `.@__thumb`, `#snapshot`, `.snapshot`, `.DocumentRevisions-V100`, `.TemporaryItems`, `.Spotlight-V100`, `.fseventsd`, `__MACOSX`, `.AppleDouble`. (Any dot-folder is already covered by the rule above.) |
+| Not empty or too small to be an image | No | Skip files under 1 KB. They are counted in the existing "unreadable files hidden" note. |
+| Contents match a supported format | No | Read the first bytes before decoding. If they are another supported format (phones sometimes save HEIC as `.jpg`), decode it as that format. If they are not an image, show "not a valid photo" once, and don't retry until the file changes. |
+| File is not still being written | No | If the size or modified time changed in the last 2 seconds, list the photo but wait to decode it until it is stable (a card copy in progress). |
+| File is not an online-only cloud placeholder | No | OneDrive, Dropbox, iCloud and Google Drive "online-only" files download when read. Don't read them automatically; show a "not downloaded" cell. **Steve's decision:** download when the photo is opened, or never. |
+| Picture size within the Library's limit | No | Read the dimensions from the header first. Above the limit (proposed: 200 megapixels, **Steve's decision**), the Library uses the embedded preview or a reduced decode, never a full decode. Grade and export are not limited by this. |
+
+Our own temporary files must never end in a photo extension. Exports and
+saves write to a temporary name and rename it when complete, so a
+half-written export never appears in the Library. Phase 1 audits every
+writer for this.
+
+### 6.10 Memory budget per file type
+
+Every supported type gets an estimate formula, used by the scheduler (6.5).
+Phase 0 measures each one. The figures below are worked out from the pixel
+sizes (24-megapixel example) and are **not measured yet**. The measured
+table replaces them and becomes Steve's decision.
+
+| Type | Extensions | Library route | What uses the memory | 24 MP rough figure (to measure) |
+| --- | --- | --- | --- | --- |
+| Camera RAW | ARW, CR2, CR3, NEF, NRW, RAF, RW2, ORF, ORI, PEF, SRW | LibRaw unpack, GPU development | Sensor data (W×H×2 bytes), GPU working set (VRAM, existing `rawBudget`), read-back planes | about 50 MB sensor + read-back; VRAM per `rawBudget` |
+| Camera RAW, quick preview | same | embedded JPEG | Decoded embedded preview (often 1–2 MP) | 5–25 MB |
+| DNG | DNG | raw, linear or JPEG XL-compressed | As camera RAW; linear DNG holds 3 channels; tiles bound the working set | 50–300 MB |
+| JPEG | JPG, JPEG | GPU direct | 8-bit decode W×H×3, upload copy | about 72 MB + copy |
+| JPEG, quick preview | same | original preview | Full 8-bit decode, then reduced | 70–250 MB |
+| PNG | PNG | GPU direct | W×H×channels×(1 or 2 bytes) | 72–190 MB |
+| TIFF | TIF, TIFF | strip decode | W×H×channels×(1, 2 or 4 bytes); strips bound the reading | 72–380 MB |
+| HEIC, HEIF, AVIF, JPEG XL | HEIC, HEIF, AVIF, JXL | native decode | 10–12-bit decode into 16-bit buffers; gain-map files decode two images | 150–300 MB |
+| EXR, Radiance HDR, PFM | EXR, HDR, PFM | float decode | W×H×channels×4 bytes (2 for half-float EXR) | 150–380 MB |
+| Stored outputs | — | hand-off | 640 scene about 3 MB, 2560 scene about 52 MB (half float) | as stated |
+
+Rules on top of the formulas:
+
+* **Dimensions come from the header,** read before admission. If the header
+  can't be read, use that type's worst case.
+* **Orientation:** rotated photos use the rotated dimensions.
+* **Gain-map and multi-image files** (Ultra HDR, gain-map AVIF, HEIC with
+  depth) count every image they decode.
+* **Estimates are logged against measured peaks.** Overruns raise that
+  type's estimate (6.5).
+* **Reduced decoding** is checked in phase 0 for the 640 grid size. Examples
+  are JPEG decoding at 1/2, 1/4 or 1/8 scale, and LibRaw half-size. It can
+  cut both memory and time for thumbnails. It is used only where the picture
+  stays within the agreed perceptual tolerance.
+
+## 7. Edge cases the design must handle
+
+Listed up front so each one is built and tested with its phase, rather than
+found later as a bug. "Phase" is where it is handled; "test" is the check
+that proves it.
+
+### 7.1 Files and folders
+
+| # | Case | Handling | Phase | Test |
+| --- | --- | --- | --- | --- |
+| F1 | Hidden, system, temporary, `._`, dot- and tilde-named files | File gate (6.9) | 1 | Fixture folder holding one of each; only real photos listed |
+| F2 | Trash, recycle, snapshot, NAS thumbnail and macOS metadata folders | Skipped whole (6.9) | 1 | Same fixture; NAS snapshot folders must not duplicate the library |
+| F3 | Empty or tiny files | Skipped, counted as unreadable | 1 | Fixture |
+| F4 | File still being copied (card import, sync) | Listed, decoded once stable | 1 | A file grown in steps during the test |
+| F5 | Wrong extension (HEIC named `.jpg`, PNG named `.jpg`) | Header sniff decodes the real format | 1 | Fixtures |
+| F6 | Not an image at all (HTML error page saved as `.jpg`) | "Not a valid photo" once; no retry until the file changes | 1 | Fixture |
+| F7 | Truncated or corrupt file | Decoder error remembered once (exists) | 1 | Truncated JPEG, ARW and TIFF |
+| F8 | Decoder crash or hang | The helper restarts. After one crash, that file is set aside with a message, not retried in a loop. Each type has a time limit. | 2 | A crafted crashing file and a hanging decoder stub |
+| F9 | Online-only cloud placeholder | Not read automatically; "not downloaded" cell (Steve's decision) | 1 | Placeholder attributes simulated in a unit test |
+| F10 | Supported extension, unsupported variant: multi-page or layered TIFF, CMYK or Lab, palette or 1-bit PNG, animated PNG/AVIF/HEIC, bursts, HEIC depth images, JPEG XL-compressed or lossy DNG, Apple ProRAW, monochrome DNG, a RAW from a camera LibRaw doesn't know, multi-part or deep EXR | Decode what is supported (first page or frame); otherwise a clear "not supported: reason" message, with the embedded preview if there is one | 1 | One fixture per variant that we can make or obtain |
+| F11 | Very large pictures (panoramas, 1 GB TIFFs, decompression bombs) | Header dimensions before admission; Library pixel limit (6.9); runs alone above the job budget | 2 | Synthetic 250 MP header file; 1 GB TIFF on a disposable copy |
+| F12 | Paths: over 260 characters on Windows, Unicode (macOS NFD names), names differing only in case, network shares, symbolic links and junctions (no loops) | The walk handles each; never follows a link loop | 1 | Fixture tree including a junction loop |
+| F13 | Folder without read permission | Shown once as not readable; the walk continues | 1 | Fixture with denied access |
+| F14 | Drive unplugged or asleep mid-read (D: is a removable exFAT drive) | Jobs end as "offline", never as broken photos; folders dim | 2 | Simulated read error mid-job |
+| F15 | File changed, moved or deleted during development | Identity check (exists): ends as "changed" and is redone | 2 | Existing tests, plus a scheduler case |
+| F16 | Our own exports or saves inside a Library folder | Temporary name, renamed when complete | 1 | Audit plus a test that a half-written export is not listed |
+| F17 | RAW+JPEG pairs and duplicate copies | Both listed (no stacking in v1); one development each | — | Note only |
+| F18 | Sidecars (`.xmp`, `.hdrfinisher`, `.pp3`, `.dop`) | Never parsed as photos (not on the list) | 1 | Fixture |
+
+### 7.2 Memory and scheduling
+
+| # | Case | Handling | Phase | Test |
+| --- | --- | --- | --- | --- |
+| M1 | Size unknown before decoding | Header read first; otherwise the type's worst case | 2 | Unit tests per type |
+| M2 | Job bigger than the whole job budget | Runs alone, with nothing else admitted beside it. If even that cannot fit under the ceiling, a reduced decode. | 2 | Unit test |
+| M3 | Big job starved by a stream of small ones | When a **now** job is waiting, lower classes stop being admitted until it fits | 2 | Unit test |
+| M4 | Job holding RAM while it waits for the GPU (deadlock, priority inversion) | RAM and GPU granted together, all or nothing | 3 | Unit test with two jobs needing both |
+| M5 | Leaked grants (window reload, crash, helper restart) | Each grant has an owner and a heartbeat; when the owner goes, the grant is released. After a backend restart, windows resubmit. | 2 | Kill a window mid-job; reload the page |
+| M6 | Several windows (Library, Grade, hidden delivery window) | One scheduler for all of them. A minimised or hidden window's work drops to **eventually** (Chromium's hidden-tab practice). | 2–3 | Two-window test |
+| M7 | Fast scrolling: hundreds of submits and cancels | Cancelling removes a job at once and costs nothing; only settled viewports submit (exists) | 2 | Scripted fast scroll; queue length logged |
+| M8 | Selection changes mid-development | Priority changes in place; the work is kept | 3 | Unit test |
+| M9 | Small machine (8 GB RAM, 2.5 GB ceiling) | At least one **now** job can always run; caches trim to make room; background work stops | 2 | Run with the ceiling forced to 2.5 GB |
+| M10 | Other apps use the memory (operating-system pressure) | Trim at Chromium's levels; the job budget shrinks while pressure lasts | 1–2 | Simulated pressure |
+| M11 | Memory measurement fails (a process can't be read) | Keep scheduling on estimates; log once | 2 | Unit test |
+| M12 | Unified-memory graphics (Apple silicon, Intel/AMD integrated) | GPU estimates also count against RAM (darktable's `unifraction` practice) | 3 | Unit test with a unified adapter flag |
+| M13 | GPU lost (driver reset, sleep, display change, Steve's faulty VRAM) | All GPU grants released, jobs requeued once, then the visible-only CPU fallback; GPU failures rerun before blaming code | 3 | Forced device loss in a driver |
+| M14 | GPU out of memory | Caught through WebGPU error scopes; Library work freed; retried once | 3 | Forced allocation failure |
+| M15 | Another app using VRAM (games, browsers) | Fixed headroom kept free (darktable practice); out-of-memory handling as M14 | 3 | — |
+| M16 | Export or Proof running | Library background work pauses; visible work continues on a small allowance; export never waits on the Library | 3 | Export while scrolling |
+| M17 | Grade and the Library want the same photo | One development per source identity, shared | 3 | Open a photo in Grade while its cell develops |
+| M18 | Pasting a grade onto hundreds of photos | Redraw only; visible photos first, the rest **eventually**; no new development unless the source changed | 3 | Paste onto 200 photos in a disposable copy |
+| M19 | Virtual copies | One development, separate draws | 3 | Existing virtual-copy fixture |
+| M20 | HDR/SDR switch | Redraw from the same scene; no development | 5 | Toggle test |
+| M21 | Disk cache full, or C: full | Storing fails once with a message; the cache stops filling; no retry loop | 2 | Allowance forced to a few MB |
+| M22 | Cache folder on a drive that was removed | Run without a disk cache, with a message | 2 | Simulated missing folder |
+| M23 | The grant channel drops, or the backend restarts | Windows reconnect and resubmit; waiting jobs time out instead of waiting forever | 2 | Kill and restart the channel mid-run |
+| M24 | Startup upkeep on a large library (cache reconciliation measured 31 s, all upkeep 76 s on October 30) | Runs as **eventually** work through the scheduler; never blocks visible work | 2 | Startup with D:\Photos indexed (read-only) |
+| M25 | Logging costs: backend.log is 358 MB and timing lines are frequent | Rotate logs; per-job lines stay, very frequent diagnostics are sampled | 5 | Log size after a ten-minute session |
+
+## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
 fast checks and one short scripted run on a disposable copy. No phase starts
-before the previous one is accepted by Steve trying the app.
+before the previous one is accepted by Steve trying the app. Every phase
+records its numbers in the [performance table](../performance-table.md).
 
 | Phase | What | Removes | Accept when |
 | --- | --- | --- | --- |
-| 0. Measure | Log real RAM and GPU peaks per job type on disposable copies (20241117 RAWs, Aceh JPEGs, a DNG, a large TIFF). No behaviour change. | — | Estimate table written for Steve to approve. |
-| 1. Stop the feedback loop | Refusal no longer counts as pressure. Trim once per level change, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
-| 2. One scheduler, RAM | Backend queue with priority classes, estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
-| 3. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
-| 4. Grid makes 640 only | The 2560 screen preview is made on demand or by the pre-warmer. | Root cause 7. | First screen roughly 2–3 times faster than today. |
-| 5. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. | Leftover complexity. | Fast checks pass; less code than before. |
-| 6. Tune | Adjust estimates, the fast-lane size and the GPU count from logs. | — | Steve's feel plus the logged numbers. |
+| 0. Measure | Log real RAM and GPU peaks per file type and job type on disposable copies (20241117 RAWs, Aceh JPEGs, one of each supported type, a large TIFF). Try reduced decoding for 640. No behaviour change. | — | Per-type budget table (6.10) written for Steve to approve. |
+| 1. File gate | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
+| 2. Stop the feedback loop | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
+| 3. One scheduler, RAM | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Edge cases F8, F11, F14, F15, M1–M3, M5–M7, M9–M11, M21–M24. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
+| 4. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
+| 5. Grid makes 640 only | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
+| 6. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. Edge case M25. | Leftover complexity. | Fast checks pass; less code than before. |
+| 7. Tune | Adjust estimates, the fast-lane size and the GPU count from logs. | — | Steve's feel plus the logged numbers. |
 
 Proposed tolerances, to agree before measuring:
 
@@ -347,30 +497,44 @@ Proposed tolerances, to agree before measuring:
 | False failures | Zero |
 | Grid timing | Judged against its own baseline, within 10% run to run |
 
-## 8. Risks and what could break
+## 9. Risks and what could break
 
 * **Estimates that are too low** could briefly take the app over the
   ceiling. Mitigations: the 25% margin, the measured safety net (6.2),
   logging every overrun, and running unusually large pictures alone.
 * **A bigger change in shared code.** Grade, export and the GPU delivery
-  window use the GPU broker. Phase 3 needs their GPU checks rerun.
-* **Single view on first open** may show the thumbnail for a moment before
-  the screen preview arrives (phase 4), unless the pre-warmer got there
-  first.
+  window use the GPU broker. Phase 4 needs their GPU checks rerun.
+* **Single view on first open** may show the scaled-up grid picture for a
+  moment before the 2560 picture arrives (phase 5). Neighbours are prepared
+  while Single is open, so stepping through photos is usually ready.
+* **A stricter file gate** hides anything it rejects. A real photo whose
+  name starts with `.` or `~`, or that sits in a hidden folder, will no
+  longer show. That is the intended restrictive choice; phase 1 reports how
+  many files each rule hid in Steve's library (read-only count) before it
+  ships.
+* **Header sniffing** costs one small read per file. It happens at decode
+  time, not while listing, so folder opening stays fast.
 * **Two developments at once** use more GPU memory. Steve's card has
   intermittently bad VRAM, so GPU failures are rerun before blaming code.
 * **The WebSocket channel** is new plumbing. If it drops, jobs must notice
   and ask again, rather than wait forever.
 
-## 9. Decisions for Steve (one at a time, when each phase comes up)
+## 10. Decisions for Steve (one at a time, when each phase comes up)
+
+Already decided (October 30): be restrictive about files; the grid makes
+thumbnails only; edited photos keep their edit in the grid; an unedited RAW
+gets its larger picture only in Single.
+
+Still to decide:
 
 1. Approve this design direction (option C) and the phase order.
-2. Phase 0 estimate table (sizes per job type).
-3. Fast-lane allowance (proposed 64 MB, four at once).
-4. GPU developments at once (proposed two).
-5. Grid makes only the thumbnail; Single makes its own screen preview.
+2. Phase 0 per-type budget table.
+3. Online-only cloud files: download when opened, or never (6.9).
+4. Library pixel limit (proposed 200 megapixels).
+5. Fast-lane allowance (proposed 64 MB, four at once).
+6. GPU developments at once (proposed two).
 
-## 10. Code map (for whoever builds it)
+## 11. Code map (for whoever builds it)
 
 * Memory owner: `codebase/backend/hdr_finisher/app_memory.py` (`admit`,
   `snapshot`, `_waiting_until`).
@@ -383,3 +547,10 @@ Proposed tolerances, to agree before measuring:
   `hdr-memory-pressure` handler), `library-ram.js` (`apply`).
 * Pressure relay: `desktop/main.js` (the 500 ms memory timer) and
   `desktop/memory-pressure.cjs`.
+* File gate: `desktop_security.py` (`SOURCE_EXTENSIONS`, `is_photo_name`,
+  `is_os_junk_folder`), used by `library_folders.py` (`scan_folder`,
+  `_walk_photos`), `library_folder_stream.py`, `media_browser.py`,
+  `library_metadata.py`, `library_file_folders.py`, `library_marks.py`,
+  `library_pictures.py`, `library_picture_errors.py`.
+* View sizes: `photo-library.js` `thumbnailEdge()` (640) and
+  `library-gpu-raw.js` (the `[640, 2560, edge]` development sizes).

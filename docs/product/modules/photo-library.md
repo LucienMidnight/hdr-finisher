@@ -15,6 +15,17 @@ small jobs, and measured memory as a safety net only. It supersedes the two
 "open, waiting on Steve's decision" items below. Status: draft for review;
 nothing built.
 
+Decided by Steve, October 30:
+- Be restrictive about which files the Library reads (the file gate,
+  section 6.9 of the design).
+- The grid makes thumbnails only; edited photos keep drawing their edit on
+  the 640 scene.
+- An unedited RAW gets its 2560 picture only when opened in Single.
+
+The design also adds a memory budget per supported file type and a list of
+edge cases, each assigned to a phase. Timings for the whole app are now kept
+in [performance-table](../../technical/performance-table.md).
+
 ## October 30 (night): slow RAW camera previews and false failures
 
 Steve's 18:18 run (code 1c0d45a; badminton fast, 20241117 and other RAW
