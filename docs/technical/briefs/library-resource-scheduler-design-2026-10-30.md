@@ -370,7 +370,7 @@ what the Library reads.
 | Contents match a supported format | No | Read the first bytes before decoding. If they are another supported format (phones sometimes save HEIC as `.jpg`), decode it as that format. If they are not an image, show "not a valid photo" once, and don't retry until the file changes. |
 | File is not still being written | No | If the size or modified time changed in the last 2 seconds, list the photo but wait to decode it until it is stable (a card copy in progress). |
 | File is not an online-only cloud placeholder | No | OneDrive, Dropbox, iCloud and Google Drive "online-only" files download when read. Don't read them automatically; show a "not downloaded" cell. **Steve's decision:** download when the photo is opened, or never. |
-| Picture size within the Library's limit | No | Read the dimensions from the header first. Above the limit (proposed: 200 megapixels, **Steve's decision**), the Library uses the embedded preview or a reduced decode, never a full decode. Grade and export are not limited by this. |
+| Picture size | No limit | **No size limit (Steve, October 30: support really large images).** Read the dimensions from the header first. Very large pictures run alone through a bounded route (7.3); they are never refused for size. |
 
 Our own temporary files must never end in a photo extension. Exports and
 saves write to a temporary name and rename it when complete, so a
@@ -431,7 +431,7 @@ that proves it.
 | F8 | Decoder crash or hang | The helper restarts. After one crash, that file is set aside with a message, not retried in a loop. Each type has a time limit. | 2 | A crafted crashing file and a hanging decoder stub |
 | F9 | Online-only cloud placeholder | Not read automatically; "not downloaded" cell (Steve's decision) | 1 | Placeholder attributes simulated in a unit test |
 | F10 | Supported extension, unsupported variant: multi-page or layered TIFF, CMYK or Lab, palette or 1-bit PNG, animated PNG/AVIF/HEIC, bursts, HEIC depth images, JPEG XL-compressed or lossy DNG, Apple ProRAW, monochrome DNG, a RAW from a camera LibRaw doesn't know, multi-part or deep EXR | Decode what is supported (first page or frame); otherwise a clear "not supported: reason" message, with the embedded preview if there is one | 1 | One fixture per variant that we can make or obtain |
-| F11 | Very large pictures (panoramas, 1 GB TIFFs, decompression bombs) | Header dimensions before admission; Library pixel limit (6.9); runs alone above the job budget | 2 | Synthetic 250 MP header file; 1 GB TIFF on a disposable copy |
+| F11 | Very large pictures (line scans, panoramas, 1 GB TIFFs) | Supported at any size (7.3): header dimensions before admission; runs alone through a bounded route | 3 | The 297 MP line-scan DNG and a large TIFF, on disposable copies |
 | F12 | Paths: over 260 characters on Windows, Unicode (macOS NFD names), names differing only in case, network shares, symbolic links and junctions (no loops) | The walk handles each; never follows a link loop | 1 | Fixture tree including a junction loop |
 | F13 | Folder without read permission | Shown once as not readable; the walk continues | 1 | Fixture with denied access |
 | F14 | Drive unplugged or asleep mid-read (D: is a removable exFAT drive) | Jobs end as "offline", never as broken photos; folders dim | 2 | Simulated read error mid-job |
@@ -469,6 +469,49 @@ that proves it.
 | M23 | The grant channel drops, or the backend restarts | Windows reconnect and resubmit; waiting jobs time out instead of waiting forever | 2 | Kill and restart the channel mid-run |
 | M24 | Startup upkeep on a large library (cache reconciliation measured 31 s, all upkeep 76 s on October 30) | Runs as **eventually** work through the scheduler; never blocks visible work | 2 | Startup with D:\Photos indexed (read-only) |
 | M25 | Logging costs: backend.log is 358 MB and timing lines are frequent | Rotate logs; per-job lines stay, very frequent diagnostics are sampled | 5 | Log size after a ten-minute session |
+
+### 7.3 Very large pictures (Steve, October 30: support them)
+
+The reference case is the line-scan DNG in `D:\Photos\HDR Test Images\Test
+Suite Images\` (`line_scan_2018-…NECTA0000….dng`). It is 72,480 × 4,096
+pixels, about 297 megapixels of 16-bit RGB: 1.78 GB of picture data. Read
+from the header on October 30; LibRaw cannot open it.
+
+How it works today (it works in the app):
+
+* The app's own linear-DNG reader (`linear_dng.py`) **memory-maps** the
+  file (`tifffile.memmap`). Windows pages pixel data in from disk as it is
+  read, so the whole 1.78 GB is not loaded into the app's own memory at once.
+* It is not an ordinary camera RAW, so its Library development has used the
+  backend preparation route: decode, colour, analysis, then reduction to the
+  stored sizes. That took about 25 s on October 22.
+* From the October 30 logs: first grid thumbnail 12.3 s cold; afterwards
+  the stored thumbnail shows in 0.37–0.70 s.
+
+What the design keeps and adds:
+
+1. **No size limit.** A very large picture is admitted alone: nothing else
+   large runs beside it, and the fast lane keeps serving small jobs.
+2. **Bounded routes by format,** so memory follows the strip or tile size,
+   not the picture size:
+   * memory-mapped or strip reading for DNG and TIFF;
+   * tiled GPU correction for DNG (exists);
+   * row-by-row reduction straight to 640 and 2560.
+
+   Phase 0 measures the real peak for the line scan and a large TIFF, and
+   names any step that still holds a full-size copy. Those steps become
+   phase 3 work.
+3. **Pillow's built-in size guard.** Pillow refuses images above about
+   179 megapixels (its "decompression bomb" guard), and the app does not
+   change that setting today. So a very large JPEG, PNG or TIFF that goes
+   through Pillow is probably refused now, while the DNG works. Phase 0
+   checks this. Phase 3 gives those formats a bounded route, or explicitly
+   allows large sizes where the route is bounded.
+4. **Grid cost.** A very large picture's 640 thumbnail is made once and
+   stored. A wide line scan gets a very thin thumbnail at grid size. Its
+   cell shows it fitted like any other photo.
+5. **Single and Grade** use 2560 and the existing native-detail rules.
+   Export is unchanged.
 
 ## 8. Phases
 
@@ -530,9 +573,11 @@ Still to decide:
 1. Approve this design direction (option C) and the phase order.
 2. Phase 0 per-type budget table.
 3. Online-only cloud files: download when opened, or never (6.9).
-4. Library pixel limit (proposed 200 megapixels).
-5. Fast-lane allowance (proposed 64 MB, four at once).
-6. GPU developments at once (proposed two).
+4. Fast-lane allowance (proposed 64 MB, four at once).
+5. GPU developments at once (proposed two).
+
+Decided October 30: no picture size limit; very large pictures are
+supported through bounded routes (7.3).
 
 ## 11. Code map (for whoever builds it)
 
