@@ -1,7 +1,7 @@
 /* RAM shares come from the one backend owner; VRAM stays with gpu/activity. */
 (function(root) {
   const caches=new Map();
-  let limits={thumbnails:512*1024**2,sharp:512000000}, pressure='none';
+  let limits={thumbnails:512*1024**2,sharp:512000000};
   function used(share) {let bytes=0;for(const c of caches.values())if(c.share===share)bytes+=c.bytes();return bytes;}
   function trim(share,target) {
     for(const c of caches.values())if(c.share===share && used(share)>target)c.trim(Math.max(0,c.bytes()-(used(share)-target)));
@@ -23,9 +23,9 @@
   function apply(value) {
     for(const share of Object.keys(limits))if(value.caches?.[share])limits[share]=value.caches[share].limitBytes;
     enforce();
-    const level=value.pressure==='critical' ? 'critical' : value.pressure==='moderate' || value.reclaim ? 'moderate' : 'none';
-    if(level!=='none' && (pressure!==level || value.budgetPressure))for(const share of Object.keys(limits))trim(share,level==='critical'?0:used(share)/2);
-    pressure=level;
+    // The main process decides when to trim (once per level rise, then per
+    // cool-down); this only carries it out.
+    if(value.reclaim)for(const share of Object.keys(limits))trim(share,value.reclaimLevel==='critical'?0:used(share)/2);
   }
   root.HDRLibraryRAM={register,admit,enforce,apply,report,limit:share=>limits[share],used,
     snapshot:()=>Object.fromEntries(Object.keys(limits).map(k=>[k,{bytes:used(k),limitBytes:limits[k]}]))};

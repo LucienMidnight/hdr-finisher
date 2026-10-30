@@ -565,7 +565,7 @@ that proves it.
 | M6 | Several windows (Library, Grade, hidden delivery window) | One scheduler for all of them. A minimised or hidden window's work drops to **eventually** (Chromium's hidden-tab practice). | 2–3 | Two-window test |
 | M7 | Fast scrolling: hundreds of submits and cancels | Cancelling removes a job at once and costs nothing; only settled viewports submit (exists) | 2 | Scripted fast scroll; queue length logged |
 | M8 | Selection changes mid-development | Priority changes in place; the work is kept | 3 | Unit test |
-| M9 | Small machine (8 GB RAM, 2.5 GB ceiling) | At least one **now** job can always run; caches trim to make room; background work stops | 2 | Run with the ceiling forced to 2.5 GB |
+| M9 | Small machine (8 GB RAM, 2.5 GB ceiling) | At least one **now** job can always run; caches trim to make room; background work stops | 3 | Run with the ceiling forced to 2.5 GB |
 | M10 | Other apps use the memory (operating-system pressure) | Trim at Chromium's levels; the job budget shrinks while pressure lasts | 1–2 | Simulated pressure |
 | M11 | Memory measurement fails (a process can't be read) | Keep scheduling on estimates; log once | 2 | Unit test |
 | M12 | Unified-memory graphics (Apple silicon, Intel/AMD integrated) | GPU estimates also count against RAM (darktable's `unifraction` practice) | 3 | Unit test with a unified adapter flag |
@@ -583,6 +583,7 @@ that proves it.
 | M24 | Startup upkeep on a large library (cache reconciliation measured 31 s, all upkeep 76 s on October 30) | Runs as **eventually** work through the scheduler; never blocks visible work | 2 | Startup with D:\Photos indexed (read-only) |
 | M25 | Logging costs: backend.log is 358 MB and timing lines are frequent | Rotate logs; per-job lines stay, very frequent diagnostics are sampled | 5 | Log size after a ten-minute session |
 | M26 | A picture that can never fit the GPU route (the line scan's samples exceed the GPU's largest buffer) | Goes straight to the bounded route instead of "waiting for memory" | 3 | The line-scan copy |
+| M27 | A photo left open in Grade holds more than the whole budget (Steve, October 30: the 297 MP line scan kept the backend at about 3.7 GB, the app at 5.2 GB against the 4 GB ceiling, and every Library admission was refused: "0 active · 25 waiting" on a cold folder, forever) | The open Grade photo counts as one admitted **Grade** job with its estimate, not as measured memory that blocks everyone. Its rebuildable parts (levels, frames) trim first. The Library then still gets M9's guarantee: one **now** job at a time from the fast lane and the minimum, background work stopped. Releasing the open photo's full-size pixels while Grade is not on screen (reloaded on return) is a separate choice for Steve. | 3 | Open the line-scan copy in Grade, then open a cold folder copy: visible cells keep arriving |
 
 ### 7.3 Very large pictures (Steve, October 30: support them)
 
@@ -688,6 +689,88 @@ What the design keeps and adds:
   being listed, internal previews included (Steve, October 30), because some
   apps keep originals inside the package.
 
+### 7.5 Phase 2 whiteboard: stop the feedback loop (October 30)
+
+**Today, exactly.**
+
+1. A job asks `app_memory.admit` for room (600 MB today). If measured total
+   + reservations + request is over the ceiling, it is refused, and
+   `_waiting_until` is set 2 s ahead.
+2. For those 2 s, `snapshot()` reports `budgetPressure` and `reclaim`, even
+   when measured memory is far below the target.
+3. The Electron main process reads `snapshot()` every 500 ms. While
+   `budgetPressure` is set it marks **every tick** as a reclaim:
+   * sends every window the pressure value; the Library halves both picture
+     caches (`library-ram.js` `apply`) and clears its recent pictures and
+     host copies (`photo-library.js`);
+   * sends Chromium a **critical** pressure signal (`memory-pressure.cjs`);
+   * asks the backend to reclaim (cache shares halved, helper told too).
+4. The window retries refused quick previews every 250 ms, so a stream of
+   refusals keeps the flag up permanently: four critical clean-ups a second,
+   finished thumbnails thrown away and made again.
+5. Separately, a refused `admit` empties the `working` share (Grade levels,
+   the Library's native buffer). That is a targeted make-room step for the
+   job, not a pressure signal; phase 2 leaves it alone.
+
+**What changes.**
+
+1. A refusal is only a refusal. `snapshot()` reports pressure only from
+   measurement and the operating system:
+   * **moderate**: measured total above the target (ceiling minus working
+     room), including above the ceiling, or operating-system moderate
+     pressure. Caches halve; while it lasts they halve again each cool-down,
+     which is the "trim harder" of 6.2;
+   * **critical**: operating-system critical pressure only. Everything
+     rebuildable is dropped. Measured memory over our own ceiling is not
+     critical: pictures dropped then could not be made again (admissions are
+     refused), so the grid would go blank.
+
+   The 2-second waiting note stays in the snapshot for logs only.
+2. One rule in the main process (`memory-pressure.cjs` `pressureGate`)
+   decides when to trim: at once when the level rises (none → moderate →
+   critical); otherwise at most once per 10 s cool-down while it lasts, as
+   Chromium's own monitor does. A sustained overrun therefore still reclaims,
+   every 10 s instead of every 500 ms. Falling back to none does nothing.
+3. Only that decision trims anything: the windows' caches, Chromium's signal
+   (at the same level, never "critical" for a refusal) and the backend
+   reclaim. Each trim is logged as `memory_trim` with its level and measured
+   total.
+
+No size, share, ceiling or the 600 MB reservation changes.
+
+**The open-Grade stall (M27).** Phase 2 does not unblock it. The app really
+is over the ceiling there (5.2 GB measured), so phase 2 correctly reports
+moderate pressure: caches halve on entry and then once every 10 s, instead of
+a critical clean-up four times a second. What blocks the Library is the admission rule itself ("measured
+total + reservations + 600 MB under the ceiling"), which can never pass while
+the Grade photo holds 3.7 GB and nothing may release it. That rule is
+replaced in phase 3 (admission by estimates, M9 and M27). Until then,
+opening a small photo in Grade should release the large one, since Grade
+keeps only its current photo (`SessionStore.activate_session`); not yet
+tested.
+
+**Tolerance for the scripted run** (from section 8): no pressure signal and
+no trim while measured memory stays under the target; when over it, at most
+one trim per level change plus one per 10 s; peak whole-app memory under the
+ceiling; zero false failures; grid screens no slower than the October 30
+baseline (28.7 s / 56.5 s) plus 10%.
+
+**As built and measured (October 30, 23:05).** `app_memory.pressure_level`
+(backend), `pressureGate` in `desktop/memory-pressure.cjs` (10 s cool-down,
+used by the `main.js` memory timer), `library-ram.js` `apply` trims only when
+told. Tests: `test_app_memory.py` (a refusal is not pressure; level from
+measurement and OS only), `desktop-memory-pressure.test.js` (once per rise,
+sustained overrun every 10 s, no trim on flapping), `library-ram.test.js`.
+Scripted cold run, 48 Aceh Pesta copies:
+
+| Measure | Result | Tolerance |
+| --- | --- | --- |
+| Pressure signals / trims | 1 / 1, moderate, when measured memory reached 3.50 GB (target 3.40). None from the refusals active in 6 of 11 logged samples. | Met |
+| Peak whole-app memory | 3.28 GB (independent observer), 3.50 GB (app's own sample) | Met |
+| Grid screens | 24.1 s / 46.9 s (baseline 28.7 / 56.5 s) | Met |
+| False failures | 0; every cell drew | Met |
+| Quick preview request → on screen | p50 0.93 s, p95 9.1 s, max 17.9 s | Not met against section 8's 0.5 s p95; expected, the 600 MB reservation is phase 3 |
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
@@ -699,7 +782,7 @@ records its numbers in the [performance table](../performance-table.md).
 | --- | --- | --- | --- |
 | 0. Measure — **done October 30** | Log real RAM and GPU peaks per file type and job type on disposable copies (20241117 RAWs, Aceh JPEGs, one of each supported type, a large TIFF). Try reduced decoding for 640. No behaviour change. | — | Per-type budget table (6.11) written for Steve to approve. |
 | 1. File gate — **built October 30, awaiting Steve's try** | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
-| 2. Stop the feedback loop | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
+| 2. Stop the feedback loop — **built October 30, awaiting Steve's try** (7.5) | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
 | 3. One scheduler, RAM | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
 | 4. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
 | 5. Grid makes 640 only | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |

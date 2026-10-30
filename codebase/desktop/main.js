@@ -1306,7 +1306,9 @@ if (!gotLock) {
       registerIpc();
       // One non-overlapping observer counts Electron (including GPU host RAM),
       // Python and late helpers together, before the hard four-GB limit.
-      let memorySampling = false, memoryLastLog = 0, memoryPressure = "none";
+      let memorySampling = false, memoryLastLog = 0;
+      const memoryPressureRelay = require('./memory-pressure.cjs');
+      const memoryTrimGate = memoryPressureRelay.pressureGate();
       const memoryTimer = setInterval(async () => {
         if (memorySampling || shuttingDown) return;
         memorySampling = true;
@@ -1315,10 +1317,14 @@ if (!gotLock) {
             headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret}, signal:AbortSignal.timeout(2000)});
           if (!response.ok) throw Error(`Memory sampling failed (${response.status})`);
           const value = await response.json();
-          // Sustained OS pressure trims once on entry; an actual budget overrun
-          // keeps reclaiming until there is working room again.
-          value.reclaim = value.budgetPressure || (value.pressure !== "none" && value.pressure !== memoryPressure);
-          memoryPressure = value.pressure;
+          // The backend's level comes from measurement and the OS only, never
+          // from a refused admission. Trim once when it rises, then at most
+          // once per cool-down while it lasts.
+          const trimLevel = memoryTrimGate(value.level || "none");
+          value.reclaim = !!trimLevel;
+          value.reclaimLevel = trimLevel || "none";
+          if (trimLevel) libraryStage("memory_trim", {level:trimLevel, totalBytes:value.totalBytes,
+            targetBytes:value.targetBytes, ceilingBytes:value.ceilingBytes, pressure:value.pressure, waiting:value.waiting});
           if (Date.now()-memoryLastLog > 5000) {
             memoryLastLog = Date.now();
             libraryStage("app_memory", {...value, main:process.memoryUsage(),
@@ -1329,11 +1335,10 @@ if (!gotLock) {
             // Cache owners release references above. Chromium also needs its
             // native pressure notification to discard dead upload/readback
             // storage in renderer, browser and GPU host processes.
-            await require('./memory-pressure.cjs').notifyChromiumPressure(mainWindow.webContents,
-              value.budgetPressure || value.pressure === 'critical' ? 'critical' : 'moderate');
+            await memoryPressureRelay.notifyChromiumPressure(mainWindow.webContents, trimLevel);
             const reclaimed=await fetch(`${activeBackend.url}/api/library/memory-reclaim`, {method:"POST",
               headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret,"Content-Type":"application/json"},
-              body:JSON.stringify({pressure:value.pressure==='critical'?'critical':'moderate'}),signal:AbortSignal.timeout(2000)});
+              body:JSON.stringify({pressure:trimLevel}),signal:AbortSignal.timeout(2000)});
             await reclaimed.arrayBuffer();
           }
         } catch (error) { console.error("Memory controller:",error.message); }

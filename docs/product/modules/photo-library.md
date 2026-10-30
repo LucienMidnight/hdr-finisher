@@ -4,6 +4,32 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 30 (late night): feedback loop stopped (scheduler phase 2), awaiting Steve's try
+
+A photo turned away for lack of memory no longer counts as memory pressure.
+Before, each refusal reported pressure for 2 s, and every 500 ms the app
+then halved the Library's caches, cleared recent pictures, sent Chromium a
+"critical" signal and reclaimed in the backend, so finished thumbnails were
+thrown away and made again. Now caches are trimmed only when measured memory
+is above the target (or the operating system reports pressure): once when it
+starts, then at most every 10 s while it lasts. Details in the design
+([section 7.5](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md)).
+
+Cold run on 48 Aceh Pesta copies: one trim (memory really reached 3.50 GB
+against the 3.40 GB target), none from refusals; peak 3.28 GB; screens
+24.1 s / 46.9 s (were 28.7 / 56.5 s); no failures. Quick previews still wait
+behind developments (p95 9.1 s): the fixed 600 MB reservation is phase 3.
+
+**Still open: the open-Grade stall** (design edge case M27, phase 3). With
+the 297 MP line scan open in Grade the app sits over the ceiling, and every
+Library admission is refused, so a cold folder shows "0 active · 25 waiting"
+indefinitely. Phase 2 stops the repeated clean-ups but does not unblock it.
+Until phase 3, opening a smaller photo in Grade should release the large one
+(Grade keeps only the current photo); not yet tested.
+
+Fast checks: JS 678 tests, 3 known failures; Python 2,797 passed, 4 known
+failures, 3 skipped.
+
 ## October 30 (night): file gate built (scheduler phase 1), awaiting Steve's try
 
 The Library lists and reads only supported photos, through one rule set in

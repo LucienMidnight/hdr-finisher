@@ -307,11 +307,24 @@ def snapshot(refresh=False):
         reserved=sum(row[0] for row in _reservations.values())
         waiting=now<_waiting_until
     pressure=system_pressure()
+    level=pressure_level(total,pressure)
+    # A refused admission ("waiting") is reported for logs only. It is never
+    # pressure: only measured memory and the operating system are.
     return dict(totalBytes=total,workingSetBytes=sum(r['workingSetBytes'] for r in rows),
                 measurement='physical-footprint' if sys.platform=='darwin' else 'proportional-resident',processes=rows,ceilingBytes=CEILING,
                 targetBytes=TARGET,reservedBytes=reserved,caches=cache_snapshot(),
-                pressure=pressure,budgetPressure=total>TARGET or waiting,
-                reclaim=total>TARGET or waiting or pressure!='none')
+                pressure=pressure,level=level,waiting=waiting,budgetPressure=total>TARGET,
+                reclaim=level!='none')
+
+
+def pressure_level(total,system='none'):
+    """Real shortage only. Measured memory above the target is moderate: caches
+    halve, again each cool-down while it lasts. Only operating-system critical
+    pressure drops everything rebuildable, because over our own ceiling the
+    dropped pictures could not be made again."""
+    if system=='critical': return 'critical'
+    if system=='moderate' or total>TARGET: return 'moderate'
+    return 'none'
 
 
 def admit(key,size,release=False):

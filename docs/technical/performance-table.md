@@ -52,13 +52,13 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 | Very large folder → first 256 rows / first picture / 25th picture | Regression baseline (Steve, Oct 27) | 3.81 / 4.20 / 5.40 s | Oct 27, 155,877 rows, 015baf7 | Baseline |
 | Folder open → first camera preview (RAW) | Under 0.2 s (tier 0, Steve Oct 12) | 0.14–0.29 s | Oct 30 18:18 | Met |
 | Camera preview extraction (backend only) | — | p50 56 ms, max 143 ms | Oct 30 18:18 (`picture_camera_preview_ready`) | Baseline |
-| Camera preview request → on screen in the grid, while photos develop | Proposed: p95 under 0.5 s | p50 2.1 s, max 31 s | Oct 30 18:18, 20241117 (`page_picture_camera_preview_decoded`). Cause: fixed 600 MB reservation (scheduler design) | Not met |
+| Camera preview request → on screen in the grid, while photos develop | Proposed: p95 under 0.5 s | p50 2.1 s, max 31 s (RAW); JPEG originals p50 0.93 s, p95 9.1 s, max 17.9 s | Oct 30 18:18, 20241117 (`page_picture_camera_preview_decoded`); JPEG: Oct 30 23:05, 48 Aceh Pesta copies, 41 quick previews, phase 2 code. Cause: fixed 600 MB reservation (scheduler phase 3) | Not met |
 | Visible cell shows any picture | 1 s p90 (Oct 18) | — | needs a fresh measurement | Unknown |
 | Visible cell shows its real picture | about 2 s p90 (Oct 18) | — | needs a fresh measurement | Unknown |
 | Second launch: visible thumbnails | 90% within 100 ms (Oct 18) | — | needs a fresh measurement | Unknown |
 | Folder open → first finished thumbnail, stored pictures | — | 0.52 s (25th 2.06 s) | Oct 30 18:18, badminton | Baseline |
 | Folder open → first finished thumbnail, cold RAW | — | 4.4–8.8 s | Oct 30 18:18, Kiddos Batik, 20241117 | Baseline |
-| Cold JPEG grid: first screen of 24 / second screen | — | 28.7 s / 56.5 s; per cell median 17.5 s (4.6–28.3 s) | Oct 30, 48 Aceh Pesta JPEG copies, fresh profile, 1c0d45a | Baseline |
+| Cold JPEG grid: first screen of 24 / second screen | Within 10% of baseline (scheduler design) | 24.1–28.7 s / 46.9–56.5 s; per cell median 13.8 s (3.3–27.7 s) | Oct 30, 48 Aceh Pesta JPEG copies, fresh profile; 1c0d45a (28.7 / 56.5 s) and phase 2 code at 23:05 (24.1 / 46.9 s) | Met |
 | Thumbnail cache check per cell | — | 13–930 ms seen | Oct 30 18:18 (`page_picture_cache_check`) | Baseline |
 | Folder disk check | — | 33 ms–5.3 s | Oct 30 18:18, 10–453 photos | Baseline |
 | Large scroll disk check | Regression baseline (Oct 27) | 64 s | photo-library.md, Start here | Baseline |
@@ -123,7 +123,8 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 | Action | Target | Measured | Conditions | Status |
 | --- | --- | --- | --- | --- |
-| Memory check (`/api/library/memory`) | under its 2 s timeout | p95 289 ms, max 407 ms | Oct 30, Aceh copies | Met |
+| Memory check (`/api/library/memory`) | under its 2 s timeout | p95 289 ms, max 407 ms; 95 checks, no timeouts | Oct 30, Aceh copies (and phase 2 run, 23:05) | Met |
+| Memory pressure: Chromium signals and cache trims, cold Aceh run | None while measured memory is under the target; at most one per level rise plus one per 10 s (scheduler phase 2) | 1 signal and 1 trim (moderate; measured 3.50 GB against the 3.40 GB target). Refusals were active in 6 of 11 logged samples and caused none. Peak 3.28 GB (independent observer), 3.50 GB (app's own sample) | Oct 30 23:05, 48 Aceh Pesta copies, phase 2 code. Before phase 2 each refusal set 2 s of "critical", trimming every 500 ms (29 reclaims in Steve's 18:18 RAW run) | Met |
 | Longest marks-lock hold | 250 ms | 375 ms (reconcile) | Oct 29 | Not met |
 | Index metadata read, 12 files | — | 9.7 ms warm in parallel | photo-library.md | Baseline |
 | Recovery work | — | 2,044 pieces in one session, longest 14.8 s | Oct 30 18:18 | Unknown |

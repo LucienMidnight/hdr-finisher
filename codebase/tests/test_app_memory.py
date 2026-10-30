@@ -140,6 +140,32 @@ def test_parallel_work_uses_free_total_without_reclaiming_pictures(monkeypatch):
     assert not app_memory.snapshot()['reclaim']
 
 
+def test_refused_admission_is_not_memory_pressure(monkeypatch):
+    # 2 GB measured is under the target; a request too big for the ceiling is
+    # refused, and that refusal alone must not report pressure or a reclaim.
+    monkeypatch.setattr(app_memory,'process_tree',lambda root:[{'pid':1,'workingSetBytes':2_000_000_000}])
+    monkeypatch.setattr(app_memory,'system_pressure',lambda:'none')
+    assert not app_memory.admit('huge',app_memory.CEILING)['granted']
+    value=app_memory.snapshot()
+    assert value['waiting'] and value['level']=='none'
+    assert not value['budgetPressure'] and not value['reclaim']
+
+
+def test_pressure_level_comes_from_measurement_and_os_only(monkeypatch):
+    level=app_memory.pressure_level
+    assert level(app_memory.TARGET)=='none'
+    assert level(app_memory.TARGET+1)=='moderate'
+    # Over our own ceiling stays moderate: pictures dropped then can't be remade.
+    assert level(app_memory.CEILING+1_000_000_000)=='moderate'
+    assert level(0,'moderate')=='moderate'
+    assert level(0,'critical')=='critical'
+    monkeypatch.setattr(app_memory,'process_tree',lambda root:[{'pid':1,'workingSetBytes':app_memory.TARGET+1}])
+    monkeypatch.setattr(app_memory,'system_pressure',lambda:'none')
+    monkeypatch.setattr(app_memory,'_waiting_until',0)
+    value=app_memory.snapshot(refresh=True)
+    assert value['level']=='moderate' and value['reclaim'] and not value['waiting']
+
+
 def test_grade_sessions_share_working_room_and_pressure_discards_frames(monkeypatch):
     import numpy as np
     from hdr_finisher.render_cache import SessionRenderCache

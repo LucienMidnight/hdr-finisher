@@ -282,6 +282,21 @@ Sustained OS moderate pressure trims once when entered, rather than halving
 every sampling tick. Actual budget overruns continue reclaiming until working
 room is available; critical pressure still clears reconstructible caches.
 
+**Replaced October 30 (scheduler phase 2).** Pressure now comes only from
+measurement and the operating system, never from a refused admission:
+- **moderate:** measured whole-app total above the target (ceiling minus
+  working room), including above the ceiling, or OS moderate pressure.
+  Caches halve.
+- **critical:** OS critical pressure only. Reconstructible caches are
+  dropped. Our own ceiling being exceeded is not critical, because pictures
+  dropped then could not be made again while admissions are refused.
+
+The Electron main process trims when the level rises, then at most once every
+10 s while it lasts (Chromium's practice), and logs each trim as
+`memory_trim`. Chromium's pressure signal, the windows' cache trims and the
+backend reclaim all follow that one decision. No size, share or ceiling
+changed. The 600 MB per-job reservation stays until phase 3.
+
 Follow-up fast checks: Python 2,731 passed / three known failures / three
 skipped (481 s); JavaScript 662 passed / two known failures. Python failures
 remain the scoped-preset contract, RGB publication guard fixture, and retouch
