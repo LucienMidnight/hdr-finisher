@@ -245,7 +245,18 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   refreshScopesAfterPresentation(lane);
 }
 
+// Response details arrive as text, {message}, or FastAPI's list of
+// {msg} items. Never show "[object Object]".
+function previewStatusText(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(previewStatusText).filter(Boolean).join("; ");
+  if (typeof value === "object") return previewStatusText(value.message ?? value.msg ?? value.detail ?? value.reason ?? "");
+  return String(value);
+}
+
 function markPreviewUnavailable(reason) {
+  reason = previewStatusText(reason);
   if (state.perspectiveApplyOperation?.signature === geometrySignature()) {
     setPerspectiveStatus(`Perspective saved, but the preview failed: ${reason}. Change preview tier or try again.`, "previewFailed");
   }
@@ -360,6 +371,7 @@ function setIndeterminatePreviewMessage(message) {
 }
 
 function setPreviewError(message) {
+  message = previewStatusText(message) || "Preview failed to render.";
   if (state.perspectiveApplyOperation?.signature === geometrySignature()) {
     setPerspectiveStatus(`Perspective saved, but the preview failed: ${message}. Change preview tier or try again.`, "previewFailed");
   }

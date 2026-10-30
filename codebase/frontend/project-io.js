@@ -12,6 +12,9 @@
   function responseErrorMessage(payload, fallback) {
     if (typeof payload?.detail === "string") return payload.detail;
     if (typeof payload?.detail?.message === "string") return payload.detail.message;
+    if (Array.isArray(payload?.detail) && typeof payload.detail[0]?.msg === "string") {
+      return payload.detail.map((item) => item.msg).join("; ");
+    }
     if (typeof payload?.message === "string") return payload.message;
     return fallback;
   }

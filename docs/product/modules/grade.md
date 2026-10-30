@@ -1,5 +1,43 @@
 # Module PRD: Grade
 
+## October 30: 100% zoom on wide photos
+
+Steve saw the 297 MP line-scan DNG (72,480 × 4,096) disappear with
+"[object Object]" when zooming in. This is not a regression; v0.9.1 fails the
+same way.
+
+At 100% (and at zooms whose processing size passes 8,192 px), the tiled GPU
+path presents the whole frame in one texture. Grade requested WebGPU's default
+8,192 px texture limit, so any picture wider than that failed on the GPU:
+- the line scan;
+- Steve's 50 MP Sony DSC00636.ARW, at 8,660 px;
+- likewise 61 MP Sony and 100 MP Fujifilm files.
+
+Those pictures fell back to the slower CPU preview. The CPU preview accepts at
+most 16,384 px, so the line scan was refused. FastAPI's list-shaped refusal was
+shown raw.
+
+**Fixed:**
+- Grade requests the adapter's own texture limit (16,384 on Steve's card), so
+  pictures up to that width render at 100% on the GPU (DSC00636 checked, no
+  CPU fallback).
+- CPU previews are capped at 16,384 px: a wider picture shows that size scaled
+  up instead of nothing.
+- Status messages unpack every error shape.
+
+Checks: JS fast checks (3 known failures); `performance/budget-route.js`
+passed. `full-tier-preview.js` cannot run (known `importTestPattern` harness
+defect).
+
+**Open (design):**
+- Pictures wider than the GPU's texture limit need viewport-only rendering at
+  100% (draw only what is on screen, as darktable and Lightroom do). Until
+  then, the line scan's 100% view is a 16,384 px CPU picture scaled up.
+- Opening the line scan in Grade takes 20–30 s. Its backend process holds
+  about 3.7 GB and spikes to 9.7 GB, so the app runs well over its 4 GB
+  ceiling. See the Library scheduler design, section 7.3 (very large
+  pictures).
+
 ## October 28: Graceful handling of old, damaged and newer grades (Steve, v1)
 
 Prompted by the tone-slider change: every Library thumbnail failed because
