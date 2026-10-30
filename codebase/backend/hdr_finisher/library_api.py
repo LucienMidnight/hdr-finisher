@@ -773,6 +773,11 @@ def create_library_router(worker, browser, store=None):
             raise HTTPException(status_code=400, detail=user_error(error)) from error
 
     async def helper_result(request, command, *, retain_picture=False, source_token=None, **arguments):
+        # Metadata is retried by the page. A source parks the helper's metadata
+        # lane, so return that wait to the page instead of holding an HTTP slot.
+        if command == "metadata" and (worker.status().get("source_busy") or worker.status()["paused"]):
+            return JSONResponse({"detail": "library_pending"}, status_code=202,
+                headers={"Retry-After": "0.1", "Cache-Control": "no-store"})
         arguments["trace_id"] = request.headers.get("X-Library-Request")
         epoch = file_commands.epoch
         try:
@@ -792,7 +797,7 @@ def create_library_router(worker, browser, store=None):
                 # Source jobs keep their owner and wait behind the helper pause
                 # gate. Returning 202 here cancels them in finally and restarts
                 # the entire import on every brief Grade pause.
-                if worker.status()["paused"] and command not in {"live-scene", "live-fallback"}:
+                if (worker.status()["paused"] or (command == "metadata" and worker.status().get("source_busy"))) and command not in {"live-scene", "live-fallback"}:
                     return JSONResponse({"detail": "library_pending"}, status_code=202,
                         headers={"Retry-After": "0.1", "Cache-Control": "no-store"})
                 if await request.is_disconnected():

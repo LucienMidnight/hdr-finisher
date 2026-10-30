@@ -474,6 +474,71 @@ Evidence: `codebase/output/big-folder/five-minute-reviewed/measurement.json`,
 `finished-grid-cells.csv`, `measurement-memory.jsonl`, and `measurement-backend.log`.
 JPEG isolation: `codebase/output/big-folder/jpeg-isolated.json`.
 
+### October 30: badminton cache and admission checkpoint
+
+Waiting for working memory now stays in the ranked waiting queue, outside the
+active source slots. Admission uses short requests with no connection retained
+between retries. Metadata also returns pending while its helper lane is occupied
+by a source. A GPU development that cannot fit must not block a smaller cached
+draw that can fit. Newly visible development can cancel an offscreen source
+parked at GPU admission and release its working reservation. No ceiling, share,
+decoder version or GPU algorithm changed.
+
+The scene-key regression was validation materialising the neutral
+`edge_colour_expand_percent=0.5` in authored RAW settings. Canonicalising that
+default restores the exact earlier keys for DSC07209/17/23/11/16; all five NPZs
+still exist in the real managed cache. This was a key change, not eviction or
+failure to store. Default-source and finishing-only reuse remain covered.
+
+The incident's 23:21:34 checks for DSC07232 onwards were untraced idle-warmer
+checks, not proof of completed visible-cell requests. The historical 50-second
+holder cannot be identified from that log alone. Reproduction did identify
+metadata connections held for seconds, hydration gating pictures for 6–11 s,
+and an ungranted large GPU reservation blocking fitting draws; these gates are
+removed. Grid read-ahead is cache-only and follows the viewport; full idle
+warming waits until visible cells finish and every picture queue is idle.
+
+Final isolated 2560 x 1440 scripted run: eight scroll positions through the
+DSC0720x–0725x rows, six-second pauses, copied index and retained scenes in an
+owned disposable profile; original photos only read. No drivers or ten-minute
+run. Independent process-tree proportional-resident sampling at 0.5 s peaked at
+**1,899,322,216 bytes**, below **4,000,000,000**. At that sample (bytes): Electron
+PIDs 41804=52,827,282; 1176=1,277,063,753; 22092=134,579,346;
+20488=37,771,556; 30636=17,890,157; 33316=8,462,336. Backend Python
+39556=114,848,329; helper PIDs 38820=62,855,460; 20644=64,616,740;
+14216=62,924,507; 40076=62,703,908. Python launcher 38328=1,014,052;
+conhost 15548=1,764,790. Raw working-set sum was 2,344,562,688 bytes; it is
+not the ceiling charge because it double-counts shared resident pages.
+
+Of 73 ARW grid request attempts in those rows, 41 presented before leaving the
+viewport/end: 31 unedited (1.665–11.551 s, median 3.938), ten edited
+(3.587–5.323 s, median 4.371). **40 presentations exceeded 2 s**; 32 attempts
+had no finished thumbnail before scroll/end, all observed unfinished for over
+2 s in viewport snapshots (CSV records those lower bounds separately).
+These are actual trace-ID joins
+to compositor presentation, not DOM insertion matches or assumed successes.
+This is not a complete latency pass. DSC07209 and DSC07211 presented on return
+in 3.884/4.495 s; the other three named edited photos were scrolled away before
+presentation. None of the five was redeveloped. Actual GPU admission order was
+the exported DSC07198 Version 1 JPEG five times (cancel/retry), then DSC07259.ARW.
+Earlier incident order was DSC07209 → 07217 → 07223 → 07211 → 07216.
+
+Fast checks: final JavaScript 669 passed, one existing Single fixture failure
+(`HDRLibraryScreenPreviews` missing). Full Python during iteration: 2725 passed,
+13 failed, three skipped; ten failures introduced by the intermediate key fix
+were corrected and rechecked (109 passed, one existing RGB fixture failure).
+Final focused admission/key tests: 46 passed. The other existing Python failures
+are the scoped-preset source contract and retouch CaptureCache fixture. No broad
+rerun after those focused corrections. Protected project and photo-sidecar
+hashes were unchanged; no page errors. Steve should try this checkpoint before
+further memory work; the earlier deferred work below stays open.
+
+Evidence under `codebase/output/badminton/`: `scroll.json`, `cell-timings.csv`
+(every request, including missing results and >2 s flags), `summary.json`,
+`restored-scene-keys.json`, `backend.log`, and fast-check logs. Owned copied
+profile/cache scratch is removed after measurement; evidence is retained.
+Output started and ended at 2.1 GB, below the 100 GB limit.
+
 ## 8. Open work
 
 - Bound and qualify the remaining no-GPU CPU recipes listed above; only the ordinary ARW path has the measured 600 MB result.

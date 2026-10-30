@@ -333,3 +333,27 @@ def test_changed_photo_during_memory_encoding_never_publishes(tmp_path, monkeypa
         cache.build(path, 640, quality(None), decoded=(np.ones((4, 8, 3)), None, {}), defer_store=True)
     assert not cache.transient and not cache.pending_stores
     assert not list((tmp_path / "profile").rglob("*.npz"))
+
+
+def test_materialised_neutral_highlight_default_reuses_authored_scene_identity():
+    from hdr_finisher.models import EditDocument
+    from hdr_finisher.projects import validate_saved
+    document = {"source": {"raw_import_settings": RawImportSettings().model_dump(mode="json")}}
+    document["source"]["raw_import_settings"]["lens"]["mode"] = "off"
+    document["source"]["raw_import_settings"]["highlight_reconstruction"].pop("edge_colour_expand_percent")
+    assert quality(None) == quality({})
+    from hashlib import sha256
+    import json
+    from hdr_finisher.loader import SOURCE_DECODER_VERSION, SOURCE_COLOR_TRANSFORM_VERSION
+    from hdr_finisher.library_live import recipe
+    authored = recipe(document)
+    authored["raw_import_settings"] = deepcopy(document["source"]["raw_import_settings"])
+    stored_quality = "live-scene-v2:" + sha256(json.dumps({"recipe": authored,
+        "decoder": SOURCE_DECODER_VERSION, "colour": SOURCE_COLOR_TRANSFORM_VERSION,
+        "rgb_adapter": "library-rgb-v3"}, sort_keys=True).encode()).hexdigest()
+    before = quality(document)
+    assert before == stored_quality
+    normalised = validate_saved(EditDocument, document).model_dump(mode="json")
+    assert quality(normalised) == before
+    normalised["source"]["raw_import_settings"]["highlight_reconstruction"]["edge_colour_expand_percent"] = 1
+    assert quality(normalised) != before

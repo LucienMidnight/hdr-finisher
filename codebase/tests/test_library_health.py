@@ -184,3 +184,38 @@ def test_helper_problems_are_forwarded_into_backend_health(tmp_path, capsys):
         assert "helper_start" in logs and "helper_job_failed" in logs
     finally:
         helper.close()
+
+
+def test_metadata_yields_http_connection_without_submitting_parked_helper_work(tmp_path):
+    class BusyHelper(Helper):
+        def status(self):
+            return {**super().status(), "source_busy": True}
+        def submit_library(self, *args, **kwargs):
+            raise AssertionError("Parked metadata must stay on the page")
+    app = FastAPI()
+    app.include_router(create_library_router(BusyHelper(), MediaBrowserStore(tmp_path / "app")))
+    response = TestClient(app).post("/api/library/metadata", json={"paths": [str(tmp_path / "photo.ARW")], "demand": "visible"})
+    assert response.status_code == 202
+    assert response.json()["detail"] == "library_pending"
+
+
+def test_metadata_releases_connection_when_source_parks_an_existing_read(tmp_path):
+    from concurrent.futures import Future
+    class ParkedHelper(Helper):
+        busy = False
+        cancelled = False
+        future = Future()
+        def status(self):
+            return {**super().status(), "source_busy": self.busy}
+        def submit_library(self, *args, **kwargs):
+            self.busy = True
+            return "metadata", self.future
+        def cancel(self, job):
+            self.cancelled = True
+            self.future.cancel()
+    helper = ParkedHelper()
+    app = FastAPI()
+    app.include_router(create_library_router(helper, MediaBrowserStore(tmp_path / "app")))
+    response = TestClient(app).post("/api/library/metadata", json={"paths": [str(tmp_path / "photo.ARW")]})
+    assert response.status_code == 202
+    assert helper.cancelled and helper.future.cancelled()

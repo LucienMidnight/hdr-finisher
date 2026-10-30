@@ -1,17 +1,18 @@
 /* Shared bounded work with merged demand and priority promotion. */
 (function(root){
   "use strict";
-  function create(limit=2,now=()=>Date.now(),{heavyLimit=limit,onChange=()=>{},keepRunning=false,preemptLower=false,preemptForCapacity=false}={}){
+  function create(limit=2,now=()=>Date.now(),{heavyLimit=limit,onChange=()=>{},keepRunning=false,preemptLower=false,preemptForCapacity=false,admit=null}={}){
     const jobs=new Map(),waiting=[],failures=[],runningJobs=new Set();let active=0,heavyActive=0,sequence=0;
     const cancelled=()=>new DOMException("Cancelled","AbortError");
     const score=job=>job.cost-Math.min(5,(now()-job.created)/1000);
     const order=(a,b)=>a.priority-b.priority||score(a)-score(b)||a.sequence-b.sequence;
     let ranking=null;
     const demand=job=>{job.priority=Math.min(80,...[...job.users].map(user=>user.priority<=5||!user.viewport?user.priority:ranking?ranking(job.path):user.priority));};
-    let borrowPending=false;
+    let borrowPending=false,admitting=false,retry=null;
     function pump(borrow=false){
+      if(admitting)return;
       while(active<limit&&waiting.length){
-        waiting.sort(order);
+        waiting.sort((a,b)=>Number(!!b.admitted)-Number(!!a.admitted)||order(a,b));
         let index=waiting.findIndex(job=>job.priority===waiting[0].priority&&(job.priority===0||!job.heavy||heavyActive<heavyLimit));
         if(index<0){
           // Prefer light work already waiting, but never reserve an empty slot
@@ -22,10 +23,20 @@
           }
           index=0;
         }
-        const [job]=waiting.splice(index,1);
+        const job=waiting[index];
+        if(admit&&!job.admitted){
+          admitting=true;
+          Promise.resolve().then(()=>admit(job)).then(granted=>{
+            job.admitted=granted;
+            if(!granted&&!job.controller.signal.aborted&&!job.resourceWaiting){job.resourceWaiting=true;onChange(job,"waiting");}
+          },error=>{const at=waiting.indexOf(job);if(at>=0)waiting.splice(at,1);settle(job,error);})
+            .finally(()=>{admitting=false;if(job.admitted||job.controller.signal.aborted)pump();else if(!retry)retry=setTimeout(()=>{retry=null;pump();},100);});
+          break;
+        }
+        waiting.splice(index,1);
         if(job.controller.signal.aborted){if(jobs.get(job.key)===job)jobs.delete(job.key);continue;}
-        active++;if(job.heavy)heavyActive++;job.running=true;job.started=now();runningJobs.add(job);onChange(job,"running");
-        Promise.resolve().then(()=>job.task(job.controller.signal,()=>job.priority))
+        job.resourceWaiting=false;active++;if(job.heavy)heavyActive++;job.running=true;job.started=now();runningJobs.add(job);onChange(job,"running");
+        Promise.resolve().then(()=>job.task(job.controller.signal,()=>job.priority,job))
           .then(value=>settle(job,null,value),error=>settle(job,error))
           .finally(()=>{runningJobs.delete(job);active--;if(job.heavy)heavyActive--;if(jobs.get(job.key)===job)jobs.delete(job.key);pump();});
       }

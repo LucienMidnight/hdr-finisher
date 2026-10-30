@@ -4727,3 +4727,54 @@ passed, three existing failures, three skipped. Output is 2.1 GB. Steve shortene
 this round to five minutes and requested a manual try: the full ten-minute
 scroll and all six Library drivers are deferred until before merging to main.
 Local commits only; no merge or push.
+
+### October 30: badminton cache-hit and edited-scene fixes
+
+Memory admission now happens before a source takes an active queue slot. Pending
+admission and busy metadata return short responses, leaving browser connections
+free between retries. A non-fitting GPU development no longer blocks a fitting
+cached draw. Picture loading starts independently of sidecar/index hydration.
+Grid read-ahead follows current visibility, uses stored scenes only, and no
+longer gives an offscreen selection priority zero. Full idle warming waits for
+visible pictures and all picture queues to finish. Newly visible development
+can release an offscreen source parked waiting for GPU admission.
+
+DSC07209/17/23/11/16's earlier scenes survived on disk. Validation had inserted
+the neutral RAW setting `edge_colour_expand_percent=0.5`, changing scene hashes.
+Canonical scene identity now restores all five exact old keys; no decoder bump,
+eviction change, budget change or photo/project rewrite was needed. The actual
+incident development order was **07209 → 07217 → 07223 → 07211 → 07216**, with
+request-to-draw times 3.644, 5.614, 10.627, 17.451 and 20.443 s. Independent
+admission polling let later requests overtake earlier ones; memory waiting now
+remains in one ranked queue. Queued visible work precedes offscreen work;
+already executing GPU work is allowed to finish.
+
+The 23:21:34 cache-check messages for DSC07232 onwards were idle-warmer checks.
+They cannot establish which request held up the historical 50-second blank.
+Code and short reproduction identified and removed connection, hydration and
+GPU ordering gates; do not claim the historical connection hypothesis is proven.
+
+Final short scripted scroll used the real badminton folder read-only, with a
+copied index/cache in a disposable profile, eight positions with six-second
+pauses. Of 73 ARW requests in DSC0720x–0725x, 41 presented: unedited 31,
+1.665–11.551 s (median 3.938); edited ten, 3.587–5.323 s (median 4.371).
+Forty presentations exceeded 2 s; 32 were not presented before scroll/end and
+were observed unfinished for over 2 s in snapshots. The per-request
+record is `codebase/output/badminton/cell-timings.csv`; missing results remain
+missing. DSC07209/11 presented on return in 3.884/4.495 s; 07216/17/23 did not
+present before leaving the viewport. All five restored scene keys were verified
+against existing managed NPZs and none of those five was developed during the
+run. Actual GPU admission order: exported DSC07198 Version 1 JPEG five times
+(cancel/retry), then DSC07259.ARW. **Latency is not a complete pass**; Steve's
+manual retry is the next checkpoint, not further memory work.
+
+Peak process charge was **1,899,322,216 bytes**, under the 4 GB ceiling;
+per-process values and measurement limitations are in the memory-and-caches
+October 30 note. Original sidecar and protected-project hashes were unchanged;
+no page errors. JS: 669 passed, one existing Single fixture failure. Full Python
+ran during iteration (2725 passed, 13 failed, three skipped); ten introduced
+failures were fixed and covered by the focused rerun (109 passed, one existing
+RGB fixture failure), then 46 final focused checks passed. The other existing
+failures are scoped-preset source wording and retouch CaptureCache fixtures.
+No drivers, ten-minute run, merge or push. Both module PRDs accompany this fix.
+Owned profile/cache scratch was removed; output started and ended at 2.1 GB.

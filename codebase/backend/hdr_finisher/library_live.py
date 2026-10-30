@@ -40,7 +40,14 @@ def recipe(document):
 
 def quality(document):
     from .loader import SOURCE_DECODER_VERSION, SOURCE_COLOR_TRANSFORM_VERSION
-    identity = {"recipe": recipe(document), "decoder": SOURCE_DECODER_VERSION,
+    inputs = recipe(document)
+    # Validation materialises this neutral default in older authored grades.
+    # Its presence must not turn the same source pixels into a different scene.
+    if inputs["raw_import_settings"] != RawImportSettings().model_dump(mode="json"):
+        highlights = inputs["raw_import_settings"]["highlight_reconstruction"]
+        if highlights.get("edge_colour_expand_percent") == 0.5:
+            highlights.pop("edge_colour_expand_percent")
+    identity = {"recipe": inputs, "decoder": SOURCE_DECODER_VERSION,
                 "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-v3"}
     return "live-scene-v2:" + sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 

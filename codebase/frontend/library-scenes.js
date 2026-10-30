@@ -23,6 +23,23 @@ window.HDRLibraryScenes = (() => {
   // detaches. Grid/filmstrip and speculative demand use viewport ownership.
   const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {
     heavyLimit:cpuLanes,onChange:changed,
+    // Release an offscreen source's working room if it is only waiting on
+    // the GPU and newly visible development needs that room.
+    preemptLower:(job,priority)=>priority<=10&&job.resourceWaiting,
+    admit:async job=>{
+      job.admission ||= crypto.randomUUID();
+      if(!job.releaseAdmission){
+        job.releaseAdmission=()=>fetch("/api/library/memory-admission",{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({id:job.admission,release:true})}).catch(()=>{});
+        job.controller.signal.addEventListener("abort",job.releaseAdmission,{once:true});
+      }
+      const response=await fetch("/api/library/memory-admission",{method:"POST",signal:job.controller.signal,
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({id:job.admission,bytes:600_000_000})});
+      if(!response.ok)throw Error("Application memory accounting is unavailable.");
+      const {granted}=await response.json();
+      if(!granted)job.stage="Waiting for working memory";
+      return granted;
+    },
     keepRunning:job=>job.retainDetached||visible.has(job.path)||nearby.has(job.path)});
   const versions = new Map();
   const history = new Map(), generations = new Map();
@@ -62,21 +79,14 @@ window.HDRLibraryScenes = (() => {
     const elapsed = previous && previous.revision === plan.revision ? previous.ms : 0;
     const heavy = plan.bytes >= largeBytes || elapsed >= 2000;
     const cost = elapsed ? elapsed / 1000 : plan.bytes / largeBytes;
-    const pending = sources.submit(identity+"|"+version+"|"+generation, async (shared, importance) => {
+    const pending = sources.submit(identity+"|"+version+"|"+generation, async (shared, importance, job) => {
       const started = performance.now();
-      const admission = crypto.randomUUID();
+      const admission = job.admission;
       const request = release => fetch("/api/library/memory-admission", {method:"POST",
         ...(release?{}:{signal:shared}), headers:{"Content-Type":"application/json"},
         body:JSON.stringify({id:admission,bytes:600_000_000,release})});
       let renew;
       try {
-        for (;;) {
-          const response = await request(false);
-          if (!response.ok) throw Error("Application memory accounting is unavailable.");
-          if ((await response.json()).granted) break;
-          sources.stage(path,"Reclaiming older pictures",true);
-          await wait(250,shared);
-        }
         renew = setInterval(()=>{void request(false).catch(()=>{});},10000);
         const result = await develop(path, edge, shared, importance, version, options.gpuOnly || idle || (priority >= 80 && !visible.has(path)));
         if (result && (idle || signal?.aborted)) save(result);

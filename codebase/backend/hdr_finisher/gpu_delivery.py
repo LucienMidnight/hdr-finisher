@@ -309,6 +309,9 @@ def create_gpu_delivery_router():
             # Only Library developments share spare memory. Selected work gets
             # the next reservation when sharing cannot fit; draws stay exclusive.
             for other in raw_jobs.values():
+                # A development that cannot fit owns no reservation and must
+                # not block a smaller cached draw that can fit now.
+                if not other['granted'] and other['bytes'] > available: continue
                 if other is value or order(other) >= order(value): continue
                 can_share = value['concurrent'] and other['concurrent']
                 if not can_share or (not other['granted'] and (not value['granted'] or reserved + other['bytes'] > available)):

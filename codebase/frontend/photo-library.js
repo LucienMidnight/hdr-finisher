@@ -145,7 +145,8 @@
   const idlePictures = HDRLibrarySceneScheduler.createWarmer({
     load:(path,signal)=>HDRLibraryScenes.load(path,640,signal,80,true),
     idle:()=>state.active&&!document.hidden&&!state.reading&&state.view==="grid"&&
-      !HDRLibraryScenes.snapshot().sources.active&&!HDRLibraryScenes.snapshot().sources.waiting,
+      shownCells(state.cells).every(cell=>!!cell.meta)&&
+      Object.values(HDRLibraryScenes.snapshot()).every(work=>!work.active&&!work.waiting),
   });
   for(const event of ["pointerdown","keydown","wheel"]) document.addEventListener(event,()=>idlePictures.touch(),{passive:true});
   async function warmPictures(){
@@ -227,7 +228,7 @@
       for (const item of photos) {
         if (!current()) break;
         try {
-          const meta = await HDRLibraryScenes.load(item.path,2560,controller.signal,item.path===photo.path?0:50,false,null,{viewportDemand:true});
+          const meta = await HDRLibraryScenes.load(item.path,2560,controller.signal,80,false,null,{viewportDemand:true,cachedOnly:true});
           if (!current()) break;
           if (meta?.route === "gpu-raw-thumbnail") await HDRLibraryPictures.prepare(meta,controller.signal,current);
           if (!current()) break;
@@ -633,7 +634,11 @@
           HDRLibraryStopwatch("folder_first_picture_requested", {path:opening.path,request:opening.request,
             reason:photo.path,duration_ms:performance.now()-opening.started});
         }
-        await hydrateVisible(photo,current,cell.controller.signal);
+        // live-plan reads the current saved grade itself. Folder details must
+        // not gate cached pictures behind sidecar/index upkeep.
+        void hydrateVisible(photo,current,cell.controller.signal).catch(error=>{
+          if(current()&&!aborted(error))status(error.message);
+        });
         if(!current())return;
         cell.identity=pictureIdentity(photo);
         const fallback = document.createElement("canvas"); cell.fallback = fallback;
