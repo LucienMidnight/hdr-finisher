@@ -1326,6 +1326,11 @@ if (!gotLock) {
           }
           for (const record of windows.values()) if (!record.window.isDestroyed()) record.window.webContents.send("desktop:memory-pressure",value);
           if (value.reclaim) {
+            // Cache owners release references above. Chromium also needs its
+            // native pressure notification to discard dead upload/readback
+            // storage in renderer, browser and GPU host processes.
+            await require('./memory-pressure.cjs').notifyChromiumPressure(mainWindow.webContents,
+              value.budgetPressure || value.pressure === 'critical' ? 'critical' : 'moderate');
             const reclaimed=await fetch(`${activeBackend.url}/api/library/memory-reclaim`, {method:"POST",
               headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret,"Content-Type":"application/json"},
               body:JSON.stringify({pressure:value.pressure==='critical'?'critical':'moderate'}),signal:AbortSignal.timeout(2000)});

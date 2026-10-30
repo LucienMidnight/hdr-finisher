@@ -174,3 +174,17 @@ def test_idle_headroom_stops_before_evicting_existing_scenes(tmp_path, monkeypat
     preferences = cache.preferences() | {'enabled': False}
     monkeypatch.setattr(cache, 'preferences', lambda: preferences)
     assert not cache.can_warm()
+
+
+def test_over_budget_publication_evicts_from_ledger_without_disk_rescan(tmp_path, monkeypatch):
+    cache = LibraryCache(tmp_path/'profile'); root = cache.prepare()
+    directory = root/'library-pictures'; directory.mkdir(exist_ok=True)
+    old = directory/'old.npz'; old.write_bytes(b'x'*60)
+    recent = directory/'recent.npz'; recent.write_bytes(b'x'*40)
+    os.utime(old,(1,1)); os.utime(recent,(2,2))
+    cache.record(old); cache.record(recent)
+    monkeypatch.setattr(cache, 'entries', lambda *a, **k: pytest.fail('Publication rescanned disk'))
+    cache.trim(limit_bytes=50)
+    assert not old.exists() and recent.exists()
+    monkeypatch.undo()
+    assert cache.usage()['thumbnail_used_bytes'] == 40

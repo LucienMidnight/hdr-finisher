@@ -234,9 +234,12 @@ def developed(cache, path, header, payload):
     plane_count = 6 if reference_present else 3
     pixels = reference = None
     if payload is not None:
-        if len(payload) != h * w * plane_count * 4:
+        sample_bytes = header.get('sample_bytes', 4)
+        if sample_bytes not in (2, 4):
+            raise ValueError('Unsupported RGB preview precision.')
+        if len(payload) != h * w * plane_count * sample_bytes:
             raise ValueError("Incomplete RGB preview data.")
-        planes = np.frombuffer(payload, dtype="<f4").reshape(plane_count, h, w)
+        planes = np.frombuffer(payload, dtype="<f2" if sample_bytes == 2 else "<f4").reshape(plane_count, h, w)
         if not np.all(np.isfinite(planes)):
             raise ValueError("RGB GPU preparation produced invalid samples.")
         pixels = np.ascontiguousarray(planes[:3].transpose(1, 2, 0))

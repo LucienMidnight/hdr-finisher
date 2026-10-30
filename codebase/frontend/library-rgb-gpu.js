@@ -230,6 +230,15 @@ window.HDRLibraryRGB = (() => {
     const outW = w, outH = h;
     const st = meta.sample_stride, sw = Math.ceil(outW / st), sh = Math.ceil(outH / st);
     const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
+    // The scene cache stores clipped IEEE half samples. Quantize the handoff
+    // once here instead of transporting six float32 planes through renderer,
+    // Electron network and backend copies before doing the same conversion.
+    const sampleBytes = direct && typeof Float16Array !== 'undefined' ? 2 : 4;
+    const handoffPlane = buffer => {
+      if (sampleBytes !== 2) return buffer;
+      return Float16Array.from(new Float32Array(buffer), value =>
+        Number.isFinite(value) ? Math.max(0, Math.min(65504, value)) : value).buffer;
+    };
     const owned = new Set(); let liveBytes = 0, peakBytes = 0;
     const own = buffer => { if(liveBytes+buffer.size>memoryBudget){buffer.destroy();throw Error("RGB preparation exceeds the reserved memory budget.");} owned.add(buffer); liveBytes += buffer.size; peakBytes = Math.max(peakBytes, liveBytes); return buffer; };
     const release = buffer => { if (owned.delete(buffer)) { liveBytes -= buffer.size; buffer.destroy(); } };
@@ -331,13 +340,13 @@ window.HDRLibraryRGB = (() => {
       for (const edge of edges) {
         const lastEdge = edge === edges.at(-1);
         const [rh, rw] = reducedSize(meta, edge);
-        reduced[edge] = { height: rh, width: rw, planes: [], textures: [] };
+        reduced[edge] = { height: rh, width: rw, planes: [], textures: [], sample_bytes: sampleBytes };
         const retained = [];
         for (const plane of planes) {
           if(rh===h && rw===w){
             const start=performance.now();
             if(direct)retained.push(plane);
-            reduced[edge].planes.push(await read(plane,n*4));
+            reduced[edge].planes.push(handoffPlane(await read(plane,n*4)));
             timings.rgb_readback=(timings.rgb_readback||0)+performance.now()-start;
             if(lastEdge && !direct)release(plane);
             continue;
@@ -353,7 +362,7 @@ window.HDRLibraryRGB = (() => {
           release(mid);
           {
             const start=performance.now();
-            reduced[edge].planes.push(await read(out,rh*rw*4));
+            reduced[edge].planes.push(handoffPlane(await read(out,rh*rw*4)));
             timings.rgb_readback=(timings.rgb_readback||0)+performance.now()-start;
             if(direct)retained.push(out);else release(out);
           }

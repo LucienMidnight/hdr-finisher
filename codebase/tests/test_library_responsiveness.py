@@ -117,9 +117,9 @@ def test_full_maintenance_yields_to_foreground_between_pages(tmp_path, monkeypat
     browser.remove_pin(str(folder))
     entered, foreground = Event(), Event()
     original = index.membership.reconcile
-    def reconcile(paths=None):
-        if paths is None: return original()
-        original(paths)
+    def reconcile(paths=None, **options):
+        if paths is None: return original(**options)
+        original(paths, **options)
         if paths and not entered.is_set():
             entered.set()
             assert foreground.wait(2)
@@ -142,3 +142,22 @@ def test_restart_does_not_reconcile_before_helper_start(tmp_path, monkeypatch):
     restarted = LibraryIndex(marks, browser, None)
     assert restarted.membership.marks is marks
     assert calls == []
+
+
+def test_reconcile_batches_and_full_pass_visits_each_family_once(tmp_path, monkeypatch):
+    folder, photos, browser, marks, index = library(tmp_path)
+    marks.album_create("Keep", photos[:2]); marks.writer.drain()
+    calls = []
+    original = index.membership._reconcile_piece
+    def piece(paths):
+        calls.append(list(paths))
+        return original(paths)
+    monkeypatch.setattr(index.membership, "_reconcile_piece", piece)
+    index.membership.reconcile(photos)
+    assert calls == [sorted(str(p) for p in photos)]
+    calls.clear()
+    index.membership.reconcile()
+    families = [p for batch in calls for p in batch]
+    assert len(families) == len(set(families))
+    assert all(len(batch) <= 16 for batch in calls)
+    assert marks.album_paths("Keep") == [str(p) for p in photos[:2]]

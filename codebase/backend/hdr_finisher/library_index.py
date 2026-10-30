@@ -204,9 +204,10 @@ class LibraryIndex:
 
     @audited("index_remember_facts")
     def remember_facts(self, records, *, epoch=None, generation=None, foreground=False):
-        if len(records) > 1:
-            for start in range(0,len(records),1):
-                self.remember_facts(records[start:start+1],epoch=epoch,generation=generation,foreground=foreground)
+        if len(records) > 16:
+            for start in range(0,len(records),16):
+                if not foreground: self.wait_for_upkeep()
+                self.remember_facts(records[start:start+16],epoch=epoch,generation=generation,foreground=foreground)
                 time.sleep(.001)
             return
         for record in records:

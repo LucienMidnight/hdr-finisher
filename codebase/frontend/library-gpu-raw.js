@@ -831,7 +831,7 @@
   async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "") {
     const begun = performance.now();
     const sourceJob=liveScene ? crypto.randomUUID().replaceAll("-", "") : null;
-    let retainedSource = false, gpuResult;
+    let retainedSource = false, gpuResult, sourceRenewal;
     try {
     // Inspect only the adapter limit; do not wait for pipeline compilation.
     const sourceLimit=await sourceStorageLimit();
@@ -859,6 +859,16 @@
     const sensorMs = performance.now() - begun;
     const length = new DataView(body).getUint32(0, true);
     const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(body, 4, length)));
+    // Ownership must survive waiting for a GPU permit and preview handoff,
+    // not just shader submissions. Idle/abandoned direct scenes still expire.
+    if(meta.source_job){
+      let renewing=false;
+      sourceRenewal=setInterval(()=>{
+        if(renewing)return;renewing=true;
+        fetch("/api/library/live-source/"+meta.source_job,{method:"POST",signal})
+          .catch(()=>{}).finally(()=>{renewing=false;});
+      },10000);
+    }
     const mosaic = new Uint8Array(body, 4 + length, meta.mosaic_bytes);
     if(meta.dng_linear?.support){
       const mask=meta.dng_linear.support;meta.dng_support=new Float32Array(body,4+length+mask.offset,mask.bytes/4);
@@ -884,7 +894,7 @@
     for (const storedEdge of nativeMode ? [100000] : [...new Set([640,2560,edge])]) {
       const picture = developed.reduced[storedEdge];
       const header = { draw_first:liveScene && !nativeMode, rgb:meta.rgb, has_sdr_reference:!!meta.sdr_reference, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
-      edge:storedEdge, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode && !liveScene, flip: meta.flip, height: picture.height, width: picture.width,
+      edge:storedEdge, sample_bytes:picture.sample_bytes || 4, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode && !liveScene, flip: meta.flip, height: picture.height, width: picture.width,
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
       memory_peak_bytes: developed.memory_peak_bytes,
@@ -951,6 +961,7 @@
     root.HDRLibraryStopwatch?.("picture_development", {path, duration_ms:performance.now()-begun, gpu_ms:gpuMs, sensor_ms:sensorMs, source_ms:meta.source_timings_ms, gpu_stages_ms:developed.timings, quantiles_ms:quantileMs, handoff_ms:performance.now()-handoffStarted});
     return selectedResult;
     } finally {
+      clearInterval(sourceRenewal);
       if(!retainedSource)for(const picture of Object.values(gpuResult?.reduced || {}))for(const texture of picture.textures || [])texture.destroy();
       if(sourceJob && !retainedSource) await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
     }
@@ -1052,7 +1063,21 @@
     // samples, reductions and readback; complex graphs retain their estimate.
     const complex=meta.repairs?.length || meta.dng_linear || meta.raw_import_settings?.highlight_reconstruction?.method === "edge_colour_v1" || edges.includes(100000);
     const perPixel=complex ? 44 : 28;
-    return meta.width*meta.height*perPixel+64*1024*1024;
+    let estimate=meta.width*meta.height*perPixel+64*1024*1024;
+    if(meta.rgb){
+      const lanes=meta.colour?.authored_sdr || meta.sdr_reference ? 6 : 3;
+      const source=meta.width*meta.height*lanes*4;
+      let textures=0;
+      for(const edge of [...new Set(edges)]){
+        const [h,w]=reducedSize(meta,edge),pixels=h*w;
+        // Conservative overlap: full source, retained reduced buffers, packed
+        // textures, one horizontal reduction and its mapped readback.
+        estimate=Math.max(estimate,source+textures+pixels*lanes*4+pixels*(lanes/3)*8
+          +meta.height*w*4+pixels*4+64*1024*1024);
+        textures+=pixels*(lanes/3)*8;
+      }
+    }
+    return estimate;
   };
   const exported = Object.freeze({ cachedDirect, forgetDirect, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity}) });
   root.HDRLibraryGpuRaw = exported;

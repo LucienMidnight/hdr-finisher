@@ -7,7 +7,7 @@ import ctypes
 from ctypes import wintypes
 import os
 import sys
-from threading import RLock
+from threading import RLock, Lock
 import time
 import weakref
 
@@ -21,6 +21,7 @@ _reservations = {}
 _waiting_until = 0
 _caches = {}
 _sample = (0, None)
+_sample_lock = Lock()
 _remote_claim = None
 
 
@@ -292,8 +293,12 @@ def snapshot(refresh=False):
     with _lock:
         cached=_sample
     if refresh or now-cached[0]>.45 or cached[1] is None:
-        rows=process_tree(int(os.environ.get('HDR_FINISHER_DESKTOP_PID',os.getppid())))
-        with _lock: _sample=(now,rows)
+        with _sample_lock:
+            with _lock: cached = _sample
+            if refresh or time.monotonic()-cached[0]>.45 or cached[1] is None:
+                rows=process_tree(int(os.environ.get('HDR_FINISHER_DESKTOP_PID',os.getppid())))
+                with _lock: _sample=(time.monotonic(),rows)
+            else: rows=cached[1]
     else: rows=cached[1]
     total=sum(row.get('chargedBytes',row['workingSetBytes']) for row in rows)
     with _lock:

@@ -131,8 +131,9 @@ class LibraryMembership:
                         return
                     current = sorted(self._pending)
                     self._pending.clear()
-                for path in current:
-                    self._reconcile_piece([path])
+                for at in range(0, len(current), 16):
+                    if background: self.index.wait_for_upkeep()
+                    self._reconcile_piece(current[at:at+16])
                     time.sleep(.001)
         finally:
             if held: self._publish.release()
@@ -252,7 +253,7 @@ class LibraryMembership:
         for at in range(0,len(paths),16):
             if background: self.index.wait_for_upkeep()
             started=time.perf_counter()
-            self.reconcile(paths[at:at+16])
+            self.reconcile(paths[at:at+16], background=background)
             from .library_diagnostics import log
             log("recovery_piece",count=len(paths[at:at+16]),duration_ms=(time.perf_counter()-started)*1000)
             time.sleep(.005)
@@ -270,6 +271,7 @@ class LibraryMembership:
                 db.close()
         recovery_paths = sorted({source(row[1] if table == "album_photos" else row[0])
             for record in list(self._saved_records.values()) for table, rows in record.items() for row in rows})
+        visited = set(recovery_paths)
         for start in range(0, len(recovery_paths), 32):
             self.maintain(recovery_paths[start:start+32], background=background)
             time.sleep(.001)
@@ -288,7 +290,9 @@ class LibraryMembership:
                         db.close()
                 if not batch: break
                 pins = self.pins()
-                paths = batch if table != "files" else [p for p in batch if not self.pinned(p, pins)]
+                paths = sorted({source(p) for p in batch if source(p) not in visited
+                    and (table != "files" or not self.pinned(p, pins))})
+                visited.update(paths)
                 for start in range(0, len(paths), 32):
                     self.maintain(paths[start:start+32], background=background)
                     time.sleep(.001)

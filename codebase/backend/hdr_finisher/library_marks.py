@@ -338,7 +338,9 @@ class LibraryMarks:
                 with timed_lock(self._lock,'marks_read_copies'):
                     self.copies.observe(value, document)
         if getattr(self, "membership", None):
-            self.membership.reconcile(paths)
+            recovery = {row["path"] for row in rebuilt} | set(removed)
+            recovery.update(value for value, document in zip(observed_paths, observed_documents) if document)
+            if recovery: self.membership.reconcile(sorted(recovery))
             self.membership.describe(photos)
             self.membership.remember(photos)
         return {"photos": photos, "warnings": warnings, "undo_available": bool(self._undo), "_documents": seen}

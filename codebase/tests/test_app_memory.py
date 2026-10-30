@@ -168,3 +168,73 @@ def test_jobs_do_not_evict_grade_cache_when_total_has_room(monkeypatch):
     assert app_memory.admit('second',700_000_000)['granted']
     assert app_memory.admit('first',700_000_000)['granted']
     assert app_memory.cache_snapshot()['working']['bytes']==100_000_000
+
+
+def test_concurrent_memory_requests_share_one_process_census(monkeypatch):
+    entered, release = Event(), Event()
+    calls = []
+    def tree(root):
+        calls.append(root); entered.set()
+        assert release.wait(2)
+        return [dict(pid=1, workingSetBytes=100)]
+    monkeypatch.setattr(app_memory, 'process_tree', tree)
+    with ThreadPoolExecutor(8) as pool:
+        first = pool.submit(app_memory.snapshot)
+        assert entered.wait(2)
+        rest = [pool.submit(app_memory.snapshot) for _ in range(7)]
+        release.set()
+        assert all(task.result(timeout=2)['totalBytes'] == 100 for task in [first, *rest])
+    assert len(calls) == 1
+
+
+def test_memory_control_answers_while_default_request_workers_are_full():
+    import asyncio
+    import anyio
+    from hdr_finisher.library_api import memory_control
+    async def run():
+        limiter = anyio.to_thread.current_default_thread_limiter()
+        previous = limiter.total_tokens
+        limiter.total_tokens = 1
+        entered, release = Event(), Event()
+        def blocked():
+            entered.set(); assert release.wait(2)
+        task = asyncio.create_task(anyio.to_thread.run_sync(blocked))
+        try:
+            while not entered.is_set(): await asyncio.sleep(.001)
+            assert await asyncio.wait_for(memory_control(lambda: 'responsive'), .5) == 'responsive'
+        finally:
+            release.set(); await task; limiter.total_tokens = previous
+    asyncio.run(run())
+
+
+def test_memory_endpoint_answers_during_coalesced_slow_reclaim(tmp_path, monkeypatch):
+    import asyncio
+    import httpx
+    from fastapi import FastAPI
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.library_worker import LibraryWorker
+    from hdr_finisher.media_browser import MediaBrowserStore
+    entered, release = Event(), Event()
+    calls = []
+    def reclaim(level):
+        calls.append(level); entered.set(); assert release.wait(3)
+    monkeypatch.setattr(app_memory, 'reclaim', reclaim)
+    monkeypatch.setattr(app_memory, 'process_tree', lambda root: [dict(pid=1, workingSetBytes=100)])
+    worker = LibraryWorker(tmp_path)
+    monkeypatch.setattr(worker, '_send', lambda command: None)
+    app = FastAPI(); app.include_router(create_library_router(worker, MediaBrowserStore(tmp_path)))
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            try:
+                result = await asyncio.wait_for(client.post('/api/library/memory-reclaim', json={}), .5)
+                assert result.json() == {'reclaiming': True}
+                while not entered.is_set(): await asyncio.sleep(.001)
+                for _ in range(5):
+                    assert (await client.post('/api/library/memory-reclaim', json={})).is_success
+                sample = await asyncio.wait_for(client.get('/api/library/memory'), .5)
+                assert sample.json()['totalBytes'] == 100
+                assert calls == ['moderate']
+            finally:
+                release.set()
+                await asyncio.sleep(.05)
+    asyncio.run(run())

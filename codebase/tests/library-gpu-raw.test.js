@@ -163,3 +163,9 @@ test('development restarts are bounded, explained, and release the GPU on failur
   assert.equal(events.at(-1).stage,'picture_development_outcome');
  }
 });
+
+
+test('small RGB direct scene reservation covers source, reductions and retained textures',()=>{
+ const estimate=globalThis.HDRLibraryGpuRaw.rawBudget({rgb:true,width:2400,height:1801,colour:{authored_sdr:true}},[640,2560]);
+ assert.ok(estimate>=190_786_160,'IMG_0267 measured peak must fit');
+});

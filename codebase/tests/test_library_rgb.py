@@ -256,7 +256,8 @@ def test_precision_hdr_backend_failure_has_explicit_fallback(tmp_path,monkeypatc
 
 
 @pytest.mark.parametrize("authored",[False,True])
-def test_precision_publication_matches_grade_document(tmp_path,authored):
+@pytest.mark.parametrize('sample_bytes', [2, 4])
+def test_precision_publication_matches_grade_document(tmp_path,authored,sample_bytes):
     import tifffile
     from hdr_finisher.library_pictures import LibraryPictureCache
     path=tmp_path/"photo.tif"
@@ -277,11 +278,16 @@ def test_precision_publication_matches_grade_document(tmp_path,authored):
         robust={"channel":a.robust_peak_linear,"luma":a.robust_peak_luma_linear,"bt2020":a.robust_peak_bt2020_linear})
     planes=[expected.image.transpose(2,0,1)]
     if authored:planes.append(expected.sdr_reference_image.transpose(2,0,1))
-    body=np.concatenate(planes).astype("<f4").tobytes()
+    body=np.concatenate(planes).astype("<f2" if sample_bytes == 2 else "<f4").tobytes()
+    header["sample_bytes"] = sample_bytes
     cache=LibraryPictureCache(tmp_path/"cache")
     result=library_rgb.developed(cache,path,header,body)
     assert result["has_reference"]==authored
     assert cache.default_document(path)==expected.edit_document().model_dump(mode="json")
+    with np.load(cache.file(result['key']), allow_pickle=False) as stored:
+        np.testing.assert_array_equal(stored['pixels'], np.clip(expected.image, 0, 65504).astype(np.float16))
+        if authored:
+            np.testing.assert_array_equal(stored['reference'], np.clip(expected.sdr_reference_image, 0, 65504).astype(np.float16))
 
 @pytest.mark.parametrize("transfer,bits,dtype",[("sRGB",8,"uint8"),("PQ",12,"uint16"),("HLG",16,"uint16"),("PQ",32,"float32")])
 def test_jxl_samples_precision_gate_and_normalized_override_order(tmp_path, transfer, bits, dtype):

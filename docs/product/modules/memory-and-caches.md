@@ -646,3 +646,45 @@ Final focused cache/scene/error checks: 52 passed. The photo-library note
 records the full fast-suite failures without claiming a clean broad pass.
 Output started/ended at 2.1 GB; owned photo/profile/pytest scratch removed.
 Both module records accompany this local `library-big-folder` commit.
+
+
+### October 30: keep control sampling responsive during cold development
+
+Memory sampling now runs on a dedicated executor, independently of the
+ordinary API worker pool and disk reclamation. A single-flight process census
+prevents concurrent callers from allocating duplicate Windows working-set
+queries. Timestamp the completed census, avoiding an immediately stale sample.
+Admission uses its own workers. Reclaim requests coalesce on a separate worker
+and acknowledge queueing promptly; critical pressure upgrades pending work.
+Disk spills no longer block subsequent controller samples. The desktop also
+forwards the existing controller's pressure to Chromium's native allocators;
+renderer cache eviction alone did not release accumulated transfer buffers.
+
+The Library disk cache now evicts from its size/access-age ledger, releasing
+the shared publication lock between small LRU families, rather than rescanning
+the cache during every over-budget save. RGB preview handoffs carry clipped
+half samples, matching the existing persisted NPZ precision and reducing
+transient copies. Source ownership renews through waits and saves. The GPU
+footprint estimate includes actual overlapping buffers/textures. No RAM
+ceiling, target, cache share, disk allowance, 600 MB minimum or concurrency
+setting changed.
+
+Final fresh-profile cold mixed-60 capture with pinned indexing active:
+**190** memory endpoint requests, **zero timeouts**, **127.8 ms p95**,
+**336.5 ms maximum**, independently sampled whole-app peak
+**3,826,597,295 bytes** (ceiling remains **4,000,000,000**). All first-two-screen
+observations finished: 42 observations of 29 distinct photos because the
+viewports overlap. The full photo-library note records per-cell latency,
+stage times, reconcile counts, test failures and the still-slow 95-second
+first screen. Three protected-project hashes were unchanged.
+
+This is evidence for the short sample, not a guarantee for all 449 files.
+Fast native half conversion exceeded the ceiling in an experiment; adding a
+separate reservation while decode reservations were held then blocked work.
+Both experiments are omitted. More concurrent GPU developments are not
+recommended until transient allocation/readback ownership is improved.
+Existing minimum, budgets and shares remain Steve's decision.
+
+Output started and ended at **2.1 GB** (100 GB limit). Owned temporary
+photo/profile/pytest scratch was removed; only linked small evidence remains.
+Committed locally on `library-big-folder`; stop for Steve's retry.

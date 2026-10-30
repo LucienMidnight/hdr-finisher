@@ -214,6 +214,7 @@ class LibraryPictureCache:
             with np.load(destination, allow_pickle=False) as stored:
                 result = json.loads(str(stored["metadata"]))
             os.utime(destination, None)
+            self.managed.record(destination)
             return result | {"key": key, "quality": quality, "cache_hit": True, "stored_bytes": destination.stat().st_size}
         except (OSError, ValueError, EOFError) as error:
             problem("cache_corrupt", destination, error, "damaged entry removed; picture rebuilt")
@@ -404,7 +405,9 @@ class LibraryPictureCache:
         with np.load(self.open(key, path), allow_pickle=False) as stored:
             reference = lane == "sdr" and "reference" in stored
             pixels = stored["reference" if reference else "pixels"].astype(np.float32)
-        if path.exists(): os.utime(path, None)
+        if path.exists():
+            os.utime(path, None)
+            self.managed.record(path)
         body, stride = encode_rgba_proxy_rows(pixels, 0, pixels.shape[0], prefer_half=True, pixel_format="rgba16float")
         self.delivered(key)
         return body, pixels.shape[1], pixels.shape[0], stride, "linear-srgb" if reference else "acescg"

@@ -4942,3 +4942,117 @@ Output started and ended at **2.1 GB**, below 100 GB. Owned photo copies,
 three Electron profiles, pytest scratch and intermediate logs were removed;
 only the small linked evidence remains. Committed locally on
 `library-big-folder`; no protected project save, merge, push or installer.
+
+
+### October 30: cold mixed-folder contention and memory-controller retry
+
+The 15:09-15:11 retry exposed whole-library startup recovery overlapping the
+open folder. Startup upkeep alone accounts for 14,645 reconcile lock events
+in its logged 133-second interval; these were not 449 distinct source jobs.
+The recovery pass revisited physical sources across recovery records and
+files/photos/albums/grades/copies. `maintain` offered groups of 16, but
+`reconcile` split them back into individual paths and slept after each lock.
+Streaming mark reads also reconciled unchanged paths, and indexing remembered
+facts one path per transaction. Pins trigger/restart indexing; opening a
+folder triggers streaming reads and restarts that index generation. They
+amplified the same recovery work rather than independently developing every
+photo thousands of times.
+
+Built in this commit: deduplicate physical sources during full recovery;
+coalesce reconcile into at most 16 paths per lock; yield background batches
+to visible-source demand; avoid reconciling unchanged mark reads; index facts
+in bounded groups of 16. Memory sampling/admission have dedicated workers;
+slow, coalesced disk reclamation has its own worker. Source ownership renews
+every ten seconds during GPU waits and publication, addressing the expired
+source-preparation messages. No budget, share or concurrency setting changes.
+
+"Saving preview data" included real contention. Captured worker stacks showed
+publication and reclamation blocked on LibraryCache's shared lock while an
+over-budget trim rescanned the entire disk cache twice. Publication now uses
+its existing SQLite size ledger plus recorded access ages, evicting one LRU
+family at a time and releasing the lock between families. Explicit Settings
+usage/recovery can still reconcile disk drift. RGB handoffs send the same
+clipped half-precision values already stored by the NPZ cache, reducing body
+copies; the backend accepts two- or four-byte samples and rejects nonfinite
+samples. Behavioral checks compare the persisted planes with the existing
+float32-to-half result. Chromium also receives the existing controller's
+pressure notification so native transfer allocations can be reclaimed.
+
+IMG_0267.JPG (2400 x 1801) needed **190,786,160 bytes** of actual direct-scene
+GPU buffers/textures. The old **188,136,064-byte** estimate omitted overlap
+between source planes, retained reductions, packed textures and readback.
+The estimate now covers these lifetimes: **383,236,864 bytes** reserved in the
+disposable-copy check, one successful development, finished presentation at
+about **8.2 s**. This changes the per-photo estimate, not the GPU allowance.
+
+Validation used a fresh isolated `test-` profile, 2560 x 1440, disposable copies
+of 60 selected files (44 HEIC, 8 JPG, 4 PNG, 4 ARW, including IMG_0267), and a
+pinned generated 1,200-file index workload. The index remained enabled and
+indexing while source work ran, yielding to it (done=0 at the snapshot).
+The final stationary/one-scroll capture lasted about 95 seconds:
+
+- First screen: **24/24** finished; last cell at **94.826 s** after open.
+  Cold request-to-finished presentation: median **31.330 s**, range
+  **3.469-93.977 s**.
+- Second screen: **18/18** finished by **95.181 s** after open. Cold request
+  times median **19.789 s**, range **3.469-93.977 s**; many were prepared before
+  scrolling. These are **42 cell observations, 29 distinct photos**, because
+  the two captured viewports overlap by 13 photos. Camera previews are kept
+  separate from finished shader presentations.
+- No failed cells, development restarts, expired-source failures, page errors
+  or memory-controller errors. All 26 measured RGB GPU peaks fit reservations.
+- **190 memory polls**, **zero timeouts**; p95 **127.8 ms**, maximum **336.5 ms**.
+- Reconcile: **53 lock holds**, **252 ms total**, maximum hold **16 ms**,
+  maximum wait **32 ms**; **50 recovery-piece events**. Fresh-profile counts
+  are not a replay of Steve's large historical recovery database.
+- Independent whole-app process-tree peak: **3,826,597,295 bytes**, below the
+  unchanged 4,000,000,000-byte ceiling. All three protected-project hashes
+  stayed unchanged. Originals under D:/Photos were read/copied only.
+
+Remaining cold-development times (medians; stage medians do not sum exactly):
+
+| Format | Decode/prepare | Source request incl. transfer | GPU-stage interval | Saving/handoff | Whole development |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| HEIC, 17 developments | 0.991 s | 1.481 s | 4.178 s | 0.880 s | 6.695 s |
+| JPG, 5 developments | 0.007 s | 0.081 s | 0.908 s | 0.289 s | 1.451 s |
+
+HEIC handoff max is **1.385 s**, versus the reported old median 3.2 s/max
+9.8 s. Backend handoff substage medians are about 7 ms request framing,
+33 ms accept/pack, and 7 ms describe; the larger frontend handoff includes
+transport and both preview sizes. The HEIC GPU interval includes GPU waiting,
+upload, shaders, readback and half conversion: readback/conversion alone is
+**2.912 s** median. It must not be described as four seconds of shader work.
+GPU development remains effectively serial; two source preparations can
+pipeline decode/transport around it. The expensive RAW cells can wait behind
+lighter work despite being visible. Recommendation: keep one GPU development
+at a time for Steve's retry; more simultaneous large photos risks the ceiling.
+First reduce readback/conversion and visible-queue delay before increasing
+concurrency. A faster native conversion and a reservation-top-up experiment
+were discarded: they respectively exceeded the ceiling and blocked progress.
+The retained implementation has neither change.
+
+The first screen now finishes within the original 133-second blank/stalled
+window, but 95 seconds is still slow. This is a short sample, not a controlled
+before/after latency qualification or a complete 449-photo memory guarantee;
+OS file cache was not flushed. Steve's full-folder manual retry is next.
+
+Evidence: `codebase/output/cold-mixed/final/` holds `report.json`,
+`summary.json`, `cell-timings.csv` (every observation's request/finished time),
+`screen.png`, `backend.log`, and independent `memory.jsonl`;
+`contention-stacks.txt` preserves the blocked-cache stack evidence; `jpeg/` holds the
+focused disposable IMG_0267 check. The reusable measurement helper is
+`codebase/tools/measure-library-cold-mixed.cjs`. No drivers, endurance run,
+merge, push, protected-project save or installer build.
+
+Fast checks: full Python **2,749 passed, four failed, three skipped**. Existing
+failures remain: scoped-preset source contract, RGB description's None fixture,
+Grade frame-cache retention, and retouch CaptureCache's missing `defer_store`.
+Focused final backend checks passed except that same RGB fixture (123 pass,
+one known failure); final control/cache checks: **36 passed**, including no-rescan eviction. JavaScript full suite: **672 passed, three known fixture failures**: two
+library-scenes error cases lack a source identity, and Single lacks
+HDRLibraryScreenPreviews. Focused reservation/pressure checks: **14 passed**. Detailed
+counts and logs remain in `codebase/output/cold-mixed-*.log`.
+
+Output started and ended at **2.1 GB** (100 GB limit). Owned temporary
+photo/profile/pytest scratch was removed; only linked small evidence remains.
+Committed locally on `library-big-folder`; stop for Steve's retry.

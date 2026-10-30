@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 import os
 import time
 from pathlib import Path
-from concurrent.futures import CancelledError
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from typing import Literal
 from .cpu_budget import logical_cpus
 
@@ -23,6 +23,14 @@ from starlette.concurrency import run_in_threadpool
 from .library_pictures import LibraryPictureCache
 from .library_marks import LibraryMarks, MarkChange, NameTaken
 from .library_index import LibraryIndex
+
+
+_memory_control = ThreadPoolExecutor(max_workers=2, thread_name_prefix="memory-control")
+_memory_sampler = ThreadPoolExecutor(max_workers=1, thread_name_prefix="memory-sampler")
+_memory_reclaimer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="memory-reclaim")
+
+async def memory_control(function, *args):
+    return await asyncio.get_running_loop().run_in_executor(_memory_control, function, *args)
 
 
 class DevelopmentFailure(BaseModel):
@@ -586,6 +594,7 @@ def create_library_router(worker, browser, store=None):
 
     @router.post("/live-developed")
     async def live_developed(request: Request):
+        accepted_at = time.perf_counter()
         from . import library_gpu_raw
         try:
             header, body = library_gpu_raw.unframe(await request.body())
@@ -647,9 +656,16 @@ def create_library_router(worker, browser, store=None):
             adapter = library_rgb if header.get("rgb") else library_gpu_raw
             if header.get("describe_only") and (not header.get("rgb") or header["edge"] == 100000 or body):
                 raise ValueError("Only reduced RGB scene metadata can be described without pixels.")
+            developed_at = time.perf_counter()
             result = await run_in_threadpool(adapter.developed, SceneCache(), path, header, None if header.get("describe_only") else body)
+            describe_at = time.perf_counter()
             log("picture_live_developed", path=str(path), edge=header["edge"], **(header.get("timing_ms") or {}))
             described = await run_in_threadpool(live.describe, item, result)
+            log("picture_handoff_timing", path=path, edge=header["edge"],
+                request_ms=(developed_at-accepted_at)*1000,
+                accept_ms=(describe_at-developed_at)*1000,
+                describe_ms=(time.perf_counter()-describe_at)*1000,
+                describe_only=bool(header.get("describe_only")))
             if header.get("describe_only"):
                 from .models import GeometryAdjustments, AdjustmentState
                 from .projects import validate_saved
@@ -709,14 +725,14 @@ def create_library_router(worker, browser, store=None):
     file_commands = add_file_routes(router, marks, browser, index, worker, store)
 
     @router.get("/memory")
-    def memory_snapshot():
+    async def memory_snapshot():
         from .app_memory import snapshot
-        return snapshot()
+        return await asyncio.get_running_loop().run_in_executor(_memory_sampler, snapshot)
 
     @router.post("/memory-admission")
-    def memory_admission(command: dict):
+    async def memory_admission(command: dict):
         from .app_memory import admit
-        return admit(str(command["id"]), command.get("bytes", 600_000_000), command.get("release", False))
+        return await memory_control(admit, str(command["id"]), command.get("bytes", 600_000_000), command.get("release", False))
 
     @router.post('/memory-report')
     def memory_report(report: dict):
@@ -729,14 +745,31 @@ def create_library_router(worker, browser, store=None):
         value=app_memory.snapshot()
         return dict(value,accepted=accepted)
 
+    reclaim_task = None
+    reclaim_level = None
+
     @router.post("/memory-reclaim")
-    def memory_reclaim(command: dict = {}):
+    async def memory_reclaim(command: dict = {}):
         from . import app_memory
         level=command.get('pressure','moderate')
         if level not in ('moderate','critical'): level='moderate'
-        app_memory.reclaim(level)
-        worker._send(dict(command='memory-pressure',level=level))
-        return {"reclaimed": True}
+        nonlocal reclaim_task, reclaim_level
+        # A slow disk spill must neither occupy the sampling lane nor queue a
+        # new reclaim for every 500 ms poll. Critical pressure upgrades one run.
+        if reclaim_task is not None and not reclaim_task.done():
+            if level == 'critical': reclaim_level = level
+        else:
+            reclaim_level = level
+            async def run():
+                nonlocal reclaim_level
+                while reclaim_level is not None:
+                    current, reclaim_level = reclaim_level, None
+                    def reclaim():
+                        app_memory.reclaim(current)
+                        worker._send(dict(command='memory-pressure', level=current))
+                    await asyncio.get_running_loop().run_in_executor(_memory_reclaimer, reclaim)
+            reclaim_task = asyncio.create_task(run())
+        return {"reclaiming": True}
 
     @router.post("/lock-metrics")
     def lock_metrics(command: dict = {}):
