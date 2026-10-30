@@ -613,3 +613,36 @@ See photo-library for the per-cell results and recorded known fast-check
 failures (34 final focused checks pass). The profile and scene copies are
 removed; original scenes/sidecars and protected projects remain unchanged.
 Output started and ended at 2.1 GB. Steve's manual retry is the next checkpoint.
+
+### October 30: keep pending Library previews drawable during reclamation
+
+The exported-JPEG loop was a GPU lifetime error, not a new memory allowance:
+six RGB source planes outlived their last reduction use. Releasing each plane
+after that use fits the existing development reservation. Cache shares, the
+whole-app ceiling and GPU budgets are unchanged.
+
+The first-draw preview loss was hand-off ownership: the LRU could evict both
+published bytes and their pending-store receipt while a visible draw waited.
+Before evicting an undelivered pending entry, the hand-off owner now validates
+its source/settings and atomically writes the already-packed NPZ into the
+existing thumbnail/full-size disk cache, then releases RAM. Existing disk
+accounting and trimming apply; no separate spool, byte copy cache or allowance
+is introduced. Ordinary delivered transient bodies still release normally.
+Install ownership before RAM admission for GPU and CPU publication; retain it
+until pending disk publication finishes, so concurrent reclaim cannot leave
+a gap with neither RAM nor disk backing. Changed-source checks still reject
+publication. Disk I/O errors propagate as explicit failures rather than
+publishing a missing preview.
+
+Behavior checks cover both immediate hand-off admission refusal and later
+zero-byte reclamation, and drawing during disk publication. The short fresh
+profile open of disposable `20260214` copies backed **21** pending previews
+during reclamation: all **18** developed cells presented, each developed once,
+without restarts or draw failures. Per-cell timings and the JPEG failure
+explanation are in photo-library's matching October 30 note; this is not a
+new process-memory or endurance qualification. No drivers or ten-minute run.
+
+Final focused cache/scene/error checks: 52 passed. The photo-library note
+records the full fast-suite failures without claiming a clean broad pass.
+Output started/ended at 2.1 GB; owned photo/profile/pytest scratch removed.
+Both module records accompany this local `library-big-folder` commit.

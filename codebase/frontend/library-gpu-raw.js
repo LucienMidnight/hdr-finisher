@@ -750,7 +750,7 @@
     try {
       // Finished Library surfaces are disposable, not a reason to abandon GPU development.
       if (background) await root.HDRLibraryScenes?.reclaim(bytes,true);
-      let reclaimed = false;
+      let reclaimed = false, attempts = 0;
       for (;;) {
         const value = await lease(false);
         if (value.waiting === "memory" || value.fallback) {
@@ -773,7 +773,8 @@
           if (value.granted) await lease(true);
           await wait(50, signal); continue;
         }
-        root.HDRLibraryStopwatch?.("picture_development_admitted", {path:meta.path,route:"exclusive-gpu",duration_ms:0,reason:importance() === 0 ? "selected photo" : "spare capacity"});
+        attempts++;
+        root.HDRLibraryStopwatch?.("picture_development_admitted", {path:meta.path,attempt:attempts,route:"exclusive-gpu",duration_ms:0,reason:importance() === 0 ? "selected photo" : "spare capacity"});
         let touched = 0;
         let edgePermitAt = 0;
         const beforeSubmit = async () => {
@@ -796,11 +797,23 @@
         try { return await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, signal, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy}); }
         catch (error) {
           if (context.state?.lost) { error.gpuUnavailable=true; throw error; }
-          if (!error.yieldRaw && !/exceeds the reserved (?:GPU )?memory budget/.test(error.message)) throw error;
+          const retry = !!error.yieldRaw && attempts < 3;
+          root.HDRLibraryStopwatch?.(retry ? "picture_development_restart" : "picture_development_failed",
+            {path:meta.path,attempt:attempts,reason:error.message});
+          // Repeating the same allocation cannot fix an underestimated footprint.
+          // Preemption alone may restart, at most twice, after releasing its lease.
+          if (!retry) {
+            error.message = `Development stopped after ${attempts} attempt${attempts === 1 ? "" : "s"}: ${error.message}`;
+            throw error;
+          }
         }
         // developRaw's finally has freed every buffer before Grade sees zero.
         await lease(true); await wait(50, signal);
       }
+    } catch (error) {
+      root.HDRLibraryStopwatch?.("picture_development_outcome", {path:meta.path,reason:error.message,
+        work_stage:error.name === "AbortError" ? "cancelled" : "failed"});
+      throw error;
     } finally { await fetch(url, {method:"DELETE"}).catch(() => {}); }
   }
 

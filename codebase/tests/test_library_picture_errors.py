@@ -200,3 +200,32 @@ def test_two_real_decoder_failures_release_helper_for_next_photo(tmp_path):
         assert worker.status()["pending"] == 0
     finally:
         worker.close()
+
+def test_renderer_development_failure_is_remembered_until_explicit_retry(tmp_path):
+    path = tmp_path / "photo.png"
+    Image.new("RGB", (64, 32), (100, 120, 80)).save(path)
+    helper = Helper()
+    api = client(tmp_path / "app", helper)
+    reason = "Development stopped after 3 attempts: Yielding GPU RAW to shared work."
+    identity = api.post("/api/library/live-plan", json={"path": str(path), "edge": 640}).json()["source_identity"]
+    response = api.post("/api/library/development-error", json={"path": str(path), "source_identity": identity, "reason": reason})
+    assert response.status_code == 200, response.text
+    record = response.json()["error"]
+    assert record["reason"] == reason
+    blocked = api.post("/api/library/live-scene", json={"path": str(path), "edge": 640})
+    assert blocked.status_code == 422
+    assert blocked.json()["library_error"]["reason"] == reason
+    assert not helper.calls
+    retry = api.post("/api/library/picture-error", json={"path": str(path), "revision": record["revision"], "action": "retry"})
+    assert retry.status_code == 200, retry.text
+    assert not api.get("/api/library/health").json()["picture_errors"]
+
+def test_failed_old_development_does_not_mark_changed_source_failed(tmp_path):
+    path = tmp_path / "photo.png"
+    Image.new("RGB", (64, 32), (100, 120, 80)).save(path)
+    api = client(tmp_path / "app", Helper())
+    identity = api.post("/api/library/live-plan", json={"path": str(path), "edge": 640}).json()["source_identity"]
+    path.write_bytes(path.read_bytes() + b"changed")
+    response = api.post("/api/library/development-error", json={"path": str(path), "source_identity": identity, "reason": "Old development failed"})
+    assert response.status_code == 409
+    assert not api.get("/api/library/health").json()["picture_errors"]

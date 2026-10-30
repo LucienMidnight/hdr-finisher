@@ -431,3 +431,46 @@ def test_draw_identity_ignores_document_metadata_but_tracks_finishing(tmp_path):
     document['global_adjustments']['hdr']['exposure']=1
     after=service.describe(path,scene)
     assert after['key']!=before['key'] and after['source_key']==before['source_key']
+
+@pytest.mark.parametrize("admission_refused", [False, True])
+def test_waiting_visible_preview_survives_handoff_reclamation(tmp_path, monkeypatch, admission_refused):
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    from hdr_finisher import app_memory
+    cache = LibraryPictureCache(tmp_path / "profile")
+    path = photo(tmp_path)
+    pixels = np.full((4, 8, 3), .18, dtype=np.float32)
+    if admission_refused:
+        monkeypatch.setattr(app_memory, "claim", lambda *args: False)
+    result = cache.build(path, 640, quality(None), decoded=(pixels, None,
+        {"source_width": 8, "source_height": 4}), defer_store=True)
+    service = LivePictures(tmp_path / "profile", None)
+    service.cache = cache
+    meta = service.describe(path, result)
+    # Simulate other developments reclaiming the handoff while this draw waits.
+    cache.trim_memory(0)
+    assert not cache.transient
+    assert cache.file(result["key"]).is_file()
+    body, width, height, stride, space = service.pixels(meta["key"], "hdr")
+    assert (width, height, space) == (8, 4, "acescg")
+    np.testing.assert_allclose(np.frombuffer(body, dtype=np.float16).reshape(height, stride // 2)[:, :width*4].reshape(height, width, 4)[..., :3], pixels, atol=.0001)
+    assert not cache.pending_stores
+    assert not list((tmp_path / "profile").rglob("*.tmp"))
+
+def test_pending_preview_stays_owned_until_disk_publication_finishes(tmp_path, monkeypatch):
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    cache = LibraryPictureCache(tmp_path / "profile")
+    path = photo(tmp_path)
+    result = cache.build(path, 640, quality(None), decoded=(np.full((4, 8, 3), .18), None,
+        {"source_width": 8, "source_height": 4}), defer_store=True)
+    service = LivePictures(tmp_path / "profile", None)
+    service.cache = cache
+    meta = service.describe(path, result)
+    build = cache.build
+    def while_storing(*args, **kwargs):
+        cache.trim_memory(0)
+        assert service.pixels(meta["key"], "hdr")[1:3] == (8, 4)
+        return build(*args, **kwargs)
+    monkeypatch.setattr(cache, "build", while_storing)
+    cache.persist_pending(str(path.resolve()), lambda _: None)
+    assert not cache.transient and not cache.pending_stores
+    assert cache.file(result["key"]).is_file()

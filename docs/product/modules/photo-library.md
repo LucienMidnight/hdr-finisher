@@ -4855,3 +4855,90 @@ The full suite ran during iteration; final focused checks cover subsequent
 identity/admission changes. Output started/ended at 2.1 GB. Disposable scene
 copies/profile removed after recording; no RAW copies, project saves, merge
 or push. Both module PRDs are included in the same local commit.
+
+### October 30: exported JPEG restart and missing first-draw preview
+
+Steve's 08:35–08:37 retry in `20260214` admitted the darktable-exported
+DSC01910 JPEG 340 times. The disposable 3558 × 2372 copy reproduced 42
+admissions and 42 allocation failures in a bounded 15-second capture. Its ICC
+profile is decoded correctly; this is a GPU resource-lifetime failure. Authored
+SDR development keeps six full source planes (working and reference colour).
+Reduction retained those planes after their last use, exceeding the unchanged
+303,416,992-byte reservation. `scheduledDevelopment` swallowed the allocation
+error and restarted identical work without any outcome or reason event.
+
+RGB reduction now releases each source plane after its final requested size
+has read it. Pixel maths, profile conversion, reservations and cache limits
+are unchanged. The isolated copy completed once. Deterministic allocation
+errors stop on their first attempt; GPU preemption may restart at most twice
+(three attempts total). Every admitted attempt has a number, every restart
+logs its reason, and terminal/cancelled developments log an outcome. Terminal
+renderer failures are remembered against the photo/settings revision, shown
+with the reason directly in the cell, and use the existing explicit Try again
+recovery. The GPU lease is deleted on every exit, allowing other photos through.
+
+DSC01884's missing first-draw preview was possible because the bounded hand-off
+LRU discarded both undelivered NPZ bytes and their deferred-store record while
+a draw waited for the GPU. Reclamation now atomically backs pending bytes to
+the existing disk cache before releasing RAM. Ownership is installed before
+admission (including CPU hand-offs), and stays through disk publication. The
+original packed NPZ bytes are reused; there is no extra decode, new cache or
+allowance increase. See memory-and-caches for ownership details.
+
+Validation: only disposable photo copies under `codebase/output/test-photos/`
+were opened, including `darktable_exported`; fresh Electron profile, 2560 ×
+1440, one short stationary open, no drivers or ten-minute run. All **18/18**
+developed cells presented, **one development per photo**, zero restarts,
+zero failed developments/draws and zero page errors. The run backed 21 pending
+thumbnail/screen previews during RAM reclamation without losing a draw.
+Camera placeholders and finished shader presentations are separate trace-ID
+joins to compositor opportunities; neither is inferred from DOM insertion.
+
+| Photo | Development attempts | Request to finished presentation (s) |
+| --- | --- | --- |
+| DSC01884.ARW | 1 | 7.537 |
+| DSC01885.ARW | 1 | 9.347 |
+| DSC01886.ARW | 1 | 12.638 |
+| DSC01887.ARW | 1 | 9.370 |
+| DSC01888.ARW | 1 | 16.620 |
+| DSC01889.ARW | 1 | 17.972 |
+| DSC01890.ARW | 1 | 15.256 |
+| DSC01891.ARW | 1 | 13.789 |
+| DSC01902.ARW | 1 | 19.293 |
+| DSC01903.ARW | 1 | 22.416 |
+| DSC01904.ARW | 1 | 20.759 |
+| DSC01905.ARW | 1 | 24.166 |
+| DSC01906.ARW | 1 | 26.039 |
+| DSC01907.ARW | 1 | 27.621 |
+| DSC01908.ARW | 1 | 30.864 |
+| DSC01909.ARW | 1 | 30.246 |
+| DSC01910.ARW | 1 | 28.973 |
+| darktable_exported/DSC01910.jpg | 1 | 11.519 |
+
+Every row has no failure. Camera placeholders appeared in 0.177–0.783 s.
+These are recorded cold-open timings, not a latency qualification: the slow
+finished RAW queue remains visible in the numbers. The requested correctness
+target passes; Steve's manual retry is next. The recorder originally asserted
+one presentation event per cell and counted both camera and developed events;
+its summary/assertion was corrected against the same capture without rerunning.
+
+Evidence retained in `codebase/output/jpeg-loop/`: `baseline.json`,
+`focused.json`, `folder.json`, `cell-timings.csv` (every cell, camera and finished
+presentation separately), `folder.png`, `backend.log`, and fast/focused check
+logs. The two `tools/check-library-jpeg-*.cjs` helpers open disposable copies
+only. Three protected-project hashes were unchanged; D:/Photos was read-only.
+
+Fast checks: JavaScript **670 passed, one known Single fixture failure**
+(`HDRLibraryScreenPreviews` missing). Full Python during iteration: **2,744
+passed, five failed, three skipped**. The new renderer-error endpoint's local
+request model caused one failure; corrected with **52/52 final focused checks**
+(cache, scene, durable error/retry and changed-source guards). Four failures
+outside this change remain: scoped-preset source contract, RGB description
+fixture, Grade frame-cache retention assertion, and retouch CaptureCache's
+missing `defer_store` argument. They were not repaired or broadly rerun.
+The bounded-restart JS behavior checks pass (10/10 focused). Later failure-cell
+text/CSS and helper edits pass syntax/diff checks; GPU work was not repeated.
+Output started and ended at **2.1 GB**, below 100 GB. Owned photo copies,
+three Electron profiles, pytest scratch and intermediate logs were removed;
+only the small linked evidence remains. Committed locally on
+`library-big-folder`; no protected project save, merge, push or installer.

@@ -81,7 +81,7 @@ window.HDRLibraryPictureErrors = Object.freeze({
         cell.element.querySelector(".picture-frame").append(tag);
       }
       if (record.grade_warning && record.ignored) { tag.remove(); return; }
-      tag.textContent = record.grade_warning ? "Grade needs attention" : record.ignored ? "Error · ignored" : "Error";
+      tag.textContent = record.grade_warning ? "Grade needs attention" : record.ignored ? "Error · ignored" : `Failed · ${record.reason}`;
       tag.title = record.reason;
       tag.setAttribute("aria-label", `${cell.photo.name}: ${record.reason} Review error`);
     }

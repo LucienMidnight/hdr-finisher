@@ -126,7 +126,12 @@ window.HDRLibraryScenes = (() => {
         if (meta) return meta;
       } catch (error) {
         if (error.name === "AbortError" || error.libraryError) throw error;
-        if (!error.gpuUnavailable) throw error;
+        if (!error.gpuUnavailable) {
+          const response = await fetch("/api/library/development-error", {method:"POST",signal,
+            headers:{"Content-Type":"application/json"},body:JSON.stringify({path,source_identity:version.split(":")[0],reason:error.message})});
+          if(response.ok)error.libraryError=(await response.json()).error;
+          throw error;
+        }
         window.HDRLibraryStopwatch?.("picture_source_gpu_fallback",{path,reason:error.message});
         // The structured fallback event above carries the picture labels.
       }

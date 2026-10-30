@@ -329,6 +329,7 @@ window.HDRLibraryRGB = (() => {
       }
       const reduced = {};
       for (const edge of edges) {
+        const lastEdge = edge === edges.at(-1);
         const [rh, rw] = reducedSize(meta, edge);
         reduced[edge] = { height: rh, width: rw, planes: [], textures: [] };
         const retained = [];
@@ -338,6 +339,7 @@ window.HDRLibraryRGB = (() => {
             if(direct)retained.push(plane);
             reduced[edge].planes.push(await read(plane,n*4));
             timings.rgb_readback=(timings.rgb_readback||0)+performance.now()-start;
+            if(lastEdge && !direct)release(plane);
             continue;
           }
           const mid = make(h * rw * 4), out = make(rh * rw * 4);
@@ -355,6 +357,9 @@ window.HDRLibraryRGB = (() => {
             timings.rgb_readback=(timings.rgb_readback||0)+performance.now()-start;
             if(direct)retained.push(out);else release(out);
           }
+          // Both colour lanes have six full source planes. Once the last
+          // requested size has read one, it must not overlap later reductions.
+          if(lastEdge)release(plane);
         }
         if(direct)for(let c=0;c<retained.length;c+=3){
           const bytes=rh*rw*8;

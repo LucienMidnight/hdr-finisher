@@ -25,6 +25,12 @@ from .library_marks import LibraryMarks, MarkChange, NameTaken
 from .library_index import LibraryIndex
 
 
+class DevelopmentFailure(BaseModel):
+    path: str
+    source_identity: str = Field(pattern=r"^[a-f0-9]{64}$")
+    reason: str = Field(min_length=1, max_length=4096)
+
+
 class StopwatchEvent(BaseModel):
     range_start: int | None = Field(default=None, ge=0)
     range_end: int | None = Field(default=None, ge=0)
@@ -33,6 +39,7 @@ class StopwatchEvent(BaseModel):
     picture_requests: int | None = Field(default=None, ge=0)
     scroll_top: float | None = Field(default=None, ge=0)
     active: bool | None = None
+    attempt: int | None = Field(default=None, ge=1, le=3)
     demand: Literal["selected", "visible", "background"] | None = None
     display_epoch: int | None = Field(default=None, ge=0)
     visible_thumbnails: int | None = Field(default=None, ge=0)
@@ -321,6 +328,14 @@ def create_library_router(worker, browser, store=None):
             validate_saved(EditDocument, document)
         return document
 
+    @router.post("/development-error")
+    def development_error(command: DevelopmentFailure):
+        revision = picture_errors.revision(command.path)
+        current = picture_key(marks.source_path(command.path), 0, live_quality(live.document(command.path)))
+        if current != command.source_identity:
+            raise HTTPException(409, "Photo or source settings changed during development.")
+        return {"error": picture_errors.remember(command.path, RuntimeError(command.reason), revision)}
+
     @router.post("/picture-error")
     def picture_error(command: PictureErrorCommand):
         record = picture_errors.get(command.path)
@@ -533,10 +548,10 @@ def create_library_router(worker, browser, store=None):
                     raise ValueError("Source settings changed before saving preview data.")
             for scene in result.pop("_pending_scenes", []):
                 default = scene.pop("_default_document", None)
-                live.cache.accept_transient(scene)
                 with live.cache.transient_lock:
-                    if scene["key"] in live.cache.transient:
+                    if scene.get("_transient"):
                         live.cache.pending_stores[scene["key"]] = (path, scene["edge"], source_quality, default, validate_cpu_store)
+                    live.cache.accept_transient(scene)
             live.cache.accept_transient(result)
             return await run_in_threadpool(live.describe, command.path, result)
         finally:

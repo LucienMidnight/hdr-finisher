@@ -69,11 +69,44 @@ class LibraryPictureCache:
         self._native_source = None
         self._native_paused = False
 
+    def _evict_transient(self, key):
+        # A published preview is still owned by its waiting draw. Reclaim RAM,
+        # but keep its already-packed NPZ in the existing disk allowance.
+        pending = self.pending_stores.get(key)
+        if pending:
+            source, edge, quality, default, owner_check = pending
+            if owner_check:
+                owner_check()
+            if picture_key(source, edge, quality) != key:
+                raise ValueError("Photo changed before saving preview data.")
+            self.managed.prepare()
+            destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary = None
+            try:
+                with NamedTemporaryFile(dir=destination.parent, suffix=".tmp", delete=False) as handle:
+                    temporary = Path(handle.name)
+                    handle.write(self.transient[key])
+                if owner_check:
+                    owner_check()
+                if picture_key(source, edge, quality) != key:
+                    raise ValueError("Photo changed before saving preview data.")
+                os.replace(temporary, destination)
+                self.managed.record(destination)
+                if default is not None:
+                    self.keep_default_document(source, default)
+                self.trim()
+                log("picture_handoff_backed", path=source, key=key, edge=edge, reason="handoff RAM reclaimed before draw")
+            finally:
+                if temporary:
+                    temporary.unlink(missing_ok=True)
+        self.transient.pop(key, None)
+        self.pending_stores.pop(key, None)
+
     def trim_memory(self,target):
         with self.transient_lock:
             while self.transient and sum(map(len,self.transient.values()))>target:
-                key,_=self.transient.popitem(last=False)
-                self.pending_stores.pop(key,None)
+                self._evict_transient(next(iter(self.transient)))
             app_memory.claim(self.memory_key,'handoff',sum(map(len,self.transient.values())))
 
     def delivered(self,key):
@@ -88,8 +121,7 @@ class LibraryPictureCache:
                 self.transient[result['key']] = base64.b64decode(body)
                 self.transient.move_to_end(result['key'])
                 while self.transient and not app_memory.claim(self.memory_key,'handoff',sum(map(len,self.transient.values()))):
-                    expired, _ = self.transient.popitem(last=False)
-                    self.pending_stores.pop(expired, None)
+                    self._evict_transient(next(iter(self.transient)))
                 app_memory.report(self.memory_key,'handoff',sum(map(len,self.transient.values())))
         return result
 
@@ -238,10 +270,14 @@ class LibraryPictureCache:
                     check_cancelled(cancelled)
                     if picture_key(path, edge, quality) != key:
                         raise ValueError("Photo changed before publishing preview data.")
-                result = self.transient_result(key, arrays, metadata, validate_memory)
+                # Ownership must be installed before admission can evict this body.
                 with self.transient_lock:
-                    if key in self.transient:
-                        self.pending_stores[key] = (str(path), edge, quality, default_document, store_validate)
+                    self.pending_stores[key] = (str(path), edge, quality, default_document, store_validate)
+                    try:
+                        result = self.transient_result(key, arrays, metadata, validate_memory)
+                    except BaseException:
+                        self.pending_stores.pop(key, None)
+                        raise
                 result.pop('_transient', None)
                 return result
             destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
@@ -274,7 +310,7 @@ class LibraryPictureCache:
             keys = [key for key, value in self.pending_stores.items() if value[0] == str(path)]
         for key in keys:
             with self.transient_lock:
-                pending = self.pending_stores.pop(key, None)
+                pending = self.pending_stores.get(key)
                 body = self.transient.get(key)
             if pending is None or body is None:
                 continue
@@ -297,7 +333,10 @@ class LibraryPictureCache:
                     metadata["default_document"] = default
                 self.build(source, edge, quality, checkpoint, (pixels, reference, metadata), persist=True)
             finally:
-                self.delivered(key)
+                with self.transient_lock:
+                    if self.pending_stores.get(key) is pending:
+                        self.pending_stores.pop(key, None)
+                    self.delivered(key)
 
     @audited("picture_cache_build_native")
     def build_native(self, path, center_x, center_y, width, height, cancelled=None):
