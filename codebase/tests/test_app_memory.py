@@ -23,7 +23,8 @@ def test_memory_includes_full_tree_and_reservations(monkeypatch):
     assert app_memory.snapshot()['totalBytes']==2_000_000_000
     assert roots==[123]
     assert app_memory.admit('a',700_000_000)['granted']
-    assert not app_memory.admit('b',700_000_000)['granted']
+    assert app_memory.admit('b',700_000_000)['granted']
+    assert not app_memory.admit('c',700_000_000)['granted']
     app_memory.admit('a',0,True)
     assert app_memory.admit('b',700_000_000)['granted']
     app_memory.admit('b',0,True)
@@ -129,12 +130,13 @@ def test_pressure_trims_old_entries_to_half_then_zero():
     app_memory.reclaim('critical');assert cache.bytes==0
 
 
-def test_busy_working_slot_does_not_reclaim_inflight_pictures(monkeypatch):
-    monkeypatch.setattr(app_memory,'process_tree',lambda root:[{'pid':1,'workingSetBytes':2_900_000_000}])
+def test_parallel_work_uses_free_total_without_reclaiming_pictures(monkeypatch):
+    monkeypatch.setattr(app_memory,'process_tree',lambda root:[{'pid':1,'workingSetBytes':1_800_000_000}])
     monkeypatch.setattr(app_memory,'system_pressure',lambda:'none')
     monkeypatch.setattr(app_memory,'_waiting_until',0)
     assert app_memory.admit('drawing',app_memory.WORKING)['granted']
-    assert not app_memory.admit('queued',app_memory.WORKING)['granted']
+    assert app_memory.admit('queued',app_memory.WORKING)['granted']
+    assert app_memory.admit('third',app_memory.WORKING)['granted']
     assert not app_memory.snapshot()['reclaim']
 
 
@@ -152,3 +154,17 @@ def test_grade_sessions_share_working_room_and_pressure_discards_frames(monkeypa
     assert app_memory.cache_snapshot()['working']['bytes'] == 0
     assert not a._frames and not b._frames
     assert a.adjusted_frame(AdjustmentState(), PreviewKind.HDR, 256).shape == (64,64,3)
+
+
+def test_jobs_do_not_evict_grade_cache_when_total_has_room(monkeypatch):
+    monkeypatch.setattr(app_memory,'process_tree',lambda root:[dict(pid=1,workingSetBytes=1_800_000_000)])
+    class Cache:
+        def trim(self,target):
+            pytest.fail("Free total RAM must preserve retained Grade levels")
+    cache=Cache()
+    app_memory.register('grade','working',cache.trim)
+    assert app_memory.claim('grade','working',100_000_000)
+    assert app_memory.admit('first',700_000_000)['granted']
+    assert app_memory.admit('second',700_000_000)['granted']
+    assert app_memory.admit('first',700_000_000)['granted']
+    assert app_memory.cache_snapshot()['working']['bytes']==100_000_000

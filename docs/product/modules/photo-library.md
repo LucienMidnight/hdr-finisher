@@ -4778,3 +4778,80 @@ RGB fixture failure), then 46 final focused checks passed. The other existing
 failures are scoped-preset source wording and retouch CaptureCache fixtures.
 No drivers, ten-minute run, merge or push. Both module PRDs accompany this fix.
 Owned profile/cache scratch was removed; output started and ended at 2.1 GB.
+
+### October 30 retry: default recipes and complete badminton scene audit
+
+The earlier neutral-default fix was conditional on a non-default RAW recipe.
+DSC07270/71/78 and DSC07502/03/08/09/14 use the default recipe, so validation
+still added Edge colour expansion and missed their existing scenes. Canonical
+source quality now ignores expansion for Opposed colour, uses the established
+absent encoding for the default expansion, ignores inactive reconstruction and
+lens settings, repair labels/IDs, and disabled repairs. Active repair recipes
+remain ordered; real reconstruction, lens, interpretation and reference-white
+changes still invalidate. Exact equivalent old recipe encodings can locate an
+existing file; no decoder/version mismatch or arbitrary older scene is accepted.
+Reads use that file's actual key and report canonical quality, with no rewrite
+or duplicate scene. Aliases are bounded and held only in memory.
+
+Key history found in the audit:
+
+| Commit | Key effect |
+| --- | --- |
+| `4f7d839` | Introduced source recipe identity and stored scenes. |
+| `a43ea3d` | Added the live draw identity from the scene plus the whole saved document. This included non-pixel metadata; the retry fix limits it to finishing settings. A changed live key does not itself prove a disk scene miss. |
+| `558ffd8` | Added decoder/colour versions and RGB adapter v1 to source quality. |
+| `7374c80`, `093b655` | RGB adapters v2 and v3 deliberately invalidate adapted source pixels. These predate the October 26 hits. |
+| `c25fa0e` | Picture format/version v7 for shared GPU RAW views; also predates those hits. File path, size, modification time and requested edge remain part of a stored scene's identity. |
+| `d5ecf47` | Added ordered repairs to source quality; initially whole records also hashed labels, IDs and disabled strokes. Those non-pixel fields are excluded now. |
+| `1101d6a` | Added the Edge colour expansion default to RAW settings. The control does not affect Opposed colour pixels. |
+| `611c994` | Validated/materialised the entire grade before recipe hashing and Library document reads. This exposed the new default in previously authored recipes. |
+| `f98c55b` | Removed expansion 0.5 only for non-default recipes: fixed the earlier five, missed the default-recipe eight. Replaced by unconditional pixel-based canonicalisation and exact equivalent lookup. |
+| `8ff72f8` | Brought retouch GPU changes into this branch. Its new `repair_rendering` fields are response metadata, not EditDocument/source recipe fields. Neither repair route metadata nor Grade cache ownership changed these eight source keys. |
+
+The `63c904a7bcb1…` / `2ca279323958…` values in Steve's log are live draw
+identities. DSC07270's original **disk source key** is `087ed43f6fe1…`;
+the materialised-default development used `8f476cb0a465…`. Both still exist.
+The real Grade database has 75 badminton state records and no pending saves;
+no desired grade overrides the sidecar recipes. Read-only audit of all 69
+edited original badminton photos locates existing
+thumbnail scenes for **69/69**, including all eight named in the retry.
+The eight original source-key prefixes are 087ed43f6fe1, 993909c7130a,
+0561cf37bec9, 2ed257aced50, 75221f82b687, 5295556a6068, cb7737458bd7,
+and c9b2787852e8, respectively. Audit: `codebase/output/badminton/scene-audit.json`.
+
+Validation uses Steve's supplied targets: about one second for edited stored
+scenes, no visible stall over two seconds caused by the old working-slot wait,
+and the exact whole-app ceiling. No drivers or ten-minute validation are
+requested. `prepare-badminton-profile.py` reads originals, copies only existing
+small scene files to a disposable TEMP profile, and never links the live cache.
+The short recorder visits DSC07268/74/78 and DSC07500/06/12; source cache files
+are reused via disposable copies so reads/touches/publication cannot mutate
+Steve's cache. RAWs are never copied. The sidecar and three protected-project
+hashes are checked across the scroll.
+
+Short scroll result: all **49/49** requested ARW cells in the measured rows
+presented (11 edited, 38 unedited); all 11 edited requests hit stored scenes.
+The eight reported photos presented in 4.911, 5.116, 0.974, 1.145, 1.339,
+1.732, 1.871 and 0.497 seconds in the order listed above. Edited median was
+1.871 s (range 0.497–5.274), unedited median 0.830 s (0.199–5.334).
+Fourteen presentations exceeded two seconds, concentrated in the first group;
+none waited for working memory and no photo in that group was redeveloped.
+DSC07270/71 cache discovery took 1.495/1.509 s and their draw-queue waits
+3.254/3.381 s. **The about-one-second latency target is only partially met**;
+cache recovery and elimination of the false working-slot wait are confirmed,
+but the initial cached-draw delay remains for Steve's retry. Stop here as
+requested; no drivers or longer run.
+
+Peak whole-app proportional resident charge was **2,091,545,156 bytes**.
+No memory-admission request was needed in this warm-scene scroll. All original
+sidecar hashes, audited original scene-file hashes and three protected-project
+hashes were unchanged; no page errors. Per-cell request-to-presentation timings
+are in `codebase/output/badminton/cell-timings.csv`, with source audit and
+scroll trace alongside it. Fast JS: 669 pass, one existing missing Single
+screen-preview fixture stub. Full Python: 2,741 pass, three existing failures
+(scoped-preset source contract, RGB publication fixture, retouch CaptureCache
+fixture), three skipped; final focused memory/scene checks: 34/34 pass.
+The full suite ran during iteration; final focused checks cover subsequent
+identity/admission changes. Output started/ended at 2.1 GB. Disposable scene
+copies/profile removed after recording; no RAW copies, project saves, merge
+or push. Both module PRDs are included in the same local commit.

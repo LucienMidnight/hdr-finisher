@@ -18,7 +18,7 @@ for request in events:
     if request['stage'] != 'navigation' or request.get('view') != 'grid':
         continue
     path = request['path']
-    if not re.search(r'DSC072[0-5]\d\.ARW$', path):
+    if not re.search(r'DSC07(?:2[6-8]\d|5[0-2]\d)\.(?:ARW|JPG|JPEG)$', path):
         continue
     sidecar = Path(path + '.hdrf')
     document = json.loads(sidecar.read_text()) if sidecar.exists() else {}
@@ -50,6 +50,8 @@ summary = dict(peakBytes=report['peakBytes'], peakSample=report['peakSample'],
     errors=report['errors'], cells=len(rows), drawn=sum(row['thumbnail_seconds'] is not None for row in rows),
     over2s=sum(row['over_2s'] and row['thumbnail_seconds'] is not None for row in rows),
     unfinishedOver2s=sum(row['over_2s'] and row['thumbnail_seconds'] is None for row in rows),
+    storedSceneHits=sum(row['edited'] and any(event['stage']=='picture_cache_check' and event.get('request')==row['request'] and event.get('cache_hit') for event in events) for row in rows),
+    memoryWaits=[event for event in events if event.get('work_stage')=='Waiting for working memory'],
     developmentOrder=[event['path'] for event in events if event['stage'] == 'picture_development_admitted'])
 for edited in (False, True):
     values = [row['thumbnail_seconds'] for row in rows if row['edited'] == edited and row['thumbnail_seconds'] is not None]

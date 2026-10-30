@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from .color_context import RenderColorContext
-from .library_pictures import LibraryPictureCache, reduce_picture
+from .library_pictures import LibraryPictureCache, reduce_picture, picture_key
 from .models import AdjustmentState, DenoiseDocumentSettings, LocalAdjustment, RawImportSettings, SourceInterpretationOverride
 from .projects import validate_saved
 from .render_cache import SessionRenderCache, encode_rgba_proxy_rows
@@ -38,18 +38,51 @@ def recipe(document):
     }
 
 
-def quality(document):
+def _quality(inputs):
     from .loader import SOURCE_DECODER_VERSION, SOURCE_COLOR_TRANSFORM_VERSION
-    inputs = recipe(document)
-    # Validation materialises this neutral default in older authored grades.
-    # Its presence must not turn the same source pixels into a different scene.
-    if inputs["raw_import_settings"] != RawImportSettings().model_dump(mode="json"):
-        highlights = inputs["raw_import_settings"]["highlight_reconstruction"]
-        if highlights.get("edge_colour_expand_percent") == 0.5:
-            highlights.pop("edge_colour_expand_percent")
     identity = {"recipe": inputs, "decoder": SOURCE_DECODER_VERSION,
                 "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-v3"}
     return "live-scene-v2:" + sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+
+
+_quality_aliases = OrderedDict()
+
+
+def equivalent_qualities(value):
+    with _registry_lock:
+        return _quality_aliases.get(value, (value,))
+
+
+def quality(document):
+    inputs = recipe(document)
+    canonical = deepcopy(inputs)
+    highlights = canonical["raw_import_settings"]["highlight_reconstruction"]
+    # Opposed colour never reads this Edge colour-only control. Use the
+    # established pre-prototype encoding for its default in every recipe.
+    if highlights["method"] != "edge_colour_v1" or highlights["edge_colour_expand_percent"] == 0.5:
+        highlights.pop("edge_colour_expand_percent", None)
+    if not highlights["enabled"]:
+        canonical["raw_import_settings"]["highlight_reconstruction"] = {"enabled": False}
+    lens = canonical["raw_import_settings"]["lens"]
+    if lens["mode"] == "off":
+        canonical["raw_import_settings"]["lens"] = {"mode": "off"}
+    # Record labels and disabled strokes never alter the reconstructed source.
+    canonical["repairs"] = [{"recipe": r["recipe"]} for r in inputs["repairs"] if r["enabled"]]
+    value = _quality(canonical)
+    variants = [value, _quality(inputs)]
+    # Exact historical encodings of the SAME developed pixels, never a broad
+    # cache search or fallback to a different recipe/decoder/file version.
+    old = deepcopy(inputs)
+    h = old["raw_import_settings"]["highlight_reconstruction"]
+    if h["method"] != "edge_colour_v1" or h["edge_colour_expand_percent"] == 0.5:
+        h.pop("edge_colour_expand_percent", None)
+        variants.append(_quality(old))
+    with _registry_lock:
+        previous = _quality_aliases.pop(value, ())
+        _quality_aliases[value] = tuple(dict.fromkeys((*variants, *previous)))[:16]
+        while len(_quality_aliases) > 1024:
+            _quality_aliases.popitem(last=False)
+    return value
 
 
 def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progress=None, draw_first=False):
@@ -217,8 +250,17 @@ class LivePictures:
                     report["sections"] = list(dict.fromkeys(i["section"] for i in report["issues"]))
                     report["reason"] = " ".join(dict.fromkeys(i["reason"] for i in report["issues"]))
                 errors.observe_grade(path, report)
-        grade_id = sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
-        identity = "live-" + sha256((metadata["key"] + grade_id).encode()).hexdigest()[:59]
+        # Transport/draw identity includes the finishing pixels, not document
+        # versions, filenames, source measurements or materialised RAW defaults.
+        # Source development already has its own identity in metadata["key"].
+        finishing = {"global_adjustments": document.get("global_adjustments") or metadata["adjustments"],
+            "local_adjustments": document.get("local_adjustments", []),
+            "denoise": document.get("denoise", {}), "framing": document.get("framing"),
+            "hdr_reference_white_nits": document.get("hdr_reference_white_nits", 203)}
+        from .library_grades import grade_key
+        grade_id = sha256(json.dumps(grade_key(finishing), sort_keys=True).encode()).hexdigest()
+        source_identity = picture_key(metadata["path"], metadata["edge"], quality(document))
+        identity = "live-" + sha256((source_identity + grade_id).encode()).hexdigest()[:59]
         result = dict(metadata, route="library-live", source_key=metadata["key"], key=identity,
             path=str(path), adjustments=document.get("global_adjustments") or metadata["adjustments"],
             locals=document.get("local_adjustments", []), denoise=document.get("denoise", {}),

@@ -74,9 +74,9 @@ def claim(key, share, size):
             forget(dead)
         previous=_caches.get(key,{}).get('bytes',0)
         used=sum(v['bytes'] for v in _caches.values() if v['share']==share)-previous
-        reserved=sum(v[0] for v in _reservations.values()) if share=='working' else 0
-        if size>previous and used+size+reserved>limit(share): return False
-        if share not in ('working','handoff') and size>previous and _sample[1]:
+        # Temporary reservations do not consume retained cache shares.
+        if size>previous and used+size>limit(share): return False
+        if share != 'handoff' and size>previous and _sample[1]:
             total=sum(r.get('chargedBytes',r['workingSetBytes']) for r in _sample[1])
             if total+size-previous>TARGET: return False
         entry=_caches.setdefault(key,dict(share=share,trim=None))
@@ -314,24 +314,26 @@ def admit(key,size,release=False):
     if release:
         with _lock: _reservations.pop(key,None)
         return dict(granted=True)
-    value=snapshot()
-    if value['caches']['working']['bytes']:
-        with _lock: callbacks=[v['trim']() for v in _caches.values() if v['share']=='working' and v.get('trim')]
-        for callback in callbacks:
-            if callback: callback(0)
-        value=snapshot()
     with _lock:
         if key in _reservations:
             _reservations[key]=(_reservations[key][0],time.monotonic()+30)
             return dict(granted=True)
-        # One shared working-room envelope, including Grade source mips.
-        size=min(WORKING,max(1,int(size)))
+    value=snapshot()
+    size=max(1,int(size))
+    with _lock:
         reserved=sum(row[0] for row in _reservations.values())
-        grade=value['caches']['working']['bytes']
-        granted=reserved+grade+size<=WORKING and value['totalBytes']+reserved+size<=CEILING
+    # Retained Grade levels need eviction only when total RAM is needed.
+    # Ordinary admission and lease renewal must not destroy another owner.
+    if value['totalBytes']+reserved+size>CEILING and value['caches']['working']['bytes']:
+        with _lock: callbacks=[v['trim']() for v in _caches.values() if v['share']=='working' and v.get('trim')]
+        for callback in callbacks:
+            if callback: callback(0)
+        value=snapshot(refresh=True)
+    with _lock:
+        # Shares cap retained caches. WORKING is the minimum room caches
+        # leave free, not a combined job limit or a per-job maximum.
+        reserved=sum(row[0] for row in _reservations.values())
+        granted=value['totalBytes']+reserved+size<=CEILING
         if granted: _reservations[key]=(size,time.monotonic()+30)
-        elif reserved+grade+size<=WORKING and value['totalBytes']+reserved+size>CEILING:
-            _waiting_until=time.monotonic()+2
-        # A busy working slot is scheduling, not memory pressure. Trimming
-        # here used to discard scenes still being drawn by its current owner.
+        else: _waiting_until=time.monotonic()+2
     return dict(value,granted=granted)

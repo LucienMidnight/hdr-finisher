@@ -168,13 +168,21 @@ class LibraryPictureCache:
                 return metadata | {"key": key, "cache_hit": True, "stored_bytes": 0,
                     "_transient": base64.b64encode(body).decode()}
         destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
+        if not destination.is_file() and quality.startswith("live-scene-v2:"):
+            from .library_live import equivalent_qualities
+            for equivalent in equivalent_qualities(quality):
+                candidate_key = picture_key(path, edge, equivalent)
+                candidate = (self.full_root if edge >= 1280 else self.root) / (candidate_key + ".npz")
+                if candidate.is_file():
+                    key, destination = candidate_key, candidate
+                    break
         if not destination.is_file():
             return None
         try:
             with np.load(destination, allow_pickle=False) as stored:
                 result = json.loads(str(stored["metadata"]))
             os.utime(destination, None)
-            return result | {"key": key, "cache_hit": True, "stored_bytes": destination.stat().st_size}
+            return result | {"key": key, "quality": quality, "cache_hit": True, "stored_bytes": destination.stat().st_size}
         except (OSError, ValueError, EOFError) as error:
             problem("cache_corrupt", destination, error, "damaged entry removed; picture rebuilt")
             destination.unlink(missing_ok=True)

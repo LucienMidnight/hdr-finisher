@@ -18,7 +18,10 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   let buffer='';observer.stdout.on('data',chunk=>{buffer+=chunk;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at);buffer=buffer.slice(at+1);if(line){const s=JSON.parse(line);if(s.totalBytes>report.peakBytes){report.peakBytes=s.totalBytes;report.peakSample=s;}if(s.totalBytes>4e9)report.ceilingExceeded=true;}}});
   observer.stderr.on('data',b=>report.errors.push(String(b)));
   const page=await browser.newPage();page.on('pageerror',e=>report.errors.push(String(e)));
-  report.network=[];const requests=new Map();
+  report.network=[];report.admission=[];const requests=new Map();
+  page.on('response',async response=>{if(response.url().endsWith('/api/library/memory-admission')){
+   try{const value=await response.json();if(!response.request().postDataJSON().release)report.admission.push({at:Date.now(),...value});}catch{}
+  }});
   page.on('request',r=>{if(r.url().includes('/api/library/'))requests.set(r,{url:r.url().split('/api/library/')[1],at:Date.now(),body:r.postData()?.slice(0,300)});});
   page.on('requestfailed',r=>{const v=requests.get(r);if(v){report.network.push({...v,ms:Date.now()-v.at,cancelled:true});requests.delete(r);}});
   page.on('requestfinished',r=>{const v=requests.get(r);if(v){report.network.push({...v,ms:Date.now()-v.at});requests.delete(r);}});
@@ -39,10 +42,10 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
   await lib.evaluate(()=>HDRLibrary.browse('D:/Photos/2026/20261017 badminton'));
   await lib.waitForFunction(()=>!HDRLibrary.getSnapshot().reading&&HDRLibrary.getSnapshot().paths.some(p=>p.includes("DSC07200")));
   await lib.evaluate(()=>document.querySelector('[data-sort="name"]').click());report.initial=await lib.evaluate(()=>HDRLibrary.getSnapshot());await sleep(1000);
-  for(const name of ['DSC07200','DSC07210','DSC07220','DSC07230','DSC07240','DSC07250','DSC07210','DSC07230']){
+  for(const name of ['DSC07268','DSC07274','DSC07278','DSC07500','DSC07506','DSC07512']){
    if(report.ceilingExceeded)throw Error('Memory ceiling exceeded');
    await lib.evaluate(name=>{
-    const s=HDRLibrary.getSnapshot(),i=s.paths.findIndex(p=>p.includes(name));
+    const s=HDRLibrary.getSnapshot(),i=s.paths.findIndex(p=>p.endsWith(name+'.ARW'));
     if(i<0)throw Error("Missing scroll target "+name);const grid=document.getElementById('library-grid'),size=Number(document.getElementById('thumbnail-size').value);
     const layout=HDRLibraryLayout.gridLayout(s.count,grid.clientWidth,grid.clientHeight,grid.scrollTop,size);
     grid.scrollTop=layout.scrollFor(i);grid.dispatchEvent(new Event('scroll'));

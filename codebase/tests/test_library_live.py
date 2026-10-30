@@ -352,8 +352,82 @@ def test_materialised_neutral_highlight_default_reuses_authored_scene_identity()
         "decoder": SOURCE_DECODER_VERSION, "colour": SOURCE_COLOR_TRANSFORM_VERSION,
         "rgb_adapter": "library-rgb-v3"}, sort_keys=True).encode()).hexdigest()
     before = quality(document)
-    assert before == stored_quality
+    from hdr_finisher.library_live import equivalent_qualities
+    assert stored_quality in equivalent_qualities(before)
     normalised = validate_saved(EditDocument, document).model_dump(mode="json")
     assert quality(normalised) == before
     normalised["source"]["raw_import_settings"]["highlight_reconstruction"]["edge_colour_expand_percent"] = 1
+    assert quality(normalised) == before
+    normalised["source"]["raw_import_settings"]["highlight_reconstruction"]["method"] = "edge_colour_v1"
     assert quality(normalised) != before
+
+
+@pytest.mark.parametrize("lens_mode", ["auto", "off"])
+def test_stored_scene_survives_materialised_defaults(tmp_path, lens_mode):
+    from hdr_finisher.library_live import recipe, _quality
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    path = photo(tmp_path)
+    document = {"source": {"raw_import_settings": RawImportSettings().model_dump(mode="json")}}
+    document["source"]["raw_import_settings"]["lens"]["mode"] = lens_mode
+    authored = recipe(document)
+    authored["raw_import_settings"]["highlight_reconstruction"].pop("edge_colour_expand_percent")
+    cache = LibraryPictureCache(tmp_path / "profile")
+    stored = cache.build(path, 640, _quality(authored), decoded=(np.ones((4,8,3)), None, {"source_width":8,"source_height":4}))
+    found = cache.cached(path, 640, quality(document))
+    assert found["cache_hit"] and found["key"] == stored["key"]
+    assert found["quality"] == quality(document)
+    service=LivePictures(tmp_path/'profile', LibraryMarks(tmp_path/'profile'),
+        SimpleNamespace(request=lambda path:{'grade':document}))
+    before=service.describe(path,found)
+    from hdr_finisher.library_pictures import picture_key
+    from shutil import copyfile
+    canonical_key=picture_key(path,640,quality(document))
+    if canonical_key != stored['key']:
+        copyfile(cache.file(stored['key']),cache.file(canonical_key))
+    canonical=cache.cached(path,640,quality(document))
+    after=service.describe(path,canonical)
+    assert before['key']==after['key']
+    if lens_mode == 'off':
+        assert before['source_key']!=after['source_key']
+    document["source"]["raw_import_settings"]["highlight_reconstruction"]["clipping_threshold"] = 1.1
+    assert cache.cached(path, 640, quality(document)) is None
+
+
+def test_scene_identity_ignores_inactive_controls_and_repair_labels():
+    from hdr_finisher.library_live import recipe
+    document = {"source": {"raw_import_settings": RawImportSettings().model_dump(mode="json")}}
+    document["source"]["raw_import_settings"]["highlight_reconstruction"]["enabled"] = False
+    before = quality(document)
+    document["source"]["raw_import_settings"]["highlight_reconstruction"]["clipping_threshold"] = .8
+    assert quality(document) == before
+    from hdr_finisher.retouch_recipe import InpaintRecipe
+    repair = {"id":"first", "name":"Dust", "enabled":True, "recipe":InpaintRecipe(
+        source_size=(64,64), search_rect=(0,0,64,64), points=[dict(x=.5,y=.5)]).model_dump(mode="json")}
+    document["repairs"] = [repair]
+    before = quality(document)
+    repair.update(id="renamed", name="New label")
+    assert quality(document) == before
+    repair["recipe"]["points"][0]["x"] = .6
+    assert quality(document) != before
+    repair["enabled"] = False
+    document["repairs"] = [repair]
+    disabled = quality(document)
+    document["repairs"] = []
+    assert quality(document) == disabled
+
+
+def test_draw_identity_ignores_document_metadata_but_tracks_finishing(tmp_path):
+    path=photo(tmp_path)
+    root=tmp_path/'profile'
+    scene=develop_cpu(root,path,None,640)
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    document=LibraryPictureCache(root).default_document(path)
+    service=LivePictures(root,LibraryMarks(root),SimpleNamespace(request=lambda path:{'grade':document}))
+    before=service.describe(path,scene)
+    document['app_version']='old-version'
+    document['source']['filename']='renamed.png'
+    document['source']['raw_import_settings']['highlight_reconstruction'].pop('edge_colour_expand_percent',None)
+    assert service.describe(path,scene)['key']==before['key']
+    document['global_adjustments']['hdr']['exposure']=1
+    after=service.describe(path,scene)
+    assert after['key']!=before['key'] and after['source_key']==before['source_key']

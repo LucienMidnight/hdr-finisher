@@ -50,9 +50,12 @@ app behaves when the machine runs short.
    memory pressure, the caches drop their oldest entries early (moderate
    pressure: trim to about half; critical: drop everything that can be made
    again). This follows Chromium's memory-pressure practice.
-7. **Working room is reserved, not cached.** The photo being developed, Delete
-   planning and similar work need temporary memory. That room is kept free
-   inside the total; caches may not fill it.
+7. **Working room is reserved, not capped at 600 MB.** Cache shares cap
+   retained bytes. Caches leave at least 600 MB free inside the total;
+   temporary developments and other jobs may borrow any additional free room.
+   Several developments may run together when their reservations fit. Visible
+   photos go first; the hard limit is the whole-app ceiling (Steve's
+   clarification, October 30, 2026).
 8. **Disk and VRAM are separate budgets.** Disk allowances (section 5) and GPU
    memory (section 6) do not count toward the RAM total.
 
@@ -83,8 +86,8 @@ not shrink.
 | Camera previews | backend / helper | 64,000,000 bytes | yes | Aggregate preview LRU claims `camera`. |
 | RAW read-ahead | backend | 768,000,000 bytes, at most 12 files | yes | Reader admits actual file/shared-section bytes, including partial reads. |
 | Picture hand-off | backend / helper | 256,000,000 bytes | yes | RAW outputs and transient picture bodies share `handoff`; delivered bodies are released. |
-| Grade source mips / session frames, masks, hue stages / retained native source | backend / helper | inside working room | — | One aggregate working share replaces the separate 256 MiB mip, 192 MiB frame and 96/160 MiB mask limits. Unique array backing is counted once within a session; persistent mips have one retaining owner. Oversized levels are served without being cached. |
-| Working room | all | 600,000,000 bytes | no | One aggregate reservation envelope, including retained working caches, replacing 700 MB–1.2 GB per-job requests. |
+| Grade source mips / session frames, masks, hue stages / retained native source | backend / helper | inside working room | — | A 600,000,000-byte aggregate retention cap replaces the separate 256 MiB mip, 192 MiB frame and 96/160 MiB mask limits. Unique array backing is counted once within a session; persistent mips have one retaining owner. Oversized levels are served without being cached. |
+| Working room | all | at least 600,000,000 bytes kept free | no | Minimum free room protected from retained caches, not a maximum for jobs. Concurrent temporary reservations may use all remaining room below the whole-app ceiling. |
 | **Total** | | **ceiling 4,000,000,000 bytes** | | Actual process charge is the final gate; shares are approximate and cannot override it. |
 
 The fixed thumbnail decision preserves the existing 512 MiB implementation.
@@ -575,3 +578,38 @@ recipes remain unqualified within the working room as listed above.
   ([memory & performance tuning](https://docs.darktable.org/usermanual/4.8/en/special-topics/mem-performance))
   and Chromium's memory-pressure listener
   ([memory_pressure_listener.h](https://android.googlesource.com/platform/external/chromium_org/+/03339f7/base/memory/memory_pressure_listener.h)).
+
+### October 30 retry: saved scenes and working room
+
+Steve clarified that shares cap what caches **keep**, rather than partitioning
+RAM into exclusive job slots. The 600 MB is a minimum kept free, not the
+maximum for jobs. Development admission now compares actual whole-app charge
+plus outstanding reservations plus the requested bytes with the unchanged
+4,000,000,000-byte ceiling. It no longer clamps a request to 600 MB or forces
+all concurrent jobs into that amount. Visible-first scheduling stays in the
+ranked Library queue. Retained Grade levels keep their own 600 MB aggregate
+cap and are not evicted on every new admission or ten-second lease renewal;
+they are reclaimed when total room is needed. Cache growth leaves the working
+minimum free. Reservations conservatively include work already reflected in
+process charge; this can refuse work before the measured ceiling when its
+additional reserved bytes would not fit. It is not a 600 MB slot refusal.
+
+The fixed slot was introduced by `b567c15`; `f56075a` made Grade retained
+levels consume that same slot, and renewal also discarded those levels.
+Neither change altered Library disk scene identity. Source-mip ownership and
+Library NPZ ownership are separate: Grade mips use content fingerprints and
+interpretation; Library scenes use file version, edge and source quality.
+Neither includes cache owner/object identity. See the photo-library retry note
+for the scene-key audit and short read-only measurement results.
+
+Short retry measurement: **2,091,545,156 bytes** peak whole-app proportional
+resident charge, below the unchanged 4 GB ceiling. No working-memory wait and
+no admission request occurred: every edited cell used a stored scene. Behavior
+checks separately admit three 600 MB jobs with a 1.8 GB measured app total,
+preserve Grade retained levels during admission/renewal, and reject work whose
+charge plus outstanding reservations would exceed the ceiling. The first
+cached row still had draw-queue delays; this is not a complete latency pass.
+See photo-library for the per-cell results and recorded known fast-check
+failures (34 final focused checks pass). The profile and scene copies are
+removed; original scenes/sidecars and protected projects remain unchanged.
+Output started and ended at 2.1 GB. Steve's manual retry is the next checkpoint.
