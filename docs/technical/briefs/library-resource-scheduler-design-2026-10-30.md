@@ -684,9 +684,9 @@ What the design keeps and adds:
     (Lightroom's own previews);
   * no real photo was hidden by the `.`/`~` name rules;
   * the content sample found no non-images and 13 JPEG-in-HEIC files (F5).
-* Not covered: photo-library packages such as `Aperture Library.aplibrary`
-  still list their internal previews, as they did before. Whether to skip
-  app library packages is an open question for Steve.
+* Photo-app library packages such as `Aperture Library.aplibrary` keep
+  being listed, internal previews included (Steve, October 30), because some
+  apps keep originals inside the package.
 
 ## 8. Phases
 
