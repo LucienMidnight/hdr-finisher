@@ -274,3 +274,18 @@ test('idle no-GPU demand never develops on the CPU',async()=>{
  assert.equal(await scenes.load('photo',640,null,80,true),null);
  assert.ok(!requests.some(request=>request.gpu===false));
 });
+
+
+test('offline cache reads cancel without a broken-photo receipt and notify the folder', async()=>{
+ const {scenes,context,requests}=setup({offline:{offline:true,path:'offline',detail:'Folder offline',library_error:undefined}},()=>assert.fail('Offline source must not develop'));
+ const dispatched=[];
+ context.Event=Event;
+ context.CustomEvent=class {constructor(type,options){this.type=type;this.detail=options.detail;}};
+ context.window.dispatchEvent=event=>dispatched.push(event);
+ const fetch=context.fetch;
+ context.fetch=async(url,options)=>url==='/api/library/live-plan'?{ok:false,json:async()=>({offline:true,path:'offline',detail:'Folder offline'})}:fetch(url,options);
+ await assert.rejects(scenes.load('offline',640),{name:'AbortError'});
+ assert.equal(dispatched.filter(e=>e.type==='library-offline').length,1);
+ assert.equal(dispatched.find(e=>e.type==='library-offline').detail.path,'offline');
+ assert.equal(requests.length,0);
+});

@@ -1,4 +1,6 @@
 """Remember failed pictures by source/settings revision without occupying a worker."""
+import errno
+from pathlib import Path
 from functools import wraps
 from hashlib import sha256
 import inspect
@@ -10,6 +12,17 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from .library_diagnostics import log
+
+
+def source_offline(error, path):
+    if not isinstance(error, OSError):
+        return False
+    if getattr(error, "winerror", None) in {21, 53, 55, 64, 67, 121, 1117, 1167}:
+        return True
+    if error.errno in {errno.ENODEV, errno.ENXIO, errno.ENETDOWN, errno.ENETUNREACH, errno.EHOSTUNREACH, errno.ETIMEDOUT}:
+        return True
+    # A deleted individual file is distinct from a disconnected parent folder.
+    return error.errno == errno.ENOENT and not Path(path).parent.is_dir()
 
 
 def _reader_identity():
@@ -149,6 +162,10 @@ class PictureErrors:
                 failure = error.__cause__
             except (ValueError, OSError) as error:
                 failure = error
+            if source_offline(failure, path):
+                log("picture_offline", path=str(path), action="no broken-photo receipt; retry after reconnect")
+                return JSONResponse({"detail": "This folder is offline. Reconnect the drive, then open the folder again.",
+                                     "offline": True, "path": str(path)}, status_code=503)
             # Admission failures and interruptions are not broken photos.
             text = str(failure).lower()
             if any(word in text for word in ("cancelled", "memory", "busy", "in progress", "changed during", "changed while", "expired", "invalidated")):

@@ -298,5 +298,8 @@ A camera preview can remain visible when development is unavailable. New message
 - “Not supported: X-Trans sensor development is not available in the Library. The camera preview is kept when available.”
 - “The photo decoder stopped while reading this file. The file was set aside; other photos continue.”
 - “The photo decoder took too long. The file was set aside; other photos continue.”
+- “This folder is offline. Reconnect the drive, then open the folder again.”
+
+Offline reads are not recorded as broken photos. Affected pins dim. After reconnecting, return to the Library window or reopen the folder to retry.
 
 Very large pictures needing the unfinished bounded route can still wait.

@@ -229,3 +229,35 @@ def test_failed_old_development_does_not_mark_changed_source_failed(tmp_path):
     response = api.post("/api/library/development-error", json={"path": str(path), "source_identity": identity, "reason": "Old development failed"})
     assert response.status_code == 409
     assert not api.get("/api/library/health").json()["picture_errors"]
+
+
+def test_disconnected_read_is_offline_without_a_broken_photo_receipt(tmp_path):
+    import errno
+    from pydantic import BaseModel
+    class PhotoRequest(BaseModel):
+        path: str
+    path = tmp_path / 'photo.jpg'; path.write_bytes(b'photo')
+    marks = LibraryMarks(tmp_path / 'profile')
+    errors = PictureErrors(marks)
+    offline = [True]
+    app = FastAPI()
+    @app.post('/read')
+    @errors.guard
+    def read(command: PhotoRequest):
+        if offline[0]: raise OSError(errno.ENODEV, 'simulated device disconnected')
+        return {'ready': True}
+    with TestClient(app) as api:
+        result = api.post('/read', json={'path': str(path)})
+        assert result.status_code == 503 and result.json()['offline']
+        assert errors.all() == []
+        offline[0] = False
+        assert api.post('/read', json={'path': str(path)}).json() == {'ready': True}
+        assert errors.all() == []
+
+
+def test_corrupt_image_is_distinct_from_offline_device(tmp_path):
+    import errno
+    from hdr_finisher.library_picture_errors import source_offline
+    assert not source_offline(OSError('corrupt pixels'), tmp_path / 'a.jpg')
+    assert not source_offline(FileNotFoundError(errno.ENOENT, 'deleted file'), tmp_path / 'a.jpg')
+    assert source_offline(FileNotFoundError(errno.ENOENT, 'missing folder'), tmp_path / 'removed' / 'a.jpg')

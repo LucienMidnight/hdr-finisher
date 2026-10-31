@@ -857,7 +857,7 @@
       // unbounded CPU development while hardware is available.
       throw new Error(response.headers.get("X-Library-Fallback") || "This source has no supported GPU development route.");
     }
-    if (!response.ok) { const result = await response.json().catch(() => ({})); const error = result.changed ? new DOMException(result.detail,"AbortError") : new Error(result.detail || "Library request failed."); error.status = response.status; error.libraryError = result.library_error; error.cloudOnly = !!result.cloud_only; throw error; }
+    if (!response.ok) { const result = await response.json().catch(() => ({})); const error = result.changed || result.offline ? new DOMException(result.detail,"AbortError") : new Error(result.detail || "Library request failed."); if(result.offline) window.dispatchEvent(new CustomEvent("library-offline",{detail:result})); error.status = response.status; error.libraryError = result.library_error; error.cloudOnly = !!result.cloud_only; throw error; }
     if ((response.headers.get("Content-Type") || "").includes("application/json")) return response.json();
     const transferAt = performance.now();
     const body = await response.arrayBuffer();

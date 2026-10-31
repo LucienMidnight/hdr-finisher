@@ -1101,6 +1101,13 @@ waiting for acceptance between them. No approved budget or estimate changes.
    native crash occurs, the culprit remains ambiguous; current bounded replay
    remains rather than falsely accusing every active photo. GPU-source decoding
    in the backend itself is outside this helper protection. Both remain open.
+3. **Offline reads built, return detected on reopen/focus.** OS errno/Windows
+   device errors survive helper transport. Disconnection returns HTTP 503 with
+   `offline`, never a picture-error receipt. The frontend treats it as an
+   interrupted request, dims affected pins and explains reconnect/reopen. Coming
+   back to the window refreshes pins and reopens the folder. Immediate hardware
+   reconnect notification is not wired. A simulated ENODEV read followed by a
+   successful retry passes; corrupt files remain distinct.
 
 ## 8. Phases
 

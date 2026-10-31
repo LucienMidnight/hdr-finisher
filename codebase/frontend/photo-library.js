@@ -1606,8 +1606,21 @@
     });
     row.append(expand, name); if (depth === 0) navigation.pinHandle(row, folder.path); wrapper.append(row, children); return wrapper;
   }
+  const offlineSources = new Set();
+  window.addEventListener("library-offline", event => {
+    offlineSources.add(event.detail.path);
+    status(event.detail.detail);
+    void refreshPins();
+  });
+  window.addEventListener("focus", () => {
+    if (!offlineSources.size) return;
+    offlineSources.clear();
+    void refreshPins().then(() => reopen()).catch(error => status(error.message));
+  });
   async function refreshPins() {
     const result = await api("/api/library/pins"); state.pins = navigation.orderPins(result.pinned);
+    const key = path => path.replaceAll("\\", "/").replace(/\/$/, "").toLowerCase();
+    for (const pin of state.pins) if ([...offlineSources].some(path => key(path).startsWith(key(pin.path) + "/"))) pin.available = false;
     $("folders").replaceChildren(...state.pins.map((pin) => folderRow(pin))); paintGrid();
   }
   function paintFolderSelection() {

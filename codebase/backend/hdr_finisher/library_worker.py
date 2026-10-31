@@ -374,7 +374,11 @@ class LibraryWorker:
                 else:
                     from .media_browser import MediaBrowserError, MediaBrowserInterpretationRequired
                     error = message.get("error", "Library job failed.")
-                    if message.get("reason"):
+                    if message.get("errno") is not None or message.get("winerror") is not None:
+                        exception = OSError(message.get("errno"), error)
+                        if message.get("winerror") is not None:
+                            exception.winerror = message["winerror"]
+                    elif message.get("reason"):
                         exception = MediaBrowserInterpretationRequired(error,
                             reason=message["reason"], profile_name=message.get("profile_name"))
                     else:
@@ -620,6 +624,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 if not isinstance(exc, CancelledError) and not cancelled.is_set():
                     log("picture_helper_job_failed" if kind == "picture" else "helper_job_failed", operation=job["command"], paths=job.get("path", job.get("paths")), reason=repr(exc), action="request failed; saved marks retained")
                 result = {"id": job["id"], "error": str(exc)}
+                if isinstance(exc, OSError):
+                    result.update(errno=exc.errno, winerror=getattr(exc, "winerror", None))
             log(("picture_" if kind == "picture" else "") + ("helper_job_cancelled" if cancelled.is_set() or stopping.is_set() else "helper_job_finished"), job=job["id"], request=job.get("trace_id"), operation=job["command"], edge=job.get("edge"), path=job.get("path"), outcome="cancelled" if cancelled.is_set() or stopping.is_set() else "failed" if "error" in result else "completed", last_stage=last_stage[0], stage_ms=round((time.perf_counter()-last_stage[1])*1000,2), work_ms=round((time.perf_counter()-started-waited[0])*1000, 2), yield_ms=round(waited[0]*1000, 2))
             with condition:
                 jobs.pop(job["id"], None)

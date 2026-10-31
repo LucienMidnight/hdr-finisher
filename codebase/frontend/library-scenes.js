@@ -37,7 +37,8 @@ window.HDRLibraryScenes = (() => {
   const rank = path => {const priority=visible.has(path)?10:nearby.has(path)?50:80;window.HDRLibraryGrants?.promote(path,priority);return priority;};
   const largeBytes = 32 * 1024 * 1024;
   function failure(result) {
-    const error = result.changed ? new DOMException(result.detail,"AbortError") : Error(result.detail || "The photo could not be prepared.");
+    const error = result.changed || result.offline ? new DOMException(result.detail,"AbortError") : Error(result.detail || "The photo could not be prepared.");
+    if (result.offline) window.dispatchEvent(new CustomEvent("library-offline", {detail:result}));
     error.libraryError = result.library_error;
     return error;
   }

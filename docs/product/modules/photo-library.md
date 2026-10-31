@@ -10,6 +10,8 @@ Header checks refuse unresolved JPEG XL and X-Trans before pixel decoding. Bound
 
 Identified helper crashes and per-type deadlines set a bad file aside while remaining requests recover. Multiple-active-file crash attribution and backend-process decode protection remain open.
 
+Device-read failures remain offline rather than broken photos. Affected pins dim; returning to the window or reopening retries. Immediate reconnect notification remains open.
+
 No image math, approved memory budget or paused-for-Grade wording changed. See design 7.7 for the remaining work and qualification limits.
 
 ## October 31 phase 3a.1: two developments, speed qualification still open
