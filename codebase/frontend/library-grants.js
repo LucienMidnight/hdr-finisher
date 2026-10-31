@@ -71,7 +71,12 @@
       const response=await fetch("/api/library/preview",{method:"POST",priority:"high",signal:shared,headers:{"Content-Type":"application/json",...headers},body:JSON.stringify({...body,grant})});
       return new Response(response.status===204?null:await response.arrayBuffer(),{status:response.status,headers:response.headers});
     });
-    const visibility=()=>root.HDRLibraryGrants.visibility(root.document.visibilityState!=="hidden");
+    let nativeVisible=true;
+    const visibility=()=>root.HDRLibraryGrants.visibility(nativeVisible&&root.document.visibilityState!=="hidden");
+    const desktop=root.hdrFinisherDesktop||root.parent?.hdrFinisherDesktop;
+    const nativeState=value=>{nativeVisible=value.visible!==false;visibility();};
+    desktop?.onWindowStateChanged?.(nativeState);
+    desktop?.getWindowState?.().then(nativeState).catch(()=>{});
     if(root.document.visibilityState==="hidden")visibility();
     root.document.addEventListener("visibilitychange",visibility);
     root.addEventListener("pagehide",()=>root.HDRLibraryGrants.close());

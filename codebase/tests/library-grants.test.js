@@ -62,3 +62,24 @@ test('hidden window class changes use the channel and survive reconnect',async()
  grants.visibility(true);assert.deepEqual(sockets[1].sent.at(-1),{type:'visibility',visible:true});
  abort.abort();await assert.rejects(pending,{name:'AbortError'});grants.close();
 });
+
+
+test('native minimisation keeps a visible Chromium page in eventually until restored',async()=>{
+ const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
+ const listeners={},sockets=[];let native;
+ const document={visibilityState:'visible',addEventListener:(type,fn)=>listeners[type]=fn};
+ const root={document,crypto:require('node:crypto').webcrypto,dispatchEvent:()=>{},addEventListener:()=>{},
+  hdrFinisherDesktop:{onWindowStateChanged:fn=>native=fn,getWindowState:async()=>({visible:true})}};
+ class Socket{constructor(){this.readyState=0;this.sent=[];sockets.push(this);}send(v){this.sent.push(JSON.parse(v));}close(){this.readyState=3;this.onclose();}}
+ const context={window:root,location:{origin:'http://local'},WebSocket:Socket,DOMException,AbortController,Event,
+  setTimeout,clearTimeout,setInterval:()=>null,clearInterval};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../frontend/library-grants.js'),'utf8'),context);
+ await tick();const abort=new AbortController(),pending=root.HDRLibraryGrants.acquire('a.jpg','source',abort.signal);
+ sockets[0].readyState=1;sockets[0].onopen();
+ native({visible:false});assert.equal(sockets[0].sent.at(-1).visible,false);
+ listeners.visibilitychange();assert.equal(sockets[0].sent.at(-1).visible,false);
+ native({visible:true});assert.equal(sockets[0].sent.at(-1).visible,true);
+ document.visibilityState='hidden';listeners.visibilitychange();native({visible:true});
+ assert.equal(sockets[0].sent.at(-1).visible,false);
+ abort.abort();await assert.rejects(pending,{name:'AbortError'});root.HDRLibraryGrants.close();
+});

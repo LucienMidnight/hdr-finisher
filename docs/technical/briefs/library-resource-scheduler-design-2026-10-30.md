@@ -1100,7 +1100,7 @@ waiting for acceptance between them. No approved budget or estimate changes.
    stub tests recover the following file. If several files are active when a
    native crash occurs, the culprit remains ambiguous; current bounded replay
    remains rather than falsely accusing every active photo. GPU-source decoding
-   in the backend itself is outside this helper protection. Both remain open.
+   in the backend itself is outside this helper protection. Both remain open. The existing three-restart lifetime limit is unchanged; this is not unlimited recovery.
 3. **Offline reads built, return detected on reopen/focus.** OS errno/Windows
    device errors survive helper transport. Disconnection returns HTTP 503 with
    `offline`, never a picture-error receipt. The frontend treats it as an
@@ -1124,13 +1124,12 @@ waiting for acceptance between them. No approved budget or estimate changes.
    while the current short piece finishes. Non-startup indexing retains its
    existing waits. First-use ledger creation can still reconcile synchronously;
    the generated-fixture launch comparison is required before claiming ≤10%.
-6. **Visibility scheduling built; native-window trial outstanding.** Visibility
+6. **Visibility scheduling built; native-window trial passed.** Visibility
    messages use the persistent grant channel. Hidden owners' jobs become
    `eventually`, including quick previews; they cannot jump ahead of foreground
    work. Promotions made while hidden are retained and restored when shown.
    Active work completes at its normal boundary. Two-owner scheduling and
-   reconnect-channel behaviour pass; an actual two-window minimise/restore trial
-   remains to be done.
+   reconnect-channel behaviour pass. The native main + detached-Library trial also passes: a queued job becomes eventually when minimised, returns to now on restore, and is admitted when the two held slots end. Chromium remained visible while minimised in the harness, so the existing native window-state event also supplies visibility. Class changes are published even when the waiting reason is unchanged.
 
 ## 8. Phases
 
@@ -1144,7 +1143,7 @@ records its numbers in the [performance table](../performance-table.md).
 | 0. Measure — **done October 30** | Log real RAM and GPU peaks per file type and job type on disposable copies (20241117 RAWs, Aceh JPEGs, one of each supported type, a large TIFF). Try reduced decoding for 640. No behaviour change. | — | Per-type budget table (6.11) written for Steve to approve. |
 | 1. File gate — **built October 30, awaiting Steve's try** | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
 | 2. Stop the feedback loop — **built October 30, awaiting Steve's try** (7.5) | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
-| 3. One scheduler, RAM — **October 31 run exception: Steve authorised 3a.1 → 3b without intervening acceptance.** — **3a scheduler/channel connected October 31; speed qualification open (7.6). 3b partial resilience/scheduling work; large-picture and disk-cache work unfinished (7.7)** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
+| 3. One scheduler, RAM — **October 31 run exception: Steve authorised 3a.1 → 3b without intervening acceptance.** — **3a scheduler/channel connected October 31; speed qualification open (7.6). 3b partial resilience/scheduling built, large-picture and disk-cache work unfinished (7.7)** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
 | 4. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
 | 5. Grid makes 640 only | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
 | 6. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. Edge case M25. | Leftover complexity. | Fast checks pass; less code than before. |

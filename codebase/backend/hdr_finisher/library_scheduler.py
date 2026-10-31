@@ -137,10 +137,19 @@ class Scheduler:
                 self.hidden.discard(owner)
             else:
                 self.hidden.add(owner)
+            changed = []
             for job in self.jobs.values():
                 if job.owner == owner and job.requested_cls != "Grade":
-                    job.cls = job.requested_cls if visible else "eventually"
+                    cls = job.requested_cls if visible else "eventually"
+                    if cls != job.cls:
+                        job.cls = cls
+                        changed.append(job)
             self._pump()
+            # The waiting reason may stay identical across a visibility change.
+            # Still publish the new class to the window's existing channel.
+            for job in changed:
+                if job.notify:
+                    job.notify(self._message(job, "granted" if job.granted is not None else "waiting"))
 
     def valid(self, id, path, kind=None):
         with self.lock:

@@ -4,21 +4,20 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
-## October 31 phase 3b: partial work; qualification open
+## October 31 phase 3b: resilience improvements; large-picture and cache work unfinished
 
-Header checks refuse unresolved JPEG XL and X-Trans RAF before pixel decoding. Bounded large-picture routes remain unfinished; the line scan still waits for that route.
+Header checks refuse unresolved JPEG XL and X-Trans RAF before pixel decoding.
+Helper jobs have proposed measured per-type deadlines; an identified bad file
+is set aside once and remaining work recovers. Device-read errors remain offline
+rather than broken photos; affected pins dim and reconnect/reopen retries.
+Startup upkeep yields through eventually grants, and hidden windows lose
+foreground priority until shown. Section 7.7 records tests and limitations.
 
-Identified helper crashes and per-type deadlines set a bad file aside while remaining requests recover. Multiple-active-file crash attribution and backend-process decode protection remain open.
-
-Device-read failures remain offline rather than broken photos. Affected pins dim; returning to the window or reopening retries. Immediate reconnect notification remains open.
-
-Disk-cache failure handling is blocked on coordinated writer state and safe transient-preview handoff; no partial cache-disable switch is shipped.
-
-Startup upkeep uses eventually grants and yields at existing safe points. First-use synchronous ledger work and the generated-fixture launch comparison remain open.
-
-Hidden-window work drops to eventually and restores its requested class on return. Two-owner/reconnect tests pass; native two-window qualification is outstanding.
-
-No image math, approved memory budget or paused-for-Grade wording changed. See design 7.7 for the remaining work and qualification limits.
+This is partial work: bounded large-picture routes, complete header routing,
+ambiguous multi-file crash attribution, coordinated disk-cache failure handling,
+launch timing qualification remain open. A real main + detached-Library minimise/restore trial passes, including native visibility events when Chromium stays visible. The line
+scan's Library cell still cannot finish its development. No image math, memory
+budget or paused-for-Grade wording changed.
 
 ## October 31 phase 3a.1: two developments, speed qualification still open
 

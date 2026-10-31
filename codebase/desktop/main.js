@@ -605,6 +605,7 @@ function registerIpc() {
   handleWindow("desktop:get-window-state", (record) => ({
     maximized: record.window.isMaximized(),
     fullscreen: record.window.isFullScreen(),
+    visible: record.window.isVisible() && !record.window.isMinimized(),
   }));
   handleWindow("desktop:perform-window-action", (record, action) => {
     const window = record.window;
@@ -912,6 +913,7 @@ function sendWindowState(window = mainWindow) {
   window.webContents.send("desktop:window-state", {
     maximized: window.isMaximized(),
     fullscreen: window.isFullScreen(),
+    visible: window.isVisible() && !window.isMinimized(),
   });
 }
 
@@ -1127,7 +1129,7 @@ async function createWindow(role = "main") {
     }
     if (!windows.size && !shuttingDown) void beginShutdown();
   });
-  for (const eventName of ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen"]) {
+  for (const eventName of ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen", "minimize", "restore", "hide", "show"]) {
     window.on(eventName, () => sendWindowState(window));
   }
   for (const eventName of ["move", "resize", "enter-full-screen", "leave-full-screen"]) {

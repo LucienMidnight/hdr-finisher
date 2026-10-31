@@ -34,9 +34,12 @@ changed.
 
 ### October 31: phase 3b partial scheduling
 
-Startup upkeep uses the existing 64 MB minimum estimate as eventually work, yields between safe points, and releases its grant on completion/close.
-Hidden-window work becomes eventually without changing its estimates or allowances.
-Bounded large-image routes and coordinated unavailable-disk-cache fallback remain unfinished; all approved rates/shares stay in force.
+Startup upkeep uses the existing 64 MB minimum estimate as eventually work,
+yields between safe points, and releases its grant on completion/close. Hidden
+window work becomes eventually without changing its estimates or allowances. Native window-state events cover minimisation when Chromium visibility stays visible.
+Bounded large-image routes and coordinated unavailable-disk-cache fallback remain
+unfinished; all approved rates/shares stay in force. See design 7.7 for why the
+transient handoff cannot safely be detached from failed disk storage yet.
 
 ### October 31: phase 3a.1 admission cap
 

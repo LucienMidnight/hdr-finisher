@@ -250,3 +250,16 @@ def test_two_windows_hide_restore_and_priority_updates():
     assert hidden.granted is not None
     s.disconnect('hidden-window')
     assert not s.hidden and hidden.id not in s.jobs
+
+
+def test_visibility_publishes_class_even_when_wait_reason_does_not_change():
+    s = fresh(2*GB)
+    ask(s, 'a'); ask(s, 'b')
+    messages = []
+    waiting = s.ask('queued', 'window', 'photo', 'source', FAST_BYTES, 'now', notify=messages.append)
+    reason = waiting.reason
+    s.set_visible('window', False)
+    assert waiting.reason == reason
+    assert messages[-1]['type'] == 'waiting' and messages[-1]['cls'] == 'eventually'
+    s.set_visible('window', True)
+    assert messages[-1]['cls'] == 'now' and waiting.granted is None

@@ -413,10 +413,10 @@ Needs attention locations. Data checks: `test_library_file_commands.py`,
 `test_library_file_exfat.py`. Focused Electron: `library-photo-file-commands.js`,
 `library-folder-file-commands.js`, `library-delete-file-commands.js`.
 
-October 31 Library follow-up:
-
-- `library_rgb.py` / `library_gpu_raw.py`: header-only unresolved JPEG XL/X-Trans RAF refusal.
-- `library_worker.py`: active decoder deadlines and identified crash recovery.
-- `library_picture_errors.py`: offline device errors; `library-scenes.js`, `library-gpu-raw.js` and `photo-library.js`: offline notification, dimming and focus retry.
-- `library_index.py`: startup upkeep grants at safe points and release on close; `library_scheduler.py`: upkeep foreground precedence.
-- `library_scheduler.py`: hidden-owner priority restoration; `library_grants.py` / `library-grants.js`: visibility over the existing channel.
+October 31 scheduler follow-up: `library_scheduler.py` also owns the global
+two-development/FIFO admission, hidden-owner class restoration and startup-upkeep
+grants. `library_index.py` releases startup grants at safe points and on close.
+`library_worker.py` tracks active decoder deadlines and identified crash recovery;
+`library_picture_errors.py` separates device-offline errors from broken photos.
+`library-grants.js` sends document/native visibility over the existing channel; `desktop/main.js` includes native visibility in the existing window-state event. Header-only JPEG
+XL/X-Trans RAF refusal lives in `library_rgb.py` / `library_gpu_raw.py`.
