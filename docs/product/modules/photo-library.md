@@ -4,7 +4,7 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
-## October 31 phase 3c.2 Part A: partial, stopped at the AVIF ceiling
+## October 31 phase 3c.2 Part A: revised memory acceptance; B/C open
 
 Approved estimates and helper deadlines are wired in: AVIF 56 bytes/pixel;
 qualified reduced >=100 MP JPEG/PNG/TIFF/linear DNG 6/8/6/6; the active-work
@@ -12,16 +12,15 @@ deadline caps at five minutes. Timeout cells offer Try again without a durable
 broken-photo receipt. Native/CPU rates and reduced-route picture output stay as
 before. Focused rate, deadline, recovery and grant/channel checks pass.
 
-The required default 4 GB mixed run stopped at **4.011418177 GB**, with the
-Lightroom AVIF alone on a **2.361934848 GB** grant. Zero duplicate asks, zero
-memory-request timeouts; protected project hashes unchanged. The brief explicitly
-requires stopping on this result. GPU scheduler work (Part B), 640-only
-development (Part C), and their acceptance runs have not started. No new
-before/after pictures were produced. The DxO DNG prepared successfully through
-the API in isolation, but its earlier mixed failure remains unexplained.
-
-[Scheduler design 7.9](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#79-phase-3c2-part-a-approved-rates-and-retryable-deadlines-stopped-on-avif-october-31)
-records the evidence and unfinished work. No rate or allowance was increased.
+The earlier default mixed run's **4.011418177 GB** AVIF sample passes Steve's
+revised peak rule: at most ceiling +10% briefly during work, then below ceiling
+minus 600 MB after work. The system reserve remains hard. The harness and
+production overrun records now report peak, overage, active types and duration;
+repeated excursions propose estimate review without changing rates. Full mixed
+completion/settling is still pending the final rerun. Keep AVIF 56 and do not
+investigate it further now. Leave the DxO DNG alone unless it fails again;
+then capture the full request error. Parts B/C and edited-photo pictures remain
+open. [Scheduler design 7.9](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#79-phase-3c2-part-a-approved-rates-and-retryable-deadlines-revised-acceptance-october-31).
 
 ## October 31 phase 3c: reduced pictures and live memory setting; qualification partial
 

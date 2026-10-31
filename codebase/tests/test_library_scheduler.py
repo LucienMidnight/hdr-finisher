@@ -336,3 +336,24 @@ def test_saving_memory_estimate_still_prevents_new_admission():
     assert b.granted is None
     s.finish(a.id)
     assert b.granted is not None
+
+
+def test_overrun_logs_active_types_duration_and_repeated_proposal_without_rate_change(monkeypatch):
+    events, now = [], [0]
+    monkeypatch.setattr("hdr_finisher.library_scheduler.log", lambda event, **fields: events.append((event, fields)))
+    s = Scheduler(clock=lambda: now[0])
+    s.update(total=2*GB, available=60*GB, ram=68*GB)
+    job = s.ask("avif", "window", "photo.avif", "source", 2*GB)
+    for start in (1, 5):
+        now[0] = start
+        s.update(total=4_011_418_177, available=60*GB, ram=68*GB)
+        now[0] = start+2
+        s.update(total=3*GB, available=60*GB, ram=68*GB)
+    starts = [fields for event, fields in events if event == "library_memory_over_ceiling"]
+    ends = [fields for event, fields in events if event == "library_memory_under_ceiling"]
+    proposals = [fields for event, fields in events if event == "library_estimate_proposal"]
+    assert len(starts) == len(ends) == 2
+    assert starts[0]["active_grants"][0]["file_type"] == ".avif"
+    assert ends[0]["duration_ms"] == 2000 and ends[0]["over_bytes"] == 11_418_177
+    assert len(proposals) == 1 and proposals[0]["overrun_count"] == 2
+    assert job.estimate == 2*GB

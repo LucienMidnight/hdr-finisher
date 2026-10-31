@@ -32,20 +32,32 @@ The RAW sensor read needs about 5.5 bytes per pixel. GPU memory runs about
 proposed per-type estimates are Steve's decision; no size or share has
 changed.
 
-### October 31: phase 3c.2 approved estimates; mixed qualification stopped
+### October 31: planning ceiling acceptance and overrun records (Steve)
 
-Production uses AVIF 56 bytes/pixel and qualified reduced >=100 MP Library
-JPEG/PNG/TIFF/linear DNG 6/8/6/6. Native, ordinary and CPU requests retain
-their approved rates; the 64 MB minimum and all cache shares are unchanged.
-The helper deadline is capped at 300 seconds of active work; timeout notices
-are retryable window state, never broken-photo receipts.
+The whole-app ceiling is a planning budget. While a job runs, memory may
+briefly reach **ceiling +10%** (4.4 GB at default 4 GB). After work finishes
+it must settle below **ceiling −600 MB** (3.4 GB). The larger of 2 GB or 10%
+of system RAM remains a hard physical reserve; never start work that would
+cut into it. Existing estimate admission, cache shares, floor and fast lane
+are unchanged. This decision supersedes earlier exact-ceiling acceptance here.
 
-One default-limit mixed run stopped at **4,011,418,177 bytes**, against the
-exact **4,000,000,000-byte** ceiling. Its sole development grant was the
-Lightroom AVIF, **2,361,934,848 bytes**, admitted alone. This is a failed
-whole-app check, not proof that AVIF alone needs another specific rate.
-Per the brief, work stopped before GPU scheduling/640-only phases; no approved
-number was changed. Evidence and remaining work: scheduler design section 7.9.
+The independent measurement harness stops above ceiling +10% or on a reserve
+breach, reports peak/overage, active grants and file types, and duration per
+sampled excursion. Sampling resolves duration to about 500 ms. A bounded
+30-second observation window checks settling after screen work; unfinished
+work or no settling is incomplete acceptance, not a relaxed target. Production
+logs record crossings/recovery and propose review after repeated excursions
+with the same active type. Rates never change automatically; attribution is
+association with an active grant, not isolated proof of its cost.
+
+The earlier **4,011,418,177-byte** AVIF sample passes the revised peak rule.
+The stopped run did not measure completion or settling. Keep **56 bytes/pixel**,
+leave AVIF alone, and rerun the default mixed folder in final acceptance.
+Qualified reduced >=100 MP JPEG/PNG/TIFF/linear DNG remain **6/8/6/6**;
+native, ordinary and CPU rates stay unchanged. Helper active deadlines cap at
+300 seconds with Try again and no broken-photo receipt. Leave the isolated
+successful DxO DNG alone; capture its full request error if it fails later.
+GPU scheduling and 640-only work remain open; scheduler design section 7.9.
 
 ### October 31: phase 3c live memory setting; estimates awaiting Steve
 

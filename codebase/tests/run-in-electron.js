@@ -424,6 +424,7 @@ function packagedExecutable() {
   // fetch. Expose a same-origin test capability without exposing its token.
   const nodeFetch = global.fetch.bind(global);
   global.HDRFinisherElectronTestHarness = {
+    userDataDirectory,
     memory:()=>app.evaluate(({app})=>({main:process.memoryUsage(),roles:app.getAppMetrics().map(p=>({pid:p.pid,type:p.type}))})),
     fetch: (input, options = {}) => {
       const target = new URL(String(input), origin);

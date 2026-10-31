@@ -211,3 +211,8 @@ No recent number for:
   and Delete.
 * A cold-launch measurement of each startup target.
 * One timing per supported file type (scheduler design, phase 0).
+
+October 31 acceptance clarification: the stopped phase 3c.2 AVIF sample
+(4.011418177 GB) passes the new ceiling +10% peak rule. Completion, duration
+and settling were not observed; no new timing is claimed. The default mixed
+folder will be rerun after Parts B/C. See scheduler design decision 16.

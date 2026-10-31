@@ -4,6 +4,7 @@ Callbacks run under the scheduler lock and must only enqueue notifications.
 No decoder, process sampler or session-store lock is entered while it is held.
 """
 from dataclasses import dataclass, field
+from pathlib import Path
 from threading import RLock, Event
 import time
 from .library_diagnostics import log
@@ -72,6 +73,8 @@ class Scheduler:
         self.pressure = "none"
         self.listeners = set()
         self.sampled_grants = set()
+        self.overrun = None
+        self.overrun_counts = {}
 
     def update(self, *, caches=0, grade_bytes=0, grade_name="", total=None,
                available=None, ram=None, pressure="none", sampled_grants=None):
@@ -85,10 +88,44 @@ class Scheduler:
                 if job.granted is not None and total is not None and job.baseline is not None:
                     # Whole-app incremental peak, not private allocation attribution.
                     job.peak = max(job.peak or 0, total-job.baseline)
+            self._measure_overrun()
             self._pump()
             if grade_changed:
                 for notify in self.listeners:
                     notify(dict(type="grade", name=grade_name, bytes=grade_bytes))
+
+    def _measure_overrun(self):
+        """Observe planning-budget excursions; never tune admission estimates."""
+        if self.total is None:
+            return
+        now = self.clock()
+        active = [dict(id=j.id, path=j.path, file_type=Path(j.path).suffix.lower(),
+                       estimate_bytes=j.estimate, saving=j.saving)
+                  for j in self.jobs.values() if j.granted is not None]
+        if self.total > self.ceiling:
+            if self.overrun is None:
+                self.overrun = dict(start=now, peak=self.total, ceiling=self.ceiling,
+                                    grants=active, types=set())
+                log("library_memory_over_ceiling", measured_total_bytes=self.total,
+                    ceiling_bytes=self.ceiling, over_bytes=self.total-self.ceiling,
+                    active_grants=active)
+            episode = self.overrun
+            episode["types"].update(g["file_type"] for g in active if g["file_type"])
+            if self.total > episode["peak"]:
+                episode.update(peak=self.total, grants=active)
+        elif self.overrun is not None:
+            episode, self.overrun = self.overrun, None
+            fields = dict(peak_bytes=episode["peak"], ceiling_bytes=episode["ceiling"],
+                          over_bytes=episode["peak"]-episode["ceiling"],
+                          duration_ms=round((now-episode["start"])*1000),
+                          active_grants_at_peak=episode["grants"],
+                          file_types=sorted(episode["types"]))
+            log("library_memory_under_ceiling", **fields)
+            for kind in sorted(episode["types"]):
+                count = self.overrun_counts[kind] = self.overrun_counts.get(kind, 0)+1
+                if count >= 2:
+                    log("library_estimate_proposal", file_type=kind, overrun_count=count,
+                        action="Steve to review estimate; approved rate unchanged", **fields)
 
     def set_ceiling(self, ceiling):
         with self.lock:

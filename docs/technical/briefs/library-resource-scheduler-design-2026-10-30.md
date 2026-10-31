@@ -1454,7 +1454,7 @@ embedded-DNG reference regression found during this work was fixed by retaining
 its original route. No full suites, repeat pairs, push, merge or installer.
 Protected project hashes were verified by each actual-app harness run.
 
-### 7.9 Phase 3c.2 Part A: approved rates and retryable deadlines; stopped on AVIF (October 31)
+### 7.9 Phase 3c.2 Part A: approved rates and retryable deadlines; revised acceptance (October 31)
 
 **Partial implementation, based on ad1402d.** AVIF uses the approved 56 bytes
 per source pixel. Qualified reduced Library sources at >=100 MP use JPEG 6,
@@ -1471,7 +1471,7 @@ Cells retain this notice in window memory: "Took too long · Try again".
 Retry clears the notice and requests a new development at the photo's
 current visible/background priority, with a fresh deadline.
 
-**Required stop reached.** One 27-file cold mixed run, default exact
+**Earlier stop, superseded by decision 16 below.** One 27-file cold mixed run, default
 4,000,000,000-byte ceiling, stopped at **4,011,418,177 bytes** (4.011418177 GB),
 **11,418,177 bytes over**. The only active development grant was
 LR-classic-hdr-source-test-1.avif: **2,361,934,848 bytes**, the approved
@@ -1505,9 +1505,30 @@ one-versus-two GPU runs, raised line scan, Grade coexistence, forced GPU failure
 Single/neighbours and edited-photo comparisons. No new before/after folder exists.
 Existing phase 3c review pictures remain unchanged and await Steve's visual review.
 
-Next decision: resume investigation of AVIF admission and retained-memory overlap
-at the approved rate, or revise the brief. Larger estimates or changed allowances
-have not been proposed as a measured fix.
+**Steve's revised acceptance, October 31 (decision 16).** The 4.011418177 GB
+sample passes the memory peak rule. It does not establish completed-file or
+settling acceptance: that stopped run did not observe either. Keep AVIF 56;
+no further AVIF investigation now. Leave the DxO DNG alone because it succeeds
+in isolation; capture and report the full request error only if it fails again.
+Continue Parts B/C, then rerun the default mixed folder in final acceptance.
+
+The harness now permits up to 10% over the planning ceiling during active work,
+stops above that or on a physical-reserve breach, and records peak, overage,
+active grant/file type and each observed excursion's duration (500 ms census
+resolution). It observes normal settling for up to 30 seconds after the screen
+work, requiring no running grants and memory below ceiling minus 600 MB. The
+30 seconds is a proposed measurement window to keep the acceptance bounded,
+not an additional production timeout or allowance. An unfinished job or missing
+settle is reported as incomplete acceptance. Production logs record every
+sampled crossing and recovery with active file types. A second excursion with
+the same active type produces an estimate-review proposal for Steve; this is
+association, not proof of causation, and never changes a rate automatically.
+
+Focused validation of this addendum: 29 scheduler Python checks and four
+independent observer accounting checks pass. The new boundary checks explicitly
+accept exactly +10%, reject one byte beyond it, and preserve the hard reserve.
+No GPU acceptance run was repeated for this measurement-only change.
+
 
 ## 8. Phases
 
@@ -1522,9 +1543,9 @@ records its numbers in the [performance table](../performance-table.md).
 | 1. File gate — **built October 30, awaiting Steve's try** | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
 | 2. Stop the feedback loop — **built October 30, awaiting Steve's try** (7.5) | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
 | 3. One scheduler, RAM — **October 31 run exception: Steve authorised 3a.1 → 3b without intervening acceptance.** — **3a.2 corrections built October 31; speed/mixed-memory qualification open (7.6). 3b partial resilience/scheduling built, large-picture and disk-cache work unfinished (7.7)** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
-| 3c.2 approved decisions — **Part A partial; stopped at AVIF ceiling violation (7.9)** | Approved estimates and retryable capped deadlines | Qualification remains open | Default mixed peak must stay below 4 GB; observed 4.011418177 GB. |
-| 4. GPU in the same scheduler — **not started; AVIF stop condition (7.9)** | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
-| 5. Grid makes 640 only — **not started; AVIF stop condition (7.9)** | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
+| 3c.2 approved decisions — **Part A estimates built; revised memory acceptance (7.9)** | Approved estimates and retryable capped deadlines | Qualification remains open | Peak within ceiling +10%, then below target; mixed completion rerun pending. |
+| 4. GPU in the same scheduler — **open; Steve authorised continuation (7.9)** | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
+| 5. Grid makes 640 only — **open; Steve authorised continuation (7.9)** | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
 | 6. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. Edge case M25. | Leftover complexity. | Fast checks pass; less code than before. |
 | 7. Tune | Adjust estimates, the fast-lane size and the GPU count from logs. | — | Steve's feel plus the logged numbers. |
 
@@ -1533,7 +1554,7 @@ Proposed tolerances, to agree before measuring:
 | Measure | Tolerance |
 | --- | --- |
 | Embedded preview, request to on screen, during development | p95 under 500 ms (extraction is about 60 ms) |
-| Peak whole-app memory | Under the ceiling in every run |
+| Peak whole-app memory | Briefly at most ceiling +10% while work runs; settle below ceiling −600 MB; physical reserve stays hard (decision 16) |
 | False failures | Zero |
 | Grid timing | Judged against its own baseline, within 10% run to run |
 
@@ -1685,6 +1706,19 @@ Decided October 30:
     behind the total. No pass/fail target for it yet; set one once the speed
     work settles. The request-to-screen p95 <0.5 s target stays unchanged and
     is not met.
+
+
+16. **Whole-app ceiling is a planning budget — Steve, October 31.** Running
+    work may briefly exceed it by at most 10% (400 MB at default 4 GB), then
+    must settle below target (ceiling minus 600 MB) when work finishes. The
+    physical reserve remains hard and unchanged; never admit work that would
+    cut into it. Measurements stop only above ceiling +10% or at a reserve
+    breach. Report peak, overage, active grant/file type and excursion duration.
+    Log every crossing; repeated excursions with one active type become a
+    proposal for Steve, never an automatic rate change. The 4.011 GB AVIF sample
+    passes; keep 56, no further AVIF investigation now. Rerun the default mixed
+    folder in final acceptance. This supersedes earlier exact-ceiling acceptance
+    wording, not the existing estimate-based admission or reserve rules.
 
 ## 11. Code map (for whoever builds it)
 

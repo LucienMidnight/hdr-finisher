@@ -2,6 +2,7 @@
 // node tests/run-in-electron.js tools/measure-library-cold-mixed.cjs [--jpeg|--probe|--aceh]
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const {spawn}=require('node:child_process');
+const {MemoryMonitor}=require('./library-memory-monitor.cjs');
 const {chromium}=require('playwright');
 const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
 const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe'),aceh=process.argv.includes('--aceh'),phase0=process.argv.includes('--phase0');
@@ -34,6 +35,7 @@ const report={mode:phase0?'phase0':jpeg?'IMG_0267':aceh?'aceh':'mixed',files:nam
 const before=hashProjects(require('../tests/release/drivers.json').protectedProjects);
 (async()=>{
  let memoryViolation, browser,lib,observer,peak=0,pending='',poll,stopping=false,activePoll,diagnostics;
+ const memory=new MemoryMonitor(memoryLimit);
  const api=async(route,body,signal)=>{
   const response=await global.HDRFinisherElectronTestHarness.fetch('/api/library/'+route,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal});
   if(!response.ok)throw Error(`${route}: ${response.status} ${await response.text()}`);return response.json();
@@ -44,7 +46,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   report.grantEvents=[];const liveGrants=new Map();
   page.on('websocket',ws=>{if(!ws.url().endsWith('/api/library/grants'))return;
     ws.on('framereceived',event=>{const value=JSON.parse(String(event.payload));report.grantEvents.push({at:Date.now(),...value});if(value.type==='granted')liveGrants.set(value.id,value);});
-    ws.on('framesent',event=>{const value=JSON.parse(String(event.payload));if(value.type==='finish')liveGrants.delete(value.id);});
+    ws.on('framesent',event=>{const value=JSON.parse(String(event.payload));if(value.type==='finish'||value.type==='cancel')liveGrants.delete(value.id);});
   });
   report.channelFrames=[];report.httpRequests=[];page.on('websocket',ws=>ws.on('framesent',event=>{if(ws.url().endsWith('/api/library/grants'))report.channelFrames.push({at:Date.now(),...JSON.parse(String(event.payload))});}));page.on('request',r=>{if(r.url().includes('/api/library/'))report.httpRequests.push({at:Date.now(),url:r.url()});});
   await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
@@ -66,10 +68,8 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   observer=spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID],{windowsHide:true});
   observer.stdout.on('data',chunk=>{
    pending+=chunk;let at;while((at=pending.indexOf('\n'))>=0){const line=pending.slice(0,at);pending=pending.slice(at+1);if(!line)continue;
-    const sample=JSON.parse(line);if(sample.totalBytes>peak){peak=sample.totalBytes;report.peakSample=sample;}report.samples=(report.samples||0)+1;
-    if(sample.totalBytes>(report.observerRaised?16_000_000_000:memoryLimit)){
-      memoryViolation={at:Date.now(),sample,grants:[...liveGrants.values()]};
-    }
+    const sample=JSON.parse(line);memory.sample(sample,[...liveGrants.values()]);
+    peak=memory.peakBytes;memoryViolation=memory.violation;report.samples=(report.samples||0)+1;
     fs.appendFileSync(path.join(out,'memory.jsonl'),line+'\n');
    }
   });
@@ -117,7 +117,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
    });
    const started=Date.now();let cells;
    while(Date.now()-started<(phase0&&screen?5000:probe?60000:120000)){
-    if(memoryViolation){report.memoryViolation=memoryViolation;throw Error('STOP: whole-app memory exceeded chosen ceiling');}
+    if(memoryViolation){report.memoryViolation=memoryViolation;throw Error('STOP: '+memoryViolation.reason);}
     cells=await lib.evaluate(paths=>paths.map(p=>{const c=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===p);return {path:p,presented:!!c?.querySelector('canvas[data-picture-key]'),needsMemory:c?.querySelector('.library-memory-needed')?.textContent,error:c?.querySelector('.library-picture-error')?.title||c?.querySelector('.picture-failed')?.textContent};}),targets);
     if(cells.length&&cells.every(c=>c.presented||c.error||c.needsMemory))break;
     await sleep(300);
@@ -130,7 +130,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
    report.beforeRaise=await lib.evaluate(()=>HDRLibraryGrants.snapshot());
    report.beforeRaiseNotices=await lib.evaluate(()=>[...document.querySelectorAll('.library-memory-needed')].map(e=>e.textContent));
    await api('memory-setting',{bytes:16_000_000_000});
-   report.observerRaised=true;
+   report.observerRaised=true;memory.ceiling=16_000_000_000;
    report.raisedAt=Date.now();
    await lib.waitForFunction(()=>new Set(coldEvents.filter(e=>e.stage==='picture_navigation_to_present'&&e.picture_size==='thumbnail').map(e=>e.path)).size===HDRLibrary.getSnapshot().count,null,{timeout:90000});
    report.resumed=await lib.evaluate(()=>({notices:document.querySelectorAll('.library-memory-needed').length,grants:HDRLibraryGrants.snapshot()}));
@@ -151,6 +151,20 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
    await sleep(2500);
    report.returnCells=await lib.evaluate(()=>[...document.querySelectorAll('#grid-space .library-cell')].map(c=>({path:c.dataset.path,presented:!!c.querySelector('canvas[data-picture-key]')})));
   }
+  // Observe ordinary cache trimming after development and saving have drained.
+  // Thirty seconds is a measurement window, not a new production deadline.
+  const settleStart=Date.now();
+  for(;;){
+   if(memoryViolation)throw Error('STOP: '+memoryViolation.reason);
+   const grants=await lib.evaluate(()=>HDRLibraryGrants.snapshot());
+   const running=grants.jobs.filter(g=>g.state==='running'||g.type==='granted');
+   if(!running.length&&memory.last?.totalBytes<=memory.ceiling-600_000_000){report.settledAfterWork=true;break;}
+   if(Date.now()-settleStart>=30000)break;
+   await sleep(500);
+  }
+  report.settleObservedMs=Date.now()-settleStart;
+  report.grantsAtEnd=await lib.evaluate(()=>HDRLibraryGrants.snapshot());
+  Object.assign(report,memory.report());
   if(diagnostics){await diagnostics().catch(error=>report.memoryDiagnosticError=String(error));diagnostics=null;}
   Object.assign(report,await lib.evaluate(()=>({events:coldEvents,allocations:coldAllocations,snapshot:HDRLibrary.getSnapshot(),queue:HDRLibraryScenes.snapshot()})));
   report.lock=await api('lock-metrics',{});
@@ -159,7 +173,8 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   assert.ok((report.allocations||[]).every(a=>a.peak<=a.reserved),'Actual GPU allocation must fit its reservation');
   assert.ok(!report.memoryRequests.some(r=>r.error),'Memory endpoint must not time out');
   assert.ok(report.samples>0&&!report.observerError,'Independent memory observer must work');
-  assert.ok(peak<=(report.observerRaised?16_000_000_000:memoryLimit),'Whole-app memory must remain below chosen ceiling');
+  assert.ok(!memory.violation,'Whole-app memory must respect ceiling + 10% and the system reserve');
+  assert.ok(report.settledAfterWork,'Work must finish and whole-app memory settle below ceiling minus 600 MB');
   assert.deepEqual(report.errors,[]);
   if(aceh)assert.equal(report.snapshot.count,names.length,'AppleDouble ._ files must not be listed');
  }catch(e){report.error=String(e.stack||e);process.exitCode=1;
@@ -167,9 +182,9 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
  }
  finally{
   stopping=true;clearInterval(poll);if(activePoll)await activePoll;
-  observer?.kill();report.peakBytes=peak;
+  observer?.kill();Object.assign(report,memory.report());
   checkProjects(before);report.protectedProjectsUnchanged=true;
-  const log=path.join(process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA||'','logs/backend.log');if(fs.existsSync(log))fs.copyFileSync(log,path.join(out,'backend.log'));
+  const log=path.join(global.HDRFinisherElectronTestHarness.userDataDirectory||process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA||'','logs/backend.log');if(fs.existsSync(log))fs.copyFileSync(log,path.join(out,'backend.log'));
   report.results=(report.screens||[]).flatMap(s=>s.cells.map(c=>({...c,screen:s.screen,requests:(report.events||[]).filter(e=>e.path===c.path&&e.stage==='picture_navigation_to_present'&&e.view==='grid').map(e=>({request:e.request,size:e.picture_size,ms:e.duration_ms})),failures:(report.events||[]).filter(e=>e.path===c.path&&/development_(failed|restart|outcome)$/.test(e.stage))})));
   const quick=(report.events||[]).filter(e=>e.stage==='picture_navigation_to_present'&&e.picture_size==='camera preview').map(e=>e.duration_ms).sort((a,b)=>a-b);report.quickMs={count:quick.length,p50:quick[Math.floor(quick.length*.5)],p95:quick[Math.floor(quick.length*.95)],max:quick.at(-1)};
   const visible=new Set(report.screens[0]?.visibleTargets || []);
