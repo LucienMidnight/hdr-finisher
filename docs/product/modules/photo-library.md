@@ -4,6 +4,16 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 31 Part C baseline — captured; implementation pending
+
+The disposable edited-photo baseline is in `codebase/output/part-c-edited/`:
+grid, filmstrip and five Single 2560 captures covering masks, many locals,
+Film Look, Denoise, Retouch and a virtual copy. Capture tools are committed;
+source behavior remains unchanged. Steve reported obvious VRAM corruption in
+the fifth picture; a repeat still has artifacts. Part C remains open.
+
+## October 31 phase 3c.2 Part B:
+
 ## October 31 phase 3c.2 Part B: GPU work in the Library scheduler — built and measured
 
 Library developments and draws now use the one scheduler on branch

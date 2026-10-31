@@ -1607,6 +1607,24 @@ Evidence: `codebase/output/cold-mixed/aceh-3c2-partb-{one,two}/report.json`,
 `codebase/output/release-checks/`, `codebase/output/library-gpu-recovery/`,
 `codebase/output/phase3a-grade/report.json`.
 
+### 7.11 Part C: edited baseline captured; implementation and acceptance pending (October 31)
+
+Before any scene change, `tools/capture-library-edited.cjs --baseline` captured
+five variants from disposable copies of the four-mask and fifty-local projects:
+masks, many locals, Film Look with Denoise, a virtual copy and active Retouch.
+Pictures and manifest: `codebase/output/part-c-edited/`. All five Single views
+reached edge 2560; grid and filmstrip captured; protected project hashes checked.
+The capture uses one reusable RAW under output/test-photos and removes its
+sidecar afterwards. A canvas-stability capture timeout was corrected. Steve
+observed VRAM corruption in the fifth picture; the unchanged-code capture was
+rerun once and still contains obvious bright artifacts. Preserve this caveat
+when judging pairs. No scene behavior changed in this capture commit.
+
+Comparison allowance: mean Delta E 2000 below 1 and p99.9 at most 3, with
+visual review of differences (same perceptual limits used in phase 3c).
+Sparse obvious hardware corruption is identified separately, as Steve requested.
+Focused validation: completed capture, five 2560 views, no page errors.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
