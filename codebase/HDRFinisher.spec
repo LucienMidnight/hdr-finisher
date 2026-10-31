@@ -30,6 +30,17 @@ lensfun_datas, lensfun_binaries, lensfun_hiddenimports = collect_all("lensfunpy"
 # Native hue selection uses OpenCV filtering. collect_all retains the wheel's
 # full LICENSE.txt and LICENSE-3RD-PARTY.txt as well as its native libraries.
 cv2_datas, cv2_binaries, cv2_hiddenimports = collect_all("cv2")
+vips_datas, vips_binaries, vips_hiddenimports = collect_all("pyvips")
+# The binary wheel installs a top-level extension/DLL, not a pyvips_binary
+# import package. Resolve its installed files rather than collecting a name
+# which does not exist (and would silently omit the native decoder).
+from importlib.metadata import distribution
+vips_distribution = distribution("pyvips-binary")
+vips_native_binaries = [(str(vips_distribution.locate_file(file)), ".")
+    for file in vips_distribution.files if str(file).endswith((".dll", ".pyd", ".so", ".dylib"))]
+datas += vips_datas
+cv2_binaries += vips_binaries + vips_native_binaries
+cv2_hiddenimports += vips_hiddenimports + ["_libvips"]
 datas += cv2_datas
 datas += rawpy_datas + lensfun_datas
 

@@ -8,6 +8,7 @@ const DEFAULT_APPLICATION_PREFERENCES = Object.freeze({
   libraryTestPatterns: false,
   navigationWindow: "auto",
   maximumGpuMemoryGiB: "auto",
+  appMemoryBytes: null,
   folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
   shortcuts: {},
   shortcutPresets: {},
@@ -45,6 +46,8 @@ function sanitizeApplicationPreferences(value = {}) {
     libraryTestPatterns: value.libraryTestPatterns === true,
     gradeAutosave: value.gradeAutosave !== false,
     navigationWindow: ["auto", "always", "off"].includes(value.navigationWindow) ? value.navigationWindow : "auto",
+    appMemoryBytes: Number.isSafeInteger(value.appMemoryBytes) && value.appMemoryBytes >= 2_500_000_000
+      ? Math.min(value.appMemoryBytes, Math.max(2_500_000_000, require("node:os").totalmem()-Math.max(2_000_000_000,Math.floor(require("node:os").totalmem()/10)))) : null,
     maximumGpuMemoryGiB: (() => {
       if (value.maximumGpuMemoryGiB === "auto") return "auto";
       const numeric = Number(value.maximumGpuMemoryGiB);

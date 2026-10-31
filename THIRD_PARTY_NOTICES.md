@@ -192,3 +192,12 @@ The build fetcher verifies pinned SHA-512 package integrity before extraction.
 macOS uses /usr/bin/perl; Debian declares perl as a dependency. Flatpak ships
 Perl 5.42.0 from CPAN, under the Artistic/GPL dual terms, with Artistic and
 Copying under /app/share/licenses/io.github.LucienMidnight.hdr-finisher.
+
+Library reduced reading uses pyvips 3.2.0 (MIT), with the dynamically loaded
+libvips 8.18.7 binary wheel (LGPL-3.0-or-later). The unmodified wheel's notices
+are retained in `codebase/bin/licenses/pyvips-MIT.txt` and
+`codebase/bin/licenses/pyvips-binary-LGPL-3.0.txt`, included by both backend
+packaging specifications. Source and build instructions are available at
+https://github.com/libvips/pyvips and https://github.com/libvips/pyvips-binary.
+The native library remains replaceable; no libvips source is vendored or
+modified. Existing Grade, Proof and export decoders do not use this route.

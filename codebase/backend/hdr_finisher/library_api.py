@@ -535,7 +535,7 @@ def create_library_router(worker, browser, store=None):
                     inputs = live_recipe(document)
                     try:
                         if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
-                            header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs)
+                            header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs, command.edge)
                         elif Path(path).suffix.lower() == ".dng":
                             from . import library_dng
                             if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
@@ -752,6 +752,27 @@ def create_library_router(worker, browser, store=None):
     async def memory_snapshot():
         from .app_memory import snapshot
         return await asyncio.get_running_loop().run_in_executor(_memory_sampler, lambda: snapshot(cached_only=True))
+
+    @router.get("/memory-setting")
+    def memory_setting():
+        from . import app_memory
+        return dict(app_memory.memory_options(), ceilingBytes=app_memory.CEILING)
+
+    @router.post("/memory-setting")
+    async def memory_setting_update(command: dict):
+        from . import app_memory
+        chosen = command.get("bytes")
+        options = app_memory.memory_options()
+        if chosen is not None and (type(chosen) is not int or not options["minimumBytes"] <= chosen <= options["maximumBytes"]):
+            raise HTTPException(400, "Choose a memory limit within this computer's range.")
+        previous=app_memory.CEILING
+        value=app_memory.configure(chosen)
+        scheduler.set_ceiling(value["ceilingBytes"])
+        worker._send(dict(command="memory-budget", bytes=value["ceilingBytes"]))
+        if value["ceilingBytes"] < previous:
+            # Same coalesced asynchronous trim path as measured pressure.
+            await memory_reclaim({"pressure":"moderate"})
+        return value
 
     @router.post('/memory-report')
     def memory_report(report: dict):

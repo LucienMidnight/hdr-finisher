@@ -1,7 +1,7 @@
 """Header-only pixel counts and Steve's October 30 bytes-per-pixel table."""
 from pathlib import Path
 from .library_scheduler import MINIMUM
-from .app_memory import CEILING
+from . import app_memory
 
 RATES = {".jpg":23, ".jpeg":23, ".hdr":23, ".png":28, ".tif":28,
          ".tiff":28, ".dng":28, ".exr":38, ".pfm":38, ".avif":38,
@@ -48,7 +48,9 @@ def dimensions(path):
         register_heif_opener()
     try:
         from PIL import Image
-        with Image.open(path) as source:
+        from PIL import JpegImagePlugin, PngImagePlugin
+        opener = JpegImagePlugin.JpegImageFile if path.suffix.lower() in {".jpg", ".jpeg"} else PngImagePlugin.PngImageFile if path.suffix.lower() == ".png" else Image.open
+        with opener(path) as source:
             return source.size
     except (OSError, ValueError):
         import exifread
@@ -73,7 +75,8 @@ def estimate_pixels(suffix, width, height, kind="source"):
     return max(MINIMUM, rate*int(width)*int(height))
 
 
-def estimate_details(path, kind="source", ceiling=CEILING):
+def estimate_details(path, kind="source", ceiling=None):
+    ceiling = app_memory.CEILING if ceiling is None else ceiling
     try:
         width, height = dimensions(path)
         if width <= 0 or height <= 0:
@@ -102,5 +105,5 @@ def estimate_details(path, kind="source", ceiling=CEILING):
         return ceiling, "unknown size"
 
 
-def estimate(path, kind="source", ceiling=CEILING):
+def estimate(path, kind="source", ceiling=None):
     return estimate_details(path, kind, ceiling)[0]

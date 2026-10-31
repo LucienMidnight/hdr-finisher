@@ -27,7 +27,7 @@ from .projects import validate_saved
 from .render_cache import encode_rgba_proxy_rows
 
 SIDECAR_SUFFIX = ".hdrf"
-PICTURE_VERSION = "library-scene-gpu-views-v7"
+PICTURE_VERSION = "library-scene-reduced-v8"
 CACHE_LIMIT_BYTES = 2 * 1024**3
 _CACHE_LOCKS = [RLock() for _ in range(64)]
 _TRIM_LOCK = RLock()
@@ -459,7 +459,12 @@ def original_preview(path, edge):
         raise ValueError("No original quick draw for this format")
     if path.suffix.lower() != ".png" and loader.is_ultrahdr_jpeg(path):
         raise ValueError("Gain-map JPEG needs its HDR interpretation")
-    pixels, metadata = loader._load_with_pillow(path, encoded_samples=True, draft_edge=edge)
+    if path.suffix.lower() == ".png":
+        from .library_reduced import png
+        pixels, metadata = png(path)
+    else:
+        from .library_reduced import jpeg_open
+        pixels, metadata = loader._load_with_pillow(path, encoded_samples=True, draft_edge=edge, image_factory=jpeg_open)
     if metadata.get("needs_color_override") or metadata.get("color_space") != "sRGB":
         raise ValueError("Original quick draw needs resolved SDR colour")
     # Grade's decoder already applied ICC and orientation. Only this temporary
@@ -558,7 +563,12 @@ def embedded_picture(path, edge):
 
 
 def reduced_bitmap(path, edge):
-    with Image.open(path) as source:
+    from .library_reduced import jpeg_open, png
+    if path.suffix.lower() == ".png":
+        pixels, _ = png(path)
+        return reduce_picture(pixels, edge)*np.float32(1/255)
+    opener = jpeg_open if path.suffix.lower() in {".jpg", ".jpeg"} else Image.open
+    with opener(path) as source:
         profile = source.info.get("icc_profile")
         source.draft("RGB", (edge, edge))
         image = ImageOps.exif_transpose(source)
@@ -631,7 +641,7 @@ def decode_picture(path, edge, quality):
             log("picture_source_reduced", path=str(path), duration_ms=(perf_counter()-reduce_started)*1000)
             return pixels, None, {"route": "native-raw" if quality == "native" else "quick-half-raw", "raw_input": True, "raw_start_brightness": brightness,
                 "source_width": transport.shape[1] * (1 if quality == "native" else 2), "source_height": transport.shape[0] * (1 if quality == "native" else 2)}
-    if quality == "fast" and suffix in {".heic", ".heif", ".tif", ".tiff"}:
+    if quality == "fast" and suffix in {".heic", ".heif"}:
         # Only accept a real decoder-supported picture, never reinterpret arbitrary bytes.
         try:
             pixels = reduced_bitmap(path, edge)
@@ -649,14 +659,16 @@ def decode_picture(path, edge, quality):
     elif suffix in {".heic", ".heif"}:
         image, metadata = loader._load_heif(path)
     elif suffix in {".tif", ".tiff"}:
-        image, metadata = loader._load_tiff(path)
+        image, metadata = loader._load_tiff(path, library_edge=5120 if edge <= 2560 else None)
     elif suffix == ".exr":
         image, metadata = loader._load_exr(path)
     elif suffix in {".hdr", ".pfm"}:
         image, metadata = loader._load_hdr_like(path)
     else:
         image = reduced_bitmap(path, edge)
-        with Image.open(path) as header:
+        from PIL import JpegImagePlugin, PngImagePlugin
+        opener = PngImagePlugin.PngImageFile if suffix == ".png" else JpegImagePlugin.JpegImageFile
+        with opener(path) as header:
             width, height = header.size
             if header.getexif().get(274) in {5, 6, 7, 8}:
                 width, height = height, width
@@ -683,11 +695,23 @@ def linear_dng_picture(path, inspection, edge):
     from .dng_color import normalize_camera_samples, build_color_transform, transform_normalized_to_acescg_in_place
     with tifffile.TiffFile(path) as tif:
         series = tif.series[inspection.primary_series_index]
-        decoded = _normalize_layout(series.asarray(), getattr(series, "axes", None))
+        from .library_reduced import read
+        if edge <= 2560 and inspection.primary_page_index is not None:
+            decoded, original = read(path, page=inspection.primary_page_index, edge=10240)
+        else:
+            decoded = _normalize_layout(series.asarray(), getattr(series, "axes", None))
+            original = (inspection.width, inspection.height)
+    from copy import deepcopy
+    reduced_metadata = deepcopy(inspection.metadata)
+    sx,sy=decoded.shape[1]/original[0],decoded.shape[0]/original[1]
+    reduced_metadata["active_area"]=np.rint(np.asarray(reduced_metadata["active_area"])*[sy,sx,sy,sx]).astype(int).tolist()
+    reduced_metadata["default_crop_origin"]=(np.asarray(reduced_metadata["default_crop_origin"])*[sx,sy]).tolist()
+    reduced_metadata["default_crop_size"]=(np.asarray(reduced_metadata["default_crop_size"])*[sx,sy]).tolist()
     color = color_metadata_from_mapping(inspection.metadata)
     working = normalize_camera_samples(decoded, color)
-    working = crop_and_orient(working, inspection.metadata)
-    source_height, source_width = working.shape[:2]
+    working = crop_and_orient(working, reduced_metadata)
+    from .library_dng import geometry
+    source_width, source_height, _, _ = geometry(inspection.metadata, *original)
     working = reduce_picture(working, edge)
     clipped = np.any(working >= .999, axis=2)
     transform_normalized_to_acescg_in_place(working, build_color_transform(color),

@@ -243,11 +243,25 @@ def decode_linear_dng(
     *,
     progress: Callable[[str, str], None] | None = None,
     cancelled: Callable[[], bool] | None = None,
+    library_edge: int | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     if inspection.route is not DngRoute.LINEAR_DNG:
         detail = inspection.rejection.message if inspection.rejection else inspection.route.value
         raise LinearDngError(f"Experimental DNG is not accepted: {detail}")
     _raise_if_cancelled(cancelled)
+    if library_edge is not None:
+        library_edge = max(10240, library_edge)
+    geometry_metadata = inspection.metadata
+    reduced = library_edge is not None and inspection.primary_page_index is not None and not (inspection.required_opcodes or inspection.optional_opcodes) and inspection.metadata.get("sdr_preview_series_index") is None
+    if reduced:
+        from copy import deepcopy
+        geometry_metadata = deepcopy(inspection.metadata)
+        from .library_reduced import sample_size
+        sw,sh=sample_size(inspection.width,inspection.height,library_edge)
+        sx,sy=sw/inspection.width,sh/inspection.height
+        geometry_metadata["active_area"]=np.rint(np.asarray(geometry_metadata["active_area"])*[sy,sx,sy,sx]).astype(int).tolist()
+        geometry_metadata["default_crop_origin"]=(np.asarray(geometry_metadata["default_crop_origin"])*[sx,sy]).tolist()
+        geometry_metadata["default_crop_size"]=(np.asarray(geometry_metadata["default_crop_size"])*[sx,sy]).tolist()
     try:
         import tifffile
 
@@ -261,16 +275,20 @@ def decode_linear_dng(
                     progress("dng_sdr_preview", "Experimental DNG Import: decoding embedded SDR rendition")
                 preview_series = tif.series[int(preview_series_index)]
                 preview = _normalize_layout(preview_series.asarray(), getattr(preview_series, "axes", None))
-                preview = crop_and_orient(preview, inspection.metadata)
+                preview = crop_and_orient(preview, geometry_metadata)
                 sdr_reference = _decode_srgb_reference(preview, cancelled=cancelled)
                 del preview
             if progress:
                 progress("dng_decode", "Experimental DNG Import: decoding full-resolution primary")
-            if bool(page.is_memmappable):
+            if reduced:
+                from .library_reduced import read
+                decoded, _ = read(path,page=inspection.primary_page_index or 0,edge=library_edge)
+            elif bool(page.is_memmappable):
                 decoded = tifffile.memmap(path, series=inspection.primary_series_index, mode="r")
             else:
                 decoded = page.asarray()
-            decoded = _normalize_layout(decoded, getattr(tif.series[inspection.primary_series_index], "axes", None))
+            if not reduced:
+                decoded = _normalize_layout(decoded, getattr(tif.series[inspection.primary_series_index], "axes", None))
             _raise_if_cancelled(cancelled)
 
             color_metadata = color_metadata_from_mapping(inspection.metadata)
@@ -304,7 +322,7 @@ def decode_linear_dng(
                 ),
                 cancelled=cancelled,
             )
-            working = crop_and_orient(working, inspection.metadata)
+            working = crop_and_orient(working, geometry_metadata)
             image = np.ascontiguousarray(working, dtype=np.float32)
             if sdr_reference is not None and sdr_reference.shape != image.shape:
                 sdr_reference = None
@@ -367,6 +385,10 @@ def decode_linear_dng(
     }
     if sdr_reference is not None:
         metadata["sdr_reference_image"] = sdr_reference
+    if reduced:
+        from .library_dng import geometry
+        width,height,_,_=geometry(inspection.metadata,inspection.width,inspection.height)
+        metadata.update(source_width=width,source_height=height)
     return image, metadata
 
 

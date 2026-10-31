@@ -40,7 +40,7 @@ def test_waiting_now_prevents_lower_work_and_smaller_same_class_overtaking():
 
 def test_oversized_job_runs_alone():
     s = fresh(GB)
-    big = ask(s, "big", 3*GB)
+    big = ask(s, "big", 2*GB)
     small = ask(s, "small", FAST_BYTES)
     assert big.granted is not None and big.alone
     assert small.granted is None

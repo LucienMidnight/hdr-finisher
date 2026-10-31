@@ -68,6 +68,7 @@ def load_image(
     cancelled: Callable[[], bool] | None = None,
     retained_session_bytes: int = 0,
     hdr_reference_white_nits: int = 203,
+    library_edge: int | None = None,
 ) -> tuple[np.ndarray, SourceImageDescriptor, dict[str, Any], Any, np.ndarray | None]:
     from .file_gate import decode_suffix
     suffix = decode_suffix(path)  # by contents when they differ from the extension
@@ -91,11 +92,19 @@ def load_image(
         elif suffix in {".png", ".jpg", ".jpeg", ".bmp"}:
             if progress:
                 progress("decoding_bitmap", "Decoding full-resolution bitmap")
-            image, metadata = _load_with_pillow(path)
+            if library_edge is not None and suffix == ".png":
+                from .library_reduced import png
+                samples, metadata = png(path)
+                image = samples.astype(np.float32)*np.float32(1/255)
+            elif library_edge is not None and suffix in {".jpg", ".jpeg"}:
+                from .library_reduced import jpeg_open
+                image, metadata = _load_with_pillow(path, draft_edge=5120, image_factory=jpeg_open)
+            else:
+                image, metadata = _load_with_pillow(path)
         elif suffix in {".tif", ".tiff"}:
             if progress:
                 progress("decoding_tiff", "Decoding full-resolution TIFF")
-            image, metadata = _load_tiff(path)
+            image, metadata = _load_tiff(path, library_edge=library_edge)
         elif suffix == ".exr":
             if progress:
                 progress("decoding_exr", "Decoding full-resolution OpenEXR")
@@ -116,7 +125,7 @@ def load_image(
             inspection = inspect_dng(path, retained_session_bytes=retained_session_bytes)
             if inspection.route is DngRoute.LINEAR_DNG:
                 image, metadata = decode_linear_dng(
-                    path, inspection, progress=progress, cancelled=cancelled
+                    path, inspection, progress=progress, cancelled=cancelled, **({"library_edge":library_edge} if library_edge is not None else {})
                 )
             elif inspection.route is DngRoute.MOSAICED_RAW_DNG:
                 image, metadata = decode_raw(
@@ -235,8 +244,8 @@ def load_image(
     descriptor = SourceImageDescriptor(
         filename=path.name,
         suffix=suffix,
-        width=int(normalized.shape[1]),
-        height=int(normalized.shape[0]),
+        width=int(metadata.get("source_width",normalized.shape[1])) if library_edge is not None else int(normalized.shape[1]),
+        height=int(metadata.get("source_height",normalized.shape[0])) if library_edge is not None else int(normalized.shape[0]),
         channels=int(normalized.shape[2]),
         dtype=str(normalized.dtype),
         source_color_space=metadata.get("source_color_space_label", metadata.get("color_space")),
@@ -289,16 +298,24 @@ def _linear_dng_library_exposure_ev(image: np.ndarray) -> float:
     return round(metered_exposure_ev, 3)
 
 
-def _load_with_pillow(path: Path, *, encoded_samples: bool = False, draft_edge: int | None = None) -> tuple[np.ndarray, dict[str, Any]]:
+def _load_with_pillow(path: Path, *, encoded_samples: bool = False, draft_edge: int | None = None, image_factory=None) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         from PIL import Image, ImageOps
     except ImportError as exc:
         raise LoaderError("Pillow is required for bitmap input formats.") from exc
 
-    with Image.open(path) as img:
+    with (image_factory or Image.open)(path) as img:
         metadata = dict(img.info)
+        if draft_edge is not None:
+            width,height=img.size
+            if img.getexif().get(274) in {5,6,7,8}: width,height=height,width
+            metadata.update(source_width=width,source_height=height)
         if draft_edge is not None and img.format == "JPEG":
-            img.draft("RGB",(draft_edge,draft_edge))
+            if image_factory is not None:
+                from .library_reduced import jpeg_draft
+                jpeg_draft(img, draft_edge)
+            else:
+                img.draft("RGB",(draft_edge,draft_edge))
         oriented = ImageOps.exif_transpose(img)
         icc_profile = metadata.get("icc_profile")
         if icc_profile:
@@ -334,7 +351,7 @@ def _load_with_pillow(path: Path, *, encoded_samples: bool = False, draft_edge: 
     return normalized, metadata
 
 
-def _load_tiff(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
+def _load_tiff(path: Path, *, library_edge: int | None = None) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         import tifffile
     except ImportError as exc:
@@ -343,8 +360,13 @@ def _load_tiff(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
     with tifffile.TiffFile(path) as tif:
         series = tif.series[0]
         from .cpu_budget import logical_cpus
-        array = series.asarray(maxworkers=logical_cpus())
-        array = _normalize_tiff_layout(array, getattr(series, "axes", None))
+        if library_edge is not None:
+            from .library_reduced import read
+            array, _ = read(path, edge=library_edge)
+        else:
+            array = series.asarray(maxworkers=logical_cpus())
+        if library_edge is None:
+            array = _normalize_tiff_layout(array, getattr(series, "axes", None))
         page = tif.pages[0]
         metadata = {
             "bit_depth": str(array.dtype),
@@ -352,6 +374,7 @@ def _load_tiff(path: Path) -> tuple[np.ndarray, dict[str, Any]]:
             "transfer_function": None,
             "photometric": str(getattr(page, "photometric", "unknown")),
             "series_axes": str(getattr(series, "axes", "")),
+            **({"source_width":int(page.imagewidth),"source_height":int(page.imagelength)} if library_edge is not None else {}),
             "needs_color_override": True,
         }
         if getattr(page, "tags", None) is not None:

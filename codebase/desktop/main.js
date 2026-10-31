@@ -312,6 +312,7 @@ async function startBackend() {
     cwd: command.cwd,
     env: {
       ...process.env,
+      HDR_FINISHER_MEMORY_BYTES: applicationPreferences.appMemoryBytes == null ? "" : String(applicationPreferences.appMemoryBytes),
       HDR_FINISHER_DESKTOP_SECRET: authoringSecret,
       HDR_FINISHER_DESKTOP_PID: String(process.pid),
       HDR_FINISHER_DESKTOP_CONTROL_SECRET: controlSecret,
@@ -649,8 +650,16 @@ function registerIpc() {
   handle("desktop:list-grading-presets", (groupId) => listGradingPresets(groupId));
   handle("desktop:save-grading-preset", (preset) => saveGradingPreset(preset));
   handle("desktop:delete-grading-preset", (presetId) => deleteGradingPreset(presetId));
-  handle("desktop:set-preferences", (value) => {
-    applicationPreferences = sanitizeApplicationPreferences(value);
+  handle("desktop:set-preferences", async (value) => {
+    const next = sanitizeApplicationPreferences(value);
+    if (next.appMemoryBytes !== applicationPreferences.appMemoryBytes) {
+      const response = await fetch(`${backend.url}/api/library/memory-setting`, {
+        method:"POST", headers:{"Content-Type":"application/json", "X-HDR-Finisher-Token":backend.authoringSecret},
+        body:JSON.stringify({bytes:next.appMemoryBytes}),
+      });
+      if (!response.ok) throw Error(await response.text());
+    }
+    applicationPreferences = next;
     const library = windows.get("library")?.window;
     if (library && !library.isDestroyed()) library.webContents.send("desktop:library-window", { action: "theme", theme: applicationPreferences.theme });
     renderingMode = applicationPreferences.renderingMode;

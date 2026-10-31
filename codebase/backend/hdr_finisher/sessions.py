@@ -271,6 +271,7 @@ class SessionStore:
         progress: Callable[[str, str], None] | None = None,
         cancelled: Callable[[], bool] | None = None,
         hdr_reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS,
+        library_edge: int | None = None,
     ) -> LoadedSession:
         try:
             resolved_raw_settings = raw_import_settings or RawImportSettings()
@@ -293,6 +294,7 @@ class SessionStore:
                     cancelled=cancelled,
                     retained_session_bytes=self._retained_session_bytes(),
                     hdr_reference_white_nits=hdr_reference_white_nits,
+                    **({"library_edge":library_edge} if library_edge is not None else {}),
                 )
                 prepared_fingerprint = fingerprint.result()
             final_stat = source_path.stat()

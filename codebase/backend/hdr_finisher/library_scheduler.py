@@ -90,6 +90,16 @@ class Scheduler:
                 for notify in self.listeners:
                     notify(dict(type="grade", name=grade_name, bytes=grade_bytes))
 
+    def set_ceiling(self, ceiling):
+        with self.lock:
+            self.ceiling = int(ceiling)
+            # Unknown dimensions track the current whole budget, not the value
+            # captured when this file first asked for a grant.
+            for job in self.jobs.values():
+                if job.granted is None and job.size_reason == "unknown size":
+                    job.estimate = self.ceiling
+            self._pump()
+
     def heartbeat(self, owner):
         with self.lock:
             self.owners[owner] = self.clock()
@@ -209,7 +219,7 @@ class Scheduler:
         with self.lock:
             return [dict(self._message(j, "granted" if j.granted is not None else "waiting"),
                          state="running" if j.granted is not None else "waiting",
-                         stage=("memory in use by the photo open in Grade" if j.granted is None and j.reason=="paused for Grade" else f"not enough free memory on this computer (needs {j.estimate/1e9:.2f} GB, {(self.available or 0)/1e9:.2f} GB free)" if j.granted is None and j.reason=="system reserve" else "Developing photo")) for j in self.jobs.values()]
+                         stage=(f"Needs about {j.estimate/1e9:.1f} GB. Raise Memory the app may use in Settings." if j.granted is None and j.reason=="needs more memory" else "memory in use by the photo open in Grade" if j.granted is None and j.reason=="paused for Grade" else f"not enough free memory on this computer (needs {j.estimate/1e9:.2f} GB, {(self.available or 0)/1e9:.2f} GB free)" if j.granted is None and j.reason=="system reserve" else "Developing photo")) for j in self.jobs.values()]
 
     def disconnect(self, owner):
         with self.lock:
@@ -223,7 +233,7 @@ class Scheduler:
 
     def _message(self, job, type):
         return dict(type=type, id=job.id, path=job.path, reason=job.reason if type=="waiting" else "",
-                    estimate=job.estimate, free=self.available, grade=self.grade_name,
+                    estimate=job.estimate, ceiling=self.ceiling, free=self.available, grade=self.grade_name,
                     cls=job.cls, alone=job.alone, saving=job.saving)
 
     def _wait(self, job, reason):
@@ -254,6 +264,8 @@ class Scheduler:
                 continue
             if job.cls == "Grade":
                 pass
+            elif job.estimate > self.ceiling:
+                reason = "needs more memory"
             elif headroom is not None and job.estimate > headroom:
                 reason = "system reserve"
             elif job.kind == "upkeep" and (self.grade_bytes or any(CLASSES[j.cls] < CLASSES[job.cls] for j in running)
@@ -307,7 +319,7 @@ class Scheduler:
             if reason:
                 job.floor = job.alone = False
                 self._wait(job, reason)
-                if job.cls == "now" and reason not in ("paused for Grade", "system reserve"):
+                if job.cls == "now" and reason not in ("paused for Grade", "system reserve", "needs more memory"):
                     now_waiting = True
                 continue
             job.granted = self.clock()

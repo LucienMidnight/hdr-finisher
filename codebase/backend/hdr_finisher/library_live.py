@@ -41,7 +41,7 @@ def recipe(document):
 def _quality(inputs):
     from .loader import SOURCE_DECODER_VERSION, SOURCE_COLOR_TRANSFORM_VERSION
     identity = {"recipe": inputs, "decoder": SOURCE_DECODER_VERSION,
-                "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-v3"}
+                "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-reduced-v4"}
     return "live-scene-v2:" + sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
@@ -106,7 +106,8 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
         source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
             raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
             interpretation_override=SourceInterpretationOverride.model_validate(inputs["interpretation_override"]),
-            hdr_reference_white_nits=inputs["hdr_reference_white_nits"])
+            hdr_reference_white_nits=inputs["hdr_reference_white_nits"],
+            library_edge=5120 if edge <= 2560 and not inputs.get("repairs") else None)
     preparation_ms = (perf_counter() - prepared_at) * 1000
     if document:
         saved = validate_saved(EditDocument, document)
@@ -136,7 +137,7 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     for size in sorted({640, 2560, edge}, reverse=True):
         metadata = {"route": "library-live", "renderer": "cpu", "raw_input": True,
             "starting_look": source.starting_adjustments().model_dump(mode="json"),
-            "source_width": source.image.shape[1], "source_height": source.image.shape[0],
+            "source_width": source.source.width, "source_height": source.source.height,
             "source_fingerprint_sha256": source.source_fingerprint_sha256,
             "source_timings_ms": source.metadata.get("import_timings_ms")}
         from .retouch_routes import records, notice

@@ -774,6 +774,7 @@
     const forward = grid.scrollTop >= lastGridTop; lastGridTop = grid.scrollTop;
     const first = forward ? layout.last : Math.max(0, layout.first - screen);
     const last = forward ? Math.min(state.photos.length, layout.last + screen) : layout.first;
+    paintMemoryNeeds();
   }
   let lastFilmLeft = 0;
   let FILM_PITCH = 119; // filmstrip tile width plus the 3px gap
@@ -2080,6 +2081,21 @@
       if (event.key === "F11" && libraryDesktop) { event.preventDefault(); void libraryDesktop.performWindowAction("fullscreen"); }
     });
   }
+  function paintMemoryNeeds() {
+    const jobs=window.HDRLibraryGrants.snapshot().jobs;
+    for(const cell of document.querySelectorAll(".library-cell")){
+      const job=jobs.filter(j=>j.path===cell.dataset.path && j.reason==="needs more memory").sort((a,b)=>b.estimate-a.estimate)[0];
+      let notice=cell.querySelector(".library-memory-needed");
+      if(!job){notice?.remove();continue;}
+      if(!notice){notice=document.createElement("div");notice.className="library-memory-needed";notice.style.cssText="position:absolute;inset:auto 4px 24px;padding:6px;background:var(--panel,#222);color:var(--text,#eee);font-size:12px;z-index:4;white-space:normal";cell.append(notice);}
+      notice.textContent=job.stage;notice.title=job.stage;
+      notice.style.cursor="pointer";notice.setAttribute("role","button");notice.tabIndex=0;
+      const settings=()=>window.parent.HDRApplicationShell?.openSettings("performance");
+      notice.onclick=event=>{event.stopPropagation();settings();};
+      notice.onkeydown=event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();settings();}};
+    }
+  }
+  window.addEventListener("library-work-changed",paintMemoryNeeds);
   // Read-only status for the focused interaction driver; no test-only behavior.
   HDRLibraryStopwatch("ready");
   window.HDRLibrary = Object.freeze({ browse, refreshPins, getSnapshot: () => ({ ram:HDRLibraryRAM.snapshot(), path: state.path, collection: state.collection, albums: albums.names(), rules: (state.filters.rules || []).length, indexing: state.indexing, facts: selected() ? { camera: selected().camera, lens: selected().lens, iso: selected().iso, indexed: !!selected().indexed, albums: selected().albums || [] } : null, count: state.photos.length,

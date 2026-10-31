@@ -272,11 +272,17 @@ class LibraryWorker:
         # Proposed for Steve: 5x phase-0 maxima, rounded up, with a five-second
         # minimum. Unknown types use the slowest measured route, not infinity.
         suffix = Path(path or "").suffix.lower()
-        return {".dng": 135, ".avif": 81, ".exr": 16, ".png": 15,
+        baseline = {".dng": 135, ".avif": 81, ".exr": 16, ".png": 15,
                 ".jxl": 6, ".raf": 17, ".heic": 9, ".heif": 9,
                 ".jpg": 5, ".jpeg": 5, ".tif": 5, ".tiff": 5,
                 ".arw": 5, ".cr2": 5, ".cr3": 5, ".orf": 5,
                 ".rw2": 5, ".nef": 5, ".hdr": 5, ".pfm": 5}.get(suffix, 135)
+        try:
+            from .library_estimates import dimensions
+            width,height=dimensions(path)
+            return baseline * max(1., width*height/24_000_000)
+        except Exception:
+            return baseline
 
     def _set_aside(self, key, reason):
         request = self._requests.pop(key, {})
@@ -679,6 +685,10 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
             with condition:
                 if message["command"] == "stop":
                     break
+                if message['command']=='memory-budget':
+                    from . import app_memory
+                    app_memory.configure(message['bytes'])
+                    continue
                 if message['command']=='memory-pressure':
                     from . import app_memory
                     # Keep receiving owner replies while a cache waits for its lock.

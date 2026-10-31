@@ -41,8 +41,16 @@ def machine_memory():
     except (ValueError,AttributeError): return 8*1024**3
 
 
-def budgets(ram=None):
-    ceiling=max(2_500_000_000,min(4_000_000_000,int((ram or machine_memory())//4)))
+def memory_options(ram=None):
+    ram = ram or machine_memory()
+    return dict(minimumBytes=2_500_000_000,
+        maximumBytes=max(2_500_000_000, ram-max(2_000_000_000, ram//10)),
+        defaultBytes=max(2_500_000_000,min(4_000_000_000,ram//4)), ramBytes=ram)
+
+
+def budgets(ram=None, chosen=None):
+    options=memory_options(ram)
+    ceiling=options['defaultBytes'] if chosen is None else max(options['minimumBytes'],min(options['maximumBytes'],int(chosen)))
     # Starting memory and working room stay fixed. The fixed thumbnail pool
     # stays fixed too; only the other cache shares shrink on smaller machines.
     scale=max(0,(ceiling-STARTING-WORKING-SHARES['thumbnails']) /
@@ -50,8 +58,17 @@ def budgets(ram=None):
     return ceiling,{key:int(value*(scale if key not in ('thumbnails','working') else 1))
                     for key,value in SHARES.items()}
 
-CEILING, LIMITS = budgets()
+CEILING, LIMITS = budgets(chosen=os.environ.get("HDR_FINISHER_MEMORY_BYTES") or None)
 TARGET = CEILING-WORKING
+
+
+def configure(chosen=None):
+    global CEILING, TARGET, LIMITS
+    ceiling, limits = budgets(chosen=chosen)
+    with _lock:
+        CEILING, TARGET, LIMITS = ceiling, ceiling-WORKING, limits
+        os.environ["HDR_FINISHER_MEMORY_BYTES"] = str(ceiling)
+    return dict(memory_options(), ceilingBytes=ceiling, targetBytes=TARGET)
 
 
 def limit(share): return LIMITS[share]
