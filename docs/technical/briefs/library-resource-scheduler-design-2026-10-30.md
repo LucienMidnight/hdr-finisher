@@ -1588,10 +1588,12 @@ Decided October 30:
     limits. Phase 3c scales them by max(1, source MP/24), still proposed,
     awaiting Steve; giant examples and tradeoffs are in 7.8. Queued work and
     Grade pauses do not consume the limit.
-13. **Bounded-route estimates — measured; proposed, awaiting Steve.** Section
-    7.8 records source peaks and the single authorised comparison. Propose
-    6/8/6/2 MB per source MP for qualified reduced JPEG/PNG/TIFF/linear-DNG
-    routes at >=100 MP. **AVIF 56 MB/MP approved by Steve, October 31**
+13. **Bounded-route estimates — approved by Steve, October 31.** Section
+    7.8 records source peaks and the single authorised comparison. Qualified
+    reduced routes at >=100 MP: JPEG 6, PNG 8, TIFF 6, linear DNG **6** MB per
+    source MP. Codex proposed 2 for linear DNG; Steve chose 6 because the line
+    scan's whole-app increment (1.226 GB, about 4.1 per pixel) is double what 2
+    budgets. Not yet in code; needs a whole-app recheck with varied real files. **AVIF 56 MB/MP approved by Steve, October 31**
     (replaces 38; needs a whole-app ceiling recheck). Lower reduced-route rates
     improve overlap but may underestimate other files; the higher AVIF rate
     reduces overlap but addresses its measured external-decoder overrun.

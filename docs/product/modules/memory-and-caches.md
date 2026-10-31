@@ -43,9 +43,11 @@ photo receipt. Three 192 MP sources verified 4 -> 16 GB resume.
 
 JPEG DCT reduction, sequential PNG/TIFF and a qualified root-page linear-DNG
 route now reduce before Library development. No cache allowance or approved
-estimate changed. Proposed rates, awaiting Steve: JPEG/PNG/TIFF/eligible
-linear DNG 6/8/6/2 MB per MP, restricted to reduced routes >=100 MP. AVIF 56
-**approved by Steve, 2026-10-31** (not yet in code; needs a whole-app recheck).
+estimate changed. **Approved by Steve, 2026-10-31** (not yet in code; each
+needs a whole-app recheck): reduced routes >=100 MP use JPEG 6, PNG 8, TIFF 6
+and eligible linear DNG 6 bytes per source pixel. Codex proposed 2 for linear
+DNG; Steve chose 6 because the line scan's measured whole-app increase
+(1.226 GB, about 4.1 per pixel) is double what 2 budgets. AVIF 56 (was 38).
 Source peak increments: 100 MP JPEG/PNG/TIFF 322/569/401 MB; 192 MP
 791/1101/258 MB; line scan 390 MB. The isolated line's **whole-app** increment
 was 1.226 GB, above the 1 GB aim (12.466 s active, within 27 s).
