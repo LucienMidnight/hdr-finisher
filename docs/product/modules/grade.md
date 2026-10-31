@@ -1,5 +1,14 @@
 # Module PRD: Grade
 
+## October 31: long file names stay inside the Metadata rail
+
+Steve saw the line scan's file name, and the "DNG import is experimental"
+note under it, run past the left rail's edge. The name has no spaces, so it
+could not break, and it widened the whole summary section. The summary now
+keeps to the rail's width and long names break anywhere (`styles.css`,
+`.source-summary`). Checked in the page: without the fix the box ended 10 px
+past the rail; with it, inside.
+
 ## October 30: 100% zoom on wide photos
 
 Steve saw the 297 MP line-scan DNG (72,480 × 4,096) disappear with
