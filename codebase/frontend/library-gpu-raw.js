@@ -877,25 +877,40 @@
     for(const key of decodedSources.keys())if(path===null||key.startsWith(path+'|'))dropDecoded(key);
     for(const [key,entry] of directScenes)if(path===null || entry.path===path){entry.dispose();directScenes.delete(key);}
   }
+  // The GPU route gave up for this photo: drop its retained decoded source so
+  // the CPU fallback can claim the source instead of waiting on that claim.
+  function releaseSource(path) {
+    for(const key of decodedSources.keys())if(key.startsWith(path+'|'))dropDecoded(key);
+  }
   function cachedDirect(path,edge,version) {
     return directScenes.get(path+"|"+version)?.variants[edge] || null;
   }
   async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null, gpuDone = () => {}) {
     const begun = performance.now();
     const decodedKey=path+'|'+edge+'|'+sceneIdentity.split(':')[0];
-    let kept=decodedSources.get(decodedKey);
-    if(kept){
-      const check=await fetch('/api/library/live-source/'+kept.token,{method:'POST',signal});
-      decodedSources.delete(decodedKey);clearInterval(kept.renewal);
-      if(!check.ok){await fetch('/api/library/live-source/'+kept.token,{method:'DELETE'}).catch(()=>{});kept=null;}
-    }
-    const sourceJob=liveScene ? kept?.token || crypto.randomUUID().replaceAll("-", "") : null;
+    // Take over a retained decoded source when one exists: renew its claim,
+    // clear its renewal, and release it if the backend no longer honours it.
+    const adoptKept=async()=>{
+      const entry=decodedSources.get(decodedKey);
+      if(!entry)return null;
+      const check=await fetch('/api/library/live-source/'+entry.token,{method:'POST',signal});
+      decodedSources.delete(decodedKey);clearInterval(entry.renewal);
+      if(check.ok)return entry;
+      await fetch('/api/library/live-source/'+entry.token,{method:'DELETE'}).catch(()=>{});
+      return null;
+    };
+    let kept=await adoptKept();
+    let sourceJob=liveScene ? kept?.token || crypto.randomUUID().replaceAll("-", "") : null;
     let retainedSource = false, gpuResult, sourceRenewal, body;
     try {
     // Inspect only the adapter limit; do not wait for pipeline compilation.
     const sourceLimit=await sourceStorageLimit();
     let response, requestWaitMs = 0;
     if(!kept)for (;;) {
+      // A requeued attempt can start before the previous attempt stores its
+      // decoded source. Adopt it here so its held claim is reused, not waited on.
+      const late=await adoptKept();
+      if(late){kept=late;sourceJob=late.token;break;}
       response = await fetch(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", priority:"low", signal,
         headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, grant, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, grant, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
       if(grant && response.headers.get("X-Library-Wait")==="memory")await root.HDRLibraryGrants.wait(grant,signal);
@@ -1157,7 +1172,7 @@
     if(!response.ok)throw Error('GPU scheduling unavailable.');
     return {bytes:Math.max(0,(await response.json()).budget-(640*640*64+64*1024**2)),unified};
   }
-  const exported = Object.freeze({ preflight, cachedDirect, forgetDirect, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant}) });
+  const exported = Object.freeze({ preflight, cachedDirect, forgetDirect, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

@@ -64,7 +64,9 @@ window.HDRLibraryScenes = (() => {
     versions.delete(path);versions.set(path,sourceVersion);
     if(versions.size>1024)versions.delete(versions.keys().next().value);
     const direct = HDRLibraryGpuRaw.cachedDirect?.(path,edge,version);
-    if (direct) { options.onSourceDemand?.(); return direct; }
+    // A retained direct scene reuses the stored development without reading
+    // the disk cache; it is the fastest reuse and reports as a cache hit.
+    if (direct) { options.onSourceDemand?.(); return direct.cache_hit ? direct : {...direct, cache_hit:true}; }
     if (plan.cached) { options.onSourceDemand?.(); return plan.cached; }
     if (options.cachedOnly) return null;
     await options.beforeSource?.();
@@ -130,6 +132,8 @@ window.HDRLibraryScenes = (() => {
         }
         window.HDRLibraryStopwatch?.("picture_source_gpu_fallback",{path,reason:error.message});
         // The structured fallback event above carries the picture labels.
+        // Release the retained GPU source so the CPU route can claim it.
+        HDRLibraryGpuRaw.releaseSource?.(path);
       }
     }
     if (importance() >= 50 || (gpuOnly && importance() > 0)) return null;
