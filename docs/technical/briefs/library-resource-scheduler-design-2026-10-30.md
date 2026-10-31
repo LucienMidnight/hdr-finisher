@@ -1839,6 +1839,36 @@ pair was also inspected visually: detail and colour agree. This round does not
 claim fresh perceptual comparisons for all 17 or Steve's visual acceptance.
 All approved rates, shares, floors, deadlines and limits remain unchanged.
 
+**Final regression checks, committed code `3cf7a9e`, once at the end.**
+Two cold Aceh 48 runs finished their first screens in **13.195 / 13.547 s**
+and their second screens by **19.635 / 20.928 s**. Both first screens remain
+inside the predeclared 5% timing tolerance against Part C. All 30 initially
+visible camera previews appeared by **1.725 / 1.807 s**. Peak whole-app RAM:
+**2.304 / 2.367 GB**, settled below 3.4 GB, reserve untouched. Whole-card GPU
+peaks **4.058 / 4.093 GB**, including the desktop and other applications; these
+are not Library-only allocations. Reports: `output/cold-mixed/aceh-scroll-big-final-1`
+and `aceh-scroll-big-final-2` under `codebase`.
+
+The requested release-runner `library-live-grid.js` and
+`library-gpu-recovery.js` both **pass**, no retries, at `3cf7a9e`.
+Their run directories are
+`output/release-checks/2026-10-31T17-31-27-705Z-84a5ee87675fa723d939` and
+`2026-10-31T17-32-03-973Z-bb59737dae16adf3fbde`.
+Grade coexistence passes: pause 480 ms, ordinary photo 488 ms,
+folder click 1 ms, close 416 ms, resume 58 ms.
+The disposable edit was saved and its original sidecar restored; protected
+project hashes remained unchanged in every run. Report: `output/phase3a-grade`.
+Output remains **14.5 GB** (100 GB limit); all 40 owned temporary profiles and
+failed-run scratch were removed. Reusable photo copies and cited evidence stay.
+
+**Open work:** reproduce the reported pressure/beyond-capacity scroll loss;
+resolve the idle mixed queue without changing an approved number; rerun default
+mixed completion after that fix and verify terminal non-broken outcomes. The
+mixed run above is deliberately recorded as failed, not hidden by successful
+isolated runs. Further slow diagnosis/validation needs a new time block under
+AGENTS.md's roughly-30-minute stop-and-ask rule; no budget increase is proposed
+from the current evidence alone.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with

@@ -18,6 +18,11 @@ finish individually; two JXLs and EXR need source interpretation, RAF needs
 X-Trans support. The complete table, bounds and unfinished acceptance checks are
 in [scheduler design 7.12](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
 
+Final checks on `3cf7a9e`: cold Aceh first screens 13.195 / 13.547 s (inside
+5% tolerance); both release-runner grid/recovery checks and Grade coexistence
+pass. Whole-app RAM 2.304 / 2.367 GB. The default mixed-queue failure remains
+open; these regression passes do not qualify mixed completion.
+
 ## November 1 scroll-back diagnosis — bounded case passes, reported loss still open
 
 On 200 mixed disposable photos, all 96 returning cells from three completed

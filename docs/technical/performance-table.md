@@ -50,6 +50,8 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 | --- | --- | --- | --- | --- |
 | Scroll back to three recently finished screens | Each screen under 0.5 s, no blanks or redevelopment (Oct 31 brief) | 12.4–22.7 ms, 96 cells | Nov 1, scroll diagnosis commit; 200 mixed disposable photos, 2560×1440, 367 MB retained within 512 MiB; `scroll-verified/report.json` | Met for this bounded case; pressure/beyond-capacity loss not reproduced |
 | Isolated previously unfinished phase0 files → finished thumbnail | Default 4 GB / 4.4 GB transient limit | 5.56–19.65 s for the 13 supported files; four explicit source-route refusals in 0.98–1.64 s | Nov 1 big-file fix commit; isolated copies, TIFF saved interpretation retained; AVIF transport peak 3.786 GB | Met individually; mixed default remains 10/27 at 106 s, idle queue blocked |
+| Cold Aceh 48: first / second screen, final scroll/big-file checks | First screen within 5% of Part C (12.98 / 14.26 s) | First 13.195–13.547 s; second 19.635–20.928 s | Nov 1, `3cf7a9e`, two cold 2560×1440 runs; RAM 2.304–2.367 GB, whole-card GPU 4.058–4.093 GB | Met |
+| Cold Aceh: folder open → all 30 visible camera previews | Regression reference | 1.725–1.807 s | Same final pair, `3cf7a9e` | Baseline |
 | Folder open → rows usable | 0.5 s end to end (photo-library.md) | 31–164 ms | Oct 30 18:18; 10–453-photo folders | Met |
 | Very large folder → first 256 rows / first picture / 25th picture | Regression baseline (Steve, Oct 27) | 3.81 / 4.20 / 5.40 s | Oct 27, 155,877 rows, 015baf7 | Baseline |
 | Folder open → first camera preview (RAW) | Under 0.2 s (tier 0, Steve Oct 12) | 0.14–0.29 s | Oct 30 18:18 | Met |
