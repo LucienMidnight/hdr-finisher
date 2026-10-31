@@ -28,3 +28,11 @@ test("Save allows leaving only after a successful save", async () => {
     throw new Error("disk failure");
   } }), /disk failure/);
 });
+
+const {saveAndClose}=require('../frontend/photo-transition');
+test('Library close drains edits, saves, deletes and then clears the view',async()=>{
+ const order=[];await saveAndClose({drain:async()=>order.push('drain'),save:async()=>{order.push('save');return true;},close:async()=>order.push('delete'),reset:()=>order.push('reset')});assert.deepEqual(order,['drain','save','delete','reset']);
+});
+test('Library close keeps the photo when saving or deleting fails',async()=>{
+ for(const stage of ['save','delete']){let cleared=false,deleted=false;await assert.rejects(saveAndClose({drain:async()=>{},save:async()=>stage!=='save',close:async()=>{deleted=true;throw Error('delete failed');},reset:()=>cleared=true}));assert.equal(cleared,false);assert.equal(deleted,stage==='delete');}
+});

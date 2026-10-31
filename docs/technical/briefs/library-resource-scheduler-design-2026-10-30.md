@@ -803,16 +803,71 @@ above sent about 37 requests a second. The window has only a few
 connections to the backend, so a folder click waited behind them, although
 the backend answered folder requests in about 1 ms.
 
-**October 31 implementation checkpoint — foundation only, not enabled.**
-The estimate-based queue and header/formula helpers have 32 focused behavior
-checks. No Library caller uses them yet. The unreadable-header fallback in
-point 2 needs Steve's decision: the approved table gives bytes per pixel,
-but no type's worst-case pixel count or byte amount. Unlimited picture size
-means there is no finite worst case to infer. No unapproved size was chosen.
-Channel, caller integration, Grade accounting/close, reduced previews,
-packaging and app measurements remain open; 3a is not marked built.
+**October 31 implementation — phase 3a connected, performance qualification open.**
+The backend estimate queue now owns Library source, CPU, sensor, quick-preview
+and RAW-reader admission. Each window has one authenticated `/api/library/grants`
+WebSocket; asks are sent once, with heartbeat/owner expiry, cancellation,
+promotion and reconnect. Backend-owned requests wait in process. Source
+preparation reuses its grant. Fixed Library memory admission and memory-202
+retries have been removed; non-memory preparation/copy and GPU broker waits
+remain as before. `MemoryPending` from a route needing phase 3b remains waiting
+until cancellation, without repeated decode attempts.
 
-**What changes (proposed).**
+Grade retained source allocations are counted once by unique NumPy backing
+allocation. They reduce Library room and are excluded from the app-target
+trim comparison, while physical pressure still trims everything. The Library
+pause rows and Close photo in Grade action are connected. Closing requires
+edit drain and a successful save before session deletion. JPEG quick previews
+use reduced DCT decoding; finished source/Grade/export/Proof paths are unchanged.
+
+Logs record asks, grants, finishes, class, estimate, wait reason and peak.
+`measured_peak` is a sampled whole-app increase from the grant baseline,
+not an isolated per-job peak; overlapping jobs/caches affect it and very short
+jobs may lack a useful sample. Unavailable sampling logs once and estimates
+continue. Unknown-size logs retain reason **unknown size** separately from
+what made them wait. All agreed budgets, cache shares and phase 2 trim cooldown
+are unchanged. Phase 3b and phase 4 are still open.
+
+**As built and measured, October 31 (phase 3a integration commit).** Code is
+built; acceptance remains open for Steve's try because the speed targets below
+are not met. Scratch profiles, read-only originals, one existing line-scan
+copy; 2560 × 1440 Electron. No Grade-close-specific GPU driver existed; the
+focused real-app run exercised that action instead. The frozen backend was
+built separately and accepted an authenticated grant WebSocket.
+
+| Agreed check | Result |
+| --- | --- |
+| Quick preview request → screen p95 <0.5 s | **Not met:** p50 1.496 s / p95 2.394 s / max 2.560 s, 48 JPEG previews |
+| Thirty waiting jobs: one ask each plus heartbeat | Behavioral channel checks; real Aceh: 96 asks for 96 jobs, zero duplicates, 16 heartbeats (~1.2 asks/s). All HTTP including unchanged GPU/cache/telemetry work averaged 16.9/s; RAM retry requests: zero |
+| Folder click while waiting <0.5 s | 1 ms to the already listed folder; opening a different uncached folder while paused is not separately qualified |
+| Grade line scan: first ordinary photo <5 s | 3.288 s; visible work progressed with Grade retaining 3,562,536,960 bytes |
+| Large cell paused within 1 s of being shown | **Not qualified:** observed 2.876 s from folder opening; cell-visible time was not captured separately |
+| Close saves first; resume <2 s after close | Exposure 0.125 read back from the settings file; close including save 2.142 s; grants resumed 0.165 s after Grade emptied |
+| Forced physical reserve: waits, then starts, no failure | Passing behavior tests; unknown headers also use the ceiling, run alone and never use the floor |
+| Peak under ceiling, no oversized Grade/job | 3.746 GB against 4 GB (independent whole-app observer) |
+| Cold Aceh screens ≤26.51 / 51.59 s | **Not met:** 39.9 / 83.9 s (elapsed from folder opening); first run with backend checks competing was slower and is not used as the final timing |
+| Reduced quick preview mean ΔE2000 <1 | 0.331–0.485 across three JPEGs, compared with the prior quick route |
+| No Grade-only target trims | No trims during the measured Grade-browsing interval; two legitimate trims during initial source loading. Unit checks also cover Grade exclusion and OS pressure |
+| Pressure feedback remains controlled | Aceh: one moderate Chromium signal/trim at 3.409 GB against 3.4 GB target; zero refusal-induced trims |
+| False failures zero | Aceh: zero. Mixed phase0: **not met**, existing X-Trans CPU-route refusal and unresolved-colour JPEG XL route refusal (two unique photos, ten repeated work-failed events); memory waits themselves were not failures |
+
+The cold run also failed its memory-endpoint responsiveness check: two 2.5 s
+timeouts out of 139 samples. No further timing sweep was run. These speed and
+route limitations remain open; the implementation must not be described as a
+qualified stall fix. Whole-app peak attribution has the limitation above.
+Evidence is in `codebase/output/cold-mixed/aceh/`, `output/phase3a-grade/`,
+`output/phase3a-quick-colour.json` and `output/phase3a-package-smoke.log`.
+
+Fast checks: JavaScript 681 passed / 3 known failures; the final 30-cell channel
+case was added and passes separately. Full Python
+2,835 passed / 3 skipped / 4 known failures; final targeted queue/header/channel
+set 41 passed. Known failures: preset-header contract, RGB publication fixture,
+frame-cache fixture and Retouch capture-cache fixture; JavaScript's two
+scene-version harness cases and Single screen-preview harness case. No limits
+or tolerances were relaxed. The two scene-order expectations now follow
+backend FIFO grant order instead of the replaced cost-biased admission.
+
+**What changes (implemented for 3a).**
 
 1. **One decision maker.** A new backend module, `library_scheduler.py`,
    owns every Library grant: who asked (owner), class (Grade, now, soon,
@@ -829,8 +884,8 @@ packaging and app measurements remain open; 3a is not marked built.
    bytes per pixel (6.11) times the pixel count read from the file header
    (M1), with the 64 MB minimum. If the header can't be read, the job is
    estimated at the full Library budget, the ceiling (decision 10, to
-   revisit). When a job ends, its measured peak is logged beside its
-   estimate.
+   revisit). When a job ends, its sampled incremental whole-app peak is logged beside
+   its estimate, subject to the attribution limitation above.
 3. **The open Grade photo is a grant of its own** (M27). When Grade opens a
    photo, the scheduler records its exact size (the pixels Grade keeps). It is
    never refused by the Library, since Grade comes first, but the Library now
@@ -985,7 +1040,7 @@ records its numbers in the [performance table](../performance-table.md).
 | 0. Measure — **done October 30** | Log real RAM and GPU peaks per file type and job type on disposable copies (20241117 RAWs, Aceh JPEGs, one of each supported type, a large TIFF). Try reduced decoding for 640. No behaviour change. | — | Per-type budget table (6.11) written for Steve to approve. |
 | 1. File gate — **built October 30, awaiting Steve's try** | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
 | 2. Stop the feedback loop — **built October 30, awaiting Steve's try** (7.5) | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
-| 3. One scheduler, RAM — **3a foundation started October 31; not enabled; unreadable-header fallback needs decision (7.6). 3b remains separate** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
+| 3. One scheduler, RAM — **3a scheduler/channel connected October 31; speed qualification open (7.6). 3b remains separate** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
 | 4. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
 | 5. Grid makes 640 only | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
 | 6. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. Edge case M25. | Leftover complexity. | Fast checks pass; less code than before. |

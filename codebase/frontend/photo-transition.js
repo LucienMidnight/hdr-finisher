@@ -15,6 +15,13 @@
     })();
   }
 
-  if (typeof module !== "undefined" && module.exports) module.exports = { leaveCurrentPhoto };
-  if (root) root.HDRPhotoTransition = Object.freeze({ leaveCurrentPhoto });
+  async function saveAndClose({drain,save,close,reset}) {
+    await drain();
+    if(await save()!==true)throw Error("The photo could not be saved. It remains open in Grade.");
+    await close();
+    reset();
+  }
+
+  if (typeof module !== "undefined" && module.exports) module.exports = { leaveCurrentPhoto, saveAndClose };
+  if (root) root.HDRPhotoTransition = Object.freeze({ leaveCurrentPhoto, saveAndClose });
 })(typeof window !== "undefined" ? window : null);

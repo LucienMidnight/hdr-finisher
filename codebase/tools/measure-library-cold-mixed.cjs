@@ -38,6 +38,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
  try{
   browser=await chromium.launch();const page=await browser.newPage();page.on('pageerror',e=>report.errors.push(String(e)));
   page.on('console',msg=>{if(msg.text().includes('Memory controller:'))report.errors.push(msg.text());});
+  report.channelFrames=[];report.httpRequests=[];page.on('websocket',ws=>ws.on('framesent',event=>{if(ws.url().endsWith('/api/library/grants'))report.channelFrames.push({at:Date.now(),...JSON.parse(String(event.payload))});}));page.on('request',r=>{if(r.url().includes('/api/library/'))report.httpRequests.push({at:Date.now(),url:r.url()});});
   await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
   lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
   await lib.evaluate(()=>{
@@ -106,6 +107,8 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   checkProjects(before);report.protectedProjectsUnchanged=true;
   const log=path.join(process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA||'','logs/backend.log');if(fs.existsSync(log))fs.copyFileSync(log,path.join(out,'backend.log'));
   report.results=(report.screens||[]).flatMap(s=>s.cells.map(c=>({...c,screen:s.screen,requests:(report.events||[]).filter(e=>e.path===c.path&&e.stage==='picture_navigation_to_present'&&e.view==='grid').map(e=>({request:e.request,size:e.picture_size,ms:e.duration_ms})),failures:(report.events||[]).filter(e=>e.path===c.path&&/development_(failed|restart|outcome)$/.test(e.stage))})));
+  const quick=(report.events||[]).filter(e=>e.stage==='picture_navigation_to_present'&&e.picture_size==='camera preview').map(e=>e.duration_ms).sort((a,b)=>a-b);report.quickMs={count:quick.length,p50:quick[Math.floor(quick.length*.5)],p95:quick[Math.floor(quick.length*.95)],max:quick.at(-1)};
+  const frames=report.channelFrames||[];report.grantAsks=frames.filter(f=>f.type==='ask').length;report.duplicateAsks=frames.filter(f=>f.type==='ask').length-new Set(frames.filter(f=>f.type==='ask').map(f=>f.id)).size;
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));
   fs.writeFileSync(path.join(out,'cell-timings.csv'),'screen,photo,finished_request,request_to_finished_ms,camera_preview_ms,presented,failure\n'+report.results.map(r=>{
    const finished=r.requests.filter(p=>p.size==='thumbnail').at(-1)||{};

@@ -32,6 +32,8 @@ class Job:
     notify: object = None
     granted: float | None = None
     reason: str = ""
+    size_reason: str = ""
+    blocked: str = ""
     peak: int | None = None
     baseline: int | None = None
     floor: bool = False
@@ -87,7 +89,7 @@ class Scheduler:
                 if self.clock()-seen > seconds:
                     self.disconnect(owner)
 
-    def ask(self, id, owner, path, kind, estimate, cls="now", notify=None):
+    def ask(self, id, owner, path, kind, estimate, cls="now", notify=None, size_reason=""):
         if cls not in CLASSES:
             raise ValueError("Unknown Library priority")
         with self.lock:
@@ -100,6 +102,7 @@ class Scheduler:
             amount = max(0 if cls == "Grade" else MINIMUM, int(estimate))
             job = Job(id, owner, path, kind, amount, cls,
                       self.sequence, self.clock(), notify)
+            job.size_reason = size_reason
             self.jobs[id] = job
             self._log(job, "asked")
             self._pump()
@@ -130,6 +133,26 @@ class Scheduler:
             job.ready.set()
             self._pump()
 
+    def defer(self, id, reason):
+        """A route that cannot proceed gives back RAM without HTTP retries.
+        Bounded-route support is phase 3b; those jobs stay waiting, not failed.
+        """
+        with self.lock:
+            job = self.jobs.get(id)
+            if job:
+                job.granted = None
+                job.floor = job.alone = False
+                job.ready.clear()
+                job.blocked = reason
+                self._wait(job, reason)
+                self._pump()
+
+    def snapshot(self):
+        with self.lock:
+            return [dict(self._message(j, "granted" if j.granted is not None else "waiting"),
+                         state="running" if j.granted is not None else "waiting",
+                         stage=("memory in use by the photo open in Grade" if j.granted is None and j.reason=="paused for Grade" else f"not enough free memory on this computer (needs {j.estimate/1e9:.2f} GB, {(self.available or 0)/1e9:.2f} GB free)" if j.granted is None and j.reason=="system reserve" else "Developing photo")) for j in self.jobs.values()]
+
     def disconnect(self, owner):
         with self.lock:
             self.owners.pop(owner, None)
@@ -140,7 +163,7 @@ class Scheduler:
             self._pump()
 
     def _message(self, job, type):
-        return dict(type=type, id=job.id, path=job.path, reason=job.reason,
+        return dict(type=type, id=job.id, path=job.path, reason=job.reason if type=="waiting" else "",
                     estimate=job.estimate, free=self.available, grade=self.grade_name,
                     cls=job.cls)
 
@@ -165,6 +188,9 @@ class Scheduler:
             normal = [j for j in running if not j.fast]
             used = sum(j.estimate for j in normal)
             reason = ""
+            if job.blocked:
+                self._wait(job, job.blocked)
+                continue
             if job.cls == "Grade":
                 pass
             elif headroom is not None and job.estimate > headroom:
@@ -216,7 +242,7 @@ class Scheduler:
             priority_class=job.cls, estimate_bytes=job.estimate,
             measured_peak_bytes=job.peak, peak_scope="whole-app-increment",
             wait_ms=round(((job.granted if job.granted is not None else self.clock())-job.asked)*1000),
-            reason=job.reason or None, over_estimate=job.peak is not None and job.peak > job.estimate)
+            reason=job.size_reason or job.reason or None, waited_for=job.reason or None, over_estimate=job.peak is not None and job.peak > job.estimate)
 
 
 from .app_memory import CEILING

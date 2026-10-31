@@ -4,32 +4,44 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
-## October 31: phase 3a foundation started; integration waiting on a missing estimate decision
+## October 31: phase 3a scheduler and grant channel connected; speed targets not yet met
 
-The backend queue and header-estimate helpers now exist, with 32 focused
-behavior checks. They are **not connected to the live Library** yet: the
-existing admission gates, polling and Grade behavior remain in place.
-This is not a completed phase 3a or a measured stall fix.
+Every Library source, CPU decode, sensor read and quick preview now asks the
+backend estimate scheduler. Each window keeps one WebSocket channel: one ask,
+then a grant notification, cancellation or priority update. Heartbeats clean
+up disconnected owners; waiting jobs resubmit after reconnect and interrupted
+work restarts. RAW reader waits stay inside the backend. The old Library
+memory-admission route, fixed 600 MB reservations and memory-202 loops are gone.
 
-The brief requires each type's worst-case estimate when its header cannot be
-read. The approved table supplies bytes per pixel but no worst-case pixel
-count or byte value, and picture sizes are deliberately unlimited. Steve
-must choose that fallback before the new admission path is enabled. No
-fallback size, budget or estimate has been invented.
+Grade's exact retained source reduces Library room without triggering repeated
+target trims. Visible jobs may use the approved one-job 1 GB floor; four quick
+previews of at most 64 MB can continue. Larger waiting jobs show the Grade
+pause message and **Close photo in Grade**. That action drains edits, saves
+successfully, then closes Grade; a save error leaves the photo open. The
+physical reserve is still a hard stop. Header failures use the full ceiling
+estimate, run alone, never use the floor, and log reason **unknown size**.
+JPEG quick previews use reduced DCT decoding; finished pictures are unchanged.
 
-Checks for this foundation commit: 32 focused queue/header checks pass.
-JavaScript: 675 passed, the same 3 known failures. The full Python run:
-2,807 passed, 3 skipped, 5 failed; one was the new paused-job ordering case,
-fixed and rechecked in the focused set. The other four are the known
-preset-header contract, RGB publication fixture, frame-cache budget fixture
-and Retouch capture-cache fixture. No GPU check applies to this disconnected
-backend foundation, and no Grade close code has changed. No app timings or
-memory-tolerance results are claimed.
+Validation and measured limits are recorded in design section 7.6 and the
+performance table. The packaged backend accepts the authenticated grant
+channel. Quick-preview mean ΔE2000 was 0.33–0.49 (target below 1). The first
+cold Aceh measurement stayed below 4 GB with zero failed photos and duplicate
+asks, but missed both speed targets; this is not a completed performance fix.
+Phase 3b bounded very-large-picture routes and phase 4 GPU scheduling remain open.
+The final cold result was 39.9 / 83.9 s, preview p95 2.394 s, peak 3.746 GB;
+two memory samples timed out. Grade coexistence: first small photo 3.288 s,
+pause observed 2.876 s from folder opening (cell-visible interval unmeasured),
+close including save 2.142 s and resume 0.165 s later. Mixed phase0 still
+has existing X-Trans and unresolved-colour JPEG XL route failures, so overall
+zero false failures is not claimed. No trims occurred during Grade browsing.
 
-Remaining 3a work: header-reader coverage and fallback, channel and reconnect,
-all caller integration, Grade accounting and save-before-close control,
-reduced quick previews, pressure integration, packaging verification and the
-two requested app measurements. Phase 3b remains separate.
+Full Python: 2,835 passed, 3 skipped, four known failures (preset-header,
+RGB publication, frame-cache and Retouch capture-cache fixtures). Final targeted
+queue/header/channel checks: 41 passed. Full JavaScript: 681 passed / 3 known failures before the final 30-cell
+channel case (that added behavior passes separately). The same three
+known harness failures (two scene-version cases and Single screen previews).
+The frozen WebSocket smoke check and save-before-close app flow passed.
+
 
 ## October 31: phase 3 whiteboard written
 
@@ -38,8 +50,8 @@ askers with their own retry loops, each asking for 600 MB, and Grade never
 asking. It proposes one backend scheduler working on estimates, a channel
 that says "your turn" instead of polling, and a floor so on-screen photos
 keep coming even with a huge photo open in Grade. Proposed in two steps
-(3a scheduler and channel, 3b very large pictures and the rest). Nothing
-built.
+(3a scheduler and channel, 3b very large pictures and the rest). The
+whiteboard is the historical starting point; the implementation status is above.
 
 Decided by Steve, October 31: keep the floor. Grade stays fully usable. When
 the Library's next photo is itself large (a folder of line scans with one
@@ -50,7 +62,7 @@ minus a system reserve; such a job waits with a message and is never marked
 failed. Also decided October 31: build as 3a then 3b; floor allowance
 1 GB; system reserve the larger of 2 GB or 10% of RAM; fast lane 64 MB, up
 to four at once; reduced-decode quick previews, moved into 3a. All
-decisions for 3a are made; 3a is ready to build.
+decisions for 3a are made; its integration is recorded above.
 
 ## October 30 (late night): feedback loop stopped (scheduler phase 2), awaiting Steve's try
 

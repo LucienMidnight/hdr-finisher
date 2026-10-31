@@ -34,7 +34,7 @@ datas += cv2_datas
 datas += rawpy_datas + lensfun_datas
 
 hiddenimports = ["tkinter", "tkinter.filedialog"]
-hiddenimports += collect_submodules("uvicorn")
+hiddenimports += collect_submodules("uvicorn") + collect_submodules("websockets")
 hiddenimports += imagecodecs_hiddenimports
 hiddenimports += rawpy_hiddenimports + lensfun_hiddenimports
 

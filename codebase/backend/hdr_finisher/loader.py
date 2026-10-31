@@ -289,7 +289,7 @@ def _linear_dng_library_exposure_ev(image: np.ndarray) -> float:
     return round(metered_exposure_ev, 3)
 
 
-def _load_with_pillow(path: Path, *, encoded_samples: bool = False) -> tuple[np.ndarray, dict[str, Any]]:
+def _load_with_pillow(path: Path, *, encoded_samples: bool = False, draft_edge: int | None = None) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         from PIL import Image, ImageOps
     except ImportError as exc:
@@ -297,6 +297,8 @@ def _load_with_pillow(path: Path, *, encoded_samples: bool = False) -> tuple[np.
 
     with Image.open(path) as img:
         metadata = dict(img.info)
+        if draft_edge is not None and img.format == "JPEG":
+            img.draft("RGB",(draft_edge,draft_edge))
         oriented = ImageOps.exif_transpose(img)
         icc_profile = metadata.get("icc_profile")
         if icc_profile:

@@ -34,7 +34,7 @@
           if (current.fullscreen !== detail.enabled) return libraryDesktop.performWindowAction("fullscreen");
         }) : null;
       task?.catch(error => status(error.message));
-      if (["grade-replaced", "quick-export", "export-selection", "command-state", "add-export-selection"].includes(action)) void libraryDesktop.forwardLibraryAction?.(action, detail).catch(error => status(error.message));
+      if (["grade-replaced", "quick-export", "export-selection", "command-state", "add-export-selection", "close-grade"].includes(action)) void libraryDesktop.forwardLibraryAction?.(action, detail).catch(error => status(error.message));
     }
   };
   const status = (message) => { $("library-status").textContent = message; };
@@ -401,8 +401,7 @@
     const eligible = () => current() && pictureIdentity(selected() || {}) === sourceIdentity && !photo.edited &&
       !readyWindow.has(photo) && !quickWindow.has(photo) && !$('single-stage').querySelector('[data-stand-in="true"]');
     try {
-      const response = await fetch('/api/library/preview',{method:'POST',signal:controller.signal,
-        headers:{'Content-Type':'application/json'},body:JSON.stringify({path:photo.path,quick_draw:true,bytes:photo.bytes,mtime_ns:photo.mtime_ns})});
+      const response = await HDRLibraryGrants.preview({path:photo.path,quick_draw:true,bytes:photo.bytes,mtime_ns:photo.mtime_ns},controller.signal);
       if (response.status !== 200 || !eligible()) return;
       const meta = await response.json();
       if (!meta.url || !eligible()) return;
@@ -643,14 +642,10 @@
         cell.identity=pictureIdentity(photo);
         const fallback = document.createElement("canvas"); cell.fallback = fallback;
         fallback.hidden = true; frame.append(fallback);
-        const preview = (async () => {
-          while (current() && !cell.meta) {
-            const response = await fetch("/api/library/preview", {method:"POST", signal:cell.controller.signal,
-              headers:{"Content-Type":"application/json","Accept":"image/png"},body:JSON.stringify({path:photo.path})});
-            if (response.status !== 202) return response;
-            await sleep(250,cell.controller.signal);
-          }
-        })().then(async response => {
+        const quickController=new AbortController();
+        cell.controller.signal.addEventListener("abort",()=>quickController.abort(),{once:true});
+        cell.quickController=quickController;
+        const preview = HDRLibraryGrants.preview({path:photo.path,quick_draw:true,bytes:photo.bytes,mtime_ns:photo.mtime_ns},quickController.signal,{Accept:"image/png"}).then(async response => {
           if (!response || response.status !== 200) return;
           const blob = await response.blob();
           if (!current() || cell.meta) return;
@@ -680,6 +675,7 @@
             if (!current()) return;
             await drawPicture(meta, fallback, cell.controller, current);
             if (!current()) return;
+            cell.quickController?.abort();
             cell.meta = cell.scene = meta; cell.displayEpoch = state.displayEpoch; cell.elapsed = performance.now() - started;
             fallback.hidden = false; canvas.hidden = true; canvas.removeAttribute("src"); element.classList.remove("loading");
             fallback.dataset.pictureKey=meta.key; fallback.dataset.picturePath=photo.path;
@@ -896,6 +892,10 @@
     confirmChange(`${revert.done} ${plural(result.count, "photo")}.${target === "saved" ? "" : ` ${result.count === 1 ? "It keeps" : "Each keeps"} its previous grade.`}${result.undo_available ? " Ctrl+Z undoes it." : ""}`, result.undo_available);
     await pollSettings();
   }
+  const gradeCloseChannel=new BroadcastChannel("hdr-library-grade-close");
+  gradeCloseChannel.onmessage=event=>{if(event.data?.error)status(event.data.error);};
+  window.addEventListener("pagehide",()=>gradeCloseChannel.close());
+  window.addEventListener("library-close-grade",()=>postParent("close-grade"));
   const commandState = () => postParent("command-state", {selected: state.selection.size, copied: pasteGrades.available()});
   function invalidateGradePictures(paths) {
     const targets = new Set(paths);

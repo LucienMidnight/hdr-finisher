@@ -23,7 +23,7 @@ then in the code.
 memory pressure are behind the October 29–30 stalls. The proposed
 replacement, with research and phases, is
 [library-resource-scheduler-design-2026-10-30](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
-It is waiting on Steve's review; nothing in it is built.
+Phase 3a is connected as recorded below; later phases remain open.
 Steve approved the design and phase order on October 30. Phase 0 measured
 backend memory per job and file type (section 6.11 of the design). A
 full-size non-RAW decode needs 0.5–1.3 GB, more than the 600 MB working room.
@@ -32,16 +32,31 @@ The RAW sensor read needs about 5.5 bytes per pixel. GPU memory runs about
 proposed per-type estimates are Steve's decision; no size or share has
 changed.
 
-### October 31: phase 3a foundation only
+### October 31: phase 3a scheduler and channel connected
 
-`library_scheduler.py` implements an independently tested estimate-based queue:
-class order and first come first served, one visible floor job, paused-for-Grade
-jobs stepping aside, the system reserve, the four-job fast lane and owner
-cleanup. `library_estimates.py` reads dimensions without decoding pixels and
-applies the approved rates. Neither helper is connected to app admission yet;
-all existing live memory behavior is unchanged.
+`library_scheduler.py` owns estimate admission, priority/FIFO, the visible
+floor, the four-job fast lane, system reserve and disconnected-owner cleanup.
+`library_estimates.py` reads headers without decoding pixels;
+`library_grants.py` serves one WebSocket per window and in-process waits for
+backend work. Live source, CPU, sensor, quick preview and RAW-reader callers
+use it. A source-preparation request reuses its window grant.
 
-Phase 3a remains open and unmeasured.
+Room is ceiling minus the approved 1.3 GB starting footprint, cache bytes
+capped at their shares, and Grade's unique retained source allocations.
+Measured whole-app memory minus that Grade source is a safety backstop;
+operating-system pressure still counts everything. Existing phase 2 trim
+cooldown and all approved budgets/shares are unchanged. Waiting is not a
+failure or a pressure event. The Close photo in Grade action requires edits
+to be drained and saved before releasing the source.
+
+Grant logs include class, estimate, wait and peak alongside the reason. The
+peak is the largest sampled whole-app increase since that grant began, not
+an isolated job measurement: overlapping work and cache changes affect it;
+a short job or unavailable measurements can have no useful peak. An unavailable
+measurement is logged once and scheduling continues on estimates.
+
+Cold-folder timing remains outside tolerance; see the performance table and
+design 7.6. Phase 3b and the phase 4 GPU broker are not implemented here.
 
 **Decided by Steve, October 31 (to revisit): unknown size.** When a file's
 dimensions can't be read from its header, its job is estimated at the

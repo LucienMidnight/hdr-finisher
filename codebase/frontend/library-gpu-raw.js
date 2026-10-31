@@ -787,7 +787,7 @@
           if(performance.now()-edgePermitAt<permitWindow)return;
           if(meta.source_job && performance.now()-touched>5000){
             const check=await fetch("/api/library/live-source/"+meta.source_job,{method:"POST",signal});
-            if(!check.ok) throw Error("Library source preparation was invalidated."); touched=performance.now();
+            if(!check.ok) throw new DOMException("Library source preparation was invalidated.","AbortError"); touched=performance.now();
           }
           const status = await lease(false);
           if (!status.granted || status.preempt || status.fallback) { const error = Error("Yielding GPU RAW to shared work."); error.yieldRaw = true; throw error; }
@@ -833,7 +833,7 @@
   function cachedDirect(path,edge,version) {
     return directScenes.get(path+"|"+version)?.variants[edge] || null;
   }
-  async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "") {
+  async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null) {
     const begun = performance.now();
     const sourceJob=liveScene ? crypto.randomUUID().replaceAll("-", "") : null;
     let retainedSource = false, gpuResult, sourceRenewal;
@@ -842,8 +842,9 @@
     const sourceLimit=await sourceStorageLimit();
     let response, requestWaitMs = 0;
     for (;;) {
-      response = await fetch(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", signal,
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
+      response = await fetch(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", priority:"low", signal,
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, grant, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, grant, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
+      if(grant && response.headers.get("X-Library-Wait")==="memory")await root.HDRLibraryGrants.wait(grant,signal);
       if (response.status !== 202) break;
       root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
       const waitingAt = performance.now();
@@ -856,7 +857,7 @@
       // unbounded CPU development while hardware is available.
       throw new Error(response.headers.get("X-Library-Fallback") || "This source has no supported GPU development route.");
     }
-    if (!response.ok) { const result = await response.json().catch(() => ({})); const error = new Error(result.detail || "Library request failed."); error.status = response.status; error.libraryError = result.library_error; error.cloudOnly = !!result.cloud_only; throw error; }
+    if (!response.ok) { const result = await response.json().catch(() => ({})); const error = result.changed ? new DOMException(result.detail,"AbortError") : new Error(result.detail || "Library request failed."); error.status = response.status; error.libraryError = result.library_error; error.cloudOnly = !!result.cloud_only; throw error; }
     if ((response.headers.get("Content-Type") || "").includes("application/json")) return response.json();
     const transferAt = performance.now();
     const body = await response.arrayBuffer();
@@ -919,7 +920,7 @@
       root.HDRLibraryStopwatch?.(describeOnly ? "picture_scene_description" : "picture_scene_handoff",{
         path,edge:header.edge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes:framed.size});
       const result=await stored.json();
-      if(!stored.ok){const error=Error(result.detail || "Library request failed.");error.status=stored.status;throw error;}
+      if(!stored.ok){const error=result.changed?new DOMException(result.detail,"AbortError"):Error(result.detail || "Library request failed.");error.status=stored.status;throw error;}
       return result;
     };
     if(liveScene && meta.rgb && !nativeMode && !root.HDRLibraryProfileLegacy && entries.every(({picture})=>picture.textures?.length)){
@@ -988,7 +989,7 @@
   }
   // The grid and the filmstrip can ask for the same photo: they share one job,
   // which stops only when every asker has scrolled past it.
-  function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "" } = {}) {
+  function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null } = {}) {
     root.HDRIdleWarmup?.touch();
     const key = `${path}|${savedGradeOnly}|${nativeMode}|${liveScene}|${sceneIdentity}`;
     let job = inflight.get(key);
@@ -997,7 +998,7 @@
       const controller = new AbortController();
       job = { controller, users: 0 };
       job.promise = new Promise((resolve, reject) => {
-        waiting.push({ signal: controller.signal, resolve, reject, importance, task: () => develop(path, edge, controller.signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity) });
+        waiting.push({ signal: controller.signal, resolve, reject, importance, task: () => develop(path, edge, controller.signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity, grant) });
         pump();
       }).finally(() => { if (inflight.get(key) === job) inflight.delete(key); });
       job.promise.catch(() => {});
@@ -1011,7 +1012,7 @@
       job.promise.then(value => {
         signal?.removeEventListener("abort", leave);
         if (value && !value.kept && !nativeMode && value.edge !== edge)
-          resolve(cachedDirect(path,edge,sceneIdentity) || develop(path, edge, signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity));
+          resolve(cachedDirect(path,edge,sceneIdentity) || develop(path, edge, signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity, grant));
         else resolve(value);
       },
         error => { signal?.removeEventListener("abort", leave); reject(error); });
@@ -1084,7 +1085,7 @@
     }
     return estimate;
   };
-  const exported = Object.freeze({ cachedDirect, forgetDirect, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity}) });
+  const exported = Object.freeze({ cachedDirect, forgetDirect, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

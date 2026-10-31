@@ -163,6 +163,8 @@ class RawBrowsing:
                 if job["priority"] >= 50 and key not in self.wanted and not job["active"]:
                     job["future"].cancel()
                     del self.jobs[key]
+                    from .library_scheduler import scheduler
+                    scheduler.finish("raw-decode-"+key,outcome="cancelled")
             for i, path in enumerate(paths):
                 if self.wanted[i] not in retained:
                     self.request(path, 0 if i == 0 else 50 + i)
@@ -236,6 +238,8 @@ class RawBrowsing:
 
     def _read(self):
         # One reader is I/O bound; parallel seeks hurt USB-drive foreground reads.
+        from .library_scheduler import scheduler, priority_class
+        from .library_estimates import estimate_details
         lower_thread_priority()
         while True:
             with self.cv:
@@ -247,6 +251,14 @@ class RawBrowsing:
                     self.cv.wait(.025)
                     continue
                 job = candidates[0]
+                grant_id='raw-decode-'+job['key']
+                if grant_id not in scheduler.jobs:
+                    amount, reason=estimate_details(job['path'],"cpu")
+                    scheduler.ask(grant_id,"raw-reader",job['path'],"cpu",amount,priority_class(job['priority']),size_reason=reason)
+                scheduler.change(grant_id,"raw-reader",priority_class(job['priority']))
+                if scheduler.jobs[grant_id].granted is None:
+                    self.cv.wait(.05)
+                    continue
                 # One partial mapping only. On reprioritization release it before
                 # reading the new file; rapid travel cannot accumulate paused RAWs.
                 if self.partial and self.partial[0] != job["key"]:
@@ -302,6 +314,8 @@ class RawBrowsing:
                     self._fail(job, error)
 
     def _fail(self, job, error):
+        from .library_scheduler import scheduler
+        scheduler.finish("raw-decode-"+job["key"],outcome="changed" if "chang" in str(error).lower() else "finished")
         self.jobs.pop(job["key"], None)
         if not job["future"].done():
             job["future"].set_exception(error)
@@ -309,6 +323,8 @@ class RawBrowsing:
         self.cv.notify_all()
 
     def _lane(self, index):
+        from .library_scheduler import scheduler, priority_class
+        from .library_estimates import estimate_details
         context = multiprocessing.get_context("spawn")
         connection, child = context.Pipe()
         process = context.Process(target=worker_main, args=(child, index == 0), daemon=True,
@@ -335,7 +351,13 @@ class RawBrowsing:
                         self.cv.wait(.025)
                         continue
                     job = candidates[0]
-                    if not app_memory.admit('raw-decode-'+job['key'],app_memory.WORKING)['granted']:
+                    grant_id='raw-decode-'+job['key']
+                    if grant_id not in scheduler.jobs:
+                        amount, reason=estimate_details(job['path'],"cpu")
+                        scheduler.ask(grant_id,"raw-reader",job['path'],"cpu",amount,priority_class(job['priority']),size_reason=reason)
+                    scheduler.change(grant_id,"raw-reader",priority_class(job['priority']))
+                    grant=scheduler.jobs.get(grant_id)
+                    if grant is None or grant.granted is None:
                         self.cv.wait(.05)
                         continue
                     # Selected development takes every free CPU. Neighbours share
@@ -355,8 +377,6 @@ class RawBrowsing:
                         return
                     if not process.is_alive():
                         raise RuntimeError("Library RAW decoder stopped.")
-                    with app_memory._lock:
-                        app_memory._reservations['raw-decode-'+job['key']]=(app_memory.WORKING,time.monotonic()+30)
                 result = connection.recv()
                 with self.cv:
                     if self.stopped:
@@ -382,13 +402,13 @@ class RawBrowsing:
                                 old, _ = self.outputs.pop(key)
                                 self._dispose(old)
                             log("picture_raw_browse_ready", path=job["path"], decode_ms=meta["decode_ms"], unpack_ms=meta["unpack_ms"], native_threads=meta["native_threads"], read_ms=meta["read_ms"])
-                    app_memory.admit('raw-decode-'+job['key'],0,True)
+                    scheduler.finish('raw-decode-'+job['key'])
                     job = None
                     self.cv.notify_all()
         except Exception as error:
             with self.cv:
                 if job:
-                    app_memory.admit('raw-decode-'+job['key'],0,True)
+                    scheduler.finish('raw-decode-'+job['key'])
                 if job and not self.stopped:
                     self._fail(job, error)
                 # Fail all waiters rather than leaving a reserved lane dead.
@@ -397,7 +417,7 @@ class RawBrowsing:
                     for pending in list(self.jobs.values()):
                         self._fail(pending, RuntimeError(self.failure))
         finally:
-            if job:app_memory.admit('raw-decode-'+job['key'],0,True)
+            if job:scheduler.finish('raw-decode-'+job['key'])
             connection.close()
             if process.is_alive():
                 process.terminate()
@@ -406,6 +426,8 @@ class RawBrowsing:
     def close(self):
         with self.cv:
             self.stopped = True
+            from .library_scheduler import scheduler
+            scheduler.disconnect("raw-reader")
             for job in self.jobs.values():
                 job["future"].cancel()
             self.cv.notify_all()

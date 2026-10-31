@@ -77,7 +77,7 @@
     let released = false;
     return () => { if (!released) { released = true; projectOpenPauses -= 1; } };
   }
-  async function save({ automatic = false } = {}) {
+  async function save({ automatic = false, waitForDisk = false } = {}) {
     if (!automatic) await revertFlight;
     if (busy && !saving && !automatic) await tickFlight;
     if (!current || busy) return false;
@@ -86,13 +86,21 @@
       await flush();
       const savedToken = `${state.editRevision}:${state.globalEditGeneration}`;
       result = await command("save");
+      if(waitForDisk){
+        const started=performance.now();
+        // Saving is queued durably first; Close also requires the file write.
+        while(result.pending&&!result.reason&&!result.conflict&&performance.now()-started<10000){
+          await new Promise(resolve=>setTimeout(resolve,100));
+          result=await command("check",{unsaved:false});
+        }
+      }
       if (result.grade_notice) { busy = false; await reviewGradeNotice(); return false; }
       state.documentDirty = Boolean(result.dirty) || result.conflict || savedToken !== `${state.editRevision}:${state.globalEditGeneration}`;
       if (result.conflict && (!automatic || !conflictShown)) {
         busy = false;
         return await resolve();
       }
-      return !result.conflict;
+      return waitForDisk ? !result.conflict && !result.reason && !result.pending && !state.documentDirty : !result.conflict;
     } catch (error) {
       state.documentDirty = true;
       status.post({ id: "grade-save", severity: "error", message: error.message });

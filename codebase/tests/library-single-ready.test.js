@@ -36,7 +36,7 @@ test('camera quick draw rejects edits, navigation changes and late delivery afte
   const images=[],stage={querySelector:()=>quick,append(image){images.push(image);image.isConnected=true;quick=image;}};
   const context={photo,rawTypes:new Set(['ARW']),pictureIdentity:p=>`${p.path}|${p.bytes}|${p.mtime_ns}`,selected:()=>selected,
    readyWindow:{has:()=>sharp},quickWindow:{has:()=>thumbnail},performance,console,AbortController,
-   fetch:async()=>{requests++;return {status:200,json:async()=>({url:'camera',route:'camera-preview'})};},
+   HDRLibraryGrants:{preview:async()=>{requests++;return {status:200,json:async()=>({url:'camera',route:'camera-preview'})};}},
    document:{createElement:()=>({dataset:{},style:{},isConnected:false,async decode(){
     if(change==='navigated')selected={...photo,path:'b'};if(change==='source')photo.mtime_ns=2;
     if(change==='thumbnail')thumbnail=true;if(change==='sharp')sharp=true;if(change==='quick')quick={};

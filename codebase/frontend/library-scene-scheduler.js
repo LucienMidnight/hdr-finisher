@@ -8,12 +8,20 @@
     const order=(a,b)=>a.priority-b.priority||score(a)-score(b)||a.sequence-b.sequence;
     let ranking=null;
     const demand=job=>{job.priority=Math.min(80,...[...job.users].map(user=>user.priority<=5||!user.viewport?user.priority:ranking?ranking(job.path):user.priority));};
-    let borrowPending=false,admitting=false,retry=null;
+    let borrowPending=false,retry=null;
     function pump(borrow=false){
-      if(admitting)return;
+      if(admit)for(const job of waiting){
+        if(job.admitted||job.admitting||job.controller.signal.aborted)continue;
+        job.admitting=true;
+        Promise.resolve().then(()=>admit(job)).then(granted=>{
+          job.admitted=granted;
+          if(!granted&&!job.controller.signal.aborted&&!job.resourceWaiting){job.resourceWaiting=true;onChange(job,"waiting");}
+        },error=>{const at=waiting.indexOf(job);if(at>=0)waiting.splice(at,1);settle(job,error);})
+          .finally(()=>{job.admitting=false;if(job.admitted||job.controller.signal.aborted)pump();else if(!retry)retry=setTimeout(()=>{retry=null;pump();},100);});
+      }
       while(active<limit&&waiting.length){
         waiting.sort((a,b)=>Number(!!b.admitted)-Number(!!a.admitted)||order(a,b));
-        let index=waiting.findIndex(job=>job.priority===waiting[0].priority&&(job.priority===0||!job.heavy||heavyActive<heavyLimit));
+        let index=waiting.findIndex(job=>(!admit||job.admitted)&&job.priority===waiting[0].priority&&(job.priority===0||!job.heavy||heavyActive<heavyLimit));
         if(index<0){
           // Prefer light work already waiting, but never reserve an empty slot
           // indefinitely. One microtask lets a burst of requests join the queue.
@@ -21,18 +29,9 @@
             if(!borrowPending){borrowPending=true;queueMicrotask(()=>{borrowPending=false;pump(true);});}
             break;
           }
-          index=0;
+          index=waiting.findIndex(job=>!admit||job.admitted);if(index<0)break;
         }
         const job=waiting[index];
-        if(admit&&!job.admitted){
-          admitting=true;
-          Promise.resolve().then(()=>admit(job)).then(granted=>{
-            job.admitted=granted;
-            if(!granted&&!job.controller.signal.aborted&&!job.resourceWaiting){job.resourceWaiting=true;onChange(job,"waiting");}
-          },error=>{const at=waiting.indexOf(job);if(at>=0)waiting.splice(at,1);settle(job,error);})
-            .finally(()=>{admitting=false;if(job.admitted||job.controller.signal.aborted)pump();else if(!retry)retry=setTimeout(()=>{retry=null;pump();},100);});
-          break;
-        }
         waiting.splice(index,1);
         if(job.controller.signal.aborted){if(jobs.get(job.key)===job)jobs.delete(job.key);continue;}
         job.resourceWaiting=false;active++;if(job.heavy)heavyActive++;job.running=true;job.started=now();runningJobs.add(job);onChange(job,"running");
@@ -43,8 +42,8 @@
     }
     function settle(job,error,value){
       if(job.settled)return;job.settled=true;
-      if(error&&!job.controller.signal.aborted){failures.push({path:job.path,reason:error.message});if(failures.length>8)failures.shift();}
-      onChange(job,job.controller.signal.aborted ? "cancelled" : error ? "failed" : "completed",error);
+      if(error&&error.name!=="AbortError"&&!job.controller.signal.aborted){failures.push({path:job.path,reason:error.message});if(failures.length>8)failures.shift();}
+      onChange(job,job.controller.signal.aborted ? "cancelled" : error?.name==="AbortError" ? /chang|invalidat/i.test(error.message)?"changed":"cancelled" : error ? "failed" : "completed",error);
       if(jobs.get(job.key)===job)jobs.delete(job.key);
       for(const user of job.users){user.signal?.removeEventListener("abort",user.stop);error?user.reject(error):user.resolve(value);}
       job.users.clear();

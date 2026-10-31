@@ -273,3 +273,19 @@ If you move a photo outside the app, move its `.hdrf` file with it. A photo with
 - [Quick start](../getting-started/quick-start.md)
 - [Export and Delivery](export.md)
 - [Photo Library: how it works](https://github.com/LucienMidnight/hdr-finisher/blob/main/docs/technical/photo-library.md) (technical detail, on GitHub)
+
+## When Grade is using the available memory
+
+A very large photo can keep Grade's source in memory while you browse.
+Small visible photos and quick previews can continue, but another large
+photo may show **Waiting: memory in use by the photo open in Grade**.
+Activity shows **Library paused: memory is in use by photo.dng in Grade**.
+
+Open Activity and choose **Close photo in Grade** to resume that work.
+The app finishes and saves your pending edits before closing the photo.
+If saving fails, the photo stays open and the error is shown. You can keep
+working in Grade while Library jobs wait.
+
+**Waiting: not enough free memory on this computer** means other memory
+use leaves too little room after the system reserve. Waiting is not a
+failed photo; work resumes when enough memory is available.

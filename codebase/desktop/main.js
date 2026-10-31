@@ -516,7 +516,7 @@ function registerIpc() {
     windows.get("library")?.window.webContents.send("desktop:menu-command", { command }); return true;
   });
   handleWindow("desktop:forward-library-action", (record, action, detail = {}) => {
-    if (record.role !== "library" || !["command-state", "grade-replaced", "quick-export", "export-selection", "add-export-selection"].includes(action)) throw new Error("Invalid Library action.");
+    if (record.role !== "library" || !["command-state", "grade-replaced", "quick-export", "export-selection", "add-export-selection", "close-grade"].includes(action)) throw new Error("Invalid Library action.");
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");
     mainWindow.webContents.send("desktop:library-window", { ...detail, action });
     if (["quick-export", "export-selection"].includes(action)) { mainWindow.show(); mainWindow.focus(); }
@@ -1297,7 +1297,7 @@ if (!gotLock) {
       libraryStage("desktop_startup_join", { duration_ms: Date.now() - shellStarted });
       if (shuttingDown || !mainWindow || mainWindow.isDestroyed()) return;
       const activeBackend = backend;
-      session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${activeBackend.url}/*`] }, (details, callback) => {
+      session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${activeBackend.url}/*`, `${activeBackend.url.replace("http:","ws:")}/*`] }, (details, callback) => {
         const uploadBytes=(details.uploadData || []).reduce((n,item)=>n+(item.bytes?.byteLength || 0),0);
         if(uploadBytes>0)libraryStage('main_upload_copy',{bytes:uploadBytes,main:process.memoryUsage()});
         details.requestHeaders["X-HDR-Finisher-Token"] = activeBackend.authoringSecret;

@@ -49,7 +49,7 @@ cv2_datas, cv2_binaries, cv2_hiddenimports = collect_all("cv2")
 datas += cv2_datas
 datas += rawpy_datas + lensfun_datas
 
-hiddenimports = collect_submodules("uvicorn") + imagecodecs_hiddenimports + rawpy_hiddenimports + lensfun_hiddenimports
+hiddenimports = collect_submodules("uvicorn") + collect_submodules("websockets") + imagecodecs_hiddenimports + rawpy_hiddenimports + lensfun_hiddenimports
 
 a = Analysis(
     ["run_app.py"],

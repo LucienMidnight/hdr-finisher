@@ -27,27 +27,17 @@ window.HDRLibraryScenes = (() => {
     // the GPU and newly visible development needs that room.
     preemptLower:(job,priority)=>priority<=10&&job.resourceWaiting,
     admit:async job=>{
-      job.admission ||= crypto.randomUUID();
-      if(!job.releaseAdmission){
-        job.releaseAdmission=()=>fetch("/api/library/memory-admission",{method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({id:job.admission,release:true})}).catch(()=>{});
-        job.controller.signal.addEventListener("abort",job.releaseAdmission,{once:true});
-      }
-      const response=await fetch("/api/library/memory-admission",{method:"POST",signal:job.controller.signal,
-        headers:{"Content-Type":"application/json"},body:JSON.stringify({id:job.admission,bytes:600_000_000})});
-      if(!response.ok)throw Error("Application memory accounting is unavailable.");
-      const {granted}=await response.json();
-      if(!granted)job.stage="Waiting for working memory";
-      return granted;
+      job.grant=await HDRLibraryGrants.acquire(job.path,HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority);
+      return true;
     },
     keepRunning:job=>job.retainDetached||visible.has(job.path)||nearby.has(job.path)});
   const versions = new Map();
   const history = new Map(), generations = new Map();
   let visible = new Set(), nearby = new Set(), reviewPath = null;
-  const rank = path => visible.has(path) ? 10 : nearby.has(path) ? 50 : 80;
+  const rank = path => {const priority=visible.has(path)?10:nearby.has(path)?50:80;window.HDRLibraryGrants?.promote(path,priority);return priority;};
   const largeBytes = 32 * 1024 * 1024;
   function failure(result) {
-    const error = Error(result.detail || "The photo could not be prepared.");
+    const error = result.changed ? new DOMException(result.detail,"AbortError") : Error(result.detail || "The photo could not be prepared.");
     error.libraryError = result.library_error;
     return error;
   }
@@ -86,19 +76,13 @@ window.HDRLibraryScenes = (() => {
     const cost = elapsed ? elapsed / 1000 : plan.bytes / largeBytes;
     const pending = sources.submit(identity+"|"+version+"|"+generation, async (shared, importance, job) => {
       const started = performance.now();
-      const admission = job.admission;
-      const request = release => fetch("/api/library/memory-admission", {method:"POST",
-        ...(release?{}:{signal:shared}), headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({id:admission,bytes:600_000_000,release})});
-      let renew;
       try {
-        renew = setInterval(()=>{void request(false).catch(()=>{});},10000);
-        const result = await develop(path, edge, shared, importance, version, options.gpuOnly || idle || (priority >= 80 && !visible.has(path)));
+        const result = await HDRLibraryGrants.run(path,HDRLibraryGpuRaw.enabled()?"source":"cpu",shared,
+          (grant,owned)=>develop(path,edge,owned,importance,version,options.gpuOnly || idle || (priority >= 80 && !visible.has(path)),grant),importance,job.grant);
         if (result && (idle || signal?.aborted)) save(result);
         return result;
       }
       finally {
-        clearInterval(renew); await request(true).catch(()=>{});
         if (!shared.aborted) {
           history.delete(path);
           history.set(path, {revision:plan.revision,ms:performance.now()-started});
@@ -124,10 +108,10 @@ window.HDRLibraryScenes = (() => {
     if (generation!==(generations.get(path)||0) || signal?.aborted) throw new DOMException("Invalidated", "AbortError");
     return {...meta, draw_priority:priority, trace, log_view:trace?.view || (edge <= 640 ? "grid,filmstrip" : "single,fullscreen,compare")};
   }
-  async function develop(path, edge, signal, importance, version, gpuOnly = false) {
+  async function develop(path, edge, signal, importance, version, gpuOnly = false, grant = null) {
     if (HDRLibraryGpuRaw.enabled()) {
       try {
-        const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal, importance, version);
+        const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal, importance, version, grant);
         if (meta) return meta;
       } catch (error) {
         if (error.name === "AbortError" || error.libraryError) throw error;
@@ -142,14 +126,19 @@ window.HDRLibraryScenes = (() => {
       }
     }
     if (gpuOnly && importance() > 0) return null;
-    for (;;) {
-      const response = await fetch("/api/library/live-scene", {method:"POST",signal,
-        headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,priority:importance()})});
+    const cpu=async (token,owned)=>{for (;;) {
+      const response = await fetch("/api/library/live-scene", {method:"POST",priority:"low",signal:owned,
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,priority:importance(),grant:token})});
       if (response.status === 202) { sources.stage(path,"Waiting to develop photo",true); await wait(150, signal); continue; }
       const meta = await response.json();
       if (!response.ok) throw failure(meta);
       return meta;
+    }};
+    if(HDRLibraryGpuRaw.enabled()){
+      HDRLibraryGrants.release(grant);
+      return HDRLibraryGrants.run(path,"cpu",signal,cpu,importance);
     }
+    return cpu(grant,signal);
   }
   async function lease(meta, signal, nativeBudget = false) {
     const url = `/api/delivery/gpu/raw-budget/${crypto.randomUUID()}`;

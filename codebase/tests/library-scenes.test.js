@@ -7,6 +7,7 @@ function setup(plans,develop,cores=4){
  let time=0;const requests=[],events=[];
  const context={navigator:{hardwareConcurrency:cores},window:{HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},HDRLibrarySceneScheduler:scheduler,AbortController,DOMException,setTimeout,clearTimeout,setInterval,clearInterval,
   performance:{now:()=>time},console,crypto:require('node:crypto').webcrypto,
+  HDRLibraryGrants:{acquire:async()=>({id:"test"}),run:async(p,k,s,task)=>task("test",s),promote:()=>{},release:()=>{}},
   HDRLibraryGpuRaw:{enabled:()=>true,liveScene:develop},
   fetch:async(url,options)=>{if(url==="/api/library/memory-admission")return {ok:true,json:async()=>({granted:true})};requests.push(JSON.parse(options.body));if(url==="/api/library/live-scene")return {ok:false,json:async()=>({detail:"decoder failed"})};const plan=plans[JSON.parse(options.body).path];return {ok:!plan.library_error,json:async()=>plan};}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../frontend/library-scenes.js'),'utf8'),context);
@@ -66,7 +67,7 @@ test('observed slow files still borrow idle capacity, and source revisions remai
  assert.deepEqual(started,['odd','other','odd']);assert.equal(scenes.snapshot().sources.active,2);
  block.resolve();await Promise.all([a,b]);
  plans.odd.revision='2';block=gate();const c=scenes.load('other',640),d=scenes.load('odd',640);
- await tick();assert.deepEqual(started.slice(-2),['other','odd']);
+ await tick();assert.deepEqual(started.slice(-2),['odd','other']);
  block.resolve();await Promise.all([c,d]);
 });
 test('cancelled pending expensive demand never starts and a failed preparation releases capacity',async()=>{
@@ -213,7 +214,7 @@ test('needed explicit and viewport sources survive reranking and competing deman
  await tick();scenes.viewport([],[]);
  const selected=scenes.load('selected',2560,undefined,0);
  await tick();assert.equal(signals.build.aborted,false);assert.equal(signals.tile.aborted,false);
- assert.deepEqual(started,['build','tile']);
+ assert.deepEqual(started,['tile','build']);
  scenes.viewport([],['tile']);controller.abort();await cancelled;assert.equal(signals.tile.aborted,false);
  scenes.viewport([],[]);assert.equal(signals.tile.aborted,true);assert.equal(signals.build.aborted,false);
  block.resolve();assert.equal((await build).key,'build');assert.equal((await selected).key,'selected');

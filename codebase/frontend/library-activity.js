@@ -24,7 +24,7 @@
     return `Checking for new photos${running ? " · " + running.path.split(/[\\/]/).at(-1) : ""}`;
   }
   function sceneWork(health, snapshot = {}) {
-    const all = [...Object.values(snapshot).flatMap(queue => queue.jobs || []), ...(health.preparation || []), ...(health.helper.jobs || [])].filter(job => job.path);
+    const all = [...Object.values(snapshot).flatMap(queue => queue.jobs || []), ...(health.preparation || []), ...(health.helper.jobs || []), ...(health.grants || []), ...(typeof window!=="undefined"?window.HDRLibraryGrants?.snapshot().jobs||[]:[])].filter(job => job.path);
     const jobs = [...new Map(all.map(job=>[job.path,job])).values()];
     const waiting=jobs.filter(j=>j.state==="waiting").length;
     const running=jobs.length-waiting;
@@ -38,6 +38,8 @@
     if (checkText(index)) jobs.push(checkText(index));
     if (index.state === "indexing" || index.state === "retrying" || index.paused) jobs.push(indexText(index));
     if (health.file_commands?.jobs?.length) jobs.unshift(`File commands: ${health.file_commands.jobs[0].done} of ${health.file_commands.jobs[0].total}`);
+    const pause=(typeof window!=="undefined"?window.HDRLibraryGrants?.snapshot().jobs:health.grants)?.find(j=>j.reason==="paused for Grade");
+    if(pause)return `Library paused: memory is in use by ${pause.grade} in Grade`;
     const work = sceneWork(health, typeof window !== "undefined" ? window.HDRLibraryScenes?.snapshot() : undefined);
     if (work.jobs.length || health.helper.manual_paused) jobs.unshift(work.jobs.length ? work.text : "Library reading paused");
     const problems = work.failures.filter(item => !item.ignored).length + (health.file_commands?.attention?.length || 0) + writer.attention.reduce((sum, group) => sum + group.count, 0) + (health.conflicts || []).length + (index.checks?.folders || []).filter(folder => folder.failure || folder.warnings?.length).length;
@@ -75,6 +77,12 @@
       if(built?.usage){const u=built.usage;panel.append(node('p',`Protected screen previews: ${(u.protected_bytes/1024**3).toFixed(2)} of ${(u.limit_bytes/1024**3).toFixed(0)} GiB · ${u.protected_previews} HDR/SDR files${u.protected_bytes>=u.limit_bytes?' · Limit reached: discard some previews before building more':''}`));}
       if(built?.job){const j=built.job,section=node('section','','library-activity-job');section.append(node('p',`Build previews: ${j.done} of ${j.total} · ${j.state}${j.error?' · '+j.error:''}`));if(['running','paused'].includes(j.state)){const cancel=node('button','Cancel building previews','text-button');cancel.onclick=()=>window.HDRLibraryBuildPreviews.cancel();section.append(cancel);}panel.append(section);}
       const work = sceneWork(health, window.HDRLibraryScenes?.snapshot());
+      if(work.jobs.some(j=>j.reason==="paused for Grade")){
+        const section=node("section","","library-activity-job");
+        section.append(node("h3","This photo needs the app's memory while it is open in Grade. Close it in Grade to resume Library browsing.","panel-title"));
+        const close=node("button","Close photo in Grade","text-button");close.onclick=()=>window.dispatchEvent(new Event("library-close-grade"));
+        section.append(close);panel.append(section);
+      }
       if (work.jobs.length || health.helper.pending || health.helper.manual_paused) {
         const section = node("section", "", "library-activity-job");
         section.append(node("p", work.text + (health.helper.paused ? " · Reading paused" : "")));

@@ -41,7 +41,7 @@ Open the file named for the thing you are changing. Most files are focused.
 | Scopes, overlays, peak | `scopes.py`, `overlay.py`, `peak_accuracy.py`, `peak_candidates.py` |
 | Session and projects | `sessions.py`, `projects.py` |
 | Export and proof | `exporters.py`, `proofing.py`, `hosting_probe.py`, `test_pattern.py` |
-| Library RAM scheduling (phase 3a foundation; not connected yet) | `library_scheduler.py` (priority, floor, reserve, owner cleanup), `library_estimates.py` (header dimensions and approved rates) |
+| Library RAM scheduling (phase 3a) | `library_scheduler.py` (priority, floor, reserve, owner cleanup), `library_estimates.py` (header dimensions and approved rates), `library_grants.py` (WebSocket channel, Grade accounting, backend waits); frontend `library-grants.js` (one channel per window, cancellation, reconnect) |
 | Machine and tools | `capabilities.py`, `binaries.py`, `subprocess_utils.py`, `display_probe.py` |
 
 The largest are `adjustments.py` and `main.py`. Neither

@@ -410,12 +410,14 @@ class SessionStore:
         current = self.current()
         if current is None:
             return 0
-        total = int(current.image.nbytes)
-        if current.retouch_original is not current.image:
-            total += int(current.retouch_original.nbytes)
-        if current.sdr_reference_image is not None:
-            total += int(current.sdr_reference_image.nbytes)
-        return total
+        arrays = [current.image, current.retouch_original, current.sdr_reference_image]
+        retained = {}
+        for array in arrays:
+            if array is None: continue
+            while isinstance(getattr(array,"base",None),np.ndarray):
+                array = array.base
+            retained[id(array)] = int(array.nbytes)
+        return sum(retained.values())
 
     def clear(self) -> None:
         with self._lock:

@@ -23,6 +23,7 @@ _caches = {}
 _sample = (0, None)
 _sample_lock = Lock()
 _remote_claim = None
+grade_bytes_provider = lambda: 0
 
 
 def machine_memory():
@@ -307,13 +308,15 @@ def snapshot(refresh=False):
         reserved=sum(row[0] for row in _reservations.values())
         waiting=now<_waiting_until
     pressure=system_pressure()
-    level=pressure_level(total,pressure)
+    grade_bytes=grade_bytes_provider()
+    safety_total=max(0,total-grade_bytes)
+    level=pressure_level(safety_total,pressure)
     # A refused admission ("waiting") is reported for logs only. It is never
     # pressure: only measured memory and the operating system are.
     return dict(totalBytes=total,workingSetBytes=sum(r['workingSetBytes'] for r in rows),
                 measurement='physical-footprint' if sys.platform=='darwin' else 'proportional-resident',processes=rows,ceilingBytes=CEILING,
                 targetBytes=TARGET,reservedBytes=reserved,caches=cache_snapshot(),
-                pressure=pressure,level=level,waiting=waiting,budgetPressure=total>TARGET,
+                pressure=pressure,level=level,waiting=waiting,budgetPressure=safety_total>TARGET,gradeBytes=grade_bytes,
                 reclaim=level!='none')
 
 

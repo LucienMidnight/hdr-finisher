@@ -440,7 +440,7 @@ def original_preview(path, edge):
         raise ValueError("No original quick draw for this format")
     if path.suffix.lower() != ".png" and loader.is_ultrahdr_jpeg(path):
         raise ValueError("Gain-map JPEG needs its HDR interpretation")
-    pixels, metadata = loader._load_with_pillow(path, encoded_samples=True)
+    pixels, metadata = loader._load_with_pillow(path, encoded_samples=True, draft_edge=edge)
     if metadata.get("needs_color_override") or metadata.get("color_space") != "sRGB":
         raise ValueError("Original quick draw needs resolved SDR colour")
     # Grade's decoder already applied ICC and orientation. Only this temporary
@@ -517,6 +517,7 @@ def _extract_camera_preview(path, edge):
         raw.open_file(str(path))
         thumb = raw.extract_thumb()
         image = Image.open(BytesIO(thumb.data)) if thumb.format == rawpy.ThumbFormat.JPEG else Image.fromarray(thumb.data)
+        if thumb.format == rawpy.ThumbFormat.JPEG: image.draft("RGB", (edge, edge))
         image = ImageOps.exif_transpose(image).convert("RGB")
         image.thumbnail((edge, edge))
         output = BytesIO()
