@@ -1533,6 +1533,81 @@ accept exactly +10%, reject one byte beyond it, and preserve the hard reserve.
 No GPU acceptance run was repeated for this measurement-only change.
 
 
+### 7.10 Phase 3c.2 Part B: GPU work in the Library scheduler (October 31)
+
+**Built and measured on `library-gpu-scheduling`** (`e466cd4` prototype finished
+in `ae79a3d`, `2a9f016`, `d19862b`, `5282827`). The brief asked for this as a new
+section 7.9; Part A holds that number, so it is 7.10.
+
+Built: development and draw leases move into the one scheduler. Up to two
+developments share the GPU when both `rawBudget` estimates, plus the small draw
+allowance, fit in the app's existing Auto budget (half the detected card; the
+Library now reports the same budget as Grade). Finished cells draw on their own
+allowance without waiting for a development lease. Grade and export preempt at
+the job's next safe point: the Library job releases its GPU memory, discards its
+GPU work, keeps its decoded CPU source only if the RAM cache admits it, and is
+requeued without spending an attempt (no disk checkpoint); the release log
+records how long the higher class waited. RAM and the GPU are granted together
+(M4). Out of memory frees the work and retries once at the front, then the
+visible-only CPU route, and writes no broken-photo record. A lost device
+releases all GPU grants and requeues once, then the visible-only CPU route.
+Every development logs `gpu_estimate_bytes` and its measured `gpu_peak_bytes`.
+
+**The 120 s grid timeout was not the scheduler.** The grid driver copies
+`sdr_gradient.png` (111 bytes) as its fourth photo; the October 30 file gate
+lists only files of at least 1 KB, so the folder listed three photos
+(`folder_open_first_rows rows: 3`, `page_folder_rows_usable count: 3`) and the
+driver waited forever for a fourth canvas. The disposable copy is now padded
+past IEND above 1 KB (`ae79a3d`); pixels and edges are unchanged. With four
+photos listed, the grid completed and two real Part B defects surfaced:
+
+1. The Library window never received the detected video memory, so its Auto
+   budget stayed at the 2 GiB policy default and `/api/delivery/gpu/activity`
+   clamped the scheduler's GPU budget to 2 GiB. Two 1.26 GB ARW developments
+   could never share and mid-flight preemption checks misfired. The Library boot
+   now reads `desktop.videoMemory()` before renderer setup (`2a9f016`).
+2. A device-loss or preemption requeue could start before the departing attempt
+   stored its retained decoded source (measured 5 ms). The retry then fetched
+   the source again while the backend claim was still held and renewed every
+   10 s, so `live-scene` answered 202 forever. The retry now adopts a retained
+   source that appears while it waits, and when the GPU route gives up for a
+   photo the retained source is released so the visible CPU route can claim it
+   (`d19862b`). A retained direct scene also reports as a cache hit.
+
+**Measurements** (commit `5282827`). Grid driver via the release runner: PASS;
+four cells cold in 6.7 s, every source reused (18-22 ms), two developments
+overlapped, device-loss redraw of all cells works. New recovery driver
+(`library-gpu-recovery.js`, area): forced OOM takes one GPU retry then the
+visible CPU route; two forced device losses requeue once then take the visible
+CPU route; both photos finish, no broken-photo records, no stuck grants - PASS.
+
+One versus two GPU developments, Aceh 48-photo folder, cold, default 4 GB:
+first/second screen 27.4 / 43.5 s with two, 28.6 / 47.7 s with one; all 30
+visible quick previews on screen by 2.0 s (slowest IMG_3212.JPG, 1.27 s
+request); peak RAM 3.74 / 3.42 GB; two overlapped in the grant log and is
+faster with the same outcomes, so two stays. Default mixed folder (phase0 set,
+4 GB): peak 3.42 GB - under the ceiling, the +10% brief excursion was not
+needed - settled immediately (under ceiling - 600 MB), system reserve never
+touched. Completion is unchanged from Part A: 10 of 27 finished, 3 refused as
+needing more memory, the rest still developing at stop; the harness'
+per-cell-outcome assert fails on those unfinished giants. Grade coexistence:
+line-scan DNG open in Grade, Library paused in 543 ms, first ordinary photo
+551 ms, resume after close 212 ms, the small edit saved.
+
+**Open.** Two of the 48 Aceh JPEGs (IMG_2995, IMG_3232) are portrait photos:
+`gpu_metadata` plans with landscape dimensions while the decode reports
+portrait, the decoded `rawBudget` exceeds the admitted reservation by ~4 KB,
+and `gpu_refine` forbids growth after admission, so both take the visible CPU
+route (identical in both runs). Finishing it needs either the planning
+convention to match the decode or a small tolerated growth - a decision, not
+taken here. Large-picture completion in the phase0 set, and explicit M8/M18/M19
+driver coverage, remain open.
+
+Evidence: `codebase/output/cold-mixed/aceh-3c2-partb-{one,two}/report.json`,
+`codebase/output/cold-mixed/phase3c2-partb-default/report.json`,
+`codebase/output/release-checks/`, `codebase/output/library-gpu-recovery/`,
+`codebase/output/phase3a-grade/report.json`.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
@@ -1748,6 +1823,15 @@ README in `docs/technical/wip/phase3c2-gpu/` on that branch) and as
 to Part A. Part B/C and all final acceptance remain open. No edited comparison
 baseline or pairs were captured. Resume with the prototype README; do not treat
 its focused checks as qualification of the restored production code.
+
+**Resumed and finished, same day.** Part B was completed on
+`library-gpu-scheduling` (see 7.10): the 120 s timeout was the driver's
+111-byte fixture under the file gate's 1 KB listing floor, and the two real
+defects it hid (the Library's 2 GiB budget default; a retry racing the previous
+attempt's retained source claim) were fixed. The wip scaffolding and its
+output copy are removed; the prototype's descriptor correction (cropped versus
+raw sensor dimensions) stands. Acceptance runs in 7.10; the remaining open
+items are listed there.
 
 ## 11. Code map (for whoever builds it)
 

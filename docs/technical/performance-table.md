@@ -134,6 +134,22 @@ codebase/output/cold-mixed/phase3c2-default/report.json and memory.jsonl.
 Parts B/C and the remaining acceptance runs stopped under the brief's explicit
 AVIF condition; previous timing rows remain the last complete measurements.
 
+Phase 3c.2 Part B, October 31 (branch `library-gpu-scheduling`, commit
+5282827), one disposable cold run per condition, 2560x1440, default 4 GB.
+Evidence: `codebase/output/cold-mixed/aceh-3c2-partb-{one,two}/report.json`,
+`codebase/output/cold-mixed/phase3c2-partb-default/report.json`,
+`codebase/output/library-gpu-recovery/`, `codebase/output/phase3a-grade/`.
+
+| Action | Target | Latest measured | Conditions | Status |
+|---|---|---|---|---|
+| Cold Aceh 48, two GPU developments: first / second viewport | <=26.51 / 51.59 s historical target | 27.424 / 43.451 s | All 48 finished; peak 3.741 GB; developments overlapped; 0 duplicate asks, 0 timeouts | Second viewport within target; first 3.4% over, one run |
+| Cold Aceh 48, one GPU development: first / second viewport | Same historical target, comparison run | 28.622 / 47.721 s; peak 3.420 GB | Same folder, `HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS=1` | Two is faster (4% / 9%); two stays |
+| Folder click -> all initially visible quick previews | Report, no pass/fail target (decision 15) | 30/30 by 1.965 s; slowest IMG_3212.JPG, 1.264 s request | Two-development run; includes partial rows | Reported |
+| Grid of 3 RAW + 1 PNG, cold | Grid completes | 6.722 s to four drawn cells; each reuse 18-22 ms | 2560x1440, isolated profile; release runner PASS | Met |
+| Default mixed phase0, 27, 4 GB | Peak within ceiling +10% briefly, settle below ceiling - 600 MB | Peak 3.420 GB (no excursion); settled immediately | Completion unchanged from Part A: 10 finish, 3 need-memory, 14 still developing at stop | Memory met; completion open |
+| Line-scan DNG open in Grade, Library browsing | Pause <1 s; first ordinary <5 s; resume <2 s | Pause 543 ms; first ordinary 551 ms; resume 212 ms | 4 GB ceiling; small edit saved | Met |
+| Forced Library GPU OOM and device loss | Photos finish; no broken records | OOM: 2 attempts then visible CPU route; loss twice: 2 attempts then visible CPU route | `tests/library-gpu-recovery.js`, release runner PASS | Met |
+
 ## 3. Developing a photo (per photo)
 
 | Action | Target | Measured | Conditions | Status |

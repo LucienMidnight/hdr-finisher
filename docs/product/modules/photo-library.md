@@ -4,6 +4,31 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 31 phase 3c.2 Part B: GPU work in the Library scheduler — built and measured
+
+Library developments and draws now use the one scheduler on branch
+`library-gpu-scheduling` (`ae79a3d`, `2a9f016`, `d19862b`, `5282827`). Up to two
+developments share the GPU when both estimates fit in the app's Auto budget
+(half the detected card; the Library now reports that budget, not the 2 GiB
+policy default); finished cells draw without waiting; Grade and export preempt
+at a safe point and the requeued job costs no attempt; RAM and GPU are granted
+together; out-of-memory retries once at the front, then the visible-only CPU
+route; a lost device releases all grants and requeues once. Every development
+logs its GPU estimate and measured peak. Details: [scheduler design 7.10](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+
+The earlier 120 s grid timeout was the driver's 111-byte PNG falling under the
+file gate's 1 KB listing floor, not the scheduler; with four photos listed, two
+real defects surfaced (Library budget default; a retry racing the previous
+attempt's retained source claim) and were fixed. Acceptance: grid driver and
+recovery driver pass via the release runner; two developments beat one on the
+Aceh folder (27.4/43.5 s vs 28.6/47.7 s, peaks 3.74/3.42 GB), so two stays; the
+default mixed folder met the memory rules (peak 3.42 GB, settled, reserve
+untouched) with completion unchanged from Part A; Grade coexistence passes
+(pause 543 ms). Open: two portrait JPEGs of 48 plan with landscape dimensions
+and take the visible CPU route (plan-vs-decode growth of ~4 KB, no growth
+tolerance after admission) — a decision, not taken; large-picture completion
+in the phase0 set and explicit M8/M18/M19 driver coverage remain open.
+
 ## October 31 wrap-up: Part A committed; Parts B/C unfinished
 
 Part A is committed in `5fb733c` and `a86689a`. The later Part B prototype
@@ -18,6 +43,11 @@ restart points. A copy also remains in `codebase/output/phase3c2-gpu-wip/`.
 No Part C changes or edited-photo comparison pairs were made. One-versus-two,
 final default mixed, raised line scan, Grade coexistence, forced GPU failures
 and Single/neighbour acceptance remain open. No acceptance claim is made.
+(Superseded the same day: Part B was resumed and completed on
+`library-gpu-scheduling`; see the section above. The wip scaffolding and its
+output copy were removed. Of the items listed, one-versus-two, final default
+mixed and Grade coexistence are now measured in the new section; forced GPU
+failures have a new driver; Single/neighbour coverage remains open.)
 
 Steve clarified that M17 shares only simultaneous work at the same source and
 resolution. Priority preemption discards Library GPU intermediates at a safe

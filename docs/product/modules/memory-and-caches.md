@@ -291,9 +291,16 @@ section 9 for file layout.
 VRAM is a separate budget, set per device in `gpu-budget.js` and
 `gpu-render-plan.js` (automatic policy 2 GiB; smaller on software or limited
 adapters). Grade's GPU tile caches trim against it in `webgpu-preview.js`.
-Library RAW development, delivery and Grade share the GPU broker's budget;
-Library GPU RAW keeps at most 384 MiB of developed scenes
-(`library-raw-gpu.js`). Details: [preview-and-gpu](preview-and-gpu.md).
+Library RAW development, delivery and Grade share the GPU broker's budget.
+Library developments and finished-cell draws now take their allowance inside
+the one Library scheduler (phase 3c.2 Part B, October 31): up to two
+developments share the GPU when their estimates fit the Automatic VRAM budget
+(half the detected dedicated video memory; the Library reports the same budget
+as Grade, not the 2 GiB policy default), finished cells draw on a small
+allowance without waiting for a development lease, and Grade or export preempts
+a Library development at its next safe point. Library GPU RAW keeps at most
+384 MiB of developed scenes (`library-raw-gpu.js`). Details:
+[preview-and-gpu](preview-and-gpu.md).
 
 GPU-process **host** RAM (Chromium's copies of uploads and canvases) does
 count toward the RAM total, and grows with the number of live canvases.
