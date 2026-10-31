@@ -4,6 +4,27 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 31 wrap-up: Part A committed; Parts B/C unfinished
+
+Part A is committed in `5fb733c` and `a86689a`. The later Part B prototype
+passed 76 focused Python and 71 JavaScript checks but failed its real-app grid
+check twice: first a RAW sensor-size reservation mismatch, then a 120-second
+grid-completion timeout after correcting the descriptor. It is **not built or
+qualified**. At Steve's request to wrap up, the code was restored to committed
+Part A. The prototype and recovery-driver draft are preserved on the local
+branch `library-gpu-scheduling-wip` (commit 54bfb62, not pushed), with its
+README in `docs/technical/wip/phase3c2-gpu/` there; the README records the
+restart points. A copy also remains in `codebase/output/phase3c2-gpu-wip/`.
+No Part C changes or edited-photo comparison pairs were made. One-versus-two,
+final default mixed, raised line scan, Grade coexistence, forced GPU failures
+and Single/neighbour acceptance remain open. No acceptance claim is made.
+
+Steve clarified that M17 shares only simultaneous work at the same source and
+resolution. Priority preemption discards Library GPU intermediates at a safe
+point, keeps CPU samples only if free to retain, and requeues without spending
+an attempt. No disk checkpoint. These decisions are recorded in the scheduler
+design and memory-and-caches.
+
 ## October 31 phase 3c.2 Part A: revised memory acceptance; B/C open
 
 Approved estimates and helper deadlines are wired in: AVIF 56 bytes/pixel;

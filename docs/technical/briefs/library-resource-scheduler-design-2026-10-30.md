@@ -307,9 +307,12 @@ requests.
   back and hands off). **Steve's decision.**
 * Draws of finished pictures do not need a development lease. They are
   small, and they get their own small GPU allowance.
-* Grade and export keep priority. A Library development is asked to pause
-  only at a safe point between stages, and is not thrown away. If it is
-  stopped, it waits its turn again without spending an attempt.
+* Grade and export keep priority. **Steve, October 31: this replaces “not
+  thrown away” for GPU work.** Stop Library GPU work at its next safe point,
+  release its GPU memory and discard GPU intermediates. Requeue without
+  spending an attempt. Keep the decoded CPU source only when it fits the
+  existing free RAM share; otherwise drop it. No disk checkpoint. Export may
+  wait only until that safe point (expected well under one second); log the wait.
 * A GPU out-of-memory error frees Library work and retries once at the
   front of the line, before any CPU fallback.
 
@@ -573,7 +576,7 @@ that proves it.
 | M14 | GPU out of memory | Caught through WebGPU error scopes; Library work freed; retried once | 3 | Forced allocation failure |
 | M15 | Another app using VRAM (games, browsers) | Fixed headroom kept free (darktable practice); out-of-memory handling as M14 | 3 | — |
 | M16 | Export or Proof running | Library background work pauses; visible work continues on a small allowance; export never waits on the Library | 3 | Export while scrolling |
-| M17 | Grade and the Library want the same photo | One development per source identity, shared | 3 | Open a photo in Grade while its cell develops |
+| M17 | Grade and the Library want the same photo | No duplicate simultaneous development for the same source **at the same resolution**; different resolutions may proceed with Grade priority | 3 | Open a photo in Grade while its cell develops |
 | M18 | Pasting a grade onto hundreds of photos | Redraw only; visible photos first, the rest **eventually**; no new development unless the source changed | 3 | Paste onto 200 photos in a disposable copy |
 | M19 | Virtual copies | One development, separate draws | 3 | Existing virtual-copy fixture |
 | M20 | HDR/SDR switch | Redraw from the same scene; no development | 5 | Toggle test |
@@ -1719,6 +1722,32 @@ Decided October 30:
     passes; keep 56, no further AVIF investigation now. Rerun the default mixed
     folder in final acceptance. This supersedes earlier exact-ceiling acceptance
     wording, not the existing estimate-based admission or reserve rules.
+
+17. **Sharing means the same source at the same resolution — Steve, October 31.**
+    M17 forbids duplicate simultaneous work at matching source/resolution. A
+    Library 640 development may proceed alongside Grade's full-resolution work;
+    Grade keeps priority. Reusing Grade's finished result for a cell is optional
+    only if simple; do not build new sharing machinery for it.
+
+18. **Discard Library GPU intermediates on priority preemption — Steve, October 31.**
+    This supersedes “not thrown away” in 6.7 for GPU work. Stop at the next safe
+    point, free GPU allocations, requeue without spending an attempt. Retain the
+    CPU decoded source only if free to keep inside existing RAM cache shares;
+    otherwise drop it too. No disk checkpoints or added allowance. Export waits
+    only for the next safe point, expected well under one second; log that wait.
+
+**Wrap-up requested by Steve, October 31.** Part A remains the committed
+implementation (`5fb733c`, `a86689a`). A Part B prototype passed 76 focused
+Python and 71 JavaScript checks, but the real-app grid driver failed twice.
+The first failure exposed cropped versus raw sensor dimensions in the GPU
+reservation descriptor; after correcting that, detached reuse passed but grid
+completion timed out after 120 seconds. The unqualified prototype was preserved
+on the local branch `library-gpu-scheduling-wip` (commit 54bfb62, not pushed;
+README in `docs/technical/wip/phase3c2-gpu/` on that branch) and as
+`codebase/output/phase3c2-gpu-wip/part-b.patch`. Production code is restored
+to Part A. Part B/C and all final acceptance remain open. No edited comparison
+baseline or pairs were captured. Resume with the prototype README; do not treat
+its focused checks as qualification of the restored production code.
 
 ## 11. Code map (for whoever builds it)
 

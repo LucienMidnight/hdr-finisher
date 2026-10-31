@@ -325,6 +325,10 @@ versus sidecar Export/Proof output. `tests/library-grade-saving.js` is the
 focused Electron check for controls, transitions, close cancellation, external
 changes and offered restart recovery, using disposable photos only.
 
+`codebase/tools/library-memory-monitor.cjs` records whole-app peak, planning
+ceiling excursions, active grants/types, duration and hard reserve violations;
+`measure-library-cold-mixed.cjs` consumes it for acceptance runs.
+
 ### Photo Library measurements
 
 `tests/performance/photo-library-measurements.py` is a read-only corpus probe

@@ -32,6 +32,19 @@ The RAW sensor read needs about 5.5 bytes per pixel. GPU memory runs about
 proposed per-type estimates are Steve's decision; no size or share has
 changed.
 
+### October 31: GPU priority and source sharing decisions (Steve)
+
+Library GPU intermediates are disposable at a safe point when Grade or export
+needs their memory. Release them and requeue without spending an attempt. Keep
+CPU decoded samples only when free to keep within the existing sharp-scene RAM
+share; otherwise drop them. **No disk checkpoints and no increased allowance.**
+Log the priority wait through release; export should wait well under one second.
+This replaces the earlier “not thrown away” rule for GPU work.
+
+M17 sharing applies only to simultaneous requests for the same source at the
+same resolution. Grade's full-resolution work and a Library 640 development may
+both proceed, with Grade priority. No new cross-resolution sharing machinery.
+
 ### October 31: planning ceiling acceptance and overrun records (Steve)
 
 The whole-app ceiling is a planning budget. While a job runs, memory may
