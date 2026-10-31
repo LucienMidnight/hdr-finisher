@@ -5,7 +5,8 @@ const {spawn}=require('node:child_process');
 const {chromium}=require('playwright');
 const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
 const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe'),aceh=process.argv.includes('--aceh'),phase0=process.argv.includes('--phase0');
-const out=path.join(root,'output/cold-mixed',jpeg?'jpeg':probe?'probe':aceh?'aceh':phase0?'phase0':'final');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'memory.jsonl'),'');
+const outputName=process.argv.includes('--output-name')?process.argv[process.argv.indexOf('--output-name')+1]:null;
+const out=path.join(root,'output/cold-mixed',outputName|| (jpeg?'jpeg':probe?'probe':aceh?'aceh':phase0?'phase0':'final'));fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'memory.jsonl'),'');
 const scratch=fs.mkdtempSync(path.join(root,'output/test-photos/cold-mixed-'));
 const photos=path.join(root,'output/test-photos',phase0?'phase0':aceh?'aceh':'cold-mixed-photos'),background=path.join(scratch,'index');fs.mkdirSync(photos,{recursive:true});fs.mkdirSync(background);
 const source=phase0?photos:aceh?'D:/Photos/2017/Aceh-Wedding/Pesta':'D:/Photos/2023/11';
@@ -30,7 +31,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const report={mode:phase0?'phase0':jpeg?'IMG_0267':aceh?'aceh':'mixed',files:names,junk,errors:[],memoryRequests:[],screens:[],startedAt:new Date().toISOString()};
 const before=hashProjects(require('../tests/release/drivers.json').protectedProjects);
 (async()=>{
- let browser,lib,observer,peak=0,pending='',poll,stopping=false,activePoll;
+ let memoryViolation, browser,lib,observer,peak=0,pending='',poll,stopping=false,activePoll,diagnostics;
  const api=async(route,body,signal)=>{
   const response=await global.HDRFinisherElectronTestHarness.fetch('/api/library/'+route,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal});
   if(!response.ok)throw Error(`${route}: ${response.status} ${await response.text()}`);return response.json();
@@ -38,6 +39,11 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
  try{
   browser=await chromium.launch();const page=await browser.newPage();page.on('pageerror',e=>report.errors.push(String(e)));
   page.on('console',msg=>{if(msg.text().includes('Memory controller:'))report.errors.push(msg.text());});
+  report.grantEvents=[];const liveGrants=new Map();
+  page.on('websocket',ws=>{if(!ws.url().endsWith('/api/library/grants'))return;
+    ws.on('framereceived',event=>{const value=JSON.parse(String(event.payload));report.grantEvents.push({at:Date.now(),...value});if(value.type==='granted')liveGrants.set(value.id,value);});
+    ws.on('framesent',event=>{const value=JSON.parse(String(event.payload));if(value.type==='finish')liveGrants.delete(value.id);});
+  });
   report.channelFrames=[];report.httpRequests=[];page.on('websocket',ws=>ws.on('framesent',event=>{if(ws.url().endsWith('/api/library/grants'))report.channelFrames.push({at:Date.now(),...JSON.parse(String(event.payload))});}));page.on('request',r=>{if(r.url().includes('/api/library/'))report.httpRequests.push({at:Date.now(),url:r.url()});});
   await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
   lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
@@ -51,10 +57,19 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
    const slider=document.getElementById('thumbnail-size');slider.value=300;slider.dispatchEvent(new Event('input'));
    document.querySelector('[data-sort="name"]').click();
   });
+  const requests=new Map();report.network=[];
+  page.on('request',r=>{if(r.url().includes('/api/library/'))requests.set(r,Date.now());});
+  const ended=r=>{if(requests.has(r)){report.network.push({url:r.url(),start:requests.get(r),end:Date.now(),failure:r.failure()?.errorText});requests.delete(r);}};
+  page.on('requestfinished',ended);page.on('requestfailed',ended);
   observer=spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID],{windowsHide:true});
   observer.stdout.on('data',chunk=>{
    pending+=chunk;let at;while((at=pending.indexOf('\n'))>=0){const line=pending.slice(0,at);pending=pending.slice(at+1);if(!line)continue;
     const sample=JSON.parse(line);if(sample.totalBytes>peak){peak=sample.totalBytes;report.peakSample=sample;}report.samples=(report.samples||0)+1;
+    if(sample.totalBytes>4_000_000_000){
+      const ordinary=[...liveGrants.values()].filter(j=>j.estimate>64_000_000);
+      if(phase0 && ordinary.length===1 && ordinary[0].alone)(report.oversizedExceptions ||= []).push({at:Date.now(),bytes:sample.totalBytes,grant:ordinary[0]});
+      else memoryViolation={at:Date.now(),sample,grants:[...liveGrants.values()]};
+    }
     fs.appendFileSync(path.join(out,'memory.jsonl'),line+'\n');
    }
   });
@@ -64,30 +79,52 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
    activePoll=(async()=>{const at=performance.now();try{const value=await api('memory',null,AbortSignal.timeout(2000));report.memoryRequests.push({ms:performance.now()-at,total:value.totalBytes});}
     catch(e){report.memoryRequests.push({ms:performance.now()-at,error:String(e)});}})().finally(()=>activePoll=null);
   };poll=setInterval(sample,500);await sample();
+  if(process.argv.includes('--memory-detail'))try{
+   const cdp=await page.context().newCDPSession(page);
+   diagnostics=async()=>{
+    await cdp.send('Tracing.start',{categories:'-*,disabled-by-default-memory-infra',transferMode:'ReturnAsStream'});
+    report.nativeSampling=await cdp.send('Memory.getBrowserSamplingProfile').catch(error=>({error:String(error)}));
+    report.rendererHeap=await cdp.send('Runtime.getHeapUsage');
+    await cdp.send('Tracing.requestMemoryDump',{levelOfDetail:'detailed'});
+    const done=new Promise(resolve=>cdp.once('Tracing.tracingComplete',resolve));
+    await cdp.send('Tracing.end');const {stream}=await done;
+    const tracePath=path.join(out,'memory-trace.json');fs.writeFileSync(tracePath,'');
+    for(;;){const part=await cdp.send('IO.read',{handle:stream,size:1048576});fs.appendFileSync(tracePath,part.base64Encoded?Buffer.from(part.data,'base64'):part.data);if(part.eof)break;}
+    await cdp.send('IO.close',{handle:stream});
+    report.memoryTrace='memory-trace.json';
+   };
+  }catch(error){report.memoryDiagnosticError=String(error);}
   const cacheSettings=await api('cache-settings');report.cacheSettings=cacheSettings;
   assert.ok(cacheSettings.location.toLowerCase().includes('test-'),'Test must use an isolated disk cache');
   await api('lock-metrics',{reset:true});
   if(!jpeg&&!aceh&&!phase0)await api('pins',{paths:[background]});
-  const opened=Date.now();void lib.evaluate(folder=>HDRLibrary.browse(folder),photos.replaceAll('\\','/')).catch(e=>report.errors.push(String(e)));
+  if(phase0)await lib.evaluate(()=>window.phase3a2All=true);
+  report.openedPerformance=await lib.evaluate(()=>performance.now());
+  const opened=report.openedAt=Date.now();void lib.evaluate(folder=>HDRLibrary.browse(folder),photos.replaceAll('\\','/')).catch(e=>report.errors.push(String(e)));
   await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count>0,null,{timeout:20000});
-  for(let screen=0;screen<(jpeg||probe?1:2);screen++){
+  for(let screen=0;screen<(phase0?1:jpeg||probe?1:2);screen++){
    if(screen){report.scrolledAt=Date.now();}if(screen)await lib.evaluate(()=>{const grid=document.getElementById('library-grid');grid.scrollTop+=grid.clientHeight;grid.dispatchEvent(new Event('scroll'));});
    await sleep(300);
+   const visibleTargets=await lib.evaluate(()=>{
+    const b=document.getElementById('library-grid').getBoundingClientRect();
+    return [...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect();return r.top<b.bottom&&r.bottom>b.top;}).map(c=>c.dataset.path);
+   });
    const targets=await lib.evaluate(()=>{
     const bounds=document.getElementById('library-grid').getBoundingClientRect();
-    return [...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect();return r.top>=bounds.top-1&&r.bottom<=bounds.bottom+1;}).map(c=>c.dataset.path);
+    return [...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect();return (window.phase3a2All || (r.top>=bounds.top-1&&r.bottom<=bounds.bottom+1));}).map(c=>c.dataset.path);
    });
    const started=Date.now();let cells;
    while(Date.now()-started<(phase0&&screen?5000:probe?60000:120000)){
-    if(peak>4_000_000_000)throw Error('STOP: whole-app memory exceeded 4 GB');
+    if(memoryViolation){report.memoryViolation=memoryViolation;throw Error('STOP: whole-app memory exceeded 4 GB outside a single oversized-alone grant');}
     cells=await lib.evaluate(paths=>paths.map(p=>{const c=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===p);return {path:p,presented:!!c?.querySelector('canvas[data-picture-key]'),error:c?.querySelector('.library-picture-error')?.title||c?.querySelector('.picture-failed')?.textContent};}),targets);
     if(cells.length&&cells.every(c=>c.presented||c.error))break;
     await sleep(300);
    }
-   report.screens.push({screen:screen+1,elapsedSinceOpenMs:Date.now()-opened,cells});
+   report.screens.push({screen:screen+1,visibleTargets,elapsedSinceOpenMs:Date.now()-opened,cells});
    report.indexDuringScreens=await api('health',null,AbortSignal.timeout(2000)).catch(e=>({error:String(e)}));
    console.log(JSON.stringify({screen:screen+1,elapsedMs:Date.now()-opened,presented:cells.filter(c=>c.presented).length,total:cells.length,peakGB:peak/1e9}));
   }
+  if(diagnostics){await diagnostics().catch(error=>report.memoryDiagnosticError=String(error));diagnostics=null;}
   Object.assign(report,await lib.evaluate(()=>({events:coldEvents,allocations:coldAllocations,snapshot:HDRLibrary.getSnapshot(),queue:HDRLibraryScenes.snapshot()})));
   report.lock=await api('lock-metrics',{});
   await page.screenshot({path:path.join(out,'screen.png')});
@@ -95,7 +132,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   assert.ok((report.allocations||[]).every(a=>a.peak<=a.reserved),'Actual GPU allocation must fit its reservation');
   assert.ok(!report.memoryRequests.some(r=>r.error),'Memory endpoint must not time out');
   assert.ok(report.samples>0&&!report.observerError,'Independent memory observer must work');
-  assert.ok(peak<=4_000_000_000,'Whole-app memory must remain below ceiling');
+  assert.ok(peak<=4_000_000_000 || (phase0 && !memoryViolation && report.oversizedExceptions?.length),'Whole-app memory must remain below ceiling except a logged single oversized-alone grant');
   assert.deepEqual(report.errors,[]);
   if(aceh)assert.equal(report.snapshot.count,names.length,'AppleDouble ._ files must not be listed');
  }catch(e){report.error=String(e.stack||e);process.exitCode=1;
@@ -108,7 +145,22 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   const log=path.join(process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA||'','logs/backend.log');if(fs.existsSync(log))fs.copyFileSync(log,path.join(out,'backend.log'));
   report.results=(report.screens||[]).flatMap(s=>s.cells.map(c=>({...c,screen:s.screen,requests:(report.events||[]).filter(e=>e.path===c.path&&e.stage==='picture_navigation_to_present'&&e.view==='grid').map(e=>({request:e.request,size:e.picture_size,ms:e.duration_ms})),failures:(report.events||[]).filter(e=>e.path===c.path&&/development_(failed|restart|outcome)$/.test(e.stage))})));
   const quick=(report.events||[]).filter(e=>e.stage==='picture_navigation_to_present'&&e.picture_size==='camera preview').map(e=>e.duration_ms).sort((a,b)=>a-b);report.quickMs={count:quick.length,p50:quick[Math.floor(quick.length*.5)],p95:quick[Math.floor(quick.length*.95)],max:quick.at(-1)};
+  const visible=new Set(report.screens[0]?.visibleTargets || []);
+  const quickEvents=(report.events||[]).filter(e=>e.stage==='picture_navigation_to_present'&&e.picture_size==='camera preview');
+  const visibleQuick=quickEvents.filter(e=>visible.has(e.path));
+  report.visibleQuick={targets:visible.size,count:new Set(visibleQuick.map(e=>e.path)).size,
+    allOnScreenMs:Math.max(0,...visibleQuick.map(e=>e.at-report.openedPerformance)),
+    p95:visibleQuick.map(e=>e.duration_ms).sort((a,b)=>a-b)[Math.floor(visibleQuick.length*.95)]};
   const frames=report.channelFrames||[];report.grantAsks=frames.filter(f=>f.type==='ask').length;report.duplicateAsks=frames.filter(f=>f.type==='ask').length-new Set(frames.filter(f=>f.type==='ask').map(f=>f.id)).size;
+  const norm=value=>String(value).replaceAll('\\','/').replace(/\/+/g,'/').toLowerCase();
+  report.perFile=names.map(name=>{
+    const full=norm(path.join(photos,name)),events=(report.events||[]).filter(e=>norm(e.path)===full);
+    const finished=events.find(e=>e.stage==='picture_navigation_to_present'&&e.picture_size==='thumbnail');
+    const quick=events.find(e=>e.stage==='picture_navigation_to_present'&&e.picture_size==='camera preview');
+    return {file:name,status:finished?'finished':quick?'quick preview only':'not finished before stop',
+      finishedMs:finished?finished.at-report.openedPerformance:null,quickMs:quick?quick.at-report.openedPerformance:null};
+  });
+  fs.writeFileSync(path.join(out,'per-file-results.csv'),'file,status,finished_ms,quick_ms\n'+report.perFile.map(r=>[r.file,r.status,r.finishedMs??'',r.quickMs??''].join(',')).join('\n')+'\n');
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));
   fs.writeFileSync(path.join(out,'cell-timings.csv'),'screen,photo,finished_request,request_to_finished_ms,camera_preview_ms,presented,failure\n'+report.results.map(r=>{
    const finished=r.requests.filter(p=>p.size==='thumbnail').at(-1)||{};

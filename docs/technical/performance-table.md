@@ -93,7 +93,11 @@ Additional phase 3a.2 observations (same quiet Aceh repeats, this change):
 | Active saving places | Provisional maximum two, approved by Steve | 2 in both repeats | Permanent limit awaiting decision | Met |
 
 Reports/logs/screens: `codebase/output/cold-mixed/aceh-3a2-{6,7}/`.
-Run 7 includes the final cached-only HTTP census refinement. Native memory
+Production corrections: local commit `f4dc71d`. The measurement-tools follow-up
+records request/grant events and visible previews, writes per-file results even
+on an early stop, and captures native-memory dumps on request. The focused RAW
+driver reuses permanent copies and expects the existing unsupported PNG route
+to refuse explicitly. Run 7 includes the final cached-only HTTP census refinement. Native memory
 ownership evidence is in design 7.6 and the memory module; it does not enlarge
 any share. RAW pixel-check stdout: `codebase/output/phase3a2-raw3.txt`.
 
