@@ -4,7 +4,7 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
-## October 31 Part C — built; final acceptance pending
+## October 31 Part C — built and measured; mixed completion still open
 
 The disposable edited-photo baseline is in `codebase/output/part-c-edited/`:
 grid, filmstrip and five Single 2560 captures covering masks, many locals,
@@ -17,8 +17,30 @@ also publishes only the requested tier. Finished grid stand-ins, stored screen
 previews and the unedited camera-preview fast lane retain their existing paths.
 Planning now matches JPEG/PNG EXIF orientation and LibRaw flip; TIFF follows
 its decoder, which leaves EXIF orientation unapplied. No budget/rate changes.
-Steve reported obvious VRAM corruption in
-the fifth picture; a repeat still has artifacts. Final acceptance remains open.
+Edited pictures match by eye apart from the obvious red VRAM artifacts Steve
+allowed us to disregard; all raw measurements and pairs remain in
+`codebase/output/part-c-edited/index.html`. Sparse artifacts exceed the numeric
+p99.9 limit in one grid and all filmstrip variants, so this is a qualified visual
+pass. Four Single captures match exactly; the fifth differs in sparse red pixels.
+
+Cold Aceh first screens: 12.978 / 14.257 s versus 27.424 s before (2.11x / 1.92x
+faster); second screens at 20.380 / 21.991 s. All 48 finish, both portraits use
+the GPU, RAM peaks 2.109 / 2.236 GB; whole-card GPU peaks 3.793 / 3.885 GB,
+including other applications. All visible quick previews by 1.848 / 1.924 s.
+Single: 1.761 s; prepared neighbour: 17 ms. Neighbours use soon; none remain
+running on departure. Active cancellation has focused-test coverage, not a live
+in-flight demonstration. Grid HDR/SDR switch makes no new scene (M20).
+
+Default mixed folder remains 10/27 finished (6 camera previews only, 3 need more
+memory, 8 unfinished), peak 3.173 GB, settled below 3.4 GB, reserve untouched.
+The unfinished-cell assertion still fails; mixed completion remains open.
+Grid and forced GPU-recovery checks pass through the release runner. Grade
+coexistence passes (pause 464 ms, ordinary photo 471 ms, resume 122 ms). The
+approved both-tier reservation is retained while only the requested scene is
+made; an initial narrower reservation incorrectly refused one TIFF and was
+corrected. No approved numbers changed. Grade/Proof/export picture code is
+untouched; Proof/export were not separately rerun. Full results and caveats:
+[scheduler design 7.11](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
 
 ## October 31 phase 3c.2 Part B: GPU work in the Library scheduler — built and measured
 
@@ -42,7 +64,7 @@ default mixed folder met the memory rules (peak 3.42 GB, settled, reserve
 untouched) with completion unchanged from Part A; Grade coexistence passes
 (pause 543 ms). Open: two portrait JPEGs of 48 plan with landscape dimensions
 and take the visible CPU route (plan-vs-decode growth of ~4 KB, no growth
-tolerance after admission) — a decision, not taken; large-picture completion
+tolerance after admission) — resolved in Part C above; large-picture completion
 in the phase0 set and explicit M8/M18/M19 driver coverage remain open.
 
 ## October 31 wrap-up: Part A committed; Parts B/C unfinished

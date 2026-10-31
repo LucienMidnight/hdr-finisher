@@ -1607,7 +1607,7 @@ Evidence: `codebase/output/cold-mixed/aceh-3c2-partb-{one,two}/report.json`,
 `codebase/output/release-checks/`, `codebase/output/library-gpu-recovery/`,
 `codebase/output/phase3a-grade/report.json`.
 
-### 7.11 Part C: built; final acceptance pending (October 31)
+### 7.11 Part C: built and measured; remaining limits (October 31)
 
 Before any scene change, `tools/capture-library-edited.cjs --baseline` captured
 five variants from disposable copies of the four-mask and fifty-local projects:
@@ -1639,13 +1639,73 @@ Focused checks: 47 orientation/estimate Python checks; 47 scene/GPU/ready-window
 read-ahead JS checks, and 37 grant/scene checks after tier-aware promotion.
 The focused live Python run had 71 passes and the known unrelated scene-version
 stub failure (`library-rgb-v3` versus current `library-rgb-reduced-v4`); left alone.
-The live-grid driver now checks 640-only, M20 and soon-neighbour demand; final
-release-runner acceptance and measurements pending. The first mixed run exposed
-a reservation regression (IMG_1150.tiff refused; 9/27 finished). Restore the
-approved both-tier reservation even when only one product is developed; do not
-change the formula or any approved rate. Focused GPU/scene checks: 37 passed.
-Initial Single check: 1830 ms; prepared neighbour step: 13 ms. Initial Aceh
-screens: 13.124/20.539 and 14.322/21.417 s; repeat after reservation restoration.
+The final live-grid and GPU-recovery drivers pass through the release runner
+at `28240ef` (isolated profiles, 2560x1440). Grid recovery stays 640-only;
+M20 switching HDR/SDR starts no development. Single from the cold grid reaches
+2560 in 1.761 s; a prepared neighbour step takes 17 ms; neighbour requests use
+soon priority 50. No screen work remains after leaving Single. Active neighbour
+cancellation is verified by the focused behavioral test; the successful live
+run's neighbours had already finished, so it does not prove an in-flight abort.
+Fullscreen/Compare use the same demand path; not separately timed here.
+
+**Edited comparison.** `output/part-c-edited/index.html` shows every pair;
+`comparison.json` retains unfiltered Delta E 2000 results. All averages are below
+0.057. Four Single pictures are pixel-identical; the fifth has sparse red
+corruption (mean 0.00472, p99.9 zero). Grid variant 3 and the five filmstrip
+pictures exceed the p99.9 limit solely at sparse red streaks: filmstrip
+x=64+119*n, for example [225,0,38] versus [192,193,185] at y=38.
+Eye review finds no edit/color/detail change beyond this hardware corruption,
+which Steve explicitly allowed us to disregard. The raw numeric check is not
+an unqualified pass; no pixels or tolerance were changed. The original
+filmstrip screenshot showed only two finished cells; a complete five-cell
+supplement was captured with the exact original `71b486f` renderer, then the
+current files were restored byte-for-byte. All protected projects unchanged.
+
+**Final speed, approved estimates retained.** Two cold Aceh 48 runs at 4 GB,
+two GPU developments, Auto half-card budget:
+
+| Run | First / second screen, from opening | All 30 visible camera previews | App RAM peak | Whole-card GPU peak |
+|---|---|---|---|---|
+| one | 12.978 / 20.380 s | 1.848 s; slowest IMG_3212.JPG, request 1.159 s | 2.109 GB | 3.793 GB |
+| two | 14.257 / 21.991 s | 1.924 s; slowest IMG_3212.JPG, request 1.229 s | 2.236 GB | 3.885 GB |
+
+First screen is 2.11x / 1.92x faster than Part B's 27.424 s. All 48 finished
+in both runs, zero development failures/timeouts; every RGB development requests
+only edge 640. Both IMG_2995 and IMG_3232 use the GPU in both runs; actual peaks
+155,013,488 / 314,437,808 bytes fit reservations 406,777,472 / 557,958,464.
+GPU figures sample nvidia-smi every 250 ms and include other applications and
+the desktop (initial whole-card use 2.404 / 2.393 GB); they are not app-only.
+
+**Mixed 27, default 4 GB.** 10 finished, 6 quick previews only, 3 need more
+memory and 8 unfinished at the 132-second stop: same completion as Part B.
+Peak 3.173 GB, no excursion or physical-reserve breach, settled below 3.4 GB,
+zero memory endpoint timeouts and zero development failures. The driver's
+all-target-outcomes assertion still fails on the unfinished photos, as in
+Part B; this is a memory pass, not a mixed-completion pass.
+
+The first Part C mixed run finished 9 because narrowing the reservation inputs
+removed headroom used by full-source RGB preparation (IMG_1150.tiff refused).
+Restored the approved both-tier reservation and unchanged formula; only the
+products actually developed are tiered. Repeated the affected two Aceh runs
+and mixed measurement after this correction. Two test assumptions were also
+corrected: matching-tier cache reuse is checked before another tier can reclaim
+it, and live navigation accepts a neighbour that finished before departure;
+active cancellation remains covered by the behavioral test. The final release
+checks pass without retry. Grade's measurement initially failed while collecting
+its log because it read an unset environment variable; it now uses the runner's
+actual profile path. Final Grade check passes: pause 464 ms, first ordinary 471 ms, close/save
+324 ms, resume 122 ms; small exposure edit saved and original sidecar restored.
+Evidence: `codebase/output/phase3a-grade/report.json` (`9fb6b25` log-path fix).
+
+Evidence: `codebase/output/cold-mixed/aceh-partc-{one,two}/`,
+`phase0-partc-default/`; `output/library-live-grid/result.json`;
+release-check folders `2026-10-31T16-38-42-377Z-e1e30d04e3923741abb4` and
+`2026-10-31T16-39-54-178Z-8f64a7e7e08f034e0c26`. No approved rate, budget,
+ceiling, reserve, concurrency or rendering formula changed. Grade, Proof and
+export rendering code unchanged. Proof/export were not separately rerun.
+Output size: 6.4 GB at start, 6.7 GB at end (100 GB limit). All 20 disposable
+Electron profiles created for this task were removed; review pictures/reports
+and reusable test-photo copies retained.
 
 ## 8. Phases
 
@@ -1662,7 +1722,7 @@ records its numbers in the [performance table](../performance-table.md).
 | 3. One scheduler, RAM — **October 31 run exception: Steve authorised 3a.1 → 3b without intervening acceptance.** — **3a.2 corrections built October 31; speed/mixed-memory qualification open (7.6). 3b partial resilience/scheduling built, large-picture and disk-cache work unfinished (7.7)** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
 | 3c.2 approved decisions — **Part A estimates built; revised memory acceptance (7.9)** | Approved estimates and retryable capped deadlines | Qualification remains open | Peak within ceiling +10%, then below target; mixed completion rerun pending. |
 | 4. GPU in the same scheduler — **open; Steve authorised continuation (7.9)** | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
-| 5. Grid makes 640 only — **open; Steve authorised continuation (7.9)** | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
+| 5. Grid makes 640 only — **built/measured October 31, awaiting Steve's try; hardware-artifact exception and mixed completion limit (7.11)** | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
 | 6. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. Edge case M25. | Leftover complexity. | Fast checks pass; less code than before. |
 | 7. Tune | Adjust estimates, the fast-lane size and the GPU count from logs. | — | Steve's feel plus the logged numbers. |
 

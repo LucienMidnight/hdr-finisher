@@ -150,6 +150,35 @@ Evidence: `codebase/output/cold-mixed/aceh-3c2-partb-{one,two}/report.json`,
 | Line-scan DNG open in Grade, Library browsing | Pause <1 s; first ordinary <5 s; resume <2 s | Pause 543 ms; first ordinary 551 ms; resume 212 ms | 4 GB ceiling; small edit saved | Met |
 | Forced Library GPU OOM and device loss | Photos finish; no broken records | OOM: 2 attempts then visible CPU route; loss twice: 2 attempts then visible CPU route | `tests/library-gpu-recovery.js`, release runner PASS | Met |
 
+## Part C: requested scene tiers (October 31, 2026)
+
+Code `9a746fa` / final navigation check `28240ef`, branch
+`library-gpu-scheduling`; cold isolated profiles at 2560x1440, default 4 GB,
+two GPU developments, unchanged approved estimates and Auto half-card budget.
+Times for second screens are cumulative from folder opening. Decimal GB.
+Evidence: `codebase/output/cold-mixed/aceh-partc-{one,two}/report.json`,
+`phase0-partc-default/report.json`, `output/library-live-grid/result.json`,
+`output/phase3a-grade/report.json`. GPU memory samples cover the whole card,
+including the desktop and other apps, not app-only allocation.
+
+| Action | Target | Latest measured | Conditions | Status |
+|---|---|---|---|---|
+| Cold Aceh 48, first / second viewport, run one | First roughly 2–3x faster than Part B's 27.424 s | 12.978 / 20.380 s | All 48 finished; peak RAM 2.109 GB, whole-card GPU 3.793 GB (initial 2.404 GB) | First 2.11x faster |
+| Cold Aceh 48, first / second viewport, run two | Same | 14.257 / 21.991 s | All 48 finished; peak RAM 2.236 GB, whole-card GPU 3.885 GB (initial 2.393 GB) | First 1.92x faster |
+| Folder click to all initially visible camera previews | Report (decision 15) | 30/30 by 1.848 / 1.924 s | Slowest IMG_3212.JPG both runs, request 1.159 / 1.229 s; p95 request 1.135 / 1.200 s | Reported; old <0.5 s request target still unmet |
+| Cold grid, 3 RAW + 1 PNG | All finish, only 640 developments | 6.207 s | Release runner PASS; GPU loss/restore, M20 included | Met |
+| Cold-grid photo opened in Single | 2560 now | 1.761 s | DSC07061.ARW; next/previous soon priority 50 | Met |
+| Prepared Single neighbour step | Fast | 17 ms | DSC07072.ARW; no unfinished screen work after leaving Single | Met; active abort covered by focused test |
+| Default mixed 27, 4 GB | Ceiling +10%, settle below 3.4 GB, reserve hard | Peak 3.173 GB, no excursion; settled | 10 finish, 6 quick-only, 3 need-memory, 8 unfinished at 131.947 s; same completion as Part B | Memory met; all-target-outcomes assertion fails, completion open |
+| Line-scan in Grade with Library browsing | Pause <1 s; first ordinary <5 s; resume <2 s | Pause 464 ms, ordinary 471 ms, resume 122 ms; close/save 324 ms | Small edit saved, protected projects unchanged; driver log-path fix `9fb6b25` | Met |
+
+An initial narrower reservation refused IMG_1150.tiff (9/27 finished). Restored
+the approved reservation without changing rates/formulas and repeated the affected
+measurements above. Initial Single timing was 1.830 s / neighbour 13 ms; final
+values above supersede it. The final grid/recovery release runs pass without
+retry. Initial grid-driver failures exposed cache-retention and race assumptions;
+these were corrected to exercise the intended tiered behavior.
+
 ## 3. Developing a photo (per photo)
 
 | Action | Target | Measured | Conditions | Status |
