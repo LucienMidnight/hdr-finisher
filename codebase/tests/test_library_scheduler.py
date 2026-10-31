@@ -357,3 +357,45 @@ def test_overrun_logs_active_types_duration_and_repeated_proposal_without_rate_c
     assert ends[0]["duration_ms"] == 2000 and ends[0]["over_bytes"] == 11_418_177
     assert len(proposals) == 1 and proposals[0]["overrun_count"] == 2
     assert job.estimate == 2*GB
+
+
+def test_atomic_gpu_wait_holds_neither_resource_and_saving_releases_gpu():
+    s = fresh(20*GB)
+    s.gpu_draw_room = 100
+    s.update_gpu(1000, external=200)
+    a = s.ask('a', 'w', 'a.raw', 'source', GB, gpu_bytes=500)
+    b = s.ask('b', 'w', 'b.raw', 'source', GB, gpu_bytes=300)
+    assert a.granted is not None and b.granted is None
+    assert s.gpu_reserved() == 500
+    assert s.gpu_refine('a', 350)
+    assert b.granted is not None and s.gpu_reserved() == 650
+    s.gpu_done('a', 'w')
+    assert s.gpu_reserved() == 300 and a.saving
+    assert a.estimate == GB
+
+
+def test_unified_gpu_is_charged_to_ram_without_changing_base_estimate():
+    s = fresh(GB)
+    s.update_gpu(4*GB)
+    ask(s, 'busy', 64_000_000)
+    job = s.ask('a', 'w', 'a.raw', 'source', 800_000_000, gpu_bytes=400_000_000, gpu_unified=True)
+    assert job.estimate == 1_200_000_000 and job.granted is None
+    s.set_ceiling(4*GB)
+    assert job.granted is not None
+
+
+def test_priority_preemption_frees_unused_gpu_and_waits_for_active_safe_point(monkeypatch):
+    events, notifications, now = [], [], [1]
+    monkeypatch.setattr('hdr_finisher.library_scheduler.log', lambda event, **fields: events.append((event,fields)))
+    s = Scheduler(ceiling=20*GB, clock=lambda:now[0])
+    s.update_gpu(4*GB)
+    a = s.ask('a','w','a.raw','source',GB,gpu_bytes=GB,notify=notifications.append)
+    b = s.ask('b','w','b.raw','source',GB,gpu_bytes=GB)
+    assert s.gpu_refine('b',GB)
+    s.preempt_gpu()
+    assert a.gpu_bytes == 0 and b.gpu_bytes == GB
+    assert notifications[-1]['type'] == 'gpu-preempt'
+    now[0] = 1.125
+    s.finish('b','w')
+    release = [fields for event,fields in events if event == 'library_gpu_priority_release']
+    assert release[-1]['wait_ms'] == 125

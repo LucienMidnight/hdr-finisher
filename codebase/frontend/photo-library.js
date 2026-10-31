@@ -903,7 +903,7 @@
     readyWindow.invalidate(photo=>targets.has(photo.path)); quickWindow.invalidate(photo=>targets.has(photo.path));
     readAhead.clear();
     for (const [key] of recentPictures) if (paths.some(path=>key.startsWith(path+"|"))) recentPictures.delete(key);
-    HDRLibraryScenes.invalidate(paths);
+    HDRLibraryScenes.invalidate(paths,{finishingOnly:true});
     tilePool.discard(cell => targets.has(cell.photo.path));
     for (const map of [state.cells, state.filmCells]) for (const [path, cell] of map) if (targets.has(path)) { cell.controller.abort(); cell.element.remove(); map.delete(path); }
     if (targets.has(selected()?.path)) { state.single?.abort(); state.fitMeta = null; state.nativeMeta = null; }

@@ -23,11 +23,9 @@ window.HDRLibraryScenes = (() => {
   // detaches. Grid/filmstrip and speculative demand use viewport ownership.
   const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {
     heavyLimit:cpuLanes,onChange:changed,fifo:true,
-    // Release an offscreen source's working room if it is only waiting on
-    // the GPU and newly visible development needs that room.
-    preemptLower:(job,priority)=>priority<=10&&job.resourceWaiting,
     admit:async job=>{
-      job.grant=await HDRLibraryGrants.acquire(job.path,HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority,job.edge);
+      const gpu=HDRLibraryGpuRaw.enabled()&&HDRLibraryGpuRaw.preflight ? await HDRLibraryGpuRaw.preflight(job.gpuMeta,job.edge,job.controller.signal) : {bytes:0,unified:false};
+      job.grant=await HDRLibraryGrants.acquire(job.path,HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority,job.edge,gpu.bytes,gpu.unified);
       return true;
     },
     keepRunning:job=>job.retainDetached||visible.has(job.path)||nearby.has(job.path)});
@@ -61,8 +59,9 @@ window.HDRLibraryScenes = (() => {
       throw Object.assign(Error("Not downloaded: this photo is online-only. Open it to download it."), {cloudOnly:true});
     }
     const version=plan.render_identity || plan.source_identity || plan.revision;
-    if(versions.has(path)&&versions.get(path)!==version)sources.invalidate(candidate=>candidate===path);
-    versions.delete(path);versions.set(path,version);
+    const sourceVersion=plan.source_identity || version;
+    if(versions.has(path)&&versions.get(path)!==sourceVersion)sources.invalidate(candidate=>candidate===path);
+    versions.delete(path);versions.set(path,sourceVersion);
     if(versions.size>1024)versions.delete(versions.keys().next().value);
     const direct = HDRLibraryGpuRaw.cachedDirect?.(path,edge,version);
     if (direct) { options.onSourceDemand?.(); return direct; }
@@ -75,7 +74,7 @@ window.HDRLibraryScenes = (() => {
     const elapsed = previous && previous.revision === plan.revision ? previous.ms : 0;
     const heavy = plan.bytes >= largeBytes || elapsed >= 2000;
     const cost = elapsed ? elapsed / 1000 : plan.bytes / largeBytes;
-    const pending = sources.submit(identity+"|"+version+"|"+generation, async (shared, importance, job) => {
+    const pending = sources.submit(plan.source_identity || identity+"|"+sourceVersion, async (shared, importance, job) => {
       const started = performance.now();
       try {
         const result = await HDRLibraryGrants.run(path,HDRLibraryGpuRaw.enabled()?"source":"cpu",shared,
@@ -90,9 +89,15 @@ window.HDRLibraryScenes = (() => {
           if (history.size > 256) history.delete(history.keys().next().value);
         }
       }
-    }, signal, priority, {heavy,cost,path,edge,viewport:!!options.viewportDemand||idle,retainDetached:!options.viewportDemand&&!idle,log_view:trace?.view,stage:"Developing photo"});
+    }, signal, priority, {heavy,cost,path,edge,gpuMeta:plan.gpu_meta,viewport:!!options.viewportDemand||idle,retainDetached:!options.viewportDemand&&!idle,log_view:trace?.view,stage:"Developing photo"});
     options.onSourceDemand?.();
-    return pending;
+    const result=await pending;
+    if(result && result.path && result.path!==path){
+      const response=await fetch('/api/library/live-plan',{method:'POST',signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({path,edge})});
+      const own=await response.json();if(!response.ok)throw failure(own);
+      if(own.cached)return own.cached;
+    }
+    return result;
   }
   // Selected work follows at most the single sharp draw already in flight.
   // Quick draws use thumbnails and their own renderer and priority queue.
@@ -115,8 +120,9 @@ window.HDRLibraryScenes = (() => {
         const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal, importance, version, grant);
         if (meta) return meta;
       } catch (error) {
-        if (error.name === "AbortError" || error.libraryError) throw error;
+        if (error.name === "AbortError" || error.libraryError || error.libraryRequeue) throw error;
         if (!error.gpuUnavailable) {
+          if(!version)throw error;
           const response = await fetch("/api/library/development-error", {method:"POST",signal,
             headers:{"Content-Type":"application/json"},body:JSON.stringify({path,source_identity:version.split(":")[0],reason:error.message})});
           if(response.ok)error.libraryError=(await response.json()).error;
@@ -126,7 +132,7 @@ window.HDRLibraryScenes = (() => {
         // The structured fallback event above carries the picture labels.
       }
     }
-    if (gpuOnly && importance() > 0) return null;
+    if (importance() >= 50 || (gpuOnly && importance() > 0)) return null;
     const cpu=async (token,owned)=>{for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",priority:"low",signal:owned,
         headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,priority:importance(),grant:token})});
@@ -157,7 +163,7 @@ window.HDRLibraryScenes = (() => {
     }
     const check = async (acquiring = false) => {
       const response = await fetch(url,{method:"POST",signal,headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({bytes,background:true,priority:typeof meta.draw_priority==='function'?meta.draw_priority():meta.draw_priority??10})});
+        body:JSON.stringify({bytes,background:true,draw:!nativeBudget,concurrent:true,priority:typeof meta.draw_priority==='function'?meta.draw_priority():meta.draw_priority??10})});
       if (!response.ok) throw Error("Library GPU scheduling unavailable.");
       const value = await response.json();
       if (value.fallback) throw Error(value.fallback);
@@ -186,7 +192,7 @@ window.HDRLibraryScenes = (() => {
     reclaim:(bytes,required=false)=>reclaim(bytes,required),
     promote:(path,priority)=>{probes.promote(path,priority);sources.promote(path,priority);draws.promote(path,priority);quickDraws.promote(path,priority);},
     viewport:(shown,around)=>{visible=new Set(shown);nearby=new Set(around);window.HDRLibraryGrants?.viewport?.([...shown,...around]);sources.reprioritize(rank);probes.reprioritize(rank);},
-    invalidate:paths=>{const targets=new Set(paths);for(const path of targets){generations.set(path,(generations.get(path)||0)+1);HDRLibraryGpuRaw.forgetDirect?.(path);}sources.invalidate(path=>targets.has(path));probes.invalidate(path=>targets.has(path));},
+    invalidate:(paths,{finishingOnly=false}={})=>{const targets=new Set(paths);for(const path of targets){generations.set(path,(generations.get(path)||0)+1);HDRLibraryGpuRaw.forgetDirect?.(path);}if(!finishingOnly)sources.invalidate(path=>targets.has(path));probes.invalidate(path=>targets.has(path));},
     stage:(path,stage,waiting=false)=>sources.stage(path,stage,waiting),
     draw:(task,signal,priority=10,path="Photo",labels={})=>draws.submit(crypto.randomUUID(),task,signal,priority,{path,...labels,stage:`Drawing ${labels.edge === 100000 ? "detail preview" : labels.edge <= 640 ? "thumbnail" : "screen preview"}`}),
     quickDraw:(task,signal,priority=10,path="Photo",labels={})=>quickDraws.submit(crypto.randomUUID(),task,signal,priority,{path,...labels,stage:"Drawing thumbnail for quick draw"}),

@@ -7,11 +7,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from threading import RLock, Event
 import time
+import os
 from .library_diagnostics import log
 
 MINIMUM = FAST_BYTES = 64_000_000
 FAST_COUNT = 4
-DEVELOPMENTS = 2
+DEVELOPMENTS = 1 if os.environ.get("HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS") == "1" else 2
 SAVES = 2  # Steve approved the provisional bound in this chat, October 31.
 FLOOR = 1_000_000_000
 STARTING = 1_300_000_000
@@ -44,6 +45,8 @@ class Job:
     saving: str = ""
     floor: bool = False
     alone: bool = False
+    gpu_bytes: int = 0
+    gpu_unified: bool = False
     ready: Event = field(default_factory=Event)
 
     @property
@@ -75,6 +78,10 @@ class Scheduler:
         self.sampled_grants = set()
         self.overrun = None
         self.overrun_counts = {}
+        self.gpu_budget = 0
+        self.gpu_external = 0
+        self.gpu_paused = False
+        self.gpu_draw_room = 0
 
     def update(self, *, caches=0, grade_bytes=0, grade_name="", total=None,
                available=None, ram=None, pressure="none", sampled_grants=None):
@@ -127,6 +134,38 @@ class Scheduler:
                     log("library_estimate_proposal", file_type=kind, overrun_count=count,
                         action="Steve to review estimate; approved rate unchanged", **fields)
 
+    def update_gpu(self, budget, external=0, paused=False):
+        with self.lock:
+            self.gpu_budget, self.gpu_external, self.gpu_paused = max(0, int(budget)), max(0, int(external)), bool(paused)
+            self._pump()
+
+    def preempt_gpu(self):
+        with self.lock:
+            for job in self.jobs.values():
+                if job.granted is None or not job.gpu_bytes or job.saving:
+                    continue
+                if not hasattr(job, 'gpu_preempted_at'):
+                    job.gpu_preempted_at = self.clock()
+                    if not getattr(job, 'gpu_started', False):
+                        job.gpu_bytes = 0
+                        if job.notify: job.notify(dict(type='gpu-preempt',id=job.id))
+
+    def gpu_reserved(self):
+        with self.lock:
+            return sum(j.gpu_bytes for j in self.jobs.values() if j.granted is not None and not j.saving)
+
+    def gpu_refine(self, id, amount):
+        with self.lock:
+            job = self.jobs.get(id)
+            if not job or job.granted is None or job.saving or amount > job.gpu_bytes:
+                return False
+            job.gpu_started = True
+            # The header reservation may shrink after decode, never grow while holding RAM.
+            if not job.gpu_unified:
+                job.gpu_bytes = amount
+                self._pump()
+            return True
+
     def set_ceiling(self, ceiling):
         with self.lock:
             self.ceiling = int(ceiling)
@@ -147,7 +186,7 @@ class Scheduler:
                 if self.clock()-seen > seconds:
                     self.disconnect(owner)
 
-    def ask(self, id, owner, path, kind, estimate, cls="now", notify=None, size_reason="", order=None):
+    def ask(self, id, owner, path, kind, estimate, cls="now", notify=None, size_reason="", order=None, gpu_bytes=0, gpu_unified=False):
         if cls not in CLASSES:
             raise ValueError("Unknown Library priority")
         with self.lock:
@@ -160,6 +199,9 @@ class Scheduler:
             amount = max(0 if cls == "Grade" else MINIMUM, int(estimate))
             job = Job(id, owner, path, kind, amount, cls,
                       self.sequence, self.clock(), notify)
+            job.gpu_bytes = max(0, int(gpu_bytes))
+            job.gpu_unified = bool(gpu_unified)
+            if job.gpu_unified: job.estimate += job.gpu_bytes
             job.requested_cls = cls
             if owner in self.hidden and cls != "Grade":
                 job.cls = "eventually"
@@ -234,6 +276,10 @@ class Scheduler:
             if job is None or (owner is not None and job.owner != owner):
                 return
             self.jobs.pop(id)
+            if hasattr(job, "gpu_preempted_at"):
+                log("library_gpu_priority_release", request=job.id, path=job.path,
+                    wait_ms=round((self.clock()-job.gpu_preempted_at)*1000, 3),
+                    reason="Grade or export waited for next Library safe point")
             self._log(job, outcome)
             job.ready.set()
             self._pump()
@@ -271,7 +317,7 @@ class Scheduler:
     def _message(self, job, type):
         return dict(type=type, id=job.id, path=job.path, reason=job.reason if type=="waiting" else "",
                     estimate=job.estimate, ceiling=self.ceiling, free=self.available, grade=self.grade_name,
-                    cls=job.cls, alone=job.alone, saving=job.saving)
+                    cls=job.cls, alone=job.alone, saving=job.saving, kind=job.kind, gpu_bytes=job.gpu_bytes)
 
     def _wait(self, job, reason):
         if reason != job.reason:
@@ -344,6 +390,11 @@ class Scheduler:
             measured_fits = self.total is None or self.total + unmeasured + job.estimate <= self.ceiling
             if not reason and job.cls != "Grade" and not job.fast and not job.alone and not job.floor and not measured_fits:
                 reason = "measured memory"
+            if not reason and job.gpu_bytes:
+                if self.gpu_paused:
+                    reason = "GPU needed by Grade or export"
+                elif self.gpu_reserved()+job.gpu_bytes+self.gpu_external+self.gpu_draw_room > self.gpu_budget:
+                    reason = "GPU memory"
             if not reason:
                 if job.development and any(j.kind == "quick" and j.cls == "now" for j in running):
                     reason = "quick previews first"
@@ -371,7 +422,7 @@ class Scheduler:
 
     def _log(self, job, event):
         log("library_grant_"+event, request=job.id, owner=job.owner, path=job.path,
-            priority_class=job.cls, estimate_bytes=job.estimate, saving=job.saving,
+            priority_class=job.cls, estimate_bytes=job.estimate, gpu_estimate_bytes=job.gpu_bytes, gpu_unified=job.gpu_unified, saving=job.saving,
             alone=job.alone, floor=job.floor, measured_total_bytes=self.total,
             unmeasured_grant_bytes=sum(j.estimate for j in self.jobs.values() if j.granted is not None and j.id not in self.sampled_grants),
             measured_peak_bytes=job.peak, peak_scope="whole-app-increment",

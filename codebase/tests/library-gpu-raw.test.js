@@ -2,18 +2,24 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 require('../frontend/library-gpu-raw.js');
 const { quantile, reducedSize } = globalThis.HDRLibraryGpuRaw;
+function compileScheduled(context,fn){
+ const original=context.gpu;
+ context.gpu=async()=>({...await original(),device:{pushErrorScope(){},popErrorScope:async()=>null}});
+ context.gpuFailures=new Map();context.activeGpuWorks=new Map();context.decodedSources=new Map();
+ require('node:vm').runInNewContext(fn+';this.run=scheduledDevelopment;',context);
+}
 
 test('Library releases finished cache memory before accepting a RAW budget refusal', async () => {
   const fs=require('node:fs'),vm=require('node:vm');
   const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
-  const fn=source.slice(source.indexOf('  async function scheduledDevelopment('),source.indexOf('  async function develop(path,'));
+  const fn=source.slice(source.indexOf('  function allocationScope('),source.indexOf('  async function develop(path,'));
   let held=80,drawn=0;const order=[];
   const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
     serial:task=>task(),gpu:async()=>{},rawBudget:()=>60,
     root:{HDRLibraryScenes:{reclaim:async(bytes,required)=>{assert.equal(required,true);held=0;order.push('reclaim');},stage(){}}},
     fetch:async(_url,options)=>{if(options.method==='DELETE')return {};order.push('lease');return {ok:true,json:async()=>held+60>100?{fallback:'budget'}:{granted:true}};},
     developRaw:async()=>{drawn++;order.push('GPU');return {timings:{}};}};
-  vm.runInNewContext(fn+';this.run=scheduledDevelopment;',context);
+  compileScheduled(context,fn);
   await context.run({meta:{},edges:[640,2560],background:true},new AbortController().signal);
   assert.equal(drawn,1);assert.deepEqual(order,['reclaim','lease','GPU']);
 });
@@ -21,7 +27,7 @@ test('Library releases finished cache memory before accepting a RAW budget refus
 test('a second development waits at the GPU broker, not behind the first in this window', async () => {
   const fs=require('node:fs'),vm=require('node:vm');
   const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
-  const fn=source.slice(source.indexOf('  async function scheduledDevelopment('),source.indexOf('  async function develop(path,'));
+  const fn=source.slice(source.indexOf('  function allocationScope('),source.indexOf('  async function develop(path,'));
   const started=[];let release;
   const held=new Promise(resolve=>{release=resolve;});
   const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
@@ -29,7 +35,7 @@ test('a second development waits at the GPU broker, not behind the first in this
     root:{HDRLibraryScenes:{stage(){}}},
     fetch:async(_url,options)=>{if(options.method==='DELETE')return {};return {ok:true,json:async()=>({granted:true})};},
     developRaw:async({meta})=>{started.push(meta.path);await held;return {timings:{}};}};
-  vm.runInNewContext(fn+';this.run=scheduledDevelopment;',context);
+  compileScheduled(context,fn);
   const signal=new AbortController().signal;
   const first=context.run({meta:{path:'a'},edges:[640]},signal);
   const second=context.run({meta:{path:'b'},edges:[640]},signal);
@@ -132,14 +138,14 @@ test('DNG footprints enclose independent per-channel maps across off-centre and 
 test('memory admission waits, reclaims and retries the same GPU development',async()=>{
  const vm=require('node:vm'),fs=require('node:fs');
  const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
- const fn=source.slice(source.indexOf('  async function scheduledDevelopment('),source.indexOf('  async function develop(path,'));
+ const fn=source.slice(source.indexOf('  function allocationScope('),source.indexOf('  async function develop(path,'));
  let leases=0,reclaims=0,developments=0;
  const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
   gpu:async()=>({state:{lost:false}}),rawBudget:()=>60,wait:async()=>{},forgetDirect(){},
   root:{HDRLibraryScenes:{reclaim:async()=>{reclaims++;},stage(){},snapshot:()=>({draws:{active:0}})}},
   fetch:async(_url,options)=>({ok:true,json:async()=>++leases===1?{granted:false,waiting:'memory'}:{granted:true}}),
   developRaw:async()=>{developments++;return {timings:{}};}};
- vm.runInNewContext(fn+';this.run=scheduledDevelopment;',context);
+ compileScheduled(context,fn);
  await context.run({meta:{},edges:[640],background:true},new AbortController().signal);
  assert.equal(leases,2);assert.equal(reclaims,2);assert.equal(developments,1);
 });
@@ -147,7 +153,7 @@ test('memory admission waits, reclaims and retries the same GPU development',asy
 test('yields wait their turn, real failures are explained once, cancellations pass through', async () => {
  const vm=require('node:vm'),fs=require('node:fs');
  const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
- const fn=source.slice(source.indexOf('  async function scheduledDevelopment('),source.indexOf('  async function develop(path,'));
+ const fn=source.slice(source.indexOf('  function allocationScope('),source.indexOf('  async function develop(path,'));
  for(const kind of ['yield','memory','abort','readonly']){
   let attempts=0,deletes=0,releases=0;const events=[];
   const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
@@ -160,7 +166,7 @@ test('yields wait their turn, real failures are explained once, cancellations pa
     if(kind==='abort')throw new DOMException('Cancelled','AbortError');
     if(kind==='readonly')throw new DOMException('mapAsync failed','OperationError');
     throw Error('RGB preparation exceeds the reserved memory budget.');}};
-  vm.runInNewContext(fn+';this.run=scheduledDevelopment;',context);
+  compileScheduled(context,fn);
   const run=context.run({meta:{path:'photo.arw'},edges:[640]},new AbortController().signal);
   const failed=events=>events.filter(e=>e.stage==='picture_development_failed').length;
   if(kind==='yield'){

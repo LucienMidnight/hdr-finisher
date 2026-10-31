@@ -237,7 +237,9 @@ def create_gpu_delivery_router():
     router = APIRouter(prefix="/api/delivery/gpu")
     active = {}
     raw_jobs = {}
-    budget_lock = RLock()
+    from .library_scheduler import scheduler
+    budget_lock = scheduler.lock
+    scheduler.gpu_draw_room = 640*640*64 + 64*1024*1024
 
     def budget_locked(function):
         @wraps(function)
@@ -270,6 +272,12 @@ def create_gpu_delivery_router():
                 active.pop(key, None)
                 with _lock: _sessions.pop(key, None)
         _sweep(root, active)
+        deliveries = list(waiting_deliveries())
+        if deliveries or active or time.monotonic() < _activity["until"]:
+            scheduler.preempt_gpu()
+        scheduler.update_gpu(_activity["budget"], _activity["bytes"] + raw_reserved()
+                             + sum(v[1].get("reservation", 0) for v in active.values()),
+                             bool(deliveries or active or time.monotonic() < _activity["until"]))
 
     @router.post("/activity")
     async def activity(request: Request):
@@ -281,7 +289,7 @@ def create_gpu_delivery_router():
                 "bytes": max(0, int(value.get("bytes", 0))),
                 "budget": max(0, int(value.get("budget", 536870912)))}
             accounting()
-            reserved = raw_reserved() + sum(v[1].get("reservation", 0) for v in active.values())
+            reserved = scheduler.gpu_reserved() + raw_reserved() + sum(v[1].get("reservation", 0) for v in active.values())
             return {"reserved": reserved,
                 "budget": max(0, _activity["budget"] - _activity["bytes"] + _clients[key]["bytes"] - reserved)}
 
@@ -291,12 +299,26 @@ def create_gpu_delivery_router():
         with budget_lock:
             accounting()
             now = time.time()
+            if payload.get("grant"):
+                amount = max(0, int(payload["bytes"]))
+                job = scheduler.jobs.get(str(payload["grant"]))
+                if job is not None and not job.gpu_bytes:
+                    return {"granted": False, "preempt": True, "retry": True}
+                if job is None or not scheduler.gpu_refine(job.id, amount):
+                    return {"granted": False, "preempt": True,
+                            "fallback": "GPU descriptor exceeded or lost its atomic reservation"}
+                waiting = bool(list(waiting_deliveries()) or active or time.monotonic() < _activity["until"]
+                               or scheduler.gpu_reserved()+scheduler.gpu_external > scheduler.gpu_budget)
+                if waiting and not hasattr(job, "gpu_preempted_at"):
+                    job.gpu_preempted_at = time.monotonic()
+                return {"granted": True, "preempt": waiting, "budget": scheduler.gpu_budget,
+                        "reason": "Grade or export needs the GPU" if waiting else None}
             value = raw_jobs.setdefault(identity, {"priority": 15, "created": now,
                 "granted": False, "bytes": 0})
             value.update(expires=time.monotonic() + 30, bytes=max(0, int(payload["bytes"])),
                 background=bool(payload.get("background")),
                 library_priority=max(0, min(100, int(payload.get('priority', 15)))),
-                concurrent=bool(payload.get('concurrent') and payload.get('background')))
+                concurrent=bool(payload.get('concurrent') and payload.get('background')), draw=bool(payload.get("draw")))
             if payload.get("release"): value["granted"] = False
             available = max(0, _activity["budget"] - _activity["bytes"])
             if value["bytes"] > available:
@@ -305,7 +327,7 @@ def create_gpu_delivery_router():
             priority = _effective_priority(value, now)
             higher = any(_effective_priority(v, now) < priority for v in waiting_deliveries())
             order = lambda job: (_effective_priority(job, now), job['library_priority'], job['created'])
-            reserved = raw_reserved()
+            reserved = raw_reserved() + scheduler.gpu_reserved()
             # Only Library developments share spare memory. Selected work gets
             # the next reservation when sharing cannot fit; draws stay exclusive.
             for other in raw_jobs.values():
@@ -313,11 +335,11 @@ def create_gpu_delivery_router():
                 # not block a smaller cached draw that can fit now.
                 if not other['granted'] and other['bytes'] > available: continue
                 if other is value or order(other) >= order(value): continue
-                can_share = value['concurrent'] and other['concurrent']
+                can_share = value['draw'] or (value['concurrent'] and (other['concurrent'] or other.get('draw')))
                 if not can_share or (not other['granted'] and (not value['granted'] or reserved + other['bytes'] > available)):
                     higher = True
             preempt = time.monotonic() < _activity["until"] or higher
-            sharing = value['concurrent'] and all(v['concurrent'] for v in raw_jobs.values() if v['granted'])
+            sharing = value['draw'] or (value['concurrent'] and all(v['concurrent'] or v.get('draw') for v in raw_jobs.values() if v['granted']))
             if not value["granted"] and not payload.get("release") and not preempt and not active and value['bytes'] + reserved <= available and (not reserved or sharing):
                 value["granted"] = True
             return {"granted": value["granted"], "preempt": preempt, "budget": available}
@@ -363,7 +385,7 @@ def create_gpu_delivery_router():
     def next_job():
         (root / "heartbeat").touch()
         accounting()
-        if time.monotonic() < _activity["until"] or active or raw_reserved():
+        if time.monotonic() < _activity["until"] or active or raw_reserved() or scheduler.gpu_reserved():
             return None
         candidates = []
         for path in root.glob("delivery-*/request.json"):
@@ -374,9 +396,6 @@ def create_gpu_delivery_router():
             return None
         now = time.time()
         value, directory = min(candidates, key=lambda pair: (_effective_priority(pair[0], now), pair[0]["created"]))
-        if any((_effective_priority(v, now), v["created"]) <
-               (_effective_priority(value, now), value["created"]) for v in raw_jobs.values()):
-            return None
         (directory / "claimed").touch()
         if value.get("operation") in {"edge_colour", "dng_correction", "retouch"}:
             active[value["id"]] = (directory, value)

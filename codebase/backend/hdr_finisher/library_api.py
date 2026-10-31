@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import traceback
 import json
 from hashlib import sha256
 from contextlib import asynccontextmanager
@@ -70,6 +71,9 @@ class StopwatchEvent(BaseModel):
     duration_ms: float | None = None
     queue_ms: float | None = None
     gpu_ms: float | None = None
+    gpu_estimate_bytes: int | None = None
+    gpu_peak_bytes: int | None = None
+    peak_scope: str | None = Field(default=None,max_length=32)
     sensor_ms: float | None = None
     quantiles_ms: float | None = None
     handoff_ms: float | None = None
@@ -125,7 +129,7 @@ class LibraryRoute(APIRoute):
                 if isinstance(error,ValueError) and ("source settings changed" in str(error).lower() or "source photo changed" in str(error).lower()):
                     log("request_changed",operation=request.url.path,reason=str(error),action="work discarded; refresh the picture")
                     return JSONResponse({"detail":str(error),"changed":True},status_code=409)
-                log("request_failed", operation=request.url.path, context=await context(), reason=repr(error), action="request stopped; saved marks retained")
+                log("request_failed", operation=request.url.path, context=await context(), reason=repr(error), traceback=traceback.format_exc(), action="request stopped; saved marks retained")
                 return JSONResponse({"detail": "The Library could not finish that request. Saved marks are safe; try again."}, status_code=500)
         return checked
 
@@ -497,7 +501,9 @@ def create_library_router(worker, browser, store=None):
         cached = live.cache.cached(str(path), command.edge, live_quality(document))
         if cached:
             live.cache.accept_transient(cached)
-        return {"cached": live.describe(command.path, cached) if cached else None,
+        from .library_estimates import gpu_metadata
+        return {"gpu_meta": gpu_metadata(path,document,command.edge) if not cached and not is_cloud_placeholder(stat) else None,
+                "cached": live.describe(command.path, cached) if cached else None,
                 "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}",
                 "source_identity": picture_key(path, 0, live_quality(document)),
                 "render_identity": picture_key(path, 0, live_quality(document)) + ":" + sha256(json.dumps(document or {}, sort_keys=True).encode()).hexdigest(),

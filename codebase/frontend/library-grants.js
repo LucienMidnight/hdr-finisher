@@ -8,12 +8,12 @@
     function connect(){
       if(closed||channel)return;
       const current=channel=socket(url);
-      current.onopen=()=>{lastMessage=Date.now();if(!visible)send({type:"visibility",visible});for(const j of jobs.values())send({type:"ask",id:j.id,path:j.path,kind:j.kind,edge:j.edge,priority:j.priority,order:screenOrder.get(j.path)});heartbeat=interval(()=>{if(Date.now()-lastMessage>15000)current.close();else send({type:"heartbeat"});},5000);};
+      current.onopen=()=>{lastMessage=Date.now();if(!visible)send({type:"visibility",visible});for(const j of jobs.values())send({type:"ask",id:j.id,path:j.path,kind:j.kind,edge:j.edge,gpu_bytes:j.gpu_bytes,gpu_unified:j.gpu_unified,priority:j.priority,order:j.front?-1:screenOrder.get(j.path)});heartbeat=interval(()=>{if(Date.now()-lastMessage>15000)current.close();else send({type:"heartbeat"});},5000);};
       current.onmessage=event=>{
         lastMessage=Date.now();const value=JSON.parse(event.data);
         if(value.type==="grade"){grade=value;for(const job of jobs.values())job.status.grade=value.name;}
         const j=jobs.get(value.id);
-        if(j){if(value.type==="saving"){j.saveResolve?.();return;}j.status=value;if(value.type==="waiting")j.granted=false;if(value.type==="granted"&&!j.granted){j.granted=true;j.started=true;j.resolve(j);}}
+        if(j){if(value.type==="gpu-preempt"){j.connection.abort();return;}if(value.type==="saving"){j.saveResolve?.();return;}j.status=value;if(value.type==="waiting")j.granted=false;if(value.type==="granted"&&!j.granted){j.granted=true;j.started=true;j.resolve(j);}}
         changed();
       };
       current.onclose=()=>{
@@ -23,14 +23,14 @@
       };
       current.onerror=()=>current.close();
     }
-    function acquire(path,kind,signal,priority=10,edge=2560){
+    function acquire(path,kind,signal,priority=10,edge=2560,gpu_bytes=0,gpu_unified=false,front=false){
       if(closed||signal?.aborted)return Promise.reject(cancelled());
       return new Promise((resolve,reject)=>{
-        const id=root.crypto.randomUUID(),j={id,path,kind,edge,priority,resolve,reject,connection:new AbortController(),granted:false,status:{type:"waiting",path,reason:"connecting"}};
+        const id=root.crypto.randomUUID(),j={id,path,kind,edge,gpu_bytes,gpu_unified,front,priority,resolve,reject,connection:new AbortController(),granted:false,status:{type:"waiting",path,reason:"connecting"}};
         const stop=()=>{finish(j,"cancelled");reject(cancelled());};
         j.detach=()=>signal?.removeEventListener("abort",stop);
         jobs.set(id,j);signal?.addEventListener("abort",stop,{once:true});
-        if(channel?.readyState===1)send({type:"ask",id,path,kind,edge,priority,order:screenOrder.get(path)});else connect();changed();
+        if(channel?.readyState===1)send({type:"ask",id,path,kind,edge,gpu_bytes,gpu_unified,priority,order:front?-1:screenOrder.get(path)});else connect();changed();
       });
     }
     function finish(j,outcome="finished"){
@@ -38,25 +38,26 @@
       j.saveReject?.(cancelled());j.detach();send({type:outcome==="cancelled"?"cancel":"finish",id:j.id,outcome});changed();
     }
     async function run(path,kind,signal,task,priority=10,initial=null){
-      let grant=initial;
+      let grant=initial,front=false;
       for(;;){
-        grant ||= await acquire(path,kind,signal,typeof priority==="function"?priority():priority);
+        grant ||= await acquire(path,kind,signal,typeof priority==="function"?priority():priority,initial?.edge??2560,initial?.gpu_bytes??0,initial?.gpu_unified??false,front);
         const combined=new AbortController(),stop=()=>combined.abort();
         signal?.addEventListener("abort",stop,{once:true});grant.connection.signal.addEventListener("abort",stop,{once:true});
         if(signal?.aborted||grant.connection.signal.aborted)stop();
+        const ownedGrant=grant;
         let outcome="finished";
         try{return await task(grant.id,combined.signal);}
         catch(error){
-          if(grant.connection.signal.aborted&&!signal?.aborted){grant=null;continue;}
+          if((grant.connection.signal.aborted||error.libraryRequeue)&&!signal?.aborted){front=!!error.gpuRetry;finish(grant,"cancelled");grant=null;continue;}
           outcome=signal?.aborted?"cancelled":/chang|invalidat/i.test(error.message)?"changed":"finished";throw error;
         }finally{
           signal?.removeEventListener("abort",stop);
-          if(grant){grant.connection.signal.removeEventListener("abort",stop);finish(grant,outcome);}
+          ownedGrant.connection.signal.removeEventListener("abort",stop);finish(ownedGrant,outcome);
         }
       }
     }
     function snapshot(){return {grade,jobs:[...jobs.values()].map(j=>({...j.status,path:j.path,state:j.granted?"running":"waiting",stage:j.granted?"Developing photo":waitingText(j.status)}))};}
-    return {acquire,finish,run,snapshot,gpuDone(id){const j=jobs.get(id);if(!j)return Promise.reject(cancelled());return new Promise((resolve,reject)=>{j.saveResolve=resolve;j.saveReject=reject;send({type:"gpu-done",id});});},visibility(value){visible=!!value;send({type:"visibility",visible});},viewport(paths){screenOrder=new Map(paths.map((p,i)=>[p,i]));for(const j of jobs.values())send({type:"priority",id:j.id,priority:j.priority,order:screenOrder.get(j.path)});},release(id){const job=jobs.get(id);if(job)finish(job);},wait(id,signal){return new Promise((resolve,reject)=>{const stop=()=>{signal?.removeEventListener("abort",stop);reject(cancelled());};signal?.addEventListener("abort",stop,{once:true});if(signal?.aborted)stop();});},promote(path,priority){for(const j of jobs.values())if(j.path===path&&j.priority!==priority){j.priority=priority;send({type:"priority",id:j.id,priority});}},close(){closed=true;clearTimeout(reconnect);clearInterval(heartbeat);for(const j of [...jobs.values()]){finish(j,"cancelled");j.connection.abort();j.reject(cancelled());}channel?.close();}};
+    return {acquire,finish,run,snapshot,gpuLost(){for(const j of [...jobs.values()])if(j.gpu_bytes&&j.started){j.connection.abort();finish(j,"cancelled");}},gpuDone(id){const j=jobs.get(id);if(!j)return Promise.reject(cancelled());return new Promise((resolve,reject)=>{j.saveResolve=resolve;j.saveReject=reject;send({type:"gpu-done",id});});},visibility(value){visible=!!value;send({type:"visibility",visible});},viewport(paths){screenOrder=new Map(paths.map((p,i)=>[p,i]));for(const j of jobs.values())send({type:"priority",id:j.id,priority:j.priority,order:j.front?-1:screenOrder.get(j.path)});},release(id){const job=jobs.get(id);if(job)finish(job);},wait(id,signal){return new Promise((resolve,reject)=>{const stop=()=>{signal?.removeEventListener("abort",stop);reject(cancelled());};signal?.addEventListener("abort",stop,{once:true});if(signal?.aborted)stop();});},promote(path,priority){for(const j of jobs.values())if(j.path===path&&j.priority!==priority){j.priority=priority;send({type:"priority",id:j.id,priority});}},close(){closed=true;clearTimeout(reconnect);clearInterval(heartbeat);for(const j of [...jobs.values()]){finish(j,"cancelled");j.connection.abort();j.reject(cancelled());}channel?.close();}};
   }
   function waitingText(value){
     if(value.reason==="needs more memory")return `Needs about ${(value.estimate/1e9).toFixed(1)} GB. Raise “Memory the app may use” in Settings.`;

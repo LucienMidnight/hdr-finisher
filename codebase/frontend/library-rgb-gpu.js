@@ -215,14 +215,15 @@ window.HDRLibraryRGB = (() => {
       let subnormal=(base+increment)/16777216.0;
       textureStore(out,vec2i(p.xy),vec4f(select(subnormal,normal,v>=vec3f(0.00006103515625)),1));
     }`;
-  async function developFrame({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity, direct = false, signal = null }) {
-    const shared = await gpu(), {device,errors} = shared;
-    let pipelines=compiled.get(device);
+  async function developFrame({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity, direct = false, signal = null, context = null }) {
+    const shared = context || await gpu(), {device,errors} = shared;
+    const compileDevice=shared.baseDevice || device;
+    let pipelines=compiled.get(compileDevice);
     if(!pipelines){
       pipelines={REDUCE:shared.pipelines.REDUCE};
       for(const [name,code] of Object.entries({RGB,RGB_SDR,REFERENCE,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GRADE,DNG_TILE_GAIN,DNG_LINEAR,PACK}))
         pipelines[name]=await device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code}),entryPoint:"main"}});
-      compiled.set(device,pipelines);
+      compiled.set(compileDevice,pipelines);
     }
     if(meta.dng_warp)return developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines});
     errors.length = 0;

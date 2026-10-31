@@ -146,7 +146,7 @@ def add_routes(router, marks):
                         raise ValueError("Invalid Library job")
                     amount, reason = await asyncio.to_thread(estimate_details, path, kind, scheduler.ceiling, int(command.get("edge",2560)))
                     scheduler.ask(id,owner,path,kind,amount,
-                        "now" if kind=="quick" and amount>64_000_000 else priority_class(int(command.get("priority",10))),notify,reason,order=command.get("order"))
+                        "now" if kind=="quick" and amount>64_000_000 else priority_class(int(command.get("priority",10))),notify,reason,order=command.get("order"), gpu_bytes=max(0,int(command.get("gpu_bytes",0))), gpu_unified=bool(command.get("gpu_unified")))
                 elif action == "gpu-done":
                     scheduler.gpu_done(id, owner)
                 elif action in {"finish","cancel"}:

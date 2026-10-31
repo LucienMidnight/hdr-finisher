@@ -132,3 +132,50 @@ def reduced_rate(path):
 
 def estimate(path, kind="source", ceiling=None):
     return estimate_details(path, kind, ceiling)[0]
+
+
+def gpu_metadata(path, document=None, edge=2560):
+    """Conservative header descriptor for the existing frontend rawBudget formula.
+
+    No decode or replacement GPU rate. The decoded descriptor can only shrink
+    this reservation. Unknown headers request the whole available GPU budget.
+    """
+    try:
+        from .file_gate import decode_suffix
+        from .library_live import recipe
+        suffix = decode_suffix(Path(path))
+        width, height = dimensions(path)
+        if suffix not in RATES:
+            import rawpy
+            with rawpy.RawPy() as raw:
+                raw.open_file(str(path))
+                width, height = raw.sizes.raw_width, raw.sizes.raw_height
+        inputs = recipe(document)
+        meta = dict(width=width, height=height, flip=0,
+                    raw_import_settings=inputs['raw_import_settings'], repairs=inputs.get('repairs'))
+        if suffix == '.dng':
+            from .linear_dng import inspect_dng, DngRoute
+            from .library_dng import geometry, plan
+            inspection = inspect_dng(Path(path))
+            width, height, *_ = geometry(inspection.metadata, inspection.width, inspection.height)
+            if inspection.route is DngRoute.LINEAR_DNG:
+                meta['dng_linear'] = True
+                if (edge <= 2560 and inspection.primary_page_index is not None
+                        and not (inspection.required_opcodes or inspection.optional_opcodes)
+                        and inspection.metadata.get('sdr_preview_series_index') is None):
+                    from .library_reduced import sample_size
+                    width, height = sample_size(width, height, 10240)
+            else:
+                plan(inspection)
+                meta['dng_warp'] = True
+            meta.update(width=width, height=height, rgb=True, colour={'authored_sdr':True})
+        elif suffix in RATES:
+            if edge <= 2560 and suffix in {'.png','.tif','.tiff'} and not inputs.get('repairs'):
+                from .library_reduced import sample_size
+                width, height = sample_size(width,height)
+            # JPEG's DCT route can retain more samples than SAMPLE_EDGE; the
+            # original header is its conservative bound, including orientation.
+            meta.update(width=width,height=height,rgb=True,colour={'authored_sdr':True})
+        return meta
+    except Exception:
+        return None

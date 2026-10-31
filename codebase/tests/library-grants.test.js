@@ -105,3 +105,27 @@ test('disconnect while waiting to save cancels that attempt and restarts without
  sockets[1].receive({type:'granted',id:sockets[1].sent[0].id});
  assert.equal(await work,42);assert.equal(attempts,2);grants.close();
 });
+
+
+test('GPU retry returns once at the front with its original atomic descriptor',async()=>{
+ const {grants,sockets}=setup();
+ const initial=grants.acquire('photo.raw','source',null,10,640,1234,true);
+ sockets[0].open();sockets[0].receive({type:'granted',id:sockets[0].sent[0].id});
+ let attempts=0;
+ const work=grants.run('photo.raw','source',null,async()=>{
+  if(++attempts===1)throw Object.assign(Error('oom'),{libraryRequeue:true,gpuRetry:true});return 42;
+ },10,await initial);
+ await tick();const retry=sockets[0].sent.filter(v=>v.type==='ask').at(-1);
+ assert.equal(retry.order,-1);assert.equal(retry.edge,640);assert.equal(retry.gpu_bytes,1234);assert.equal(retry.gpu_unified,true);
+ sockets[0].receive({type:'granted',id:retry.id});assert.equal(await work,42);grants.close();
+});
+
+test('device loss releases active GPU grants and leaves waiting asks live',async()=>{
+ const {grants,sockets}=setup();
+ const a=grants.acquire('a.raw','source',null,10,640,123),b=grants.acquire('b.raw','source',null,10,640,123);
+ sockets[0].open();const asks=sockets[0].sent.filter(v=>v.type==='ask');
+ sockets[0].receive({type:'granted',id:asks[0].id});const active=await a;
+ grants.gpuLost();assert.equal(active.connection.signal.aborted,true);
+ assert.equal(grants.snapshot().jobs.length,1);
+ sockets[0].receive({type:'granted',id:asks[1].id});grants.finish(await b);grants.close();
+});
