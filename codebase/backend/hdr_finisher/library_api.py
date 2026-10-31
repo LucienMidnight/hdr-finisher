@@ -18,6 +18,7 @@ from fastapi.routing import APIRoute
 from fastapi.exceptions import RequestValidationError
 from .file_gate import is_cloud_placeholder
 from .library_diagnostics import log, recent, timed_lock
+from .library_worker import DecoderTimeout
 from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
@@ -527,7 +528,7 @@ def create_library_router(worker, browser, store=None):
         log("picture_source_claim", path=path, checks_claim_ms=(claimed_at-requested_at)*1000, gpu=command.gpu)
         transfer = False
         try:
-            async with backend_grant(path,"source" if command.gpu else "cpu",command.priority,command.grant,request.is_disconnected):
+            async with backend_grant(path,"source" if command.gpu else "cpu",command.priority,command.grant,request.is_disconnected,edge=command.edge):
                 if command.gpu:
                     source_foreground(token, True)
                     from . import library_gpu_raw, library_rgb
@@ -904,6 +905,9 @@ def create_library_router(worker, browser, store=None):
             elif command == 'overlay': overlay_maps.cache.accept_transient(result)
             result['_file_epoch'] = epoch
             return result
+        except DecoderTimeout as exc:
+            return JSONResponse({"detail": str(exc), "library_timeout": True,
+                                 "path": arguments.get("path")}, status_code=408)
         except RuntimeError as exc:
             log("helper_request_failed", operation=command, paths=arguments, reason=str(exc), action="request stopped; restart app")
             raise HTTPException(status_code=503, detail=helper_error(exc)) from exc

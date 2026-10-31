@@ -69,12 +69,12 @@ class Runtime:
 
 
 @asynccontextmanager
-async def backend_grant(path, kind="source", priority=10, token=None, cancelled=lambda:False):
+async def backend_grant(path, kind="source", priority=10, token=None, cancelled=lambda:False, edge=2560):
     """Reuse a window's grant; never reserve the same decode a second time."""
     own = token is None
     if own:
         token = uuid4().hex
-        amount, reason = await asyncio.to_thread(estimate_details, path, kind, scheduler.ceiling)
+        amount, reason = await asyncio.to_thread(estimate_details, path, kind, scheduler.ceiling, edge)
         job = scheduler.ask(token, "backend", str(path), kind, amount, priority_class(priority), size_reason=reason)
         try:
             while job.granted is None:
@@ -144,7 +144,7 @@ def add_routes(router, marks):
                     kind = command.get("kind", "source")
                     if kind not in {"source","cpu","quick","sensor"}:
                         raise ValueError("Invalid Library job")
-                    amount, reason = await asyncio.to_thread(estimate_details, path, kind, scheduler.ceiling)
+                    amount, reason = await asyncio.to_thread(estimate_details, path, kind, scheduler.ceiling, int(command.get("edge",2560)))
                     scheduler.ask(id,owner,path,kind,amount,
                         "now" if kind=="quick" and amount>64_000_000 else priority_class(int(command.get("priority",10))),notify,reason,order=command.get("order"))
                 elif action == "gpu-done":

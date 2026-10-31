@@ -8,7 +8,7 @@
     function connect(){
       if(closed||channel)return;
       const current=channel=socket(url);
-      current.onopen=()=>{lastMessage=Date.now();if(!visible)send({type:"visibility",visible});for(const j of jobs.values())send({type:"ask",id:j.id,path:j.path,kind:j.kind,priority:j.priority,order:screenOrder.get(j.path)});heartbeat=interval(()=>{if(Date.now()-lastMessage>15000)current.close();else send({type:"heartbeat"});},5000);};
+      current.onopen=()=>{lastMessage=Date.now();if(!visible)send({type:"visibility",visible});for(const j of jobs.values())send({type:"ask",id:j.id,path:j.path,kind:j.kind,edge:j.edge,priority:j.priority,order:screenOrder.get(j.path)});heartbeat=interval(()=>{if(Date.now()-lastMessage>15000)current.close();else send({type:"heartbeat"});},5000);};
       current.onmessage=event=>{
         lastMessage=Date.now();const value=JSON.parse(event.data);
         if(value.type==="grade"){grade=value;for(const job of jobs.values())job.status.grade=value.name;}
@@ -23,14 +23,14 @@
       };
       current.onerror=()=>current.close();
     }
-    function acquire(path,kind,signal,priority=10){
+    function acquire(path,kind,signal,priority=10,edge=2560){
       if(closed||signal?.aborted)return Promise.reject(cancelled());
       return new Promise((resolve,reject)=>{
-        const id=root.crypto.randomUUID(),j={id,path,kind,priority,resolve,reject,connection:new AbortController(),granted:false,status:{type:"waiting",path,reason:"connecting"}};
+        const id=root.crypto.randomUUID(),j={id,path,kind,edge,priority,resolve,reject,connection:new AbortController(),granted:false,status:{type:"waiting",path,reason:"connecting"}};
         const stop=()=>{finish(j,"cancelled");reject(cancelled());};
         j.detach=()=>signal?.removeEventListener("abort",stop);
         jobs.set(id,j);signal?.addEventListener("abort",stop,{once:true});
-        if(channel?.readyState===1)send({type:"ask",id,path,kind,priority,order:screenOrder.get(path)});else connect();changed();
+        if(channel?.readyState===1)send({type:"ask",id,path,kind,edge,priority,order:screenOrder.get(path)});else connect();changed();
       });
     }
     function finish(j,outcome="finished"){

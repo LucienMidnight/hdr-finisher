@@ -182,7 +182,7 @@ def test_identified_bad_decoder_is_not_replayed_and_next_file_recovers(tmp_path,
     try:
         bad_id, failed = helper.submit_thumbnail(str(bad))
         good_id, recovered = helper.submit_thumbnail(str(good))
-        with pytest.raises(MediaBrowserError, match='set aside'):
+        with pytest.raises(ValueError, match='took too long' if payload == b'HANG' else 'set aside'):
             failed.result(timeout=10)
         assert recovered.result(timeout=10) == good
         assert bad_id not in helper._requests

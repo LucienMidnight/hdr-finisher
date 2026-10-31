@@ -82,7 +82,7 @@
       if (response.status === 202) { await sleep(150, signal); continue; }
       if (!response.ok) {
         const error = new Error(typeof result.detail === "string" ? result.detail : "Library request failed.");
-        error.status = response.status; error.libraryError = result.library_error; throw error;
+        error.status = response.status; error.libraryError = result.library_error || (result.library_timeout ? {path:result.path,reason:result.detail,timeout:true,time:Date.now()/1000} : undefined); throw error;
       }
       if (measured) HDRLibraryStopwatch("picture_answered", { picture_size:route === "/api/library/native" ? "detail preview" : body.edge <= 640 ? "thumbnail" : "screen preview",view:logView(),path: body.path, request: trace, key: result.key, duration_ms: performance.now() - queued, kept: !!result.kept });
       return result;
@@ -172,7 +172,7 @@
     for (const row of result.photos || []) { const photo = state.allPhotos.find(item => item.path === row.path); if (photo) Object.assign(photo, row); }
     paintGrid(); paintFilm();
     if (requeue) for (const path of paths) {
-      void HDRLibraryScenes.load(path, 640, undefined, 80).catch(error => {
+      void HDRLibraryScenes.load(path, 640, undefined, [...state.cells.values(),...state.filmCells.values()].some(cell=>cell.photo.path===path) ? 10 : 80).catch(error => {
         if (error.libraryError) pictureErrors.remember(error.libraryError);
         else if (!aborted(error)) status(error.message);
         void activity.refresh();

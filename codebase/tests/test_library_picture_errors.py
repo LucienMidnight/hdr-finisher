@@ -261,3 +261,22 @@ def test_corrupt_image_is_distinct_from_offline_device(tmp_path):
     assert not source_offline(OSError('corrupt pixels'), tmp_path / 'a.jpg')
     assert not source_offline(FileNotFoundError(errno.ENOENT, 'deleted file'), tmp_path / 'a.jpg')
     assert source_offline(FileNotFoundError(errno.ENOENT, 'missing folder'), tmp_path / 'removed' / 'a.jpg')
+
+
+def test_timeout_returns_retryable_response_without_broken_photo_receipt(tmp_path):
+    from concurrent.futures import Future
+    from hdr_finisher.library_worker import DecoderTimeout
+    class TimedOutHelper(Helper):
+        def submit_library(self,*args,**kwargs):
+            future=Future()
+            future.set_exception(DecoderTimeout("This photo took too long. Try again."))
+            return "timeout-job",future
+        submit_browse_picture=submit_library
+        def cancel(self,job): pass
+    path=tmp_path/"photo.png"
+    Image.new("RGB",(64,32),(100,120,80)).save(path)
+    api=client(tmp_path/"profile",TimedOutHelper())
+    response=api.post("/api/library/picture",json={"path":str(path),"edge":640})
+    assert response.status_code==408,response.text
+    assert response.json()["library_timeout"] is True
+    assert api.get("/api/library/health").json()["picture_errors"]==[]

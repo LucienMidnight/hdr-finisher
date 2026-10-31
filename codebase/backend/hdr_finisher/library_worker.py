@@ -13,6 +13,10 @@ from uuid import uuid4
 from .library_diagnostics import log, problem
 
 
+class DecoderTimeout(ValueError):
+    """A retryable deadline, never a broken-photo receipt."""
+
+
 class LibraryWorker:
     def __init__(self, root: Path) -> None:
         self.root = Path(root).resolve()
@@ -269,8 +273,8 @@ class LibraryWorker:
 
     @staticmethod
     def decoder_timeout(path):
-        # Proposed for Steve: 5x phase-0 maxima, rounded up, with a five-second
-        # minimum. Unknown types use the slowest measured route, not infinity.
+        # Steve approved per-type baselines scaled by source size, capped at
+        # five minutes of active work. Queueing and Grade pauses are excluded.
         suffix = Path(path or "").suffix.lower()
         baseline = {".dng": 135, ".avif": 81, ".exr": 16, ".png": 15,
                 ".jxl": 6, ".raf": 17, ".heic": 9, ".heif": 9,
@@ -280,17 +284,17 @@ class LibraryWorker:
         try:
             from .library_estimates import dimensions
             width,height=dimensions(path)
-            return baseline * max(1., width*height/24_000_000)
+            return min(300., baseline * max(1., width*height/24_000_000))
         except Exception:
             return baseline
 
-    def _set_aside(self, key, reason):
+    def _set_aside(self, key, reason, timed_out=False):
         request = self._requests.pop(key, {})
         future = self._pending.pop(key, None)
         self._work.pop(key, None)
         if future is not None and not future.done():
             from .media_browser import MediaBrowserError
-            future.set_exception(MediaBrowserError(reason))
+            future.set_exception(DecoderTimeout(reason) if timed_out else MediaBrowserError(reason))
         log("helper_file_set_aside", path=request.get("path"), reason=reason,
             action="file not replayed; remaining requests recover")
 
@@ -307,7 +311,7 @@ class LibraryWorker:
                     work["elapsed"] = work.get("elapsed", 0) + elapsed
                 if work.get("elapsed", 0) > self.decoder_timeout(request.get("path")):
                     self._identified_failure = True
-                    self._set_aside(key, "The photo decoder took too long. The file was set aside; other photos continue.")
+                    self._set_aside(key, "This photo took too long. Try again.", timed_out=True)
                     # The native decoder may not honour cancellation. Restart the
                     # disposable helper; the timed-out request is never replayed.
                     raise RuntimeError("Library decoder time limit exceeded")

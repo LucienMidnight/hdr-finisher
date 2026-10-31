@@ -125,6 +125,15 @@ probes in `codebase/output/phase3c/route-peaks.jsonl`.
 | Reduced linear DNG source, 297 MP | Report | 10.834 s; +389.565 MB | 10240-edge source, full line read | Reported |
 | LR-classic AVIF source, 42.177 MP | Approved 38 bytes/pixel estimate | 16.262 s; +1.883587143 GB including external decoder | Full gain reconstruction; propose 56 MB/MP, awaiting Steve | Estimate insufficient |
 
+Phase 3c.2 Part A, October 31, based on ad1402d, one default 4 GB cold mixed
+run: **stopped at 4.011418177 GB** with the sole active development grant for
+the Lightroom AVIF at the approved 56 bytes/pixel (2.361934848 GB).
+Memory acceptance failed; no complete-folder, first/second-screen or complete
+quick-preview time is claimed. No repeat was run. Evidence:
+codebase/output/cold-mixed/phase3c2-default/report.json and memory.jsonl.
+Parts B/C and the remaining acceptance runs stopped under the brief's explicit
+AVIF condition; previous timing rows remain the last complete measurements.
+
 ## 3. Developing a photo (per photo)
 
 | Action | Target | Measured | Conditions | Status |

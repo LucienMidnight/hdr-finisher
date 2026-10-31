@@ -1454,6 +1454,61 @@ embedded-DNG reference regression found during this work was fixed by retaining
 its original route. No full suites, repeat pairs, push, merge or installer.
 Protected project hashes were verified by each actual-app harness run.
 
+### 7.9 Phase 3c.2 Part A: approved rates and retryable deadlines; stopped on AVIF (October 31)
+
+**Partial implementation, based on ad1402d.** AVIF uses the approved 56 bytes
+per source pixel. Qualified reduced Library sources at >=100 MP use JPEG 6,
+PNG 8, TIFF 6 and linear DNG 6. The header qualifier excludes gain-map JPEG
+and DNGs with operations or an embedded SDR rendition; native and CPU requests
+keep their existing rates. The requested scene edge travels with the grant,
+including reconnects. The 64 MB minimum and every other allowance are unchanged.
+No reduced-route image processing changed.
+
+Decoder baselines scale by max(1, source MP/24), capped at 300 seconds of
+active helper work. Queueing and Grade pauses remain excluded. A deadline
+returns a typed, retryable 408 result rather than a broken-photo receipt.
+Cells retain this notice in window memory: "Took too long · Try again".
+Retry clears the notice and requests a new development at the photo's
+current visible/background priority, with a fresh deadline.
+
+**Required stop reached.** One 27-file cold mixed run, default exact
+4,000,000,000-byte ceiling, stopped at **4,011,418,177 bytes** (4.011418177 GB),
+**11,418,177 bytes over**. The only active development grant was
+LR-classic-hdr-source-test-1.avif: **2,361,934,848 bytes**, the approved
+56 bytes/pixel, admitted alone. The external AVIF decoder was active;
+no AVIF GPU development had started. The sampled AVIF decoder charge was
+1,206,977,097 bytes; the remainder includes the app and previously retained
+resources, so this is not an isolated AVIF increment or a measured final peak.
+The run stopped at the first observed violation. There were zero duplicate
+grant asks and zero memory-request timeouts (50 requests). Protected-project
+hashes were unchanged.
+
+Evidence: codebase/output/cold-mixed/phase3c2-default/report.json,
+memory.jsonl, per-file-results.csv and screen.png. This stopped run establishes
+neither all-file completion nor complete screen/quick-preview timings.
+No estimate was raised and no acceptance run was repeated.
+
+**DxO DNG remains unresolved.** The earlier recorded error occurred during
+Reading photo samples. Source preparation and JSON header serialization
+succeeded in isolation on the existing disposable photo; the Library API
+also returned a complete 640-source response (200). This does not qualify
+the GPU picture or explain the earlier mixed-run failure. No speculative
+decoder change or new refusal was added.
+
+**Validation.** The final focused selection passed **72 Python checks**
+and **33 grant/channel and scene-scheduler JavaScript checks**. Two new test
+fixture defects found in the initial selection were corrected before this pass. The existing
+helper crash/hang tests exercise deadline recovery and the new API test verifies
+408 with no receipt. No full Python/Node suites, repeat pairs or release sweep.
+The brief's AVIF stop condition prevented Parts B/C and the remaining acceptance:
+one-versus-two GPU runs, raised line scan, Grade coexistence, forced GPU failures,
+Single/neighbours and edited-photo comparisons. No new before/after folder exists.
+Existing phase 3c review pictures remain unchanged and await Steve's visual review.
+
+Next decision: resume investigation of AVIF admission and retained-memory overlap
+at the approved rate, or revise the brief. Larger estimates or changed allowances
+have not been proposed as a measured fix.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
@@ -1467,8 +1522,9 @@ records its numbers in the [performance table](../performance-table.md).
 | 1. File gate — **built October 30, awaiting Steve's try** | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
 | 2. Stop the feedback loop — **built October 30, awaiting Steve's try** (7.5) | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
 | 3. One scheduler, RAM — **October 31 run exception: Steve authorised 3a.1 → 3b without intervening acceptance.** — **3a.2 corrections built October 31; speed/mixed-memory qualification open (7.6). 3b partial resilience/scheduling built, large-picture and disk-cache work unfinished (7.7)** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
-| 4. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
-| 5. Grid makes 640 only | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
+| 3c.2 approved decisions — **Part A partial; stopped at AVIF ceiling violation (7.9)** | Approved estimates and retryable capped deadlines | Qualification remains open | Default mixed peak must stay below 4 GB; observed 4.011418177 GB. |
+| 4. GPU in the same scheduler — **not started; AVIF stop condition (7.9)** | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
+| 5. Grid makes 640 only — **not started; AVIF stop condition (7.9)** | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
 | 6. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. Edge case M25. | Leftover complexity. | Fast checks pass; less code than before. |
 | 7. Tune | Adjust estimates, the fast-lane size and the GPU count from logs. | — | Steve's feel plus the logged numbers. |
 
@@ -1591,8 +1647,8 @@ Decided October 30:
     already set from the line scan, so scaling counted its size twice (about
     28 minutes against 12.5 s measured), and a stuck giant runs alone, holding
     up all large work. A job that hits the limit is not a broken photo: its
-    cell says it took too long and offers Try again. Not yet in code (cap and
-    Try again). Original proposal, kept for reference: use five times the
+    cell says it took too long and offers Try again. Cap and retryable Try again implemented in Part A; mixed qualification
+    stopped as recorded in 7.9. Original proposal, kept for reference: use five times the
     largest phase-0 measured per-type job time, rounded up, with a five-second
     minimum: DNG 135 s, AVIF 81 s, EXR 16 s, PNG 15 s, JPEG XL 6 s, RAF 17 s,
     HEIC/HEIF 9 s; JPEG/TIFF/Bayer RAW/HDR/PFM 5 s. Unmeasured extensions use
@@ -1607,7 +1663,8 @@ Decided October 30:
     reduced routes at >=100 MP: JPEG 6, PNG 8, TIFF 6, linear DNG **6** MB per
     source MP. Codex proposed 2 for linear DNG; Steve chose 6 because the line
     scan's whole-app increment (1.226 GB, about 4.1 per pixel) is double what 2
-    budgets. Not yet in code; needs a whole-app recheck with varied real files. **AVIF 56 MB/MP approved by Steve, October 31**
+    budgets. Implemented for qualified reduced Library sources in Part A; whole-app
+    qualification stopped as recorded in 7.9. **AVIF 56 MB/MP approved by Steve, October 31**
     (replaces 38; needs a whole-app ceiling recheck). Lower reduced-route rates
     improve overlap but may underestimate other files; the higher AVIF rate
     reduces overlap but addresses its measured external-decoder overrun.

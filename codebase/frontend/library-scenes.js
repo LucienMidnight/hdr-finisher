@@ -27,7 +27,7 @@ window.HDRLibraryScenes = (() => {
     // the GPU and newly visible development needs that room.
     preemptLower:(job,priority)=>priority<=10&&job.resourceWaiting,
     admit:async job=>{
-      job.grant=await HDRLibraryGrants.acquire(job.path,HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority);
+      job.grant=await HDRLibraryGrants.acquire(job.path,HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority,job.edge);
       return true;
     },
     keepRunning:job=>job.retainDetached||visible.has(job.path)||nearby.has(job.path)});
@@ -39,7 +39,7 @@ window.HDRLibraryScenes = (() => {
   function failure(result) {
     const error = result.changed || result.offline ? new DOMException(result.detail,"AbortError") : Error(result.detail || "The photo could not be prepared.");
     if (result.offline) window.dispatchEvent(new CustomEvent("library-offline", {detail:result}));
-    error.libraryError = result.library_error;
+    error.libraryError = result.library_error || (result.library_timeout ? {path:result.path,reason:result.detail,timeout:true,time:Date.now()/1000} : undefined);
     return error;
   }
   async function prepared(path, edge, signal, priority, identity, idle = false, trace = null, options = {}) {

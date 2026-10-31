@@ -32,6 +32,21 @@ The RAW sensor read needs about 5.5 bytes per pixel. GPU memory runs about
 proposed per-type estimates are Steve's decision; no size or share has
 changed.
 
+### October 31: phase 3c.2 approved estimates; mixed qualification stopped
+
+Production uses AVIF 56 bytes/pixel and qualified reduced >=100 MP Library
+JPEG/PNG/TIFF/linear DNG 6/8/6/6. Native, ordinary and CPU requests retain
+their approved rates; the 64 MB minimum and all cache shares are unchanged.
+The helper deadline is capped at 300 seconds of active work; timeout notices
+are retryable window state, never broken-photo receipts.
+
+One default-limit mixed run stopped at **4,011,418,177 bytes**, against the
+exact **4,000,000,000-byte** ceiling. Its sole development grant was the
+Lightroom AVIF, **2,361,934,848 bytes**, admitted alone. This is a failed
+whole-app check, not proof that AVIF alone needs another specific rate.
+Per the brief, work stopped before GPU scheduling/640-only phases; no approved
+number was changed. Evidence and remaining work: scheduler design section 7.9.
+
 ### October 31: phase 3c live memory setting; estimates awaiting Steve
 
 The persistent Settings > Performance memory control is built and applies

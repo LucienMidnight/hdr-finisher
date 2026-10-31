@@ -5,7 +5,7 @@ from hdr_finisher.library_estimates import dimensions, estimate, estimate_pixels
 
 @pytest.mark.parametrize("suffix,rate", [
     (".arw",7),(".cr3",7),(".jpg",23),(".hdr",23),(".png",28),
-    (".tif",28),(".dng",28),(".exr",38),(".pfm",38),(".avif",38),
+    (".tif",28),(".dng",28),(".exr",38),(".pfm",38),(".avif",56),
     (".heic",52),(".heif",52),(".jxl",52)])
 def test_approved_rates(suffix,rate):
     assert estimate_pixels(suffix,6000,4000) == rate*24_000_000
@@ -81,3 +81,29 @@ def test_camera_dng_uses_raw_rate_and_linear_dng_uses_linear_rate(tmp_path):
         tifffile.imwrite(path,shape=(3000,4000),dtype="uint16",photometric=photo)
     assert estimate_details(camera)[0]==7*12_000_000
     assert estimate_details(linear)[0]==28*12_000_000
+
+
+@pytest.mark.parametrize("suffix,rate", [(".jpg",6),(".png",8),(".tiff",6),(".dng",6)])
+def test_reduced_source_rates_only_for_qualified_large_library_routes(monkeypatch, tmp_path, suffix, rate):
+    from hdr_finisher import library_estimates as estimates
+    monkeypatch.setattr(estimates,"dimensions",lambda path:(20000,10000))
+    monkeypatch.setattr(estimates,"reduced_rate",lambda path:rate)
+    path=tmp_path/("source"+suffix)
+    if suffix==".dng":
+        import tifffile
+        tifffile.imwrite(path,shape=(20,30),dtype="uint16",photometric=34892)
+    assert estimates.estimate_details(path)[0] == rate*200_000_000
+    assert estimates.estimate_details(path,edge=100000)[0] == estimates.RATES[suffix]*200_000_000
+    assert estimates.estimate_details(path,kind="cpu")[0] == 25*200_000_000
+    monkeypatch.setattr(estimates,"reduced_rate",lambda path:None)
+    assert estimates.estimate_details(path)[0] == estimates.RATES[suffix]*200_000_000
+
+
+def test_reduced_jpeg_qualification_keeps_gainmap_rate(tmp_path, monkeypatch):
+    from hdr_finisher.library_estimates import reduced_rate
+    from hdr_finisher import loader
+    path=tmp_path/"photo.jpg"
+    Image.new("RGB",(16,12)).save(path)
+    assert reduced_rate(path)==6
+    monkeypatch.setattr(loader,"is_ultrahdr_jpeg",lambda path:True)
+    assert reduced_rate(path) is None

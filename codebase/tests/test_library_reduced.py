@@ -96,3 +96,11 @@ def test_giant_deadline_scales_without_shortening_ordinary_deadline(monkeypatch)
     assert LibraryWorker.decoder_timeout("giant.jpg")==40
     monkeypatch.setattr(library_estimates,"dimensions",lambda path:(4000,3000))
     assert LibraryWorker.decoder_timeout("ordinary.jpg")==5
+
+
+def test_decoder_deadline_caps_giant_dng_at_five_minutes(monkeypatch):
+    from hdr_finisher import library_estimates
+    from hdr_finisher.library_worker import LibraryWorker
+    monkeypatch.setattr(library_estimates,"dimensions",lambda path:(30000,10000))
+    assert LibraryWorker.decoder_timeout("line.dng")==300
+    assert LibraryWorker.decoder_timeout("line.avif")==300

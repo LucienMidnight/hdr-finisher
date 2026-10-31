@@ -4,7 +4,7 @@ from .library_scheduler import MINIMUM
 from . import app_memory
 
 RATES = {".jpg":23, ".jpeg":23, ".hdr":23, ".png":28, ".tif":28,
-         ".tiff":28, ".dng":28, ".exr":38, ".pfm":38, ".avif":38,
+         ".tiff":28, ".dng":28, ".exr":38, ".pfm":38, ".avif":56,
          ".heic":52, ".heif":52, ".jxl":52}
 
 
@@ -75,7 +75,7 @@ def estimate_pixels(suffix, width, height, kind="source"):
     return max(MINIMUM, rate*int(width)*int(height))
 
 
-def estimate_details(path, kind="source", ceiling=None):
+def estimate_details(path, kind="source", ceiling=None, edge=2560):
     ceiling = app_memory.CEILING if ceiling is None else ceiling
     try:
         width, height = dimensions(path)
@@ -98,11 +98,36 @@ def estimate_details(path, kind="source", ceiling=None):
                 main=max(pages,key=lambda p:p.imagewidth*p.imagelength)
                 if int(main.photometric)==32803: # CFA camera DNG, not LinearRaw.
                     return max(MINIMUM,7*width*height), ""
+        if kind == "source" and edge <= 2560 and width*height >= 100_000_000:
+            rate = reduced_rate(path)
+            if rate is not None:
+                return max(MINIMUM, rate*width*height), ""
         return estimate_pixels(Path(path).suffix, width, height, kind), ""
     except Exception:
         # Steve, October 31: no invented per-type maximum. Decode errors are
         # reported only if decoding subsequently fails, never by admission.
         return ceiling, "unknown size"
+
+
+def reduced_rate(path):
+    """Header-only qualification; native, CPU and unsupported routes keep their rates."""
+    from .file_gate import decode_suffix
+    suffix = decode_suffix(Path(path))
+    if suffix in {".jpg", ".jpeg"}:
+        from .loader import is_ultrahdr_jpeg
+        return None if is_ultrahdr_jpeg(path) else 6
+    if suffix == ".png":
+        return 8
+    if suffix in {".tif", ".tiff"}:
+        return 6
+    if suffix == ".dng":
+        from .linear_dng import inspect_dng, DngRoute
+        inspection = inspect_dng(Path(path))
+        if (inspection.route == DngRoute.LINEAR_DNG and inspection.primary_page_index is not None
+                and not (inspection.required_opcodes or inspection.optional_opcodes)
+                and inspection.metadata.get("sdr_preview_series_index") is None):
+            return 6
+    return None
 
 
 def estimate(path, kind="source", ceiling=None):
