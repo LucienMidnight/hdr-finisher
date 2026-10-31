@@ -970,7 +970,7 @@
     let selectedResult;
     const handoffStarted = performance.now();
     const entries = [];
-    for (const storedEdge of nativeMode ? [100000] : [...new Set([640,2560,edge])]) {
+    for (const storedEdge of [edge]) {
       const picture = developed.reduced[storedEdge];
       const header = { draw_first:false, rgb:meta.rgb, has_sdr_reference:!!meta.sdr_reference, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
       edge:storedEdge, sample_bytes:picture.sample_bytes || 4, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode && !liveScene, flip: meta.flip, height: picture.height, width: picture.width,
@@ -978,7 +978,7 @@
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
       memory_peak_bytes: developed.memory_peak_bytes,
       edge_diagnostics: developed.edge_diagnostics,
-      dng_diagnostics: developed.dng_tiles ? {tiles:developed.dng_tiles,max_source_bytes:developed.dng_max_source_bytes,reserved_bytes:rawBudget(meta,nativeMode?[100000]:[640,2560,edge])} : undefined,
+      dng_diagnostics: developed.dng_tiles ? {tiles:developed.dng_tiles,max_source_bytes:developed.dng_max_source_bytes,reserved_bytes:rawBudget(meta,[edge])} : undefined,
       timing_ms: { ...meta.source_timings_ms, ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:developed.timings.gain_map ?? meta.gain_map_ms, highlight_support:meta.highlight_support_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
       entries.push({header,picture});
     }
