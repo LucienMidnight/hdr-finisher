@@ -129,6 +129,7 @@ app behaves when the machine runs short.
 | Decision | Date |
 | --- | --- |
 | **Whole-app RAM ceiling: the smaller of 4 GB or a quarter of total RAM, but never less than 2.5 GB.** 4 GB means 4,000,000,000 bytes, counting Electron main, renderers, GPU-process host RAM, the Python backend and its helpers. Dedicated VRAM is not counted. | Steve, 2026-10-29 |
+| **User memory setting, like DaVinci Resolve.** Settings will let the user choose how much memory the app may use: from 2.5 GB up to the computer's RAM minus the system reserve (the larger of 2 GB or 10%). The ceiling, target, scaled shares, admission and the very-large-picture check all follow it. The default stays the rule above (Steve, 2026-10-31: users with big files raise it themselves). Not built yet; details in the scheduler design, section 7.3. | Steve, 2026-10-31 |
 | **Budget split** as in section 4. Approved as a trial; adjust from measurements. | Steve, 2026-10-29 |
 | **Respond to system memory pressure** by trimming caches early (principle 6). | Steve, 2026-10-29 |
 | Older pictures may be discarded and redrawn; visible and nearby pictures keep priority. | Steve, 2026-10-29 |

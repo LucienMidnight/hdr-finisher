@@ -628,6 +628,43 @@ What the design keeps and adds:
 5. **Single and Grade** use 2560 and the existing native-detail rules.
    Export is unchanged.
 
+**Revised direction (Steve, October 31).** These points replace points 1–3
+where they differ.
+
+* **A memory setting, like DaVinci Resolve.** Settings gain "Memory the app
+  may use".
+  * Default: today's rule (the smaller of 4 GB or a quarter of RAM, never
+    below 2.5 GB). Steve, October 31: keep it; users with big files raise
+    the setting themselves.
+  * The user can raise it up to the computer's RAM minus the system reserve
+    (the larger of 2 GB or 10%), or lower it to 2.5 GB.
+  * Everything follows the chosen value: the ceiling, the target, the scaled
+    cache shares, admission, and the picture size check below.
+  * Today the ceiling never goes above 4 GB, even on a 128 GB machine. The
+    setting is how a user with plenty of RAM gives the app more.
+* **100 MP photos work smoothly at the default limit.** At the approved
+  estimates, a 100 MP RAW needs about 0.7 GB and fits beside other work. A
+  100 MP JPEG (about 2.3 GB) or TIFF, PNG or linear DNG (about 2.8 GB) does
+  not, so today each would run alone, one at a time.
+  * Proposed fix, **shrink while reading** for Library pictures:
+    * JPEG is decoded at reduced scale, as quick previews already are;
+    * TIFF, PNG and linear DNG are read in strips and reduced as they are
+      read;
+    * the normal pipeline then runs on the reduced picture.
+  * This avoids rewriting each full-size step (the 3b finding).
+  * The coding agent confirms it can be done and measures it. Library
+    pictures must stay within the perceptual tolerance of today's.
+* **Giant pictures (line scans, huge panoramas) work whenever the user's
+  limit allows.**
+  * Such a picture runs alone, as in point 1.
+  * If it needs more than the limit, its cell says how much memory it needs
+    and where to raise the limit. It never waits forever.
+  * If shrink while reading works for its type, it may fit the default
+    anyway.
+* **Pillow's size guard** (about 179 MP) is never disabled globally. A larger
+  picture is let through for that one decode when the app's own estimate
+  fits the user's limit and the computer's free memory.
+
 ### 7.4 Phase 1 as built (October 30)
 
 * `codebase/backend/hdr_finisher/file_gate.py` holds the supported list and
