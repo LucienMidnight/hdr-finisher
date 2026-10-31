@@ -4,6 +4,15 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## November 1 scroll-back diagnosis — bounded case passes, reported loss still open
+
+On 200 mixed disposable photos, all 96 returning cells from three completed
+screens reused memory in 12–23 ms, with no blank cells or new development.
+The fixed thumbnail share held 367 MB of 512 MiB; no pressure trim occurred.
+No cache-policy change is justified by this reproduction. Steve's pressure or
+beyond-capacity case remains open. Details and observer caveats are in
+[scheduler design 7.12](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+
 ## October 31 Part C — built and measured; mixed completion still open
 
 The disposable edited-photo baseline is in `codebase/output/part-c-edited/`:

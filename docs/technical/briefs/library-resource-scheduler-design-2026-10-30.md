@@ -1707,6 +1707,40 @@ Output size: 6.4 GB at start, 6.7 GB at end (100 GB limit). All 20 disposable
 Electron profiles created for this task were removed; review pictures/reports
 and reusable test-photo copies retained.
 
+### 7.12 Scroll-back and mixed completion diagnosis (November 1)
+
+**Problem 1: not reproduced on the bounded recent-screen case; no cache-policy
+change claimed.** The diagnostic mode `--scroll-diagnose` reuses 200 disposable
+copies (86 ARW, 85 HEIC, 20 PNG, 9 JPEG) from `D:/Photos/2023/11`. It waits for
+three screens to finish, scrolls four more screens without waiting, then returns
+to screens 3, 2 and 1. Source originals are read only. The observer computes the
+complete expected screen from the layout before sampling: it does not mistake
+cells left over from the previous layout for a completed screen.
+
+`codebase/output/cold-mixed/scroll-verified/report.json` records every returning
+cell, first draw, finished draw, blank observation, source/cache events and
+previous finish. All 96 observations (36 / 30 / 30 cells) reused finished surfaces
+in memory in 22.7 / 13.2 / 12.4 ms; no blank cells, disk-scene reads, source decode
+or redevelopment. Every cell had previously finished. The three original screens
+finished at 26.958 / 41.883 / 61.727 s. Whole-app RAM peaked at 3.090 GB, settled
+below 3.4 GB, with no reserve violation or memory-endpoint timeout.
+
+The thumbnail share held 367,288,320 of its existing 536,870,912 bytes; sharp
+retention was zero. `tilePool` keeps finished surfaces outside the DOM and
+returns them by exact source/grade/display identity. Virtual-window removal
+alone did not lose these pictures. Its existing oldest-entry eviction applies
+when the fixed share fills, and real memory pressure can trim it. An earlier,
+invalid time-sorted diagnostic saw six memory trims while moving rows; that is
+an investigation lead, **not proof** of Steve's reported cause. An initial
+observer also undercounted a return screen; its timings are not acceptance data.
+Neither run justifies a cache increase. Reproduction under pressure and the
+beyond-capacity disk/stand-in behavior remain open; this run only covers the
+three completed screens, including the top screen several screens back.
+
+Validation: 24 focused layout, tile-pool, ready-window and grant checks pass.
+No production cache sizes, cache lifetimes, rendering, Grade, Proof or export
+behavior changed for Problem 1.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with

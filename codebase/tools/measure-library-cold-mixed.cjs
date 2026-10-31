@@ -6,18 +6,22 @@ const {MemoryMonitor}=require('./library-memory-monitor.cjs');
 const {chromium}=require('playwright');
 const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
 const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe'),aceh=process.argv.includes('--aceh'),phase0=process.argv.includes('--phase0');
+const scrollDiagnose=process.argv.includes('--scroll-diagnose');
 const memoryLimit=Number(process.argv.find(x=>x.startsWith('--memory-gb='))?.split('=')[1]||4)*1e9;
 const allFolder=process.argv.find(x=>x.startsWith('--all-folder='))?.slice(13);
 const outputName=process.argv.includes('--output-name')?process.argv[process.argv.indexOf('--output-name')+1]:null;
 const out=path.join(root,'output/cold-mixed',outputName|| (jpeg?'jpeg':probe?'probe':aceh?'aceh':phase0?'phase0':'final'));fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'memory.jsonl'),'');
 const scratch=fs.mkdtempSync(path.join(root,'output/test-photos/cold-mixed-'));
-const photos=allFolder||path.join(root,'output/test-photos',phase0?'phase0':aceh?'aceh':'cold-mixed-photos'),background=path.join(scratch,'index');fs.mkdirSync(photos,{recursive:true});fs.mkdirSync(background);
+const photos=allFolder||path.join(root,'output/test-photos',phase0?'phase0':aceh?'aceh':scrollDiagnose?'scroll-back-mixed':'cold-mixed-photos'),background=path.join(scratch,'index');fs.mkdirSync(photos,{recursive:true});fs.mkdirSync(background);
 const source=phase0?photos:aceh?'D:/Photos/2017/Aceh-Wedding/Pesta':'D:/Photos/2023/11';
 let names=fs.readdirSync(source).filter(n=>/\.(heic|jpg|png|arw)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
 if(phase0)names=fs.readdirSync(photos,{recursive:true}).filter(n=>/\.(dng|jxl|raf|tiff?|jpg|jpeg|png|arw|avif|heic|cr3|orf|rw2|nef|exr|hdr|pfm)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
 let junk=[];
 if(aceh){junk=fs.readdirSync(source).filter(n=>n.startsWith('._')).sort().slice(0,6);names=names.filter(n=>!n.startsWith('._')).slice(0,48);}
-else if(phase0){}else if(jpeg)names=['IMG_0267.JPG'];else{
+else if(phase0){}else if(scrollDiagnose){
+ const groups=['ARW','HEIC','JPG','PNG'].map(ext=>names.filter(n=>n.toUpperCase().endsWith('.'+ext)));
+ names=[];while(names.length<200&&groups.some(g=>g.length))for(const group of groups)if(group.length&&names.length<200)names.push(group.shift());
+}else if(jpeg)names=['IMG_0267.JPG'];else{
  const chosen=probe ? [
   ...names.filter(n=>/\.ARW$/i.test(n)).slice(0,4),...names.filter(n=>/\.HEIC$/i.test(n)).slice(0,8),
   ...names.filter(n=>/\.JPG$/i.test(n)).slice(0,2),...names.filter(n=>/\.PNG$/i.test(n)).slice(0,2)
@@ -29,9 +33,9 @@ else if(phase0){}else if(jpeg)names=['IMG_0267.JPG'];else{
 for(const name of [...junk,...names])if(!fs.existsSync(path.join(photos,name)))fs.copyFileSync(path.join(source,name),path.join(photos,name));
 // Small generated-fixture files keep an independent pinned index active;
 // no second copies of Steve's real photos are made.
-if(!jpeg&&!aceh&&!phase0)for(let i=0;i<1200;i++)fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),path.join(background,`index-${String(i).padStart(4,'0')}.png`));
+if(!jpeg&&!aceh&&!phase0&&!scrollDiagnose)for(let i=0;i<1200;i++)fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),path.join(background,`index-${String(i).padStart(4,'0')}.png`));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const report={mode:phase0?'phase0':jpeg?'IMG_0267':aceh?'aceh':'mixed',files:names,junk,errors:[],memoryRequests:[],screens:[],startedAt:new Date().toISOString()};
+const report={mode:scrollDiagnose?'scroll-diagnose':phase0?'phase0':jpeg?'IMG_0267':aceh?'aceh':'mixed',files:names,junk,errors:[],memoryRequests:[],screens:[],startedAt:new Date().toISOString()};
 const before=hashProjects(require('../tests/release/drivers.json').protectedProjects);
 (async()=>{
  let memoryViolation, browser,lib,observer,peak=0,pending='',poll,stopping=false,activePoll,diagnostics,gpuObserver;
@@ -103,12 +107,17 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   const cacheSettings=await api('cache-settings');report.cacheSettings=cacheSettings;
   assert.ok(cacheSettings.location.toLowerCase().includes('test-'),'Test must use an isolated disk cache');
   await api('lock-metrics',{reset:true});
-  if(!jpeg&&!aceh&&!phase0)await api('pins',{paths:[background]});
+  if(!jpeg&&!aceh&&!phase0&&!scrollDiagnose)await api('pins',{paths:[background]});
   if(process.argv.includes('--settings-exercise'))await lib.evaluate(()=>{window.frameGaps=[];let last=performance.now();function tick(now){frameGaps.push(now-last);last=now;requestAnimationFrame(tick);}requestAnimationFrame(tick);});
   report.openedPerformance=await lib.evaluate(()=>performance.now());
   const opened=report.openedAt=Date.now();void lib.evaluate(folder=>HDRLibrary.browse(folder),photos.replaceAll('\\','/')).catch(e=>report.errors.push(String(e)));
   await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count>0,null,{timeout:20000});
-  for(let screen=0;screen<(phase0?3:jpeg||probe?1:2);screen++){
+  if(scrollDiagnose){
+   await lib.waitForFunction(()=>!HDRLibrary.getSnapshot().reading);
+   await lib.evaluate(()=>document.querySelector('[data-sort="name"]').click());
+   await sleep(300);
+  }
+  for(let screen=0;screen<(scrollDiagnose?3:phase0?3:jpeg||probe?1:2);screen++){
    if(screen){report.scrolledAt=Date.now();}if(screen)await lib.evaluate(()=>{const grid=document.getElementById('library-grid');grid.scrollTop+=grid.clientHeight;grid.dispatchEvent(new Event('scroll'));});
    await sleep(300);
    const visibleTargets=await lib.evaluate(()=>{
@@ -150,6 +159,42 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
    report.frameGaps=await lib.evaluate(()=>frameGaps);report.maxFrameGapMs=Math.max(...report.frameGaps);
    await page.screenshot({path:path.join(out,'settings-browsing.png')});
   }
+  if(scrollDiagnose){
+   report.scrollBack=[];
+   for(let step=0;step<4;step++){
+    await lib.evaluate(()=>{const grid=document.getElementById('library-grid');grid.scrollTop+=grid.clientHeight;grid.dispatchEvent(new Event('scroll'));});
+    await sleep(300);
+   }
+   for(const screen of [2,1,0]){
+    const at=Date.now(),eventStart=await lib.evaluate(()=>coldEvents.length);
+    const observation=await lib.evaluate(async screen=>{
+     const grid=document.getElementById('library-grid');const began=performance.now();
+     grid.scrollTop=screen*grid.clientHeight;grid.dispatchEvent(new Event('scroll'));
+     const layout=HDRLibraryLayout.gridLayout(HDRLibrary.getSnapshot().count,grid.clientWidth,grid.clientHeight,grid.scrollTop,Number(document.getElementById('thumbnail-size').value));
+     const targets=HDRLibrary.getSnapshot().paths.slice(layout.first,layout.last);
+     const cells=new Map(targets.map(path=>[path,{path,firstDrawMs:null,finishedMs:null,everBlank:false}]));
+     // Observe after the scroll handler has laid out the complete target screen.
+     await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+     while(performance.now()-began<15000){
+      const b=grid.getBoundingClientRect();let complete=true;
+      for(const path of targets){
+       const c=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===path);
+       const finished=!!c?.querySelector('canvas[data-picture-key]:not([hidden])');
+       const image=c?.querySelector('img');const preview=!!image&&!image.hidden&&image.style.visibility!=='hidden'&&image.naturalWidth>0;
+       const row=cells.get(path);
+       if(finished||preview)row.firstDrawMs??=performance.now()-began;else row.everBlank=true;
+       if(finished)row.finishedMs??=performance.now()-began;else complete=false;
+      }
+      if(cells.size&&complete)break;
+      await new Promise(requestAnimationFrame);
+     }
+     return {screen,began,ms:performance.now()-began,cells:[...cells.values()],ram:HDRLibraryRAM.snapshot()};
+    },screen);
+    observation.events=await lib.evaluate(start=>coldEvents.slice(start),eventStart);
+    observation.requests=report.httpRequests.filter(r=>r.at>=at);report.scrollBack.push(observation);
+    console.log(JSON.stringify({returnScreen:screen,ms:observation.ms,blank:observation.cells.filter(c=>c.everBlank).length}));
+   }
+  }
   if(process.argv.includes('--scroll-back')){
    report.returnAt=Date.now();report.returnPerformance=await lib.evaluate(()=>{window.returnAt=performance.now();const grid=document.getElementById('library-grid');grid.scrollTop=0;grid.dispatchEvent(new Event('scroll'));return window.returnAt;});
    await sleep(2500);
@@ -173,6 +218,10 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   Object.assign(report,await lib.evaluate(()=>({events:coldEvents,allocations:coldAllocations,snapshot:HDRLibrary.getSnapshot(),queue:HDRLibraryScenes.snapshot()})));
   report.lock=await api('lock-metrics',{});
   await page.screenshot({path:path.join(out,'screen.png')});
+  if(scrollDiagnose)for(const screen of report.scrollBack){
+   assert.ok(screen.cells.length&&screen.cells.every(c=>c.finishedMs!==null&&c.finishedMs<500&&!c.everBlank),'Every returning cell must be drawn within 500 ms without a blank');
+   assert.ok(!screen.events.some(e=>['picture_development','picture_source_transfer','picture_pixels_fetched'].includes(e.stage)),'Recent scroll-back must use memory without source or disk reads');
+  }
   assert.ok(report.screens.every(s=>s.cells.length&&s.cells.every(c=>c.presented||c.needsMemory||c.error)),'Every target cell must have an outcome');
   assert.ok((report.allocations||[]).every(a=>a.peak<=a.reserved),'Actual GPU allocation must fit its reservation');
   assert.ok(!report.memoryRequests.some(r=>r.error),'Memory endpoint must not time out');
@@ -211,6 +260,12 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   });
   fs.writeFileSync(path.join(out,'per-file-results.csv'),'file,status,finished_ms,quick_ms\n'+report.perFile.map(r=>[r.file,r.status,r.finishedMs??'',r.quickMs??''].join(',')).join('\n')+'\n');
   gpuObserver?.kill();
+  for(const screen of report.scrollBack||[])for(const cell of screen.cells){
+   const events=screen.events.filter(e=>e.path===cell.path);
+   cell.route=events.some(e=>e.stage==='picture_development')?'redeveloped':events.some(e=>e.stage==='picture_pixels_fetched')?'disk scene redraw':events.some(e=>e.stage==='picture_source_transfer')?'source decoded again':cell.finishedMs!==null?'finished surface in memory':'redraw pending';
+   const previous=(report.events||[]).filter(e=>e.path===cell.path&&e.stage==='picture_shown'&&e.at<screen.began).at(-1);
+   cell.previouslyFinishedAt=previous?.at;
+  }
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));
   fs.writeFileSync(path.join(out,'cell-timings.csv'),'screen,photo,finished_request,request_to_finished_ms,camera_preview_ms,presented,failure\n'+report.results.map(r=>{
    const finished=r.requests.filter(p=>p.size==='thumbnail').at(-1)||{};
