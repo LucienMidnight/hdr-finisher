@@ -749,6 +749,12 @@ opening a small photo in Grade should release the large one, since Grade
 keeps only its current photo (`SessionStore.activate_session`); not yet
 tested.
 
+Steve's try (October 31) confirmed it: 5.15 GB measured, one moderate trim
+every 10 s, nothing admitted. It also showed a second effect: the 30 waiting
+cells polled about 37 times a second, filling the window's connections, so
+folder-tree clicks waited behind them (the backend answered in about 1 ms).
+Phase 3's waiting line without polling (6.6) has to land with the M27 fix.
+
 **Tolerance for the scripted run** (from section 8): no pressure signal and
 no trim while measured memory stays under the target; when over it, at most
 one trim per level change plus one per 10 s; peak whole-app memory under the

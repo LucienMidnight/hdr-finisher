@@ -27,6 +27,15 @@ indefinitely. Phase 2 stops the repeated clean-ups but does not unblock it.
 Until phase 3, opening a smaller photo in Grade should release the large one
 (Grade keeps only the current photo); not yet tested.
 
+Steve's try, October 31 (2021\07, 530 PNG/HEIC, after the line scan at
+100%): confirmed. The backend held 3.75 GB (peak 7.3 GB at 100%), the app
+5.15 GB; trims came every 10 s as designed, "0 active · 30 waiting". Folders
+also felt slow to open. The backend answered folder-tree requests in about
+1 ms and listed the folder in 0.18 s, so the delay was in the window: the 30
+waiting cells polled about 37 times a second, which fills the window's few
+connections to the backend, and a folder click queues behind them. This is
+root cause 5 (polling), removed in phase 3.
+
 Fast checks: JS 678 tests, 3 known failures; Python 2,797 passed, 4 known
 failures, 3 skipped.
 
