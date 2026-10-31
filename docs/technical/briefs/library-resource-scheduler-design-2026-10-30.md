@@ -833,8 +833,8 @@ the backend answered folder requests in about 1 ms.
    a large photo open in Grade), one **now** job at a time still runs, plus
    the fast lane, even if that takes the app over its 4 GB budget. **soon**
    and **eventually** work stops. The floor is for ordinary photos: only a
-   job whose estimate is within the **floor allowance** (proposed 1 GB,
-   decision 8) runs this way.
+   job whose estimate is within the **floor allowance** (1 GB, Steve,
+   October 31; decision 8) runs this way.
 6. **The Library pauses for a large photo in Grade** (Steve, October 31).
    Example: a folder of line scans, with one open in Grade. Each line scan
    needs about 6 GB in the Library (measured, 6.11), so the floor can't take
@@ -1029,8 +1029,9 @@ Still to decide:
    Going over the app's budget is usually fine, but never over the
    computer's free memory (7.6, points 5–8).
 7. ~~Build phase 3 as 3a then 3b (7.6).~~ Approved by Steve, October 31.
-8. The floor allowance: the largest photo job that may run over the app's
-   budget while room is short (7.6, point 5). Proposed 1 GB: covers a
+8. ~~The floor allowance~~ **1 GB, approved by Steve, October 31.** The
+   largest photo job that may run over the app's budget while room is short
+   (7.6, point 5). 1 GB covers a
    24 MP JPEG (about 550 MB), a 12 MP iPhone HEIC (about 620 MB) and a
    61 MP RAW sensor read (about 430 MB); not a 48 MP HEIC (about 2.5 GB)
    or a line scan (about 6 GB), which wait for room instead. Needed for 3a.

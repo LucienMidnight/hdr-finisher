@@ -285,8 +285,8 @@ room is available; critical pressure still clears reconstructible caches.
 **Decided by Steve, October 31 (for scheduler phase 3, not built).** The
 4 GB ceiling becomes the budget for normal Library work, not a hard stop:
 - Photos on screen keep a floor: one ordinary photo at a time may run even
-  when that takes the app over 4 GB (floor allowance proposed 1 GB, still
-  Steve's decision).
+  when that takes the app over 4 GB, if its estimate is 1 GB or less (floor
+  allowance, Steve, October 31).
 - One large job at a time may also go over 4 GB.
 - While a large photo is open in Grade, a large Library photo pauses with a
   clear message and a **Close photo in Grade** button. Grade stays fully

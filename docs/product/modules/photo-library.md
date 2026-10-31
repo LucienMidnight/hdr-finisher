@@ -21,8 +21,8 @@ open in Grade), the Library pauses with "Library paused: memory is in use by
 budget is usually fine, but no job starts beyond the computer's free memory
 minus a system reserve; such a job waits with a message and is never marked
 failed. Steve approved building it as 3a then 3b (October 31). Still to
-decide before 3a: the floor allowance (decision 8), the system reserve (9)
-and the fast-lane size (4).
+decide before 3a: the system reserve (decision 9) and the fast-lane size
+(4). Floor allowance: 1 GB (Steve, October 31).
 
 ## October 30 (late night): feedback loop stopped (scheduler phase 2), awaiting Steve's try
 
