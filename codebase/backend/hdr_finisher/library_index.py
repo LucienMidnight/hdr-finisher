@@ -9,7 +9,7 @@ from concurrent.futures import CancelledError, TimeoutError
 import json
 import os
 from pathlib import Path
-from threading import Event, RLock, Thread
+from threading import Event, RLock, Thread, get_ident
 import time
 
 from .library_metadata import FACT_FIELDS
@@ -39,6 +39,8 @@ class LibraryIndex:
         self._retry_seconds = 15
         self._thread = None
         self._upkeep_thread = None
+        self._upkeep_ident = None
+        self._upkeep_id = "startup-upkeep-" + str(id(self))
         from .library_folder_checks import FolderChecks
         self.checks = FolderChecks(self)
         self._generation = 0
@@ -50,6 +52,18 @@ class LibraryIndex:
 
     def wait_for_upkeep(self):
         """Yield between photo families, without owning a database lock."""
+        if get_ident() == self._upkeep_ident:
+            from .library_scheduler import scheduler, MINIMUM
+            with scheduler.lock:
+                scheduler.finish(self._upkeep_id)
+                if self._stop.is_set():
+                    raise CancelledError()
+                job = scheduler.ask(self._upkeep_id, self._upkeep_id, str(self.browser.root),
+                                    "upkeep", MINIMUM, "eventually")
+            job.ready.wait()
+            if self._stop.is_set():
+                raise CancelledError()
+            return
         while self.worker is not None:
             if self._stop.is_set():
                 raise CancelledError()
@@ -62,6 +76,7 @@ class LibraryIndex:
         # Let the last folder and its grid get their first requests in first.
         if self._stop.wait(3):
             return
+        self._upkeep_ident = get_ident()
         started = time.monotonic()
         log("startup_upkeep_started", action="background Library recovery reconciliation")
         try:
@@ -78,6 +93,10 @@ class LibraryIndex:
             log("startup_upkeep_cancelled", duration_ms=round((time.monotonic()-started)*1000, 2))
         except Exception as error:
             problem("startup_upkeep_failed", self.browser.root, error, "durable recovery retained; retry on next launch")
+        finally:
+            from .library_scheduler import scheduler
+            scheduler.finish(self._upkeep_id)
+            self._upkeep_ident = None
 
     # Personal settings stay outside the database, which can be rebuilt.
 
@@ -286,6 +305,8 @@ class LibraryIndex:
 
     def close(self):
         self._stop.set()
+        from .library_scheduler import scheduler
+        scheduler.finish(self._upkeep_id)
         self.checks.wake.set()
         with self.checks.lock:
             for signal in self.checks.signals.values(): signal.close()

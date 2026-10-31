@@ -32,6 +32,11 @@ The RAW sensor read needs about 5.5 bytes per pixel. GPU memory runs about
 proposed per-type estimates are Steve's decision; no size or share has
 changed.
 
+### October 31: phase 3b partial scheduling
+
+Startup upkeep uses the existing 64 MB minimum estimate as eventually work, yields between safe points, and releases its grant on completion/close.
+Bounded large-image routes and coordinated unavailable-disk-cache fallback remain unfinished; all approved rates/shares stay in force.
+
 ### October 31: phase 3a.1 admission cap
 
 Two source/CPU developments may be admitted across windows. This is the approved

@@ -203,6 +203,10 @@ class Scheduler:
                 pass
             elif headroom is not None and job.estimate > headroom:
                 reason = "system reserve"
+            elif job.kind == "upkeep" and (self.grade_bytes or any(CLASSES[j.cls] < CLASSES[job.cls] for j in running)
+                    or any(j.granted is None and not j.blocked and CLASSES[j.cls] < CLASSES[job.cls]
+                           for j in self.jobs.values())):
+                reason = "foreground work first"
             elif job.fast:
                 if sum(j.fast for j in running) >= FAST_COUNT:
                     reason = "fast lane full"

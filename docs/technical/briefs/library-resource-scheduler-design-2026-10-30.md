@@ -1116,6 +1116,14 @@ waiting for acceptance between them. No approved budget or estimate changes.
    coordinated unavailable-cache state plus an event-driven handoff backpressure
    path, then ENOSPC/missing-volume tests. Existing budgets and LRU behaviour
    remain. No full-cache/no-cache acceptance claim; no new cache message.
+5. **Startup scheduling built; launch tolerance unqualified.** Startup
+   reconciliation, cleanup and membership recovery ask for the existing 64 MB
+   minimum as `eventually` work. At every existing safe point the previous grant
+   ends, visible requests go first, then upkeep waits on the job event. Close
+   cancels/wakes the grant, and completion releases it. Visible work can start
+   while the current short piece finishes. Non-startup indexing retains its
+   existing waits. First-use ledger creation can still reconcile synchronously;
+   the generated-fixture launch comparison is required before claiming ≤10%.
 
 ## 8. Phases
 

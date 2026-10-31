@@ -211,3 +211,20 @@ def test_screen_order_survives_out_of_order_cache_probes():
     s.finish(blocker.id)
     assert earlier.granted is not None and middle.granted is not None
     assert later.granted is None
+
+
+def test_upkeep_yields_at_checkpoint_until_visible_work_finishes():
+    s = fresh(2*GB)
+    visible = ask(s, 'visible', 100_000_000)
+    upkeep = ask(s, 'upkeep', FAST_BYTES, 'eventually', 'upkeep')
+    assert upkeep.granted is None and upkeep.baseline is None
+    s.finish(visible.id)
+    assert upkeep.granted is not None
+    another = ask(s, 'another', 100_000_000)
+    assert another.granted is not None  # Upkeep never blocks a visible admission.
+    s.finish(upkeep.id)
+    next_step = ask(s, 'upkeep', FAST_BYTES, 'eventually', 'upkeep')
+    assert next_step.granted is None
+    s.finish(another.id)
+    assert next_step.granted is not None
+
