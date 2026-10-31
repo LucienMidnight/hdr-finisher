@@ -228,3 +228,25 @@ def test_upkeep_yields_at_checkpoint_until_visible_work_finishes():
     s.finish(another.id)
     assert next_step.granted is not None
 
+
+def test_two_windows_hide_restore_and_priority_updates():
+    s = fresh(2*GB)
+    quick = ask(s, 'quick', kind='quick')
+    hidden = ask(s, 'hidden', owner='hidden-window')
+    visible = ask(s, 'visible', owner='visible-window')
+    s.set_visible('hidden-window', False)
+    assert hidden.cls == 'eventually'
+    s.change(hidden.id, hidden.owner, 'soon')
+    assert hidden.cls == 'eventually' and hidden.requested_cls == 'soon'
+    s.finish(quick.id)
+    assert visible.granted is not None and hidden.granted is None
+    hidden_quick = ask(s, 'hidden-quick', kind='quick', owner='hidden-window')
+    assert hidden_quick.granted is None
+    s.set_visible('hidden-window', True)
+    assert hidden.cls == 'soon' and hidden_quick.cls == 'now'
+    assert hidden_quick.granted is not None
+    s.finish(hidden_quick.id)
+    s.finish(visible.id)
+    assert hidden.granted is not None
+    s.disconnect('hidden-window')
+    assert not s.hidden and hidden.id not in s.jobs

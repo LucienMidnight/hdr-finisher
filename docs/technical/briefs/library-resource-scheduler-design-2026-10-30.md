@@ -1124,6 +1124,13 @@ waiting for acceptance between them. No approved budget or estimate changes.
    while the current short piece finishes. Non-startup indexing retains its
    existing waits. First-use ledger creation can still reconcile synchronously;
    the generated-fixture launch comparison is required before claiming ≤10%.
+6. **Visibility scheduling built; native-window trial outstanding.** Visibility
+   messages use the persistent grant channel. Hidden owners' jobs become
+   `eventually`, including quick previews; they cannot jump ahead of foreground
+   work. Promotions made while hidden are retained and restored when shown.
+   Active work completes at its normal boundary. Two-owner scheduling and
+   reconnect-channel behaviour pass; an actual two-window minimise/restore trial
+   remains to be done.
 
 ## 8. Phases
 

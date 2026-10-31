@@ -419,3 +419,4 @@ October 31 Library follow-up:
 - `library_worker.py`: active decoder deadlines and identified crash recovery.
 - `library_picture_errors.py`: offline device errors; `library-scenes.js`, `library-gpu-raw.js` and `photo-library.js`: offline notification, dimming and focus retry.
 - `library_index.py`: startup upkeep grants at safe points and release on close; `library_scheduler.py`: upkeep foreground precedence.
+- `library_scheduler.py`: hidden-owner priority restoration; `library_grants.py` / `library-grants.js`: visibility over the existing channel.

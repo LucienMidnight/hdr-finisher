@@ -3,12 +3,12 @@
   "use strict";
   const cancelled=()=>new DOMException("Cancelled","AbortError");
   function create({socket=url=>new WebSocket(url),url,changed=()=>{},timer=setTimeout,interval=setInterval}={}){
-    const jobs=new Map(); let screenOrder=new Map(); let channel=null,reconnect=null,heartbeat=null,lastMessage=0,closed=false,grade={name:"",bytes:0};
+    const jobs=new Map(); let screenOrder=new Map(); let visible=true; let channel=null,reconnect=null,heartbeat=null,lastMessage=0,closed=false,grade={name:"",bytes:0};
     const send=value=>{if(channel?.readyState===1)channel.send(JSON.stringify(value));};
     function connect(){
       if(closed||channel)return;
       const current=channel=socket(url);
-      current.onopen=()=>{lastMessage=Date.now();for(const j of jobs.values())send({type:"ask",id:j.id,path:j.path,kind:j.kind,priority:j.priority,order:screenOrder.get(j.path)});heartbeat=interval(()=>{if(Date.now()-lastMessage>15000)current.close();else send({type:"heartbeat"});},5000);};
+      current.onopen=()=>{lastMessage=Date.now();if(!visible)send({type:"visibility",visible});for(const j of jobs.values())send({type:"ask",id:j.id,path:j.path,kind:j.kind,priority:j.priority,order:screenOrder.get(j.path)});heartbeat=interval(()=>{if(Date.now()-lastMessage>15000)current.close();else send({type:"heartbeat"});},5000);};
       current.onmessage=event=>{
         lastMessage=Date.now();const value=JSON.parse(event.data);
         if(value.type==="grade"){grade=value;for(const job of jobs.values())job.status.grade=value.name;}
@@ -56,7 +56,7 @@
       }
     }
     function snapshot(){return {grade,jobs:[...jobs.values()].map(j=>({...j.status,path:j.path,state:j.granted?"running":"waiting",stage:j.granted?"Developing photo":waitingText(j.status)}))};}
-    return {acquire,finish,run,snapshot,viewport(paths){screenOrder=new Map(paths.map((p,i)=>[p,i]));for(const j of jobs.values())send({type:"priority",id:j.id,priority:j.priority,order:screenOrder.get(j.path)});},release(id){const job=jobs.get(id);if(job)finish(job);},wait(id,signal){return new Promise((resolve,reject)=>{const stop=()=>{signal?.removeEventListener("abort",stop);reject(cancelled());};signal?.addEventListener("abort",stop,{once:true});if(signal?.aborted)stop();});},promote(path,priority){for(const j of jobs.values())if(j.path===path&&j.priority!==priority){j.priority=priority;send({type:"priority",id:j.id,priority});}},close(){closed=true;clearTimeout(reconnect);clearInterval(heartbeat);for(const j of [...jobs.values()]){finish(j,"cancelled");j.connection.abort();j.reject(cancelled());}channel?.close();}};
+    return {acquire,finish,run,snapshot,visibility(value){visible=!!value;send({type:"visibility",visible});},viewport(paths){screenOrder=new Map(paths.map((p,i)=>[p,i]));for(const j of jobs.values())send({type:"priority",id:j.id,priority:j.priority,order:screenOrder.get(j.path)});},release(id){const job=jobs.get(id);if(job)finish(job);},wait(id,signal){return new Promise((resolve,reject)=>{const stop=()=>{signal?.removeEventListener("abort",stop);reject(cancelled());};signal?.addEventListener("abort",stop,{once:true});if(signal?.aborted)stop();});},promote(path,priority){for(const j of jobs.values())if(j.path===path&&j.priority!==priority){j.priority=priority;send({type:"priority",id:j.id,priority});}},close(){closed=true;clearTimeout(reconnect);clearInterval(heartbeat);for(const j of [...jobs.values()]){finish(j,"cancelled");j.connection.abort();j.reject(cancelled());}channel?.close();}};
   }
   function waitingText(value){
     if(value.reason==="paused for Grade")return "memory in use by the photo open in Grade";
@@ -71,6 +71,9 @@
       const response=await fetch("/api/library/preview",{method:"POST",priority:"high",signal:shared,headers:{"Content-Type":"application/json",...headers},body:JSON.stringify({...body,grant})});
       return new Response(response.status===204?null:await response.arrayBuffer(),{status:response.status,headers:response.headers});
     });
+    const visibility=()=>root.HDRLibraryGrants.visibility(root.document.visibilityState!=="hidden");
+    if(root.document.visibilityState==="hidden")visibility();
+    root.document.addEventListener("visibilitychange",visibility);
     root.addEventListener("pagehide",()=>root.HDRLibraryGrants.close());
   }
 })(typeof window==="undefined"?globalThis:window);

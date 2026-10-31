@@ -129,6 +129,10 @@ def add_routes(router, marks):
                 if action == "heartbeat":
                     scheduler.heartbeat(owner)
                     notify(dict(type="heartbeat"))
+                elif action == "visibility":
+                    if type(command.get("visible")) is not bool:
+                        raise ValueError("Invalid window visibility")
+                    scheduler.set_visible(owner, command["visible"])
                 elif action == "ask":
                     if not isinstance(id,str) or not 1 <= len(id) <= 96:
                         raise ValueError("Invalid grant identifier")

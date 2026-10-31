@@ -37,6 +37,7 @@ class Job:
     blocked: str = ""
     peak: int | None = None
     baseline: int | None = None
+    requested_cls: str = "now"
     order: int = 0
     floor: bool = False
     alone: bool = False
@@ -58,6 +59,7 @@ class Scheduler:
         self.ceiling = ceiling
         self.jobs = {}
         self.owners = {}
+        self.hidden = set()
         self.sequence = 0
         self.caches = 0
         self.grade_bytes = 0
@@ -108,6 +110,9 @@ class Scheduler:
             amount = max(0 if cls == "Grade" else MINIMUM, int(estimate))
             job = Job(id, owner, path, kind, amount, cls,
                       self.sequence, self.clock(), notify)
+            job.requested_cls = cls
+            if owner in self.hidden and cls != "Grade":
+                job.cls = "eventually"
             job.order = job.sequence if order is None else int(order)
             job.size_reason = size_reason
             self.jobs[id] = job
@@ -121,9 +126,21 @@ class Scheduler:
         with self.lock:
             job = self.jobs.get(id)
             if job and job.owner == owner:
-                job.cls = cls
+                job.requested_cls = cls
+                job.cls = "eventually" if owner in self.hidden and cls != "Grade" else cls
                 if order is not None: job.order = int(order)
                 self._pump()
+
+    def set_visible(self, owner, visible):
+        with self.lock:
+            if visible:
+                self.hidden.discard(owner)
+            else:
+                self.hidden.add(owner)
+            for job in self.jobs.values():
+                if job.owner == owner and job.requested_cls != "Grade":
+                    job.cls = job.requested_cls if visible else "eventually"
+            self._pump()
 
     def valid(self, id, path, kind=None):
         with self.lock:
@@ -164,6 +181,7 @@ class Scheduler:
     def disconnect(self, owner):
         with self.lock:
             self.owners.pop(owner, None)
+            self.hidden.discard(owner)
             for id in [j.id for j in self.jobs.values() if j.owner == owner]:
                 job = self.jobs.pop(id)
                 self._log(job, "cancelled")
@@ -207,6 +225,10 @@ class Scheduler:
                     or any(j.granted is None and not j.blocked and CLASSES[j.cls] < CLASSES[job.cls]
                            for j in self.jobs.values())):
                 reason = "foreground work first"
+            elif job.owner in self.hidden and (any(CLASSES[j.cls] < CLASSES[job.cls] for j in running)
+                    or any(j.granted is None and not j.blocked and CLASSES[j.cls] < CLASSES[job.cls]
+                           and j.reason not in {"paused for Grade", "system reserve"} for j in self.jobs.values())):
+                reason = "foreground windows first"
             elif job.fast:
                 if sum(j.fast for j in running) >= FAST_COUNT:
                     reason = "fast lane full"

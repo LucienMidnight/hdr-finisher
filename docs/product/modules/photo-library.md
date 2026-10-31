@@ -16,6 +16,8 @@ Disk-cache failure handling is blocked on coordinated writer state and safe tran
 
 Startup upkeep uses eventually grants and yields at existing safe points. First-use synchronous ledger work and the generated-fixture launch comparison remain open.
 
+Hidden-window work drops to eventually and restores its requested class on return. Two-owner/reconnect tests pass; native two-window qualification is outstanding.
+
 No image math, approved memory budget or paused-for-Grade wording changed. See design 7.7 for the remaining work and qualification limits.
 
 ## October 31 phase 3a.1: two developments, speed qualification still open

@@ -302,4 +302,6 @@ A camera preview can remain visible when development is unavailable. New message
 
 Offline reads are not recorded as broken photos. Affected pins dim. After reconnecting, return to the Library window or reopen the folder to retry.
 
+Hidden/minimised windows give foreground Library work priority. Showing the window restores its previous work classes.
+
 Very large pictures needing the unfinished bounded route can still wait.

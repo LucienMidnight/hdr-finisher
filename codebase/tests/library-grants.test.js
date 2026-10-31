@@ -50,3 +50,15 @@ test('thirty paused cells send one ask each without polling',async()=>{
  sockets[0].receive({type:'grade',name:'next.dng',bytes:4e9});assert.ok(grants.snapshot().jobs.every(j=>j.grade==='next.dng'));
  abort.abort();assert.ok((await settled).every(r=>r.status==='rejected'));grants.close();
 });
+
+
+test('hidden window class changes use the channel and survive reconnect',async()=>{
+ const {grants,sockets,timers}=setup();
+ grants.visibility(false);
+ const abort=new AbortController(),pending=grants.acquire('hidden.jpg','source',abort.signal);
+ sockets[0].open();assert.deepEqual(sockets[0].sent[0],{type:'visibility',visible:false});
+ sockets[0].close();timers.shift()();sockets[1].open();
+ assert.deepEqual(sockets[1].sent[0],{type:'visibility',visible:false});
+ grants.visibility(true);assert.deepEqual(sockets[1].sent.at(-1),{type:'visibility',visible:true});
+ abort.abort();await assert.rejects(pending,{name:'AbortError'});grants.close();
+});
