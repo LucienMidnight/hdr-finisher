@@ -8,11 +8,23 @@ const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
 const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe'),aceh=process.argv.includes('--aceh'),phase0=process.argv.includes('--phase0');
 const scrollDiagnose=process.argv.includes('--scroll-diagnose');
 const memoryLimit=Number(process.argv.find(x=>x.startsWith('--memory-gb='))?.split('=')[1]||4)*1e9;
+const singleFile=process.argv.find(x=>x.startsWith('--single-file='))?.slice(14);
 const allFolder=process.argv.find(x=>x.startsWith('--all-folder='))?.slice(13);
 const outputName=process.argv.includes('--output-name')?process.argv[process.argv.indexOf('--output-name')+1]:null;
 const out=path.join(root,'output/cold-mixed',outputName|| (jpeg?'jpeg':probe?'probe':aceh?'aceh':phase0?'phase0':'final'));fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'memory.jsonl'),'');
 const scratch=fs.mkdtempSync(path.join(root,'output/test-photos/cold-mixed-'));
-const photos=allFolder||path.join(root,'output/test-photos',phase0?'phase0':aceh?'aceh':scrollDiagnose?'scroll-back-mixed':'cold-mixed-photos'),background=path.join(scratch,'index');fs.mkdirSync(photos,{recursive:true});fs.mkdirSync(background);
+let photos=allFolder||path.join(root,'output/test-photos',phase0?'phase0':aceh?'aceh':scrollDiagnose?'scroll-back-mixed':'cold-mixed-photos'),background=path.join(scratch,'index');fs.mkdirSync(photos,{recursive:true});fs.mkdirSync(background);
+let singleFileRestore;
+if(singleFile){
+ assert.ok(phase0,'Isolated-file diagnosis uses the reusable phase0 copies');
+ const relative=fs.readdirSync(photos,{recursive:true}).find(n=>path.basename(n)===singleFile);
+ assert.ok(relative,'The requested phase0 copy exists');
+ const original=path.join(photos,relative);photos=path.join(scratch,'isolated');fs.mkdirSync(photos);
+ singleFileRestore={original,temporary:path.join(photos,singleFile)};
+ assert.ok(path.resolve(original).startsWith(path.resolve(root,'output/test-photos/phase0')+path.sep));
+ fs.renameSync(original,singleFileRestore.temporary); // Move only the disposable copy; restore it in finally.
+ if(fs.existsSync(original+'.hdrf')){fs.renameSync(original+'.hdrf',singleFileRestore.temporary+'.hdrf');singleFileRestore.sidecar=true;}
+}
 const source=phase0?photos:aceh?'D:/Photos/2017/Aceh-Wedding/Pesta':'D:/Photos/2023/11';
 let names=fs.readdirSync(source).filter(n=>/\.(heic|jpg|png|arw)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
 if(phase0)names=fs.readdirSync(photos,{recursive:true}).filter(n=>/\.(dng|jxl|raf|tiff?|jpg|jpeg|png|arw|avif|heic|cr3|orf|rw2|nef|exr|hdr|pfm)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
@@ -117,7 +129,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
    await lib.evaluate(()=>document.querySelector('[data-sort="name"]').click());
    await sleep(300);
   }
-  for(let screen=0;screen<(scrollDiagnose?3:phase0?3:jpeg||probe?1:2);screen++){
+  for(let screen=0;screen<(singleFile?1:scrollDiagnose?3:phase0?3:jpeg||probe?1:2);screen++){
    if(screen){report.scrolledAt=Date.now();}if(screen)await lib.evaluate(()=>{const grid=document.getElementById('library-grid');grid.scrollTop+=grid.clientHeight;grid.dispatchEvent(new Event('scroll'));});
    await sleep(300);
    const visibleTargets=await lib.evaluate(()=>{
@@ -128,11 +140,23 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
     const bounds=document.getElementById('library-grid').getBoundingClientRect();
     return [...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect();return r.top<bounds.bottom&&r.bottom>bounds.top;}).map(c=>c.dataset.path);
    });
-   const started=Date.now();let cells;
-   while(Date.now()-started<(phase0&&screen?5000:probe?60000:120000)){
+   const started=Date.now();let cells,idleSince=null;
+   while(Date.now()-started<(phase0?600000:probe?60000:120000)){
     if(memoryViolation){report.memoryViolation=memoryViolation;throw Error('STOP: '+memoryViolation.reason);}
     cells=await lib.evaluate(paths=>paths.map(p=>{const c=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===p);return {path:p,presented:!!c?.querySelector('canvas[data-picture-key]'),needsMemory:c?.querySelector('.library-memory-needed')?.textContent,error:c?.querySelector('.library-picture-error')?.title||c?.querySelector('.picture-failed')?.textContent};}),targets);
     if(cells.length&&cells.every(c=>c.presented||c.error||c.needsMemory))break;
+    if(phase0){
+     const jobs=(await lib.evaluate(()=>HDRLibraryGrants.snapshot())).jobs;
+     if(jobs.some(j=>j.state==='running'))idleSince=null;else idleSince??=Date.now();
+     if(idleSince&&Date.now()-idleSince>=5000&&process.argv.includes('--diagnose-gc')&&!report.idleCollection){
+      const cdp=await page.context().newCDPSession(page);
+      report.idleCollection={at:Date.now(),before:await api('memory')};
+      await cdp.send('HeapProfiler.collectGarbage');
+      report.idleCollection.heap=await cdp.send('Runtime.getHeapUsage');
+      await cdp.detach();
+     }
+     if(idleSince&&Date.now()-idleSince>=30000){report.stalledGrants=jobs;break;}
+    }
     await sleep(300);
    }
    report.screens.push({screen:screen+1,visibleTargets,elapsedSinceOpenMs:Date.now()-opened,cells});
@@ -275,6 +299,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   console.log(JSON.stringify({error:report.error,peakBytes:peak,memoryRequests:report.memoryRequests.length,timeouts:report.memoryRequests.filter(r=>r.error).length}));
   await browser?.close();
   // Resolve and verify our own scratch target before recursive cleanup.
+  if(singleFileRestore){assert.ok(!fs.existsSync(singleFileRestore.original));fs.renameSync(singleFileRestore.temporary,singleFileRestore.original);if(singleFileRestore.sidecar)fs.renameSync(singleFileRestore.temporary+'.hdrf',singleFileRestore.original+'.hdrf');}
   assert.ok(path.resolve(scratch).startsWith(path.resolve(root,'output/test-photos')+path.sep));fs.rmSync(scratch,{recursive:true,force:true});
  }
 })().catch(e=>{console.error(e);process.exitCode=1;});

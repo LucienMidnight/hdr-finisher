@@ -1741,6 +1741,104 @@ Validation: 24 focused layout, tile-pool, ready-window and grant checks pass.
 No production cache sizes, cache lifetimes, rendering, Grade, Proof or export
 behavior changed for Problem 1.
 
+**Problem 2: partial fixes built; default mixed completion still fails.**
+
+The original 17 unfinished source jobs were all **waiting**, not actively
+running. Three refusal notices belonged to quick-preview attempts, not the
+finished-picture routes. Four independent problems are now corrected:
+
+* API paths are strings: the reduced-JPEG qualifier now converts to `Path`
+  before checking gain maps. The 192 MP JPEG uses the approved 6 bytes/pixel
+  instead of falling through to an unknown-size 4 GB reservation.
+* JPEG XL dimensions now seek to the codestream header instead of requiring
+  an entire large container box in a 1 MB prefix. OpenEXR's `InputFile` header
+  reader is closed explicitly; it does not support the previous context-manager
+  use. The real JXL and EXR now have dimension-based estimates, not 4 GB unknowns.
+* JPEG GPU planning uses the same header-only DCT draft dimensions as the
+  existing decoder. The 192 MP JPEG no longer reserves full-raster GPU space
+  for an 8000×6000 decoded source. No estimate rate or GPU limit changed.
+* GPU source responses stream their unchanged framed bytes in 1 MiB views.
+  Joining the whole decoded source had created an additional full-source copy.
+  The isolated gain-map AVIF initially stopped at **4.710 GB** (backend 2.905 GB);
+  streaming lets it finish at **19.645 s, peak 3.786 GB**, settled below 3.4 GB.
+  This is a transport fix, not a new decoder or a picture-quality change.
+
+The grid's finished-picture memory notice now excludes quick-preview grants.
+For the line scan, PNG and TIFF, the quick attempts estimated 6.828 / 4.416 /
+4.416 GB, while the approved reduced source estimates are 1.781 / 1.536 / 1.152 GB.
+A preview refusal must not describe those finished routes as unable to fit.
+
+**All 17 isolated diagnoses.** Decimal MB/GB. Estimates are per source job;
+measured peaks below are independently sampled **whole-app** peaks, including
+startup, transport and GPU host memory, not per-decoder increments. They must
+not be subtracted from or compared directly with a job estimate. Timings start
+at folder open, and include application work; refusal times are explicit
+unsupported-route outcomes, not successful developments. The 15 ordinary rows
+were measured with header fixes before streaming, AVIF and TIFF with streaming.
+The first isolated TIFF attempt omitted its `.hdrf` interpretation and was
+invalid for this comparison; the corrected driver moves and restores that
+sidecar with the disposable photo. No original photo is moved or edited.
+
+| File / format | File MB | MP | Route | Source estimate MB | Isolated app peak GB | Isolated finish / refusal s | Mixed wait |
+| --- | ---: | ---: | --- | ---: | ---: | --- | --- |
+| `_DSC6510-1.png` | 223.27 | 42.390 | RGB PNG | 1186.91 | 2.446 | 9.386 (finished) | room, behind AVIF |
+| `-4_stops_exposure_PQ_Rec_2020_DSC08883_03.avif` | 2.14 | 10.664 | RGB AVIF | 597.18 | 1.751 | 6.756 (finished) | room, behind AVIF |
+| `DSC00636.ARW` | 56.24 | 49.766 | Bayer GPU | 348.36 | 1.364 | 6.366 (finished) | room, behind AVIF |
+| `DSC01244_DxO-optical-corr-only.dng` | 134.98 | 42.538 | linear DNG GPU | 1191.07 | 2.587 | 7.871 (finished) | room, behind AVIF |
+| `DSC01302.jxl` | 93.61 | 10.664 | JPEG XL interpretation gate | 554.53 | 1.392 | 1.642 (refused) | room, behind AVIF |
+| `DSCF6495.RAF` | 33.74 | 16.454 | X-Trans unsupported | 115.18 | 1.302 | 1.037 (refused) | room, behind AVIF |
+| `IMG_7723.CR3` | 28.43 | 25.504 | Bayer GPU | 178.53 | 1.767 | 5.563 (finished) | room, behind AVIF |
+| `jpeg_xl_16_bit_p3_color.jxl` | 0.76 | 10.684 | JPEG XL interpretation gate | 555.57 | 1.308 | 0.981 (refused) | room, behind AVIF |
+| `line_scan_…fbcb8f8f…dng` | 1781.27 | 296.878 | reduced linear DNG GPU | 1781.27 | 2.308 | 13.178 (finished) | room, behind AVIF |
+| `LR-classic-hdr-source-test-1.avif` | 25.54 | 42.177 | RGB gain-map AVIF | 2361.93 | 3.786 | 19.645 (finished) | measured memory |
+| `P1010004.ORF` | 14.37 | 16.110 | Bayer GPU | 112.77 | 1.485 | 5.649 (finished) | room, behind AVIF |
+| `pano_192mp.jpg` | 3.40 | 192.000 | DCT-reduced JPEG GPU | 1152.00 | 1.465 | 5.767 (finished) | room, behind AVIF |
+| `pano_192mp.png` | 9.32 | 192.000 | row-reduced PNG GPU | 1536.00 | 2.279 | 7.738 (finished) | room, behind AVIF |
+| `pano_192mp.tif` | 10.44 | 192.000 | row-reduced TIFF GPU (saved interpretation) | 1152.00 | 1.768 | 5.903 (finished) | room, behind AVIF |
+| `possibly-cat-prints-texture-v001.exr` | 14.32 | 28.302 | EXR interpretation gate | 1075.49 | 1.640 | 1.375 (refused) | room, behind AVIF |
+| `synthetic_24mp.hdr` | 82.39 | 24.000 | RGB HDR GPU | 552.00 | 2.189 | 7.046 (finished) | room, behind AVIF |
+| `synthetic_24mp.pfm` | 288.00 | 24.000 | RGB PFM GPU | 912.00 | 2.264 | 7.435 (finished) | room, behind AVIF |
+
+The shortened line-scan name is
+`line_scan_2018-05-26-11-35-40_NECTA0000_fbcb8f8f1d37db8bf93c0d46fb748355c01b7f8b.dng`.
+Reports: `codebase/output/cold-mixed/isolated-0` through `isolated-16`, replacing
+9 with `isolated-9-streamed` and 13 with `isolated-13-with-grade`.
+Thus **13 of these 17 finish on their own**; two JXLs require source-colour
+interpretation in Grade, EXR also needs interpretation, and RAF needs X-Trans
+support. The RAF keeps its camera preview. DxO DNG succeeds on its own;
+no unrelated investigation or rendering change was made for it.
+
+**Remaining mixed blockage, not accepted:** `phase0-streamed/report.json`
+(default 4 GB, all 27) still finishes **10/27**, with the same 17 waiting. Peak
+3.059 GB, settled below 3.4 GB, system reserve untouched, 210 memory requests
+without timeout. After 106.041 s the third screen still has 10 finished;
+the measurement ends after detecting 30 s with no running jobs on each screen.
+The first blocked visible source is `LR-classic-hdr-source-test-1.avif`:
+2.282 GB retained whole-app RAM + its 2.362 GB estimate = **4.644 GB**, exceeding
+even the 4.4 GB elastic boundary. The other 16 wait for room behind it under
+existing FIFO. The table supplies every unfinished file's final reason.
+No active decoder reaches its five-minute deadline: these jobs have not started.
+Running this idle state for five minutes would not exercise the decoder cap.
+This is not an accepted completion run and no terminal memory outcome is claimed.
+
+Garbage collection, a moderate native-memory diagnostic, explicit consumed
+upload-buffer detachment, and releasing the idle development device did not
+unblock the queue. Upload detachment and device release were removed. The
+pressure diagnostic is not production policy. Do not bypass the measured gate,
+reduce 56 bytes/pixel, raise 4 GB, or manufacture pressure to clear thumbnails.
+The remaining ownership/admission work and a default-folder completion run are
+open; this change has not established a need for a higher approved number.
+
+Validation: 64 estimate/framing checks and 28 focused source/grant/monitor checks
+pass; 24 live-source checks pass with the brief's known unrelated authored-scene
+version stub failing once. No full suites. The streaming test checks identical
+wire bytes and that payload chunks share their original backing storage.
+Existing reduced/full pixel comparisons in `output/phase3c/picture-review`
+remain the evidence (mean ΔE2000 all <1; no new colour algorithm here). The PNG
+pair was also inspected visually: detail and colour agree. This round does not
+claim fresh perceptual comparisons for all 17 or Steve's visual acceptance.
+All approved rates, shares, floors, deadlines and limits remain unchanged.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with

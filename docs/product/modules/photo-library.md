@@ -4,6 +4,20 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## November 1 big-file diagnosis — partial fixes, default completion still open
+
+Header estimates for large JPEG, JXL and EXR now work; JPEG GPU planning matches
+its existing reduced decode. Source responses avoid a whole-raster copy, bringing
+the isolated Lightroom AVIF from a 4.710 GB stop to a 3.786 GB peak and successful
+19.645 s finish. Quick-preview refusals no longer label the finished route as
+needing more memory. No approved number or picture algorithm changed.
+
+The default mixed folder still finishes **10/27**: a measured-memory wait on that
+AVIF holds the other 16 source jobs behind it. Thirteen of the 17 unfinished files
+finish individually; two JXLs and EXR need source interpretation, RAF needs
+X-Trans support. The complete table, bounds and unfinished acceptance checks are
+in [scheduler design 7.12](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+
 ## November 1 scroll-back diagnosis — bounded case passes, reported loss still open
 
 On 200 mixed disposable photos, all 96 returning cells from three completed

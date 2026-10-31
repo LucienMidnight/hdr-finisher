@@ -577,7 +577,7 @@ def create_library_router(worker, browser, store=None):
                     header.setdefault("source_timings_ms", {}).update(checks_claim=(claimed_at-requested_at)*1000, decode_prepare=(time.perf_counter()-claimed_at)*1000)
                     header.update(edge=command.edge, source_quality=source_quality, item_path=command.path, source_job=token)
                     transfer = True
-                    return Response(library_gpu_raw.frame(header, *parts), media_type="application/octet-stream")
+                    return StreamingResponse(library_gpu_raw.frame_chunks(header, *parts), media_type="application/octet-stream")
                 result = await helper_result(request, "live-scene", path=path, document=document,
                     edge=command.edge, priority=command.priority, source_token=token, draw_first=command.edge != 100000)
                 if isinstance(result, Response): return result

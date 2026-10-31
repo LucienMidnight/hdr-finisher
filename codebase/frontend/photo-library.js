@@ -2084,7 +2084,7 @@
   function paintMemoryNeeds() {
     const jobs=window.HDRLibraryGrants.snapshot().jobs;
     for(const cell of document.querySelectorAll(".library-cell")){
-      const job=jobs.filter(j=>j.path===cell.dataset.path && j.reason==="needs more memory").sort((a,b)=>b.estimate-a.estimate)[0];
+      const job=jobs.filter(j=>j.path===cell.dataset.path && j.kind!=="quick" && j.reason==="needs more memory").sort((a,b)=>b.estimate-a.estimate)[0];
       let notice=cell.querySelector(".library-memory-needed");
       if(!job){notice?.remove();continue;}
       if(!notice){notice=document.createElement("div");notice.className="library-memory-needed";notice.style.cssText="position:absolute;inset:auto 4px 24px;padding:6px;background:var(--panel,#222);color:var(--text,#eee);font-size:12px;z-index:4;white-space:normal";cell.append(notice);}

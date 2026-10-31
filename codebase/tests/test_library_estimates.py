@@ -105,6 +105,7 @@ def test_reduced_jpeg_qualification_keeps_gainmap_rate(tmp_path, monkeypatch):
     path=tmp_path/"photo.jpg"
     Image.new("RGB",(16,12)).save(path)
     assert reduced_rate(path)==6
+    assert reduced_rate(str(path))==6
     monkeypatch.setattr(loader,"is_ultrahdr_jpeg",lambda path:True)
     assert reduced_rate(path) is None
 
@@ -137,3 +138,37 @@ def test_gpu_plan_retains_raw_sensor_geometry_and_libraw_flip(tmp_path, monkeypa
     monkeypatch.setattr("hdr_finisher.file_gate.decode_suffix", lambda p: ".arw")
     meta = library_estimates.gpu_metadata(tmp_path / "rotated.arw", edge=640)
     assert (meta["width"], meta["height"], meta["flip"]) == (8000, 5320, 5)
+
+
+def test_large_jpegxl_container_header_does_not_need_entire_box(tmp_path, monkeypatch):
+    import imagecodecs, struct
+    import numpy as np
+    payload=imagecodecs.jpegxl_encode(np.zeros((200,300,3),dtype="uint8"))
+    assert payload.startswith(b"\xff\x0a")
+    path=tmp_path/"large.jxl"
+    path.write_bytes(b"\x00\x00\x00\x0cJXL \r\n\x87\n" + struct.pack(">I4s", 2_000_008, b"jxlc") + payload + bytes(2_000_000-len(payload)))
+    monkeypatch.setattr(imagecodecs,"jpegxl_decode",lambda *a,**k:pytest.fail("header read decoded pixels"))
+    assert dimensions(path)==(300,200)
+
+
+def test_exr_header_does_not_require_context_manager(tmp_path):
+    import OpenEXR, numpy as np
+    path=tmp_path/"source.exr"
+    OpenEXR.File({}, {"RGB":np.zeros((200,300,3),dtype=np.float32)}).write(str(path))
+    assert dimensions(path)==(300,200)
+
+
+def test_large_jpeg_gpu_plan_matches_dct_samples(tmp_path, monkeypatch):
+    from hdr_finisher.library_estimates import gpu_metadata
+    from PIL import JpegImagePlugin
+    # Header dimensions alone exercise draft's DCT choice without a giant raster.
+    path=tmp_path/"large.jpg"
+    Image.new("RGB",(16,12)).save(path)
+    original=JpegImagePlugin.JpegImageFile._open
+    def header(image):
+        original(image)
+        image._size=(16000,12000)
+    monkeypatch.setattr(JpegImagePlugin.JpegImageFile,"_open",header)
+    monkeypatch.setattr(Image.Image,"load",lambda *a,**k:pytest.fail("planning decoded pixels"))
+    plan=gpu_metadata(path,edge=640)
+    assert (plan["width"],plan["height"])==(8000,6000)

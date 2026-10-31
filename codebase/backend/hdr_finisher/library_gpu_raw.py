@@ -51,6 +51,15 @@ def frame(header: dict, *payload) -> bytes:
     return b"".join([struct.pack("<I", len(text)), text, *payload])
 
 
+def frame_chunks(header: dict, *payload):
+    """Same wire frame, without joining large source planes into another copy."""
+    yield frame(header)
+    for part in payload:
+        view = memoryview(part).cast("B")
+        for offset in range(0, view.nbytes, 1024 * 1024):
+            yield view[offset:offset + 1024 * 1024]
+
+
 def unframe(body: bytes) -> tuple[dict, memoryview]:
     if len(body) < 4:
         raise ValueError("The developed picture was incomplete.")

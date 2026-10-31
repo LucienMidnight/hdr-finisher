@@ -13,8 +13,31 @@ def dimensions(path):
     path = Path(path)
     if path.suffix.lower() == ".jxl":
         from .jpegxl import _probe_basic_info
+        import struct
         with path.open("rb") as handle:
-            info = _probe_basic_info(handle.read(1024*1024))
+            prefix = handle.read(12)
+            if prefix.startswith(b"\xff\x0a"):
+                handle.seek(0)
+            else:
+                # Large container boxes exceed the bounded prefix read. Seek
+                # past metadata, then probe only the codestream's small header.
+                while True:
+                    header = handle.read(8)
+                    if len(header) != 8:
+                        raise ValueError("Missing JPEG XL codestream")
+                    size, kind = struct.unpack(">I4s", header)
+                    count = 8
+                    if size == 1:
+                        size = struct.unpack(">Q", handle.read(8))[0]
+                        count = 16
+                    if kind in {b"jxlc", b"jxlp"}:
+                        if kind == b"jxlp":
+                            handle.read(4)
+                        break
+                    if size < count:
+                        raise ValueError("Invalid JPEG XL box")
+                    handle.seek(size-count, 1)
+            info = _probe_basic_info(handle.read(65536))
         return info["width"], info["height"]
     if path.suffix.lower() in {".hdr", ".pfm"}:
         import re
@@ -40,9 +63,12 @@ def dimensions(path):
             return max(((p.imagewidth, p.imagelength) for p in pages), key=lambda wh:wh[0]*wh[1])
     if path.suffix.lower() == ".exr":
         import OpenEXR
-        with OpenEXR.InputFile(str(path)) as source:
+        source = OpenEXR.InputFile(str(path))
+        try:
             box = source.header()["dataWindow"]
             return box.max.x-box.min.x+1, box.max.y-box.min.y+1
+        finally:
+            source.close()
     if path.suffix.lower() in {".heic", ".heif"}:
         from pillow_heif import register_heif_opener
         register_heif_opener()
@@ -112,7 +138,8 @@ def estimate_details(path, kind="source", ceiling=None, edge=2560):
 def reduced_rate(path):
     """Header-only qualification; native, CPU and unsupported routes keep their rates."""
     from .file_gate import decode_suffix
-    suffix = decode_suffix(Path(path))
+    path = Path(path)
+    suffix = decode_suffix(path)
     if suffix in {".jpg", ".jpeg"}:
         from .loader import is_ultrahdr_jpeg
         return None if is_ultrahdr_jpeg(path) else 6
@@ -178,6 +205,11 @@ def gpu_metadata(path, document=None, edge=2560):
                 from PIL import JpegImagePlugin, PngImagePlugin
                 opener = PngImagePlugin.PngImageFile if suffix == '.png' else JpegImagePlugin.JpegImageFile
                 with opener(path) as header:
+                    if edge <= 2560 and suffix != '.png' and not inputs.get('repairs'):
+                        from .loader import is_ultrahdr_jpeg
+                        if not is_ultrahdr_jpeg(Path(path)):
+                            header.draft("RGB", (5120, 5120))
+                            width, height = header.size
                     if int(header.getexif().get(274, 1)) in {5, 6, 7, 8}:
                         width, height = height, width
             if edge <= 2560 and suffix in {'.png','.tif','.tiff'} and not inputs.get('repairs'):
