@@ -1072,7 +1072,7 @@ waiting for acceptance between them. No approved budget or estimate changes.
 | Item | Today | Change to build | Acceptance / undecided numbers |
 | --- | --- | --- | --- |
 | 1. Large pictures / header routing | RGB codecs can decode before colour refusal; a DNG larger than a GPU buffer waits indefinitely; Pillow rejects very large images. | Inspect eligibility before pixels; provide strip/mapped reduction only where the decoder and colour pipeline support it. Do not silently replace finished pictures with a different rendering. Unsupported routes must finish once with a reason and retain an embedded preview. | Line scan ≤27 s, report incremental peak, aim ≤1 GB. Large TIFF and >179 MP synthetic JPEG/PNG must finish. Ordinary mean ΔE2000 <1. Bounded-route estimates remain **proposed, awaiting Steve**, only after measurements; keep approved rates meanwhile. |
-| 2. Decoder recovery | Shared helper restarts and replays pending requests, including the culprit; no per-file deadline. | Track active requests and deadlines; isolate a known culprit once. A shared-process crash with multiple active files cannot safely identify its cause: do not mark innocent photos broken. | Crafted crash and hanging stub. Proposed, awaiting Steve: 135 s linear DNG (5×27 s), 80 s AVIF (5×16 s), 30 s JPEG/PNG/RAW, 135 s other codecs until measured per-type timings exist. Use only the measured DNG/AVIF proposals meanwhile; unmeasured limits need further evidence. |
+| 2. Decoder recovery | Shared helper restarts and replays pending requests, including the culprit; no per-file deadline. | Track active requests and deadlines; isolate a known culprit once. A shared-process crash with multiple active files cannot safely identify its cause: do not mark innocent photos broken. | Crafted crash and hanging stub. Proposed, awaiting Steve: five times each phase-0 measured maximum, rounded up, at least five seconds. The final per-type proposal is in section 10, decision 12; use it in the helper meantime as authorised. |
 | 3. Offline source | Missing pins already dim, but an I/O failure during decoding can be remembered as a broken photo. | Preserve OS error identity across helper transport; treat disconnected-device errors as temporary offline results, with no broken-photo receipt. Refresh available folders on return. | Simulated device failures only; zero stored broken-photo errors, retry succeeds after return. No new size/count. |
 | 4. Disk cache unavailable | Publication errors can fail the photo and subsequent jobs try storage again. | Stop failed storage for the session and continue transient pictures; surface one cache message. Handle missing cache volume separately from a new folder. | Scratch allowance of a few MB and simulated ENOSPC / missing volume; one failed store, no retry loop, usable pictures. Existing allowances unchanged. |
 | 5. Startup upkeep | Low-priority thread waits for helper idleness outside the scheduler. | Admit bounded upkeep steps as eventually work, yield between safe points, release on cancellation/close. | Large generated scratch fixture; first visible picture within 10% of launch without upkeep (proposed tolerance from this brief). No new memory allowance: existing 64 MB minimum estimate. |
@@ -1092,6 +1092,15 @@ waiting for acceptance between them. No approved budget or estimate changes.
    support, colour conversion, crop/orientation and reduction. A mapped input
    alone cannot meet 7.3. No global Pillow guard change, no claim of an any-size
    thumbnail, and no bounded-route rate proposed without a measured route.
+2. **Helper recovery built with a remaining crash ambiguity.** All decoding
+   helper jobs announce active work. A single active culprit is set aside on
+   crash; queued requests survive restart. Deadlines count active, unpaused work,
+   not queue/Grade-pause time. A timed-out request is removed before restarting
+   the helper, and other active requests are retained. Crafted crash and hanging
+   stub tests recover the following file. If several files are active when a
+   native crash occurs, the culprit remains ambiguous; current bounded replay
+   remains rather than falsely accusing every active photo. GPU-source decoding
+   in the backend itself is outside this helper protection. Both remain open.
 
 ## 8. Phases
 
@@ -1217,6 +1226,15 @@ Decided October 30:
   routes (7.3).
 - Online-only cloud files download only when opened (6.9).
 
+12. **Decoder deadlines — proposed, awaiting Steve.** Use five times the
+    largest phase-0 measured per-type job time, rounded up, with a five-second
+    minimum: DNG 135 s, AVIF 81 s, EXR 16 s, PNG 15 s, JPEG XL 6 s, RAF 17 s,
+    HEIC/HEIF 9 s; JPEG/TIFF/Bayer RAW/HDR/PFM 5 s. Unmeasured extensions use
+    135 s. These proposed limits are used in the helper meantime, as authorised
+    by this brief. Tradeoff: a bad decoder cannot occupy a lane forever, but a
+    slower machine or an unusually large valid file can exceed these sample-based
+    limits. They need scaling/qualification for bounded very-large jobs; those
+    routes are not built. Queued work and Grade pauses do not consume the limit.
 13. **Bounded-route estimates — awaiting measurements.** No new rate is applied
     or invented. Keep the approved per-type rates until a bounded implementation
     has measured peaks. A lower rate would allow more overlap but could exceed

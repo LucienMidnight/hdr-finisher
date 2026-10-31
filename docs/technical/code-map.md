@@ -416,3 +416,4 @@ Needs attention locations. Data checks: `test_library_file_commands.py`,
 October 31 Library follow-up:
 
 - `library_rgb.py` / `library_gpu_raw.py`: header-only unresolved JPEG XL/X-Trans refusal.
+- `library_worker.py`: active decoder deadlines and identified crash recovery.

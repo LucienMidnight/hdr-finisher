@@ -24,6 +24,9 @@ class LibraryWorker:
         self._pending: dict[str, Future] = {}
         self._requests = {}
         self._work = {}
+        self._active = set()
+        self._deadline_sample = time.monotonic()
+        self._identified_failure = False
         self._stop = Event()
         self._restarts = 0
         self._recovering = False
@@ -88,9 +91,23 @@ class LibraryWorker:
                         return
                     self._ready.clear()
                     self._recovering = True
-                    self._work.clear()
+                    active = list(self._active)
                     process = self._process
                     self._connection = None
+                # EOF can arrive just before Windows reports the process exit.
+                # Observe natural exit before attributing a crash; a protocol
+                # error in a still-live helper must not accuse an active photo.
+                if process is not None:
+                    process.join(timeout=3)
+                with self._lock:
+                    if (not self._identified_failure and len(active) == 1
+                            and active[0] in self._pending
+                            and self._requests[active[0]].get("command") in {"thumbnail", "picture", "native", "live-scene", "live-fallback"}
+                            and process is not None and process.exitcode not in (None, 0)):
+                        self._set_aside(active[0], "The photo decoder stopped while reading this file. The file was set aside; other photos continue.")
+                    self._work.clear()
+                    self._active.clear()
+                    self._identified_failure = False
                     log("helper_stopped", reason=repr(error), pending=len(self._pending), action="waiting requests retained; Grade unaffected")
                 # Dispose the failed generation before launching another. Never
                 # hold the control lock during process joins or restart backoff.
@@ -250,11 +267,51 @@ class LibraryWorker:
             except (EOFError, OSError) as error:
                 log("helper_control_failed", operation=message["command"], reason=str(error), action="reader fails waiting requests when pipe closes")
 
+    @staticmethod
+    def decoder_timeout(path):
+        # Proposed for Steve: 5x phase-0 maxima, rounded up, with a five-second
+        # minimum. Unknown types use the slowest measured route, not infinity.
+        suffix = Path(path or "").suffix.lower()
+        return {".dng": 135, ".avif": 81, ".exr": 16, ".png": 15,
+                ".jxl": 6, ".raf": 17, ".heic": 9, ".heif": 9,
+                ".jpg": 5, ".jpeg": 5, ".tif": 5, ".tiff": 5,
+                ".arw": 5, ".cr2": 5, ".cr3": 5, ".orf": 5,
+                ".rw2": 5, ".nef": 5, ".hdr": 5, ".pfm": 5}.get(suffix, 135)
+
+    def _set_aside(self, key, reason):
+        request = self._requests.pop(key, {})
+        future = self._pending.pop(key, None)
+        self._work.pop(key, None)
+        if future is not None and not future.done():
+            from .media_browser import MediaBrowserError
+            future.set_exception(MediaBrowserError(reason))
+        log("helper_file_set_aside", path=request.get("path"), reason=reason,
+            action="file not replayed; remaining requests recover")
+
+    def _check_deadlines(self):
+        now = time.monotonic()
+        with self._lock:
+            elapsed = now - self._deadline_sample
+            self._deadline_sample = now
+            for key, work in list(self._work.items()):
+                request = self._requests.get(key, {})
+                if request.get("command") not in {"thumbnail", "picture", "native", "live-scene", "live-fallback"}:
+                    continue
+                if not self._paused:
+                    work["elapsed"] = work.get("elapsed", 0) + elapsed
+                if work.get("elapsed", 0) > self.decoder_timeout(request.get("path")):
+                    self._identified_failure = True
+                    self._set_aside(key, "The photo decoder took too long. The file was set aside; other photos continue.")
+                    # The native decoder may not honour cancellation. Restart the
+                    # disposable helper; the timed-out request is never replayed.
+                    raise RuntimeError("Library decoder time limit exceeded")
+
     def _read_results(self, connection) -> None:
         started = time.monotonic()
         ready = False
         try:
             while not self._stop.is_set():
+                self._check_deadlines()
                 if not connection.poll(.25):
                     if not self._process.is_alive():
                         raise RuntimeError(f"helper exited with code {self._process.exitcode}")
@@ -276,20 +333,27 @@ class LibraryWorker:
                     record = message["record"]
                     log(record.pop("event"), **record)
                     continue
+                if message.get("event") == "job-started":
+                    with self._lock:
+                        self._active.add(message["id"])
+                    continue
                 if message.get("event") == "work":
                     with self._lock:
                         if message.get("done"):
                             self._work.pop(message["id"], None)
+                            self._active.discard(message["id"])
                         else:
                             previous = self._work.get(message["id"], {})
                             self._work[message["id"]] = dict(path=message.get("path"), stage=message["stage"],
-                                state=previous.get("state", "running" if message["id"] in self._pending else "stopping"))
+                                state=previous.get("state", "running" if message["id"] in self._pending else "stopping"),
+                                elapsed=previous.get("elapsed", 0))
                     continue
                 if message.get("event") == "ready":
                     log("helper_ready", pid=message.get("pid"))
                     log("helper_start", pid=message.get("pid"), action="helper ready")
                     with self._lock:
                         self._work.clear()
+                        self._active.clear()
                         self.info = message
                         ready = True
                         self._recovering = False
@@ -346,6 +410,7 @@ class LibraryWorker:
             self._pending.clear()
             self._requests.clear()
             self._work.clear()
+            self._active.clear()
         for future in pending:
             future.cancel()
         if process is not None:
@@ -467,6 +532,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
 
                 from .library_metadata import pause_readers
                 pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]) or bool(state["scanning"]))
+            reply({"event": "job-started", "id": job["id"]})
             waited = [0.]
             def yielding():
                 wait_started = time.perf_counter()
@@ -496,7 +562,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     previous_stage=last_stage[0], duration_ms=(now-last_stage[1])*1000)
                 last_stage[:] = [stage, now]
                 reply({"event":"work", "id":job["id"], "path":job.get("path"), "stage":text})
-            if job["command"] in {"live-scene", "live-fallback"}: progress("reading", "Reading photo")
+            if job["command"] in {"thumbnail", "picture", "native", "live-scene", "live-fallback"}:
+                progress("reading", "Reading photo")
             check = yielding if kind in {"index", "check", "kept", "stored"} else cancelled.is_set
             try:
                 if job["command"] == "stored-screen-build":

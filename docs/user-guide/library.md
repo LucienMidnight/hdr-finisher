@@ -296,5 +296,7 @@ A camera preview can remain visible when development is unavailable. New message
 
 - “Not supported: JPEG XL source colour is unresolved. Open it in Grade to choose its source interpretation.”
 - “Not supported: X-Trans sensor development is not available in the Library. The camera preview is kept when available.”
+- “The photo decoder stopped while reading this file. The file was set aside; other photos continue.”
+- “The photo decoder took too long. The file was set aside; other photos continue.”
 
 Very large pictures needing the unfinished bounded route can still wait.
