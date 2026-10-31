@@ -1028,7 +1028,7 @@ Still to decide:
    Library pauses with a clear message and a way to close the photo in Grade.
    Going over the app's budget is usually fine, but never over the
    computer's free memory (7.6, points 5–8).
-7. Build phase 3 as 3a then 3b (7.6). Needed before building.
+7. ~~Build phase 3 as 3a then 3b (7.6).~~ Approved by Steve, October 31.
 8. The floor allowance: the largest photo job that may run over the app's
    budget while room is short (7.6, point 5). Proposed 1 GB: covers a
    24 MP JPEG (about 550 MB), a 12 MP iPhone HEIC (about 620 MB) and a
