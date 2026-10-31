@@ -1082,9 +1082,9 @@ waiting for acceptance between them. No approved budget or estimate changes.
 
 1. **Header refusal built; bounded pictures unfinished.** JPEG XL without a
    resolved source interpretation is refused before its pixel decoder is called.
-   LibRaw's header CFA is checked before `unpack`, so X-Trans reports a clear
+   Fuji RAF's 6×6 CFA metadata tag is checked before opening LibRaw, so X-Trans reports a clear
    unsupported reason while the separate camera-preview path remains available.
-   Ordinary supported decode/render math is untouched. Tests execute real marked
+   Other RAW containers retain the existing post-unpack CFA gate; complete header routing remains open. Ordinary supported decode/render math is untouched. Tests execute real marked
    JPEG XL samples and assert that unresolved samples never reach the decoder.
    This does **not** complete F19 for EXR/TIFF or provide bounded DNG/TIFF/PNG/JPEG.
    The line scan still waits for the missing bounded route. Investigation found

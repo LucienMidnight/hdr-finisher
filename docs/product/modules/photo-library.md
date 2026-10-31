@@ -6,7 +6,7 @@ Read it before changing how much any Library cache keeps.
 
 ## October 31 phase 3b: partial work; qualification open
 
-Header checks refuse unresolved JPEG XL and X-Trans before pixel decoding. Bounded large-picture routes remain unfinished; the line scan still waits for that route.
+Header checks refuse unresolved JPEG XL and X-Trans RAF before pixel decoding. Bounded large-picture routes remain unfinished; the line scan still waits for that route.
 
 Identified helper crashes and per-type deadlines set a bad file aside while remaining requests recover. Multiple-active-file crash attribution and backend-process decode protection remain open.
 

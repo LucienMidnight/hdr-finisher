@@ -573,16 +573,26 @@ def test_unresolved_jpegxl_is_refused_before_pixel_decode(tmp_path, monkeypatch)
 
 
 def test_xtrans_is_refused_before_sensor_unpack(tmp_path, monkeypatch):
-    import rawpy
-    from hdr_finisher import library_gpu_raw, raw_import
-    path = tmp_path / 'xtrans.raf'; path.write_bytes(b'header')
-    class Header:
-        raw_pattern = np.zeros((6, 6))
-        def __enter__(self): return self
-        def __exit__(self, *args): pass
-        def open_file(self, path): pass
-        def unpack(self): pytest.fail('X-Trans must be refused before unpack')
-    monkeypatch.setattr(rawpy, 'RawPy', Header)
-    monkeypatch.setattr(raw_import, '_read_raw_exif', lambda path: ({}, None))
+    import rawpy, struct
+    from hdr_finisher import library_gpu_raw
+    path = tmp_path / 'xtrans.raf'
+    header = bytearray(108); header[:16] = b'FUJIFILMCCD-RAW '
+    struct.pack_into('>II', header, 92, 108, 44)
+    path.write_bytes(header + struct.pack('>IHH', 1, 0x0131, 36) + bytes([0, 1, 2]*12))
+    def decoder(*args, **kwargs):
+        pytest.fail('X-Trans header refusal must not open the sensor decoder')
+    monkeypatch.setattr(rawpy, 'RawPy', decoder)
     with pytest.raises(library_gpu_raw.NotEligible, match='Not supported: X-Trans'):
         library_gpu_raw.sensor(path)
+
+
+def test_raf_header_without_xtrans_and_truncated_tags_are_not_guessed(tmp_path):
+    import struct
+    from hdr_finisher.library_gpu_raw import _xtrans_raf
+    path=tmp_path/'bayer.raf'
+    header=bytearray(108);header[:16]=b'FUJIFILMCCD-RAW '
+    struct.pack_into('>II',header,92,108,12)
+    path.write_bytes(header+struct.pack('>IHH',1,0x0130,4)+bytes(4))
+    assert not _xtrans_raf(path)
+    path.write_bytes(path.read_bytes()[:-1])
+    assert not _xtrans_raf(path)

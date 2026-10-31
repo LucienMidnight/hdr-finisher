@@ -67,6 +67,34 @@ def _identity(path: Path) -> list[str]:
     return [str(stat.st_size), str(stat.st_mtime_ns)]
 
 
+def _xtrans_raf(path):
+    """Read Fuji's 6x6 CFA header tag without RawPy's implicit pixel unpack."""
+    with path.open("rb") as source:
+        if not source.read(16).startswith(b"FUJIFILMCCD-RAW "):
+            return False
+        source.seek(92)
+        header = source.read(8)
+        if len(header) != 8:
+            return False
+        offset, length = struct.unpack(">II", header)
+        end = offset + length
+        if length < 4 or end > path.stat().st_size:
+            return False
+        source.seek(offset)
+        count = struct.unpack(">I", source.read(4))[0]
+        for _ in range(count):
+            if source.tell() + 4 > end:
+                return False
+            tag, size = struct.unpack(">HH", source.read(4))
+            if source.tell() + size > end:
+                return False
+            if tag == 0x0131 and size == 36:
+                pattern = source.read(size)
+                return len(pattern) == 36 and set(pattern) == {0, 1, 2}
+            source.seek(size, 1)
+    return False
+
+
 def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict, list]:
     """Unpack the visible mosaic and describe Grade's development of it."""
     path = Path(path).resolve(strict=True)
@@ -78,6 +106,8 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
         raise NotEligible("highlight reconstruction differs from the GPU route")
     began = time.perf_counter()
     timings = {}
+    if _xtrans_raf(path):
+        raise NotEligible("Not supported: X-Trans sensor development is not available in the Library. The camera preview is kept when available.")
     identity = _identity(path)
     exif, _warning = raw_import._read_raw_exif(path)
     timings["exif"] = (time.perf_counter()-began)*1000
@@ -91,9 +121,6 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
         if source is not None: raw.open_buffer(source)
         else: raw.open_file(str(path))
         timings["libraw_open"] = (time.perf_counter()-mark)*1000
-        pattern = getattr(raw, "raw_pattern", None)
-        if pattern is not None and pattern.shape != (2, 2):
-            raise NotEligible("Not supported: X-Trans sensor development is not available in the Library. The camera preview is kept when available.")
         mark = time.perf_counter()
         raw.unpack()
         timings["libraw_unpack"] = (time.perf_counter()-mark)*1000
