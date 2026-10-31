@@ -44,7 +44,8 @@ photo receipt. Three 192 MP sources verified 4 -> 16 GB resume.
 JPEG DCT reduction, sequential PNG/TIFF and a qualified root-page linear-DNG
 route now reduce before Library development. No cache allowance or approved
 estimate changed. Proposed rates, awaiting Steve: JPEG/PNG/TIFF/eligible
-linear DNG 6/8/6/2 MB per MP, restricted to reduced routes >=100 MP; AVIF 56.
+linear DNG 6/8/6/2 MB per MP, restricted to reduced routes >=100 MP. AVIF 56
+**approved by Steve, 2026-10-31** (not yet in code; needs a whole-app recheck).
 Source peak increments: 100 MP JPEG/PNG/TIFF 322/569/401 MB; 192 MP
 791/1101/258 MB; line scan 390 MB. The isolated line's **whole-app** increment
 was 1.226 GB, above the 1 GB aim (12.466 s active, within 27 s).
@@ -190,7 +191,7 @@ app behaves when the machine runs short.
 | Older pictures may be discarded and redrawn; visible and nearby pictures keep priority. | Steve, 2026-10-29 |
 | **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
 | Grade import: no additional full-size photo copies held at once; about 100 MB extra peak working memory is allowed; larger additions need Steve's decision. | Steve, 2026-10-13 |
-| **Per-job memory estimates for the Library scheduler** (measured peak plus 25%, from header pixel count, 64 MB minimum per job). Backend RAM in bytes per pixel: camera RAW sensor read 7; JPEG and Radiance HDR 23; PNG, TIFF and linear DNG 28; EXR, PFM and AVIF 38; HEIC, HEIF and JPEG XL 52; CPU route, any type, 25. Reduced-decode quick preview: 64 MB. Quick preview without reduced decode: 23 × the preview's pixels. GPU memory: the existing `rawBudget` formula. Overruns are logged and raise that type's estimate. Measurements: scheduler design, section 6.11. Not built yet (phase 3). | Steve, 2026-10-30 |
+| **Per-job memory estimates for the Library scheduler** (measured peak plus 25%, from header pixel count, 64 MB minimum per job). Backend RAM in bytes per pixel: camera RAW sensor read 7; JPEG and Radiance HDR 23; PNG, TIFF and linear DNG 28; EXR and PFM 38; AVIF 56 (raised from 38 by Steve, 2026-10-31, after a measured 44.7 overrun); HEIC, HEIF and JPEG XL 52; CPU route, any type, 25. Reduced-decode quick preview: 64 MB. Quick preview without reduced decode: 23 × the preview's pixels. GPU memory: the existing `rawBudget` formula. Overruns are logged and raise that type's estimate. Measurements: scheduler design, section 6.11. Not built yet (phase 3). | Steve, 2026-10-30 |
 | No disk allowance increases without Steve's decision (selected-photo native detail uses the existing full-size allowance). | Steve, 2026-10-19 |
 | Superseded: the RAW reader sized from "memory is plentiful (64 GB)" (October 14 disk-reader brief, FastRawViewer's 40 files cached / 12 ahead). Replaced by the fixed shares below. | 2026-10-29 |
 

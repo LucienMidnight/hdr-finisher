@@ -1379,7 +1379,8 @@ no selected reduced-output path. A fresh 42.177 MP LR-classic source measured
 **1.883587143 GB** above baseline (44.7 bytes/pixel), including an external
 decoder peak of 1.881 GB, against the approved 38 bytes/pixel / 1.603 GB.
 This explains the underestimate; reducing only after reconstruction cannot
-fix it. Propose **56 MB/MP**, awaiting Steve (measured +25%, rounded up).
+fix it. Propose **56 MB/MP** (measured +25%, rounded up). **Approved by
+Steve, October 31**; not yet in code.
 That is 2.362 GB for this source and reduces overlap. It requires a new
 whole-app check if approved, especially with the oversized-alone exception.
 No AVIF rate or implementation was silently changed.
@@ -1590,7 +1591,8 @@ Decided October 30:
 13. **Bounded-route estimates — measured; proposed, awaiting Steve.** Section
     7.8 records source peaks and the single authorised comparison. Propose
     6/8/6/2 MB per source MP for qualified reduced JPEG/PNG/TIFF/linear-DNG
-    routes at >=100 MP; propose 56 MB/MP for AVIF. Lower reduced-route rates
+    routes at >=100 MP. **AVIF 56 MB/MP approved by Steve, October 31**
+    (replaces 38; needs a whole-app ceiling recheck). Lower reduced-route rates
     improve overlap but may underestimate other files; the higher AVIF rate
     reduces overlap but addresses its measured external-decoder overrun.
     Approved rates remain in production; the comparison override was removed.
