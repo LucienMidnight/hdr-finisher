@@ -803,6 +803,15 @@ above sent about 37 requests a second. The window has only a few
 connections to the backend, so a folder click waited behind them, although
 the backend answered folder requests in about 1 ms.
 
+**October 31 implementation checkpoint — foundation only, not enabled.**
+The estimate-based queue and header/formula helpers have 32 focused behavior
+checks. No Library caller uses them yet. The unreadable-header fallback in
+point 2 needs Steve's decision: the approved table gives bytes per pixel,
+but no type's worst-case pixel count or byte amount. Unlimited picture size
+means there is no finite worst case to infer. No unapproved size was chosen.
+Channel, caller integration, Grade accounting/close, reduced previews,
+packaging and app measurements remain open; 3a is not marked built.
+
 **What changes (proposed).**
 
 1. **One decision maker.** A new backend module, `library_scheduler.py`,
@@ -975,7 +984,7 @@ records its numbers in the [performance table](../performance-table.md).
 | 0. Measure — **done October 30** | Log real RAM and GPU peaks per file type and job type on disposable copies (20241117 RAWs, Aceh JPEGs, one of each supported type, a large TIFF). Try reduced decoding for 640. No behaviour change. | — | Per-type budget table (6.11) written for Steve to approve. |
 | 1. File gate — **built October 30, awaiting Steve's try** | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
 | 2. Stop the feedback loop — **built October 30, awaiting Steve's try** (7.5) | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
-| 3. One scheduler, RAM — **whiteboard written October 31 (7.6), proposed as 3a then 3b** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
+| 3. One scheduler, RAM — **3a foundation started October 31; not enabled; unreadable-header fallback needs decision (7.6). 3b remains separate** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
 | 4. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
 | 5. Grid makes 640 only | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
 | 6. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. Edge case M25. | Leftover complexity. | Fast checks pass; less code than before. |

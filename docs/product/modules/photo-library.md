@@ -4,7 +4,34 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
-## October 31: phase 3 whiteboard written, waiting on Steve
+## October 31: phase 3a foundation started; integration waiting on a missing estimate decision
+
+The backend queue and header-estimate helpers now exist, with 32 focused
+behavior checks. They are **not connected to the live Library** yet: the
+existing admission gates, polling and Grade behavior remain in place.
+This is not a completed phase 3a or a measured stall fix.
+
+The brief requires each type's worst-case estimate when its header cannot be
+read. The approved table supplies bytes per pixel but no worst-case pixel
+count or byte value, and picture sizes are deliberately unlimited. Steve
+must choose that fallback before the new admission path is enabled. No
+fallback size, budget or estimate has been invented.
+
+Checks for this foundation commit: 32 focused queue/header checks pass.
+JavaScript: 675 passed, the same 3 known failures. The full Python run:
+2,807 passed, 3 skipped, 5 failed; one was the new paused-job ordering case,
+fixed and rechecked in the focused set. The other four are the known
+preset-header contract, RGB publication fixture, frame-cache budget fixture
+and Retouch capture-cache fixture. No GPU check applies to this disconnected
+backend foundation, and no Grade close code has changed. No app timings or
+memory-tolerance results are claimed.
+
+Remaining 3a work: header-reader coverage and fallback, channel and reconnect,
+all caller integration, Grade accounting and save-before-close control,
+reduced quick previews, pressure integration, packaging verification and the
+two requested app measurements. Phase 3b remains separate.
+
+## October 31: phase 3 whiteboard written
 
 The design's section 7.6 maps how the Library asks for memory today: five
 askers with their own retry loops, each asking for 600 MB, and Grade never

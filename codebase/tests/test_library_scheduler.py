@@ -1,0 +1,168 @@
+"""Execute the RAM admission rules without sampling the test runner."""
+from hdr_finisher.library_scheduler import Scheduler, FLOOR, FAST_BYTES
+
+GB = 1_000_000_000
+
+
+def fresh(room=2*GB):
+    s = Scheduler(ceiling=room+1_300_000_000)
+    s.update(available=60*GB, ram=68*GB)
+    return s
+
+
+def ask(s, id, estimate=FAST_BYTES, cls="now", kind="source", owner="window"):
+    return s.ask(id, owner, id, kind, estimate, cls)
+
+
+def test_class_order_and_fifo():
+    s = fresh(GB)
+    first = ask(s, "first", GB)
+    eventually = ask(s, "eventually", GB, "eventually")
+    soon = ask(s, "soon", GB, "soon")
+    now1 = ask(s, "now1", GB)
+    now2 = ask(s, "now2", GB)
+    assert not any(j.ready.is_set() for j in [eventually, soon, now1, now2])
+    for finishing, following in [(first, now1), (now1, now2), (now2, soon), (soon, eventually)]:
+        s.finish(finishing.id)
+        assert following.granted is not None
+
+
+def test_waiting_now_prevents_lower_work_and_smaller_same_class_overtaking():
+    s = fresh(2*GB)
+    ask(s, "running", GB)
+    big = ask(s, "big", 2*GB)
+    small = ask(s, "small", FAST_BYTES)
+    lower = ask(s, "lower", FAST_BYTES, "soon")
+    assert not big.ready.is_set() and not small.ready.is_set() and not lower.ready.is_set()
+    s.finish("running")
+    assert big.ready.is_set() and not lower.ready.is_set()
+
+
+def test_oversized_job_runs_alone():
+    s = fresh(GB)
+    big = ask(s, "big", 3*GB)
+    small = ask(s, "small", FAST_BYTES)
+    assert big.granted is not None and big.alone
+    assert small.granted is None
+    s.finish("big")
+    assert small.granted is not None
+
+
+def test_floor_and_paused_grade_steps_aside():
+    s = fresh()
+    s.update(grade_bytes=4*GB, grade_name="scan.dng", available=60*GB, ram=68*GB)
+    big = ask(s, "scan", FLOOR+1)
+    small = ask(s, "ordinary", FLOOR)
+    other = ask(s, "other", FAST_BYTES)
+    background = ask(s, "background", FAST_BYTES, "soon")
+    assert big.reason == "paused for Grade" and big.granted is None
+    assert small.granted is not None and small.floor
+    assert other.granted is None and background.granted is None
+    s.finish("ordinary")
+    assert other.granted is not None
+    s.finish("other")
+    s.update(available=60*GB, ram=68*GB)
+    assert big.granted is not None
+
+
+def test_system_reserve_and_recheck():
+    s = fresh()
+    s.update(available=3*GB, ram=8*GB)
+    big = ask(s, "big", 2*GB)
+    small = ask(s, "small", FAST_BYTES)
+    assert big.reason == "system reserve" and big.granted is None
+    assert small.granted is not None
+    s.finish("small")
+    s.update(available=5*GB, ram=8*GB)
+    assert big.granted is not None
+
+
+def test_free_memory_snapshot_cannot_be_spent_twice():
+    s = fresh()
+    s.update(available=3*GB, ram=8*GB)
+    assert ask(s, "first", 600_000_000).granted is not None
+    assert ask(s, "second", 600_000_000).reason == "system reserve"
+
+
+def test_fast_lane_four_and_large_preview_joins_normal_queue():
+    s = fresh(GB)
+    ask(s, "running", 2*GB)
+    fast = [ask(s, str(i), FAST_BYTES, kind="quick") for i in range(5)]
+    large = ask(s, "large", FAST_BYTES+1, kind="quick")
+    assert all(j.granted is not None for j in fast[:4])
+    assert fast[4].reason == "fast lane full"
+    assert large.granted is None and not large.fast
+    s.finish("0")
+    assert fast[4].granted is not None
+
+
+def test_disconnect_cancels_waiters_and_releases_running():
+    s = fresh(GB)
+    ask(s, "active", GB, owner="old")
+    waiting = ask(s, "waiting", GB, owner="old")
+    s.disconnect("old")
+    assert not s.jobs and waiting.ready.is_set()
+    retry = ask(s, "waiting", GB, owner="new")
+    assert retry.granted is not None
+
+
+def test_heartbeat_expiry_and_cancel_cost_nothing():
+    now = [0]
+    s = Scheduler(clock=lambda:now[0])
+    s.heartbeat("dead")
+    ask(s, "held", GB, owner="dead")
+    s.finish("held", "somebody-else")
+    assert "held" in s.jobs
+    now[0] = 16
+    s.expire()
+    assert not s.jobs
+
+
+def test_measurement_unavailable_does_not_stop_estimate_admission():
+    s = fresh()
+    s.update(total=None, available=None)
+    assert ask(s, "ordinary", GB).granted is not None
+
+
+def test_cancelled_waiter_not_notified_as_failure():
+    events = []
+    s = fresh(GB)
+    ask(s, "held", GB)
+    job = s.ask("wait", "owner", "file", "source", GB, notify=events.append)
+    assert job.granted is None
+    s.finish("wait", "owner", "cancelled")
+    assert [e["type"] for e in events] == ["waiting"]
+    assert "wait" not in s.jobs
+
+
+def test_measured_safety_net_allows_only_floor_and_fast_lane_above_ceiling():
+    s = fresh(2*GB)
+    s.update(total=s.ceiling+1, available=60*GB, ram=68*GB)
+    larger = ask(s, "large", FLOOR+1)
+    ordinary = ask(s, "ordinary", FLOOR)
+    quick = ask(s, "quick", FAST_BYTES, kind="quick")
+    assert larger.granted is None and larger.reason == "room"
+    # First come first served holds up ordinary normal work here, unlike a
+    # paused-for-Grade or system-reserve block. Cancelling frees its place.
+    assert ordinary.granted is None
+    assert quick.granted is not None
+    s.finish("large")
+    assert ordinary.granted is not None and ordinary.floor
+
+
+def test_critical_pressure_stops_background_and_limits_now_to_floor():
+    s = fresh()
+    s.update(pressure="critical", available=60*GB, ram=68*GB)
+    ordinary = ask(s, "ordinary", GB)
+    second = ask(s, "second", FAST_BYTES)
+    background = ask(s, "background", FAST_BYTES,"eventually")
+    assert ordinary.granted is not None and ordinary.floor
+    assert second.granted is None and background.granted is None
+
+
+def test_grade_priority_is_not_refused_by_library_reserve():
+    s = fresh()
+    s.update(available=GB,ram=8*GB)
+    grade = ask(s, "Grade",4*GB,"Grade")
+    assert grade.granted is not None and grade.estimate == 4*GB
+    assert ask(s, "ordinary",FAST_BYTES).granted is None

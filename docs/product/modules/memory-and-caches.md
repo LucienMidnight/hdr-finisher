@@ -32,6 +32,19 @@ The RAW sensor read needs about 5.5 bytes per pixel. GPU memory runs about
 proposed per-type estimates are Steve's decision; no size or share has
 changed.
 
+### October 31: phase 3a foundation only
+
+`library_scheduler.py` implements an independently tested estimate-based queue:
+class order and first come first served, one visible floor job, paused-for-Grade
+jobs stepping aside, the system reserve, the four-job fast lane and owner
+cleanup. `library_estimates.py` reads dimensions without decoding pixels and
+applies the approved rates. Neither helper is connected to app admission yet;
+all existing live memory behavior is unchanged.
+
+The unreadable-header worst case remains undefined: the approved per-pixel
+table has no fallback pixel count or byte amount. It needs Steve's decision;
+no size or allowance has changed. Phase 3a remains open and unmeasured.
+
 ## 1. Purpose
 
 HDR Finisher holds pictures in several processes at once: the Python backend
