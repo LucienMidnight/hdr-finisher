@@ -159,6 +159,13 @@ const HDRLibraryPictureFactory = (quick = false) => {
       const started = performance.now();
       renderer = new HDRLibraryGPU(surface);
       renderer.libraryLimits = configuredLimits;
+      // Auto is half of the active card's dedicated video memory, the same
+      // rule Grade follows. Without it this renderer kept the 2 GiB policy
+      // fallback, and the scheduler held every Library development to a
+      // fraction of the real GPU budget.
+      const desktop = window.hdrFinisherDesktop || window.parent?.hdrFinisherDesktop;
+      const videoMemory = await Promise.resolve(desktop?.videoMemory?.()).catch(() => null);
+      renderer.setDetectedVideoMemory(videoMemory?.detected ? videoMemory : null);
       if (!await renderer.initialize(() => beforeNext(() => initializationDemand))) {
         const error=renderer.libraryInitializationError || new Error(renderer.detail || "Library GPU initialization did not finish.");
         if (!navigator.gpu || renderer.detail === "No WebGPU adapter was returned" || renderer.deviceLost) error.gpuUnavailable=true;
