@@ -5,6 +5,11 @@ const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-li
 fs.mkdirSync(folder,{recursive:true});
 const sources=['DSC07060','DSC07061','DSC07072'].map(n=>'D:/test-photos-delete-later/'+n+'.ARW');
 for(const source of [...sources,path.join(root,'tests/fixtures/sdr_gradient.png')])fs.copyFileSync(source,path.join(folder,path.basename(source)));
+// The Library lists photos of at least 1 KB (file gate, October 30). The
+// 111-byte gradient fixture keeps its pixels: trailing bytes after IEND make
+// the disposable copy a listed photo.
+const gradient=path.join(folder,'sdr_gradient.png'),gradientBytes=fs.statSync(gradient).size;
+if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes));
 (async()=>{
  const browser=await chromium.launch();
  try{
