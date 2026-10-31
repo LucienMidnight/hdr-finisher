@@ -20,9 +20,10 @@ open in Grade), the Library pauses with "Library paused: memory is in use by
 … in Grade" and a **Close photo in Grade** button. Going over the app's 4 GB
 budget is usually fine, but no job starts beyond the computer's free memory
 minus a system reserve; such a job waits with a message and is never marked
-failed. Steve approved building it as 3a then 3b (October 31). Still to
-decide before 3a: the fast-lane size (decision 4). Decided October 31:
-floor allowance 1 GB; system reserve the larger of 2 GB or 10% of RAM.
+failed. Also decided October 31: build as 3a then 3b; floor allowance
+1 GB; system reserve the larger of 2 GB or 10% of RAM; fast lane 64 MB, up
+to four at once; reduced-decode quick previews, moved into 3a. All
+decisions for 3a are made; 3a is ready to build.
 
 ## October 30 (late night): feedback loop stopped (scheduler phase 2), awaiting Steve's try
 

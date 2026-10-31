@@ -826,8 +826,11 @@ the backend answered folder requests in about 1 ms.
    never refused by the Library, since Grade comes first, but the Library now
    knows about it instead of tripping over it.
 4. **A fast lane** for jobs estimated at 64 MB or less (embedded camera
-   JPEGs): a separate small allowance, so they never wait behind a
-   development (6.4; size is decision 4).
+   JPEGs, and with reduced decoding nearly every JPEG quick preview): a
+   separate allowance of 64 MB, up to four at once, so they never wait
+   behind a development (6.4; Steve, October 31, decisions 3 and 4). A
+   quick preview estimated above 64 MB joins the normal queue as a **now**
+   job with its real estimate.
 5. **A floor for what is on screen** (M9, M27; Steve, October 31: keep a
    floor). If the room is too small for any **now** job (a small machine, or
    a large photo open in Grade), one **now** job at a time still runs, plus
@@ -908,11 +911,13 @@ large. Building it in two steps lets Steve try the stall fix sooner, and each
 step can be undone alone.
 
 * **3a. Scheduler and channel:** points 1–12 above, including the paused
-  message and the **Close photo in Grade** button. Edge cases M1–M3, M5,
+  message and the **Close photo in Grade** button, and reduced-decode quick
+  previews (decision 3; check: mean ΔE 2000 against today's quick preview
+  below 1, as measured in phase 0). Edge cases M1–M3, M5,
   M7, M9, M10, M11, M23, M27; F15 (a changed file ends its job as "changed"
   and releases its grant). Removes the stall and the polling.
 * **3b. Bounded routes and the rest:** very large pictures (F11, F19, M26,
-  7.3), reduced-decode quick previews if approved (decision 3), decoder crash
+  7.3), decoder crash
   and hang limits (F8), offline drives (F14), disk cache full or missing
   (M21, M22), startup upkeep as **eventually** work (M24), hidden windows
   (M6).
@@ -1019,8 +1024,12 @@ Still to decide:
    Approved by Steve, October 30.
 2. ~~Phase 0 per-type estimates (6.11).~~ Approved by Steve, October 30;
    recorded in memory-and-caches.
-3. Reduced-decode quick previews (6.11, point 4).
-4. Fast-lane allowance (proposed 64 MB, four at once). Needed for 3a.
+3. ~~Reduced-decode quick previews (6.11, point 4).~~ Approved by Steve,
+   October 31, and moved into 3a. Quick previews only; finished
+   thumbnails, Single, Grade, Proof and export are unchanged.
+4. ~~Fast-lane allowance.~~ **64 MB, up to four at once, approved by Steve,
+   October 31.** A quick preview estimated over 64 MB joins the normal queue
+   as a **now** job with its real estimate (never refused, never failed).
 5. GPU developments at once (proposed two).
 6. ~~When the photo open in Grade is bigger than the Library's room
    (M27).~~ Decided by Steve, October 31: keep a floor (option A, over

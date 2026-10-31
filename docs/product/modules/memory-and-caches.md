@@ -296,7 +296,11 @@ room is available; critical pressure still clears reconstructible caches.
   that would cross it waits with a message; it is never
   marked failed.
 
-Details: design section 7.6 and decisions 6, 8 and 9.
+- Quick previews have a fast lane of 64 MB, up to four at once; JPEG quick
+  previews use a reduced decode (15–51 MB instead of 218–762 MB). A larger
+  quick preview joins the normal queue with its own estimate.
+
+Details: design section 7.6 and decisions 3, 4, 6, 8 and 9.
 
 **Replaced October 30 (scheduler phase 2).** Pressure now comes only from
 measurement and the operating system, never from a refused admission:
