@@ -1578,7 +1578,14 @@ Decided October 30:
   routes (7.3).
 - Online-only cloud files download only when opened (6.9).
 
-12. **Decoder deadlines — proposed, awaiting Steve.** Use five times the
+12. **Decoder deadlines — approved by Steve, October 31, with a 5-minute
+    cap.** Per-type baselines below, scaled by max(1, source MP/24), but never
+    more than **5 minutes** of active work. Why the cap: the DNG baseline was
+    already set from the line scan, so scaling counted its size twice (about
+    28 minutes against 12.5 s measured), and a stuck giant runs alone, holding
+    up all large work. A job that hits the limit is not a broken photo: its
+    cell says it took too long and offers Try again. Not yet in code (cap and
+    Try again). Original proposal, kept for reference: use five times the
     largest phase-0 measured per-type job time, rounded up, with a five-second
     minimum: DNG 135 s, AVIF 81 s, EXR 16 s, PNG 15 s, JPEG XL 6 s, RAF 17 s,
     HEIC/HEIF 9 s; JPEG/TIFF/Bayer RAW/HDR/PFM 5 s. Unmeasured extensions use
