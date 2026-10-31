@@ -52,38 +52,50 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 | Very large folder → first 256 rows / first picture / 25th picture | Regression baseline (Steve, Oct 27) | 3.81 / 4.20 / 5.40 s | Oct 27, 155,877 rows, 015baf7 | Baseline |
 | Folder open → first camera preview (RAW) | Under 0.2 s (tier 0, Steve Oct 12) | 0.14–0.29 s | Oct 30 18:18 | Met |
 | Camera preview extraction (backend only) | — | p50 56 ms, max 143 ms | Oct 30 18:18 (`picture_camera_preview_ready`) | Baseline |
-| Camera preview request → on screen in the grid, while photos develop | p95 under 0.5 s (phase 3a brief) | p50 1.372–1.390 s / p95 2.130–2.381 s / max 2.439–2.494 s | Oct 31, phase 3a.1 e1b7c9b and final 3b, 48 cold Aceh JPEG previews per run, isolated profiles, 2560×1440 | Not met |
+| Camera preview request → on screen in the grid, while photos develop | p95 under 0.5 s (phase 3a brief) | p50 1.507–1.551 s / p95 2.410–2.783 s / max 2.630–2.847 s | Oct 31 phase 3a.2, two quiet cold Aceh repeats, 48 previews each, 2560×1440 isolated profiles | Not met |
 | Visible cell shows any picture | 1 s p90 (Oct 18) | — | needs a fresh measurement | Unknown |
 | Visible cell shows its real picture | about 2 s p90 (Oct 18) | — | needs a fresh measurement | Unknown |
 | Second launch: visible thumbnails | 90% within 100 ms (Oct 18) | — | needs a fresh measurement | Unknown |
 | Folder open → first finished thumbnail, stored pictures | — | 0.52 s (25th 2.06 s) | Oct 30 18:18, badminton | Baseline |
 | Folder open → first finished thumbnail, cold RAW | — | 4.4–8.8 s | Oct 30 18:18, Kiddos Batik, 20241117 | Baseline |
-| Cold JPEG grid: first screen of 24 / second screen | ≤26.51 / 51.59 s (24.1 / 46.9 s +10%) | 35.429 / 94.662 s (3a.1); 35.284 / 81.634 s (final 3b) | Oct 31, e1b7c9b and final 3b, 48 Aceh Pesta copies each, fresh profiles, independent peaks 3.601 / 3.635 GB, zero photo failures; memory-sample timeouts fail qualification | Not met |
+| Cold JPEG grid: first screen of 24 / second screen | ≤26.51 / 51.59 s (24.1 / 46.9 s +10%) | 29.442–32.111 / 56.064–57.203 s | Oct 31 phase 3a.2, Aceh repeats 6/7, peaks 3.598/3.712 GB, all 48 finished, zero failures/timeouts | Not met |
 | Thumbnail cache check per cell | — | 13–930 ms seen | Oct 30 18:18 (`page_picture_cache_check`) | Baseline |
 | Folder disk check | — | 33 ms–5.3 s | Oct 30 18:18, 10–453 photos | Baseline |
 | Large scroll disk check | Regression baseline (Oct 27) | 64 s | photo-library.md, Start here | Baseline |
 | Back to grid after Single or fullscreen | — | 0.4–4.2 s, some over 5 s | Oct 26 (photo-library.md) | Unknown |
 
-Phase 3a Grade coexistence, October 31 (phase 3a.1 e1b7c9b, disposable
+Phase 3a.2 Grade coexistence, October 31 (this change, disposable
 phase0 photos, 2560×1440; `output/phase3a-grade/report.json`):
 
 | Action | Target | Measured | Conditions | Status |
 | --- | --- | --- | --- | --- |
-| Grade line scan + ordinary folder → first small photo | <5 s | 2.926 s | Grade retains 3.563 GB | Met |
-| Folder with large photo → Grade pause message | <1 s from cell shown | 1.995 s from folder opening | Cell-visible timestamp not separately captured | Not qualified |
-| Folder click while cells wait | <0.5 s | 1 ms | Already listed folder selected again; different cold folder not qualified | Met for measured case |
-| Close photo in Grade → empty Grade / Library resume | Save first; resume <2 s after close | Close including save 1.872 s; resume 0.150 s later | Saved exposure 0.125 verified on disk | Met |
+| Grade line scan + ordinary folder → first small photo | <5 s | 1.978 s | Oct 31 phase 3a.2, Grade retains 3.563 GB | Met |
+| Folder with large photo → Grade pause message | <1 s from cell shown | 1.573 s from folder opening | Cell-visible timestamp not captured; older harness folder-to-pause assertion fails | Not qualified |
+| Folder click while cells wait | <0.5 s | 23 ms | Oct 31 phase 3a.2, selected listed folder | Met for measured case |
+| Close photo in Grade → empty Grade / Library resume | Save first; resume <2 s after close | Close including save 1.926 s; resume 0.696 s later | Oct 31 phase 3a.2, saved exposure 0.125 verified on disk | Met |
 
-Final mixed-format qualification stopped at 4.206 GB during AVIF decoding:
-ten of 27 files finished. DJI TIFF took 14.257 s; the line scan and synthetic
-192 MP TIFF remain unmeasured, while the 192 MP JPEG/PNG preview path hit the
-existing Pillow size guard. Full per-file statuses:
-`codebase/output/cold-mixed/phase0/per-file-results.csv`. These are overlapping
-whole-app measurements, not isolated bounded-route peaks.
+Phase 3a.2 mixed-format qualification stopped at **4.022 GB** during AVIF:
+ten of 27 files finished; 226 memory requests had no timeout. Admission at
+2.271 GB measured + 1.603 GB estimate fit the ceiling; decoder charge then
+reached 1.765 GB. No oversized-alone exception applied at stop. Per-file status
+and timings: `codebase/output/cold-mixed/phase0-3a2/per-file-results.csv`.
+Unfinished files are not declared failures. Bounded large-picture routes remain
+unfinished, and no approved estimate is changed. Grade's timing run has no
+independent memory observer and does not qualify the 4 GB limit.
 
-Grade memory was log-only: peak 9.124 GB during oversized Grade opening, three
-moderate trims/Chromium pressure relays before browsing, and a 5.370 GB coexistence
-snapshot. The Grade timing results above do not qualify the <4 GB limit.
+Additional phase 3a.2 observations (same quiet Aceh repeats, this change):
+
+| Action | Target | Measured | Conditions | Status |
+| --- | --- | --- | --- | --- |
+| Folder click → all initially visible quick previews, including partial rows | Proposed measure, awaiting Steve; formal p95 target unchanged | 30/30 by 5.008–5.884 s; visible request p95 2.473–2.791 s | First viewport, repeats 6/7 | Unknown |
+| Longest Library request spanning trim or starting within 1 s after | <1 s (fix brief) | 0.822–1.066 s | One moderate trim each; live-developed request | Not met in run 7 |
+| Development places maximum / time-weighted mean | Maximum two (Steve) | 2 / 1.413–1.430 | GPU completion releases place; saving still holds memory | Met |
+| Active saving places | Provisional maximum two, approved by Steve | 2 in both repeats | Permanent limit awaiting decision | Met |
+
+Reports/logs/screens: `codebase/output/cold-mixed/aceh-3a2-{6,7}/`.
+Run 7 includes the final cached-only HTTP census refinement. Native memory
+ownership evidence is in design 7.6 and the memory module; it does not enlarge
+any share. RAW pixel-check stdout: `codebase/output/phase3a2-raw3.txt`.
 
 ## 3. Developing a photo (per photo)
 
@@ -107,7 +119,7 @@ snapshot. The Grade timing results above do not qualify the <4 GB limit.
 | Backend source decode (GPU route), warm: RAW sensor / JPEG 42 MP / PNG 42 MP / TIFF 48 MP / HEIC 24 MP / EXR 42 MP / gain-map AVIF 42 MP | — | 0.10–0.45 s / 0.29 s / 2.98 s / 0.64 s / 1.74 s / 1.52 s / 16.0 s | Oct 30 phase 0, copies in `output/test-photos/phase0` | Baseline |
 | CPU route: X-Trans RAF / JPEG XL / EXR without colour tags | — | 3.3 s / 1.0–1.1 s / 3.1 s | same | Baseline |
 | Quick preview, today vs reduced decode: Nikon NEF, Canon CR3/CR2, 30 MP JPEG, 42 MP JPEG | — | 125 / 100 / 107 / 338 / 217 ms → 40 / 37 / 35 / 251 / 95 ms | same; reduced decode not built | Baseline |
-| Direct Library RAW GPU pixel check, _DSC6527.ARW | Existing perceptual limits | 3.249 s app / 1.878 s GPU; SDR mean ΔE2000 0.0259, p99.9 0.1343; HDR mean 0.1023, p99.9 0.5414 | Oct 31, phase 3b, fresh profile, 2560×1440; existing comparison, permanent photo copy | Met |
+| Direct Library RAW GPU pixel check, DSC07060.ARW | Existing perceptual limits | 3.004 s app / 1.164 s GPU; SDR mean/p99.9 ΔE2000 0.0182/0.0590; HDR 0.0266/0.0769 | Oct 31 phase 3a.2, fresh profile, 2560×1440; permanent photo copy; one focused GPU driver | Met |
 | Library Denoise measurement (reused) | — | p50 6.6 ms, max 58 ms | Oct 30 18:18 | Baseline |
 
 ## 4. Single, fullscreen and Compare
@@ -145,8 +157,8 @@ snapshot. The Grade timing results above do not qualify the <4 GB limit.
 
 | Action | Target | Measured | Conditions | Status |
 | --- | --- | --- | --- | --- |
-| Memory check (`/api/library/memory`) | under its 2 s timeout | 2 of 159 samples exceeded the harness 2 s timeout | Oct 31, phase 3a integration, cold Aceh run; timing qualification failed | Not met |
-| Memory pressure: Chromium signals and cache trims, cold Aceh run | None below target; at most one per level rise plus one per 10 s | 3a.1: two moderate trims/Chromium relays at 3.469 / 3.420 GB; final 3b: one at 3.542 GB, all above 3.40 GB target; zero memory-refusal signals | Oct 31, cold Aceh copies; independent peaks 3.601 / 3.635 GB | Met |
+| Memory check (`/api/library/memory`) | under its 2 s timeout | Longest 110.5–339.7 ms; 0 timeouts in 112 + 121 requests | Oct 31 phase 3a.2, Aceh repeats 6/7, independent observer | Met |
+| Memory pressure: Chromium signals and cache trims, cold Aceh run | None below target; at most one per level rise plus one per 10 s | One moderate trim/relay in each repeat; zero memory-refusal signals | Oct 31 phase 3a.2, target 3.40 GB; moderate relay collects page garbage | Met |
 | Longest marks-lock hold | 250 ms | 375 ms (reconcile) | Oct 29 | Not met |
 | Index metadata read, 12 files | — | 9.7 ms warm in parallel | photo-library.md | Baseline |
 | Recovery work | — | 2,044 pieces in one session, longest 14.8 s | Oct 30 18:18 | Unknown |

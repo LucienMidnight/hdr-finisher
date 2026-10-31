@@ -1337,7 +1337,9 @@ if (!gotLock) {
             // Cache owners release references above. Chromium also needs its
             // native pressure notification to discard dead upload/readback
             // storage in renderer, browser and GPU host processes.
+            const pressureStarted = Date.now();
             await memoryPressureRelay.notifyChromiumPressure(mainWindow.webContents, trimLevel);
+            libraryStage("chromium_pressure_timing", {level:trimLevel,duration_ms:Date.now()-pressureStarted});
             const reclaimed=await fetch(`${activeBackend.url}/api/library/memory-reclaim`, {method:"POST",
               headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret,"Content-Type":"application/json"},
               body:JSON.stringify({pressure:trimLevel}),signal:AbortSignal.timeout(2000)});

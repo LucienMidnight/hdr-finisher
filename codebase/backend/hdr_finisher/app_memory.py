@@ -288,18 +288,24 @@ def process_tree(root):
     return result
 
 
-def snapshot(refresh=False):
+def snapshot(refresh=False, cached_only=False):
     global _sample
     now=time.monotonic()
     with _lock:
         cached=_sample
-    if refresh or now-cached[0]>.45 or cached[1] is None:
-        with _sample_lock:
-            with _lock: cached = _sample
-            if refresh or time.monotonic()-cached[0]>.45 or cached[1] is None:
-                rows=process_tree(int(os.environ.get('HDR_FINISHER_DESKTOP_PID',os.getppid())))
-                with _lock: _sample=(time.monotonic(),rows)
-            else: rows=cached[1]
+    if refresh or (not cached_only and now-cached[0]>.45) or cached[1] is None:
+        # Readers can use the latest completed census while the grant lane
+        # refreshes it. Never queue HTTP reads behind a slow OS working-set walk.
+        acquired = _sample_lock.acquire(blocking=refresh or cached[1] is None)
+        if acquired:
+            try:
+                with _lock: cached = _sample
+                if refresh or time.monotonic()-cached[0]>.45 or cached[1] is None:
+                    rows=process_tree(int(os.environ.get('HDR_FINISHER_DESKTOP_PID',os.getppid())))
+                    with _lock: _sample=(time.monotonic(),rows)
+                else: rows=cached[1]
+            finally: _sample_lock.release()
+        else: rows=cached[1]
     else: rows=cached[1]
     total=sum(row.get('chargedBytes',row['workingSetBytes']) for row in rows)
     with _lock:

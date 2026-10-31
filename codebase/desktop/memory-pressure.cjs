@@ -4,7 +4,10 @@ async function notifyChromiumPressure(contents, level) {
   const owned = !transport.isAttached();
   try {
     if (owned) transport.attach('1.3');
-    await transport.sendCommand('Memory.simulatePressureNotification', {level});
+    // Release dead page-owned upload blobs at moderate pressure. A global
+    // native purge also stalls in-flight GPU mappings for many seconds.
+    if(level==='moderate')await transport.sendCommand('HeapProfiler.collectGarbage');
+    else await transport.sendCommand('Memory.simulatePressureNotification', {level});
   } finally {
     if (owned && transport.isAttached()) transport.detach();
   }

@@ -69,11 +69,22 @@ class LibraryPictureCache:
         self._native_source = None
         self._native_paused = False
 
+    def _handoff_bytes(self):
+        with self.transient_lock:
+            return sum(map(len, self.transient.values()))
+
+    def _report_handoff(self):
+        app_memory.report(self.memory_key, 'handoff', self._handoff_bytes())
+
     def _evict_transient(self, key):
-        # A published preview is still owned by its waiting draw. Reclaim RAM,
-        # but keep its already-packed NPZ in the existing disk allowance.
-        pending = self.pending_stores.get(key)
-        if pending:
+        # Readers retain the immutable body until disk publication completes.
+        # Never do file/index/owner work under the transport bookkeeping lock.
+        with self.transient_lock:
+            pending = self.pending_stores.get(key)
+            body = self.transient.get(key)
+            if pending is None:
+                self.transient.pop(key, None)
+        if pending and body is not None:
             source, edge, quality, default, owner_check = pending
             if owner_check:
                 owner_check()
@@ -86,7 +97,7 @@ class LibraryPictureCache:
             try:
                 with NamedTemporaryFile(dir=destination.parent, suffix=".tmp", delete=False) as handle:
                     temporary = Path(handle.name)
-                    handle.write(self.transient[key])
+                    handle.write(body)
                 if owner_check:
                     owner_check()
                 if picture_key(source, edge, quality) != key:
@@ -96,44 +107,58 @@ class LibraryPictureCache:
                 if default is not None:
                     self.keep_default_document(source, default)
                 self.trim()
+                with self.transient_lock:
+                    if self.transient.get(key) is body and self.pending_stores.get(key) is pending:
+                        self.transient.pop(key, None)
+                        self.pending_stores.pop(key, None)
                 log("picture_handoff_backed", path=source, key=key, edge=edge, reason="handoff RAM reclaimed before draw")
             finally:
                 if temporary:
                     temporary.unlink(missing_ok=True)
-        self.transient.pop(key, None)
-        self.pending_stores.pop(key, None)
+        self._report_handoff()
 
-    def trim_memory(self,target):
+    def trim_memory(self, target):
+        # Disposable/delivered copies go before any preview awaiting storage.
         with self.transient_lock:
-            while self.transient and sum(map(len,self.transient.values()))>target:
-                self._evict_transient(next(iter(self.transient)))
-            app_memory.claim(self.memory_key,'handoff',sum(map(len,self.transient.values())))
+            keys = sorted(self.transient, key=lambda key: key in self.pending_stores)
+        for key in keys:
+            if self._handoff_bytes() <= target:
+                break
+            self._evict_transient(key)
+        self._report_handoff()
 
-    def delivered(self,key):
+    def delivered(self, key):
         with self.transient_lock:
-            if key not in self.pending_stores: self.transient.pop(key,None)
-            app_memory.claim(self.memory_key,'handoff',sum(map(len,self.transient.values())))
+            if key not in self.pending_stores:
+                self.transient.pop(key, None)
+        self._report_handoff()
 
-    def accept_transient(self, result):
-        body = result.pop('_transient', None)
-        if body:
+    def accept_transient(self, result, pending=None):
+        encoded = result.pop('_transient', None)
+        if encoded:
+            body = base64.b64decode(encoded)
+            key = result['key']
             with self.transient_lock:
-                self.transient[result['key']] = base64.b64decode(body)
-                self.transient.move_to_end(result['key'])
-                while self.transient and not app_memory.claim(self.memory_key,'handoff',sum(map(len,self.transient.values()))):
-                    self._evict_transient(next(iter(self.transient)))
-                app_memory.report(self.memory_key,'handoff',sum(map(len,self.transient.values())))
+                if pending is not None:
+                    self.pending_stores[key] = pending
+                self.transient[key] = body
+                self.transient.move_to_end(key)
+                keys = sorted(self.transient, key=lambda item: item in self.pending_stores)
+            for candidate in keys:
+                if app_memory.claim(self.memory_key, 'handoff', self._handoff_bytes()):
+                    break
+                self._evict_transient(candidate)
+            self._report_handoff()
         return result
 
-    def transient_result(self, key, arrays, metadata, validate=None):
+    def transient_result(self, key, arrays, metadata, validate=None, pending=None):
         stream = BytesIO()
         np.savez(stream, **arrays)
         if validate:
             validate()
         result = metadata | {'key': key, 'cache_hit': False, 'stored_bytes': 0,
             '_transient': base64.b64encode(stream.getvalue()).decode()}
-        # Only deferred disk publication needs local ownership before delivery.
-        self.accept_transient(dict(result))
+        self.accept_transient(dict(result), pending)
         return result
 
     def open(self, key, file=None):
@@ -194,11 +219,11 @@ class LibraryPictureCache:
         key = picture_key(path, edge, quality)
         with self.transient_lock:
             body = self.transient.get(key)
-            if body is not None:
-                with np.load(BytesIO(body), allow_pickle=False) as stored:
-                    metadata = json.loads(str(stored["metadata"]))
-                return metadata | {"key": key, "cache_hit": True, "stored_bytes": 0,
-                    "_transient": base64.b64encode(body).decode()}
+        if body is not None:
+            with np.load(BytesIO(body), allow_pickle=False) as stored:
+                metadata = json.loads(str(stored["metadata"]))
+            return metadata | {"key": key, "cache_hit": True, "stored_bytes": 0,
+                "_transient": base64.b64encode(body).decode()}
         destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
         if not destination.is_file() and quality.startswith("live-scene-v2:"):
             from .library_live import equivalent_qualities
@@ -271,14 +296,8 @@ class LibraryPictureCache:
                     check_cancelled(cancelled)
                     if picture_key(path, edge, quality) != key:
                         raise ValueError("Photo changed before publishing preview data.")
-                # Ownership must be installed before admission can evict this body.
-                with self.transient_lock:
-                    self.pending_stores[key] = (str(path), edge, quality, default_document, store_validate)
-                    try:
-                        result = self.transient_result(key, arrays, metadata, validate_memory)
-                    except BaseException:
-                        self.pending_stores.pop(key, None)
-                        raise
+                pending = (str(path), edge, quality, default_document, store_validate)
+                result = self.transient_result(key, arrays, metadata, validate_memory, pending)
                 result.pop('_transient', None)
                 return result
             destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
@@ -337,7 +356,7 @@ class LibraryPictureCache:
                 with self.transient_lock:
                     if self.pending_stores.get(key) is pending:
                         self.pending_stores.pop(key, None)
-                    self.delivered(key)
+                self.delivered(key)
 
     @audited("picture_cache_build_native")
     def build_native(self, path, center_x, center_y, width, height, cancelled=None):

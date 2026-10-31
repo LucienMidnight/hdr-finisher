@@ -264,3 +264,36 @@ def test_memory_endpoint_answers_during_coalesced_slow_reclaim(tmp_path, monkeyp
                 release.set()
                 await asyncio.sleep(.05)
     asyncio.run(run())
+
+
+def test_memory_reader_uses_completed_census_during_refresh(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    import time
+    entered, release = Event(), Event()
+    old = [dict(pid=1, workingSetBytes=100, chargedBytes=100)]
+    monkeypatch.setattr(app_memory, '_sample', (0, old))
+    monkeypatch.setattr(app_memory, 'system_pressure', lambda: 'none')
+    def census(root):
+        entered.set()
+        assert release.wait(2)
+        return [dict(pid=1, workingSetBytes=200, chargedBytes=200)]
+    monkeypatch.setattr(app_memory, 'process_tree', census)
+    with ThreadPoolExecutor() as pool:
+        future = pool.submit(app_memory.snapshot, refresh=True)
+        try:
+            assert entered.wait(1)
+            started = time.monotonic()
+            assert app_memory.snapshot()['totalBytes'] == 100
+            assert time.monotonic() - started < .5
+        finally: release.set()
+        assert future.result()['totalBytes'] == 200
+
+
+def test_memory_telemetry_does_not_start_a_slow_census(monkeypatch):
+    monkeypatch.setattr(app_memory, '_sample', (0, [dict(workingSetBytes=100)]))
+    monkeypatch.setattr(app_memory, 'system_pressure', lambda: 'none')
+    def forbidden(root):
+        raise AssertionError('Telemetry must use the scheduler census')
+    monkeypatch.setattr(app_memory, 'process_tree', forbidden)
+    assert app_memory.snapshot(cached_only=True)['totalBytes'] == 100

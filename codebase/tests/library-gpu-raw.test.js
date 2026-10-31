@@ -186,3 +186,20 @@ test('small RGB direct scene reservation covers source, reductions and retained 
  const estimate=globalThis.HDRLibraryGpuRaw.rawBudget({rgb:true,width:2400,height:1801,colour:{authored_sdr:true}},[640,2560]);
  assert.ok(estimate>=190_786_160,'IMG_0267 measured peak must fit');
 });
+
+
+test('a finished GPU frees a local place while that photo is still saving',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm');
+ const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+ const fn=source.slice(source.indexOf('  const LIMIT = 2'),source.indexOf('  // The grid and the filmstrip'));
+ const context={DOMException};vm.runInNewContext(fn+';this.add=(job)=>{waiting.push(job);pump();};',context);
+ const started=[],finished=[];let gpuDone,saveDone;
+ const saving=new Promise(r=>saveDone=r),tasks=[];
+ const add=(name,hold=false)=>tasks.push(new Promise((resolve,reject)=>context.add({signal:new AbortController().signal,importance:()=>10,resolve,reject,
+  task:async release=>{started.push(name);if(hold){gpuDone=release;await saving;}finished.push(name);}})));
+ add('a',true);add('b',true);add('c');
+ await new Promise(r=>setImmediate(r));assert.deepEqual(started,['a','b']);
+ gpuDone();await new Promise(r=>setImmediate(r));
+ assert.deepEqual(started,['a','b','c']);assert.deepEqual(finished,['c']);
+ saveDone();await Promise.all(tasks);
+});

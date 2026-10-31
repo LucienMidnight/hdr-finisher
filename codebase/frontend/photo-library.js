@@ -645,7 +645,7 @@
         const quickController=new AbortController();
         cell.controller.signal.addEventListener("abort",()=>quickController.abort(),{once:true});
         cell.quickController=quickController;
-        const preview = HDRLibraryGrants.preview({path:photo.path,quick_draw:true,bytes:photo.bytes,mtime_ns:photo.mtime_ns},quickController.signal,{Accept:"image/png"}).then(async response => {
+        const preview = HDRLibraryGrants.preview({path:photo.path,quick_draw:true,bytes:photo.bytes,mtime_ns:photo.mtime_ns},quickController.signal,{Accept:"image/png"},()=>(container === space ? state.cells : state.filmCells).shown?.has(photo.path)?10:50).then(async response => {
           if (!response || response.status !== 200) return;
           const blob = await response.blob();
           if (!current() || cell.meta) return;

@@ -25,8 +25,10 @@ class Runtime:
         session = self.store.current() if self.store is not None else None
         grade_bytes = self.store._retained_session_bytes() if session is not None else 0
         grade_name = session.source.filename if session is not None else ""
+        with scheduler.lock:
+            sampled = {j.id for j in scheduler.jobs.values() if j.granted is not None}
         try:
-            value = app_memory.snapshot()
+            value = app_memory.snapshot(refresh=True)
             total, pressure = value["totalBytes"], value["pressure"]
         except Exception as error:
             total, pressure = None, "none"
@@ -37,7 +39,7 @@ class Runtime:
         caches = sum(min(v["bytes"],v["limitBytes"]) for v in app_memory.cache_snapshot().values())
         scheduler.update(caches=caches, grade_bytes=grade_bytes, grade_name=grade_name,
             total=total, pressure=pressure, available=resources.available_ram_bytes,
-            ram=resources.total_ram_bytes)
+            ram=resources.total_ram_bytes, sampled_grants=sampled)
         scheduler.expire()
 
     def start(self):
@@ -142,7 +144,9 @@ def add_routes(router, marks):
                         raise ValueError("Invalid Library job")
                     amount, reason = await asyncio.to_thread(estimate_details, path, kind)
                     scheduler.ask(id,owner,path,kind,amount,
-                        "now" if kind=="quick" else priority_class(int(command.get("priority",10))),notify,reason,order=command.get("order"))
+                        "now" if kind=="quick" and amount>64_000_000 else priority_class(int(command.get("priority",10))),notify,reason,order=command.get("order"))
+                elif action == "gpu-done":
+                    scheduler.gpu_done(id, owner)
                 elif action in {"finish","cancel"}:
                     scheduler.finish(id,owner,command.get("outcome","finished") if action=="finish" else "cancelled")
                 elif action == "priority":

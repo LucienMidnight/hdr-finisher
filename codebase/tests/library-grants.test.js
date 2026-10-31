@@ -83,3 +83,25 @@ test('native minimisation keeps a visible Chromium page in eventually until rest
  assert.equal(sockets[0].sent.at(-1).visible,false);
  abort.abort();await assert.rejects(pending,{name:'AbortError'});root.HDRLibraryGrants.close();
 });
+
+
+test('GPU completion keeps the grant until the bounded save is acknowledged and finished',async()=>{
+ const {grants,sockets}=setup();
+ let saving=false;
+ const work=grants.run('photo.jpg','source',null,async id=>{await grants.gpuDone(id);saving=true;return 42;});
+ sockets[0].open();const id=sockets[0].sent[0].id;
+ sockets[0].receive({type:'granted',id});await tick();
+ assert.equal(sockets[0].sent.at(-1).type,'gpu-done');
+ assert.equal(grants.snapshot().jobs.length,1);assert.equal(saving,false);
+ sockets[0].receive({type:'saving',id});assert.equal(await work,42);
+ assert.equal(saving,true);assert.equal(sockets[0].sent.at(-1).type,'finish');grants.close();
+});
+
+test('disconnect while waiting to save cancels that attempt and restarts without hanging',async()=>{
+ const {grants,sockets,timers}=setup();let attempts=0;
+ const work=grants.run('photo.jpg','source',null,async id=>{attempts++;if(attempts===1)await grants.gpuDone(id);return 42;});
+ sockets[0].open();sockets[0].receive({type:'granted',id:sockets[0].sent[0].id});await tick();
+ sockets[0].close();await tick();timers.shift()();sockets[1].open();
+ sockets[1].receive({type:'granted',id:sockets[1].sent[0].id});
+ assert.equal(await work,42);assert.equal(attempts,2);grants.close();
+});

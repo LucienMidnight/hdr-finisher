@@ -11,6 +11,7 @@ from .library_diagnostics import log
 MINIMUM = FAST_BYTES = 64_000_000
 FAST_COUNT = 4
 DEVELOPMENTS = 2
+SAVES = 2  # Steve approved the provisional bound in this chat, October 31.
 FLOOR = 1_000_000_000
 STARTING = 1_300_000_000
 CLASSES = {"Grade": 0, "now": 1, "soon": 2, "eventually": 3}
@@ -39,13 +40,14 @@ class Job:
     baseline: int | None = None
     requested_cls: str = "now"
     order: int = 0
+    saving: str = ""
     floor: bool = False
     alone: bool = False
     ready: Event = field(default_factory=Event)
 
     @property
     def development(self):
-        return self.kind in {"source", "cpu"} and self.cls != "Grade"
+        return self.kind in {"source", "cpu"} and self.cls != "Grade" and not self.saving
 
     @property
     def fast(self):
@@ -72,12 +74,13 @@ class Scheduler:
         self.sampled_grants = set()
 
     def update(self, *, caches=0, grade_bytes=0, grade_name="", total=None,
-               available=None, ram=None, pressure="none"):
+               available=None, ram=None, pressure="none", sampled_grants=None):
         with self.lock:
             grade_changed = (self.grade_bytes, self.grade_name) != (grade_bytes, grade_name)
             self.caches, self.grade_bytes, self.grade_name = caches, grade_bytes, grade_name
             self.total, self.available, self.ram, self.pressure = total, available, ram, pressure
-            self.sampled_grants = {j.id for j in self.jobs.values() if j.granted is not None}
+            self.sampled_grants = ({j.id for j in self.jobs.values() if j.granted is not None}
+                                   if sampled_grants is None else set(sampled_grants))
             for job in self.jobs.values():
                 if job.granted is not None and total is not None and job.baseline is not None:
                     # Whole-app incremental peak, not private allocation attribution.
@@ -157,6 +160,27 @@ class Scheduler:
             return bool(job and job.path == str(path) and job.granted is not None
                         and (kind is None or job.kind == kind))
 
+    def gpu_done(self, id, owner):
+        """Free the development place; keep the memory grant through saving."""
+        with self.lock:
+            job = self.jobs.get(id)
+            if job and job.owner == owner and job.granted is not None and job.development:
+                job.saving = "waiting"
+                self._log(job, "gpu_done")
+                self._pump()
+
+    def _start_saves(self):
+        active = sum(j.saving == "active" for j in self.jobs.values())
+        for job in sorted(self.jobs.values(), key=lambda j: (CLASSES[j.cls], j.order, j.sequence)):
+            if active >= SAVES:
+                break
+            if job.saving == "waiting":
+                job.saving = "active"
+                active += 1
+                self._log(job, "saving")
+                if job.notify:
+                    job.notify(self._message(job, "saving"))
+
     def finish(self, id, owner=None, outcome="finished"):
         with self.lock:
             job = self.jobs.get(id)
@@ -200,15 +224,17 @@ class Scheduler:
     def _message(self, job, type):
         return dict(type=type, id=job.id, path=job.path, reason=job.reason if type=="waiting" else "",
                     estimate=job.estimate, free=self.available, grade=self.grade_name,
-                    cls=job.cls)
+                    cls=job.cls, alone=job.alone, saving=job.saving)
 
     def _wait(self, job, reason):
         if reason != job.reason:
             job.reason = reason
+            self._log(job, "waiting")
             if job.notify:
                 job.notify(self._message(job, "waiting"))
 
     def _pump(self):
+        self._start_saves()
         running = [j for j in self.jobs.values() if j.granted is not None]
         room = self.ceiling-STARTING-self.caches-self.grade_bytes
         total_without_grade = None if self.total is None else max(0, self.total-self.grade_bytes)
@@ -219,7 +245,7 @@ class Scheduler:
             sum(j.estimate for j in running if j.id not in self.sampled_grants))
         now_waiting = False
         for job in sorted((j for j in self.jobs.values() if j.granted is None),
-                          key=lambda j: (CLASSES[j.cls], j.kind != "quick", j.order, j.sequence)):
+                          key=lambda j: (CLASSES[j.cls], not (j.kind == "quick" and j.cls == "now"), j.order, j.sequence)):
             normal = [j for j in running if not j.fast]
             used = sum(j.estimate for j in normal)
             reason = ""
@@ -265,9 +291,15 @@ class Scheduler:
                 job.alone = True
             else:
                 reason = "room"
+            unmeasured = sum(j.estimate for j in running if j.id not in self.sampled_grants)
+            measured_fits = self.total is None or self.total + unmeasured + job.estimate <= self.ceiling
+            if not reason and job.cls != "Grade" and not job.fast and not job.alone and not job.floor and not measured_fits:
+                reason = "measured memory"
             if not reason:
-                if job.development and any(j.kind == "quick" for j in running):
+                if job.development and any(j.kind == "quick" and j.cls == "now" for j in running):
                     reason = "quick previews first"
+                elif job.development and sum(bool(j.saving) for j in running) >= SAVES:
+                    reason = "saving places full"
                 elif job.development and sum(j.development for j in running) >= DEVELOPMENTS:
                     reason = "development places full"
                 elif job.development and any(j.development and CLASSES[j.cls] < CLASSES[job.cls] for j in running):
@@ -290,7 +322,9 @@ class Scheduler:
 
     def _log(self, job, event):
         log("library_grant_"+event, request=job.id, owner=job.owner, path=job.path,
-            priority_class=job.cls, estimate_bytes=job.estimate,
+            priority_class=job.cls, estimate_bytes=job.estimate, saving=job.saving,
+            alone=job.alone, floor=job.floor, measured_total_bytes=self.total,
+            unmeasured_grant_bytes=sum(j.estimate for j in self.jobs.values() if j.granted is not None and j.id not in self.sampled_grants),
             measured_peak_bytes=job.peak, peak_scope="whole-app-increment",
             wait_ms=round(((job.granted if job.granted is not None else self.clock())-job.asked)*1000),
             reason=job.size_reason or job.reason or None, waited_for=job.reason or None, over_estimate=job.peak is not None and job.peak > job.estimate)

@@ -1107,6 +1107,98 @@ trims and Chromium pressure relays at 3.469 / 3.420 GB, above the existing
 Invalid exploratory runs (overlapped apps and an accidental draw-lane change)
 were excluded; the draw queues are restored to one lane.
 
+### Phase 3a.2 as built and measured (October 31)
+
+The four findings were confirmed. Development places included disk saving;
+transient spill/packing held the shared picture lock; admission could ignore
+native whole-app growth; and offscreen quick previews received foreground
+precedence. The changes below preserve the approved estimates, shares, fast
+lane, floor, reserve and Grade messages.
+
+* GPU completion releases the preparation place after the exclusive lease ends.
+  The memory grant survives through saving. **Two saves at once** is provisional,
+  explicitly approved by Steve in this chat; a third waits, and new developments
+  stop entering while both saving places are occupied. This bounds retained
+  decoded results without hiding their memory.
+* Transient state is captured briefly under the picture lock; packing, spilling,
+  index/default-document work and memory reporting run outside it. Pending
+  ownership and packed bytes publish atomically. A blocked-spill concurrency
+  test proves unrelated open/store/default-document/memory calls finish while
+  the spill remains blocked. Delivered disposable bytes are dropped first.
+  Chromium's moderate relay now collects page garbage instead of requesting
+  a global native purge; critical pressure retains that purge. The level gate,
+  ten-second cooldown, cache halving and critical zeroing are unchanged.
+* Admission requires measured total + estimates for grants begun since that
+  census + the new estimate to fit. Grants already covered by the census are
+  not counted twice. Approved fast/floor/oversized-alone exceptions remain.
+  Scheduler samples refresh every half second; telemetry reads the last completed
+  census without waiting on another process walk. Logs identify measured-memory
+  waits, saving and alone/floor exceptions.
+* Only visible quick previews precede visible developments. Offscreen quick
+  previews retain their normal class. RGB direct scenes now compare the same
+  render identity, reuse already uploaded variants, and keep retained textures
+  in the existing sharp share; pixel payloads are saved once inside the grant.
+
+Two quiet cold Aceh repeats, isolated profiles, 2560×1440, all 48 photos finished:
+
+| Measure | aceh-3a2-6 | aceh-3a2-7 |
+| --- | --- | --- |
+| First / second screen from folder click | 29.442 / 56.064 s | 32.111 / 57.203 s |
+| Development maximum / time-weighted mean | 2 / 1.430 | 2 / 1.413 |
+| Saving maximum | 2 | 2 |
+| Independent whole-app peak | 3.598 GB | 3.712 GB |
+| Memory requests / timeouts / longest | 112 / 0 / 110.5 ms | 121 / 0 / 339.7 ms |
+| All-preview request latency p50 / p95 | 1.551 / 2.783 s | 1.507 / 2.410 s |
+| Visible previews, including partial cells | 30/30 by 5.008 s | 30/30 by 5.884 s |
+| Longest Library request spanning trim or starting within 1 s after | 0.822 s | 1.066 s |
+
+Each run had one real moderate trim. Run 7 also contains the final cached-only
+telemetry refinement. Source reports/logs/screens are in
+`codebase/output/cold-mixed/aceh-3a2-{6,7}/`. These results remove the long
+freeze and improve throughput, but **do not qualify** the 26.51 / 51.59 s screen
+limits, formal preview p95 <0.5 s, or strict <1 s trim-request limit in run 7.
+Protected projects were unchanged; no photo failures or duplicate asks occurred.
+
+Mixed phase0 stopped at **4.022 GB**, with ten of 27 finished thumbnails and no
+memory endpoint timeouts (226 requests). Five logged wait-reason transitions
+were measured-memory waits. AVIF was admitted at 2.271 GB measured + 1.603 GB
+estimate = 3.874 GB, which fits; the decoder subsequently charged 1.765 GB.
+The overrun was not an oversized-alone exception. The measured gate works,
+but approved estimates do not guarantee this route's peak. No estimate was
+raised to conceal it. Bounded large-picture routes remain unfinished.
+Per-file timings/statuses, including unfinished files at stop, are in
+`codebase/output/cold-mixed/phase0-3a2/per-file-results.csv`; no uncompleted file
+is relabelled as a decode failure.
+
+Grade retained 3.563 GB. The first ordinary photo took 1.978 s; pause was
+observed 1.573 s from folder opening (cell-visible interval unmeasured); folder
+click 23 ms; close including saved exposure 0.125 took 1.926 s and Library
+resumed 0.696 s later. The harness's older <1 s folder-to-pause assertion fails;
+its save/resume assertions pass. This run does not qualify whole-app memory.
+See `codebase/output/phase3a-grade/report.json`.
+
+Native memory: the detailed Chromium dump in
+`codebase/output/cold-mixed/aceh-3a2-4/memory-trace.json` identifies 1.099 GB of
+GPU transfer memory, with 0.810 GB mapped into the main page (mostly the same
+shared pages, **do not add them**), 94 MB of GPU shared images and 390 MB of
+browser blob storage. Page JS used 11.6 MB; backing storage was 211 MB.
+The previously unexplained Browser/GPU total is mainly native transfer/readback
+pools and browser upload blobs, rather than two hidden JavaScript scene caches.
+The sharp texture owner reports 445.747 MB, within its existing 512 MB share,
+and halves that on moderate pressure. No cache share or total is increased.
+Comparative runs implicate Chromium's global native purge in the long stalls;
+this is an inference from timing, not an OS-stack attribution.
+
+Validation: full Python 2,861 passed / 3 skipped / four known failures
+(preset header, RGB publication guard, frame-cache budget, Retouch capture-cache).
+Final focused memory/scheduler/grants/trim checks: 52 passed. Full Node: 690
+passed / three known failures (two scene version stubs, Single preview stub).
+One focused RAW GPU driver passed on DSC07060.ARW: 3.004 s app / 1.164 s GPU;
+SDR mean/p99.9 ΔE2000 0.0182/0.0590, HDR 0.0266/0.0769, within existing limits.
+No pixel math changed. Driver reuse of permanent copies and stop-time per-file
+reporting are separate from production behavior. Steve should try the two
+screens, mixed folder and Grade coexistence before further speed tuning.
+
 ### 7.7 Phase 3b whiteboard (October 31)
 
 Steve authorised 3a.1 followed immediately by 3b during this run, without
@@ -1221,7 +1313,7 @@ records its numbers in the [performance table](../performance-table.md).
 | 0. Measure — **done October 30** | Log real RAM and GPU peaks per file type and job type on disposable copies (20241117 RAWs, Aceh JPEGs, one of each supported type, a large TIFF). Try reduced decoding for 640. No behaviour change. | — | Per-type budget table (6.11) written for Steve to approve. |
 | 1. File gate — **built October 30, awaiting Steve's try** | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
 | 2. Stop the feedback loop — **built October 30, awaiting Steve's try** (7.5) | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
-| 3. One scheduler, RAM — **October 31 run exception: Steve authorised 3a.1 → 3b without intervening acceptance.** — **3a scheduler/channel connected October 31; speed qualification open (7.6). 3b partial resilience/scheduling built, large-picture and disk-cache work unfinished (7.7)** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
+| 3. One scheduler, RAM — **October 31 run exception: Steve authorised 3a.1 → 3b without intervening acceptance.** — **3a.2 corrections built October 31; speed/mixed-memory qualification open (7.6). 3b partial resilience/scheduling built, large-picture and disk-cache work unfinished (7.7)** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
 | 4. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
 | 5. Grid makes 640 only | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
 | 6. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. Edge case M25. | Leftover complexity. | Fast checks pass; less code than before. |
@@ -1264,7 +1356,7 @@ Already decided (October 30): be restrictive about files; the grid makes
 thumbnails only; edited photos keep their edit in the grid; an unedited RAW
 gets its larger picture only in Single.
 
-Still to decide:
+Decisions waiting for Steve:
 
 1. ~~Approve this design direction (option C) and the phase order.~~
    Approved by Steve, October 30.
@@ -1347,6 +1439,17 @@ Decided October 30:
     has measured peaks. A lower rate would allow more overlap but could exceed
     the ceiling if full-size intermediates remain. Current code uses the approved
     rates, including the oversized line scan's conservative estimate.
+
+14. **Permanent saving limit — awaiting Steve.** Two simultaneous saves is the
+    explicitly approved provisional setting used above. Keeping two bounds
+    decoded results waiting for disk; a higher count might improve throughput
+    on fast storage but retains more memory and can pile up results.
+15. **Visible quick-preview measure — awaiting Steve, after decision 14.**
+    Proposed additional measure: all initially visible cells, including partial
+    rows, show their quick preview within 5.884 s of folder click (30/30 in the
+    slower repeat). This reflects what appears on screen but can hide individual
+    queue delays. The existing request-to-screen p95 <0.5 s target remains in
+    force until Steve decides; it is not met.
 
 ## 11. Code map (for whoever builds it)
 

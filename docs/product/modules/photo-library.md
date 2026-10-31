@@ -4,6 +4,23 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 31 phase 3a.2: saving, trim and measured-admission corrections
+
+GPU completion releases a development place while its memory grant remains
+through bounded saving (two at once, provisionally approved by Steve). Visible
+quick previews precede developments; offscreen previews keep normal priority.
+Picture packing/spilling no longer holds the shared picture lock, and moderate
+Chromium cleanup collects page garbage. Direct RGB scenes reuse their saved
+payload and report retained textures in the existing sharp share.
+
+Two cold Aceh repeats finished all 48 photos: 29.442/56.064 s and
+32.111/57.203 s for the two screens, peaks 3.598/3.712 GB, zero memory-request
+timeouts. Speed targets remain unmet; trim-adjacent longest requests were
+0.822/1.066 s. Measured-memory admission is connected, but mixed phase0 stopped
+at 4.022 GB during AVIF: bounded routes and mixed-memory qualification remain
+open. Grade save/resume passed; its pause timing is unqualified. Design 7.6
+and the performance table record causes, tests, evidence and pending decisions.
+
 ## October 31 phase 3b: resilience improvements; large-picture and cache work unfinished
 
 Header checks refuse unresolved JPEG XL and X-Trans RAF before pixel decoding.

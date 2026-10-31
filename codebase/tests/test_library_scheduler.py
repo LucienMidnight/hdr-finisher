@@ -263,3 +263,76 @@ def test_visibility_publishes_class_even_when_wait_reason_does_not_change():
     assert messages[-1]['type'] == 'waiting' and messages[-1]['cls'] == 'eventually'
     s.set_visible('window', True)
     assert messages[-1]['cls'] == 'now' and waiting.granted is None
+
+
+def test_measured_total_and_new_estimate_must_fit():
+    s = fresh(2_700_000_000)
+    s.update(total=2_720_000_000, available=60*GB, ram=68*GB)
+    large = ask(s, "avif", 1_602_741_504)
+    assert large.granted is None and large.reason == "measured memory"
+    s.update(total=2_000_000_000, available=60*GB, ram=68*GB)
+    assert large.granted is not None
+
+
+def test_new_grants_charge_sample_once_until_measured():
+    s = fresh(2_700_000_000)
+    s.update(total=2_500_000_000, available=60*GB, ram=68*GB)
+    first = ask(s, "first", GB)
+    second = ask(s, "second", GB)
+    assert first.granted is not None and second.granted is None
+    s.update(total=2_000_000_000, sampled_grants={first.id}, available=60*GB, ram=68*GB)
+    assert second.granted is not None
+
+
+def test_grant_during_sample_is_still_charged():
+    s = fresh(2_700_000_000)
+    s.update(total=2_500_000_000, available=60*GB, ram=68*GB)
+    first = ask(s, "first", GB)
+    s.update(total=2_500_000_000, sampled_grants=set(), available=60*GB, ram=68*GB)
+    second = ask(s, "second", GB)
+    assert first.granted is not None and second.granted is None
+
+
+def test_prefetch_quick_does_not_delay_visible_development():
+    s = fresh(20*GB)
+    prefetch = ask(s, "prefetch", kind="quick", cls="soon")
+    assert prefetch.granted is not None
+    assert ask(s, "visible").granted is not None
+
+
+def test_gpu_end_frees_place_but_keeps_memory_until_save_finishes():
+    s = fresh(20*GB)
+    first, second, next_job = [ask(s, name) for name in ["first", "second", "next"]]
+    assert next_job.granted is None
+    s.gpu_done(first.id, first.owner)
+    assert first.id in s.jobs and first.granted is not None
+    assert first.saving == "active" and not first.development
+    assert next_job.granted is not None
+    assert sum(j.development for j in s.jobs.values()) == 2
+    s.finish(first.id, first.owner)
+    assert first.id not in s.jobs
+
+
+def test_saving_bounded_and_pipeline_backpressures_new_developments():
+    s = fresh(20*GB)
+    a, b, c, d, e = [ask(s, name) for name in "abcde"]
+    s.gpu_done(a.id, a.owner)
+    assert c.granted is not None
+    s.gpu_done(b.id, b.owner)
+    assert d.granted is None
+    s.gpu_done(c.id, c.owner)
+    assert c.saving == "waiting"
+    assert sum(j.saving == "active" for j in s.jobs.values()) == 2
+    s.finish(a.id)
+    assert c.saving == "active" and d.granted is None
+    s.finish(b.id)
+    assert d.granted is not None and e.granted is not None
+
+
+def test_saving_memory_estimate_still_prevents_new_admission():
+    s = fresh(GB)
+    a, b = ask(s, "a", GB), ask(s, "b", GB)
+    s.gpu_done(a.id, a.owner)
+    assert b.granted is None
+    s.finish(a.id)
+    assert b.granted is not None

@@ -13,12 +13,12 @@
         lastMessage=Date.now();const value=JSON.parse(event.data);
         if(value.type==="grade"){grade=value;for(const job of jobs.values())job.status.grade=value.name;}
         const j=jobs.get(value.id);
-        if(j){j.status=value;if(value.type==="waiting")j.granted=false;if(value.type==="granted"&&!j.granted){j.granted=true;j.started=true;j.resolve(j);}}
+        if(j){if(value.type==="saving"){j.saveResolve?.();return;}j.status=value;if(value.type==="waiting")j.granted=false;if(value.type==="granted"&&!j.granted){j.granted=true;j.started=true;j.resolve(j);}}
         changed();
       };
       current.onclose=()=>{
         if(channel!==current)return;channel=null;clearInterval(heartbeat);
-        for(const j of [...jobs.values()])if(j.started){jobs.delete(j.id);j.detach();j.connection.abort();}
+        for(const j of [...jobs.values()])if(j.started){jobs.delete(j.id);j.saveReject?.(cancelled());j.detach();j.connection.abort();}
         changed();if(!closed)reconnect=timer(()=>{reconnect=null;connect();},500);
       };
       current.onerror=()=>current.close();
@@ -35,7 +35,7 @@
     }
     function finish(j,outcome="finished"){
       if(!jobs.delete(j.id))return;
-      j.detach();send({type:outcome==="cancelled"?"cancel":"finish",id:j.id,outcome});changed();
+      j.saveReject?.(cancelled());j.detach();send({type:outcome==="cancelled"?"cancel":"finish",id:j.id,outcome});changed();
     }
     async function run(path,kind,signal,task,priority=10,initial=null){
       let grant=initial;
@@ -56,7 +56,7 @@
       }
     }
     function snapshot(){return {grade,jobs:[...jobs.values()].map(j=>({...j.status,path:j.path,state:j.granted?"running":"waiting",stage:j.granted?"Developing photo":waitingText(j.status)}))};}
-    return {acquire,finish,run,snapshot,visibility(value){visible=!!value;send({type:"visibility",visible});},viewport(paths){screenOrder=new Map(paths.map((p,i)=>[p,i]));for(const j of jobs.values())send({type:"priority",id:j.id,priority:j.priority,order:screenOrder.get(j.path)});},release(id){const job=jobs.get(id);if(job)finish(job);},wait(id,signal){return new Promise((resolve,reject)=>{const stop=()=>{signal?.removeEventListener("abort",stop);reject(cancelled());};signal?.addEventListener("abort",stop,{once:true});if(signal?.aborted)stop();});},promote(path,priority){for(const j of jobs.values())if(j.path===path&&j.priority!==priority){j.priority=priority;send({type:"priority",id:j.id,priority});}},close(){closed=true;clearTimeout(reconnect);clearInterval(heartbeat);for(const j of [...jobs.values()]){finish(j,"cancelled");j.connection.abort();j.reject(cancelled());}channel?.close();}};
+    return {acquire,finish,run,snapshot,gpuDone(id){const j=jobs.get(id);if(!j)return Promise.reject(cancelled());return new Promise((resolve,reject)=>{j.saveResolve=resolve;j.saveReject=reject;send({type:"gpu-done",id});});},visibility(value){visible=!!value;send({type:"visibility",visible});},viewport(paths){screenOrder=new Map(paths.map((p,i)=>[p,i]));for(const j of jobs.values())send({type:"priority",id:j.id,priority:j.priority,order:screenOrder.get(j.path)});},release(id){const job=jobs.get(id);if(job)finish(job);},wait(id,signal){return new Promise((resolve,reject)=>{const stop=()=>{signal?.removeEventListener("abort",stop);reject(cancelled());};signal?.addEventListener("abort",stop,{once:true});if(signal?.aborted)stop();});},promote(path,priority){for(const j of jobs.values())if(j.path===path&&j.priority!==priority){j.priority=priority;send({type:"priority",id:j.id,priority});}},close(){closed=true;clearTimeout(reconnect);clearInterval(heartbeat);for(const j of [...jobs.values()]){finish(j,"cancelled");j.connection.abort();j.reject(cancelled());}channel?.close();}};
   }
   function waitingText(value){
     if(value.reason==="paused for Grade")return "memory in use by the photo open in Grade";
@@ -67,10 +67,10 @@
   if(typeof module!=="undefined")module.exports=api;
   else {
     root.HDRLibraryGrants=create({url:location.origin.replace(/^http/,"ws")+"/api/library/grants",changed:()=>root.dispatchEvent(new Event("library-work-changed"))});
-    root.HDRLibraryGrants.preview=(body,signal,headers={})=>root.HDRLibraryGrants.run(body.path,"quick",signal,async(grant,shared)=>{
+    root.HDRLibraryGrants.preview=(body,signal,headers={},priority=10)=>root.HDRLibraryGrants.run(body.path,"quick",signal,async(grant,shared)=>{
       const response=await fetch("/api/library/preview",{method:"POST",priority:"high",signal:shared,headers:{"Content-Type":"application/json",...headers},body:JSON.stringify({...body,grant})});
       return new Response(response.status===204?null:await response.arrayBuffer(),{status:response.status,headers:response.headers});
-    });
+    },priority);
     let nativeVisible=true;
     const visibility=()=>root.HDRLibraryGrants.visibility(nativeVisible&&root.document.visibilityState!=="hidden");
     const desktop=root.hdrFinisherDesktop||root.parent?.hdrFinisherDesktop;

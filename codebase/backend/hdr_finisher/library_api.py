@@ -581,10 +581,8 @@ def create_library_router(worker, browser, store=None):
                         raise ValueError("Source settings changed before saving preview data.")
                 for scene in result.pop("_pending_scenes", []):
                     default = scene.pop("_default_document", None)
-                    with live.cache.transient_lock:
-                        if scene.get("_transient"):
-                            live.cache.pending_stores[scene["key"]] = (path, scene["edge"], source_quality, default, validate_cpu_store)
-                        live.cache.accept_transient(scene)
+                    pending = (path, scene["edge"], source_quality, default, validate_cpu_store) if scene.get("_transient") else None
+                    live.cache.accept_transient(scene, pending)
                 live.cache.accept_transient(result)
                 return await run_in_threadpool(live.describe, command.path, result)
         finally:
@@ -691,10 +689,11 @@ def create_library_router(worker, browser, store=None):
                 accept_ms=(describe_at-developed_at)*1000,
                 describe_ms=(time.perf_counter()-describe_at)*1000,
                 describe_only=bool(header.get("describe_only")))
-            if header.get("describe_only"):
+            if header.get("rgb") and header["edge"] != 100000:
                 from .models import GeometryAdjustments, AdjustmentState
                 from .projects import validate_saved
                 adjustments = validate_saved(AdjustmentState, described["adjustments"])
+                described["render_identity"] = picture_key(path, 0, header["source_quality"]) + ":" + sha256(json.dumps(document or {}, sort_keys=True).encode()).hexdigest()
                 described["direct_supported"] = (adjustments.shared.geometry == GeometryAdjustments()
                     and not described["locals"]
                     and not any(v.get("enabled") for v in described["denoise"].values() if isinstance(v, dict)))
@@ -752,7 +751,7 @@ def create_library_router(worker, browser, store=None):
     @router.get("/memory")
     async def memory_snapshot():
         from .app_memory import snapshot
-        return await asyncio.get_running_loop().run_in_executor(_memory_sampler, snapshot)
+        return await asyncio.get_running_loop().run_in_executor(_memory_sampler, lambda: snapshot(cached_only=True))
 
     @router.post('/memory-report')
     def memory_report(report: dict):
@@ -762,7 +761,7 @@ def create_library_router(worker, browser, store=None):
         for share in ('thumbnails','sharp'):
             app_memory.report('renderer-'+share,share,report.get(share,0))
             accepted[share]=report.get(share,0)<=app_memory.limit(share)
-        value=app_memory.snapshot()
+        value=app_memory.snapshot(cached_only=True)
         return dict(value,accepted=accepted)
 
     reclaim_task = None

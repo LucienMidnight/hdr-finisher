@@ -50,7 +50,7 @@ def test_measurement_failure_logs_once_and_keeps_estimate_admission(monkeypatch)
     monkeypatch.setattr(library_grants,"scheduler",scheduler)
     events=[]
     monkeypatch.setattr(library_grants,"log",lambda event,**fields:events.append((event,fields)))
-    def unavailable():raise OSError("measurement unavailable")
+    def unavailable(**kwargs):raise OSError("measurement unavailable")
     monkeypatch.setattr(library_grants.app_memory,"snapshot",unavailable)
     monkeypatch.setattr(library_grants.app_memory,"cache_snapshot",lambda:{})
     monkeypatch.setattr(library_grants,"detect_memory_resources",lambda:SimpleNamespace(available_ram_bytes=20_000_000_000,total_ram_bytes=32_000_000_000))

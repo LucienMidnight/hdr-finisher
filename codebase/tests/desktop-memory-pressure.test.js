@@ -24,8 +24,8 @@ for(const attached of [false,true])test(`native pressure preserves an existing d
     detach:()=>{connected=false;calls.push('detach');},sendCommand:async(command,value)=>calls.push([command,value])};
   await notifyChromiumPressure({debugger:debuggerTransport},'moderate');
   assert.equal(connected,attached);
-  assert.deepEqual(calls,attached ? [['Memory.simulatePressureNotification',{level:'moderate'}]] :
-    ['attach',['Memory.simulatePressureNotification',{level:'moderate'}],'detach']);
+  assert.deepEqual(calls,attached ? [['HeapProfiler.collectGarbage',undefined]] :
+    ['attach',['HeapProfiler.collectGarbage',undefined],'detach']);
 });
 test('failed native notification releases its own debugger',async()=>{
  let connected=false;
@@ -33,4 +33,12 @@ test('failed native notification releases its own debugger',async()=>{
    sendCommand:async()=>{throw Error('unavailable');}};
  await assert.rejects(notifyChromiumPressure({debugger:transport},'critical'),/unavailable/);
  assert.equal(connected,false);
+});
+
+
+test('critical pressure still purges native allocations',async()=>{
+ const calls=[];
+ const transport={isAttached:()=>true,sendCommand:async(...args)=>calls.push(args)};
+ await notifyChromiumPressure({debugger:transport},'critical');
+ assert.deepEqual(calls,[['Memory.simulatePressureNotification',{level:'critical'}]]);
 });

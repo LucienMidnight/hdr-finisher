@@ -32,6 +32,33 @@ The RAW sensor read needs about 5.5 bytes per pixel. GPU memory runs about
 proposed per-type estimates are Steve's decision; no size or share has
 changed.
 
+### October 31: phase 3a.2 measured admission and native ownership
+
+Admission now also requires measured whole-app bytes plus estimates for grants
+not covered by that census plus the incoming estimate to fit the ceiling.
+Covered grants are not counted twice. Approved floor, fast-lane, physical-reserve
+and oversized-alone rules remain unchanged. Saving retains its memory grant
+after releasing a development place; two saves at once is Steve's provisional
+approval, with the permanent limit awaiting his decision.
+
+Fresh scheduler censuses run every half second. Memory endpoints return a
+completed census while another walk is busy. Transient spill/packing/index work
+runs outside the shared picture lock. Moderate Chromium cleanup collects page
+garbage; critical cleanup still requests native pressure. Thresholds, cooldown,
+halving and critical zeroing are unchanged.
+
+A Chromium detailed dump identifies 1.099 GB of native GPU transfer memory,
+0.810 GB mapped into the main page (shared overlap, not additive), 94 MB GPU
+shared images and 390 MB browser upload blobs. Page JS used 11.6 MB. These are
+engine-owned native allocations counted in the measured total, not a new cache
+share. Retained direct textures report 445.747 MB under the existing sharp
+512 MB share and halve on moderate trim. No approved rate/share/ceiling changed.
+
+Cold Aceh peaks were 3.598/3.712 GB with no memory-request timeouts. Mixed phase0
+stopped at 4.022 GB after an AVIF decoder exceeded its admitted estimate; this
+remains unqualified. See design 7.6 for census coverage tests, native dump and
+per-file evidence; bounded routes in 7.7 remain unfinished.
+
 ### October 31: phase 3b partial scheduling
 
 Startup upkeep uses the existing 64 MB minimum estimate as eventually work,
@@ -60,7 +87,7 @@ use it. A source-preparation request reuses its window grant.
 
 Room is ceiling minus the approved 1.3 GB starting footprint, cache bytes
 capped at their shares, and Grade's unique retained source allocations.
-Measured whole-app memory minus that Grade source is a safety backstop;
+As superseded by phase 3a.2 above, measured whole-app memory is also an admission gate;
 operating-system pressure still counts everything. Existing phase 2 trim
 cooldown and all approved budgets/shares are unchanged. Waiting is not a
 failure or a pressure event. The Close photo in Grade action requires edits

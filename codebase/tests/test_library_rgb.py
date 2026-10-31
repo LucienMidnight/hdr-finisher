@@ -545,6 +545,9 @@ def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, 
         assert accepted.status_code == 200
         assert accepted.json()["key"] == described["key"]
         assert accepted.json()["adjustments"] == described["adjustments"]
+        assert accepted.json()["direct_supported"]
+        plan = client.post("/api/library/live-plan", json={"path":str(photo),"edge":640}).json()
+        assert accepted.json()["render_identity"] == plan["render_identity"]
         assert client.post("/api/library/live-store/"+described["key"]).status_code == 200
         assert list(profile.rglob("*.npz"))
         old = client.post("/api/library/live-plan",json={"path":str(photo),"edge":640}).json()
