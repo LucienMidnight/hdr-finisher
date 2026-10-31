@@ -1625,7 +1625,7 @@ visual review of differences (same perceptual limits used in phase 3c).
 Sparse obvious hardware corruption is identified separately, as Steve requested.
 Focused validation: completed capture, five 2560 views, no page errors.
 
-Implementation: requested-edge-only GPU development/preflight and CPU fallback;
+Implementation: requested-edge-only GPU development and CPU fallback;
 source flights keyed by source identity AND edge. Grid/filmstrip and grid idle
 warming make only 640. Single/fullscreen/Compare request 2560 now; only next
 and previous neighbours develop as soon (50), with viewport-owned cancellation.
@@ -1640,7 +1640,12 @@ read-ahead JS checks, and 37 grant/scene checks after tier-aware promotion.
 The focused live Python run had 71 passes and the known unrelated scene-version
 stub failure (`library-rgb-v3` versus current `library-rgb-reduced-v4`); left alone.
 The live-grid driver now checks 640-only, M20 and soon-neighbour demand; final
-release-runner acceptance and measurements pending.
+release-runner acceptance and measurements pending. The first mixed run exposed
+a reservation regression (IMG_1150.tiff refused; 9/27 finished). Restore the
+approved both-tier reservation even when only one product is developed; do not
+change the formula or any approved rate. Focused GPU/scene checks: 37 passed.
+Initial Single check: 1830 ms; prepared neighbour step: 13 ms. Initial Aceh
+screens: 13.124/20.539 and 14.322/21.417 s; repeat after reservation restoration.
 
 ## 8. Phases
 

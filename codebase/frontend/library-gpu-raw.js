@@ -761,7 +761,9 @@
   }
   async function scheduledDevelopment({mosaic, meta, lensData, edges, background = false, syncStages = false, importance = () => 30, grant = null}, signal) {
     const context = await gpu();
-    const id = crypto.randomUUID(), bytes = rawBudget(meta, edges);
+    // Keep the approved reservation; requesting fewer products must not remove
+    // headroom used by full-source RGB preparation. Only development is tiered.
+    const id = crypto.randomUUID(), bytes = rawBudget(meta, edges.includes(100000) ? [100000] : [640,2560,...edges]);
     const key=meta.path+'|'+edges.join(',');
     if((gpuFailures.get(key)||0)>=2)throw Object.assign(Error('GPU failed twice; using visible CPU fallback.'),{gpuUnavailable:true});
     const allocations=allocationScope(context);
@@ -978,7 +980,7 @@
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
       memory_peak_bytes: developed.memory_peak_bytes,
       edge_diagnostics: developed.edge_diagnostics,
-      dng_diagnostics: developed.dng_tiles ? {tiles:developed.dng_tiles,max_source_bytes:developed.dng_max_source_bytes,reserved_bytes:rawBudget(meta,[edge])} : undefined,
+      dng_diagnostics: developed.dng_tiles ? {tiles:developed.dng_tiles,max_source_bytes:developed.dng_max_source_bytes,reserved_bytes:rawBudget(meta,nativeMode?[100000]:[640,2560,edge])} : undefined,
       timing_ms: { ...meta.source_timings_ms, ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:developed.timings.gain_map ?? meta.gain_map_ms, highlight_support:meta.highlight_support_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
       entries.push({header,picture});
     }
@@ -1167,7 +1169,7 @@
     }
     const info=await adapterMemory;
     const unified=!(Number(info?.bytes)>=4*1024**3);
-    if(meta)return {bytes:rawBudget(meta,[edge]),unified};
+    if(meta)return {bytes:rawBudget(meta,edge===100000?[100000]:[640,2560,edge]),unified};
     const response=await fetch('/api/delivery/gpu/permit',{signal});
     if(!response.ok)throw Error('GPU scheduling unavailable.');
     return {bytes:Math.max(0,(await response.json()).budget-(640*640*64+64*1024**2)),unified};
