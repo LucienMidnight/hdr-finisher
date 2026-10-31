@@ -642,7 +642,8 @@ where they differ.
     cache shares, admission, and the picture size check below.
   * Today the ceiling never goes above 4 GB, even on a 128 GB machine. The
     setting is how a user with plenty of RAM gives the app more.
-* **100 MP photos work smoothly at the default limit.** At the approved
+* **100 MP beside other work: measured; proposed rates awaiting Steve.**
++  Steve corrected the phase 3c acceptance item. At the approved
   estimates, a 100 MP RAW needs about 0.7 GB and fits beside other work. A
   100 MP JPEG (about 2.3 GB) or TIFF, PNG or linear DNG (about 2.8 GB) does
   not, so today each would run alone, one at a time.
@@ -1302,6 +1303,156 @@ CaptureCache fixture. No new failures; logs are
 Temporary profiles and test scratch are removed; real photos are reused only
 from the permanent test-photo copies.
 
+### 7.8 Phase 3c: live memory setting and reduced Library sources (October 31)
+
+Built on `library-big-folder` after `2b37557`. Acceptance is **partial**. Steve
+corrected the brief: **100 MP beside other work: measured; proposed rates
+awaiting Steve**. The shipped estimates, default ceiling rule, fixed shares,
+floor, fast lane, two developments and two saves remain approved values.
+
+**Built.** Settings > Performance has a persistent, live "Memory the app may
+use" control, from 2.5 GB to RAM minus max(2 GB, 10% RAM), with Use default.
+The default remains max(2.5 GB, min(4 GB, RAM/4)). Ceiling, target (minus
+600 MB), scaled shares, scheduler and helper follow it immediately; lowering
+uses the existing trim path. Oversized cells keep available previews and show
+their requirement with a link to this setting. Waiting is not a broken-photo
+receipt. Raising the value resumes jobs without reopening the folder.
+
+JPEG uses DCT reduction; PNG and TIFF use sequential decoding and reduction
+before the normal Library pipeline. Ordinary sources retain up to a 5120
+edge; the qualified root-page linear DNG route retains 10240. A 5120 line-scan
+comparison exceeded the high-percentile tolerance, so it is not used. Single
+100%, Grade, Proof and export keep full resolution. Original dimensions remain
+in source descriptors. Repair jobs, DNG SubIFDs, opcode routes and DNGs with a
+full-size embedded SDR reference retain their existing full-source route.
+Uncompressed contiguous TIFF/DNG uses bounded overlapping row reads even for
+a single enormous strip; mapping that strip kept the whole original resident.
+Compressed TIFF/PNG use libvips sequential reduction. No retained cache was
+added. Pillow's global guard is unchanged: giant JPEG permission is local to
+one decode and checks the app estimate and physical reserve first.
+
+**Other formats.** No reduced route was built for HEIC/HEIF, AVIF, JPEG XL,
+EXR, PFM or Radiance HDR. Existing HEIF auxiliary/gain-map and ICC handling,
+AVIF gain reconstruction and JPEG XL colour/auxiliary handling need their
+format-specific paths. Resizing their returned full raster would not bound
+decode memory. EXR/PFM/HDR also retain full decode; adding a correct scanline
+reader is separate work. The new generic reader is deliberately not selected
+for these formats. This is an assessment of the current adapters, not a claim
+that their codec libraries cannot support future reduced decoding.
+
+**Source-boundary peaks and decision 13.** Fresh Python processes, 25 ms
+independent proportional-resident process-tree sampling, including external
+children; peak minus the pre-job baseline. Decimal MB/GB. These are source
+peaks, not promises about whole-app memory. A separate 1 ms private/working-set
+probe is retained in the same JSON. Estimates in production are unchanged.
+
+| Reduced route | Measured incremental peak | Source time | Proposed rate, awaiting Steve |
+|---|---:|---:|---|
+| 100 MP JPEG / 192 MP JPEG | 322.154 / 791.076 MB | 0.137 / 0.261 s | 6 MB/MP |
+| 100 MP PNG / 192 MP PNG | 568.809 / 1101.330 MB | 0.792 / 2.369 s | 8 MB/MP |
+| 100 MP TIFF / 192 MP TIFF | 400.610 / 258.233 MB | 0.562 / 0.458 s | 6 MB/MP |
+| 297 MP eligible linear DNG | 389.565 MB | 10.834 s | 2 MB/MP |
+
+Proposed lower rates apply only to the qualified reduced route at 100 MP or
+larger; ordinary, native and fallback routes retain approved rates. The 64 MB
+minimum remains. MB/MP equals bytes per source pixel. The proposed rates cover
+the measured source peaks plus at least 25%, rounded upward. They still need
+whole-app qualification across less compressible and differently shaped files.
+The 192 MP PNG peak shows that sequential input is not constant-memory decoding.
+Evidence: `codebase/output/phase3c/route-peaks.jsonl` (192 MP files were later
+flattened from `phase0/synthetic` into `phase0` for the nonrecursive Library).
+
+One authorised test-only comparison applied 6/8/6 to the three 100 MP sources
+at the default 4 GB. All three finished in 7.886 / 7.953 / 7.983 s from folder
+open (JPEG / PNG / TIFF); whole-app peak **2.478308200 GB**. Source grants
+overlapped and each had `alone=false`: JPEG 1793444581807-1793444583855 ms,
+PNG 1793444581808-1793444584701, TIFF 1793444582943-1793444585573. Thus each
+ran beside other 100 MP work. Twelve generated 111-byte background PNGs were
+filtered by the existing 1 KB photo gate, so this was three actual photos,
+not a 15-photo ordinary mixed-work qualification. The temporary estimate
+override was removed before committing. Production uses only approved rates.
+Evidence: `codebase/output/cold-mixed/phase3c-proposed-comparison/`.
+
+**AVIF overrun remains open.** The external gain-map decoder reconstructs
+full-size output while retaining decoded image/gain-map/RGB buffers. It has
+no selected reduced-output path. A fresh 42.177 MP LR-classic source measured
+**1.883587143 GB** above baseline (44.7 bytes/pixel), including an external
+decoder peak of 1.881 GB, against the approved 38 bytes/pixel / 1.603 GB.
+This explains the underestimate; reducing only after reconstruction cannot
+fix it. Propose **56 MB/MP**, awaiting Steve (measured +25%, rounded up).
+That is 2.362 GB for this source and reduces overlap. It requires a new
+whole-app check if approved, especially with the oversized-alone exception.
+No AVIF rate or implementation was silently changed.
+
+**Actual-app evidence** (disposable profiles/copies, 2560x1440, one run each;
+process-tree census, zero memory-observer timeouts):
+
+| Run | Result | Whole-app peak |
+|---|---|---:|
+| 27-file phase0, approved rates, default 4 GB | Strict stop during LR-classic AVIF; acceptance failed | 4.002060571 GB |
+| Same 27 files, approved rates, 16 GB | 22 finished, 5 refusals; line scan and all 192 MP synthetics finished | 5.402632183 GB |
+| Focused 192 MP JPEG/PNG/TIFF, 4 -> 16 GB | Three needs-memory cells resumed in the same folder; 8.200 / 9.767 / 10.508 s from open; notices cleared | 3.057958322 GB |
+| Line scan alone, 16 GB, cold app | Active development 12.4656 s; source 10.7978 s | 2.209855773 GB |
+| Ordinary Aceh 48, default 4 GB | All finished, first/second viewport 24.910 / 41.252 s | 3.618042437 GB |
+
+The line-alone pre-grant baseline was 0.984061070 GB, so whole-app incremental
+peak was **1.225794703 GB**. It meets the <=27 s time aim but misses <=1 GB
+incremental memory. The isolated 390 MB source figure does not replace this
+whole-app result. In the raised mixed run the line took 12.667 s active,
+47.161 s from open including queueing; concurrent work makes that interval
+unsuitable for isolating the line's peak. Total raised mixed finish was 57.3 s.
+All 27 per-file statuses/times are in each run's `per-file-results.csv` and `report.json`.
+The five raised-run refusals are unresolved colour for two JXLs and the EXR,
+unsupported X-Trans Library development for RAF, and an **unclassified**
+request error for `DSC01244_DxO-optical-corr-only.dng`. The latter is not
+claimed pre-existing. None is a needs-memory success; mixed acceptance remains
+open. The stopped default run does not establish all-visible-preview time.
+
+Ordinary quick-preview request p50/p95/max was 1.4751 / 2.2861 / 2.3655 s:
+the <0.5 s p95 target remains unmet. All initially visible cells, partial rows
+included, were quick-drawn by **2.9996 s**, 30/30; slowest `IMG_3212.JPG`,
+2.9996 s from folder click / 2.3655 s from request. Setting 8 GB then 4 GB
+took 62 / 22 ms; maximum frame gap across those setting changes was 89.7 ms,
+with no failures. The complete browsing trace had an earlier 2.7925 s gap,
+so this is not a claim that all browsing stalls are fixed. One cold run is
+directionally faster than 3a.2, not a repeat-pair regression qualification.
+
+**Scroll-back investigation.** At 43.386 s, all 48 previously shown Aceh cells
+remained presented. Returning generated no `picture_navigation_to_present`,
+`picture_cache_check`, source or development event and no pixel/source request;
+only status polling and later idle live-plan calls. This case did not reproduce
+Steve's thumbnail wait. No cache share was increased and no speculative cache
+fix was made. Larger-folder reproduction remains open. Evidence for these
+checks: `codebase/output/cold-mixed/phase3c-ordinary/report.json` and
+`memory.jsonl`; other runs use the corresponding `phase3c-*` directory.
+
+**Picture review.** Six before/after 2560 pairs are in
+`D:\AI\AI Projects\HDR Finisher Tool\ai\codebase\output\phase3c\picture-review`.
+Open `index.html` for pairs and full-size links. Finished SDR mean/p99.9
+Delta E 2000: JPEG 0/0, PNG 0.269/1.832, TIFF 0.048/0.779, second PNG 0/0,
+edited JPEG (+0.7 EV) 0/0, linear DNG 0.118/1.698. All satisfy mean <1 and
+p99.9 <=3. The line pair uses the same +0.25 EV starting adjustment on both
+routes, as labelled on the review page. Ordinary JPEG retains sufficient DCT
+samples to keep the edited comparison inside tolerance. Steve's visual review
+is still required; passing numerical agreement is not his approval by eye.
+
+**Deadline proposal (decision 12).** The helper now scales the already-proposed
+per-type baseline by `max(1, source MP/24)`. Queued time/Grade pauses do not
+count. Examples: 192 MP JPEG 40 s; 297 MP DNG about 1670 s. This avoids
+killing valid giants but lets a stuck giant hold a lane much longer. The
+scaling and baseline remain proposed, awaiting Steve.
+
+Focused checks only, as instructed for this round. Settings/scheduler/grants,
+reduced PNG/TIFF, original geometry and DNG reference handling were exercised;
+153 final focused Python checks passed (3 unrelated parameter cases deselected);
+52 focused JavaScript checks passed. Follow-up checks after the final geometry,
+PNG orientation and deadline tests: 36 reduced/DNG and 25 reduced/worker passed
+(overlapping selections, not additional unique-test counts). A pre-existing RGB publication test creates
+a source reference without required luminance and remains unrelated. An
+embedded-DNG reference regression found during this work was fixed by retaining
+its original route. No full suites, repeat pairs, push, merge or installer.
+Protected project hashes were verified by each actual-app harness run.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
@@ -1433,13 +1584,16 @@ Decided October 30:
     135 s. These proposed limits are used in the helper meantime, as authorised
     by this brief. Tradeoff: a bad decoder cannot occupy a lane forever, but a
     slower machine or an unusually large valid file can exceed these sample-based
-    limits. They need scaling/qualification for bounded very-large jobs; those
-    routes are not built. Queued work and Grade pauses do not consume the limit.
-13. **Bounded-route estimates — awaiting measurements.** No new rate is applied
-    or invented. Keep the approved per-type rates until a bounded implementation
-    has measured peaks. A lower rate would allow more overlap but could exceed
-    the ceiling if full-size intermediates remain. Current code uses the approved
-    rates, including the oversized line scan's conservative estimate.
+    limits. Phase 3c scales them by max(1, source MP/24), still proposed,
+    awaiting Steve; giant examples and tradeoffs are in 7.8. Queued work and
+    Grade pauses do not consume the limit.
+13. **Bounded-route estimates — measured; proposed, awaiting Steve.** Section
+    7.8 records source peaks and the single authorised comparison. Propose
+    6/8/6/2 MB per source MP for qualified reduced JPEG/PNG/TIFF/linear-DNG
+    routes at >=100 MP; propose 56 MB/MP for AVIF. Lower reduced-route rates
+    improve overlap but may underestimate other files; the higher AVIF rate
+    reduces overlap but addresses its measured external-decoder overrun.
+    Approved rates remain in production; the comparison override was removed.
 
 14. **Saving limit — decided: two at once (Steve, October 31).** Keeping two
     bounds decoded results waiting for disk; a higher count might improve

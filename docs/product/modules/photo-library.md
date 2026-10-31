@@ -4,6 +4,42 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 31 phase 3c: reduced pictures and live memory setting; qualification partial
+
+Settings now changes the persistent app memory allowance without restart.
+Oversized cells show their requirement and link to the setting; three 192 MP
+JPEG/PNG/TIFF cells resumed after raising 4 to 16 GB in the same folder.
+Library JPEG/PNG/TIFF and eligible linear DNG reduce while reading, before
+normal development. Grade, Proof, export and Single 100% keep full sources.
+Six finished before/after comparisons passed mean Delta E 2000 <1 and p99.9
+<=3, including an edited JPEG. Steve's visual review is pending:
+`D:\AI\AI Projects\HDR Finisher Tool\ai\codebase\output\phase3c\picture-review\index.html`.
+
+Approved rates remain unchanged. **100 MP beside other work: measured;
+proposed rates awaiting Steve.** One test-only comparison used proposed
+JPEG/PNG/TIFF 6/8/6 MB per MP: all three overlapped and finished at the default
+4 GB, peak 2.478 GB. The override was removed. Eligible reduced linear DNG
+2 MB/MP and AVIF 56 MB/MP are also proposed, awaiting Steve.
+
+Default 27-file mixed run stopped at 4.002 GB during AVIF: acceptance is not
+met. Raised to 16 GB, peak 5.403 GB, 22/27 finished including the line and
+192 MP synthetics. Five refusals remain (two unresolved-colour JXL, one EXR,
+X-Trans RAF, one unclassified optical-correction DNG request error). Line
+alone: 12.466 s active, 390 MB source increment, **1.226 GB whole-app
+increment**: time aim met, 1 GB memory aim missed.
+
+One ordinary cold 48-photo folder finished: first/second viewport
+24.910/41.252 s; peak 3.618 GB. All initially visible quick previews, partial
+rows included, appeared by 2.9996 s; slowest IMG_3212.JPG. Request p95 2.2861 s
+still misses 0.5 s. Live settings changes took 62/22 ms, no failure and no
+setting-change frame gap over 89.7 ms. Scroll-back kept all 48 pictures and
+did not read/develop sources again; the larger-folder symptom was not
+reproduced and no cache share changed. No repeat-pair claim is made.
+
+The [scheduler design 7.8](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#78-phase-3c-live-memory-setting-and-reduced-library-sources-october-31)
+records evidence paths, every route peak, picture agreement, focused checks,
+deadline proposal and open acceptance. Phase 3c is built but not fully qualified.
+
 ## October 31 phase 3a.2: saving, trim and measured-admission corrections
 
 GPU completion releases a development place while its memory grant remains

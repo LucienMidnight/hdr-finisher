@@ -41,6 +41,8 @@ Open the file named for the thing you are changing. Most files are focused.
 | Scopes, overlays, peak | `scopes.py`, `overlay.py`, `peak_accuracy.py`, `peak_candidates.py` |
 | Session and projects | `sessions.py`, `projects.py` |
 | Export and proof | `exporters.py`, `proofing.py`, `hosting_probe.py`, `test_pattern.py` |
+| Library reduced sources (phase 3c) | `library_reduced.py` (JPEG DCT, sequential PNG/TIFF, bounded uncompressed row reads); `library_rgb.py`, `library_dng_linear.py`, `library_live.py` select reduced Library routes; full Grade/Proof/export loaders remain default |
+| Live app memory setting (phase 3c) | `app_memory.py` (options/configure), `library_api.py` memory-setting endpoints, `library_scheduler.py` live ceiling/giant waits, `application-shell.js` and desktop application preferences |
 | Library RAM scheduling (phase 3a) | `library_scheduler.py` (priority, floor, reserve, owner cleanup), `library_estimates.py` (header dimensions and approved rates), `library_grants.py` (WebSocket channel, Grade accounting, backend waits); frontend `library-grants.js` (one channel per window, cancellation, reconnect) |
 | Machine and tools | `capabilities.py`, `binaries.py`, `subprocess_utils.py`, `display_probe.py` |
 

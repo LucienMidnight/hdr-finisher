@@ -32,6 +32,33 @@ The RAW sensor read needs about 5.5 bytes per pixel. GPU memory runs about
 proposed per-type estimates are Steve's decision; no size or share has
 changed.
 
+### October 31: phase 3c live memory setting; estimates awaiting Steve
+
+The persistent Settings > Performance memory control is built and applies
+without restart, including helper, scheduler, target and scaled cache shares.
+It ranges from 2.5 GB to RAM minus max(2 GB, 10% RAM); the default rule is
+unchanged. Lowering uses existing reclamation. Giant cells link to Settings
+and resume in the same folder after a sufficient increase, without a broken
+photo receipt. Three 192 MP sources verified 4 -> 16 GB resume.
+
+JPEG DCT reduction, sequential PNG/TIFF and a qualified root-page linear-DNG
+route now reduce before Library development. No cache allowance or approved
+estimate changed. Proposed rates, awaiting Steve: JPEG/PNG/TIFF/eligible
+linear DNG 6/8/6/2 MB per MP, restricted to reduced routes >=100 MP; AVIF 56.
+Source peak increments: 100 MP JPEG/PNG/TIFF 322/569/401 MB; 192 MP
+791/1101/258 MB; line scan 390 MB. The isolated line's **whole-app** increment
+was 1.226 GB, above the 1 GB aim (12.466 s active, within 27 s).
+
+The one permitted test-only 100 MP comparison overlapped all three sources at
+4 GB, peak 2.478 GB; its override is removed. Approved rates remain shipped.
+Default mixed qualification still fails: AVIF crossed 4 GB at 4.002 GB. At
+16 GB, line and 192 MP sources finished; 22/27 finished overall, with five
+non-memory refusals. Settings up/down took 62/22 ms, no failure; 89.7 ms
+maximum frame gap during those changes. No cache share increase. Scroll-back
+on the 48-photo fixture reused presented pictures without source reads; the
+reported larger-folder symptom remains unconfirmed. Full evidence and pending
+decisions: [scheduler design 7.8](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#78-phase-3c-live-memory-setting-and-reduced-library-sources-october-31).
+
 ### October 31: phase 3a.2 measured admission and native ownership
 
 Admission now also requires measured whole-app bytes plus estimates for grants
@@ -157,7 +184,7 @@ app behaves when the machine runs short.
 | Decision | Date |
 | --- | --- |
 | **Whole-app RAM ceiling: the smaller of 4 GB or a quarter of total RAM, but never less than 2.5 GB.** 4 GB means 4,000,000,000 bytes, counting Electron main, renderers, GPU-process host RAM, the Python backend and its helpers. Dedicated VRAM is not counted. | Steve, 2026-10-29 |
-| **User memory setting, like DaVinci Resolve.** Settings will let the user choose how much memory the app may use: from 2.5 GB up to the computer's RAM minus the system reserve (the larger of 2 GB or 10%). The ceiling, target, scaled shares, admission and the very-large-picture check all follow it. The default stays the rule above (Steve, 2026-10-31: users with big files raise it themselves). Not built yet; details in the scheduler design, section 7.3. | Steve, 2026-10-31 |
+| **User memory setting, like DaVinci Resolve.** Settings will let the user choose how much memory the app may use: from 2.5 GB up to the computer's RAM minus the system reserve (the larger of 2 GB or 10%). The ceiling, target, scaled shares, admission and the very-large-picture check all follow it. The default stays the rule above (Steve, 2026-10-31: users with big files raise it themselves). Built live and persistent in phase 3c; evidence and limitations in the scheduler design, section 7.8. | Steve, 2026-10-31 |
 | **Budget split** as in section 4. Approved as a trial; adjust from measurements. | Steve, 2026-10-29 |
 | **Respond to system memory pressure** by trimming caches early (principle 6). | Steve, 2026-10-29 |
 | Older pictures may be discarded and redrawn; visible and nearby pictures keep priority. | Steve, 2026-10-29 |

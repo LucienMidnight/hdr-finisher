@@ -87,7 +87,7 @@ Additional phase 3a.2 observations (same quiet Aceh repeats, this change):
 
 | Action | Target | Measured | Conditions | Status |
 | --- | --- | --- | --- | --- |
-| Folder click → all initially visible quick previews, including partial rows | Proposed measure, awaiting Steve; formal p95 target unchanged | 30/30 by 5.008–5.884 s; visible request p95 2.473–2.791 s | First viewport, repeats 6/7 | Unknown |
+| Folder click → all initially visible quick previews, including partial rows | Reported measure, approved by Steve; formal p95 target unchanged | 30/30 by 5.008–5.884 s; visible request p95 2.473–2.791 s | First viewport, repeats 6/7 | Unknown |
 | Longest Library request spanning trim or starting within 1 s after | <1 s (fix brief) | 0.822–1.066 s | One moderate trim each; live-developed request | Not met in run 7 |
 | Development places maximum / time-weighted mean | Maximum two (Steve) | 2 / 1.413–1.430 | GPU completion releases place; saving still holds memory | Met |
 | Active saving places | Provisional maximum two, approved by Steve | 2 in both repeats | Permanent limit awaiting decision | Met |
@@ -100,6 +100,30 @@ driver reuses permanent copies and expects the existing unsupported PNG route
 to refuse explicitly. Run 7 includes the final cached-only HTTP census refinement. Native memory
 ownership evidence is in design 7.6 and the memory module; it does not enlarge
 any share. RAW pixel-check stdout: `codebase/output/phase3a2-raw3.txt`.
+
+Phase 3c, October 31 (after `2b37557`, this change), one disposable cold run
+per condition, 2560x1440. No Aceh repeat pairs. Decimal GB; independent
+whole-app census, zero observer timeouts. Evidence under
+`codebase/output/cold-mixed/phase3c-*`, per-file CSV and JSON; source-boundary
+probes in `codebase/output/phase3c/route-peaks.jsonl`.
+
+| Action | Target | Latest measured | Conditions | Status |
+|---|---|---|---|---|
+| Cold Aceh 48: first / second viewport | <=26.51 / 51.59 s historical target | 24.910 / 41.252 s | Partial rows included (30 initial cells); 48 finished; 3.618 GB peak | Within target in one run; no repeat-pair qualification |
+| Quick preview request -> screen | p95 <0.5 s | p50 1.4751 / p95 2.2861 / max 2.3655 s | 48 ordinary photos | Not met |
+| Folder click -> all initially visible quick previews | Report, no pass/fail target (decision 15) | 30/30 by 2.9996 s; slowest IMG_3212.JPG, 2.9996 s from folder / 2.3655 s from request | Includes partial rows | Reported |
+| Live setting 4 -> 8 -> 4 GB | No setting-change stall >1 s or failure | 62 / 22 ms; frame gap <=89.7 ms during changes | Same browsing run; earlier folder-load gap 2.7925 s | Met for settings; broader browsing stall remains |
+| Line scan, active / from folder | <=27 s active | 12.4656 s alone; 12.667 s active / 47.161 s from open mixed | 16 GB, approved rates; source 10.7978-11.268 s | Time met |
+| Line scan whole-app incremental peak | <=1 GB | 1.225794703 GB (baseline 0.984061070, peak 2.209855773 GB) | Cold app, line alone; isolated source increment 389.565 MB | Not met |
+| Default mixed phase0, 27 | All finish or needs-memory, <=4 GB | Strict stop at 4.002060571 GB during AVIF | Approved rates | Not met |
+| Raised mixed phase0, 27 | Line + 192 MP finish | 57.3 s overall; line 47.161 s; 192 JPEG/PNG/TIFF 38.07/42.13/44.16 s | 16 GB, 5.402632183 GB peak; 22 finish / 5 refusals | Giant requirement met; all-file acceptance open |
+| 100 MP JPEG/PNG/TIFF beside other work | Measured; proposed rates awaiting Steve | 7.886/7.953/7.983 s; all source grants overlap, none alone; peak 2.478308200 GB | One 4 GB test-only comparison at proposed 6/8/6 MB per MP; override removed | Measured, approval pending |
+| 192 MP needs-memory -> raise setting -> finish | Same folder, no broken-photo receipt | 8.200/9.767/10.508 s from open, notices cleared | 4 -> 16 GB, approved rates, peak 3.057958322 GB | Met |
+| Reduced JPEG source, 100/192 MP | Report | 0.137/0.261 s; +322.154/791.076 MB | Fresh process, source-boundary only | Reported |
+| Reduced PNG source, 100/192 MP | Report | 0.792/2.369 s; +568.809/1101.330 MB | Same | Reported |
+| Reduced TIFF source, 100/192 MP | Report | 0.562/0.458 s; +400.610/258.233 MB | Same | Reported |
+| Reduced linear DNG source, 297 MP | Report | 10.834 s; +389.565 MB | 10240-edge source, full line read | Reported |
+| LR-classic AVIF source, 42.177 MP | Approved 38 bytes/pixel estimate | 16.262 s; +1.883587143 GB including external decoder | Full gain reconstruction; propose 56 MB/MP, awaiting Steve | Estimate insufficient |
 
 ## 3. Developing a photo (per photo)
 
