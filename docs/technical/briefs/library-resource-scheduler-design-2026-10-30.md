@@ -1130,6 +1130,22 @@ Still to decide:
       (an 8 GB machine with a 2.5 GB ceiling needs 4.5 GB free). Better
       stand-ins then: a per-type worst case, or an estimate from the file
       size for uncompressed formats (TIFF, PFM, linear DNG).
+11. **Fix 3a's speed before 3b; at most two developments in progress,
+    approved by Steve, October 31 (phase 3a.1).** Cause, from the 3a Aceh
+    run's grant log (`codebase/output/cold-mixed/aceh/backend.log`): with
+    estimates instead of the fixed 600 MB, 22 developments were granted in
+    the same instant (2.2 s). They decoded on the CPU together and then
+    queued for the still-exclusive GPU lease (phase 4), finishing about one
+    per second in no screen order (IMG_2986: granted 2.2 s, finished
+    34.3 s; grant-to-finish p50 13.4 s against a whole JPEG development of
+    about 1.8 s). The old 600 MB rule had been limiting concurrency to about
+    three by accident. Quick previews waited p50 1.0 s for the four-slot
+    fast lane and took about 0.28 s each under that CPU load (phase 0: about
+    0.06 s). Fix: at most two developments in progress (one on the GPU, one
+    preparing), started in screen order; quick previews ahead of
+    developments; memory granted just before real work, not held while
+    waiting for the GPU. The count is tunable from logs (decision 5 still
+    covers phase 4's two GPU developments at once).
 
 Decided October 30:
 - No picture size limit; very large pictures are supported through bounded
