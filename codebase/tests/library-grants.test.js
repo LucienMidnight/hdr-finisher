@@ -129,3 +129,13 @@ test('device loss releases active GPU grants and leaves waiting asks live',async
  assert.equal(grants.snapshot().jobs.length,1);
  sockets[0].receive({type:'granted',id:asks[1].id});grants.finish(await b);grants.close();
 });
+
+
+test('visible filmstrip promotion does not turn screen neighbour work into now work',async()=>{
+ const {grants,sockets}=setup(),controller=new AbortController();
+ const pending=[grants.acquire('photo','source',controller.signal,50,640),grants.acquire('photo','source',controller.signal,50,2560)];
+ const done=Promise.allSettled(pending);sockets[0].open();grants.promote('photo',10,640);
+ const promotions=sockets[0].sent.filter(v=>v.type==='priority');
+ assert.equal(promotions.length,1);assert.equal(promotions[0].id,sockets[0].sent[0].id);
+ controller.abort();await done;grants.close();
+});

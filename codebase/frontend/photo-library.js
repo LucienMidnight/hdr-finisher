@@ -242,11 +242,11 @@
     key: (photo, edge) => `${pictureIdentity(photo)}|${edge}`,
     load: (photo, edge, signal) => {
       const cached = recentPictures.get(pictureIdentity(photo));
-      return cached?.edge >= edge ? Promise.resolve(cached) : HDRLibraryScenes.load(photo.path,edge,signal,5,false,null,{gpuOnly:true,viewportDemand:true});
+      return cached?.edge >= edge ? Promise.resolve(cached) : HDRLibraryScenes.load(photo.path,edge,signal,50,false,null,{gpuOnly:true,viewportDemand:true});
     },
   });
   function developmentNeighbours() {
-    return Array.from({length:browsingLimits.ahead},(_,i)=>state.photos[state.index+(i+1)*rawDirection]).filter(Boolean);
+    return [rawDirection,-rawDirection].map(offset=>state.photos[state.index+offset]).filter(Boolean);
   }
   function developAhead(photo) {
     if (!state.active || state.view !== "single" || compare.enabled() || selected()?.path !== photo.path || !HDRLibraryGpuRaw.enabled()) return;
@@ -334,7 +334,7 @@
         }
         // Probe stored developments immediately; only a source miss waits for navigation.
         const meta = await HDRLibraryScenes.load(photo.path,edge,signal,importance(),false,trace,
-          {cachedOnly:edge===640 && !options.allowSource,beforeSource:()=>beforeSource(photo,signal,importance),
+          {viewportDemand:true,cachedOnly:edge===640 && !options.allowSource,beforeSource:()=>beforeSource(photo,signal,importance),
             onSourceDemand:()=>{}});
         if (!meta) return null;
         if (!current()) throw new DOMException("Invalidated","AbortError");
@@ -458,7 +458,7 @@
   }
   setInterval(pollReadyMemory,100);
   function readyNeighbours() {
-    return [rawDirection,2*rawDirection,-rawDirection,-2*rawDirection].map(offset=>state.photos[state.index+offset]).filter(Boolean);
+    return [rawDirection,-rawDirection].map(offset=>state.photos[state.index+offset]).filter(Boolean);
   }
   function warmReady(photo, neighbours) {
     void (async () => {
@@ -467,7 +467,7 @@
       await Promise.allSettled(neighbours.map(async neighbour => {
         // A finished 640 surface is useful even when the expensive sharp draw
         // cannot keep up with two selections per second.
-        await Promise.allSettled([quickWindow.get(neighbour,5,null,{allowSource:true}), readyWindow.get(neighbour)]);
+        await Promise.allSettled([quickWindow.get(neighbour,50,null,{allowSource:true}), readyWindow.get(neighbour,50)]);
       }));
     })().catch(error=>{if(!aborted(error))console.debug("Library window:",error.message);});
   }

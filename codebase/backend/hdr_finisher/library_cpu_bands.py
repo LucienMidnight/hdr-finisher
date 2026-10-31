@@ -108,7 +108,7 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first):
             info,data=lens; n=info['gain_width']*info['gain_height']
             if n: gain=data[:n].reshape(info['gain_height'],info['gain_width'])
             if info['coordinate_width']: coordinates=data[n:].reshape(info['coordinate_height'],info['coordinate_width'],3,2)
-        reductions={size:_Reduction(out_w,out_h,size) for size in sorted({640,2560,edge})}
+        reductions={size:_Reduction(out_w,out_h,size) for size in [edge]}
         stride=max(1,int(np.ceil(np.sqrt(out_w*out_h/2_000_000))))
         samples=[]; peaks=dict(peak=0.,peak_luma=0.,peak_bt2020=0.)
         if progress: progress('reduction','Correcting and reducing RAW bands')

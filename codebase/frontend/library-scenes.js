@@ -28,11 +28,11 @@ window.HDRLibraryScenes = (() => {
       job.grant=await HDRLibraryGrants.acquire(job.path,HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority,job.edge,gpu.bytes,gpu.unified);
       return true;
     },
-    keepRunning:job=>job.retainDetached||visible.has(job.path)||nearby.has(job.path)});
+    keepRunning:job=>job.retainDetached||(job.edge<=640&&(visible.has(job.path)||nearby.has(job.path)))});
   const versions = new Map();
   const history = new Map(), generations = new Map();
   let visible = new Set(), nearby = new Set(), reviewPath = null;
-  const rank = path => {const priority=visible.has(path)?10:nearby.has(path)?50:80;window.HDRLibraryGrants?.promote(path,priority);return priority;};
+  const rank = path => {const priority=visible.has(path)?10:nearby.has(path)?50:80;window.HDRLibraryGrants?.promote(path,priority,640);return priority;};
   const largeBytes = 32 * 1024 * 1024;
   function failure(result) {
     const error = result.changed || result.offline ? new DOMException(result.detail,"AbortError") : Error(result.detail || "The photo could not be prepared.");
@@ -76,7 +76,7 @@ window.HDRLibraryScenes = (() => {
     const elapsed = previous && previous.revision === plan.revision ? previous.ms : 0;
     const heavy = plan.bytes >= largeBytes || elapsed >= 2000;
     const cost = elapsed ? elapsed / 1000 : plan.bytes / largeBytes;
-    const pending = sources.submit(plan.source_identity || identity+"|"+sourceVersion, async (shared, importance, job) => {
+    const pending = sources.submit((plan.source_identity || identity+"|"+sourceVersion)+"|"+edge, async (shared, importance, job) => {
       const started = performance.now();
       try {
         const result = await HDRLibraryGrants.run(path,HDRLibraryGpuRaw.enabled()?"source":"cpu",shared,
@@ -91,7 +91,7 @@ window.HDRLibraryScenes = (() => {
           if (history.size > 256) history.delete(history.keys().next().value);
         }
       }
-    }, signal, priority, {heavy,cost,path,edge,gpuMeta:plan.gpu_meta,viewport:!!options.viewportDemand||idle,retainDetached:!options.viewportDemand&&!idle,log_view:trace?.view,stage:"Developing photo"});
+    }, signal, priority, {heavy,cost,path,edge,gpuMeta:plan.gpu_meta,viewport:edge<=640&&(!!options.viewportDemand||idle),retainDetached:!options.viewportDemand&&!idle,log_view:trace?.view,stage:"Developing photo"});
     options.onSourceDemand?.();
     const result=await pending;
     if(result && result.path && result.path!==path){
@@ -110,8 +110,8 @@ window.HDRLibraryScenes = (() => {
     const identity = path + (edge === 100000 ? "|native" : "");
     let meta = await prepared(path, edge, signal, priority, identity, idle, trace, options);
     if (!meta) return null;
-    // One development publishes both sizes in memory. A waiter asking for
-    // the other size reuses that data; it never starts another import.
+    // Share only matching source/resolution. Another requested tier is
+    // developed on demand; a grid request never prepares a screen scene.
     if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge, false, trace, options);
     if (generation!==(generations.get(path)||0) || signal?.aborted) throw new DOMException("Invalidated", "AbortError");
     return {...meta, draw_priority:priority, trace, log_view:trace?.view || (edge <= 640 ? "grid,filmstrip" : "single,fullscreen,compare")};

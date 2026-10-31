@@ -958,7 +958,7 @@
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const started = performance.now();
     root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
-    const developed = gpuResult = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, grant, edges:nativeMode ? [100000] : [...new Set([640,2560,edge])]}, signal);
+    const developed = gpuResult = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, grant, edges:[edge]}, signal);
     const gpuMs = performance.now() - started;
     gpuDone();
     if(grant) await root.HDRLibraryGrants.gpuDone(grant);
@@ -1065,7 +1065,7 @@
   // which stops only when every asker has scrolled past it.
   function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null } = {}) {
     root.HDRIdleWarmup?.touch();
-    const key = `${path}|${savedGradeOnly}|${nativeMode}|${liveScene}|${sceneIdentity}`;
+    const key = `${path}|${edge}|${savedGradeOnly}|${nativeMode}|${liveScene}|${sceneIdentity}`;
     let job = inflight.get(key);
     if (job?.controller.signal.aborted) job = null;
     if (!job) {
@@ -1167,7 +1167,7 @@
     }
     const info=await adapterMemory;
     const unified=!(Number(info?.bytes)>=4*1024**3);
-    if(meta)return {bytes:rawBudget(meta,edge===100000?[100000]:[640,2560,edge]),unified};
+    if(meta)return {bytes:rawBudget(meta,[edge]),unified};
     const response=await fetch('/api/delivery/gpu/permit',{signal});
     if(!response.ok)throw Error('GPU scheduling unavailable.');
     return {bytes:Math.max(0,(await response.json()).budget-(640*640*64+64*1024**2)),unified};

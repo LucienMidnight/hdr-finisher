@@ -15,7 +15,7 @@ def photo(tmp_path):
     return path
 
 
-def test_one_import_stores_both_sizes_and_finishing_reuses_source(tmp_path, monkeypatch):
+def test_only_requested_size_is_developed_and_finishing_reuses_source(tmp_path, monkeypatch):
     from hdr_finisher.sessions import SessionStore
     original=SessionStore.prepare_session; calls=[]
     def prepare(self,*args,**kwargs):
@@ -23,8 +23,10 @@ def test_one_import_stores_both_sizes_and_finishing_reuses_source(tmp_path, monk
     monkeypatch.setattr(SessionStore,"prepare_session",prepare)
     path=photo(tmp_path);before=path.read_bytes();root=tmp_path/"cache"
     small=develop_cpu(root,path,None,640)
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    assert LibraryPictureCache(root).cached(path,2560,quality(None)) is None
     large=develop_cpu(root,path,None,2560)
-    assert len(calls)==1
+    assert len(calls)==2
     assert (small["width"],small["height"])==(640,320)
     assert (large["width"],large["height"])==(800,400)
     service=LivePictures(root,LibraryMarks(root))
@@ -311,11 +313,11 @@ def test_fresh_scene_draws_from_memory_before_atomic_store(tmp_path, invalidate)
     assert not list((tmp_path / "profile").rglob("*.tmp"))
 
 
-def test_cpu_fallback_hands_both_fresh_sizes_to_draw_before_store(tmp_path):
+def test_cpu_fallback_hands_only_requested_size_to_draw_before_store(tmp_path):
     path = photo(tmp_path)
     result = develop_cpu(tmp_path / "profile", path, None, 640, draw_first=True)
     scenes = result.pop("_pending_scenes")
-    assert {scene["edge"] for scene in scenes} == {640, 2560}
+    assert {scene["edge"] for scene in scenes} == {640}
     assert all(scene.get("_transient") for scene in scenes)
     assert not list((tmp_path / "profile").rglob("*.npz"))
 

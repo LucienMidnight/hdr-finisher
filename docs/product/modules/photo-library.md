@@ -4,15 +4,21 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
-## October 31 Part C baseline — captured; implementation pending
+## October 31 Part C — built; final acceptance pending
 
 The disposable edited-photo baseline is in `codebase/output/part-c-edited/`:
 grid, filmstrip and five Single 2560 captures covering masks, many locals,
 Film Look, Denoise, Retouch and a virtual copy. Capture tools are committed;
-source behavior remains unchanged. Steve reported obvious VRAM corruption in
-the fifth picture; a repeat still has artifacts. Part C remains open.
-
-## October 31 phase 3c.2 Part B:
+grid/filmstrip now develop only 640, edited or unedited; Single, fullscreen
+and Compare request 2560 on opening. Single prepares only its next/previous
+neighbours as soon work, cancelled on leaving Single. Matching source and
+resolution share work; different tiers develop separately. The CPU fallback
+also publishes only the requested tier. Finished grid stand-ins, stored screen
+previews and the unedited camera-preview fast lane retain their existing paths.
+Planning now matches JPEG/PNG EXIF orientation and LibRaw flip; TIFF follows
+its decoder, which leaves EXIF orientation unapplied. No budget/rate changes.
+Steve reported obvious VRAM corruption in
+the fifth picture; a repeat still has artifacts. Final acceptance remains open.
 
 ## October 31 phase 3c.2 Part B: GPU work in the Library scheduler — built and measured
 

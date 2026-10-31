@@ -1607,7 +1607,7 @@ Evidence: `codebase/output/cold-mixed/aceh-3c2-partb-{one,two}/report.json`,
 `codebase/output/release-checks/`, `codebase/output/library-gpu-recovery/`,
 `codebase/output/phase3a-grade/report.json`.
 
-### 7.11 Part C: edited baseline captured; implementation and acceptance pending (October 31)
+### 7.11 Part C: built; final acceptance pending (October 31)
 
 Before any scene change, `tools/capture-library-edited.cjs --baseline` captured
 five variants from disposable copies of the four-mask and fifty-local projects:
@@ -1624,6 +1624,23 @@ Comparison allowance: mean Delta E 2000 below 1 and p99.9 at most 3, with
 visual review of differences (same perceptual limits used in phase 3c).
 Sparse obvious hardware corruption is identified separately, as Steve requested.
 Focused validation: completed capture, five 2560 views, no page errors.
+
+Implementation: requested-edge-only GPU development/preflight and CPU fallback;
+source flights keyed by source identity AND edge. Grid/filmstrip and grid idle
+warming make only 640. Single/fullscreen/Compare request 2560 now; only next
+and previous neighbours develop as soon (50), with viewport-owned cancellation.
+Filmstrip rank changes promote only 640 grants, keeping 2560 neighbours soon.
+Existing edited stand-ins and protected stored-screen-preview reads are retained.
+JPEG/PNG planning applies the decoder's EXIF turn; RAW planning keeps sensor
+allocation dimensions and LibRaw flip. TIFF follows its unchanged, unrotated
+decode contract. Admission still forbids growth; all approved numbers unchanged.
+
+Focused checks: 47 orientation/estimate Python checks; 47 scene/GPU/ready-window/
+read-ahead JS checks, and 37 grant/scene checks after tier-aware promotion.
+The focused live Python run had 71 passes and the known unrelated scene-version
+stub failure (`library-rgb-v3` versus current `library-rgb-reduced-v4`); left alone.
+The live-grid driver now checks 640-only, M20 and soon-neighbour demand; final
+release-runner acceptance and measurements pending.
 
 ## 8. Phases
 

@@ -19,7 +19,7 @@ if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes
   await page.evaluate(()=>activateWorkflowTab('import'));
   const library=page.locator('#library-frame');
   await library.evaluate(element=>{
-   const w=element.contentWindow,fetch=w.fetch.bind(w);w.__liveRequests=[];
+   const w=element.contentWindow,fetch=w.fetch.bind(w);w.__liveRequests=[];w.__developments=[];const gpuRaw=w.HDRLibraryGpuRaw;w.HDRLibraryGpuRaw={...gpuRaw,liveScene:(p,e,signal,importance,...rest)=>{const row={path:p,edge:e,priority:importance(),cancelled:false};signal?.addEventListener('abort',()=>row.cancelled=true,{once:true});w.__developments.push(row);return gpuRaw.liveScene(p,e,signal,importance,...rest);}};
    w.fetch=(url,options)=>{w.__liveRequests.push({url:String(url),body:typeof options?.body==='string'?options.body:null});return fetch(url,options);};
   });
   const detached=await library.evaluate(async(element,source)=>{
@@ -39,8 +39,8 @@ if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes
    }finally{w.HDRLibraryGpuRaw=original;}
   },path.join(folder,'DSC07060.ARW'));
   assert.equal(detached.detachedResult,'AbortError');assert.equal(detached.active,1);
-  assert.equal(detached.starts,1,'Returning explicit demand reuses detached GPU preparation');
-  assert.equal(detached.returnedEdge,2560);assert.ok(detached.smallCached&&detached.largeCached,'Detached preparation publishes both cache sizes');
+  assert.equal(detached.starts,2,'Different resolutions develop independently; matching demand reuses preparation');
+  assert.equal(detached.returnedEdge,2560);assert.ok(detached.smallCached&&detached.largeCached,'Each requested resolution is stored and reused');
   const start=Date.now();
   await library.evaluate((element,folder)=>element.contentWindow.HDRLibrary.browse(folder),folder);
   const settled=()=>page.waitForFunction(()=>{
@@ -78,17 +78,31 @@ if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes
   assert.deepEqual([...new Set(fallback.requested)].sort(),fallback.paths.sort(),'CPU files are only requested for visible cells');
   await library.evaluate(element=>{const w=element.contentWindow;w.navigator.gpu.requestAdapter=w.__requestAdapter;});
   await settled();
+  const gridOnly=await library.evaluate(element=>element.contentWindow.__developments.slice(2));
+  assert.ok(gridOnly.every(row=>row.edge===640),'Cold grid and recovery develop only 640');
+  const beforeToggle=await library.evaluate(element=>element.contentWindow.__developments.length);
+  await library.evaluate(element=>element.contentWindow.document.getElementById('hdr-button').click());
+  await settled();
+  await library.evaluate(element=>element.contentWindow.document.getElementById('hdr-button').click());
+  await settled();
+  assert.equal(await library.evaluate(element=>element.contentWindow.__developments.length),beforeToggle,'M20: changing HDR/SDR only redraws the existing scene');
+  report.m20=true;
   const singleStarted=Date.now();
   await library.evaluate(element=>{
    const d=element.contentWindow.document;
-   [...d.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path.endsWith('sdr_gradient.png')).click();
+   [...d.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path.endsWith('DSC07061.ARW')).click();
    d.getElementById('single-view').click();
   });
   await page.waitForFunction(()=>{
    const c=document.querySelector('#library-frame').contentWindow.document.getElementById('single-picture');
-   return c.dataset.picturePath?.endsWith('sdr_gradient.png')&&Number(c.dataset.pictureEdge)===2560;
+   return c.dataset.picturePath?.endsWith('DSC07061.ARW')&&Number(c.dataset.pictureEdge)===2560;
   },null,{timeout:60000});
   report.singleMs=Date.now()-singleStarted;
+  await page.waitForFunction(()=>document.querySelector('#library-frame').contentWindow.__developments.some(row=>row.edge===2560&&row.priority===50),null,{timeout:30000});
+  report.neighboursSoon=true;
+  await library.evaluate(element=>element.contentWindow.document.getElementById('grid-view').click());
+  await new Promise(resolve=>setTimeout(resolve,1000));
+  report.developments=await library.evaluate(element=>element.contentWindow.__developments);
   assert.deepEqual(errors,[],'No page errors');
   fs.writeFileSync(path.join(folder,'result.json'),JSON.stringify({coldMs,...report},null,2));
   console.log(JSON.stringify({coldMs,reuse:report.rows.map(r=>({name:r.name,ms:r.reuseMs})),residentBytes:report.memory.resident.totalBytes,gpuRecovery:true}));

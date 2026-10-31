@@ -47,15 +47,15 @@ test('cached pictures bypass both occupied sources and light demand gets the nex
  block.resolve();assert.equal((await quick).key,'quick');
  await Promise.all([a,b]);assert.deepEqual(started,['a','b','quick']);
 });
-test('merged grid and selected demand survives one cancellation and reads the other cached size',async()=>{
+test('different scene tiers develop independently while matching tiers share demand',async()=>{
  const block=gate(),started=[];
  const plans={photo:{bytes:96e6,revision:'1'}};
  const {scenes}=setup(plans,async(p,edge)=>{started.push(edge);await block.promise;
-  plans.photo.cached={edge:2560,key:'large'};return {edge,key:'small'};});
+  return {edge,key:edge===2560?'large':'small'};});
  const cancel=new AbortController();const first=scenes.load('photo',640,cancel.signal,80);
  const selected=scenes.load('photo',2560,undefined,0);await tick();
  cancel.abort();await assert.rejects(first,{name:'AbortError'});block.resolve();
- assert.equal((await selected).key,'large');assert.deepEqual(started,[640]);
+ assert.equal((await selected).key,'large');assert.deepEqual(started,[2560,640]);
 });
 test('observed slow files still borrow idle capacity, and source revisions remain usable',async()=>{
  const started=[];let block=gate(),hold=false;
@@ -220,7 +220,7 @@ test('needed explicit and viewport sources survive reranking and competing deman
  block.resolve();assert.equal((await build).key,'build');assert.equal((await selected).key,'selected');
 });
 
-test('returning explicit demand outside the viewport reuses detached preparation and both finished sizes',async()=>{
+test('returning explicit demand at the same resolution reuses detached preparation',async()=>{
  const block=gate(),controller=new AbortController(),plans={photo:{bytes:1,revision:'1'}};let starts=0,shared;
  const {scenes,context}=setup(plans,async(path,edge,signal)=>{
   starts++;shared=signal;await block.promise;
@@ -230,8 +230,8 @@ test('returning explicit demand outside the viewport reuses detached preparation
  const first=scenes.load('photo',640,controller.signal);const cancelled=assert.rejects(first,{name:'AbortError'});
  await tick();controller.abort();await cancelled;scenes.viewport([],[]);
  assert.equal(shared.aborted,false);
- const returning=scenes.load('photo',2560,undefined,0);await tick();assert.equal(starts,1);
- block.resolve();assert.equal((await returning).edge,2560);
+ const returning=scenes.load('photo',640,undefined,0);await tick();assert.equal(starts,1);
+ block.resolve();assert.equal((await returning).edge,640);
  assert.equal((await scenes.load('photo',640)).key,'finished');assert.equal(starts,1);
 });
 
@@ -288,4 +288,18 @@ test('offline cache reads cancel without a broken-photo receipt and notify the f
  assert.equal(dispatched.filter(e=>e.type==='library-offline').length,1);
  assert.equal(dispatched.find(e=>e.type==='library-offline').detail.path,'offline');
  assert.equal(requests.length,0);
+});
+
+
+test('screen neighbours stay soon beside a visible filmstrip and stop when demand leaves',async()=>{
+ const block=gate(),plans={photo:{bytes:1,revision:'1'}},started=[];let shared;
+ const {scenes}=setup(plans,async(p,edge,signal,importance)=>{
+  shared=signal;started.push({edge,priority:importance()});await block.promise;return {edge};
+ });
+ scenes.viewport(['photo'],[]);
+ const controller=new AbortController();
+ const neighbour=scenes.load('photo',2560,controller.signal,50,false,null,{viewportDemand:true});
+ const stopped=assert.rejects(neighbour,{name:'AbortError'});await tick();
+ assert.deepEqual(started,[{edge:2560,priority:50}]);
+ controller.abort();await stopped;assert.equal(shared.aborted,true);block.resolve();
 });

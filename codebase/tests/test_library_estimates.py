@@ -107,3 +107,33 @@ def test_reduced_jpeg_qualification_keeps_gainmap_rate(tmp_path, monkeypatch):
     assert reduced_rate(path)==6
     monkeypatch.setattr(loader,"is_ultrahdr_jpeg",lambda path:True)
     assert reduced_rate(path) is None
+
+
+@pytest.mark.parametrize("suffix", [".jpg", ".png", ".tiff"])
+@pytest.mark.parametrize("orientation", [1, 3, 5, 6, 7, 8])
+def test_gpu_plan_matches_decoder_orientation_without_decoding(tmp_path, monkeypatch, suffix, orientation):
+    from hdr_finisher.library_estimates import gpu_metadata
+    path = tmp_path / ("portrait" + suffix)
+    exif = Image.Exif()
+    exif[274] = orientation
+    Image.new("RGB", (300, 200)).save(path, exif=exif)
+    monkeypatch.setattr(Image.Image, "load", lambda *a, **k: pytest.fail("admission decoded pixels"))
+    meta = gpu_metadata(path, edge=640)
+    expected = (200, 300) if suffix != ".tiff" and orientation >= 5 else (300, 200)
+    assert (meta["width"], meta["height"]) == expected
+
+
+def test_gpu_plan_retains_raw_sensor_geometry_and_libraw_flip(tmp_path, monkeypatch):
+    from hdr_finisher import library_estimates
+    from types import SimpleNamespace
+    import rawpy
+    class Header:
+        sizes = SimpleNamespace(raw_width=8000, raw_height=5320, flip=5)
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def open_file(self, path): pass
+    monkeypatch.setattr(library_estimates, "dimensions", lambda p: (7952, 5304))
+    monkeypatch.setattr(rawpy, "RawPy", Header)
+    monkeypatch.setattr("hdr_finisher.file_gate.decode_suffix", lambda p: ".arw")
+    meta = library_estimates.gpu_metadata(tmp_path / "rotated.arw", edge=640)
+    assert (meta["width"], meta["height"], meta["flip"]) == (8000, 5320, 5)

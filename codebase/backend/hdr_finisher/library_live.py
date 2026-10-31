@@ -86,7 +86,7 @@ def quality(document):
 
 
 def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progress=None, draw_first=False):
-    """One full development produces both scene sizes; no CPU finishing."""
+    """Develop only the requested scene size; no CPU finishing."""
     from .sessions import SessionStore
     from .models import EditDocument
     cache = cache or LibraryPictureCache(root)
@@ -134,7 +134,7 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     if progress: progress("reduction", "Preparing thumbnail and screen preview")
     result = None
     reduction_at = perf_counter()
-    for size in sorted({640, 2560, edge}, reverse=True):
+    for size in [edge]:
         metadata = {"route": "library-live", "renderer": "cpu", "raw_input": True,
             "starting_look": source.starting_adjustments().model_dump(mode="json"),
             "source_width": source.source.width, "source_height": source.source.height,
@@ -164,9 +164,9 @@ _cpu_condition = Condition()
 
 
 def develop_cpu(root, path, document, edge, cancelled=None, progress=None, draw_first=False):
-    """Coalesce helper calls before allocating a decoder, across scene tiers."""
+    """Coalesce matching source/resolution calls before allocating a decoder."""
     from .library_pictures import picture_key, check_cancelled
-    key = (str(root), picture_key(path, 100000 if edge == 100000 else 0, quality(document)))
+    key = (str(root), picture_key(path, edge, quality(document)))
     demand = cancelled or (lambda: False)
     with _cpu_condition:
         flight = _cpu_flights.get(key)

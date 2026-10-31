@@ -145,13 +145,15 @@ def gpu_metadata(path, document=None, edge=2560):
         from .library_live import recipe
         suffix = decode_suffix(Path(path))
         width, height = dimensions(path)
+        flip = 0
         if suffix not in RATES:
             import rawpy
             with rawpy.RawPy() as raw:
                 raw.open_file(str(path))
                 width, height = raw.sizes.raw_width, raw.sizes.raw_height
+                flip = int(raw.sizes.flip)
         inputs = recipe(document)
-        meta = dict(width=width, height=height, flip=0,
+        meta = dict(width=width, height=height, flip=flip,
                     raw_import_settings=inputs['raw_import_settings'], repairs=inputs.get('repairs'))
         if suffix == '.dng':
             from .linear_dng import inspect_dng, DngRoute
@@ -170,6 +172,14 @@ def gpu_metadata(path, document=None, edge=2560):
                 meta['dng_warp'] = True
             meta.update(width=width, height=height, rgb=True, colour={'authored_sdr':True})
         elif suffix in RATES:
+            # Match the decode boundary: Pillow applies JPEG/PNG EXIF turns;
+            # Grade's TIFF route deliberately leaves its tag unapplied.
+            if suffix in {'.jpg', '.jpeg', '.png'}:
+                from PIL import JpegImagePlugin, PngImagePlugin
+                opener = PngImagePlugin.PngImageFile if suffix == '.png' else JpegImagePlugin.JpegImageFile
+                with opener(path) as header:
+                    if int(header.getexif().get(274, 1)) in {5, 6, 7, 8}:
+                        width, height = height, width
             if edge <= 2560 and suffix in {'.png','.tif','.tiff'} and not inputs.get('repairs'):
                 from .library_reduced import sample_size
                 width, height = sample_size(width,height)
