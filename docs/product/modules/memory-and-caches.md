@@ -292,7 +292,8 @@ room is available; critical pressure still clears reconstructible caches.
   clear message and a **Close photo in Grade** button. Grade stays fully
   usable.
 - The hard stop is the computer's free physical memory minus a system
-  reserve: the larger of 2 GB or 10% of RAM (Steve, October 31). A job that would cross it waits with a message; it is never
+  reserve: the larger of 2 GB or 10% of RAM (Steve, October 31). A job
+  that would cross it waits with a message; it is never
   marked failed.
 
 Details: design section 7.6 and decisions 6, 8 and 9.
