@@ -1108,6 +1108,14 @@ waiting for acceptance between them. No approved budget or estimate changes.
    back to the window refreshes pins and reopens the folder. Immediate hardware
    reconnect notification is not wired. A simulated ENODEV read followed by a
    successful retry passes; corrupt files remain distinct.
+4. **Disk-cache failure handling blocked, no partial latch shipped.** Scene,
+   camera-thumbnail, overlay and stored-screen writers publish independently in
+   two processes. `_evict_transient` also relies on disk to preserve previews
+   already promised to a draw. Disabling writes in just `prepare`/`build` either
+   loses those previews or leaves memory above its share. Next work is one
+   coordinated unavailable-cache state plus an event-driven handoff backpressure
+   path, then ENOSPC/missing-volume tests. Existing budgets and LRU behaviour
+   remain. No full-cache/no-cache acceptance claim; no new cache message.
 
 ## 8. Phases
 
