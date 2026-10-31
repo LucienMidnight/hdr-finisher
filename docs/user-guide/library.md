@@ -290,9 +290,10 @@ working in Grade while Library jobs wait.
 use leaves too little room after the system reserve. Waiting is not a
 failed photo; work resumes when enough memory is available.
 
-### Unsupported photos and interrupted reads
+### Unsupported photos, interrupted decoders and offline folders
 
-A camera preview can remain visible when development is unavailable. New messages:
+A camera preview can remain visible when full development is unavailable.
+The Library now explains these cases:
 
 - “Not supported: JPEG XL source colour is unresolved. Open it in Grade to choose its source interpretation.”
 - “Not supported: X-Trans sensor development is not available in the Library. The camera preview is kept when available.”
@@ -300,8 +301,8 @@ A camera preview can remain visible when development is unavailable. New message
 - “The photo decoder took too long. The file was set aside; other photos continue.”
 - “This folder is offline. Reconnect the drive, then open the folder again.”
 
-Offline reads are not recorded as broken photos. Affected pins dim. After reconnecting, return to the Library window or reopen the folder to retry.
-
-Hidden/minimised windows give foreground Library work priority. Showing the window restores its previous work classes.
-
-Very large pictures needing the unfinished bounded route can still wait.
+An offline read is not recorded as a broken photo. Affected pinned folders dim.
+After reconnecting the drive, return to the Library window or reopen the folder
+to retry. Hidden/minimised windows give foreground Library work priority; showing
+the window restores its previous work classes. Very large pictures that require
+the unfinished bounded route can still wait; that work is not complete.

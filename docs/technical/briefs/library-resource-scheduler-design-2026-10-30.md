@@ -1042,14 +1042,19 @@ samples timed out; qualification fails. Prepared pixels still retain their grant
 while awaiting the exclusive GPU lease: the requested no-grant GPU wait is NOT
 implemented or claimed. A safe transfer of ownership belongs with phase 4;
 releasing a grant while keeping decoded pixels would undercount real memory.
-Screen two is explicitly scrolled to by the script after all screen-one canvases
-appear; a later store/finish overlaps that scroll, so this is not evidence of
-unprompted second-screen overtaking. No rerun for noise: the miss is substantial.
+The final run records one second-screen-labelled source starting before the
+last first-screen finish and before explicit scrolling. The app includes 30
+partly visible cells in its visible class; the harness counts 24 fully visible
+cells. Filename FIFO passes, but strict 24-cell first-screen ordering is not
+qualified. No rerun for noise: the timing miss is substantial.
 
 Grade coexistence: first ordinary picture 2.926 s (<5), paused line scan observed
 1.995 s from folder opening (cell-visible latency unmeasured), close/save 1.872 s,
 resume 0.150 s (<2), saved exposure verified, zero page errors, protected project
 hashes unchanged. The pause message and Close photo in Grade action work.
+No independent memory observer ran here: backend logs reached 9.124 GB during
+oversized Grade opening, with three moderate trims/Chromium pressure relays
+before browsing; one coexistence snapshot was 5.370 GB. This is not a <4 GB pass.
 
 Checks: scheduler/grant Python checks 22 passed. Final full Python: 2,842
 passed, three skipped, four existing fixture failures (preset-header, RGB
@@ -1060,7 +1065,8 @@ stub). No new failures. The quick-first and FIFO expectations were updated
 because those behaviours changed deliberately; no tolerance was relaxed.
 Development grants: maximum two, time-weighted mean 1.831. Quick previews:
 p50 1.390 s / p95 2.130 s / max 2.439 s (p95 limit <0.5 s missed). Two moderate
-trims at 3.469 / 3.420 GB, above the existing 3.40 GB target; no refusal signals.
+trims and Chromium pressure relays at 3.469 / 3.420 GB, above the existing
+3.40 GB target; no memory-refusal signals.
 Invalid exploratory runs (overlapped apps and an accidental draw-lane change)
 were excluded; the draw queues are restored to one lane.
 
@@ -1130,6 +1136,41 @@ waiting for acceptance between them. No approved budget or estimate changes.
    work. Promotions made while hidden are retained and restored when shown.
    Active work completes at its normal boundary. Two-owner scheduling and
    reconnect-channel behaviour pass. The native main + detached-Library trial also passes: a queued job becomes eventually when minimised, returns to now on restore, and is admitted when the two held slots end. Chromium remained visible while minimised in the harness, so the existing native window-state event also supplies visibility. Class changes are published even when the waiting reason is unchanged.
+
+**Final qualification, October 31.** The final cold Aceh run completed all 48
+pictures with no photo/page failures or duplicate asks: 35.284 / 81.634 s,
+quick p50 / p95 / max 1.372 / 2.381 / 2.494 s, development maximum two and
+time-weighted mean 1.980, independent peak 3.635 GB. Timing targets still fail;
+two of 148 memory-endpoint samples timed out. One moderate trim/Chromium relay
+occurred at 3.542 GB, above the 3.40 GB target. The 24-versus-30 visible-cell
+ordering qualification described in 7.6 remains open.
+
+The mixed-format cold run stopped at 4.206 GB during AVIF decoding (the external
+AVIF process accounted for 1.546 GB). Only ten of 27 files completed; every file,
+including unfinished ones, is recorded in
+`codebase/output/cold-mixed/phase0/per-file-results.csv`. DJI TIFF completed in
+14.257 s, but this is not a bounded-route measurement. The 192 MP JPEG/PNG quick
+paths hit Pillow's existing size guard. The line scan, synthetic TIFF and other
+unreached files remain unqualified. Overlapping grants mean per-file whole-app
+increments in that CSV are not isolated decoder peaks; no lower estimates are
+proposed from them. RAF/JXL header refusal timings were checked separately,
+not mistaken for completed grid results. Full evidence and trim counts are in
+`codebase/output/phase3b-summary.json`.
+
+A sequential 2560×1440 direct Bayer RAW GPU check passes: app 3.249 s / GPU
+1.878 s; SDR mean ΔE2000 0.0259 (p99.9 0.1343), HDR mean 0.1023 (p99.9 0.5414).
+No tiled DNG math was built, so its tiled pixel comparison was not run. Disk-cache
+failure tests and the generated-fixture upkeep launch comparison remain undone;
+no broad or >30-minute slow validation was substituted.
+
+Final grouped fast checks: JavaScript 686 passed / three existing failures;
+Python 2,853 passed / three skipped / four existing failures (414.35 s). Existing
+failures remain the two scene version stubs, Single screen-preview stub, preset
+header contract, RGB publication guard, frame-cache budget and Retouch
+CaptureCache fixture. No new failures; logs are
+`codebase/output/phase3b-node-final.txt` and `phase3b-pytest-final.txt`.
+Temporary profiles and test scratch are removed; real photos are reused only
+from the permanent test-photo copies.
 
 ## 8. Phases
 

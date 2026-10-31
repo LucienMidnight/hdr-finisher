@@ -4,15 +4,16 @@ const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),asse
 const {spawn}=require('node:child_process');
 const {chromium}=require('playwright');
 const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
-const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe'),aceh=process.argv.includes('--aceh');
-const out=path.join(root,'output/cold-mixed',jpeg?'jpeg':probe?'probe':aceh?'aceh':'final');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'memory.jsonl'),'');
+const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe'),aceh=process.argv.includes('--aceh'),phase0=process.argv.includes('--phase0');
+const out=path.join(root,'output/cold-mixed',jpeg?'jpeg':probe?'probe':aceh?'aceh':phase0?'phase0':'final');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'memory.jsonl'),'');
 const scratch=fs.mkdtempSync(path.join(root,'output/test-photos/cold-mixed-'));
-const photos=path.join(root,'output/test-photos',aceh?'aceh':'cold-mixed-photos'),background=path.join(scratch,'index');fs.mkdirSync(photos,{recursive:true});fs.mkdirSync(background);
-const source=aceh?'D:/Photos/2017/Aceh-Wedding/Pesta':'D:/Photos/2023/11';
+const photos=path.join(root,'output/test-photos',phase0?'phase0':aceh?'aceh':'cold-mixed-photos'),background=path.join(scratch,'index');fs.mkdirSync(photos,{recursive:true});fs.mkdirSync(background);
+const source=phase0?photos:aceh?'D:/Photos/2017/Aceh-Wedding/Pesta':'D:/Photos/2023/11';
 let names=fs.readdirSync(source).filter(n=>/\.(heic|jpg|png|arw)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+if(phase0)names=fs.readdirSync(photos,{recursive:true}).filter(n=>/\.(dng|jxl|raf|tiff?|jpg|jpeg|png|arw|avif|heic|cr3|orf|rw2|nef|exr|hdr|pfm)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
 let junk=[];
 if(aceh){junk=fs.readdirSync(source).filter(n=>n.startsWith('._')).sort().slice(0,6);names=names.filter(n=>!n.startsWith('._')).slice(0,48);}
-else if(jpeg)names=['IMG_0267.JPG'];else{
+else if(phase0){}else if(jpeg)names=['IMG_0267.JPG'];else{
  const chosen=probe ? [
   ...names.filter(n=>/\.ARW$/i.test(n)).slice(0,4),...names.filter(n=>/\.HEIC$/i.test(n)).slice(0,8),
   ...names.filter(n=>/\.JPG$/i.test(n)).slice(0,2),...names.filter(n=>/\.PNG$/i.test(n)).slice(0,2)
@@ -24,9 +25,9 @@ else if(jpeg)names=['IMG_0267.JPG'];else{
 for(const name of [...junk,...names])if(!fs.existsSync(path.join(photos,name)))fs.copyFileSync(path.join(source,name),path.join(photos,name));
 // Small generated-fixture files keep an independent pinned index active;
 // no second copies of Steve's real photos are made.
-if(!jpeg&&!aceh)for(let i=0;i<1200;i++)fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),path.join(background,`index-${String(i).padStart(4,'0')}.png`));
+if(!jpeg&&!aceh&&!phase0)for(let i=0;i<1200;i++)fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),path.join(background,`index-${String(i).padStart(4,'0')}.png`));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const report={mode:jpeg?'IMG_0267':aceh?'aceh':'mixed',files:names,junk,errors:[],memoryRequests:[],screens:[],startedAt:new Date().toISOString()};
+const report={mode:phase0?'phase0':jpeg?'IMG_0267':aceh?'aceh':'mixed',files:names,junk,errors:[],memoryRequests:[],screens:[],startedAt:new Date().toISOString()};
 const before=hashProjects(require('../tests/release/drivers.json').protectedProjects);
 (async()=>{
  let browser,lib,observer,peak=0,pending='',poll,stopping=false,activePoll;
@@ -66,18 +67,18 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   const cacheSettings=await api('cache-settings');report.cacheSettings=cacheSettings;
   assert.ok(cacheSettings.location.toLowerCase().includes('test-'),'Test must use an isolated disk cache');
   await api('lock-metrics',{reset:true});
-  if(!jpeg&&!aceh)await api('pins',{paths:[background]});
+  if(!jpeg&&!aceh&&!phase0)await api('pins',{paths:[background]});
   const opened=Date.now();void lib.evaluate(folder=>HDRLibrary.browse(folder),photos.replaceAll('\\','/')).catch(e=>report.errors.push(String(e)));
   await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count>0,null,{timeout:20000});
   for(let screen=0;screen<(jpeg||probe?1:2);screen++){
-   if(screen)await lib.evaluate(()=>{const grid=document.getElementById('library-grid');grid.scrollTop+=grid.clientHeight;grid.dispatchEvent(new Event('scroll'));});
+   if(screen){report.scrolledAt=Date.now();}if(screen)await lib.evaluate(()=>{const grid=document.getElementById('library-grid');grid.scrollTop+=grid.clientHeight;grid.dispatchEvent(new Event('scroll'));});
    await sleep(300);
    const targets=await lib.evaluate(()=>{
     const bounds=document.getElementById('library-grid').getBoundingClientRect();
     return [...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect();return r.top>=bounds.top-1&&r.bottom<=bounds.bottom+1;}).map(c=>c.dataset.path);
    });
    const started=Date.now();let cells;
-   while(Date.now()-started<(probe?60000:120000)){
+   while(Date.now()-started<(phase0&&screen?5000:probe?60000:120000)){
     if(peak>4_000_000_000)throw Error('STOP: whole-app memory exceeded 4 GB');
     cells=await lib.evaluate(paths=>paths.map(p=>{const c=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===p);return {path:p,presented:!!c?.querySelector('canvas[data-picture-key]'),error:c?.querySelector('.library-picture-error')?.title||c?.querySelector('.picture-failed')?.textContent};}),targets);
     if(cells.length&&cells.every(c=>c.presented||c.error))break;
