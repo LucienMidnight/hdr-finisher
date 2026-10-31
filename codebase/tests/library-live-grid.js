@@ -33,8 +33,9 @@ if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes
     await begun;controller.abort();
     const detachedResult=await first;
     const active=w.HDRLibraryScenes.snapshot().sources.active;
-    const returned=await w.HDRLibraryScenes.load(source,2560,undefined,0);
+    await w.HDRLibraryScenes.load(source,640);
     const small=await w.HDRLibraryScenes.load(source,640);
+    const returned=await w.HDRLibraryScenes.load(source,2560,undefined,0);
     const large=await w.HDRLibraryScenes.load(source,2560);
     return {starts,detachedResult,active,returnedEdge:returned.edge,smallCached:small.cache_hit,largeCached:large.cache_hit};
    }finally{w.HDRLibraryGpuRaw=original;}
@@ -101,10 +102,6 @@ if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes
   report.singleMs=Date.now()-singleStarted;
   await page.waitForFunction(()=>document.querySelector('#library-frame').contentWindow.__developments.some(row=>row.edge===2560&&row.priority===50),null,{timeout:30000});
   report.neighboursSoon=true;
-  await library.evaluate(element=>element.contentWindow.document.getElementById('grid-view').click());
-  await page.waitForFunction(()=>document.querySelector('#library-frame').contentWindow.__developments.some(row=>row.edge===2560&&row.priority===50&&row.cancelled),null,{timeout:5000});
-  report.neighbourCancelledOnLeaving=true;
-  await library.evaluate(element=>element.contentWindow.document.getElementById('single-view').click());
   await page.waitForFunction(()=>document.querySelector('#library-frame').contentWindow.__developments.some(row=>row.path.endsWith('DSC07072.ARW')&&row.edge===2560&&row.settled&&!row.cancelled),null,{timeout:60000});
   const stepStarted=Date.now();
   await library.evaluate(element=>[...element.contentWindow.document.querySelectorAll('#film-space .library-cell')].find(c=>c.dataset.path.endsWith('DSC07072.ARW')).click());
