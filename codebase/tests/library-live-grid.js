@@ -1,10 +1,11 @@
 /* Live unedited cells: stored scene reuse, no JPEG publication and GPU recovery. */
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require('playwright');
-const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-live-grid',String(Date.now()));
+const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/test-photos/library-live-grid'),resultFolder=path.join(root,'output/library-live-grid');
+fs.mkdirSync(resultFolder,{recursive:true});
 fs.mkdirSync(folder,{recursive:true});
 const sources=['DSC07060','DSC07061','DSC07072'].map(n=>'D:/test-photos-delete-later/'+n+'.ARW');
-for(const source of [...sources,path.join(root,'tests/fixtures/sdr_gradient.png')])fs.copyFileSync(source,path.join(folder,path.basename(source)));
+for(const source of [...sources,path.join(root,'tests/fixtures/sdr_gradient.png')])if(!fs.existsSync(path.join(folder,path.basename(source))))fs.copyFileSync(source,path.join(folder,path.basename(source)));
 // The Library lists photos of at least 1 KB (file gate, October 30). The
 // 111-byte gradient fixture keeps its pixels: trailing bytes after IEND make
 // the disposable copy a listed photo.
@@ -19,7 +20,7 @@ if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes
   await page.evaluate(()=>activateWorkflowTab('import'));
   const library=page.locator('#library-frame');
   await library.evaluate(element=>{
-   const w=element.contentWindow,fetch=w.fetch.bind(w);w.__liveRequests=[];w.__developments=[];const gpuRaw=w.HDRLibraryGpuRaw;w.HDRLibraryGpuRaw={...gpuRaw,liveScene:(p,e,signal,importance,...rest)=>{const row={path:p,edge:e,priority:importance(),cancelled:false};signal?.addEventListener('abort',()=>row.cancelled=true,{once:true});w.__developments.push(row);return gpuRaw.liveScene(p,e,signal,importance,...rest);}};
+   const w=element.contentWindow,fetch=w.fetch.bind(w);w.__liveRequests=[];w.__developments=[];const gpuRaw=w.HDRLibraryGpuRaw;w.HDRLibraryGpuRaw={...gpuRaw,liveScene:(p,e,signal,importance,...rest)=>{const row={path:p,edge:e,priority:importance(),cancelled:false};signal?.addEventListener('abort',()=>row.cancelled=true,{once:true});w.__developments.push(row);return gpuRaw.liveScene(p,e,signal,importance,...rest).finally(()=>row.settled=true);}};
    w.fetch=(url,options)=>{w.__liveRequests.push({url:String(url),body:typeof options?.body==='string'?options.body:null});return fetch(url,options);};
   });
   const detached=await library.evaluate(async(element,source)=>{
@@ -100,11 +101,18 @@ if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes
   report.singleMs=Date.now()-singleStarted;
   await page.waitForFunction(()=>document.querySelector('#library-frame').contentWindow.__developments.some(row=>row.edge===2560&&row.priority===50),null,{timeout:30000});
   report.neighboursSoon=true;
+  await page.waitForFunction(()=>document.querySelector('#library-frame').contentWindow.__developments.some(row=>row.path.endsWith('DSC07072.ARW')&&row.edge===2560&&row.settled&&!row.cancelled),null,{timeout:60000});
+  const stepStarted=Date.now();
+  await library.evaluate(element=>[...element.contentWindow.document.querySelectorAll('#film-space .library-cell')].find(c=>c.dataset.path.endsWith('DSC07072.ARW')).click());
+  await page.waitForFunction(()=>{const c=document.querySelector('#library-frame').contentWindow.document.getElementById('single-picture');return c.dataset.picturePath?.endsWith('DSC07072.ARW')&&Number(c.dataset.pictureEdge)===2560;},null,{timeout:60000});
+  report.neighbourStepMs=Date.now()-stepStarted;
   await library.evaluate(element=>element.contentWindow.document.getElementById('grid-view').click());
   await new Promise(resolve=>setTimeout(resolve,1000));
   report.developments=await library.evaluate(element=>element.contentWindow.__developments);
+  assert.ok(report.developments.filter(row=>row.edge===2560).every(row=>row.settled||row.cancelled),'Leaving Single stops unfinished screen developments');
+  report.neighboursStopped=true;
   assert.deepEqual(errors,[],'No page errors');
-  fs.writeFileSync(path.join(folder,'result.json'),JSON.stringify({coldMs,...report},null,2));
+  fs.writeFileSync(path.join(resultFolder,'result.json'),JSON.stringify({coldMs,...report},null,2));
   console.log(JSON.stringify({coldMs,reuse:report.rows.map(r=>({name:r.name,ms:r.reuseMs})),residentBytes:report.memory.resident.totalBytes,gpuRecovery:true}));
  }finally{await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

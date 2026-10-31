@@ -11,6 +11,7 @@ fs.mkdirSync(out,{recursive:true});
 const protectedProjects=require('../tests/release/drivers.json').protectedProjects,before=hashProjects(protectedProjects);
 execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-edited-fixtures.py'),folder]);
 (async()=>{
+ const filmOnly=process.argv.includes('--filmstrip-only');
  const browser=await chromium.launch(),report={phase,images:[],errors:[]};
  try{
   const page=await browser.newPage();page.on('pageerror',e=>report.errors.push(e.message));
@@ -20,19 +21,19 @@ execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'li
   await lib.evaluate(folder=>HDRLibrary.browse(folder),folder);
   await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count===5,null,{timeout:60000});
   await lib.waitForFunction(()=>[...document.querySelectorAll('#grid-space .library-cell canvas[data-picture-key]')].filter(c=>!c.hidden).length===5,null,{timeout:300000});
-  await lib.locator('#grid-space').screenshot({path:path.join(out,'grid.png')});report.images.push('grid.png');
+  if(!filmOnly)await lib.locator('#grid-space').screenshot({path:path.join(out,'grid.png')});report.images.push('grid.png');
   const paths=await lib.evaluate(()=>HDRLibrary.getSnapshot().paths);
-  for(let i=0;i<paths.length;i++){
+  for(let i=0;i<(filmOnly?1:paths.length);i++){
    await lib.evaluate(p=>{const c=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===p);c.click();document.getElementById('single-view').click();},paths[i]);
    await lib.waitForFunction(p=>{const c=document.getElementById('single-picture');return c.dataset.picturePath===p&&Number(c.dataset.pictureEdge)===2560&&!c.hidden;},paths[i],{timeout:300000});
-   const name=`single-${i}.png`;await page.screenshot({path:path.join(out,name),clip:await lib.locator('#single-picture').boundingBox()});report.images.push(name);
-   await lib.waitForFunction(()=>[...document.querySelectorAll('#filmstrip .library-cell canvas[data-picture-key], #film-space .library-cell canvas[data-picture-key]')].filter(c=>!c.hidden).length>=1,null,{timeout:60000});
-   if(i===0){await page.screenshot({path:path.join(out,'filmstrip.png')});report.images.push('filmstrip.png');}
+   const name=`single-${i}.png`;if(!filmOnly)await page.screenshot({path:path.join(out,name),clip:await lib.locator('#single-picture').boundingBox()});report.images.push(name);
+   await lib.waitForFunction(()=>[...document.querySelectorAll('#filmstrip .library-cell canvas[data-picture-key], #film-space .library-cell canvas[data-picture-key]')].filter(c=>!c.hidden).length===5,null,{timeout:60000});
+   if(i===0){await page.screenshot({path:path.join(out,'filmstrip-all.png'),clip:await lib.locator('#film-space').boundingBox()});report.images.push('filmstrip.png');}
    await lib.evaluate(()=>document.getElementById('grid-view').click());
   }
   report.complete=true;report.paths=paths;assert.deepEqual(report.errors,[]);
  }finally{
-  fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));
+  fs.writeFileSync(path.join(out,filmOnly?'filmstrip-report.json':'report.json'),JSON.stringify(report,null,2));
   checkProjects(before,protectedProjects);await browser.close();
   // Only this tool's disposable source links/sidecars; keep captures and manifest.
   fs.rmSync(path.join(folder,'DSC00264.ARW.hdrf'),{force:true});

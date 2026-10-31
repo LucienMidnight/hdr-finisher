@@ -34,13 +34,17 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const report={mode:phase0?'phase0':jpeg?'IMG_0267':aceh?'aceh':'mixed',files:names,junk,errors:[],memoryRequests:[],screens:[],startedAt:new Date().toISOString()};
 const before=hashProjects(require('../tests/release/drivers.json').protectedProjects);
 (async()=>{
- let memoryViolation, browser,lib,observer,peak=0,pending='',poll,stopping=false,activePoll,diagnostics;
+ let memoryViolation, browser,lib,observer,peak=0,pending='',poll,stopping=false,activePoll,diagnostics,gpuObserver;
  const memory=new MemoryMonitor(memoryLimit);
  const api=async(route,body,signal)=>{
   const response=await global.HDRFinisherElectronTestHarness.fetch('/api/library/'+route,{method:body?'POST':'GET',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),signal});
   if(!response.ok)throw Error(`${route}: ${response.status} ${await response.text()}`);return response.json();
  };
  try{
+  report.gpuMemory={scope:'whole card, including desktop and other applications',samples:0,peakBytes:0};
+  gpuObserver=spawn('nvidia-smi',['--query-gpu=memory.used','--format=csv,noheader,nounits','-lms','250'],{windowsHide:true});
+  let gpuPending='';gpuObserver.stdout.on('data',chunk=>{gpuPending+=chunk;let end;while((end=gpuPending.indexOf('\n'))>=0){const line=gpuPending.slice(0,end);gpuPending=gpuPending.slice(end+1);const bytes=Number(line.trim())*1024**2;if(Number.isFinite(bytes)&&bytes>0){report.gpuMemory.initialBytes??=bytes;report.gpuMemory.samples++;report.gpuMemory.peakBytes=Math.max(report.gpuMemory.peakBytes,bytes);}}});
+  gpuObserver.on('error',error=>report.gpuMemory.error=String(error));
   browser=await chromium.launch();const page=await browser.newPage();page.on('pageerror',e=>report.errors.push(String(e)));
   page.on('console',msg=>{if(msg.text().includes('Memory controller:'))report.errors.push(msg.text());});
   report.grantEvents=[];const liveGrants=new Map();
@@ -54,7 +58,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   await lib.evaluate(()=>{
    window.coldEvents=[];window.coldAllocations=[];
    const rgb=HDRLibraryRGB;window.HDRLibraryRGB={...rgb,develop:async args=>{
-    const value=await rgb.develop(args);coldAllocations.push({path:args.meta.path,width:args.meta.width,height:args.meta.height,reserved:args.memoryBudget,peak:value.memory_peak_bytes});return value;
+    const value=await rgb.develop(args);coldAllocations.push({path:args.meta.path,width:args.meta.width,height:args.meta.height,edges:args.edges,reserved:args.memoryBudget,peak:value.memory_peak_bytes});return value;
    }};
    const log=HDRLibraryStopwatch;
    window.HDRLibraryStopwatch=(stage,fields)=>{coldEvents.push({stage,at:performance.now(),...fields});log(stage,fields);};
@@ -206,6 +210,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
       finishedMs:finished?finished.at-report.openedPerformance:null,quickMs:quick?quick.at-report.openedPerformance:null};
   });
   fs.writeFileSync(path.join(out,'per-file-results.csv'),'file,status,finished_ms,quick_ms\n'+report.perFile.map(r=>[r.file,r.status,r.finishedMs??'',r.quickMs??''].join(',')).join('\n')+'\n');
+  gpuObserver?.kill();
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));
   fs.writeFileSync(path.join(out,'cell-timings.csv'),'screen,photo,finished_request,request_to_finished_ms,camera_preview_ms,presented,failure\n'+report.results.map(r=>{
    const finished=r.requests.filter(p=>p.size==='thumbnail').at(-1)||{};
