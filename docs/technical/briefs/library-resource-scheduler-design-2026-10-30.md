@@ -1448,12 +1448,14 @@ Decided October 30:
     in (memory setting, shrink while reading, faster processing), rerun the
     cold-folder tests with two, three and four saves and compare folder finish
     time and peak memory before changing it.
-15. **Visible quick-preview measure — awaiting Steve.**
-    Proposed additional measure: all initially visible cells, including partial
-    rows, show their quick preview within 5.884 s of folder click (30/30 in the
-    slower repeat). This reflects what appears on screen but can hide individual
-    queue delays. The existing request-to-screen p95 <0.5 s target remains in
-    force until Steve decides; it is not met.
+15. **Visible quick-preview measure — decided October 31 (Steve asked Claude
+    to answer).** Add it as a reported measure: time from folder click until
+    all initially visible cells, including partial rows, show their quick
+    preview (5.008 / 5.884 s in the 3a.2 repeats). Each report also names the
+    slowest single visible cell and its time, so one stuck cell cannot hide
+    behind the total. No pass/fail target for it yet; set one once the speed
+    work settles. The request-to-screen p95 <0.5 s target stays unchanged and
+    is not met.
 
 ## 11. Code map (for whoever builds it)
 
