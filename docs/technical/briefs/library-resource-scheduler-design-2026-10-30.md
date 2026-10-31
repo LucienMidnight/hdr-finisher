@@ -863,7 +863,8 @@ the backend answered folder requests in about 1 ms.
    (M2): nothing large starts beside it, and it may take the app over 4 GB.
    But no Library job starts if its estimate is more than the computer's
    free physical memory minus a **system reserve** left for Windows and
-   other apps (proposed: the larger of 2 GB or 10% of RAM, decision 9):
+   other apps (the larger of 2 GB or 10% of RAM, Steve, October 31;
+   decision 9):
    * Such a job waits with "Waiting: not enough free memory on this computer
      (needs 6.0 GB, 4.1 GB free)". It is not a failure.
    * The backend re-checks free memory when grants are released and every
@@ -1035,8 +1036,9 @@ Still to decide:
    24 MP JPEG (about 550 MB), a 12 MP iPhone HEIC (about 620 MB) and a
    61 MP RAW sensor read (about 430 MB); not a 48 MP HEIC (about 2.5 GB)
    or a line scan (about 6 GB), which wait for room instead. Needed for 3a.
-9. The system reserve: free memory always left for Windows and other apps
-   (7.6, point 7). Proposed the larger of 2 GB or 10% of RAM (6.8 GB on
+9. ~~The system reserve~~ **the larger of 2 GB or 10% of RAM, approved by
+   Steve, October 31.** Free memory always left for Windows and other apps
+   (7.6, point 7) (6.8 GB on
    Steve's 68 GB machine, 2 GB on an 8 GB one). Needed for 3a.
 
 Decided October 30:
