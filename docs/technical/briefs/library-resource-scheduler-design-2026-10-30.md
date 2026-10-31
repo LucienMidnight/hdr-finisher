@@ -1116,8 +1116,9 @@ precedence. The changes below preserve the approved estimates, shares, fast
 lane, floor, reserve and Grade messages.
 
 * GPU completion releases the preparation place after the exclusive lease ends.
-  The memory grant survives through saving. **Two saves at once** is provisional,
-  explicitly approved by Steve in this chat; a third waits, and new developments
+  The memory grant survives through saving. **Two saves at once** is Steve's
+  decision (October 31; decision 14 records it as a possible bottleneck to
+  retest later); a third waits, and new developments
   stop entering while both saving places are occupied. This bounds retained
   decoded results without hiding their memory.
 * Transient state is captured briefly under the picture lock; packing, spilling,
@@ -1440,11 +1441,14 @@ Decided October 30:
     the ceiling if full-size intermediates remain. Current code uses the approved
     rates, including the oversized line scan's conservative estimate.
 
-14. **Permanent saving limit — awaiting Steve.** Two simultaneous saves is the
-    explicitly approved provisional setting used above. Keeping two bounds
-    decoded results waiting for disk; a higher count might improve throughput
-    on fast storage but retains more memory and can pile up results.
-15. **Visible quick-preview measure — awaiting Steve, after decision 14.**
+14. **Saving limit — decided: two at once (Steve, October 31).** Keeping two
+    bounds decoded results waiting for disk; a higher count might improve
+    throughput on fast storage but retains more memory and can pile up results.
+    **Possible bottleneck for folder speed.** Once the other major changes are
+    in (memory setting, shrink while reading, faster processing), rerun the
+    cold-folder tests with two, three and four saves and compare folder finish
+    time and peak memory before changing it.
+15. **Visible quick-preview measure — awaiting Steve.**
     Proposed additional measure: all initially visible cells, including partial
     rows, show their quick preview within 5.884 s of folder click (30/30 in the
     slower repeat). This reflects what appears on screen but can hide individual

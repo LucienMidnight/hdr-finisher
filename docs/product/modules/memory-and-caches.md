@@ -38,8 +38,9 @@ Admission now also requires measured whole-app bytes plus estimates for grants
 not covered by that census plus the incoming estimate to fit the ceiling.
 Covered grants are not counted twice. Approved floor, fast-lane, physical-reserve
 and oversized-alone rules remain unchanged. Saving retains its memory grant
-after releasing a development place; two saves at once is Steve's provisional
-approval, with the permanent limit awaiting his decision.
+after releasing a development place; two saves at once is Steve's decision
+(2026-10-31). It may limit folder speed: retest two, three and four saves once
+the other major changes are in (scheduler design, decision 14).
 
 Fresh scheduler censuses run every half second. Memory endpoints return a
 completed census while another walk is busy. Transient spill/packing/index work

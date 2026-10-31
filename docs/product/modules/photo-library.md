@@ -7,7 +7,8 @@ Read it before changing how much any Library cache keeps.
 ## October 31 phase 3a.2: saving, trim and measured-admission corrections
 
 GPU completion releases a development place while its memory grant remains
-through bounded saving (two at once, provisionally approved by Steve). Visible
+through bounded saving (two at once, Steve's decision on October 31; a
+possible folder-speed bottleneck to retest after the other major changes). Visible
 quick previews precede developments; offscreen previews keep normal priority.
 Picture packing/spilling no longer holds the shared picture lock, and moderate
 Chromium cleanup collects page garbage. Direct RGB scenes reuse their saved
