@@ -268,3 +268,13 @@ test('visible development releases an offscreen source parked at GPU admission',
  const visible=queue.submit('visible',async()=>assert.equal(released,true),undefined,10);
  await Promise.all([visible,rejected]);assert.equal(queue.snapshot().active<=1,true);
 });
+
+test('development FIFO keeps screen order despite different costs',async()=>{
+ const q=create(1,undefined,{fifo:true}),block=gate(),started=[];
+ const first=q.submit('first',()=>block.promise);
+ const a=q.submit('visible-a',()=>started.push('a'),null,10,{cost:5});
+ const b=q.submit('visible-b',()=>started.push('b'),null,10,{cost:0});
+ const selected=q.submit('selected',()=>started.push('selected'),null,0);
+ block.resolve();await Promise.all([first,a,b,selected]);
+ assert.deepEqual(started,['selected','a','b']);
+});

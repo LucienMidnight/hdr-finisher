@@ -146,6 +146,7 @@ def test_measured_safety_net_allows_only_floor_and_fast_lane_above_ceiling():
     # paused-for-Grade or system-reserve block. Cancelling frees its place.
     assert ordinary.granted is None
     assert quick.granted is not None
+    s.finish("quick")
     s.finish("large")
     assert ordinary.granted is not None and ordinary.floor
 
@@ -166,3 +167,47 @@ def test_grade_priority_is_not_refused_by_library_reserve():
     grade = ask(s, "Grade",4*GB,"Grade")
     assert grade.granted is not None and grade.estimate == 4*GB
     assert ask(s, "ordinary",FAST_BYTES).granted is None
+
+
+def test_developments_capped_fifo_across_windows_and_cancel_frees_place():
+    s = fresh(20*GB)
+    jobs = [ask(s, str(i), owner=f"window-{i%2}") for i in range(30)]
+    assert [j.id for j in jobs if j.granted is not None] == ["0", "1"]
+    assert all(j.baseline is None for j in jobs[2:])
+    s.finish("0", outcome="cancelled")
+    assert jobs[2].granted is not None
+    assert sum(j.development and j.granted is not None for j in s.jobs.values()) == 2
+
+
+def test_quick_previews_run_before_next_development():
+    s = fresh(20*GB)
+    a = ask(s, "a")
+    b = ask(s, "b")
+    c = ask(s, "c")
+    quick = ask(s, "quick", kind="quick")
+    assert quick.granted is not None
+    s.finish(a.id)
+    assert c.granted is None and c.reason == "quick previews first"
+    s.finish(quick.id)
+    assert c.granted is not None
+
+
+def test_first_screen_finishes_before_background_development_starts():
+    s = fresh(20*GB)
+    a, b = ask(s, "a"), ask(s, "b")
+    later = ask(s, "second-screen", cls="soon")
+    s.finish(a.id)
+    assert later.granted is None
+    s.finish(b.id)
+    assert later.granted is not None
+
+
+def test_screen_order_survives_out_of_order_cache_probes():
+    s = fresh(20*GB)
+    blocker = ask(s, "quick", kind="quick")
+    later = s.ask("later", "window", "later.jpg", "source", FAST_BYTES, order=8)
+    earlier = s.ask("earlier", "window", "earlier.jpg", "source", FAST_BYTES, order=0)
+    middle = s.ask("middle", "window", "middle.jpg", "source", FAST_BYTES, order=1)
+    s.finish(blocker.id)
+    assert earlier.granted is not None and middle.granted is not None
+    assert later.granted is None

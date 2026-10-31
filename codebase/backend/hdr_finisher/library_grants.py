@@ -138,11 +138,11 @@ def add_routes(router, marks):
                         raise ValueError("Invalid Library job")
                     amount, reason = await asyncio.to_thread(estimate_details, path, kind)
                     scheduler.ask(id,owner,path,kind,amount,
-                        "now" if kind=="quick" else priority_class(int(command.get("priority",10))),notify,reason)
+                        "now" if kind=="quick" else priority_class(int(command.get("priority",10))),notify,reason,order=command.get("order"))
                 elif action in {"finish","cancel"}:
                     scheduler.finish(id,owner,command.get("outcome","finished") if action=="finish" else "cancelled")
                 elif action == "priority":
-                    scheduler.change(id,owner,priority_class(int(command["priority"])))
+                    scheduler.change(id,owner,priority_class(int(command["priority"])),order=command.get("order"))
         except (WebSocketDisconnect,asyncio.TimeoutError):
             pass
         except (KeyError,ValueError,TypeError) as error:

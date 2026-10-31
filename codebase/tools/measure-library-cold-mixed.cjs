@@ -7,7 +7,7 @@ const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
 const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe'),aceh=process.argv.includes('--aceh');
 const out=path.join(root,'output/cold-mixed',jpeg?'jpeg':probe?'probe':aceh?'aceh':'final');fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'memory.jsonl'),'');
 const scratch=fs.mkdtempSync(path.join(root,'output/test-photos/cold-mixed-'));
-const photos=path.join(scratch,'photos'),background=path.join(scratch,'index');fs.mkdirSync(photos);fs.mkdirSync(background);
+const photos=path.join(root,'output/test-photos',aceh?'aceh':'cold-mixed-photos'),background=path.join(scratch,'index');fs.mkdirSync(photos,{recursive:true});fs.mkdirSync(background);
 const source=aceh?'D:/Photos/2017/Aceh-Wedding/Pesta':'D:/Photos/2023/11';
 let names=fs.readdirSync(source).filter(n=>/\.(heic|jpg|png|arw)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
 let junk=[];
@@ -21,8 +21,7 @@ else if(jpeg)names=['IMG_0267.JPG'];else{
  for(const ext of ['HEIC','JPG','PNG','ARW'])if(!chosen.some(n=>n.toUpperCase().endsWith('.'+ext)))chosen.push(names.find(n=>n.toUpperCase().endsWith('.'+ext)));
  if(!chosen.includes('IMG_0267.JPG'))chosen.push('IMG_0267.JPG');names=chosen;
 }
-for(const name of junk)fs.copyFileSync(path.join(source,name),path.join(photos,name));
-for(const name of names)fs.copyFileSync(path.join(source,name),path.join(photos,name));
+for(const name of [...junk,...names])if(!fs.existsSync(path.join(photos,name)))fs.copyFileSync(path.join(source,name),path.join(photos,name));
 // Small generated-fixture files keep an independent pinned index active;
 // no second copies of Steve's real photos are made.
 if(!jpeg&&!aceh)for(let i=0;i<1200;i++)fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),path.join(background,`index-${String(i).padStart(4,'0')}.png`));

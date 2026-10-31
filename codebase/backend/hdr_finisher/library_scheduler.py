@@ -10,6 +10,7 @@ from .library_diagnostics import log
 
 MINIMUM = FAST_BYTES = 64_000_000
 FAST_COUNT = 4
+DEVELOPMENTS = 2
 FLOOR = 1_000_000_000
 STARTING = 1_300_000_000
 CLASSES = {"Grade": 0, "now": 1, "soon": 2, "eventually": 3}
@@ -36,9 +37,14 @@ class Job:
     blocked: str = ""
     peak: int | None = None
     baseline: int | None = None
+    order: int = 0
     floor: bool = False
     alone: bool = False
     ready: Event = field(default_factory=Event)
+
+    @property
+    def development(self):
+        return self.kind in {"source", "cpu"} and self.cls != "Grade"
 
     @property
     def fast(self):
@@ -89,7 +95,7 @@ class Scheduler:
                 if self.clock()-seen > seconds:
                     self.disconnect(owner)
 
-    def ask(self, id, owner, path, kind, estimate, cls="now", notify=None, size_reason=""):
+    def ask(self, id, owner, path, kind, estimate, cls="now", notify=None, size_reason="", order=None):
         if cls not in CLASSES:
             raise ValueError("Unknown Library priority")
         with self.lock:
@@ -102,19 +108,21 @@ class Scheduler:
             amount = max(0 if cls == "Grade" else MINIMUM, int(estimate))
             job = Job(id, owner, path, kind, amount, cls,
                       self.sequence, self.clock(), notify)
+            job.order = job.sequence if order is None else int(order)
             job.size_reason = size_reason
             self.jobs[id] = job
             self._log(job, "asked")
             self._pump()
             return job
 
-    def change(self, id, owner, cls):
+    def change(self, id, owner, cls, order=None):
         if cls not in CLASSES:
             raise ValueError("Unknown Library priority")
         with self.lock:
             job = self.jobs.get(id)
             if job and job.owner == owner:
                 job.cls = cls
+                if order is not None: job.order = int(order)
                 self._pump()
 
     def valid(self, id, path, kind=None):
@@ -184,7 +192,7 @@ class Scheduler:
             sum(j.estimate for j in running if j.id not in self.sampled_grants))
         now_waiting = False
         for job in sorted((j for j in self.jobs.values() if j.granted is None),
-                          key=lambda j: (CLASSES[j.cls], j.sequence)):
+                          key=lambda j: (CLASSES[j.cls], j.kind != "quick", j.order, j.sequence)):
             normal = [j for j in running if not j.fast]
             used = sum(j.estimate for j in normal)
             reason = ""
@@ -222,7 +230,15 @@ class Scheduler:
                 job.alone = True
             else:
                 reason = "room"
+            if not reason:
+                if job.development and any(j.kind == "quick" for j in running):
+                    reason = "quick previews first"
+                elif job.development and sum(j.development for j in running) >= DEVELOPMENTS:
+                    reason = "development places full"
+                elif job.development and any(j.development and CLASSES[j.cls] < CLASSES[job.cls] for j in running):
+                    reason = "visible photos first"
             if reason:
+                job.floor = job.alone = False
                 self._wait(job, reason)
                 if job.cls == "now" and reason not in ("paused for Grade", "system reserve"):
                     now_waiting = True

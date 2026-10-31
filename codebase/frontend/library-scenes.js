@@ -22,7 +22,7 @@ window.HDRLibraryScenes = (() => {
   // Explicit preparations finish their cache even if the immediate waiter
   // detaches. Grid/filmstrip and speculative demand use viewport ownership.
   const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {
-    heavyLimit:cpuLanes,onChange:changed,
+    heavyLimit:cpuLanes,onChange:changed,fifo:true,
     // Release an offscreen source's working room if it is only waiting on
     // the GPU and newly visible development needs that room.
     preemptLower:(job,priority)=>priority<=10&&job.resourceWaiting,
@@ -184,7 +184,7 @@ window.HDRLibraryScenes = (() => {
     onReclaim:handler=>{reclaim=handler;},
     reclaim:(bytes,required=false)=>reclaim(bytes,required),
     promote:(path,priority)=>{probes.promote(path,priority);sources.promote(path,priority);draws.promote(path,priority);quickDraws.promote(path,priority);},
-    viewport:(shown,around)=>{visible=new Set(shown);nearby=new Set(around);sources.reprioritize(rank);probes.reprioritize(rank);},
+    viewport:(shown,around)=>{visible=new Set(shown);nearby=new Set(around);window.HDRLibraryGrants?.viewport?.([...shown,...around]);sources.reprioritize(rank);probes.reprioritize(rank);},
     invalidate:paths=>{const targets=new Set(paths);for(const path of targets){generations.set(path,(generations.get(path)||0)+1);HDRLibraryGpuRaw.forgetDirect?.(path);}sources.invalidate(path=>targets.has(path));probes.invalidate(path=>targets.has(path));},
     stage:(path,stage,waiting=false)=>sources.stage(path,stage,waiting),
     draw:(task,signal,priority=10,path="Photo",labels={})=>draws.submit(crypto.randomUUID(),task,signal,priority,{path,...labels,stage:`Drawing ${labels.edge === 100000 ? "detail preview" : labels.edge <= 640 ? "thumbnail" : "screen preview"}`}),

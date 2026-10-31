@@ -4,6 +4,16 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 31 phase 3a.1: two developments, speed qualification still open
+
+The scheduler now caps source/CPU development at two globally, starts queued
+photos in viewport order within each class and gives quick previews precedence.
+Cold Aceh remains outside tolerance: 35.429 / 94.662 s, peak 3.601 GB, all 48
+cells presented. A prepared source still holds memory while waiting for the
+exclusive GPU lease; phase 4 remains necessary. Grade resumes in 0.150 s and
+saves correctly. Section 7.7 records the 3b whiteboard; Steve authorised this
+run to proceed directly from 3a.1 into 3b. No budgets or Grade messages changed.
+
 ## October 31: phase 3a scheduler and grant channel connected; speed targets not yet met
 
 Every Library source, CPU decode, sensor read and quick preview now asks the

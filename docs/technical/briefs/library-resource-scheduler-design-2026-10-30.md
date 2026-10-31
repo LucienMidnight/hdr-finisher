@@ -1028,6 +1028,56 @@ one run with the line-scan copy
 (`codebase\output\test-photos\phase0\line_scan_…dng`) open in Grade
 while a cold folder copy opens.
 
+**Phase 3a.1 as built and measured, October 31.** Admission now permits at
+most two source/CPU developments across windows. Queued work starts in viewport
+order within class; quick jobs precede new development work. Cancel immediately
+releases its place. The frontend source queue retains FIFO within class; other
+queues retain their existing ordering. The cause was confirmed: source grants
+were issued before the local queue and exclusive GPU lease, allowing 22 decoded
+sources to compete. Budgets, estimates, Grade wording and GPU lease are unchanged.
+
+Corrected isolated Aceh run: 35.429 / 94.662 s (limits 26.51 / 51.59 s), all
+48 cells presented, peak 3.601 GB <4 GB, zero duplicate asks. Two memory-endpoint
+samples timed out; qualification fails. Prepared pixels still retain their grant
+while awaiting the exclusive GPU lease: the requested no-grant GPU wait is NOT
+implemented or claimed. A safe transfer of ownership belongs with phase 4;
+releasing a grant while keeping decoded pixels would undercount real memory.
+Screen two is explicitly scrolled to by the script after all screen-one canvases
+appear; a later store/finish overlaps that scroll, so this is not evidence of
+unprompted second-screen overtaking. No rerun for noise: the miss is substantial.
+
+Grade coexistence: first ordinary picture 2.926 s (<5), paused line scan observed
+1.995 s from folder opening (cell-visible latency unmeasured), close/save 1.872 s,
+resume 0.150 s (<2), saved exposure verified, zero page errors, protected project
+hashes unchanged. The pause message and Close photo in Grade action work.
+
+Checks: scheduler/grant Python checks 22 passed. Final full Python: 2,842
+passed, three skipped, four existing fixture failures (preset-header, RGB
+publication, frame-cache and Retouch capture-cache). The earlier unrelated
+helper-restart timeout did not recur. Full JavaScript: 683 passed, three
+existing failures (two source-test version stubs and Single screen-preview
+stub). No new failures. The quick-first and FIFO expectations were updated
+because those behaviours changed deliberately; no tolerance was relaxed.
+Development grants: maximum two, time-weighted mean 1.831. Quick previews:
+p50 1.390 s / p95 2.130 s / max 2.439 s (p95 limit <0.5 s missed). Two moderate
+trims at 3.469 / 3.420 GB, above the existing 3.40 GB target; no refusal signals.
+Invalid exploratory runs (overlapped apps and an accidental draw-lane change)
+were excluded; the draw queues are restored to one lane.
+
+### 7.7 Phase 3b whiteboard (October 31)
+
+Steve authorised 3a.1 followed immediately by 3b during this run, without
+waiting for acceptance between them. No approved budget or estimate changes.
+
+| Item | Today | Change to build | Acceptance / undecided numbers |
+| --- | --- | --- | --- |
+| 1. Large pictures / header routing | RGB codecs can decode before colour refusal; a DNG larger than a GPU buffer waits indefinitely; Pillow rejects very large images. | Inspect eligibility before pixels; provide strip/mapped reduction only where the decoder and colour pipeline support it. Do not silently replace finished pictures with a different rendering. Unsupported routes must finish once with a reason and retain an embedded preview. | Line scan ≤27 s, report incremental peak, aim ≤1 GB. Large TIFF and >179 MP synthetic JPEG/PNG must finish. Ordinary mean ΔE2000 <1. Bounded-route estimates remain **proposed, awaiting Steve**, only after measurements; keep approved rates meanwhile. |
+| 2. Decoder recovery | Shared helper restarts and replays pending requests, including the culprit; no per-file deadline. | Track active requests and deadlines; isolate a known culprit once. A shared-process crash with multiple active files cannot safely identify its cause: do not mark innocent photos broken. | Crafted crash and hanging stub. Proposed, awaiting Steve: 135 s linear DNG (5×27 s), 80 s AVIF (5×16 s), 30 s JPEG/PNG/RAW, 135 s other codecs until measured per-type timings exist. Use only the measured DNG/AVIF proposals meanwhile; unmeasured limits need further evidence. |
+| 3. Offline source | Missing pins already dim, but an I/O failure during decoding can be remembered as a broken photo. | Preserve OS error identity across helper transport; treat disconnected-device errors as temporary offline results, with no broken-photo receipt. Refresh available folders on return. | Simulated device failures only; zero stored broken-photo errors, retry succeeds after return. No new size/count. |
+| 4. Disk cache unavailable | Publication errors can fail the photo and subsequent jobs try storage again. | Stop failed storage for the session and continue transient pictures; surface one cache message. Handle missing cache volume separately from a new folder. | Scratch allowance of a few MB and simulated ENOSPC / missing volume; one failed store, no retry loop, usable pictures. Existing allowances unchanged. |
+| 5. Startup upkeep | Low-priority thread waits for helper idleness outside the scheduler. | Admit bounded upkeep steps as eventually work, yield between safe points, release on cancellation/close. | Large generated scratch fixture; first visible picture within 10% of launch without upkeep (proposed tolerance from this brief). No new memory allowance: existing 64 MB minimum estimate. |
+| 6. Window visibility | Hidden and shown owners retain equal classes. | Window visibility arrives over the grant channel; hidden owners become eventually; showing restores requested classes. Running work completes at its existing safe boundary. | Two owners: visible work wins, hidden queued work resumes and restores its class. No new count or budget. |
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
@@ -1040,7 +1090,7 @@ records its numbers in the [performance table](../performance-table.md).
 | 0. Measure — **done October 30** | Log real RAM and GPU peaks per file type and job type on disposable copies (20241117 RAWs, Aceh JPEGs, one of each supported type, a large TIFF). Try reduced decoding for 640. No behaviour change. | — | Per-type budget table (6.11) written for Steve to approve. |
 | 1. File gate — **built October 30, awaiting Steve's try** | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
 | 2. Stop the feedback loop — **built October 30, awaiting Steve's try** (7.5) | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
-| 3. One scheduler, RAM — **3a scheduler/channel connected October 31; speed qualification open (7.6). 3b remains separate** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
+| 3. One scheduler, RAM — **October 31 run exception: Steve authorised 3a.1 → 3b without intervening acceptance.** — **3a scheduler/channel connected October 31; speed qualification open (7.6). 3b remains separate** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
 | 4. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
 | 5. Grid makes 640 only | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
 | 6. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. Edge case M25. | Leftover complexity. | Fast checks pass; less code than before. |

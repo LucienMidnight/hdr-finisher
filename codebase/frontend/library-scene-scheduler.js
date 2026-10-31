@@ -1,11 +1,11 @@
 /* Shared bounded work with merged demand and priority promotion. */
 (function(root){
   "use strict";
-  function create(limit=2,now=()=>Date.now(),{heavyLimit=limit,onChange=()=>{},keepRunning=false,preemptLower=false,preemptForCapacity=false,admit=null}={}){
+  function create(limit=2,now=()=>Date.now(),{heavyLimit=limit,onChange=()=>{},keepRunning=false,preemptLower=false,preemptForCapacity=false,admit=null,fifo=false}={}){
     const jobs=new Map(),waiting=[],failures=[],runningJobs=new Set();let active=0,heavyActive=0,sequence=0;
     const cancelled=()=>new DOMException("Cancelled","AbortError");
     const score=job=>job.cost-Math.min(5,(now()-job.created)/1000);
-    const order=(a,b)=>a.priority-b.priority||score(a)-score(b)||a.sequence-b.sequence;
+    const order=(a,b)=>a.priority-b.priority||(!fifo && score(a)-score(b))||a.sequence-b.sequence;
     let ranking=null;
     const demand=job=>{job.priority=Math.min(80,...[...job.users].map(user=>user.priority<=5||!user.viewport?user.priority:ranking?ranking(job.path):user.priority));};
     let borrowPending=false,retry=null;

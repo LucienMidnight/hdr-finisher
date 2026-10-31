@@ -32,6 +32,14 @@ The RAW sensor read needs about 5.5 bytes per pixel. GPU memory runs about
 proposed per-type estimates are Steve's decision; no size or share has
 changed.
 
+### October 31: phase 3a.1 admission cap
+
+Two source/CPU developments may be admitted across windows. This is the approved
+count, not a new memory allowance. Quick previews precede new developments; all
+estimates, floor, physical reserve and fast-lane limits remain unchanged. A
+prepared job still owns its decoded memory through its exclusive GPU wait; no
+unaccounted release is used. Corrected cold Aceh peak 3.601 GB.
+
 ### October 31: phase 3a scheduler and channel connected
 
 `library_scheduler.py` owns estimate admission, priority/FIFO, the visible

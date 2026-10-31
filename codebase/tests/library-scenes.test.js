@@ -67,7 +67,7 @@ test('observed slow files still borrow idle capacity, and source revisions remai
  assert.deepEqual(started,['odd','other','odd']);assert.equal(scenes.snapshot().sources.active,2);
  block.resolve();await Promise.all([a,b]);
  plans.odd.revision='2';block=gate();const c=scenes.load('other',640),d=scenes.load('odd',640);
- await tick();assert.deepEqual(started.slice(-2),['odd','other']);
+ await tick();assert.deepEqual(started.slice(-2),['other','odd']);
  block.resolve();await Promise.all([c,d]);
 });
 test('cancelled pending expensive demand never starts and a failed preparation releases capacity',async()=>{
