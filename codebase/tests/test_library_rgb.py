@@ -290,7 +290,7 @@ def test_precision_publication_matches_grade_document(tmp_path,authored,sample_b
             np.testing.assert_array_equal(stored['reference'], np.clip(expected.sdr_reference_image, 0, 65504).astype(np.float16))
 
 @pytest.mark.parametrize("transfer,bits,dtype",[("sRGB",8,"uint8"),("PQ",12,"uint16"),("HLG",16,"uint16"),("PQ",32,"float32")])
-def test_jxl_samples_precision_gate_and_normalized_override_order(tmp_path, transfer, bits, dtype):
+def test_jxl_samples_precision_gate_and_normalized_override_order(tmp_path, monkeypatch, transfer, bits, dtype):
     import sys
     sys.path.insert(0,str(Path(__file__).parent/'helpers'))
     from library_codec_samples import marked_jxl
@@ -314,9 +314,12 @@ def test_jxl_samples_precision_gate_and_normalized_override_order(tmp_path, tran
     assert overridden['colour']['transfer']=='BT.709' and overridden['colour']['eotf_applied']
     # The marker is required even when libjxl can decode the samples.
     path.write_bytes(__import__('imagecodecs').jpegxl_encode(np.zeros((5,8,3),np.uint8),lossless=True))
-    with pytest.raises(library_rgb.NotEligible,match='primaries'):library_rgb.decoded(path,recipe(None))
+    def forbidden_decode(*args, **kwargs):
+        pytest.fail('Unresolved JPEG XL must be rejected from the header')
+    monkeypatch.setattr(library_rgb.loader, 'decode_jpegxl', forbidden_decode)
+    with pytest.raises(library_rgb.NotEligible): library_rgb.decoded(path, recipe(None))
     inputs['interpretation_override']['color_space']=None
-    with pytest.raises(library_rgb.NotEligible,match='primaries'):library_rgb.decoded(path,inputs)
+    with pytest.raises(library_rgb.NotEligible): library_rgb.decoded(path, inputs)
 
 
 def test_plain_avif_rejects_gainmap_before_primary_decode(tmp_path,monkeypatch):
@@ -553,3 +556,33 @@ def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, 
         new = client.post("/api/library/live-plan",json={"path":str(photo),"edge":640}).json()
         assert old["source_identity"] == new["source_identity"]
         assert old["render_identity"] != new["render_identity"]
+
+
+def test_unresolved_jpegxl_is_refused_before_pixel_decode(tmp_path, monkeypatch):
+    from hdr_finisher import jpegxl
+    from hdr_finisher.library_gpu_raw import NotEligible
+    path = tmp_path / 'unknown.jxl'
+    path.write_bytes(b'header fixture')
+    monkeypatch.setattr('hdr_finisher.file_gate.decode_suffix', lambda path: '.jxl')
+    monkeypatch.setattr(jpegxl, 'inspect_jpegxl', lambda path: {'app_metadata': None})
+    def pixels(*args, **kwargs):
+        pytest.fail('Unresolved JPEG XL must not decode pixels')
+    monkeypatch.setattr(library_rgb.loader, 'decode_jpegxl', pixels)
+    with pytest.raises(NotEligible, match='Not supported: JPEG XL source colour is unresolved'):
+        library_rgb.decoded(path, recipe(None))
+
+
+def test_xtrans_is_refused_before_sensor_unpack(tmp_path, monkeypatch):
+    import rawpy
+    from hdr_finisher import library_gpu_raw, raw_import
+    path = tmp_path / 'xtrans.raf'; path.write_bytes(b'header')
+    class Header:
+        raw_pattern = np.zeros((6, 6))
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def open_file(self, path): pass
+        def unpack(self): pytest.fail('X-Trans must be refused before unpack')
+    monkeypatch.setattr(rawpy, 'RawPy', Header)
+    monkeypatch.setattr(raw_import, '_read_raw_exif', lambda path: ({}, None))
+    with pytest.raises(library_gpu_raw.NotEligible, match='Not supported: X-Trans'):
+        library_gpu_raw.sensor(path)

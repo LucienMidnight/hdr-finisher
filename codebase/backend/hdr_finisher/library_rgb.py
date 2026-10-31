@@ -79,6 +79,12 @@ def decoded_precision(path, inputs):
             raise NotEligible(str(error)) from error
         facts.update(effective_bits=16, orientation=metadata["orientation"])
     elif suffix == ".jxl":
+        from .jpegxl import inspect_jpegxl
+        info = inspect_jpegxl(path)
+        colour = info.get("app_metadata") or {}
+        override = inputs["interpretation_override"]
+        if not override.get("color_space") and not (colour.get("color_space") and colour.get("transfer_function")):
+            raise NotEligible("Not supported: JPEG XL source colour is unresolved. Open it in Grade to choose its source interpretation.")
         pixels, metadata = loader.decode_jpegxl(path, encoded_samples=True)
         facts.update(orientation=None, effective_bits=int(metadata["bit_depth"]), sample_type=metadata["sample_type"], jpegxl_info=metadata["jpegxl_info"])
     elif suffix == ".avif":

@@ -4,6 +4,12 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 31 phase 3b: partial work; qualification open
+
+Header checks refuse unresolved JPEG XL and X-Trans before pixel decoding. Bounded large-picture routes remain unfinished; the line scan still waits for that route.
+
+No image math, approved memory budget or paused-for-Grade wording changed. See design 7.7 for the remaining work and qualification limits.
+
 ## October 31 phase 3a.1: two developments, speed qualification still open
 
 The scheduler now caps source/CPU development at two globally, starts queued

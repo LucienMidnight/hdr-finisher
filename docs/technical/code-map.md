@@ -412,3 +412,7 @@ Needs attention locations. Data checks: `test_library_file_commands.py`,
 `test_library_file_folders.py`, `test_library_file_delete.py`,
 `test_library_file_exfat.py`. Focused Electron: `library-photo-file-commands.js`,
 `library-folder-file-commands.js`, `library-delete-file-commands.js`.
+
+October 31 Library follow-up:
+
+- `library_rgb.py` / `library_gpu_raw.py`: header-only unresolved JPEG XL/X-Trans refusal.

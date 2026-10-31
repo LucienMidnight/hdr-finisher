@@ -91,6 +91,9 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
         if source is not None: raw.open_buffer(source)
         else: raw.open_file(str(path))
         timings["libraw_open"] = (time.perf_counter()-mark)*1000
+        pattern = getattr(raw, "raw_pattern", None)
+        if pattern is not None and pattern.shape != (2, 2):
+            raise NotEligible("Not supported: X-Trans sensor development is not available in the Library. The camera preview is kept when available.")
         mark = time.perf_counter()
         raw.unpack()
         timings["libraw_unpack"] = (time.perf_counter()-mark)*1000

@@ -1078,6 +1078,21 @@ waiting for acceptance between them. No approved budget or estimate changes.
 | 5. Startup upkeep | Low-priority thread waits for helper idleness outside the scheduler. | Admit bounded upkeep steps as eventually work, yield between safe points, release on cancellation/close. | Large generated scratch fixture; first visible picture within 10% of launch without upkeep (proposed tolerance from this brief). No new memory allowance: existing 64 MB minimum estimate. |
 | 6. Window visibility | Hidden and shown owners retain equal classes. | Window visibility arrives over the grant channel; hidden owners become eventually; showing restores requested classes. Running work completes at its existing safe boundary. | Two owners: visible work wins, hidden queued work resumes and restores its class. No new count or budget. |
 
+**3b implementation status (October 31; partial, not accepted).**
+
+1. **Header refusal built; bounded pictures unfinished.** JPEG XL without a
+   resolved source interpretation is refused before its pixel decoder is called.
+   LibRaw's header CFA is checked before `unpack`, so X-Trans reports a clear
+   unsupported reason while the separate camera-preview path remains available.
+   Ordinary supported decode/render math is untouched. Tests execute real marked
+   JPEG XL samples and assert that unresolved samples never reach the decoder.
+   This does **not** complete F19 for EXR/TIFF or provide bounded DNG/TIFF/PNG/JPEG.
+   The line scan still waits for the missing bounded route. Investigation found
+   full-size allocation in `normalize_camera_samples`, then global highlight
+   support, colour conversion, crop/orientation and reduction. A mapped input
+   alone cannot meet 7.3. No global Pillow guard change, no claim of an any-size
+   thumbnail, and no bounded-route rate proposed without a measured route.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
@@ -1090,7 +1105,7 @@ records its numbers in the [performance table](../performance-table.md).
 | 0. Measure — **done October 30** | Log real RAM and GPU peaks per file type and job type on disposable copies (20241117 RAWs, Aceh JPEGs, one of each supported type, a large TIFF). Try reduced decoding for 640. No behaviour change. | — | Per-type budget table (6.11) written for Steve to approve. |
 | 1. File gate — **built October 30, awaiting Steve's try** | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
 | 2. Stop the feedback loop — **built October 30, awaiting Steve's try** (7.5) | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
-| 3. One scheduler, RAM — **October 31 run exception: Steve authorised 3a.1 → 3b without intervening acceptance.** — **3a scheduler/channel connected October 31; speed qualification open (7.6). 3b remains separate** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
+| 3. One scheduler, RAM — **October 31 run exception: Steve authorised 3a.1 → 3b without intervening acceptance.** — **3a scheduler/channel connected October 31; speed qualification open (7.6). 3b partial resilience/scheduling work; large-picture and disk-cache work unfinished (7.7)** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
 | 4. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
 | 5. Grid makes 640 only | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
 | 6. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. Edge case M25. | Leftover complexity. | Fast checks pass; less code than before. |
@@ -1201,6 +1216,12 @@ Decided October 30:
 - No picture size limit; very large pictures are supported through bounded
   routes (7.3).
 - Online-only cloud files download only when opened (6.9).
+
+13. **Bounded-route estimates — awaiting measurements.** No new rate is applied
+    or invented. Keep the approved per-type rates until a bounded implementation
+    has measured peaks. A lower rate would allow more overlap but could exceed
+    the ceiling if full-size intermediates remain. Current code uses the approved
+    rates, including the oversized line scan's conservative estimate.
 
 ## 11. Code map (for whoever builds it)
 

@@ -289,3 +289,12 @@ working in Grade while Library jobs wait.
 **Waiting: not enough free memory on this computer** means other memory
 use leaves too little room after the system reserve. Waiting is not a
 failed photo; work resumes when enough memory is available.
+
+### Unsupported photos and interrupted reads
+
+A camera preview can remain visible when development is unavailable. New messages:
+
+- “Not supported: JPEG XL source colour is unresolved. Open it in Grade to choose its source interpretation.”
+- “Not supported: X-Trans sensor development is not available in the Library. The camera preview is kept when available.”
+
+Very large pictures needing the unfinished bounded route can still wait.
