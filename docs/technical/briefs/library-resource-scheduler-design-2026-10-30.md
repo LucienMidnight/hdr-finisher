@@ -1521,7 +1521,14 @@ Decisions waiting for Steve:
 4. ~~Fast-lane allowance.~~ **64 MB, up to four at once, approved by Steve,
    October 31.** A quick preview estimated over 64 MB joins the normal queue
    as a **now** job with its real estimate (never refused, never failed).
-5. GPU developments at once (proposed two).
+5. ~~GPU developments at once.~~ **Two, approved by Steve, October 31**,
+   with a measured one-versus-two comparison; if two is not faster, go back
+   to one. A second development starts only when its GPU estimate fits beside
+   Grade inside the GPU budget (Auto: half the card, 6 GB on Steve's 12 GB
+   RTX 4070 Ti). Expected Library use: about 1.5-2.5 GB for two typical
+   developments, about 3.5 GB at most. Per-development GPU peaks are logged.
+   Steve also chose (October 31) to build phases 4 and 5 in one round together
+   with wiring decisions 12-13 and the AVIF rate.
 6. ~~When the photo open in Grade is bigger than the Library's room
    (M27).~~ Decided by Steve, October 31: keep a floor (option A, over
    options B "Grade lets go of the photo" and C "the Library waits"). Grade
