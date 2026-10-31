@@ -777,6 +777,126 @@ Scripted cold run, 48 Aceh Pesta copies:
 | False failures | 0; every cell drew | Met |
 | Quick preview request → on screen | p50 0.93 s, p95 9.1 s, max 17.9 s | Not met against section 8's 0.5 s p95; expected, the 600 MB reservation is phase 3 |
 
+### 7.6 Phase 3 whiteboard: one scheduler for RAM (October 31, for Steve's review)
+
+**Today, exactly.** Five places ask for memory, each on its own:
+
+| Who asks | Where | Asks for | When refused |
+| --- | --- | --- | --- |
+| Quick preview (embedded camera JPEG, small original preview) | backend `library_api.py` `quick_preview` | 600 MB | Answers HTTP 202; the window asks again every 150 ms (`photo-library.js`) |
+| Window development (every grid photo being developed) | window `library-scenes.js` `sources` `admit`, through `/memory-admission` | 600 MB, renewed every 10 s | The window's queue asks again every 100 ms (`library-scene-scheduler.js`) |
+| RAW sensor read | backend `library_raw.py` | 600 MB | Its thread waits and asks again |
+| Source preparation (`live-source`) | backend `library_api.py` | refused when the bounded GPU route can't take it yet (`MemoryPending`) | HTTP 202; the window asks again every 150 ms (`library-scenes.js`) |
+| Helper process caches | `library_worker.py` remote claims | cache shares | Cache evicts its oldest |
+
+The rule for the 600 MB askers: **measured total + every reservation +
+600 MB ≤ 4 GB**. A running job is counted twice (measured and reserved).
+
+**Grade never asks.** Opening a photo in Grade checks only against the
+computer's physical memory (`resource_preflight.py`), not the app's 4 GB
+ceiling. The open photo is held until another photo replaces it. For the
+line scan that is 3.75 GB in the backend (7.3 GB at peak while viewing at
+100%), so the app sits at 5.15 GB. Every Library ask is then refused, forever.
+
+**What that produced on October 31.** 30 waiting cells and the retry loops
+above sent about 37 requests a second. The window has only a few
+connections to the backend, so a folder click waited behind them, although
+the backend answered folder requests in about 1 ms.
+
+**What changes (proposed).**
+
+1. **One decision maker.** A new backend module, `library_scheduler.py`,
+   owns every Library grant: who asked (owner), class (Grade, now, soon,
+   eventually), estimate, and when it was granted. Higher classes first;
+   first come, first served within a class. `app_memory` keeps measurement,
+   cache shares and pressure (phase 2).
+2. **Estimates, not measurements, decide.** The room for jobs is:
+
+   > ceiling − starting memory (1.3 GB) − cache bytes in use (at most their
+   > shares) − the open Grade photo (its exact size)
+
+   A job is admitted if its estimate fits in that room beside the estimates
+   already running. Nothing is counted twice. Estimates are the approved
+   bytes per pixel (6.11) times the pixel count read from the file header
+   (M1), with the 64 MB minimum; if the header can't be read, that type's
+   worst case. When a job ends, its measured peak is logged beside its
+   estimate.
+3. **The open Grade photo is a grant of its own** (M27). When Grade opens a
+   photo, the scheduler records its exact size (the pixels Grade keeps). It is
+   never refused by the Library, since Grade comes first, but the Library now
+   knows about it instead of tripping over it.
+4. **A fast lane** for jobs estimated at 64 MB or less (embedded camera
+   JPEGs): a separate small allowance, so they never wait behind a
+   development (6.4; size is decision 4).
+5. **A floor for what is on screen** (M9, M27). If the room is too small for
+   any **now** job (a small machine, or a huge photo open in Grade), one
+   **now** job at a time still runs, plus the fast lane. **soon** and
+   **eventually** work stops. What the floor may cost is decision 6 below.
+6. **A job bigger than the whole room runs alone** (M2): it starts when no
+   other large job is running, and nothing large starts beside it.
+7. **No starvation** (M3): while a **now** job waits, lower classes are not
+   admitted.
+8. **The phase 2 safety net stays.** Measured total above the target: stop
+   admitting **soon** and **eventually**. Above the ceiling: only Grade, the
+   fast lane and the floor.
+9. **Waiting in line without asking again** (6.6). Each window opens one
+   WebSocket to the backend (`/api/library/grants`; the backend already has
+   the WebSocket library). The window sends "ask", "cancel" and "change
+   priority"; the backend answers "granted" once, when it is that job's turn.
+   * While waiting, nothing polls and no HTTP connection is held, so folder
+     clicks never queue behind waiting photos.
+   * A quick preview or a development carries its grant to the backend. The
+     backend's own users (RAW sensor read) wait in-process without HTTP.
+   * Each window sends a heartbeat every 5 s. If a window closes, reloads or
+     crashes, its grants are released (M5). If the channel drops, the window
+     reconnects and asks again; nobody waits forever (M23).
+   * The memory-related HTTP 202 retry loops and `/memory-admission` are
+     removed.
+10. **Logging.** One line per job: asked, granted, finished, with class,
+    estimate and measured peak, and the wait time.
+
+**Proposed split: phase 3a, then 3b.** Phase 3 as listed in section 8 is
+large. Building it in two steps lets Steve try the stall fix sooner, and each
+step can be undone alone.
+
+* **3a. Scheduler and channel:** points 1–10 above. Edge cases M1–M3, M5,
+  M7, M9, M10, M11, M23, M27; F15 (a changed file ends its job as "changed"
+  and releases its grant). Removes the stall and the polling.
+* **3b. Bounded routes and the rest:** very large pictures (F11, F19, M26,
+  7.3), reduced-decode quick previews if approved (decision 3), decoder crash
+  and hang limits (F8), offline drives (F14), disk cache full or missing
+  (M21, M22), startup upkeep as **eventually** work (M24), hidden windows
+  (M6).
+
+**What could break (3a).**
+
+* Estimates that are too low could take the app briefly over the ceiling.
+  The phase 2 safety net and the per-job log catch it.
+* The WebSocket is new plumbing between every window and the backend. If it
+  fails, Library pictures stop until it reconnects. Reconnection and a
+  timeout are part of 3a, and the packaged build must include the WebSocket
+  library (it comes with `uvicorn[standard]`; checked in the trial packaged
+  build, not assumed).
+* Grade, export and the hidden delivery window keep their current GPU
+  leases until phase 4, so their GPU behaviour does not change in 3a.
+
+**Tolerances for 3a (proposed, to agree before building).**
+
+| Measure | Tolerance |
+| --- | --- |
+| Embedded preview, request to on screen, while photos develop | p95 under 0.5 s (section 8) |
+| Requests from a window while 30 cells wait | No repeated asks: at most one per job, plus the 5 s heartbeat |
+| Folder click to rows usable, while cells wait | Under 0.5 s (existing target) |
+| Line scan open in Grade, then a cold folder copy | Visible cells keep arriving: the first within 5 s, none stuck |
+| Peak whole-app memory, without an oversized Grade photo | Under the ceiling |
+| Cold Aceh grid screens | No slower than phase 2's 24.1 s / 46.9 s plus 10% |
+| False failures | Zero |
+
+Checks: fast checks; unit tests for each edge case above; the Aceh cold run;
+one run with the line-scan copy
+(`codebase\output\test-photos\phase0\line_scan_…dng`) open in Grade
+while a cold folder copy opens.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
@@ -789,7 +909,7 @@ records its numbers in the [performance table](../performance-table.md).
 | 0. Measure — **done October 30** | Log real RAM and GPU peaks per file type and job type on disposable copies (20241117 RAWs, Aceh JPEGs, one of each supported type, a large TIFF). Try reduced decoding for 640. No behaviour change. | — | Per-type budget table (6.11) written for Steve to approve. |
 | 1. File gate — **built October 30, awaiting Steve's try** | The rules in 6.9, edge cases F1–F7, F9, F10, F12, F13, F16 and F18. One shared rule set for the scan, the index, the add-folder browser and file checks. | Junk being parsed. | The fixture folder lists only real photos. No change for Steve's real folders apart from hidden and junk files. |
 | 2. Stop the feedback loop — **built October 30, awaiting Steve's try** (7.5) | Refusal no longer counts as pressure. Trim once per change of level, with a cool-down. Chromium is signalled only on real shortage. | Root cause 4. | No pressure signal while measured memory is under the target. |
-| 3. One scheduler, RAM | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
+| 3. One scheduler, RAM — **whiteboard written October 31 (7.6), proposed as 3a then 3b** | Backend queue with priority classes, per-type estimates and the fast lane. Replaces the fixed 600 MB reservations (gates 1 and 3). Grants arrive over the channel. Reduced-decode quick previews if approved. Bounded routes for very large pictures. Edge cases F8, F11, F14, F15, F19, M1–M3, M5–M7, M9–M11, M21–M24, M26. | Root causes 2, 3 and 5 (RAM). | Embedded previews appear quickly while photos develop. Peak under the ceiling. |
 | 4. GPU in the same scheduler | Development and draw leases move into the scheduler; two developments at once; safe-point pauses instead of yields. Edge cases M4, M8, M12–M19. | Root causes 1 and 6. | Developments overlap; finished cells draw without waiting. |
 | 5. Grid makes 640 only | 2560 made in Single and for its neighbours (6.8). The edited-photo no-regression check. Edge case M20. | Root cause 7. | First screen roughly 2–3 times faster than today; edited thumbnails unchanged. |
 | 6. Clean-up | Remove the retry loops, polling and workarounds the old gates needed. Edge case M25. | Leftover complexity. | Fast checks pass; less code than before. |
@@ -839,8 +959,24 @@ Still to decide:
 2. ~~Phase 0 per-type estimates (6.11).~~ Approved by Steve, October 30;
    recorded in memory-and-caches.
 3. Reduced-decode quick previews (6.11, point 4).
-4. Fast-lane allowance (proposed 64 MB, four at once).
+4. Fast-lane allowance (proposed 64 MB, four at once). Needed for 3a.
 5. GPU developments at once (proposed two).
+6. When the photo open in Grade is bigger than the Library's room (M27),
+   what the floor may cost. Needed for 3a. Options (7.6, point 5):
+   * **A. The Library keeps a floor (recommended).** One visible photo at a
+     time plus small previews always run; background work stops. Cost: with
+     a huge photo in Grade the app can go about 0.5–1 GB further over 4 GB,
+     on top of what Grade alone already takes. Simple; nothing in Grade
+     changes.
+   * **B. Grade lets go of a huge photo while you are in the Library.** Its
+     full-size pixels are released when you switch away, and reloaded when
+     you come back. The ceiling holds and the Library runs normally. Cost:
+     returning to Grade waits for the reload (tens of seconds for the line
+     scan), and it touches Grade's undo, retouch and SDR reference handling,
+     which is riskier.
+   * **C. Keep today's behaviour:** the Library waits until the photo
+     leaves Grade.
+7. Build phase 3 as 3a then 3b (7.6).
 
 Decided October 30:
 - No picture size limit; very large pictures are supported through bounded

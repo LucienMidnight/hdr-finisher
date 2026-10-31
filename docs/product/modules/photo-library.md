@@ -4,6 +4,17 @@
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
 
+## October 31: phase 3 whiteboard written, waiting on Steve
+
+The design's section 7.6 maps how the Library asks for memory today: five
+askers with their own retry loops, each asking for 600 MB, and Grade never
+asking. It proposes one backend scheduler working on estimates, a channel
+that says "your turn" instead of polling, and a floor so on-screen photos
+keep coming even with a huge photo open in Grade. Proposed in two steps
+(3a scheduler and channel, 3b very large pictures and the rest). Decisions
+before building: what the floor may cost (decision 6), the fast-lane size
+(decision 4), and the 3a/3b split. Nothing built.
+
 ## October 30 (late night): feedback loop stopped (scheduler phase 2), awaiting Steve's try
 
 A photo turned away for lack of memory no longer counts as memory pressure.
