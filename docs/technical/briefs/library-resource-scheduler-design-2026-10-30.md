@@ -557,7 +557,7 @@ that proves it.
 
 | # | Case | Handling | Phase | Test |
 | --- | --- | --- | --- | --- |
-| M1 | Size unknown before decoding | Header read first; otherwise the type's worst case | 2 | Unit tests per type |
+| M1 | Size unknown before decoding | Header read first; otherwise estimated at the ceiling, so it runs alone, never as the floor, and only when free memory minus the reserve covers it (decision 10, to revisit) | 3a | Unit tests per type; an unreadable header gets the ceiling |
 | M2 | Job bigger than the whole job budget | Runs alone, with nothing else admitted beside it. If even that cannot fit under the ceiling, a reduced decode. | 2 | Unit test |
 | M3 | Big job starved by a stream of small ones | When a **now** job is waiting, lower classes stop being admitted until it fits | 2 | Unit test |
 | M4 | Job holding RAM while it waits for the GPU (deadlock, priority inversion) | RAM and GPU granted together, all or nothing | 3 | Unit test with two jobs needing both |
@@ -827,8 +827,9 @@ packaging and app measurements remain open; 3a is not marked built.
    A job is admitted if its estimate fits in that room beside the estimates
    already running. Nothing is counted twice. Estimates are the approved
    bytes per pixel (6.11) times the pixel count read from the file header
-   (M1), with the 64 MB minimum; if the header can't be read, that type's
-   worst case. When a job ends, its measured peak is logged beside its
+   (M1), with the 64 MB minimum. If the header can't be read, the job is
+   estimated at the full Library budget, the ceiling (decision 10, to
+   revisit). When a job ends, its measured peak is logged beside its
    estimate.
 3. **The open Grade photo is a grant of its own** (M27). When Grade opens a
    photo, the scheduler records its exact size (the pixels Grade keeps). It is
@@ -1056,8 +1057,24 @@ Still to decide:
    or a line scan (about 6 GB), which wait for room instead. Needed for 3a.
 9. ~~The system reserve~~ **the larger of 2 GB or 10% of RAM, approved by
    Steve, October 31.** Free memory always left for Windows and other apps
-   (7.6, point 7) (6.8 GB on
-   Steve's 68 GB machine, 2 GB on an 8 GB one). Needed for 3a.
+   (7.6, point 7): 6.8 GB on Steve's 68 GB machine, 2 GB on an 8 GB one.
+10. **Unknown size: estimated at the ceiling, approved by Steve, October 31
+    (Claude's proposal, asked for by Codex). Marked to revisit.** When a
+    file's dimensions can't be read from its header, its job is estimated at
+    the full Library budget (the ceiling: 4 GB on Steve's machine). The
+    existing rules then apply: it runs alone, it is never admitted as the
+    floor, and it starts only when free memory minus the system reserve
+    covers that estimate. Waiting is never a failure; if the decode then
+    fails, that error is recorded once as today. Each such job is logged as
+    "unknown size", with its measured peak.
+    * Why: most unreadable headers are damaged files that fail quickly, so a
+      conservative stand-in costs little. The approved per-pixel table has
+      no pixel count to fall back on.
+    * Revisit if: the "unknown size" log lines show real photos (not damaged
+      files) taking this path often, or waiting long on a small machine
+      (an 8 GB machine with a 2.5 GB ceiling needs 4.5 GB free). Better
+      stand-ins then: a per-type worst case, or an estimate from the file
+      size for uncompressed formats (TIFF, PFM, linear DNG).
 
 Decided October 30:
 - No picture size limit; very large pictures are supported through bounded

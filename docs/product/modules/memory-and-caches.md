@@ -41,9 +41,15 @@ cleanup. `library_estimates.py` reads dimensions without decoding pixels and
 applies the approved rates. Neither helper is connected to app admission yet;
 all existing live memory behavior is unchanged.
 
-The unreadable-header worst case remains undefined: the approved per-pixel
-table has no fallback pixel count or byte amount. It needs Steve's decision;
-no size or allowance has changed. Phase 3a remains open and unmeasured.
+Phase 3a remains open and unmeasured.
+
+**Decided by Steve, October 31 (to revisit): unknown size.** When a file's
+dimensions can't be read from its header, its job is estimated at the
+ceiling (the full Library budget, 4 GB on Steve's machine). It then runs
+alone, never as the floor, and only when free memory minus the system
+reserve covers it. It is logged as "unknown size" with its measured peak.
+Revisit if those log lines show real photos taking this path often or
+waiting long on small machines; alternatives are in design decision 10.
 
 ## 1. Purpose
 
