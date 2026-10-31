@@ -40,6 +40,6 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 }catch(e){report.error=String(e.stack||e);process.exitCode=1;}finally{
  checkProjects(before);report.protectedProjectsUnchanged=true;
  if(originalSidecar)fs.writeFileSync(sidecar,originalSidecar);else if(fs.existsSync(sidecar))fs.unlinkSync(sidecar);
- const log=path.join(process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA,'logs/backend.log');if(fs.existsSync(log))fs.copyFileSync(log,path.join(out,'backend.log'));
+ const log=path.join(global.HDRFinisherElectronTestHarness.userDataDirectory,'logs/backend.log');if(fs.existsSync(log))fs.copyFileSync(log,path.join(out,'backend.log'));
  fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));await browser?.close();
 }})();
