@@ -1598,9 +1598,8 @@ line-scan DNG open in Grade, Library paused in 543 ms, first ordinary photo
 `gpu_metadata` plans with landscape dimensions while the decode reports
 portrait, the decoded `rawBudget` exceeds the admitted reservation by ~4 KB,
 and `gpu_refine` forbids growth after admission, so both take the visible CPU
-route (identical in both runs). Finishing it needs either the planning
-convention to match the decode or a small tolerated growth - a decision, not
-taken here. Large-picture completion in the phase0 set, and explicit M8/M18/M19
+route (identical in both runs). **Steve chose option A (decision 19):** the
+planning estimate uses the orientation the decode reports. Not yet in code. Large-picture completion in the phase0 set, and explicit M8/M18/M19
 driver coverage, remain open.
 
 Evidence: `codebase/output/cold-mixed/aceh-3c2-partb-{one,two}/report.json`,
@@ -1810,6 +1809,14 @@ Decided October 30:
     CPU decoded source only if free to keep inside existing RAM cache shares;
     otherwise drop it too. No disk checkpoints or added allowance. Export waits
     only for the next safe point, expected well under one second; log that wait.
+19. **GPU planning uses the decoded orientation — Steve, October 31.** Portrait
+    photos were planned with landscape dimensions, so their decoded `rawBudget`
+    exceeded the admitted reservation by about 4 KB and they fell back to the
+    CPU route (IMG_2995, IMG_3232 in Aceh). Option A: the GPU estimate uses the
+    same orientation the decode reports, as 6.10 already states for rotated
+    photos ("rotated photos use the rotated dimensions"). Growth after admission
+    stays forbidden (option B rejected: a job could exceed what admission
+    checked). Recheck the Aceh and phase0 numbers once after the change.
 
 **Wrap-up requested by Steve, October 31.** Part A remains the committed
 implementation (`5fb733c`, `a86689a`). A Part B prototype passed 76 focused
