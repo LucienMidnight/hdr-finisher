@@ -282,6 +282,22 @@ Sustained OS moderate pressure trims once when entered, rather than halving
 every sampling tick. Actual budget overruns continue reclaiming until working
 room is available; critical pressure still clears reconstructible caches.
 
+**Decided by Steve, October 31 (for scheduler phase 3, not built).** The
+4 GB ceiling becomes the budget for normal Library work, not a hard stop:
+- Photos on screen keep a floor: one ordinary photo at a time may run even
+  when that takes the app over 4 GB (floor allowance proposed 1 GB, still
+  Steve's decision).
+- One large job at a time may also go over 4 GB.
+- While a large photo is open in Grade, a large Library photo pauses with a
+  clear message and a **Close photo in Grade** button. Grade stays fully
+  usable.
+- The hard stop is the computer's free physical memory minus a system
+  reserve (proposed the larger of 2 GB or 10% of RAM, still Steve's
+  decision). A job that would cross it waits with a message; it is never
+  marked failed.
+
+Details: design section 7.6 and decisions 6, 8 and 9.
+
 **Replaced October 30 (scheduler phase 2).** Pressure now comes only from
 measurement and the operating system, never from a refused admission:
 - **moderate:** measured whole-app total above the target (ceiling minus

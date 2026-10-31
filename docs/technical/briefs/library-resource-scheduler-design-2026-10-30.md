@@ -583,7 +583,7 @@ that proves it.
 | M24 | Startup upkeep on a large library (cache reconciliation measured 31 s, all upkeep 76 s on October 30) | Runs as **eventually** work through the scheduler; never blocks visible work | 2 | Startup with D:\Photos indexed (read-only) |
 | M25 | Logging costs: backend.log is 358 MB and timing lines are frequent | Rotate logs; per-job lines stay, very frequent diagnostics are sampled | 5 | Log size after a ten-minute session |
 | M26 | A picture that can never fit the GPU route (the line scan's samples exceed the GPU's largest buffer) | Goes straight to the bounded route instead of "waiting for memory" | 3 | The line-scan copy |
-| M27 | A photo left open in Grade holds more than the whole budget (Steve, October 30: the 297 MP line scan kept the backend at about 3.7 GB, the app at 5.2 GB against the 4 GB ceiling, and every Library admission was refused: "0 active · 25 waiting" on a cold folder, forever) | The open Grade photo counts as one admitted **Grade** job with its estimate, not as measured memory that blocks everyone. Its rebuildable parts (levels, frames) trim first. The Library then still gets M9's guarantee: one **now** job at a time from the fast lane and the minimum, background work stopped. Releasing the open photo's full-size pixels while Grade is not on screen (reloaded on return) is a separate choice for Steve. | 3 | Open the line-scan copy in Grade, then open a cold folder copy: visible cells keep arriving |
+| M27 | A photo left open in Grade holds more than the whole budget (Steve, October 30: the 297 MP line scan kept the backend at about 3.7 GB, the app at 5.2 GB against the 4 GB ceiling, and every Library admission was refused: "0 active · 25 waiting" on a cold folder, forever) | The open Grade photo counts as one admitted **Grade** job with its estimate, not as measured memory that blocks everyone. Its rebuildable parts (levels, frames) trim first. The Library then still gets M9's floor: one ordinary **now** job at a time plus the fast lane, background work stopped. A large Library job (above the floor allowance) pauses with a message and a **Close photo in Grade** button; nothing ever starts beyond the computer's free memory minus the system reserve (Steve, October 31; 7.6 points 5–8). | 3a | Open the line-scan copy in Grade, then open a cold folder copy: visible cells keep arriving |
 
 ### 7.3 Very large pictures (Steve, October 30: support them)
 
@@ -828,18 +828,64 @@ the backend answered folder requests in about 1 ms.
 4. **A fast lane** for jobs estimated at 64 MB or less (embedded camera
    JPEGs): a separate small allowance, so they never wait behind a
    development (6.4; size is decision 4).
-5. **A floor for what is on screen** (M9, M27). If the room is too small for
-   any **now** job (a small machine, or a huge photo open in Grade), one
-   **now** job at a time still runs, plus the fast lane. **soon** and
-   **eventually** work stops. What the floor may cost is decision 6 below.
-6. **A job bigger than the whole room runs alone** (M2): it starts when no
-   other large job is running, and nothing large starts beside it.
-7. **No starvation** (M3): while a **now** job waits, lower classes are not
-   admitted.
-8. **The phase 2 safety net stays.** Measured total above the target: stop
-   admitting **soon** and **eventually**. Above the ceiling: only Grade, the
-   fast lane and the floor.
-9. **Waiting in line without asking again** (6.6). Each window opens one
+5. **A floor for what is on screen** (M9, M27; Steve, October 31: keep a
+   floor). If the room is too small for any **now** job (a small machine, or
+   a large photo open in Grade), one **now** job at a time still runs, plus
+   the fast lane, even if that takes the app over its 4 GB budget. **soon**
+   and **eventually** work stops. The floor is for ordinary photos: only a
+   job whose estimate is within the **floor allowance** (proposed 1 GB,
+   decision 8) runs this way.
+6. **The Library pauses for a large photo in Grade** (Steve, October 31).
+   Example: a folder of line scans, with one open in Grade. Each line scan
+   needs about 6 GB in the Library (measured, 6.11), so the floor can't take
+   it. Grade stays fully usable; the Library pauses instead of piling more on
+   top:
+   * **Rule:** while the open Grade photo leaves no room for a job, a
+     **now** job bigger than the floor allowance does not start. It steps
+     aside rather than blocking the line, so smaller visible photos and the
+     fast lane carry on.
+   * **Status bar:** "Library paused: memory is in use by
+     line_scan_….dng in Grade".
+   * **Each waiting row in Activity:** "Waiting: memory in use by the photo
+     open in Grade".
+   * **Activity heading, with one button:** "This photo needs the app's
+     memory while it is open in Grade. Close it in Grade to resume Library
+     browsing." The button, **Close photo in Grade**, saves the grade first
+     (autosave), then closes the photo, and Grade shows no photo. The backend
+     already has the close step (`DELETE /api/session/current`); no Grade
+     control uses it today. The Library resumes by itself when the photo's
+     grant is released.
+   * Nothing is marked as failed, and the message goes away as soon as the
+     photo leaves Grade, however it leaves (closed, another photo opened, or
+     app restart).
+7. **Over the app budget is allowed; over the computer's free memory is
+   not** (Steve, October 31). A job bigger than the whole room runs alone
+   (M2): nothing large starts beside it, and it may take the app over 4 GB.
+   But no Library job starts if its estimate is more than the computer's
+   free physical memory minus a **system reserve** left for Windows and
+   other apps (proposed: the larger of 2 GB or 10% of RAM, decision 9):
+   * Such a job waits with "Waiting: not enough free memory on this computer
+     (needs 6.0 GB, 4.1 GB free)". It is not a failure.
+   * The backend re-checks free memory when grants are released and every
+     few seconds while anything is blocked this way, then grants it. The
+     window never polls.
+   * The same check covers the floor and the paused-for-Grade cases, so even
+     the floor can't push the computer into swapping.
+   * On Steve's 68 GB machine this almost never binds; on an 8 GB machine
+     it is what keeps the app from taking the computer down with it.
+8. **The open Grade photo doesn't set off repeated trims.** Phase 2 trims
+   caches every 10 s while measured memory is over the target. With a large
+   photo in Grade that would halve Grade's own caches over and over and make
+   Grade slower. The safety net therefore compares memory without the Grade
+   photo's grant against the target. Operating-system pressure still trims
+   everything.
+9. **No starvation** (M3): while a **now** job waits, lower classes are not
+   admitted. A job that stepped aside (point 6) or is blocked by the system
+   reserve (point 7) does not hold up the jobs behind it.
+10. **The phase 2 safety net stays.** Measured total above the target: stop
+    admitting **soon** and **eventually**. Above the ceiling: only Grade,
+    the fast lane and the floor.
+11. **Waiting in line without asking again** (6.6). Each window opens one
    WebSocket to the backend (`/api/library/grants`; the backend already has
    the WebSocket library). The window sends "ask", "cancel" and "change
    priority"; the backend answers "granted" once, when it is that job's turn.
@@ -852,14 +898,16 @@ the backend answered folder requests in about 1 ms.
      reconnects and asks again; nobody waits forever (M23).
    * The memory-related HTTP 202 retry loops and `/memory-admission` are
      removed.
-10. **Logging.** One line per job: asked, granted, finished, with class,
-    estimate and measured peak, and the wait time.
+12. **Logging.** One line per job: asked, granted, finished, with class,
+    estimate and measured peak, and the wait time; and why a job waited
+    (room, paused for Grade, system reserve).
 
 **Proposed split: phase 3a, then 3b.** Phase 3 as listed in section 8 is
 large. Building it in two steps lets Steve try the stall fix sooner, and each
 step can be undone alone.
 
-* **3a. Scheduler and channel:** points 1–10 above. Edge cases M1–M3, M5,
+* **3a. Scheduler and channel:** points 1–12 above, including the paused
+  message and the **Close photo in Grade** button. Edge cases M1–M3, M5,
   M7, M9, M10, M11, M23, M27; F15 (a changed file ends its job as "changed"
   and releases its grant). Removes the stall and the polling.
 * **3b. Bounded routes and the rest:** very large pictures (F11, F19, M26,
@@ -879,6 +927,15 @@ step can be undone alone.
   build, not assumed).
 * Grade, export and the hidden delivery window keep their current GPU
   leases until phase 4, so their GPU behaviour does not change in 3a.
+* **Close photo in Grade** is the first control that closes Grade's photo.
+  If it closed before the autosave finished, the last edits could be lost.
+  It waits for the save to finish, and a failed save keeps the photo open
+  with the save error shown. Tested with a disposable copy, never the
+  read-only test projects.
+* Going over the 4 GB budget is now allowed for the floor and for one large
+  job at a time. The system reserve is the hard stop. If the estimates for a
+  type are too low, a job could still eat into the reserve; the per-job log
+  shows it and that type's estimate is raised.
 
 **Tolerances for 3a (proposed, to agree before building).**
 
@@ -887,8 +944,11 @@ step can be undone alone.
 | Embedded preview, request to on screen, while photos develop | p95 under 0.5 s (section 8) |
 | Requests from a window while 30 cells wait | No repeated asks: at most one per job, plus the 5 s heartbeat |
 | Folder click to rows usable, while cells wait | Under 0.5 s (existing target) |
-| Line scan open in Grade, then a cold folder copy | Visible cells keep arriving: the first within 5 s, none stuck |
-| Peak whole-app memory, without an oversized Grade photo | Under the ceiling |
+| Line scan open in Grade, then a cold folder of ordinary photos | Visible cells keep arriving: the first within 5 s, none stuck; Grade's caches not trimmed by the safety net |
+| Line scan open in Grade, then a folder holding line-scan copies | Their cells wait with the "paused for Grade" message, within 1 s of being shown; ordinary cells beside them still arrive; Grade stays responsive |
+| **Close photo in Grade** | Grade's edits saved first; Library work resumes within 2 s of the photo closing |
+| A job bigger than free memory minus the reserve (forced in a test) | Waits with the "not enough free memory" message; never starts; never marked failed |
+| Peak whole-app memory, without an oversized Grade photo or job | Under the ceiling |
 | Cold Aceh grid screens | No slower than phase 2's 24.1 s / 46.9 s plus 10% |
 | False failures | Zero |
 
@@ -961,22 +1021,22 @@ Still to decide:
 3. Reduced-decode quick previews (6.11, point 4).
 4. Fast-lane allowance (proposed 64 MB, four at once). Needed for 3a.
 5. GPU developments at once (proposed two).
-6. When the photo open in Grade is bigger than the Library's room (M27),
-   what the floor may cost. Needed for 3a. Options (7.6, point 5):
-   * **A. The Library keeps a floor (recommended).** One visible photo at a
-     time plus small previews always run; background work stops. Cost: with
-     a huge photo in Grade the app can go about 0.5–1 GB further over 4 GB,
-     on top of what Grade alone already takes. Simple; nothing in Grade
-     changes.
-   * **B. Grade lets go of a huge photo while you are in the Library.** Its
-     full-size pixels are released when you switch away, and reloaded when
-     you come back. The ceiling holds and the Library runs normally. Cost:
-     returning to Grade waits for the reload (tens of seconds for the line
-     scan), and it touches Grade's undo, retouch and SDR reference handling,
-     which is riskier.
-   * **C. Keep today's behaviour:** the Library waits until the photo
-     leaves Grade.
-7. Build phase 3 as 3a then 3b (7.6).
+6. ~~When the photo open in Grade is bigger than the Library's room
+   (M27).~~ Decided by Steve, October 31: keep a floor (option A, over
+   options B "Grade lets go of the photo" and C "the Library waits"). Grade
+   stays fully usable. When the Library's next photo is itself large, the
+   Library pauses with a clear message and a way to close the photo in Grade.
+   Going over the app's budget is usually fine, but never over the
+   computer's free memory (7.6, points 5–8).
+7. Build phase 3 as 3a then 3b (7.6). Needed before building.
+8. The floor allowance: the largest photo job that may run over the app's
+   budget while room is short (7.6, point 5). Proposed 1 GB: covers a
+   24 MP JPEG (about 550 MB), a 12 MP iPhone HEIC (about 620 MB) and a
+   61 MP RAW sensor read (about 430 MB); not a 48 MP HEIC (about 2.5 GB)
+   or a line scan (about 6 GB), which wait for room instead. Needed for 3a.
+9. The system reserve: free memory always left for Windows and other apps
+   (7.6, point 7). Proposed the larger of 2 GB or 10% of RAM (6.8 GB on
+   Steve's 68 GB machine, 2 GB on an 8 GB one). Needed for 3a.
 
 Decided October 30:
 - No picture size limit; very large pictures are supported through bounded

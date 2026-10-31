@@ -11,9 +11,17 @@ askers with their own retry loops, each asking for 600 MB, and Grade never
 asking. It proposes one backend scheduler working on estimates, a channel
 that says "your turn" instead of polling, and a floor so on-screen photos
 keep coming even with a huge photo open in Grade. Proposed in two steps
-(3a scheduler and channel, 3b very large pictures and the rest). Decisions
-before building: what the floor may cost (decision 6), the fast-lane size
-(decision 4), and the 3a/3b split. Nothing built.
+(3a scheduler and channel, 3b very large pictures and the rest). Nothing
+built.
+
+Decided by Steve, October 31: keep the floor. Grade stays fully usable. When
+the Library's next photo is itself large (a folder of line scans with one
+open in Grade), the Library pauses with "Library paused: memory is in use by
+… in Grade" and a **Close photo in Grade** button. Going over the app's 4 GB
+budget is usually fine, but no job starts beyond the computer's free memory
+minus a system reserve; such a job waits with a message and is never marked
+failed. Still to decide before 3a: the 3a/3b split (decision 7), the floor
+allowance (8), the system reserve (9) and the fast-lane size (4).
 
 ## October 30 (late night): feedback loop stopped (scheduler phase 2), awaiting Steve's try
 
