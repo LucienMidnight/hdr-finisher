@@ -110,10 +110,12 @@ class Scheduler:
                 job = self.jobs.get(self.reclamation["id"])
                 request = self.reclamation
                 deficit = max(0, (self.total or 0) + (job.estimate if job else 0) - self.ceiling * 11 // 10)
+                if job and deficit and request.get("released", 0) > 0:
+                    request["pending"].insert(0, request["owner"])
                 if job and deficit and request["pending"]:
                     owner = request["pending"].pop(0)
                     request.update(owner=owner, owners=set() if owner is None else {owner}, bytes=deficit,
-                                   backend_done=owner is not None, started=False, completed_at=None)
+                                   backend_done=owner is not None, started=False, completed_at=None, released=0)
                 else:
                     if job: job.reclaimed = True
                     self.reclamation = None
@@ -334,7 +336,9 @@ class Scheduler:
         with self.lock:
             self.owners.pop(owner, None)
             self.hidden.discard(owner)
-            if self.reclamation: self.reclaimed(self.reclamation["epoch"], owner)
+            if self.reclamation:
+                self.reclamation["pending"] = [o for o in self.reclamation["pending"] if o != owner]
+                self.reclaimed(self.reclamation["epoch"], owner)
             for id in [j.id for j in self.jobs.values() if j.owner == owner]:
                 job = self.jobs.pop(id)
                 if job.granted is not None and not job.fast:
@@ -362,10 +366,12 @@ class Scheduler:
                 request["started"] = True
                 return dict(request)
 
-    def reclaimed(self, epoch, owner=None):
+    def reclaimed(self, epoch, owner=None, released=0):
         with self.lock:
             request = self.reclamation
             if request and request["epoch"] == epoch:
+                if owner != request["owner"]: return
+                request["released"] = max(0, int(released or 0))
                 if owner is None: request["backend_done"] = True
                 else: request["owners"].discard(owner)
                 if request["backend_done"] and not request["owners"]:

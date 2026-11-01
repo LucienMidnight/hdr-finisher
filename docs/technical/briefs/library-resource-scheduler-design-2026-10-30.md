@@ -2173,7 +2173,9 @@ release, including cancellation/defer/disconnect. Real shortages retain the
 existing elastic boundary and physical reserve. Reclamation sends a byte
 target to one owner, resamples after acknowledgement, and visits another only
 if a deficit remains. Within an owner it stops at the target, allowing the
-last indivisible resource to cross it. Visible surfaces and prepared Single
+last indivisible resource to cross it. If that estimated release returns less
+resident RAM than expected, resampling requests another bounded batch from
+the same owner until it fits or that owner has nothing left to release. Visible surfaces and prepared Single
 neighbours remain protected. No approved estimate, budget or concurrency
 number changes. Grade, Proof and export picture algorithms are unchanged.
 

@@ -301,7 +301,8 @@ def create_library_router(worker, browser, store=None):
         from . import app_memory
         released = app_memory.reclaim("shortage", amount)
         if released < amount:
-            worker.reclaim_waiting(amount-released)
+            released += worker.reclaim_waiting(amount-released)
+        return released
     grant_runtime.reclaim = reclaim_waiting
     cache = LibraryPictureCache(browser.root)
     from .library_raw import RawBrowsing, camera_raw

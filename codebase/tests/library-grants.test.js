@@ -160,11 +160,11 @@ test('terminal memory outcome releases once without running or recording a broke
 test('reclamation acknowledgement waits for cache release and preserves queued requests',async()=>{
  let done;const released=new Promise(r=>done=r),sent=[];
  const socket={readyState:1,send:v=>sent.push(JSON.parse(v)),close(){}};
- const grants=create({url:'ws://test',socket:()=>socket,interval:()=>null,reclaim:()=>released});
+ const grants=create({url:'ws://test',socket:()=>socket,interval:()=>null,reclaim:bytes=>{assert.equal(bytes,123);return released;}});
  const abort=new AbortController(),pending=grants.acquire('photo','source',abort.signal);
- socket.onopen();socket.onmessage({data:JSON.stringify({type:'reclaim',id:'blocked',epoch:4})});
+ socket.onopen();socket.onmessage({data:JSON.stringify({type:'reclaim',id:'blocked',epoch:4,bytes:123})});
  await tick();assert.equal(sent.filter(v=>v.type==='reclaimed').length,0);
- done();await tick();assert.equal(sent.filter(v=>v.type==='reclaimed').length,1);
+ done(128);await tick();assert.equal(sent.filter(v=>v.type==='reclaimed').length,1);assert.equal(sent.find(v=>v.type==='reclaimed').released,128);
  assert.equal(grants.snapshot().jobs.length,1);
  abort.abort();await assert.rejects(pending,{name:'AbortError'});grants.close();
 });

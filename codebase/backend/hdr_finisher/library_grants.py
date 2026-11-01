@@ -57,8 +57,8 @@ class Runtime:
                 return
             def release():
                 try:
-                    self.reclaim(request["bytes"])
-                    scheduler.reclaimed(request["epoch"])
+                    released = self.reclaim(request["bytes"])
+                    scheduler.reclaimed(request["epoch"], released=released)
                 except Exception as error:
                     log("library_reclaim_failed", reason=str(error))
             self.reclaimer = Thread(target=release, name="library-reclaim-waiting", daemon=True)
@@ -172,7 +172,7 @@ def add_routes(router, marks):
                     scheduler.ask(id,owner,path,kind,amount,
                         "now" if kind=="quick" and amount>64_000_000 else priority_class(int(command.get("priority",10))),notify,reason,order=command.get("order"), gpu_bytes=max(0,int(command.get("gpu_bytes",0))), gpu_unified=bool(command.get("gpu_unified")))
                 elif action == "reclaimed":
-                    scheduler.reclaimed(command.get("epoch"), owner)
+                    scheduler.reclaimed(command.get("epoch"), owner, command.get("released", 0))
                 elif action == "gpu-done":
                     scheduler.gpu_done(id, owner)
                 elif action in {"finish","cancel"}:

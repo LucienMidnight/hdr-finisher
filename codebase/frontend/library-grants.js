@@ -13,7 +13,7 @@
         lastMessage=Date.now();const value=JSON.parse(event.data);
         if(value.type==="grade"){grade=value;for(const job of jobs.values())job.status.grade=value.name;}
         if(value.type==="reclaim"){
-          Promise.resolve().then(()=>reclaim(value.bytes)).then(()=>send({type:"reclaimed",epoch:value.epoch})).catch(error=>console.debug(error));return;
+          Promise.resolve().then(()=>reclaim(value.bytes)).then(released=>send({type:"reclaimed",epoch:value.epoch,released:released||0})).catch(error=>console.debug(error));return;
         }
         const j=jobs.get(value.id);
         if(j&&value.type==="needs-memory"){

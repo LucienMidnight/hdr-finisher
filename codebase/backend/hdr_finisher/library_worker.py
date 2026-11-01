@@ -275,13 +275,14 @@ class LibraryWorker:
     def reclaim_waiting(self, needed):
         token, done = uuid4().hex, Event()
         with self._lock:
-            if self._connection is None or self._closed or self._failure: return
+            if self._connection is None or self._closed or self._failure: return 0
             self._reclaims[token] = done
             self._send(dict(command="memory-pressure", level="shortage", request=token, needed=needed))
         try:
             while not done.wait(.25):
                 if self._stop.is_set() or not self._process.is_alive():
                     raise RuntimeError("Helper stopped during cache reclamation")
+            return done.released
         finally:
             with self._lock: self._reclaims.pop(token, None)
 
@@ -346,7 +347,9 @@ class LibraryWorker:
                 if message.get('event') == 'memory-reclaimed':
                     with self._lock:
                         done = self._reclaims.get(message['request'])
-                        if done: done.set()
+                        if done:
+                            done.released = message.get('released', 0)
+                            done.set()
                     continue
                 if message.get('event')=='memory-claim':
                     from . import app_memory
@@ -716,9 +719,9 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     from . import app_memory
                     # Keep receiving owner replies while a cache waits for its lock.
                     def reclaim(command):
-                        app_memory.reclaim(command['level'], command.get('needed'))
+                        released = app_memory.reclaim(command['level'], command.get('needed'))
                         if command.get('request'):
-                            reply(dict(event='memory-reclaimed', request=command['request']))
+                            reply(dict(event='memory-reclaimed', request=command['request'], released=released))
                     Thread(target=reclaim,args=(message,),daemon=True).start()
                 elif message["command"] == "pause":
                     state["paused"] = message["paused"]

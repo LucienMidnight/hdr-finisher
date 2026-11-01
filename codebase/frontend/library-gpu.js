@@ -365,9 +365,11 @@ const HDRLibraryPictureFactory = (quick = false) => {
     const idle = queue;
     await idle.catch(()=>{});
     if (foreground || queue !== idle) return;
+    const before=renderer.resourceMemorySnapshot().resident.totalBytes;
     renderer.rawPictures?.clear();
     renderer.resetSession(null);
     renderer.libraryMeta = null;
+    return Math.max(0,before-renderer.resourceMemorySnapshot().resident.totalBytes);
   }
   return Object.freeze({ show, initialize, prepare, prepareDenoise, readyMemory, reclaimHost,
     configure: async limits => { configuredLimits = limits; if (renderer) renderer.libraryLimits = limits; },

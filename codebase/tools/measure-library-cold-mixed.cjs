@@ -35,7 +35,7 @@ if(hdrTest){
 }
 const source=hdrTest?photos:phase0?photos:aceh?'D:/Photos/2017/Aceh-Wedding/Pesta':'D:/Photos/2023/11';
 let names=fs.readdirSync(source).filter(n=>/\.(heic|jpg|png|arw)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
-if(phase0||hdrTest)names=fs.readdirSync(photos,{recursive:true}).filter(n=>/\.(dng|jxl|raf|tiff?|jpg|jpeg|png|arw|avif|heic|cr3|orf|rw2|nef|exr|hdr|pfm)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+if(phase0||hdrTest)names=fs.readdirSync(photos,{recursive:true}).filter(n=>/\.(dng|jxl|raf|tiff?|jpg|jpeg|png|arw|avif|heic|cr2|cr3|orf|rw2|nef|exr|hdr|pfm)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
 let junk=[];
 if(aceh){junk=fs.readdirSync(source).filter(n=>n.startsWith('._')).sort().slice(0,6);names=names.filter(n=>!n.startsWith('._')).slice(0,48);}
 else if(phase0||hdrTest){}else if(scrollDiagnose){
@@ -104,8 +104,8 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   observer.stderr.on('data',chunk=>{report.observerError=String(chunk);});
   const sample=async()=>{
    if(activePoll||stopping)return;
-   activePoll=(async()=>{const at=performance.now();try{const value=await api('memory',null,AbortSignal.timeout(2000));report.memoryRequests.push({ms:performance.now()-at,total:value.totalBytes});}
-    catch(e){report.memoryRequests.push({ms:performance.now()-at,error:String(e)});}})().finally(()=>activePoll=null);
+   activePoll=(async()=>{const at=performance.now();try{const value=await api('memory',null,AbortSignal.timeout(2000));report.memoryRequests.push({at:Date.now(),ms:performance.now()-at,total:value.totalBytes});}
+    catch(e){report.memoryRequests.push({at:Date.now(),ms:performance.now()-at,error:String(e)});}})().finally(()=>activePoll=null);
   };poll=setInterval(sample,500);await sample();
   if(process.argv.includes('--memory-detail'))try{
    const cdp=await page.context().newCDPSession(page);
@@ -149,7 +149,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
     return [...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect();return r.top<bounds.bottom&&r.bottom>bounds.top;}).map(c=>c.dataset.path);
    });
    const started=Date.now();let cells,idleSince=null;
-   while(Date.now()-started<(phase0?600000:probe?60000:120000)){
+   while(Date.now()-started<(phase0?600000:hdrTest?300000:probe?60000:120000)){
     if(memoryViolation){report.memoryViolation=memoryViolation;throw Error('STOP: '+memoryViolation.reason);}
     cells=await lib.evaluate(paths=>paths.map(p=>{const c=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===p);return {path:p,presented:!!c?.querySelector('canvas[data-picture-key]'),needsMemory:c?.querySelector('.library-memory-needed')?.textContent,error:c?.querySelector('.library-picture-error')?.title||c?.querySelector('.picture-failed')?.textContent};}),targets);
     if(cells.length&&cells.every(c=>c.presented||c.error||c.needsMemory))break;

@@ -551,3 +551,21 @@ def test_reclamation_owner_budget_is_remaining_deficit_and_stops_when_fitting():
     s.reclaimed(second["epoch"], "b")
     s.update(total=2_400_000_000, available=60*GB, ram=68*GB)
     assert big.granted is not None and not s.reclamation_request()
+
+
+def test_owner_retries_remaining_shortfall_until_measured_fit_or_exhaustion():
+    s = Scheduler()
+    s.update(total=3*GB, available=60*GB, ram=68*GB)
+    s.heartbeat("window")
+    big = ask(s, "big", 2*GB)
+    ask(s, "later", FAST_BYTES)
+    request = s.reclamation_request()
+    s.reclaimed(request["epoch"], "window", 600_000_000)
+    # Cached texture accounting can exceed the RAM actually returned.
+    s.update(total=2_800_000_000, available=60*GB, ram=68*GB)
+    again = s.reclamation_request()
+    assert again["owner"] == "window" and again["bytes"] == 400_000_000
+    assert not big.outcome
+    s.reclaimed(again["epoch"], "window", 400_000_000)
+    s.update(total=2_400_000_000, available=60*GB, ram=68*GB)
+    assert big.granted is not None and not s.reclamation

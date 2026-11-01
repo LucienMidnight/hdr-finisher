@@ -605,12 +605,11 @@
     remaining-=readyWindow.evictFinished(other,Math.max(0,remaining));
     remaining-=quickWindow.evictFinished(other,Math.max(0,remaining));
     if(remaining>0)remaining-=await HDRLibraryGpuRaw.reclaimDecoded?.(remaining)||0;
-    if(remaining>0){
-      await HDRLibraryPictures.reclaimHost();
-      await HDRLibraryQuickPictures.reclaimHost();
-    }
+    if(remaining>0)remaining-=await HDRLibraryPictures.reclaimHost()||0;
+    if(remaining>0)remaining-=await HDRLibraryQuickPictures.reclaimHost()||0;
     await HDRLibraryRAM.report();
     await (window.hdrFinisherDesktop || window.parent?.hdrFinisherDesktop)?.reclaimLibraryStorage?.();
+    return Math.max(0,needed-remaining);
   };
   let hostReclaim = false;
   window.addEventListener("message", async event => {
