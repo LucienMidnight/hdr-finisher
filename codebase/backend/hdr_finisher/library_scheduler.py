@@ -433,9 +433,9 @@ class Scheduler:
         guard = min(guards, key=lambda j: (CLASSES[j.cls], j.sequence), default=None)
         if self.reclamation:
             guard = self.jobs.get(self.reclamation["id"], guard)
-        # A lower class never starts while a higher class is waiting for room.
-        # Otherwise background grid work takes the development places and the
-        # memory that the photo on screen is waiting for (6.8).
+        # Background work never starts ahead of a photo on screen that is
+        # waiting for room (6.8). A waiting neighbour alone does not stop the
+        # pre-warmer, which is what makes the next screen ready.
         blocked_classes = set()
         for job in sorted((j for j in self.jobs.values() if j.granted is None),
                           key=lambda j: (CLASSES[j.cls], not (j.kind == "quick" and j.cls == "now"), j.order, j.sequence)):
@@ -522,10 +522,15 @@ class Scheduler:
                         self._preempt_development_place(job.cls)
                 elif job.development and any(j.development and CLASSES[j.cls] < CLASSES[job.cls] for j in running):
                     reason = "visible photos first"
+            if reason in ("room", "measured memory") and job.cls == "now":
+                # The photo on screen never waits on memory that background work
+                # is holding: the lower-class development stops at its safe point
+                # and requeues behind the photo on screen (6.8, decision 18).
+                self._preempt_development_place(job.cls)
             if reason:
                 job.floor = job.alone = False
                 self._wait(job, reason)
-                if reason not in ("paused for Grade", "system reserve", "needs more memory"):
+                if reason not in ("paused for Grade", "system reserve", "needs more memory") and job.cls == "now":
                     blocked_classes.add(CLASSES[job.cls])
                 if job.cls == "now" and reason not in ("paused for Grade", "system reserve", "needs more memory"):
                     now_waiting = True

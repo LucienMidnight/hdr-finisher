@@ -97,6 +97,17 @@ function analyse(text, openedAt) {
     });
     const gaps = () => lib.evaluate(() => { const g = window.__gaps || []; return { longest: Math.max(0, ...g), top: [...g].sort((a, b) => b - a).slice(0, 3) }; });
     const nameOf = p => String(p).replaceAll('\\', '/').split('/').pop();
+    const appMs = name => {
+      let found = null;
+      try {
+        for (const line of fs.readFileSync(logPath, 'utf8').split('\n')) {
+          if (!line.startsWith('[library] page_picture_navigation_to_present ')) continue;
+          const payload = JSON.parse(line.slice(line.indexOf('{')));
+          if (String(payload.path || '').replaceAll('\\', '/').split('/').pop() === name) found = payload.duration_ms;
+        }
+      } catch { /* the log may not exist yet */ }
+      return found === null ? null : Math.round(found);
+    };
     const openedAt = Date.now();
     let at = Date.now();
     const first = await lib.evaluate(() => {
@@ -123,7 +134,7 @@ function analyse(text, openedAt) {
       try {
         const r = await shown(path);
         const g = await gaps().catch(() => ({}));
-        steps.push({ index: i, name: nameOf(path), ms: Date.now() - at, dispatchMs, selectedMs, seen: r.seen, longestGapMs: g.longest, topGapsMs: g.top });
+        steps.push({ index: i, name: nameOf(path), ms: Date.now() - at, appMs: appMs(nameOf(path)), dispatchMs, selectedMs, seen: r.seen, longestGapMs: g.longest, topGapsMs: g.top });
       }
       catch (error) { steps.push({ index: i, name: nameOf(path), ms: null, error: error.name, seen: error.seen }); }
       console.log(`single step ${i} ${nameOf(path)} ${steps.at(-1).ms} ms`);
