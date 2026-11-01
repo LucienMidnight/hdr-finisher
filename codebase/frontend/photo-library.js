@@ -465,10 +465,11 @@
     void (async () => {
       await navigationGate.settled(state.single?.signal);
       if (selected()?.path !== photo.path || state.view !== "single" || !state.active || compare.enabled()) return;
+      // One picture size per photo: the step needs the neighbour's 2560
+      // surface, so preparing a 640 development as well would decode the file
+      // twice and take the development place the step is waiting for (6.8).
       await Promise.allSettled(neighbours.map(async neighbour => {
-        // A finished 640 surface is useful even when the expensive sharp draw
-        // cannot keep up with two selections per second.
-        await Promise.allSettled([quickWindow.get(neighbour,50,null,{allowSource:true}), readyWindow.get(neighbour,50)]);
+        await readyWindow.get(neighbour,50);
       }));
     })().catch(error=>{if(!aborted(error))console.debug("Library window:",error.message);});
   }
@@ -636,6 +637,9 @@
     const name = document.createElement("span"); name.className = "name"; name.textContent = photo.name;
     element.append(frame, name); container.append(element);
     const cell = { element, canvas, controller: new AbortController(), photo, index, edge:thumbnailEdge(), identity:pictureIdentity(photo) };
+    // Grid cells on screen are now; the strip under Single only wants them
+    // soon, so a neighbour never outranks the photo being shown.
+    const cellPriority = () => container === space ? ((state.cells.shown?.has(photo.path)) ? 10 : 80) : 50;
     element.addEventListener("click", (event) => { if (!event.target.closest(".library-picture-error")) select(state.photos.findIndex((item) => item.path === photo.path), false, event.shiftKey ? "range" : event.ctrlKey || event.metaKey ? "toggle" : "single"); });
     element.addEventListener("dblclick", () => { select(state.photos.findIndex((item) => item.path === photo.path)); openGrade(); });
     element.addEventListener("pointerenter", () => { if (state.timing && cell.meta) diagnostics(photo, cell.meta, cell.elapsed); });
@@ -680,7 +684,7 @@
         const quickController=new AbortController();
         cell.controller.signal.addEventListener("abort",()=>quickController.abort(),{once:true});
         cell.quickController=quickController;
-        const preview = HDRLibraryGrants.preview({path:photo.path,quick_draw:true,bytes:photo.bytes,mtime_ns:photo.mtime_ns},quickController.signal,{Accept:"image/png"},()=>(container === space ? state.cells : state.filmCells).shown?.has(photo.path)?10:50).then(async response => {
+        const preview = HDRLibraryGrants.preview({path:photo.path,quick_draw:true,bytes:photo.bytes,mtime_ns:photo.mtime_ns},quickController.signal,{Accept:"image/png"},cellPriority).then(async response => {
           if (!response || response.status !== 200) return;
           const blob = await response.blob();
           if (!current() || cell.meta) return;
@@ -701,13 +705,16 @@
             const gpu = await HDRLibraryPictures.initialize();
             if (gpu.adapterInfo?.fallback) throw Object.assign(Error("Hardware GPU unavailable."),{gpuUnavailable:true});
             const trace = HDRLibraryTrace.begin(container === space ? "grid" : "filmstrip",photo.path,started);
-            const meta = await HDRLibraryScenes.load(photo.path, cell.edge, cell.controller.signal,10,false,trace,
-              {viewportDemand:true,beforeSource:async()=>{
+            const meta = await HDRLibraryScenes.load(photo.path, cell.edge, cell.controller.signal, cellPriority(), false, trace,
+              {viewportDemand:true,cachedOnly:container !== space,beforeSource:async()=>{
                 // Fullscreen's own quick/sharp request gets source slots before the filmstrip.
                 while (state.view === "single" && !readyWindow.has(selected() || {})) await sleep(50,cell.controller.signal);
                 if (state.view === "single") await navigationGate.settled(cell.controller.signal);
               }});
             if (!current()) return;
+            // The strip under Single keeps a finished picture or its camera
+            // preview; it never starts a development there (6.8).
+            if (!meta) return;
             await drawPicture(meta, fallback, cell.controller, current);
             if (!current()) return;
             cell.quickController?.abort();
@@ -749,7 +756,16 @@
     const kept = (cell, index) => index >= start && index < end || index >= keepStart && index < keepEnd && cell.meta && (!cell.fallback || cell.scene?.route === "library-live");
     const wanted = new Map(state.photos.slice(keepStart, keepEnd).map((photo, offset) => [photo.path, keepStart + offset]));
     map.shown = new Set(state.photos.slice(start, end).map(photo => photo.path));
-    HDRLibraryScenes.viewport([...map.shown].filter(path=>!path.startsWith("pending:")),state.photos.slice(keepStart,keepEnd).filter(photo=>!photo._pending).map(photo=>photo.path));
+    // Only the view Steve is looking at owns priority. While Single covers
+    // the grid, the grid and filmstrip cells are not "visible": the single
+    // photo is now and its two neighbours are soon (6.8). Otherwise a grid
+    // cell would keep a development place and memory the single photo needs.
+    if (map === state.cells && state.view === "grid") {
+      HDRLibraryScenes.viewport([...map.shown].filter(path=>!path.startsWith("pending:")),state.photos.slice(keepStart,keepEnd).filter(photo=>!photo._pending).map(photo=>photo.path));
+    } else if (map === state.filmCells && state.view !== "grid") {
+      const photo = selected();
+      HDRLibraryScenes.viewport(photo ? [photo.path] : [], readyNeighbours().map(item => item.path));
+    }
     for (const [path, cell] of map) {
       if (wanted.has(path) && kept(cell, wanted.get(path))) continue;
       cell.element.remove(); map.delete(path);
@@ -1076,6 +1092,11 @@
     }
     state.single?.abort(); state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; state.fitMeta = null; $("native-picture").hidden = true;
     if (!photo || !state.active || state.view !== "single") return;
+    // Single covers the grid: unfinished grid cells are abandoned at their
+    // next safe point instead of holding a development place, a save place or
+    // memory the photo on screen is waiting for (6.8, decision 18). Finished
+    // cells stay pooled and return with the grid.
+    for (const [path, cell] of state.cells) if (path !== photo.path && !cell.meta) cell.controller.abort();
     compare.hide();
     const trace = requestedTrace || HDRLibraryTrace.begin(state.review ? "fullscreen" : "single",photo.path);
     const controller = new AbortController(); state.single = controller;
@@ -1101,6 +1122,9 @@
       const neighbours = readyNeighbours();
       readyWindow.update(photo,neighbours); quickWindow.update(photo,neighbours);
       readAhead.update(photo,developmentNeighbours(),2560,false);
+      // Start the neighbours' 2560 surfaces now, while this photo is on
+      // screen: a step to a prepared neighbour must not need a new decode.
+      warmReady(photo,neighbours);
       let meta, kept = false;
       try {
         kept = readyWindow.has(photo);
@@ -1123,12 +1147,12 @@
         const waiting = performance.now();
         let value;
         if (!borrowed && !quick && !kept) {
-          const small = quickWindow.get(photo,0,trace,{allowSource:true});
-          small.catch(()=>{});
-          const first = await Promise.race([sharp.then(value=>({value})),small.then(quick=>({quick})).catch(()=>({quick:null}))]);
-          if (!current()) return;
-          if (first.value) value = first.value;
-          else { showQuick(first.quick,controller,current,trace); value = await sharp; }
+          // The camera preview or a finished grid picture covers this wait. A
+          // second 640 development of the same photo would decode it twice and
+          // hold the development place and memory the 2560 picture is waiting
+          // for, so Single prepares one picture size per photo (6.8).
+          void showCameraPreview(photo,controller,current,trace);
+          value = await sharp;
         } else value = await sharp;
         HDRLibraryTrace.mark(trace,"picture_window_wait",waiting,{kept});
         if (!value) return;

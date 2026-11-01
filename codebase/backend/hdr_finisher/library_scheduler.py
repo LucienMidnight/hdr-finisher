@@ -173,9 +173,32 @@ class Scheduler:
                     continue
                 if not hasattr(job, 'gpu_preempted_at'):
                     job.gpu_preempted_at = self.clock()
+                    job.preempt_reason = "Grade or export waited for next Library safe point"
                     if not getattr(job, 'gpu_started', False):
                         job.gpu_bytes = 0
                         if job.notify: job.notify(dict(type='gpu-preempt',id=job.id))
+
+    def _preempt_development_place(self, cls):
+        """Give a development place to a photo of a higher priority class.
+
+        Decision 18's safe point: the window stops the job and requeues it
+        without spending an attempt. One running development is asked per
+        census, and never one that has already been asked.
+        """
+        limit = CLASSES[cls]
+        candidates = [j for j in self.jobs.values()
+                      if j.granted is not None and j.development and CLASSES[j.cls] > limit]
+        if not candidates:
+            return
+        job = max(candidates, key=lambda j: (CLASSES[j.cls], j.sequence))
+        if hasattr(job, "gpu_preempted_at"):
+            return
+        job.gpu_preempted_at = self.clock()
+        job.preempt_reason = "a higher-priority photo needed the development place"
+        log("library_grant_place_preempt", request=job.id, path=job.path,
+            priority_class=job.cls, wanted_class=cls)
+        if job.notify:
+            job.notify(dict(type="gpu-preempt", id=job.id))
 
     def gpu_reserved(self):
         with self.lock:
@@ -308,7 +331,7 @@ class Scheduler:
             if hasattr(job, "gpu_preempted_at"):
                 log("library_gpu_priority_release", request=job.id, path=job.path,
                     wait_ms=round((self.clock()-job.gpu_preempted_at)*1000, 3),
-                    reason="Grade or export waited for next Library safe point")
+                    reason=getattr(job, "preempt_reason", "a higher-priority photo needed the resource"))
             self._log(job, outcome)
             job.ready.set()
             self._pump()
@@ -410,6 +433,10 @@ class Scheduler:
         guard = min(guards, key=lambda j: (CLASSES[j.cls], j.sequence), default=None)
         if self.reclamation:
             guard = self.jobs.get(self.reclamation["id"], guard)
+        # A lower class never starts while a higher class is waiting for room.
+        # Otherwise background grid work takes the development places and the
+        # memory that the photo on screen is waiting for (6.8).
+        blocked_classes = set()
         for job in sorted((j for j in self.jobs.values() if j.granted is None),
                           key=lambda j: (CLASSES[j.cls], not (j.kind == "quick" and j.cls == "now"), j.order, j.sequence)):
             normal = [j for j in running if not j.fast]
@@ -417,9 +444,13 @@ class Scheduler:
             reason = ""
             if self.reclamation and self.reclamation["id"] == job.id:
                 self._wait(job, "reclaiming memory")
+                blocked_classes.add(CLASSES[job.cls])
                 continue
             if job.blocked:
                 self._wait(job, job.blocked)
+                block = job.blocked not in ("paused for Grade", "system reserve", "needs more memory")
+                if block:
+                    blocked_classes.add(CLASSES[job.cls])
                 continue
             if job.cls == "Grade":
                 pass
@@ -438,6 +469,8 @@ class Scheduler:
             elif job.fast:
                 if sum(j.fast for j in running) >= FAST_COUNT:
                     reason = "fast lane full"
+            elif any(cls < CLASSES[job.cls] for cls in blocked_classes):
+                reason = "higher priority photo first"
             elif job.cls != "now" and (now_waiting or self.pressure != "none" or
                     (total_without_grade is not None and total_without_grade > self.ceiling-600_000_000) or
                     self.grade_bytes > self.ceiling-STARTING):
@@ -485,11 +518,15 @@ class Scheduler:
                     reason = "saving places full"
                 elif job.development and sum(j.development for j in running) >= DEVELOPMENTS:
                     reason = "development places full"
+                    if CLASSES[job.cls] <= CLASSES["soon"]:
+                        self._preempt_development_place(job.cls)
                 elif job.development and any(j.development and CLASSES[j.cls] < CLASSES[job.cls] for j in running):
                     reason = "visible photos first"
             if reason:
                 job.floor = job.alone = False
                 self._wait(job, reason)
+                if reason not in ("paused for Grade", "system reserve", "needs more memory"):
+                    blocked_classes.add(CLASSES[job.cls])
                 if job.cls == "now" and reason not in ("paused for Grade", "system reserve", "needs more memory"):
                     now_waiting = True
                 if reason == "needs more memory":
