@@ -508,6 +508,12 @@ function registerIpc() {
     const record = validateSender(event);
     return callback(record, ...args);
   });
+  handleWindow("desktop:reclaim-library-storage", async record => {
+    // Decision 20: references have been evicted for an actual waiting job.
+    // Reuse the existing dead-upload release, without inventing OS pressure.
+    await require('./memory-pressure.cjs').notifyChromiumPressure(record.window.webContents, 'moderate');
+    return true;
+  });
   handleWindow("desktop:set-library-command-state", (record, next = {}) => {
     libraryCommandState = { selected: Math.max(0, Number(next.selected) || 0), copied: Boolean(next.copied), active: record.role === "library" || Boolean(next.active) };
     buildMenu(); return true;

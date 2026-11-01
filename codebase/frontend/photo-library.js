@@ -600,6 +600,7 @@
     await HDRLibraryPictures.reclaimHost();
     await HDRLibraryQuickPictures.reclaimHost();
     await HDRLibraryRAM.report();
+    await (window.hdrFinisherDesktop || window.parent?.hdrFinisherDesktop)?.reclaimLibraryStorage?.();
   };
   let hostReclaim = false;
   window.addEventListener("message", async event => {

@@ -1943,6 +1943,15 @@ with `needs more memory`. The cell keeps its preview and memory notice; no
 broken-photo record is made. A new cell on scrolling back or opening Single can
 make a fresh attempt. The source queue excludes these outcomes from failures.
 
+Initial real-app check (`decision20-phase0`): all 27 ended in 34.331 s,
+19 finished, four existing interpretation/X-Trans refusals, four source memory
+outcomes (line scan, AVIF, PNG, PFM). Peak 3.813 GB, settled below 3.4 GB, no
+reserve violation or HTTP timeout. The eviction acknowledgements preceded
+Chromium releasing dead upload storage; the completion path now also awaits
+the existing garbage-release call after references are released. It sends no
+synthetic OS pressure and changes no approved number. This initial run is not
+qualification; final acceptance below supersedes its completion result.
+
 Focused validation: 59 Python scheduler/channel/memory checks and 38 JavaScript
 channel/queue checks pass. The FIFO test now expects intentional same-class
 skip-ahead while lower classes wait. No full suites, per this brief.

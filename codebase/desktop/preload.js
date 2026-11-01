@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   startupTheme: process.argv.find(value => value.startsWith("--hdr-finisher-theme="))?.split("=")[1] || "default-dark",
   platform: process.platform,
   environment: () => ipcRenderer.invoke("desktop:environment"),
+  reclaimLibraryStorage: () => ipcRenderer.invoke("desktop:reclaim-library-storage"),
   videoMemory: () => ipcRenderer.invoke("desktop:video-memory"),
   rendererReady: () => ipcRenderer.invoke("desktop:renderer-ready"),
   getPreferences: () => ipcRenderer.invoke("desktop:get-preferences"),
