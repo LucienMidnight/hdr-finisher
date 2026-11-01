@@ -1,4 +1,4 @@
-"""Count stored Library pictures with a whole colour channel at zero.
+"""Count stored Library pictures with a colour channel that is (almost) all zero.
 
 Run from codebase: .venv/Scripts/python.exe tools/library-channel-audit.py <cache folder>
 Prints JSON. A real photo never has every red, green or blue value exactly
@@ -27,7 +27,9 @@ def audit(folder: Path) -> dict:
         if pixels.ndim != 3 or pixels.shape[-1] < 3:
             continue
         result["pictures"] += 1
-        zero = [bool(not np.any(pixels[..., c])) for c in range(3)]
+        # 99%: faulty VRAM can sprinkle stray values into an empty channel; real
+        # photos peak near 29% exact zeros (Steve's cache, November 1).
+        zero = [bool(np.mean(pixels[..., c] == 0) >= 0.99) for c in range(3)]
         name = f"{Path(str(metadata.get('path', file.name))).name} @{metadata.get('edge', '?')}"
         if all(zero):
             result["all_channels_zero"].append(name)

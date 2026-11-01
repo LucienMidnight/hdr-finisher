@@ -37,8 +37,10 @@ Open work it leaves, in Steve's order:
 2. **Zeroed colour channels** in 42 MP RAW thumbnails (teal or black), seen
    in about 37% of A7R III thumbnails developed after the merge (44 stored
    640 pictures in Steve's cache). No error was logged. Guarded November 1
-   (branch `library-stall-teal`): a GPU development whose read-back colour
-   channel is entirely zero counts as a GPU failure, so the existing path
+   (branch `library-stall-teal`): a GPU development with a read-back colour
+   channel that is 99% or more exact zeros counts as a GPU failure (Steve
+   found teal thumbnails that also carried his faulty-VRAM specks, so "all
+   zero" missed them; real photos in his cache peak near 29% zeros), so the existing path
    retries once and then develops on the CPU, and logs
    `picture_development_empty_channel`. Not reproduced on a 40-photo test
    copy (`output/test-photos/badminton-42mp`) with one or two GPU

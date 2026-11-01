@@ -738,11 +738,15 @@
         const r = reduced[edge];
         r.planes = await Promise.all(r.planes.map(buffer => read(buffer, r.height * r.width * 4)));
       }
-      // A real photo never has a whole colour channel at exactly zero. One that
-      // does means a GPU step silently wrote nothing (November 1: teal and black
-      // 42 MP thumbnails), so treat it like a GPU memory failure: retry, then CPU.
+      // A real photo never has a colour channel that is (almost) all exact zero.
+      // One that does means a GPU step silently wrote nothing (November 1: teal
+      // and black 42 MP thumbnails). "Almost": Steve's faulty VRAM can sprinkle a
+      // few stray values into the empty channel. Real photos peak near 29% zero
+      // (crushed blacks). Treat it like a GPU memory failure: retry, then CPU.
       for (const [edge, r] of Object.entries(reduced)) r.planes.forEach((plane, c) => {
-        if (new Uint32Array(plane).some(v => v !== 0)) return;
+        const bits = new Uint32Array(plane); let zero = 0;
+        for (let k = 0; k < bits.length; k++) if (bits[k] === 0) zero++;
+        if (zero < bits.length * 0.99) return;
         const channel = ["red", "green", "blue"][c];
         root.HDRLibraryStopwatch?.("picture_development_empty_channel", {path: meta.path, edge: Number(edge), channel});
         throw Object.assign(Error(`GPU development returned an empty ${channel} channel at ${edge}.`), {gpuMemory: true, emptyChannel: true});
