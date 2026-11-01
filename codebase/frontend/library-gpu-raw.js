@@ -1174,7 +1174,7 @@
     if(!response.ok)throw Error('GPU scheduling unavailable.');
     return {bytes:Math.max(0,(await response.json()).budget-(640*640*64+64*1024**2)),unified};
   }
-  const exported = Object.freeze({ reclaimDecoded:async()=>{await Promise.all([...decodedSources.keys()].map(dropDecoded));forgetDirect();}, preflight, cachedDirect, forgetDirect, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant}) });
+  const exported = Object.freeze({ reclaimDecoded:async(needed)=>{let released=0;for(const [key,value] of decodedSources){if(released>=needed)break;released+=value.body.byteLength;await dropDecoded(key);}for(const [key,entry] of directScenes){if(released>=needed)break;released+=entry.bytes;entry.dispose();directScenes.delete(key);}return released;}, preflight, cachedDirect, forgetDirect, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

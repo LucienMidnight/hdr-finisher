@@ -272,12 +272,12 @@ class LibraryWorker:
             except (EOFError, OSError) as error:
                 log("helper_control_failed", operation=message["command"], reason=str(error), action="reader fails waiting requests when pipe closes")
 
-    def reclaim_waiting(self):
+    def reclaim_waiting(self, needed):
         token, done = uuid4().hex, Event()
         with self._lock:
             if self._connection is None or self._closed or self._failure: return
             self._reclaims[token] = done
-            self._send(dict(command="memory-pressure", level="shortage", request=token))
+            self._send(dict(command="memory-pressure", level="shortage", request=token, needed=needed))
         try:
             while not done.wait(.25):
                 if self._stop.is_set() or not self._process.is_alive():
@@ -716,7 +716,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     from . import app_memory
                     # Keep receiving owner replies while a cache waits for its lock.
                     def reclaim(command):
-                        app_memory.reclaim(command['level'])
+                        app_memory.reclaim(command['level'], command.get('needed'))
                         if command.get('request'):
                             reply(dict(event='memory-reclaimed', request=command['request']))
                     Thread(target=reclaim,args=(message,),daemon=True).start()

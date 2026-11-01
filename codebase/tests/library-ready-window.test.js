@@ -65,3 +65,14 @@ test('key release wakes a stopped selection without the remaining quiet timeout'
   await Promise.resolve();assert.equal(started,false);
   navigation.release();await pending;assert.equal(started,true);
 });
+
+
+test('bounded eviction preserves wanted pictures and stops after one indivisible surface',async()=>{
+ const disposed=[];
+ const {create}=require('../frontend/library-ready-window');
+ const cache=create({key:p=>p.id,load:async p=>({bytes:p.bytes,id:p.id}),dispose:v=>disposed.push(v.id),manageBytes:false});
+ const keep={id:'next',bytes:50},old={id:'old',bytes:100},later={id:'later',bytes:100};
+ await cache.get(keep);await cache.get(old);await cache.get(later);
+ assert.equal(cache.evictFinished(p=>p.id!=='next',60),100);
+ assert.deepEqual(disposed,['old']);assert.ok(cache.has(keep)&&cache.has(later));
+});

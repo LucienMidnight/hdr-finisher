@@ -6,14 +6,14 @@ const {MemoryMonitor}=require('./library-memory-monitor.cjs');
 const {chromium}=require('playwright');
 const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
 const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe'),aceh=process.argv.includes('--aceh'),phase0=process.argv.includes('--phase0');
-const scrollDiagnose=process.argv.includes('--scroll-diagnose');
+const scrollDiagnose=process.argv.includes('--scroll-diagnose'),hdrTest=process.argv.includes('--hdr-test');
 const memoryLimit=Number(process.argv.find(x=>x.startsWith('--memory-gb='))?.split('=')[1]||4)*1e9;
 const singleFile=process.argv.find(x=>x.startsWith('--single-file='))?.slice(14);
 const allFolder=process.argv.find(x=>x.startsWith('--all-folder='))?.slice(13);
 const outputName=process.argv.includes('--output-name')?process.argv[process.argv.indexOf('--output-name')+1]:null;
 const out=path.join(root,'output/cold-mixed',outputName|| (jpeg?'jpeg':probe?'probe':aceh?'aceh':phase0?'phase0':'final'));fs.mkdirSync(out,{recursive:true});fs.writeFileSync(path.join(out,'memory.jsonl'),'');
 const scratch=fs.mkdtempSync(path.join(root,'output/test-photos/cold-mixed-'));
-let photos=allFolder||path.join(root,'output/test-photos',phase0?'phase0':aceh?'aceh':scrollDiagnose?'scroll-back-mixed':'cold-mixed-photos'),background=path.join(scratch,'index');fs.mkdirSync(photos,{recursive:true});fs.mkdirSync(background);
+let photos=allFolder||path.join(root,'output/test-photos',hdrTest?'hdr-test':phase0?'phase0':aceh?'aceh':scrollDiagnose?'scroll-back-mixed':'cold-mixed-photos'),background=path.join(scratch,'index');fs.mkdirSync(photos,{recursive:true});fs.mkdirSync(background);
 let singleFileRestore;
 if(singleFile){
  assert.ok(phase0,'Isolated-file diagnosis uses the reusable phase0 copies');
@@ -25,12 +25,20 @@ if(singleFile){
  fs.renameSync(original,singleFileRestore.temporary); // Move only the disposable copy; restore it in finally.
  if(fs.existsSync(original+'.hdrf')){fs.renameSync(original+'.hdrf',singleFileRestore.temporary+'.hdrf');singleFileRestore.sidecar=true;}
 }
-const source=phase0?photos:aceh?'D:/Photos/2017/Aceh-Wedding/Pesta':'D:/Photos/2023/11';
+if(hdrTest){
+ const original='D:/Photos/HDR Test Images';
+ for(const name of fs.readdirSync(original,{recursive:true})){
+  const src=path.join(original,name),dst=path.join(photos,name);
+  if(fs.statSync(src).isDirectory())fs.mkdirSync(dst,{recursive:true});
+  else if(!fs.existsSync(dst)){fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst);}
+ }
+}
+const source=hdrTest?photos:phase0?photos:aceh?'D:/Photos/2017/Aceh-Wedding/Pesta':'D:/Photos/2023/11';
 let names=fs.readdirSync(source).filter(n=>/\.(heic|jpg|png|arw)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
-if(phase0)names=fs.readdirSync(photos,{recursive:true}).filter(n=>/\.(dng|jxl|raf|tiff?|jpg|jpeg|png|arw|avif|heic|cr3|orf|rw2|nef|exr|hdr|pfm)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+if(phase0||hdrTest)names=fs.readdirSync(photos,{recursive:true}).filter(n=>/\.(dng|jxl|raf|tiff?|jpg|jpeg|png|arw|avif|heic|cr3|orf|rw2|nef|exr|hdr|pfm)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
 let junk=[];
 if(aceh){junk=fs.readdirSync(source).filter(n=>n.startsWith('._')).sort().slice(0,6);names=names.filter(n=>!n.startsWith('._')).slice(0,48);}
-else if(phase0){}else if(scrollDiagnose){
+else if(phase0||hdrTest){}else if(scrollDiagnose){
  const groups=['ARW','HEIC','JPG','PNG'].map(ext=>names.filter(n=>n.toUpperCase().endsWith('.'+ext)));
  names=[];while(names.length<200&&groups.some(g=>g.length))for(const group of groups)if(group.length&&names.length<200)names.push(group.shift());
 }else if(jpeg)names=['IMG_0267.JPG'];else{
@@ -45,9 +53,9 @@ else if(phase0){}else if(scrollDiagnose){
 for(const name of [...junk,...names])if(!fs.existsSync(path.join(photos,name)))fs.copyFileSync(path.join(source,name),path.join(photos,name));
 // Small generated-fixture files keep an independent pinned index active;
 // no second copies of Steve's real photos are made.
-if(!jpeg&&!aceh&&!phase0&&!scrollDiagnose)for(let i=0;i<1200;i++)fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),path.join(background,`index-${String(i).padStart(4,'0')}.png`));
+if(!hdrTest&&!jpeg&&!aceh&&!phase0&&!scrollDiagnose)for(let i=0;i<1200;i++)fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),path.join(background,`index-${String(i).padStart(4,'0')}.png`));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-const report={mode:scrollDiagnose?'scroll-diagnose':phase0?'phase0':jpeg?'IMG_0267':aceh?'aceh':'mixed',files:names,junk,errors:[],memoryRequests:[],screens:[],startedAt:new Date().toISOString()};
+const report={mode:hdrTest?'hdr-test':scrollDiagnose?'scroll-diagnose':phase0?'phase0':jpeg?'IMG_0267':aceh?'aceh':'mixed',files:names,junk,errors:[],memoryRequests:[],screens:[],startedAt:new Date().toISOString()};
 const before=hashProjects(require('../tests/release/drivers.json').protectedProjects);
 (async()=>{
  let memoryViolation, browser,lib,observer,peak=0,pending='',poll,stopping=false,activePoll,diagnostics,gpuObserver;
@@ -119,7 +127,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   const cacheSettings=await api('cache-settings');report.cacheSettings=cacheSettings;
   assert.ok(cacheSettings.location.toLowerCase().includes('test-'),'Test must use an isolated disk cache');
   await api('lock-metrics',{reset:true});
-  if(!jpeg&&!aceh&&!phase0&&!scrollDiagnose)await api('pins',{paths:[background]});
+  if(!hdrTest&&!jpeg&&!aceh&&!phase0&&!scrollDiagnose)await api('pins',{paths:[background]});
   if(process.argv.includes('--settings-exercise'))await lib.evaluate(()=>{window.frameGaps=[];let last=performance.now();function tick(now){frameGaps.push(now-last);last=now;requestAnimationFrame(tick);}requestAnimationFrame(tick);});
   report.openedPerformance=await lib.evaluate(()=>performance.now());
   const opened=report.openedAt=Date.now();void lib.evaluate(folder=>HDRLibrary.browse(folder),photos.replaceAll('\\','/')).catch(e=>report.errors.push(String(e)));
@@ -236,10 +244,31 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
    await sleep(500);
   }
   report.settleObservedMs=Date.now()-settleStart;
+  const coldCapture=await lib.evaluate(()=>({events:coldEvents,allocations:coldAllocations,snapshot:HDRLibrary.getSnapshot(),queue:HDRLibraryScenes.snapshot()}));
+  Object.assign(report,coldCapture);
+  if(hdrTest&&process.argv.includes('--warm-reopen')){
+   await lib.evaluate(folder=>HDRLibrary.browse(folder),background.replaceAll('\\','/'));
+   await lib.goto(lib.url());await lib.waitForFunction(()=>window.HDRLibrary);
+   await lib.evaluate(()=>{
+    window.warmEvents=[];const log=HDRLibraryStopwatch;
+    window.HDRLibraryStopwatch=(stage,fields)=>{warmEvents.push({stage,at:performance.now(),...fields});log(stage,fields);};
+    const slider=document.getElementById('thumbnail-size');slider.value=300;slider.dispatchEvent(new Event('input'));
+   });
+   const began=Date.now();
+   await lib.evaluate(folder=>HDRLibrary.browse(folder),photos.replaceAll('\\','/'));
+   await lib.waitForFunction(()=>{
+    const b=document.getElementById('library-grid').getBoundingClientRect();
+    const cells=[...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect();return r.top<b.bottom&&r.bottom>b.top;});
+    return cells.length&&cells.every(c=>c.querySelector('canvas[data-picture-key]'));
+   },null,{timeout:120000});
+   report.warm={fullScreenMs:Date.now()-began,events:await lib.evaluate(()=>warmEvents)};
+   const checks=report.warm.events.filter(e=>e.stage==='picture_cache_check');
+   report.warm.cache={hits:checks.filter(e=>e.cache_hit).length,checks:checks.length};
+  }
   report.grantsAtEnd=await lib.evaluate(()=>HDRLibraryGrants.snapshot());
   Object.assign(report,memory.report());
   if(diagnostics){await diagnostics().catch(error=>report.memoryDiagnosticError=String(error));diagnostics=null;}
-  Object.assign(report,await lib.evaluate(()=>({events:coldEvents,allocations:coldAllocations,snapshot:HDRLibrary.getSnapshot(),queue:HDRLibraryScenes.snapshot()})));
+  Object.assign(report,coldCapture);
   report.lock=await api('lock-metrics',{});
   await page.screenshot({path:path.join(out,'screen.png')});
   if(scrollDiagnose)for(const screen of report.scrollBack){

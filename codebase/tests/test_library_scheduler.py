@@ -411,8 +411,7 @@ def test_oldest_reclaims_then_starts_without_starvation_or_lower_admission():
     lower = ask(s, "lower", FAST_BYTES, "soon")
     assert s.reclamation and small.granted is None and lower.granted is None
     request = s.reclamation_request()
-    # A backend acknowledgement alone cannot grant or refuse before the window.
-    s.reclaimed(request["epoch"])
+    # Only one owner releases; a fresh census can spare every other owner.
     s.update(total=1_500_000_000, available=60*GB, ram=68*GB)
     assert big.granted is None
     s.reclaimed(request["epoch"], "window")
@@ -466,8 +465,6 @@ def test_grade_preempts_guard_before_reclamation_and_during_owner_wait():
     grade = ask(s, "grade-during", 8*GB, "Grade")
     assert grade.ready.is_set() and grade.granted is not None
     assert s.reclamation["owners"] == {"window"}
-    assert not s.reclamation["backend_done"]
-    s.reclaimed(request["epoch"])
     s.reclaimed(request["epoch"], "window")
     # A census still has not arrived; Grade did not need it.
     assert s.reclamation and not blocked.ready.is_set()
@@ -519,3 +516,38 @@ def test_guarded_gpu_preemption_keeps_grade_safe_point_release():
     assert s.gpu_reserved() == GB  # Active work reaches its existing safe point.
     s.finish(job.id)
     assert s.gpu_reserved() == 0
+
+
+def test_ordinary_queue_never_guards_and_waits_for_post_drain_census():
+    now = [1.0]
+    s = Scheduler(clock=lambda: now[0])
+    s.update(total=1_800_000_000, available=60*GB, ram=68*GB)
+    first = ask(s, "first", 1_340_000_000)
+    now[0] = 2
+    s.update(total=3_600_000_000, sampled_grants={first.id}, available=60*GB, ram=68*GB)
+    ordinary = ask(s, "ordinary", 1_340_000_000)
+    smaller = ask(s, "smaller", 100_000_000)
+    assert smaller.granted is not None and not s.reclamation
+    now[0] = 3
+    s.finish(first.id); s.finish(smaller.id)
+    assert not s.reclamation  # Previous census still includes running allocations.
+    now[0] = 4
+    s.update(total=1_900_000_000, sample_started=3.5, available=60*GB, ram=68*GB)
+    assert ordinary.granted is not None and not s.reclamation
+
+
+def test_reclamation_owner_budget_is_remaining_deficit_and_stops_when_fitting():
+    s = Scheduler()
+    s.update(total=3_000_000_000, available=60*GB, ram=68*GB)
+    s.heartbeat("a"); s.heartbeat("b")
+    big = ask(s, "big", 2*GB)
+    ask(s, "later", FAST_BYTES)
+    first = s.reclamation_request()
+    assert first["owner"] == "a" and first["bytes"] == 600_000_000
+    s.reclaimed(first["epoch"], "a")
+    s.update(total=2_600_000_000, available=60*GB, ram=68*GB)
+    second = s.reclamation_request()
+    assert second["owner"] == "b" and second["bytes"] == 200_000_000
+    s.reclaimed(second["epoch"], "b")
+    s.update(total=2_400_000_000, available=60*GB, ram=68*GB)
+    assert big.granted is not None and not s.reclamation_request()

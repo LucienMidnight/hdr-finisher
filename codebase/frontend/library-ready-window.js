@@ -44,7 +44,7 @@
       return entry.promise;
     }
     return Object.freeze({get, update, invalidate, contains:photo => entries.has(key(photo)),
-      evictFinished:(predicate=()=>true)=>{for(const [id,entry] of entries)if(entry.value && predicate(entry.photo))remove(id);}, has:photo => !!entries.get(key(photo))?.value, size:() => entries.size});
+      evictFinished:(predicate=()=>true,needed=Infinity)=>{let released=0;for(const [id,entry] of entries){if(released>=needed)break;if(entry.value && predicate(entry.photo)){released+=entry.value.bytes||0;remove(id);}}return released;}, has:photo => !!entries.get(key(photo))?.value, size:() => entries.size});
   }
   // Only the finished live surface qualifies, never its camera JPEG sibling.
   function standIn(cells, identity, epoch, hdr) {

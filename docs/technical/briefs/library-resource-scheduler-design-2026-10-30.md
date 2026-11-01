@@ -2149,6 +2149,43 @@ Scratch output is **14.5 GB** at start and end (12.5 GB reusable test photos),
 below 100 GB. The seven task-created temporary profiles and redundant console
 scratch were removed; the reports and referenced diagnostic capture remain.
 
+### 7.15 Ordinary waits and proportional reclamation (November 1)
+
+The requested session (epoch 1793504808–1793504883) confirms 238 visible
+measured-memory waits, 200 guard waits and 156 room waits. Its 111 thumbnail
+cache checks include 43 hits and 68 misses. Four ordinary requests triggered
+reclamation at retained totals of 3.091, 3.201, 3.362 and 3.555 GB. There were
+14 developments, with no repeated path in that session. The log does not prove
+that the misses were a one-time Part C rebuild.
+
+The guard used a previous memory wait plus queue age/bypass, even while jobs
+were running. It therefore blocked fitting work during normal queuing. Once
+jobs finished, it could immediately reuse a census taken while they still
+held allocations. Reclamation had no byte target: all windows, backend and
+helper emptied eligible caches. The first 1.344 GB job needed only about
+35 MB below the elastic admission boundary, yet invoked the same wholesale
+release as a genuine giant. The backend pressure endpoint already acknowledges
+asynchronously; the historical two desktop timeout messages alone do not
+identify which part delayed acknowledgement.
+
+The guard now requires drained running work and a census started after its
+release, including cancellation/defer/disconnect. Real shortages retain the
+existing elastic boundary and physical reserve. Reclamation sends a byte
+target to one owner, resamples after acknowledgement, and visits another only
+if a deficit remains. Within an owner it stops at the target, allowing the
+last indivisible resource to cross it. Visible surfaces and prepared Single
+neighbours remain protected. No approved estimate, budget or concurrency
+number changes. Grade, Proof and export picture algorithms are unchanged.
+
+`measure-library-cold-mixed.cjs --hdr-test` copies the complete source tree
+once into `output/test-photos/hdr-test`, preserving child folders and sidecars.
+Every cold app uses an isolated profile. `--warm-reopen` resets the Library
+frame and its memory caches before reopening the folder against the same disk
+cache. Measurement acceptance: report both screens, camera-preview coverage,
+visible wait maximum, reclamation count, peak/settled RAM and warm cache hits;
+Aceh first screens stay within the requested 5% of 14.4/13.6 s. Slow acceptance
+is pending; focused checks currently pass (66 Python, 24 JavaScript).
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
@@ -2363,10 +2400,12 @@ Decided October 30:
     Section 7.12 found one gain-map AVIF (2.362 GB estimate on top of 2.282 GB
     retained) blocking 16 jobs that each finish on their own. Within the same
     priority class, a job that fits now may start ahead of an older job that
-    does not. Guard against starvation: once the blocked job is the oldest
-    waiting job in its class, stop admitting later jobs of that class or below
-    and reclaim memory the app holds but does not need (finished pictures and
-    scenes off screen, retained decoded sources) until it fits. If it still
+    does not. Normal waiting behind running work does not activate the guard.
+    Guard against starvation only after running work drains and a fresh census
+    still shows that the oldest waiting job cannot fit. Then stop admitting
+    later jobs of that class or below and reclaim only its remaining shortfall,
+    cheapest offscreen finished surfaces first, then retained decoded sources.
+    Resample between owners and stop releasing as soon as the job fits. If it still
     cannot fit once nothing else of its class is running, it ends once with
     "needs more memory", keeps its camera preview, and is never recorded as a
     broken photo. Tradeoff accepted: photos no longer always finish in screen

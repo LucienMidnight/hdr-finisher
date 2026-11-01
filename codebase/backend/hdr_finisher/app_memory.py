@@ -124,7 +124,25 @@ def cache_snapshot():
                 for share,cap in LIMITS.items()}
 
 
-def reclaim(level='moderate'):
+def reclaim(level='moderate', needed=None):
+    if needed is None:
+        return reclaim_all(level)
+    remaining = max(0, int(needed))
+    # Rebuildable working data first; packed handoffs can require disk I/O.
+    with _lock:
+        owners = [(key, v['trim']()) for share in ('working', 'raw', 'handoff')
+                  for key, v in _caches.items() if v['share'] == share and v.get('trim')]
+    for key, callback in owners:
+        if remaining <= 0: break
+        if not callback: continue
+        with _lock: before = _caches.get(key, {}).get('bytes', 0)
+        callback(max(0, before-remaining))
+        with _lock: after = _caches.get(key, {}).get('bytes', 0)
+        remaining -= max(0, before-after)
+    return max(0, int(needed)-remaining)
+
+
+def reclaim_all(level='moderate'):
     with _lock:
         callbacks=[(v['trim'](),0 if level in ('critical','shortage') else v['bytes']//2)
                    for v in _caches.values() if v.get('trim') and

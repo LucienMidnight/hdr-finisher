@@ -308,3 +308,20 @@ def test_waiting_job_reclamation_releases_decoded_caches_without_camera_or_visib
         app_memory.report(share, share, 100)
     app_memory.reclaim("shortage")
     assert calls == [("raw", 0), ("handoff", 0), ("working", 0)]
+
+
+def test_shortage_releases_only_needed_bytes_and_stops_before_next_owner(monkeypatch):
+    from hdr_finisher import app_memory
+    monkeypatch.setattr(app_memory, "_caches", {})
+    released = []
+    def owner(name, share, size):
+        def trim(target):
+            released.append((name, target))
+            app_memory.report(name, share, target)
+        app_memory.register(name, share, trim)
+        app_memory.report(name, share, size)
+        return trim
+    callbacks = [owner("raw", "raw", 500), owner("working", "working", 200)]
+    assert app_memory.reclaim("shortage", 100) == 100
+    assert released == [("working", 100)]
+    assert app_memory.cache_snapshot()["raw"]["bytes"] == 500

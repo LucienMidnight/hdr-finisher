@@ -294,8 +294,9 @@
     void HDRLibraryPictures.readyMemory(readyBytes).catch(() => {});
   }
   HDRLibraryRAM.register('ready-surfaces','sharp',()=>readyBytes,target=>{
-    const other=photo=>photo.path!==selected()?.path;
-    readyWindow.evictFinished(other);quickWindow.evictFinished(other);
+    const other=photo=>Math.abs(state.photos.findIndex(p=>p.path===photo.path)-state.index)>1;
+    readyWindow.evictFinished(other,Math.max(0,readyBytes-target));
+    quickWindow.evictFinished(other,Math.max(0,readyBytes-target));
     if(readyBytes>target)for(const value of readySurfaces.values()){
       if(readyBytes<=target)break;
       if(value.retired || target===0)releaseReady(value,true);
@@ -584,21 +585,30 @@
     updateDetails(); paintGrid(); paintFilm();
     status(`${state.photos.length.toLocaleString()} photos · ${state.hiddenFiles} unreadable files hidden`);
   }
-  window.HDRLibraryReclaimWaiting = async () => {
-    tilePool.clear();
-    // Retained DOM cells extend beyond the viewport. Release only those outside it.
+  window.HDRLibraryReclaimWaiting = async needed => {
+    let remaining = Math.max(0, needed);
+    // Discard cheapest finished surfaces first, one indivisible entry at a time.
+    while(remaining>0){
+      const before=tilePool.snapshot().bytes;
+      if(!tilePool.evictOne(cell=>cell.fallback?.dataset.standIn!=="true"))break;
+      remaining-=before-tilePool.snapshot().bytes;
+    }
     for(const map of [state.cells,state.filmCells])for(const [path,cell] of map){
-      if(map.shown?.has(path))continue;
+      if(remaining<=0 || map.shown?.has(path))continue;
+      remaining-=cell.fallback?cell.fallback.width*cell.fallback.height*16:0;
       cell.controller.abort();cell.element.remove();
       if(cell.fallback){cell.fallback.getContext("webgpu")?.unconfigure();cell.fallback.width=cell.fallback.height=0;}
       cell.canvas.removeAttribute("src");map.delete(path);
     }
-    const other=photo=>state.view!=="single" || photo.path!==selected()?.path;
-    readyWindow.evictFinished(other);quickWindow.evictFinished(other);
-    recentPictures.clear();
-    await HDRLibraryGpuRaw.reclaimDecoded?.();
-    await HDRLibraryPictures.reclaimHost();
-    await HDRLibraryQuickPictures.reclaimHost();
+    // Keep the selected picture and its prepared neighbours.
+    const other=photo=>state.view!=="single" || Math.abs(state.photos.findIndex(p=>p.path===photo.path)-state.index)>1;
+    remaining-=readyWindow.evictFinished(other,Math.max(0,remaining));
+    remaining-=quickWindow.evictFinished(other,Math.max(0,remaining));
+    if(remaining>0)remaining-=await HDRLibraryGpuRaw.reclaimDecoded?.(remaining)||0;
+    if(remaining>0){
+      await HDRLibraryPictures.reclaimHost();
+      await HDRLibraryQuickPictures.reclaimHost();
+    }
     await HDRLibraryRAM.report();
     await (window.hdrFinisherDesktop || window.parent?.hdrFinisherDesktop)?.reclaimLibraryStorage?.();
   };

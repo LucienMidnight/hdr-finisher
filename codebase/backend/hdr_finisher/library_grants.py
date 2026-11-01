@@ -21,7 +21,7 @@ class Runtime:
         self.stop = Event()
         self.thread = None
         self.measurement_logged = False
-        self.reclaim = lambda: app_memory.reclaim("shortage")
+        self.reclaim = lambda amount: app_memory.reclaim("shortage", amount)
         self.reclaimer = None
 
     def sample(self):
@@ -47,12 +47,17 @@ class Runtime:
         scheduler.expire()
         request = scheduler.reclamation_request()
         if request:
-            with scheduler.lock:
-                for notify in scheduler.listeners:
-                    notify(dict(type="reclaim", id=request["id"], epoch=request["epoch"]))
+            log("library_reclaim_owner", request=request["id"], epoch=request["epoch"],
+                owner=request["owner"] or "backend/helper", needed_bytes=request["bytes"])
+            if request["owner"] is not None:
+                with scheduler.lock:
+                    for notify in scheduler.listeners:
+                        notify(dict(type="reclaim", id=request["id"], epoch=request["epoch"],
+                                    owner=request["owner"], bytes=request["bytes"]))
+                return
             def release():
                 try:
-                    self.reclaim()
+                    self.reclaim(request["bytes"])
                     scheduler.reclaimed(request["epoch"])
                 except Exception as error:
                     log("library_reclaim_failed", reason=str(error))
@@ -134,6 +139,8 @@ def add_routes(router, marks):
         loop = asyncio.get_running_loop()
         outgoing = asyncio.Queue()
         def notify(message):
+            if message.get("type") == "reclaim" and message.get("owner") != owner:
+                return
             loop.call_soon_threadsafe(outgoing.put_nowait, message)
         with scheduler.lock:
             scheduler.listeners.add(notify)

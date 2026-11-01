@@ -1,5 +1,14 @@
 # Module PRD: Photo Library
 
+## November 1: ordinary-wait guard correction — acceptance pending
+
+Normal queuing now waits for running work to drain and a fresh memory census
+before protecting a blocked turn. Genuine shortages reclaim toward a byte
+target, one owner at a time, preserving visible and prepared neighbour pictures.
+Approved budgets and estimates stay unchanged. Focused behavior checks pass;
+Steve-folder cold/warm and final regression measurements remain pending.
+See [scheduler design 7.15](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#715-ordinary-waits-and-proportional-reclamation-november-1).
+
 ## November 1: Decision 21 measured — 22/27; Grade rerun passes
 
 Guarded jobs can use the existing 10% elastic allowance after their class

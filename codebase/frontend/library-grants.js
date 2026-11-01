@@ -13,7 +13,7 @@
         lastMessage=Date.now();const value=JSON.parse(event.data);
         if(value.type==="grade"){grade=value;for(const job of jobs.values())job.status.grade=value.name;}
         if(value.type==="reclaim"){
-          Promise.resolve().then(()=>reclaim()).then(()=>send({type:"reclaimed",epoch:value.epoch})).catch(error=>console.debug(error));return;
+          Promise.resolve().then(()=>reclaim(value.bytes)).then(()=>send({type:"reclaimed",epoch:value.epoch})).catch(error=>console.debug(error));return;
         }
         const j=jobs.get(value.id);
         if(j&&value.type==="needs-memory"){
@@ -75,7 +75,7 @@
   const api={create,waitingText};
   if(typeof module!=="undefined")module.exports=api;
   else {
-    root.HDRLibraryGrants=create({url:location.origin.replace(/^http/,"ws")+"/api/library/grants",changed:()=>root.dispatchEvent(new Event("library-work-changed")),reclaim:()=>root.HDRLibraryReclaimWaiting?.()});
+    root.HDRLibraryGrants=create({url:location.origin.replace(/^http/,"ws")+"/api/library/grants",changed:()=>root.dispatchEvent(new Event("library-work-changed")),reclaim:bytes=>root.HDRLibraryReclaimWaiting?.(bytes)});
     root.HDRLibraryGrants.preview=(body,signal,headers={},priority=10)=>root.HDRLibraryGrants.run(body.path,"quick",signal,async(grant,shared)=>{
       const response=await fetch("/api/library/preview",{method:"POST",priority:"high",signal:shared,headers:{"Content-Type":"application/json",...headers},body:JSON.stringify({...body,grant})});
       return new Response(response.status===204?null:await response.arrayBuffer(),{status:response.status,headers:response.headers});

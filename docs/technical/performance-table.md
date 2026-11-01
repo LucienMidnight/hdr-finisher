@@ -48,6 +48,7 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 | Action (from → to) | Target | Measured | Conditions | Status |
 | --- | --- | --- | --- | --- |
+| HDR Test Images: ordinary-wait incident | Ordinary jobs must not cause blanket reclamation | 14 developments in 75 s; visible waits up to 30 s; four reclaims | Nov 1, `9da80c9`, real session 1793504808 only; 43/111 thumbnail cache hits; corrected-driver acceptance pending in scheduler 7.15 | Regression confirmed; fix not yet qualified |
 | Default mixed phase0, 27: Decision 21 | 22 finish; four interpretation/X-Trans reasons; AVIF memory notice | 22 finished; all 27 outcomes by 49.131 s; last thumbnail 48.424 s | Nov 1, `f780e3b`, default 4 GB, 2560×1440; `decision21-final-phase0/report.json`; peak 3.754 GB, settled <3.4 GB, reserve intact | Met |
 | Cold Aceh 48: Decision 21 first / second screen | First within 5% of 13.8 / 14.1 s respectively | First 14.383 / 13.601 s; second 21.762 / 20.661 s | Nov 1, `f780e3b`, cold 2560×1440, 48/48 twice, peaks 2.236 / 2.333 GB; `decision21-aceh-{one,two}/report.json` | Met |
 | Grade line scan: Decision 21 pause / ordinary / resume | Pause <1 s; ordinary <5 s; resume <2 s; close/save near 0.4 s | 0.509 / 0.518 / 0.319 s; close/save 0.354 s | Nov 1, `f780e3b`, final `output/phase3a-grade/report.json`; exposure 0.125 saved | Met; earlier slow-run cause unresolved |
