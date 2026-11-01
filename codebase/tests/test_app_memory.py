@@ -297,3 +297,14 @@ def test_memory_telemetry_does_not_start_a_slow_census(monkeypatch):
         raise AssertionError('Telemetry must use the scheduler census')
     monkeypatch.setattr(app_memory, 'process_tree', forbidden)
     assert app_memory.snapshot(cached_only=True)['totalBytes'] == 100
+
+
+def test_waiting_job_reclamation_releases_decoded_caches_without_camera_or_visible_surfaces(monkeypatch):
+    from hdr_finisher import app_memory
+    monkeypatch.setattr(app_memory, "_caches", {})
+    calls = []
+    for share in ("raw", "handoff", "working", "camera", "thumbnails", "sharp"):
+        app_memory.register(share, share, lambda target, share=share: calls.append((share, target)))
+        app_memory.report(share, share, 100)
+    app_memory.reclaim("shortage")
+    assert calls == [("raw", 0), ("handoff", 0), ("working", 0)]

@@ -26,6 +26,7 @@ class LibraryWorker:
         self._reader = None
         self._ready = Event()
         self._pending: dict[str, Future] = {}
+        self._reclaims = {}
         self._requests = {}
         self._work = {}
         self._active = set()
@@ -271,6 +272,19 @@ class LibraryWorker:
             except (EOFError, OSError) as error:
                 log("helper_control_failed", operation=message["command"], reason=str(error), action="reader fails waiting requests when pipe closes")
 
+    def reclaim_waiting(self):
+        token, done = uuid4().hex, Event()
+        with self._lock:
+            if self._connection is None or self._closed or self._failure: return
+            self._reclaims[token] = done
+            self._send(dict(command="memory-pressure", level="shortage", request=token))
+        try:
+            while not done.wait(.25):
+                if self._stop.is_set() or not self._process.is_alive():
+                    raise RuntimeError("Helper stopped during cache reclamation")
+        finally:
+            with self._lock: self._reclaims.pop(token, None)
+
     @staticmethod
     def decoder_timeout(path):
         # Steve approved per-type baselines scaled by source size, capped at
@@ -329,6 +343,11 @@ class LibraryWorker:
                         raise RuntimeError("helper did not report ready within 30 seconds")
                     continue
                 message = connection.recv()
+                if message.get('event') == 'memory-reclaimed':
+                    with self._lock:
+                        done = self._reclaims.get(message['request'])
+                        if done: done.set()
+                    continue
                 if message.get('event')=='memory-claim':
                     from . import app_memory
                     key='helper-'+str(self._process.pid)+'-'+message['key']
@@ -696,7 +715,11 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 if message['command']=='memory-pressure':
                     from . import app_memory
                     # Keep receiving owner replies while a cache waits for its lock.
-                    Thread(target=app_memory.reclaim,args=(message['level'],),daemon=True).start()
+                    def reclaim(command):
+                        app_memory.reclaim(command['level'])
+                        if command.get('request'):
+                            reply(dict(event='memory-reclaimed', request=command['request']))
+                    Thread(target=reclaim,args=(message,),daemon=True).start()
                 elif message["command"] == "pause":
                     state["paused"] = message["paused"]
                     pictures.pause_native(message["paused"])

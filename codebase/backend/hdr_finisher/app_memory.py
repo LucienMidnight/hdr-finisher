@@ -126,8 +126,9 @@ def cache_snapshot():
 
 def reclaim(level='moderate'):
     with _lock:
-        callbacks=[(v['trim'](),0 if level=='critical' else v['bytes']//2)
-                   for v in _caches.values() if v.get('trim')]
+        callbacks=[(v['trim'](),0 if level in ('critical','shortage') else v['bytes']//2)
+                   for v in _caches.values() if v.get('trim') and
+                   (level != 'shortage' or v['share'] in ('raw','handoff','working'))]
     for callback,target in callbacks:
         if callback: callback(target)
 

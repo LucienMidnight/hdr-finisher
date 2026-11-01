@@ -1919,6 +1919,34 @@ Proposed tolerances, to agree before measuring:
 * **The WebSocket channel** is new plumbing. If it drops, jobs must notice
   and ask again, rather than wait forever.
 
+### 7.13 Decision 20: fitting jobs pass a blocked job (November 1)
+
+Implemented on `library-gpu-scheduling`; acceptance results pending below.
+Within a class, a fitting request can pass an older memory wait while earlier
+work drains. Once passed, or once earlier work has drained and it is the oldest
+waiter in its class, the blocked request protects its next turn: later work in
+that class and lower classes stops. Higher classes and the quick-preview fast
+lane continue. Existing running work finishes before reclamation.
+
+Reclamation runs outside the scheduler lock, through existing cache trims and
+scene/token release paths. Every connected window releases offscreen finished
+surfaces/scenes and retained decoded sources; visible finished surfaces and
+camera previews stay. Backend and helper release retained decoded/handoff
+caches. Only acknowledgements from all owners followed by a fresh memory census
+allow admission or a terminal decision. This is shortage for a specific waiting
+job, not a synthetic operating-system pressure signal. No cache sizes, estimate
+rates, concurrency limits, ceiling/floor or reserve values changed. Alone work
+also observes the existing measured-memory admission gate.
+
+If the job still cannot fit with competing work drained, its request ends once
+with `needs more memory`. The cell keeps its preview and memory notice; no
+broken-photo record is made. A new cell on scrolling back or opening Single can
+make a fresh attempt. The source queue excludes these outcomes from failures.
+
+Focused validation: 59 Python scheduler/channel/memory checks and 38 JavaScript
+channel/queue checks pass. The FIFO test now expects intentional same-class
+skip-ahead while lower classes wait. No full suites, per this brief.
+
 ## 10. Decisions for Steve (one at a time, when each phase comes up)
 
 Already decided (October 30): be restrictive about files; the grid makes

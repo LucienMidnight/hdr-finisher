@@ -297,6 +297,11 @@ def create_library_router(worker, browser, store=None):
     from .library_grants import Runtime, add_routes as add_grant_routes, backend_grant
     from .library_scheduler import scheduler
     grant_runtime = Runtime(store)
+    def reclaim_waiting():
+        from . import app_memory
+        app_memory.reclaim("shortage")
+        worker.reclaim_waiting()
+    grant_runtime.reclaim = reclaim_waiting
     cache = LibraryPictureCache(browser.root)
     from .library_raw import RawBrowsing, camera_raw
     from .library_raw_thumbnails import RawThumbnails

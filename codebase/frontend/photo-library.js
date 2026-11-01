@@ -584,6 +584,23 @@
     updateDetails(); paintGrid(); paintFilm();
     status(`${state.photos.length.toLocaleString()} photos · ${state.hiddenFiles} unreadable files hidden`);
   }
+  window.HDRLibraryReclaimWaiting = async () => {
+    tilePool.clear();
+    // Retained DOM cells extend beyond the viewport. Release only those outside it.
+    for(const map of [state.cells,state.filmCells])for(const [path,cell] of map){
+      if(map.shown?.has(path))continue;
+      cell.controller.abort();cell.element.remove();
+      if(cell.fallback){cell.fallback.getContext("webgpu")?.unconfigure();cell.fallback.width=cell.fallback.height=0;}
+      cell.canvas.removeAttribute("src");map.delete(path);
+    }
+    const other=photo=>state.view!=="single" || photo.path!==selected()?.path;
+    readyWindow.evictFinished(other);quickWindow.evictFinished(other);
+    recentPictures.clear();
+    await HDRLibraryGpuRaw.reclaimDecoded?.();
+    await HDRLibraryPictures.reclaimHost();
+    await HDRLibraryQuickPictures.reclaimHost();
+    await HDRLibraryRAM.report();
+  };
   let hostReclaim = false;
   window.addEventListener("message", async event => {
     if(event.origin!==location.origin || event.data?.type!=='hdr-memory-pressure')return;
@@ -701,7 +718,7 @@
             await sleep(2000,cell.controller.signal);
           }
         }
-      })().catch(error=>{if(current()&&!aborted(error)){if(error.cloudOnly){element.classList.remove("loading");element.classList.add("cloud-only");element.title="Online-only. Open this photo to download it.";}else if(error.folderDetails)status(error.message);else removeUnreadable(photo,error);pictureErrors.paint(cell);cell.controller.abort();}});
+      })().catch(error=>{if(current()&&!aborted(error)){if(error.needsMemory){cell.memoryNeed={path:photo.path,kind:"source",reason:"needs more memory",estimate:error.estimate,stage:error.message};element.classList.remove("loading");paintMemoryNeeds();return;}if(error.cloudOnly){element.classList.remove("loading");element.classList.add("cloud-only");element.title="Online-only. Open this photo to download it.";}else if(error.folderDetails)status(error.message);else removeUnreadable(photo,error);pictureErrors.paint(cell);cell.controller.abort();}});
     }
     };
     if (!defer) cell.start();
@@ -2082,7 +2099,7 @@
     });
   }
   function paintMemoryNeeds() {
-    const jobs=window.HDRLibraryGrants.snapshot().jobs;
+    const jobs=[...window.HDRLibraryGrants.snapshot().jobs,...[...state.cells.values(),...state.filmCells.values()].map(c=>c.memoryNeed).filter(Boolean)];
     for(const cell of document.querySelectorAll(".library-cell")){
       const job=jobs.filter(j=>j.path===cell.dataset.path && j.kind!=="quick" && j.reason==="needs more memory").sort((a,b)=>b.estimate-a.estimate)[0];
       let notice=cell.querySelector(".library-memory-needed");

@@ -47,6 +47,9 @@ class Job:
     alone: bool = False
     gpu_bytes: int = 0
     gpu_unified: bool = False
+    bypassed: bool = False
+    reclaimed: bool = False
+    outcome: str = ""
     ready: Event = field(default_factory=Event)
 
     @property
@@ -82,9 +85,11 @@ class Scheduler:
         self.gpu_external = 0
         self.gpu_paused = False
         self.gpu_draw_room = 0
+        self.reclamation = None
+        self.reclaim_sequence = 0
 
     def update(self, *, caches=0, grade_bytes=0, grade_name="", total=None,
-               available=None, ram=None, pressure="none", sampled_grants=None):
+               available=None, ram=None, pressure="none", sampled_grants=None, sample_started=None):
         with self.lock:
             grade_changed = (self.grade_bytes, self.grade_name) != (grade_bytes, grade_name)
             self.caches, self.grade_bytes, self.grade_name = caches, grade_bytes, grade_name
@@ -95,6 +100,13 @@ class Scheduler:
                 if job.granted is not None and total is not None and job.baseline is not None:
                     # Whole-app incremental peak, not private allocation attribution.
                     job.peak = max(job.peak or 0, total-job.baseline)
+            # Only a fresh census after every owner acknowledged eviction can
+            # decide that the protected job still cannot fit.
+            if (self.reclamation and self.reclamation.get("completed_at") is not None and
+                    (self.clock() if sample_started is None else sample_started) >= self.reclamation["completed_at"]):
+                job = self.jobs.get(self.reclamation["id"])
+                if job: job.reclaimed = True
+                self.reclamation = None
             self._measure_overrun()
             self._pump()
             if grade_changed:
@@ -308,6 +320,7 @@ class Scheduler:
         with self.lock:
             self.owners.pop(owner, None)
             self.hidden.discard(owner)
+            if self.reclamation: self.reclaimed(self.reclamation["epoch"], owner)
             for id in [j.id for j in self.jobs.values() if j.owner == owner]:
                 job = self.jobs.pop(id)
                 self._log(job, "cancelled")
@@ -326,6 +339,30 @@ class Scheduler:
             if job.notify:
                 job.notify(self._message(job, "waiting"))
 
+    def reclamation_request(self):
+        with self.lock:
+            request = self.reclamation
+            if request and not request["started"]:
+                request["started"] = True
+                return dict(request)
+
+    def reclaimed(self, epoch, owner=None):
+        with self.lock:
+            request = self.reclamation
+            if request and request["epoch"] == epoch:
+                if owner is None: request["backend_done"] = True
+                else: request["owners"].discard(owner)
+                if request["backend_done"] and not request["owners"]:
+                    request["completed_at"] = self.clock()
+
+    def _terminal_memory(self, job):
+        job.reason = job.outcome = "needs more memory"
+        self.jobs.pop(job.id, None)
+        self._log(job, "needs_memory")
+        job.ready.set()
+        if job.notify:
+            job.notify(dict(self._message(job, "needs-memory"), reason=job.reason))
+
     def _pump(self):
         self._start_saves()
         running = [j for j in self.jobs.values() if j.granted is not None]
@@ -337,11 +374,22 @@ class Scheduler:
         headroom = None if self.available is None else max(0, self.available-reserve-
             sum(j.estimate for j in running if j.id not in self.sampled_grants))
         now_waiting = False
+        memory_reasons = {"room", "measured memory", "reclaiming memory"}
+        waiting = [j for j in self.jobs.values() if j.granted is None and not j.fast and not j.blocked]
+        # Screen order can differ from age. A job may be passed once while an
+        # older job runs; after that, or once older work drains, protect its turn.
+        guards = [j for j in waiting if j.reason in memory_reasons and
+                  not any(k.cls == j.cls and k.sequence < j.sequence for k in waiting) and
+                  (j.bypassed or not any(k.cls == j.cls and k.sequence < j.sequence for k in running))]
+        guard = min(guards, key=lambda j: (CLASSES[j.cls], j.sequence), default=None)
         for job in sorted((j for j in self.jobs.values() if j.granted is None),
                           key=lambda j: (CLASSES[j.cls], not (j.kind == "quick" and j.cls == "now"), j.order, j.sequence)):
             normal = [j for j in running if not j.fast]
             used = sum(j.estimate for j in normal)
             reason = ""
+            if self.reclamation and self.reclamation["id"] == job.id:
+                self._wait(job, "reclaiming memory")
+                continue
             if job.blocked:
                 self._wait(job, job.blocked)
                 continue
@@ -371,7 +419,7 @@ class Scheduler:
             elif job.estimate > FLOOR and (self.pressure == "critical" or
                     (total_without_grade is not None and total_without_grade > self.ceiling)):
                 reason = "room"
-            elif now_waiting or any(j.alone or j.floor for j in normal):
+            elif any(j.alone or j.floor for j in normal):
                 reason = "room"
             elif job.estimate+used <= room and self.pressure != "critical" and not (total_without_grade is not None and total_without_grade > self.ceiling):
                 pass
@@ -388,8 +436,11 @@ class Scheduler:
                 reason = "room"
             unmeasured = sum(j.estimate for j in running if j.id not in self.sampled_grants)
             measured_fits = self.total is None or self.total + unmeasured + job.estimate <= self.ceiling
-            if not reason and job.cls != "Grade" and not job.fast and not job.alone and not job.floor and not measured_fits:
+            if not reason and job.cls != "Grade" and not job.fast and not job.floor and not measured_fits:
                 reason = "measured memory"
+            if (not reason and guard and job is not guard and not job.fast and
+                    CLASSES[job.cls] >= CLASSES[guard.cls] and job.cls != "Grade"):
+                reason = "oldest waiting photo first"
             if not reason and job.gpu_bytes:
                 if self.gpu_paused:
                     reason = "GPU needed by Grade or export"
@@ -409,7 +460,24 @@ class Scheduler:
                 self._wait(job, reason)
                 if job.cls == "now" and reason not in ("paused for Grade", "system reserve", "needs more memory"):
                     now_waiting = True
+                if reason == "needs more memory":
+                    self._terminal_memory(job)
+                elif (reason in memory_reasons and job is guard and
+                      not any(not j.fast and CLASSES[j.cls] >= CLASSES[job.cls] for j in running) and
+                      not any(CLASSES[j.cls] < CLASSES[job.cls] for j in running)):
+                    if job.reclaimed:
+                        self._terminal_memory(job)
+                        guard = None
+                        now_waiting = False
+                    elif self.reclamation is None:
+                        self.reclaim_sequence += 1
+                        self.reclamation = dict(id=job.id, epoch=self.reclaim_sequence,
+                            owners=set(self.owners)-{"backend"}, started=False, backend_done=False)
+                        self._log(job, "reclaiming")
                 continue
+            for older in waiting:
+                if older.cls == job.cls and older.sequence < job.sequence and older.reason in memory_reasons:
+                    older.bypassed = True
             job.granted = self.clock()
             job.baseline = self.total
             running.append(job)

@@ -139,3 +139,32 @@ test('visible filmstrip promotion does not turn screen neighbour work into now w
  assert.equal(promotions.length,1);assert.equal(promotions[0].id,sockets[0].sent[0].id);
  controller.abort();await done;grants.close();
 });
+
+
+test('terminal memory outcome releases once without running or recording a broken photo',async()=>{
+ const {grants,sockets}=setup();const {create:queue}=require('../frontend/library-scene-scheduler');
+ const states=[],sources=queue(1,undefined,{onChange:(_,state)=>states.push(state)});let ran=false;
+ const work=sources.submit('big.avif',()=>grants.run('big.avif','source',null,async()=>{ran=true;}));
+ await tick();sockets[0].open();const id=sockets[0].sent[0].id;
+ sockets[0].receive({type:'needs-memory',id,estimate:2.362e9});
+ await assert.rejects(work,e=>e.needsMemory===true);
+ assert.equal(ran,false);assert.deepEqual(sources.snapshot().failures,[]);
+ assert.ok(states.includes('needs-memory'));assert.equal(grants.snapshot().jobs.length,0);
+ assert.equal(sockets[0].sent.filter(v=>v.type==='finish').length,1);
+ // A new viewport demand can make one fresh attempt.
+ const retry=grants.acquire('big.avif','source');const next=sockets[0].sent.at(-1).id;
+ sockets[0].receive({type:'granted',id:next});grants.finish(await retry);grants.close();
+});
+
+
+test('reclamation acknowledgement waits for cache release and preserves queued requests',async()=>{
+ let done;const released=new Promise(r=>done=r),sent=[];
+ const socket={readyState:1,send:v=>sent.push(JSON.parse(v)),close(){}};
+ const grants=create({url:'ws://test',socket:()=>socket,interval:()=>null,reclaim:()=>released});
+ const abort=new AbortController(),pending=grants.acquire('photo','source',abort.signal);
+ socket.onopen();socket.onmessage({data:JSON.stringify({type:'reclaim',id:'blocked',epoch:4})});
+ await tick();assert.equal(sent.filter(v=>v.type==='reclaimed').length,0);
+ done();await tick();assert.equal(sent.filter(v=>v.type==='reclaimed').length,1);
+ assert.equal(grants.snapshot().jobs.length,1);
+ abort.abort();await assert.rejects(pending,{name:'AbortError'});grants.close();
+});

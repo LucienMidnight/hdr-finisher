@@ -2,7 +2,7 @@
 (function(root){
   "use strict";
   const cancelled=()=>new DOMException("Cancelled","AbortError");
-  function create({socket=url=>new WebSocket(url),url,changed=()=>{},timer=setTimeout,interval=setInterval}={}){
+  function create({socket=url=>new WebSocket(url),url,changed=()=>{},timer=setTimeout,interval=setInterval,reclaim=async()=>{}}={}){
     const jobs=new Map(); let screenOrder=new Map(); let visible=true; let channel=null,reconnect=null,heartbeat=null,lastMessage=0,closed=false,grade={name:"",bytes:0};
     const send=value=>{if(channel?.readyState===1)channel.send(JSON.stringify(value));};
     function connect(){
@@ -12,7 +12,14 @@
       current.onmessage=event=>{
         lastMessage=Date.now();const value=JSON.parse(event.data);
         if(value.type==="grade"){grade=value;for(const job of jobs.values())job.status.grade=value.name;}
+        if(value.type==="reclaim"){
+          Promise.resolve().then(()=>reclaim()).then(()=>send({type:"reclaimed",epoch:value.epoch})).catch(error=>console.debug(error));return;
+        }
         const j=jobs.get(value.id);
+        if(j&&value.type==="needs-memory"){
+          finish(j,"needs more memory");
+          j.reject(Object.assign(Error(waitingText({...value,reason:"needs more memory"})),{needsMemory:true,estimate:value.estimate}));return;
+        }
         if(j){if(value.type==="gpu-preempt"){j.connection.abort();return;}if(value.type==="saving"){j.saveResolve?.();return;}j.status=value;if(value.type==="waiting")j.granted=false;if(value.type==="granted"&&!j.granted){j.granted=true;j.started=true;j.resolve(j);}}
         changed();
       };
@@ -68,7 +75,7 @@
   const api={create,waitingText};
   if(typeof module!=="undefined")module.exports=api;
   else {
-    root.HDRLibraryGrants=create({url:location.origin.replace(/^http/,"ws")+"/api/library/grants",changed:()=>root.dispatchEvent(new Event("library-work-changed"))});
+    root.HDRLibraryGrants=create({url:location.origin.replace(/^http/,"ws")+"/api/library/grants",changed:()=>root.dispatchEvent(new Event("library-work-changed")),reclaim:()=>root.HDRLibraryReclaimWaiting?.()});
     root.HDRLibraryGrants.preview=(body,signal,headers={},priority=10)=>root.HDRLibraryGrants.run(body.path,"quick",signal,async(grant,shared)=>{
       const response=await fetch("/api/library/preview",{method:"POST",priority:"high",signal:shared,headers:{"Content-Type":"application/json",...headers},body:JSON.stringify({...body,grant})});
       return new Response(response.status===204?null:await response.arrayBuffer(),{status:response.status,headers:response.headers});

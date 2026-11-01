@@ -17,7 +17,7 @@
           job.admitted=granted;
           if(!granted&&!job.controller.signal.aborted&&!job.resourceWaiting){job.resourceWaiting=true;onChange(job,"waiting");}
         },error=>{const at=waiting.indexOf(job);if(at>=0)waiting.splice(at,1);settle(job,error);})
-          .finally(()=>{job.admitting=false;if(job.admitted||job.controller.signal.aborted)pump();else if(!retry)retry=setTimeout(()=>{retry=null;pump();},100);});
+          .finally(()=>{job.admitting=false;if(job.settled||job.admitted||job.controller.signal.aborted)pump();else if(!retry)retry=setTimeout(()=>{retry=null;pump();},100);});
       }
       while(active<limit&&waiting.length){
         waiting.sort((a,b)=>Number(!!b.admitted)-Number(!!a.admitted)||order(a,b));
@@ -42,8 +42,8 @@
     }
     function settle(job,error,value){
       if(job.settled)return;job.settled=true;
-      if(error&&error.name!=="AbortError"&&!job.controller.signal.aborted){failures.push({path:job.path,reason:error.message});if(failures.length>8)failures.shift();}
-      onChange(job,job.controller.signal.aborted ? "cancelled" : error?.name==="AbortError" ? /chang|invalidat/i.test(error.message)?"changed":"cancelled" : error ? "failed" : "completed",error);
+      if(error&&error.name!=="AbortError"&&!error.needsMemory&&!job.controller.signal.aborted){failures.push({path:job.path,reason:error.message});if(failures.length>8)failures.shift();}
+      onChange(job,job.controller.signal.aborted ? "cancelled" : error?.name==="AbortError" ? /chang|invalidat/i.test(error.message)?"changed":"cancelled" : error?.needsMemory ? "needs-memory" : error ? "failed" : "completed",error);
       if(jobs.get(job.key)===job)jobs.delete(job.key);
       for(const user of job.users){user.signal?.removeEventListener("abort",user.stop);error?user.reject(error):user.resolve(value);}
       job.users.clear();

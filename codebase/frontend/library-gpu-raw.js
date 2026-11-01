@@ -459,7 +459,7 @@
   // in memory does not mean two photos can share GPU bandwidth at full speed.
   const gpuFailures=new Map(),activeGpuWorks=new Map(),decodedSources=new Map();
   const decodedBytes=()=>[...decodedSources.values()].reduce((n,v)=>n+v.body.byteLength,0);
-  function dropDecoded(key){const value=decodedSources.get(key);if(!value)return;decodedSources.delete(key);clearInterval(value.renewal);fetch('/api/library/live-source/'+value.token,{method:'DELETE'}).catch(()=>{});}
+  function dropDecoded(key){const value=decodedSources.get(key);if(!value)return;decodedSources.delete(key);clearInterval(value.renewal);return fetch('/api/library/live-source/'+value.token,{method:'DELETE'}).catch(()=>{});}
   root.HDRLibraryRAM?.register('decoded-source','sharp',decodedBytes,target=>{for(const key of decodedSources.keys()){if(decodedBytes()<=target)break;dropDecoded(key);}});
   let shared = null, storageLimit = 0;
   async function hardwareAdapter() {
@@ -1174,7 +1174,7 @@
     if(!response.ok)throw Error('GPU scheduling unavailable.');
     return {bytes:Math.max(0,(await response.json()).budget-(640*640*64+64*1024**2)),unified};
   }
-  const exported = Object.freeze({ preflight, cachedDirect, forgetDirect, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant}) });
+  const exported = Object.freeze({ reclaimDecoded:async()=>{await Promise.all([...decodedSources.keys()].map(dropDecoded));forgetDirect();}, preflight, cachedDirect, forgetDirect, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

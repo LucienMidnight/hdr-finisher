@@ -3,6 +3,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import os
 import inspect
+import time
 from threading import Event, Thread
 from uuid import uuid4
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
@@ -20,6 +21,8 @@ class Runtime:
         self.stop = Event()
         self.thread = None
         self.measurement_logged = False
+        self.reclaim = lambda: app_memory.reclaim("shortage")
+        self.reclaimer = None
 
     def sample(self):
         session = self.store.current() if self.store is not None else None
@@ -27,6 +30,7 @@ class Runtime:
         grade_name = session.source.filename if session is not None else ""
         with scheduler.lock:
             sampled = {j.id for j in scheduler.jobs.values() if j.granted is not None}
+        sample_started = time.monotonic()
         try:
             value = app_memory.snapshot(refresh=True)
             total, pressure = value["totalBytes"], value["pressure"]
@@ -39,8 +43,21 @@ class Runtime:
         caches = sum(min(v["bytes"],v["limitBytes"]) for v in app_memory.cache_snapshot().values())
         scheduler.update(caches=caches, grade_bytes=grade_bytes, grade_name=grade_name,
             total=total, pressure=pressure, available=resources.available_ram_bytes,
-            ram=resources.total_ram_bytes, sampled_grants=sampled)
+            ram=resources.total_ram_bytes, sampled_grants=sampled, sample_started=sample_started)
         scheduler.expire()
+        request = scheduler.reclamation_request()
+        if request:
+            with scheduler.lock:
+                for notify in scheduler.listeners:
+                    notify(dict(type="reclaim", id=request["id"], epoch=request["epoch"]))
+            def release():
+                try:
+                    self.reclaim()
+                    scheduler.reclaimed(request["epoch"])
+                except Exception as error:
+                    log("library_reclaim_failed", reason=str(error))
+            self.reclaimer = Thread(target=release, name="library-reclaim-waiting", daemon=True)
+            self.reclaimer.start()
 
     def start(self):
         # Grade's exact retained source is not a reconstructible cache share.
@@ -78,7 +95,7 @@ async def backend_grant(path, kind="source", priority=10, token=None, cancelled=
         job = scheduler.ask(token, "backend", str(path), kind, amount, priority_class(priority), size_reason=reason)
         try:
             while job.granted is None:
-                if job.reason == "needs more memory":
+                if job.outcome == "needs more memory" or job.reason == "needs more memory":
                     raise HTTPException(409, f"Needs about {job.estimate/1e9:.1f} GB. Raise Memory the app may use in Settings.")
                 stopped = await cancelled() if inspect.iscoroutinefunction(cancelled) else cancelled()
                 if stopped:
@@ -147,6 +164,8 @@ def add_routes(router, marks):
                     amount, reason = await asyncio.to_thread(estimate_details, path, kind, scheduler.ceiling, int(command.get("edge",2560)))
                     scheduler.ask(id,owner,path,kind,amount,
                         "now" if kind=="quick" and amount>64_000_000 else priority_class(int(command.get("priority",10))),notify,reason,order=command.get("order"), gpu_bytes=max(0,int(command.get("gpu_bytes",0))), gpu_unified=bool(command.get("gpu_unified")))
+                elif action == "reclaimed":
+                    scheduler.reclaimed(command.get("epoch"), owner)
                 elif action == "gpu-done":
                     scheduler.gpu_done(id, owner)
                 elif action in {"finish","cancel"}:

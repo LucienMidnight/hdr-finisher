@@ -27,13 +27,14 @@ def test_class_order_and_fifo():
         assert following.granted is not None
 
 
-def test_waiting_now_prevents_lower_work_and_smaller_same_class_overtaking():
+def test_fitting_same_class_skips_blocked_job_but_lower_class_waits():
     s = fresh(2*GB)
     ask(s, "running", GB)
     big = ask(s, "big", 2*GB)
     small = ask(s, "small", FAST_BYTES)
     lower = ask(s, "lower", FAST_BYTES, "soon")
-    assert not big.ready.is_set() and not small.ready.is_set() and not lower.ready.is_set()
+    assert not big.ready.is_set() and small.ready.is_set() and not lower.ready.is_set()
+    s.finish("small")
     s.finish("running")
     assert big.ready.is_set() and not lower.ready.is_set()
 
@@ -141,9 +142,9 @@ def test_measured_safety_net_allows_only_floor_and_fast_lane_above_ceiling():
     larger = ask(s, "large", FLOOR+1)
     ordinary = ask(s, "ordinary", FLOOR)
     quick = ask(s, "quick", FAST_BYTES, kind="quick")
-    assert larger.granted is None and larger.reason == "room"
-    # First come first served holds up ordinary normal work here, unlike a
-    # paused-for-Grade or system-reserve block. Cancelling frees its place.
+    assert larger.granted is None and larger.reason in {"room", "reclaiming memory"}
+    # The oldest blocked job now protects its turn while reclaiming.
+    # The fast lane still runs. Cancelling frees the protected place.
     assert ordinary.granted is None
     assert quick.granted is not None
     s.finish("quick")
@@ -399,3 +400,49 @@ def test_priority_preemption_frees_unused_gpu_and_waits_for_active_safe_point(mo
     s.finish('b','w')
     release = [fields for event,fields in events if event == 'library_gpu_priority_release']
     assert release[-1]['wait_ms'] == 125
+
+
+def test_oldest_reclaims_then_starts_without_starvation_or_lower_admission():
+    s = fresh(2_700_000_000)
+    s.update(total=2_300_000_000, caches=800_000_000, available=60*GB, ram=68*GB)
+    s.heartbeat("window")
+    big = ask(s, "big", 2*GB)
+    small = ask(s, "small", FAST_BYTES)
+    lower = ask(s, "lower", FAST_BYTES, "soon")
+    assert s.reclamation and small.granted is None and lower.granted is None
+    request = s.reclamation_request()
+    # A backend acknowledgement alone cannot grant or refuse before the window.
+    s.reclaimed(request["epoch"])
+    s.update(total=1_500_000_000, available=60*GB, ram=68*GB)
+    assert big.granted is None
+    s.reclaimed(request["epoch"], "window")
+    s.update(total=1_500_000_000, available=60*GB, ram=68*GB)
+    assert big.granted is not None and small.granted is None
+
+
+def test_exhausted_reclamation_ends_once_and_releases_the_queue():
+    s = fresh()
+    events = []
+    s.update(total=2_300_000_000, available=60*GB, ram=68*GB)
+    big = s.ask("big", "window", "big.avif", "source", 2*GB, notify=events.append)
+    small = ask(s, "small", FAST_BYTES)
+    request = s.reclamation_request()
+    s.reclaimed(request["epoch"])
+    s.update(total=2_300_000_000, available=60*GB, ram=68*GB)
+    assert big.outcome == "needs more memory" and big.ready.is_set()
+    assert "big" not in s.jobs and small.granted is not None
+    s.update(total=2_300_000_000, available=60*GB, ram=68*GB)
+    assert sum(e["type"] == "needs-memory" for e in events) == 1
+
+
+def test_higher_classes_and_fast_lane_bypass_starvation_guard():
+    s = fresh()
+    s.update(total=2_300_000_000, available=60*GB, ram=68*GB)
+    blocked = ask(s, "blocked", 2*GB, "soon")
+    ask(s, "later", FAST_BYTES, "soon")
+    assert s.reclamation
+    now = ask(s, "visible", FAST_BYTES)
+    grade = ask(s, "grade", GB, "Grade")
+    quick = ask(s, "preview", FAST_BYTES, kind="quick")
+    assert blocked.granted is None
+    assert now.granted is not None and grade.granted is not None and quick.granted is not None
