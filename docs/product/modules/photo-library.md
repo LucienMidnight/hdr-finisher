@@ -1,5 +1,23 @@
 # Module PRD: Photo Library
 
+## November 1: detached timing and responsive transfers
+
+The quick check now launches without DevTools and measures input to the matching
+2560 canvas plus the next frame using the Library page clock. Final 90-second
+runs after the PNG change have grid/Single frame gaps of 91/55 ms (before:
+418/133 ms). Worker transfers, paced GPU copies and completed-buffer collection
+remove the measured freezes without changing any memory/GPU limit or picture size.
+Single opens in 2225 ms, first preview 29 ms; ten steps median 2151 ms, maximum
+5621 ms, prepared step 12 ms. Persisted backend events agree within 14 ms;
+retries remain part of the new input-to-picture measure.
+
+PNG decode no longer encodes and reopens an intermediate PNG. The existing
+orientation, colour-profile, 8-bit and alpha boundaries stay unchanged: the three
+PNG medians improve from 4176/153/2324 to 2875/27/1961 ms. Focused checks:
+23 PNG/reduction and 32 JavaScript cases pass. Fixture and Grade/release outcomes
+are recorded in scheduler section 7.19; six existing source interpretation /
+X-Trans gates cannot provide finished comparison pixels.
+
 ## November 1: Single is priority, and decodes use the cores
 
 Single is now the top Library work after Grade and export. Before this
@@ -5633,5 +5651,3 @@ counts and logs remain in `codebase/output/cold-mixed-*.log`.
 Output started and ended at **2.1 GB** (100 GB limit). Owned temporary
 photo/profile/pytest scratch was removed; only linked small evidence remains.
 Committed locally on `library-big-folder`; stop for Steve's retry.
-
-November 1 detached-check follow-up: input-to-present timing now runs in-page without DevTools. Final 90-second grid/Single frame gaps 97/61 ms; unchanged budgets. Worker upload/download assembly and paced GPU copies remove the observed freezes. Scheduler 7.19 records timing reconciliation, rejected trials and pending image/Grade/release acceptance.

@@ -2696,6 +2696,32 @@ open below. Exploratory `yield-worker-grid` had a missing DNG signal parameter;
 it was fixed and that run is discarded, not counted as acceptance.
 
 
+### PNG round trip removed
+
+`library_reduced.png` now hands its already reduced Pillow image to the existing
+loader boundary instead of encoding and reopening a PNG. VIPS metadata selection,
+8-bit high-byte conversion, alpha discard, ICC conversion/fallback and orientation
+stay identical. The EXIF byte envelope is normalized to the prefix Pillow used to
+add on reopening; regression checks caught this detail before application runs.
+23 focused PNG/reduction cases pass. The file's unrelated old scheduler test
+still expects a terminal needs-memory job to revive after raising the ceiling;
+that assertion fails with the unchanged scheduler and is left alone.
+
+End-to-end Library RGB decode, edge 2560, warm filesystem, median of three:
+`_DSC6510-1.png` 4176.0 -> 2875.0 ms (31% faster), `IMG_6717.PNG` 153.1 ->
+27.0 ms (82%), `pano_192mp.png` 2324.4 -> 1961.4 ms (16%). Every repeat of
+both versions has an identical SHA-256 of the decoded bytes. Evidence:
+`codebase/output/png-roundtrip-comparison.json`. Grade/Proof/export loaders stay
+on their original route. No new cache, estimate or size change.
+
+The legacy quick-report picture counts and time-to fields now also derive from
+recorded page events relative to page browse time. Backend log timestamps remain
+only for backend diagnostics (reclaims, development counts and memory logs).
+A focused test covers relative timing, duplicates and pre-browse events.
+Source-buffer assembly now completes in the worker before the response reaches
+the page, so `picture_source_transfer` measures only the final page handoff;
+use end-to-end picture timing to compare versions, not that stage alone.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with

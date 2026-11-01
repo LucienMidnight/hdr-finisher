@@ -63,3 +63,14 @@ test('source response headers and bytes survive worker transfer, including error
  await context.self.onmessage({data:{id:9,url:'/source',responseType:'buffer'}});
  assert.equal(replies[0].value.body,body);assert.equal(replies[0].transfer[0],body);
 });
+
+
+test('picture progress uses page time, ignores pre-browse events and duplicate draws',()=>{
+ const {pictures}=require('../tools/library-quick-metrics.cjs');
+ const result=pictures([{stage:'picture_shown',path:'D:/copy/a.jpg',at:99},
+  {stage:'picture_shown',path:'D:/copy/a.jpg',at:250},
+  {stage:'picture_shown',path:'D:/copy/a.jpg',at:900},
+  {stage:'picture_camera_preview_decoded',path:'D:/copy/a.jpg',at:200}],100);
+ assert.equal(result.shown.get('a.jpg'),.15);assert.equal(result.preview.get('a.jpg'),.1);
+ assert.equal(result.shown.size,1);
+});

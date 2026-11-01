@@ -1,5 +1,4 @@
 """Library sample reduction. Native decoders consume scanlines; no retained cache."""
-from io import BytesIO
 from pathlib import Path
 import numpy as np
 
@@ -59,10 +58,12 @@ def png(path):
         info["icc_profile"] = header.get("icc-profile-data")
     if header.get_typeof("exif-data"):
         info["exif"] = header.get("exif-data")
-    body = BytesIO()
-    reduced.save(body, format="PNG", **info)
-    body.seek(0)
-    array, metadata = loader._load_with_pillow(body, encoded_samples=True)
+    # Match the EXIF envelope Pillow adds when opening a PNG.
+    if info.get("exif") and not info["exif"].startswith(b"Exif\x00\x00"):
+        info["exif"] = b"Exif\x00\x00" + info["exif"]
+    reduced.info.update(info)
+    array, metadata = loader._load_with_pillow(
+        path, encoded_samples=True, image_factory=lambda _: reduced)
     exif = Image.Exif()
     if info.get("exif"):
         exif.load(info["exif"])

@@ -97,7 +97,7 @@ async function scenario(config) {
       record.app_trace_starts_after_input_ms=app?Math.round(app.at-app.duration_ms-record.started_ms):null;
       record.app_event_after_presentation_ms=app?Math.round(app.at-record.presented_ms):null;
     }
-    return {opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,events,errors,stage:'done'};
+    return {opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,events,errors,stage:'done'};
   } catch(error) {
     return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,events,errors:[...errors,String(error.stack||error)],stage};
   } finally {

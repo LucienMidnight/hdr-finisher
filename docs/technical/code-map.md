@@ -41,7 +41,7 @@ Open the file named for the thing you are changing. Most files are focused.
 | Scopes, overlays, peak | `scopes.py`, `overlay.py`, `peak_accuracy.py`, `peak_candidates.py` |
 | Session and projects | `sessions.py`, `projects.py` |
 | Export and proof | `exporters.py`, `proofing.py`, `hosting_probe.py`, `test_pattern.py` |
-| Library reduced sources (phase 3c) | `library_reduced.py` (JPEG DCT, sequential PNG/TIFF, bounded uncompressed row reads); `library_rgb.py`, `library_dng_linear.py`, `library_live.py` select reduced Library routes; full Grade/Proof/export loaders remain default |
+| Library reduced sources (phase 3c) | `library_reduced.py` (JPEG DCT, sequential PNG/TIFF, direct Pillow orientation/ICC handoff without PNG re-encoding, bounded uncompressed row reads); `library_rgb.py`, `library_dng_linear.py`, `library_live.py` select reduced Library routes; full Grade/Proof/export loaders remain default |
 | Live app memory setting (phase 3c) | `app_memory.py` (options/configure), `library_api.py` memory-setting endpoints, `library_scheduler.py` live ceiling/giant waits, `application-shell.js` and desktop application preferences |
 | Library RAM scheduling (phase 3a) | `library_scheduler.py` (priority, floor, reserve, owner cleanup), `library_estimates.py` (header dimensions and approved rates), `library_grants.py` (WebSocket channel, Grade accounting, backend waits); frontend `library-grants.js` (one channel per window, cancellation, reconnect) |
 | Machine and tools | `capabilities.py`, `binaries.py`, `subprocess_utils.py`, `display_probe.py` |
@@ -427,5 +427,8 @@ grants. `library_index.py` releases startup grants at safe points and on close.
 `library-grants.js` sends document/native visibility over the existing channel; `desktop/main.js` includes native visibility in the existing window-state event. Header-only JPEG
 XL/X-Trans RAF refusal lives in `library_rgb.py` / `library_gpu_raw.py`.
 
-| Library quick check | `codebase/tools/quick-library-check.cjs`: plain Electron child, isolated profile, deadline and external memory census; `desktop/quick-library-test.cjs`: explicit-switch-only startup and file result; `tools/quick-library-scenario.js`: in-page inputs, presentation timing, grid progress and responsiveness probes |
-| Library uploads | `codebase/frontend/library-upload.js` and `library-upload-worker.js`: transferable upload body, HTTP status, cancellation, worker/network failure and bounded completion |
+| Library diagnostics | Files |
+| --- | --- |
+| Library quick check | `codebase/tools/quick-library-check.cjs`: plain Electron child, isolated profile, deadline and external memory census; `desktop/quick-library-test.cjs`: explicit-switch-only startup and file result; `tools/quick-library-scenario.js`: in-page inputs, presentation timing, grid progress and responsiveness probes; `tools/library-quick-metrics.cjs`: page-clock picture totals |
+| Library uploads | `codebase/frontend/library-upload.js` and `library-upload-worker.js`: transferable upload/download buffers, HTTP status, cancellation, worker/network failure and bounded completion |
+| Library fixture comparison | `codebase/tools/capture-library-fixtures.cjs`: finished SDR/HDR GPU readback at grid/Single sizes; `tools/compare-library-fixtures.py`: exact hashes, finite-pixel checks, perceptual RAF exception and small difference review images |

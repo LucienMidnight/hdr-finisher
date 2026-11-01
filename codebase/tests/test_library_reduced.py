@@ -104,3 +104,49 @@ def test_decoder_deadline_caps_giant_dng_at_five_minutes(monkeypatch):
     monkeypatch.setattr(library_estimates,"dimensions",lambda path:(30000,10000))
     assert LibraryWorker.decoder_timeout("line.dng")==300
     assert LibraryWorker.decoder_timeout("line.avif")==300
+
+
+@pytest.mark.parametrize("mode", ["L", "LA", "RGB", "RGBA"])
+@pytest.mark.parametrize("profile", ["none", "srgb", "invalid"])
+def test_png_direct_boundary_matches_encoded_boundary(tmp_path, mode, profile):
+    from io import BytesIO
+    from PIL import ImageCms
+    from hdr_finisher import loader
+    p = tmp_path / "profile-oriented.png"
+    image = Image.new("RGB", (17, 13), (101, 153, 207)).convert(mode)
+    exif = Image.Exif(); exif[274] = 6
+    info = {"exif": exif}
+    if profile != "none":
+        info["icc_profile"] = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes() if profile == "srgb" else b"invalid-profile"
+    image.save(p, **info)
+    # Historical Library boundary: VIPS samples/metadata -> PNG -> Pillow.
+    # Compare against that boundary, including metadata VIPS rejects/drops.
+    import pyvips
+    pixels, _ = read(p)
+    reduced = Image.fromarray(pixels[..., 0] if pixels.shape[2] == 1 else pixels)
+    header = pyvips.Image.new_from_file(str(p), access="sequential")
+    stored = {}
+    for field, key in [("icc-profile-data", "icc_profile"), ("exif-data", "exif")]:
+        if header.get_typeof(field): stored[key] = header.get(field)
+    body = BytesIO(); reduced.save(body, format="PNG", **stored); body.seek(0)
+    expected, metadata = loader._load_with_pillow(body, encoded_samples=True)
+    actual, actual_metadata = png(p)
+    np.testing.assert_array_equal(actual, expected)
+    for key, value in metadata.items():
+        assert actual_metadata[key] == value
+    assert actual_metadata["bit_depth"] == "uint8"
+    assert (actual_metadata["source_width"], actual_metadata["source_height"]) == (13, 17)
+
+
+@pytest.mark.parametrize("channels", [1, 3, 4])
+def test_png_uint16_keeps_existing_high_byte_and_alpha_boundary(tmp_path, monkeypatch, channels):
+    from hdr_finisher import library_reduced
+    p = tmp_path / "sixteen.png"
+    Image.new("RGB", (17, 13)).save(p)
+    pixels = (np.arange(13*17*channels, dtype=np.uint16).reshape(13, 17, channels) * 97)
+    monkeypatch.setattr(library_reduced, "read", lambda path: (pixels, (17, 13)))
+    actual, metadata = png(p)
+    high = (pixels >> 8).astype(np.uint8)
+    expected = np.repeat(high, 3, axis=2) if channels == 1 else high[..., :3]
+    np.testing.assert_array_equal(actual, expected)
+    assert metadata["bit_depth"] == "uint8"

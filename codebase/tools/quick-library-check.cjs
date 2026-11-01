@@ -28,7 +28,7 @@ function freezeSummary(probe = {}) {
     long_tasks: { count: tasks.length, total_ms: Math.round(tasks.reduce((a, b) => a + b, 0)), longest_ms: tasks[0] ?? 0 } };
 }
 
-function analyse(text, openedAt) {
+function analyse(text, openedAt, events, openedPageAt) {
   const shown = new Map(), preview = new Map(), failed = new Map(), reclaims = [], memory = [], developed = [];
   for (const line of text.split('\n')) {
     const m = line.match(/^\[library\] (\w+) (\{.*\})\s*$/);
@@ -37,13 +37,14 @@ function analyse(text, openedAt) {
     const t = (d.time > 1e12 ? d.time / 1000 : d.time) - openedAt / 1000;
     if (t < 0) continue;
     const name = d.path ? path.basename(d.path) : null;
-    if (m[1] === 'page_picture_shown' && name && !shown.has(name)) shown.set(name, t);
-    if ((m[1] === 'page_picture_camera_preview_decoded' || m[1] === 'picture_camera_preview_ready') && name && !preview.has(name)) preview.set(name, t);
     if (m[1] === 'page_picture_work_failed' && name) failed.set(name, d.reason || d.error || '');
     if (m[1] === 'library_grant_reclaiming') reclaims.push([+t.toFixed(1), name]);
     if (m[1] === 'picture_live_developed') developed.push(t);
     if (m[1] === 'app_memory' && d.totalBytes) memory.push([t, d.totalBytes]);
   }
+  const page=require('./library-quick-metrics.cjs').pictures(events,openedPageAt);
+  for(const [name,t] of page.shown)shown.set(name,t);
+  for(const [name,t] of page.preview)preview.set(name,t);
   const times = [...shown.values()].sort((a, b) => a - b);
   const at = n => times[n - 1] === undefined ? null : +times[n - 1].toFixed(1);
   const by = s => times.filter(x => x <= s).length;
@@ -126,9 +127,9 @@ function analyse(text, openedAt) {
     const errors=[...(result.errors||[])];if(!sampleCount||observerError)errors.push('Independent memory observer: '+(observerError||'no samples'));
     sampleIntervals.sort((a,b)=>a-b);
     const report={label,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
-      ...analyse(text,result.opened_epoch_ms),grid_progress:result.grid_progress,freezes:{...freezes,failure:failures},single:result.single,
+      ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms),grid_progress:result.grid_progress,freezes:{...freezes,failure:failures},single:result.single,
       independent_memory:{...memory.report(),samples:sampleCount,lastBytes:memory.last?.totalBytes,sampleIntervalMs:{requested:250,median:sampleIntervals[Math.floor(sampleIntervals.length/2)],maximum:sampleIntervals.at(-1)},grants_note:'External process census; no DevTools WebSocket instrumentation.'},observerError,
-      stage:result.stage,scenario_ms:result.scenario_ms,harness_total_ms:Date.now()-harnessAt,harness_outside_scenario_ms:Date.now()-harnessAt-result.scenario_ms,cdp_attached:false};
+      picture_timing_clock:'Library performance.now()',stage:result.stage,scenario_ms:result.scenario_ms,harness_total_ms:Date.now()-harnessAt,harness_outside_scenario_ms:Date.now()-harnessAt-result.scenario_ms,cdp_attached:false};
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,1));
     console.log(JSON.stringify(report,null,1));
     if(failures.length){console.error(`FREEZE: ${failures.join('; ')} (limit 250 ms)`);process.exitCode=1;}
