@@ -68,36 +68,41 @@ function analyse(text, openedAt) {
   // reading is from the key press (or the open click) until the 2560 picture
   // for that photo is on screen.
   const runSingle = async lib => {
-    const shown = async path => lib.waitForFunction(p => {
+    const selected = () => lib.evaluate(() => HDRLibrary.getSnapshot().selected || '');
+    const shown = (path, timeout = 120000) => lib.waitForFunction(p => {
       const c = document.getElementById('single-picture');
       return !!c && !c.hidden && c.dataset.picturePath === p && Number(c.dataset.pictureEdge) === 2560;
-    }, path, { timeout: 300000 });
-    await lib.waitForFunction(() => document.querySelector('#grid-space .library-cell'), null, { timeout: 300000 });
-    const paths = await lib.evaluate(() => HDRLibrary.getSnapshot().paths);
-    if (!paths.length) throw Error('no photos to open');
-    const nameOf = p => p.replaceAll('\\', '/').split('/').pop();
+    }, path, { timeout });
+    await lib.waitForFunction(() => document.querySelector('#grid-space .library-cell canvas[data-picture-key]'), null, { timeout: 300000 });
+    const nameOf = p => String(p).replaceAll('\\', '/').split('/').pop();
     const openedAt = Date.now();
     let at = Date.now();
-    await lib.evaluate(p => {
-      [...document.querySelectorAll('#grid-space .library-cell')].find(c => c.dataset.path === p)?.click();
+    const first = await lib.evaluate(() => {
+      const cell = document.querySelector('#grid-space .library-cell');
+      cell.click();
       document.getElementById('single-view').click();
-    }, paths[0]);
-    await shown(paths[0]);
+      return cell.dataset.path || '';
+    });
+    const openPath = await selected() || first;
+    await shown(openPath);
     const openMs = Date.now() - at;
+    console.log(`single open ${nameOf(openPath)} ${openMs} ms`);
     const steps = [];
-    for (let i = 1; i <= singleSteps && i < paths.length; i++) {
+    for (let i = 1; i <= singleSteps; i++) {
       const since = Date.now() - at;
       if (since < singlePace) await new Promise(r => setTimeout(r, singlePace - since));
       at = Date.now();
       await lib.evaluate(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
-      await shown(paths[i]);
-      steps.push({ index: i, name: nameOf(paths[i]), ms: Date.now() - at });
+      const path = await selected();
+      try { await shown(path); steps.push({ index: i, name: nameOf(path), ms: Date.now() - at }); }
+      catch (error) { steps.push({ index: i, name: nameOf(path), ms: null, error: error.name }); }
+      console.log(`single step ${i} ${nameOf(path)} ${steps.at(-1).ms} ms`);
     }
     await page.screenshot({ path: path.join(out, 'single.png') }).catch(() => {});
-    const times = steps.map(s => s.ms);
+    const times = steps.map(s => s.ms).filter(v => typeof v === 'number');
     const sorted = [...times].sort((a, b) => a - b);
     return {
-      first_photo: nameOf(paths[0]), open_ms: openMs, steps,
+      first_photo: nameOf(openPath), open_ms: openMs, steps,
       step_mean_ms: times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null,
       step_median_ms: times.length ? sorted[Math.floor(sorted.length / 2)] : null,
       step_max_ms: times.length ? sorted.at(-1) : null,
