@@ -18,19 +18,38 @@ split between its parts**. The other module PRDs describe what each cache is
 for; the sizes live here. Change a size here first, with Steve's decision, and
 then in the code.
 
-**Open, October 30: one scheduler for memory and GPU work.** The fixed
-600 MB per-job reservation, memory counted twice, and refusals treated as
-memory pressure are behind the October 29–30 stalls. The proposed
-replacement, with research and phases, is
-[library-resource-scheduler-design-2026-10-30](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
-Phase 3a is connected as recorded below; later phases remain open.
-Steve approved the design and phase order on October 30. Phase 0 measured
-backend memory per job and file type (section 6.11 of the design). A
-full-size non-RAW decode needs 0.5–1.3 GB, more than the 600 MB working room.
-The RAW sensor read needs about 5.5 bytes per pixel. GPU memory runs about
-25 bytes per pixel. The 297 MP line scan peaks at 6 GB on the CPU route. The
-proposed per-type estimates are Steve's decision; no size or share has
-changed.
+**Built, November 1, 2026: one scheduler for Library memory and GPU work**
+(merged into `main` as `ae1396a`; X-Trans follow-up `f1a99d4`). It replaced
+the fixed 600 MB per-job reservations, double-counted memory and
+refusal-as-pressure loops behind the October 29–30 stalls. The finished
+design, measurements and history are archived in
+[library-resource-scheduler-design-2026-10-30](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md)
+(section numbers such as "scheduler 7.20" in this file and in the Library
+PRD point there). Approved numbers, which change only with Steve's decision:
+
+- **Ceiling:** the 4 GB rule and user setting in section 3. A peak may exceed
+  it by up to 10% briefly, and the app must settle below the ceiling minus
+  600 MB. The system reserve (the larger of 2 GB or 10% of RAM) is a hard
+  stop.
+- **Per-job estimates:** the bytes-per-pixel table in section 3 (AVIF 56;
+  X-Trans RAF on the CPU route 45). The scheduler admits jobs by estimate,
+  and logs and corrects overruns.
+- **What's on screen comes first:** classes Grade/export, now, soon,
+  eventually. A fast lane runs small jobs (estimated at 64 MB or less, such as
+  camera previews) beside big ones, and a 1 GB floor lets one visible job
+  start even when the room is taken.
+- **Two developments and two saves** at a time. GPU work runs inside the
+  same scheduler, within the Automatic VRAM budget (half the dedicated video
+  memory, section 6). Grade and export preempt Library developments at the
+  next safe point.
+- **Grade coexistence:** a large photo open in Grade pauses Library work with
+  a message and a **Close photo in Grade** action.
+
+Known open items: the Grade pause message takes 3–4 s to appear when a folder
+is opened (target 1 s; see the Library PRD); intermittent zeroed colour
+channels in 42 MP RAW thumbnails since the merge (being tested with one GPU
+development at a time); some of the CPU recipes listed in section 8 are
+still unqualified.
 
 ### October 31: GPU priority and source sharing decisions (Steve)
 
@@ -100,7 +119,7 @@ non-memory refusals. Settings up/down took 62/22 ms, no failure; 89.7 ms
 maximum frame gap during those changes. No cache share increase. Scroll-back
 on the 48-photo fixture reused presented pictures without source reads; the
 reported larger-folder symptom remains unconfirmed. Full evidence and pending
-decisions: [scheduler design 7.8](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#78-phase-3c-live-memory-setting-and-reduced-library-sources-october-31).
+decisions: [scheduler design 7.8](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md#78-phase-3c-live-memory-setting-and-reduced-library-sources-october-31).
 
 ### October 31: phase 3a.2 measured admission and native ownership
 
@@ -233,7 +252,7 @@ app behaves when the machine runs short.
 | Older pictures may be discarded and redrawn; visible and nearby pictures keep priority. | Steve, 2026-10-29 |
 | **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
 | Grade import: no additional full-size photo copies held at once; about 100 MB extra peak working memory is allowed; larger additions need Steve's decision. | Steve, 2026-10-13 |
-| **Per-job memory estimates for the Library scheduler** (measured peak plus 25%, from header pixel count, 64 MB minimum per job). Backend RAM in bytes per pixel: camera RAW sensor read 7; JPEG and Radiance HDR 23; PNG, TIFF and linear DNG 28; EXR and PFM 38; AVIF 56 (raised from 38 by Steve, 2026-10-31, after a measured 44.7 overrun); HEIC, HEIF and JPEG XL 52; CPU route, 25 except header-confirmed 6x6 RAF, 45 (Steve, November 1; 587.7 MB measured private peak plus 25%, scheduler section 7.20). Reduced-decode quick preview: 64 MB. Quick preview without reduced decode: 23 × the preview's pixels. GPU memory: the existing `rawBudget` formula. Overruns are logged and raise that type's estimate. Measurements: scheduler design, section 6.11. Not built yet (phase 3). | Steve, 2026-10-30 |
+| **Per-job memory estimates for the Library scheduler** (measured peak plus 25%, from header pixel count, 64 MB minimum per job). Backend RAM in bytes per pixel: camera RAW sensor read 7; JPEG and Radiance HDR 23; PNG, TIFF and linear DNG 28; EXR and PFM 38; AVIF 56 (raised from 38 by Steve, 2026-10-31, after a measured 44.7 overrun); HEIC, HEIF and JPEG XL 52; CPU route, 25 except header-confirmed 6x6 RAF, 45 (Steve, November 1; 587.7 MB measured private peak plus 25%, scheduler section 7.20). Reduced-decode quick preview: 64 MB. Quick preview without reduced decode: 23 × the preview's pixels. GPU memory: the existing `rawBudget` formula. Overruns are logged and raise that type's estimate. Measurements: scheduler design, section 6.11. Built in the Library scheduler (November 1). | Steve, 2026-10-30 |
 | No disk allowance increases without Steve's decision (selected-photo native detail uses the existing full-size allowance). | Steve, 2026-10-19 |
 | Superseded: the RAW reader sized from "memory is plentiful (64 GB)" (October 14 disk-reader brief, FastRawViewer's 40 files cached / 12 ahead). Replaced by the fixed shares below. | 2026-10-29 |
 

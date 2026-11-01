@@ -88,6 +88,14 @@ may not contradict these.
 10. **Pre-1.0: no compatibility code.** There is no migration code for old
     projects or preferences. When a feature changes, the affected projects
     are named, and work carries on.
+11. **Assume slow storage** (Steve, November 1, 2026). Serious
+    photographers keep large RAW libraries on spinning disks in a NAS or DAS,
+    because SSDs are too small. Design for that; a faster drive is a bonus.
+    Nothing already prepared waits on a read from the photo drive: it comes
+    from the app's own cache on the local disk or from memory. Checks for
+    changed files run in the background and in batches (one folder listing,
+    not one request per photo). Speed targets are judged on slow storage,
+    such as Steve's removable exFAT drive.
 
 ## 3. Scope
 

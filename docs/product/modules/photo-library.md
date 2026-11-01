@@ -1,5 +1,39 @@
 # Module PRD: Photo Library
 
+## November 1: Library scheduler finished; brief archived
+
+The one-scheduler work (phases 0 to 3c.2 Part C and the November 1 rounds)
+is merged into `main` (`ae1396a`, X-Trans follow-up `f1a99d4`). Every
+Library job (camera preview, decode, sensor read, GPU development, draw,
+save) asks one backend scheduler, by estimate and screen priority, inside
+the memory and GPU numbers owned by
+[memory-and-caches](memory-and-caches.md). The design and its measurement
+record moved to
+[archive/briefs/library-resource-scheduler-design-2026-10-30](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md);
+"scheduler 7.x" references in this file point there.
+
+Open work it leaves, in Steve's order:
+
+1. **Redisplay of stored pictures** (Steve, November 1: speed item 1). A
+   picture that is already stored takes about 0.9 s per cell to come back
+   on screen, even when the app is idle: about 0.3 s for a per-photo
+   `live-plan` check that reads the photo drive, plus about 0.55 s in the
+   queue. The draw itself takes 20–150 ms. Target: 90% of visible stored
+   pictures within 100 ms (October 18), under the slow-storage rule (master
+   PRD, philosophy 11).
+2. **Zeroed colour channels** in 42 MP RAW thumbnails (teal or black), seen
+   in about 37% of A7R III thumbnails developed after the merge. No error is
+   logged. Next step: compare one GPU development at a time with two, for
+   pictures and speed.
+3. Finished gain-map AVIFs are slow to prepare (about 2 s each, 6–9 s for
+   large ones) and mostly run one at a time because of their memory
+   estimate. Candidate: GPU gain-map reconstruction.
+4. The Grade pause message takes 3–4 s when a folder opens while Grade holds
+   a large photo (target 1 s). About 2 s is the first-row disk checks. Its
+   check, `tools/measure-library-grade-grants.cjs`, still uses DevTools and
+   times from folder opening.
+5. Fuji X-Trans development takes about 37.5 s including queueing (later).
+
 ## November 1: Fuji X-Trans thumbnails
 
 Confirmed 6x6 RAF files now use Grade's CPU development through the existing
@@ -69,7 +103,7 @@ reduce bands: HEIC 2.47 -> 1.67 s and 1.43 -> 1.01 s, AVIF 6.17 -> 4.74 s,
 5.08 -> 4.96 s. Every fixture file still decodes to identical pixels.
 Longest single GPU submission is 195 ms (the reduce on the 223 MB PNG);
 no pass needs splitting.
-See [scheduler design 7.18](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#718-single-priority-over-the-covered-grid-and-core-shared-decoding-november-1).
+See [scheduler design 7.18](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md#718-single-priority-over-the-covered-grid-and-core-shared-decoding-november-1).
 
 ## November 1: whole-pass GPU submission - cold screen faster, Single not
 
@@ -94,7 +128,7 @@ faster (open 2019 -> 5551 ms; median step 9886 -> 15298 ms); it is now
 limited by decode and scheduling contention with the grid pre-warm, not by
 GPU pass cost. No approved number changed. Not run this round: phase0,
 Aceh, Grade coexistence and the release drivers.
-See [scheduler design 7.17](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#717-whole-pass-gpu-submission-and-true-pass-costs-november-1).
+See [scheduler design 7.17](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md#717-whole-pass-gpu-submission-and-true-pass-costs-november-1).
 
 ## November 1: DNG estimate and EXR interpretation admission correction
 
@@ -109,7 +143,7 @@ Final acceptance passed at `b6754a2`: cold repeats show 20–22 / 31 at 30 /
 Default phase0 finishes 22 / 27, peak 4.025 GB, only the permitted AVIF reclaim.
 Grade coexistence and both requested release checks pass. Three unchanged
 focused-test sharing/version/publication failures remain; no full suite run.
-See [scheduler design 7.16](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#716-memory-overshoot-and-ordinary-reclaim-correction-november-1).
+See [scheduler design 7.16](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md#716-memory-overshoot-and-ordinary-reclaim-correction-november-1).
 
 ## November 1: ordinary-wait guard correction — acceptance pending
 
@@ -128,7 +162,7 @@ occurred before that early stop; the new collection path and EXR were not
 reached. Longest completion gap 6.981 s; no queued source interval without
 an active grant in the trace. **Not fixed/qualified yet.** Investigate the
 overshoot next. Steve deferred warm/final regressions; no more slow checks ran.
-See [scheduler design 7.15](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#715-ordinary-waits-and-proportional-reclamation-november-1).
+See [scheduler design 7.15](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md#715-ordinary-waits-and-proportional-reclamation-november-1).
 
 ## November 1: Decision 21 measured — 22/27; Grade rerun passes
 
@@ -150,7 +184,7 @@ Cold Aceh first screens **14.383 / 13.601 s**, both within the agreed 5%;
 48/48 finish twice. Both requested release-runner grid/GPU-recovery checks
 pass. Focused checks: 63 Python / 45 JavaScript pass; no full suites.
 Owner table, all 27 states, exact conditions and remaining diagnostic limits:
-[scheduler design 7.14](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#714-grade-rerun-decision-21-and-retained-memory-investigation-november-1).
+[scheduler design 7.14](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md#714-grade-rerun-decision-21-and-retained-memory-investigation-november-1).
 
 ## November 1: Decision 20 built; acceptance incomplete
 
@@ -173,7 +207,7 @@ all 48 finish twice. Grid and GPU recovery pass through the release runner.
 Grade saves/resumes correctly but its **2.705 s pause notice fails the 1 s
 limit**; this check is not qualified. Focused checks: 59 Python / 57 JavaScript
 pass; no full suites or extra scroll diagnosis. All 27 states and caveats:
-[scheduler design 7.13](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#713-decision-20-fitting-jobs-pass-a-blocked-job-november-1).
+[scheduler design 7.13](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md#713-decision-20-fitting-jobs-pass-a-blocked-job-november-1).
 
 
 ## November 1 big-file diagnosis — partial fixes, default completion still open
@@ -188,7 +222,7 @@ The default mixed folder still finishes **10/27**: a measured-memory wait on tha
 AVIF holds the other 16 source jobs behind it. Thirteen of the 17 unfinished files
 finish individually; two JXLs and EXR need source interpretation, RAF needs
 X-Trans support. The complete table, bounds and unfinished acceptance checks are
-in [scheduler design 7.12](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+in [scheduler design 7.12](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md).
 
 Final checks on `3cf7a9e`: cold Aceh first screens 13.195 / 13.547 s (inside
 5% tolerance); both release-runner grid/recovery checks and Grade coexistence
@@ -202,7 +236,7 @@ screens reused memory in 12–23 ms, with no blank cells or new development.
 The fixed thumbnail share held 367 MB of 512 MiB; no pressure trim occurred.
 No cache-policy change is justified by this reproduction. Steve's pressure or
 beyond-capacity case remains open. Details and observer caveats are in
-[scheduler design 7.12](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+[scheduler design 7.12](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md).
 
 ## October 31 Part C — built and measured; mixed completion still open
 
@@ -240,7 +274,7 @@ approved both-tier reservation is retained while only the requested scene is
 made; an initial narrower reservation incorrectly refused one TIFF and was
 corrected. No approved numbers changed. Grade/Proof/export picture code is
 untouched; Proof/export were not separately rerun. Full results and caveats:
-[scheduler design 7.11](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+[scheduler design 7.11](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md).
 
 ## October 31 phase 3c.2 Part B: GPU work in the Library scheduler — built and measured
 
@@ -252,7 +286,7 @@ policy default); finished cells draw without waiting; Grade and export preempt
 at a safe point and the requeued job costs no attempt; RAM and GPU are granted
 together; out-of-memory retries once at the front, then the visible-only CPU
 route; a lost device releases all grants and requeues once. Every development
-logs its GPU estimate and measured peak. Details: [scheduler design 7.10](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+logs its GPU estimate and measured peak. Details: [scheduler design 7.10](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md).
 
 The earlier 120 s grid timeout was the driver's 111-byte PNG falling under the
 file gate's 1 KB listing floor, not the scheduler; with four photos listed, two
@@ -309,7 +343,7 @@ repeated excursions propose estimate review without changing rates. Full mixed
 completion/settling is still pending the final rerun. Keep AVIF 56 and do not
 investigate it further now. Leave the DxO DNG alone unless it fails again;
 then capture the full request error. Parts B/C and edited-photo pictures remain
-open. [Scheduler design 7.9](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#79-phase-3c2-part-a-approved-rates-and-retryable-deadlines-revised-acceptance-october-31).
+open. [Scheduler design 7.9](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md#79-phase-3c2-part-a-approved-rates-and-retryable-deadlines-revised-acceptance-october-31).
 
 ## October 31 phase 3c: reduced pictures and live memory setting; qualification partial
 
@@ -343,7 +377,7 @@ setting-change frame gap over 89.7 ms. Scroll-back kept all 48 pictures and
 did not read/develop sources again; the larger-folder symptom was not
 reproduced and no cache share changed. No repeat-pair claim is made.
 
-The [scheduler design 7.8](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#78-phase-3c-live-memory-setting-and-reduced-library-sources-october-31)
+The [scheduler design 7.8](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md#78-phase-3c-live-memory-setting-and-reduced-library-sources-october-31)
 records evidence paths, every route peak, picture agreement, focused checks,
 deadline proposal and open acceptance. Phase 3c is built but not fully qualified.
 
@@ -459,7 +493,7 @@ then halved the Library's caches, cleared recent pictures, sent Chromium a
 thrown away and made again. Now caches are trimmed only when measured memory
 is above the target (or the operating system reports pressure): once when it
 starts, then at most every 10 s while it lasts. Details in the design
-([section 7.5](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md)).
+([section 7.5](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md)).
 
 Cold run on 48 Aceh Pesta copies: one trim (memory really reached 3.50 GB
 against the 3.40 GB target), none from refusals; peak 3.28 GB; screens
@@ -502,13 +536,13 @@ different supported format is decoded by its contents.
 Read-only check of D:\Photos: 140,302 of 142,570 photo-type files stay
 listed. 2,267 `._` files and 13 hidden Lightroom data folders are hidden. No
 real photo is hidden by the name rules. Details, and what is not covered, are
-in the design ([section 7.4](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md)).
+in the design ([section 7.4](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md)).
 The supported-files list is now in the user guide (`docs/user-guide/library.md`).
 
 ## October 30 (late): design review before more fixes
 
 Steve asked for a whole-system design before further fixes. The proposal,
-[library-resource-scheduler-design-2026-10-30](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md),
+[library-resource-scheduler-design-2026-10-30](../../technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md),
 replaces the separate Library gates (quick-preview and RAW-decode
 reservations, the exclusive GPU lease, draw leases, retry loops) with one
 backend scheduler: priority classes, per-job estimates, a fast lane for

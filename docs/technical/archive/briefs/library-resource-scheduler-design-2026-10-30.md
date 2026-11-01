@@ -1,13 +1,18 @@
 # Design: one scheduler for Library memory and GPU work
 
-Status: **DRAFT FOR STEVE'S REVIEW, October 30, 2026.** Design only. No code
+Status: **FINISHED AND ARCHIVED, November 1, 2026.** Built and merged into
+`main` (`ae1396a`, X-Trans follow-up `f1a99d4`). The outcome and approved
+numbers live in the Photo Library and Memory and caches module PRDs. History
+only from here.
+
+Original status: **DRAFT FOR STEVE'S REVIEW, October 30, 2026.** Design only. No code
 changes are approved by this document. Each phase below is approved
 separately, and every size or count marked "Steve's decision" stays a
 proposal until he agrees it.
 
-Owner modules: [photo-library](../../product/modules/photo-library.md),
-[memory-and-caches](../../product/modules/memory-and-caches.md),
-[preview-and-gpu](../../product/modules/preview-and-gpu.md).
+Owner modules: [photo-library](../../../product/modules/photo-library.md),
+[memory-and-caches](../../../product/modules/memory-and-caches.md),
+[preview-and-gpu](../../../product/modules/preview-and-gpu.md).
 
 ## 1. Why this document exists
 
@@ -2861,7 +2866,7 @@ agreement and a targeted RAF Single UI check remain unverified.
 Each phase is one small set of commits that can be undone on its own, with
 fast checks and one short scripted run on a disposable copy. No phase starts
 before the previous one is accepted by Steve trying the app. Every phase
-records its numbers in the [performance table](../performance-table.md).
+records its numbers in the [performance table](../../performance-table.md).
 
 | Phase | What | Removes | Accept when |
 | --- | --- | --- | --- |

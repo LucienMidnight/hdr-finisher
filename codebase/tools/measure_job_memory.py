@@ -1,6 +1,6 @@
 """Measure peak memory and time of each Library backend job, per file type.
 
-Phase 0 of docs/technical/briefs/library-resource-scheduler-design-2026-10-30.md.
+Phase 0 of docs/technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md.
 Each job runs in its own fresh Python process, so one job's memory never
 hides another's. Windows only (reads the process's own peak counters).
 

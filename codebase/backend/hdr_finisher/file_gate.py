@@ -1,7 +1,7 @@
 """Which files the Library lists and reads (Steve, October 30, 2026: be restrictive).
 
 One rule set for folder scans, the index walk, the add-folder browser and file
-checks. See docs/technical/briefs/library-resource-scheduler-design-2026-10-30.md,
+checks. See docs/technical/archive/briefs/library-resource-scheduler-design-2026-10-30.md,
 section 6.9, and docs/user-guide/library.md for the user-facing list.
 """
 from __future__ import annotations
