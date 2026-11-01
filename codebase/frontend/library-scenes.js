@@ -25,7 +25,7 @@ window.HDRLibraryScenes = (() => {
     heavyLimit:cpuLanes,onChange:changed,fifo:true,
     admit:async job=>{
       const gpu=!job.cpuRoute&&HDRLibraryGpuRaw.enabled()&&HDRLibraryGpuRaw.preflight ? await HDRLibraryGpuRaw.preflight(job.gpuMeta,job.edge,job.controller.signal) : {bytes:0,unified:false};
-      job.grant=await HDRLibraryGrants.acquire(job.path,!job.cpuRoute&&HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority,job.edge,gpu.bytes,gpu.unified);
+      job.grant=await HDRLibraryGrants.acquire(job.path,!job.cpuRoute&&HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority,job.edge,gpu.bytes,gpu.unified,!!job.front);
       return true;
     },
     keepRunning:job=>job.retainDetached||(job.edge<=640&&(visible.has(job.path)||nearby.has(job.path)))});
@@ -82,7 +82,7 @@ window.HDRLibraryScenes = (() => {
       const started = performance.now();
       try {
         const result = await HDRLibraryGrants.run(path,!plan.cpu_route&&HDRLibraryGpuRaw.enabled()?"source":"cpu",shared,
-          (grant,owned)=>develop(path,edge,owned,importance,version,options.gpuOnly || idle || (priority >= 80 && !visible.has(path)),grant,plan.cpu_route),importance,job.grant);
+          (grant,owned)=>develop(path,edge,owned,importance,version,options.gpuOnly || idle || (priority >= 80 && !visible.has(path)),grant,plan.cpu_route),importance,job.grant,{requeueLane:true});
         if (result && (idle || signal?.aborted)) save(result);
         return result;
       }

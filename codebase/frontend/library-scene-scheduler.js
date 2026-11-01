@@ -36,8 +36,16 @@
         if(job.controller.signal.aborted){if(jobs.get(job.key)===job)jobs.delete(job.key);continue;}
         job.resourceWaiting=false;active++;if(job.heavy)heavyActive++;job.running=true;job.started=now();runningJobs.add(job);onChange(job,"running");
         Promise.resolve().then(()=>job.task(job.controller.signal,()=>job.priority,job))
-          .then(value=>settle(job,null,value),error=>settle(job,error))
-          .finally(()=>{runningJobs.delete(job);active--;if(job.heavy)heavyActive--;if(jobs.get(job.key)===job)jobs.delete(job.key);pump();});
+          .then(value=>settle(job,null,value),error=>{
+            // Lost its admitted turn: give the slot back and wait in line again,
+            // rather than hold a slot while another admitted job cannot start.
+            if(error?.laneRequeue&&admit&&!job.controller.signal.aborted){job.requeued=true;job.front=!!error.front;return;}
+            settle(job,error);
+          })
+          .finally(()=>{runningJobs.delete(job);active--;if(job.heavy)heavyActive--;
+            if(job.requeued){job.requeued=false;job.running=false;job.admitted=false;job.grant=null;job.resourceWaiting=true;waiting.push(job);onChange(job,"waiting");}
+            else if(jobs.get(job.key)===job)jobs.delete(job.key);
+            pump();});
       }
     }
     function settle(job,error,value){

@@ -44,7 +44,9 @@
       if(!jobs.delete(j.id))return;
       j.saveReject?.(cancelled());j.detach();send({type:outcome==="cancelled"?"cancel":"finish",id:j.id,outcome});changed();
     }
-    async function run(path,kind,signal,task,priority=10,initial=null){
+    // requeueLane: the caller's own queue slot must not be held while waiting
+    // for another turn (November 1 Library stall). Throw instead of re-asking.
+    async function run(path,kind,signal,task,priority=10,initial=null,{requeueLane=false}={}){
       let grant=initial,front=false;
       for(;;){
         grant ||= await acquire(path,kind,signal,typeof priority==="function"?priority():priority,initial?.edge??2560,initial?.gpu_bytes??0,initial?.gpu_unified??false,front);
@@ -55,7 +57,11 @@
         let outcome="finished";
         try{return await task(grant.id,combined.signal);}
         catch(error){
-          if((grant.connection.signal.aborted||error.libraryRequeue)&&!signal?.aborted){front=!!error.gpuRetry;finish(grant,"cancelled");grant=null;continue;}
+          if((grant.connection.signal.aborted||error.libraryRequeue)&&!signal?.aborted){
+            front=!!error.gpuRetry;finish(grant,"cancelled");
+            if(requeueLane)throw Object.assign(new DOMException("Waiting for another development turn","AbortError"),{laneRequeue:true,front});
+            grant=null;continue;
+          }
           outcome=signal?.aborted?"cancelled":/chang|invalidat/i.test(error.message)?"changed":"finished";throw error;
         }finally{
           signal?.removeEventListener("abort",stop);
