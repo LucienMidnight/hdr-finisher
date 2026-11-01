@@ -512,7 +512,10 @@ def create_library_router(worker, browser, store=None):
         if not cached and not is_cloud_placeholder(stat):
             from .library_rgb import preflight_interpretation
             preflight_interpretation(path, live_recipe(document))
-        return {"gpu_meta": gpu_metadata(path,document,command.edge) if not cached and not is_cloud_placeholder(stat) else None,
+        from .library_gpu_raw import xtrans_cpu
+        cpu_route = "xtrans" if not cached and not is_cloud_placeholder(stat) and xtrans_cpu(path) else None
+        return {"cpu_route": cpu_route,
+                "gpu_meta": gpu_metadata(path,document,command.edge) if not cached and not is_cloud_placeholder(stat) and not cpu_route else None,
                 "cached": live.describe(command.path, cached) if cached else None,
                 "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}",
                 "source_identity": picture_key(path, 0, live_quality(document)),
@@ -543,9 +546,11 @@ def create_library_router(worker, browser, store=None):
         claimed_at = time.perf_counter()
         log("picture_source_claim", path=path, checks_claim_ms=(claimed_at-requested_at)*1000, gpu=command.gpu)
         transfer = False
+        from .library_gpu_raw import xtrans_cpu
         try:
-            async with backend_grant(path,"source" if command.gpu else "cpu",command.priority,command.grant,request.is_disconnected,edge=command.edge):
-                if command.gpu:
+            use_gpu = command.gpu and not await run_in_threadpool(xtrans_cpu, path)
+            async with backend_grant(path,"source" if use_gpu else "cpu",command.priority,command.grant,request.is_disconnected,edge=command.edge):
+                if use_gpu:
                     source_foreground(token, True)
                     from . import library_gpu_raw, library_rgb
                     from .models import RawImportSettings, SourceInterpretationOverride

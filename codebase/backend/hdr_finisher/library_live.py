@@ -102,12 +102,21 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
         return develop(root, path, document, edge, cancelled, cache, progress, draw_first)
     from .highlight_edge_gpu import source_work
     prepared_at = perf_counter()
-    with source_work(priority=15, cancelled=cancelled):
-        source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
-            raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
-            interpretation_override=SourceInterpretationOverride.model_validate(inputs["interpretation_override"]),
-            hdr_reference_white_nits=inputs["hdr_reference_white_nits"],
-            library_edge=5120 if edge <= 2560 and not inputs.get("repairs") else None)
+    from .library_gpu_raw import xtrans_cpu
+    from .cpu_budget import raw_threads, logical_cpus, native_threads
+    xtrans = xtrans_cpu(path)
+    if xtrans:
+        raw_threads(logical_cpus())
+    try:
+        with source_work(priority=15, cancelled=cancelled):
+            source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
+                raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
+                interpretation_override=SourceInterpretationOverride.model_validate(inputs["interpretation_override"]),
+                hdr_reference_white_nits=inputs["hdr_reference_white_nits"],
+                library_edge=5120 if edge <= 2560 and not inputs.get("repairs") else None)
+    finally:
+        if xtrans:
+            raw_threads(native_threads())
     preparation_ms = (perf_counter() - prepared_at) * 1000
     if document:
         saved = validate_saved(EditDocument, document)
@@ -134,6 +143,13 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     if progress: progress("reduction", "Preparing thumbnail and screen preview")
     result = None
     reduction_at = perf_counter()
+    # X-Trans uses the same filtered source level as Grade, including its
+    # overshoot guard. Other Library routes retain their existing pixels.
+    reduce = reduce_picture
+    if xtrans:
+        from .preview import downsample_image
+        def reduce(image, size):
+            return downsample_image(image, size, is_current=lambda: not (cancelled and cancelled()))
     for size in [edge]:
         metadata = {"route": "library-live", "renderer": "cpu", "raw_input": True,
             "starting_look": source.starting_adjustments().model_dump(mode="json"),
@@ -148,8 +164,8 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
         if not document:
             metadata["default_document"] = source.edit_document().model_dump(mode="json")
         item = cache.build(path, size, source_quality, cancelled,
-            (reduce_picture(source.image, size),
-             reduce_picture(source.sdr_reference_image, size) if source.sdr_reference_image is not None else None, metadata), defer_store=draw_first)
+            (reduce(source.image, size),
+             reduce(source.sdr_reference_image, size) if source.sdr_reference_image is not None else None, metadata), defer_store=draw_first)
         if size == edge:
             result = item
     from .library_diagnostics import log

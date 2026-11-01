@@ -46,13 +46,18 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
-Nov 1 Fuji X-Trans preflight, unchanged `ae1396a` production code:
-`DSCF6495.RAF` CPU development at 640/2560 took 3.474-4.042 s warm,
-3.653-4.100 s first-use in fresh processes. This measures backend scene
-preparation, not visible Library completion. Memory blocks implementation
-pending an estimate decision (scheduler design 7.20). The cold
-`xtrans-baseline` quick check hit its hard deadline after 132.750 s in
-`observe`; no complete grid/frame-gap comparison is available.
+Nov 1 Fuji X-Trans repair (`library-xtrans-thumbnails`, local): final guarded
+Lanczos CPU scene development 640/2560 is 3.009-3.204 s warm, 3.193-3.325 s
+first-use; incremental private peak 587.7 MB, approved reservation 740.413 MB.
+Earlier bilinear route, cold plain 90 s grid: camera preview 1.811 s after RAF
+tile request; developed presentation 37.021 s including queue. Grid 22/27 by
+30/60 s, external peak 3.585 GB, longest frame gap 70 ms. Same-day ae1396a
+production baseline: 22/26, 3.763 GB, 96 ms. Ten Single steps: open 2335 ms,
+preview 30 ms, median 2363 ms, maximum 6184 ms; no frame gap >=50 ms.
+Final filter/estimate cold grid check (`xtrans-final`): RAF preview 0.807 s,
+developed 37.545 s including queue; grid 23/27 by 30/60 s, external peak
+3.543 GB, longest frame gap 61 ms. No ceiling/reserve violation, settled
+below target. See scheduler 7.20; Steve requested no further sweeps.
 
 Nov 1 PNG round-trip removal (`8e5396a`), Library RGB decode edge 2560,
 warm filesystem, median of three: `_DSC6510-1.png` 4176.0 -> 2875.0 ms;

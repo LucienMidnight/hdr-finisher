@@ -107,6 +107,11 @@ def estimate_details(path, kind="source", ceiling=None, edge=2560):
         width, height = dimensions(path)
         if width <= 0 or height <= 0:
             raise ValueError("Missing source dimensions")
+        if kind == "cpu":
+            from .library_gpu_raw import xtrans_cpu
+            if xtrans_cpu(path):
+                # Steve, November 1: measured Grade route peak plus 25%.
+                return max(MINIMUM, 45*width*height), ""
         # Embedded JPEGs use the approved DCT-scaled quick route. Other
         # embedded formats keep a conservative full-source preview estimate.
         if kind == "quick" and (Path(path).suffix.lower() not in RATES or Path(path).suffix.lower()==".dng"):

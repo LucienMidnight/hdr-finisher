@@ -186,3 +186,24 @@ def test_rgb_correction_dng_reserves_existing_dng_rate_without_decoding(tmp_path
     monkeypatch.setattr(tifffile.TiffPage,"asarray",lambda *a,**k:pytest.fail("admission decoded pixels"))
     assert library_estimates.estimate_details(path)==(28*width*height, "")
     assert library_estimates.estimate_details(path,kind="cpu")== (25*width*height, "")
+
+
+def test_xtrans_cpu_uses_approved_exception_without_decoding(tmp_path, monkeypatch):
+    import struct
+    import rawpy
+    from hdr_finisher import library_estimates, library_gpu_raw
+    path = tmp_path / "fuji.raf"
+    header = bytearray(100)
+    header[:16] = b"FUJIFILMCCD-RAW "
+    data = struct.pack(">IHH", 1, 0x0131, 36) + bytes([0, 1, 2] * 12)
+    header[92:100] = struct.pack(">II", 100, len(data))
+    path.write_bytes(header + data)
+    monkeypatch.setattr(library_estimates, "dimensions", lambda path: (4992, 3296))
+    monkeypatch.setattr(rawpy, "imread", lambda *a, **k: pytest.fail("admission unpacked RAW"))
+    assert library_gpu_raw.xtrans_cpu(path)
+    assert library_estimates.estimate_details(path, "cpu")[0] == 740_413_440
+    assert library_estimates.estimate_details(path, "quick")[0] != 740_413_440
+    data = data[:-36] + bytes(36)
+    path.write_bytes(header + data)
+    assert not library_gpu_raw.xtrans_cpu(path)
+    assert library_estimates.estimate_details(path, "cpu")[0] == 411_340_800

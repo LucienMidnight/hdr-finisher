@@ -2791,48 +2791,70 @@ Start output 32.3 GB; final **32.1 GB**, including 29.7 GB reusable test photos,
 below 100 GB. No Electron/Crashpad processes remain. Real profile/cache and
 `D:\Photos` were not written; protected project hashes verify unchanged files.
 
-## 7.20 X-Trans thumbnail repair: estimate decision needed (November 1)
+## 7.20 X-Trans thumbnail repair (November 1)
 
-Work stopped before implementation under the Fuji bug brief's approved-number
-rule. Branch `library-xtrans-thumbnails`, production code unchanged from
-`ae1396a`. Grade's existing cancellable `library_live.develop_cpu` reuses
-`SessionStore.prepare_session`; a large decoder rewrite is not needed.
+Built locally on `library-xtrans-thumbnails`: a bounded CPU development only
+for RAF files whose header confirms a 6x6 CFA. Planning and admission use the
+existing cancellable live-scene helper, low priority and all LibRaw cores.
+The scene is cached at 640/2560. Other GPU refusals do not acquire this route.
+Camera previews finish independently of development; an available picture
+survives a source refusal, whose explanation remains on hover. Old remembered
+source errors are invalidated when the supported source routes change.
 
-The locked-fixture run copy `DSCF6495.RAF` has **4992 x 3296 = 16,453,632
-header pixels**, not the 26 MP stated in section 6.11. This is a new measurement
-of this fixture, not a remeasurement of that section's unidentified sample.
-The existing CPU rate, 25 bytes/pixel, admits **411,340,800 bytes**.
+Steve first approved 36 bytes/pixel, then **45 bytes/pixel** after matching
+Grade's Lanczos reduction raised the measured peak. This exception is only
+for confirmed X-Trans CPU development. All other rates, shares, concurrency,
+deadlines, GPU limits, reserve, 4 GB ceiling and 10% allowance are unchanged.
+`DSCF6495.RAF` has 4992 x 3296 = 16,453,632 header pixels; its reservation is
+**740,413,440 bytes**. The prior section 6.11 sample labelled 26 MP is not
+identified as this fixture.
 
-Measured using `tools/measure_job_memory.py`'s unchanged `CHILD` runner,
-invoked in fresh `.venv` processes for `cpu_develop_640` and
-`cpu_develop_2560`. Each runner warms once, then samples current process
-working set and private commitment every millisecond during the second
-development. Figures are incremental peaks above the warmed baseline,
-not whole-app peaks; working set is Windows resident memory (RSS).
+Unchanged `measure_job_memory.py` CHILD runner, fresh .venv process per edge,
+one warm-up then 1 ms sampling of incremental RSS/private commitment:
 
-| Requested edge | Peak extra RSS | Peak extra private commitment | Warm development | First development |
-| --- | --- | --- | --- | --- |
-| 640 | 332.4 MB | 460.7 MB | 3.474 s | 4.100 s |
-| 2560 | 361.2 MB | 461.7 MB | 4.042 s | 3.653 s |
+| Edge | Peak extra RSS | Peak extra private commitment | Warm / first development |
+| --- | --- | --- | --- |
+| 640 | 587.0 MB | 587.7 MB | 3.009 / 3.193 s |
+| 2560 | 587.5 MB | 587.7 MB | 3.204 / 3.325 s |
 
-The larger RSS peak plus the existing 25% headroom needs 451.5 MB
-(27.44 bytes/pixel), already beyond the approved CPU estimate. The larger
-private peak plus that headroom needs **577.125 MB (35.08 bytes/pixel)**.
-Proposed decision: use **36 bytes/pixel only for header-confirmed 6x6 RAF
-CPU development**, reserving 592,330,752 bytes for this fixture. Leave all
-other route estimates, shares, counts, ceiling, allowance and reserve unchanged.
-Do not implement this exception without Steve's decision.
+The private peak plus 25% is 734.625 MB, inside 740.413 MB. The earlier
+bilinear version used at most 462.5 MB private but failed finished-pixel
+agreement: SDR mean/p99.9 Delta E2000 1.072/13.782 (640), 1.322/9.788 (2560).
+Two independent Grade opens worked and their captured renders matched each
+other exactly. Grade's existing guarded Lanczos source reduction now replaces
+bilinear only for X-Trans. **Final colour tolerance is not verified:** the
+comparison harness subsequently failed before pixel readback. The small
+`output/library-xtrans-review/review.html` is diagnostic evidence of the
+pre-correction pictures, not acceptance of the final filter.
 
-The same-day cold baseline `quick-library-check.cjs --label=xtrans-baseline`
-ended at its hard deadline after 132.750 s, stage `observe`; there is no
-completed 90-second report or usable grid-count/frame-gap comparison.
-Disposable profile cleanup ran. Report:
-`codebase/output/quick-library-check/xtrans-baseline/report.json`.
+Completed cold 90 s checks before the final filter/estimate adjustment:
+`xtrans-grid` showed 22/27 pictures at 30/60 s, peak external memory 3.585 GB,
+70 ms longest frame gap. Same-day exact ae1396a production baseline
+`xtrans-baseline-complete`: 22/26 pictures, 3.763 GB, 96 ms. Baseline production
+files were temporarily replaced byte-for-byte and restored; f70df48 in the
+report is a documentation-only commit. RAF camera presentation was 1.811 s
+after tile request, development 37.021 s including queueing; no RAF failure.
+`xtrans-single` completed ten steps: open 2335 ms, first preview 30 ms,
+median step 2363 ms, maximum 6184 ms; peak 3.441 GB and no frame gap >=50 ms.
+That sequence did not select the RAF.
 
-Not implemented or verified: bounded X-Trans admission, camera-preview
-preservation, Grade UI opening, finished-pixel agreement and decode variation,
-review page, final grid/Single acceptance and other-fixture pixel comparison.
-No source, cache, fixture or approved-number changes were made.
+Final `xtrans-final` plain cold 90 s grid check passed with no harness errors:
+RAF camera preview 0.807 s after tile request, developed picture 37.545 s
+including queue, no RAF failure; 23/27 pictures by 30/60 s against baseline
+22/26; external peak 3.543 GB against 3.763 GB; longest frame gap 61 ms
+against 96 ms. No ceiling/reserve violation and settled below target.
+Three other photos retain their existing interpretation refusals. Report:
+`codebase/output/quick-library-check/xtrans-final/report.json`.
+
+
+Focused Python and JavaScript route/refusal/preview cases passed. Two existing
+unrelated failures remain: the old v3 scene-identity expectation in
+`test_materialised_neutral_highlight_default_reuses_authored_scene_identity`,
+and `screen neighbours stay soon beside a visible filmstrip and stop when
+demand leaves` (expected priority 50, existing result 10). Steve then asked
+for only a quick check and no bunch of tests: no fixture sweep or further
+colour-driver reruns. Other-fixture exactness against ae1396a, final colour
+agreement and a targeted RAF Single UI check remain unverified.
 
 ## 8. Phases
 

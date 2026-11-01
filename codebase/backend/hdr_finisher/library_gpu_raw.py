@@ -104,6 +104,12 @@ def _xtrans_raf(path):
     return False
 
 
+def xtrans_cpu(path):
+    """The sole sensor-specific CPU development exception, decided November 1."""
+    path = Path(path)
+    return path.suffix.lower() == ".raf" and _xtrans_raf(path)
+
+
 def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict, list]:
     """Unpack the visible mosaic and describe Grade's development of it."""
     path = Path(path).resolve(strict=True)

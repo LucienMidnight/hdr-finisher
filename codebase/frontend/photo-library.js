@@ -661,9 +661,6 @@
     const started = performance.now();
     const current = () => state.active && element.isConnected && !cell.controller.signal.aborted;
     pictureErrors.paint(cell);
-    // Refused development stays a result until its source/settings change or
-    // an explicit retry clears it. Folder rechecks must not start new previews.
-    if (!pictureErrors.canPrepare(photo.path)) return;
     {
       void (async () => {
         const opening = state.folderOpen;
@@ -684,7 +681,7 @@
         const quickController=new AbortController();
         cell.controller.signal.addEventListener("abort",()=>quickController.abort(),{once:true});
         cell.quickController=quickController;
-        const preview = HDRLibraryGrants.preview({path:photo.path,quick_draw:true,bytes:photo.bytes,mtime_ns:photo.mtime_ns},quickController.signal,{Accept:"image/png"},cellPriority).then(async response => {
+        const preview = cell.previewPromise = HDRLibraryGrants.preview({path:photo.path,quick_draw:true,bytes:photo.bytes,mtime_ns:photo.mtime_ns},quickController.signal,{Accept:"image/png"},cellPriority).then(async response => {
           if (!response || response.status !== 200) return;
           const blob = await response.blob();
           if (!current() || cell.meta) return;
@@ -693,12 +690,16 @@
           try { await canvas.decode(); } finally { URL.revokeObjectURL(url); }
           if (current() && !cell.meta) {
 
+            cell.hasCameraPreview = true;
             canvas.style.visibility=""; element.classList.remove("loading");
+            pictureErrors.paint(cell);
             const baseline = HDRLibraryTrace.begin(container === space ? "grid" : "filmstrip",photo.path,started);
             HDRLibraryTrace.mark(baseline,"picture_camera_preview_decoded",started,{picture_size:"camera preview",route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : "original-preview-placeholder"});
             HDRLibraryTrace.present(baseline,()=>current() && !cell.meta,{picture_size:"camera preview",route:/\.arw$/i.test(photo.path) ? "sony_embedded_preview" : "original-preview-placeholder"});
           }
         }).catch(()=>{});
+        // Remembered source refusals still get their camera picture on revisits.
+        if (!pictureErrors.canPrepare(photo.path)) { await preview; return; }
         let cpuShown = false;
         while (current()) {
           try {
@@ -743,7 +744,7 @@
             await sleep(2000,cell.controller.signal);
           }
         }
-      })().catch(error=>{if(current()&&!aborted(error)){if(error.needsMemory){cell.memoryNeed={path:photo.path,kind:"source",reason:"needs more memory",estimate:error.estimate,stage:error.message};element.classList.remove("loading");paintMemoryNeeds();return;}if(error.cloudOnly){element.classList.remove("loading");element.classList.add("cloud-only");element.title="Online-only. Open this photo to download it.";}else if(error.folderDetails)status(error.message);else removeUnreadable(photo,error);pictureErrors.paint(cell);cell.controller.abort();}});
+      })().catch(async error=>{if(current()&&!aborted(error)){if(error.needsMemory){cell.memoryNeed={path:photo.path,kind:"source",reason:"needs more memory",estimate:error.estimate,stage:error.message};element.classList.remove("loading");paintMemoryNeeds();return;}if(error.cloudOnly){element.classList.remove("loading");element.classList.add("cloud-only");element.title="Online-only. Open this photo to download it.";}else if(error.folderDetails)status(error.message);else removeUnreadable(photo,error);await pictureErrors.failed(cell,current);}});
     }
     };
     if (!defer) cell.start();
