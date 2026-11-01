@@ -140,19 +140,20 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   for(let screen=0;screen<(singleFile?1:scrollDiagnose?3:phase0?3:jpeg||probe?1:2);screen++){
    if(screen){report.scrolledAt=Date.now();}if(screen)await lib.evaluate(()=>{const grid=document.getElementById('library-grid');grid.scrollTop+=grid.clientHeight;grid.dispatchEvent(new Event('scroll'));});
    await sleep(300);
-   const visibleTargets=await lib.evaluate(()=>{
+   let visibleTargets=await lib.evaluate(()=>{
     const b=document.getElementById('library-grid').getBoundingClientRect();
     return [...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect();return r.top<b.bottom&&r.bottom>b.top;}).map(c=>c.dataset.path);
    });
-   const targets=await lib.evaluate(()=>{
+   let targets=await lib.evaluate(()=>{
     const bounds=document.getElementById('library-grid').getBoundingClientRect();
     return [...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect();return r.top<bounds.bottom&&r.bottom>bounds.top;}).map(c=>c.dataset.path);
    });
    const started=Date.now();let cells,idleSince=null;
    while(Date.now()-started<(phase0?600000:hdrTest?300000:probe?60000:120000)){
     if(memoryViolation){report.memoryViolation=memoryViolation;throw Error('STOP: '+memoryViolation.reason);}
+    if(hdrTest)targets=await lib.evaluate(()=>{const b=document.getElementById('library-grid').getBoundingClientRect();return [...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect();return r.top<b.bottom&&r.bottom>b.top;}).map(c=>c.dataset.path);});
     cells=await lib.evaluate(paths=>{return paths.map(p=>{const c=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===p);const refused=coldEvents.findLast(e=>e.path===p&&e.stage==='picture_work_failed');return {path:p,presented:!!c?.querySelector('canvas[data-picture-key]'),needsMemory:c?.querySelector('.library-memory-needed')?.textContent,error:c?.querySelector('.library-picture-error')?.title||c?.querySelector('.picture-failed')?.textContent||refused?.reason};});},targets);
-    if(cells.length&&cells.every(c=>c.presented||c.error||c.needsMemory))break;
+    if(cells.length&&cells.every(c=>c.presented||c.error||c.needsMemory)&&(!hdrTest||!await lib.evaluate(()=>HDRLibrary.getSnapshot().reading)))break;
     if(phase0){
      const jobs=(await lib.evaluate(()=>HDRLibraryGrants.snapshot())).jobs;
      if(jobs.some(j=>j.state==='running'))idleSince=null;else idleSince??=Date.now();
@@ -167,6 +168,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
     }
     await sleep(300);
    }
+   if(hdrTest)visibleTargets=targets;
    report.screens.push({screen:screen+1,visibleTargets,elapsedSinceOpenMs:Date.now()-opened,cells});
    report.indexDuringScreens=await api('health',null,AbortSignal.timeout(2000)).catch(e=>({error:String(e)}));
    console.log(JSON.stringify({screen:screen+1,elapsedMs:Date.now()-opened,presented:cells.filter(c=>c.presented).length,total:cells.length,peakGB:peak/1e9}));
