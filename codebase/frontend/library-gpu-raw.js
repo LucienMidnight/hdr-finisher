@@ -607,18 +607,23 @@
       const coarse = make(cw * chh * 4), dilated = make(cw * chh * 4), counts = make(16);
       const wgX = Math.ceil(w / 16), wgY = Math.ceil(h / 16);
       const partials = make(wgX * wgY * 6 * 4);
+      // One submit per pass. Splitting a pass into eight-row bands and awaiting
+      // the whole queue after each band made every stage wait for the other
+      // development and for draws, so two developments never overlapped and
+      // each pass cost hundreds of milliseconds. A whole pass is far shorter
+      // than the preemption deadline, so the permit is checked once, before it.
       const run = async (name, entries, x, y) => {
         const pipe = pipelines[name];
         const group = device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: entries.map((buffer, binding) => ({ binding, resource: { buffer } })) });
-        const band = beforeSubmit && name !== "REDUCE" ? 8 : y;
-        for (let row = 0; row < y; row += band) {
-          if (beforeSubmit) await beforeSubmit();
-          if (name !== "REDUCE") device.queue.writeBuffer(uniform, 21 * 16, new Uint32Array([0, row * 16, 0, 0]));
-          const encoder = device.createCommandEncoder(); const pass = encoder.beginComputePass();
-          pass.setPipeline(pipe); pass.setBindGroup(0, group); pass.dispatchWorkgroups(x, Math.min(band, y - row)); pass.end();
-          device.queue.submit([encoder.finish()]);
-          if (beforeSubmit) await device.queue.onSubmittedWorkDone();
-        }
+        if (beforeSubmit) await beforeSubmit();
+        if (name !== "REDUCE") device.queue.writeBuffer(uniform, 21 * 16, new Uint32Array([0, 0, 0, 0]));
+        const encoder = device.createCommandEncoder(); const pass = encoder.beginComputePass();
+        pass.setPipeline(pipe); pass.setBindGroup(0, group); pass.dispatchWorkgroups(x, y); pass.end();
+        device.queue.submit([encoder.finish()]);
+        // One fence per pass keeps passes from piling up (the approved GPU
+        // estimate is a peak, not a running total); per-band fencing was the
+        // part that cost hundreds of waits per photo.
+        if (beforeSubmit) await device.queue.onSubmittedWorkDone();
       };
       const read = async (buffer, bytes) => {
         if (liveBytes + bytes > memoryBudget) throw Error("GPU RAW readback exceeds the reserved memory budget.");

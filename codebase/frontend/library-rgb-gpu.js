@@ -279,8 +279,9 @@ window.HDRLibraryRGB = (() => {
       const mosaicBuf = make(meta.mosaic_bytes);
       const whole = Math.floor(mosaic.byteLength / 4) * 4;
       const transferBand = w * 128 * 3 * (meta.layout?.dtype === "float32" ? 4 : 1);
+      // Check the permit once for the upload. It is only a buffer write, and
+      // the per-band check made every band wait on the whole GPU queue.
       for(let offset=0;offset<whole;offset+=transferBand){
-        if(beforeSubmit) await beforeSubmit();
         device.queue.writeBuffer(mosaicBuf,offset,mosaic.buffer,mosaic.byteOffset+offset,Math.min(transferBand,whole-offset));
       }
       if (whole < mosaic.byteLength) { const tail = new Uint8Array(4); tail.set(mosaic.subarray(whole)); device.queue.writeBuffer(mosaicBuf, whole, tail); }
@@ -304,18 +305,20 @@ window.HDRLibraryRGB = (() => {
       }
       let planes, peaks, samples;
       const wgX = Math.ceil(w / 16), wgY = Math.ceil(h / 16);
+      // One submit per pass; see library-gpu-raw.js. Per-band submits with a
+      // full-queue wait after each serialised this development against the
+      // other one and against draws.
       const run = async (name, entries, x, y) => {
         const pipe = pipelines[name];
         const group = device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: entries.flatMap((buffer, binding) => buffer ? [{ binding, resource: { buffer } }] : []) });
-        const band = beforeSubmit && name !== "REDUCE" ? 8 : y;
-        for (let row = 0; row < y; row += band) {
-          if (beforeSubmit) await beforeSubmit();
-          if (name !== "REDUCE") device.queue.writeBuffer(uniform, 21 * 16, new Uint32Array([0, row * 16, 0, 0]));
-          const encoder = device.createCommandEncoder(); const pass = encoder.beginComputePass();
-          pass.setPipeline(pipe); pass.setBindGroup(0, group); pass.dispatchWorkgroups(x, Math.min(band, y - row)); pass.end();
-          device.queue.submit([encoder.finish()]);
-          if (beforeSubmit) await device.queue.onSubmittedWorkDone();
-        }
+        if (beforeSubmit) await beforeSubmit();
+        if (name !== "REDUCE") device.queue.writeBuffer(uniform, 21 * 16, new Uint32Array([0, 0, 0, 0]));
+        const encoder = device.createCommandEncoder(); const pass = encoder.beginComputePass();
+        pass.setPipeline(pipe); pass.setBindGroup(0, group); pass.dispatchWorkgroups(x, y); pass.end();
+        device.queue.submit([encoder.finish()]);
+        // One fence per pass, as in library-gpu-raw.js: enough to keep passes
+        // from piling up, without the per-band waits.
+        if (beforeSubmit) await device.queue.onSubmittedWorkDone();
       };
       const read = async (buffer, bytes) => {
         const staging = own(device.createBuffer({ size: bytes, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }));
@@ -424,6 +427,8 @@ window.HDRLibraryRGB = (() => {
       const buffer=device.createBuffer({size,usage});owned.add(buffer);live+=size;peak=Math.max(peak,live);return buffer;
     };
     const free=b=>{if(owned.delete(b)){live-=b.size;b.destroy();}};
+    // Fence each tile stage. Removing these let several tiles' passes queue up
+    // and pushed whole-app memory past the allowed 4.4 GB.
     const timed=async(name,fn)=>{const start=performance.now();const value=await fn();await device.queue.onSubmittedWorkDone();timings[name]=(timings[name]||0)+performance.now()-start;return value;};
     const read=async b=>{
       const staging=make(b.size,GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST);
@@ -434,7 +439,9 @@ window.HDRLibraryRGB = (() => {
       const pipe=pipelines[name],group=device.createBindGroup({layout:pipe.getBindGroupLayout(0),entries:buffers.flatMap((b,binding)=>b?[{binding,resource:{buffer:b}}]:[])});
       const enc=device.createCommandEncoder(),pass=enc.beginComputePass();pass.setPipeline(pipe);pass.setBindGroup(0,group);pass.dispatchWorkgroups(Math.ceil(width/16),Math.ceil(height/16));pass.end();device.queue.submit([enc.finish()]);
     };
-    const permit=async()=>{if(beforeSubmit)await timed("permits",beforeSubmit);};
+    // Timing the permit must not drain the queue: beforeSubmit is CPU and
+    // network only, and awaiting the whole queue here serialised every tile.
+    const permit=async()=>{if(beforeSubmit){const start=performance.now();await beforeSubmit();timings.permits=(timings.permits||0)+performance.now()-start;}};
     // Full developed planes are held in host RAM. GPU memory contains only
     // one distortion footprint and one output tile, then one reduction plane.
     const planes=Array.from({length:3},()=>new Float32Array(w*h));
@@ -479,9 +486,22 @@ window.HDRLibraryRGB = (() => {
         await timed("warp_colour_measure",async()=>dispatch(meta.preserve_signed?"DNG_TILE_GRADE":"DNG_TILE_RGB",[uniform,input,dng,null,...out,pk,sample],tw,th));
         await permit();
         await timed("readback",async()=>{
-          for(let c=0;c<3;c++){const a=await read(out[c]);for(let r=0;r<th;r++)planes[c].set(a.subarray(r*tw,(r+1)*tw),(y+r)*w+x);}
-          const p=await read(pk);for(let c=0;c<3;c++)peaks[c]=Math.max(peaks[c],p[c]);
-          const a=await read(sample);
+          // One staging buffer and one mapAsync per tile. Five separate
+          // readbacks per tile spent almost all of the correction route's time
+          // waiting on map latency.
+          const planeFloats=tw*th,peakFloats=4,sampleFloats=tsw*tsh*3;
+          const staging=make((planeFloats*3+peakFloats+sampleFloats)*4,GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST);
+          const enc=device.createCommandEncoder();let off=0;
+          for(let c=0;c<3;c++){enc.copyBufferToBuffer(out[c],0,staging,off*4,planeFloats*4);off+=planeFloats;}
+          enc.copyBufferToBuffer(pk,0,staging,off*4,peakFloats*4);off+=peakFloats;
+          enc.copyBufferToBuffer(sample,0,staging,off*4,sampleFloats*4);
+          device.queue.submit([enc.finish()]);
+          await staging.mapAsync(GPUMapMode.READ);
+          const all=new Float32Array(staging.getMappedRange().slice(0));staging.unmap();free(staging);
+          let at=0;
+          for(let c=0;c<3;c++){const a=all.subarray(at,at+planeFloats);at+=planeFloats;for(let r=0;r<th;r++)planes[c].set(a.subarray(r*tw,(r+1)*tw),(y+r)*w+x);}
+          for(let c=0;c<3;c++)peaks[c]=Math.max(peaks[c],all[at+c]);at+=peakFloats;
+          const a=all.subarray(at,at+sampleFloats);
           for(let r=(st-y%st)%st;r<th;r+=st)for(let c=(st-x%st)%st;c<tw;c+=st){
             const local=(Math.floor(r/st)*tsw+Math.floor(c/st))*3,global=((y+r)/st*sw+(x+c)/st)*3;samples.set(a.subarray(local,local+3),global);
           }
