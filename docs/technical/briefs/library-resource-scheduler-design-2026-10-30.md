@@ -2079,6 +2079,18 @@ Decided October 30:
     photos ("rotated photos use the rotated dimensions"). Growth after admission
     stays forbidden (option B rejected: a job could exceed what admission
     checked). Recheck the Aceh and phase0 numbers once after the change.
+20. **Smaller jobs may skip a job that cannot fit yet — Steve, November 1.**
+    Section 7.12 found one gain-map AVIF (2.362 GB estimate on top of 2.282 GB
+    retained) blocking 16 jobs that each finish on their own. Within the same
+    priority class, a job that fits now may start ahead of an older job that
+    does not. Guard against starvation: once the blocked job is the oldest
+    waiting job in its class, stop admitting later jobs of that class or below
+    and reclaim memory the app holds but does not need (finished pictures and
+    scenes off screen, retained decoded sources) until it fits. If it still
+    cannot fit once nothing else of its class is running, it ends once with
+    "needs more memory", keeps its camera preview, and is never recorded as a
+    broken photo. Tradeoff accepted: photos no longer always finish in screen
+    order. No approved number changes.
 
 **Wrap-up requested by Steve, October 31.** Part A remains the committed
 implementation (`5fb733c`, `a86689a`). A Part B prototype passed 76 focused
