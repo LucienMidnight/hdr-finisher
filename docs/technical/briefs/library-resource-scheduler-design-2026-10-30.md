@@ -2791,6 +2791,49 @@ Start output 32.3 GB; final **32.1 GB**, including 29.7 GB reusable test photos,
 below 100 GB. No Electron/Crashpad processes remain. Real profile/cache and
 `D:\Photos` were not written; protected project hashes verify unchanged files.
 
+## 7.20 X-Trans thumbnail repair: estimate decision needed (November 1)
+
+Work stopped before implementation under the Fuji bug brief's approved-number
+rule. Branch `library-xtrans-thumbnails`, production code unchanged from
+`ae1396a`. Grade's existing cancellable `library_live.develop_cpu` reuses
+`SessionStore.prepare_session`; a large decoder rewrite is not needed.
+
+The locked-fixture run copy `DSCF6495.RAF` has **4992 x 3296 = 16,453,632
+header pixels**, not the 26 MP stated in section 6.11. This is a new measurement
+of this fixture, not a remeasurement of that section's unidentified sample.
+The existing CPU rate, 25 bytes/pixel, admits **411,340,800 bytes**.
+
+Measured using `tools/measure_job_memory.py`'s unchanged `CHILD` runner,
+invoked in fresh `.venv` processes for `cpu_develop_640` and
+`cpu_develop_2560`. Each runner warms once, then samples current process
+working set and private commitment every millisecond during the second
+development. Figures are incremental peaks above the warmed baseline,
+not whole-app peaks; working set is Windows resident memory (RSS).
+
+| Requested edge | Peak extra RSS | Peak extra private commitment | Warm development | First development |
+| --- | --- | --- | --- | --- |
+| 640 | 332.4 MB | 460.7 MB | 3.474 s | 4.100 s |
+| 2560 | 361.2 MB | 461.7 MB | 4.042 s | 3.653 s |
+
+The larger RSS peak plus the existing 25% headroom needs 451.5 MB
+(27.44 bytes/pixel), already beyond the approved CPU estimate. The larger
+private peak plus that headroom needs **577.125 MB (35.08 bytes/pixel)**.
+Proposed decision: use **36 bytes/pixel only for header-confirmed 6x6 RAF
+CPU development**, reserving 592,330,752 bytes for this fixture. Leave all
+other route estimates, shares, counts, ceiling, allowance and reserve unchanged.
+Do not implement this exception without Steve's decision.
+
+The same-day cold baseline `quick-library-check.cjs --label=xtrans-baseline`
+ended at its hard deadline after 132.750 s, stage `observe`; there is no
+completed 90-second report or usable grid-count/frame-gap comparison.
+Disposable profile cleanup ran. Report:
+`codebase/output/quick-library-check/xtrans-baseline/report.json`.
+
+Not implemented or verified: bounded X-Trans admission, camera-preview
+preservation, Grade UI opening, finished-pixel agreement and decode variation,
+review page, final grid/Single acceptance and other-fixture pixel comparison.
+No source, cache, fixture or approved-number changes were made.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with

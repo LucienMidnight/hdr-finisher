@@ -46,6 +46,14 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+Nov 1 Fuji X-Trans preflight, unchanged `ae1396a` production code:
+`DSCF6495.RAF` CPU development at 640/2560 took 3.474-4.042 s warm,
+3.653-4.100 s first-use in fresh processes. This measures backend scene
+preparation, not visible Library completion. Memory blocks implementation
+pending an estimate decision (scheduler design 7.20). The cold
+`xtrans-baseline` quick check hit its hard deadline after 132.750 s in
+`observe`; no complete grid/frame-gap comparison is available.
+
 Nov 1 PNG round-trip removal (`8e5396a`), Library RGB decode edge 2560,
 warm filesystem, median of three: `_DSC6510-1.png` 4176.0 -> 2875.0 ms;
 `IMG_6717.PNG` 153.1 -> 27.0 ms; `pano_192mp.png` 2324.4 -> 1961.4 ms.
