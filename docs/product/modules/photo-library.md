@@ -47,7 +47,7 @@ Open work it leaves, in Steve's order:
    times from folder opening.
 5. Fuji X-Trans development takes about 37.5 s including queueing (later).
 
-## November 1: stored thumbnail redisplay (implementation commit)
+## November 1: stored thumbnail redisplay (`589d39d`)
 
 Save the exact GPU canvas bytes at 640 pixels, with lossless compression,
 in the existing local thumbnail allowance. Visible cells request them as one
@@ -88,6 +88,46 @@ nonzero for its initial frame-gap gate (also fails on main), so this is not
 a clean generic quick-check pass. Measurement details and accepted outcome
 are recorded in the follow-up harness/records commit. Steve's source data,
 real profile/cache, locked fixture and protected projects were not written.
+
+## November 1: redisplay measurement and acceptance (harness/records commit)
+
+The quick check now has `--redisplay`: after a 65-second cold fill, scroll
+away/back, leave the folder, and actually reopen it. It counts only already
+finished visible pictures, checks matching canvases each animation frame,
+and starts after scroll-settled or the first usable indexed rows. Profiles
+are disposable `test-` folders on the system disk, while the reusable fixture
+copy remains on removable exFAT D:. It removes its profile on success/failure.
+No protected fixture or real-photo writes. Measurements used the app's own
+clock and plain Electron, with no DevTools instrumentation.
+
+Original `72f75fb`: **27/27** scroll-back within 100 ms; reopened **0/27**, all
+in **242–1,928 ms**. Implementation `589d39d` (measured just before commit):
+**27/27** scroll-back within 100 ms; reopened **0/27**, all in **181–211 ms**.
+The saved surfaces were used for all 27, with no redevelopment or camera
+preview flash. The shared backend local read/check took **46.6 ms**; first
+identity snapshot **8.8 ms**. Old per-cell `live-plan` checks were
+**104–1,334 ms** during the comparable reopen. Whole-app peak **3.604 GB**,
+below the unchanged 4 GB ceiling. The quick-check generic frame-gap gate
+failed at 4.456 s (original 4.310 s), so its nonzero exit is recorded rather
+than called a pass. No scene interpretation gates were relaxed.
+
+Steve accepted the result November 1: "sounds fast enough mate. wrap it up
+neatly". The 100 ms target remains on record; further latency work is deferred.
+Restart/offline persistence and exact bytes pass the focused behavior checks;
+a separate timed full app relaunch and large-folder qualification are not
+claimed. Full fast-check results/failure reasons are recorded above.
+
+Retained small local evidence: [before report](../../../codebase/output/quick-library-check/redisplay-baseline/report.json),
+[after report](../../../codebase/output/quick-library-check/redisplay-final/report.json),
+their sibling `scenario.json`/`backend.log`,
+[final JavaScript log](../../../codebase/output/redisplay-node-final.log),
+[full pytest log](../../../codebase/output/redisplay-pytest.log), and baseline
+`redisplay-baseline-node.log` / `redisplay-baseline-pytest.log` in the same
+output folder. Reports record base HEAD `72f75fb`; the after run used the
+working tree subsequently committed as `589d39d`. Diagnostic runs, duplicate
+logs, memory-sampling scratch and temporary test profiles were removed.
+Output started and ended at **23.5 GB**, below 100 GB; existing test-photo
+copies and Steve's untracked design files were preserved.
 
 ## November 1: Fuji X-Trans thumbnails
 

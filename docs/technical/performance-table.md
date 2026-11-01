@@ -108,11 +108,11 @@ section 7.19 records the corrected ordering and reconciliation.
 | Camera preview request → on screen in the grid, while photos develop | p95 under 0.5 s (phase 3a brief) | p50 1.507–1.551 s / p95 2.410–2.783 s / max 2.630–2.847 s | Oct 31 phase 3a.2, two quiet cold Aceh repeats, 48 previews each, 2560×1440 isolated profiles | Not met |
 | Visible cell shows any picture | 1 s p90 (Oct 18) | — | needs a fresh measurement | Unknown |
 | Visible cell shows its real picture | about 2 s p90 (Oct 18) | — | needs a fresh measurement | Unknown |
-| Second launch: visible thumbnails | 90% within 100 ms (Oct 18) | — | needs a fresh measurement | Unknown |
+| Second launch: visible thumbnails | 90% within 100 ms (Oct 18) | Folder-reopen proxy: 0/27 within 100 ms, all in 181–211 ms; before 242–1,928 ms. Scroll-back 27/27 within 100 ms before/after | Nov 1, `589d39d` working tree against `72f75fb`; 65 s cold fill, fixture copies on removable exFAT D:, disposable cache on C:, 2560×1440. App relaunch not separately timed | 100 ms target not met; Steve accepted measured speed Nov 1 |
 | Folder open → first finished thumbnail, stored pictures | — | 0.52 s (25th 2.06 s) | Oct 30 18:18, badminton | Baseline |
 | Folder open → first finished thumbnail, cold RAW | — | 4.4–8.8 s | Oct 30 18:18, Kiddos Batik, 20241117 | Baseline |
 | Cold JPEG grid: first screen of 24 / second screen | ≤26.51 / 51.59 s (24.1 / 46.9 s +10%) | 29.442–32.111 / 56.064–57.203 s | Oct 31 phase 3a.2, Aceh repeats 6/7, peaks 3.598/3.712 GB, all 48 finished, zero failures/timeouts | Not met |
-| Thumbnail cache check per cell | — | 13–930 ms seen | Oct 30 18:18 (`page_picture_cache_check`) | Baseline |
+| Thumbnail cache check per cell | No photo-drive check before stored redisplay (Nov 1) | Per-cell probe removed for finished hits: 8.8 ms first identity snapshot / 46.6 ms complete local read+checks for all 27; stored lookup-through-GPU-copy 182–202 ms per cell. Before: live-plan 104–1,334 ms per reopened cell | Nov 1, `589d39d` working tree vs `72f75fb`; same fixture/cache conditions as above; grouped times are not per-cell probe times | Source-free path built; overall 100 ms target not met |
 | Folder disk check | — | 33 ms–5.3 s | Oct 30 18:18, 10–453 photos | Baseline |
 | Large scroll disk check | Regression baseline (Oct 27) | 64 s | photo-library.md, Start here | Baseline |
 | Back to grid after Single or fullscreen | — | 0.4–4.2 s, some over 5 s | Oct 26 (photo-library.md) | Unknown |

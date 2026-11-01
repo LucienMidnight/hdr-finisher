@@ -1,5 +1,5 @@
 // Plain Electron quick check: no Playwright, DevTools or remote debugging port.
-// node tools/quick-library-check.cjs [--seconds=90] [--label=name] [--single]
+// node tools/quick-library-check.cjs [--seconds=90] [--label=name] [--single] [--redisplay]
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {execFileSync,spawn}=require('node:child_process');
 const {MemoryMonitor}=require('./library-memory-monitor.cjs');
@@ -63,7 +63,7 @@ function analyse(text, openedAt, events, openedPageAt) {
 (async()=>{
   const harnessAt=Date.now();
   // Always create our own empty profile; inherited real-app profile settings are ignored.
-  const profile=fs.mkdtempSync(path.join(root,'output','quick-library-test-'));
+  const profile=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-finisher-test-quick-'));
   const logPath=path.join(profile,'logs/backend.log');
   let app,observer,stage='fixture',done=false;
   const kill=()=>{
@@ -72,8 +72,8 @@ function analyse(text, openedAt, events, openedPageAt) {
   };
   const cleanup=()=>{
     // Native PowerShell avoids Windows' extended-path removal failures.
-    const script = '$target=[IO.Path]::GetFullPath($env:HDR_QUICK_PROFILE); $base=[IO.Path]::GetFullPath($env:HDR_QUICK_OUTPUT); if(!$target.StartsWith($base+[IO.Path]::DirectorySeparatorChar) -or !(Split-Path -Leaf $target).StartsWith("quick-library-test-")){throw "Unsafe cleanup target"}; if(Test-Path -LiteralPath $target){Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop}';
-    execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{env:{...process.env,HDR_QUICK_PROFILE:profile,HDR_QUICK_OUTPUT:path.join(root,'output')},windowsHide:true,stdio:'ignore',timeout:10000});
+    const script = '$target=[IO.Path]::GetFullPath($env:HDR_QUICK_PROFILE); $base=[IO.Path]::GetFullPath($env:HDR_QUICK_OUTPUT); if(!$target.StartsWith($base+[IO.Path]::DirectorySeparatorChar) -or !(Split-Path -Leaf $target).StartsWith("hdr-finisher-test-quick-")){throw "Unsafe cleanup target"}; if(Test-Path -LiteralPath $target){Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop}';
+    execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{env:{...process.env,HDR_QUICK_PROFILE:profile,HDR_QUICK_OUTPUT:os.tmpdir()},windowsHide:true,stdio:'ignore',timeout:10000});
   };
   const currentStage=()=>{try{return JSON.parse(fs.readFileSync(path.join(profile,'quick-stage.json'),'utf8')).stage;}catch{return stage;}};
   const deadline=setTimeout(()=>{
@@ -85,7 +85,7 @@ function analyse(text, openedAt, events, openedPageAt) {
   const signal=()=>{kill();try{cleanup();}catch{}process.exit(130);};process.once('SIGINT',signal);process.once('SIGTERM',signal);
   try{
     execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-mixed-fixture.py'),'run-copy'],{stdio:'inherit',timeout:30000});
-    const config={folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
+    const config={folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE||'2560x1440').split('x').map(Number);
     fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width,height}));
@@ -127,7 +127,7 @@ function analyse(text, openedAt, events, openedPageAt) {
     const errors=[...(result.errors||[])];if(!sampleCount||observerError)errors.push('Independent memory observer: '+(observerError||'no samples'));
     sampleIntervals.sort((a,b)=>a-b);
     const report={label,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
-      ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms),grid_progress:result.grid_progress,freezes:{...freezes,failure:failures},single:result.single,
+      ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,
       independent_memory:{...memory.report(),samples:sampleCount,lastBytes:memory.last?.totalBytes,sampleIntervalMs:{requested:250,median:sampleIntervals[Math.floor(sampleIntervals.length/2)],maximum:sampleIntervals.at(-1)},grants_note:'External process census; no DevTools WebSocket instrumentation.'},observerError,
       picture_timing_clock:'Library performance.now()',stage:result.stage,scenario_ms:result.scenario_ms,harness_total_ms:Date.now()-harnessAt,harness_outside_scenario_ms:Date.now()-harnessAt-result.scenario_ms,cdp_attached:false};
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,1));
