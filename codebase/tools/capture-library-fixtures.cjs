@@ -33,18 +33,26 @@ const completed=new Set(report.rows.map(row=>row.name));
     gpu=await HDRLibraryPictures.initialize();original=gpu.renderTo;
     gpu.renderTo=async function(target,...args){const result=await original.call(this,target,...args);captured=await this.analyzeScope(target,{width:args[9].width,height:args[9].height,tier:'picture',raw:true});return result;};
     canvas=document.createElement('canvas');canvas.id=edge===640?'fixture-grid-picture':'fixture-single-picture';document.body.append(canvas);
+    w.__fixtureCaptured={};
     for(const lane of ['sdr','hdr']){
      captured=null;await HDRLibraryPictures.show(meta,canvas,controller.signal,()=>true,lane==='hdr');
      if(!captured?.halves)throw Error('No finished pixels');
-     const bytes=new Uint8Array(captured.halves.buffer);let binary='';
-     for(let i=0;i<bytes.length;i+=16384)binary+=String.fromCharCode(...bytes.subarray(i,i+16384));
-     record.lanes[lane]=btoa(binary);
+     const bytes=new Uint8Array(captured.halves.buffer).slice();
+     w.__fixtureCaptured[lane]=bytes;record.lanes[lane]=bytes.length;
     }
    }catch(error){record.error=refusal||String(error.message||error);}
    finally{clearTimeout(timer);clearInterval(watch);HDRLibraryScenes.viewport([],[]);if(gpu&&original)gpu.renderTo=original;canvas?.remove();}
    return record;
   },{photo,edge});
-  if(row.lanes){for(const [lane,b64] of Object.entries(row.lanes)){const file=index+'-'+lane+'.f16';fs.writeFileSync(path.join(out,file),Buffer.from(b64,'base64'));row.lanes[lane]=file;}}
+  if(row.lanes){for(const [lane,length] of Object.entries(row.lanes)){
+   const file=index+'-'+lane+'.f16',target=path.join(out,file);fs.writeFileSync(target,Buffer.alloc(0));
+   for(let offset=0;offset<length;offset+=1024*1024){
+    const b64=await lib.evaluate(({lane,offset})=>{const bytes=window.__fixtureCaptured[lane].subarray(offset,offset+1024*1024);let binary='';for(let i=0;i<bytes.length;i+=16384)binary+=String.fromCharCode(...bytes.subarray(i,i+16384));return btoa(binary);},{lane,offset});
+    fs.appendFileSync(target,Buffer.from(b64,'base64'));
+   }
+   row.lanes[lane]=file;
+  }}
+  await lib.evaluate(()=>{delete window.__fixtureCaptured;});
   report.rows.push(row);fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,1));
  }
  report.complete=true;
