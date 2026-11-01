@@ -407,6 +407,14 @@ colour profiles) are after v1.
    - GPU first with a CPU fallback, like the rest of development.
    Prompted by HSL work on Balanced Rock, where coloured rims around bright
    specks made colour selection harsh. Not started; needs its own brief.
+6. **V2 (Steve, November 1, 2026): GPU X-Trans development.** Fuji X-Trans
+   RAWs use a 6x6 colour pattern that the GPU RAW route (2x2 Bayer only)
+   cannot demosaic. In v1 they show the camera preview first, then develop
+   on the CPU inside the Library memory scheduler (branch
+   `library-xtrans-thumbnails`). V2 adds an X-Trans demosaic to the GPU
+   development, matching Grade's CPU result within the agreed perceptual
+   tolerance, for the Library, Grade and export. Not started; needs its own
+   brief.
 
 ## 7. Detail and history
 
