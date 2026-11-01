@@ -2239,7 +2239,7 @@ recovery, and Grade coexistence remain deferred for these commits.
 
 ### 7.16 Memory overshoot and ordinary reclaim correction (November 1)
 
-**Approved correction; final acceptance in progress.** Steve authorized the
+**Built and final acceptance passed at `b6754a2`.** Steve authorized the
 route-specific DNG estimate correction on November 1. The implementation uses
 Library's header-only correction plan to distinguish RGB correction DNGs
 (**28 bytes/pixel**) from sensor-only DNGs (**7**). No other rate, allowance,
@@ -2261,7 +2261,7 @@ Focused coverage verifies corrected/sensor/linear DNG rates, no pixel decode
 at admission, resolved/unresolved/overridden EXR headers and the API error
 receipt before preparation. Initial corrected estimate-only run: **20 / 31**
 by 30 / 60 s, independent peak **4.061182 GB**, settled **2.781151 GB**, one EXR
-reclaim. Final checks and the before/after table will be recorded below.
+reclaim. Final cold repeats and wider acceptance passed as recorded below.
 
 Two unchanged-code cold `library-mixed-v1` checks show **18 / 17 pictures by
 30 s and 31 / 31 by 60 s**. Both log a 4.308 GB backend-sampled peak and one
@@ -2304,7 +2304,8 @@ before each source all failed independent memory acceptance. Their peaks were
 all were removed. Per-run evidence remains under
 `codebase/output/quick-library-check/{owned-source,upload-bands,tile-storage,collect-start}/`.
 The last experiment also exposed overlapping debugger collection failures
-(`target closed while handling command`); it is not shipped. Those rejected experiments changed no shipped behavior. A further drained
+(`target closed while handling command`); it is not shipped. Those rejected
+experiments changed no shipped behavior. A further drained
 native-storage purge also failed (20 / 29, three ordinary reclaims) and was
 removed. Evidence: `quick-library-check/drained-native/report.json`.
 
@@ -2313,12 +2314,51 @@ wait collected dead uploads, then still saw 2.811 GB retained plus its 1.611 GB
 estimate, about 21 MB above 4.4 GB. It invoked bounded eviction and eventually
 ended with a memory notice rather than reaching its source interpretation
 gate. This is real retained-memory pressure, not evidence that running work
-was mistaken for drained work. The estimate-only correction did not solve this; the header gate above avoids
+was mistaken for drained work. The estimate-only correction did not solve this;
+the header gate above avoids
 requesting this unusable decode.
 
-Final focused checks: **70 Python and 32 JavaScript pass**; quick-check syntax
-and observer compilation pass. Output is **31.8 GB** at start and end, below
-100 GB. All six created application profiles were removed; evidence stays.
+**Final acceptance, November 1, `b6754a2`.** All peaks below use independent
+whole-app proportional resident samples; the final observer requests 250 ms
+start cadence (repeat medians 250 / 253 ms; occasional scheduling gaps remain).
+
+| Locked 50-photo cold check | Shown 30 s / 60 s | Independent peak | Last sample | Ordinary reclaims |
+| --- | --- | --- | --- | --- |
+| Before (`94f996d`) | 17 / 31 | 4.420309 GB | <3.4 GB | 1 |
+| Final A | 20 / 31 | 3.999547 GB | 2.749328 GB | 0 |
+| Final B | 22 / 31 | 3.981966 GB | 2.756791 GB | 0 |
+
+Reports: `codebase/output/quick-library-check/memory-final-{a,b}/report.json`;
+logs, process samples and screenshots are beside them. Both repeats have no
+new errors, no 4.4 GB or physical-reserve breach and settle below target.
+The interpretation/X-Trans gates are preserved; unresolved EXR now reports its
+interpretation requirement before reserving source memory.
+
+Default **4 GB phase0: 22 / 27 finished**, all outcomes by 68.586 s;
+independent peak **4.024668 GB**, settled **2.566558 GB** after work finished,
+no reserve breach, 135 memory requests without timeout. The only reclamation
+was the permitted non-fitting gain-map AVIF: 2.535 GB retained + 2.362 GB
+estimate cannot fit 4.4 GB after competing work drains. It keeps its memory
+notice. The other four outcomes are existing interpretation/X-Trans gates.
+Evidence: `codebase/output/cold-mixed/memory-final-phase0/report.json`.
+
+Grade coexistence passes: pause **919 ms**, first ordinary **926 ms**, close/save
+**244 ms**, resume **748 ms**, saved exposure 0.125 verified. Evidence:
+`codebase/output/phase3a-grade/report.json`. Both requested release-runner
+checks pass without retry at `b6754a2`: `tests/library-live-grid.js` (0.6 min)
+and `tests/library-gpu-recovery.js` (0.1 min). Evidence under
+`codebase/output/release-checks/2026-11-01T06-03-00-780Z-afec475f0f40e312ccce/`
+and `2026-11-01T06-03-52-884Z-5e6f4aeee1885c3381e3/`.
+Protected projects are unchanged. No push, merge or installer build.
+
+Focused checks: **145 scheduler/DNG/memory Python pass; 191 broader focused
+Python pass with three unchanged failures** (CPU cross-tier sharing expectation,
+RGB publication SourceReference luminance stub, historical scene-version stub).
+The first does not call changed code; the latter two are listed unrelated
+failures. **32 JavaScript pass**. No full suite or output-image sweep was run;
+Grade/Proof/export processing was untouched. Eight new disposable profiles and
+the aborted recipe-binding run's scratch were removed. Output was 31.8 GB at start and 31.9 GB at end, below
+100 GB; reports and screenshots are retained.
 
 Tooling now adds independent whole-app process samples, active grants, peak,
 reserve violations, final below-target status and observed sampling cadence to

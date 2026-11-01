@@ -903,5 +903,10 @@ mosaiced DNGs eligible for Library's mandatory RGB correction route. A header-on
 check uses the same correction plan as decoding. Sensor-only DNGs retain 7;
 linear DNG, CPU and quick routes retain their existing rates. The two 48 MP DJI
 files now reserve 1.344 GB each rather than 336 MB. This may reduce overlap;
-whole-app memory, speed and ordinary-file reclamation still need verification.
+final cold repeats verify 20–22 / 31 shown at 30 / 60 s, 3.982–4.000 GB peak,
+settling below 3.4 GB and zero ordinary reclaims. Default phase0: 22 / 27,
+4.025 GB peak, settled; only the permitted non-fitting AVIF reclaims.
+The accompanying EXR header gate avoids reserving an unusable decode before
+its existing interpretation requirement is known. Grade coexistence and the
+two requested release checks pass at `b6754a2`.
 The 4 GB ceiling, 4.4 GB elastic maximum and all cache shares are unchanged.

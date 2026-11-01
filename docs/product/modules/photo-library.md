@@ -8,7 +8,11 @@ file underestimated its full RGB preparation. Library also checks unresolved
 EXR source primaries from headers before requesting decode memory. The same
 interpretation notice and saved overrides apply; cache hits remain usable.
 No processing, Grade, Proof, export, other rate or allowance changes.
-Final memory, ordinary reclaim and coexistence acceptance is in progress.
+Final acceptance passed at `b6754a2`: cold repeats show 20–22 / 31 at 30 /
+60 s, independent peak 3.982–4.000 GB, settled below 3.4 GB, zero reclaims.
+Default phase0 finishes 22 / 27, peak 4.025 GB, only the permitted AVIF reclaim.
+Grade coexistence and both requested release checks pass. Three unchanged
+focused-test sharing/version/publication failures remain; no full suite run.
 See [scheduler design 7.16](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#716-memory-overshoot-and-ordinary-reclaim-correction-november-1).
 
 ## November 1: ordinary-wait guard correction — acceptance pending
