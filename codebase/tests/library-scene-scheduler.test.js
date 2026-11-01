@@ -278,3 +278,13 @@ test('development FIFO keeps screen order despite different costs',async()=>{
  block.resolve();await Promise.all([first,a,b,selected]);
  assert.deepEqual(started,['selected','a','b']);
 });
+
+test('a job that loses its development turn frees its slot for an admitted job (Nov 1 stall)',async()=>{
+ const order=[];let tries=0;
+ const queue=create(1,undefined,{admit:async()=>true});
+ const lost=queue.submit('lost',async()=>{tries++;order.push('lost-'+tries);if(tries===1)throw Object.assign(new DOMException('Waiting for another development turn','AbortError'),{laneRequeue:true});return 'lost done';});
+ const other=queue.submit('other',async()=>{order.push('other');return 'other done';});
+ assert.equal(await other,'other done');assert.equal(await lost,'lost done');
+ assert.deepEqual(order,['lost-1','other','lost-2']); await new Promise(r=>setImmediate(r));
+ assert.equal(queue.snapshot().active,0);assert.equal(queue.snapshot().waiting,0);assert.deepEqual(queue.snapshot().failures,[]);
+});

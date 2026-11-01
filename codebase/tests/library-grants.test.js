@@ -184,3 +184,13 @@ test('unsupported camera-preview formats need no grant',()=>{
  for(const p of ['ordinary.DNG','camera.ARW','image.JPG','image.png','image.cr2|copy|version'])assert.ok(previewSupported(p));
  for(const p of ['DSC01287.exr','image.tif','image.heic','image.avif','image.jxl'])assert.equal(previewSupported(p),false);
 });
+
+test('a preempted turn is handed back instead of re-asked inside the caller slot',async()=>{
+ const {grants,sockets}=setup();let attempts=0;
+ const work=grants.run('photo.arw','source',null,async(id,signal)=>{attempts++;await new Promise((r,j)=>signal.addEventListener('abort',()=>j(new DOMException('preempted','AbortError'))));},10,null,{requeueLane:true});
+ sockets[0].open();const id=sockets[0].sent[0].id;sockets[0].receive({type:'granted',id});await tick();
+ sockets[0].receive({type:'gpu-preempt',id});
+ await assert.rejects(work,error=>error.laneRequeue===true);
+ assert.equal(attempts,1);assert.equal(sockets[0].sent.filter(v=>v.type==='ask').length,1);
+ assert.equal(sockets[0].sent.at(-1).type,'cancel');assert.equal(grants.snapshot().jobs.length,0);grants.close();
+});

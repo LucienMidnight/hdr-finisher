@@ -49,7 +49,7 @@
   // Only the finished live surface qualifies, never its camera JPEG sibling.
   function standIn(cells, identity, epoch, hdr) {
     return cells.find(cell => cell.identity === identity && cell.displayEpoch === epoch &&
-      !cell.controller.signal.aborted && cell.meta?.route === "library-live" &&
+      !cell.controller.signal.aborted && ["library-live","finished-thumbnail"].includes(cell.meta?.route) &&
       cell.fallback?.dataset.rendition === (hdr ? "hdr" : "sdr") &&
       cell.fallback.dataset.picturePath === cell.photo.path && !cell.fallback.hidden);
   }

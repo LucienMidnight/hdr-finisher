@@ -241,6 +241,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
         sampleCurvePoints, edge, meta.locals || [], 0, null, meta.white,
         { width: meta.width, height: meta.height }, { scopeAnalysis: !native, isCurrent,
           ...(native ? {viewport:meta.viewport,frameSize:{width:meta.width,height:meta.height}} : {}),
+          onPresented:texture=>window.HDRLibraryFinishedThumbnails?.capture(gpu,meta,texture,hdr,isCurrent),
           ...(lease ? {beforeDeliverySubmit:lease.check} : {}) });
       if (native && result?.rendered && isCurrent() && !signal.aborted) {
         // Retain only the visible crop after Grade finishes its frame-anchored

@@ -36,7 +36,7 @@ async function scenario(config) {
   };
   const visible = e => e && !e.hidden && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden' && e.getBoundingClientRect().width > 0;
   const nameOf = p => String(p).replaceAll('\\','/').split('/').pop();
-  let openedAt, single=null;
+  let openedAt, single=null, redisplay=null;
   try {
     mark('memory setting');
     const set=await fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:4e9})});
@@ -88,6 +88,29 @@ async function scenario(config) {
     mark('observe');
     await sleep(Math.max(0,config.seconds*1000-(performance.now()-openedAt)));
     await frame();
+    if(config.redisplay){
+      const grid=document.getElementById('library-grid');
+      if(!grid)throw Error('Grid scroller missing');
+      const cells=()=>[...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect(),g=grid.getBoundingClientRect();return r.bottom>g.top&&r.top<g.bottom;});
+      const paths=cells().map(c=>c.dataset.path);
+      const stored=paths.filter(p=>document.querySelector('#grid-space canvas[data-picture-path="'+CSS.escape(p)+'"]'));
+      async function measure(name,action){
+        mark(name);await action();
+        const at=performance.now(),seen=new Map();
+        while(performance.now()-at<5000){
+          for(const c of cells()){const canvas=c.querySelector('canvas[data-picture-key]');if(canvas&&!canvas.hidden&&stored.includes(c.dataset.path)&&!seen.has(c.dataset.path))seen.set(c.dataset.path,performance.now()-at);}
+          if(seen.size===stored.length)break;await frame();
+        }
+        await frame();
+        return {stored:stored.length,shown:seen.size,within_100ms:[...seen.values()].filter(t=>t<=100).length,percent:stored.length?100*[...seen.values()].filter(t=>t<=100).length/stored.length:null,times_ms:Object.fromEntries(seen)};
+      }
+      grid.scrollTop=grid.scrollHeight;grid.dispatchEvent(new Event('scroll'));await sleep(600);
+      const backAt=performance.now();
+      const back=await measure('scroll back',async()=>{grid.scrollTop=0;grid.dispatchEvent(new Event('scroll'));await wait(()=>events.some(e=>e.stage==='grid_scroll_settled'&&e.scroll_top===0&&e.at>=backAt),2000);});
+      await HDRLibrary.browse(config.folder+'/../');
+      const reopen=await measure('folder reopen',async()=>{await HDRLibrary.browse(config.folder);});
+      redisplay={back,reopen,timing_note:'Visible matching canvas, polled each animation frame after scroll settle or browse rows listed. Only pictures finished during the cold fill count.'};
+    }
     for(const record of single?[single.open,...single.steps]:[]){
       const matches=events.filter(e=>e.path===record.path&&e.at>=record.started_ms&&e.at<=record.presented_ms+100);
       const app=matches.filter(e=>e.stage==='picture_navigation_to_present'&&e.sharp_draw).at(-1);
@@ -97,9 +120,9 @@ async function scenario(config) {
       record.app_trace_starts_after_input_ms=app?Math.round(app.at-app.duration_ms-record.started_ms):null;
       record.app_event_after_presentation_ms=app?Math.round(app.at-record.presented_ms):null;
     }
-    return {opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,events,errors,stage:'done'};
+    return {opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,redisplay,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
   } catch(error) {
-    return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,events,errors:[...errors,String(error.stack||error)],stage};
+    return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,redisplay,events,errors:[...errors,String(error.stack||error)],stage};
   } finally {
     stopped=true;clearInterval(timer);clearInterval(gridTimer);observer?.disconnect();window.HDRLibraryStopwatch=inherited;
     window.removeEventListener('error',onError);window.removeEventListener('unhandledrejection',onError);

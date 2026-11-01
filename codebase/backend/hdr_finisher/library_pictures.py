@@ -54,6 +54,12 @@ def picture_key(path, edge, quality):
     return sha256(f"{PICTURE_VERSION}:{path}:{stat.st_mtime_ns}:{stat.st_size}:{edge}:{quality}".encode()).hexdigest()
 
 
+def indexed_picture_key(path, edge, quality, stamp):
+    """Same scene identity using facts already committed to the local index."""
+    size, modified = stamp
+    return sha256(f"{PICTURE_VERSION}:{path}:{modified}:{size}:{edge}:{quality}".encode()).hexdigest()
+
+
 def default_document_key(path):
     # One per photo version, whatever thumbnail size developed it.
     return picture_key(path, 0, "default-document")
@@ -214,14 +220,14 @@ class LibraryPictureCache:
                 temporary.unlink(missing_ok=True)
 
     @audited("picture_cache_cached")
-    def cached(self, path, edge, quality):
+    def cached(self, path, edge, quality, *, stamp=None):
         # "fast" asks for a stand-in only until the real picture exists. Once it
         # is cached, the stand-in would just show first and then be swapped.
         if quality == "fast":
             real = self.cached(path, edge, "quick")
             if real:
                 return real
-        key = picture_key(path, edge, quality)
+        key = indexed_picture_key(path, edge, quality, stamp) if stamp is not None else picture_key(path, edge, quality)
         with self.transient_lock:
             body = self.transient.get(key)
         if body is not None:
@@ -233,7 +239,7 @@ class LibraryPictureCache:
         if not destination.is_file() and quality.startswith("live-scene-v2:"):
             from .library_live import equivalent_qualities
             for equivalent in equivalent_qualities(quality):
-                candidate_key = picture_key(path, edge, equivalent)
+                candidate_key = indexed_picture_key(path, edge, equivalent, stamp) if stamp is not None else picture_key(path, edge, equivalent)
                 candidate = (self.full_root if edge >= 1280 else self.root) / (candidate_key + ".npz")
                 if candidate.is_file():
                     key, destination = candidate_key, candidate

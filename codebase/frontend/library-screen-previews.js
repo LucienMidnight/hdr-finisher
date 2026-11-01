@@ -85,5 +85,5 @@ window.HDRLibraryScreenPreviews = (() => {
     HDRLibraryStopwatch('picture_stored_screen_preview_draw',{path:photo.path,rendition:hdr?'hdr':'sdr',picture_size:'screen preview',step:'sharp draw',duration_ms:performance.now()-started});
     return meta;
   }
-  return Object.freeze({capture,load,display,snapshot:()=>({pending,captures})});
+  return Object.freeze({capture,load,display,tryCapture:()=>{if(pending>=2)return false;pending++;return true;},endCapture:()=>pending--,snapshot:()=>({pending,captures})});
 })();

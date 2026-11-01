@@ -20,11 +20,60 @@ Open work it leaves, in Steve's order:
    `live-plan` check that reads the photo drive, plus about 0.55 s in the
    queue. The draw itself takes 20–150 ms. Target: 90% of visible stored
    pictures within 100 ms (October 18), under the slow-storage rule (master
-   PRD, philosophy 11).
+   PRD, philosophy 11). Built November 1 on `stored-library-redisplay`:
+   exact 640-pixel GPU presentation bytes are saved on the local disk and
+   returned in one visible-cell request, before camera previews or source
+   work. Indexed source/grade facts replace source-drive checks for prepared
+   scenes; a known local edit or indexed source change rejects old surfaces.
+   The existing thumbnail pool retains finished cells during scrolling.
+   First use fills the new display cache from the existing scene; source
+   scene identity is unchanged, so this does not force redevelopment.
+   Fixture scroll-back: 27/27 within 100 ms. Folder reopen: 27/27 in
+   181–211 ms (0/27 within 100 ms), down from 242–1,928 ms. Steve accepted
+   this result on November 1 ("sounds fast enough mate"). The October 18
+   100 ms target remains unmet; no further latency work is requested now.
+   App restart uses the same persistent cache; restart/offline reuse is
+   covered by behavior tests, not a separate timed app-relaunch run.
 2. **Zeroed colour channels** in 42 MP RAW thumbnails (teal or black), seen
-   in about 37% of A7R III thumbnails developed after the merge. No error is
-   logged. Next step: compare one GPU development at a time with two, for
-   pictures and speed.
+   in about 37% of A7R III thumbnails developed after the merge (44 stored
+   640 pictures in Steve's cache). No error was logged. Guarded November 1
+   (branch `library-stall-teal`): a GPU development whose read-back colour
+   channel is entirely zero counts as a GPU failure, so the existing path
+   retries once and then develops on the CPU, and logs
+   `picture_development_empty_channel`. Not reproduced on a 40-photo test
+   copy (`output/test-photos/badminton-42mp`) with one or two GPU
+   developments; both runs were clean, so the cause stays unknown (most
+   likely a GPU failure only seen under Steve's real-session load). The
+   development's own GPU error list is a fresh empty list that nothing writes
+   to (`library-gpu-raw.js`, `allocationScope`), so validation errors are
+   not seen; left unchanged, because routing shared device errors there
+   could fail good photos. `tools/quick-library-check.cjs` now audits stored
+   pictures for zeroed channels after every run (`--folder=` measures a
+   test-photos copy). Bad pictures stored before the guard stay until they
+   are rebuilt.
+2a. **Development turns held unused (stall), fixed November 1** (branch
+   `library-stall-teal`). When scrolling took a development turn back from
+   a running photo, that photo kept its slot in the window's queue while it
+   asked for a new turn. Once every slot (about the square root of the CPU
+   cores) was held that way, the backend's two turns went to photos that
+   could not start: in Steve's 22:57 session two turns sat unused for 59 s
+   and only 2 of the folder's photos developed in 90 s (earlier sessions held
+   turns for 22–35 s). A photo that loses its turn now gives its slot back
+   and waits in line. Covered by two behaviour tests; the quick check does
+   not scroll mid-development, so Steve's use is the real-app check.
+2b. **Window freezes on a 42 MP folder:** the quick check on the
+   badminton copy showed a 2.5–3.1 s frame gap in both runs (the mixed
+   fixture shows about 0.1 s). Not investigated.
+2c. **Refresh thumbnail (Steve, November 1), built November 1** (branch
+   `library-stall-teal`). Right-click one or more photos and choose
+   **Refresh thumbnail(s)**. It removes the photos' stored scenes at every
+   size, their finished display surfaces and unprotected screen previews
+   (`POST /api/library/refresh-pictures`, `library_refresh.py`; files are
+   matched by the photo path in their own headers), forgets them in the
+   window, and develops them again in screen order. Photos, grades, marks and
+   protected built previews ("Discard built previews…") stay. A virtual copy
+   also refreshes its source photo's scene. Covered by two behaviour tests
+   on real cache classes; the menu itself was first tried by Steve.
 3. Finished gain-map AVIFs are slow to prepare (about 2 s each, 6–9 s for
    large ones) and mostly run one at a time because of their memory
    estimate. Candidate: GPU gain-map reconstruction.
@@ -33,6 +82,88 @@ Open work it leaves, in Steve's order:
    check, `tools/measure-library-grade-grants.cjs`, still uses DevTools and
    times from folder opening.
 5. Fuji X-Trans development takes about 37.5 s including queueing (later).
+
+## November 1: stored thumbnail redisplay (`589d39d`)
+
+Save the exact GPU canvas bytes at 640 pixels, with lossless compression,
+in the existing local thumbnail allowance. Visible cells request them as one
+batch and upload directly, bypassing source-drive probes and the serialized
+finishing queue. Existing stored scenes also use indexed source/grade facts
+on `live-plan`; cold development and camera-preview behavior stay in place.
+Own edits and known source changes reject stale captures/loads. Display
+lane and canvas format are part of the surface identity. No existing scene
+identity changes and no blanket source redevelopment is required.
+
+External-change policy: retain the existing visible-folder check cadence,
+**15 seconds between checks on a responsive folder, plus the scan time**;
+a slow scan backs off to ten times its duration. This avoids saturating a
+slow NAS/USB drive. It is not a hard wall-clock guarantee on slow/offline
+storage. Initial reconciliation follows the indexed rows, and only changed
+files/sidecars are enriched. Offline checks preserve stored rows/pictures.
+All approved budgets and concurrency numbers remain unchanged; exact cache
+ownership/eviction is in memory-and-caches section 9.
+
+Checks: final JavaScript suite **721 passed, 5 failed**; full pytest
+**2,949 passed, 3 skipped, 9 failed**; final focused cache checks **5 Python
+and 3 JavaScript passed**, including exact transfer bytes, saved identity,
+offline/restart reuse, stale publication and abandoned-cell rejection.
+The five JS failures also reproduce on untouched `72f75fb`: two picture-shape
+mocks and quick-draw lack `setDetectedVideoMemory`, scenes expects priority
+50 rather than 10, and single-ready lacks `HDRLibraryScreenPreviews`.
+The three backend failures touching changed modules also reproduce on main:
+RGB describe publication, source-baseline counting, and retouch cache mock
+(`defer_store`). The other full-pytest failures concern unchanged code/tests:
+local-scope preset wording, neutral-highlight legacy quality expectation,
+giant-memory resumption, CPU tier coalescing, loader mock signature, and
+render-cache entry expectation. They are left for their own work.
+
+The real GPU path was exercised by the short plain-Electron fixture check,
+with added scroll-back and actual folder close/reopen steps; no separate
+release sweep or long GPU driver. The generic quick-check exit remains
+nonzero for its initial frame-gap gate (also fails on main), so this is not
+a clean generic quick-check pass. Measurement details and accepted outcome
+are recorded in the follow-up harness/records commit. Steve's source data,
+real profile/cache, locked fixture and protected projects were not written.
+
+## November 1: redisplay measurement and acceptance (harness/records commit)
+
+The quick check now has `--redisplay`: after a 65-second cold fill, scroll
+away/back, leave the folder, and actually reopen it. It counts only already
+finished visible pictures, checks matching canvases each animation frame,
+and starts after scroll-settled or the first usable indexed rows. Profiles
+are disposable `test-` folders on the system disk, while the reusable fixture
+copy remains on removable exFAT D:. It removes its profile on success/failure.
+No protected fixture or real-photo writes. Measurements used the app's own
+clock and plain Electron, with no DevTools instrumentation.
+
+Original `72f75fb`: **27/27** scroll-back within 100 ms; reopened **0/27**, all
+in **242–1,928 ms**. Implementation `589d39d` (measured just before commit):
+**27/27** scroll-back within 100 ms; reopened **0/27**, all in **181–211 ms**.
+The saved surfaces were used for all 27, with no redevelopment or camera
+preview flash. The shared backend local read/check took **46.6 ms**; first
+identity snapshot **8.8 ms**. Old per-cell `live-plan` checks were
+**104–1,334 ms** during the comparable reopen. Whole-app peak **3.604 GB**,
+below the unchanged 4 GB ceiling. The quick-check generic frame-gap gate
+failed at 4.456 s (original 4.310 s), so its nonzero exit is recorded rather
+than called a pass. No scene interpretation gates were relaxed.
+
+Steve accepted the result November 1: "sounds fast enough mate. wrap it up
+neatly". The 100 ms target remains on record; further latency work is deferred.
+Restart/offline persistence and exact bytes pass the focused behavior checks;
+a separate timed full app relaunch and large-folder qualification are not
+claimed. Full fast-check results/failure reasons are recorded above.
+
+Retained small local evidence: [before report](../../../codebase/output/quick-library-check/redisplay-baseline/report.json),
+[after report](../../../codebase/output/quick-library-check/redisplay-final/report.json),
+their sibling `scenario.json`/`backend.log`,
+[final JavaScript log](../../../codebase/output/redisplay-node-final.log),
+[full pytest log](../../../codebase/output/redisplay-pytest.log), and baseline
+`redisplay-baseline-node.log` / `redisplay-baseline-pytest.log` in the same
+output folder. Reports record base HEAD `72f75fb`; the after run used the
+working tree subsequently committed as `589d39d`. Diagnostic runs, duplicate
+logs, memory-sampling scratch and temporary test profiles were removed.
+Output started and ended at **23.5 GB**, below 100 GB; existing test-photo
+copies and Steve's untracked design files were preserved.
 
 ## November 1: Fuji X-Trans thumbnails
 

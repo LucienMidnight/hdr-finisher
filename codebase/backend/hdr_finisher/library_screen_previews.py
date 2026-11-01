@@ -209,6 +209,10 @@ def add_screen_preview_routes(router, live, worker):
     cache = StoredScreenPreviews(live.root, live.document)
     from threading import BoundedSemaphore
     slots = BoundedSemaphore(2)  # Bounded uploads; no folder-sized RAM queue.
+    from .library_finished_thumbnails import add_finished_thumbnail_routes
+    add_finished_thumbnail_routes(router, live, slots)
+    from .library_refresh import add_refresh_route
+    add_refresh_route(router, live, cache)
 
     def identity(path, display_width, display_height, lane):
         if lane not in ('hdr', 'sdr') or not 1 <= display_width <= 2560 or not 1 <= display_height <= 2560:
