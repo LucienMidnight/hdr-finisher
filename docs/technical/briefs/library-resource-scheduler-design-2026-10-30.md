@@ -2369,6 +2369,117 @@ and local commit are recorded in the commit note. No new slow driver, full
 suite, push, merge or protected-project write. The default Library real-app
 check line was added to the local untracked `AGENTS.md`.
 
+## 7.17 Whole-pass GPU submission and true pass costs (November 1)
+
+Steve's direction: one full-size development per photo, made fast; no
+separate reduced-resolution process for grid thumbnails.
+
+### What was making the GPU steps slow
+
+Every GPU pass in the Library development was split into eight-row
+dispatches and awaited `onSubmittedWorkDone()` after each one. On a 24 MP
+photo that is about 235 whole-queue waits per development (highlights alone
+had about 157). Each wait drains the entire device queue, so it also waited
+for the other development and for draws. Two developments therefore took
+turns instead of sharing the GPU, and every pass looked several times more
+expensive than it was. The RGB/DNG route had the same banding; the bounded
+DNG tile route read five separate buffers per tile and drained the queue
+after every upload and every tile stage; the RGB mosaic upload checked its
+permit once per 128-row band.
+
+Confirmed by arithmetic against the c663354 log: highlights 498 ms on
+IMG_5137.CR2 is ~157 waits at ~3 ms each, demosaic 208 ms is ~94 waits.
+The shader work itself is 5-55 ms.
+
+### What changed
+
+* One submit per pass, with one fence (still bounded so passes cannot pile
+  up past the approved GPU peak). The permit is checked once per pass
+  instead of once per eight rows; the raw lease is renewed well inside its
+  30 s expiry.
+* The DNG tile readback is one staging buffer and one `mapAsync` per tile
+  instead of five. The tile route checks its permit once per tile boundary.
+* The RGB mosaic upload checks its permit once instead of once per band.
+
+Shaders, uniforms, buffer contents and dispatch coverage are unchanged;
+only the number of submissions changes. Pictures match: the 90 s grid
+screenshots from c663354 and from this change compare at mean dE2000 0.040
+and p99.9 2.55 (agreed limits: mean below 1, p99.9 at most 3).
+
+### True per-pass cost, 24 MP ARW
+
+Means over the 31-development cold fixture, 2560x1440, 4 GB, one
+development at a time on this machine (the log records per-pass times with
+`syncStages` on, which is the same fence the fix now uses):
+
+| Pass | Before (c663354) | After | Shader work alone |
+| --- | --- | --- | --- |
+| Highlights (normalize, dilate, residual, repair) | 212 ms | 42 ms | 5-55 ms |
+| Demosaic (green, homogeneity) | 135 ms | 19 ms | 5-20 ms |
+| Lens (remap) | 135 ms | 27 ms | 20-50 ms |
+| Upload | 221 ms | 263 ms | buffer write |
+| Reduce (640) | 48 ms | 50 ms | 15-20 ms |
+| Readback | 249 ms | 181 ms | copy + map |
+
+Mean whole development GPU time fell from 1364 ms to 820 ms; total GPU
+time for the 31 cold developments fell from 42.3 s to 25.4 s. The RTX
+4070 Ti is no longer the limit for a 24 MP ARW: the remaining cost is the
+sensor read (about 300-700 ms, CPU) and the handoff (about 200-300 ms).
+
+With two developments running, per-pass times are unchanged within noise;
+the fence is per pass rather than per eight rows, so one development waits
+at most one pass for the other, not one band.
+
+### Why average development concurrency stays near 1.5-1.6
+
+Time-weighted concurrency was 1.64 before and 1.63 after, so the removed
+waits were not what limited overlap. The cold log's grant waits explain it:
+`development places full` 160, `measured memory` 132, `room` 77, `saving
+places full` 47. The second place is real and often taken; the average is
+low because each development also spends 0.3-0.7 s decoding and 0.2-0.4 s
+on the handoff, outside the GPU passes, and because a second development is
+held by the unchanged memory estimates and the 4 GB ceiling. Raising
+concurrency means changing an approved estimate or the ceiling, so this
+round reports it and makes no change.
+
+### Single view timings
+
+`tools/quick-library-check.cjs --single` opens the first fixture photo in
+Single from a cold profile, then steps forward ten times at a 1.5 s pace,
+reporting time from the click and from each key press to that photo's 2560
+picture.
+
+| | Before (c663354) | After |
+| --- | --- | --- |
+| Open first photo (2560) | 2019 ms | 5551 ms |
+| Step median | 9886 ms | 15298 ms |
+| Step mean | 9984 ms | 10511 ms |
+| Step max | 23287 ms | 23846 ms |
+| Ten steps, total | 119.8 s | 113.9 s |
+
+Single did not get faster in this sample. Steps are 15 ms to 24 s from
+step to step because a neighbour prefetch sometimes already holds the 2560
+picture and sometimes the request queues behind the grid pre-warm. The GPU
+passes are now cheap, so Single's remaining cost is decode and scheduling
+contention, not the graphics card. Needs a decision (see the report).
+
+### What keeping the 2560 picture from the same pass would cost
+
+The development already produces the full-resolution result before
+reducing, so keeping 2560 as well needs only a second reduce pair and a
+second readback, not a second development. Estimate per visible photo:
+
+* GPU: about 60-80 ms extra (the 640 reduce plus readback is about 35 ms on
+  a 24 MP ARW; 2560 is about four times the pixels).
+* Handoff and RAM: one extra 2560x1920 picture, 29 MB as 16-bit planes or
+  59 MB as float, in flight per development.
+* Cache: for a 31-photo screen, about 0.9 GB (16-bit) or 1.8 GB (float)
+  retained, against the approved 768 MB raw cache and 256 MB handoff
+  shares. It does not fit either share, so keeping it for every visible
+  photo would need a larger share or retaining fewer photos.
+
+No change was made; Steve decides.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with

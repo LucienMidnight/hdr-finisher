@@ -1,5 +1,30 @@
 # Module PRD: Photo Library
 
+## November 1: whole-pass GPU submission - cold screen faster, Single not
+
+Library development now submits each GPU pass once instead of in eight-row
+bands with a whole-queue wait after every band. That was about 235 queue
+waits per 24 MP photo, each also waiting for the other development and for
+draws. On the 24 MP RAW passes, highlights fell 212 -> 42 ms, demosaic
+135 -> 19 ms and lens 135 -> 27 ms; mean development GPU time fell
+1364 -> 820 ms. The bounded DNG tile readback is one buffer per tile
+instead of five, and the RGB mosaic upload checks its permit once instead
+of once per band. Shaders and buffers are unchanged; the grid pictures
+match c663354 at mean dE2000 0.040, p99.9 2.55.
+
+Cold mixed 50, 2560x1440, 4 GB: 26-27 shown at 30 s (was 20) and 31 by
+41-50 s (was 60 s); independent peak 4.263 GB, zero reclaims. The 28 by
+30 s target is not met. Mean development concurrency is unchanged at
+1.63; the cold grant waits (`development places full` 160, `measured
+memory` 132, `room` 77) show the second place is real and held by the
+unchanged estimates and ceiling, so raising it needs a Steve decision.
+`tools/quick-library-check.cjs --single` was added. Single did not get
+faster (open 2019 -> 5551 ms; median step 9886 -> 15298 ms); it is now
+limited by decode and scheduling contention with the grid pre-warm, not by
+GPU pass cost. No approved number changed. Not run this round: phase0,
+Aceh, Grade coexistence and the release drivers.
+See [scheduler design 7.17](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#717-whole-pass-gpu-submission-and-true-pass-costs-november-1).
+
 ## November 1: DNG estimate and EXR interpretation admission correction
 
 Steve approved the existing 28 bytes/pixel DNG rate for the RGB correction
