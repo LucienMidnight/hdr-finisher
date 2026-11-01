@@ -1869,6 +1869,136 @@ isolated runs. Further slow diagnosis/validation needs a new time block under
 AGENTS.md's roughly-30-minute stop-and-ask rule; no budget increase is proposed
 from the current evidence alone.
 
+### 7.13 Decision 20: fitting jobs pass a blocked job (November 1)
+
+Implemented on `library-gpu-scheduling` (`ea2629b`, `42a0ede`); final acceptance is partial below.
+Within a class, a fitting request can pass an older memory wait while earlier
+work drains. Once passed, or once earlier work has drained and it is the oldest
+waiter in its class, the blocked request protects its next turn: later work in
+that class and lower classes stops. Higher classes and the quick-preview fast
+lane continue. Existing running work finishes before reclamation.
+
+Reclamation runs outside the scheduler lock, through existing cache trims and
+scene/token release paths. Every connected window releases offscreen finished
+surfaces/scenes and retained decoded sources; visible finished surfaces and
+camera previews stay. Backend and helper release retained decoded/handoff
+caches. Only acknowledgements from all owners followed by a fresh memory census
+allow admission or a terminal decision. This is shortage for a specific waiting
+job, not a synthetic operating-system pressure signal. No cache sizes, estimate
+rates, concurrency limits, ceiling/floor or reserve values changed. Alone work
+also observes the existing measured-memory admission gate.
+
+If the job still cannot fit with competing work drained, its request ends once
+with `needs more memory`. The cell keeps its preview and memory notice; no
+broken-photo record is made. A new cell on scrolling back or opening Single can
+make a fresh attempt. The source queue excludes these outcomes from failures.
+
+Initial real-app check (`decision20-phase0`): all 27 ended in 34.331 s,
+19 finished, four existing interpretation/X-Trans refusals, four source memory
+outcomes (line scan, AVIF, PNG, PFM). Peak 3.813 GB, settled below 3.4 GB, no
+reserve violation or HTTP timeout. The eviction acknowledgements preceded
+Chromium releasing dead upload storage; the completion path now also awaits
+the existing garbage-release call after references are released. It sends no
+synthetic OS pressure and changes no approved number. This initial run is not
+qualification; final acceptance below supersedes its completion result.
+
+Focused validation: 59 Python scheduler/channel/memory checks and 38 JavaScript
+channel/queue checks pass. The FIFO test now expects intentional same-class
+skip-ahead while lower classes wait. No full suites, per this brief.
+
+
+**Final acceptance at `42a0ede`, November 1.** The default mixed 4 GB run
+reached an outcome for **all 27 in 34.6 s**: **20 finished**, four existing
+interpretation/X-Trans refusals, three terminal source-memory outcomes. The
+requested 23-finished target is **not met**. No jobs remain stuck. The last
+finished photo was PFM at 32.831 s. The big AVIF ends once with `needs more
+memory` at **29.018 s**; no source decode was started for it and it creates no
+broken-photo record. Available camera previews remain. Quick-preview-only
+refusals for the line scan, PNG and TIFF are separate from the source outcomes.
+
+The guarded requests exhausted existing offscreen/decoded-cache release and
+the dead-upload garbage-release step. The final census still left these sums
+above the unchanged 4 GB admission gate (the 10% allowance covers running-work
+excursions, not a wider admission rule):
+
+| Source request | Estimate GB | Retained whole-app GB at decision | Sum GB | Outcome time s |
+| --- | ---: | ---: | ---: | ---: |
+| Line-scan DNG | 1.781 | 2.390 | 4.172 | 21.566 |
+| Large gain-map AVIF | 2.362 | 2.466 | 4.828 | 29.018 |
+| 192 MP PNG | 1.536 | 2.501 | 4.037 | 33.799 |
+
+Peak whole-app RAM **3.592 GB**, zero above-ceiling excursions, settled below
+**3.4 GB** as soon as the driver began its settling observation; system reserve
+never touched. All 70 memory requests answered; no page errors. GPU allocation
+reservations passed. No estimate, ceiling, allowance, floor, reserve, cache
+share, save/development count or decoder deadline changed.
+
+**All 27 final states:**
+
+| File | Final state |
+| --- | --- |
+| `_DSC6117_DxO.jpg` | finished |
+| `_DSC6328.jpg` | finished |
+| `_DSC6510-1.png` | finished |
+| `_DSC6527.ARW` | finished |
+| `-4_stops_exposure_PQ_Rec_2020_DSC08883_03.avif` | finished |
+| `DJI_0071-2.tif` | finished |
+| `DSC00636.ARW` | finished |
+| `DSC01244_DxO-optical-corr-only.dng` | finished |
+| `DSC01302.jxl` | Needs source-colour interpretation in Grade |
+| `DSCF6495.RAF` | X-Trans unsupported; camera preview kept |
+| `IMG_1150.tiff` | finished |
+| `IMG_6717.PNG` | finished |
+| `IMG_7723.CR3` | finished |
+| `iphone_16_pro_IMG_3324.HEIC` | finished |
+| `jpeg_xl_16_bit_p3_color.jxl` | Needs source-colour interpretation in Grade |
+| `line_scan_2018-05-26-11-35-40_NECTA0000_fbcb8f8f1d37db8bf93c0d46fb748355c01b7f8b.dng` | needs more memory |
+| `LR-classic-hdr-source-test-1.avif` | needs more memory |
+| `P1010004.ORF` | finished |
+| `P1150601.RW2` | finished |
+| `pano_192mp.jpg` | finished |
+| `pano_192mp.png` | needs more memory |
+| `pano_192mp.tif` | finished |
+| `possibly-cat-prints-texture-v001.exr` | Needs source-colour interpretation in Grade |
+| `QNY_8816.NEF` | finished |
+| `synthetic_24mp.hdr` | finished |
+| `synthetic_24mp.pfm` | finished |
+| `VKNS0418.JPEG` | finished |
+
+Evidence: `codebase/output/cold-mixed/decision20-final-phase0/report.json`
+(includes the terminal backend census/estimate records), `per-file-results.csv`
+and `memory.jsonl` in the same folder. Initial unqualified run remains in
+`codebase/output/cold-mixed/decision20-phase0/`.
+
+**Aceh regression passes:** both cold runs finish all 48, first screens
+**13.783 / 14.062 s**, within 5% of their respective 13.2 / 13.5 s baselines.
+Second screens **20.585 / 21.157 s**; peak RAM **2.265 / 2.348 GB**, settled
+below 3.4 GB, no reserve breach, timeout or page error. Reports:
+`codebase/output/cold-mixed/decision20-aceh-one/` and `decision20-aceh-two/`.
+
+**Real-app checks:** `library-live-grid.js` and `library-gpu-recovery.js` both
+pass through `npm run test:release -- --driver ...` after committing at
+`42a0ede` (no flaky retry). Release records:
+`codebase/output/release-checks/2026-11-01T02-38-59-169Z-841682e34ed08c51a61c/`
+and `2026-11-01T02-39-50-898Z-f3a790930c1b24989f3e/`.
+
+**Grade coexistence is not qualified:** pause notice **2.705 s**, over its
+1 s limit; first ordinary picture **3.001 s** (under 5 s), folder click
+**170 ms**, close/save **2.591 s**, resume **729 ms** (under 2 s). Exposure
+0.125 was saved and Grade emptied. Protected projects stayed unchanged in all
+runs. This driver failed its pause assertion; no extra slow rerun or diagnosis
+was made. `codebase/output/decision20-grade-report.json` keeps the result.
+
+Final focused checks: **59 Python and 57 JavaScript pass**. No full suites,
+scroll-back diagnosis, Proof/export comparison or extra slow tests. Steve's
+scroll-back try is still open. The 23-photo completion target and Grade pause
+timing remain open; this is a built queue-stall fix with incomplete acceptance.
+The remaining memory evidence suggests retained renderer/GPU host storage plus
+protected visible surfaces, rather than queued decoders, limits the three jobs;
+no additional ownership investigation or higher-memory proposal is claimed.
+Disposable application profiles from these runs were removed. Output storage
+remains **14.5 GB** at the end (14.5 GB at the start; limit 100 GB).
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
@@ -1918,43 +2048,6 @@ Proposed tolerances, to agree before measuring:
   intermittently bad VRAM, so GPU failures are rerun before blaming code.
 * **The WebSocket channel** is new plumbing. If it drops, jobs must notice
   and ask again, rather than wait forever.
-
-### 7.13 Decision 20: fitting jobs pass a blocked job (November 1)
-
-Implemented on `library-gpu-scheduling`; acceptance results pending below.
-Within a class, a fitting request can pass an older memory wait while earlier
-work drains. Once passed, or once earlier work has drained and it is the oldest
-waiter in its class, the blocked request protects its next turn: later work in
-that class and lower classes stops. Higher classes and the quick-preview fast
-lane continue. Existing running work finishes before reclamation.
-
-Reclamation runs outside the scheduler lock, through existing cache trims and
-scene/token release paths. Every connected window releases offscreen finished
-surfaces/scenes and retained decoded sources; visible finished surfaces and
-camera previews stay. Backend and helper release retained decoded/handoff
-caches. Only acknowledgements from all owners followed by a fresh memory census
-allow admission or a terminal decision. This is shortage for a specific waiting
-job, not a synthetic operating-system pressure signal. No cache sizes, estimate
-rates, concurrency limits, ceiling/floor or reserve values changed. Alone work
-also observes the existing measured-memory admission gate.
-
-If the job still cannot fit with competing work drained, its request ends once
-with `needs more memory`. The cell keeps its preview and memory notice; no
-broken-photo record is made. A new cell on scrolling back or opening Single can
-make a fresh attempt. The source queue excludes these outcomes from failures.
-
-Initial real-app check (`decision20-phase0`): all 27 ended in 34.331 s,
-19 finished, four existing interpretation/X-Trans refusals, four source memory
-outcomes (line scan, AVIF, PNG, PFM). Peak 3.813 GB, settled below 3.4 GB, no
-reserve violation or HTTP timeout. The eviction acknowledgements preceded
-Chromium releasing dead upload storage; the completion path now also awaits
-the existing garbage-release call after references are released. It sends no
-synthetic OS pressure and changes no approved number. This initial run is not
-qualification; final acceptance below supersedes its completion result.
-
-Focused validation: 59 Python scheduler/channel/memory checks and 38 JavaScript
-channel/queue checks pass. The FIFO test now expects intentional same-class
-skip-ahead while lower classes wait. No full suites, per this brief.
 
 ## 10. Decisions for Steve (one at a time, when each phase comes up)
 

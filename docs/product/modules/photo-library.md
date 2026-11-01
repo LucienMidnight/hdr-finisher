@@ -1,21 +1,28 @@
 # Module PRD: Photo Library
 
-## November 1: Decision 20 implemented; final acceptance pending
+## November 1: Decision 20 built; acceptance incomplete
 
-Fitting jobs may pass a blocked photo within the same class. The oldest blocked
-photo then protects its turn and reclaims offscreen finished pictures/scenes
-and retained decoded sources through existing eviction paths. Visible finished
-pictures and the camera-preview fast lane remain. If memory still cannot fit,
-the job ends once with a memory notice, retains its camera preview, and is not
-a broken photo. Scroll return or Single can retry. No approved numbers changed.
-Focused scheduler/channel/memory checks pass (59 Python, 38 JavaScript).
-Final mixed-folder, Aceh and real-app regression results belong in
-[scheduler design 7.13](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+The queue now ends every request: **20/27 mixed photos finish in 34.6 s**, four
+retain their interpretation/X-Trans reasons, and the big AVIF, line-scan DNG
+and 192 MP PNG end once with memory notices. The AVIF ends at **29.018 s**;
+its unchanged 2.362 GB estimate plus 2.466 GB retained exceeds the 4 GB gate
+after reclamation. The 23-finished target remains open. No photo is recorded
+as broken for memory. Available camera previews and visible finished pictures
+stay. Scroll return or Single can retry by the same rule.
 
+Fitting jobs may pass a blocked job in the same class; the oldest blocked job
+then protects its turn and releases offscreen finished scenes/pictures and
+retained decoded sources using existing paths. Higher classes and the fast
+lane continue. Peak RAM **3.592 GB**, settled below 3.4 GB, reserve untouched.
+No approved numbers changed. Code: `ea2629b`, `42a0ede`.
 
-**Memory and cache sizes** (the whole-app RAM ceiling, each cache's share,
-disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
-Read it before changing how much any Library cache keeps.
+Aceh passes: **13.783 / 14.062 s** first screens, both within the agreed 5%;
+all 48 finish twice. Grid and GPU recovery pass through the release runner.
+Grade saves/resumes correctly but its **2.705 s pause notice fails the 1 s
+limit**; this check is not qualified. Focused checks: 59 Python / 57 JavaScript
+pass; no full suites or extra scroll diagnosis. All 27 states and caveats:
+[scheduler design 7.13](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#713-decision-20-fitting-jobs-pass-a-blocked-job-november-1).
+
 
 ## November 1 big-file diagnosis — partial fixes, default completion still open
 
