@@ -2,7 +2,7 @@
 (function(root){
   "use strict";
   const cancelled=()=>new DOMException("Cancelled","AbortError");
-  function create({socket=url=>new WebSocket(url),url,changed=()=>{},timer=setTimeout,interval=setInterval,reclaim=async()=>{}}={}){
+  function create({socket=url=>new WebSocket(url),url,changed=()=>{},timer=setTimeout,interval=setInterval,reclaim=async()=>{},collect=async()=>{}}={}){
     const jobs=new Map(); let screenOrder=new Map(); let visible=true; let channel=null,reconnect=null,heartbeat=null,lastMessage=0,closed=false,grade={name:"",bytes:0};
     const send=value=>{if(channel?.readyState===1)channel.send(JSON.stringify(value));};
     function connect(){
@@ -12,8 +12,8 @@
       current.onmessage=event=>{
         lastMessage=Date.now();const value=JSON.parse(event.data);
         if(value.type==="grade"){grade=value;for(const job of jobs.values())job.status.grade=value.name;}
-        if(value.type==="reclaim"){
-          Promise.resolve().then(()=>reclaim(value.bytes)).then(released=>send({type:"reclaimed",epoch:value.epoch,released:released||0})).catch(error=>console.debug(error));return;
+        if(value.type==="reclaim"||value.type==="collect"){
+          Promise.resolve().then(()=>value.type==="collect"?collect():reclaim(value.bytes)).catch(error=>{console.debug(error);return 0;}).then(released=>send({type:"reclaimed",epoch:value.epoch,released:released||0}));return;
         }
         const j=jobs.get(value.id);
         if(j&&value.type==="needs-memory"){
@@ -72,11 +72,12 @@
     if(value.reason==="system reserve")return `not enough free memory on this computer (needs ${(value.estimate/1e9).toFixed(2)} GB, ${(value.free/1e9).toFixed(2)} GB free)`;
     return value.reason==="connecting"?"Connecting to Library scheduler":"Waiting for working memory";
   }
-  const api={create,waitingText};
+  function previewSupported(path){return /\.(jpe?g|png|dng|arw|cr2|cr3|nef|nrw|raf|rw2|orf|ori|pef|srw)(?:\|copy\||$)/i.test(path);}
+  const api={create,waitingText,previewSupported};
   if(typeof module!=="undefined")module.exports=api;
   else {
-    root.HDRLibraryGrants=create({url:location.origin.replace(/^http/,"ws")+"/api/library/grants",changed:()=>root.dispatchEvent(new Event("library-work-changed")),reclaim:bytes=>root.HDRLibraryReclaimWaiting?.(bytes)});
-    root.HDRLibraryGrants.preview=(body,signal,headers={},priority=10)=>root.HDRLibraryGrants.run(body.path,"quick",signal,async(grant,shared)=>{
+    root.HDRLibraryGrants=create({url:location.origin.replace(/^http/,"ws")+"/api/library/grants",changed:()=>root.dispatchEvent(new Event("library-work-changed")),reclaim:bytes=>root.HDRLibraryReclaimWaiting?.(bytes),collect:()=>root.HDRLibraryCollectWaiting?.()});
+    root.HDRLibraryGrants.preview=(body,signal,headers={},priority=10)=>!previewSupported(body.path)?Promise.resolve(new Response(null,{status:204})):root.HDRLibraryGrants.run(body.path,"quick",signal,async(grant,shared)=>{
       const response=await fetch("/api/library/preview",{method:"POST",priority:"high",signal:shared,headers:{"Content-Type":"application/json",...headers},body:JSON.stringify({...body,grant})});
       return new Response(response.status===204?null:await response.arrayBuffer(),{status:response.status,headers:response.headers});
     },priority);

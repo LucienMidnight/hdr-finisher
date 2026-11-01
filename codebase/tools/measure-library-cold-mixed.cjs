@@ -3,6 +3,7 @@
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),assert=require('node:assert/strict');
 const {spawn}=require('node:child_process');
 const {MemoryMonitor}=require('./library-memory-monitor.cjs');
+const {viewportTargets}=require('./library-measure-viewport.cjs');
 const {chromium}=require('playwright');
 const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
 const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe'),aceh=process.argv.includes('--aceh'),phase0=process.argv.includes('--phase0');
@@ -137,7 +138,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
    await lib.evaluate(()=>document.querySelector('[data-sort="name"]').click());
    await sleep(300);
   }
-  for(let screen=0;screen<(singleFile?1:scrollDiagnose?3:phase0?3:jpeg||probe?1:2);screen++){
+  for(let screen=0;screen<(singleFile||process.argv.includes('--first-screen-only')?1:scrollDiagnose?3:phase0?3:jpeg||probe?1:2);screen++){
    if(screen){report.scrolledAt=Date.now();}if(screen)await lib.evaluate(()=>{const grid=document.getElementById('library-grid');grid.scrollTop+=grid.clientHeight;grid.dispatchEvent(new Event('scroll'));});
    await sleep(300);
    let visibleTargets=await lib.evaluate(()=>{
@@ -151,7 +152,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
    const started=Date.now();let cells,idleSince=null;
    while(Date.now()-started<(phase0?600000:hdrTest?300000:probe?60000:120000)){
     if(memoryViolation){report.memoryViolation=memoryViolation;throw Error('STOP: '+memoryViolation.reason);}
-    if(hdrTest)targets=await lib.evaluate(()=>{const b=document.getElementById('library-grid').getBoundingClientRect();return [...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect();return r.top<b.bottom&&r.bottom>b.top;}).map(c=>c.dataset.path);});
+    if(hdrTest)targets=await lib.evaluate(viewportTargets);
     cells=await lib.evaluate(paths=>{return paths.map(p=>{const c=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===p);const refused=coldEvents.findLast(e=>e.path===p&&e.stage==='picture_work_failed');return {path:p,presented:!!c?.querySelector('canvas[data-picture-key]'),needsMemory:c?.querySelector('.library-memory-needed')?.textContent,error:c?.querySelector('.library-picture-error')?.title||c?.querySelector('.picture-failed')?.textContent||refused?.reason};});},targets);
     if(cells.length&&cells.every(c=>c.presented||c.error||c.needsMemory)&&(!hdrTest||!await lib.evaluate(()=>HDRLibrary.getSnapshot().reading)))break;
     if(phase0){

@@ -91,6 +91,6 @@ window.HDRLibraryPictureErrors = Object.freeze({
       tag.title = record.reason;
       tag.setAttribute("aria-label", `${cell.photo.name}: ${record.reason} Review error`);
     }
-    return Object.freeze({remember, update, show, paint, get:path => records.get(path)});
+    return Object.freeze({remember, update, show, paint, canPrepare:path => !records.has(path) || !!records.get(path).grade_warning, get:path => records.get(path)});
   }
 });

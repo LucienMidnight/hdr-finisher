@@ -47,12 +47,13 @@ class Runtime:
         scheduler.expire()
         request = scheduler.reclamation_request()
         if request:
-            log("library_reclaim_owner", request=request["id"], epoch=request["epoch"],
+            action = request.get("action", "reclaim")
+            log("library_collect_owner" if action == "collect" else "library_reclaim_owner", request=request["id"], epoch=request["epoch"],
                 owner=request["owner"] or "backend/helper", needed_bytes=request["bytes"])
             if request["owner"] is not None:
                 with scheduler.lock:
                     for notify in scheduler.listeners:
-                        notify(dict(type="reclaim", id=request["id"], epoch=request["epoch"],
+                        notify(dict(type=action, id=request["id"], epoch=request["epoch"],
                                     owner=request["owner"], bytes=request["bytes"]))
                 return
             def release():

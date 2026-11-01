@@ -49,6 +49,7 @@ class Job:
     gpu_unified: bool = False
     bypassed: bool = False
     reclaimed: bool = False
+    collected: bool = False
     outcome: str = ""
     ready: Event = field(default_factory=Event)
 
@@ -110,14 +111,16 @@ class Scheduler:
                 job = self.jobs.get(self.reclamation["id"])
                 request = self.reclamation
                 deficit = max(0, (self.total or 0) + (job.estimate if job else 0) - self.ceiling * 11 // 10)
-                if job and deficit and request.get("released", 0) > 0:
+                if job and deficit and request.get("action") != "collect" and request.get("released", 0) > 0:
                     request["pending"].insert(0, request["owner"])
                 if job and deficit and request["pending"]:
                     owner = request["pending"].pop(0)
                     request.update(owner=owner, owners=set() if owner is None else {owner}, bytes=deficit,
                                    backend_done=owner is not None, started=False, completed_at=None, released=0)
                 else:
-                    if job: job.reclaimed = True
+                    if job:
+                        if request.get("action") == "collect": job.collected = True
+                        else: job.reclaimed = True
                     self.reclamation = None
             self._measure_overrun()
             self._pump()
@@ -500,13 +503,18 @@ class Scheduler:
                         now_waiting = False
                     elif self.reclamation is None:
                         self.reclaim_sequence += 1
-                        owners = sorted(set(self.owners)-{"backend"}) + [None]
+                        owners = sorted(set(self.owners)-{"backend"})
+                        # A finished upload can still own dead native buffers until
+                        # Chromium collects it. Release garbage before evicting caches.
+                        collect = bool(owners and self.listeners and not job.collected)
+                        if not collect: owners.append(None)
                         owner = owners.pop(0)
                         self.reclamation = dict(id=job.id, epoch=self.reclaim_sequence,
+                            action="collect" if collect else "reclaim",
                             owner=owner, owners=set() if owner is None else {owner}, pending=owners,
-                            bytes=max(0, (self.total or STARTING+self.caches+self.grade_bytes) + job.estimate - admission_limit),
+                            bytes=0 if collect else max(0, (self.total or STARTING+self.caches+self.grade_bytes) + job.estimate - admission_limit),
                             started=False, backend_done=owner is not None)
-                        self._log(job, "reclaiming")
+                        self._log(job, "collecting" if collect else "reclaiming")
                 continue
             for older in waiting:
                 if older.cls == job.cls and older.sequence < job.sequence and older.reason in memory_reasons:

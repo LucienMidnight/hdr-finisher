@@ -569,3 +569,51 @@ def test_owner_retries_remaining_shortfall_until_measured_fit_or_exhaustion():
     s.reclaimed(again["epoch"], "window", 400_000_000)
     s.update(total=2_400_000_000, available=60*GB, ram=68*GB)
     assert big.granted is not None and not s.reclamation
+
+
+def test_dead_upload_collection_precedes_eviction_and_fresh_fit_needs_no_reclaim():
+    events, notices = [], []
+    s = Scheduler()
+    s.heartbeat("window")
+    s.listeners.add(notices.append)
+    s.update(total=3_300_000_000, available=60*GB, ram=68*GB)
+    ordinary = s.ask("ordinary", "window", "ordinary.dng", "source", 1_190_000_000, notify=events.append)
+    s.update(total=3_300_000_000, available=60*GB, ram=68*GB)
+    request = s.reclamation_request()
+    assert request["action"] == "collect" and request["bytes"] == 0
+    s.reclaimed(request["epoch"], "window")
+    s.update(total=3_100_000_000, available=60*GB, ram=68*GB)
+    assert ordinary.granted is not None and not ordinary.reclaimed and not s.reclamation
+
+
+def test_collection_that_cannot_fit_a_giant_continues_to_bounded_eviction():
+    s = Scheduler()
+    s.heartbeat("window")
+    s.listeners.add(lambda value: None)
+    s.update(total=3*GB, available=60*GB, ram=68*GB)
+    big = ask(s, "big", 2*GB)
+    s.update(total=3*GB, available=60*GB, ram=68*GB)
+    collect = s.reclamation_request()
+    assert collect["action"] == "collect"
+    s.reclaimed(collect["epoch"], "window")
+    s.update(total=3*GB, available=60*GB, ram=68*GB)
+    request = s.reclamation_request()
+    assert request["action"] == "reclaim" and request["bytes"] == 600_000_000
+    s.reclaimed(request["epoch"], "window")
+    s.update(total=3*GB, available=60*GB, ram=68*GB)
+    backend = s.reclamation_request()
+    s.reclaimed(backend["epoch"])
+    s.update(total=3*GB, available=60*GB, ram=68*GB)
+    assert big.outcome == "needs more memory" and not s.jobs
+
+
+def test_finished_and_refused_work_leaves_no_occupied_development_places():
+    s = Scheduler()
+    s.update(total=1_500_000_000, available=60*GB, ram=68*GB)
+    first, second = ask(s, "first", 400_000_000), ask(s, "second", 400_000_000)
+    waiting = ask(s, "waiting", 400_000_000)
+    assert waiting.reason == "development places full"
+    s.finish(first.id)
+    assert waiting.granted is not None  # No sample, timer or new folder action needed.
+    s.finish(second.id); s.finish(waiting.id)
+    assert not s.jobs

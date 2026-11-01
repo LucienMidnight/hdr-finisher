@@ -168,3 +168,19 @@ test('reclamation acknowledgement waits for cache release and preserves queued r
  assert.equal(grants.snapshot().jobs.length,1);
  abort.abort();await assert.rejects(pending,{name:'AbortError'});grants.close();
 });
+
+
+test('dead-upload collection acknowledges without evicting cache entries',async()=>{
+ const sockets=[],calls=[];
+ const grants=create({url:'ws://local',socket:()=>{const s={readyState:1,send(v){calls.push(JSON.parse(v));},close(){}};sockets.push(s);return s;},interval:()=>null,collect:async()=>{calls.push('collect');return 0;},reclaim:async()=>{throw Error('Cache eviction was not requested');}});
+ const controller=new AbortController();const pending=grants.acquire('ordinary.dng','source',controller.signal);
+ sockets[0].onmessage({data:JSON.stringify({type:'collect',epoch:4})});await tick();await tick();
+ assert.ok(calls.includes('collect'));assert.deepEqual(calls.at(-1),{type:'reclaimed',epoch:4,released:0});
+ controller.abort();await assert.rejects(pending,{name:'AbortError'});grants.close();
+});
+
+test('unsupported camera-preview formats need no grant',()=>{
+ const {previewSupported}=require('../frontend/library-grants');
+ for(const p of ['ordinary.DNG','camera.ARW','image.JPG','image.png','image.cr2|copy|version'])assert.ok(previewSupported(p));
+ for(const p of ['DSC01287.exr','image.tif','image.heic','image.avif','image.jxl'])assert.equal(previewSupported(p),false);
+});

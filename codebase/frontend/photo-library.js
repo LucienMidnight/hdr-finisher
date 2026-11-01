@@ -585,6 +585,11 @@
     updateDetails(); paintGrid(); paintFilm();
     status(`${state.photos.length.toLocaleString()} photos · ${state.hiddenFiles} unreadable files hidden`);
   }
+  window.HDRLibraryCollectWaiting = async () => {
+    await (window.hdrFinisherDesktop || window.parent?.hdrFinisherDesktop)?.reclaimLibraryStorage?.();
+    await HDRLibraryRAM.report();
+    return 0;
+  };
   window.HDRLibraryReclaimWaiting = async needed => {
     let remaining = Math.max(0, needed);
     // Discard cheapest finished surfaces first, one indivisible entry at a time.
@@ -652,6 +657,9 @@
     const started = performance.now();
     const current = () => state.active && element.isConnected && !cell.controller.signal.aborted;
     pictureErrors.paint(cell);
+    // Refused development stays a result until its source/settings change or
+    // an explicit retry clears it. Folder rechecks must not start new previews.
+    if (!pictureErrors.canPrepare(photo.path)) return;
     {
       void (async () => {
         const opening = state.folderOpen;

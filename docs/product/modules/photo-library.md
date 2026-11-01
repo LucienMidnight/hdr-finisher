@@ -6,7 +6,12 @@ Normal queuing now waits for running work to drain and a fresh memory census
 before protecting a blocked turn. Genuine shortages reclaim toward a byte
 target, one owner at a time, preserving visible and prepared neighbour pictures.
 Approved budgets and estimates stay unchanged. Focused behavior checks pass;
-Steve-folder cold/warm and final regression measurements remain pending.
+Initial cold observation still had eight ordinary reclaims. Follow-up now
+collects dead uploads before eviction, skips unsupported camera-preview grants,
+and remembers refused cells across folder rechecks. A stale viewport target
+list caused the observer's long idle gap; it now tracks discovery/sort changes.
+Focused checks: 70 Python, 29 JavaScript pass. Steve authorized one cold check
+next and deferred warm/final regressions; acceptance remains open.
 See [scheduler design 7.15](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#715-ordinary-waits-and-proportional-reclamation-november-1).
 
 ## November 1: Decision 21 measured — 22/27; Grade rerun passes

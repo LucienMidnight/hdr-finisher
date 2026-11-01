@@ -2186,7 +2186,30 @@ frame and its memory caches before reopening the folder against the same disk
 cache. Measurement acceptance: report both screens, camera-preview coverage,
 visible wait maximum, reclamation count, peak/settled RAM and warm cache hits;
 Aceh first screens stay within the requested 5% of 14.4/13.6 s. Slow acceptance
-is pending; focused checks currently pass (66 Python, 24 JavaScript).
+is incomplete; focused checks currently pass (70 Python, 29 JavaScript).
+
+Follow-up after `guard-hdr-final-one`: eight cache reclaims remained and the
+first-screen observer expired at 313.926 s (24/30 original targets). The log
+shows no queued source developments in the long gap before the observer
+scrolled at 313.9 s: its fixed target list included photos moved offscreen by
+folder discovery/sort updates. The observer now follows the current viewport;
+a regression exercises row replacement. Finished/refused grants immediately
+release development places in a focused behavioral check.
+
+The EXR's source development failed once and was remembered, but every recheck
+rebuilt its aborted cell and asked for a new *quick-preview* grant (0.975 GB),
+before the cached refusal rejected the source plan. Refused cells now stop
+before either preview or source preparation; grade warnings still allow work.
+Unsupported preview formats (including EXR/TIFF/HEIC) no longer reserve RAM
+for the preview endpoint that returns no preview for them. Estimates are not
+changed. Before any cache eviction a drained shortage now asks connected
+windows to collect dead upload buffers, then resamples. This does not discard
+cache entries. Only a remaining measured deficit begins bounded eviction.
+
+Steve stopped the extra folder run on November 1 and deferred phase0, Aceh,
+release-driver and Grade checks. The next authorized slow check is one cold
+HDR-copy first screen, followed by a report; no warm reopen or other slow
+checks in that round. Focused checks above pass; native acceptance pending.
 
 ## 8. Phases
 
