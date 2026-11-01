@@ -290,7 +290,11 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   stopping=true;clearInterval(poll);if(activePoll)await activePoll;
   observer?.kill();Object.assign(report,memory.report());
   checkProjects(before);report.protectedProjectsUnchanged=true;
-  const log=path.join(global.HDRFinisherElectronTestHarness.userDataDirectory||process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA||'','logs/backend.log');if(fs.existsSync(log))fs.copyFileSync(log,path.join(out,'backend.log'));
+  const log=path.join(global.HDRFinisherElectronTestHarness.userDataDirectory||process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA||'','logs/backend.log');if(fs.existsSync(log)){
+   fs.copyFileSync(log,path.join(out,'backend.log'));
+   report.controllerErrors=fs.readFileSync(log,'utf8').split('\n').filter(line=>line.includes('memory_controller_error'));
+   if(report.controllerErrors.length){report.error ||= 'Memory controller error';process.exitCode=1;}
+  }
   report.results=(report.screens||[]).flatMap(s=>s.cells.map(c=>({...c,screen:s.screen,requests:(report.events||[]).filter(e=>e.path===c.path&&e.stage==='picture_navigation_to_present'&&e.view==='grid').map(e=>({request:e.request,size:e.picture_size,ms:e.duration_ms})),failures:(report.events||[]).filter(e=>e.path===c.path&&/development_(failed|restart|outcome)$/.test(e.stage))})));
   const quick=(report.events||[]).filter(e=>e.stage==='picture_navigation_to_present'&&e.picture_size==='camera preview').map(e=>e.duration_ms).sort((a,b)=>a-b);report.quickMs={count:quick.length,p50:quick[Math.floor(quick.length*.5)],p95:quick[Math.floor(quick.length*.95)],max:quick.at(-1)};
   const visible=new Set(report.screens[0]?.visibleTargets || []);

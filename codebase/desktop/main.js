@@ -1360,7 +1360,10 @@ if (!gotLock) {
               body:JSON.stringify({pressure:trimLevel}),signal:AbortSignal.timeout(2000)});
             await reclaimed.arrayBuffer();
           }
-        } catch (error) { console.error("Memory controller:",error.message); }
+        } catch (error) {
+          libraryStage("memory_controller_error", {reason:error.message});
+          console.error("Memory controller:",error.message);
+        }
         finally { memorySampling = false; }
       }, 500);
       memoryTimer.unref();
