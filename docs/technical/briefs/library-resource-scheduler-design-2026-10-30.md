@@ -1999,6 +1999,156 @@ no additional ownership investigation or higher-memory proposal is claimed.
 Disposable application profiles from these runs were removed. Output storage
 remains **14.5 GB** at the end (14.5 GB at the start; limit 100 GB).
 
+### 7.14 Grade rerun, decision 21 and retained-memory investigation (November 1)
+
+Built and measured on `library-gpu-scheduling`: Grade coverage `024bbfb`,
+decision 21 `f780e3b`. All final real-app checks below ran at `f780e3b`.
+No push, merge, installer build, cache tuning or approved-number change.
+
+**Grade: earlier slowdown not reproduced; cause unresolved.** The requested
+one baseline repeat on unchanged `b3d5eed` passes: pause **469 ms**, ordinary
+picture **477 ms**, close/save **402 ms**, resume **261 ms**. The original
+2.705 s pause / 2.591 s close therefore does not establish a reproducible
+regression in decision 20. No production fix is claimed. Grade's scheduler
+branch already bypasses guard, measured admission and owner acknowledgements;
+backend reclamation runs on a separate thread outside its lock. The retained
+slow-run report has timings but does not isolate the delaying operation; no
+reclamation/census cause can be established from it. Native page collection
+can still occupy its renderer; uninterrupted interaction during that engine
+operation is not established by these measurements.
+
+Behavioral coverage now checks Grade before reclamation, while backend and
+owner acknowledgements are both outstanding, and before a fresh census.
+Another case admits a guarded GPU job, requests priority preemption and checks
+that its active GPU reservation releases at the existing safe point. Final
+coexistence: **509 ms pause, 518 ms ordinary picture, 354 ms close/save,
+319 ms resume**; exposure **0.125** read back from the saved sidecar. Both
+runs preserve the protected projects. Baseline evidence:
+`codebase/output/grade-regression-baseline.json`; final evidence:
+`codebase/output/phase3a-grade/{report.json,backend.log,screen.png}`.
+
+**Decision 21 as built.** The oldest protected request, with no running job
+of its own class, may use ceiling × 1.1 in the measured admission gate.
+Ordinary admission stays at the ceiling. The physical-headroom gate runs
+first, charges uncovered grants and preserves the hard system reserve.
+The target, estimates, ceiling rule, elastic percentage, floor, fast lane,
+cache shares, two developments, two saves and decoder deadlines are unchanged.
+The allowance may avoid reclamation if the guarded request already fits;
+otherwise decision 20 still drains, releases owners and requires a fresh
+census. Tests cover 4.4 GB exactly and one byte over, unchanged ordinary
+admission, same-class drainage, reserve blocking/recovery and Grade priority.
+Existing reclamation fixtures now use retained totals above the new boundary
+so they continue to exercise owner acknowledgements and census ordering.
+
+**Retained memory, by owner; no tuning or additional release built.** At the
+AVIF terminal decision after completed reclamation, scheduler total was
+**2.461827 GB**, estimate **2.361935 GB**, sum **4.823762 GB**, above 4.4 GB.
+The independent sample 252 ms before that decision measured **2.461704 GB**:
+
+| Owner | Charged RAM MB at AVIF decision (nearest sample) | Needed? Existing guarded-job release? |
+| --- | ---: | --- |
+| Electron main/browser | 105.7 | App shell is needed. Dead uploads can use the existing page garbage-release call, already awaited. The later native capture reports 67.5 MB blob storage; it does not prove which blobs remain live. |
+| Main Library/Grade renderer | 828.7 | Page and visible surfaces are needed; offscreen scenes, decoded sources and idle picture-host resources already release through `HDRLibraryReclaimWaiting`, `reclaimDecoded`, `reclaimHost`. Native/backing-store remainder is not attributed to live JS objects by this capture. |
+| Other renderer / GPU host | 44.5 | Hidden renderer service remains needed. It has a native WebGPU transfer mapping even while idle; session reset does not destroy its device. No existing guarded purge of that engine pool is established. |
+| Chromium GPU process | 1069.9 | Device/visible compositor resources are needed. A large transfer pool persists after app resources are released. Existing texture destruction/reset does not guarantee that Chromium returns its transfer pool. Device destruction/recreation would need a separate change and validation. |
+| Python backend | 129.7 | Interpreter, Library metadata and small protected caches remain needed. Raw/handoff/working shares are reclaimed through `app_memory.reclaim("shortage")`; no extra large backend decode remains here. |
+| Helper and its three decoder children | 254.0 | About 63–65 MB each, predominantly process baseline. Helper acknowledgement follows its existing raw/handoff/working reclamation. Stopping/restarting decoder services is not an existing guarded-cache release. |
+| Utility/crash handler/launcher/console | 29.1 | Service/process baseline; no app-cache purge path. |
+| Visible protected surfaces (overlap with owners above) | Not separately charged | Finished visible surfaces and available camera previews deliberately stay. The nearest logged cache census (1.5 s earlier) reported 72.8 MB of thumbnails; this is not an additional process total. Freeing those would violate decision 20's protection. |
+
+The **end-of-run detailed Chromium capture**, after the final PNG (not an
+atomic dump at the AVIF decision), identifies **846.7 MB GPU transfer memory**:
+576.7 MB for the main renderer's client and 269.0 MB for the other renderer.
+Three mappings are 268.4 MB each. The renderer maps **541.1 / 268.4 MB** of
+that storage: the matching shared-memory identifiers confirm overlap, so do
+not add these numbers to the GPU total. GPU shared images are **73.3 MB**.
+Main-page JS heap used is **9.7 MB**, while backing storage is **671.0 MB**
+and the array-buffer allocator's resident accounting is **687.5 MB**. The
+capture does not distinguish live references, dead awaiting collection and
+allocator retention within that backing storage. It must not be described
+as 671 MB of proven reclaimable cache. Native sampling returned no stacks.
+
+This explains where most of the retained charge resides: renderer/native
+backing storage and Chromium GPU transfer pools, rather than a retained 1 GB
+Python decode. The existing safe release paths have already been exercised;
+no simple additional release is proven safe. Synthetic OS pressure, arbitrary
+cache reductions and GPU device resets were not introduced. The AVIF still
+does not fit. Its exact object-level backing-store retention remains open.
+Evidence: `codebase/output/cold-mixed/decision21-final-phase0/`
+`{report.json,memory.jsonl,memory-trace.json,backend.log}`. Shared allocator,
+resident and charged measurements are different views, not additive totals.
+
+**Final acceptance, one run per requested check.** Mixed default 4 GB: all
+27 outcomes confirmed by **49.131 s**, last finished thumbnail at **48.424 s**;
+**22 finished**, four existing interpretation/X-Trans refusals, one AVIF memory
+notice at **35.218 s**. Line scan finishes at **34.505 s**, PNG at **48.424 s**.
+Their guarded censuses plus unchanged estimates are **4.181019 GB** and
+**4.072916 GB**, respectively. Quick-preview-only size refusals do not change
+these source outcomes. Available camera previews remain; no memory refusal
+records a broken photo.
+
+Peak RAM **3.753870 GB**; no samples above the 4 GB ceiling, no elastic-limit
+or physical-reserve violation, settled under **3.4 GB** at the first settling
+observation. Last independent sample **2.648059 GB**. All 100 memory requests
+answer, no page errors, GPU allocation reservations pass. Independent samples
+are about 500 ms apart, so unsampled shorter excursions cannot be excluded.
+
+| File | Final state |
+| --- | --- |
+| `_DSC6117_DxO.jpg` | finished |
+| `_DSC6328.jpg` | finished |
+| `_DSC6510-1.png` | finished |
+| `_DSC6527.ARW` | finished |
+| `-4_stops_exposure_PQ_Rec_2020_DSC08883_03.avif` | finished |
+| `DJI_0071-2.tif` | finished |
+| `DSC00636.ARW` | finished |
+| `DSC01244_DxO-optical-corr-only.dng` | finished |
+| `DSC01302.jxl` | Needs source-colour interpretation in Grade |
+| `DSCF6495.RAF` | X-Trans unsupported; camera preview kept |
+| `IMG_1150.tiff` | finished |
+| `IMG_6717.PNG` | finished |
+| `IMG_7723.CR3` | finished |
+| `iphone_16_pro_IMG_3324.HEIC` | finished |
+| `jpeg_xl_16_bit_p3_color.jxl` | Needs source-colour interpretation in Grade |
+| `line_scan_2018-05-26-11-35-40_NECTA0000_fbcb8f8f1d37db8bf93c0d46fb748355c01b7f8b.dng` | finished |
+| `LR-classic-hdr-source-test-1.avif` | needs more memory |
+| `P1010004.ORF` | finished |
+| `P1150601.RW2` | finished |
+| `pano_192mp.jpg` | finished |
+| `pano_192mp.png` | finished |
+| `pano_192mp.tif` | finished |
+| `possibly-cat-prints-texture-v001.exr` | Needs source-colour interpretation in Grade |
+| `QNY_8816.NEF` | finished |
+| `synthetic_24mp.hdr` | finished |
+| `synthetic_24mp.pfm` | finished |
+| `VKNS0418.JPEG` | finished |
+
+All 27 rows, per-file times and terminal notices are retained in
+`codebase/output/cold-mixed/decision21-final-phase0/per-file-results.csv`.
+
+Cold Aceh, 48/48 finished in both runs: first screens **14.383 / 13.601 s**
+(report timestamps), second screens **21.762 / 20.661 s**. First screens are
+within the agreed 5% of **13.8 / 14.1 s** respectively. Peaks **2.236 / 2.333 GB**;
+both settle below target with reserve intact, no endpoint timeout or page error.
+Evidence: `codebase/output/cold-mixed/decision21-aceh-{one,two}/report.json`.
+Console completion notices can trail the stored screen timestamp by milliseconds.
+
+Focused checks: **63 Python** scheduler/channel/app-memory checks and **45
+JavaScript** grant/queue/desktop-memory checks pass. No full suites, broad GPU
+sweep, Proof or export picture checks. Grade/Proof/export picture code is
+unchanged. After committing, both requested release-runner drivers pass at
+`f780e3b`: `tests/library-live-grid.js` and `tests/library-gpu-recovery.js`.
+Protected project hashes are unchanged. Runner summaries:
+`codebase/output/release-checks/2026-11-01T03-40-36-631Z-4277919e7eb6f8bed383/`
+and `2026-11-01T03-41-21-032Z-c0e0cebc3bf3f2a49a0b/`.
+
+Remaining limits: original slow Grade run's cause unresolved; native transfer
+pool/backing-store release not implemented; AVIF remains a memory notice.
+No new decision or numerical relaxation is required for the built change.
+Scratch output is **14.5 GB** at start and end (12.5 GB reusable test photos),
+below 100 GB. The seven task-created temporary profiles and redundant console
+scratch were removed; the reports and referenced diagnostic capture remain.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
@@ -2275,25 +2425,3 @@ items are listed there.
   `library_pictures.py`, `library_picture_errors.py`.
 * View sizes: `photo-library.js` `thumbnailEdge()` (640) and
   `library-gpu-raw.js` (the `[640, 2560, edge]` development sizes).
-
-
-### 7.14 Grade rerun, decision 21 and retained-memory investigation (November 1)
-
-Step 1 baseline on unchanged `b3d5eed`: pause **469 ms**, first ordinary
-picture **477 ms**, close/save **402 ms**, resume **261 ms**. Exposure 0.125
-was saved and protected projects were unchanged. The earlier slowdown did
-not reproduce. No evidence establishes a decision-20 regression or its cause;
-no speculative production fix has been made. The scheduler already excludes
-Grade from guard/admission waits and performs backend reclamation on a separate
-thread. A behavioral check covers Grade before reclamation, while both backend
-and owner acknowledgements are outstanding, and before the fresh census.
-Evidence: `codebase/output/grade-regression-baseline.json`.
-
-Decision 21 is built: only the oldest protected request, with no running job
-of its own class, uses ceiling × 1.1 for the measured admission gate. Ordinary
-admission remains at the ceiling. The existing physical-headroom check runs
-first and charges every uncovered grant; the reserve cannot be borrowed.
-No estimate, cache share, floor, concurrency or budget value changed. Existing
-reclamation tests now use retained totals above 4.4 GB including the request,
-so they still exercise owner acknowledgements and a fresh census. Focused
-scheduler/channel/memory checks: **63 pass**. Final acceptance follows below.

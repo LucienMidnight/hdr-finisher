@@ -1,14 +1,26 @@
 # Module PRD: Photo Library
 
-## November 1: Decision 21 built; final qualification pending
+## November 1: Decision 21 measured — 22/27; Grade rerun passes
 
-The protected oldest job can use the existing 10% elastic allowance once no
-job of its class is running. Ordinary admission and the hard system reserve
-are unchanged. Focused admission/preemption checks pass. The unchanged Grade
-rerun passes (469 ms pause, 402 ms close/save); the earlier slow run did not
-reproduce and its cause remains unresolved. Final mixed/Aceh/release checks
-are pending; see scheduler design section 7.14.
+Guarded jobs can use the existing 10% elastic allowance after their class
+has drained; ordinary admission, system reserve and every approved number
+stay unchanged. Code `f780e3b`. Default 4 GB mixed: **22/27 finished**, all
+outcomes checked by **49.131 s**. Line scan and 192 MP PNG finish; large AVIF
+ends once with a memory notice, four interpretation/X-Trans reasons remain.
+Peak **3.754 GB**, settled below 3.4 GB, reserve intact.
 
+Final Grade: **509 ms pause**, 518 ms first ordinary picture, **354 ms
+close/save**, 319 ms resume; exposure 0.125 saved. The unchanged baseline
+also passed. The earlier slow run did not reproduce; its cause is unresolved
+and no production Grade fix is claimed. Focused guard/reclamation preemption
+checks pass. Native transfer pools/backing storage dominate retained memory;
+no safe simple additional release was established and no cache tuning was done.
+
+Cold Aceh first screens **14.383 / 13.601 s**, both within the agreed 5%;
+48/48 finish twice. Both requested release-runner grid/GPU-recovery checks
+pass. Focused checks: 63 Python / 45 JavaScript pass; no full suites.
+Owner table, all 27 states, exact conditions and remaining diagnostic limits:
+[scheduler design 7.14](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#714-grade-rerun-decision-21-and-retained-memory-investigation-november-1).
 
 ## November 1: Decision 20 built; acceptance incomplete
 
