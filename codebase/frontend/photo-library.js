@@ -964,12 +964,15 @@
   window.addEventListener("pagehide",()=>gradeCloseChannel.close());
   window.addEventListener("library-close-grade",()=>postParent("close-grade"));
   const commandState = () => postParent("command-state", {selected: state.selection.size, copied: pasteGrades.available()});
-  function invalidateGradePictures(paths) {
+  // source:true also forgets the developed source (Refresh thumbnail); a grade
+  // change keeps it and only redraws the finish.
+  function invalidateGradePictures(paths, {source = false} = {}) {
     const targets = new Set(paths);
     readyWindow.invalidate(photo=>targets.has(photo.path)); quickWindow.invalidate(photo=>targets.has(photo.path));
     readAhead.clear();
     for (const [key] of recentPictures) if (paths.some(path=>key.startsWith(path+"|"))) recentPictures.delete(key);
-    HDRLibraryScenes.invalidate(paths,{finishingOnly:true});
+    HDRLibraryScenes.invalidate(paths,{finishingOnly:!source});
+    if (source) window.HDRLibraryRawGPU?.clear?.();
     tilePool.discard(cell => targets.has(cell.photo.path));
     for (const map of [state.cells, state.filmCells]) for (const [path, cell] of map) if (targets.has(path)) { cell.controller.abort(); cell.element.remove(); map.delete(path); }
     if (targets.has(selected()?.path)) { state.single?.abort(); state.fitMeta = null; state.nativeMeta = null; }
@@ -1004,6 +1007,14 @@
   }
   libraryDesktop?.onMenuCommand?.(({command}) => libraryCommand(command));
   void pasteGrades.refresh().catch(() => {});
+  // Steve, November 1: throw away a photo's stored pictures and develop it
+  // again, for a picture that looks wrong and for testing. Grades stay.
+  async function refreshThumbnails(paths) {
+    await api("/api/library/refresh-pictures", { paths });
+    invalidateGradePictures(paths, { source: true });
+    status(`Refreshing ${plural(paths.length, "photo")}.`);
+    paintGrid(); paintFilm(); if (state.view === "single") showSingle();
+  }
   async function photoMenu(event, photo) {
     event.preventDefault();
     const index = state.photos.findIndex(item => item.path === photo.path);
@@ -1019,7 +1030,8 @@
       {label:"Paste grade (choose settings)…", key:"Ctrl+Shift+V", disabled:!commands.canPaste(), run:() => commands.paste(true)},
       {separator:true}, {label:"Quick export…",key:"Ctrl+Shift+E",run:commands.quickExport},
       {label:"Open in Export",run:commands.openExport});
-    grades.push({label:"Build previews…",run:()=>HDRLibraryBuildPreviews.start({paths})},{label:"Discard built previews…",run:()=>HDRLibraryBuildPreviews.discard({paths})});
+    grades.push({label:"Build previews…",run:()=>HDRLibraryBuildPreviews.start({paths})},{label:"Discard built previews…",run:()=>HDRLibraryBuildPreviews.discard({paths})},
+      {label:one?"Refresh thumbnail":"Refresh thumbnails",run:()=>refreshThumbnails(paths)});
     grades.push({ label: "Create virtual copy…", run: () => createCopy(chosen) });
     if (one && photo.copy_id) grades.push({ label: "Rename copy…", run: () => renameCopy(photo) });
     showMenu(event, [{ header: one ? photo.name : `${paths.length.toLocaleString()} photos` },

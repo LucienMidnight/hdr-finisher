@@ -64,10 +64,16 @@ Open work it leaves, in Steve's order:
 2b. **Window freezes on a 42 MP folder:** the quick check on the
    badminton copy showed a 2.5–3.1 s frame gap in both runs (the mixed
    fixture shows about 0.1 s). Not investigated.
-2c. **Refresh thumbnail (Steve, November 1):** a right-click "Refresh
-   thumbnail" action that throws away a photo's stored pictures (scene and
-   finished display surfaces) and develops it again. Useful when a picture
-   looks wrong, and for testing.
+2c. **Refresh thumbnail (Steve, November 1), built November 1** (branch
+   `library-stall-teal`). Right-click one or more photos and choose
+   **Refresh thumbnail(s)**. It removes the photos' stored scenes at every
+   size, their finished display surfaces and unprotected screen previews
+   (`POST /api/library/refresh-pictures`, `library_refresh.py`; files are
+   matched by the photo path in their own headers), forgets them in the
+   window, and develops them again in screen order. Photos, grades, marks and
+   protected built previews ("Discard built previews…") stay. A virtual copy
+   also refreshes its source photo's scene. Covered by two behaviour tests
+   on real cache classes; the menu itself was first tried by Steve.
 3. Finished gain-map AVIFs are slow to prepare (about 2 s each, 6–9 s for
    large ones) and mostly run one at a time because of their memory
    estimate. Candidate: GPU gain-map reconstruction.
