@@ -2689,7 +2689,7 @@ The old checker ran once on the same working implementation, then its external
 This is incomplete and uses the old incorrect ordering, not a matched ten-step
 comparison. Evidence: `codebase/output/old-cdp-once-{console.txt,backend.log,timeout.json}`.
 
-31 focused JavaScript checks pass: switch inertness, pressure collection,
+32 focused JavaScript checks pass: switch inertness, pressure collection,
 worker start/HTTP/network failure, cancellation, transferred responses, exact
 paced-copy bytes and memory monitoring. Picture/Grade/release acceptance remains
 open below. Exploratory `yield-worker-grid` had a missing DNG signal parameter;
@@ -2721,6 +2721,48 @@ A focused test covers relative timing, duplicates and pre-browse events.
 Source-buffer assembly now completes in the worker before the response reaches
 the page, so `picture_source_transfer` measures only the final page handoff;
 use end-to-end picture timing to compare versions, not that stage alone.
+
+### Finished-picture comparison
+
+All 50 fixture files were attempted at 640 (grid render entry point) and 2560
+(Single render entry point), SDR and HDR, against the `4d07bd4` picture code.
+**44 renderable files, 88 file/size cases, 176 lane pairs: exact SHA-256 match,
+max difference 0, all finite.** No pair is outside tolerance and no difference
+review page remains. The other six files have the same source gate in both
+versions, so their pixels are **not verified**: X-Trans `DSCF6495.RAF`, unresolved
+primaries `DSC04375_DxO_clipped_target.tif`, both JPEG XL fixtures, and both EXRs.
+The RAF perceptual exception was therefore not exercised. The full comparison
+record is `codebase/output/library-freeze-pixels/comparison.json`.
+
+A sequential 640 pass refused the Lightroom AVIF for working memory; its fresh
+isolated retry succeeds and matches both baseline lanes exactly. The 2560 CDP
+capture repeatedly lost its connection on `P1150601.RW2`; delayed runner
+messages say the page connection closed while Electron main stayed alive, with
+no recorded renderer/GPU crash or window-destroy event. This is not proof of an
+app crash. A plain-Electron capture finishes it and all remaining files.
+`capture-library-fixtures-native.cjs` uses the same explicit isolated-profile
+switch, production scene/picture entry points, finished half-float readback,
+and bounded IPC chunks, with no DevTools. The original CDP reports/connection
+logs remain as diagnostic evidence. Actual view navigation and live-grid are
+covered separately; this matrix does not claim 100 full-UI navigation scenarios.
+
+### Grade coexistence: pause acceptance failed
+
+Two fresh-profile runs of the unchanged `measure-library-grade-grants.cjs` driver
+on the final production change fail the strict pause <1000 ms gate: **4110 / 3251
+ms**. First ordinary picture **4114 / 3256 ms** passes <5000; resume **346 / 1408
+ms** passes <2000. Both save exposure 0.125, close Grade, report no page errors,
+and verify all three protected-project hashes. Folder click is 1 / 0 ms.
+The first-row disk checks alone take 2146 / 1825 ms before a row can ask for a
+grant; backend paused-for-Grade events confirm a real delay, not just an inflated
+host clock. Do not count these as Grade passes or relax the one-second limit.
+Reports and backend logs: `codebase/output/grade-final-{a,b}/`.
+One diagnostic run with all changed production files temporarily restored to
+`4d07bd4` also fails pause: **3924 ms** (ordinary 4032, resume 371, edit saved,
+protected hashes unchanged). Original file bytes were restored in `finally`.
+This establishes an existing failure under this fresh-folder setup; it does
+not establish a precise timing regression or repair that separate folder-start
+path. Baseline record: `codebase/output/grade-final-baseline/`.
 
 ## 8. Phases
 

@@ -15,7 +15,9 @@ PNG decode no longer encodes and reopens an intermediate PNG. The existing
 orientation, colour-profile, 8-bit and alpha boundaries stay unchanged: the three
 PNG medians improve from 4176/153/2324 to 2875/27/1961 ms. Focused checks:
 23 PNG/reduction and 32 JavaScript cases pass. Fixture and Grade/release outcomes
-are recorded in scheduler section 7.19; six existing source interpretation /
+are recorded in scheduler section 7.19: all 176 finished SDR/HDR lane pairs
+from 44 renderable fixtures at 640/2560 match `4d07bd4` exactly (all finite). Grade pause fails both runs (4110/3251 ms
+against <1000); ordinary pictures, resume and saved edit pass. Six existing source interpretation /
 X-Trans gates cannot provide finished comparison pixels.
 
 ## November 1: Single is priority, and decodes use the cores
