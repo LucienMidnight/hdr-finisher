@@ -1,5 +1,40 @@
 # Module PRD: Photo Library
 
+## November 1: Single is priority, and decodes use the cores
+
+Single is now the top Library work after Grade and export. Before this
+change the filmstrip under Single kept priority "now", grid work was never
+
+told to stop, priority only moved 640 thumbnails, and every photo was
+developed twice (640 and 2560), so the photo on screen queued behind the
+grid: open 5.6 s, median step 15.3 s, individual steps 15 ms to 24 s.
+
+Now only the view on screen sets priority: the photo is "now", its two
+neighbours "soon", the covered grid not ranked and the filmstrip
+"eventually". The strip shows finished pictures only, unfinished grid work
+
+stops at its next safe point, and each photo is developed once at one size.
+A photo on screen waiting for memory or a development place takes it from a
+running background job at a safe point.
+
+Measured with the app's own clock (key press to the 2560 picture): open
+1270 ms, prepared neighbours 9-49 ms, an unprepared RAW 302 ms, a HEIC
+3.1 s, one ARW 6.5 s. The harness's own wall clock is unreliable here (it
+once reported 18 s for a picture the app had shown in 1.7 s), so both are
+reported. Cold 90 s grid: 25 at 30 s, 31 by 60 s, peak 3.749 GB, no
+reclaims. Phase0 22/27, peak 3.912 GB. Aceh first screens 12.8-14.6 s
+(reference 13.8 s); second screens 18.4-23.6 s against a 14.1 s reference
+not reproduced this round. Grade coexistence passes on the second run
+(pause 987 ms; an earlier run was 1324 ms). Both release drivers pass.
+
+Decoding now uses this photo's share of the cores for colour, transfer and
+reduce bands: HEIC 2.47 -> 1.67 s and 1.43 -> 1.01 s, AVIF 6.17 -> 4.74 s,
+4.26 GB-class gain-map AVIF 6.91 -> 5.60 s, the 223 MB 16-bit PNG
+5.08 -> 4.96 s. Every fixture file still decodes to identical pixels.
+Longest single GPU submission is 195 ms (the reduce on the 223 MB PNG);
+no pass needs splitting.
+See [scheduler design 7.18](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#718-single-priority-over-the-covered-grid-and-core-shared-decoding-november-1).
+
 ## November 1: whole-pass GPU submission - cold screen faster, Single not
 
 Library development now submits each GPU pass once instead of in eight-row

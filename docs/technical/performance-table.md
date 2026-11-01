@@ -285,3 +285,41 @@ November 1 Grade regression rerun on unchanged `b3d5eed`: pause 469 ms,
 first ordinary 477 ms, close/save 402 ms, resume 261 ms. Exposure saved;
 all existing limits pass. Earlier 2.705 s pause not reproduced; cause unresolved.
 Evidence: `codebase/output/grade-regression-baseline.json`.
+
+
+
+November 1, Single priority and core-shared decoding (commits `2cca525`,
+`469af11`, `3b60ebc`, `a951a4b`). Library `--single`, 2560x1440, 4 GB, cold
+profile. App time is the photo's own key-press (or click) to the 2560
+picture; wall is the harness including its own polling.
+
+| Measure | Before (`84cad99`) | After |
+| --- | --- | --- |
+| Single open, app time | not recorded | 1270 ms |
+| Single open, harness wall | 5551 ms | 5384 ms |
+| Step median, app time | not recorded | about 300 ms |
+| Step median, harness wall | 15298 ms | 158-9903 ms (varies) |
+| Prepared neighbour, app time | not recorded | 9-49 ms |
+| Unprepared RAW, app time | not recorded | 302 ms |
+| Unprepared HEIC, app time | not recorded | 3133 ms |
+| Cold 90 s grid, shown at 30 s / 60 s | 26-27 / 31 | 25 / 31 |
+| Cold 90 s grid peak, backend | 4.253 GB | 3.749 GB |
+| Phase0 presented | 22/27 | 22/27 |
+| Phase0 peak | 4.025 GB | 3.912 GB |
+| Aceh first screen | 13.8 s | 12.8 s, 14.6 s |
+| Aceh second screen | 14.1 s | 18.4 s, 23.6 s (not reproduced) |
+| Grade pause / first ordinary / close / resume | 919 / 926 / 244 / 748 ms | 987 / 994 / 333 / 678 ms (one run 1324 ms pause) |
+| Longest single GPU submission | 42 ms (highlights mean) | 195 ms (PNG reduce), 121 ms ARW upload |
+
+Decode, Single edge 2560, median of three:
+
+| File | Before | After |
+| --- | --- | --- |
+| `_DSC6510-1.png`, 223 MB, 16-bit | 5084 ms | 4956 ms |
+| `iphone_16_pro_IMG_3324.HEIC` | 2474 ms | 1666 ms |
+| `IMG_6705.HEIC` | 1428 ms | 1013 ms |
+| `DSC08883.avif` | 6167 ms | 4744 ms |
+| `-4_stops...DSC08883_03.avif` | 6906 ms | 5597 ms |
+| `LR-classic-hdr-source-test-1.avif` | 30326 ms | 24574 ms |
+
+Handoff per photo: request 9-86 ms, accept 86-310 ms, describe 6-27 ms.

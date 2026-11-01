@@ -2480,6 +2480,135 @@ second readback, not a second development. Estimate per visible photo:
 
 No change was made; Steve decides.
 
+## 7.18 Single priority over the covered grid, and core-shared decoding (November 1)
+
+Steve's direction: the photo on screen in Single is the most important
+Library work after Grade and export; its neighbours are soon; the covered
+grid is background. Commits `2cca525`, `469af11`, `3b60ebc` and `a951a4b`
+on `library-gpu-scheduling`.
+
+### Cause, from the `--single` logs
+
+Confirmed before changing anything, from
+`codebase/output/quick-library-check/single-after-2/backend.log`:
+
+* The **filmstrip under Single kept "now"**. `HDRLibraryScenes.viewport`
+  was only ever called from the grid paint path, and grid paint returns
+  early in Single, so the visible/nearby sets stayed those of the covered
+  grid. Every filmstrip cell therefore asked for its 640 camera preview and
+  640 scene at priority 10 (`now`).
+* **Priority was per picture size, not per photo.** `rank` promoted only
+  edge 640, and `prepared` marked a job `viewport` only for edge ≤ 640, so a
+  2560 neighbour was never promoted or demoted with the view.
+* **Two developments per photo.** Single raced the 640 window (with
+  `allowSource`) against the 2560 window, so every photo decoded twice, and
+  `warmReady` prepared *both* sizes for each neighbour.
+* **Grid cells were never told to stop.** Entering Single left their work
+  running at `now` and left their `img`/canvas alone.
+* Waiting requests in the old run: `quick previews first` 46,
+  `development places full` 44, `measured memory` 27, `room` 26. A neighbour
+  JPEG waited 14 s for memory behind grid work.
+
+### What changed
+
+* Only the view on screen sets visible/nearby. In Single the photo is
+  visible and its two neighbours are nearby; the grid is not ranked at all
+  and the filmstrip is `eventually`. Priority is per photo, all edges.
+* The filmstrip under Single reads finished pictures only (`cachedOnly`) and
+  never starts a development. Unfinished grid cells are abandoned at their
+  next safe point when Single opens; finished cells stay pooled.
+* One picture size per photo: the selected photo develops at 2560 only, and
+  neighbours at 2560 only. The camera preview or a finished grid picture
+  covers the wait.
+* Neighbour preparation starts when the photo is selected, not after it is
+  published.
+* Scheduler: background work never starts while a photo on screen is
+  waiting for room; a photo on screen waiting for memory or a development
+  place asks a running lower-class development to stop at its safe point and
+  requeue (no attempt spent). A waiting *neighbour* alone does not stop the
+  pre-warmer, because the pre-warmer is what makes the next screen ready.
+
+### Single timings
+
+`--single` now also reports the app's own key-press-to-picture time, because
+the harness wall clock carries its own polling stalls. Both are shown.
+
+| | Before (`84cad99`) | After |
+| --- | --- | --- |
+| Open, app time to the 2560 picture | not recorded | 1270 ms |
+| Open, harness wall | 5551 ms | 5384 ms |
+| Step median, app time | not recorded | about 300 ms |
+| Step median, harness wall | 15298 ms | 9903 ms (one run) / 158 ms (another) |
+| Prepared neighbour, app time | not recorded | 9-49 ms |
+| Unprepared photo, app time | not recorded | 302 ms (ARW), 3.1 s (HEIC), 6.5 s (one ARW) |
+
+The app time is the ground truth for what Steve sees. The harness wall
+clock is unreliable in this configuration: in one run the app had already
+presented the picture in 1.7 s while the harness's next frame query did not
+return for 18 s. Fixing that instrument is open work.
+
+### Safety checks at `a951a4b` and `3b60ebc`
+
+| Check | Result |
+| --- | --- |
+| Grade coexistence | pause 987 ms (one earlier run 1324 ms), first ordinary 994 ms, close 333 ms, resume 678 ms, exposure 0.125 saved |
+| `tests/library-live-grid.js` (release runner) | pass, 0.5 min |
+| `tests/library-gpu-recovery.js` (release runner) | pass, 0.1 min |
+| Phase0 cold mixed | 22/27 presented, peak 3.912 GB, 0 timeouts |
+| Aceh 48, run 1 | first screen 14.6 s, second 23.6 s |
+| Aceh 48, run 2 | first screen 12.8 s, second 18.4 s |
+| 90 s cold grid | 25 shown at 30 s, 31 by 60 s, peak 3.749 GB, 0 reclaims |
+
+The Aceh second screen is slower than the 14.1 s reference. With the decode
+change disabled it was 18.9 s and with the wider priority gate 23.6 s, so
+neither this change nor the wider gate explains it; the reference was taken
+on another day. Grade pause is marginal against its 1 s limit.
+
+### Longest single GPU submission
+
+`tools/measure-library-gpu-pass.cjs`, one development with per-stage fences:
+
+| File | Longest submission | Stages |
+| --- | --- | --- |
+| `_DSC6510-1.png`, 7968x5320, 223 MB | 195 ms (reduce) | upload 34, colour measure 110, reduce 195, readback 143; whole GPU 496 ms |
+| `DSC00636.ARW`, 24 MP | 121 ms (upload) | upload 121, highlights 66, demosaic 28, lens 53, reduce 36, readback 33; whole GPU 355 ms |
+
+No pass reaches 250 ms, so no pass is split.
+
+### Decode time with the cores
+
+Row bands and channels now run on the shared CPU pool inside one Library
+decode; Grade's own import keeps its separate bands. Median of three, Single
+edge 2560:
+
+| File | Before | After |
+| --- | --- | --- |
+| `_DSC6510-1.png` (223 MB, 16-bit) | 5084 ms | 4956 ms |
+| `iphone_16_pro_IMG_3324.HEIC` | 2474 ms | 1666 ms |
+| `IMG_6705.HEIC` | 1428 ms | 1013 ms |
+| `DSC08883.avif` | 6167 ms | 4744 ms |
+| `-4_stops...DSC08883_03.avif` | 6906 ms | 5597 ms |
+| `LR-classic-hdr-source-test-1.avif` | 30326 ms | 24574 ms |
+
+The PNG is bound by libvips' sequential PNG decode (1.4 s) plus a wasted
+in-memory PNG re-encode and re-decode (about 1.8 s), not by Python work.
+Removing that round trip is the next win and was not attempted this round
+because it touches the picture path.
+
+### Handoff, about 0.2-0.4 s per photo
+
+`picture_handoff_timing` from the same runs: request 9-86 ms (accept the
+developed pixels), **accept 86-310 ms** (unpack, validate, build and persist
+the cache scene), describe 6-27 ms. The accept step is the cost; it is
+serial per photo and is a candidate for the same band treatment.
+
+### Pictures
+
+Every fixture file at 640 and 2560 decodes to identical pixels serial and
+parallel (max difference 0). `DSCF6495.RAF` differs between two serial
+decodes of itself, so LibRaw's threaded demosaic is non-deterministic for
+that file; that predates this round.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
