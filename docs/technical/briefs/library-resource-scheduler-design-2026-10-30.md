@@ -2221,6 +2221,17 @@ Decided October 30:
     "needs more memory", keeps its camera preview, and is never recorded as a
     broken photo. Tradeoff accepted: photos no longer always finish in screen
     order. No approved number changes.
+21. **A guarded job may start inside the elastic allowance — Steve, November 1.**
+    Section 7.13: after reclamation, the line scan (4.172 GB) and the 192 MP PNG
+    (4.037 GB) were refused against the 4 GB admission gate, although each
+    finished alone (whole-app peaks 2.3 GB). When the decision-20 guard holds the
+    turn and nothing else of the job's class is running, admission may use the
+    ceiling plus the existing 10% elastic allowance (4.4 GB at the default) as its
+    limit. Ordinary admission stays at the ceiling. The system reserve stays
+    hard: admission never cuts into it. Memory must settle below target after the
+    job, as before. No estimate, ceiling or allowance value changes. Expected
+    result on phase0: line scan and PNG finish (22 of 27); the 4.828 GB AVIF still
+    ends with "needs more memory" unless retained memory is reduced.
 
 **Wrap-up requested by Steve, October 31.** Part A remains the committed
 implementation (`5fb733c`, `a86689a`). A Part B prototype passed 76 focused
