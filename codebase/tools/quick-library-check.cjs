@@ -6,7 +6,8 @@
 //   set HDR_FINISHER_ELECTRON_TEST_USER_DATA=<empty temp folder>
 //   node tests/run-in-electron.js tools/quick-library-check.cjs [--seconds=90] [--label=name]
 const fs = require('node:fs'), path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawn } = require('node:child_process');
+const { MemoryMonitor } = require('./library-memory-monitor.cjs');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const arg = (name, fallback) => process.argv.find(x => x.startsWith(`--${name}=`))?.split('=')[1] ?? fallback;
@@ -51,6 +52,12 @@ function analyse(text, openedAt) {
 
 (async () => {
   const browser = await chromium.launch(); const page = await browser.newPage();
+  const liveGrants = new Map();
+  page.on('websocket', ws => {
+    if (!ws.url().endsWith('/api/library/grants')) return;
+    ws.on('framereceived', event => { const v = JSON.parse(String(event.payload)); if (v.type === 'granted') liveGrants.set(v.id, v); });
+    ws.on('framesent', event => { const v = JSON.parse(String(event.payload)); if (v.type === 'finish' || v.type === 'cancel') liveGrants.delete(v.id); });
+  });
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
   page.on('console', m => { if (/Memory controller|timeout/i.test(m.text())) errors.push(m.text()); });
   await page.goto(process.env.HDR_FINISHER_URL); await page.evaluate(() => activateWorkflowTab('import'));
@@ -62,6 +69,23 @@ function analyse(text, openedAt) {
   if (!String(cache.location).toLowerCase().includes('test-') || !process.argv.includes('--warm') && fs.existsSync(path.join(cache.location, 'library-pictures')) && fs.readdirSync(path.join(cache.location, 'library-pictures')).length)
     throw Error('Not an empty isolated cache: ' + cache.location);
   await lib.evaluate(() => { const s = document.getElementById('thumbnail-size'); if (s) { s.value = 300; s.dispatchEvent(new Event('input')); } document.querySelector('[data-sort="name"]')?.click(); });
+  const memory = new MemoryMonitor(4e9);
+  const memoryPath = path.join(out, 'memory.jsonl'); fs.writeFileSync(memoryPath, '');
+  let pending = '', observerError, sampleCount = 0;
+  const sampleIntervals = []; let lastSampleAt;
+  const observer = spawn(path.join(root, '.venv/Scripts/python.exe'), [path.join(__dirname, 'measure-library-processes.py'), process.env.HDR_FINISHER_ELECTRON_MAIN_PID, '.25'], {windowsHide:true});
+  observer.on('error', e => { observerError = String(e); });
+  observer.stderr.on('data', chunk => { observerError = String(chunk); });
+  observer.stdout.on('data', chunk => {
+    pending += chunk;
+    let end; while ((end = pending.indexOf('\n')) >= 0) {
+      const line = pending.slice(0, end); pending = pending.slice(end + 1);
+      if (!line) continue;
+      const sample = JSON.parse(line); sampleCount++;
+      if (lastSampleAt !== undefined) sampleIntervals.push(sample.at - lastSampleAt); lastSampleAt = sample.at;
+      memory.sample(sample, [...liveGrants.values()]); fs.appendFileSync(memoryPath, line + '\n');
+    }
+  });
   const openedAt = Date.now();
   lib.evaluate(f => HDRLibrary.browse(f), folder.replaceAll('\\', '/')).catch(e => errors.push(String(e)));
   for (let s = 10; s <= seconds; s += 10) {
@@ -72,8 +96,11 @@ function analyse(text, openedAt) {
   await page.screenshot({ path: path.join(out, 'screen.png') }).catch(() => {});
   const text = fs.readFileSync(logPath, 'utf8');
   fs.writeFileSync(path.join(out, 'backend.log'), text);
-  const report = { label, commit: execFileSync('git', ['-c', 'safe.directory=*', 'rev-parse', '--short', 'HEAD'], { cwd: root }).toString().trim(), seconds, errors, ...analyse(text, openedAt) };
+  if (!sampleCount || observerError) errors.push('Independent memory observer: ' + (observerError || 'no samples'));
+  sampleIntervals.sort((a,b) => a-b);
+  const report = { label, commit: execFileSync('git', ['-c', 'safe.directory=*', 'rev-parse', '--short', 'HEAD'], { cwd: root }).toString().trim(), seconds, errors, ...analyse(text, openedAt), independent_memory: {...memory.report(), samples: sampleCount, lastBytes: memory.last?.totalBytes, sampleIntervalMs: {requested: 250, median: sampleIntervals[Math.floor(sampleIntervals.length/2)], maximum: sampleIntervals.at(-1)}}, observerError };
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 1));
   console.log(JSON.stringify(report, null, 1));
+  observer.kill();
   await browser.close();
 })().catch(e => { console.error(e); process.exitCode = 1; });

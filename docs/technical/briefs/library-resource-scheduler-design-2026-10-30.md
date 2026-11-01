@@ -2237,6 +2237,83 @@ estimates before another slow check. The one-run follow-up did not reach the
 EXR or establish a warm cache hit rate; phase0, Aceh, release-runner grid and
 recovery, and Grade coexistence remain deferred for these commits.
 
+### 7.16 Memory overshoot diagnosis; estimate decision required (November 1)
+
+**Not fixed or qualified.** Work remains on `library-gpu-scheduling`, baseline
+`94f996d`. No approved number or production behavior is changed in this round.
+The requested brief says to stop before changing an estimate. The diagnosis
+below reaches that boundary; phase0, Grade and release acceptance have therefore
+not been run for a claimed fix.
+
+Two unchanged-code cold `library-mixed-v1` checks show **18 / 17 pictures by
+30 s and 31 / 31 by 60 s**. Both log a 4.308 GB backend-sampled peak and one
+ordinary-file reclaim (`DSC01287.exr`). The independent observer in the second
+run catches **4,420,308,985 bytes**, over the 4.4 GB limit, while ordinary DJI
+DNG developments run, before any guarded admission. It settles below 3.4 GB
+and does not breach the physical reserve. Reports:
+`codebase/output/quick-library-check/memory-before/report.json` and
+`codebase/output/quick-library-check/memory-before250/report.json`; independent
+samples are in the latter's `memory.jsonl`. That first observer used a 250 ms
+sleep plus census time (median interval 339 ms), so shorter spikes remain
+possible. The checked-in observer now offers a true 250 ms start cadence;
+existing callers retain their original default behavior.
+
+**Concrete admission/route mismatch.** Header-only inspection shows both
+`DJI_0071.DNG` and `DJI_0072.DNG` are **8000 x 6000 (48 MP)**, with required
+GainMap and WarpRectilinear corrections. These fixture entries were previously
+described as 20 MP; the locked fixture and manifest are unchanged.
+`library_estimates.estimate_details` sees CFA photometric 32803 and reserves
+**336 MB (7 bytes/pixel)** as though this were sensor-only RAW preparation.
+`library_dng.decoded` instead demosaics to a **576 MB float32 RGB source**;
+`developDNGTiles` also holds **576 MB in three full-size host planes**, before
+tile packing, readbacks, transport and decoder temporaries. These are logical
+live buffers, not a second process-memory charge. They exceed the grant even
+before temporary/native retention. The baseline whole-app peak has 2.752 GB
+in the main renderer and 1.149 GB in the GPU process. A whole-app increment
+cannot be attributed exclusively to one overlapping grant. The route/header
+record is `memory-before250/dng-route-diagnosis.json` beside that report.
+
+The GPU header planner already distinguishes the DNG correction route; the
+RAM planner does not. A proposed next step is to use the existing **28-byte
+DNG RGB rate** for this route (1.344 GB per 48 MP request), retaining 7 for
+sensor-only Bayer. This changes those jobs' admission estimates, so it awaits
+Steve's authorization. It could reduce overlap and throughput, and would
+still require the requested memory/speed acceptance. It is not implemented.
+The other option is a larger bounded-host-buffer redesign with unchanged
+estimates, requiring additional correctness and performance work.
+
+**Rejected experiments, removed from production.** Explicit source-buffer
+release, paced RGB uploads, explicit DNG tile-buffer release, and collection
+before each source all failed independent memory acceptance. Their peaks were
+4.781 / 4.663 / 5.651 / 4.617 GB. They do not establish a safe lifetime fix;
+all were removed. Per-run evidence remains under
+`codebase/output/quick-library-check/{owned-source,upload-bands,tile-storage,collect-start}/`.
+The last experiment also exposed overlapping debugger collection failures
+(`target closed while handling command`); it is not shipped. No estimate,
+cache share, ceiling, allowance, floor, reserve, save/development count or
+decoder deadline has changed. Decisions 20 and 21 remain intact.
+
+**Ordinary reclamation is still open.** In the first baseline the drained EXR
+wait collected dead uploads, then still saw 2.811 GB retained plus its 1.611 GB
+estimate, about 21 MB above 4.4 GB. It invoked bounded eviction and eventually
+ended with a memory notice rather than reaching its source interpretation
+gate. This is real retained-memory pressure, not evidence that running work
+was mistaken for drained work. Reducing false/avoidable ordinary reclaims has
+not been achieved; estimate correction alone is not claimed to solve it.
+
+Final focused checks: **70 Python and 32 JavaScript pass**; quick-check syntax
+and observer compilation pass. Output is **31.8 GB** at start and end, below
+100 GB. All six created application profiles were removed; evidence stays.
+
+Tooling now adds independent whole-app process samples, active grants, peak,
+reserve violations, final below-target status and observed sampling cadence to
+the quick check, while preserving the existing backend `peak_gb` field and
+older-commit API compatibility. `measure-library-processes.py` accepts an
+optional period; its original callers retain the default. Focused validation
+and local commit are recorded in the commit note. No new slow driver, full
+suite, push, merge or protected-project write. The default Library real-app
+check line was added to the local untracked `AGENTS.md`.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
