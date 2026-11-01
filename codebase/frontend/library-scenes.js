@@ -24,8 +24,8 @@ window.HDRLibraryScenes = (() => {
   const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {
     heavyLimit:cpuLanes,onChange:changed,fifo:true,
     admit:async job=>{
-      const gpu=HDRLibraryGpuRaw.enabled()&&HDRLibraryGpuRaw.preflight ? await HDRLibraryGpuRaw.preflight(job.gpuMeta,job.edge,job.controller.signal) : {bytes:0,unified:false};
-      job.grant=await HDRLibraryGrants.acquire(job.path,HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority,job.edge,gpu.bytes,gpu.unified);
+      const gpu=!job.cpuRoute&&HDRLibraryGpuRaw.enabled()&&HDRLibraryGpuRaw.preflight ? await HDRLibraryGpuRaw.preflight(job.gpuMeta,job.edge,job.controller.signal) : {bytes:0,unified:false};
+      job.grant=await HDRLibraryGrants.acquire(job.path,!job.cpuRoute&&HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority,job.edge,gpu.bytes,gpu.unified);
       return true;
     },
     keepRunning:job=>job.retainDetached||(job.edge<=640&&(visible.has(job.path)||nearby.has(job.path)))});
@@ -81,8 +81,8 @@ window.HDRLibraryScenes = (() => {
     const pending = sources.submit((plan.source_identity || identity+"|"+sourceVersion)+"|"+edge, async (shared, importance, job) => {
       const started = performance.now();
       try {
-        const result = await HDRLibraryGrants.run(path,HDRLibraryGpuRaw.enabled()?"source":"cpu",shared,
-          (grant,owned)=>develop(path,edge,owned,importance,version,options.gpuOnly || idle || (priority >= 80 && !visible.has(path)),grant),importance,job.grant);
+        const result = await HDRLibraryGrants.run(path,!plan.cpu_route&&HDRLibraryGpuRaw.enabled()?"source":"cpu",shared,
+          (grant,owned)=>develop(path,edge,owned,importance,version,options.gpuOnly || idle || (priority >= 80 && !visible.has(path)),grant,plan.cpu_route),importance,job.grant);
         if (result && (idle || signal?.aborted)) save(result);
         return result;
       }
@@ -93,7 +93,7 @@ window.HDRLibraryScenes = (() => {
           if (history.size > 256) history.delete(history.keys().next().value);
         }
       }
-    }, signal, priority, {heavy,cost,path,edge,gpuMeta:plan.gpu_meta,viewport:!!options.viewportDemand||idle,retainDetached:!options.viewportDemand&&!idle,log_view:trace?.view,stage:"Developing photo"});
+    }, signal, priority, {heavy,cost,path,edge,cpuRoute:plan.cpu_route,gpuMeta:plan.gpu_meta,viewport:!!options.viewportDemand||idle,retainDetached:!options.viewportDemand&&!idle,log_view:trace?.view,stage:"Developing photo"});
     options.onSourceDemand?.();
     const result=await pending;
     if(result && result.path && result.path!==path){
@@ -118,8 +118,8 @@ window.HDRLibraryScenes = (() => {
     if (generation!==(generations.get(path)||0) || signal?.aborted) throw new DOMException("Invalidated", "AbortError");
     return {...meta, draw_priority:priority, trace, log_view:trace?.view || (edge <= 640 ? "grid,filmstrip" : "single,fullscreen,compare")};
   }
-  async function develop(path, edge, signal, importance, version, gpuOnly = false, grant = null) {
-    if (HDRLibraryGpuRaw.enabled()) {
+  async function develop(path, edge, signal, importance, version, gpuOnly = false, grant = null, cpuRoute = null) {
+    if (!cpuRoute && HDRLibraryGpuRaw.enabled()) {
       try {
         const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal, importance, version, grant);
         if (meta) return meta;
@@ -138,7 +138,7 @@ window.HDRLibraryScenes = (() => {
         HDRLibraryGpuRaw.releaseSource?.(path);
       }
     }
-    if (importance() >= 50 || (gpuOnly && importance() > 0)) return null;
+    if (!cpuRoute && (importance() >= 50 || (gpuOnly && importance() > 0))) return null;
     const cpu=async (token,owned)=>{for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",priority:"low",signal:owned,
         headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,priority:importance(),grant:token})});
@@ -147,7 +147,7 @@ window.HDRLibraryScenes = (() => {
       if (!response.ok) throw failure(meta);
       return meta;
     }};
-    if(HDRLibraryGpuRaw.enabled()){
+    if(!cpuRoute && HDRLibraryGpuRaw.enabled()){
       HDRLibraryGrants.release(grant);
       return HDRLibraryGrants.run(path,"cpu",signal,cpu,importance);
     }

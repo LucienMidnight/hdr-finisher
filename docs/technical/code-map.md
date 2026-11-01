@@ -425,7 +425,7 @@ grants. `library_index.py` releases startup grants at safe points and on close.
 `library_worker.py` tracks active decoder deadlines and identified crash recovery;
 `library_picture_errors.py` separates device-offline errors from broken photos.
 `library-grants.js` sends document/native visibility over the existing channel; `desktop/main.js` includes native visibility in the existing window-state event. Header-only JPEG
-XL/X-Trans RAF refusal lives in `library_rgb.py` / `library_gpu_raw.py`.
+XL refusal lives in `library_rgb.py`. Header-confirmed X-Trans RAF CPU routing lives in `library_gpu_raw.py`, `library_api.py`, `library_live.py` and `library-scenes.js`; its measured exception is in `library_estimates.py`.
 
 | Library diagnostics | Files |
 | --- | --- |

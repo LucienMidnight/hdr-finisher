@@ -303,3 +303,28 @@ test('screen neighbours stay soon beside a visible filmstrip and stop when deman
  assert.deepEqual(started,[{edge:2560,priority:50}]);
  controller.abort();await stopped;assert.equal(shared.aborted,true);block.resolve();
 });
+
+
+test('confirmed X-Trans uses its CPU grant directly even with a usable GPU',async()=>{
+ const {context,scenes}=setup({fuji:{cpu_route:'xtrans',bytes:32e6}},()=>assert.fail('X-Trans must not enter Bayer development'));
+ const grants=[],requests=[];
+ context.HDRLibraryGrants.acquire=async(path,kind,signal,priority,edge,gpuBytes)=>{grants.push({kind,edge,gpuBytes});return {id:'bounded-fuji'};};
+ context.HDRLibraryGrants.run=async(path,kind,signal,task,priority,initial)=>{assert.equal(kind,'cpu');assert.equal(initial.id,'bounded-fuji');return task(initial.id,signal);};
+ context.HDRLibraryGpuRaw.preflight=()=>assert.fail('No Bayer GPU reservation for X-Trans');
+ const fetch=context.fetch;
+ context.fetch=async(url,options)=>{
+  if(url!=='/api/library/live-scene')return fetch(url,options);
+  const body=JSON.parse(options.body);requests.push(body);return {ok:true,json:async()=>({edge:body.edge,key:'stored-fuji'})};
+ };
+ for(const edge of [640,2560])assert.equal((await scenes.load('fuji',edge,null,0)).key,'stored-fuji');
+ assert.equal(grants.length,2);assert.ok(grants.every(g=>g.kind==='cpu'&&g.gpuBytes===0));
+ assert.ok(requests.every(r=>r.gpu===false&&r.grant==='bounded-fuji'));
+});
+
+test('unsupported source refusals never reopen the general CPU path',async()=>{
+ for(const reason of ['unresolved EXR interpretation','JPEG XL interpretation required','unsupported DNG opcode']){
+  const {scenes,requests}=setup({photo:{bytes:96e6}},async()=>{throw Error(reason);});
+  await assert.rejects(scenes.load('photo',640),new RegExp(reason));
+  assert.ok(requests.every(r=>r.gpu!==false));
+ }
+});

@@ -296,7 +296,8 @@ A camera preview can remain visible when full development is unavailable.
 The Library now explains these cases:
 
 - “Not supported: JPEG XL source colour is unresolved. Open it in Grade to choose its source interpretation.”
-- “Not supported: X-Trans sensor development is not available in the Library. The camera preview is kept when available.”
+- Fuji X-Trans photos first show the camera preview, then develop using the same decoder as Grade. Development can wait for memory or earlier work.
+- When development is refused and a preview is available, the preview stays visible. Hover over the photo for the reason.
 - “The photo decoder stopped while reading this file. The file was set aside; other photos continue.”
 - “The photo decoder took too long. The file was set aside; other photos continue.”
 - “This folder is offline. Reconnect the drive, then open the folder again.”

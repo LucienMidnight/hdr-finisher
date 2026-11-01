@@ -77,7 +77,9 @@ window.HDRLibraryPictureErrors = Object.freeze({
     function paint(cell) {
       const record = records.get(cell.photo.path);
       let tag = cell.element.querySelector(".library-picture-error");
-      cell.element.classList.toggle("picture-failed", !!record && !record.grade_warning);
+      const previewOnly = !!record && !record.grade_warning && !!cell.hasCameraPreview;
+      cell.element.classList.toggle("picture-failed", !!record && !record.grade_warning && !previewOnly);
+      if (previewOnly) { cell.element.title = record.reason; tag?.remove(); return; }
       if (!record) { tag?.remove(); return; }
       cell.element.classList.remove("loading");
       if (!tag) {
@@ -91,6 +93,14 @@ window.HDRLibraryPictureErrors = Object.freeze({
       tag.title = record.reason;
       tag.setAttribute("aria-label", `${cell.photo.name}: ${record.reason} Review error`);
     }
-    return Object.freeze({remember, update, show, paint, canPrepare:path => !records.has(path) || !!records.get(path).grade_warning, get:path => records.get(path)});
+    async function failed(cell, current) {
+      // A source refusal can beat JPEG extraction. Let the independent quick
+      // request finish before deciding whether this cell has no picture.
+      await cell.previewPromise;
+      if (!current()) return;
+      paint(cell);
+      if (!cell.hasCameraPreview) cell.controller.abort();
+    }
+    return Object.freeze({remember, update, show, paint, failed, canPrepare:path => !records.has(path) || !!records.get(path).grade_warning, get:path => records.get(path)});
   }
 });

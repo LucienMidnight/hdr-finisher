@@ -165,6 +165,10 @@ each module's open work:
 (chromatic aberration and purple/green defringe). See the
 [Import and RAW PRD](modules/import-and-raw.md), open work item 5.
 
+**V2 (Steve, November 1, 2026):** GPU development for Fuji X-Trans RAWs
+(the 6x6 sensor pattern). In v1, X-Trans develops on the CPU. See the
+[Import and RAW PRD](modules/import-and-raw.md), open work item 6.
+
 **Later, not planned yet:** AI search and tagging (version 2 at the earliest).
 
 ## 4. How the app is built

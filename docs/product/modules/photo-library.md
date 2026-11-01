@@ -1,5 +1,20 @@
 # Module PRD: Photo Library
 
+## November 1: Fuji X-Trans thumbnails
+
+Confirmed 6x6 RAF files now use Grade's CPU development through the existing
+cancellable helper and cache the result at 640/2560. The camera preview can
+appear while development waits; source refusals keep an available preview
+and explain the reason on hover. Other interpretation/refusal gates remain.
+Steve approved a Fuji-only 45 bytes/pixel reservation after measuring 587.7 MB
+private commitment; the 4 GB ceiling and all other rates are unchanged.
+Grade's guarded Lanczos filter is used only for this route. Grade opens work;
+final perceptual agreement and other-fixture exactness remain unverified.
+Final 90 s check passed: RAF preview 0.807 s, development 37.545 s including
+queue; grid 23/27 by 30/60 s, external peak 3.543 GB, longest frame gap 61 ms.
+Steve requested a quick check instead of further sweeps. Scheduler 7.20 has
+the measurements and verification limits.
+
 ## November 1: detached timing and responsive transfers
 
 The quick check now launches without DevTools and measures input to the matching

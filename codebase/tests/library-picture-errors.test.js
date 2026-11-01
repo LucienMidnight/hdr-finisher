@@ -10,3 +10,24 @@ test('interpretation refusal stays blocked through folder rechecks, until explic
 test('a readable grade warning still permits picture preparation',()=>{
  const {errors}=setup();errors.remember({path:'photo.dng',grade_warning:true});assert.ok(errors.canPrepare('photo.dng'));assert.ok(errors.canPrepare('healthy.dng'));
 });
+
+
+test('a late camera preview survives source refusal and exposes the reason on hover',async()=>{
+ const {errors}=setup(),controller=new AbortController();let resolve,removed=false;
+ errors.remember({path:'refused.raf',reason:'Unsupported recipe'});
+ const classes=new Map(),tag={remove(){removed=true;}};
+ const cell={photo:{path:'refused.raf'},controller,element:{querySelector:()=>tag,classList:{toggle:(key,value)=>classes.set(key,value)}}};
+ cell.previewPromise=new Promise(r=>resolve=r);
+ const failure=errors.failed(cell,()=>!controller.signal.aborted);
+ await Promise.resolve();assert.equal(controller.signal.aborted,false);
+ cell.hasCameraPreview=true;resolve();await failure;
+ assert.equal(controller.signal.aborted,false);assert.equal(removed,true);
+ assert.equal(classes.get('picture-failed'),false);assert.equal(cell.element.title,'Unsupported recipe');
+});
+
+test('a missing preview still releases the failed cell and an obsolete preview cannot repaint it',async()=>{
+ const {errors}=setup();let paints=0;
+ const cell={photo:{path:'no-picture.raf'},controller:new AbortController(),previewPromise:Promise.resolve(),element:{querySelector:()=>null,classList:{toggle:()=>paints++}}};
+ await errors.failed(cell,()=>true);assert.equal(cell.controller.signal.aborted,true);assert.equal(paints,1);
+ paints=0;await errors.failed(cell,()=>false);assert.equal(paints,0);
+});

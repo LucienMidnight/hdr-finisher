@@ -476,3 +476,71 @@ def test_pending_preview_stays_owned_until_disk_publication_finishes(tmp_path, m
     cache.persist_pending(str(path.resolve()), lambda _: None)
     assert not cache.transient and not cache.pending_stores
     assert cache.file(result["key"]).is_file()
+
+
+@pytest.mark.parametrize("gpu", [False, True])
+def test_xtrans_api_reuses_measured_cpu_grant_and_existing_cancellable_helper(tmp_path, monkeypatch, gpu):
+    from concurrent.futures import Future
+    from contextlib import asynccontextmanager
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher import library_api, library_gpu_raw, library_estimates
+    from hdr_finisher import library_grants
+    from hdr_finisher.library_grants import backend_grant
+    from hdr_finisher.library_scheduler import scheduler
+    from hdr_finisher.media_browser import MediaBrowserStore
+    import struct
+    profile = tmp_path / "profile"
+    png = photo(tmp_path)
+    result = develop_cpu(profile, png, None, 640)
+    from hdr_finisher.library_live import LivePictures
+    LivePictures(profile, LibraryMarks(profile)).cache.managed.clear()
+    raf = tmp_path / "fuji.raf"
+    header = bytearray(100)
+    header[:16] = b"FUJIFILMCCD-RAW "
+    data = struct.pack(">IHH", 1, 0x0131, 36) + bytes([0, 1, 2] * 12)
+    header[92:100] = struct.pack(">II", 100, len(data))
+    raf.write_bytes(header + data + bytes(2000))
+    monkeypatch.setattr(library_estimates, "dimensions", lambda path: (4992, 3296))
+    monkeypatch.setattr(library_gpu_raw, "sensor", lambda *a, **k: pytest.fail("X-Trans entered Bayer sensor route"))
+    admitted = []
+    @asynccontextmanager
+    async def grant(path, kind, priority, token, cancelled, edge):
+        async with backend_grant(path, kind, priority, token, cancelled, edge) as owned:
+            admitted.append((kind, scheduler.jobs[owned].estimate))
+            yield owned
+    monkeypatch.setattr(library_grants, "backend_grant", grant)
+    class Helper:
+        def status(self): return {"paused": False}
+        def submit_library(self, command, **arguments):
+            assert command == "live-scene" and arguments["path"] == str(raf)
+            future = Future(); future.set_result(dict(result)); return "fuji", future
+        def prioritize(self, *args): pass
+        def cancel(self, *args): pass
+    app = FastAPI(); app.include_router(library_api.create_library_router(Helper(), MediaBrowserStore(profile)))
+    with TestClient(app) as client:
+        plan = client.post('/api/library/live-plan', json={"path":str(raf),"edge":640})
+        assert plan.status_code == 200
+        assert plan.json()["cpu_route"] == "xtrans" and plan.json()["gpu_meta"] is None
+        response = client.post('/api/library/live-scene', json={"path":str(raf),"edge":640,"gpu":gpu})
+        assert response.status_code == 200, response.text
+    assert admitted == [("cpu", 740_413_440)]
+
+
+def test_non_xtrans_gpu_refusal_never_submits_cpu_helper(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher import library_api, library_rgb, library_gpu_raw
+    from hdr_finisher.media_browser import MediaBrowserStore
+    path = photo(tmp_path)
+    def refuse(*args, **kwargs):
+        raise library_gpu_raw.NotEligible("unsupported source recipe")
+    monkeypatch.setattr(library_rgb, "decoded", refuse)
+    class Helper:
+        def status(self): return {"paused": False}
+        def submit_library(self, *args, **kwargs): pytest.fail("refusal submitted CPU work")
+    app = FastAPI(); app.include_router(library_api.create_library_router(Helper(), MediaBrowserStore(tmp_path/"profile")))
+    with TestClient(app) as client:
+        response = client.post('/api/library/live-scene', json={"path":str(path),"edge":640,"gpu":True})
+    assert response.status_code == 204
+    assert response.headers["X-Library-Fallback"] == "unsupported source recipe"

@@ -30,7 +30,9 @@ def _reader_identity():
     remembered failure (often an old grade an earlier version wrote) is retried
     after an update instead of staying stuck until the photo changes."""
     from .models import EditDocument
-    return sha256(json.dumps(EditDocument.model_json_schema(), sort_keys=True).encode()).hexdigest()
+    # A newly supported source route must retry failures saved by the old app.
+    identity = {"grade_schema": EditDocument.model_json_schema(), "library_source_routes": "xtrans-cpu-v1"}
+    return sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
 _READER = _reader_identity()
