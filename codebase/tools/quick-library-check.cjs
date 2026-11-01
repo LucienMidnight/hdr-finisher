@@ -69,11 +69,33 @@ function analyse(text, openedAt) {
   // for that photo is on screen.
   const runSingle = async lib => {
     const selected = () => lib.evaluate(() => HDRLibrary.getSnapshot().selected || '');
-    const shown = (path, timeout = 120000) => lib.waitForFunction(p => {
+    // Poll the shown surface ourselves so a slow step can report the canvas
+    // state it was waiting on instead of only "timed out".
+    const surface = () => lib.evaluate(() => {
       const c = document.getElementById('single-picture');
-      return !!c && !c.hidden && c.dataset.picturePath === p && Number(c.dataset.pictureEdge) === 2560;
-    }, path, { timeout });
+      if (!c) return { present: false };
+      return { present: true, path: c.dataset.picturePath || '', edge: Number(c.dataset.pictureEdge) || 0, hidden: !!c.hidden };
+    });
+    const shown = async (path, timeout = 120000) => {
+      const until = Date.now() + timeout, seen = new Map();
+      for (;;) {
+        let s;
+        try { s = await surface(); } catch (error) { s = { present: false, error: error.message }; }
+        const mark = `${s.path || ''}|${s.edge || 0}|${s.hidden ? 'hidden' : 'shown'}`;
+        seen.set(mark, (seen.get(mark) || 0) + 1);
+        if (s.present && !s.hidden && s.path === path && s.edge === 2560) return { surface: s, seen: [...seen].map(([k, v]) => `${k} x${v}`).slice(-6) };
+        if (Date.now() > until) throw Object.assign(Error('Timed out waiting for surface'), { seen: [...seen].map(([k, v]) => `${k} x${v}`).slice(-8) });
+        await sleep(50);
+      }
+    };
     await lib.waitForFunction(() => document.querySelector('#grid-space .library-cell canvas[data-picture-key]'), null, { timeout: 300000 });
+    const watch = () => lib.evaluate(() => {
+      window.__gaps = [];
+      let last = performance.now();
+      const tick = () => { const n = performance.now(); if (n - last > 120) window.__gaps.push(Math.round(n - last)); last = n; if (window.__gaps.length < 200) requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+    });
+    const gaps = () => lib.evaluate(() => { const g = window.__gaps || []; return { longest: Math.max(0, ...g), top: [...g].sort((a, b) => b - a).slice(0, 3) }; });
     const nameOf = p => String(p).replaceAll('\\', '/').split('/').pop();
     const openedAt = Date.now();
     let at = Date.now();
@@ -91,11 +113,19 @@ function analyse(text, openedAt) {
     for (let i = 1; i <= singleSteps; i++) {
       const since = Date.now() - at;
       if (since < singlePace) await new Promise(r => setTimeout(r, singlePace - since));
+      await watch();
       at = Date.now();
+      let mark = Date.now();
       await lib.evaluate(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+      const dispatchMs = Date.now() - mark; mark = Date.now();
       const path = await selected();
-      try { await shown(path); steps.push({ index: i, name: nameOf(path), ms: Date.now() - at }); }
-      catch (error) { steps.push({ index: i, name: nameOf(path), ms: null, error: error.name }); }
+      const selectedMs = Date.now() - mark; mark = Date.now();
+      try {
+        const r = await shown(path);
+        const g = await gaps().catch(() => ({}));
+        steps.push({ index: i, name: nameOf(path), ms: Date.now() - at, dispatchMs, selectedMs, seen: r.seen, longestGapMs: g.longest, topGapsMs: g.top });
+      }
+      catch (error) { steps.push({ index: i, name: nameOf(path), ms: null, error: error.name, seen: error.seen }); }
       console.log(`single step ${i} ${nameOf(path)} ${steps.at(-1).ms} ms`);
     }
     await page.screenshot({ path: path.join(out, 'single.png') }).catch(() => {});
