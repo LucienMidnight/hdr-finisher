@@ -18,27 +18,20 @@ test('flapping around the target does not trim on every return',()=>{
   for(let t=0;t<COOLDOWN_MS;t+=500)if(step(t%1000?'none':'moderate',t))trims.push(t);
   assert.deepEqual(trims,[0]);
 });
-for(const attached of [false,true])test(`native pressure preserves an existing debugger: ${attached}`,async()=>{
-  let connected=attached;const calls=[];
-  const debuggerTransport={isAttached:()=>connected,attach:()=>{connected=true;calls.push('attach');},
-    detach:()=>{connected=false;calls.push('detach');},sendCommand:async(command,value)=>calls.push([command,value])};
-  await notifyChromiumPressure({debugger:debuggerTransport},'moderate');
-  assert.equal(connected,attached);
-  assert.deepEqual(calls,attached ? [['HeapProfiler.collectGarbage',undefined]] :
-    ['attach',['HeapProfiler.collectGarbage',undefined],'detach']);
+test('moderate reclaim awaits renderer collection without accessing DevTools',async()=>{
+ const vm=require('node:vm');let complete,seen;
+ const pending=notifyChromiumPressure({get debugger(){throw Error('DevTools must stay detached');},
+  executeJavaScriptInIsolatedWorld:async(world,scripts)=>vm.runInNewContext(scripts[0].code,{gc:options=>{seen=options;return new Promise(resolve=>{complete=resolve;});}}),
+  send:()=>{throw Error('moderate must retain native caches');}},'moderate');
+ let finished=false;pending.then(()=>{finished=true;});await Promise.resolve();
+ assert.equal(finished,false);assert.equal(seen.type,'major');assert.equal(seen.execution,'async');assert.equal(seen.flavor,'last-resort');
+ complete();await pending;assert.equal(finished,true);
 });
-test('failed native notification releases its own debugger',async()=>{
- let connected=false;
- const transport={isAttached:()=>connected,attach:()=>{connected=true;},detach:()=>{connected=false;},
-   sendCommand:async()=>{throw Error('unavailable');}};
- await assert.rejects(notifyChromiumPressure({debugger:transport},'critical'),/unavailable/);
- assert.equal(connected,false);
-});
-
-
-test('critical pressure still purges native allocations',async()=>{
+test('critical reclaim also requests native cache eviction',async()=>{
  const calls=[];
- const transport={isAttached:()=>true,sendCommand:async(...args)=>calls.push(args)};
- await notifyChromiumPressure({debugger:transport},'critical');
- assert.deepEqual(calls,[['Memory.simulatePressureNotification',{level:'critical'}]]);
+ await notifyChromiumPressure({executeJavaScriptInIsolatedWorld:async()=>calls.push('collected'),send:channel=>calls.push(channel)},'critical');
+ assert.deepEqual(calls,['collected','desktop:clear-native-cache']);
+});
+test('failed renderer collection surfaces to the caller',async()=>{
+ await assert.rejects(notifyChromiumPressure({executeJavaScriptInIsolatedWorld:async()=>{throw Error('unavailable');}},'moderate'),/unavailable/);
 });

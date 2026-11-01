@@ -1,16 +1,9 @@
-// Forward the app's measured pressure to Chromium's native memory owners.
+// Reclaim without a DevTools session. Both calls run in the renderer isolate;
+// critical pressure also clears Blink's native resource caches in the preload.
 async function notifyChromiumPressure(contents, level) {
-  const transport = contents.debugger;
-  const owned = !transport.isAttached();
-  try {
-    if (owned) transport.attach('1.3');
-    // Release dead page-owned upload blobs at moderate pressure. A global
-    // native purge also stalls in-flight GPU mappings for many seconds.
-    if(level==='moderate')await transport.sendCommand('HeapProfiler.collectGarbage');
-    else await transport.sendCommand('Memory.simulatePressureNotification', {level});
-  } finally {
-    if (owned && transport.isAttached()) transport.detach();
-  }
+  await contents.executeJavaScriptInIsolatedWorld(998, [{code:
+    "(async()=>{if(typeof gc!=='function')throw Error('Renderer GC unavailable');await gc({type:'major',execution:'async',flavor:'last-resort'});})()"}]);
+  if (level === 'critical') contents.send('desktop:clear-native-cache');
 }
 // Decide when a measured pressure level trims caches. A rise trims at once;
 // a level that lasts trims again only after the cool-down, as Chromium's own

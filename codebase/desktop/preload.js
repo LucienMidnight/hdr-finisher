@@ -1,4 +1,5 @@
-const { contextBridge, ipcRenderer, webUtils } = require("electron");
+const { contextBridge, ipcRenderer, webUtils, webFrame } = require("electron");
+ipcRenderer.on("desktop:clear-native-cache", () => webFrame.clearCache());
 
 function subscribe(channel, callback) {
   if (typeof callback !== "function") return () => {};

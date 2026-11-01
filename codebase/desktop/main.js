@@ -55,6 +55,9 @@ if (process.env.HDR_FINISHER_DISABLE_GPU === "1") {
   app.disableHardwareAcceleration();
 }
 
+// The app reclaims renderer garbage through V8, without attaching DevTools.
+app.commandLine.appendSwitch("js-flags", [app.commandLine.getSwitchValue("js-flags"), "--expose-gc"].filter(Boolean).join(" "));
+
 const recentProjects = createRecentProjects(path.join(app.getPath("userData"), "recent-projects.json"));
 
 let deliveryWindow = null;
@@ -1315,8 +1318,9 @@ if (!gotLock) {
       if (shuttingDown || !mainWindow || mainWindow.isDestroyed()) return;
       const activeBackend = backend;
       session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${activeBackend.url}/*`, `${activeBackend.url.replace("http:","ws:")}/*`] }, (details, callback) => {
-        const uploadBytes=(details.uploadData || []).reduce((n,item)=>n+(item.bytes?.byteLength || 0),0);
-        if(uploadBytes>0)libraryStage('main_upload_copy',{bytes:uploadBytes,main:process.memoryUsage()});
+        // Never touch details.uploadData here: touching it makes Electron copy a
+        // whole upload body (a library handoff is 25-60 MB) into this process.
+        // That copy stalls the window while the photo is saved.
         details.requestHeaders["X-HDR-Finisher-Token"] = activeBackend.authoringSecret;
         callback({ requestHeaders: details.requestHeaders });
       });
@@ -1372,6 +1376,10 @@ if (!gotLock) {
       }
       buildMenu();
       await mainWindow.loadURL(backend.url);
+      if (process.env.HDR_FINISHER_QUICK_LIBRARY_CONFIG) {
+        void require("./quick-library-test.cjs").run({app, window:mainWindow, backend})
+          .catch(error => console.error("Quick Library check:", error));
+      }
       setTimeout(async () => {
       if (shuttingDown) return;
       deliveryWindow = new BrowserWindow({show:false, webPreferences:{
