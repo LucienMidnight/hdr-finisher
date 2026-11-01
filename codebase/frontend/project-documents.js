@@ -200,7 +200,7 @@ async function openStagedDesktopSource(selection) {
           throw new Error(payload?.detail || "The completed source session could not be opened.");
         }
         for (const phase of job.phase_history || []) gradeOpenStage("grade_open_backend_stage", {
-          key: phase.phase, duration_ms: phase.duration_ms,
+          work_stage: phase.phase, duration_ms: phase.duration_ms,
         });
         const retainedProjectPath = selection.replaceSessionId ? state.projectPath : "";
         const gradeSession = selection.replaceSessionId ? payload.session : await window.HDRGradeSaving.open(payload.session, selection.itemKey, () => generation === state.importGeneration, recoveryChoice);
