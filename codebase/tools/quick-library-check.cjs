@@ -12,6 +12,10 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const arg = (name, fallback) => process.argv.find(x => x.startsWith(`--${name}=`))?.split('=')[1] ?? fallback;
 const seconds = Number(arg('seconds', 90)), label = arg('label', 'run');
+// --single also measures opening one photo in Single and stepping forward.
+// It uses only the Library API and DOM that older commits already have.
+const singleMode = process.argv.includes('--single');
+const singleSteps = Number(arg('steps', 10)), singlePace = Number(arg('pace', 1500));
 const folder = path.join(root, 'output/test-photos/library-mixed-v1-run');
 const out = path.join(root, 'output/quick-library-check', label);
 fs.mkdirSync(out, { recursive: true });
@@ -60,6 +64,46 @@ function analyse(text, openedAt) {
   });
   const errors = []; page.on('pageerror', e => errors.push(String(e)));
   page.on('console', m => { if (/Memory controller|timeout/i.test(m.text())) errors.push(m.text()); });
+  // Open one photo in Single, then step forward at a natural pace. Each
+  // reading is from the key press (or the open click) until the 2560 picture
+  // for that photo is on screen.
+  const runSingle = async lib => {
+    const shown = async path => lib.waitForFunction(p => {
+      const c = document.getElementById('single-picture');
+      return !!c && !c.hidden && c.dataset.picturePath === p && Number(c.dataset.pictureEdge) === 2560;
+    }, path, { timeout: 300000 });
+    await lib.waitForFunction(() => document.querySelector('#grid-space .library-cell'), null, { timeout: 300000 });
+    const paths = await lib.evaluate(() => HDRLibrary.getSnapshot().paths);
+    if (!paths.length) throw Error('no photos to open');
+    const nameOf = p => p.replaceAll('\\', '/').split('/').pop();
+    const openedAt = Date.now();
+    let at = Date.now();
+    await lib.evaluate(p => {
+      [...document.querySelectorAll('#grid-space .library-cell')].find(c => c.dataset.path === p)?.click();
+      document.getElementById('single-view').click();
+    }, paths[0]);
+    await shown(paths[0]);
+    const openMs = Date.now() - at;
+    const steps = [];
+    for (let i = 1; i <= singleSteps && i < paths.length; i++) {
+      const since = Date.now() - at;
+      if (since < singlePace) await new Promise(r => setTimeout(r, singlePace - since));
+      at = Date.now();
+      await lib.evaluate(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+      await shown(paths[i]);
+      steps.push({ index: i, name: nameOf(paths[i]), ms: Date.now() - at });
+    }
+    await page.screenshot({ path: path.join(out, 'single.png') }).catch(() => {});
+    const times = steps.map(s => s.ms);
+    const sorted = [...times].sort((a, b) => a - b);
+    return {
+      first_photo: nameOf(paths[0]), open_ms: openMs, steps,
+      step_mean_ms: times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null,
+      step_median_ms: times.length ? sorted[Math.floor(sorted.length / 2)] : null,
+      step_max_ms: times.length ? sorted.at(-1) : null,
+      elapsed_ms: Date.now() - openedAt,
+    };
+  };
   await page.goto(process.env.HDR_FINISHER_URL); await page.evaluate(() => activateWorkflowTab('import'));
   const lib = page.frame({ url: /\/library(?:\?|$)/ }); await lib.waitForFunction(() => window.HDRLibrary);
   const set = await global.HDRFinisherElectronTestHarness.fetch('/api/library/memory-setting', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bytes: 4e9 }) }).catch(e => ({ ok: false, status: String(e) }));
@@ -88,17 +132,22 @@ function analyse(text, openedAt) {
   });
   const openedAt = Date.now();
   lib.evaluate(f => HDRLibrary.browse(f), folder.replaceAll('\\', '/')).catch(e => errors.push(String(e)));
-  for (let s = 10; s <= seconds; s += 10) {
-    await sleep(10000);
-    const r = analyse(fs.readFileSync(logPath, 'utf8'), openedAt);
-    console.log(`${s}s shown ${r.shown_by.end}/50 peak ${r.peak_gb} GB reclaims ${r.reclaims.length}`);
+  let single = null;
+  if (singleMode) {
+    single = await runSingle(lib);
+  } else {
+    for (let s = 10; s <= seconds; s += 10) {
+      await sleep(10000);
+      const r = analyse(fs.readFileSync(logPath, 'utf8'), openedAt);
+      console.log(`${s}s shown ${r.shown_by.end}/50 peak ${r.peak_gb} GB reclaims ${r.reclaims.length}`);
+    }
+    await page.screenshot({ path: path.join(out, 'screen.png') }).catch(() => {});
   }
-  await page.screenshot({ path: path.join(out, 'screen.png') }).catch(() => {});
   const text = fs.readFileSync(logPath, 'utf8');
   fs.writeFileSync(path.join(out, 'backend.log'), text);
   if (!sampleCount || observerError) errors.push('Independent memory observer: ' + (observerError || 'no samples'));
   sampleIntervals.sort((a,b) => a-b);
-  const report = { label, commit: execFileSync('git', ['-c', 'safe.directory=*', 'rev-parse', '--short', 'HEAD'], { cwd: root }).toString().trim(), seconds, errors, ...analyse(text, openedAt), independent_memory: {...memory.report(), samples: sampleCount, lastBytes: memory.last?.totalBytes, sampleIntervalMs: {requested: 250, median: sampleIntervals[Math.floor(sampleIntervals.length/2)], maximum: sampleIntervals.at(-1)}}, observerError };
+  const report = { label, commit: execFileSync('git', ['-c', 'safe.directory=*', 'rev-parse', '--short', 'HEAD'], { cwd: root }).toString().trim(), seconds, single_mode: singleMode, errors, ...analyse(text, openedAt), single, independent_memory: {...memory.report(), samples: sampleCount, lastBytes: memory.last?.totalBytes, sampleIntervalMs: {requested: 250, median: sampleIntervals[Math.floor(sampleIntervals.length/2)], maximum: sampleIntervals.at(-1)}}, observerError };
   fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify(report, null, 1));
   console.log(JSON.stringify(report, null, 1));
   observer.kill();
