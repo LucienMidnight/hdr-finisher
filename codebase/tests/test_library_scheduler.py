@@ -404,7 +404,7 @@ def test_priority_preemption_frees_unused_gpu_and_waits_for_active_safe_point(mo
 
 def test_oldest_reclaims_then_starts_without_starvation_or_lower_admission():
     s = fresh(2_700_000_000)
-    s.update(total=2_300_000_000, caches=800_000_000, available=60*GB, ram=68*GB)
+    s.update(total=2_500_000_000, caches=800_000_000, available=60*GB, ram=68*GB)
     s.heartbeat("window")
     big = ask(s, "big", 2*GB)
     small = ask(s, "small", FAST_BYTES)
@@ -423,12 +423,12 @@ def test_oldest_reclaims_then_starts_without_starvation_or_lower_admission():
 def test_exhausted_reclamation_ends_once_and_releases_the_queue():
     s = fresh()
     events = []
-    s.update(total=2_300_000_000, available=60*GB, ram=68*GB)
+    s.update(total=2_500_000_000, available=60*GB, ram=68*GB)
     big = s.ask("big", "window", "big.avif", "source", 2*GB, notify=events.append)
     small = ask(s, "small", FAST_BYTES)
     request = s.reclamation_request()
     s.reclaimed(request["epoch"])
-    s.update(total=2_300_000_000, available=60*GB, ram=68*GB)
+    s.update(total=2_500_000_000, available=60*GB, ram=68*GB)
     assert big.outcome == "needs more memory" and big.ready.is_set()
     assert "big" not in s.jobs and small.granted is not None
     s.update(total=2_300_000_000, available=60*GB, ram=68*GB)
@@ -471,3 +471,51 @@ def test_grade_preempts_guard_before_reclamation_and_during_owner_wait():
     s.reclaimed(request["epoch"], "window")
     # A census still has not arrived; Grade did not need it.
     assert s.reclamation and not blocked.ready.is_set()
+
+
+def test_guarded_admission_uses_elastic_limit_but_ordinary_admission_does_not():
+    for total, expected in [(2_400_000_000, True), (2_400_000_001, False)]:
+        s = Scheduler()
+        s.update(total=total, available=60*GB, ram=68*GB)
+        big = ask(s, "big", 2*GB)
+        assert big.granted is None  # Ordinary admission still stops at 4 GB.
+        s.update(total=total, available=60*GB, ram=68*GB)
+        if not expected:
+            request = s.reclamation_request()
+            assert request
+            s.reclaimed(request["epoch"])
+            s.update(total=total, available=60*GB, ram=68*GB)
+            assert big.outcome == "needs more memory"
+        assert (big.granted is not None) == expected
+
+
+def test_elastic_guard_requires_same_class_to_drain_and_keeps_reserve_hard():
+    s = Scheduler()
+    s.update(total=2_400_000_000, available=60*GB, ram=68*GB)
+    active = ask(s, "active", FAST_BYTES)
+    big = ask(s, "big", 2*GB)
+    ask(s, "later", FAST_BYTES)
+    assert big.bypassed and big.granted is None
+    s.update(total=2_400_000_000, available=8_000_000_000, ram=68*GB)
+    s.finish(active.id)
+    s.finish("later")
+    assert big.granted is None and big.reason == "system reserve"
+    s.update(total=2_400_000_000, available=8_800_000_000, ram=68*GB)
+    assert big.granted is None  # Recovery first restores the measured-memory guard.
+    s.update(total=2_400_000_000, available=8_800_000_000, ram=68*GB)
+    assert big.granted is not None  # Exactly the hard reserve remains.
+
+
+def test_guarded_gpu_preemption_keeps_grade_safe_point_release():
+    s = Scheduler()
+    s.update(total=2_400_000_000, available=60*GB, ram=68*GB)
+    s.update_gpu(4*GB)
+    job = s.ask("big", "window", "big.raw", "source", 2*GB, gpu_bytes=GB)
+    s.update(total=2_400_000_000, available=60*GB, ram=68*GB)
+    assert job.granted is not None and s.gpu_refine(job.id, GB)
+    s.preempt_gpu()
+    grade = ask(s, "grade", 8*GB, "Grade")
+    assert grade.granted is not None
+    assert s.gpu_reserved() == GB  # Active work reaches its existing safe point.
+    s.finish(job.id)
+    assert s.gpu_reserved() == 0

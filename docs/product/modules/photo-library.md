@@ -1,5 +1,15 @@
 # Module PRD: Photo Library
 
+## November 1: Decision 21 built; final qualification pending
+
+The protected oldest job can use the existing 10% elastic allowance once no
+job of its class is running. Ordinary admission and the hard system reserve
+are unchanged. Focused admission/preemption checks pass. The unchanged Grade
+rerun passes (469 ms pause, 402 ms close/save); the earlier slow run did not
+reproduce and its cause remains unresolved. Final mixed/Aceh/release checks
+are pending; see scheduler design section 7.14.
+
+
 ## November 1: Decision 20 built; acceptance incomplete
 
 The queue now ends every request: **20/27 mixed photos finish in 34.6 s**, four

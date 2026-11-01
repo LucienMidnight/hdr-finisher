@@ -2289,4 +2289,11 @@ thread. A behavioral check covers Grade before reclamation, while both backend
 and owner acknowledgements are outstanding, and before the fresh census.
 Evidence: `codebase/output/grade-regression-baseline.json`.
 
-Decision 21 and final acceptance follow below.
+Decision 21 is built: only the oldest protected request, with no running job
+of its own class, uses ceiling × 1.1 for the measured admission gate. Ordinary
+admission remains at the ceiling. The existing physical-headroom check runs
+first and charges every uncovered grant; the reserve cannot be borrowed.
+No estimate, cache share, floor, concurrency or budget value changed. Existing
+reclamation tests now use retained totals above 4.4 GB including the request,
+so they still exercise owner acknowledgements and a fresh census. Focused
+scheduler/channel/memory checks: **63 pass**. Final acceptance follows below.

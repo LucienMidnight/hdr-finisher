@@ -435,7 +435,11 @@ class Scheduler:
             else:
                 reason = "room"
             unmeasured = sum(j.estimate for j in running if j.id not in self.sampled_grants)
-            measured_fits = self.total is None or self.total + unmeasured + job.estimate <= self.ceiling
+            # Decision 21 widens only the protected, drained turn. New grants
+            # still consume physical headroom above, including the fast lane.
+            guarded_alone = job is guard and not any(j.cls == job.cls for j in running)
+            admission_limit = self.ceiling * 11 // 10 if guarded_alone else self.ceiling
+            measured_fits = self.total is None or self.total + unmeasured + job.estimate <= admission_limit
             if not reason and job.cls != "Grade" and not job.fast and not job.floor and not measured_fits:
                 reason = "measured memory"
             if (not reason and guard and job is not guard and not job.fast and
