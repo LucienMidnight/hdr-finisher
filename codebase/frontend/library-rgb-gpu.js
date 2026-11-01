@@ -2,7 +2,7 @@
  * Grade, export and Proof retain their existing preparation entry points. */
 window.HDRLibraryRGB = (() => {
   "use strict";
-  const {gpu,COMMON,TURN,FINISHING,reducedSize}=HDRLibraryGpuRaw.shared;
+  const {gpu,COMMON,TURN,FINISHING,reducedSize,uploadBuffer,yieldToWindow}=HDRLibraryGpuRaw.shared;
   const compiled=new WeakMap();
   const INPUT = `
   @group(0) @binding(1) var<storage, read> rgbInput: array<u32>;
@@ -225,7 +225,7 @@ window.HDRLibraryRGB = (() => {
         pipelines[name]=await device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code}),entryPoint:"main"}});
       compiled.set(compileDevice,pipelines);
     }
-    if(meta.dng_warp)return developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines});
+    if(meta.dng_warp)return developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines,signal});
     errors.length = 0;
     const w = meta.width, h = meta.height, n = w * h;
     const outW = w, outH = h;
@@ -278,12 +278,7 @@ window.HDRLibraryRGB = (() => {
       if(beforeSubmit) await beforeSubmit();
       const mosaicBuf = make(meta.mosaic_bytes);
       const whole = Math.floor(mosaic.byteLength / 4) * 4;
-      const transferBand = w * 128 * 3 * (meta.layout?.dtype === "float32" ? 4 : 1);
-      // Check the permit once for the upload. It is only a buffer write, and
-      // the per-band check made every band wait on the whole GPU queue.
-      for(let offset=0;offset<whole;offset+=transferBand){
-        device.queue.writeBuffer(mosaicBuf,offset,mosaic.buffer,mosaic.byteOffset+offset,Math.min(transferBand,whole-offset));
-      }
+      await uploadBuffer(device,mosaicBuf,mosaic,whole,signal);
       if (whole < mosaic.byteLength) { const tail = new Uint8Array(4); tail.set(mosaic.subarray(whole)); device.queue.writeBuffer(mosaicBuf, whole, tail); }
       await stage("upload");
 
@@ -415,7 +410,7 @@ window.HDRLibraryRGB = (() => {
     }
   }
 
-  async function developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines}) {
+  async function developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines,signal}) {
     errors.length=0;
     const {dngFootprint}=HDRLibraryGpuRaw.shared;
     const w=meta.width,h=meta.height,st=meta.sample_stride,sw=Math.ceil(w/st),sh=Math.ceil(h/st);
@@ -477,8 +472,12 @@ window.HDRLibraryRGB = (() => {
         for(let c=0;c<3;c++){const k=warp.coefficients[warp.coefficients.length===1?0:c];df.set(k.slice(0,4),c*8);df.set(k.slice(4),c*8+4);}
         df.set([...warp.center,warp.radius,0],24);df.set([...warp.affine_x,x],28);df.set([...warp.affine_y,y],32);du.set([warp.width,warp.height,box.left,box.top],36);device.queue.writeBuffer(dng,0,data);
         await timed("upload",async()=>{
-          const packed=new Float32Array(bytes/4);for(let r=0;r<box.height;r++)packed.set(source.subarray(((box.top+r)*warp.width+box.left)*3,((box.top+r)*warp.width+box.left+box.width)*3),r*box.width*3);
-          device.queue.writeBuffer(input,0,packed);
+          const packed=new Float32Array(bytes/4);let slice=performance.now();
+          for(let r=0;r<box.height;r++){
+            packed.set(source.subarray(((box.top+r)*warp.width+box.left)*3,((box.top+r)*warp.width+box.left+box.width)*3),r*box.width*3);
+            if(performance.now()-slice>=4){if(signal?.aborted)throw new DOMException('Cancelled','AbortError');await yieldToWindow();slice=performance.now();}
+          }
+          await uploadBuffer(device,input,new Uint8Array(packed.buffer),packed.byteLength,signal);
         });
         await permit();
         if(gains)await timed("gain_map",async()=>dispatch("DNG_TILE_GAIN",[uniform,input,dng,gains],box.width,box.height));
@@ -522,7 +521,7 @@ window.HDRLibraryRGB = (() => {
           const target=reduced[edge],rh=target.height,rw=target.width;
           if(rh===h&&rw===w){target.planes.push(planes[c].buffer);continue;}
           await permit();
-          if(!input){input=make(w*h*4);await timed("upload",async()=>device.queue.writeBuffer(input,0,planes[c]));}
+          if(!input){input=make(w*h*4);await timed("upload",()=>uploadBuffer(device,input,new Uint8Array(planes[c].buffer),planes[c].byteLength,signal));}
           const mid=make(h*rw*4),out=make(rh*rw*4),settings=make(16,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST);
           for(const [src,dst,inLen,outLen,across,axis] of [[input,mid,w,rw,h,0],[mid,out,h,rh,rw,1]]){
             await permit();

@@ -49,7 +49,7 @@ test('the developed handoff frames the header and planes the backend unframes', 
   const { handoffBody } = globalThis.HDRLibraryGpuRaw;
   const planes = [new Float32Array([0.1, 0.2, 0.3]).buffer, new Float32Array([0.4, 0.5]).buffer];
   const header = { path: 'C:/photos/photo.ARW', identity: ['12', '34'], edge: 640 };
-  const bytes = new Uint8Array(await handoffBody(header, planes).arrayBuffer());
+  const bytes = new Uint8Array(handoffBody(header, planes));
   const length = new DataView(bytes.buffer).getUint32(0, true);
   assert.equal((4 + length) % 4, 0, 'Payload stays 4-byte aligned');
   assert.deepEqual(JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + length))), header);
@@ -208,4 +208,18 @@ test('a finished GPU frees a local place while that photo is still saving',async
  gpuDone();await new Promise(r=>setImmediate(r));
  assert.deepEqual(started,['a','b','c']);assert.deepEqual(finished,['c']);
  saveDone();await Promise.all(tasks);
+});
+
+test('cooperative uploads preserve aligned source bytes and allow cancellation between copies',async()=>{
+ const vm=require('node:vm'),fs=require('node:fs');let clock=0,yields=0,stop=false;
+ const context={performance:{now:()=>clock},DOMException,Uint8Array,ArrayBuffer,
+  setTimeout:resolve=>{yields++;if(stop)controller.abort();resolve();}};
+ vm.runInNewContext(fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8'),context);
+ const upload=context.HDRLibraryGpuRaw.shared.uploadBuffer;
+ const source=new Uint8Array(8*1024*1024+32).fill(71),view=source.subarray(8,source.length-8),target=new Uint8Array(view.length);
+ const device={queue:{writeBuffer:(_,offset,body,start,count)=>{target.set(new Uint8Array(body,start,count),offset);clock+=5;}}};
+ await upload(device,{},view);assert.deepEqual(target,view);assert.ok(yields>=2);
+ const controller=new AbortController();stop=true;target.fill(0);
+ await assert.rejects(upload(device,{},view,view.length,controller.signal),{name:'AbortError'});
+ assert.equal(target[0],71);assert.equal(target.at(-1),0);
 });

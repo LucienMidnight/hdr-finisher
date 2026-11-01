@@ -46,6 +46,15 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+Nov 1, detached-check/freeze commits (parent `4d07bd4`), cold name-sort, 4 GB,
+2560x1440, 90 s: grid frame gap 418 -> 97 ms, Single 133 -> 61 ms; timer
+blocks 424 -> 105 / 150 -> 81 ms. Single open 2401 ms (preview 26), ten steps
+median 2243, max 8185, prepared 12 ms. Peaks 3.941/3.391 GB. Reports:
+`output/quick-library-check/{strict-before-grid,strict-before-single,transfer-final-grid,transfer-final-single}/report.json`.
+Older Playwright wall times below are historical instrument-dependent values;
+section 7.19 records the corrected ordering and reconciliation.
+
+
 | Action (from → to) | Target | Measured | Conditions | Status |
 | --- | --- | --- | --- | --- |
 | Locked mixed 50: whole-pass GPU submission | >=16 / >=28 at 30 / 60 s; <=4.4 GB; zero ordinary reclaims | 20 shown at 30 s, 31 by 60 s (before) -> 26-27 at 30 s, 31 by 41-50 s (after); mean development GPU 1364 -> 820 ms; independent peak 4.263 GB, no reclaim | Nov 1, `b5f9bfb`, isolated cold 2560x1440, 4 GB; `output/quick-library-check/{claude-verify-c663354,passfix-b,passfix-e}/report.json`; grid pictures match at mean dE2000 0.040, p99.9 2.55 | Speed improved; 28 by 30 s not met |

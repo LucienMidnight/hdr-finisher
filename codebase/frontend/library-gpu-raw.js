@@ -7,6 +7,19 @@
 (function (root) {
   "use strict";
 
+  // Bound CPU copies, not GPU passes. Yielding here leaves bytes, permits and
+  // queue ordering unchanged while letting input and animation tasks run.
+  const yieldToWindow = () => new Promise(resolve=>setTimeout(resolve,0));
+  async function uploadBuffer(device, target, bytes, count=bytes.byteLength, signal) {
+    let slice=performance.now();
+    const band=4*1024*1024;
+    for(let offset=0;offset<count;offset+=band){
+      if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
+      device.queue.writeBuffer(target,offset,bytes.buffer,bytes.byteOffset+offset,Math.min(band,count-offset));
+      if(offset+band<count&&performance.now()-slice>=4){await yieldToWindow();slice=performance.now();}
+    }
+  }
+
   const COMMON = /* wgsl */ `
   struct P {
     dims: vec4<u32>,        // w, h, flip, stride
@@ -545,14 +558,19 @@
   }
 
   // The developed picture as library_gpu_raw.unframe reads it: a 4-byte header
-  // length, the JSON header padded to 4 bytes, then the planes. The parts go
-  // straight into the Blob, so the picture bytes are copied once, not twice.
+  // length, the JSON header padded to 4 bytes, then the planes. One contiguous
+  // buffer is copied once here and transferred to the upload worker; a Blob body
+  // would be streamed for a second through Electron's browser process instead.
   function handoffBody(header, planes) {
     const text = new TextEncoder().encode(JSON.stringify(header));
     const prefix = new Uint8Array(4 + text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32);
     new DataView(prefix.buffer).setUint32(0, prefix.length - 4, true);
     prefix.set(text, 4);
-    return new Blob([prefix, ...planes]);
+    const body = new Uint8Array(prefix.byteLength + planes.reduce((n, plane) => n + plane.byteLength, 0));
+    body.set(prefix);
+    let at = prefix.byteLength;
+    for (const plane of planes) { body.set(new Uint8Array(plane), at); at += plane.byteLength; }
+    return body.buffer;
   }
 
   async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity, signal = null, context = null }) {
@@ -599,7 +617,7 @@
 
       const mosaicBuf = make(n * 2);
       const whole = Math.floor(mosaic.byteLength / 4) * 4;
-      device.queue.writeBuffer(mosaicBuf, 0, mosaic.buffer, mosaic.byteOffset, whole);
+      await uploadBuffer(device,mosaicBuf,mosaic,whole,signal);
       if (whole < mosaic.byteLength) { const tail = new Uint8Array(4); tail.set(mosaic.subarray(whole)); device.queue.writeBuffer(mosaicBuf, whole, tail); }
       await stage("upload");
 
@@ -918,7 +936,7 @@
       // decoded source. Adopt it here so its held claim is reused, not waited on.
       const late=await adoptKept();
       if(late){kept=late;sourceJob=late.token;break;}
-      response = await fetch(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", priority:"low", signal,
+      response = await root.HDRLibraryUpload.fetchSource(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", priority:"low", signal,
         headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, grant, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, grant, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
       if(grant && response.headers.get("X-Library-Wait")==="memory")await root.HDRLibraryGrants.wait(grant,signal);
       if (response.status !== 202) break;
@@ -992,13 +1010,16 @@
     const send = async (entry, describeOnly = false) => {
       const {header,picture}=entry, packedAt=performance.now();
       const framed=handoffBody(describeOnly ? {...header,describe_only:true} : header,describeOnly ? [] : picture.planes);
-      // Blob uploads avoid Electron's additional main-process byte copy.
-      const payload=framed, sentAt=performance.now();
-      const stored=await fetch(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed",{
-        method:"POST",signal,headers:{"Content-Type":"application/octet-stream"},body:payload});
+      // The upload worker keeps the multi-megabyte stream off this window's
+      // thread, and a plain buffer body keeps it out of Electron's browser
+      // process. Development has already finished, so a cancelled view cannot
+      // strand the upload.
+      const payload=framed, bytes=framed.byteLength, sentAt=performance.now();
+      const stored=await root.HDRLibraryUpload.send(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed",
+        {body:payload,signal,headers:{"Content-Type":"application/octet-stream"}});
       root.HDRLibraryStopwatch?.(describeOnly ? "picture_scene_description" : "picture_scene_handoff",{
-        path,edge:header.edge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes:framed.size});
-      const result=await stored.json();
+        path,edge:header.edge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes});
+      const result=JSON.parse(stored.text || "{}");
       if(!stored.ok){const error=result.changed?new DOMException(result.detail,"AbortError"):Error(result.detail || "Library request failed.");error.status=stored.status;throw error;}
       return result;
     };
@@ -1179,7 +1200,7 @@
     if(!response.ok)throw Error('GPU scheduling unavailable.');
     return {bytes:Math.max(0,(await response.json()).budget-(640*640*64+64*1024**2)),unified};
   }
-  const exported = Object.freeze({ reclaimDecoded:async(needed)=>{let released=0;for(const [key,value] of decodedSources){if(released>=needed)break;released+=value.body.byteLength;await dropDecoded(key);}for(const [key,entry] of directScenes){if(released>=needed)break;released+=entry.bytes;entry.dispose();directScenes.delete(key);}return released;}, preflight, cachedDirect, forgetDirect, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant}) });
+  const exported = Object.freeze({ reclaimDecoded:async(needed)=>{let released=0;for(const [key,value] of decodedSources){if(released>=needed)break;released+=value.body.byteLength;await dropDecoded(key);}for(const [key,entry] of directScenes){if(released>=needed)break;released+=entry.bytes;entry.dispose();directScenes.delete(key);}return released;}, preflight, cachedDirect, forgetDirect, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint,uploadBuffer,yieldToWindow}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

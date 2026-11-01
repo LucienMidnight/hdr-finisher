@@ -126,7 +126,7 @@ window.HDRLibraryRawGPU = (() => {
       try {
         const encoder=device.createCommandEncoder();encoder.copyTextureToBuffer({texture:entry.texture},{buffer,bytesPerRow:stride},[width,height]);device.queue.submit([encoder.finish()]);
         await buffer.mapAsync(GPUMapMode.READ);const body=buffer.getMappedRange().slice(0);buffer.unmap();
-        const response=await fetch('/api/library/raw-thumbnail/'+key,{method:'POST',body});
+        const response=await HDRLibraryUpload.send('/api/library/raw-thumbnail/'+key,{body});
         if (!response.ok && response.status !== 409) throw Error('Thumbnail could not be saved.');
       } finally {buffer.destroy();}
     }

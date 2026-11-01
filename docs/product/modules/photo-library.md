@@ -19,9 +19,9 @@ running background job at a safe point.
 
 Measured with the app's own clock (key press to the 2560 picture): open
 1270 ms, prepared neighbours 9-49 ms, an unprepared RAW 302 ms, a HEIC
-3.1 s, one ARW 6.5 s. The harness's own wall clock is unreliable here (it
-once reported 18 s for a picture the app had shown in 1.7 s), so both are
-reported. Cold 90 s grid: 25 at 30 s, 31 by 60 s, peak 3.749 GB, no
+3.1 s, one ARW 6.5 s. Those historical app traces can miss input delay and retries; the host
+clock also includes delayed DevTools replies (18 s for a 1.7 s app trace).
+Neither alone measures the complete on-screen wait; see scheduler 7.19. Cold 90 s grid: 25 at 30 s, 31 by 60 s, peak 3.749 GB, no
 reclaims. Phase0 22/27, peak 3.912 GB. Aceh first screens 12.8-14.6 s
 (reference 13.8 s); second screens 18.4-23.6 s against a 14.1 s reference
 not reproduced this round. Grade coexistence passes on the second run
@@ -5633,3 +5633,5 @@ counts and logs remain in `codebase/output/cold-mixed-*.log`.
 Output started and ended at **2.1 GB** (100 GB limit). Owned temporary
 photo/profile/pytest scratch was removed; only linked small evidence remains.
 Committed locally on `library-big-folder`; stop for Steve's retry.
+
+November 1 detached-check follow-up: input-to-present timing now runs in-page without DevTools. Final 90-second grid/Single frame gaps 97/61 ms; unchanged budgets. Worker upload/download assembly and paced GPU copies remove the observed freezes. Scheduler 7.19 records timing reconciliation, rejected trials and pending image/Grade/release acceptance.

@@ -426,3 +426,6 @@ grants. `library_index.py` releases startup grants at safe points and on close.
 `library_picture_errors.py` separates device-offline errors from broken photos.
 `library-grants.js` sends document/native visibility over the existing channel; `desktop/main.js` includes native visibility in the existing window-state event. Header-only JPEG
 XL/X-Trans RAF refusal lives in `library_rgb.py` / `library_gpu_raw.py`.
+
+| Library quick check | `codebase/tools/quick-library-check.cjs`: plain Electron child, isolated profile, deadline and external memory census; `desktop/quick-library-test.cjs`: explicit-switch-only startup and file result; `tools/quick-library-scenario.js`: in-page inputs, presentation timing, grid progress and responsiveness probes |
+| Library uploads | `codebase/frontend/library-upload.js` and `library-upload-worker.js`: transferable upload body, HTTP status, cancellation, worker/network failure and bounded completion |

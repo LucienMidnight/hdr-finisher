@@ -3,6 +3,9 @@ window.HDRLibraryScreenPreviews = (() => {
   let pending = 0;
   const captures=[];
   const pipelines = new WeakMap();
+  // A 25-40 MB capture body streamed by the frame's own fetch blocks its main
+  // thread for most of a second. The upload worker owns the whole request.
+  const upload=(url,body)=>HDRLibraryUpload.send(url,{body});
   const display = () => ({display_width:Math.min(2560,Math.round(screen.width*(devicePixelRatio||1))),
     display_height:Math.min(2560,Math.round(screen.height*(devicePixelRatio||1)))});
   function query(path,hdr) { return new URLSearchParams({path,lane:hdr?'hdr':'sdr',...display()}); }
@@ -22,7 +25,7 @@ window.HDRLibraryScreenPreviews = (() => {
         status.stage='upload';
         if (!pixels) throw Error('No finished GPU pixels for screen preview.');
         for (const name of ['width','height','stride']) params.set(name,pixels[name]);
-        const response = await fetch('/api/library/stored-screen-preview?'+params,{method:'POST',body:pixels.body});
+        const response = await upload('/api/library/stored-screen-preview?'+params,pixels.body);
         status.stage='accepted';status.http=response.status;
         if (!response.ok || (meta.buildPreview && response.status!==200)) throw Error('Stored screen preview was not saved: '+response.status);
       }).finally(()=>pending--);

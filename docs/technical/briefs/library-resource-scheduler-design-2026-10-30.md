@@ -2542,10 +2542,12 @@ the harness wall clock carries its own polling stalls. Both are shown.
 | Prepared neighbour, app time | not recorded | 9-49 ms |
 | Unprepared photo, app time | not recorded | 302 ms (ARW), 3.1 s (HEIC), 6.5 s (one ARW) |
 
-The app time is the ground truth for what Steve sees. The harness wall
-clock is unreliable in this configuration: in one run the app had already
-presented the picture in 1.7 s while the harness's next frame query did not
-return for 18 s. Fixing that instrument is open work.
+These are historical, incomplete instruments. The host wall clock correctly
+includes time waiting for a DevTools reply, which can arrive long after the
+picture is drawn; it does not identify the on-screen completion time. The
+app's navigation trace can start after input and restart after memory retries,
+so it can also undercount the person's wait. Neither is ground truth alone.
+Section 7.19 replaces host polling with input-to-presentation timing in-page.
 
 ### Safety checks at `a951a4b` and `3b60ebc`
 
@@ -2608,6 +2610,91 @@ Every fixture file at 640 and 2560 decodes to identical pixels serial and
 parallel (max difference 0). `DSCF6495.RAF` differs between two serial
 decodes of itself, so LibRaw's threaded demosaic is non-deterministic for
 that file; that predates this round.
+
+## 7.19 Measure the presented picture without DevTools (November 1)
+
+The previous quick checker repeatedly queried the page over Playwright/CDP.
+Its reply delays are real host waits, not measurements of when the window
+presented. Re-reading the two Chromium traces confirms DevTools handler tasks
+lasting 6.590 and 6.773 seconds; the second also contains 5.952 and 3.430 second
+tasks. This supports the instrument diagnosis; it does not prove Network
+instrumentation is the sole cause. Large uploads and frequent requests are
+plausible contributors, not established attribution.
+
+The replacement launches a plain Electron child with a new isolated `test-`
+profile, seeds 2560x1440 window bounds, and removes `ELECTRON_RUN_AS_NODE`.
+Only `HDR_FINISHER_QUICK_LIBRARY_CONFIG` loads the scenario. A focused inertness
+test rejects any capability access when that switch is absent. Cache guards
+run before browsing. The page uses `performance.now()` from input dispatch to
+matching 2560 canvas metadata followed by the next animation frame. It also
+records the first matching visible preview/stand-in, rAF gaps, 20 ms timer
+lateness, Long Tasks when available, and grid progress. This measures the next
+compositor opportunity, not physical panel scanout. The host reads results
+only when finished; only stage files are polled while running. The independent
+process census remains outside Electron at a requested 250 ms cadence.
+
+A 130-second deadline records the reached stage and kills the entire app
+process tree; kill and profile removal have bounded 5/10-second deadlines.
+Normal reports include scenario time, total time including shutdown/cleanup,
+and the difference. No changes were made to `tests/run-in-electron.js`.
+
+The old checker also set name sort before opening the folder; folder-specific
+sort restoration overwrote it. The new scenario seeds the disposable folder's
+sort and verifies it. Early exploratory runs using the old ordering are
+labelled `nocdp-*` and are not the final name-sorted acceptance comparison.
+
+The app itself formerly attached a transient debugger for garbage collection.
+That also violates the fully detached measurement condition. Collection now
+uses an awaited V8 operation in an isolated renderer world, with native cache
+clearing on critical pressure through the preload. Pressure thresholds and
+cool-down, memory/cache/GPU budgets, concurrency and picture sizes are unchanged.
+This replacement requires the same focused memory and image safety checks as
+the upload fix; a low frame gap alone is not sufficient acceptance.
+
+Timing reconciliation must follow retries. For example, in exploratory Single
+run `nocdp-worker-single-a`, DSC01212 took 6711 ms from input, while the final
+app trace reported 4525 ms because it restarted 2186 ms after input. The DxO
+DNG took 15655 ms while its final trace reported 6810 ms after restarting at
+8845 ms. Other steps agreed within 18 ms. In the corrected name-sorted run,
+ordinary steps agreed within 0–21 ms; DJI_0072's retry added 2573 ms. These
+are genuine waits which the new check intentionally retains.
+
+### Detached measurements and freeze fix
+
+Cold disposable profiles, 4 GB, 2560x1440: untouched upload/picture code gave
+418 ms grid frame gap / 424 ms timer block; Single 133/150 ms. Workers alone
+still gave 303/324 ms grid and 127-152 ms Single gaps. A separate native trace
+identified 334/268 ms renderer microtask checkpoints immediately after decoded
+RGB sources arrived: whole-plane GPU copies ran without yielding. Copies and
+DNG packing now yield between bounded bands; decoded-source download assembly
+also runs in the worker. No shaders, estimates, permits or sizes changed.
+
+Final 90-second `transfer-final-grid` / `transfer-final-single` pass: frame gaps
+97/61 ms, timer blocks 105/81 ms, no frame gaps above 100 or 250 ms. Peaks
+3.941/3.391 GB, no allowance violation, settled below target. Worker heaps
+collect completed request backing stores. Awaited renderer/worker collection
+uses asynchronous major last-resort GC; ordinary major GC alone exceeded
+4.4 GB in rejected trials. Existing pressure thresholds and cooldown remain.
+
+Single open 2401 ms (first preview 26); ten steps median 2243, max 8185 ms.
+Prepared AVIF 12 ms; unprepared PNG 8185 and DNGs 6596/6292 ms. Every final
+action agrees with its app trace within -1 to 12 ms. Three earlier cold
+name-sorted runs had prepared actions 9-20 ms, ordinary trace differences
+within 21 ms. Retried DNGs include their real 2.1-2.6 s pre-restart wait.
+Final scenario 90.025 s, outside scenario 14.386 s, total 104.411 s.
+
+The old checker ran once on the same working implementation, then its external
+145-second bound killed it after four actions. Open 38584 vs app 4370 ms
+(34214 extra); HEIC 42111 vs 7431 (34680 extra); prepared 203/96 vs 8/8.
+This is incomplete and uses the old incorrect ordering, not a matched ten-step
+comparison. Evidence: `codebase/output/old-cdp-once-{console.txt,backend.log,timeout.json}`.
+
+31 focused JavaScript checks pass: switch inertness, pressure collection,
+worker start/HTTP/network failure, cancellation, transferred responses, exact
+paced-copy bytes and memory monitoring. Picture/Grade/release acceptance remains
+open below. Exploratory `yield-worker-grid` had a missing DNG signal parameter;
+it was fixed and that run is discarded, not counted as acceptance.
+
 
 ## 8. Phases
 
