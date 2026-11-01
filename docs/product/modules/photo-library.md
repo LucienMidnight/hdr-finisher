@@ -1,17 +1,15 @@
 # Module PRD: Photo Library
 
-## November 1: overshoot diagnosed; estimate decision pending
+## November 1: DNG estimate and EXR interpretation admission correction
 
-The unchanged locked mixed-folder check shows 17–18 pictures by 30 s and 31
-by 60 s, but independent RAM peaks at 4.420309 GB and one ordinary EXR
-reclaims. Two 48 MP DJI DNG correction jobs receive 336 MB sensor estimates
-while their route holds a 576 MB RGB source and 576 MB host planes per job,
-before temporaries. This is a RAM route-classification mismatch, not evidence
-that guarded admission caused this excursion. Cleanup experiments did not
-qualify and were removed. Correcting these jobs to the existing RGB DNG rate
-would change estimates; Steve's decision is required. Ordinary reclamation
-and final phase0/Grade/release acceptance remain open. Production is unchanged.
-See [scheduler design 7.16](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#716-memory-overshoot-diagnosis-estimate-decision-required-november-1).
+Steve approved the existing 28 bytes/pixel DNG rate for the RGB correction
+route; sensor-only DNGs retain 7. The former 336 MB grant for each 48 MP DJI
+file underestimated its full RGB preparation. Library also checks unresolved
+EXR source primaries from headers before requesting decode memory. The same
+interpretation notice and saved overrides apply; cache hits remain usable.
+No processing, Grade, Proof, export, other rate or allowance changes.
+Final memory, ordinary reclaim and coexistence acceptance is in progress.
+See [scheduler design 7.16](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#716-memory-overshoot-and-ordinary-reclaim-correction-november-1).
 
 ## November 1: ordinary-wait guard correction — acceptance pending
 

@@ -123,7 +123,16 @@ def estimate_details(path, kind="source", ceiling=None, edge=2560):
                     if page.pages is not None:pages.extend(page.pages)
                 main=max(pages,key=lambda p:p.imagewidth*p.imagelength)
                 if int(main.photometric)==32803: # CFA camera DNG, not LinearRaw.
-                    return max(MINIMUM,7*width*height), ""
+                    from .linear_dng import inspect_dng
+                    from .library_dng import plan
+                    from .library_gpu_raw import NotEligible
+                    try:
+                        plan(inspect_dng(Path(path)))
+                    except NotEligible:
+                        return max(MINIMUM,7*width*height), ""
+                    # Steve, November 1: mandatory RGB corrections retain full
+                    # RGB samples, so use the existing DNG rate, not sensor RAW.
+                    return estimate_pixels(".dng",width,height,kind), ""
         if kind == "source" and edge <= 2560 and width*height >= 100_000_000:
             rate = reduced_rate(path)
             if rate is not None:

@@ -172,3 +172,17 @@ def test_large_jpeg_gpu_plan_matches_dct_samples(tmp_path, monkeypatch):
     monkeypatch.setattr(Image.Image,"load",lambda *a,**k:pytest.fail("planning decoded pixels"))
     plan=gpu_metadata(path,edge=640)
     assert (plan["width"],plan["height"])==(8000,6000)
+
+
+@pytest.mark.parametrize("width,height", [(8000,6000),(20000,10000)])
+def test_rgb_correction_dng_reserves_existing_dng_rate_without_decoding(tmp_path, monkeypatch, width, height):
+    import tifffile
+    from hdr_finisher import library_estimates, linear_dng
+    from test_library_dng import inspection
+    path=tmp_path/"corrected.dng"
+    tifffile.imwrite(path,shape=(20,30),dtype="uint16",photometric=32803)
+    monkeypatch.setattr(library_estimates,"dimensions",lambda path:(width,height))
+    monkeypatch.setattr(linear_dng,"inspect_dng",lambda path:inspection())
+    monkeypatch.setattr(tifffile.TiffPage,"asarray",lambda *a,**k:pytest.fail("admission decoded pixels"))
+    assert library_estimates.estimate_details(path)==(28*width*height, "")
+    assert library_estimates.estimate_details(path,kind="cpu")== (25*width*height, "")

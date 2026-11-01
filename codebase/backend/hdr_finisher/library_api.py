@@ -509,6 +509,9 @@ def create_library_router(worker, browser, store=None):
         if cached:
             live.cache.accept_transient(cached)
         from .library_estimates import gpu_metadata
+        if not cached and not is_cloud_placeholder(stat):
+            from .library_rgb import preflight_interpretation
+            preflight_interpretation(path, live_recipe(document))
         return {"gpu_meta": gpu_metadata(path,document,command.edge) if not cached and not is_cloud_placeholder(stat) else None,
                 "cached": live.describe(command.path, cached) if cached else None,
                 "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}",

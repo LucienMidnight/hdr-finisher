@@ -15,6 +15,25 @@ from .source_luminance import describe_source_luminance
 VERSION = "library-rgb-reduced-v4"
 
 
+
+def preflight_interpretation(path, inputs):
+    """Reject an unresolved EXR from headers before reserving decode memory."""
+    from .file_gate import decode_suffix
+    if decode_suffix(Path(path)) != ".exr" or inputs["interpretation_override"].get("color_space"):
+        return
+    import OpenEXR
+    file = OpenEXR.InputFile(str(path))
+    try:
+        header = file.header()
+    finally:
+        file.close()
+    name, _, confident = loader._infer_exr_chromaticities(header.get("chromaticities"))
+    interop, _, interop_confident = loader._infer_exr_color_interop_id(header.get("colorInteropID"))
+    _, _, resolved, _ = loader._resolve_exr_color_space(name, confident, interop, interop_confident)
+    if not resolved:
+        raise ValueError("Unresolved source primaries retain Grade's interpretation gate")
+
+
 def decoded(path, inputs, edge=2560):
     from .file_gate import decode_suffix
     path = Path(path).resolve(strict=True)

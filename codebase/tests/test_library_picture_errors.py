@@ -280,3 +280,18 @@ def test_timeout_returns_retryable_response_without_broken_photo_receipt(tmp_pat
     assert response.status_code==408,response.text
     assert response.json()["library_timeout"] is True
     assert api.get("/api/library/health").json()["picture_errors"]==[]
+
+def test_unresolved_exr_plan_reports_interpretation_before_requesting_source(tmp_path, monkeypatch):
+    import OpenEXR, numpy as np
+    path=tmp_path/"unknown.exr"
+    out=OpenEXR.OutputFile(str(path),OpenEXR.Header(2,2))
+    out.writePixels({c:np.zeros(4,np.float32).tobytes() for c in "RGB"});out.close()
+    from hdr_finisher import loader
+    monkeypatch.setattr(loader,"_load_exr",lambda *a,**k:pytest.fail("plan decoded pixels"))
+    helper=Helper()
+    with client(tmp_path/"profile",helper) as api:
+        result=api.post("/api/library/live-plan",json={"path":str(path),"edge":640})
+        assert result.status_code==422
+        assert "Unresolved source primaries" in result.json()["detail"]
+        assert result.json()["library_error"]["path"]==str(path)
+    assert not helper.calls

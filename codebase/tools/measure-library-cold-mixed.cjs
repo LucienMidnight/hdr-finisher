@@ -94,7 +94,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   page.on('request',r=>{if(r.url().includes('/api/library/'))requests.set(r,Date.now());});
   const ended=r=>{if(requests.has(r)){report.network.push({url:r.url(),start:requests.get(r),end:Date.now(),failure:r.failure()?.errorText});requests.delete(r);}};
   page.on('requestfinished',ended);page.on('requestfailed',ended);
-  observer=spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID],{windowsHide:true});
+  observer=spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID,'.25'],{windowsHide:true});
   observer.stdout.on('data',chunk=>{
    pending+=chunk;let at;while((at=pending.indexOf('\n'))>=0){const line=pending.slice(0,at);pending=pending.slice(at+1);if(!line)continue;
     const sample=JSON.parse(line);memory.sample(sample,[...liveGrants.values()]);

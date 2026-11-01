@@ -895,3 +895,13 @@ Existing minimum, budgets and shares remain Steve's decision.
 Output started and ended at **2.1 GB** (100 GB limit). Owned temporary
 photo/profile/pytest scratch was removed; only linked small evidence remains.
 Committed locally on `library-big-folder`; stop for Steve's retry.
+
+### November 1: RGB correction DNG admission estimate (Steve)
+
+Steve approved using the existing **28 bytes per source pixel** DNG rate for
+mosaiced DNGs eligible for Library's mandatory RGB correction route. A header-only
+check uses the same correction plan as decoding. Sensor-only DNGs retain 7;
+linear DNG, CPU and quick routes retain their existing rates. The two 48 MP DJI
+files now reserve 1.344 GB each rather than 336 MB. This may reduce overlap;
+whole-app memory, speed and ordinary-file reclamation still need verification.
+The 4 GB ceiling, 4.4 GB elastic maximum and all cache shares are unchanged.

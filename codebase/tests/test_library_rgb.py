@@ -599,3 +599,21 @@ def test_raf_header_without_xtrans_and_truncated_tags_are_not_guessed(tmp_path):
     assert not _xtrans_raf(path)
     path.write_bytes(path.read_bytes()[:-1])
     assert not _xtrans_raf(path)
+
+@pytest.mark.parametrize("resolved,override", [(False,False),(True,False),(False,True)])
+def test_exr_header_interpretation_gate_precedes_pixels(tmp_path, monkeypatch, resolved, override):
+    import OpenEXR, Imath
+    path=tmp_path/"source.exr"
+    header=OpenEXR.Header(2,2)
+    if resolved: header["colorInteropID"]=b"lin_rec2020_scene"
+    out=OpenEXR.OutputFile(str(path),header)
+    out.writePixels({channel:np.zeros(4,np.float32).tobytes() for channel in "RGB"})
+    out.close()
+    monkeypatch.setattr(library_rgb.loader,"_load_exr",lambda *a,**k:pytest.fail("header gate decoded pixels"))
+    inputs=recipe(None)
+    if override: inputs["interpretation_override"]["color_space"]="ACEScg"
+    if not resolved and not override:
+        with pytest.raises(ValueError,match="Unresolved source primaries"):
+            library_rgb.preflight_interpretation(path,inputs)
+    else:
+        library_rgb.preflight_interpretation(path,inputs)
