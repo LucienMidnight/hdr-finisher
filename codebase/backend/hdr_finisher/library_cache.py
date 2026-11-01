@@ -5,6 +5,7 @@ from pathlib import Path
 from threading import RLock
 import sqlite3
 from tempfile import NamedTemporaryFile
+import time
 
 DIRECTORIES = ('library-pictures', 'library-full-pictures', 'library-raw-thumbnails', 'library-thumbnails')
 ALLOWANCES = {'thumbnail': 2, 'full_size': 10, 'saved_grade': 2}
@@ -94,6 +95,8 @@ class LibraryCache:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, category TEXT, size INTEGER);
                 CREATE TABLE IF NOT EXISTS totals(category TEXT PRIMARY KEY, size INTEGER);
+                CREATE TABLE IF NOT EXISTS ages(path TEXT PRIMARY KEY, stamp INTEGER);
+                CREATE INDEX IF NOT EXISTS cache_age ON ages(stamp);
             """)
             _LEDGERS[key] = db
             try:
@@ -114,8 +117,10 @@ class LibraryCache:
             entries = self.entries()
             db.execute('DELETE FROM files')
             db.execute('DELETE FROM totals')
+            db.execute('DELETE FROM ages')
             db.executemany('INSERT INTO files VALUES (?, ?, ?)',
                            [(str(file), self.allowance(file), size) for _, size, file in entries])
+            db.executemany('INSERT INTO ages VALUES (?, ?)', [(str(file), stamp) for stamp, _, file in entries])
             db.execute('INSERT INTO totals SELECT category, SUM(size) FROM files GROUP BY category')
             db.commit()
         except BaseException:
@@ -191,13 +196,16 @@ class LibraryCache:
                 if old:
                     db.execute('UPDATE totals SET size=size-? WHERE category=?', (old[1], old[0]))
                 db.execute('DELETE FROM files WHERE path=?', (str(file),))
+                db.execute('DELETE FROM ages WHERE path=?', (str(file),))
                 try:
-                    size = file.stat().st_size
+                    stat = file.stat()
+                    size = stat.st_size
                 except FileNotFoundError:
                     size = None
                 if size is not None:
                     category = self.allowance(file)
                     db.execute('INSERT INTO files VALUES (?, ?, ?)', (str(file), category, size))
+                    db.execute('INSERT INTO ages VALUES (?, ?)', (str(file), stat.st_mtime_ns))
                     db.execute('INSERT INTO totals VALUES (?, ?) ON CONFLICT(category) DO UPDATE SET size=size+excluded.size', (category, size))
                 db.commit()
             except BaseException:
@@ -277,41 +285,43 @@ class LibraryCache:
             return {'freed_bytes': freed, **self.usage()}
 
     def trim_soon(self):
-        """Check running totals on every save; enumerate only for eviction."""
+        """Check running totals on every save; evict from the publication ledger."""
         self.trim()
 
     def trim(self, limit_bytes=None, allowance='thumbnail'):
         if allowance not in ALLOWANCES:
             raise ValueError('Unknown Library cache allowance.')
-        with _LOCK:
-            db = self._ledger()
-            preferences = self.preferences()
-            used = self._used(db)
-            limits = {name: limit_bytes if limit_bytes is not None and name == allowance
-                      else preferences[name + '_limit_gb'] * 1024 ** 3 for name in ALLOWANCES}
-            if all(used[name] <= limits[name] for name in ALLOWANCES):
-                return
-            self._reconcile(db)
-            entries = self.entries()
-            for name in ALLOWANCES:
-                owned = [item for item in entries if self.allowance(item[2]) == name]
-                total = sum(size for _, size, _ in owned)
-                limit = limit_bytes if limit_bytes is not None and name == allowance else preferences[name + '_limit_gb'] * 1024 ** 3
-                groups = {}
-                for stamp, size, file in owned:
-                    # An active producer publishes these under a final key later.
-                    if file.name.startswith('kept-') or file.suffix == '.tmp':
-                        continue
-                    group = groups.setdefault((file.parent, file.stem), [])
-                    group.append((stamp, size, file))
-                # A saved-grade image and its metadata form one LRU item.
-                for group in sorted(groups.values(), key=lambda files: max(item[0] for item in files)):
-                    if total <= limit:
+        preferences = self.preferences()
+        limits = {name: limit_bytes if limit_bytes is not None and name == allowance
+                  else preferences[name + '_limit_gb'] * 1024 ** 3 for name in ALLOWANCES}
+        # Publication already maintains totals and ages. Never rescan the disk
+        # under the shared lock on an over-budget save. Release it after each
+        # small LRU family so visible producers and reclaim can make progress.
+        for name in ALLOWANCES:
+            while True:
+                with _LOCK:
+                    db = self._ledger()
+                    if self._used(db)[name] <= limits[name]:
                         break
-                    for _, size, file in group:
-                        try:
-                            file.unlink()
-                            total -= size
-                            self.record(file)
-                        except FileNotFoundError:
-                            self.record(file)
+                    row = db.execute(
+                        'SELECT files.path FROM files LEFT JOIN ages USING(path) '
+                        'WHERE category=? ORDER BY COALESCE(stamp,0), files.path LIMIT 1', (name,)).fetchone()
+                    if row is None:
+                        break
+                    file = Path(row[0])
+                    prefix = str(file.with_suffix('')) + '.'
+                    siblings = db.execute('SELECT path FROM files WHERE category=? AND path>=? AND path<?',
+                                          (name, prefix, prefix + '\uffff')).fetchall() or [row]
+                    for (filename,) in siblings:
+                        candidate = Path(filename)
+                        if candidate.stem != file.stem:
+                            continue
+                        directory = candidate.parent
+                        if (directory not in [Path(preferences['location']) / part for part in DIRECTORIES]
+                                or directory.is_symlink() or getattr(directory, 'is_junction', lambda: False)()
+                                or candidate.is_symlink() or candidate.name.startswith('kept-') or candidate.suffix == '.tmp'):
+                            raise ValueError('Unsafe entry in disposable Library cache ledger; reconcile cache usage.')
+                        candidate.unlink(missing_ok=True)
+                        self.record(candidate)
+                # Yield between families, never with the publication lock held.
+                time.sleep(.001)

@@ -609,9 +609,17 @@
           Number(this.adapter.limits.maxBufferSize) || (256 * 1024 * 1024),
           512 * 1024 * 1024,
         );
+        // WebGPU's default 2D texture limit is 8192 even where the adapter
+        // allows 16384. At 100% the tiled path presents the whole frame in one
+        // texture, so photos wider than 8192 (50 MP and larger sensors) need
+        // the adapter's real limit. This raises a limit; it allocates nothing.
+        const adapterTextureLimit = Number(this.adapter.limits.maxTextureDimension2D) || 0;
         this.device = await (this.requestPreviewDevice ? this.requestPreviewDevice.bind(this) : this.adapter.requestDevice.bind(this.adapter))({
           requiredFeatures: timestampQueries ? ["timestamp-query"] : [],
-          requiredLimits: { maxBufferSize: fullSurfaceBufferLimit },
+          requiredLimits: {
+            maxBufferSize: fullSurfaceBufferLimit,
+            ...(adapterTextureLimit > 8192 ? { maxTextureDimension2D: adapterTextureLimit } : {}),
+          },
         });
         const info = this.adapter.info || {};
         const adapterDescription = [info.vendor, info.architecture, info.device, info.description]

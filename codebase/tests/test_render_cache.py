@@ -509,7 +509,7 @@ def test_source_mip_cold_builds_do_not_invalidate_on_grade_changes(tmp_path) -> 
     diagnostics = store.diagnostics()
     assert diagnostics["cold_builds"] == 1
     assert diagnostics["memory_hits"] == 1
-    assert first._source_proxies[256] is second._source_proxies[256]
+    assert first.source_proxy(PreviewKind.HDR, 256)[0] is second.source_proxy(PreviewKind.HDR, 256)[0]
 
 
 def test_source_mip_serves_disk_after_memory_is_dropped(tmp_path) -> None:
@@ -604,15 +604,15 @@ def test_source_mip_memory_and_disk_lrus_are_byte_bounded(tmp_path) -> None:
     store.level(identity, 400, image)
 
     diagnostics = store.diagnostics()
-    # Memory is bounded beyond the two most recent levels, which stay resident.
-    assert diagnostics["memory_entries"] == 2
+    # Oversized levels are served but never bypass the retained-byte limit.
+    assert diagnostics["memory_bytes"] <= store.memory_budget_bytes
     assert diagnostics["disk_bytes"] <= store.disk_budget_bytes
     assert diagnostics["disk_entries"] >= 1
     assert diagnostics["memory_evictions"] >= 1
     assert diagnostics["disk_evictions"] >= 1
 
 
-def test_a_level_larger_than_the_memory_budget_is_still_served_from_memory(tmp_path) -> None:
+def test_a_level_larger_than_the_memory_budget_is_served_without_retention(tmp_path) -> None:
     # A magnified view reads one level for every tile, mask and pan. A
     # 36-megapixel source at 66.67% is 258 MiB against a 256 MiB budget; it
     # used to be read from disk again for each of those requests.
@@ -623,13 +623,14 @@ def test_a_level_larger_than_the_memory_budget_is_still_served_from_memory(tmp_p
     first, state = store.level(identity, 600, image)
     assert state == "built" and first.nbytes > store.memory_budget_bytes
     again, state = store.level(identity, 600, image)
-    assert state == "memory" and again is first
+    assert state == "disk"
+    np.testing.assert_array_equal(again, first)
     # The lane's other level at that size does not push it out either.
     store.level(identity, 590, image)
-    assert store.level(identity, 600, image)[1] == "memory"
-    assert store.level(identity, 590, image)[1] == "memory"
+    assert store.level(identity, 600, image)[1] == "disk"
+    assert store.level(identity, 590, image)[1] == "disk"
     store.level(identity, 256, image)
-    assert store.diagnostics()["memory_entries"] == 2
+    assert store.diagnostics()["memory_bytes"] <= store.memory_budget_bytes
 
 
 def test_source_mip_telemetry_counts_cold_warm_and_build_duration(tmp_path) -> None:

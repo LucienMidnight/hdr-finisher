@@ -16,18 +16,18 @@ from time import perf_counter
 import numpy as np
 from PIL import Image, ImageCms, ImageOps
 
-from . import loader, raw_import
+from . import loader, raw_import, app_memory
 from .import_defaults import calibrate_camera_raw, starting_adjustments
 from .library_diagnostics import audited, problem, log
 from .analysis import classify_hdr
 from .color import display_referred_sdr, map_negative_acescg, normalize_to_acescg, sdr_file_renditions
-from .desktop_security import SOURCE_EXTENSIONS
+from .file_gate import SOURCE_EXTENSIONS, is_photo_name
 from .models import AdjustmentState
 from .projects import validate_saved
 from .render_cache import encode_rgba_proxy_rows
 
 SIDECAR_SUFFIX = ".hdrf"
-PICTURE_VERSION = "library-scene-gpu-views-v7"
+PICTURE_VERSION = "library-scene-reduced-v8"
 CACHE_LIMIT_BYTES = 2 * 1024**3
 _CACHE_LOCKS = [RLock() for _ in range(64)]
 _TRIM_LOCK = RLock()
@@ -39,8 +39,13 @@ def reduce_picture(image, edge):
         return np.asarray(image, dtype=np.float32)
     scale = edge / max(h, w)
     size = (max(1, round(w * scale)), max(1, round(h * scale)))
-    return np.stack([np.asarray(Image.fromarray(image[:, :, c].astype(np.float32)).resize(
-        size, Image.Resampling.BILINEAR)) for c in range(3)], axis=2)
+    def channel(index):
+        return np.asarray(Image.fromarray(image[:, :, index].astype(np.float32)).resize(
+            size, Image.Resampling.BILINEAR))
+    # Each channel resizes independently to the same pixels; only their order
+    # in time changes when a Library decode has the cores (cpu_budget).
+    from .cpu_budget import parallel_bands
+    return np.stack(list(parallel_bands(channel, range(image.shape[2]))), axis=2)
 
 
 def picture_key(path, edge, quality):
@@ -60,31 +65,105 @@ class LibraryPictureCache:
         self.managed = LibraryCache(root)
         self.transient = OrderedDict()
         self.transient_lock = RLock()
+        self.memory_key='picture-handoff-'+str(id(self))
+        app_memory.register(self.memory_key,'handoff',self.trim_memory)
+        self.native_key='native-'+str(id(self))
+        app_memory.register(self.native_key,'working',self.trim_native)
         self.pending_stores = {}
         self._native_lock = RLock()
         self._native_source = None
         self._native_paused = False
 
-    def accept_transient(self, result):
-        body = result.pop('_transient', None)
-        if body:
+    def _handoff_bytes(self):
+        with self.transient_lock:
+            return sum(map(len, self.transient.values()))
+
+    def _report_handoff(self):
+        app_memory.report(self.memory_key, 'handoff', self._handoff_bytes())
+
+    def _evict_transient(self, key):
+        # Readers retain the immutable body until disk publication completes.
+        # Never do file/index/owner work under the transport bookkeeping lock.
+        with self.transient_lock:
+            pending = self.pending_stores.get(key)
+            body = self.transient.get(key)
+            if pending is None:
+                self.transient.pop(key, None)
+        if pending and body is not None:
+            source, edge, quality, default, owner_check = pending
+            if owner_check:
+                owner_check()
+            if picture_key(source, edge, quality) != key:
+                raise ValueError("Photo changed before saving preview data.")
+            self.managed.prepare()
+            destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary = None
+            try:
+                with NamedTemporaryFile(dir=destination.parent, suffix=".tmp", delete=False) as handle:
+                    temporary = Path(handle.name)
+                    handle.write(body)
+                if owner_check:
+                    owner_check()
+                if picture_key(source, edge, quality) != key:
+                    raise ValueError("Photo changed before saving preview data.")
+                os.replace(temporary, destination)
+                self.managed.record(destination)
+                if default is not None:
+                    self.keep_default_document(source, default)
+                self.trim()
+                with self.transient_lock:
+                    if self.transient.get(key) is body and self.pending_stores.get(key) is pending:
+                        self.transient.pop(key, None)
+                        self.pending_stores.pop(key, None)
+                log("picture_handoff_backed", path=source, key=key, edge=edge, reason="handoff RAM reclaimed before draw")
+            finally:
+                if temporary:
+                    temporary.unlink(missing_ok=True)
+        self._report_handoff()
+
+    def trim_memory(self, target):
+        # Disposable/delivered copies go before any preview awaiting storage.
+        with self.transient_lock:
+            keys = sorted(self.transient, key=lambda key: key in self.pending_stores)
+        for key in keys:
+            if self._handoff_bytes() <= target:
+                break
+            self._evict_transient(key)
+        self._report_handoff()
+
+    def delivered(self, key):
+        with self.transient_lock:
+            if key not in self.pending_stores:
+                self.transient.pop(key, None)
+        self._report_handoff()
+
+    def accept_transient(self, result, pending=None):
+        encoded = result.pop('_transient', None)
+        if encoded:
+            body = base64.b64decode(encoded)
+            key = result['key']
             with self.transient_lock:
-                self.transient[result['key']] = base64.b64decode(body)
-                self.transient.move_to_end(result['key'])
-                while sum(map(len, self.transient.values())) > 256 * 1024**2:
-                    expired, _ = self.transient.popitem(last=False)
-                    self.pending_stores.pop(expired, None)
+                if pending is not None:
+                    self.pending_stores[key] = pending
+                self.transient[key] = body
+                self.transient.move_to_end(key)
+                keys = sorted(self.transient, key=lambda item: item in self.pending_stores)
+            for candidate in keys:
+                if app_memory.claim(self.memory_key, 'handoff', self._handoff_bytes()):
+                    break
+                self._evict_transient(candidate)
+            self._report_handoff()
         return result
 
-    def transient_result(self, key, arrays, metadata, validate=None):
+    def transient_result(self, key, arrays, metadata, validate=None, pending=None):
         stream = BytesIO()
         np.savez(stream, **arrays)
         if validate:
             validate()
         result = metadata | {'key': key, 'cache_hit': False, 'stored_bytes': 0,
             '_transient': base64.b64encode(stream.getvalue()).decode()}
-        # Also retain it in this helper for repeat requests; transport stays in RAM.
-        self.accept_transient(dict(result))
+        self.accept_transient(dict(result), pending)
         return result
 
     def open(self, key, file=None):
@@ -145,19 +224,28 @@ class LibraryPictureCache:
         key = picture_key(path, edge, quality)
         with self.transient_lock:
             body = self.transient.get(key)
-            if body is not None:
-                with np.load(BytesIO(body), allow_pickle=False) as stored:
-                    metadata = json.loads(str(stored["metadata"]))
-                return metadata | {"key": key, "cache_hit": True, "stored_bytes": 0,
-                    "_transient": base64.b64encode(body).decode()}
+        if body is not None:
+            with np.load(BytesIO(body), allow_pickle=False) as stored:
+                metadata = json.loads(str(stored["metadata"]))
+            return metadata | {"key": key, "cache_hit": True, "stored_bytes": 0,
+                "_transient": base64.b64encode(body).decode()}
         destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
+        if not destination.is_file() and quality.startswith("live-scene-v2:"):
+            from .library_live import equivalent_qualities
+            for equivalent in equivalent_qualities(quality):
+                candidate_key = picture_key(path, edge, equivalent)
+                candidate = (self.full_root if edge >= 1280 else self.root) / (candidate_key + ".npz")
+                if candidate.is_file():
+                    key, destination = candidate_key, candidate
+                    break
         if not destination.is_file():
             return None
         try:
             with np.load(destination, allow_pickle=False) as stored:
                 result = json.loads(str(stored["metadata"]))
             os.utime(destination, None)
-            return result | {"key": key, "cache_hit": True, "stored_bytes": destination.stat().st_size}
+            self.managed.record(destination)
+            return result | {"key": key, "quality": quality, "cache_hit": True, "stored_bytes": destination.stat().st_size}
         except (OSError, ValueError, EOFError) as error:
             problem("cache_corrupt", destination, error, "damaged entry removed; picture rebuilt")
             destination.unlink(missing_ok=True)
@@ -167,7 +255,7 @@ class LibraryPictureCache:
     @audited("picture_cache_build")
     def build(self, path, edge, quality="quick", cancelled=None, decoded=None, defer_store=False, persist=False, store_validate=None):
         path = Path(path).resolve(strict=True)
-        if path.suffix.lower() not in SOURCE_EXTENSIONS:
+        if not is_photo_name(path.name):
             raise ValueError("Unsupported library file type.")
         key = picture_key(path, edge, quality)
         browsing = path.suffix.lower() not in raw_import.RAW_EXTENSIONS and quality in {"quick", "fast"}
@@ -213,10 +301,8 @@ class LibraryPictureCache:
                     check_cancelled(cancelled)
                     if picture_key(path, edge, quality) != key:
                         raise ValueError("Photo changed before publishing preview data.")
-                result = self.transient_result(key, arrays, metadata, validate_memory)
-                with self.transient_lock:
-                    if key in self.transient:
-                        self.pending_stores[key] = (str(path), edge, quality, default_document, store_validate)
+                pending = (str(path), edge, quality, default_document, store_validate)
+                result = self.transient_result(key, arrays, metadata, validate_memory, pending)
                 result.pop('_transient', None)
                 return result
             destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
@@ -249,7 +335,7 @@ class LibraryPictureCache:
             keys = [key for key, value in self.pending_stores.items() if value[0] == str(path)]
         for key in keys:
             with self.transient_lock:
-                pending = self.pending_stores.pop(key, None)
+                pending = self.pending_stores.get(key)
                 body = self.transient.get(key)
             if pending is None or body is None:
                 continue
@@ -261,15 +347,21 @@ class LibraryPictureCache:
                 if picture_key(source, edge, quality) != key:
                     raise ValueError("Photo changed before saving preview data.")
                 return False
-            checkpoint()
-            with np.load(BytesIO(body), allow_pickle=False) as stored:
-                pixels = stored["pixels"].astype(np.float32)
-                reference = stored["reference"].astype(np.float32) if "reference" in stored else None
-                metadata = json.loads(str(stored["metadata"]))
-            metadata["starting_look"] = metadata["adjustments"]
-            if default is not None:
-                metadata["default_document"] = default
-            self.build(source, edge, quality, checkpoint, (pixels, reference, metadata), persist=True)
+            try:
+                checkpoint()
+                with np.load(BytesIO(body), allow_pickle=False) as stored:
+                    pixels = stored["pixels"].astype(np.float32)
+                    reference = stored["reference"].astype(np.float32) if "reference" in stored else None
+                    metadata = json.loads(str(stored["metadata"]))
+                metadata["starting_look"] = metadata["adjustments"]
+                if default is not None:
+                    metadata["default_document"] = default
+                self.build(source, edge, quality, checkpoint, (pixels, reference, metadata), persist=True)
+            finally:
+                with self.transient_lock:
+                    if self.pending_stores.get(key) is pending:
+                        self.pending_stores.pop(key, None)
+                self.delivered(key)
 
     @audited("picture_cache_build_native")
     def build_native(self, path, center_x, center_y, width, height, cancelled=None):
@@ -287,6 +379,7 @@ class LibraryPictureCache:
             source = self._native_source
             if source is None or source[0] != identity:
                 self._native_source = None
+                app_memory.report(self.native_key,'working',0)
                 pixels, reference, metadata = decode_picture(path, 100000, "native")
                 check_cancelled(cancelled)
                 if picture_key(path, 100000, "native") != identity:
@@ -295,7 +388,8 @@ class LibraryPictureCache:
                 grade = validate_saved(AdjustmentState, starting_look) if starting_look else default_look(
                     pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
                 source = (identity, pixels, reference, metadata, grade.model_dump(mode="json"))
-                if not self._native_paused:
+                size=pixels.nbytes+(reference.nbytes if reference is not None else 0)
+                if not self._native_paused and app_memory.claim(self.native_key,'working',size):
                     self._native_source = source
             _, pixels, reference, metadata, grade = source
             source_height, source_width = pixels.shape[:2]
@@ -316,12 +410,18 @@ class LibraryPictureCache:
 
     def retain_gpu_native(self, path, pixels, metadata, grade):
         with self._native_lock:
-            self._native_source = (picture_key(path, 100000, "native"), pixels, None, metadata, grade)
+            if app_memory.claim(self.native_key,'working',pixels.nbytes):
+                self._native_source = (picture_key(path, 100000, "native"), pixels, None, metadata, grade)
+
+    def trim_native(self,target):
+        with self._native_lock:
+            self._native_source=None
+            app_memory.claim(self.native_key,'working',0)
 
     def pause_native(self, paused):
         self._native_paused = bool(paused)
         if paused:
-            self._native_source = None
+            self.trim_native(0)
 
     @audited("picture_cache_pixels")
     def pixels(self, key, lane="hdr"):
@@ -329,8 +429,11 @@ class LibraryPictureCache:
         with np.load(self.open(key, path), allow_pickle=False) as stored:
             reference = lane == "sdr" and "reference" in stored
             pixels = stored["reference" if reference else "pixels"].astype(np.float32)
-        if path.exists(): os.utime(path, None)
+        if path.exists():
+            os.utime(path, None)
+            self.managed.record(path)
         body, stride = encode_rgba_proxy_rows(pixels, 0, pixels.shape[0], prefer_half=True, pixel_format="rgba16float")
+        self.delivered(key)
         return body, pixels.shape[1], pixels.shape[0], stride, "linear-srgb" if reference else "acescg"
 
     @audited("picture_cache_trim")
@@ -361,7 +464,12 @@ def original_preview(path, edge):
         raise ValueError("No original quick draw for this format")
     if path.suffix.lower() != ".png" and loader.is_ultrahdr_jpeg(path):
         raise ValueError("Gain-map JPEG needs its HDR interpretation")
-    pixels, metadata = loader._load_with_pillow(path, encoded_samples=True)
+    if path.suffix.lower() == ".png":
+        from .library_reduced import png
+        pixels, metadata = png(path)
+    else:
+        from .library_reduced import jpeg_open
+        pixels, metadata = loader._load_with_pillow(path, encoded_samples=True, draft_edge=edge, image_factory=jpeg_open)
     if metadata.get("needs_color_override") or metadata.get("color_space") != "sRGB":
         raise ValueError("Original quick draw needs resolved SDR colour")
     # Grade's decoder already applied ICC and orientation. Only this temporary
@@ -376,7 +484,30 @@ def original_preview(path, edge):
 
 _CAMERA_PREVIEWS = OrderedDict()
 _CAMERA_PREVIEW_LOCK = RLock()
-_CAMERA_PREVIEW_BYTES = 64 * 1024**2
+_CAMERA_PREVIEW_BYTES = app_memory.limit('camera')
+
+
+def _trim_camera(target):
+    with _CAMERA_PREVIEW_LOCK:
+        while _CAMERA_PREVIEWS and sum(len(row['url'].encode('utf-8')) for row in _CAMERA_PREVIEWS.values())>target:
+            _CAMERA_PREVIEWS.popitem(last=False)
+        app_memory.claim('camera-previews','camera',sum(len(row['url'].encode('utf-8')) for row in _CAMERA_PREVIEWS.values()))
+
+
+# Module function is deliberately strong; instance callbacks use weak methods.
+app_memory.register('camera-previews','camera',_trim_camera)
+
+
+def cached_camera_preview(path, edge):
+    path = Path(path).resolve(strict=True)
+    stat = path.stat()
+    key = (str(path), stat.st_size, stat.st_mtime_ns, edge)
+    with _CAMERA_PREVIEW_LOCK:
+        cached = _CAMERA_PREVIEWS.get(key)
+        if cached is not None:
+            _CAMERA_PREVIEWS.move_to_end(key)
+            return dict(cached)
+    return None
 
 
 def camera_preview(path, edge):
@@ -401,7 +532,7 @@ def camera_preview(path, edge):
     result["kept"] = True
     with _CAMERA_PREVIEW_LOCK:
         _CAMERA_PREVIEWS[key] = result
-        while sum(len(row["url"]) for row in _CAMERA_PREVIEWS.values()) > _CAMERA_PREVIEW_BYTES:
+        while _CAMERA_PREVIEWS and not app_memory.claim('camera-previews','camera',sum(len(row['url'].encode('utf-8')) for row in _CAMERA_PREVIEWS.values())):
             _CAMERA_PREVIEWS.popitem(last=False)
         return dict(result)
 
@@ -415,6 +546,7 @@ def _extract_camera_preview(path, edge):
         raw.open_file(str(path))
         thumb = raw.extract_thumb()
         image = Image.open(BytesIO(thumb.data)) if thumb.format == rawpy.ThumbFormat.JPEG else Image.fromarray(thumb.data)
+        if thumb.format == rawpy.ThumbFormat.JPEG: image.draft("RGB", (edge, edge))
         image = ImageOps.exif_transpose(image).convert("RGB")
         image.thumbnail((edge, edge))
         output = BytesIO()
@@ -436,7 +568,12 @@ def embedded_picture(path, edge):
 
 
 def reduced_bitmap(path, edge):
-    with Image.open(path) as source:
+    from .library_reduced import jpeg_open, png
+    if path.suffix.lower() == ".png":
+        pixels, _ = png(path)
+        return reduce_picture(pixels, edge)*np.float32(1/255)
+    opener = jpeg_open if path.suffix.lower() in {".jpg", ".jpeg"} else Image.open
+    with opener(path) as source:
         profile = source.info.get("icc_profile")
         source.draft("RGB", (edge, edge))
         image = ImageOps.exif_transpose(source)
@@ -448,6 +585,14 @@ def reduced_bitmap(path, edge):
 
 
 def decode_picture(path, edge, quality):
+    # One Library photo decodes with its share of the cores; Grade's own
+    # import keeps its separate bands.
+    from .cpu_budget import library_bands
+    with library_bands():
+        return _decode_picture(path, edge, quality)
+
+
+def _decode_picture(path, edge, quality):
     suffix = path.suffix.lower()
     if suffix in raw_import.RAW_EXTENSIONS:
         if quality == "fast":
@@ -509,7 +654,7 @@ def decode_picture(path, edge, quality):
             log("picture_source_reduced", path=str(path), duration_ms=(perf_counter()-reduce_started)*1000)
             return pixels, None, {"route": "native-raw" if quality == "native" else "quick-half-raw", "raw_input": True, "raw_start_brightness": brightness,
                 "source_width": transport.shape[1] * (1 if quality == "native" else 2), "source_height": transport.shape[0] * (1 if quality == "native" else 2)}
-    if quality == "fast" and suffix in {".heic", ".heif", ".tif", ".tiff"}:
+    if quality == "fast" and suffix in {".heic", ".heif"}:
         # Only accept a real decoder-supported picture, never reinterpret arbitrary bytes.
         try:
             pixels = reduced_bitmap(path, edge)
@@ -527,14 +672,16 @@ def decode_picture(path, edge, quality):
     elif suffix in {".heic", ".heif"}:
         image, metadata = loader._load_heif(path)
     elif suffix in {".tif", ".tiff"}:
-        image, metadata = loader._load_tiff(path)
+        image, metadata = loader._load_tiff(path, library_edge=5120 if edge <= 2560 else None)
     elif suffix == ".exr":
         image, metadata = loader._load_exr(path)
     elif suffix in {".hdr", ".pfm"}:
         image, metadata = loader._load_hdr_like(path)
     else:
         image = reduced_bitmap(path, edge)
-        with Image.open(path) as header:
+        from PIL import JpegImagePlugin, PngImagePlugin
+        opener = PngImagePlugin.PngImageFile if suffix == ".png" else JpegImagePlugin.JpegImageFile
+        with opener(path) as header:
             width, height = header.size
             if header.getexif().get(274) in {5, 6, 7, 8}:
                 width, height = height, width
@@ -561,11 +708,23 @@ def linear_dng_picture(path, inspection, edge):
     from .dng_color import normalize_camera_samples, build_color_transform, transform_normalized_to_acescg_in_place
     with tifffile.TiffFile(path) as tif:
         series = tif.series[inspection.primary_series_index]
-        decoded = _normalize_layout(series.asarray(), getattr(series, "axes", None))
+        from .library_reduced import read
+        if edge <= 2560 and inspection.primary_page_index is not None:
+            decoded, original = read(path, page=inspection.primary_page_index, edge=10240)
+        else:
+            decoded = _normalize_layout(series.asarray(), getattr(series, "axes", None))
+            original = (inspection.width, inspection.height)
+    from copy import deepcopy
+    reduced_metadata = deepcopy(inspection.metadata)
+    sx,sy=decoded.shape[1]/original[0],decoded.shape[0]/original[1]
+    reduced_metadata["active_area"]=np.rint(np.asarray(reduced_metadata["active_area"])*[sy,sx,sy,sx]).astype(int).tolist()
+    reduced_metadata["default_crop_origin"]=(np.asarray(reduced_metadata["default_crop_origin"])*[sx,sy]).tolist()
+    reduced_metadata["default_crop_size"]=(np.asarray(reduced_metadata["default_crop_size"])*[sx,sy]).tolist()
     color = color_metadata_from_mapping(inspection.metadata)
     working = normalize_camera_samples(decoded, color)
-    working = crop_and_orient(working, inspection.metadata)
-    source_height, source_width = working.shape[:2]
+    working = crop_and_orient(working, reduced_metadata)
+    from .library_dng import geometry
+    source_width, source_height, _, _ = geometry(inspection.metadata, *original)
     working = reduce_picture(working, edge)
     clipped = np.any(working >= .999, axis=2)
     transform_normalized_to_acescg_in_place(working, build_color_transform(color),

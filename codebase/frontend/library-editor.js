@@ -42,7 +42,11 @@
     return true;
   }
   async function libraryAction(message) {
-    if (message.action === "command-state") updateCommands(message);
+    if (message.action === "close-grade") {
+      try {await closePhotoInGrade();}
+      catch(error){const channel=new BroadcastChannel("hdr-library-grade-close");channel.postMessage({error:error.message});channel.close();throw error;}
+    }
+    else if (message.action === "command-state") updateCommands(message);
     else if (message.action === "grade-replaced") await window.HDRGradeSaving.refresh(message.session);
     else if (message.action === "quick-export") await window.batchExport?.quick(message.paths || message.ids || []);
     else if (message.action === "export-selection") await window.batchExport?.open(message.paths || message.ids || [], { fromLibrary: true });
@@ -56,7 +60,7 @@
     if (message.action === "prepare-paste") {
       preparePaste(message.paths).then(allowed => desktop.completeLibraryPaste(message.requestId, allowed))
         .catch(() => desktop.completeLibraryPaste(message.requestId, false));
-    } else if (["command-state", "grade-replaced", "quick-export", "export-selection", "add-export-selection"].includes(message.action)) {
+    } else if (["command-state", "grade-replaced", "quick-export", "export-selection", "add-export-selection", "close-grade"].includes(message.action)) {
       libraryAction(message).catch(error => showUploadError(error.message));
     } else if (message.action === "docked") {
       detached = false; away.hidden = true; frame.hidden = false;
@@ -95,7 +99,7 @@
     if (event.source !== frame.contentWindow || event.origin !== location.origin || event.data?.type !== "hdr-library") return;
     const message = event.data;
     if (message.action === "ready") sync();
-    else if (["command-state", "grade-replaced", "quick-export", "export-selection", "add-export-selection"].includes(message.action)) libraryAction(message).catch(error => showUploadError(error.message));
+    else if (["command-state", "grade-replaced", "quick-export", "export-selection", "add-export-selection", "close-grade"].includes(message.action)) libraryAction(message).catch(error => showUploadError(error.message));
     else if (message.action === "review") review(Boolean(message.enabled));
     else if (message.action === "pop-out") {
       if (!desktop) { showUploadError("A separate Library window requires the desktop app."); return; }

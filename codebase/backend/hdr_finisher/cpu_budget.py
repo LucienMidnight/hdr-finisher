@@ -2,6 +2,8 @@
 import os
 from math import isqrt
 from concurrent.futures import ThreadPoolExecutor, Future
+from contextlib import contextmanager
+from contextvars import ContextVar
 from threading import local, RLock
 from weakref import WeakSet
 
@@ -55,6 +57,8 @@ def raw_threads(count):
 
 _cpu_pool = ThreadPoolExecutor(max_workers=logical_cpus(), thread_name_prefix="hdr-cpu")
 _inside = local()
+# Library decodes opt in; Grade's own import keeps its separate bands.
+_library_bands = ContextVar("library_bands", default=False)
 
 
 class CpuExecutor:
@@ -113,3 +117,29 @@ class CpuExecutor:
 
     def __exit__(self, *error):
         self.shutdown(cancel_futures=bool(error[0]))
+
+
+def parallel_bands(function, starts):
+    """Run independent row bands on the shared CPU pool, in band order.
+
+    Bands are the same rows a serial caller would use, so results are
+    identical; only their order in time changes. Only a Library decode asks
+    for this (see library_bands); a nested call runs inline and a single band
+    is never dispatched.
+    """
+    starts = list(starts)
+    if len(starts) < 2 or getattr(_inside, "active", False) or not _library_bands.get():
+        yield from map(function, starts)
+        return
+    with CpuExecutor() as pool:
+        yield from pool.map(function, starts)
+
+
+@contextmanager
+def library_bands():
+    """Let one Library decode use its share of the cores for pixel work."""
+    token = _library_bands.set(True)
+    try:
+        yield
+    finally:
+        _library_bands.reset(token)

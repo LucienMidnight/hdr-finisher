@@ -19,6 +19,7 @@
     fasterDragging: false,
     libraryTestPatterns: false,
     maximumGpuMemoryGiB: "auto",
+    appMemoryBytes: null,
     executionOverride: "auto",
     roiPreview: "fit",
     navigationWindow: "auto",
@@ -172,6 +173,7 @@
     libraryTestPatterns: value.libraryTestPatterns === true,
     gradeAutosave: value.gradeAutosave !== false,
     maximumGpuMemoryGiB: normalizeGpuMemoryGiB(value.maximumGpuMemoryGiB),
+    appMemoryBytes: Number.isSafeInteger(value.appMemoryBytes) && value.appMemoryBytes >= 2_500_000_000 ? value.appMemoryBytes : null,
     executionOverride: EXECUTION_OVERRIDES.has(value.executionOverride) ? value.executionOverride : "auto",
     roiPreview: ROI_PREVIEW_MODES.has(value.roiPreview) ? value.roiPreview : "fit",
     navigationWindow: ["auto", "always", "off"].includes(value.navigationWindow) ? value.navigationWindow : "auto",
@@ -192,6 +194,29 @@
       try { return mergePreferences(await shell.desktop.getPreferences()); } catch (error) { console.warn("Could not load desktop preferences.", error); }
     }
     try { return mergePreferences(JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}")); } catch { return mergePreferences(); }
+  }
+
+  async function renderAppMemory() {
+    const input = byId("settings-app-memory"), status = byId("settings-app-memory-status");
+    try {
+      const response = await fetch("/api/library/memory-setting");
+      if (!response.ok) throw Error(await response.text());
+      const value = await response.json();
+      input.max = String(Math.floor(value.maximumBytes/1e8)/10);
+      input.value = String(value.ceilingBytes/1e9);
+      status.textContent = `Default on this computer: ${(value.defaultBytes/1e9).toFixed(1)} GB. Up to ${(value.maximumBytes/1e9).toFixed(1)} GB available after leaving memory for the system. Changes apply now.`;
+    } catch (error) { status.textContent = String(error.message); }
+  }
+
+  async function setAppMemory(bytes) {
+    const status = byId("settings-app-memory-status");
+    try {
+      const response = await fetch("/api/library/memory-setting", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes})});
+      if (!response.ok) throw Error(await response.text());
+      shell.preferences.appMemoryBytes = bytes;
+      persistPreferences();
+      await renderAppMemory();
+    } catch (error) { status.textContent=error.message; }
   }
 
   function persistPreferences() {
@@ -632,6 +657,7 @@
   }
 
   function renderSettings() {
+    void renderAppMemory();
     byId("settings-rendering-mode").value = shell.preferences.renderingMode;
     byId("settings-faster-dragging").checked = shell.preferences.fasterDragging === true;
     byId("settings-library-test-patterns").checked = shell.preferences.libraryTestPatterns === true;
@@ -902,6 +928,10 @@
       shell.preferences.defaultReferenceWhiteNits = Number(event.target.value) === 100 ? 100 : 203;
       persistPreferences();
     });
+    byId("settings-app-memory").addEventListener("change", event => {
+      if (event.target.reportValidity()) void setAppMemory(Math.round(Number(event.target.value)*1e9));
+    });
+    byId("settings-app-memory-default").addEventListener("click", () => void setAppMemory(null));
     byId("settings-rendering-mode").addEventListener("change", (event) => {
       shell.preferences.renderingMode = event.target.value;
       persistPreferences();

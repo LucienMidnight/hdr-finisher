@@ -42,7 +42,9 @@ the delivery renderer for export, Proof and Library pictures (see
 **Built:** WebGPU renderer for the whole look (film stock, grain,
 halation, Denoise, local adjustments and masks, geometry, lens), tiled
 full-resolution rendering, viewport-bounded tiers with native zoom, GPU
-scopes and navigation, GPU Match candidates, GPU memory budget, device-loss
+scopes and navigation, GPU Match candidates, GPU memory budget (see
+[memory-and-caches](memory-and-caches.md) for how VRAM and RAM budgets fit
+together), device-loss
 recovery, CPU fallback paths, preview-against-export comparison tools and
 parity checks per stage.
 

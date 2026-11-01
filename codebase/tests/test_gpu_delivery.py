@@ -145,7 +145,7 @@ def test_raw_reservation_yields_without_releasing_live_memory(tmp_path, monkeypa
         client.delete('/api/delivery/gpu/raw-budget/first')
         assert post('second')["granted"]
         client.delete('/api/delivery/gpu/raw-budget/second')
-        assert client.post('/api/delivery/gpu/raw-budget/large', json={"bytes":901}).json()["fallback"]
+        assert client.post('/api/delivery/gpu/raw-budget/large', json={"bytes":901}).json()["waiting"] == "memory"
         assert client.post('/api/delivery/gpu/activity', json={"bytes":100,"budget":1000}).json()["reserved"] == 0
 
 
@@ -366,3 +366,17 @@ def test_full_size_denoise_does_not_measure_on_cpu_before_the_gpu_turn(tmp_path,
         assert job["authored_sdr"] is False
         client.post(f"/api/delivery/gpu/{job['id']}/complete", json={"error": "stop"})
         assert pending.result(timeout=5) is None
+
+
+def test_cached_draw_passes_older_development_waiting_for_memory(tmp_path, monkeypatch):
+    with TestClient(_broker(tmp_path, monkeypatch)) as client:
+        client.post('/api/delivery/gpu/activity', json={"bytes":100,"budget":1000})
+        def post(name, size):
+            return client.post('/api/delivery/gpu/raw-budget/' + name,
+                json={"bytes":size,"background":True,"priority":10}).json()
+        assert post('development', 1200)['waiting'] == 'memory'
+        assert post('cached-thumbnail', 100)['granted']
+        assert not post('development', 1200)['granted']
+        client.delete('/api/delivery/gpu/raw-budget/cached-thumbnail')
+        client.post('/api/delivery/gpu/activity', json={"bytes":0,"budget":2000})
+        assert post('development', 1200)['granted']

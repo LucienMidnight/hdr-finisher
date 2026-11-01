@@ -137,5 +137,6 @@ def test_oversized_linear_source_is_rejected_before_reading_pixels(monkeypatch,t
     source=inspect_dng(path)
     import tifffile
     monkeypatch.setattr(tifffile,"TiffFile",lambda *a,**k:pytest.fail("Decoded an impossible GPU source"))
-    with pytest.raises(NotEligible,match="storage binding limit"):
+    from hdr_finisher.library_gpu_raw import MemoryPending
+    with pytest.raises(MemoryPending,match="storage binding limit"):
         linear(path,recipe(None),source,max_storage_bytes=24*32*12-1)

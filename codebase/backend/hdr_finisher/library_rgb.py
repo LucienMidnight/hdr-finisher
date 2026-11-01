@@ -12,27 +12,59 @@ from .models import SourceInterpretationOverride, SourceImageDescriptor, SourceR
 from .import_defaults import starting_adjustments
 from .source_luminance import describe_source_luminance
 
-VERSION = "library-rgb-v3"
+VERSION = "library-rgb-reduced-v4"
 
 
-def decoded(path, inputs):
+
+def preflight_interpretation(path, inputs):
+    """Reject an unresolved EXR from headers before reserving decode memory."""
+    from .file_gate import decode_suffix
+    if decode_suffix(Path(path)) != ".exr" or inputs["interpretation_override"].get("color_space"):
+        return
+    import OpenEXR
+    file = OpenEXR.InputFile(str(path))
+    try:
+        header = file.header()
+    finally:
+        file.close()
+    name, _, confident = loader._infer_exr_chromaticities(header.get("chromaticities"))
+    interop, _, interop_confident = loader._infer_exr_color_interop_id(header.get("colorInteropID"))
+    _, _, resolved, _ = loader._resolve_exr_color_space(name, confident, interop, interop_confident)
+    if not resolved:
+        raise ValueError("Unresolved source primaries retain Grade's interpretation gate")
+
+
+def decoded(path, inputs, edge=2560):
+    from .file_gate import decode_suffix
     path = Path(path).resolve(strict=True)
-    if path.suffix.lower() in {".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
-        return decoded_precision(path, inputs)
-    if path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
+    suffix = decode_suffix(path)  # by contents when they differ from the extension
+    if suffix in {".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
+        return decoded_precision(path, inputs, edge=edge)
+    if suffix not in {".jpg", ".jpeg", ".png"}:
         raise NotEligible("RGB preparation currently supports ordinary JPEG/PNG only")
     if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
         raise NotEligible("RGB interpretation overrides retain Grade's CPU loader")
-    if path.suffix.lower() != ".png" and loader.is_ultrahdr_jpeg(path):
-        return decoded_precision(path, inputs)
+    if suffix != ".png" and loader.is_ultrahdr_jpeg(path):
+        return decoded_precision(path, inputs, edge=edge)
     identity = _identity(path)
     start = perf_counter()
-    with Image.open(path) as image:
+    from .library_reduced import jpeg_open
+    from PIL import JpegImagePlugin, PngImagePlugin
+    # Header-only inspection does not allocate a decoded image.
+    opener = PngImagePlugin.PngImageFile if suffix == ".png" else JpegImagePlugin.JpegImageFile
+    with opener(path) as image:
         orientation = int(image.getexif().get(274, 1))
+        original_size = image.size[::-1] if orientation in {5,6,7,8} else image.size
         original_mode = image.mode
         icc = image.info.get("icc_profile")
     # This is the very same CPU orientation/ICC boundary used by Grade.
-    pixels, metadata = loader._load_with_pillow(path, encoded_samples=True)
+    if edge <= 2560 and suffix == ".png":
+        from .library_reduced import png
+        pixels, metadata = png(path)
+    else:
+        pixels, metadata = loader._load_with_pillow(path, encoded_samples=True,
+            draft_edge=5120 if edge <= 2560 else None,
+            image_factory=jpeg_open if edge <= 2560 and suffix != ".png" else None)
     if metadata.get("needs_color_override") or metadata.get("color_space") != "sRGB":
         raise NotEligible("ICC interpretation is unresolved or not representable as sRGB")
     if _identity(path) != identity:
@@ -47,7 +79,7 @@ def decoded(path, inputs):
                    "alpha": "discarded by Grade decoder", "ownership": "request-owned", "original_mode": original_mode,
                    "data_window": [0, 0, width, height], "display_window": [0, 0, width, height], "origin": [0, 0]},
         "orientation": {"original": orientation, "applied": True},
-        "colour": {"primaries": "sRGB", "transfer": "sRGB", "icc_present": bool(icc),
+        "colour": {"primaries": "sRGB", "transfer": "sRGB", "original_dimensions":list(original_size), "icc_present": bool(icc),
                    "icc_applied_cpu": bool(metadata.get("icc_converted_to_srgb")),
                    "original_profile": metadata.get("source_icc_profile_name"), "decoder_normalized": False,
                    "eotf_applied": False, "reference_white_nits": inputs["hdr_reference_white_nits"],
@@ -61,12 +93,13 @@ def decoded(path, inputs):
     }, [memoryview(np.ascontiguousarray(pixels)).cast("B")]
 
 
-def decoded_precision(path, inputs):
+def decoded_precision(path, inputs, edge=2560):
     """Use decoder-owned float32 samples, before transfer/gamut preparation."""
     from . import color
+    from .file_gate import decode_suffix
     identity = _identity(path)
     start = perf_counter()
-    suffix = path.suffix.lower()
+    suffix = decode_suffix(path)
     facts = {}
     reference = None
     if suffix in {".jpg", ".jpeg"}:
@@ -76,6 +109,12 @@ def decoded_precision(path, inputs):
             raise NotEligible(str(error)) from error
         facts.update(effective_bits=16, orientation=metadata["orientation"])
     elif suffix == ".jxl":
+        from .jpegxl import inspect_jpegxl
+        info = inspect_jpegxl(path)
+        colour = info.get("app_metadata") or {}
+        override = inputs["interpretation_override"]
+        if not override.get("color_space") and not (colour.get("color_space") and colour.get("transfer_function")):
+            raise NotEligible("Not supported: JPEG XL source colour is unresolved. Open it in Grade to choose its source interpretation.")
         pixels, metadata = loader.decode_jpegxl(path, encoded_samples=True)
         facts.update(orientation=None, effective_bits=int(metadata["bit_depth"]), sample_type=metadata["sample_type"], jpegxl_info=metadata["jpegxl_info"])
     elif suffix == ".avif":
@@ -109,7 +148,7 @@ def decoded_precision(path, inputs):
         finally:
             file.close()
     elif suffix in {".tif", ".tiff"}:
-        pixels, metadata = loader._load_tiff(path)
+        pixels, metadata = loader._load_tiff(path, library_edge=5120 if edge <= 2560 else None)
         import tifffile
         with tifffile.TiffFile(path) as tif:
             page = tif.pages[0]
@@ -182,7 +221,7 @@ def decoded_precision(path, inputs):
     scale = .18 if linear_reference == "diffuse_white_1_0" else 1.
     if metadata.get("sample_reference_white_nits"):
         scale *= metadata["sample_reference_white_nits"] / inputs["hdr_reference_white_nits"]
-    descriptor = SourceImageDescriptor(filename=path.name, suffix=suffix, width=w, height=h, channels=3,
+    descriptor = SourceImageDescriptor(filename=path.name, suffix=suffix, width=metadata.get("source_width",w), height=metadata.get("source_height",h), channels=3,
         dtype="float32", source_color_space=metadata.get("source_color_space_label",metadata["color_space"]),
         transfer_function=metadata["transfer_function"], linear_reference=linear_reference,
         interpretation_mode="manual" if override else "auto", color_space_confident=True)
@@ -234,9 +273,12 @@ def developed(cache, path, header, payload):
     plane_count = 6 if reference_present else 3
     pixels = reference = None
     if payload is not None:
-        if len(payload) != h * w * plane_count * 4:
+        sample_bytes = header.get('sample_bytes', 4)
+        if sample_bytes not in (2, 4):
+            raise ValueError('Unsupported RGB preview precision.')
+        if len(payload) != h * w * plane_count * sample_bytes:
             raise ValueError("Incomplete RGB preview data.")
-        planes = np.frombuffer(payload, dtype="<f4").reshape(plane_count, h, w)
+        planes = np.frombuffer(payload, dtype="<f2" if sample_bytes == 2 else "<f4").reshape(plane_count, h, w)
         if not np.all(np.isfinite(planes)):
             raise ValueError("RGB GPU preparation produced invalid samples.")
         pixels = np.ascontiguousarray(planes[:3].transpose(1, 2, 0))
@@ -264,6 +306,8 @@ def developed(cache, path, header, payload):
         width=header["source_width"], height=header["source_height"], channels=3, dtype="float32",
         source_color_space="sRGB", transfer_function="sRGB")
     if colour.get("descriptor"): source = SourceImageDescriptor.model_validate(colour["descriptor"])
+    if colour.get("original_dimensions"):
+        source=source.model_copy(update=dict(zip(("width","height"),colour["original_dimensions"])))
     from .library_source_jobs import shared_fingerprint
     fingerprint = shared_fingerprint(header.get("source_job"), path, header["identity"], lambda: _sha256_file(path))
     document = EditDocument(hdr_reference_white_nits=white, global_adjustments=look,

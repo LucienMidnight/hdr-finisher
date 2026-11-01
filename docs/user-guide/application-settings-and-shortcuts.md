@@ -18,6 +18,20 @@ Rendering mode does not change final export quality.
 
 **Maximum GPU memory for previews** sets how much of the graphics card the preview may use. **Auto** uses up to half of the card's own memory, or 2 GiB when the card's memory can't be read. With more memory the preview processes the whole image in one fast pass. Choose a lower limit if you run other graphics-heavy apps at the same time. Export is unaffected.
 
+## Performance and memory
+
+**Memory the app may use** sets the app's memory allowance. The default is
+the smaller of 4 GB or one quarter of your computer's RAM, with a minimum of
+2.5 GB. Settings shows the default for your computer. You can choose from
+2.5 GB up to RAM minus the larger of 2 GB or 10% reserved for the system.
+Use **Use default** to return to the automatic value.
+
+Changes apply immediately and are saved for next time. Lowering the value
+releases cached pictures through the normal memory management. A very large
+photo that needs a higher allowance shows a message in its Library cell;
+select it to open this setting. Raise the allowance enough and the waiting
+photo can continue without reopening the folder.
+
 ## Diagnostics
 
 The Diagnostics section holds troubleshooting switches that you don't need for normal work. None of them affect exports.

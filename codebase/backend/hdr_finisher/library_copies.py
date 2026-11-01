@@ -72,7 +72,7 @@ class LibraryCopies:
         items = self.validate(document)
         # Every folder open reads every photo; write only what changed. One
         # write per photo per visit cost about 1.5 s on a 372-photo folder.
-        if state == {"baseline": items}: return
+        if state == {"baseline": items} or (not state and not items): return
         db = self.marks._connect()
         try:
             with db:

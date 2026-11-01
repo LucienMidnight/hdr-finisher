@@ -35,10 +35,11 @@ def available(path):
     if os.name!='nt': return False
     kernel=c.WinDLL('kernel32',use_last_error=True);get=kernel.GetDriveTypeW;get.argtypes=[c.c_wchar_p];get.restype=c.c_uint
     root=Path(path).anchor
-    if get(root) not in {2,3}: return False
-    class Info(c.Structure): _fields_=[('size',c.c_uint32),('bytes',c.c_int64),('items',c.c_int64)]
-    info=Info(c.sizeof(Info));query=c.WinDLL('shell32').SHQueryRecycleBinW;query.argtypes=[c.c_wchar_p,c.POINTER(Info)];query.restype=c.c_long
-    return query(root,c.byref(info))>=0
+    # Local drives select the explicit RecycleItem route. A size/count query
+    # enumerates the bin and can take tens of seconds; it does not prove that
+    # recycling this item will succeed. RecycleItem remains authoritative and
+    # failure leaves the file alone, with no permanent-delete fallback.
+    return get(root) in {2,3}
 
 
 def recycle(path):

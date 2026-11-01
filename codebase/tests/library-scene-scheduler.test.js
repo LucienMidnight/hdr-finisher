@@ -226,3 +226,55 @@ test('nearby source survives a scroll, reattaches once, and stops after leaving 
  const rejected=assert.rejects(third,{name:'AbortError'});await new Promise(resolve=>setImmediate(resolve));last.abort();await rejected;
  nearby=new Set();queue.reprioritize(()=>80);assert.equal(orphan.aborted,true);finish.resolve();
 });
+
+test('memory waits leave active slots free and newly visible work wins admission',async()=>{
+ let granted=false;const starts=[],queue=create(2,undefined,{admit:async()=>granted});
+ const off=queue.submit('offscreen',async()=>starts.push('offscreen'),undefined,80);
+ await new Promise(r=>setImmediate(r));
+ assert.equal(queue.snapshot().active,0);assert.equal(queue.snapshot().waiting,1);
+ const visible=queue.submit('visible',async()=>starts.push('visible'),undefined,10);
+ await new Promise(r=>setImmediate(r));assert.equal(queue.snapshot().active,0);
+ granted=true;
+ await Promise.all([off,visible]);assert.deepEqual(starts,['visible','offscreen']);
+});
+
+test('a cancelled admission cannot start development or strand the next job',async()=>{
+ const admission=gate(),cancel=new AbortController(),starts=[];
+ const queue=create(1,undefined,{admit:job=>job.path==='cancelled'?admission.promise:Promise.resolve(true)});
+ const removed=queue.submit('cancelled',async()=>starts.push('cancelled'),cancel.signal);
+ await new Promise(r=>setImmediate(r));cancel.abort();await assert.rejects(removed,{name:'AbortError'});
+ const next=queue.submit('next',async()=>starts.push('next'));
+ admission.resolve(true);await next;assert.deepEqual(starts,['next']);
+});
+
+test('grid read-ahead follows the viewport even when the selection is offscreen',async()=>{
+ const queue=create(1),block=gate(),started=[];
+ const running=queue.submit('running',()=>block.promise);
+ queue.reprioritize(path=>path==='visible'?10:80);
+ const selected=queue.submit('old-selection',async()=>started.push('old-selection'),undefined,80,{viewport:true});
+ const visible=queue.submit('visible',async()=>started.push('visible'),undefined,80,{viewport:true});
+ block.resolve();await Promise.all([running,selected,visible]);
+ assert.deepEqual(started,['visible','old-selection']);
+});
+
+test('visible development releases an offscreen source parked at GPU admission',async()=>{
+ const queue=create(1,undefined,{preemptLower:(job,priority)=>priority<=10&&job.resourceWaiting});
+ let released=false;
+ const off=queue.submit('offscreen',signal=>new Promise((resolve,reject)=>signal.addEventListener('abort',()=>{
+  released=true;reject(new DOMException('Cancelled','AbortError'));
+ })),undefined,80);
+ await new Promise(r=>setImmediate(r));queue.stage('offscreen','Waiting for GPU memory',true);
+ const rejected=assert.rejects(off,{name:'AbortError'});
+ const visible=queue.submit('visible',async()=>assert.equal(released,true),undefined,10);
+ await Promise.all([visible,rejected]);assert.equal(queue.snapshot().active<=1,true);
+});
+
+test('development FIFO keeps screen order despite different costs',async()=>{
+ const q=create(1,undefined,{fifo:true}),block=gate(),started=[];
+ const first=q.submit('first',()=>block.promise);
+ const a=q.submit('visible-a',()=>started.push('a'),null,10,{cost:5});
+ const b=q.submit('visible-b',()=>started.push('b'),null,10,{cost:0});
+ const selected=q.submit('selected',()=>started.push('selected'),null,0);
+ block.resolve();await Promise.all([first,a,b,selected]);
+ assert.deepEqual(started,['selected','a','b']);
+});

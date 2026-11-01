@@ -21,7 +21,7 @@ window.HDRLibraryBuildPreviews=(()=>{
         for(;;){
           try{
             let usable=true;
-            try{await HDRLibraryPictures.initialize();}catch{usable=false;}
+            try{await HDRLibraryPictures.initialize();}catch(error){if(!error.gpuUnavailable&&!HDRLibraryPictures.lost?.())throw error;usable=false;}
             if(!usable){const result=await api('/cpu',{path,...HDRLibraryScreenPreviews.display()},controller.signal);if(!result.saved)throw Error('Preview was not saved.');}
             else {
               const meta=await HDRLibraryScenes.load(path,2560,controller.signal,99);

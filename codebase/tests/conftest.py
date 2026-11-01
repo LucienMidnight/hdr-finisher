@@ -27,6 +27,16 @@ def _isolate_source_mip_cache(tmp_path_factory) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _photos_written_by_tests_are_settled(monkeypatch):
+    """Tests write small stand-in photos and use them at once. The file gate's
+    "still being copied" wait and 1 KB minimum are tested with their real
+    values in test_file_gate.py."""
+    from hdr_finisher import file_gate
+    monkeypatch.setattr(file_gate, "SETTLE_SECONDS", 0.0)
+    monkeypatch.setattr(file_gate, "MIN_PHOTO_BYTES", 0)
+
+
 def make_png_bytes(color: tuple[int, int, int] = (120, 90, 60)) -> bytes:
     import io
 

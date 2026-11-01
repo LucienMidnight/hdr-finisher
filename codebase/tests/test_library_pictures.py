@@ -78,7 +78,11 @@ def test_raw_camera_placeholder_does_not_load_grade(tmp_path, monkeypatch):
 def photo(tmp_path, name="photo.png"):
     path = tmp_path / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    Image.new("RGB", (240, 120), (160, 90, 60)).save(path)
+    # A text chunk lifts the solid-colour stand-in over the file gate's 1 KB
+    # minimum (checked again in the helper process) without changing pixels.
+    from PIL.PngImagePlugin import PngInfo
+    padding = PngInfo(); padding.add_text("padding", "x" * 2048)
+    Image.new("RGB", (240, 120), (160, 90, 60)).save(path, pnginfo=padding)
     return path
 
 

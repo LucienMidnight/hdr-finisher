@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from .color_context import RenderColorContext
-from .library_pictures import LibraryPictureCache, reduce_picture
+from .library_pictures import LibraryPictureCache, reduce_picture, picture_key
 from .models import AdjustmentState, DenoiseDocumentSettings, LocalAdjustment, RawImportSettings, SourceInterpretationOverride
 from .projects import validate_saved
 from .render_cache import SessionRenderCache, encode_rgba_proxy_rows
@@ -38,15 +38,55 @@ def recipe(document):
     }
 
 
-def quality(document):
+def _quality(inputs):
     from .loader import SOURCE_DECODER_VERSION, SOURCE_COLOR_TRANSFORM_VERSION
-    identity = {"recipe": recipe(document), "decoder": SOURCE_DECODER_VERSION,
-                "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-v3"}
+    identity = {"recipe": inputs, "decoder": SOURCE_DECODER_VERSION,
+                "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-reduced-v4"}
     return "live-scene-v2:" + sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
+_quality_aliases = OrderedDict()
+
+
+def equivalent_qualities(value):
+    with _registry_lock:
+        return _quality_aliases.get(value, (value,))
+
+
+def quality(document):
+    inputs = recipe(document)
+    canonical = deepcopy(inputs)
+    highlights = canonical["raw_import_settings"]["highlight_reconstruction"]
+    # Opposed colour never reads this Edge colour-only control. Use the
+    # established pre-prototype encoding for its default in every recipe.
+    if highlights["method"] != "edge_colour_v1" or highlights["edge_colour_expand_percent"] == 0.5:
+        highlights.pop("edge_colour_expand_percent", None)
+    if not highlights["enabled"]:
+        canonical["raw_import_settings"]["highlight_reconstruction"] = {"enabled": False}
+    lens = canonical["raw_import_settings"]["lens"]
+    if lens["mode"] == "off":
+        canonical["raw_import_settings"]["lens"] = {"mode": "off"}
+    # Record labels and disabled strokes never alter the reconstructed source.
+    canonical["repairs"] = [{"recipe": r["recipe"]} for r in inputs["repairs"] if r["enabled"]]
+    value = _quality(canonical)
+    variants = [value, _quality(inputs)]
+    # Exact historical encodings of the SAME developed pixels, never a broad
+    # cache search or fallback to a different recipe/decoder/file version.
+    old = deepcopy(inputs)
+    h = old["raw_import_settings"]["highlight_reconstruction"]
+    if h["method"] != "edge_colour_v1" or h["edge_colour_expand_percent"] == 0.5:
+        h.pop("edge_colour_expand_percent", None)
+        variants.append(_quality(old))
+    with _registry_lock:
+        previous = _quality_aliases.pop(value, ())
+        _quality_aliases[value] = tuple(dict.fromkeys((*variants, *previous)))[:16]
+        while len(_quality_aliases) > 1024:
+            _quality_aliases.popitem(last=False)
+    return value
+
+
 def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progress=None, draw_first=False):
-    """One full development produces both scene sizes; no CPU finishing."""
+    """Develop only the requested scene size; no CPU finishing."""
     from .sessions import SessionStore
     from .models import EditDocument
     cache = cache or LibraryPictureCache(root)
@@ -55,13 +95,19 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     if cached:
         return cached
     inputs = recipe(document)
+    highlights = inputs["raw_import_settings"].get("highlight_reconstruction", {})
+    if (Path(path).suffix.lower() == ".arw" and edge <= 2560 and not inputs.get("repairs")
+            and highlights.get("method", "opposed_color_v1") == "opposed_color_v1"):
+        from .library_cpu_bands import develop
+        return develop(root, path, document, edge, cancelled, cache, progress, draw_first)
     from .highlight_edge_gpu import source_work
     prepared_at = perf_counter()
     with source_work(priority=15, cancelled=cancelled):
         source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
             raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
             interpretation_override=SourceInterpretationOverride.model_validate(inputs["interpretation_override"]),
-            hdr_reference_white_nits=inputs["hdr_reference_white_nits"])
+            hdr_reference_white_nits=inputs["hdr_reference_white_nits"],
+            library_edge=5120 if edge <= 2560 and not inputs.get("repairs") else None)
     preparation_ms = (perf_counter() - prepared_at) * 1000
     if document:
         saved = validate_saved(EditDocument, document)
@@ -88,10 +134,10 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     if progress: progress("reduction", "Preparing thumbnail and screen preview")
     result = None
     reduction_at = perf_counter()
-    for size in sorted({640, 2560, edge}, reverse=True):
+    for size in [edge]:
         metadata = {"route": "library-live", "renderer": "cpu", "raw_input": True,
             "starting_look": source.starting_adjustments().model_dump(mode="json"),
-            "source_width": source.image.shape[1], "source_height": source.image.shape[0],
+            "source_width": source.source.width, "source_height": source.source.height,
             "source_fingerprint_sha256": source.source_fingerprint_sha256,
             "source_timings_ms": source.metadata.get("import_timings_ms")}
         from .retouch_routes import records, notice
@@ -118,9 +164,9 @@ _cpu_condition = Condition()
 
 
 def develop_cpu(root, path, document, edge, cancelled=None, progress=None, draw_first=False):
-    """Coalesce helper calls before allocating a decoder, across scene tiers."""
+    """Coalesce matching source/resolution calls before allocating a decoder."""
     from .library_pictures import picture_key, check_cancelled
-    key = (str(root), picture_key(path, 100000 if edge == 100000 else 0, quality(document)))
+    key = (str(root), picture_key(path, edge, quality(document)))
     demand = cancelled or (lambda: False)
     with _cpu_condition:
         flight = _cpu_flights.get(key)
@@ -205,8 +251,17 @@ class LivePictures:
                     report["sections"] = list(dict.fromkeys(i["section"] for i in report["issues"]))
                     report["reason"] = " ".join(dict.fromkeys(i["reason"] for i in report["issues"]))
                 errors.observe_grade(path, report)
-        grade_id = sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
-        identity = "live-" + sha256((metadata["key"] + grade_id).encode()).hexdigest()[:59]
+        # Transport/draw identity includes the finishing pixels, not document
+        # versions, filenames, source measurements or materialised RAW defaults.
+        # Source development already has its own identity in metadata["key"].
+        finishing = {"global_adjustments": document.get("global_adjustments") or metadata["adjustments"],
+            "local_adjustments": document.get("local_adjustments", []),
+            "denoise": document.get("denoise", {}), "framing": document.get("framing"),
+            "hdr_reference_white_nits": document.get("hdr_reference_white_nits", 203)}
+        from .library_grades import grade_key
+        grade_id = sha256(json.dumps(grade_key(finishing), sort_keys=True).encode()).hexdigest()
+        source_identity = picture_key(metadata["path"], metadata["edge"], quality(document))
+        identity = "live-" + sha256((source_identity + grade_id).encode()).hexdigest()[:59]
         result = dict(metadata, route="library-live", source_key=metadata["key"], key=identity,
             path=str(path), adjustments=document.get("global_adjustments") or metadata["adjustments"],
             locals=document.get("local_adjustments", []), denoise=document.get("denoise", {}),

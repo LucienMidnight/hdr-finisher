@@ -24,7 +24,7 @@ window.HDRLibraryLiveTiles = Object.freeze({
         }catch(error){
           if(signal.aborted||!current()||error.name==="AbortError")return;
           if(error.libraryYield){await wait(50);continue;}
-          if(HDRLibraryPictures.usable())throw error;
+          if(!error.gpuUnavailable&&!HDRLibraryPictures.lost?.())throw error;
           if(!fallback){
             const response=await fetch("/api/library/fallback-picture",{method:"POST",signal,
               headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge:640,priority:80})});

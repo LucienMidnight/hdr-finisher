@@ -22,7 +22,14 @@ const samples = (process.env.HDR_FINISHER_GPU_RAW_SAMPLES ? process.env.HDR_FINI
 if (!samples.length) { console.log(JSON.stringify({ skipped: 'No sample camera RAWs on this machine.' })); process.exit(0); }
 fs.mkdirSync(out, { recursive: true });
 const folder = fs.mkdtempSync(path.join(out, 'photos-'));
-const photos = samples.map(sample => { const copy = path.join(folder, path.basename(sample)); fs.copyFileSync(sample, copy); return copy; });
+const permanent = path.join(root, 'output', 'test-photos', 'gpu-raw');
+fs.mkdirSync(permanent, {recursive:true});
+const photos = samples.map(sample => {
+  if(path.resolve(sample).startsWith(path.resolve(root,'output/test-photos')+path.sep))return sample;
+  const copy = path.join(permanent, path.basename(sample));
+  if(!fs.existsSync(copy))fs.copyFileSync(sample, copy);
+  return copy;
+});
 const png = path.join(folder, 'not-raw.png');
 fs.copyFileSync(path.join(root, 'tests', 'fixtures', 'sdr_gradient.png'), png);
 
@@ -43,14 +50,14 @@ fs.copyFileSync(path.join(root, 'tests', 'fixtures', 'sdr_gradient.png'), png);
         rows.push({ path: photo, ms: Math.round(performance.now() - started), key: meta?.key, route: meta?.route, cache_hit: !!meta?.cache_hit, gpu_ms: meta?.gpu_development_ms });
       }
       const again = await HDRLibraryGpuRaw.thumbnail(photos[0], 640);
-      const skipped = await HDRLibraryGpuRaw.thumbnail(png, 640);
+      const skipped = await HDRLibraryGpuRaw.thumbnail(png, 640).then(()=>null,error=>error.message);
       return { location: settings.location, rows, againCached: !!again?.cache_hit, againKey: again?.key, skipped };
     }, { photos, png });
     fs.writeFileSync(path.join(out, 'app-result.json'), JSON.stringify(result, null, 1));
     assert.deepEqual(errors, [], 'No page errors');
     for (const row of result.rows) assert.equal(row.route, 'gpu-raw-thumbnail', `${path.basename(row.path)} took the GPU route`);
     assert.ok(result.againCached && result.againKey === result.rows[0].key, 'A repeat request is answered from the cache');
-    assert.equal(result.skipped, null, 'A non-RAW photo keeps the CPU route');
+    assert.match(result.skipped, /no supported GPU development route/, 'Unsupported RAW development reports its refusal without switching to CPU');
     const report = JSON.parse(execFileSync(python, [path.join(root, 'tools', 'gpu_raw_prototype', 'compare_library.py'), path.join(out, 'app-result.json')], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 24 }).trim().split('\n').at(-1));
     console.log(JSON.stringify({ rows: result.rows.map(r => ({ photo: path.basename(r.path), app_ms: r.ms, gpu_ms: r.gpu_ms })), compare: report }));
     for (const row of report.photos) {
@@ -58,6 +65,7 @@ fs.copyFileSync(path.join(root, 'tests', 'fixtures', 'sdr_gradient.png'), png);
     }
   } finally {
     await browser.close();
+    assert.ok(path.resolve(folder).startsWith(path.resolve(out)+path.sep));
     fs.rmSync(folder, { recursive: true, force: true });
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });

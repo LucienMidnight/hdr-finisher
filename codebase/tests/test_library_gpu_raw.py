@@ -21,6 +21,16 @@ def test_frame_round_trip_keeps_payload_aligned():
         gpu_raw.unframe(body[:3])
 
 
+def test_source_stream_preserves_frame_without_copying_planes():
+    header = {"path": "large.avif", "mosaic_bytes": 3_000_000}
+    pixels = bytearray(b"rgb" * 1_000_000)
+    reference = bytearray(b"sdr" * 20)
+    chunks = list(gpu_raw.frame_chunks(header, pixels, reference))
+    assert b"".join(chunks) == gpu_raw.frame(header, pixels, reference)
+    assert all(isinstance(chunk, memoryview) and chunk.nbytes <= 1024 * 1024 for chunk in chunks[1:])
+    assert chunks[1].obj is pixels and chunks[-1].obj is reference
+
+
 @pytest.mark.parametrize("name", ["photo.png", "photo.dng", "photo.jpg"])
 def test_photos_outside_the_gpu_route_keep_the_cpu_route(tmp_path, name):
     photo = tmp_path / name

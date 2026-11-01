@@ -2,7 +2,7 @@
 from pathlib import Path
 from time import perf_counter
 import numpy as np
-from .library_gpu_raw import NotEligible, _identity
+from .library_gpu_raw import NotEligible, MemoryPending, _identity
 from .models import SourceImageDescriptor
 
 
@@ -17,12 +17,16 @@ def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640, m
     # decoder; no required correction or rendered SDR rendition is skipped.
     if inspection.required_opcodes or inspection.optional_opcodes:
         raise NotEligible("Linear DNG operations retain the existing CPU route")
+    shrink = edge <= 2560 and inspection.primary_page_index is not None and inspection.metadata.get("sdr_preview_series_index") is None
     if edge == 100000 and inspection.metadata.get("sdr_preview_series_index") is not None:
         raise NotEligible("Native linear DNG with an embedded SDR rendition retains the CPU route")
     # Reject an impossible native binding before decoding/normalizing gigabytes
     # that the browser would discard and then decode again on the CPU.
-    if max_storage_bytes is not None and inspection.fingerprint.width * inspection.fingerprint.height * 12 > max_storage_bytes:
-        raise NotEligible("Linear DNG samples exceed this GPU's storage binding limit")
+    from .library_reduced import sample_size
+    sample_width,sample_height = sample_size(inspection.width,inspection.height,10240) if shrink else (inspection.width,inspection.height)
+    sample_bytes = sample_width*sample_height*12
+    if max_storage_bytes is not None and sample_bytes > max_storage_bytes:
+        raise MemoryPending("Linear DNG samples exceed this GPU's storage binding limit")
     path=Path(path);identity=_identity(path);started=perf_counter()
     report=lambda stage,text: progress(stage,text) if progress else None
     metadata=inspection.metadata;reference=None
@@ -44,14 +48,31 @@ def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640, m
                 reference=np.ascontiguousarray(reference,dtype="<f4")/np.float32(scale)
             del preview
         report("dng_decode","Reading linear DNG samples")
-        source=tifffile.memmap(path,series=inspection.primary_series_index,mode="r") if page.is_memmappable else page.asarray()
-        source=dng._normalize_layout(source,getattr(tif.series[inspection.primary_series_index],"axes",None))
+        if shrink:
+            from .library_reduced import read
+            source, original_size = read(path, page=inspection.primary_page_index or 0, edge=10240)
+        else:
+            source=tifffile.memmap(path,series=inspection.primary_series_index,mode="r") if page.is_memmappable else page.asarray()
+            original_size = (inspection.width, inspection.height)
+        if not shrink:
+            source=dng._normalize_layout(source,getattr(tif.series[inspection.primary_series_index],"axes",None))
         colour=dng.color_metadata_from_mapping(metadata)
         report("dng_normalize","Normalizing DNG black and white levels")
         image=normalize_camera_samples(source,colour,cancelled=cancelled)
         del source
     decode_ms=(perf_counter()-started)*1000
-    h,w=image.shape[:2];outw,outh,ax,ay=geometry(metadata,w,h)
+    h,w=image.shape[:2]
+    outw,outh,ax,ay=geometry(metadata,*original_size)
+    original_output=(outw,outh)
+    if (w,h) != original_size:
+        # Map original crop coordinates onto the sampled pixel centres. Geometry
+        # still validates against original metadata; no DNG tags are rewritten.
+        sx,sy = w/original_size[0],h/original_size[1]
+        from .library_reduced import sample_size
+        neww,newh=sample_size(outw,outh,10240)
+        ax=[ax[0]*sx*outw/neww,ax[1]*sx*outh/newh,(ax[2]+.5)*sx-.5]
+        ay=[ay[0]*sy*outw/neww,ay[1]*sy*outh/newh,(ay[2]+.5)*sy-.5]
+        outw,outh=neww,newh
     if reference is not None and reference.shape!=(outh,outw,3):reference=None
     transform=build_color_transform(colour)
     limit=_validated_response_limit(colour.linear_response_limit)
@@ -79,14 +100,14 @@ def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640, m
         dng_sdr_rendition="embedded_full_resolution" if reference_header else "generated",dng_operations="none",
         dng_warnings=" | ".join(inspection.warnings) or "none",
         dng_diagnostics=dict(route=inspection.route.value,producer=metadata.get("producer"),make=metadata.get("make"),model=metadata.get("model"),
-            dng_version=metadata.get("dng_version"),source_dimensions=[w,h],compression=inspection.compression,source_dtype=inspection.dtype,
+            dng_version=metadata.get("dng_version"),source_dimensions=list(original_size),compression=inspection.compression,source_dtype=inspection.dtype,
             primary_series_index=inspection.primary_series_index,primary_page_offset=inspection.fingerprint.primary_offset,
             color_path=transform.color_path,linear_response_limit=colour.linear_response_limit,
             highlight_color_recovery="spatial_camera_neutral_reconstruction_near_linear_response_limit",
             estimated_profile_temperature=transform.estimated_temperature,profile_weight1=transform.profile_weight1,
             opcode_operations=[],merge_xmp_crop=metadata.get("xmp_merge_crop"),warnings=list(inspection.warnings),
             resource_estimate=dng._resource_payload(inspection.resource_estimate)))
-    descriptor=SourceImageDescriptor(filename=path.name,suffix=".dng",width=outw,height=outh,channels=3,dtype="float32",
+    descriptor=SourceImageDescriptor(filename=path.name,suffix=".dng",width=original_output[0],height=original_output[1],channels=3,dtype="float32",
         source_color_space=facts["source_color_space_label"],transfer_function="LINEAR")
     dng._raise_if_cancelled(cancelled)
     if _identity(path)!=identity:raise ValueError("Photo changed during linear DNG preparation")

@@ -14,7 +14,7 @@ window.HDRLibraryPictureErrors = Object.freeze({
       if (!checkedAt || checkedAt < latestHealth) return;
       latestHealth = checkedAt;
       const previous = new Set(records.keys());
-      const newer = [...records.values()].filter(record => record.time > checkedAt);
+      const newer = [...records.values()].filter(record => record.timeout || record.time > checkedAt);
       records.clear();
       for (const value of [...values, ...newer]) { records.set(value.path, value); previous.delete(value.path); }
       notify();
@@ -23,6 +23,12 @@ window.HDRLibraryPictureErrors = Object.freeze({
     async function show(record) {
       if (opened) return;
       record = records.get(record.path) || record;
+      if (record.timeout) {
+        records.delete(record.path); notify();
+        await changed([record.path], {}, true);
+        status("Photo queued for a new preview.");
+        return;
+      }
       opened = true;
       const origin = document.activeElement;
       const warning = !!record.grade_warning;
@@ -81,10 +87,10 @@ window.HDRLibraryPictureErrors = Object.freeze({
         cell.element.querySelector(".picture-frame").append(tag);
       }
       if (record.grade_warning && record.ignored) { tag.remove(); return; }
-      tag.textContent = record.grade_warning ? "Grade needs attention" : record.ignored ? "Error · ignored" : "Error";
+      tag.textContent = record.timeout ? "Took too long · Try again" : record.grade_warning ? "Grade needs attention" : record.ignored ? "Error · ignored" : `Failed · ${record.reason}`;
       tag.title = record.reason;
       tag.setAttribute("aria-label", `${cell.photo.name}: ${record.reason} Review error`);
     }
-    return Object.freeze({remember, update, show, paint, get:path => records.get(path)});
+    return Object.freeze({remember, update, show, paint, canPrepare:path => !records.has(path) || !!records.get(path).grade_warning, get:path => records.get(path)});
   }
 });

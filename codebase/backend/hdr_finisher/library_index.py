@@ -9,7 +9,7 @@ from concurrent.futures import CancelledError, TimeoutError
 import json
 import os
 from pathlib import Path
-from threading import Event, RLock, Thread
+from threading import Event, RLock, Thread, get_ident
 import time
 
 from .library_metadata import FACT_FIELDS
@@ -39,6 +39,8 @@ class LibraryIndex:
         self._retry_seconds = 15
         self._thread = None
         self._upkeep_thread = None
+        self._upkeep_ident = None
+        self._upkeep_id = "startup-upkeep-" + str(id(self))
         from .library_folder_checks import FolderChecks
         self.checks = FolderChecks(self)
         self._generation = 0
@@ -50,6 +52,18 @@ class LibraryIndex:
 
     def wait_for_upkeep(self):
         """Yield between photo families, without owning a database lock."""
+        if get_ident() == self._upkeep_ident:
+            from .library_scheduler import scheduler, MINIMUM
+            with scheduler.lock:
+                scheduler.finish(self._upkeep_id)
+                if self._stop.is_set():
+                    raise CancelledError()
+                job = scheduler.ask(self._upkeep_id, self._upkeep_id, str(self.browser.root),
+                                    "upkeep", MINIMUM, "eventually")
+            job.ready.wait()
+            if self._stop.is_set():
+                raise CancelledError()
+            return
         while self.worker is not None:
             if self._stop.is_set():
                 raise CancelledError()
@@ -62,6 +76,7 @@ class LibraryIndex:
         # Let the last folder and its grid get their first requests in first.
         if self._stop.wait(3):
             return
+        self._upkeep_ident = get_ident()
         started = time.monotonic()
         log("startup_upkeep_started", action="background Library recovery reconciliation")
         try:
@@ -72,12 +87,16 @@ class LibraryIndex:
                 self.cache_upkeep(self.wait_for_upkeep)
             self.marks.writer.startup_cleanup(self.wait_for_upkeep)
             self.wait_for_upkeep()
-            self.membership.reconcile()
+            self.membership.reconcile(background=True)
             log("startup_upkeep_finished", duration_ms=round((time.monotonic()-started)*1000, 2))
         except CancelledError:
             log("startup_upkeep_cancelled", duration_ms=round((time.monotonic()-started)*1000, 2))
         except Exception as error:
             problem("startup_upkeep_failed", self.browser.root, error, "durable recovery retained; retry on next launch")
+        finally:
+            from .library_scheduler import scheduler
+            scheduler.finish(self._upkeep_id)
+            self._upkeep_ident = None
 
     # Personal settings stay outside the database, which can be rebuilt.
 
@@ -204,13 +223,21 @@ class LibraryIndex:
 
     @audited("index_remember_facts")
     def remember_facts(self, records, *, epoch=None, generation=None, foreground=False):
+        if len(records) > 16:
+            for start in range(0,len(records),16):
+                if not foreground: self.wait_for_upkeep()
+                self.remember_facts(records[start:start+16],epoch=epoch,generation=generation,foreground=foreground)
+                time.sleep(.001)
+            return
         for record in records:
             record["indexed"] = record.get("mtime_ns") is not None
+        present={r['path']:Path(r['path']).exists() for r in records}
+        prepared=[(r,r["path"], r["bytes"], r["mtime_ns"], json.dumps({name:r.get(name) for name in FACT_FIELDS})) for r in records]
         with timed_lock(self.marks._lock, "index_batch"):
             self.accept_read(epoch, generation)
             commands = getattr(self.marks, "file_commands", None)
-            rows = [(r["path"], r["bytes"], r["mtime_ns"], json.dumps({name: r.get(name) for name in FACT_FIELDS}))
-                for r in records if r.get("mtime_ns") is not None and not (commands and (commands.blocked(r["path"]) or r["path"] in commands.retired and not Path(r["path"]).exists()))]
+            rows = [(path,size,stamp,facts) for r,path,size,stamp,facts in prepared
+                if stamp is not None and not (commands and (commands.blocked(path) or path in commands.retired and not present[path]))]
             if not rows: return
             db = self.marks._connect()
             try:
@@ -278,6 +305,8 @@ class LibraryIndex:
 
     def close(self):
         self._stop.set()
+        from .library_scheduler import scheduler
+        scheduler.finish(self._upkeep_id)
         self.checks.wake.set()
         with self.checks.lock:
             for signal in self.checks.signals.values(): signal.close()
@@ -374,8 +403,8 @@ class LibraryIndex:
             self.marks.conflicts.scan([photo["path"] for photo in photos])
             # Settings files rebuild marks, tags and albums for unvisited folders.
             prefix = self._prefix(pin["path"])
-            with self.marks._lock:
-                recorded = [row[0] for row in self.marks._query("SELECT path FROM photos WHERE path>=? AND path<?", (prefix, prefix[:-1] + chr(ord(prefix[-1])+1)))]
+            # Independent WAL reader; no full-folder marks lock.
+            recorded = [row[0] for row in self.marks._query("SELECT path FROM photos WHERE path>=? AND path<?", (prefix, prefix[:-1] + chr(ord(prefix[-1])+1)))]
             settings = list(dict.fromkeys([*[photo["path"] for photo in photos if photo.get("sidecar")], *recorded]))
             for path in settings:
                 self._check(generation)

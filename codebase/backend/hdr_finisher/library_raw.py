@@ -21,28 +21,14 @@ VERSION = "library-camera-gpu-v1"
 MIB = 1024 ** 2
 
 
-def machine_memory():
-    if os.name == "nt":
-        import ctypes
-        class Memory(ctypes.Structure):
-            _fields_ = [("length", ctypes.c_uint32), ("load", ctypes.c_uint32)] + [
-                (name, ctypes.c_uint64) for name in ("total", "available", "page", "free_page", "virtual", "free_virtual", "extended")]
-        value = Memory()
-        value.length = ctypes.sizeof(value)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(value)):
-            return value.total
-    try:
-        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-    except (ValueError, AttributeError):
-        return 8 * 1024 ** 3
+from . import app_memory
+machine_memory = app_memory.machine_memory
 
 
 def allowances(ram):
-    return {"raw_files": max(4, min(40, int(ram / (1.6 * 1024 ** 3)))),
-        "raw_bytes": max(128 * MIB, min(4 * 1024 ** 3, ram // 16)),
-        "transport_bytes": max(64 * MIB, min(2 * 1024 ** 3, ram // 32)),
-        "ahead": max(2, min(12, int(ram / (4 * 1024 ** 3)))),
-        "gpu_pictures": max(2, min(10, int(ram / (4 * 1024 ** 3))))}
+    _, shares = app_memory.budgets(ram)
+    return dict(raw_files=12,raw_bytes=shares['raw'],transport_bytes=shares['handoff'],
+                ahead=12 if shares['raw']>=768_000_000 else 2,gpu_pictures=10 if shares['sharp']>=512_000_000 else 2)
 
 
 def identity(path):
@@ -69,6 +55,10 @@ class RawBrowsing:
         from .library_cache import LibraryCache
         self.managed = LibraryCache(root)
         self.cv = Condition()
+        self.raw_owner = 'raw-'+str(id(self))
+        self.output_owner = 'raw-handoff-'+str(id(self))
+        app_memory.register(self.raw_owner,'raw',self.trim_raw)
+        app_memory.register(self.output_owner,'handoff',self.trim_outputs)
         self.paused = paused
         self.foreground_changed = foreground_changed
         self.raw = OrderedDict()
@@ -173,6 +163,8 @@ class RawBrowsing:
                 if job["priority"] >= 50 and key not in self.wanted and not job["active"]:
                     job["future"].cancel()
                     del self.jobs[key]
+                    from .library_scheduler import scheduler
+                    scheduler.finish("raw-decode-"+key,outcome="cancelled")
             for i, path in enumerate(paths):
                 if self.wanted[i] not in retained:
                     self.request(path, 0 if i == 0 else 50 + i)
@@ -204,8 +196,29 @@ class RawBrowsing:
     def pixels(self, key):
         with self.cv:
             memory, meta = self.outputs[key]
-            self.outputs.move_to_end(key)
-            return bytes(memory.buf[:meta["transport_bytes"]])
+            body = bytes(memory.buf[:meta["transport_bytes"]])
+            self.outputs.pop(key)
+            self._dispose(memory)
+            self._report()
+            return body
+
+    def _report(self):
+        app_memory.report(self.raw_owner,'raw',sum(v[1] for v in self.raw.values())+(self.partial[2].size if self.partial else 0))
+        app_memory.report(self.output_owner,'handoff',sum(v[0].size for v in self.outputs.values()))
+
+    def trim_raw(self, target):
+        with self.cv:
+            active={k for k,j in self.jobs.items() if j['active']}
+            for key in list(self.raw):
+                if sum(v[1] for v in self.raw.values())<=target: break
+                if key not in active: self._dispose(self.raw.pop(key)[0])
+            self._report()
+
+    def trim_outputs(self, target):
+        with self.cv:
+            while self.outputs and sum(v[0].size for v in self.outputs.values())>target:
+                self._dispose(self.outputs.popitem(last=False)[1][0])
+            self._report()
 
     def _dispose(self, memory):
         memory.close()
@@ -220,21 +233,32 @@ class RawBrowsing:
                 return False
             memory, _size = self.raw.pop(key)
             self._dispose(memory)
-        return sum(value[1] for value in self.raw.values()) + needed <= self.limits["raw_bytes"]
+        self._report()
+        return app_memory.claim(self.raw_owner,'raw',sum(v[1] for v in self.raw.values())+needed)
 
     def _read(self):
         # One reader is I/O bound; parallel seeks hurt USB-drive foreground reads.
+        from .library_scheduler import scheduler, priority_class
+        from .library_estimates import estimate_details
         lower_thread_priority()
         while True:
             with self.cv:
                 if self.stopped:
                     return
-                candidates = sorted((j for j in self.jobs.values() if j["key"] not in self.raw),
+                candidates = sorted((j for j in self.jobs.values() if j["key"] not in self.raw and not j.get("uncached")),
                     key=lambda j: (j["priority"], j["order"]))
                 if self.paused() or not candidates:
                     self.cv.wait(.025)
                     continue
                 job = candidates[0]
+                grant_id='raw-decode-'+job['key']
+                if grant_id not in scheduler.jobs:
+                    amount, reason=estimate_details(job['path'],"cpu")
+                    scheduler.ask(grant_id,"raw-reader",job['path'],"cpu",amount,priority_class(job['priority']),size_reason=reason)
+                scheduler.change(grant_id,"raw-reader",priority_class(job['priority']))
+                if scheduler.jobs[grant_id].granted is None:
+                    self.cv.wait(.05)
+                    continue
                 # One partial mapping only. On reprioritization release it before
                 # reading the new file; rapid travel cannot accumulate paused RAWs.
                 if self.partial and self.partial[0] != job["key"]:
@@ -244,7 +268,11 @@ class RawBrowsing:
                 try:
                     if self.partial is None:
                         if job["size"] > self.limits["raw_bytes"]:
-                            raise ValueError("This RAW is larger than the Library memory allowance.")
+                            # Too large for read-ahead: decode straight from disk
+                            # inside working room instead of breaking small machines.
+                            job['uncached']=True
+                            self.cv.notify_all()
+                            continue
                         if not self._trim_raw(job["size"]):
                             self.cv.wait(.025)
                             continue
@@ -286,6 +314,8 @@ class RawBrowsing:
                     self._fail(job, error)
 
     def _fail(self, job, error):
+        from .library_scheduler import scheduler
+        scheduler.finish("raw-decode-"+job["key"],outcome="changed" if "chang" in str(error).lower() else "finished")
         self.jobs.pop(job["key"], None)
         if not job["future"].done():
             job["future"].set_exception(error)
@@ -293,6 +323,8 @@ class RawBrowsing:
         self.cv.notify_all()
 
     def _lane(self, index):
+        from .library_scheduler import scheduler, priority_class
+        from .library_estimates import estimate_details
         context = multiprocessing.get_context("spawn")
         connection, child = context.Pipe()
         process = context.Process(target=worker_main, args=(child, index == 0), daemon=True,
@@ -310,7 +342,7 @@ class RawBrowsing:
                 with self.cv:
                     if self.stopped:
                         return
-                    candidates = sorted((j for j in self.jobs.values() if not j["active"] and j["key"] in self.raw
+                    candidates = sorted((j for j in self.jobs.values() if not j["active"] and (j["key"] in self.raw or j.get("uncached"))
                         and (self._decoder_lanes == 1 or (j["priority"] == 0 if index == 0 else j["priority"] > 0))),
                         key=lambda j: (j["priority"], j["order"]))
                     selected_pending = any(j["priority"] == 0 for j in self.jobs.values())
@@ -319,6 +351,15 @@ class RawBrowsing:
                         self.cv.wait(.025)
                         continue
                     job = candidates[0]
+                    grant_id='raw-decode-'+job['key']
+                    if grant_id not in scheduler.jobs:
+                        amount, reason=estimate_details(job['path'],"cpu")
+                        scheduler.ask(grant_id,"raw-reader",job['path'],"cpu",amount,priority_class(job['priority']),size_reason=reason)
+                    scheduler.change(grant_id,"raw-reader",priority_class(job['priority']))
+                    grant=scheduler.jobs.get(grant_id)
+                    if grant is None or grant.granted is None:
+                        self.cv.wait(.05)
+                        continue
                     # Selected development takes every free CPU. Neighbours share
                     # the machine and yield admission until that photo finishes.
                     # An already-running LibRaw call cannot resize its team. A
@@ -327,10 +368,10 @@ class RawBrowsing:
                     job["cpu_threads"] = max(1, logical_cpus()-used) if index == 0 else min(max(1, logical_cpus() // max(1, self._decoder_lanes-1)), logical_cpus()-used)
                     job["active"] = True
                     job["process"] = process
-                    raw, size = self.raw[job["key"]]
-                    self.raw.move_to_end(job["key"])
+                    raw,size=self.raw.get(job['key'],(None,job['size']))
+                    if raw is not None:self.raw.move_to_end(job['key'])
                     self._promote(process, job["priority"] == 0)
-                    connection.send({"path": job["path"], "raw_name": raw.name, "size": size, "threads": job["cpu_threads"]})
+                    connection.send({"path": job["path"], "raw_name": raw.name if raw is not None else None, "size": size, "threads": job["cpu_threads"]})
                 while not connection.poll(.1):
                     if self.stopped:
                         return
@@ -356,15 +397,18 @@ class RawBrowsing:
                             self.outputs[job["key"]] = (memory, meta)
                             self.jobs.pop(job["key"], None)
                             job["future"].set_result(meta)
-                            while len(self.outputs) > 40 or sum(item[0].size for item in self.outputs.values()) > self.limits["transport_bytes"]:
+                            while self.outputs and not app_memory.claim(self.output_owner,'handoff',sum(item[0].size for item in self.outputs.values())):
                                 key = next(iter(self.outputs))
                                 old, _ = self.outputs.pop(key)
                                 self._dispose(old)
                             log("picture_raw_browse_ready", path=job["path"], decode_ms=meta["decode_ms"], unpack_ms=meta["unpack_ms"], native_threads=meta["native_threads"], read_ms=meta["read_ms"])
+                    scheduler.finish('raw-decode-'+job['key'])
                     job = None
                     self.cv.notify_all()
         except Exception as error:
             with self.cv:
+                if job:
+                    scheduler.finish('raw-decode-'+job['key'])
                 if job and not self.stopped:
                     self._fail(job, error)
                 # Fail all waiters rather than leaving a reserved lane dead.
@@ -373,6 +417,7 @@ class RawBrowsing:
                     for pending in list(self.jobs.values()):
                         self._fail(pending, RuntimeError(self.failure))
         finally:
+            if job:scheduler.finish('raw-decode-'+job['key'])
             connection.close()
             if process.is_alive():
                 process.terminate()
@@ -381,6 +426,8 @@ class RawBrowsing:
     def close(self):
         with self.cv:
             self.stopped = True
+            from .library_scheduler import scheduler
+            scheduler.disconnect("raw-reader")
             for job in self.jobs.values():
                 job["future"].cancel()
             self.cv.notify_all()
@@ -397,3 +444,5 @@ class RawBrowsing:
                 self._dispose(memory)
             self.raw.clear()
             self.outputs.clear()
+            app_memory.forget(self.raw_owner)
+            app_memory.forget(self.output_owner)

@@ -1,5 +1,607 @@
 # Module PRD: Photo Library
 
+## November 1: detached timing and responsive transfers
+
+The quick check now launches without DevTools and measures input to the matching
+2560 canvas plus the next frame using the Library page clock. Final 90-second
+runs after the PNG change have grid/Single frame gaps of 91/55 ms (before:
+418/133 ms). Worker transfers, paced GPU copies and completed-buffer collection
+remove the measured freezes without changing any memory/GPU limit or picture size.
+Single opens in 2225 ms, first preview 29 ms; ten steps median 2151 ms, maximum
+5621 ms, prepared step 12 ms. Persisted backend events agree within 14 ms;
+retries remain part of the new input-to-picture measure.
+
+PNG decode no longer encodes and reopens an intermediate PNG. The existing
+orientation, colour-profile, 8-bit and alpha boundaries stay unchanged: the three
+PNG medians improve from 4176/153/2324 to 2875/27/1961 ms. Focused checks:
+23 PNG/reduction and 32 JavaScript cases pass. Fixture and Grade/release outcomes
+are recorded in scheduler section 7.19: all 176 finished SDR/HDR lane pairs
+from 44 renderable fixtures at 640/2560 match `4d07bd4` exactly (all finite). Grade pause fails both runs (4110/3251 ms
+against <1000); ordinary pictures, resume and saved edit pass. Six existing source interpretation /
+X-Trans gates cannot provide finished comparison pixels. Live-grid and GPU recovery
+both pass through the release runner at `5f400db`; protected hashes are unchanged.
+
+## November 1: Single is priority, and decodes use the cores
+
+Single is now the top Library work after Grade and export. Before this
+change the filmstrip under Single kept priority "now", grid work was never
+
+told to stop, priority only moved 640 thumbnails, and every photo was
+developed twice (640 and 2560), so the photo on screen queued behind the
+grid: open 5.6 s, median step 15.3 s, individual steps 15 ms to 24 s.
+
+Now only the view on screen sets priority: the photo is "now", its two
+neighbours "soon", the covered grid not ranked and the filmstrip
+"eventually". The strip shows finished pictures only, unfinished grid work
+
+stops at its next safe point, and each photo is developed once at one size.
+A photo on screen waiting for memory or a development place takes it from a
+running background job at a safe point.
+
+Measured with the app's own clock (key press to the 2560 picture): open
+1270 ms, prepared neighbours 9-49 ms, an unprepared RAW 302 ms, a HEIC
+3.1 s, one ARW 6.5 s. Those historical app traces can miss input delay and retries; the host
+clock also includes delayed DevTools replies (18 s for a 1.7 s app trace).
+Neither alone measures the complete on-screen wait; see scheduler 7.19. Cold 90 s grid: 25 at 30 s, 31 by 60 s, peak 3.749 GB, no
+reclaims. Phase0 22/27, peak 3.912 GB. Aceh first screens 12.8-14.6 s
+(reference 13.8 s); second screens 18.4-23.6 s against a 14.1 s reference
+not reproduced this round. Grade coexistence passes on the second run
+(pause 987 ms; an earlier run was 1324 ms). Both release drivers pass.
+
+Decoding now uses this photo's share of the cores for colour, transfer and
+reduce bands: HEIC 2.47 -> 1.67 s and 1.43 -> 1.01 s, AVIF 6.17 -> 4.74 s,
+4.26 GB-class gain-map AVIF 6.91 -> 5.60 s, the 223 MB 16-bit PNG
+5.08 -> 4.96 s. Every fixture file still decodes to identical pixels.
+Longest single GPU submission is 195 ms (the reduce on the 223 MB PNG);
+no pass needs splitting.
+See [scheduler design 7.18](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#718-single-priority-over-the-covered-grid-and-core-shared-decoding-november-1).
+
+## November 1: whole-pass GPU submission - cold screen faster, Single not
+
+Library development now submits each GPU pass once instead of in eight-row
+bands with a whole-queue wait after every band. That was about 235 queue
+waits per 24 MP photo, each also waiting for the other development and for
+draws. On the 24 MP RAW passes, highlights fell 212 -> 42 ms, demosaic
+135 -> 19 ms and lens 135 -> 27 ms; mean development GPU time fell
+1364 -> 820 ms. The bounded DNG tile readback is one buffer per tile
+instead of five, and the RGB mosaic upload checks its permit once instead
+of once per band. Shaders and buffers are unchanged; the grid pictures
+match c663354 at mean dE2000 0.040, p99.9 2.55.
+
+Cold mixed 50, 2560x1440, 4 GB: 26-27 shown at 30 s (was 20) and 31 by
+41-50 s (was 60 s); independent peak 4.263 GB, zero reclaims. The 28 by
+30 s target is not met. Mean development concurrency is unchanged at
+1.63; the cold grant waits (`development places full` 160, `measured
+memory` 132, `room` 77) show the second place is real and held by the
+unchanged estimates and ceiling, so raising it needs a Steve decision.
+`tools/quick-library-check.cjs --single` was added. Single did not get
+faster (open 2019 -> 5551 ms; median step 9886 -> 15298 ms); it is now
+limited by decode and scheduling contention with the grid pre-warm, not by
+GPU pass cost. No approved number changed. Not run this round: phase0,
+Aceh, Grade coexistence and the release drivers.
+See [scheduler design 7.17](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#717-whole-pass-gpu-submission-and-true-pass-costs-november-1).
+
+## November 1: DNG estimate and EXR interpretation admission correction
+
+Steve approved the existing 28 bytes/pixel DNG rate for the RGB correction
+route; sensor-only DNGs retain 7. The former 336 MB grant for each 48 MP DJI
+file underestimated its full RGB preparation. Library also checks unresolved
+EXR source primaries from headers before requesting decode memory. The same
+interpretation notice and saved overrides apply; cache hits remain usable.
+No processing, Grade, Proof, export, other rate or allowance changes.
+Final acceptance passed at `b6754a2`: cold repeats show 20–22 / 31 at 30 /
+60 s, independent peak 3.982–4.000 GB, settled below 3.4 GB, zero reclaims.
+Default phase0 finishes 22 / 27, peak 4.025 GB, only the permitted AVIF reclaim.
+Grade coexistence and both requested release checks pass. Three unchanged
+focused-test sharing/version/publication failures remain; no full suite run.
+See [scheduler design 7.16](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#716-memory-overshoot-and-ordinary-reclaim-correction-november-1).
+
+## November 1: ordinary-wait guard correction — acceptance pending
+
+Normal queuing now waits for running work to drain and a fresh memory census
+before protecting a blocked turn. Genuine shortages reclaim toward a byte
+target, one owner at a time, preserving visible and prepared neighbour pictures.
+Approved budgets and estimates stay unchanged. Focused behavior checks pass;
+Initial cold observation still had eight ordinary reclaims. Follow-up now
+collects dead uploads before eviction, skips unsupported camera-preview grants,
+and remembers refused cells across folder rechecks. A stale viewport target
+list caused the observer's long idle gap; it now tracks discovery/sort changes.
+Focused checks: 70 Python, 29 JavaScript pass. The single authorized cold
+follow-up (`c9507e3`) stopped at 32.002 s with only five finished pictures:
+RAM hit 4.490 GB, exceeding the unchanged 4.4 GB boundary. Zero reclaims
+occurred before that early stop; the new collection path and EXR were not
+reached. Longest completion gap 6.981 s; no queued source interval without
+an active grant in the trace. **Not fixed/qualified yet.** Investigate the
+overshoot next. Steve deferred warm/final regressions; no more slow checks ran.
+See [scheduler design 7.15](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#715-ordinary-waits-and-proportional-reclamation-november-1).
+
+## November 1: Decision 21 measured — 22/27; Grade rerun passes
+
+Guarded jobs can use the existing 10% elastic allowance after their class
+has drained; ordinary admission, system reserve and every approved number
+stay unchanged. Code `f780e3b`. Default 4 GB mixed: **22/27 finished**, all
+outcomes checked by **49.131 s**. Line scan and 192 MP PNG finish; large AVIF
+ends once with a memory notice, four interpretation/X-Trans reasons remain.
+Peak **3.754 GB**, settled below 3.4 GB, reserve intact.
+
+Final Grade: **509 ms pause**, 518 ms first ordinary picture, **354 ms
+close/save**, 319 ms resume; exposure 0.125 saved. The unchanged baseline
+also passed. The earlier slow run did not reproduce; its cause is unresolved
+and no production Grade fix is claimed. Focused guard/reclamation preemption
+checks pass. Native transfer pools/backing storage dominate retained memory;
+no safe simple additional release was established and no cache tuning was done.
+
+Cold Aceh first screens **14.383 / 13.601 s**, both within the agreed 5%;
+48/48 finish twice. Both requested release-runner grid/GPU-recovery checks
+pass. Focused checks: 63 Python / 45 JavaScript pass; no full suites.
+Owner table, all 27 states, exact conditions and remaining diagnostic limits:
+[scheduler design 7.14](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#714-grade-rerun-decision-21-and-retained-memory-investigation-november-1).
+
+## November 1: Decision 20 built; acceptance incomplete
+
+The queue now ends every request: **20/27 mixed photos finish in 34.6 s**, four
+retain their interpretation/X-Trans reasons, and the big AVIF, line-scan DNG
+and 192 MP PNG end once with memory notices. The AVIF ends at **29.018 s**;
+its unchanged 2.362 GB estimate plus 2.466 GB retained exceeds the 4 GB gate
+after reclamation. The 23-finished target remains open. No photo is recorded
+as broken for memory. Available camera previews and visible finished pictures
+stay. Scroll return or Single can retry by the same rule.
+
+Fitting jobs may pass a blocked job in the same class; the oldest blocked job
+then protects its turn and releases offscreen finished scenes/pictures and
+retained decoded sources using existing paths. Higher classes and the fast
+lane continue. Peak RAM **3.592 GB**, settled below 3.4 GB, reserve untouched.
+No approved numbers changed. Code: `ea2629b`, `42a0ede`.
+
+Aceh passes: **13.783 / 14.062 s** first screens, both within the agreed 5%;
+all 48 finish twice. Grid and GPU recovery pass through the release runner.
+Grade saves/resumes correctly but its **2.705 s pause notice fails the 1 s
+limit**; this check is not qualified. Focused checks: 59 Python / 57 JavaScript
+pass; no full suites or extra scroll diagnosis. All 27 states and caveats:
+[scheduler design 7.13](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#713-decision-20-fitting-jobs-pass-a-blocked-job-november-1).
+
+
+## November 1 big-file diagnosis — partial fixes, default completion still open
+
+Header estimates for large JPEG, JXL and EXR now work; JPEG GPU planning matches
+its existing reduced decode. Source responses avoid a whole-raster copy, bringing
+the isolated Lightroom AVIF from a 4.710 GB stop to a 3.786 GB peak and successful
+19.645 s finish. Quick-preview refusals no longer label the finished route as
+needing more memory. No approved number or picture algorithm changed.
+
+The default mixed folder still finishes **10/27**: a measured-memory wait on that
+AVIF holds the other 16 source jobs behind it. Thirteen of the 17 unfinished files
+finish individually; two JXLs and EXR need source interpretation, RAF needs
+X-Trans support. The complete table, bounds and unfinished acceptance checks are
+in [scheduler design 7.12](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+
+Final checks on `3cf7a9e`: cold Aceh first screens 13.195 / 13.547 s (inside
+5% tolerance); both release-runner grid/recovery checks and Grade coexistence
+pass. Whole-app RAM 2.304 / 2.367 GB. The default mixed-queue failure remains
+open; these regression passes do not qualify mixed completion.
+
+## November 1 scroll-back diagnosis — bounded case passes, reported loss still open
+
+On 200 mixed disposable photos, all 96 returning cells from three completed
+screens reused memory in 12–23 ms, with no blank cells or new development.
+The fixed thumbnail share held 367 MB of 512 MiB; no pressure trim occurred.
+No cache-policy change is justified by this reproduction. Steve's pressure or
+beyond-capacity case remains open. Details and observer caveats are in
+[scheduler design 7.12](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+
+## October 31 Part C — built and measured; mixed completion still open
+
+The disposable edited-photo baseline is in `codebase/output/part-c-edited/`:
+grid, filmstrip and five Single 2560 captures covering masks, many locals,
+Film Look, Denoise, Retouch and a virtual copy. Capture tools are committed;
+grid/filmstrip now develop only 640, edited or unedited; Single, fullscreen
+and Compare request 2560 on opening. Single prepares only its next/previous
+neighbours as soon work, cancelled on leaving Single. Matching source and
+resolution share work; different tiers develop separately. The CPU fallback
+also publishes only the requested tier. Finished grid stand-ins, stored screen
+previews and the unedited camera-preview fast lane retain their existing paths.
+Planning now matches JPEG/PNG EXIF orientation and LibRaw flip; TIFF follows
+its decoder, which leaves EXIF orientation unapplied. No budget/rate changes.
+Edited pictures match by eye apart from the obvious red VRAM artifacts Steve
+allowed us to disregard; all raw measurements and pairs remain in
+`codebase/output/part-c-edited/index.html`. Sparse artifacts exceed the numeric
+p99.9 limit in one grid and all filmstrip variants, so this is a qualified visual
+pass. Four Single captures match exactly; the fifth differs in sparse red pixels.
+
+Cold Aceh first screens: 12.978 / 14.257 s versus 27.424 s before (2.11x / 1.92x
+faster); second screens at 20.380 / 21.991 s. All 48 finish, both portraits use
+the GPU, RAM peaks 2.109 / 2.236 GB; whole-card GPU peaks 3.793 / 3.885 GB,
+including other applications. All visible quick previews by 1.848 / 1.924 s.
+Single: 1.761 s; prepared neighbour: 17 ms. Neighbours use soon; none remain
+running on departure. Active cancellation has focused-test coverage, not a live
+in-flight demonstration. Grid HDR/SDR switch makes no new scene (M20).
+
+Default mixed folder remains 10/27 finished (6 camera previews only, 3 need more
+memory, 8 unfinished), peak 3.173 GB, settled below 3.4 GB, reserve untouched.
+The unfinished-cell assertion still fails; mixed completion remains open.
+Grid and forced GPU-recovery checks pass through the release runner. Grade
+coexistence passes (pause 464 ms, ordinary photo 471 ms, resume 122 ms). The
+approved both-tier reservation is retained while only the requested scene is
+made; an initial narrower reservation incorrectly refused one TIFF and was
+corrected. No approved numbers changed. Grade/Proof/export picture code is
+untouched; Proof/export were not separately rerun. Full results and caveats:
+[scheduler design 7.11](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+
+## October 31 phase 3c.2 Part B: GPU work in the Library scheduler — built and measured
+
+Library developments and draws now use the one scheduler on branch
+`library-gpu-scheduling` (`ae79a3d`, `2a9f016`, `d19862b`, `5282827`). Up to two
+developments share the GPU when both estimates fit in the app's Auto budget
+(half the detected card; the Library now reports that budget, not the 2 GiB
+policy default); finished cells draw without waiting; Grade and export preempt
+at a safe point and the requeued job costs no attempt; RAM and GPU are granted
+together; out-of-memory retries once at the front, then the visible-only CPU
+route; a lost device releases all grants and requeues once. Every development
+logs its GPU estimate and measured peak. Details: [scheduler design 7.10](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+
+The earlier 120 s grid timeout was the driver's 111-byte PNG falling under the
+file gate's 1 KB listing floor, not the scheduler; with four photos listed, two
+real defects surfaced (Library budget default; a retry racing the previous
+attempt's retained source claim) and were fixed. Acceptance: grid driver and
+recovery driver pass via the release runner; two developments beat one on the
+Aceh folder (27.4/43.5 s vs 28.6/47.7 s, peaks 3.74/3.42 GB), so two stays; the
+default mixed folder met the memory rules (peak 3.42 GB, settled, reserve
+untouched) with completion unchanged from Part A; Grade coexistence passes
+(pause 543 ms). Open: two portrait JPEGs of 48 plan with landscape dimensions
+and take the visible CPU route (plan-vs-decode growth of ~4 KB, no growth
+tolerance after admission) — resolved in Part C above; large-picture completion
+in the phase0 set and explicit M8/M18/M19 driver coverage remain open.
+
+## October 31 wrap-up: Part A committed; Parts B/C unfinished
+
+Part A is committed in `5fb733c` and `a86689a`. The later Part B prototype
+passed 76 focused Python and 71 JavaScript checks but failed its real-app grid
+check twice: first a RAW sensor-size reservation mismatch, then a 120-second
+grid-completion timeout after correcting the descriptor. It is **not built or
+qualified**. At Steve's request to wrap up, the code was restored to committed
+Part A. The prototype and recovery-driver draft are preserved on the local
+branch `library-gpu-scheduling-wip` (commit 54bfb62, not pushed), with its
+README in `docs/technical/wip/phase3c2-gpu/` there; the README records the
+restart points. A copy also remains in `codebase/output/phase3c2-gpu-wip/`.
+No Part C changes or edited-photo comparison pairs were made. One-versus-two,
+final default mixed, raised line scan, Grade coexistence, forced GPU failures
+and Single/neighbour acceptance remain open. No acceptance claim is made.
+(Superseded the same day: Part B was resumed and completed on
+`library-gpu-scheduling`; see the section above. The wip scaffolding and its
+output copy were removed. Of the items listed, one-versus-two, final default
+mixed and Grade coexistence are now measured in the new section; forced GPU
+failures have a new driver; Single/neighbour coverage remains open.)
+
+Steve clarified that M17 shares only simultaneous work at the same source and
+resolution. Priority preemption discards Library GPU intermediates at a safe
+point, keeps CPU samples only if free to retain, and requeues without spending
+an attempt. No disk checkpoint. These decisions are recorded in the scheduler
+design and memory-and-caches.
+
+## October 31 phase 3c.2 Part A: revised memory acceptance; B/C open
+
+Approved estimates and helper deadlines are wired in: AVIF 56 bytes/pixel;
+qualified reduced >=100 MP JPEG/PNG/TIFF/linear DNG 6/8/6/6; the active-work
+deadline caps at five minutes. Timeout cells offer Try again without a durable
+broken-photo receipt. Native/CPU rates and reduced-route picture output stay as
+before. Focused rate, deadline, recovery and grant/channel checks pass.
+
+The earlier default mixed run's **4.011418177 GB** AVIF sample passes Steve's
+revised peak rule: at most ceiling +10% briefly during work, then below ceiling
+minus 600 MB after work. The system reserve remains hard. The harness and
+production overrun records now report peak, overage, active types and duration;
+repeated excursions propose estimate review without changing rates. Full mixed
+completion/settling is still pending the final rerun. Keep AVIF 56 and do not
+investigate it further now. Leave the DxO DNG alone unless it fails again;
+then capture the full request error. Parts B/C and edited-photo pictures remain
+open. [Scheduler design 7.9](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#79-phase-3c2-part-a-approved-rates-and-retryable-deadlines-revised-acceptance-october-31).
+
+## October 31 phase 3c: reduced pictures and live memory setting; qualification partial
+
+Settings now changes the persistent app memory allowance without restart.
+Oversized cells show their requirement and link to the setting; three 192 MP
+JPEG/PNG/TIFF cells resumed after raising 4 to 16 GB in the same folder.
+Library JPEG/PNG/TIFF and eligible linear DNG reduce while reading, before
+normal development. Grade, Proof, export and Single 100% keep full sources.
+Six finished before/after comparisons passed mean Delta E 2000 <1 and p99.9
+<=3, including an edited JPEG. Steve's visual review is pending:
+`D:\AI\AI Projects\HDR Finisher Tool\ai\codebase\output\phase3c\picture-review\index.html`.
+
+Approved rates remain unchanged. **100 MP beside other work: measured;
+proposed rates awaiting Steve.** One test-only comparison used proposed
+JPEG/PNG/TIFF 6/8/6 MB per MP: all three overlapped and finished at the default
+4 GB, peak 2.478 GB. The override was removed. Eligible reduced linear DNG
+2 MB/MP and AVIF 56 MB/MP are also proposed, awaiting Steve.
+
+Default 27-file mixed run stopped at 4.002 GB during AVIF: acceptance is not
+met. Raised to 16 GB, peak 5.403 GB, 22/27 finished including the line and
+192 MP synthetics. Five refusals remain (two unresolved-colour JXL, one EXR,
+X-Trans RAF, one unclassified optical-correction DNG request error). Line
+alone: 12.466 s active, 390 MB source increment, **1.226 GB whole-app
+increment**: time aim met, 1 GB memory aim missed.
+
+One ordinary cold 48-photo folder finished: first/second viewport
+24.910/41.252 s; peak 3.618 GB. All initially visible quick previews, partial
+rows included, appeared by 2.9996 s; slowest IMG_3212.JPG. Request p95 2.2861 s
+still misses 0.5 s. Live settings changes took 62/22 ms, no failure and no
+setting-change frame gap over 89.7 ms. Scroll-back kept all 48 pictures and
+did not read/develop sources again; the larger-folder symptom was not
+reproduced and no cache share changed. No repeat-pair claim is made.
+
+The [scheduler design 7.8](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#78-phase-3c-live-memory-setting-and-reduced-library-sources-october-31)
+records evidence paths, every route peak, picture agreement, focused checks,
+deadline proposal and open acceptance. Phase 3c is built but not fully qualified.
+
+## October 31 phase 3a.2: saving, trim and measured-admission corrections
+
+GPU completion releases a development place while its memory grant remains
+through bounded saving (two at once, Steve's decision on October 31; a
+possible folder-speed bottleneck to retest after the other major changes). Visible
+quick previews precede developments; offscreen previews keep normal priority.
+Picture packing/spilling no longer holds the shared picture lock, and moderate
+Chromium cleanup collects page garbage. Direct RGB scenes reuse their saved
+payload and report retained textures in the existing sharp share.
+
+Two cold Aceh repeats finished all 48 photos: 29.442/56.064 s and
+32.111/57.203 s for the two screens, peaks 3.598/3.712 GB, zero memory-request
+timeouts. Speed targets remain unmet; trim-adjacent longest requests were
+0.822/1.066 s. Measured-memory admission is connected, but mixed phase0 stopped
+at 4.022 GB during AVIF: bounded routes and mixed-memory qualification remain
+open. Grade save/resume passed; its pause timing is unqualified. Design 7.6
+and the performance table record causes, tests, evidence and pending decisions.
+
+## October 31 phase 3b: resilience improvements; large-picture and cache work unfinished
+
+Header checks refuse unresolved JPEG XL and X-Trans RAF before pixel decoding.
+Helper jobs have proposed measured per-type deadlines; an identified bad file
+is set aside once and remaining work recovers. Device-read errors remain offline
+rather than broken photos; affected pins dim and reconnect/reopen retries.
+Startup upkeep yields through eventually grants, and hidden windows lose
+foreground priority until shown. Section 7.7 records tests and limitations.
+
+This is partial work: bounded large-picture routes, complete header routing,
+ambiguous multi-file crash attribution, coordinated disk-cache failure handling,
+launch timing qualification remain open. A real main + detached-Library minimise/restore trial passes, including native visibility events when Chromium stays visible. The line
+scan's Library cell still cannot finish its development. No image math, memory
+budget or paused-for-Grade wording changed.
+
+## October 31 phase 3a.1: two developments, speed qualification still open
+
+The scheduler now caps source/CPU development at two globally, starts queued
+photos in viewport order within each class and gives quick previews precedence.
+Cold Aceh remains outside tolerance: 35.429 / 94.662 s, peak 3.601 GB, all 48
+cells presented. A prepared source still holds memory while waiting for the
+exclusive GPU lease; phase 4 remains necessary. Grade resumes in 0.150 s and
+saves correctly. Section 7.7 records the 3b whiteboard; Steve authorised this
+run to proceed directly from 3a.1 into 3b. No budgets or Grade messages changed.
+
+## October 31: phase 3a scheduler and grant channel connected; speed targets not yet met
+
+Every Library source, CPU decode, sensor read and quick preview now asks the
+backend estimate scheduler. Each window keeps one WebSocket channel: one ask,
+then a grant notification, cancellation or priority update. Heartbeats clean
+up disconnected owners; waiting jobs resubmit after reconnect and interrupted
+work restarts. RAW reader waits stay inside the backend. The old Library
+memory-admission route, fixed 600 MB reservations and memory-202 loops are gone.
+
+Grade's exact retained source reduces Library room without triggering repeated
+target trims. Visible jobs may use the approved one-job 1 GB floor; four quick
+previews of at most 64 MB can continue. Larger waiting jobs show the Grade
+pause message and **Close photo in Grade**. That action drains edits, saves
+successfully, then closes Grade; a save error leaves the photo open. The
+physical reserve is still a hard stop. Header failures use the full ceiling
+estimate, run alone, never use the floor, and log reason **unknown size**.
+JPEG quick previews use reduced DCT decoding; finished pictures are unchanged.
+
+Validation and measured limits are recorded in design section 7.6 and the
+performance table. The packaged backend accepts the authenticated grant
+channel. Quick-preview mean ΔE2000 was 0.33–0.49 (target below 1). The first
+cold Aceh measurement stayed below 4 GB with zero failed photos and duplicate
+asks, but missed both speed targets; this is not a completed performance fix.
+Phase 3b bounded very-large-picture routes and phase 4 GPU scheduling remain open.
+The final cold result was 39.9 / 83.9 s, preview p95 2.394 s, peak 3.746 GB;
+two memory samples timed out. Grade coexistence: first small photo 3.288 s,
+pause observed 2.876 s from folder opening (cell-visible interval unmeasured),
+close including save 2.142 s and resume 0.165 s later. Mixed phase0 still
+has existing X-Trans and unresolved-colour JPEG XL route failures, so overall
+zero false failures is not claimed. No trims occurred during Grade browsing.
+
+Full Python: 2,835 passed, 3 skipped, four known failures (preset-header,
+RGB publication, frame-cache and Retouch capture-cache fixtures). Final targeted
+queue/header/channel checks: 41 passed. Full JavaScript: 681 passed / 3 known failures before the final 30-cell
+channel case (that added behavior passes separately). The same three
+known harness failures (two scene-version cases and Single screen previews).
+The frozen WebSocket smoke check and save-before-close app flow passed.
+
+
+## October 31: phase 3 whiteboard written
+
+The design's section 7.6 maps how the Library asks for memory today: five
+askers with their own retry loops, each asking for 600 MB, and Grade never
+asking. It proposes one backend scheduler working on estimates, a channel
+that says "your turn" instead of polling, and a floor so on-screen photos
+keep coming even with a huge photo open in Grade. Proposed in two steps
+(3a scheduler and channel, 3b very large pictures and the rest). The
+whiteboard is the historical starting point; the implementation status is above.
+
+Decided by Steve, October 31: keep the floor. Grade stays fully usable. When
+the Library's next photo is itself large (a folder of line scans with one
+open in Grade), the Library pauses with "Library paused: memory is in use by
+… in Grade" and a **Close photo in Grade** button. Going over the app's 4 GB
+budget is usually fine, but no job starts beyond the computer's free memory
+minus a system reserve; such a job waits with a message and is never marked
+failed. Also decided October 31: build as 3a then 3b; floor allowance
+1 GB; system reserve the larger of 2 GB or 10% of RAM; fast lane 64 MB, up
+to four at once; reduced-decode quick previews, moved into 3a. All
+decisions for 3a are made; its integration is recorded above.
+
+## October 30 (late night): feedback loop stopped (scheduler phase 2), awaiting Steve's try
+
+A photo turned away for lack of memory no longer counts as memory pressure.
+Before, each refusal reported pressure for 2 s, and every 500 ms the app
+then halved the Library's caches, cleared recent pictures, sent Chromium a
+"critical" signal and reclaimed in the backend, so finished thumbnails were
+thrown away and made again. Now caches are trimmed only when measured memory
+is above the target (or the operating system reports pressure): once when it
+starts, then at most every 10 s while it lasts. Details in the design
+([section 7.5](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md)).
+
+Cold run on 48 Aceh Pesta copies: one trim (memory really reached 3.50 GB
+against the 3.40 GB target), none from refusals; peak 3.28 GB; screens
+24.1 s / 46.9 s (were 28.7 / 56.5 s); no failures. Quick previews still wait
+behind developments (p95 9.1 s): the fixed 600 MB reservation is phase 3.
+
+**Still open: the open-Grade stall** (design edge case M27, phase 3). With
+the 297 MP line scan open in Grade the app sits over the ceiling, and every
+Library admission is refused, so a cold folder shows "0 active · 25 waiting"
+indefinitely. Phase 2 stops the repeated clean-ups but does not unblock it.
+Until phase 3, opening a smaller photo in Grade should release the large one
+(Grade keeps only the current photo); not yet tested.
+
+Steve's try, October 31 (2021\07, 530 PNG/HEIC, after the line scan at
+100%): confirmed. The backend held 3.75 GB (peak 7.3 GB at 100%), the app
+5.15 GB; trims came every 10 s as designed, "0 active · 30 waiting". Folders
+also felt slow to open. The backend answered folder-tree requests in about
+1 ms and listed the folder in 0.18 s, so the delay was in the window: the 30
+waiting cells polled about 37 times a second, which fills the window's few
+connections to the backend, and a folder click queues behind them. This is
+root cause 5 (polling), removed in phase 3.
+
+Fast checks: JS 678 tests, 3 known failures; Python 2,797 passed, 4 known
+failures, 3 skipped.
+
+## October 30 (night): file gate built (scheduler phase 1), awaiting Steve's try
+
+The Library lists and reads only supported photos, through one rule set in
+`file_gate.py`. It skips:
+- hidden, system and temporary names and folders;
+- trash, snapshot, NAS thumbnail and metadata folders;
+- links and junctions;
+- files under 1 KB.
+
+Online-only cloud files show **Not downloaded** and download only when
+opened. A file still being copied waits. A non-image with a photo extension
+is remembered once as "Not a valid photo". A file whose contents are a
+different supported format is decoded by its contents.
+
+Read-only check of D:\Photos: 140,302 of 142,570 photo-type files stay
+listed. 2,267 `._` files and 13 hidden Lightroom data folders are hidden. No
+real photo is hidden by the name rules. Details, and what is not covered, are
+in the design ([section 7.4](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md)).
+The supported-files list is now in the user guide (`docs/user-guide/library.md`).
+
+## October 30 (late): design review before more fixes
+
+Steve asked for a whole-system design before further fixes. The proposal,
+[library-resource-scheduler-design-2026-10-30](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md),
+replaces the separate Library gates (quick-preview and RAW-decode
+reservations, the exclusive GPU lease, draw leases, retry loops) with one
+backend scheduler: priority classes, per-job estimates, a fast lane for
+small jobs, and measured memory as a safety net only. It supersedes the two
+"open, waiting on Steve's decision" items below. Status: draft for review;
+nothing built.
+
+Decided by Steve, October 30:
+- Be restrictive about which files the Library reads (the file gate,
+  section 6.9 of the design).
+- The grid makes thumbnails only; edited photos keep drawing their edit on
+  the 640 scene.
+- An unedited RAW gets its 2560 picture only when opened in Single.
+
+The design also adds a memory budget per supported file type and a list of
+edge cases, each assigned to a phase. Timings for the whole app are now kept
+in [performance-table](../../technical/performance-table.md).
+
+## October 30 (night): slow RAW camera previews and false failures
+
+Steve's 18:18 run (code 1c0d45a; badminton fast, 20241117 and other RAW
+folders slow) showed three problems:
+
+1. **Camera previews wait behind developments.** Extracting a RAW's embedded
+   JPEG takes about 56 ms in the backend, but the grid waited a median 2.1 s
+   (37 of 71 over 2 s, `_DSC6679.ARW` 31 s). Since October 29 every camera or
+   original quick preview reserves the full 600 MB working room before it
+   starts. While two or three developments held 1.2–1.8 GB of reservations
+   on top of 2.1–2.7 GB in use, every quick preview was refused (HTTP 202) and
+   polled every 250 ms. Each refusal also raises budget pressure for 2 s,
+   which reclaims finished thumbnails (29 reclaims in the run).
+2. **Yielding counted as a failed attempt.** A development preempted by more
+   urgent work three times was remembered as a broken photo
+   (`_DSC6679.ARW`: "Development stopped after 3 attempts: Yielding GPU RAW
+   to shared work").
+3. **Cancellation crashed the failure path.** A cancelled development was
+   treated as a failure, and rewriting the read-only DOMException message
+   threw "Cannot set property message" (`_DSC6658.ARW`).
+
+The `._` entries still under Needs attention were saved failures from before
+1c0d45a; no `._` file was touched in the 18:18 run.
+
+**Fixed:** yields no longer use an attempt; cancellations pass through
+unchanged; other failures are wrapped (original kept as `cause`) instead of
+having their message rewritten. Needs attention drops and deletes saved
+failures for files the Library no longer lists (`._` files, OS metadata
+folders). Saved failures from the yield bug (such as `_DSC6679.ARW`) stay until
+retried from Needs attention. Fast checks: JS 672 passed / 3 known failures;
+Python 2,757 passed / 4 known failures / 3 skipped.
+
+**Open, waiting on Steve's decision:** quick previews reserve what they
+need (a RAW's embedded JPEG is a few tens of MB; a full-size JPEG original is
+about 70–250 MB) instead of the 600 MB working room, and a refused quick
+preview stops raising budget pressure. This is a sizing change owned by
+[memory-and-caches](memory-and-caches.md). The grid-scheduler proposal below
+is still open as well.
+
+## October 30 (evening): thumbnail pipeline root-cause review
+
+Steve's 16:22 Aceh-Wedding run (code 221943a) was traced end to end. What
+actually limited the grid, in order of cost:
+
+1. **One GPU development at a time, by construction.** Every Library
+   development asks the GPU scheduler for an unshared lease
+   (`concurrent:false` in `library-gpu-raw.js`), so no second development is
+   ever granted. Finished thumbnails also take that lease to draw, so a
+   finished cell waited 1.8–2.6 s behind the next photo's development.
+2. **A grid thumbnail also builds the 2560 screen preview.** Every grid
+   development makes 640 and 2560 sizes. The 2560 copy is 16 times the bytes
+   of the thumbnail (52 MB against 3 MB for a 12 MP JPEG). It enlarges the GPU
+   reservation, readback, conversion, hand-off and disk save.
+3. **Half-float conversion ran a JavaScript callback per value.** That cost
+   about 1.4 s per 2560 picture and was logged as "readback" (2,485 ms for
+   IMG_3746).
+4. **macOS `._` AppleDouble files were listed as photos.** They took memory
+   admissions and source slots, failed, and were requested again
+   (about 25 files, 117 requests in the run).
+
+Not the cause in this run: app memory peaked at about 2.8 GB against the 4 GB
+ceiling; the longest marks-lock wait was about 125 ms. The once-a-second
+cache checks after the grid finished were the idle pre-warmer (one photo at a
+time after a 1 s pause, by design). Background recovery still logged
+2,041 pieces in three minutes; wasteful but not blocking.
+
+**Fixed in this commit (output unchanged):** half-float conversion now clamps
+in a plain loop and converts natively (bit-identical on 14.7 M test values,
+1.4 s to about 60–80 ms). One shared photo-name check skips `._NAME` files and
+OS metadata folders (`__MACOSX`, `.AppleDouble`, `@eaDir`, `.Trashes`,
+`.Spotlight-V100`, `.fseventsd`) in folder scans, the index walk, add-folder
+browsing and file checks; already-indexed `._` rows are hidden from folder
+views and removed by the next index pass.
+
+Disposable check: 48 Pesta JPEGs plus 6 `._` files copied to a fresh
+profile (`tools/measure-library-cold-mixed.cjs --aceh`). 48 listed (no `._`),
+48/48 cells finished, no failures or restarts. Median readback **138 ms**
+(was 2,485 ms), GPU stage 0.61 s (was 3.3 s), whole development 1.76 s (was
+5.2 s). First screen of 24 finished at 28.7 s, second at 56.5 s; photos still
+finish about one per second, now split between the single GPU lane (0.6 s)
+and the 2560 hand-off (0.67 s median). Memory polls 114, no timeouts, p95
+289 ms; whole-app peak 3.66 GB. Evidence: `codebase/output/cold-mixed/aceh/`.
+
+**Open, waiting on Steve's decision (proposed October 30):** grid cells
+develop only the thumbnail size, with the 2560 screen preview made when Single
+or the filmstrip needs it or by the idle pre-warmer; up to two or three
+developments share the GPU when their reservations fit the existing GPU and
+RAM budgets; finished thumbnails draw without waiting for a development
+lease; visible cells always go first. No budget, share or ceiling changes.
+
 ## October 28: Graceful saved-grade warnings
 
 Damaged grades now keep readable panel sections and display the actual photo;
@@ -1631,7 +2233,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | **One exception to develop once: selected-photo true 100% detail.** Enlarge the stored 2560 picture immediately while the selected photo develops at full size, then swap to true detail. Keep the full-size scene for that photo so later zooms reuse it, including a zoom-out while development is pending. Never pre-develop neighbours at full size. Use the existing full-size cache allowance; no disk allowance increases are approved. | Steve, 2026-10-19 |
 | **No usable GPU: visible-only CPU fallback.** Keep the existing CPU-made pictures only when the GPU is missing, software-only or lost. Make them only for photos on screen (visible cells, Single and full-screen), with no background picture queue and no pre-making pictures for pasted photos that are not visible. After device loss or driver reset, automatically return to live GPU drawing when a usable GPU becomes available; fallback must not latch for the session. As with CPU export, keep this route working without speed work or new features. | Steve, 2026-10-19 |
 | **Batch Export tiles share live Library drawing.** Visible photo tiles use the same live GPU renderer and visible-only CPU fallback. While export or Proof is running they are background work: draw each tile once and retain it, never redraw for progress updates, and yield GPU memory and turns to delivery. Verify export time per photo with the page open versus closed on the same three photos; the agreed timing noise allowance is 5%. | Steve, 2026-10-19 |
-| **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. | Steve, 2026-10-18 |
+| **Recent thumbnail pool: fixed 512 MB**, sized for an 8 GB machine; not scaled with RAM. Finished grid and filmstrip cells stay built for one screen beyond each edge. All memory and cache sizes now live in [memory-and-caches](memory-and-caches.md). | Steve, 2026-10-18 |
 | **Fullscreen stand-in: the photo's own finished grid picture.** While the sharp fullscreen picture loads, show that photo's finished grid/filmstrip picture scaled to Fit (same grade and HDR/SDR mode), then swap. Never another photo or an obsolete grade. Adjusts the October 24 hide-until-ready behaviour. | Steve, 2026-10-25 |
 | **Camera preview as a quick draw, unedited photos only.** When a photo has no thumbnail yet and has no grade, fullscreen and Single may show its camera preview immediately, then replace it with HDRF's picture. Edited photos never show a camera preview. Amends the October 14 rule. | Steve, 2026-10-25 |
 | **Cold-folder culling is a core workflow.** Users often cull folders the app has never prepared, so stored previews cannot be the only route to speed. Every supported format needs a fast first picture on cold visits: camera previews for RAWs, and fast in-process decoding for JPEG, HEIF, AVIF, TIFF, PNG, EXR, DNG and similar (the file itself as the quick draw when unedited). Edited photos need fast development and finishing. Stored screen previews speed up returning to a folder; they do not replace cold speed. | Steve, 2026-10-25 |
@@ -4285,3 +4887,770 @@ reported 1.3 GB both before and after the task, below the 100 GB limit. The
 three protected read-only project hashes remained unchanged after every driver.
 Fast totals remain Node 658 passed / 2 existing failures; Python 2715 passed /
 3 existing failures / 3 skipped. No merge or push was made.
+
+
+### October 29, 2026: large-folder request responsiveness
+
+Pin/unpin recovery no longer waits for a paused helper. Background startup
+recovery still yields to foreground demand. This removes the circular wait in
+which Activity pauses the helper, then waits for the pin request before it can
+resume that helper. The settings writer releases its lane after each photo,
+rather than retaining it for the complete pending queue. Cached full-folder
+SQLite/WAL reads no longer hold the global marks lock while materializing all
+rows. The existing log proves two roughly 18-second waits, but does not identify
+the holder; these blocking scopes were found by inspection, not established as
+the exact holder in Steve's incident.
+
+File-command planning/execution uses the asyncio executor, leaving the shared
+request pool available while it waits for locks. Commands immediately show a
+waiting message. Logs include plan/execute starts, failures, completion timings,
+lock wait/hold times, visible confirmations and accepted/cancelled decisions.
+No pixels, saved formats, scheduler retention rules or existing test limits
+change. The automatic total-app memory ceiling remains open: short profiles
+showed native Electron main-process growth while its JavaScript heap stayed
+about 7–8 MB; forced JavaScript collection and the experimental transfer change
+did not resolve it. The transfer experiment was removed.
+
+Focused backend coverage: 91 existing checks passed; two new behavior checks
+passed for foreground recovery while paused and writer-lane access between
+pending photos. Fast checks: Node 658 passed / 2 existing failures (source
+fallback and Single mock); Python 2717 passed / 3 existing failures (preset
+headers, RGB publication guard, retouch defer_store mock) / 3 skipped.
+Real-folder validation outcomes follow in the measurement record below.
+
+
+### October 29, 2026: real-folder validation stopped at the memory gate
+
+Steve approved the ten-minute read-only D:/Photos scroll and disposable Delete
+timing first, followed by six sequential 2560x1440 drivers only if peak memory
+stayed within 4 GB and Delete confirmed within about a second. Each driver had
+a 15-minute stall cutoff and the validation group a 75-minute cap.
+
+The corrected observer stopped automatically after 326.567 seconds of scrolling
+when total process-tree working set reached 4,026,507,264 bytes (4.027 GB), above
+the conservative 4,000,000,000-byte ceiling. Even excluding the console host,
+application memory reached 4,018,782,208 bytes and exceeded the ceiling. The
+Library had presented 1,701 real-folder photo rows. No full ten-minute PASS is
+claimed. Delete confirmation appeared in 306 ms while health reported indexing
+active; Cancel preserved the disposable PNG. The earlier incomplete observer
+attempt measured 322 ms but ended on an observer-only five-second UI timeout;
+its logs are retained separately and are not a ten-minute verdict. The corrected
+observer keeps measuring memory through renderer pauses without accumulating
+page requests. All runs used 2560x1440 and completed far inside the 75-minute cap.
+
+At the stopping peak, Electron main used about 0.902 GB, the main renderer
+1.059 GB, GPU-process host RAM 1.156 GB, with the other renderers/services and
+Python backend/helpers making up the rest. This is host memory, not VRAM.
+The log also shows marks_read holding the shared marks lock for 3,328 ms,
+index_scan waiting 4,515 ms, and scroll replies separated by up to 19,747 ms.
+Thus marks-reading is a reproduced long lock holder; the original morning
+18-second holder still cannot be identified from its incomplete log. The new
+responsiveness changes are partial: marks reading still needs a smaller lock
+scope, and the automatic combined-process memory ceiling is not implemented.
+Both remain Open work. No output-pixel or scheduler-retention change was made.
+
+| Named driver | Result |
+| --- | --- |
+| library-scroll-cache | NOT RUN: memory gate stopped validation |
+| library-precision-source | NOT RUN: memory gate stopped validation |
+| library-rgb-native | NOT RUN: memory gate stopped validation |
+| library-live-native | NOT RUN: memory gate stopped validation |
+| library-codec-native | NOT RUN: memory gate stopped validation |
+| library-background-activity | NOT RUN: memory gate stopped validation |
+
+Reproduce with tools/measure-library-big-folder.js through
+`node tests/run-in-electron.js tools/measure-library-big-folder.js`, setting
+HDR_FINISHER_ELECTRON_WINDOW_SIZE=2560x1440 and creating an empty absolute
+HDR_FINISHER_ELECTRON_TEST_USER_DATA path at
+codebase/output/big-folder/measurement-profile. The tool waits for startup
+cleanup to finish against its empty profile before any real-folder access,
+begins normal recursive indexing/browsing without adding exclusions, and tests
+Delete only on codebase/output/test-photos/big-folder-delete. It cancels the
+confirmation. OS sampling refreshes the process tree to include late helpers.
+Evidence is in codebase/output/big-folder/measurement.json, measurement-memory.jsonl,
+measurement-peak.json, measurement-locks.json and measurement-backend.log; the
+incomplete first attempt is under attempt1/. Short diagnostic memory profiles
+and their backend logs are also retained there. All three protected-project
+hashes matched after each measurement attempt. No six-driver PASS lines exist.
+
+Final Node fast checks: 659 passed / the same 2 existing failures, including a
+new behavior check exercising immediate waiting feedback and real page-event
+serialization of Cancel. A small logging correction uses fields already
+accepted by the page-event schema so action, planning stage and cancellation
+survive ingestion. Backend Python checks remain 2717 passed / the same 3
+existing failures / 3 skipped; no backend changes followed that run. The 91
+focused backend checks and two new locking regressions also passed. No further
+slow checks ran after the stop condition. Startup/test profiles and disposable
+photo copies were removed after preserving logs; output_size.py reported 1.3 GB
+at both start and end, below 100 GB. No merge, push or installer build was made.
+
+
+### October 29 follow-up: combined host memory and marks lock ownership
+
+The ceiling, budget split and memory open work are now in
+[memory-and-caches](memory-and-caches.md); this section keeps the history.
+
+Steve's ceiling is 4,000,000,000 bytes of combined process-tree host working
+set, including Electron main, renderers, GPU-process host RAM, backend and
+helpers. Dedicated VRAM is separate. Older pictures may be discarded and
+redrawn; visible and nearby pictures retain priority. Background work should
+release the shared marks lock within about 250 ms. Validation is the real-folder
+ten-minute measurement before the six named drivers, stopping on a memory
+ceiling breach, with a fifteen-minute driver cutoff and a seventy-five-minute
+active validation cap. An approval-service outage interrupted validation;
+its idle period is excluded, with both measurement attempts and driver attempts
+retained in the validation history.
+
+The prior measurement was still rising at its stopping peak: 2.902 GB at
+299.9 seconds of sampling became 4.027 GB at 343.2 seconds. Electron main rose
+from 0.130 to 0.902 GB and its primary renderer from 0.792 to 1.059 GB in that
+interval. The original samples remain unchanged; the separate per-process curve
+is codebase/output/big-folder/prior-curve.json.
+
+The desktop now samples the complete application tree twice a second. Memory
+pressure starts at 2.4 GB, and source jobs reserve shared headroom before
+allocating. Parallel work has a stricter admission budget; one bounded source
+job may use the remaining ceiling headroom so retained visible pictures cannot
+permanently prevent progress. Old detached canvases, ready neighbours, recent
+pictures, camera previews and idle renderer buffers are reclaimed. Disposed
+WebGPU canvases are explicitly unconfigured. Grid camera previews use blobs
+with revoked object URLs rather than retaining data URLs. Backend log
+backpressure is bounded to prevent an unbounded desktop write queue. These
+changes address concrete retention paths; the old samples alone do not prove
+which allocation caused the former main-process spike.
+
+The reproduced 3,328 ms marks_read scope included conflict-folder scans and
+settings-file reads. Disk preparation now runs outside the lock, with each
+photo applied against its observed database version; a newer mark wins.
+Recovery publication also runs outside the marks lock and has its own serial
+publication gate. Index facts are applied in bounded batches. Every long outer
+marks-lock owner is now logged, including previously unlabelled scopes.
+
+The original October 29 08:17:32--08:17:50 log proves 18,266 ms and 18,235 ms
+waits by reconcile and index_batch, but omitted the outer holder. Its exact
+historical call site cannot be recovered. New owner logging additionally
+reproduced Delete planning holding marks for 33,516 ms and settings status for
+4,235 ms. Delete's Recycle Bin probe and file hashes now run outside marks,
+settings status performs independent WAL reads outside marks, and file-command
+snapshots query only the selected original/copies instead of every table row.
+A short protected snapshot still prevents pending marks being lost.
+
+The scroll-cache driver now accepts rebuilding an evicted older picture,
+while retaining its exact finished-pixel assertion. Selected drivers reuse one
+physical copy of each large test source with disposable hard links and remove
+their temporary photo folders. No source file in D:/Photos is written.
+
+Fast validation: Node 660 passed / the same two existing failures (selected
+source fallback and Single-ready test harness). Python 2724 passed / the same
+three existing failures (local-scope wording, RGB description route, retouch
+CaptureCache mock) / 3 skipped. Focused file/settings checks: 111 passed;
+memory and slow-disk regressions: 38 passed. The regressions verify another
+thread acquires marks within 200 ms while conflict scans, recovery publication,
+status SQL reads and Recycle Bin probing are deliberately blocked.
+
+Final validation stopped on Steve's memory gate. The latest run reached
+4,233,019,392 bytes after 255.309 seconds of scrolling (925 photo rows), so it
+is not a ten-minute PASS. At the stopping peak, main was 0.337 GB, primary
+renderer 1.127 GB, GPU-process host RAM 1.126 GB, backend 1.050 GB, other
+Electron processes 0.261 GB and Python helpers 0.324 GB, plus 0.008 GB console
+host. The final rise was simultaneous renderer/backend growth; the 700 MB
+reservation shown near the peak did not contain that transient. The ceiling
+controller is partial and remains Open work, including source-admission sizing,
+progress when retained visible pictures consume the admission budget, and
+reclaiming the remaining buffers. No claim of a proven former leak root cause
+or a universal memory bound is made.
+
+The first complete ten-minute attempt, before the final admission/lock fixes,
+peaked at 3.931 GB and ended at 2.832 GB. Its scroll-cache driver then failed
+its 180-second visible-finished-picture wait, with source work waiting for
+memory admission. The precision driver was interrupted to correct admission
+and locks. The latest changes were measured again before attempting drivers;
+the repeated memory breach stopped all further slow checks. Thus all six
+final-version drivers are NOT RUN: library-scroll-cache,
+library-precision-source, library-rgb-native, library-live-native,
+library-codec-native and library-background-activity. The earlier attempt is
+retained separately, not presented as final-version coverage.
+
+Delete confirmation in the final run appeared in 811 ms; Cancel preserved the
+disposable photo. The longest final outer marks hold was 594 ms in marks_read,
+and index_batch held marks for 531 ms. The earlier 33.516-second Delete and
+4.235-second settings-status holders were removed, but the approximately
+250 ms background-lock requirement remains Open work. A scroll reply gap of
+42.761 seconds also remains a responsiveness limitation; it must not be
+reported as a marks-lock duration.
+
+Evidence: codebase/output/big-folder/ceiling-final/measurement.json,
+measurement-memory.jsonl, measurement-backend.log, curve.json, peak.json and
+locks.json. Prior full-run evidence is in ceiling-scroll/; both driver attempts
+and the approval-service idle exclusion are in slow-results.json. The three
+protected-project hashes matched. No writes targeted D:/Photos. Fast checks
+above completed on the final backend changes before the final measurement;
+no further slow test ran after the stop. These changes are committed locally
+as unfinished work on library-big-folder; no merge, push or installer build.
+
+Scratch output was 1.3 GB at the end, below the 100 GB limit. Disposable
+profiles and interrupted precision-photo copies were removed after retaining
+logs; existing user fixtures and design files were left alone.
+
+### October 29: fixed whole-app memory implementation (validation pending)
+
+The memory owner now admits cache growth by the shares in
+[memory-and-caches](memory-and-caches.md): fixed RAW read-ahead and hand-off,
+shared byte limits for ready/direct scenes, delivered hand-off release, and
+one 600 MB working envelope. Helper claims go to the backend owner; renderer
+limits and reports use that owner. Pressure trims oldest reconstructible
+entries. The gate now uses proportional resident Windows pages rather than
+summed working sets. Live picture uploads retain Blob backing to remove a
+suspected Electron-main copy path. Marks observation and index batches have
+shorter lock scopes. Final fast checks and the ordered real-folder gate are
+pending; this is not a memory-ceiling pass. No sizes were increased.
+
+Fast-check result for this implementation: Python 2,729 passed, three known
+failures, three skipped; JavaScript 662 passed, two known failures. The focused
+cache/helper group passed 91 checks. Real-folder validation is pending.
+
+
+October 29 validation follow-up: the first completed 600.651-second scroll
+stayed below 4 GB (2.585 GB peak, about 2.06 GB at the end), but finished
+picture caches remained empty, so this does not establish the browsing goal.
+Delete confirmation on the disposable PNG was 993 ms and cancelled; protected
+project hashes were unchanged. RGB-native and codec-native passed. Scroll-cache
+failed waiting for finished cells; background-activity failed waiting for its
+Pause indexing control. Precision-source and live-native could not create
+hard-linked fixtures on the exFAT D: volume. Admission now distinguishes a
+busy 600 MB working slot from low total RAM: queued work must not reclaim the
+current picture. A regression check covers that distinction. Shares are unchanged.
+The repeated scroll records finished-cell counts explicitly; validation remains open.
+
+
+**Paused at Steve's request, October 29.** Latest code is `3c446d9`
+(after `b567c15`), still on `library-big-folder`; no push or merge.
+The repeat used a disposable NTFS Windows TEMP profile. It was stopped by
+request after approximately 230 seconds of independent sampling, before
+completing the ten-minute gate or repeating Delete. Peak charge was
+3,919,898,910 bytes; final sample 2,490,635,991 bytes. Two finished grid
+cells were observed, and finished/camera/sharp bytes were retained. This is
+partial evidence only: no plateau verdict. The peak had backend charge about
+1.859 GB, GPU host 1.046 GB, renderer tabs 0.584 GB and main 0.143 GB;
+main ordinary resident was about 0.216 GB at that sample. Backend temporary
+allocations need investigation against the 600 MB working room before claiming
+one enforced whole-app ceiling. No shares were changed.
+
+| Share | Peak sample bytes / limit | Pause sample bytes / limit |
+| --- | ---: | ---: |
+| thumbnails | 51,892,480 / 536,870,912 | 57,945,600 / 536,870,912 |
+| sharp | 0 / 512,000,000 | 80,768,000 / 512,000,000 |
+| camera | 6,796,834 / 64,000,000 | 57,811,826 / 64,000,000 |
+| raw | 0 / 768,000,000 | 0 / 768,000,000 |
+| handoff | 26,310,222 / 256,000,000 | 168,059,324 / 256,000,000 |
+| working | 0 / 600,000,000 | 0 / 600,000,000 |
+
+Longest recorded lock hold in this NTFS repeat: `reconcile`
+375 ms. The earlier exFAT-profile run recorded a 1,344 ms
+startup copy observation, 656 ms during scrolling, and a 547 ms index batch.
+The 250 ms requirement remains open wherever exceeded.
+
+Fast checks after the admission follow-up: Python 2,730 passed / three known
+failures / three skipped; JS 662 passed / two known failures; ten focused
+memory checks passed. The six driver results above predate this follow-up;
+they are not a validation of `3c446d9`. Their total run time was under eight
+minutes, sequentially, with no 15-minute stall or 75-minute cap reached.
+Protected hashes were checked again after stopping and are unchanged.
+
+Resume: inspect the repeat's backend temporary allocations and lock timings;
+finish auditing RAM caches against the single owner (including Grade session
+frames/masks), and resolve hand-off cancellation/delivery lifetimes. Then run
+fast checks and the full ordered scroll/Delete/six-driver sequence. The two
+hard-link fixture drivers require an NTFS fixture strategy; D: is exFAT.
+Evidence is retained under `codebase/output/big-folder/budget-validation/`
+and `budget-validation-repeat/` (JSONL plus per-PID CSV, cache peak/end CSV for
+the completed first run, backend logs and each driver result). Temporary
+measurement profiles and driver photo scratch are removed. The three original
+untracked items were left untouched. Steve asked to resume; follow-up implementation and validation are in progress.
+
+
+October 29 resumed memory follow-up (library-big-folder): quick camera/original
+preview decodes now wait for the same 600 MB working reservation as scene
+preparation; cache hits remain immediate. Grade session caches share the budget
+owner, without their old independent byte defaults or duplicate retained mip
+references. Failed deferred hand-offs are released, empty virtual-copy baseline
+writes are avoided, and reconciliation yields after each photo. Fixed RAM
+shares and the 4 GB ceiling are unchanged. Forty focused checks passed; 110/111
+broader focused checks passed with the recorded RGB publication fixture failure.
+Full fast checks and the ordered ten-minute scroll/Delete/six-driver validation
+remain pending. Details and peak/end evidence belong to memory-and-caches §§4,
+7 and 8; the prior partial repeat is not a plateau verdict.
+
+Sustained OS moderate pressure trims once when entered, rather than halving
+every sampling tick. Actual budget overruns continue reclaiming until working
+room is available; critical pressure still clears reconstructible caches.
+
+Follow-up fast checks: Python 2,731 passed / three known failures / three
+skipped (481 s); JavaScript 662 passed / two known failures. Python failures
+remain the scoped-preset contract, RGB publication guard fixture, and retouch
+CaptureCache deferred-store fixture. JavaScript failures remain the selected
+CPU decoder fixture and missing Single screen-preview stub. No shares changed.
+Tests that formerly forced independent frame/mask limits now force eviction
+through an injected smaller owner budget and preserve live-mask priority.
+
+
+**Resumed gate, `f56075a`: STOP at 162.212 seconds of scrolling.** The
+independent observer measured **4,425,675,331 bytes**, above the exact
+4,000,000,000-byte ceiling. It stopped the app and skipped disposable Delete
+and all six drivers, as instructed. There is no ten-minute plateau result.
+The last sample is also the peak. No finished grid canvas was counted in 161
+responsive scroll replies (longest reply gap 1,020 ms), with 11,089 listed
+photos. This does not establish usable visible/nearby redraw behavior.
+
+The process curve below uses GB (1e9 bytes) and seconds from observer start;
+startup precedes scrolling by about 13 seconds. Full individual-PID samples
+are in `codebase/output/big-folder/budget-validation-resumed/process-curve.csv`.
+
+| Observer seconds | Main | Tabs combined | GPU host | Backend | Helpers combined | Total |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 0.049 | 0.150 | 0.400 | 0.094 | 0.239 | 0.960 |
+| 30 | 0.120 | 0.287 | 0.951 | 0.142 | 0.256 | 1.784 |
+| 60 | 0.234 | 0.325 | 0.939 | 0.315 | 0.256 | 2.098 |
+| 90 | 0.089 | 0.326 | 0.863 | 0.277 | 0.256 | 1.841 |
+| 120 | 0.090 | 0.466 | 0.899 | 0.284 | 0.257 | 2.026 |
+| 150 | 0.106 | 0.450 | 0.918 | 0.281 | 0.257 | 2.041 |
+| 175.5 (peak/end) | 0.109 | 0.339 | 0.908 | 0.289 | 2.750 | 4.426 |
+
+Total also includes the utility, Python launcher, crash handler and console.
+At peak/end the four helper PIDs charge 2,562,018,742 (39240), 62,469,266
+(5728), 62,521,929 (44116), and 62,771,785 (18680) bytes. Backend 47364 charges
+289,033,654; main 14656 109,026,157; tabs 47944/3908 291,900,854/46,738,285;
+GPU 15124 907,769,563. The sharp spike is in helper 39240, coincident with a
+`live-scene` job for `_DSC3289.ARW` starting about five seconds earlier.
+This is a temporary-allocation failure while the 600 MB working reservation
+is held, not evidence that a cache share should increase. Its allocation path
+remains to be bounded within the agreed working room.
+
+| Owner cache | Bytes at peak and end | Share bytes |
+| --- | --- | --- |
+| Thumbnails | 2,160,000 | 536,870,912 |
+| Sharp surfaces/direct scenes | 0 | 512,000,000 |
+| Camera previews | 5,635,374 | 64,000,000 |
+| RAW read-ahead | 0 | 768,000,000 |
+| Hand-off | 140,049,380 | 256,000,000 |
+| Retained working caches | 0 | 600,000,000 |
+
+The owner telemetry is 374 ms older than the peak process sample. The latest
+renderer thumbnail estimate is 25,200,000 bytes (sharp zero), showing that
+asynchronous reports can differ; both readings are retained in JSONL. Working
+reservations separately total 600,000,000 bytes. Reported cache bytes are well
+inside their shares despite the helper's excess temporary allocation.
+
+Main's maximum charge was 237,823,122 bytes, maximum ordinary working set
+306,454,528, and its largest observed byte upload 15,102 bytes. The former
+0.90 GB rise did not recur in this short run; this is not a ten-minute bound
+or a complete explanation of the historical spike.
+
+Lock maxima: `marks_read` 110 ms, `marks_read_copies` 125 ms, `index_scan`
+31 ms (`index_batch` 0 ms). The longest remaining hold was **734 ms in
+reconcile**, still over the approximately 250 ms requirement, at shutdown
+immediately after the ceiling sample. Splitting to one photo is insufficient
+for that database/filesystem scope. The historic Delete/morning-freeze
+causation remains unproven as described above.
+
+Delete confirmation: **not run**. `library-scroll-cache`,
+`library-precision-source`, `library-rgb-native`, `library-live-native`,
+`library-codec-native`, and `library-background-activity`: **all not run after
+this commit because the preceding ceiling gate stopped**. Earlier results
+are historical, not validation of `f56075a`. The protected project hashes
+remain unchanged; the owned C: profile and disposable Delete fixture are
+removed. D:/Photos was only read. Output remains 2.0 GB, below 100 GB.
+Evidence: `measurement.json`, `measurement-memory.jsonl`, `process-curve.csv`,
+`cache-peak-end.csv`, `analysis.json`, and `measurement-backend.log` in
+`codebase/output/big-folder/budget-validation-resumed/`.
+
+### October 29: bounded CPU ARW picture
+
+The no-GPU ordinary ARW thumbnail/screen development now processes full-resolution
+sensor bands with 32-row halos and temporary planar files. It retains only the
+640/2560 reductions in memory. Opposed-colour highlight coordinates are scanned
+in bounded batches. This is a working-allocation change; no share or total changed.
+
+With GPU delivery explicitly disabled, the complete visible CPU fallback for
+`DSC07060.ARW` (7968 x 5320, 42.4 MP) returned a finished picture in 25.61 s.
+The helper's proportional resident peak, including its baseline, was
+**328,528,456 bytes**, within the **600,000,000-byte** working room.
+Before comparing pixels, the proposed finished-SDR tolerance was average colour
+difference below 1 and p99 below 2. Against the former full-image CPU route,
+mean Delta E 76 was 0.0584 and p99 0.1948: inside those limits.
+
+Qualification covers ordinary ARW, opposed-colour highlights, no saved repairs,
+and edges at most 2560. Other formats, edge-colour, saved repairs and native CPU
+inspection still use the previous development path and are **not qualified within
+600 MB**. This is not a claim that every no-GPU recipe is bounded.
+Evidence: `codebase/output/big-folder/cpu-bands-validation.json` and
+`cpu-bands-parity.json`. Fast Python: 2734 passed, three existing failures,
+three skipped. The existing failures are the scoped-preset source contract,
+RGB publication fixture and retouch CaptureCache fixture. CPU-focused numerical
+checks pass. No protected project was saved over.
+
+
+### October 29: GPU admission and retained-grid manual checkpoint
+
+Memory/budget refusal now waits for GPU admission; only a missing, software or
+lost GPU permits visible CPU fallback. Unsupported GPU source recipes fail
+explicitly. Idle/background demand cannot start CPU development. No shares or
+total changed. Camera-preview admission returns pending rather than holding
+HTTP connections needed by the source owning the working slot. Overlapping grid
+loads survive scroll events. Ordinary Bayer reservations now match the measured
+graph with headroom; complex graphs keep the old estimate. Direct RGB scenes are
+stored before reclaim.
+
+Final 2560 x 1440 D:/Photos scroll: 300.444 s, 3,075,009,385-byte process-tree peak,
+2,737,641,174 bytes at end. Thumbnails retained 335,690,880 of 536,870,912 bytes;
+finished visible grid cells peaked at 30 and ended at 5. No proven plateau yet.
+Disposable Delete confirmation took 40 ms, was cancelled, and preserved the copy.
+The 35-second bin size/count enumeration is removed from planning; recycling
+still has no automatic permanent-delete fallback. D:/Photos was read-only;
+three protected project hashes were unchanged.
+
+This is **not a complete gate pass**: normal-use holds reached 360 ms in marks
+reading and 281 ms in picture-error revision. Those scopes remain open, together
+with the broader no-GPU CPU qualification described above. Reconcile filesystem
+and connection setup/close now sit outside the marks lock (40 focused checks pass).
+The cold JPEG isolated at 2.098 s (upload 42.7 ms, reduce 115.3 ms). Its old
+multi-second stages included admission/network contention; the RGB GPU algorithm
+is unchanged against main. The historical sub-second cold target is not yet
+re-established. See [memory and caches sections 7 and 8](memory-and-caches.md)
+for the per-process curve, every peak/end share, finished-cell counts, diagnosis,
+fast-check exceptions and evidence paths.
+
+Fast checks: JS 665 passed, one existing Single fixture failure; Python 2734
+passed, three existing failures, three skipped. Output is 2.1 GB. Steve shortened
+this round to five minutes and requested a manual try: the full ten-minute
+scroll and all six Library drivers are deferred until before merging to main.
+Local commits only; no merge or push.
+
+### October 30: badminton cache-hit and edited-scene fixes
+
+Memory admission now happens before a source takes an active queue slot. Pending
+admission and busy metadata return short responses, leaving browser connections
+free between retries. A non-fitting GPU development no longer blocks a fitting
+cached draw. Picture loading starts independently of sidecar/index hydration.
+Grid read-ahead follows current visibility, uses stored scenes only, and no
+longer gives an offscreen selection priority zero. Full idle warming waits for
+visible pictures and all picture queues to finish. Newly visible development
+can release an offscreen source parked waiting for GPU admission.
+
+DSC07209/17/23/11/16's earlier scenes survived on disk. Validation had inserted
+the neutral RAW setting `edge_colour_expand_percent=0.5`, changing scene hashes.
+Canonical scene identity now restores all five exact old keys; no decoder bump,
+eviction change, budget change or photo/project rewrite was needed. The actual
+incident development order was **07209 → 07217 → 07223 → 07211 → 07216**, with
+request-to-draw times 3.644, 5.614, 10.627, 17.451 and 20.443 s. Independent
+admission polling let later requests overtake earlier ones; memory waiting now
+remains in one ranked queue. Queued visible work precedes offscreen work;
+already executing GPU work is allowed to finish.
+
+The 23:21:34 cache-check messages for DSC07232 onwards were idle-warmer checks.
+They cannot establish which request held up the historical 50-second blank.
+Code and short reproduction identified and removed connection, hydration and
+GPU ordering gates; do not claim the historical connection hypothesis is proven.
+
+Final short scripted scroll used the real badminton folder read-only, with a
+copied index/cache in a disposable profile, eight positions with six-second
+pauses. Of 73 ARW requests in DSC0720x–0725x, 41 presented: unedited 31,
+1.665–11.551 s (median 3.938); edited ten, 3.587–5.323 s (median 4.371).
+Forty presentations exceeded 2 s; 32 were not presented before scroll/end and
+were observed unfinished for over 2 s in snapshots. The per-request
+record is `codebase/output/badminton/cell-timings.csv`; missing results remain
+missing. DSC07209/11 presented on return in 3.884/4.495 s; 07216/17/23 did not
+present before leaving the viewport. All five restored scene keys were verified
+against existing managed NPZs and none of those five was developed during the
+run. Actual GPU admission order: exported DSC07198 Version 1 JPEG five times
+(cancel/retry), then DSC07259.ARW. **Latency is not a complete pass**; Steve's
+manual retry is the next checkpoint, not further memory work.
+
+Peak process charge was **1,899,322,216 bytes**, under the 4 GB ceiling;
+per-process values and measurement limitations are in the memory-and-caches
+October 30 note. Original sidecar and protected-project hashes were unchanged;
+no page errors. JS: 669 passed, one existing Single fixture failure. Full Python
+ran during iteration (2725 passed, 13 failed, three skipped); ten introduced
+failures were fixed and covered by the focused rerun (109 passed, one existing
+RGB fixture failure), then 46 final focused checks passed. The other existing
+failures are scoped-preset source wording and retouch CaptureCache fixtures.
+No drivers, ten-minute run, merge or push. Both module PRDs accompany this fix.
+Owned profile/cache scratch was removed; output started and ended at 2.1 GB.
+
+### October 30 retry: default recipes and complete badminton scene audit
+
+The earlier neutral-default fix was conditional on a non-default RAW recipe.
+DSC07270/71/78 and DSC07502/03/08/09/14 use the default recipe, so validation
+still added Edge colour expansion and missed their existing scenes. Canonical
+source quality now ignores expansion for Opposed colour, uses the established
+absent encoding for the default expansion, ignores inactive reconstruction and
+lens settings, repair labels/IDs, and disabled repairs. Active repair recipes
+remain ordered; real reconstruction, lens, interpretation and reference-white
+changes still invalidate. Exact equivalent old recipe encodings can locate an
+existing file; no decoder/version mismatch or arbitrary older scene is accepted.
+Reads use that file's actual key and report canonical quality, with no rewrite
+or duplicate scene. Aliases are bounded and held only in memory.
+
+Key history found in the audit:
+
+| Commit | Key effect |
+| --- | --- |
+| `4f7d839` | Introduced source recipe identity and stored scenes. |
+| `a43ea3d` | Added the live draw identity from the scene plus the whole saved document. This included non-pixel metadata; the retry fix limits it to finishing settings. A changed live key does not itself prove a disk scene miss. |
+| `558ffd8` | Added decoder/colour versions and RGB adapter v1 to source quality. |
+| `7374c80`, `093b655` | RGB adapters v2 and v3 deliberately invalidate adapted source pixels. These predate the October 26 hits. |
+| `c25fa0e` | Picture format/version v7 for shared GPU RAW views; also predates those hits. File path, size, modification time and requested edge remain part of a stored scene's identity. |
+| `d5ecf47` | Added ordered repairs to source quality; initially whole records also hashed labels, IDs and disabled strokes. Those non-pixel fields are excluded now. |
+| `1101d6a` | Added the Edge colour expansion default to RAW settings. The control does not affect Opposed colour pixels. |
+| `611c994` | Validated/materialised the entire grade before recipe hashing and Library document reads. This exposed the new default in previously authored recipes. |
+| `f98c55b` | Removed expansion 0.5 only for non-default recipes: fixed the earlier five, missed the default-recipe eight. Replaced by unconditional pixel-based canonicalisation and exact equivalent lookup. |
+| `8ff72f8` | Brought retouch GPU changes into this branch. Its new `repair_rendering` fields are response metadata, not EditDocument/source recipe fields. Neither repair route metadata nor Grade cache ownership changed these eight source keys. |
+
+The `63c904a7bcb1…` / `2ca279323958…` values in Steve's log are live draw
+identities. DSC07270's original **disk source key** is `087ed43f6fe1…`;
+the materialised-default development used `8f476cb0a465…`. Both still exist.
+The real Grade database has 75 badminton state records and no pending saves;
+no desired grade overrides the sidecar recipes. Read-only audit of all 69
+edited original badminton photos locates existing
+thumbnail scenes for **69/69**, including all eight named in the retry.
+The eight original source-key prefixes are 087ed43f6fe1, 993909c7130a,
+0561cf37bec9, 2ed257aced50, 75221f82b687, 5295556a6068, cb7737458bd7,
+and c9b2787852e8, respectively. Audit: `codebase/output/badminton/scene-audit.json`.
+
+Validation uses Steve's supplied targets: about one second for edited stored
+scenes, no visible stall over two seconds caused by the old working-slot wait,
+and the exact whole-app ceiling. No drivers or ten-minute validation are
+requested. `prepare-badminton-profile.py` reads originals, copies only existing
+small scene files to a disposable TEMP profile, and never links the live cache.
+The short recorder visits DSC07268/74/78 and DSC07500/06/12; source cache files
+are reused via disposable copies so reads/touches/publication cannot mutate
+Steve's cache. RAWs are never copied. The sidecar and three protected-project
+hashes are checked across the scroll.
+
+Short scroll result: all **49/49** requested ARW cells in the measured rows
+presented (11 edited, 38 unedited); all 11 edited requests hit stored scenes.
+The eight reported photos presented in 4.911, 5.116, 0.974, 1.145, 1.339,
+1.732, 1.871 and 0.497 seconds in the order listed above. Edited median was
+1.871 s (range 0.497–5.274), unedited median 0.830 s (0.199–5.334).
+Fourteen presentations exceeded two seconds, concentrated in the first group;
+none waited for working memory and no photo in that group was redeveloped.
+DSC07270/71 cache discovery took 1.495/1.509 s and their draw-queue waits
+3.254/3.381 s. **The about-one-second latency target is only partially met**;
+cache recovery and elimination of the false working-slot wait are confirmed,
+but the initial cached-draw delay remains for Steve's retry. Stop here as
+requested; no drivers or longer run.
+
+Peak whole-app proportional resident charge was **2,091,545,156 bytes**.
+No memory-admission request was needed in this warm-scene scroll. All original
+sidecar hashes, audited original scene-file hashes and three protected-project
+hashes were unchanged; no page errors. Per-cell request-to-presentation timings
+are in `codebase/output/badminton/cell-timings.csv`, with source audit and
+scroll trace alongside it. Fast JS: 669 pass, one existing missing Single
+screen-preview fixture stub. Full Python: 2,741 pass, three existing failures
+(scoped-preset source contract, RGB publication fixture, retouch CaptureCache
+fixture), three skipped; final focused memory/scene checks: 34/34 pass.
+The full suite ran during iteration; final focused checks cover subsequent
+identity/admission changes. Output started/ended at 2.1 GB. Disposable scene
+copies/profile removed after recording; no RAW copies, project saves, merge
+or push. Both module PRDs are included in the same local commit.
+
+### October 30: exported JPEG restart and missing first-draw preview
+
+Steve's 08:35–08:37 retry in `20260214` admitted the darktable-exported
+DSC01910 JPEG 340 times. The disposable 3558 × 2372 copy reproduced 42
+admissions and 42 allocation failures in a bounded 15-second capture. Its ICC
+profile is decoded correctly; this is a GPU resource-lifetime failure. Authored
+SDR development keeps six full source planes (working and reference colour).
+Reduction retained those planes after their last use, exceeding the unchanged
+303,416,992-byte reservation. `scheduledDevelopment` swallowed the allocation
+error and restarted identical work without any outcome or reason event.
+
+RGB reduction now releases each source plane after its final requested size
+has read it. Pixel maths, profile conversion, reservations and cache limits
+are unchanged. The isolated copy completed once. Deterministic allocation
+errors stop on their first attempt; GPU preemption may restart at most twice
+(three attempts total). Every admitted attempt has a number, every restart
+logs its reason, and terminal/cancelled developments log an outcome. Terminal
+renderer failures are remembered against the photo/settings revision, shown
+with the reason directly in the cell, and use the existing explicit Try again
+recovery. The GPU lease is deleted on every exit, allowing other photos through.
+
+DSC01884's missing first-draw preview was possible because the bounded hand-off
+LRU discarded both undelivered NPZ bytes and their deferred-store record while
+a draw waited for the GPU. Reclamation now atomically backs pending bytes to
+the existing disk cache before releasing RAM. Ownership is installed before
+admission (including CPU hand-offs), and stays through disk publication. The
+original packed NPZ bytes are reused; there is no extra decode, new cache or
+allowance increase. See memory-and-caches for ownership details.
+
+Validation: only disposable photo copies under `codebase/output/test-photos/`
+were opened, including `darktable_exported`; fresh Electron profile, 2560 ×
+1440, one short stationary open, no drivers or ten-minute run. All **18/18**
+developed cells presented, **one development per photo**, zero restarts,
+zero failed developments/draws and zero page errors. The run backed 21 pending
+thumbnail/screen previews during RAM reclamation without losing a draw.
+Camera placeholders and finished shader presentations are separate trace-ID
+joins to compositor opportunities; neither is inferred from DOM insertion.
+
+| Photo | Development attempts | Request to finished presentation (s) |
+| --- | --- | --- |
+| DSC01884.ARW | 1 | 7.537 |
+| DSC01885.ARW | 1 | 9.347 |
+| DSC01886.ARW | 1 | 12.638 |
+| DSC01887.ARW | 1 | 9.370 |
+| DSC01888.ARW | 1 | 16.620 |
+| DSC01889.ARW | 1 | 17.972 |
+| DSC01890.ARW | 1 | 15.256 |
+| DSC01891.ARW | 1 | 13.789 |
+| DSC01902.ARW | 1 | 19.293 |
+| DSC01903.ARW | 1 | 22.416 |
+| DSC01904.ARW | 1 | 20.759 |
+| DSC01905.ARW | 1 | 24.166 |
+| DSC01906.ARW | 1 | 26.039 |
+| DSC01907.ARW | 1 | 27.621 |
+| DSC01908.ARW | 1 | 30.864 |
+| DSC01909.ARW | 1 | 30.246 |
+| DSC01910.ARW | 1 | 28.973 |
+| darktable_exported/DSC01910.jpg | 1 | 11.519 |
+
+Every row has no failure. Camera placeholders appeared in 0.177–0.783 s.
+These are recorded cold-open timings, not a latency qualification: the slow
+finished RAW queue remains visible in the numbers. The requested correctness
+target passes; Steve's manual retry is next. The recorder originally asserted
+one presentation event per cell and counted both camera and developed events;
+its summary/assertion was corrected against the same capture without rerunning.
+
+Evidence retained in `codebase/output/jpeg-loop/`: `baseline.json`,
+`focused.json`, `folder.json`, `cell-timings.csv` (every cell, camera and finished
+presentation separately), `folder.png`, `backend.log`, and fast/focused check
+logs. The two `tools/check-library-jpeg-*.cjs` helpers open disposable copies
+only. Three protected-project hashes were unchanged; D:/Photos was read-only.
+
+Fast checks: JavaScript **670 passed, one known Single fixture failure**
+(`HDRLibraryScreenPreviews` missing). Full Python during iteration: **2,744
+passed, five failed, three skipped**. The new renderer-error endpoint's local
+request model caused one failure; corrected with **52/52 final focused checks**
+(cache, scene, durable error/retry and changed-source guards). Four failures
+outside this change remain: scoped-preset source contract, RGB description
+fixture, Grade frame-cache retention assertion, and retouch CaptureCache's
+missing `defer_store` argument. They were not repaired or broadly rerun.
+The bounded-restart JS behavior checks pass (10/10 focused). Later failure-cell
+text/CSS and helper edits pass syntax/diff checks; GPU work was not repeated.
+Output started and ended at **2.1 GB**, below 100 GB. Owned photo copies,
+three Electron profiles, pytest scratch and intermediate logs were removed;
+only the small linked evidence remains. Committed locally on
+`library-big-folder`; no protected project save, merge, push or installer.
+
+
+### October 30: cold mixed-folder contention and memory-controller retry
+
+The 15:09-15:11 retry exposed whole-library startup recovery overlapping the
+open folder. Startup upkeep alone accounts for 14,645 reconcile lock events
+in its logged 133-second interval; these were not 449 distinct source jobs.
+The recovery pass revisited physical sources across recovery records and
+files/photos/albums/grades/copies. `maintain` offered groups of 16, but
+`reconcile` split them back into individual paths and slept after each lock.
+Streaming mark reads also reconciled unchanged paths, and indexing remembered
+facts one path per transaction. Pins trigger/restart indexing; opening a
+folder triggers streaming reads and restarts that index generation. They
+amplified the same recovery work rather than independently developing every
+photo thousands of times.
+
+Built in this commit: deduplicate physical sources during full recovery;
+coalesce reconcile into at most 16 paths per lock; yield background batches
+to visible-source demand; avoid reconciling unchanged mark reads; index facts
+in bounded groups of 16. Memory sampling/admission have dedicated workers;
+slow, coalesced disk reclamation has its own worker. Source ownership renews
+every ten seconds during GPU waits and publication, addressing the expired
+source-preparation messages. No budget, share or concurrency setting changes.
+
+"Saving preview data" included real contention. Captured worker stacks showed
+publication and reclamation blocked on LibraryCache's shared lock while an
+over-budget trim rescanned the entire disk cache twice. Publication now uses
+its existing SQLite size ledger plus recorded access ages, evicting one LRU
+family at a time and releasing the lock between families. Explicit Settings
+usage/recovery can still reconcile disk drift. RGB handoffs send the same
+clipped half-precision values already stored by the NPZ cache, reducing body
+copies; the backend accepts two- or four-byte samples and rejects nonfinite
+samples. Behavioral checks compare the persisted planes with the existing
+float32-to-half result. Chromium also receives the existing controller's
+pressure notification so native transfer allocations can be reclaimed.
+
+IMG_0267.JPG (2400 x 1801) needed **190,786,160 bytes** of actual direct-scene
+GPU buffers/textures. The old **188,136,064-byte** estimate omitted overlap
+between source planes, retained reductions, packed textures and readback.
+The estimate now covers these lifetimes: **383,236,864 bytes** reserved in the
+disposable-copy check, one successful development, finished presentation at
+about **8.2 s**. This changes the per-photo estimate, not the GPU allowance.
+
+Validation used a fresh isolated `test-` profile, 2560 x 1440, disposable copies
+of 60 selected files (44 HEIC, 8 JPG, 4 PNG, 4 ARW, including IMG_0267), and a
+pinned generated 1,200-file index workload. The index remained enabled and
+indexing while source work ran, yielding to it (done=0 at the snapshot).
+The final stationary/one-scroll capture lasted about 95 seconds:
+
+- First screen: **24/24** finished; last cell at **94.826 s** after open.
+  Cold request-to-finished presentation: median **31.330 s**, range
+  **3.469-93.977 s**.
+- Second screen: **18/18** finished by **95.181 s** after open. Cold request
+  times median **19.789 s**, range **3.469-93.977 s**; many were prepared before
+  scrolling. These are **42 cell observations, 29 distinct photos**, because
+  the two captured viewports overlap by 13 photos. Camera previews are kept
+  separate from finished shader presentations.
+- No failed cells, development restarts, expired-source failures, page errors
+  or memory-controller errors. All 26 measured RGB GPU peaks fit reservations.
+- **190 memory polls**, **zero timeouts**; p95 **127.8 ms**, maximum **336.5 ms**.
+- Reconcile: **53 lock holds**, **252 ms total**, maximum hold **16 ms**,
+  maximum wait **32 ms**; **50 recovery-piece events**. Fresh-profile counts
+  are not a replay of Steve's large historical recovery database.
+- Independent whole-app process-tree peak: **3,826,597,295 bytes**, below the
+  unchanged 4,000,000,000-byte ceiling. All three protected-project hashes
+  stayed unchanged. Originals under D:/Photos were read/copied only.
+
+Remaining cold-development times (medians; stage medians do not sum exactly):
+
+| Format | Decode/prepare | Source request incl. transfer | GPU-stage interval | Saving/handoff | Whole development |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| HEIC, 17 developments | 0.991 s | 1.481 s | 4.178 s | 0.880 s | 6.695 s |
+| JPG, 5 developments | 0.007 s | 0.081 s | 0.908 s | 0.289 s | 1.451 s |
+
+HEIC handoff max is **1.385 s**, versus the reported old median 3.2 s/max
+9.8 s. Backend handoff substage medians are about 7 ms request framing,
+33 ms accept/pack, and 7 ms describe; the larger frontend handoff includes
+transport and both preview sizes. The HEIC GPU interval includes GPU waiting,
+upload, shaders, readback and half conversion: readback/conversion alone is
+**2.912 s** median. It must not be described as four seconds of shader work.
+GPU development remains effectively serial; two source preparations can
+pipeline decode/transport around it. The expensive RAW cells can wait behind
+lighter work despite being visible. Recommendation: keep one GPU development
+at a time for Steve's retry; more simultaneous large photos risks the ceiling.
+First reduce readback/conversion and visible-queue delay before increasing
+concurrency. A faster native conversion and a reservation-top-up experiment
+were discarded: they respectively exceeded the ceiling and blocked progress.
+The retained implementation has neither change.
+
+The first screen now finishes within the original 133-second blank/stalled
+window, but 95 seconds is still slow. This is a short sample, not a controlled
+before/after latency qualification or a complete 449-photo memory guarantee;
+OS file cache was not flushed. Steve's full-folder manual retry is next.
+
+Evidence: `codebase/output/cold-mixed/final/` holds `report.json`,
+`summary.json`, `cell-timings.csv` (every observation's request/finished time),
+`screen.png`, `backend.log`, and independent `memory.jsonl`;
+`contention-stacks.txt` preserves the blocked-cache stack evidence; `jpeg/` holds the
+focused disposable IMG_0267 check. The reusable measurement helper is
+`codebase/tools/measure-library-cold-mixed.cjs`. No drivers, endurance run,
+merge, push, protected-project save or installer build.
+
+Fast checks: full Python **2,749 passed, four failed, three skipped**. Existing
+failures remain: scoped-preset source contract, RGB description's None fixture,
+Grade frame-cache retention, and retouch CaptureCache's missing `defer_store`.
+Focused final backend checks passed except that same RGB fixture (123 pass,
+one known failure); final control/cache checks: **36 passed**, including no-rescan eviction. JavaScript full suite: **672 passed, three known fixture failures**: two
+library-scenes error cases lack a source identity, and Single lacks
+HDRLibraryScreenPreviews. Focused reservation/pressure checks: **14 passed**. Detailed
+counts and logs remain in `codebase/output/cold-mixed-*.log`.
+
+Output started and ended at **2.1 GB** (100 GB limit). Owned temporary
+photo/profile/pytest scratch was removed; only linked small evidence remains.
+Committed locally on `library-big-folder`; stop for Steve's retry.

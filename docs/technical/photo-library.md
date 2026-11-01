@@ -810,7 +810,8 @@ lens name is missing for some cameras (PRD open decision 15).
   denoise. They are for browsing; Grade and export use the full route.
 - Each picture is cached in `library-pictures\`. The cache is limited to
   **2 GB**. When it goes over, the pictures used longest ago are removed
-  until it is back to 90% of the limit.
+  until it is back to 90% of the limit. All disk and RAM allowances are
+  listed in [memory-and-caches](../product/modules/memory-and-caches.md).
 - A cached picture is tied to the photo's path, size and modified date. If
   the photo changes, a new picture is made and the old one ages out.
 - A damaged cache file is deleted and made again without a message.

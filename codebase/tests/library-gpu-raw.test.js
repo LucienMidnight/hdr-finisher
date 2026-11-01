@@ -2,18 +2,24 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 require('../frontend/library-gpu-raw.js');
 const { quantile, reducedSize } = globalThis.HDRLibraryGpuRaw;
+function compileScheduled(context,fn){
+ const original=context.gpu;
+ context.gpu=async()=>({...await original(),device:{pushErrorScope(){},popErrorScope:async()=>null}});
+ context.gpuFailures=new Map();context.activeGpuWorks=new Map();context.decodedSources=new Map();
+ require('node:vm').runInNewContext(fn+';this.run=scheduledDevelopment;',context);
+}
 
 test('Library releases finished cache memory before accepting a RAW budget refusal', async () => {
   const fs=require('node:fs'),vm=require('node:vm');
   const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
-  const fn=source.slice(source.indexOf('  async function scheduledDevelopment('),source.indexOf('  async function develop(path,'));
+  const fn=source.slice(source.indexOf('  function allocationScope('),source.indexOf('  async function develop(path,'));
   let held=80,drawn=0;const order=[];
   const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
     serial:task=>task(),gpu:async()=>{},rawBudget:()=>60,
     root:{HDRLibraryScenes:{reclaim:async(bytes,required)=>{assert.equal(required,true);held=0;order.push('reclaim');},stage(){}}},
     fetch:async(_url,options)=>{if(options.method==='DELETE')return {};order.push('lease');return {ok:true,json:async()=>held+60>100?{fallback:'budget'}:{granted:true}};},
     developRaw:async()=>{drawn++;order.push('GPU');return {timings:{}};}};
-  vm.runInNewContext(fn+';this.run=scheduledDevelopment;',context);
+  compileScheduled(context,fn);
   await context.run({meta:{},edges:[640,2560],background:true},new AbortController().signal);
   assert.equal(drawn,1);assert.deepEqual(order,['reclaim','lease','GPU']);
 });
@@ -21,7 +27,7 @@ test('Library releases finished cache memory before accepting a RAW budget refus
 test('a second development waits at the GPU broker, not behind the first in this window', async () => {
   const fs=require('node:fs'),vm=require('node:vm');
   const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
-  const fn=source.slice(source.indexOf('  async function scheduledDevelopment('),source.indexOf('  async function develop(path,'));
+  const fn=source.slice(source.indexOf('  function allocationScope('),source.indexOf('  async function develop(path,'));
   const started=[];let release;
   const held=new Promise(resolve=>{release=resolve;});
   const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
@@ -29,7 +35,7 @@ test('a second development waits at the GPU broker, not behind the first in this
     root:{HDRLibraryScenes:{stage(){}}},
     fetch:async(_url,options)=>{if(options.method==='DELETE')return {};return {ok:true,json:async()=>({granted:true})};},
     developRaw:async({meta})=>{started.push(meta.path);await held;return {timings:{}};}};
-  vm.runInNewContext(fn+';this.run=scheduledDevelopment;',context);
+  compileScheduled(context,fn);
   const signal=new AbortController().signal;
   const first=context.run({meta:{path:'a'},edges:[640]},signal);
   const second=context.run({meta:{path:'b'},edges:[640]},signal);
@@ -43,7 +49,7 @@ test('the developed handoff frames the header and planes the backend unframes', 
   const { handoffBody } = globalThis.HDRLibraryGpuRaw;
   const planes = [new Float32Array([0.1, 0.2, 0.3]).buffer, new Float32Array([0.4, 0.5]).buffer];
   const header = { path: 'C:/photos/photo.ARW', identity: ['12', '34'], edge: 640 };
-  const bytes = new Uint8Array(await handoffBody(header, planes).arrayBuffer());
+  const bytes = new Uint8Array(handoffBody(header, planes));
   const length = new DataView(bytes.buffer).getUint32(0, true);
   assert.equal((4 + length) % 4, 0, 'Payload stays 4-byte aligned');
   assert.deepEqual(JSON.parse(new TextDecoder().decode(bytes.subarray(4, 4 + length))), header);
@@ -105,7 +111,8 @@ test('DNG reservation fits one-plane reduction without raising shared budgets',(
  const bytes=HDRLibraryGpuRaw.rawBudget(meta);
  assert.ok(bytes<320*1024*1024);
  assert.ok(bytes>=8000*6000*4+6000*2560*4+1920*2560*8);
- assert.equal(HDRLibraryGpuRaw.rawBudget({...meta,dng_warp:undefined}),8000*6000*44+64*1024*1024);
+ assert.equal(HDRLibraryGpuRaw.rawBudget({...meta,dng_warp:undefined}),8000*6000*28+64*1024*1024);
+ assert.equal(HDRLibraryGpuRaw.rawBudget({...meta,dng_warp:undefined,repairs:[{}]}),8000*6000*44+64*1024*1024);
 });
 
 test('DNG footprints enclose independent per-channel maps across off-centre and non-monotone warps',()=>{
@@ -126,4 +133,93 @@ test('DNG footprints enclose independent per-channel maps across off-centre and 
    }
   }
  }
+});
+
+test('memory admission waits, reclaims and retries the same GPU development',async()=>{
+ const vm=require('node:vm'),fs=require('node:fs');
+ const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+ const fn=source.slice(source.indexOf('  function allocationScope('),source.indexOf('  async function develop(path,'));
+ let leases=0,reclaims=0,developments=0;
+ const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
+  gpu:async()=>({state:{lost:false}}),rawBudget:()=>60,wait:async()=>{},forgetDirect(){},
+  root:{HDRLibraryScenes:{reclaim:async()=>{reclaims++;},stage(){},snapshot:()=>({draws:{active:0}})}},
+  fetch:async(_url,options)=>({ok:true,json:async()=>++leases===1?{granted:false,waiting:'memory'}:{granted:true}}),
+  developRaw:async()=>{developments++;return {timings:{}};}};
+ compileScheduled(context,fn);
+ await context.run({meta:{},edges:[640],background:true},new AbortController().signal);
+ assert.equal(leases,2);assert.equal(reclaims,2);assert.equal(developments,1);
+});
+
+test('yields wait their turn, real failures are explained once, cancellations pass through', async () => {
+ const vm=require('node:vm'),fs=require('node:fs');
+ const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+ const fn=source.slice(source.indexOf('  function allocationScope('),source.indexOf('  async function develop(path,'));
+ for(const kind of ['yield','memory','abort','readonly']){
+  let attempts=0,deletes=0,releases=0;const events=[];
+  const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
+   gpu:async()=>({state:{lost:false}}),rawBudget:()=>60,wait:async()=>{},
+   root:{HDRLibraryScenes:{stage(){}},HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},
+   fetch:async(_url,options)=>{if(options.method==='DELETE')deletes++;else if(JSON.parse(options.body).release)releases++;return {ok:true,json:async()=>({granted:true})};},
+   developRaw:async()=>{
+    attempts++;
+    if(kind==='yield'){if(attempts>4)return {developed:true};throw Object.assign(Error('Yielding GPU RAW to shared work.'),{yieldRaw:true});}
+    if(kind==='abort')throw new DOMException('Cancelled','AbortError');
+    if(kind==='readonly')throw new DOMException('mapAsync failed','OperationError');
+    throw Error('RGB preparation exceeds the reserved memory budget.');}};
+  compileScheduled(context,fn);
+  const run=context.run({meta:{path:'photo.arw'},edges:[640]},new AbortController().signal);
+  const failed=events=>events.filter(e=>e.stage==='picture_development_failed').length;
+  if(kind==='yield'){
+   // Four yields to more urgent work are not failures: the fifth turn finishes.
+   assert.deepEqual(await run,{developed:true});
+   assert.equal(attempts,5);assert.equal(releases,4);assert.equal(failed(events),0);
+   const restarts=events.filter(e=>e.stage==='picture_development_restart');
+   assert.equal(restarts.length,4);assert.ok(restarts.every(e=>e.reason&&e.attempt));
+  } else if(kind==='abort'){
+   await assert.rejects(run,error=>error.name==='AbortError'&&error.message==='Cancelled');
+   assert.equal(failed(events),0);assert.equal(events.at(-1).work_stage,'cancelled');
+  } else {
+   await assert.rejects(run,error=>/^Development stopped after 1 attempt: (RGB preparation|mapAsync failed)/.test(error.message)&&!!error.cause?.message);
+   assert.equal(attempts,1);assert.equal(failed(events),1);assert.equal(releases,0);
+   assert.equal(events.at(-1).stage,'picture_development_outcome');
+  }
+  assert.equal(deletes,1);
+ }
+});
+
+
+test('small RGB direct scene reservation covers source, reductions and retained textures',()=>{
+ const estimate=globalThis.HDRLibraryGpuRaw.rawBudget({rgb:true,width:2400,height:1801,colour:{authored_sdr:true}},[640,2560]);
+ assert.ok(estimate>=190_786_160,'IMG_0267 measured peak must fit');
+});
+
+
+test('a finished GPU frees a local place while that photo is still saving',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm');
+ const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+ const fn=source.slice(source.indexOf('  const LIMIT = 2'),source.indexOf('  // The grid and the filmstrip'));
+ const context={DOMException};vm.runInNewContext(fn+';this.add=(job)=>{waiting.push(job);pump();};',context);
+ const started=[],finished=[];let gpuDone,saveDone;
+ const saving=new Promise(r=>saveDone=r),tasks=[];
+ const add=(name,hold=false)=>tasks.push(new Promise((resolve,reject)=>context.add({signal:new AbortController().signal,importance:()=>10,resolve,reject,
+  task:async release=>{started.push(name);if(hold){gpuDone=release;await saving;}finished.push(name);}})));
+ add('a',true);add('b',true);add('c');
+ await new Promise(r=>setImmediate(r));assert.deepEqual(started,['a','b']);
+ gpuDone();await new Promise(r=>setImmediate(r));
+ assert.deepEqual(started,['a','b','c']);assert.deepEqual(finished,['c']);
+ saveDone();await Promise.all(tasks);
+});
+
+test('cooperative uploads preserve aligned source bytes and allow cancellation between copies',async()=>{
+ const vm=require('node:vm'),fs=require('node:fs');let clock=0,yields=0,stop=false;
+ const context={performance:{now:()=>clock},DOMException,Uint8Array,ArrayBuffer,
+  setTimeout:resolve=>{yields++;if(stop)controller.abort();resolve();}};
+ vm.runInNewContext(fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8'),context);
+ const upload=context.HDRLibraryGpuRaw.shared.uploadBuffer;
+ const source=new Uint8Array(8*1024*1024+32).fill(71),view=source.subarray(8,source.length-8),target=new Uint8Array(view.length);
+ const device={queue:{writeBuffer:(_,offset,body,start,count)=>{target.set(new Uint8Array(body,start,count),offset);clock+=5;}}};
+ await upload(device,{},view);assert.deepEqual(target,view);assert.ok(yields>=2);
+ const controller=new AbortController();stop=true;target.fill(0);
+ await assert.rejects(upload(device,{},view,view.length,controller.signal),{name:'AbortError'});
+ assert.equal(target[0],71);assert.equal(target.at(-1),0);
 });

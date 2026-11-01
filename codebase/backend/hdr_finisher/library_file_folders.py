@@ -4,7 +4,7 @@ import json
 import os
 from pathlib import Path
 from uuid import uuid4
-from .desktop_security import SOURCE_EXTENSIONS
+from .file_gate import SOURCE_EXTENSIONS, is_photo_name
 from .library_folder_commands import folder_name
 from .library_file_io import signature, digest, same, occupied, rename, durable, relocated, stable_ids, read_guard, check_streams
 from .library_file_state import snapshot, mapped, document_paths, retarget, pictures
@@ -53,7 +53,7 @@ def plan(service,request):
                 if any(Path(parent,n).is_symlink() for n in dirs+names): raise ValueError('This folder contains a link and was left alone.')
                 for name in names:
                     source=Path(parent,name);files.append({'path':str(source),'stamp':signature(source),'hash':digest(source)})
-                    if source.suffix.lower() not in SOURCE_EXTENSIONS: continue
+                    if not is_photo_name(source.name): continue
                     service.marks.conflicts.scan([str(source)])
                     if any(str(source)+'.hdrf' in c['files'] or c.get('photo')==str(source) for c in service.marks.conflicts.status()):
                         raise ValueError('More than one settings file was found inside this folder. The folder was left alone.')

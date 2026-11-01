@@ -6862,6 +6862,11 @@ body[data-workflow="grade"] .import-workflow-panel { display: none; }
   line-height: 1.5;
 }
 
+/* A long file name without spaces must break inside the rail, not widen
+   the summary (and the note under it) past the rail's edge. */
+.source-summary { grid-template-columns: minmax(0, 1fr); }
+.source-summary > * { min-width: 0; overflow-wrap: anywhere; }
+
 .disclosure-panel {
   border-top: 0;
   border-bottom: 1px solid var(--hairline);

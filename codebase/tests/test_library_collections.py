@@ -255,8 +255,11 @@ def test_background_indexing_reaches_a_pinned_folder_never_visited(tmp_path):
     exif = Image.Exif()
     exif[272] = "ILCE-7RM3"
     exif[34665] = {36867: "2024:02:03 04:05:06", 34855: 800}
-    Image.new("RGB", (16, 8)).save(folder / "dated.jpg", exif=exif)
-    Image.new("RGB", (16, 8)).save(folder / "plain.png")
+    # Padding keeps these tiny stand-ins over the file gate's 1 KB minimum.
+    from PIL.PngImagePlugin import PngInfo
+    padding = PngInfo(); padding.add_text("padding", "x" * 2048)
+    Image.new("RGB", (16, 8)).save(folder / "dated.jpg", exif=exif, comment=b"x" * 2048)
+    Image.new("RGB", (16, 8)).save(folder / "plain.png", pnginfo=padding)
     marked = LibraryMarks(tmp_path / "elsewhere")
     marked.change([folder / "plain.png"], MarkChange(rating=5, add_tag="Birds"))
     marked.writer.drain()  # Files catch up separately from the command.

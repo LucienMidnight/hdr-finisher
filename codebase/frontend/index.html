@@ -1775,6 +1775,11 @@
           <p class="helper">Auto uses WebGPU when available and falls back safely. CPU compatibility keeps preview rendering on the backend; export quality is unchanged.</p>
           <label class="checkbox-row settings-faster-dragging" title="For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected."><input id="settings-faster-dragging" type="checkbox"> Faster dragging</label>
           <p class="helper">Off (recommended): the preview shows full detail at every moment, including while you drag a slider or zoom. Turn this on only if dragging feels jerky on your computer: while you drag, the image may look softer, and it sharpens as soon as you let go. Exports, peak readings and delivery checks are never affected.</p>
+          <label class="settings-field">Memory the app may use (GB)
+            <input id="settings-app-memory" type="number" min="2.5" step="0.1" inputmode="decimal">
+          </label>
+          <div class="button-row"><button id="settings-app-memory-default" type="button" class="button-secondary">Use default</button></div>
+          <p id="settings-app-memory-status" class="helper" aria-live="polite">Loading this computer's memory limit…</p>
           <label class="settings-field">Maximum GPU memory for previews
             <select id="settings-gpu-memory-limit">
               <option value="auto">Auto · up to half of your graphics card's memory</option>

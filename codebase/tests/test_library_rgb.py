@@ -256,7 +256,8 @@ def test_precision_hdr_backend_failure_has_explicit_fallback(tmp_path,monkeypatc
 
 
 @pytest.mark.parametrize("authored",[False,True])
-def test_precision_publication_matches_grade_document(tmp_path,authored):
+@pytest.mark.parametrize('sample_bytes', [2, 4])
+def test_precision_publication_matches_grade_document(tmp_path,authored,sample_bytes):
     import tifffile
     from hdr_finisher.library_pictures import LibraryPictureCache
     path=tmp_path/"photo.tif"
@@ -277,14 +278,19 @@ def test_precision_publication_matches_grade_document(tmp_path,authored):
         robust={"channel":a.robust_peak_linear,"luma":a.robust_peak_luma_linear,"bt2020":a.robust_peak_bt2020_linear})
     planes=[expected.image.transpose(2,0,1)]
     if authored:planes.append(expected.sdr_reference_image.transpose(2,0,1))
-    body=np.concatenate(planes).astype("<f4").tobytes()
+    body=np.concatenate(planes).astype("<f2" if sample_bytes == 2 else "<f4").tobytes()
+    header["sample_bytes"] = sample_bytes
     cache=LibraryPictureCache(tmp_path/"cache")
     result=library_rgb.developed(cache,path,header,body)
     assert result["has_reference"]==authored
     assert cache.default_document(path)==expected.edit_document().model_dump(mode="json")
+    with np.load(cache.file(result['key']), allow_pickle=False) as stored:
+        np.testing.assert_array_equal(stored['pixels'], np.clip(expected.image, 0, 65504).astype(np.float16))
+        if authored:
+            np.testing.assert_array_equal(stored['reference'], np.clip(expected.sdr_reference_image, 0, 65504).astype(np.float16))
 
 @pytest.mark.parametrize("transfer,bits,dtype",[("sRGB",8,"uint8"),("PQ",12,"uint16"),("HLG",16,"uint16"),("PQ",32,"float32")])
-def test_jxl_samples_precision_gate_and_normalized_override_order(tmp_path, transfer, bits, dtype):
+def test_jxl_samples_precision_gate_and_normalized_override_order(tmp_path, monkeypatch, transfer, bits, dtype):
     import sys
     sys.path.insert(0,str(Path(__file__).parent/'helpers'))
     from library_codec_samples import marked_jxl
@@ -308,9 +314,12 @@ def test_jxl_samples_precision_gate_and_normalized_override_order(tmp_path, tran
     assert overridden['colour']['transfer']=='BT.709' and overridden['colour']['eotf_applied']
     # The marker is required even when libjxl can decode the samples.
     path.write_bytes(__import__('imagecodecs').jpegxl_encode(np.zeros((5,8,3),np.uint8),lossless=True))
-    with pytest.raises(library_rgb.NotEligible,match='primaries'):library_rgb.decoded(path,recipe(None))
+    def forbidden_decode(*args, **kwargs):
+        pytest.fail('Unresolved JPEG XL must be rejected from the header')
+    monkeypatch.setattr(library_rgb.loader, 'decode_jpegxl', forbidden_decode)
+    with pytest.raises(library_rgb.NotEligible): library_rgb.decoded(path, recipe(None))
     inputs['interpretation_override']['color_space']=None
-    with pytest.raises(library_rgb.NotEligible,match='primaries'):library_rgb.decoded(path,inputs)
+    with pytest.raises(library_rgb.NotEligible): library_rgb.decoded(path, inputs)
 
 
 def test_plain_avif_rejects_gainmap_before_primary_decode(tmp_path,monkeypatch):
@@ -536,6 +545,9 @@ def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, 
         assert accepted.status_code == 200
         assert accepted.json()["key"] == described["key"]
         assert accepted.json()["adjustments"] == described["adjustments"]
+        assert accepted.json()["direct_supported"]
+        plan = client.post("/api/library/live-plan", json={"path":str(photo),"edge":640}).json()
+        assert accepted.json()["render_identity"] == plan["render_identity"]
         assert client.post("/api/library/live-store/"+described["key"]).status_code == 200
         assert list(profile.rglob("*.npz"))
         old = client.post("/api/library/live-plan",json={"path":str(photo),"edge":640}).json()
@@ -547,3 +559,61 @@ def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, 
         new = client.post("/api/library/live-plan",json={"path":str(photo),"edge":640}).json()
         assert old["source_identity"] == new["source_identity"]
         assert old["render_identity"] != new["render_identity"]
+
+
+def test_unresolved_jpegxl_is_refused_before_pixel_decode(tmp_path, monkeypatch):
+    from hdr_finisher import jpegxl
+    from hdr_finisher.library_gpu_raw import NotEligible
+    path = tmp_path / 'unknown.jxl'
+    path.write_bytes(b'header fixture')
+    monkeypatch.setattr('hdr_finisher.file_gate.decode_suffix', lambda path: '.jxl')
+    monkeypatch.setattr(jpegxl, 'inspect_jpegxl', lambda path: {'app_metadata': None})
+    def pixels(*args, **kwargs):
+        pytest.fail('Unresolved JPEG XL must not decode pixels')
+    monkeypatch.setattr(library_rgb.loader, 'decode_jpegxl', pixels)
+    with pytest.raises(NotEligible, match='Not supported: JPEG XL source colour is unresolved'):
+        library_rgb.decoded(path, recipe(None))
+
+
+def test_xtrans_is_refused_before_sensor_unpack(tmp_path, monkeypatch):
+    import rawpy, struct
+    from hdr_finisher import library_gpu_raw
+    path = tmp_path / 'xtrans.raf'
+    header = bytearray(108); header[:16] = b'FUJIFILMCCD-RAW '
+    struct.pack_into('>II', header, 92, 108, 44)
+    path.write_bytes(header + struct.pack('>IHH', 1, 0x0131, 36) + bytes([0, 1, 2]*12))
+    def decoder(*args, **kwargs):
+        pytest.fail('X-Trans header refusal must not open the sensor decoder')
+    monkeypatch.setattr(rawpy, 'RawPy', decoder)
+    with pytest.raises(library_gpu_raw.NotEligible, match='Not supported: X-Trans'):
+        library_gpu_raw.sensor(path)
+
+
+def test_raf_header_without_xtrans_and_truncated_tags_are_not_guessed(tmp_path):
+    import struct
+    from hdr_finisher.library_gpu_raw import _xtrans_raf
+    path=tmp_path/'bayer.raf'
+    header=bytearray(108);header[:16]=b'FUJIFILMCCD-RAW '
+    struct.pack_into('>II',header,92,108,12)
+    path.write_bytes(header+struct.pack('>IHH',1,0x0130,4)+bytes(4))
+    assert not _xtrans_raf(path)
+    path.write_bytes(path.read_bytes()[:-1])
+    assert not _xtrans_raf(path)
+
+@pytest.mark.parametrize("resolved,override", [(False,False),(True,False),(False,True)])
+def test_exr_header_interpretation_gate_precedes_pixels(tmp_path, monkeypatch, resolved, override):
+    import OpenEXR, Imath
+    path=tmp_path/"source.exr"
+    header=OpenEXR.Header(2,2)
+    if resolved: header["colorInteropID"]=b"lin_rec2020_scene"
+    out=OpenEXR.OutputFile(str(path),header)
+    out.writePixels({channel:np.zeros(4,np.float32).tobytes() for channel in "RGB"})
+    out.close()
+    monkeypatch.setattr(library_rgb.loader,"_load_exr",lambda *a,**k:pytest.fail("header gate decoded pixels"))
+    inputs=recipe(None)
+    if override: inputs["interpretation_override"]["color_space"]="ACEScg"
+    if not resolved and not override:
+        with pytest.raises(ValueError,match="Unresolved source primaries"):
+            library_rgb.preflight_interpretation(path,inputs)
+    else:
+        library_rgb.preflight_interpretation(path,inputs)

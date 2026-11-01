@@ -10,12 +10,16 @@
       if (release) dispose(entry.value);
       return entry.value;
     }
+    root.HDRLibraryRAM?.register('thumbnails','thumbnails',()=>bytes,target=>{
+      for(const key of entries.keys()){if(bytes<=target)break;remove(key);}
+    });
     return Object.freeze({
       put(key, value, size) {
         remove(key);
         if (!(size > 0) || size > limit) { dispose(value); return; }
         entries.set(key, {value, bytes:size}); bytes += size;
         while (bytes > limit) remove(entries.keys().next().value);
+        root.HDRLibraryRAM?.enforce();
       },
       take:key => remove(key, false),
       values:() => [...entries.values()].map(entry => entry.value),

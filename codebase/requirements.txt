@@ -6,6 +6,8 @@ Pillow>=10.4,<12.0
 pydantic>=2.8,<3.0
 tifffile>=2026.6.1,<2027.0
 imagecodecs>=2026.6.26,<2027.0
+pyvips[binary]==3.2.0
+pyvips-binary==8.18.7
 imageio>=2.36
 colour-science>=0.4.6
 openexr>=3.2.4

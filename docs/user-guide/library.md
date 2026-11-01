@@ -20,6 +20,22 @@ Right-click a folder for more: **Check for new photos**, **New folder inside…*
 
 The Library keeps pinned folders up to date in the background. If you copy new photos in, they appear shortly. You can also choose **Check for new photos** from the folder menu or the **…** (More) menu.
 
+### Which files the Library shows
+
+The Library shows these file types: JPEG (`.jpg`, `.jpeg`), PNG, TIFF (`.tif`, `.tiff`), HEIC and HEIF, AVIF, JPEG XL (`.jxl`), OpenEXR (`.exr`), Radiance HDR (`.hdr`), PFM, DNG, and camera RAW files: Sony `.arw`, Canon `.cr2` and `.cr3`, Nikon `.nef` and `.nrw`, Fujifilm `.raf`, Panasonic `.rw2`, Olympus `.orf` and `.ori`, Pentax `.pef` and Samsung `.srw`.
+
+It leaves out files that are not photos, even when they have a photo extension:
+
+- Names that start with `.` or `~`, such as the `._` files macOS leaves on other drives and temporary files from other apps. A name that starts with `_`, like Sony's `_DSC0001.ARW`, is a normal photo.
+- Files and folders that Windows marks as hidden or system.
+- Folders for trash, snapshots and thumbnails, and any folder whose name starts with `.` or `~`. Named ones include `$RECYCLE.BIN`, `System Volume Information`, `#recycle`, `@Recycle`, `@eaDir`, `#snapshot` and `__MACOSX`.
+- Files smaller than 1 KB.
+- Links and shortcuts to other folders (symbolic links and junctions). They are not followed.
+
+A file whose contents turn out not to be a picture (for example, a web page saved with a `.jpg` name) appears once under **Needs attention** as "Not a valid photo". It is not tried again until the file changes. A photo that is still being copied waits until the copy finishes.
+
+**Online-only cloud files.** OneDrive, Dropbox, iCloud and Google Drive can keep a photo online and leave only a placeholder on your computer. The Library shows these as **Not downloaded** and never downloads them while you browse. Open one in Single or Grade to download it.
+
 ## Ways to look at your photos
 
 The buttons at the top of the Library switch the view.
@@ -257,3 +273,36 @@ If you move a photo outside the app, move its `.hdrf` file with it. A photo with
 - [Quick start](../getting-started/quick-start.md)
 - [Export and Delivery](export.md)
 - [Photo Library: how it works](https://github.com/LucienMidnight/hdr-finisher/blob/main/docs/technical/photo-library.md) (technical detail, on GitHub)
+
+## When Grade is using the available memory
+
+A very large photo can keep Grade's source in memory while you browse.
+Small visible photos and quick previews can continue, but another large
+photo may show **Waiting: memory in use by the photo open in Grade**.
+Activity shows **Library paused: memory is in use by photo.dng in Grade**.
+
+Open Activity and choose **Close photo in Grade** to resume that work.
+The app finishes and saves your pending edits before closing the photo.
+If saving fails, the photo stays open and the error is shown. You can keep
+working in Grade while Library jobs wait.
+
+**Waiting: not enough free memory on this computer** means other memory
+use leaves too little room after the system reserve. Waiting is not a
+failed photo; work resumes when enough memory is available.
+
+### Unsupported photos, interrupted decoders and offline folders
+
+A camera preview can remain visible when full development is unavailable.
+The Library now explains these cases:
+
+- “Not supported: JPEG XL source colour is unresolved. Open it in Grade to choose its source interpretation.”
+- “Not supported: X-Trans sensor development is not available in the Library. The camera preview is kept when available.”
+- “The photo decoder stopped while reading this file. The file was set aside; other photos continue.”
+- “The photo decoder took too long. The file was set aside; other photos continue.”
+- “This folder is offline. Reconnect the drive, then open the folder again.”
+
+An offline read is not recorded as a broken photo. Affected pinned folders dim.
+After reconnecting the drive, return to the Library window or reopen the folder
+to retry. Hidden/minimised windows give foreground Library work priority; showing
+the window restores its previous work classes. Very large pictures that require
+the unfinished bounded route can still wait; that work is not complete.

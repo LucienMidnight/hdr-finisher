@@ -13,6 +13,10 @@ from uuid import uuid4
 from .library_diagnostics import log, problem
 
 
+class DecoderTimeout(ValueError):
+    """A retryable deadline, never a broken-photo receipt."""
+
+
 class LibraryWorker:
     def __init__(self, root: Path) -> None:
         self.root = Path(root).resolve()
@@ -22,8 +26,12 @@ class LibraryWorker:
         self._reader = None
         self._ready = Event()
         self._pending: dict[str, Future] = {}
+        self._reclaims = {}
         self._requests = {}
         self._work = {}
+        self._active = set()
+        self._deadline_sample = time.monotonic()
+        self._identified_failure = False
         self._stop = Event()
         self._restarts = 0
         self._recovering = False
@@ -88,9 +96,23 @@ class LibraryWorker:
                         return
                     self._ready.clear()
                     self._recovering = True
-                    self._work.clear()
+                    active = list(self._active)
                     process = self._process
                     self._connection = None
+                # EOF can arrive just before Windows reports the process exit.
+                # Observe natural exit before attributing a crash; a protocol
+                # error in a still-live helper must not accuse an active photo.
+                if process is not None:
+                    process.join(timeout=3)
+                with self._lock:
+                    if (not self._identified_failure and len(active) == 1
+                            and active[0] in self._pending
+                            and self._requests[active[0]].get("command") in {"thumbnail", "picture", "native", "live-scene", "live-fallback"}
+                            and process is not None and process.exitcode not in (None, 0)):
+                        self._set_aside(active[0], "The photo decoder stopped while reading this file. The file was set aside; other photos continue.")
+                    self._work.clear()
+                    self._active.clear()
+                    self._identified_failure = False
                     log("helper_stopped", reason=repr(error), pending=len(self._pending), action="waiting requests retained; Grade unaffected")
                 # Dispose the failed generation before launching another. Never
                 # hold the control lock during process joins or restart backoff.
@@ -250,11 +272,71 @@ class LibraryWorker:
             except (EOFError, OSError) as error:
                 log("helper_control_failed", operation=message["command"], reason=str(error), action="reader fails waiting requests when pipe closes")
 
+    def reclaim_waiting(self, needed):
+        token, done = uuid4().hex, Event()
+        with self._lock:
+            if self._connection is None or self._closed or self._failure: return 0
+            self._reclaims[token] = done
+            self._send(dict(command="memory-pressure", level="shortage", request=token, needed=needed))
+        try:
+            while not done.wait(.25):
+                if self._stop.is_set() or not self._process.is_alive():
+                    raise RuntimeError("Helper stopped during cache reclamation")
+            return done.released
+        finally:
+            with self._lock: self._reclaims.pop(token, None)
+
+    @staticmethod
+    def decoder_timeout(path):
+        # Steve approved per-type baselines scaled by source size, capped at
+        # five minutes of active work. Queueing and Grade pauses are excluded.
+        suffix = Path(path or "").suffix.lower()
+        baseline = {".dng": 135, ".avif": 81, ".exr": 16, ".png": 15,
+                ".jxl": 6, ".raf": 17, ".heic": 9, ".heif": 9,
+                ".jpg": 5, ".jpeg": 5, ".tif": 5, ".tiff": 5,
+                ".arw": 5, ".cr2": 5, ".cr3": 5, ".orf": 5,
+                ".rw2": 5, ".nef": 5, ".hdr": 5, ".pfm": 5}.get(suffix, 135)
+        try:
+            from .library_estimates import dimensions
+            width,height=dimensions(path)
+            return min(300., baseline * max(1., width*height/24_000_000))
+        except Exception:
+            return baseline
+
+    def _set_aside(self, key, reason, timed_out=False):
+        request = self._requests.pop(key, {})
+        future = self._pending.pop(key, None)
+        self._work.pop(key, None)
+        if future is not None and not future.done():
+            from .media_browser import MediaBrowserError
+            future.set_exception(DecoderTimeout(reason) if timed_out else MediaBrowserError(reason))
+        log("helper_file_set_aside", path=request.get("path"), reason=reason,
+            action="file not replayed; remaining requests recover")
+
+    def _check_deadlines(self):
+        now = time.monotonic()
+        with self._lock:
+            elapsed = now - self._deadline_sample
+            self._deadline_sample = now
+            for key, work in list(self._work.items()):
+                request = self._requests.get(key, {})
+                if request.get("command") not in {"thumbnail", "picture", "native", "live-scene", "live-fallback"}:
+                    continue
+                if not self._paused:
+                    work["elapsed"] = work.get("elapsed", 0) + elapsed
+                if work.get("elapsed", 0) > self.decoder_timeout(request.get("path")):
+                    self._identified_failure = True
+                    self._set_aside(key, "This photo took too long. Try again.", timed_out=True)
+                    # The native decoder may not honour cancellation. Restart the
+                    # disposable helper; the timed-out request is never replayed.
+                    raise RuntimeError("Library decoder time limit exceeded")
+
     def _read_results(self, connection) -> None:
         started = time.monotonic()
         ready = False
         try:
             while not self._stop.is_set():
+                self._check_deadlines()
                 if not connection.poll(.25):
                     if not self._process.is_alive():
                         raise RuntimeError(f"helper exited with code {self._process.exitcode}")
@@ -262,24 +344,48 @@ class LibraryWorker:
                         raise RuntimeError("helper did not report ready within 30 seconds")
                     continue
                 message = connection.recv()
+                if message.get('event') == 'memory-reclaimed':
+                    with self._lock:
+                        done = self._reclaims.get(message['request'])
+                        if done:
+                            done.released = message.get('released', 0)
+                            done.set()
+                    continue
+                if message.get('event')=='memory-claim':
+                    from . import app_memory
+                    key='helper-'+str(self._process.pid)+'-'+message['key']
+                    granted=app_memory.claim(key,message['share'],message['bytes'])
+                    if message.get('request'):
+                        with self._lock:
+                            self._send(dict(command='memory-result',request=message['request'],granted=granted))
+                    continue
+                if message.get('event')=='memory':
+                    continue
                 if message.get("event") == "diagnostic":
                     record = message["record"]
                     log(record.pop("event"), **record)
+                    continue
+                if message.get("event") == "job-started":
+                    with self._lock:
+                        self._active.add(message["id"])
                     continue
                 if message.get("event") == "work":
                     with self._lock:
                         if message.get("done"):
                             self._work.pop(message["id"], None)
+                            self._active.discard(message["id"])
                         else:
                             previous = self._work.get(message["id"], {})
                             self._work[message["id"]] = dict(path=message.get("path"), stage=message["stage"],
-                                state=previous.get("state", "running" if message["id"] in self._pending else "stopping"))
+                                state=previous.get("state", "running" if message["id"] in self._pending else "stopping"),
+                                elapsed=previous.get("elapsed", 0))
                     continue
                 if message.get("event") == "ready":
                     log("helper_ready", pid=message.get("pid"))
                     log("helper_start", pid=message.get("pid"), action="helper ready")
                     with self._lock:
                         self._work.clear()
+                        self._active.clear()
                         self.info = message
                         ready = True
                         self._recovering = False
@@ -300,13 +406,22 @@ class LibraryWorker:
                 else:
                     from .media_browser import MediaBrowserError, MediaBrowserInterpretationRequired
                     error = message.get("error", "Library job failed.")
-                    if message.get("reason"):
+                    if message.get("errno") is not None or message.get("winerror") is not None:
+                        exception = OSError(message.get("errno"), error)
+                        if message.get("winerror") is not None:
+                            exception.winerror = message["winerror"]
+                    elif message.get("reason"):
                         exception = MediaBrowserInterpretationRequired(error,
                             reason=message["reason"], profile_name=message.get("profile_name"))
                     else:
                         exception = MediaBrowserError(error)
                     future.set_exception(exception)
         finally:
+            from . import app_memory
+            prefix='helper-'+str(self._process.pid)+'-'
+            with app_memory._lock:
+                for key in list(app_memory._caches):
+                    if key.startswith(prefix):app_memory.forget(key)
             if self._closed:
                 self._ready.set()
 
@@ -331,6 +446,7 @@ class LibraryWorker:
             self._pending.clear()
             self._requests.clear()
             self._work.clear()
+            self._active.clear()
         for future in pending:
             future.cancel()
         if process is not None:
@@ -404,6 +520,24 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
         with write_lock:
             connection.send(message)
 
+    from . import app_memory
+    memory_waiters={}
+    memory_lock=RLock()
+    def remote_claim(key,share,size):
+        # Reductions never wait for a response; pressure callbacks can run on
+        # the helper's message thread. Growth is admitted by the backend owner.
+        if size<=app_memory._caches.get(key,{}).get('bytes',0):
+            reply(dict(event='memory-claim',key=key,share=share,bytes=size))
+            return True
+        request=uuid4().hex;done=Event();value={}
+        with memory_lock:memory_waiters[request]=(done,value)
+        try:
+            reply(dict(event='memory-claim',key=key,share=share,bytes=size,request=request))
+            return done.wait(5) and value.get('granted',False)
+        finally:
+            with memory_lock:memory_waiters.pop(request,None)
+    previous_claim=app_memory._remote_claim
+    app_memory._remote_claim=remote_claim
     from . import library_diagnostics
     library_diagnostics._sink = lambda record: reply({"event": "diagnostic", "record": record})
 
@@ -434,6 +568,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
 
                 from .library_metadata import pause_readers
                 pause_readers(state["paused"] or state["source_busy"] or bool(state["developing"]) or bool(state["scanning"]))
+            reply({"event": "job-started", "id": job["id"]})
             waited = [0.]
             def yielding():
                 wait_started = time.perf_counter()
@@ -463,7 +598,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     previous_stage=last_stage[0], duration_ms=(now-last_stage[1])*1000)
                 last_stage[:] = [stage, now]
                 reply({"event":"work", "id":job["id"], "path":job.get("path"), "stage":text})
-            if job["command"] in {"live-scene", "live-fallback"}: progress("reading", "Reading photo")
+            if job["command"] in {"thumbnail", "picture", "native", "live-scene", "live-fallback"}:
+                progress("reading", "Reading photo")
             check = yielding if kind in {"index", "check", "kept", "stored"} else cancelled.is_set
             try:
                 if job["command"] == "stored-screen-build":
@@ -500,7 +636,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     result = {"id": job["id"], "result": check_kept(job["paths"], check)}
                 elif job["command"] == "metadata":
                     from .library_metadata import read_metadata
-                    result = {"id": job["id"], "result": read_metadata(job["paths"], check, parallel=bool(job.get("background")))}
+                    result = {"id": job["id"], "result": read_metadata(job["paths"], check, parallel=bool(job.get("background")), allow_cloud=job.get("priority") == 0)}
                 elif job["command"] == "scan-page":
                     from .library_folders import scan_page
                     output = scan_page(job["token"], job["path"], check,
@@ -520,6 +656,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 if not isinstance(exc, CancelledError) and not cancelled.is_set():
                     log("picture_helper_job_failed" if kind == "picture" else "helper_job_failed", operation=job["command"], paths=job.get("path", job.get("paths")), reason=repr(exc), action="request failed; saved marks retained")
                 result = {"id": job["id"], "error": str(exc)}
+                if isinstance(exc, OSError):
+                    result.update(errno=exc.errno, winerror=getattr(exc, "winerror", None))
             log(("picture_" if kind == "picture" else "") + ("helper_job_cancelled" if cancelled.is_set() or stopping.is_set() else "helper_job_finished"), job=job["id"], request=job.get("trace_id"), operation=job["command"], edge=job.get("edge"), path=job.get("path"), outcome="cancelled" if cancelled.is_set() or stopping.is_set() else "failed" if "error" in result else "completed", last_stage=last_stage[0], stage_ms=round((time.perf_counter()-last_stage[1])*1000,2), work_ms=round((time.perf_counter()-started-waited[0])*1000, 2), yield_ms=round(waited[0]*1000, 2))
             with condition:
                 jobs.pop(job["id"], None)
@@ -535,6 +673,11 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
             if not cancelled.is_set() and not stopping.is_set():
                 try:
                     reply(result)
+                    from . import app_memory
+                    # The pipe has delivered these bytes; retain source caches until
+                    # their working share or an explicit pressure event trims them.
+                    pictures.trim_memory(0)
+                    reply(dict(event='memory',bytes={k:v['bytes'] for k,v in app_memory.cache_snapshot().items()}))
                 except (EOFError, OSError) as error:
                     library_diagnostics._sink = None
                     log("picture_helper_reply_failed" if kind == "picture" else "helper_reply_failed", operation=job["command"], edge=job.get("edge"), path=job.get("path"), reason=str(error), action="lane exits; parent detects closed helper")
@@ -560,10 +703,27 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
             if not connection.poll(0.25):
                 continue
             message = connection.recv()
+            if message['command']=='memory-result':
+                with memory_lock:waiting=memory_waiters.get(message['request'])
+                if waiting:
+                    waiting[1]['granted']=message['granted'];waiting[0].set()
+                continue
             with condition:
                 if message["command"] == "stop":
                     break
-                if message["command"] == "pause":
+                if message['command']=='memory-budget':
+                    from . import app_memory
+                    app_memory.configure(message['bytes'])
+                    continue
+                if message['command']=='memory-pressure':
+                    from . import app_memory
+                    # Keep receiving owner replies while a cache waits for its lock.
+                    def reclaim(command):
+                        released = app_memory.reclaim(command['level'], command.get('needed'))
+                        if command.get('request'):
+                            reply(dict(event='memory-reclaimed', request=command['request'], released=released))
+                    Thread(target=reclaim,args=(message,),daemon=True).start()
+                elif message["command"] == "pause":
                     state["paused"] = message["paused"]
                     pictures.pause_native(message["paused"])
                 elif message["command"] == "source-busy":
@@ -590,6 +750,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
         log("helper_pipe_closed", reason=str(error), action="helper exits")
     finally:
         stopping.set()
+        app_memory._remote_claim=previous_claim
         from .library_metadata import close_readers
         close_readers()
         with condition:

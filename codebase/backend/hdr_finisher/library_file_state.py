@@ -41,7 +41,14 @@ def snapshot(marks, old, folder=False):
             if table not in tables: continue
             names = [r[1] for r in db.execute(f'PRAGMA table_info({table})')]
             rows = []
-            for row in db.execute(f'SELECT * FROM {table}'):
+            prefix=old+'|copy|'
+            clause=f'{column}=? OR ({column}>=? AND {column}<?)'
+            args=[old,prefix,prefix[:-1]+'}']
+            if folder:
+                prefix=old+os.sep
+                clause+=f' OR ({column}>=? AND {column}<?)'
+                args.extend([prefix,prefix[:-1]+chr(ord(prefix[-1])+1)])
+            for row in db.execute(f'SELECT * FROM {table} WHERE '+clause,args):
                 item = dict(zip(names,row)); p = item[column]
                 if p == old or p.startswith(old+'|copy|') or folder and p.startswith(old+os.sep): rows.append(item)
             result[table] = rows

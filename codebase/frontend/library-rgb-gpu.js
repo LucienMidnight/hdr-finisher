@@ -2,7 +2,7 @@
  * Grade, export and Proof retain their existing preparation entry points. */
 window.HDRLibraryRGB = (() => {
   "use strict";
-  const {gpu,COMMON,TURN,FINISHING,reducedSize}=HDRLibraryGpuRaw.shared;
+  const {gpu,COMMON,TURN,FINISHING,reducedSize,uploadBuffer,yieldToWindow}=HDRLibraryGpuRaw.shared;
   const compiled=new WeakMap();
   const INPUT = `
   @group(0) @binding(1) var<storage, read> rgbInput: array<u32>;
@@ -215,21 +215,39 @@ window.HDRLibraryRGB = (() => {
       let subnormal=(base+increment)/16777216.0;
       textureStore(out,vec2i(p.xy),vec4f(select(subnormal,normal,v>=vec3f(0.00006103515625)),1));
     }`;
-  async function developFrame({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity, direct = false, signal = null }) {
-    const shared = await gpu(), {device,errors} = shared;
-    let pipelines=compiled.get(device);
+  async function developFrame({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity, direct = false, signal = null, context = null }) {
+    const shared = context || await gpu(), {device,errors} = shared;
+    const compileDevice=shared.baseDevice || device;
+    let pipelines=compiled.get(compileDevice);
     if(!pipelines){
       pipelines={REDUCE:shared.pipelines.REDUCE};
       for(const [name,code] of Object.entries({RGB,RGB_SDR,REFERENCE,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GRADE,DNG_TILE_GAIN,DNG_LINEAR,PACK}))
         pipelines[name]=await device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code}),entryPoint:"main"}});
-      compiled.set(device,pipelines);
+      compiled.set(compileDevice,pipelines);
     }
-    if(meta.dng_warp)return developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines});
+    if(meta.dng_warp)return developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines,signal});
     errors.length = 0;
     const w = meta.width, h = meta.height, n = w * h;
     const outW = w, outH = h;
     const st = meta.sample_stride, sw = Math.ceil(outW / st), sh = Math.ceil(outH / st);
     const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
+    // The scene cache stores clipped IEEE half samples. Quantize the handoff
+    // once here instead of transporting six float32 planes through renderer,
+    // Electron network and backend copies before doing the same conversion.
+    const sampleBytes = direct && typeof Float16Array !== 'undefined' ? 2 : 4;
+    const handoffPlane = buffer => {
+      if (sampleBytes !== 2) return buffer;
+      // Clamp finite values to [0, 65504] in place, keep NaN/±Infinity, then
+      // let the native constructor round. A per-value callback in
+      // Float16Array.from cost about 1.4 s for one 2560-edge picture.
+      const values = new Float32Array(buffer);
+      for (let i = 0; i < values.length; i++) {
+        const value = values[i];
+        if (value <= 0) { if (value !== -Infinity) values[i] = 0; }
+        else if (value > 65504 && value !== Infinity) values[i] = 65504;
+      }
+      return new Float16Array(values).buffer;
+    };
     const owned = new Set(); let liveBytes = 0, peakBytes = 0;
     const own = buffer => { if(liveBytes+buffer.size>memoryBudget){buffer.destroy();throw Error("RGB preparation exceeds the reserved memory budget.");} owned.add(buffer); liveBytes += buffer.size; peakBytes = Math.max(peakBytes, liveBytes); return buffer; };
     const release = buffer => { if (owned.delete(buffer)) { liveBytes -= buffer.size; buffer.destroy(); } };
@@ -260,11 +278,7 @@ window.HDRLibraryRGB = (() => {
       if(beforeSubmit) await beforeSubmit();
       const mosaicBuf = make(meta.mosaic_bytes);
       const whole = Math.floor(mosaic.byteLength / 4) * 4;
-      const transferBand = w * 128 * 3 * (meta.layout?.dtype === "float32" ? 4 : 1);
-      for(let offset=0;offset<whole;offset+=transferBand){
-        if(beforeSubmit) await beforeSubmit();
-        device.queue.writeBuffer(mosaicBuf,offset,mosaic.buffer,mosaic.byteOffset+offset,Math.min(transferBand,whole-offset));
-      }
+      await uploadBuffer(device,mosaicBuf,mosaic,whole,signal);
       if (whole < mosaic.byteLength) { const tail = new Uint8Array(4); tail.set(mosaic.subarray(whole)); device.queue.writeBuffer(mosaicBuf, whole, tail); }
       await stage("upload");
 
@@ -286,18 +300,20 @@ window.HDRLibraryRGB = (() => {
       }
       let planes, peaks, samples;
       const wgX = Math.ceil(w / 16), wgY = Math.ceil(h / 16);
+      // One submit per pass; see library-gpu-raw.js. Per-band submits with a
+      // full-queue wait after each serialised this development against the
+      // other one and against draws.
       const run = async (name, entries, x, y) => {
         const pipe = pipelines[name];
         const group = device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: entries.flatMap((buffer, binding) => buffer ? [{ binding, resource: { buffer } }] : []) });
-        const band = beforeSubmit && name !== "REDUCE" ? 8 : y;
-        for (let row = 0; row < y; row += band) {
-          if (beforeSubmit) await beforeSubmit();
-          if (name !== "REDUCE") device.queue.writeBuffer(uniform, 21 * 16, new Uint32Array([0, row * 16, 0, 0]));
-          const encoder = device.createCommandEncoder(); const pass = encoder.beginComputePass();
-          pass.setPipeline(pipe); pass.setBindGroup(0, group); pass.dispatchWorkgroups(x, Math.min(band, y - row)); pass.end();
-          device.queue.submit([encoder.finish()]);
-          if (beforeSubmit) await device.queue.onSubmittedWorkDone();
-        }
+        if (beforeSubmit) await beforeSubmit();
+        if (name !== "REDUCE") device.queue.writeBuffer(uniform, 21 * 16, new Uint32Array([0, 0, 0, 0]));
+        const encoder = device.createCommandEncoder(); const pass = encoder.beginComputePass();
+        pass.setPipeline(pipe); pass.setBindGroup(0, group); pass.dispatchWorkgroups(x, y); pass.end();
+        device.queue.submit([encoder.finish()]);
+        // One fence per pass, as in library-gpu-raw.js: enough to keep passes
+        // from piling up, without the per-band waits.
+        if (beforeSubmit) await device.queue.onSubmittedWorkDone();
       };
       const read = async (buffer, bytes) => {
         const staging = own(device.createBuffer({ size: bytes, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST }));
@@ -329,15 +345,17 @@ window.HDRLibraryRGB = (() => {
       }
       const reduced = {};
       for (const edge of edges) {
+        const lastEdge = edge === edges.at(-1);
         const [rh, rw] = reducedSize(meta, edge);
-        reduced[edge] = { height: rh, width: rw, planes: [], textures: [] };
+        reduced[edge] = { height: rh, width: rw, planes: [], textures: [], sample_bytes: sampleBytes };
         const retained = [];
         for (const plane of planes) {
           if(rh===h && rw===w){
             const start=performance.now();
             if(direct)retained.push(plane);
-            reduced[edge].planes.push(await read(plane,n*4));
+            reduced[edge].planes.push(handoffPlane(await read(plane,n*4)));
             timings.rgb_readback=(timings.rgb_readback||0)+performance.now()-start;
+            if(lastEdge && !direct)release(plane);
             continue;
           }
           const mid = make(h * rw * 4), out = make(rh * rw * 4);
@@ -351,10 +369,13 @@ window.HDRLibraryRGB = (() => {
           release(mid);
           {
             const start=performance.now();
-            reduced[edge].planes.push(await read(out,rh*rw*4));
+            reduced[edge].planes.push(handoffPlane(await read(out,rh*rw*4)));
             timings.rgb_readback=(timings.rgb_readback||0)+performance.now()-start;
             if(direct)retained.push(out);else release(out);
           }
+          // Both colour lanes have six full source planes. Once the last
+          // requested size has read one, it must not overlap later reductions.
+          if(lastEdge)release(plane);
         }
         if(direct)for(let c=0;c<retained.length;c+=3){
           const bytes=rh*rw*8;
@@ -389,7 +410,7 @@ window.HDRLibraryRGB = (() => {
     }
   }
 
-  async function developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines}) {
+  async function developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines,signal}) {
     errors.length=0;
     const {dngFootprint}=HDRLibraryGpuRaw.shared;
     const w=meta.width,h=meta.height,st=meta.sample_stride,sw=Math.ceil(w/st),sh=Math.ceil(h/st);
@@ -401,6 +422,8 @@ window.HDRLibraryRGB = (() => {
       const buffer=device.createBuffer({size,usage});owned.add(buffer);live+=size;peak=Math.max(peak,live);return buffer;
     };
     const free=b=>{if(owned.delete(b)){live-=b.size;b.destroy();}};
+    // Fence each tile stage. Removing these let several tiles' passes queue up
+    // and pushed whole-app memory past the allowed 4.4 GB.
     const timed=async(name,fn)=>{const start=performance.now();const value=await fn();await device.queue.onSubmittedWorkDone();timings[name]=(timings[name]||0)+performance.now()-start;return value;};
     const read=async b=>{
       const staging=make(b.size,GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST);
@@ -411,7 +434,9 @@ window.HDRLibraryRGB = (() => {
       const pipe=pipelines[name],group=device.createBindGroup({layout:pipe.getBindGroupLayout(0),entries:buffers.flatMap((b,binding)=>b?[{binding,resource:{buffer:b}}]:[])});
       const enc=device.createCommandEncoder(),pass=enc.beginComputePass();pass.setPipeline(pipe);pass.setBindGroup(0,group);pass.dispatchWorkgroups(Math.ceil(width/16),Math.ceil(height/16));pass.end();device.queue.submit([enc.finish()]);
     };
-    const permit=async()=>{if(beforeSubmit)await timed("permits",beforeSubmit);};
+    // Timing the permit must not drain the queue: beforeSubmit is CPU and
+    // network only, and awaiting the whole queue here serialised every tile.
+    const permit=async()=>{if(beforeSubmit){const start=performance.now();await beforeSubmit();timings.permits=(timings.permits||0)+performance.now()-start;}};
     // Full developed planes are held in host RAM. GPU memory contains only
     // one distortion footprint and one output tile, then one reduction plane.
     const planes=Array.from({length:3},()=>new Float32Array(w*h));
@@ -447,8 +472,12 @@ window.HDRLibraryRGB = (() => {
         for(let c=0;c<3;c++){const k=warp.coefficients[warp.coefficients.length===1?0:c];df.set(k.slice(0,4),c*8);df.set(k.slice(4),c*8+4);}
         df.set([...warp.center,warp.radius,0],24);df.set([...warp.affine_x,x],28);df.set([...warp.affine_y,y],32);du.set([warp.width,warp.height,box.left,box.top],36);device.queue.writeBuffer(dng,0,data);
         await timed("upload",async()=>{
-          const packed=new Float32Array(bytes/4);for(let r=0;r<box.height;r++)packed.set(source.subarray(((box.top+r)*warp.width+box.left)*3,((box.top+r)*warp.width+box.left+box.width)*3),r*box.width*3);
-          device.queue.writeBuffer(input,0,packed);
+          const packed=new Float32Array(bytes/4);let slice=performance.now();
+          for(let r=0;r<box.height;r++){
+            packed.set(source.subarray(((box.top+r)*warp.width+box.left)*3,((box.top+r)*warp.width+box.left+box.width)*3),r*box.width*3);
+            if(performance.now()-slice>=4){if(signal?.aborted)throw new DOMException('Cancelled','AbortError');await yieldToWindow();slice=performance.now();}
+          }
+          await uploadBuffer(device,input,new Uint8Array(packed.buffer),packed.byteLength,signal);
         });
         await permit();
         if(gains)await timed("gain_map",async()=>dispatch("DNG_TILE_GAIN",[uniform,input,dng,gains],box.width,box.height));
@@ -456,9 +485,22 @@ window.HDRLibraryRGB = (() => {
         await timed("warp_colour_measure",async()=>dispatch(meta.preserve_signed?"DNG_TILE_GRADE":"DNG_TILE_RGB",[uniform,input,dng,null,...out,pk,sample],tw,th));
         await permit();
         await timed("readback",async()=>{
-          for(let c=0;c<3;c++){const a=await read(out[c]);for(let r=0;r<th;r++)planes[c].set(a.subarray(r*tw,(r+1)*tw),(y+r)*w+x);}
-          const p=await read(pk);for(let c=0;c<3;c++)peaks[c]=Math.max(peaks[c],p[c]);
-          const a=await read(sample);
+          // One staging buffer and one mapAsync per tile. Five separate
+          // readbacks per tile spent almost all of the correction route's time
+          // waiting on map latency.
+          const planeFloats=tw*th,peakFloats=4,sampleFloats=tsw*tsh*3;
+          const staging=make((planeFloats*3+peakFloats+sampleFloats)*4,GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST);
+          const enc=device.createCommandEncoder();let off=0;
+          for(let c=0;c<3;c++){enc.copyBufferToBuffer(out[c],0,staging,off*4,planeFloats*4);off+=planeFloats;}
+          enc.copyBufferToBuffer(pk,0,staging,off*4,peakFloats*4);off+=peakFloats;
+          enc.copyBufferToBuffer(sample,0,staging,off*4,sampleFloats*4);
+          device.queue.submit([enc.finish()]);
+          await staging.mapAsync(GPUMapMode.READ);
+          const all=new Float32Array(staging.getMappedRange().slice(0));staging.unmap();free(staging);
+          let at=0;
+          for(let c=0;c<3;c++){const a=all.subarray(at,at+planeFloats);at+=planeFloats;for(let r=0;r<th;r++)planes[c].set(a.subarray(r*tw,(r+1)*tw),(y+r)*w+x);}
+          for(let c=0;c<3;c++)peaks[c]=Math.max(peaks[c],all[at+c]);at+=peakFloats;
+          const a=all.subarray(at,at+sampleFloats);
           for(let r=(st-y%st)%st;r<th;r+=st)for(let c=(st-x%st)%st;c<tw;c+=st){
             const local=(Math.floor(r/st)*tsw+Math.floor(c/st))*3,global=((y+r)/st*sw+(x+c)/st)*3;samples.set(a.subarray(local,local+3),global);
           }
@@ -479,7 +521,7 @@ window.HDRLibraryRGB = (() => {
           const target=reduced[edge],rh=target.height,rw=target.width;
           if(rh===h&&rw===w){target.planes.push(planes[c].buffer);continue;}
           await permit();
-          if(!input){input=make(w*h*4);await timed("upload",async()=>device.queue.writeBuffer(input,0,planes[c]));}
+          if(!input){input=make(w*h*4);await timed("upload",()=>uploadBuffer(device,input,new Uint8Array(planes[c].buffer),planes[c].byteLength,signal));}
           const mid=make(h*rw*4),out=make(rh*rw*4),settings=make(16,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST);
           for(const [src,dst,inLen,outLen,across,axis] of [[input,mid,w,rw,h,0],[mid,out,h,rh,rw,1]]){
             await permit();

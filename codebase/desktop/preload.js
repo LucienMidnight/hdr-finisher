@@ -1,4 +1,5 @@
-const { contextBridge, ipcRenderer, webUtils } = require("electron");
+const { contextBridge, ipcRenderer, webUtils, webFrame } = require("electron");
+ipcRenderer.on("desktop:clear-native-cache", () => webFrame.clearCache());
 
 function subscribe(channel, callback) {
   if (typeof callback !== "function") return () => {};
@@ -12,6 +13,7 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   startupTheme: process.argv.find(value => value.startsWith("--hdr-finisher-theme="))?.split("=")[1] || "default-dark",
   platform: process.platform,
   environment: () => ipcRenderer.invoke("desktop:environment"),
+  reclaimLibraryStorage: () => ipcRenderer.invoke("desktop:reclaim-library-storage"),
   videoMemory: () => ipcRenderer.invoke("desktop:video-memory"),
   rendererReady: () => ipcRenderer.invoke("desktop:renderer-ready"),
   getPreferences: () => ipcRenderer.invoke("desktop:get-preferences"),
@@ -84,3 +86,9 @@ contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   onDisplayStateChanged: (callback) => subscribe("desktop:display-state", callback),
   onOpenRequest: (callback) => subscribe("desktop:open-request", callback),
 }));
+
+// Relay the trusted desktop sample into the same-origin Library iframe too.
+ipcRenderer.on("desktop:memory-pressure", (_event, value) => {
+  window.postMessage({type:"hdr-memory-pressure",value},location.origin);
+  for (const frame of document.querySelectorAll("iframe")) frame.contentWindow?.postMessage({type:"hdr-memory-pressure",value},location.origin);
+});

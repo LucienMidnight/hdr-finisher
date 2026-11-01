@@ -7,6 +7,19 @@
 (function (root) {
   "use strict";
 
+  // Bound CPU copies, not GPU passes. Yielding here leaves bytes, permits and
+  // queue ordering unchanged while letting input and animation tasks run.
+  const yieldToWindow = () => new Promise(resolve=>setTimeout(resolve,0));
+  async function uploadBuffer(device, target, bytes, count=bytes.byteLength, signal) {
+    let slice=performance.now();
+    const band=4*1024*1024;
+    for(let offset=0;offset<count;offset+=band){
+      if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
+      device.queue.writeBuffer(target,offset,bytes.buffer,bytes.byteOffset+offset,Math.min(band,count-offset));
+      if(offset+band<count&&performance.now()-slice>=4){await yieldToWindow();slice=performance.now();}
+    }
+  }
+
   const COMMON = /* wgsl */ `
   struct P {
     dims: vec4<u32>,        // w, h, flip, stride
@@ -457,36 +470,46 @@
 
   // One device and one set of pipelines. Developments are exclusive: fitting
   // in memory does not mean two photos can share GPU bandwidth at full speed.
+  const gpuFailures=new Map(),activeGpuWorks=new Map(),decodedSources=new Map();
+  const decodedBytes=()=>[...decodedSources.values()].reduce((n,v)=>n+v.body.byteLength,0);
+  function dropDecoded(key){const value=decodedSources.get(key);if(!value)return;decodedSources.delete(key);clearInterval(value.renewal);return fetch('/api/library/live-source/'+value.token,{method:'DELETE'}).catch(()=>{});}
+  root.HDRLibraryRAM?.register('decoded-source','sharp',decodedBytes,target=>{for(const key of decodedSources.keys()){if(decodedBytes()<=target)break;dropDecoded(key);}});
   let shared = null, storageLimit = 0;
+  async function hardwareAdapter() {
+    if (!navigator.gpu) throw Object.assign(new Error("WebGPU is unavailable."),{gpuUnavailable:true});
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+    if (!adapter) throw Object.assign(new Error("No WebGPU adapter."),{gpuUnavailable:true});
+    if (adapter.isFallbackAdapter || /swiftshader|llvmpipe|lavapipe|software rasterizer/i.test(
+      [adapter.info?.vendor, adapter.info?.architecture, adapter.info?.device, adapter.info?.description].join(" ")))
+      throw Object.assign(new Error("No hardware GPU is available."),{gpuUnavailable:true});
+    return adapter;
+  }
   async function sourceStorageLimit() {
-    if(!storageLimit){
-      const adapter=await navigator.gpu?.requestAdapter({powerPreference:"high-performance"});
-      storageLimit=adapter?.limits.maxStorageBufferBindingSize || 0;
-    }
+    if (!storageLimit) storageLimit=(await hardwareAdapter()).limits.maxStorageBufferBindingSize;
     return storageLimit || null;
   }
   async function gpu(beforeNext = async () => {}) {
     if (shared) return shared;
     shared = (async () => {
-      if (!navigator.gpu) throw new Error("WebGPU is unavailable.");
-      const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
-      if (!adapter) throw new Error("No WebGPU adapter.");
-      if (adapter.isFallbackAdapter || /swiftshader|llvmpipe|lavapipe|software rasterizer/i.test(
-        [adapter.info?.vendor, adapter.info?.architecture, adapter.info?.device, adapter.info?.description].join(" ")))
-        throw new Error("No hardware GPU is available.");
+      const adapter = await hardwareAdapter();
       const device = await adapter.requestDevice({ requiredFeatures:adapter.features.has("timestamp-query") ? ["timestamp-query"] : [], requiredLimits: {
         maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
         maxBufferSize: adapter.limits.maxBufferSize,
         maxStorageBuffersPerShaderStage: Math.min(10, adapter.limits.maxStorageBuffersPerShaderStage) } });
       const errors = [];
       device.addEventListener("uncapturederror", event => errors.push(event.error.message));
-      device.lost.then(() => { shared = null; });
+      const state = {lost:false};
+      device.lost.then(() => {
+        state.lost=true; shared = null;
+        for(const [key,work] of activeGpuWorks)if(work.state===state)gpuFailures.set(key,(gpuFailures.get(key)||0)+1);
+        root.HDRLibraryGrants?.gpuLost();
+      });
       const pipelines = {};
       for (const [name, code] of Object.entries({ NORMALIZE, DILATE, RESIDUAL, REPAIR, GREEN, HOMOGENEITY, COMBINE, EDGE_FINISH, REMAP, REDUCE })) {
         await beforeNext();
         pipelines[name] = await device.createComputePipelineAsync({ layout: "auto", compute: { module: device.createShaderModule({ code }), entryPoint: "main" } });
       }
-      return { device, pipelines, errors };
+      return { device, pipelines, errors, state };
     })();
     try { return await shared; } catch (error) { shared = null; throw error; }
   }
@@ -535,18 +558,23 @@
   }
 
   // The developed picture as library_gpu_raw.unframe reads it: a 4-byte header
-  // length, the JSON header padded to 4 bytes, then the planes. The parts go
-  // straight into the Blob, so the picture bytes are copied once, not twice.
+  // length, the JSON header padded to 4 bytes, then the planes. One contiguous
+  // buffer is copied once here and transferred to the upload worker; a Blob body
+  // would be streamed for a second through Electron's browser process instead.
   function handoffBody(header, planes) {
     const text = new TextEncoder().encode(JSON.stringify(header));
     const prefix = new Uint8Array(4 + text.length + ((4 - ((4 + text.length) % 4)) % 4)).fill(32);
     new DataView(prefix.buffer).setUint32(0, prefix.length - 4, true);
     prefix.set(text, 4);
-    return new Blob([prefix, ...planes]);
+    const body = new Uint8Array(prefix.byteLength + planes.reduce((n, plane) => n + plane.byteLength, 0));
+    body.set(prefix);
+    let at = prefix.byteLength;
+    for (const plane of planes) { body.set(new Uint8Array(plane), at); at += plane.byteLength; }
+    return body.buffer;
   }
 
-  async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity, signal = null }) {
-    const { device, pipelines, errors } = await gpu();
+  async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity, signal = null, context = null }) {
+    const { device, pipelines, errors } = context || await gpu();
     const errorStart = errors.length;
     const w = meta.width, h = meta.height, n = w * h;
     const cw = Math.ceil(w / 3), chh = Math.ceil(h / 3);
@@ -589,7 +617,7 @@
 
       const mosaicBuf = make(n * 2);
       const whole = Math.floor(mosaic.byteLength / 4) * 4;
-      device.queue.writeBuffer(mosaicBuf, 0, mosaic.buffer, mosaic.byteOffset, whole);
+      await uploadBuffer(device,mosaicBuf,mosaic,whole,signal);
       if (whole < mosaic.byteLength) { const tail = new Uint8Array(4); tail.set(mosaic.subarray(whole)); device.queue.writeBuffer(mosaicBuf, whole, tail); }
       await stage("upload");
 
@@ -597,18 +625,23 @@
       const coarse = make(cw * chh * 4), dilated = make(cw * chh * 4), counts = make(16);
       const wgX = Math.ceil(w / 16), wgY = Math.ceil(h / 16);
       const partials = make(wgX * wgY * 6 * 4);
+      // One submit per pass. Splitting a pass into eight-row bands and awaiting
+      // the whole queue after each band made every stage wait for the other
+      // development and for draws, so two developments never overlapped and
+      // each pass cost hundreds of milliseconds. A whole pass is far shorter
+      // than the preemption deadline, so the permit is checked once, before it.
       const run = async (name, entries, x, y) => {
         const pipe = pipelines[name];
         const group = device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: entries.map((buffer, binding) => ({ binding, resource: { buffer } })) });
-        const band = beforeSubmit && name !== "REDUCE" ? 8 : y;
-        for (let row = 0; row < y; row += band) {
-          if (beforeSubmit) await beforeSubmit();
-          if (name !== "REDUCE") device.queue.writeBuffer(uniform, 21 * 16, new Uint32Array([0, row * 16, 0, 0]));
-          const encoder = device.createCommandEncoder(); const pass = encoder.beginComputePass();
-          pass.setPipeline(pipe); pass.setBindGroup(0, group); pass.dispatchWorkgroups(x, Math.min(band, y - row)); pass.end();
-          device.queue.submit([encoder.finish()]);
-          if (beforeSubmit) await device.queue.onSubmittedWorkDone();
-        }
+        if (beforeSubmit) await beforeSubmit();
+        if (name !== "REDUCE") device.queue.writeBuffer(uniform, 21 * 16, new Uint32Array([0, 0, 0, 0]));
+        const encoder = device.createCommandEncoder(); const pass = encoder.beginComputePass();
+        pass.setPipeline(pipe); pass.setBindGroup(0, group); pass.dispatchWorkgroups(x, y); pass.end();
+        device.queue.submit([encoder.finish()]);
+        // One fence per pass keeps passes from piling up (the approved GPU
+        // estimate is a peak, not a running total); per-band fencing was the
+        // part that cost hundreds of waits per photo.
+        if (beforeSubmit) await device.queue.onSubmittedWorkDone();
       };
       const read = async (buffer, bytes) => {
         if (liveBytes + bytes > memoryBudget) throw Error("GPU RAW readback exceeds the reserved memory budget.");
@@ -734,84 +767,178 @@
   // develops it on the GPU, the backend stores it where Grade's CPU development
   // would. Resolves null when the photo keeps the CPU route. An edited photo
   // (savedGradeOnly) answers with its saved-grade picture or a wait.
-  async function scheduledDevelopment({mosaic, meta, lensData, edges, background = false, syncStages = false, importance = () => 30}, signal) {
-    await gpu();
-    const id = crypto.randomUUID(), bytes = rawBudget(meta, edges);
+  function allocationScope(context){
+    const pending=[],failures=[];
+    const device=new Proxy(context.device,{get(target,key){
+      if(key==='createBuffer'||key==='createTexture')return descriptor=>{
+        target.pushErrorScope('out-of-memory');
+        try{return target[key](descriptor);}
+        finally{pending.push(target.popErrorScope().then(error=>{if(error)failures.push(error.message);}));}
+      };
+      const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+    }});
+    return {context:{...context,device,baseDevice:context.device,errors:[]},async check(){
+      await Promise.all(pending.splice(0));
+      if(failures.length)throw Object.assign(Error('GPU out of memory: '+failures.join('; ')),{gpuUnavailable:true,gpuMemory:true});
+    }};
+  }
+  async function scheduledDevelopment({mosaic, meta, lensData, edges, background = false, syncStages = false, importance = () => 30, grant = null}, signal) {
+    const context = await gpu();
+    // Keep the approved reservation; requesting fewer products must not remove
+    // headroom used by full-source RGB preparation. Only development is tiered.
+    const id = crypto.randomUUID(), bytes = rawBudget(meta, edges.includes(100000) ? [100000] : [640,2560,...edges]);
+    const key=meta.path+'|'+edges.join(',');
+    if((gpuFailures.get(key)||0)>=2)throw Object.assign(Error('GPU failed twice; using visible CPU fallback.'),{gpuUnavailable:true});
+    const allocations=allocationScope(context);
+    activeGpuWorks.set(key,{state:context.state,grant});
     const url = `/api/delivery/gpu/raw-budget/${id}`;
     const lease = async release => {
       if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
       const response = await fetch(url, { method: "POST", signal,
-        headers: {"Content-Type": "application/json"}, body: JSON.stringify({bytes, release, background, priority:importance(),concurrent:false}) });
+        headers: {"Content-Type": "application/json"}, body: JSON.stringify({bytes, release, background, grant, priority:importance(),concurrent:true}) });
       if (!response.ok) throw Error("GPU memory scheduler unavailable.");
       return response.json();
     };
     try {
       // Finished Library surfaces are disposable, not a reason to abandon GPU development.
       if (background) await root.HDRLibraryScenes?.reclaim(bytes,true);
-      let reclaimed = false;
+      let reclaimed = false, attempts = 0;
       for (;;) {
         const value = await lease(false);
-        if (value.fallback) {
-          if (background && !reclaimed) { reclaimed = true; await root.HDRLibraryScenes?.reclaim(bytes,true); continue; }
+        if(grant && value.fallback)throw Object.assign(Error(value.fallback),{gpuUnavailable:true});
+        if(grant && value.preempt)throw Object.assign(Error('Grade or export needs the GPU.'),{libraryRequeue:true});
+        if (value.waiting === "memory" || value.fallback) {
+          if (background && !reclaimed) {
+            reclaimed = true;
+            for(const entry of directScenes.values())await entry.store();
+            forgetDirect();
+            await root.HDRLibraryScenes?.reclaim(bytes,true); continue;
+          }
           const work = root.HDRLibraryScenes?.snapshot();
           if (background && (work?.draws.active || work?.quickDraws?.active)) {
             // Drop this waiting reservation so the already-started window draw can finish.
             await fetch(url,{method:"DELETE"}); await wait(50,signal); reclaimed = false; continue;
           }
-          throw Error(value.fallback);
+          root.HDRLibraryScenes?.stage(meta.path,"Waiting for GPU memory",true);
+          await wait(100,signal); reclaimed=false; continue;
         }
         if (!value.granted || value.preempt) {
           root.HDRLibraryScenes?.stage(meta.path,"Waiting to develop photo",true);
           if (value.granted) await lease(true);
           await wait(50, signal); continue;
         }
-        root.HDRLibraryStopwatch?.("picture_development_admitted", {path:meta.path,route:"exclusive-gpu",duration_ms:0,reason:importance() === 0 ? "selected photo" : "spare capacity"});
+        attempts++;
+        root.HDRLibraryStopwatch?.("picture_development_admitted", {path:meta.path,attempt:attempts,route:"shared-gpu",duration_ms:0,reason:importance() === 0 ? "selected photo" : "spare capacity"});
         let touched = 0;
         let edgePermitAt = 0;
         const beforeSubmit = async () => {
           if(signal?.aborted)throw new DOMException("Cancelled", "AbortError");
+          await allocations.check();
           // Edge colour has many short blur bands. Reuse the same permit
           // window as delivery rather than making each band a network wait.
-          const permitWindow=meta.dng_warp ? 20 : meta.raw_import_settings?.highlight_reconstruction?.method === "edge_colour_v1" ? 100 : 0;
+          const permitWindow=meta.dng_warp ? 20 : 100;
           // A bounded DNG tile has several short stages. Reuse a permit for
           // at most 20 ms; cancellation still checks on every boundary.
           if(performance.now()-edgePermitAt<permitWindow)return;
           if(meta.source_job && performance.now()-touched>5000){
-            const check=await fetch("/api/library/live-source/"+meta.source_job,{method:"POST",signal});
-            if(!check.ok) throw Error("Library source preparation was invalidated."); touched=performance.now();
+            const check=await fetch("/api/library/live-source/"+meta.source_job,{method:"POST"});
+            if(!check.ok) throw new DOMException("Library source preparation was invalidated.","AbortError"); touched=performance.now();
           }
           const status = await lease(false);
           if (!status.granted || status.preempt || status.fallback) { const error = Error("Yielding GPU RAW to shared work."); error.yieldRaw = true; throw error; }
           edgePermitAt=performance.now();
         };
         root.HDRLibraryScenes?.stage(meta.path,"Developing photo");
-        try { return await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, signal, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy}); }
-        catch (error) { if (!error.yieldRaw) throw error; }
+        try {
+          const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, signal, context:allocations.context, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy});
+          try{await allocations.check();}
+          catch(error){for(const picture of Object.values(result.reduced || {}))for(const texture of picture.textures || [])texture.destroy();throw error;}
+          gpuFailures.delete(key);
+          root.HDRLibraryStopwatch?.('picture_development_gpu_done',{path:meta.path,gpu_estimate_bytes:bytes,gpu_peak_bytes:result.memory_peak_bytes,peak_scope:'job-allocated'});
+          return result;
+        }
+        catch (error) {
+          if(context.state?.lost){
+            throw Object.assign(Error('GPU device lost.'),{libraryRequeue:!!grant,gpuUnavailable:!grant});
+          }
+          await allocations.check().catch(oom=>{error=oom;});
+          if(error.gpuMemory){
+            const failures=(gpuFailures.get(key)||0)+1;gpuFailures.set(key,failures);
+            if(failures===1&&grant)throw Object.assign(error,{libraryRequeue:true,gpuRetry:true});
+            throw Object.assign(error,{gpuUnavailable:true});
+          }
+          // Cancellation is not a failure: pass it through unchanged.
+          if (signal?.aborted || error?.name === "AbortError") throw error;
+          // Yielding to more urgent work is not a failure either: release the
+          // lease and wait for the next turn without spending an attempt.
+          if (error.yieldRaw) {
+            if(grant)throw Object.assign(error,{libraryRequeue:true});
+            attempts--;
+            root.HDRLibraryStopwatch?.("picture_development_restart", {path:meta.path,attempt:attempts+1,reason:error.message});
+          } else {
+            root.HDRLibraryStopwatch?.("picture_development_failed", {path:meta.path,attempt:attempts,reason:error.message});
+            // Repeating the same allocation cannot fix an underestimated footprint.
+            // DOMException messages are read-only, so wrap rather than rewrite.
+            throw Object.assign(Error(`Development stopped after ${attempts} attempt${attempts === 1 ? "" : "s"}: ${error?.message ?? error}`, {cause:error}),
+              {gpuUnavailable:error?.gpuUnavailable, yieldRaw:false});
+          }
+        }
         // developRaw's finally has freed every buffer before Grade sees zero.
         await lease(true); await wait(50, signal);
       }
-    } finally { await fetch(url, {method:"DELETE"}).catch(() => {}); }
+    } catch (error) {
+      root.HDRLibraryStopwatch?.("picture_development_outcome", {path:meta.path,reason:error.message,
+        work_stage:error.name === "AbortError" ? "cancelled" : "failed"});
+      throw error;
+    } finally { activeGpuWorks.delete(key);await fetch(url, {method:"DELETE"}).catch(() => {}); }
   }
 
   const directScenes = new Map();
   const directBytes = () => [...directScenes.values()].reduce((n,entry)=>n+entry.bytes,0);
+  root.HDRLibraryRAM?.register('direct','sharp',directBytes,target=>{
+    for(const [key,entry] of directScenes){if(directBytes()<=target)break;entry.dispose();directScenes.delete(key);}
+  });
   function forgetDirect(path = null) {
+    for(const key of decodedSources.keys())if(path===null||key.startsWith(path+'|'))dropDecoded(key);
     for(const [key,entry] of directScenes)if(path===null || entry.path===path){entry.dispose();directScenes.delete(key);}
+  }
+  // The GPU route gave up for this photo: drop its retained decoded source so
+  // the CPU fallback can claim the source instead of waiting on that claim.
+  function releaseSource(path) {
+    for(const key of decodedSources.keys())if(key.startsWith(path+'|'))dropDecoded(key);
   }
   function cachedDirect(path,edge,version) {
     return directScenes.get(path+"|"+version)?.variants[edge] || null;
   }
-  async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "") {
+  async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null, gpuDone = () => {}) {
     const begun = performance.now();
-    const sourceJob=liveScene ? crypto.randomUUID().replaceAll("-", "") : null;
-    let retainedSource = false, gpuResult;
+    const decodedKey=path+'|'+edge+'|'+sceneIdentity.split(':')[0];
+    // Take over a retained decoded source when one exists: renew its claim,
+    // clear its renewal, and release it if the backend no longer honours it.
+    const adoptKept=async()=>{
+      const entry=decodedSources.get(decodedKey);
+      if(!entry)return null;
+      const check=await fetch('/api/library/live-source/'+entry.token,{method:'POST',signal});
+      decodedSources.delete(decodedKey);clearInterval(entry.renewal);
+      if(check.ok)return entry;
+      await fetch('/api/library/live-source/'+entry.token,{method:'DELETE'}).catch(()=>{});
+      return null;
+    };
+    let kept=await adoptKept();
+    let sourceJob=liveScene ? kept?.token || crypto.randomUUID().replaceAll("-", "") : null;
+    let retainedSource = false, gpuResult, sourceRenewal, body;
     try {
     // Inspect only the adapter limit; do not wait for pipeline compilation.
-    const sourceLimit=liveScene ? await sourceStorageLimit() : null;
+    const sourceLimit=await sourceStorageLimit();
     let response, requestWaitMs = 0;
-    for (;;) {
-      response = await fetch(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", signal,
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
+    if(!kept)for (;;) {
+      // A requeued attempt can start before the previous attempt stores its
+      // decoded source. Adopt it here so its held claim is reused, not waited on.
+      const late=await adoptKept();
+      if(late){kept=late;sourceJob=late.token;break;}
+      response = await root.HDRLibraryUpload.fetchSource(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", priority:"low", signal,
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, grant, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, grant, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
+      if(grant && response.headers.get("X-Library-Wait")==="memory")await root.HDRLibraryGrants.wait(grant,signal);
       if (response.status !== 202) break;
       root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
       const waitingAt = performance.now();
@@ -819,18 +946,31 @@
       requestWaitMs += performance.now()-waitingAt;
     }
     root.HDRLibraryScenes?.stage(path,"Reading photo samples");
+    if(!kept){
     if (response.status === 204) {
-      root.HDRLibraryStopwatch?.("picture_source_cpu_fallback", {path,reason:response.headers.get("X-Library-Fallback"),duration_ms:performance.now()-begun,request_wait_ms:requestWaitMs});
-      return null;
+      // An unsupported source is not a missing GPU. Do not turn it into an
+      // unbounded CPU development while hardware is available.
+      throw new Error(response.headers.get("X-Library-Fallback") || "This source has no supported GPU development route.");
     }
-    if (!response.ok) { const result = await response.json().catch(() => ({})); const error = new Error(result.detail || "Library request failed."); error.status = response.status; error.libraryError = result.library_error; throw error; }
+    if (!response.ok) { const result = await response.json().catch(() => ({})); const error = result.changed || result.offline ? new DOMException(result.detail,"AbortError") : new Error(result.detail || "Library request failed."); if(result.offline) window.dispatchEvent(new CustomEvent("library-offline",{detail:result})); error.status = response.status; error.libraryError = result.library_error || (result.library_timeout ? {path:result.path,reason:result.detail,timeout:true,time:Date.now()/1000} : undefined); error.cloudOnly = !!result.cloud_only; throw error; }
     if ((response.headers.get("Content-Type") || "").includes("application/json")) return response.json();
+    }
     const transferAt = performance.now();
-    const body = await response.arrayBuffer();
+    body = kept?.body || await response.arrayBuffer();
     root.HDRLibraryStopwatch?.("picture_source_transfer",{path,duration_ms:performance.now()-transferAt,bytes:body.byteLength,request_wait_ms:requestWaitMs});
     const sensorMs = performance.now() - begun;
     const length = new DataView(body).getUint32(0, true);
     const meta = JSON.parse(new TextDecoder().decode(new Uint8Array(body, 4, length)));
+    // Ownership must survive waiting for a GPU permit and preview handoff,
+    // not just shader submissions. Idle/abandoned direct scenes still expire.
+    if(meta.source_job){
+      let renewing=false;
+      sourceRenewal=setInterval(()=>{
+        if(renewing)return;renewing=true;
+        fetch("/api/library/live-source/"+meta.source_job,{method:"POST"})
+          .catch(()=>{}).finally(()=>{renewing=false;});
+      },10000);
+    }
     const mosaic = new Uint8Array(body, 4 + length, meta.mosaic_bytes);
     if(meta.dng_linear?.support){
       const mask=meta.dng_linear.support;meta.dng_support=new Float32Array(body,4+length+mask.offset,mask.bytes/4);
@@ -843,8 +983,10 @@
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const started = performance.now();
     root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
-    const developed = gpuResult = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, edges:nativeMode ? [100000] : [...new Set([640,2560,edge])]}, signal);
+    const developed = gpuResult = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, grant, edges:[edge]}, signal);
     const gpuMs = performance.now() - started;
+    gpuDone();
+    if(grant) await root.HDRLibraryGrants.gpuDone(grant);
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const measured = performance.now();
     const robust = { luma: quantile(developed.samples, 0, 0.9999), channel: quantile(developed.samples, 1, 0.9999), bt2020: quantile(developed.samples, 2, 0.9999) };
@@ -853,10 +995,10 @@
     let selectedResult;
     const handoffStarted = performance.now();
     const entries = [];
-    for (const storedEdge of nativeMode ? [100000] : [...new Set([640,2560,edge])]) {
+    for (const storedEdge of [edge]) {
       const picture = developed.reduced[storedEdge];
-      const header = { draw_first:liveScene && !nativeMode, rgb:meta.rgb, has_sdr_reference:!!meta.sdr_reference, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
-      edge:storedEdge, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode && !liveScene, flip: meta.flip, height: picture.height, width: picture.width,
+      const header = { draw_first:false, rgb:meta.rgb, has_sdr_reference:!!meta.sdr_reference, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
+      edge:storedEdge, sample_bytes:picture.sample_bytes || 4, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode && !liveScene, flip: meta.flip, height: picture.height, width: picture.width,
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
       memory_peak_bytes: developed.memory_peak_bytes,
@@ -868,37 +1010,34 @@
     const send = async (entry, describeOnly = false) => {
       const {header,picture}=entry, packedAt=performance.now();
       const framed=handoffBody(describeOnly ? {...header,describe_only:true} : header,describeOnly ? [] : picture.planes);
-      const payload=liveScene ? await framed.arrayBuffer() : framed, sentAt=performance.now();
-      const stored=await fetch(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed",{
-        method:"POST",signal,headers:{"Content-Type":"application/octet-stream"},body:payload});
+      // The upload worker keeps the multi-megabyte stream off this window's
+      // thread, and a plain buffer body keeps it out of Electron's browser
+      // process. Development has already finished, so a cancelled view cannot
+      // strand the upload.
+      const payload=framed, bytes=framed.byteLength, sentAt=performance.now();
+      const stored=await root.HDRLibraryUpload.send(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed",
+        {body:payload,signal,headers:{"Content-Type":"application/octet-stream"}});
       root.HDRLibraryStopwatch?.(describeOnly ? "picture_scene_description" : "picture_scene_handoff",{
-        path,edge:header.edge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes:framed.size});
-      const result=await stored.json();
-      if(!stored.ok){const error=Error(result.detail || "Library request failed.");error.status=stored.status;throw error;}
+        path,edge:header.edge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes});
+      const result=JSON.parse(stored.text || "{}");
+      if(!stored.ok){const error=result.changed?new DOMException(result.detail,"AbortError"):Error(result.detail || "Library request failed.");error.status=stored.status;throw error;}
       return result;
     };
     if(liveScene && meta.rgb && !nativeMode && !root.HDRLibraryProfileLegacy && entries.every(({picture})=>picture.textures?.length)){
       const variants={};
-      for(const entry of entries)variants[entry.header.edge]=await send(entry,true);
-      if(Object.values(variants).every(value=>value.direct_supported && value.grade_identity===sceneIdentity.split(":").at(-1)) && entries.reduce((n,{picture})=>n+picture.planes.reduce((m,p)=>m+p.byteLength,0)+picture.width*picture.height*8*(picture.textures?.length || 0),0)<=256*1024**2){
+      for(const entry of entries)variants[entry.header.edge]=await send(entry);
+      selectedResult=variants[edge];
+      if(Object.values(variants).every(value=>value.direct_supported && value.render_identity===sceneIdentity) && entries.reduce((n,{picture})=>n+picture.planes.reduce((m,p)=>m+p.byteLength,0)+picture.width*picture.height*8*(picture.textures?.length || 0),0)<=(root.HDRLibraryRAM?.limit('sharp') ?? 512_000_000)){
         const poolKey=path+"|"+sceneIdentity;
-        let storing, disposed=false;
-        const release=()=>fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
+        let disposed=false;
         const dispose=()=>{
           if(disposed)return;disposed=true;clearTimeout(timer);
           for(const {picture} of entries)for(const texture of picture.textures || [])texture.destroy();
-          if(!storing){for(const {picture} of entries)picture.planes=[];void release();}
         };
-        const store=()=>storing ||= (async()=>{
-          if(disposed)throw Error("Direct scene expired; request this photo again.");
-          try {for(const entry of entries)await send(entry);}
-          finally {
-            for(const {picture} of entries)picture.planes=[];
-            const retained=directScenes.get(poolKey);
-            if(retained?.variants===variants)retained.bytes=entries.reduce((n,{picture})=>n+picture.width*picture.height*8*(picture.textures?.length || 0),0);
-            await release();
-          }
-        })();
+        // Both sizes have been stored in the bounded saving stage already.
+        const store=()=>Promise.resolve();
+        for(const {picture} of entries)picture.planes=[];
+        await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
         for(const {header,picture} of entries){
           const value=variants[header.edge];
           value.directScene={device:developed.device,texture:lane=>!disposed && picture.textures?.[lane==="sdr" && value.adjustments.sdr.use_authored_base && value.has_reference ? 1 : 0],store};
@@ -907,8 +1046,9 @@
         const timer=setTimeout(()=>{dispose();if(directScenes.get(poolKey)?.variants===variants)directScenes.delete(poolKey);},30000);
         timer.unref?.();
         directScenes.get(poolKey)?.dispose();
-        directScenes.set(poolKey,{path,variants,bytes,dispose});
-        while(directBytes()>256*1024**2 && directScenes.size>1){const key=directScenes.keys().next().value;directScenes.get(key).dispose();directScenes.delete(key);}
+        directScenes.set(poolKey,{path,variants,bytes,dispose,store});
+        root.HDRLibraryRAM?.enforce();
+        while(directBytes()>(root.HDRLibraryRAM?.limit('sharp') ?? 512_000_000) && directScenes.size>1){const key=directScenes.keys().next().value;directScenes.get(key).dispose();directScenes.delete(key);}
         retainedSource=true;
         selectedResult=variants[edge];
       }
@@ -918,8 +1058,16 @@
       finally {for(const {picture} of entries)for(const texture of picture.textures || [])texture.destroy();}
     }
     root.HDRLibraryStopwatch?.("picture_development", {path, duration_ms:performance.now()-begun, gpu_ms:gpuMs, sensor_ms:sensorMs, source_ms:meta.source_timings_ms, gpu_stages_ms:developed.timings, quantiles_ms:quantileMs, handoff_ms:performance.now()-handoffStarted});
+    selectedResult.scene_stored=true;
     return selectedResult;
+    } catch(error){
+      if(error.libraryRequeue && !error.gpuRetry && body && sourceJob && root.HDRLibraryRAM?.admit('sharp',body.byteLength)){
+        decodedSources.set(decodedKey,{body,token:sourceJob,renewal:sourceRenewal});retainedSource=true;
+        root.HDRLibraryRAM.enforce();
+      }
+      throw error;
     } finally {
+      if(!decodedSources.has(decodedKey))clearInterval(sourceRenewal);
       if(!retainedSource)for(const picture of Object.values(gpuResult?.reduced || {}))for(const texture of picture.textures || [])texture.destroy();
       if(sourceJob && !retainedSource) await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
     }
@@ -936,21 +1084,23 @@
       const job = waiting.shift();
       if (job.signal.aborted) { job.reject(cancelled()); continue; }
       running++;
-      Promise.resolve().then(job.task).then(job.resolve, job.reject).finally(() => { running--; pump(); });
+      let released = false;
+      const release = () => {if(!released){released=true;running--;pump();}};
+      Promise.resolve().then(()=>job.task(release)).then(job.resolve, job.reject).finally(release);
     }
   }
   // The grid and the filmstrip can ask for the same photo: they share one job,
   // which stops only when every asker has scrolled past it.
-  function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "" } = {}) {
+  function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null } = {}) {
     root.HDRIdleWarmup?.touch();
-    const key = `${path}|${savedGradeOnly}|${nativeMode}|${liveScene}|${sceneIdentity}`;
+    const key = `${path}|${edge}|${savedGradeOnly}|${nativeMode}|${liveScene}|${sceneIdentity}`;
     let job = inflight.get(key);
     if (job?.controller.signal.aborted) job = null;
     if (!job) {
       const controller = new AbortController();
       job = { controller, users: 0 };
       job.promise = new Promise((resolve, reject) => {
-        waiting.push({ signal: controller.signal, resolve, reject, importance, task: () => develop(path, edge, controller.signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity) });
+        waiting.push({ signal: controller.signal, resolve, reject, importance, task: gpuDone => develop(path, edge, controller.signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity, grant, gpuDone) });
         pump();
       }).finally(() => { if (inflight.get(key) === job) inflight.delete(key); });
       job.promise.catch(() => {});
@@ -964,7 +1114,7 @@
       job.promise.then(value => {
         signal?.removeEventListener("abort", leave);
         if (value && !value.kept && !nativeMode && value.edge !== edge)
-          resolve(cachedDirect(path,edge,sceneIdentity) || develop(path, edge, signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity));
+          resolve(cachedDirect(path,edge,sceneIdentity) || develop(path, edge, signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity, grant));
         else resolve(value);
       },
         error => { signal?.removeEventListener("abort", leave); reject(error); });
@@ -1013,8 +1163,44 @@
     }
     return peak;
   }
-  const rawBudget = (meta,edges=[640,2560]) => meta.dng_warp ? dngBudget(meta,edges) : meta.width*meta.height*44+64*1024*1024;
-  const exported = Object.freeze({ cachedDirect, forgetDirect, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity}) });
+  const rawBudget = (meta,edges=[640,2560]) => {
+    if(meta.dng_warp)return dngBudget(meta,edges);
+    // Ordinary Bayer peaks at three demosaic buffers plus three colour
+    // planes (24 bytes/photosite); the later lens pass also holds six planes.
+    // RGB holds its input and three planes. Keep additional headroom for
+    // samples, reductions and readback; complex graphs retain their estimate.
+    const complex=meta.repairs?.length || meta.dng_linear || meta.raw_import_settings?.highlight_reconstruction?.method === "edge_colour_v1" || edges.includes(100000);
+    const perPixel=complex ? 44 : 28;
+    let estimate=meta.width*meta.height*perPixel+64*1024*1024;
+    if(meta.rgb){
+      const lanes=meta.colour?.authored_sdr || meta.sdr_reference ? 6 : 3;
+      const source=meta.width*meta.height*lanes*4;
+      let textures=0;
+      for(const edge of [...new Set(edges)]){
+        const [h,w]=reducedSize(meta,edge),pixels=h*w;
+        // Conservative overlap: full source, retained reduced buffers, packed
+        // textures, one horizontal reduction and its mapped readback.
+        estimate=Math.max(estimate,source+textures+pixels*lanes*4+pixels*(lanes/3)*8
+          +meta.height*w*4+pixels*4+64*1024*1024);
+        textures+=pixels*(lanes/3)*8;
+      }
+    }
+    return estimate;
+  };
+  let adapterMemory=null;
+  async function preflight(meta,edge,signal){
+    if(!adapterMemory){
+      const desktop=root.hdrFinisherDesktop || root.parent?.hdrFinisherDesktop;
+      adapterMemory=Promise.resolve(desktop?.videoMemory?.()).catch(()=>null);
+    }
+    const info=await adapterMemory;
+    const unified=!(Number(info?.bytes)>=4*1024**3);
+    if(meta)return {bytes:rawBudget(meta,edge===100000?[100000]:[640,2560,edge]),unified};
+    const response=await fetch('/api/delivery/gpu/permit',{signal});
+    if(!response.ok)throw Error('GPU scheduling unavailable.');
+    return {bytes:Math.max(0,(await response.json()).budget-(640*640*64+64*1024**2)),unified};
+  }
+  const exported = Object.freeze({ reclaimDecoded:async(needed)=>{let released=0;for(const [key,value] of decodedSources){if(released>=needed)break;released+=value.body.byteLength;await dropDecoded(key);}for(const [key,entry] of directScenes){if(released>=needed)break;released+=entry.bytes;entry.dispose();directScenes.delete(key);}return released;}, preflight, cachedDirect, forgetDirect, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint,uploadBuffer,yieldToWindow}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

@@ -237,6 +237,8 @@ async function renderPreviewForLane(
   }
 }
 
+const CPU_PREVIEW_MAX_LONG_EDGE = 16384;  // PreviewRequest.long_edge limit in models.py
+
 async function renderPreviewForLaneInner(
   lane,
   displayWhenReady,
@@ -274,7 +276,9 @@ async function renderPreviewForLaneInner(
       local_adjustments: state.localPreviewDirty && !localsBypassed()
         ? JSON.parse(JSON.stringify(localAdjustments()))
         : null,
-      long_edge: longEdge,
+      // The backend renders CPU previews up to 16384 px. For larger pictures
+      // (line scans, panoramas) show that size scaled up rather than nothing.
+      long_edge: Math.min(longEdge, CPU_PREVIEW_MAX_LONG_EDGE),
       execution: previewExecutionForTier(),
       hdr_display: mediaQueryMatch("(dynamic-range: high)"),
     }),
@@ -384,7 +388,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
     body: JSON.stringify({
       edit_revision: state.editRevision,
       include_locals: !localsBypassed(),
-      long_edge: longEdge,
+      long_edge: Math.min(longEdge, CPU_PREVIEW_MAX_LONG_EDGE),
       generation,
       tier: "settled",
       execution: previewExecutionForTier(),

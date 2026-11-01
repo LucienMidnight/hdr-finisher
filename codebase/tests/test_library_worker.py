@@ -135,3 +135,72 @@ def test_paused_http_thumbnail_releases_connection_and_retries(worker, tmp_path,
     response = client.get("/api/media-browser/thumbnail", params={"path": str(image), "size": 128})
     assert response.status_code == 200
     assert response.headers["content-type"] == "image/jpeg"
+
+
+def test_native_helper_retention_is_charged_to_parent_owner_and_pressure_releases_it(worker,tmp_path):
+    from hdr_finisher import app_memory
+    image=source(tmp_path)
+    _,future=worker.submit_library('native',path=str(image),center_x=.5,center_y=.5,width=100,height=100)
+    future.result(timeout=15)
+    prefix='helper-'+str(worker._process.pid)+'-'
+    def retained():
+        with app_memory._lock:
+            return sum(v['bytes'] for k,v in app_memory._caches.items() if k.startswith(prefix))
+    assert retained()>0
+    worker._send(dict(command='memory-pressure',level='critical'))
+    until=time.monotonic()+5
+    while retained() and time.monotonic()<until:time.sleep(.01)
+    assert retained()==0
+
+
+def _faulting_decoder_stub(connection, root, parent_pid, paused):
+    """Disposable native-decoder boundary: crafted bytes crash or hang."""
+    import os
+    connection.send({'event': 'ready', 'pid': os.getpid()})
+    while True:
+        message = connection.recv()
+        if message.get('command') == 'stop': return
+        if message.get('command') != 'thumbnail': continue
+        path = Path(message['path'])
+        connection.send({'event': 'job-started', 'id': message['id']})
+        connection.send({'event': 'work', 'id': message['id'], 'path': str(path), 'stage': 'Reading photo'})
+        if path.read_bytes() == b'CRAFTED-CRASH': os._exit(17)
+        if path.read_bytes() == b'HANG':
+            while True: time.sleep(1)
+        connection.send({'event': 'work', 'id': message['id'], 'done': True})
+        connection.send({'id': message['id'], 'path': str(path)})
+
+
+@pytest.mark.parametrize('payload', [b'CRAFTED-CRASH', b'HANG'])
+def test_identified_bad_decoder_is_not_replayed_and_next_file_recovers(tmp_path, monkeypatch, payload):
+    from hdr_finisher import library_worker
+    monkeypatch.setattr(library_worker, '_worker_main', _faulting_decoder_stub)
+    monkeypatch.setattr(library_worker.LibraryWorker, 'decoder_timeout', staticmethod(lambda path: .1))
+    bad = tmp_path / 'bad.jpg'; bad.write_bytes(payload)
+    good = tmp_path / 'good.jpg'; good.write_bytes(b'good')
+    helper = library_worker.LibraryWorker(tmp_path / 'profile')
+    try:
+        bad_id, failed = helper.submit_thumbnail(str(bad))
+        good_id, recovered = helper.submit_thumbnail(str(good))
+        with pytest.raises(ValueError, match='took too long' if payload == b'HANG' else 'set aside'):
+            failed.result(timeout=10)
+        assert recovered.result(timeout=10) == good
+        assert bad_id not in helper._requests
+        assert helper.status()['restarts'] == 1
+    finally:
+        helper.close()
+
+
+def test_decoder_deadline_does_not_count_queued_or_grade_pause_time(tmp_path, monkeypatch):
+    from concurrent.futures import Future
+    from hdr_finisher.library_worker import LibraryWorker
+    helper = LibraryWorker(tmp_path)
+    helper._requests = {'queued': {'command': 'thumbnail', 'path': 'a.jpg'},
+                        'active': {'command': 'thumbnail', 'path': 'b.jpg'}}
+    helper._pending = {key: Future() for key in helper._requests}
+    helper._work['active'] = {'elapsed': 0}
+    helper._paused.add('Grade')
+    helper._deadline_sample -= 1000
+    helper._check_deadlines()
+    assert helper._work['active']['elapsed'] == 0
+    assert not any(f.done() for f in helper._pending.values())

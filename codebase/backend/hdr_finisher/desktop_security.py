@@ -8,11 +8,8 @@ import time
 from uuid import uuid4
 
 
-SOURCE_EXTENSIONS = {
-    ".exr", ".tif", ".tiff", ".hdr", ".pfm", ".heic", ".heif",
-    ".avif", ".jxl", ".png", ".jpg", ".jpeg", ".dng", ".arw", ".cr2",
-    ".cr3", ".nef", ".nrw", ".raf", ".rw2", ".orf", ".ori", ".pef", ".srw",
-}
+# The supported photo list and name rules live in file_gate (one rule set).
+from .file_gate import SOURCE_EXTENSIONS, is_photo_name  # noqa: E402,F401
 EXPORT_EXTENSIONS = {".avif", ".jpg", ".jpeg", ".png", ".jxl"}
 
 
@@ -60,7 +57,7 @@ class DesktopPathGrants:
     @staticmethod
     def _validate(path: Path, intent: str) -> None:
         if intent in {"source-open", "source-relink"}:
-            if not path.is_file() or path.suffix.lower() not in SOURCE_EXTENSIONS:
+            if not path.is_file() or not is_photo_name(path.name):
                 raise ValueError("Select a supported HDR Finisher source file.")
             return
         if intent == "project-open":

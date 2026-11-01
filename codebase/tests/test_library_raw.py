@@ -7,7 +7,7 @@ from hdr_finisher.library_raw import RawBrowsing, allowances, identity, MIB
 
 def test_auto_limits_scale_down_without_losing_foreground_lane():
     small, large = allowances(8 * 1024**3), allowances(64 * 1024**3)
-    assert large["raw_files"] == 40 and large["ahead"] == 12 and large["gpu_pictures"] == 10
+    assert large["raw_files"] == 12 and large["ahead"] == 12 and large["gpu_pictures"] == 10
     assert small["raw_bytes"] < large["raw_bytes"]
     assert small["ahead"] == 2 and small["gpu_pictures"] == 2
 
@@ -137,3 +137,17 @@ def test_pause_prevents_disk_work_and_changed_source_changes_identity(tmp_path, 
     time.sleep(.05)
     assert service.partial is None and not service.raw
     service.close()
+
+
+def test_raw_larger_than_readahead_share_uses_uncached_disk_lane(tmp_path,monkeypatch):
+    path=tmp_path/'large.arw';path.write_bytes(b'raw too large')
+    service=RawBrowsing(tmp_path);service.limits['raw_bytes']=2
+    monkeypatch.setattr(service,'start',lambda:None)
+    service.request(path)
+    reader=Thread(target=service._read,daemon=True);service.threads.append(reader);reader.start()
+    try:
+        until=time.monotonic()+2
+        while not service.jobs[identity(path)[0]].get('uncached') and time.monotonic()<until:time.sleep(.01)
+        assert service.jobs[identity(path)[0]]['uncached']
+        assert not service.raw and service.partial is None
+    finally:service.close()

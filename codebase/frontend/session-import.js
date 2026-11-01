@@ -149,6 +149,10 @@ async function ejectCurrentSession() {
   await state.byteUploadQueue.catch(() => null);
   if (generation !== state.importGeneration) return;
   await projectIo.ejectCurrentSession(fetch).catch(() => null);
+  clearCurrentSessionView();
+}
+
+function clearCurrentSessionView() {
   retireActiveSession();
   state.session = null;
   state.renderCoordinator?.noteSource(null);
@@ -215,6 +219,30 @@ async function ejectCurrentSession() {
   renderLaneChrome();
   renderControlState();
   updateExportAvailability();
+}
+
+async function closePhotoInGrade() {
+  if (!state.session) return;
+  const session=state.session.session_id;
+  const resume=await window.HDRGradeSaving.pauseForProjectOpen();
+  try {
+    await window.HDRPhotoTransition.saveAndClose({
+      drain:async()=>{
+        if(await (state.editCommandQueue||Promise.resolve(true))===false || await syncGlobalEditState()===false)
+          throw Error("The latest edit could not be saved. The photo remains open in Grade.");
+      },
+      save:async()=>{
+        if(state.session?.session_id!==session)return false;
+        const saved=window.HDRGradeSaving.active()?await window.HDRGradeSaving.save({waitForDisk:true}):!state.documentDirty||await saveProjectToPath();
+        return saved&&!state.documentDirty;
+      },
+      close:async()=>{
+        if(state.session?.session_id!==session||state.documentDirty)throw Error("The photo in Grade changed. Close it again when it is ready.");
+        const response=await fetch("/api/session/current",{method:"DELETE"});
+        if(!response.ok)throw Error("The photo could not be closed. It remains open in Grade.");
+      },reset:clearCurrentSessionView
+    });
+  } finally {resume();}
 }
 
 async function requestSourceImport() {

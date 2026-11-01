@@ -113,7 +113,8 @@ SOURCE_MIP_FORMAT_VERSION = 2
 SOURCE_MIP_MAGIC = b"HDRMIP01"
 _SOURCE_MIP_HEADER = struct.Struct("<8sIIIIIIQI")
 _SOURCE_MIP_DTYPE_FLOAT32 = 1
-DEFAULT_SOURCE_MIP_MEMORY_BYTES = 256 * 1024 * 1024
+from . import app_memory
+DEFAULT_SOURCE_MIP_MEMORY_BYTES = app_memory.limit('working')
 DEFAULT_SOURCE_MIP_DISK_BYTES = 1024 * 1024 * 1024
 
 
@@ -205,6 +206,9 @@ class SourceMipStore:
         self._inflight: dict[tuple[str, int], Event] = {}
         self._build_progress: dict[tuple[str, int], tuple[int, int]] = {}
         self._memory_bytes = 0
+        from . import app_memory
+        self._ram_key='grade-mips-'+str(id(self))
+        app_memory.register(self._ram_key,'working',self.trim_memory)
         self._cleaned = False
         self._last_failure: dict[str, str] | None = None
         self._logged_failures: set[str] = set()
@@ -364,11 +368,15 @@ class SourceMipStore:
         with self._lock:
             for key in [item for item in self._memory if item[0] == digest]:
                 self._memory_bytes -= int(self._memory.pop(key).nbytes)
+            from . import app_memory
+            app_memory.claim(self._ram_key,'working',self._memory_bytes)
 
     def clear_memory(self) -> None:
         with self._lock:
             self._memory.clear()
             self._memory_bytes = 0
+            from . import app_memory
+            app_memory.claim(self._ram_key,'working',0)
 
     def diagnostics(self) -> dict[str, Any]:
         with self._lock:
@@ -565,15 +573,21 @@ class SourceMipStore:
             self._memory_bytes -= int(existing.nbytes)
         self._memory[key] = array
         self._memory_bytes += int(array.nbytes)
-        # The two most recent levels stay resident whatever their size. A level
-        # larger than the budget is the one a magnified view is reading for
-        # every tile, mask and pan (a 36-megapixel source at 66.67% is 258 MiB),
-        # and a lane's HDR and SDR levels are requested together; refusing to
-        # hold them meant a full read from disk per request.
-        while self._memory_bytes > self.memory_budget_bytes and len(self._memory) > 2:
-            _evicted_key, evicted = self._memory.popitem(last=False)
-            self._memory_bytes -= int(evicted.nbytes)
-            self._counters["memory_evictions"] += 1
+        from . import app_memory
+        while self._memory and (self._memory_bytes>self.memory_budget_bytes or
+                not app_memory.claim(self._ram_key,'working',self._memory_bytes)):
+            _,evicted=self._memory.popitem(last=False)
+            self._memory_bytes-=int(evicted.nbytes)
+            self._counters['memory_evictions']+=1
+        app_memory.claim(self._ram_key,'working',self._memory_bytes)
+
+    def trim_memory(self,target):
+        from . import app_memory
+        with self._lock:
+            while self._memory and self._memory_bytes>target:
+                _,entry=self._memory.popitem(last=False)
+                self._memory_bytes-=int(entry.nbytes)
+            app_memory.claim(self._ram_key,'working',self._memory_bytes)
 
     def _ensure_cleaned(self) -> None:
         with self._lock:
@@ -712,7 +726,7 @@ def default_source_mip_store() -> SourceMipStore | None:
         return None
     _default_source_mip_store = SourceMipStore(
         root,
-        memory_budget_bytes=_env_int("HDR_FINISHER_SOURCE_MIP_MEMORY_BYTES", DEFAULT_SOURCE_MIP_MEMORY_BYTES),
+        memory_budget_bytes=app_memory.limit("working"),
         disk_budget_bytes=_env_int("HDR_FINISHER_SOURCE_MIP_DISK_BYTES", DEFAULT_SOURCE_MIP_DISK_BYTES),
     )
     return _default_source_mip_store
@@ -724,7 +738,6 @@ class SessionRenderCache:
     sdr_reference_image: np.ndarray | None
     color_context: RenderColorContext = field(default_factory=RenderColorContext)
     max_frames: int = 6
-    max_cache_bytes: int = 192 * 1024 * 1024
     max_proxy_levels: int = 2
     source_identity: SourceMipIdentity | None = None
     sdr_identity: SourceMipIdentity | None = None
@@ -764,7 +777,11 @@ class SessionRenderCache:
 
     def __post_init__(self) -> None:
         self._hue_stages: OrderedDict = OrderedDict()
+        self._ram_lru = OrderedDict()
+        self._ram_key = 'grade-session-' + str(id(self))
+        app_memory.register(self._ram_key, 'working', self.trim_memory)
         self._build_peak_candidates()
+        self._rebalance_locked()
 
     def _build_peak_candidates(self) -> None:
         from .peak_candidates import source_candidates
@@ -777,7 +794,13 @@ class SessionRenderCache:
         authored = kind == PreviewKind.SDR and self.sdr_reference_image is not None and adjustments.sdr.use_authored_base
         lane = "sdr" if authored else "hdr"
         image = self.sdr_reference_image if authored else self.image
-        result = positioned_candidates(self._peak_candidates[lane], image.shape, adjustments.shared.geometry)
+        with self._lock:
+            if lane not in self._peak_candidates:
+                self._build_peak_candidates()
+            candidates = self._peak_candidates[lane]
+            self._touch_ram_locked('_peak_candidates', lane)
+            self._rebalance_locked()
+        result = positioned_candidates(candidates, image.shape, adjustments.shared.geometry)
         result.update(working_space="linear-srgb" if authored else "acescg", source_epoch=self._source_epoch)
         return result
 
@@ -791,6 +814,7 @@ class SessionRenderCache:
             self._frame_scope_peaks.clear()
             self._scopes.clear()
             self._cancel_inflight_locked()
+            self._rebalance_locked()
 
     def replace_source(
         self,
@@ -822,6 +846,7 @@ class SessionRenderCache:
             self._geometry_maps.clear()
             self._cancel_inflight_locked()
             self._build_peak_candidates()
+            self._rebalance_locked()
 
     def clear_adjusted(self, *, clear_masks: bool = False) -> None:
         with self._lock:
@@ -831,6 +856,7 @@ class SessionRenderCache:
             if clear_masks:
                 self._masks.clear()
             self._cancel_inflight_locked(keep_masks=not clear_masks)
+            self._rebalance_locked()
 
     def source_proxy(self, kind: PreviewKind, long_edge: int) -> tuple[np.ndarray, str]:
         source, sdr_reference = self._proxies(long_edge)
@@ -1059,6 +1085,7 @@ class SessionRenderCache:
             cached = self._geometry_maps.get(key)
             if cached is not None:
                 self._geometry_maps.move_to_end(key)
+                self._touch_ram_locked('_geometry_maps', key)
                 return cached
         # The map depends on the level's size, not its pixels, so a size that
         # has no level yet does not have one built to answer this.
@@ -1074,8 +1101,10 @@ class SessionRenderCache:
         with self._lock:
             self._geometry_maps[key] = result
             self._geometry_maps.move_to_end(key)
+            self._touch_ram_locked('_geometry_maps', key)
             while len(self._geometry_maps) > 8:
                 self._geometry_maps.popitem(last=False)
+            self._rebalance_locked()
         return result
 
     def _hue_stage(self, adjustments: AdjustmentState, edge: int, lane: PreviewKind):
@@ -1089,6 +1118,7 @@ class SessionRenderCache:
             cached = self._hue_stages.get(key)
             if cached is not None:
                 self._hue_stages.move_to_end(key)
+                self._touch_ram_locked('_hue_stages', key)
                 return cached
             source, reference = self._proxies_locked(edge)
         scale = min(1.0, edge / max(self.image.shape[:2]))
@@ -1098,8 +1128,10 @@ class SessionRenderCache:
         result = (prepare_stage_input(pixels, PreviewKind(lane), scale), fixed)
         with self._lock:
             self._hue_stages[key] = result
+            self._touch_ram_locked('_hue_stages', key)
             while len(self._hue_stages) > 2:
                 self._hue_stages.popitem(last=False)
+            self._rebalance_locked()
         return result
 
     def _hue_mask(self, adjustments, expression, edge, lane, *, spatial_only):
@@ -1241,6 +1273,7 @@ class SessionRenderCache:
                     if record_diagnostics:
                         self._hits += 1
                     self._frames.move_to_end(key)
+                    self._touch_ram_locked('_frames', key)
                     return cached, None
                 if is_current is not None and not is_current():
                     self._stale_cancellations += 1
@@ -1309,6 +1342,7 @@ class SessionRenderCache:
             processed.setflags(write=False)
             with self._lock:
                 self._frames[key] = processed
+                self._touch_ram_locked('_frames', key)
                 self._evict_locked()
         finally:
             with self._lock:
@@ -1403,6 +1437,7 @@ class SessionRenderCache:
             )
             with self._lock:
                 self._frames[key] = processed
+                self._touch_ram_locked('_frames', key)
                 if report.scope_peak_value is not None:
                     self._frame_scope_peaks[key] = float(report.scope_peak_value)
                 self._evict_locked()
@@ -1448,6 +1483,7 @@ class SessionRenderCache:
                 if cached is not None:
                     self._hits += 1
                     self._scopes.move_to_end(key)
+                    self._touch_ram_locked('_scopes', key)
                     return cached.model_copy(deep=True)
                 if is_current is not None and not is_current():
                     self._stale_cancellations += 1
@@ -1497,6 +1533,8 @@ class SessionRenderCache:
                 while len(self._scopes) > 12:
                     self._scopes.popitem(last=False)
                     self._evictions += 1
+                self._touch_ram_locked('_scopes', key)
+                self._rebalance_locked()
         finally:
             with self._lock:
                 if self._inflight.get(flight_key) is flight:
@@ -1539,18 +1577,21 @@ class SessionRenderCache:
             return self._proxies_locked(edge, is_current=is_current, persist_mips=persist_mips)
 
     def _proxies_locked(self, edge: int, *, is_current: Callable[[], bool] | None = None, persist_mips: bool = True) -> tuple[np.ndarray, np.ndarray | None]:
-        self._source_proxies[edge] = self._source_level_locked(edge, PreviewKind.HDR, is_current=is_current, persist=persist_mips)
-        if self.sdr_reference_image is None:
-            self._sdr_proxies[edge] = None
-        else:
-            self._sdr_proxies[edge] = self._source_level_locked(edge, PreviewKind.SDR, is_current=is_current, persist=persist_mips)
-        self._source_proxies.move_to_end(edge)
-        self._sdr_proxies.move_to_end(edge)
-        while len(self._source_proxies) > self.max_proxy_levels:
-            old_edge, _ = self._source_proxies.popitem(last=False)
-            self._sdr_proxies.pop(old_edge, None)
-            self._evictions += 1
-        return self._source_proxies[edge], self._sdr_proxies[edge]
+        source = self._source_level_locked(edge, PreviewKind.HDR, is_current=is_current, persist=persist_mips)
+        reference = None if self.sdr_reference_image is None else self._source_level_locked(edge, PreviewKind.SDR, is_current=is_current, persist=persist_mips)
+        # The mip store owns persistent levels. Keeping another reference here
+        # would keep its evicted payload alive outside its reported bytes.
+        for name, identity, value in (('_source_proxies', self.source_identity, source), ('_sdr_proxies', self.sdr_identity, reference)):
+            cache = getattr(self, name)
+            if self.mip_store is None or identity is None:
+                cache[edge] = value
+                cache.move_to_end(edge)
+                self._touch_ram_locked(name, edge)
+            while len(cache) > self.max_proxy_levels:
+                cache.popitem(last=False)
+                self._evictions += 1
+        self._rebalance_locked()
+        return source, reference
 
     def _source_level_locked(self, edge: int, kind: PreviewKind, *, is_current: Callable[[], bool] | None = None, persist: bool = True) -> np.ndarray:
         """Return one source level, through the persistent mip store when present.
@@ -1632,6 +1673,7 @@ class SessionRenderCache:
                         if mask is not None:
                             self._hits += 1
                             self._masks.move_to_end(key)
+                            self._touch_ram_locked('_masks', key)
                             break
                         # A request that outlived source replacement may finish for
                         # its original caller, but must not join or populate the
@@ -1679,6 +1721,7 @@ class SessionRenderCache:
                             existing = self._masks.get(key)
                             if existing is None:
                                 self._masks[key] = mask
+                                self._touch_ram_locked('_masks', key)
                                 self._misses += 1
                                 self._evict_masks_locked(self._mask_budget_locked())
                             else:
@@ -1695,41 +1738,78 @@ class SessionRenderCache:
         return compiled
 
     def _mask_budget_locked(self) -> int:
-        # The budget follows the largest edge held, not the edge just inserted:
-        # a Fit-sized insert must not shrink the cache under the native masks
-        # the next zoom would then have to compile again.
-        return 160 * 1024 * 1024 if any(key[1] > 1600 for key in self._masks) else 96 * 1024 * 1024
+        return app_memory.limit('working')
 
     def _evict_masks_locked(self, budget: int) -> None:
-        total = sum(int(mask.nbytes) for mask in self._masks.values())
-        if total <= budget:
-            return
-        # The cache only hears about a mask when a client asks for it, and a
-        # client that already holds one stops asking. Plain LRU therefore
-        # evicted the live masks of untouched locals while keeping every
-        # superseded shape of the local being edited. Drop superseded shapes
-        # (same local, edge and geometry; an older spatial identity) first.
-        live: dict[tuple[object, ...], tuple[object, ...]] = {}
-        for key in self._masks:
-            live[key[:4]] = key
-        superseded = [key for key in self._masks if live[key[:4]] is not key]
-        for key in [*superseded, *live.values()]:
-            if total <= budget:
-                break
-            total -= int(self._masks.pop(key).nbytes)
+        # An edited local's obsolete shapes lose priority before untouched
+        # live masks. The byte allowance still belongs to the shared owner.
+        live = {key[:4]: key for key in self._masks}
+        superseded = [key for key in self._masks if live[key[:4]] != key]
+        for key in superseded:
+            if app_memory.claim(self._ram_key, 'working', self._retained_bytes_locked()): break
+            self._masks.pop(key, None)
+            self._ram_lru.pop(('_masks', key), None)
             self._evictions += 1
+        self._rebalance_locked()
+
+    def _touch_ram_locked(self, name, key):
+        self._ram_lru[(name, key)] = None
+        self._ram_lru.move_to_end((name, key))
+
+    def _retained_bytes_locked(self):
+        from dataclasses import fields, is_dataclass
+        seen = set()
+        def count(value):
+            if value is None or id(value) in seen: return 0
+            seen.add(id(value))
+            if isinstance(value, np.ndarray):
+                root = value
+                while isinstance(root.base, np.ndarray): root = root.base
+                if root is not value:
+                    return count(root)
+                return int(root.nbytes)
+            if isinstance(value, dict): return sum(count(v) for v in value.values())
+            if isinstance(value, (tuple, list)): return sum(count(v) for v in value)
+            if is_dataclass(value): return sum(count(getattr(value, f.name)) for f in fields(value))
+            if hasattr(value, 'model_dump_json'): return len(value.model_dump_json().encode('utf-8'))
+            if isinstance(value, (str, bytes)): return len(value.encode('utf-8') if isinstance(value, str) else value)
+            return 0
+        # The active decoded source belongs to the current document, not a
+        # reconstructible cache. Views into it allocate no additional payload.
+        count(self.image); count(self.sdr_reference_image)
+        return sum(count(getattr(self, name)) for name in self._ram_collections())
+
+    @staticmethod
+    def _ram_collections():
+        return ('_source_proxies', '_sdr_proxies', '_frames', '_scopes',
+                '_masks', '_geometry_maps', '_hue_stages', '_peak_candidates', '_source_ranges')
+
+    def _rebalance_locked(self, target=None):
+        live = {(name, key) for name in self._ram_collections() for key in getattr(self, name)}
+        for old in list(self._ram_lru):
+            if old not in live: del self._ram_lru[old]
+        for name in self._ram_collections():
+            for key in getattr(self, name):
+                if (name, key) not in self._ram_lru: self._touch_ram_locked(name, key)
+        size = self._retained_bytes_locked()
+        while self._ram_lru and ((target is not None and size > target) or
+                not app_memory.claim(self._ram_key, 'working', size)):
+            (name, key), _ = self._ram_lru.popitem(last=False)
+            getattr(self, name).pop(key, None)
+            if name == '_frames': self._frame_scope_peaks.pop(key, None)
+            self._evictions += 1
+            size = self._retained_bytes_locked()
+        app_memory.claim(self._ram_key, 'working', size)
+
+    def trim_memory(self, target):
+        with self._lock: self._rebalance_locked(target)
 
     def _evict_locked(self) -> None:
-        def cached_bytes() -> int:
-            return (
-                self._proxy_bytes_locked()
-                + sum(int(frame.nbytes) for frame in self._frames.values())
-            )
-
-        while self._frames and (len(self._frames) > self.max_frames or cached_bytes() > self.max_cache_bytes):
+        while len(self._frames) > self.max_frames:
             evicted, _ = self._frames.popitem(last=False)
             self._frame_scope_peaks.pop(evicted, None)
             self._evictions += 1
+        self._rebalance_locked()
 
     def _cancel_inflight_locked(self, *, keep_masks: bool = False) -> None:
         # A grade edit invalidates adjusted frames and scopes, not spatial

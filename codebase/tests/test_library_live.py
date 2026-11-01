@@ -15,7 +15,7 @@ def photo(tmp_path):
     return path
 
 
-def test_one_import_stores_both_sizes_and_finishing_reuses_source(tmp_path, monkeypatch):
+def test_only_requested_size_is_developed_and_finishing_reuses_source(tmp_path, monkeypatch):
     from hdr_finisher.sessions import SessionStore
     original=SessionStore.prepare_session; calls=[]
     def prepare(self,*args,**kwargs):
@@ -23,8 +23,10 @@ def test_one_import_stores_both_sizes_and_finishing_reuses_source(tmp_path, monk
     monkeypatch.setattr(SessionStore,"prepare_session",prepare)
     path=photo(tmp_path);before=path.read_bytes();root=tmp_path/"cache"
     small=develop_cpu(root,path,None,640)
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    assert LibraryPictureCache(root).cached(path,2560,quality(None)) is None
     large=develop_cpu(root,path,None,2560)
-    assert len(calls)==1
+    assert len(calls)==2
     assert (small["width"],small["height"])==(640,320)
     assert (large["width"],large["height"])==(800,400)
     service=LivePictures(root,LibraryMarks(root))
@@ -307,14 +309,15 @@ def test_fresh_scene_draws_from_memory_before_atomic_store(tmp_path, invalidate)
         cache.persist_pending(str(path.resolve()), lambda _: None)
         assert cache.file(result["key"]).is_file()
         assert cache.cached(path, 640, quality(None))["key"] == result["key"]
+    assert result["key"] not in cache.transient
     assert not list((tmp_path / "profile").rglob("*.tmp"))
 
 
-def test_cpu_fallback_hands_both_fresh_sizes_to_draw_before_store(tmp_path):
+def test_cpu_fallback_hands_only_requested_size_to_draw_before_store(tmp_path):
     path = photo(tmp_path)
     result = develop_cpu(tmp_path / "profile", path, None, 640, draw_first=True)
     scenes = result.pop("_pending_scenes")
-    assert {scene["edge"] for scene in scenes} == {640, 2560}
+    assert {scene["edge"] for scene in scenes} == {640}
     assert all(scene.get("_transient") for scene in scenes)
     assert not list((tmp_path / "profile").rglob("*.npz"))
 
@@ -332,3 +335,144 @@ def test_changed_photo_during_memory_encoding_never_publishes(tmp_path, monkeypa
         cache.build(path, 640, quality(None), decoded=(np.ones((4, 8, 3)), None, {}), defer_store=True)
     assert not cache.transient and not cache.pending_stores
     assert not list((tmp_path / "profile").rglob("*.npz"))
+
+
+def test_materialised_neutral_highlight_default_reuses_authored_scene_identity():
+    from hdr_finisher.models import EditDocument
+    from hdr_finisher.projects import validate_saved
+    document = {"source": {"raw_import_settings": RawImportSettings().model_dump(mode="json")}}
+    document["source"]["raw_import_settings"]["lens"]["mode"] = "off"
+    document["source"]["raw_import_settings"]["highlight_reconstruction"].pop("edge_colour_expand_percent")
+    assert quality(None) == quality({})
+    from hashlib import sha256
+    import json
+    from hdr_finisher.loader import SOURCE_DECODER_VERSION, SOURCE_COLOR_TRANSFORM_VERSION
+    from hdr_finisher.library_live import recipe
+    authored = recipe(document)
+    authored["raw_import_settings"] = deepcopy(document["source"]["raw_import_settings"])
+    stored_quality = "live-scene-v2:" + sha256(json.dumps({"recipe": authored,
+        "decoder": SOURCE_DECODER_VERSION, "colour": SOURCE_COLOR_TRANSFORM_VERSION,
+        "rgb_adapter": "library-rgb-v3"}, sort_keys=True).encode()).hexdigest()
+    before = quality(document)
+    from hdr_finisher.library_live import equivalent_qualities
+    assert stored_quality in equivalent_qualities(before)
+    normalised = validate_saved(EditDocument, document).model_dump(mode="json")
+    assert quality(normalised) == before
+    normalised["source"]["raw_import_settings"]["highlight_reconstruction"]["edge_colour_expand_percent"] = 1
+    assert quality(normalised) == before
+    normalised["source"]["raw_import_settings"]["highlight_reconstruction"]["method"] = "edge_colour_v1"
+    assert quality(normalised) != before
+
+
+@pytest.mark.parametrize("lens_mode", ["auto", "off"])
+def test_stored_scene_survives_materialised_defaults(tmp_path, lens_mode):
+    from hdr_finisher.library_live import recipe, _quality
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    path = photo(tmp_path)
+    document = {"source": {"raw_import_settings": RawImportSettings().model_dump(mode="json")}}
+    document["source"]["raw_import_settings"]["lens"]["mode"] = lens_mode
+    authored = recipe(document)
+    authored["raw_import_settings"]["highlight_reconstruction"].pop("edge_colour_expand_percent")
+    cache = LibraryPictureCache(tmp_path / "profile")
+    stored = cache.build(path, 640, _quality(authored), decoded=(np.ones((4,8,3)), None, {"source_width":8,"source_height":4}))
+    found = cache.cached(path, 640, quality(document))
+    assert found["cache_hit"] and found["key"] == stored["key"]
+    assert found["quality"] == quality(document)
+    service=LivePictures(tmp_path/'profile', LibraryMarks(tmp_path/'profile'),
+        SimpleNamespace(request=lambda path:{'grade':document}))
+    before=service.describe(path,found)
+    from hdr_finisher.library_pictures import picture_key
+    from shutil import copyfile
+    canonical_key=picture_key(path,640,quality(document))
+    if canonical_key != stored['key']:
+        copyfile(cache.file(stored['key']),cache.file(canonical_key))
+    canonical=cache.cached(path,640,quality(document))
+    after=service.describe(path,canonical)
+    assert before['key']==after['key']
+    if lens_mode == 'off':
+        assert before['source_key']!=after['source_key']
+    document["source"]["raw_import_settings"]["highlight_reconstruction"]["clipping_threshold"] = 1.1
+    assert cache.cached(path, 640, quality(document)) is None
+
+
+def test_scene_identity_ignores_inactive_controls_and_repair_labels():
+    from hdr_finisher.library_live import recipe
+    document = {"source": {"raw_import_settings": RawImportSettings().model_dump(mode="json")}}
+    document["source"]["raw_import_settings"]["highlight_reconstruction"]["enabled"] = False
+    before = quality(document)
+    document["source"]["raw_import_settings"]["highlight_reconstruction"]["clipping_threshold"] = .8
+    assert quality(document) == before
+    from hdr_finisher.retouch_recipe import InpaintRecipe
+    repair = {"id":"first", "name":"Dust", "enabled":True, "recipe":InpaintRecipe(
+        source_size=(64,64), search_rect=(0,0,64,64), points=[dict(x=.5,y=.5)]).model_dump(mode="json")}
+    document["repairs"] = [repair]
+    before = quality(document)
+    repair.update(id="renamed", name="New label")
+    assert quality(document) == before
+    repair["recipe"]["points"][0]["x"] = .6
+    assert quality(document) != before
+    repair["enabled"] = False
+    document["repairs"] = [repair]
+    disabled = quality(document)
+    document["repairs"] = []
+    assert quality(document) == disabled
+
+
+def test_draw_identity_ignores_document_metadata_but_tracks_finishing(tmp_path):
+    path=photo(tmp_path)
+    root=tmp_path/'profile'
+    scene=develop_cpu(root,path,None,640)
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    document=LibraryPictureCache(root).default_document(path)
+    service=LivePictures(root,LibraryMarks(root),SimpleNamespace(request=lambda path:{'grade':document}))
+    before=service.describe(path,scene)
+    document['app_version']='old-version'
+    document['source']['filename']='renamed.png'
+    document['source']['raw_import_settings']['highlight_reconstruction'].pop('edge_colour_expand_percent',None)
+    assert service.describe(path,scene)['key']==before['key']
+    document['global_adjustments']['hdr']['exposure']=1
+    after=service.describe(path,scene)
+    assert after['key']!=before['key'] and after['source_key']==before['source_key']
+
+@pytest.mark.parametrize("admission_refused", [False, True])
+def test_waiting_visible_preview_survives_handoff_reclamation(tmp_path, monkeypatch, admission_refused):
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    from hdr_finisher import app_memory
+    cache = LibraryPictureCache(tmp_path / "profile")
+    path = photo(tmp_path)
+    pixels = np.full((4, 8, 3), .18, dtype=np.float32)
+    if admission_refused:
+        monkeypatch.setattr(app_memory, "claim", lambda *args: False)
+    result = cache.build(path, 640, quality(None), decoded=(pixels, None,
+        {"source_width": 8, "source_height": 4}), defer_store=True)
+    service = LivePictures(tmp_path / "profile", None)
+    service.cache = cache
+    meta = service.describe(path, result)
+    # Simulate other developments reclaiming the handoff while this draw waits.
+    cache.trim_memory(0)
+    assert not cache.transient
+    assert cache.file(result["key"]).is_file()
+    body, width, height, stride, space = service.pixels(meta["key"], "hdr")
+    assert (width, height, space) == (8, 4, "acescg")
+    np.testing.assert_allclose(np.frombuffer(body, dtype=np.float16).reshape(height, stride // 2)[:, :width*4].reshape(height, width, 4)[..., :3], pixels, atol=.0001)
+    assert not cache.pending_stores
+    assert not list((tmp_path / "profile").rglob("*.tmp"))
+
+def test_pending_preview_stays_owned_until_disk_publication_finishes(tmp_path, monkeypatch):
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    cache = LibraryPictureCache(tmp_path / "profile")
+    path = photo(tmp_path)
+    result = cache.build(path, 640, quality(None), decoded=(np.full((4, 8, 3), .18), None,
+        {"source_width": 8, "source_height": 4}), defer_store=True)
+    service = LivePictures(tmp_path / "profile", None)
+    service.cache = cache
+    meta = service.describe(path, result)
+    build = cache.build
+    def while_storing(*args, **kwargs):
+        cache.trim_memory(0)
+        assert service.pixels(meta["key"], "hdr")[1:3] == (8, 4)
+        return build(*args, **kwargs)
+    monkeypatch.setattr(cache, "build", while_storing)
+    cache.persist_pending(str(path.resolve()), lambda _: None)
+    assert not cache.transient and not cache.pending_stores
+    assert cache.file(result["key"]).is_file()

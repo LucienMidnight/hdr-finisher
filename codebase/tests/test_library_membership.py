@@ -186,3 +186,16 @@ def test_virtual_copy_album_keeps_original_family_and_survives_rebuild(tmp_path)
     assert not family[0]["albums"] and family[1]["albums"] == ["Copies"]
     marks.database.unlink();rebuilt=LibraryMarks(browser.root);restored=LibraryIndex(rebuilt,browser,None);LibraryCopies(rebuilt)
     assert candidates(restored)=={str(photos[0]),key}
+
+
+def test_foreground_recovery_finishes_while_background_helper_is_paused(tmp_path):
+    folder, photos, browser, marks, index = library(tmp_path)
+    marks.change([photos[0]], MarkChange(rating=4))
+    browser.remove_pin(str(folder))
+    def paused_upkeep():
+        raise AssertionError("Foreground recovery must not wait for a paused helper")
+    index.wait_for_upkeep = paused_upkeep
+    index.membership.reconcile()
+    assert marks._rows([str(photos[0])])[str(photos[0])]["marks"]["rating"] == 4
+    assert not candidates(index)
+    assert marks.writer.status()["waiting"] == 1

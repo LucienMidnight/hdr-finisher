@@ -5,6 +5,8 @@ import warnings
 
 import numpy as np
 
+from .cpu_budget import parallel_bands
+
 # HDR Finisher does not exercise colour-science's optional plotting or SciPy
 # APIs. Suppress only those two import-time capability notices; all other
 # colour warnings remain visible because they can signal real color errors.
@@ -325,13 +327,15 @@ def normalize_to_acescg_bounded(
     if not result.flags.writeable:
         result = result.copy()
     strip_rows = max(1, int(rows))
-    for start in range(0, result.shape[0], strip_rows):
+    def band(start):
         if cancelled is not None and cancelled():
             raise RuntimeError("Import cancelled")
         stop = min(start + strip_rows, result.shape[0])
         result[start:stop] = normalize_to_acescg(
             result[start:stop], source_color_space, transfer_function, reference_white_nits
         )
+    for _ in parallel_bands(band, range(0, result.shape[0], strip_rows)):
+        pass
     return result
 
 
@@ -347,11 +351,13 @@ def transform_float32_bounded(
     if not result.flags.writeable:
         result = result.copy()
     strip_rows = max(1, int(rows))
-    for start in range(0, result.shape[0], strip_rows):
+    def band(start):
         if cancelled is not None and cancelled():
             raise RuntimeError("Import cancelled")
         stop = min(start + strip_rows, result.shape[0])
         result[start:stop] = transform(result[start:stop])
+    for _ in parallel_bands(band, range(0, result.shape[0], strip_rows)):
+        pass
     return result
 
 

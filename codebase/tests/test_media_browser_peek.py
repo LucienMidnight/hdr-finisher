@@ -11,9 +11,13 @@ from hdr_finisher import media_browser as media
 
 
 def test_peek_counts_direct_photos_and_bounds_candidates_without_decoding(tmp_path, monkeypatch):
+    # Stand-ins are at least the file gate's 1 KB minimum; smaller files are not photos.
+    from hdr_finisher import file_gate
+    monkeypatch.setattr(file_gate, "MIN_PHOTO_BYTES", 1024)
     for i in range(30):
-        (tmp_path / f"photo-{i}.arw").write_bytes(b"raw stand-in")
-    (tmp_path / "photo.png").write_bytes(b"png stand-in")
+        (tmp_path / f"photo-{i}.arw").write_bytes(b"raw stand-in".ljust(2048, b"."))
+    (tmp_path / "photo.png").write_bytes(b"png stand-in".ljust(2048, b"."))
+    (tmp_path / "empty.arw").write_bytes(b"")
     (tmp_path / "notes.txt").write_text("ignored")
     (tmp_path / "nested").mkdir()
     (tmp_path / "nested" / "child.arw").write_bytes(b"nested")

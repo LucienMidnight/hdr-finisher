@@ -55,6 +55,9 @@ if (process.env.HDR_FINISHER_DISABLE_GPU === "1") {
   app.disableHardwareAcceleration();
 }
 
+// The app reclaims renderer garbage through V8, without attaching DevTools.
+app.commandLine.appendSwitch("js-flags", [app.commandLine.getSwitchValue("js-flags"), "--expose-gc"].filter(Boolean).join(" "));
+
 const recentProjects = createRecentProjects(path.join(app.getPath("userData"), "recent-projects.json"));
 
 let deliveryWindow = null;
@@ -307,11 +310,14 @@ async function startBackend() {
   fs.mkdirSync(logsDirectory, { recursive: true });
   const logPath = path.join(logsDirectory, "backend.log");
   const log = fs.createWriteStream(logPath, { flags: "a" });
+  const writeBackendLog = require("./lib/backend-log").create(log);
   const child = spawn(command.executable, command.args, {
     cwd: command.cwd,
     env: {
       ...process.env,
+      HDR_FINISHER_MEMORY_BYTES: applicationPreferences.appMemoryBytes == null ? "" : String(applicationPreferences.appMemoryBytes),
       HDR_FINISHER_DESKTOP_SECRET: authoringSecret,
+      HDR_FINISHER_DESKTOP_PID: String(process.pid),
       HDR_FINISHER_DESKTOP_CONTROL_SECRET: controlSecret,
       HDR_FINISHER_APP_DATA_DIR: app.getPath("userData"),
       PYTHONUNBUFFERED: "1",
@@ -321,13 +327,13 @@ async function startBackend() {
   });
   const backendStarted = Date.now();
   libraryStage("backend_process_started", { pid: child.pid });
-  readline.createInterface({ input: child.stderr }).on("line", line => log.write(`${line}\n`));
+  readline.createInterface({ input: child.stderr }).on("line", line => writeBackendLog(line));
 
   const ready = await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("The image-processing backend did not become ready in time.")), 30000);
     const lines = readline.createInterface({ input: child.stdout });
     lines.on("line", (line) => {
-      log.write(`${line}\n`);
+      writeBackendLog(line);
       if (!line.startsWith("HDR_FINISHER_READY ")) return;
       try {
         const record = JSON.parse(line.slice("HDR_FINISHER_READY ".length));
@@ -505,6 +511,12 @@ function registerIpc() {
     const record = validateSender(event);
     return callback(record, ...args);
   });
+  handleWindow("desktop:reclaim-library-storage", async record => {
+    // Decision 20: references have been evicted for an actual waiting job.
+    // Reuse the existing dead-upload release, without inventing OS pressure.
+    await require('./memory-pressure.cjs').notifyChromiumPressure(record.window.webContents, 'moderate');
+    return true;
+  });
   handleWindow("desktop:set-library-command-state", (record, next = {}) => {
     libraryCommandState = { selected: Math.max(0, Number(next.selected) || 0), copied: Boolean(next.copied), active: record.role === "library" || Boolean(next.active) };
     buildMenu(); return true;
@@ -514,7 +526,7 @@ function registerIpc() {
     windows.get("library")?.window.webContents.send("desktop:menu-command", { command }); return true;
   });
   handleWindow("desktop:forward-library-action", (record, action, detail = {}) => {
-    if (record.role !== "library" || !["command-state", "grade-replaced", "quick-export", "export-selection", "add-export-selection"].includes(action)) throw new Error("Invalid Library action.");
+    if (record.role !== "library" || !["command-state", "grade-replaced", "quick-export", "export-selection", "add-export-selection", "close-grade"].includes(action)) throw new Error("Invalid Library action.");
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error("The grading window is unavailable.");
     mainWindow.webContents.send("desktop:library-window", { ...detail, action });
     if (["quick-export", "export-selection"].includes(action)) { mainWindow.show(); mainWindow.focus(); }
@@ -603,6 +615,7 @@ function registerIpc() {
   handleWindow("desktop:get-window-state", (record) => ({
     maximized: record.window.isMaximized(),
     fullscreen: record.window.isFullScreen(),
+    visible: record.window.isVisible() && !record.window.isMinimized(),
   }));
   handleWindow("desktop:perform-window-action", (record, action) => {
     const window = record.window;
@@ -646,8 +659,16 @@ function registerIpc() {
   handle("desktop:list-grading-presets", (groupId) => listGradingPresets(groupId));
   handle("desktop:save-grading-preset", (preset) => saveGradingPreset(preset));
   handle("desktop:delete-grading-preset", (presetId) => deleteGradingPreset(presetId));
-  handle("desktop:set-preferences", (value) => {
-    applicationPreferences = sanitizeApplicationPreferences(value);
+  handle("desktop:set-preferences", async (value) => {
+    const next = sanitizeApplicationPreferences(value);
+    if (next.appMemoryBytes !== applicationPreferences.appMemoryBytes) {
+      const response = await fetch(`${backend.url}/api/library/memory-setting`, {
+        method:"POST", headers:{"Content-Type":"application/json", "X-HDR-Finisher-Token":backend.authoringSecret},
+        body:JSON.stringify({bytes:next.appMemoryBytes}),
+      });
+      if (!response.ok) throw Error(await response.text());
+    }
+    applicationPreferences = next;
     const library = windows.get("library")?.window;
     if (library && !library.isDestroyed()) library.webContents.send("desktop:library-window", { action: "theme", theme: applicationPreferences.theme });
     renderingMode = applicationPreferences.renderingMode;
@@ -910,6 +931,7 @@ function sendWindowState(window = mainWindow) {
   window.webContents.send("desktop:window-state", {
     maximized: window.isMaximized(),
     fullscreen: window.isFullScreen(),
+    visible: window.isVisible() && !window.isMinimized(),
   });
 }
 
@@ -1125,7 +1147,7 @@ async function createWindow(role = "main") {
     }
     if (!windows.size && !shuttingDown) void beginShutdown();
   });
-  for (const eventName of ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen"]) {
+  for (const eventName of ["maximize", "unmaximize", "enter-full-screen", "leave-full-screen", "minimize", "restore", "hide", "show"]) {
     window.on(eventName, () => sendWindowState(window));
   }
   for (const eventName of ["move", "resize", "enter-full-screen", "leave-full-screen"]) {
@@ -1295,16 +1317,69 @@ if (!gotLock) {
       libraryStage("desktop_startup_join", { duration_ms: Date.now() - shellStarted });
       if (shuttingDown || !mainWindow || mainWindow.isDestroyed()) return;
       const activeBackend = backend;
-      session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${activeBackend.url}/*`] }, (details, callback) => {
+      session.defaultSession.webRequest.onBeforeSendHeaders({ urls: [`${activeBackend.url}/*`, `${activeBackend.url.replace("http:","ws:")}/*`] }, (details, callback) => {
+        // Never touch details.uploadData here: touching it makes Electron copy a
+        // whole upload body (a library handoff is 25-60 MB) into this process.
+        // That copy stalls the window while the photo is saved.
         details.requestHeaders["X-HDR-Finisher-Token"] = activeBackend.authoringSecret;
         callback({ requestHeaders: details.requestHeaders });
       });
       registerIpc();
+      // One non-overlapping observer counts Electron (including GPU host RAM),
+      // Python and late helpers together, before the hard four-GB limit.
+      let memorySampling = false, memoryLastLog = 0;
+      const memoryPressureRelay = require('./memory-pressure.cjs');
+      const memoryTrimGate = memoryPressureRelay.pressureGate();
+      const memoryTimer = setInterval(async () => {
+        if (memorySampling || shuttingDown) return;
+        memorySampling = true;
+        try {
+          const response = await fetch(`${activeBackend.url}/api/library/memory`, {
+            headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret}, signal:AbortSignal.timeout(2000)});
+          if (!response.ok) throw Error(`Memory sampling failed (${response.status})`);
+          const value = await response.json();
+          // The backend's level comes from measurement and the OS only, never
+          // from a refused admission. Trim once when it rises, then at most
+          // once per cool-down while it lasts.
+          const trimLevel = memoryTrimGate(value.level || "none");
+          value.reclaim = !!trimLevel;
+          value.reclaimLevel = trimLevel || "none";
+          if (trimLevel) libraryStage("memory_trim", {level:trimLevel, totalBytes:value.totalBytes,
+            targetBytes:value.targetBytes, ceilingBytes:value.ceilingBytes, pressure:value.pressure, waiting:value.waiting});
+          if (Date.now()-memoryLastLog > 5000) {
+            memoryLastLog = Date.now();
+            libraryStage("app_memory", {...value, main:process.memoryUsage(),
+              electron:app.getAppMetrics().map(item=>({pid:item.pid,type:item.type,bytes:item.memory.workingSetSize*1024}))});
+          }
+          for (const record of windows.values()) if (!record.window.isDestroyed()) record.window.webContents.send("desktop:memory-pressure",value);
+          if (value.reclaim) {
+            // Cache owners release references above. Chromium also needs its
+            // native pressure notification to discard dead upload/readback
+            // storage in renderer, browser and GPU host processes.
+            const pressureStarted = Date.now();
+            await memoryPressureRelay.notifyChromiumPressure(mainWindow.webContents, trimLevel);
+            libraryStage("chromium_pressure_timing", {level:trimLevel,duration_ms:Date.now()-pressureStarted});
+            const reclaimed=await fetch(`${activeBackend.url}/api/library/memory-reclaim`, {method:"POST",
+              headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret,"Content-Type":"application/json"},
+              body:JSON.stringify({pressure:trimLevel}),signal:AbortSignal.timeout(2000)});
+            await reclaimed.arrayBuffer();
+          }
+        } catch (error) {
+          libraryStage("memory_controller_error", {reason:error.message});
+          console.error("Memory controller:",error.message);
+        }
+        finally { memorySampling = false; }
+      }, 500);
+      memoryTimer.unref();
       for (const eventName of ["display-added", "display-removed", "display-metrics-changed"]) {
         screen.on(eventName, scheduleDisplayState);
       }
       buildMenu();
       await mainWindow.loadURL(backend.url);
+      if (process.env.HDR_FINISHER_QUICK_LIBRARY_CONFIG) {
+        void require("./quick-library-test.cjs").run({app, window:mainWindow, backend})
+          .catch(error => console.error("Quick Library check:", error));
+      }
       setTimeout(async () => {
       if (shuttingDown) return;
       deliveryWindow = new BrowserWindow({show:false, webPreferences:{

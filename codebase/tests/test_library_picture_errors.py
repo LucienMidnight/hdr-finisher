@@ -200,3 +200,98 @@ def test_two_real_decoder_failures_release_helper_for_next_photo(tmp_path):
         assert worker.status()["pending"] == 0
     finally:
         worker.close()
+
+def test_renderer_development_failure_is_remembered_until_explicit_retry(tmp_path):
+    path = tmp_path / "photo.png"
+    Image.new("RGB", (64, 32), (100, 120, 80)).save(path)
+    helper = Helper()
+    api = client(tmp_path / "app", helper)
+    reason = "Development stopped after 3 attempts: Yielding GPU RAW to shared work."
+    identity = api.post("/api/library/live-plan", json={"path": str(path), "edge": 640}).json()["source_identity"]
+    response = api.post("/api/library/development-error", json={"path": str(path), "source_identity": identity, "reason": reason})
+    assert response.status_code == 200, response.text
+    record = response.json()["error"]
+    assert record["reason"] == reason
+    blocked = api.post("/api/library/live-scene", json={"path": str(path), "edge": 640})
+    assert blocked.status_code == 422
+    assert blocked.json()["library_error"]["reason"] == reason
+    assert not helper.calls
+    retry = api.post("/api/library/picture-error", json={"path": str(path), "revision": record["revision"], "action": "retry"})
+    assert retry.status_code == 200, retry.text
+    assert not api.get("/api/library/health").json()["picture_errors"]
+
+def test_failed_old_development_does_not_mark_changed_source_failed(tmp_path):
+    path = tmp_path / "photo.png"
+    Image.new("RGB", (64, 32), (100, 120, 80)).save(path)
+    api = client(tmp_path / "app", Helper())
+    identity = api.post("/api/library/live-plan", json={"path": str(path), "edge": 640}).json()["source_identity"]
+    path.write_bytes(path.read_bytes() + b"changed")
+    response = api.post("/api/library/development-error", json={"path": str(path), "source_identity": identity, "reason": "Old development failed"})
+    assert response.status_code == 409
+    assert not api.get("/api/library/health").json()["picture_errors"]
+
+
+def test_disconnected_read_is_offline_without_a_broken_photo_receipt(tmp_path):
+    import errno
+    from pydantic import BaseModel
+    class PhotoRequest(BaseModel):
+        path: str
+    path = tmp_path / 'photo.jpg'; path.write_bytes(b'photo')
+    marks = LibraryMarks(tmp_path / 'profile')
+    errors = PictureErrors(marks)
+    offline = [True]
+    app = FastAPI()
+    @app.post('/read')
+    @errors.guard
+    def read(command: PhotoRequest):
+        if offline[0]: raise OSError(errno.ENODEV, 'simulated device disconnected')
+        return {'ready': True}
+    with TestClient(app) as api:
+        result = api.post('/read', json={'path': str(path)})
+        assert result.status_code == 503 and result.json()['offline']
+        assert errors.all() == []
+        offline[0] = False
+        assert api.post('/read', json={'path': str(path)}).json() == {'ready': True}
+        assert errors.all() == []
+
+
+def test_corrupt_image_is_distinct_from_offline_device(tmp_path):
+    import errno
+    from hdr_finisher.library_picture_errors import source_offline
+    assert not source_offline(OSError('corrupt pixels'), tmp_path / 'a.jpg')
+    assert not source_offline(FileNotFoundError(errno.ENOENT, 'deleted file'), tmp_path / 'a.jpg')
+    assert source_offline(FileNotFoundError(errno.ENOENT, 'missing folder'), tmp_path / 'removed' / 'a.jpg')
+
+
+def test_timeout_returns_retryable_response_without_broken_photo_receipt(tmp_path):
+    from concurrent.futures import Future
+    from hdr_finisher.library_worker import DecoderTimeout
+    class TimedOutHelper(Helper):
+        def submit_library(self,*args,**kwargs):
+            future=Future()
+            future.set_exception(DecoderTimeout("This photo took too long. Try again."))
+            return "timeout-job",future
+        submit_browse_picture=submit_library
+        def cancel(self,job): pass
+    path=tmp_path/"photo.png"
+    Image.new("RGB",(64,32),(100,120,80)).save(path)
+    api=client(tmp_path/"profile",TimedOutHelper())
+    response=api.post("/api/library/picture",json={"path":str(path),"edge":640})
+    assert response.status_code==408,response.text
+    assert response.json()["library_timeout"] is True
+    assert api.get("/api/library/health").json()["picture_errors"]==[]
+
+def test_unresolved_exr_plan_reports_interpretation_before_requesting_source(tmp_path, monkeypatch):
+    import OpenEXR, numpy as np
+    path=tmp_path/"unknown.exr"
+    out=OpenEXR.OutputFile(str(path),OpenEXR.Header(2,2))
+    out.writePixels({c:np.zeros(4,np.float32).tobytes() for c in "RGB"});out.close()
+    from hdr_finisher import loader
+    monkeypatch.setattr(loader,"_load_exr",lambda *a,**k:pytest.fail("plan decoded pixels"))
+    helper=Helper()
+    with client(tmp_path/"profile",helper) as api:
+        result=api.post("/api/library/live-plan",json={"path":str(path),"edge":640})
+        assert result.status_code==422
+        assert "Unresolved source primaries" in result.json()["detail"]
+        assert result.json()["library_error"]["path"]==str(path)
+    assert not helper.calls

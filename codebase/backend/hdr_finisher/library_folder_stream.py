@@ -17,6 +17,23 @@ from .library_diagnostics import log
 from .library_marks import Marks
 
 PAGE = 256
+# Rows indexed before the file gate (file_gate.py) excluded a name or folder
+# stay out of views until the next index pass removes them. Patterns start at
+# the pinned folder, so a pinned folder inside a dot-folder still lists.
+from .file_gate import SKIPPED_FOLDERS as _SKIPPED
+
+
+def _escape(value):
+    return value.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+
+
+_RULES = ["%" + os.sep + ".%", "%" + os.sep + "~%"] + ["%" + _escape(os.sep + name + os.sep) + "%" for name in sorted(_SKIPPED)]
+NOT_JUNK = " AND path NOT LIKE ? ESCAPE '!'" * len(_RULES)
+
+
+def junk(prefix):
+    base = _escape(prefix[:-1])
+    return tuple(base + rule for rule in _RULES)
 
 
 def indexed_page(index, root, after="", limit=PAGE):
@@ -25,8 +42,8 @@ def indexed_page(index, root, after="", limit=PAGE):
         return []
     db = sqlite3.connect(index.marks.database.as_uri()+"?mode=ro", uri=True)
     try:
-        rows = db.execute("SELECT path,bytes,mtime_ns,facts FROM files WHERE path>=? AND path<? AND path>? ORDER BY path LIMIT ?",
-            (prefix, prefix[:-1]+chr(ord(prefix[-1])+1), after, limit)).fetchall()
+        rows = db.execute("SELECT path,bytes,mtime_ns,facts FROM files WHERE path>=? AND path<? AND path>?"+NOT_JUNK+" ORDER BY path LIMIT ?",
+            (prefix, prefix[:-1]+chr(ord(prefix[-1])+1), after, *junk(prefix), limit)).fetchall()
     finally:
         db.close()
     photos = []
@@ -41,8 +58,8 @@ def indexed_paths(index, root, after="", limit=8192):
     prefix=index._prefix(root)
     db=sqlite3.connect(index.marks.database.as_uri()+"?mode=ro",uri=True)
     try:
-        return [row[0] for row in db.execute("SELECT path FROM files WHERE path>=? AND path<? AND path>? ORDER BY path LIMIT ?",
-            (prefix,prefix[:-1]+chr(ord(prefix[-1])+1),after,limit))]
+        return [row[0] for row in db.execute("SELECT path FROM files WHERE path>=? AND path<? AND path>?"+NOT_JUNK+" ORDER BY path LIMIT ?",
+            (prefix,prefix[:-1]+chr(ord(prefix[-1])+1),after,*junk(prefix),limit))]
     finally: db.close()
 
 
@@ -133,14 +150,14 @@ class OrderedExtent:
         self.db = sqlite3.connect(index.marks.database.as_uri()+"?mode=ro", uri=True, check_same_thread=False)
         self.db.execute("BEGIN")
         prefix = index._prefix(root)
-        bounds = (prefix, prefix[:-1]+chr(ord(prefix[-1])+1))
+        bounds = (prefix, prefix[:-1]+chr(ord(prefix[-1])+1), *junk(prefix))
         def natural(value):
             value = ''.join(c for c in unicodedata.normalize('NFD', str(value)).casefold() if not unicodedata.combining(c))
             return re.sub(r'\d+', lambda m: m[0].lstrip('0').zfill(24), value)
         self.db.create_function('natural', 1, natural, deterministic=True)
         self.db.create_function('basename', 1, os.path.basename, deterministic=True)
         self.db.create_function('extension', 1, lambda p: os.path.splitext(p)[1].upper(), deterministic=True)
-        where = "f.path>=? AND f.path<?"
+        where = "f.path>=? AND f.path<?" + NOT_JUNK.replace("path", "f.path")
         count = self.db.execute("SELECT count(*) FROM files f WHERE "+where, bounds).fetchone()[0]
         tables = {r[0] for r in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         extra = 0
@@ -161,7 +178,7 @@ class OrderedExtent:
             field = "coalesce(json_extract(p.marks,'$.rating'),0)" if sort=='rating' else "CASE coalesce(json_extract(p.marks,'$.pick'),'unmarked') WHEN 'pick' THEN 0 WHEN 'reject' THEN 2 ELSE 1 END"
             order = field+direction+', '
         elif sort == 'state' and store is not None:
-            edited = store.library_grades.describe([r[0] for r in self.db.execute("SELECT path FROM photo_grades WHERE path>=? AND path<?",bounds)])
+            edited = store.library_grades.describe([r[0] for r in self.db.execute("SELECT path FROM photo_grades WHERE path>=? AND path<?",bounds[:2])])
             self.db.create_function('edited',1,lambda p: int(edited.get(p,{}).get('edited',False)))
             order = 'edited(f.path)'+direction+', '
         self.cursor = self.db.execute("SELECT f.path,f.bytes,f.mtime_ns,f.facts FROM files f"+join+" WHERE "+where+

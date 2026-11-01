@@ -5,10 +5,11 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const gate=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {resolve,promise};};
 function setup(plans,develop,cores=4){
  let time=0;const requests=[],events=[];
- const context={navigator:{hardwareConcurrency:cores},window:{HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},HDRLibrarySceneScheduler:scheduler,AbortController,DOMException,setTimeout,clearTimeout,
+ const context={navigator:{hardwareConcurrency:cores},window:{HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},HDRLibrarySceneScheduler:scheduler,AbortController,DOMException,setTimeout,clearTimeout,setInterval,clearInterval,
   performance:{now:()=>time},console,crypto:require('node:crypto').webcrypto,
+  HDRLibraryGrants:{acquire:async()=>({id:"test"}),run:async(p,k,s,task)=>task("test",s),promote:()=>{},release:()=>{}},
   HDRLibraryGpuRaw:{enabled:()=>true,liveScene:develop},
-  fetch:async(url,options)=>{requests.push(JSON.parse(options.body));if(url==="/api/library/live-scene")return {ok:false,json:async()=>({detail:"decoder failed"})};const plan=plans[JSON.parse(options.body).path];return {ok:!plan.library_error,json:async()=>plan};}};
+  fetch:async(url,options)=>{if(url==="/api/library/memory-admission")return {ok:true,json:async()=>({granted:true})};requests.push(JSON.parse(options.body));if(url==="/api/library/live-scene")return {ok:false,json:async()=>({detail:"decoder failed"})};const plan=plans[JSON.parse(options.body).path];return {ok:!plan.library_error,json:async()=>plan};}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../frontend/library-scenes.js'),'utf8'),context);
  return {context,scenes:context.window.HDRLibraryScenes,requests,events,advance:ms=>time+=ms};
 }
@@ -46,15 +47,15 @@ test('cached pictures bypass both occupied sources and light demand gets the nex
  block.resolve();assert.equal((await quick).key,'quick');
  await Promise.all([a,b]);assert.deepEqual(started,['a','b','quick']);
 });
-test('merged grid and selected demand survives one cancellation and reads the other cached size',async()=>{
+test('different scene tiers develop independently while matching tiers share demand',async()=>{
  const block=gate(),started=[];
  const plans={photo:{bytes:96e6,revision:'1'}};
  const {scenes}=setup(plans,async(p,edge)=>{started.push(edge);await block.promise;
-  plans.photo.cached={edge:2560,key:'large'};return {edge,key:'small'};});
+  return {edge,key:edge===2560?'large':'small'};});
  const cancel=new AbortController();const first=scenes.load('photo',640,cancel.signal,80);
  const selected=scenes.load('photo',2560,undefined,0);await tick();
  cancel.abort();await assert.rejects(first,{name:'AbortError'});block.resolve();
- assert.equal((await selected).key,'large');assert.deepEqual(started,[640]);
+ assert.equal((await selected).key,'large');assert.deepEqual(started,[2560,640]);
 });
 test('observed slow files still borrow idle capacity, and source revisions remain usable',async()=>{
  const started=[];let block=gate(),hold=false;
@@ -95,10 +96,10 @@ test('remembered errors skip both source slots while later pictures finish',asyn
  assert.equal(scenes.snapshot().sources.waiting,0);
 });
 
-test('GPU failures retain their reason in the loading log before CPU fallback',async()=>{
+test('GPU memory shortage never requests CPU development',async()=>{
  const {scenes,events}=setup({photo:{bytes:96e6}},async()=>{throw Error('Source transfer exceeds available GPU memory');});
- await assert.rejects(scenes.load('photo',640),/decoder failed/);
- assert.deepEqual(events.filter(event=>event.stage==="picture_source_gpu_fallback"),[{stage:'picture_source_gpu_fallback',path:'photo',reason:'Source transfer exceeds available GPU memory'}]);
+ await assert.rejects(scenes.load('photo',640),/Source transfer exceeds available GPU memory/);
+ assert.deepEqual(events.filter(event=>event.stage==="picture_source_gpu_fallback"),[]);
 });
 
 test('departed tile cancels its source job and invalidation rejects a fresh request',async()=>{
@@ -147,18 +148,19 @@ test('selected source is admitted before development-ahead demand and both run i
 });
 
 test('development-ahead GPU refusal never starts a background CPU fallback',async()=>{
- const {scenes,requests}=setup({photo:{bytes:96e6}},async()=>{throw Error('GPU memory unavailable');});
+ const {scenes,requests}=setup({photo:{bytes:96e6}},async()=>{throw Object.assign(Error('No hardware GPU'),{gpuUnavailable:true});});
  assert.equal(await scenes.load('photo',2560,null,5,false,null,{gpuOnly:true}),null);
  assert.equal(requests.length,1,'Cache discovery only; no CPU development request');
 });
 
 test('selected photo joining development-ahead keeps its CPU fallback if GPU fails',async()=>{
  const block=gate();
- const {scenes,requests}=setup({photo:{bytes:96e6}},async()=>{await block.promise;throw Error('GPU failed');});
+ const {context,scenes,requests}=setup({photo:{bytes:96e6}},async()=>{await block.promise;throw Object.assign(Error('GPU lost'),{gpuUnavailable:true});});
+ const fetch=context.fetch;context.fetch=async(url,options)=>{const response=await fetch(url,options);return url==='/api/library/live-scene'?{ok:true,json:async()=>({edge:2560,key:'cpu'})}:response;};
  const ahead=scenes.load('photo',2560,null,5,false,null,{gpuOnly:true});await tick();
  const selected=scenes.load('photo',2560,null,0);await tick();block.resolve();
  const [a,b]=await Promise.all([ahead,selected]);assert.ok(a&&b);
- assert.ok(requests.some(request=>request.body?.gpu===false&&request.body.priority===0));
+ assert.ok(requests.some(request=>request.gpu===false&&request.priority===0));
 });
 
 
@@ -212,13 +214,13 @@ test('needed explicit and viewport sources survive reranking and competing deman
  await tick();scenes.viewport([],[]);
  const selected=scenes.load('selected',2560,undefined,0);
  await tick();assert.equal(signals.build.aborted,false);assert.equal(signals.tile.aborted,false);
- assert.deepEqual(started,['build','tile']);
+ assert.deepEqual(started,['tile','build']);
  scenes.viewport([],['tile']);controller.abort();await cancelled;assert.equal(signals.tile.aborted,false);
  scenes.viewport([],[]);assert.equal(signals.tile.aborted,true);assert.equal(signals.build.aborted,false);
  block.resolve();assert.equal((await build).key,'build');assert.equal((await selected).key,'selected');
 });
 
-test('returning explicit demand outside the viewport reuses detached preparation and both finished sizes',async()=>{
+test('returning explicit demand at the same resolution reuses detached preparation',async()=>{
  const block=gate(),controller=new AbortController(),plans={photo:{bytes:1,revision:'1'}};let starts=0,shared;
  const {scenes,context}=setup(plans,async(path,edge,signal)=>{
   starts++;shared=signal;await block.promise;
@@ -228,8 +230,8 @@ test('returning explicit demand outside the viewport reuses detached preparation
  const first=scenes.load('photo',640,controller.signal);const cancelled=assert.rejects(first,{name:'AbortError'});
  await tick();controller.abort();await cancelled;scenes.viewport([],[]);
  assert.equal(shared.aborted,false);
- const returning=scenes.load('photo',2560,undefined,0);await tick();assert.equal(starts,1);
- block.resolve();assert.equal((await returning).edge,2560);
+ const returning=scenes.load('photo',640,undefined,0);await tick();assert.equal(starts,1);
+ block.resolve();assert.equal((await returning).edge,640);
  assert.equal((await scenes.load('photo',640)).key,'finished');assert.equal(starts,1);
 });
 
@@ -265,4 +267,39 @@ test('parallel thumbnail and screen cache lookups retain both callers after view
  try{await tick();assert.equal(signals.length,2);assert.ok(signals.every(s=>!s.aborted));}
  finally{block.resolve();await Promise.allSettled([small,large]);}
  assert.equal((await small).edge,640);assert.equal((await large).edge,2560);
+});
+
+test('idle no-GPU demand never develops on the CPU',async()=>{
+ const {scenes,requests}=setup({photo:{bytes:1,warm_allowed:true}},async()=>{throw Object.assign(Error('No GPU'),{gpuUnavailable:true});});
+ assert.equal(await scenes.load('photo',640,null,80,true),null);
+ assert.ok(!requests.some(request=>request.gpu===false));
+});
+
+
+test('offline cache reads cancel without a broken-photo receipt and notify the folder', async()=>{
+ const {scenes,context,requests}=setup({offline:{offline:true,path:'offline',detail:'Folder offline',library_error:undefined}},()=>assert.fail('Offline source must not develop'));
+ const dispatched=[];
+ context.Event=Event;
+ context.CustomEvent=class {constructor(type,options){this.type=type;this.detail=options.detail;}};
+ context.window.dispatchEvent=event=>dispatched.push(event);
+ const fetch=context.fetch;
+ context.fetch=async(url,options)=>url==='/api/library/live-plan'?{ok:false,json:async()=>({offline:true,path:'offline',detail:'Folder offline'})}:fetch(url,options);
+ await assert.rejects(scenes.load('offline',640),{name:'AbortError'});
+ assert.equal(dispatched.filter(e=>e.type==='library-offline').length,1);
+ assert.equal(dispatched.find(e=>e.type==='library-offline').detail.path,'offline');
+ assert.equal(requests.length,0);
+});
+
+
+test('screen neighbours stay soon beside a visible filmstrip and stop when demand leaves',async()=>{
+ const block=gate(),plans={photo:{bytes:1,revision:'1'}},started=[];let shared;
+ const {scenes}=setup(plans,async(p,edge,signal,importance)=>{
+  shared=signal;started.push({edge,priority:importance()});await block.promise;return {edge};
+ });
+ scenes.viewport(['photo'],[]);
+ const controller=new AbortController();
+ const neighbour=scenes.load('photo',2560,controller.signal,50,false,null,{viewportDemand:true});
+ const stopped=assert.rejects(neighbour,{name:'AbortError'});await tick();
+ assert.deepEqual(started,[{edge:2560,priority:50}]);
+ controller.abort();await stopped;assert.equal(shared.aborted,true);block.resolve();
 });

@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+import traceback
 import json
 from hashlib import sha256
 from contextlib import asynccontextmanager
 import os
 import time
 from pathlib import Path
-from concurrent.futures import CancelledError
+from concurrent.futures import CancelledError, ThreadPoolExecutor
 from typing import Literal
 from .cpu_budget import logical_cpus
 
@@ -16,13 +17,29 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.exceptions import RequestValidationError
+from .file_gate import is_cloud_placeholder
 from .library_diagnostics import log, recent, timed_lock
+from .library_worker import DecoderTimeout
 from pydantic import BaseModel, Field, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from .library_pictures import LibraryPictureCache
 from .library_marks import LibraryMarks, MarkChange, NameTaken
 from .library_index import LibraryIndex
+
+
+_memory_control = ThreadPoolExecutor(max_workers=2, thread_name_prefix="memory-control")
+_memory_sampler = ThreadPoolExecutor(max_workers=1, thread_name_prefix="memory-sampler")
+_memory_reclaimer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="memory-reclaim")
+
+async def memory_control(function, *args):
+    return await asyncio.get_running_loop().run_in_executor(_memory_control, function, *args)
+
+
+class DevelopmentFailure(BaseModel):
+    path: str
+    source_identity: str = Field(pattern=r"^[a-f0-9]{64}$")
+    reason: str = Field(min_length=1, max_length=4096)
 
 
 class StopwatchEvent(BaseModel):
@@ -33,6 +50,7 @@ class StopwatchEvent(BaseModel):
     picture_requests: int | None = Field(default=None, ge=0)
     scroll_top: float | None = Field(default=None, ge=0)
     active: bool | None = None
+    attempt: int | None = Field(default=None, ge=1, le=3)
     demand: Literal["selected", "visible", "background"] | None = None
     display_epoch: int | None = Field(default=None, ge=0)
     visible_thumbnails: int | None = Field(default=None, ge=0)
@@ -53,6 +71,9 @@ class StopwatchEvent(BaseModel):
     duration_ms: float | None = None
     queue_ms: float | None = None
     gpu_ms: float | None = None
+    gpu_estimate_bytes: int | None = None
+    gpu_peak_bytes: int | None = None
+    peak_scope: str | None = Field(default=None,max_length=32)
     sensor_ms: float | None = None
     quantiles_ms: float | None = None
     handoff_ms: float | None = None
@@ -94,6 +115,9 @@ class LibraryRoute(APIRoute):
             try:
                 return await handler(request)
             except HTTPException as error:
+                if error.status_code==409 and ("changed" in str(error.detail).lower() or "invalidated" in str(error.detail).lower()):
+                    log("request_changed",operation=request.url.path,reason=str(error.detail),action="work discarded; refresh the picture")
+                    return JSONResponse({"detail":str(error.detail),"changed":True},status_code=409)
                 if error.status_code != 499:
                     log("request_failed", operation=request.url.path, context=await context(), reason=str(error.__cause__ or error.detail),
                         action="request stopped; saved marks retained")
@@ -102,7 +126,10 @@ class LibraryRoute(APIRoute):
                 log("request_invalid", operation=request.url.path, context=await context(), reason=str(error), action="request rejected; nothing changed")
                 return JSONResponse({"detail": "That Library request could not be understood. Nothing was changed."}, status_code=400)
             except Exception as error:
-                log("request_failed", operation=request.url.path, context=await context(), reason=repr(error), action="request stopped; saved marks retained")
+                if isinstance(error,ValueError) and ("source settings changed" in str(error).lower() or "source photo changed" in str(error).lower()):
+                    log("request_changed",operation=request.url.path,reason=str(error),action="work discarded; refresh the picture")
+                    return JSONResponse({"detail":str(error),"changed":True},status_code=409)
+                log("request_failed", operation=request.url.path, context=await context(), reason=repr(error), traceback=traceback.format_exc(), action="request stopped; saved marks retained")
                 return JSONResponse({"detail": "The Library could not finish that request. Saved marks are safe; try again."}, status_code=500)
         return checked
 
@@ -134,6 +161,7 @@ class PictureRequest(BaseModel):
 
 
 class LiveSceneRequest(BaseModel):
+    grant: str | None = Field(default=None, max_length=96)
     path: str
     source_job: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     edge: Literal[640, 2560, 100000] = 640
@@ -149,6 +177,7 @@ class PictureErrorCommand(BaseModel):
 
 
 class SensorRequest(BaseModel):
+    grant: str | None = Field(default=None, max_length=96)
     path: str
     edge: int = Field(default=320, ge=64, le=2560)
     native_mode: bool = False
@@ -181,6 +210,7 @@ class FolderRequest(BaseModel):
 
 
 class CameraPreviewRequest(FolderRequest):
+    grant: str | None = Field(default=None, max_length=96)
     quick_draw: bool = False
     bytes: int | None = None
     mtime_ns: int | None = None
@@ -264,6 +294,16 @@ class TestPatternsRequest(BaseModel):
 
 
 def create_library_router(worker, browser, store=None):
+    from .library_grants import Runtime, add_routes as add_grant_routes, backend_grant
+    from .library_scheduler import scheduler
+    grant_runtime = Runtime(store)
+    def reclaim_waiting(amount):
+        from . import app_memory
+        released = app_memory.reclaim("shortage", amount)
+        if released < amount:
+            released += worker.reclaim_waiting(amount-released)
+        return released
+    grant_runtime.reclaim = reclaim_waiting
     cache = LibraryPictureCache(browser.root)
     from .library_raw import RawBrowsing, camera_raw
     from .library_raw_thumbnails import RawThumbnails
@@ -284,15 +324,18 @@ def create_library_router(worker, browser, store=None):
             await run_in_threadpool(file_commands.start)
         with startup_phase("settings_writer"):
             await run_in_threadpool(marks.writer.start, lambda: worker.status()["paused"])
+        grant_runtime.start()
         try:
             yield
         finally:
             await run_in_threadpool(raw_browsing.close)
+            grant_runtime.close()
             file_commands._stop.set()
             index.close()
             await run_in_threadpool(marks.writer.close)
 
     router = APIRouter(prefix="/api/library", lifespan=lifespan, route_class=LibraryRoute)
+    add_grant_routes(router, marks)
     from .library_review import add_review_routes
     add_review_routes(router, index, marks)
     from .library_folder_commands import add_folder_command_routes
@@ -320,6 +363,14 @@ def create_library_router(worker, browser, store=None):
             from .projects import validate_saved
             validate_saved(EditDocument, document)
         return document
+
+    @router.post("/development-error")
+    def development_error(command: DevelopmentFailure):
+        revision = picture_errors.revision(command.path)
+        current = picture_key(marks.source_path(command.path), 0, live_quality(live.document(command.path)))
+        if current != command.source_identity:
+            raise HTTPException(409, "Photo or source settings changed during development.")
+        return {"error": picture_errors.remember(command.path, RuntimeError(command.reason), revision)}
 
     @router.post("/picture-error")
     def picture_error(command: PictureErrorCommand):
@@ -350,8 +401,35 @@ def create_library_router(worker, browser, store=None):
     async def fallback_picture(command: LiveSceneRequest, request: Request):
         document = await run_in_threadpool(picture_document, command.path)
         path = str(marks.source_path(command.path))
+        refused = await run_in_threadpool(source_gate, path, command.priority)
+        if refused is not None:
+            return refused
         return await helper_result(request, "live-fallback", path=path, document=document,
             edge=command.edge, priority=command.priority)
+
+    def source_gate(path, priority):
+        """Checks before a photo's contents are read for a Library picture.
+
+        Returns a response to send instead, or None to go ahead. A file that is
+        not an image raises NotAPhoto, which the picture-error guard remembers
+        once for this file version."""
+        from .file_gate import check_contents, still_copying
+        info = Path(path).stat()
+        if is_cloud_placeholder(info) and priority != 0:
+            return JSONResponse({"detail": "Not downloaded: this photo is online-only. Open it to download it.",
+                "cloud_only": True}, status_code=409)
+        if still_copying(info):
+            return JSONResponse({"detail": "library_pending", "waiting": "copying"}, status_code=202)
+        check_contents(path)
+        return None
+
+    async def quick_preview(preview, path, edge, request, grant=None):
+        from .library_pictures import camera_preview, cached_camera_preview
+        if preview is camera_preview:
+            cached = await run_in_threadpool(cached_camera_preview, path, edge)
+            if cached is not None: return cached
+        async with backend_grant(path,"quick",token=grant,cancelled=request.is_disconnected):
+            return await run_in_threadpool(preview,path,edge)
 
     @router.post("/preview")
     async def live_preview(command: CameraPreviewRequest, request: Request):
@@ -363,6 +441,8 @@ def create_library_router(worker, browser, store=None):
             return Response(status_code=204)
         try:
             identity = Path(path).stat()
+            if is_cloud_placeholder(identity):
+                return Response(status_code=204)
             def eligible():
                 stat = Path(path).stat()
                 return ((stat.st_size, stat.st_mtime_ns) == (identity.st_size, identity.st_mtime_ns)
@@ -375,10 +455,15 @@ def create_library_router(worker, browser, store=None):
             if not await run_in_threadpool(eligible):
                 return Response(status_code=204)
             if await request.is_disconnected(): return Response(status_code=499)
-            preview = await run_in_threadpool(original_preview if original else camera_preview, path, 640)
+            preview = await quick_preview(original_preview if original else camera_preview, path, 640, request, command.grant)
+            if preview is None: return Response(status_code=204)
             if await request.is_disconnected(): return Response(status_code=499)
             if not await run_in_threadpool(eligible):
                 return Response(status_code=204)
+            if request.headers.get("accept") == "image/png":
+                import base64
+                return Response(base64.b64decode(preview["url"].split(",", 1)[1]), media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
             return preview
         except (ValueError, OSError):
             return Response(status_code=204)
@@ -423,11 +508,18 @@ def create_library_router(worker, browser, store=None):
         cached = live.cache.cached(str(path), command.edge, live_quality(document))
         if cached:
             live.cache.accept_transient(cached)
-        return {"cached": live.describe(command.path, cached) if cached else None,
+        from .library_estimates import gpu_metadata
+        if not cached and not is_cloud_placeholder(stat):
+            from .library_rgb import preflight_interpretation
+            preflight_interpretation(path, live_recipe(document))
+        return {"gpu_meta": gpu_metadata(path,document,command.edge) if not cached and not is_cloud_placeholder(stat) else None,
+                "cached": live.describe(command.path, cached) if cached else None,
                 "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}",
                 "source_identity": picture_key(path, 0, live_quality(document)),
                 "render_identity": picture_key(path, 0, live_quality(document)) + ":" + sha256(json.dumps(document or {}, sort_keys=True).encode()).hexdigest(),
-                "warm_allowed": live.cache.managed.can_warm()}
+                "warm_allowed": live.cache.managed.can_warm(),
+                # Online-only sync file: only the opened photo may read (download) it.
+                "cloud_only": is_cloud_placeholder(stat)}
 
     @router.post("/live-scene")
     @picture_errors.guard
@@ -442,6 +534,9 @@ def create_library_router(worker, browser, store=None):
             return await run_in_threadpool(live.describe, command.path, cached)
         if worker.status()["paused"]:
             return JSONResponse({"detail": "library_pending"}, status_code=202)
+        refused = await run_in_threadpool(source_gate, path, command.priority)
+        if refused is not None:
+            return refused
         token = source_jobs.claim(path, source_quality, command.edge, command.priority, file_commands.epoch, command.source_job)
         if token is None:
             return JSONResponse({"detail": "library_pending"}, status_code=202)
@@ -449,61 +544,64 @@ def create_library_router(worker, browser, store=None):
         log("picture_source_claim", path=path, checks_claim_ms=(claimed_at-requested_at)*1000, gpu=command.gpu)
         transfer = False
         try:
-            if command.gpu:
-                source_foreground(token, True)
-                from . import library_gpu_raw, library_rgb
-                from .models import RawImportSettings, SourceInterpretationOverride
-                inputs = live_recipe(document)
-                try:
-                    if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
-                        header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs)
-                    elif Path(path).suffix.lower() == ".dng":
-                        from . import library_dng
-                        if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
-                            raise library_gpu_raw.NotEligible("DNG interpretation overrides retain the CPU route")
-                        def dng_source():
-                            return library_dng.decoded(Path(path), inputs,
-                                progress=lambda stage,text: source_jobs.stage(token,stage,text),
-                                cancelled=lambda: source_jobs.cancelled(token), edge=command.edge, max_storage_bytes=command.max_storage_bytes)
-                        header, parts = await run_in_threadpool(source_jobs.preparing, token, path, dng_source)
-                    else:
-                        if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
-                            raise library_gpu_raw.NotEligible("source interpretation uses Grade's CPU development")
-                        header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_gpu_raw.sensor, Path(path),
-                            RawImportSettings.model_validate(inputs["raw_import_settings"]))
-                    if inputs.get("repairs") and header.get("dng_warp"):
-                        raise library_gpu_raw.NotEligible("Tiled DNG repair context exceeds the bounded GPU development route")
-                except library_gpu_raw.NotEligible as error:
-                    log("picture_source_cpu_fallback", path=path, reason=str(error), discarded_decode_ms=(time.perf_counter()-claimed_at)*1000)
-                    return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
-                if inputs.get("repairs"):
-                    from .models import RepairRecord
-                    from .retouch_gpu import context_rectangles
-                    header["repairs"] = [dict(id=r.id,rectangles=context_rectangles(r.recipe))
-                        for r in map(RepairRecord.model_validate,inputs["repairs"]) if r.enabled]
+            async with backend_grant(path,"source" if command.gpu else "cpu",command.priority,command.grant,request.is_disconnected,edge=command.edge):
+                if command.gpu:
+                    source_foreground(token, True)
+                    from . import library_gpu_raw, library_rgb
+                    from .models import RawImportSettings, SourceInterpretationOverride
+                    inputs = live_recipe(document)
+                    try:
+                        if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
+                            header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs, command.edge)
+                        elif Path(path).suffix.lower() == ".dng":
+                            from . import library_dng
+                            if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
+                                raise library_gpu_raw.NotEligible("DNG interpretation overrides retain the CPU route")
+                            def dng_source():
+                                return library_dng.decoded(Path(path), inputs,
+                                    progress=lambda stage,text: source_jobs.stage(token,stage,text),
+                                    cancelled=lambda: source_jobs.cancelled(token), edge=command.edge, max_storage_bytes=command.max_storage_bytes)
+                            header, parts = await run_in_threadpool(source_jobs.preparing, token, path, dng_source)
+                        else:
+                            if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
+                                raise library_gpu_raw.NotEligible("source interpretation uses Grade's CPU development")
+                            header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_gpu_raw.sensor, Path(path),
+                                RawImportSettings.model_validate(inputs["raw_import_settings"]))
+                        if inputs.get("repairs") and header.get("dng_warp"):
+                            raise library_gpu_raw.MemoryPending("Tiled DNG repair context exceeds the bounded GPU development route")
+                    except library_gpu_raw.MemoryPending as error:
+                        source_jobs.stage(token,"admission",str(error))
+                        scheduler.defer(command.grant, "bounded route pending")
+                        return JSONResponse({"detail":"library_pending","waiting":"memory"},status_code=409,headers={"X-Library-Wait":"memory"})
+                    except library_gpu_raw.NotEligible as error:
+                        log("picture_source_gpu_unsupported", path=path, reason=str(error), discarded_decode_ms=(time.perf_counter()-claimed_at)*1000)
+                        return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
+                    if inputs.get("repairs"):
+                        from .models import RepairRecord
+                        from .retouch_gpu import context_rectangles
+                        header["repairs"] = [dict(id=r.id,rectangles=context_rectangles(r.recipe))
+                            for r in map(RepairRecord.model_validate,inputs["repairs"]) if r.enabled]
+                    source_jobs.check(token, file_commands.epoch)
+                    if await request.is_disconnected():
+                        raise HTTPException(499, "Library request cancelled.")
+                    header.setdefault("source_timings_ms", {}).update(checks_claim=(claimed_at-requested_at)*1000, decode_prepare=(time.perf_counter()-claimed_at)*1000)
+                    header.update(edge=command.edge, source_quality=source_quality, item_path=command.path, source_job=token)
+                    transfer = True
+                    return StreamingResponse(library_gpu_raw.frame_chunks(header, *parts), media_type="application/octet-stream")
+                result = await helper_result(request, "live-scene", path=path, document=document,
+                    edge=command.edge, priority=command.priority, source_token=token, draw_first=command.edge != 100000)
+                if isinstance(result, Response): return result
                 source_jobs.check(token, file_commands.epoch)
-                if await request.is_disconnected():
-                    raise HTTPException(499, "Library request cancelled.")
-                header.setdefault("source_timings_ms", {}).update(checks_claim=(claimed_at-requested_at)*1000, decode_prepare=(time.perf_counter()-claimed_at)*1000)
-                header.update(edge=command.edge, source_quality=source_quality, item_path=command.path, source_job=token)
-                transfer = True
-                return Response(library_gpu_raw.frame(header, *parts), media_type="application/octet-stream")
-            result = await helper_result(request, "live-scene", path=path, document=document,
-                edge=command.edge, priority=command.priority, source_token=token, draw_first=command.edge != 100000)
-            if isinstance(result, Response): return result
-            source_jobs.check(token, file_commands.epoch)
-            publication_epoch = file_commands.epoch
-            def validate_cpu_store():
-                if publication_epoch != file_commands.epoch or source_quality != live_quality(live.document(command.path)):
-                    raise ValueError("Source settings changed before saving preview data.")
-            for scene in result.pop("_pending_scenes", []):
-                default = scene.pop("_default_document", None)
-                live.cache.accept_transient(scene)
-                with live.cache.transient_lock:
-                    if scene["key"] in live.cache.transient:
-                        live.cache.pending_stores[scene["key"]] = (path, scene["edge"], source_quality, default, validate_cpu_store)
-            live.cache.accept_transient(result)
-            return await run_in_threadpool(live.describe, command.path, result)
+                publication_epoch = file_commands.epoch
+                def validate_cpu_store():
+                    if publication_epoch != file_commands.epoch or source_quality != live_quality(live.document(command.path)):
+                        raise ValueError("Source settings changed before saving preview data.")
+                for scene in result.pop("_pending_scenes", []):
+                    default = scene.pop("_default_document", None)
+                    pending = (path, scene["edge"], source_quality, default, validate_cpu_store) if scene.get("_transient") else None
+                    live.cache.accept_transient(scene, pending)
+                live.cache.accept_transient(result)
+                return await run_in_threadpool(live.describe, command.path, result)
         finally:
             if not transfer:
                 source_jobs.release(token)
@@ -536,6 +634,7 @@ def create_library_router(worker, browser, store=None):
 
     @router.post("/live-developed")
     async def live_developed(request: Request):
+        accepted_at = time.perf_counter()
         from . import library_gpu_raw
         try:
             header, body = library_gpu_raw.unframe(await request.body())
@@ -597,13 +696,21 @@ def create_library_router(worker, browser, store=None):
             adapter = library_rgb if header.get("rgb") else library_gpu_raw
             if header.get("describe_only") and (not header.get("rgb") or header["edge"] == 100000 or body):
                 raise ValueError("Only reduced RGB scene metadata can be described without pixels.")
+            developed_at = time.perf_counter()
             result = await run_in_threadpool(adapter.developed, SceneCache(), path, header, None if header.get("describe_only") else body)
+            describe_at = time.perf_counter()
             log("picture_live_developed", path=str(path), edge=header["edge"], **(header.get("timing_ms") or {}))
             described = await run_in_threadpool(live.describe, item, result)
-            if header.get("describe_only"):
+            log("picture_handoff_timing", path=path, edge=header["edge"],
+                request_ms=(developed_at-accepted_at)*1000,
+                accept_ms=(describe_at-developed_at)*1000,
+                describe_ms=(time.perf_counter()-describe_at)*1000,
+                describe_only=bool(header.get("describe_only")))
+            if header.get("rgb") and header["edge"] != 100000:
                 from .models import GeometryAdjustments, AdjustmentState
                 from .projects import validate_saved
                 adjustments = validate_saved(AdjustmentState, described["adjustments"])
+                described["render_identity"] = picture_key(path, 0, header["source_quality"]) + ":" + sha256(json.dumps(document or {}, sort_keys=True).encode()).hexdigest()
                 described["direct_supported"] = (adjustments.shared.geometry == GeometryAdjustments()
                     and not described["locals"]
                     and not any(v.get("enabled") for v in described["denoise"].values() if isinstance(v, dict)))
@@ -651,19 +758,86 @@ def create_library_router(worker, browser, store=None):
     @router.post("/cache-clear")
     def clear_library_cache(change: dict):
         source_jobs.invalidate()
-        cache.transient.clear()
-        live.cache.transient.clear()
+        cache.trim_memory(0)
+        live.cache.trim_memory(0)
         return command(cache.managed.clear, change.get("location"))
 
     from .library_file_commands import add_file_routes
     file_commands = add_file_routes(router, marks, browser, index, worker, store)
+
+    @router.get("/memory")
+    async def memory_snapshot():
+        from .app_memory import snapshot
+        return await asyncio.get_running_loop().run_in_executor(_memory_sampler, lambda: snapshot(cached_only=True))
+
+    @router.get("/memory-setting")
+    def memory_setting():
+        from . import app_memory
+        return dict(app_memory.memory_options(), ceilingBytes=app_memory.CEILING)
+
+    @router.post("/memory-setting")
+    async def memory_setting_update(command: dict):
+        from . import app_memory
+        chosen = command.get("bytes")
+        options = app_memory.memory_options()
+        if chosen is not None and (type(chosen) is not int or not options["minimumBytes"] <= chosen <= options["maximumBytes"]):
+            raise HTTPException(400, "Choose a memory limit within this computer's range.")
+        previous=app_memory.CEILING
+        value=app_memory.configure(chosen)
+        scheduler.set_ceiling(value["ceilingBytes"])
+        worker._send(dict(command="memory-budget", bytes=value["ceilingBytes"]))
+        if value["ceilingBytes"] < previous:
+            # Same coalesced asynchronous trim path as measured pressure.
+            await memory_reclaim({"pressure":"moderate"})
+        return value
+
+    @router.post('/memory-report')
+    def memory_report(report: dict):
+        from . import app_memory
+        # Names are fixed, so a reload cannot accumulate report identities.
+        accepted={}
+        for share in ('thumbnails','sharp'):
+            app_memory.report('renderer-'+share,share,report.get(share,0))
+            accepted[share]=report.get(share,0)<=app_memory.limit(share)
+        value=app_memory.snapshot(cached_only=True)
+        return dict(value,accepted=accepted)
+
+    reclaim_task = None
+    reclaim_level = None
+
+    @router.post("/memory-reclaim")
+    async def memory_reclaim(command: dict = {}):
+        from . import app_memory
+        level=command.get('pressure','moderate')
+        if level not in ('moderate','critical'): level='moderate'
+        nonlocal reclaim_task, reclaim_level
+        # A slow disk spill must neither occupy the sampling lane nor queue a
+        # new reclaim for every 500 ms poll. Critical pressure upgrades one run.
+        if reclaim_task is not None and not reclaim_task.done():
+            if level == 'critical': reclaim_level = level
+        else:
+            reclaim_level = level
+            async def run():
+                nonlocal reclaim_level
+                while reclaim_level is not None:
+                    current, reclaim_level = reclaim_level, None
+                    def reclaim():
+                        app_memory.reclaim(current)
+                        worker._send(dict(command='memory-pressure', level=current))
+                    await asyncio.get_running_loop().run_in_executor(_memory_reclaimer, reclaim)
+            reclaim_task = asyncio.create_task(run())
+        return {"reclaiming": True}
+
+    @router.post("/lock-metrics")
+    def lock_metrics(command: dict = {}):
+        return marks._lock.metrics(reset=command.get("reset") is True)
 
     @router.get("/health")
     def health():
         import time
         with marks._lock:
             errors, checked_at = picture_errors.all(), time.time()
-        return {"picture_errors": errors, "picture_errors_checked_at": checked_at, "preparation": source_jobs.snapshot(), "writer": marks.writer.status(), "helper": {"restarts": 0, **worker.status()},
+        return {"picture_errors": errors, "picture_errors_checked_at": checked_at, "preparation": source_jobs.snapshot(), "grants": scheduler.snapshot(), "writer": marks.writer.status(), "helper": {"restarts": 0, **worker.status()},
             "index": index.status(), "file_commands": file_commands.status(), "conflicts": marks.conflicts.status(), "problems": recent()}
 
     @router.post("/scene-work")
@@ -704,6 +878,17 @@ def create_library_router(worker, browser, store=None):
             raise HTTPException(status_code=400, detail=user_error(error)) from error
 
     async def helper_result(request, command, *, retain_picture=False, source_token=None, **arguments):
+        if command in {"picture","native","overlay","live-fallback"}:
+            async with backend_grant(arguments["path"],"cpu",arguments.get("priority",10),cancelled=request.is_disconnected):
+                return await helper_result_inner(request,command,retain_picture=retain_picture,source_token=source_token,**arguments)
+        return await helper_result_inner(request,command,retain_picture=retain_picture,source_token=source_token,**arguments)
+
+    async def helper_result_inner(request, command, *, retain_picture=False, source_token=None, **arguments):
+        # Metadata is retried by the page. A source parks the helper's metadata
+        # lane, so return that wait to the page instead of holding an HTTP slot.
+        if command == "metadata" and (worker.status().get("source_busy") or worker.status()["paused"]):
+            return JSONResponse({"detail": "library_pending"}, status_code=202,
+                headers={"Retry-After": "0.1", "Cache-Control": "no-store"})
         arguments["trace_id"] = request.headers.get("X-Library-Request")
         epoch = file_commands.epoch
         try:
@@ -723,7 +908,7 @@ def create_library_router(worker, browser, store=None):
                 # Source jobs keep their owner and wait behind the helper pause
                 # gate. Returning 202 here cancels them in finally and restarts
                 # the entire import on every brief Grade pause.
-                if worker.status()["paused"] and command not in {"live-scene", "live-fallback"}:
+                if (worker.status()["paused"] or (command == "metadata" and worker.status().get("source_busy"))) and command not in {"live-scene", "live-fallback"}:
                     return JSONResponse({"detail": "library_pending"}, status_code=202,
                         headers={"Retry-After": "0.1", "Cache-Control": "no-store"})
                 if await request.is_disconnected():
@@ -736,6 +921,9 @@ def create_library_router(worker, browser, store=None):
             elif command == 'overlay': overlay_maps.cache.accept_transient(result)
             result['_file_epoch'] = epoch
             return result
+        except DecoderTimeout as exc:
+            return JSONResponse({"detail": str(exc), "library_timeout": True,
+                                 "path": arguments.get("path")}, status_code=408)
         except RuntimeError as exc:
             log("helper_request_failed", operation=command, paths=arguments, reason=str(exc), action="request stopped; restart app")
             raise HTTPException(status_code=503, detail=helper_error(exc)) from exc
@@ -847,21 +1035,22 @@ def create_library_router(worker, browser, store=None):
         from .library_marks import Marks
         photos = result["photos"]
         paths = [p["path"] for p in photos]
-        with marks._lock:
-            rows = marks._rows(paths)
-            if marks.database.exists():
-                db = marks._connect()
-                try:
-                    for start in range(0, len(paths), 800):
-                        chunk = paths[start:start + 800]
-                        facts = {path: (size, modified, data) for path, size, modified, data in db.execute(
-                            "SELECT path, bytes, mtime_ns, facts FROM files WHERE path IN (" + ",".join("?" for _ in chunk) + ")", chunk)}
-                        for photo in photos[start:start + 800]:
-                            row = facts.get(photo["path"])
-                            if row and row[:2] == (photo["bytes"], photo["mtime_ns"]) and row[2]:
-                                photo.update(json.loads(row[2]), indexed=True)
-                finally:
-                    db.close()
+        # Cached UI rows read committed SQLite/WAL data. Materializing a
+        # whole folder must not hold the global marks/writer lock.
+        rows = marks._rows(paths)
+        if marks.database.exists():
+            db = marks._connect()
+            try:
+                for start in range(0, len(paths), 800):
+                    chunk = paths[start:start + 800]
+                    facts = {path: (size, modified, data) for path, size, modified, data in db.execute(
+                        "SELECT path, bytes, mtime_ns, facts FROM files WHERE path IN (" + ",".join("?" for _ in chunk) + ")", chunk)}
+                    for photo in photos[start:start + 800]:
+                        row = facts.get(photo["path"])
+                        if row and row[:2] == (photo["bytes"], photo["mtime_ns"]) and row[2]:
+                            photo.update(json.loads(row[2]), indexed=True)
+            finally:
+                db.close()
         for photo in photos:
             photo.update(rows.get(photo["path"], {"marks": Marks().model_dump(), "albums": [], "storage": "none"}))
             if store is not None:
@@ -977,9 +1166,7 @@ def create_library_router(worker, browser, store=None):
         records = {"photos":[],"warnings":[],"undo_available":bool(marks._undo)}
         documents = {}
         for start in range(0,len(result["photos"]),16):
-            with marks._lock:
-                page=marks.read([photo["path"] for photo in result["photos"][start:start+16]])
-                documents.update(marks.recent_documents)
+            page=marks.read([photo["path"] for photo in result["photos"][start:start+16]], observed=documents)
             records["photos"].extend(page["photos"])
             records["warnings"].extend(page["warnings"])
             records["undo_available"]=page["undo_available"]
@@ -1113,7 +1300,9 @@ def create_library_router(worker, browser, store=None):
                 if command.quality == "fast":
                     from .library_pictures import camera_preview
                     try:
-                        return await run_in_threadpool(camera_preview, command.path, command.edge)
+                        return await quick_preview(camera_preview, command.path, command.edge, request)
+                    except HTTPException:
+                        raise
                     except Exception as error:
                         log("camera_preview_unavailable", path=command.path, reason=str(error))
                 return await helper_result(request, "picture", path=command.path,
@@ -1125,7 +1314,9 @@ def create_library_router(worker, browser, store=None):
             if command.quality == "fast" and command.edge < 1280:
                 from .library_pictures import camera_preview
                 try:
-                    return await run_in_threadpool(camera_preview, command.path, command.edge)
+                    return await quick_preview(camera_preview, command.path, command.edge, request)
+                except HTTPException:
+                    raise
                 except Exception as error:
                     log("camera_preview_unavailable", path=command.path, reason=str(error))
             future = raw_browsing.request(command.path, command.priority)
@@ -1151,20 +1342,25 @@ def create_library_router(worker, browser, store=None):
         return await helper_result(request, "picture", retain_picture=True, **command.model_dump())
 
     # Camera RAW grid thumbnails developed on the GPU by the Library window.
-    # Anything the GPU route does not cover answers 204 and keeps the CPU route.
+    # Unsupported sources answer 204; the page reports them without selecting CPU.
     from . import library_gpu_raw
     @router.post("/raw-sensor")
-    async def raw_sensor(command: SensorRequest):
+    async def raw_sensor(command: SensorRequest, request: Request):
         command.path = str(marks.source_path(command.path))
         if worker.status()["paused"]:
             return JSONResponse({"detail": "library_pending"}, status_code=202)
         try:
+            if not command.native_mode:
+                refused = await run_in_threadpool(source_gate, command.path, 1)
+                if refused is not None:
+                    return refused
             if command.native_mode and cache.gpu_native_ready(command.path):
                 return {"native_ready": True}
             cached = None if command.native_mode else await run_in_threadpool(cache.cached, command.path, command.edge, "grade-thumbnail")
             if cached: return cached
             started = time.perf_counter()
-            header, payload = await run_in_threadpool(library_gpu_raw.sensor, Path(command.path))
+            async with backend_grant(command.path,"sensor",token=command.grant,cancelled=request.is_disconnected):
+                header, payload = await run_in_threadpool(library_gpu_raw.sensor, Path(command.path))
             log("picture_raw_sensor_read", path=command.path, duration_ms=(time.perf_counter() - started) * 1000,
                 bytes=sum(len(part) for part in payload), lens=bool(header.get("lens_grid")))
         except library_gpu_raw.NotEligible as reason:

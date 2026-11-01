@@ -6,6 +6,7 @@ from hashlib import sha256
 import os
 import time
 from pathlib import Path
+from threading import Lock
 from .library_documents import atomic_json
 from .library_copies import source
 
@@ -17,6 +18,9 @@ class LibraryMembership:
         self.index, self.marks = index, index.marks
         self.path = Path(index.browser.root) / "kept-photos.json"
         self._busy = False
+        self._publish = Lock()
+        self._pending_lock = Lock()
+        self._pending = set()
         self._saved = None
         self._saved_records = {}
         self.records = self.path.parent / "library-kept-records"
@@ -111,18 +115,49 @@ class LibraryMembership:
             rows.extend(db.execute(f"SELECT * FROM {table} WHERE " + " OR ".join(clauses), args))
         return sorted(rows, key=lambda row: row[1] if table == "album_photos" else row[0]) if ordered else rows
 
-    def reconcile(self, paths=None):
+    def reconcile(self, paths=None, *, background=False):
         if paths is None:
-            return self._reconcile_all()
-        with timed_lock(self.marks._lock, "reconcile"):
-            if self._busy or not self.marks.database.exists():
-                return
-            paths = None if paths is None else sorted({source(p) for p in paths})
-            self._busy = True
+            return self._reconcile_all(background=background)
+        with self._pending_lock:
+            self._pending.update(source(p) for p in paths)
+        if not self._publish.acquire(blocking=False): return
+        held = True
+        try:
+            while True:
+                with self._pending_lock:
+                    if not self._pending:
+                        self._publish.release()
+                        held = False
+                        return
+                    current = sorted(self._pending)
+                    self._pending.clear()
+                for at in range(0, len(current), 16):
+                    if background: self.index.wait_for_upkeep()
+                    self._reconcile_piece(current[at:at+16])
+                    time.sleep(.001)
+        finally:
+            if held: self._publish.release()
+
+    def _reconcile_piece(self, paths):
+        # Filesystem and connection setup must not block marks readers. The
+        # publisher serializes reconciliation; database state is read only after
+        # taking the marks lock. A later pin change schedules its own reconcile.
+        if not self.marks.database.exists(): return
+        paths = None if paths is None else sorted({source(p) for p in paths})
+        pins = self.pins()
+        with self.index.checks.lock:
+            visible = tuple(self.index.checks.streaming)
+        stats = {}
+        for path in paths or ():
             try:
-                db = self.marks._connect()
+                info = Path(path).stat(); stats[path] = (info.st_size, info.st_mtime_ns)
+            except OSError: stats[path] = (0, 0)
+        db = self.marks._connect()
+        try:
+            with timed_lock(self.marks._lock, "reconcile"):
+                if self._busy: return
+                self._busy = True
                 try:
-                    pins = self.pins()
                     members = self._scoped(db, "album_photos", paths)
                     kept = {source(p) for _,p in members}
                     contains = lambda p: source(p) in kept or self.pinned(p, pins)
@@ -137,15 +172,16 @@ class LibraryMembership:
                     with db:
                         # An album may be made from a temporarily browsed or offline photo.
                         for p in kept-files.keys():
-                            try:
-                                info = Path(p).stat(); size, modified = info.st_size, info.st_mtime_ns
-                            except OSError:
-                                size = modified = 0
+                            if p in stats:
+                                size, modified = stats[p]
+                            else:
+                                try:
+                                    info = Path(p).stat(); size, modified = info.st_size, info.st_mtime_ns
+                                except OSError:
+                                    size = modified = 0
                             db.execute("INSERT OR IGNORE INTO files VALUES (?,?,?,NULL)", (p,size,modified))
                         # A streamed, unpinned folder still needs its observed
                         # files until its view closes; this does not pin it.
-                        with self.index.checks.lock:
-                            visible = tuple(self.index.checks.streaming)
                         db.executemany("DELETE FROM files WHERE path=?", [(p,) for p in files
                             if not contains(p) and not any(self.under(p, root) for root in visible)])
                         for p,identifier,marks,pending in rows:
@@ -178,50 +214,51 @@ class LibraryMembership:
                             key = source(row[1] if table == "album_photos" else row[0])
                             name = sha256(key.encode()).hexdigest()
                             records.setdefault(name,{}).setdefault(table,[]).append(row)
-                    for name, record in records.items():
-                        if record != self._saved_records.get(name):
-                            atomic_json(self.records / (name+".json"),record)
-                    if paths is None:
-                        removed = self._saved_records.keys() - records.keys()
-                        names = sorted(records)
-                    else:
-                        touched = {sha256(p.encode()).hexdigest() for p in paths}
-                        removed = touched - records.keys()
-                        names_changed = (self._saved is None or
-                            any(name not in self._saved_records for name in records) or
-                            any(name in self._saved_records for name in removed))
-                        names = (sorted((self._saved_records.keys() - removed) | records.keys())
-                            if names_changed else self._saved["records"])
-                    manifest = {"records":names,"albums":snapshot.get("albums",[]),"tags":snapshot.get("tags",[])}
-                    if manifest != self._saved:
-                        atomic_json(self.path, manifest)
-                        self._saved = manifest
-                    # Publish the manifest before removing old records, just as
-                    # in a full pass: a crash must never leave dangling names.
-                    for name in removed:
-                        (self.records / (name+".json")).unlink(missing_ok=True)
-                    if paths is None:
-                        self._saved_records = records
-                    else:
-                        for name in removed: self._saved_records.pop(name, None)
-                        self._saved_records.update(records)
                 finally:
-                    db.close()
-            finally:
-                self._busy = False
+                    self._busy = False
+        finally:
+            db.close()
 
-    def maintain(self, paths):
+        for name, record in records.items():
+            if record != self._saved_records.get(name):
+                atomic_json(self.records / (name+".json"),record)
+        if paths is None:
+            removed = self._saved_records.keys() - records.keys()
+            names = sorted(records)
+        else:
+            touched = {sha256(p.encode()).hexdigest() for p in paths}
+            removed = touched - records.keys()
+            names_changed = (self._saved is None or
+                any(name not in self._saved_records for name in records) or
+                any(name in self._saved_records for name in removed))
+            names = (sorted((self._saved_records.keys() - removed) | records.keys())
+                if names_changed else self._saved["records"])
+        manifest = {"records":names,"albums":snapshot.get("albums",[]),"tags":snapshot.get("tags",[])}
+        if manifest != self._saved:
+            atomic_json(self.path, manifest)
+            self._saved = manifest
+        # Publish the manifest before removing old records, just as
+        # in a full pass: a crash must never leave dangling names.
+        for name in removed:
+            (self.records / (name+".json")).unlink(missing_ok=True)
+        if paths is None:
+            self._saved_records = records
+        else:
+            for name in removed: self._saved_records.pop(name, None)
+            self._saved_records.update(records)
+
+    def maintain(self, paths, *, background=True):
         """Background recovery work yields after each physical photo family."""
         paths = sorted({source(p) for p in paths})
         for at in range(0,len(paths),16):
-            self.index.wait_for_upkeep()
+            if background: self.index.wait_for_upkeep()
             started=time.perf_counter()
-            self.reconcile(paths[at:at+16])
+            self.reconcile(paths[at:at+16], background=background)
             from .library_diagnostics import log
             log("recovery_piece",count=len(paths[at:at+16]),duration_ms=(time.perf_counter()-started)*1000)
             time.sleep(.005)
 
-    def _reconcile_all(self):
+    def _reconcile_all(self, *, background=False):
         # Key-only, indexed pages. No facts snapshot or lock spans the pass.
         # Include durable grades/copies and album paths, even without a file row.
         if not self.marks.database.exists():
@@ -234,15 +271,16 @@ class LibraryMembership:
                 db.close()
         recovery_paths = sorted({source(row[1] if table == "album_photos" else row[0])
             for record in list(self._saved_records.values()) for table, rows in record.items() for row in rows})
+        visited = set(recovery_paths)
         for start in range(0, len(recovery_paths), 32):
-            self.maintain(recovery_paths[start:start+32])
+            self.maintain(recovery_paths[start:start+32], background=background)
             time.sleep(.001)
         for table in ("files", "photos", "album_photos", "photo_grades", "library_copies"):
             if table not in tables: continue
             column = "source" if table == "library_copies" else "path"
             after = ""
             while True:
-                self.index.wait_for_upkeep()
+                if background: self.index.wait_for_upkeep()
                 with self.marks._lock:
                     db = self.marks._connect()
                     try:
@@ -252,9 +290,11 @@ class LibraryMembership:
                         db.close()
                 if not batch: break
                 pins = self.pins()
-                paths = batch if table != "files" else [p for p in batch if not self.pinned(p, pins)]
+                paths = sorted({source(p) for p in batch if source(p) not in visited
+                    and (table != "files" or not self.pinned(p, pins))})
+                visited.update(paths)
                 for start in range(0, len(paths), 32):
-                    self.maintain(paths[start:start+32])
+                    self.maintain(paths[start:start+32], background=background)
                     time.sleep(.001)
                 after = batch[-1]
                 # A waiting foreground request can acquire the lock before the

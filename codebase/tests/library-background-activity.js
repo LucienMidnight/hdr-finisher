@@ -83,5 +83,5 @@ for (let i = 0; i < 3; i++) fs.copyFileSync(path.join(root, "tests", "fixtures",
   await api("/api/library/scan", {path: folder});
   await library.waitForFunction(() => document.querySelector("#library-activity").textContent.includes("Nothing needs attention."));
   console.log("PASS: conflict detection shows both names, leaves both files untouched, clears on re-scan; Activity progress, writer Pause/Resume, grouped unreadable settings and Try again, automatic attention clearing, indexing controls, Escape and bulk Undo.");
- } finally { await browser.close(); }
+ } finally { await browser.close(); fs.rmSync(folder,{recursive:true,force:true}); }
 })().catch(error => {console.error(error); process.exitCode = 1;});
