@@ -26,6 +26,7 @@ async function run({app, window, backend, configPath = process.env.HDR_FINISHER_
     await window.webContents.executeJavaScript(`(async()=>{while(document.body?.dataset.ready!=='true'||!document.getElementById('library-frame')?.contentWindow?.HDRLibrary)await new Promise(r=>setTimeout(r,20));activateWorkflowTab('import');})()`);
     const frame = window.webContents.mainFrame.framesInSubtree.find(frame => /\/library(?:\?|$)/.test(frame.url));
     if (!frame) throw Error('Library frame missing');
+    if(config.pixelCapture){await require('./library-pixel-test.cjs').run({frame,config,stage});stage('done');return;}
     const source = fs.readFileSync(path.join(__dirname, '../tools/quick-library-scenario.js'), 'utf8');
     const result = await frame.executeJavaScript(`(${source})(${JSON.stringify(config)})`);
     if(config.trace)await require('electron').contentTracing.stopRecording(path.join(profile,'diagnostic-trace.json'));
