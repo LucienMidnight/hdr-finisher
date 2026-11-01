@@ -151,7 +151,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
    const started=Date.now();let cells,idleSince=null;
    while(Date.now()-started<(phase0?600000:hdrTest?300000:probe?60000:120000)){
     if(memoryViolation){report.memoryViolation=memoryViolation;throw Error('STOP: '+memoryViolation.reason);}
-    cells=await lib.evaluate(paths=>paths.map(p=>{const c=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===p);return {path:p,presented:!!c?.querySelector('canvas[data-picture-key]'),needsMemory:c?.querySelector('.library-memory-needed')?.textContent,error:c?.querySelector('.library-picture-error')?.title||c?.querySelector('.picture-failed')?.textContent};}),targets);
+    cells=await lib.evaluate(paths=>{return paths.map(p=>{const c=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===p);const refused=coldEvents.findLast(e=>e.path===p&&e.stage==='picture_work_failed');return {path:p,presented:!!c?.querySelector('canvas[data-picture-key]'),needsMemory:c?.querySelector('.library-memory-needed')?.textContent,error:c?.querySelector('.library-picture-error')?.title||c?.querySelector('.picture-failed')?.textContent||refused?.reason};});},targets);
     if(cells.length&&cells.every(c=>c.presented||c.error||c.needsMemory))break;
     if(phase0){
      const jobs=(await lib.evaluate(()=>HDRLibraryGrants.snapshot())).jobs;
@@ -256,12 +256,13 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
    });
    const began=Date.now();
    await lib.evaluate(folder=>HDRLibrary.browse(folder),photos.replaceAll('\\','/'));
+   let warmError;
    await lib.waitForFunction(()=>{
     const b=document.getElementById('library-grid').getBoundingClientRect();
     const cells=[...document.querySelectorAll('#grid-space .library-cell')].filter(c=>{const r=c.getBoundingClientRect();return r.top<b.bottom&&r.bottom>b.top;});
     return cells.length&&cells.every(c=>c.querySelector('canvas[data-picture-key]'));
-   },null,{timeout:120000});
-   report.warm={fullScreenMs:Date.now()-began,events:await lib.evaluate(()=>warmEvents)};
+   },null,{timeout:120000}).catch(error=>warmError=String(error));
+   report.warm={fullScreenMs:warmError?null:Date.now()-began,error:warmError,events:await lib.evaluate(()=>warmEvents)};
    const checks=report.warm.events.filter(e=>e.stage==='picture_cache_check');
    report.warm.cache={hits:checks.filter(e=>e.cache_hit).length,checks:checks.length};
   }
