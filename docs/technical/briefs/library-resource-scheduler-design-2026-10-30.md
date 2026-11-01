@@ -2209,7 +2209,33 @@ cache entries. Only a remaining measured deficit begins bounded eviction.
 Steve stopped the extra folder run on November 1 and deferred phase0, Aceh,
 release-driver and Grade checks. The next authorized slow check is one cold
 HDR-copy first screen, followed by a report; no warm reopen or other slow
-checks in that round. Focused checks above pass; native acceptance pending.
+checks in that round. Focused checks above pass; native acceptance failed in the single authorized
+follow-up run (`c9507e3`, `output/cold-mixed/guard-hdr-followup`). At 32.002 s,
+whole-app RAM reached **4.490 GB**, crossing 4.4 GB by 89.9 MB, and the observer
+stopped the run. Two ordinary DJI DNG developments held 336 MB grants each.
+The first screen was incomplete (five finished pictures); no first-screen time
+or settled RAM is available. The longest interval between successful
+`picture_live_developed` completions was **6.981 s**; these are completion
+events, so that gap does not mean the GPU was idle. Reconstructing grant state
+from asks/grants/finishes finds **0 ms** with queued source work and no active
+grant in this short observation. It recorded **zero reclaims and zero
+collection requests**, so it stopped before the new collection path or the
+EXR refusal could be qualified. No controller errors or diagnostic memory
+probe timeouts appeared. This is a failed memory acceptance, not a speed or
+zero-reclamation pass. No additional slow checks followed Steve's stop.
+
+For the earlier capture, the longest completion gap was 188.519 s, from
+129.919 to 318.439 s after the folder opened. From 140 to 313 s there were no
+queued or active source/cpu grants at all. Later `development places full`
+waits belong to the next screen's newly admitted work, after scrolling at
+313.9 s; the entire capture's longest queued interval without any active grant
+was 1.221 s. Its apparent long deadlock was the observer waiting on stale
+viewport targets. This does not explain away the eight real cache reclaims.
+
+Remaining work: diagnose the measured overshoot with unchanged budgets and
+estimates before another slow check. The one-run follow-up did not reach the
+EXR or establish a warm cache hit rate; phase0, Aceh, release-runner grid and
+recovery, and Grade coexistence remain deferred for these commits.
 
 ## 8. Phases
 

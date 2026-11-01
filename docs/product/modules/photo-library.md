@@ -10,8 +10,13 @@ Initial cold observation still had eight ordinary reclaims. Follow-up now
 collects dead uploads before eviction, skips unsupported camera-preview grants,
 and remembers refused cells across folder rechecks. A stale viewport target
 list caused the observer's long idle gap; it now tracks discovery/sort changes.
-Focused checks: 70 Python, 29 JavaScript pass. Steve authorized one cold check
-next and deferred warm/final regressions; acceptance remains open.
+Focused checks: 70 Python, 29 JavaScript pass. The single authorized cold
+follow-up (`c9507e3`) stopped at 32.002 s with only five finished pictures:
+RAM hit 4.490 GB, exceeding the unchanged 4.4 GB boundary. Zero reclaims
+occurred before that early stop; the new collection path and EXR were not
+reached. Longest completion gap 6.981 s; no queued source interval without
+an active grant in the trace. **Not fixed/qualified yet.** Investigate the
+overshoot next. Steve deferred warm/final regressions; no more slow checks ran.
 See [scheduler design 7.15](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md#715-ordinary-waits-and-proportional-reclamation-november-1).
 
 ## November 1: Decision 21 measured — 22/27; Grade rerun passes
