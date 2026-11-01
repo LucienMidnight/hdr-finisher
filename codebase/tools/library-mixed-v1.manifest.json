@@ -1,0 +1,411 @@
+{
+ "fixture": "D:\\AI\\AI Projects\\HDR Finisher Tool\\test-fixtures\\library-mixed-v1",
+ "missing_formats": [
+  ".heif",
+  ".nrw",
+  ".ori",
+  ".pef",
+  ".srw"
+ ],
+ "files": [
+  {
+   "name": "DSC00264.ARW",
+   "bytes": 85615616,
+   "sha256": "e646d44a86cef88ff73af27ed60a683bf8ce2f7f62110ea042f84fedc56a4e00",
+   "why": "Sony RAW",
+   "source": "D:\\Photos\\HDR Test Images\\DSC00264.ARW"
+  },
+  {
+   "name": "DSC01204.ARW",
+   "bytes": 85726208,
+   "sha256": "c4ff1cd52fb94f1c15556babcc9fab5a55502c273548defe4480ebdb8c04b7fc",
+   "why": "Sony RAW",
+   "source": "D:\\Photos\\HDR Test Images\\DSC01204.ARW"
+  },
+  {
+   "name": "DSC01212.ARW",
+   "bytes": 85771264,
+   "sha256": "2555627afa01de70c1999b535067497b64cd39e8d3274da145a2c41d6e539322",
+   "why": "Sony RAW",
+   "source": "D:\\Photos\\HDR Test Images\\DSC01212.ARW"
+  },
+  {
+   "name": "DSC01226.ARW",
+   "bytes": 85648384,
+   "sha256": "b935748b4da9b10785220a6086e189537ab1609501f073450bdaab1197ff9132",
+   "why": "Sony RAW",
+   "source": "D:\\Photos\\HDR Test Images\\DSC01226.ARW"
+  },
+  {
+   "name": "DSC01244.ARW",
+   "bytes": 85660672,
+   "sha256": "5f2397536a0d18c1d0034bdeeb290be3fcae44ea7c836ce3bd09221aed32f8dc",
+   "why": "Sony RAW",
+   "source": "D:\\Photos\\HDR Test Images\\DSC01244.ARW"
+  },
+  {
+   "name": "DSC01286.ARW",
+   "bytes": 85861376,
+   "sha256": "aa87f4ac5587df9194795e8311c306fda682055763dc82a82d7df517eb4f09dc",
+   "why": "Sony RAW",
+   "source": "D:\\Photos\\HDR Test Images\\DSC01286.ARW"
+  },
+  {
+   "name": "DSC01287.ARW",
+   "bytes": 86090752,
+   "sha256": "8d0cd6869a5849ecaaa0a7605212b778a6890a05c0d843cbf0e31edc2e9818bf",
+   "why": "Sony RAW",
+   "source": "D:\\Photos\\HDR Test Images\\DSC01287.ARW"
+  },
+  {
+   "name": "DSC02767.ARW",
+   "bytes": 85644288,
+   "sha256": "61a28b4d19d33b671df14e8b6696d29779540916aaf19d5192a5230eb027b184",
+   "why": "Sony RAW",
+   "source": "D:\\Photos\\HDR Test Images\\DSC02767.ARW"
+  },
+  {
+   "name": "DSC03819.ARW",
+   "bytes": 85513216,
+   "sha256": "dc3170450c519f2cd5aad6870d460305a53c11345e302d4aba9bfd528cd1c6db",
+   "why": "Sony RAW",
+   "source": "D:\\Photos\\HDR Test Images\\DSC03819.ARW"
+  },
+  {
+   "name": "DSC04375.ARW",
+   "bytes": 85533696,
+   "sha256": "1604ad3c0645b8c26ed8167dab23452a97ed784e577ed8c6b90f99312abd3cf3",
+   "why": "Sony RAW",
+   "source": "D:\\Photos\\HDR Test Images\\DSC04375.ARW"
+  },
+  {
+   "name": "DSC04761.ARW",
+   "bytes": 85742592,
+   "sha256": "69230cabaf88eeda314007bf6f670346b1f55f65cda0d6e5fa134fd8a624a3e9",
+   "why": "Sony RAW",
+   "source": "D:\\Photos\\HDR Test Images\\DSC04761.ARW"
+  },
+  {
+   "name": "DSC06615.ARW",
+   "bytes": 43477504,
+   "sha256": "216e27bccb5ff99cb3aed4199f30397abbf44d49794a005d3eb9b341ac2c2432",
+   "why": "Sony RAW",
+   "source": "D:\\Photos\\HDR Test Images\\DSC06615.ARW"
+  },
+  {
+   "name": "DSC00264.ARW.hdrf",
+   "bytes": 50356,
+   "sha256": "5757b930b89a03055232070e82eec88b8c99e95f5ef49f5a2fbcea927d5b7ccf",
+   "why": "edited RAW sidecar",
+   "source": "D:\\Photos\\HDR Test Images\\DSC00264.ARW.hdrf"
+  },
+  {
+   "name": "DSC01204.ARW.hdrf",
+   "bytes": 51028,
+   "sha256": "362643464fa420a453ffbd86c8713a7ec7e5f03f5fe3cd98ba42cdb264b9ec2a",
+   "why": "edited RAW sidecar",
+   "source": "D:\\Photos\\HDR Test Images\\DSC01204.ARW.hdrf"
+  },
+  {
+   "name": "DSC01226.ARW.hdrf",
+   "bytes": 85440,
+   "sha256": "5781c8f55201ddfa33be98f912d54890b24ae6e26aac26a2932cd6900f50bc9e",
+   "why": "edited RAW sidecar",
+   "source": "D:\\Photos\\HDR Test Images\\DSC01226.ARW.hdrf"
+  },
+  {
+   "name": "DSC04375.ARW.hdrf",
+   "bytes": 56362,
+   "sha256": "6bee360bc715c6e059dc5bd164828c49829857a88043224d9e278aaf9c1233c7",
+   "why": "edited RAW sidecar",
+   "source": "D:\\Photos\\HDR Test Images\\DSC04375.ARW.hdrf"
+  },
+  {
+   "name": "DSC06615.ARW.hdrf",
+   "bytes": 50232,
+   "sha256": "37ecc97ab61590fdb32e4116f7172b3d5f764292904531a779d0701ee3147ae2",
+   "why": "edited RAW sidecar",
+   "source": "D:\\Photos\\HDR Test Images\\DSC06615.ARW.hdrf"
+  },
+  {
+   "name": "2L1B8631.CR2",
+   "bytes": 29185235,
+   "sha256": "0099c675de295c68d1292b95100ac076fef7d365b3a0cd93e4a17ea5b382d62f",
+   "why": "Canon CR2",
+   "source": "D:\\Photos\\HDR Test Images\\Test Suite Images\\2L1B8631.CR2"
+  },
+  {
+   "name": "IMG_5137.CR2",
+   "bytes": 37802492,
+   "sha256": "3bc9253e78b1baa4b5864f333fcc6a334ae43692f0b1d1087835e431af957633",
+   "why": "Canon CR2",
+   "source": "D:\\Photos\\2020\\Lucas 2nd Birthday\\IMG_5137.CR2"
+  },
+  {
+   "name": "IMG_7723.CR3",
+   "bytes": 28431292,
+   "sha256": "483202682a22fc9b3879950b74c5aa1478367810f8f01bddb4a86e9a7eef60ef",
+   "why": "Canon CR3",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\IMG_7723.CR3"
+  },
+  {
+   "name": "QNY_8816.NEF",
+   "bytes": 40917689,
+   "sha256": "04fe1fd3dd11ef6eb18ef34c5316f1b0fb7c72f971939ae2db5b98132beaacc8",
+   "why": "Nikon NEF",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\QNY_8816.NEF"
+  },
+  {
+   "name": "Nikon_D7500_DSC_3931.NEF",
+   "bytes": 25015229,
+   "sha256": "3a1bc9e4e07005e05105dc03e86ca15d68448e7ed81cf4252d6f59a705f54253",
+   "why": "Nikon NEF",
+   "source": "D:\\Photos\\HDR Test Images\\Test Suite Images\\Nikon_D7500_DSC_3931.NEF"
+  },
+  {
+   "name": "Nikon_D7500_DSC_3931.NEF.hdrf",
+   "bytes": 302,
+   "sha256": "9403c8fce11bed5d19c75d24ed9939919d32c73bb8b9f91cf9adb2d12dd5a006",
+   "why": "edited NEF sidecar",
+   "source": "D:\\Photos\\HDR Test Images\\Test Suite Images\\Nikon_D7500_DSC_3931.NEF.hdrf"
+  },
+  {
+   "name": "P1150601.RW2",
+   "bytes": 24188928,
+   "sha256": "ac1c95573033cab13927eb4d800a97bab9ec2ffa13e8c7d7840118e63c5b7b68",
+   "why": "Panasonic RW2",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\P1150601.RW2"
+  },
+  {
+   "name": "P1010004.ORF",
+   "bytes": 14367563,
+   "sha256": "62755a0f8bf1b009e92d8c34a1a567fc58569419d14412dbe4a1bcf8fe8851e3",
+   "why": "Olympus ORF",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\P1010004.ORF"
+  },
+  {
+   "name": "P1010300.ORF",
+   "bytes": 14221165,
+   "sha256": "ca714ecfa80e0a61d4cb054067df61bb28b714f0400cbe85f194e9c5ff25764b",
+   "why": "Olympus ORF",
+   "source": "D:\\Photos\\2025\\Yenny BBQ\\P1010300.ORF"
+  },
+  {
+   "name": "DSCF6495.RAF",
+   "bytes": 33737348,
+   "sha256": "6f30ba88da509926b1fc0c3f57686f7d687ce113c4d6ce1df04b8ee94f945128",
+   "why": "Fuji X-Trans RAF: unsupported, camera preview only",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\DSCF6495.RAF"
+  },
+  {
+   "name": "DJI_0071.DNG",
+   "bytes": 96563671,
+   "sha256": "af173be2e7b9bde28b1124c2b2b06fa9586508f2c250ac6c9037d671ea799dd2",
+   "why": "20 MP drone DNG",
+   "source": "D:\\Photos\\HDR Test Images\\DJI Samples\\DJI_0071.DNG"
+  },
+  {
+   "name": "DJI_0072.DNG",
+   "bytes": 96485624,
+   "sha256": "5027f6ba30469c0a46b60cf287f6c207479089baf13ff5a7104ed4e9f3ac45cd",
+   "why": "20 MP drone DNG",
+   "source": "D:\\Photos\\HDR Test Images\\DJI Samples\\DJI_0072.DNG"
+  },
+  {
+   "name": "DSC01244_DxO-optical-corr-only.dng",
+   "bytes": 134984392,
+   "sha256": "07d71984460c11aaa73464cacbd3fa13369cfe3defdf08f48ea1dcaf4e565ccb",
+   "why": "DxO linear DNG",
+   "source": "D:\\Photos\\HDR Test Images\\DJI Samples\\DSC01244_DxO-optical-corr-only.dng"
+  },
+  {
+   "name": "DSC04375_DxO-optical-corr-only.dng",
+   "bytes": 141539424,
+   "sha256": "957b5384ed3cdd3e400ba818fb200a249019ad5c54c740981fa22723ee64846d",
+   "why": "DxO linear DNG",
+   "source": "D:\\Photos\\HDR Test Images\\DJI Samples\\DSC04375_DxO-optical-corr-only.dng"
+  },
+  {
+   "name": "Leica-X2-L1021324.DNG",
+   "bytes": 24453726,
+   "sha256": "a67eca6271afb10510ffc9cf998b641d0e8a0ebfa4c779a7bc0bfed5d28b62dd",
+   "why": "Leica DNG",
+   "source": "D:\\Photos\\HDR Test Images\\Leica-X2-L1021324.DNG"
+  },
+  {
+   "name": "line_scan_2018-05-26-11-35-40_NECTA0000_fbcb8f8f1d37db8bf93c0d46fb748355c01b7f8b.dng",
+   "bytes": 1781269120,
+   "sha256": "700b6705cd6b5f5be82538a1cd32863dd7a68652d2eb5781cb4fdc8203cc8673",
+   "why": "297 MP line scan: reduced DNG route, elastic admission",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\line_scan_2018-05-26-11-35-40_NECTA0000_fbcb8f8f1d37db8bf93c0d46fb748355c01b7f8b.dng"
+  },
+  {
+   "name": "DJI_0071-2.tif",
+   "bytes": 388002130,
+   "sha256": "88e3ca47cb51312e24a41faddd4d95ec63dcf009f9fe388926aae46012a2e3f9",
+   "why": "388 MB drone TIFF",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\DJI_0071-2.tif"
+  },
+  {
+   "name": "IMG_1150.tiff",
+   "bytes": 11439050,
+   "sha256": "4693d8694dddb6400da62c0503d6c819405d6b563ba77394fc18febcc6cb3786",
+   "why": "ordinary TIFF",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\IMG_1150.tiff"
+  },
+  {
+   "name": "pano_192mp.tif",
+   "bytes": 10439518,
+   "sha256": "a5b41acfcfd131408fda4a6f862668b7c7680f11a5d44b689d18c3c70b087c6c",
+   "why": "192 MP TIFF: reduced route",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\pano_192mp.tif"
+  },
+  {
+   "name": "pano_192mp.tif.hdrf",
+   "bytes": 33368,
+   "sha256": "c64158dad3002077acb673bf7077a45ee31acda097911315b205e0f6c136a403",
+   "why": "saved TIFF interpretation",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\pano_192mp.tif.hdrf"
+  },
+  {
+   "name": "DSC04375_DxO_clipped_target.tif",
+   "bytes": 253253558,
+   "sha256": "ca4c17d91ec75939cc1e59f98288849e6af47ddc07e552b9738e395a13ad23f1",
+   "why": "TIFF needing interpretation in Grade",
+   "source": "D:\\Photos\\HDR Test Images\\DSC04375_DxO_clipped_target.tif"
+  },
+  {
+   "name": "_DSC6117_DxO.jpg",
+   "bytes": 719584,
+   "sha256": "7885854bb33a2b9cb8bbd88934167294e93f56e9d5b5c2381733bec7fec1da96",
+   "why": "JPEG",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\_DSC6117_DxO.jpg"
+  },
+  {
+   "name": "_DSC6328.jpg",
+   "bytes": 35025192,
+   "sha256": "fd752c9cebf100cbda1605f96094948a8e87ecfaed75a7bb5f92440c0be6a101",
+   "why": "large JPEG",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\_DSC6328.jpg"
+  },
+  {
+   "name": "VKNS0418.JPEG",
+   "bytes": 13886061,
+   "sha256": "f643d5dbe0be20a4765f7f9e6d28c7eaf71a327a2482dc9e3a48d501e2f65eef",
+   "why": "JPEG, .jpeg extension",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\VKNS0418.JPEG"
+  },
+  {
+   "name": "pano_192mp.jpg",
+   "bytes": 3403053,
+   "sha256": "297a5c4528831318845cb5bac561b8f0439954863cf700966993c647f7ead2a7",
+   "why": "192 MP JPEG: DCT-reduced route",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\pano_192mp.jpg"
+  },
+  {
+   "name": "DJI_0071-2.JPG",
+   "bytes": 14010696,
+   "sha256": "53fa914ced7e504badbeedbf9980c401f9f3f8f6755d26a741491e4ff6cfc884",
+   "why": "20 MP drone JPEG",
+   "source": "D:\\Photos\\HDR Test Images\\DJI Samples\\DJI_0071-2.JPG"
+  },
+  {
+   "name": "IMG_6717.PNG",
+   "bytes": 2204477,
+   "sha256": "7b7fb976b1d57777004028f4b81aa355c480e3e58841f819a996bdeac4916b28",
+   "why": "PNG",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\IMG_6717.PNG"
+  },
+  {
+   "name": "_DSC6510-1.png",
+   "bytes": 223274840,
+   "sha256": "03aae6a086dfe163be325c076774dfdffb962feed73b2cbd5434e9a53a2fc6c0",
+   "why": "223 MB 16-bit PNG",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\_DSC6510-1.png"
+  },
+  {
+   "name": "pano_192mp.png",
+   "bytes": 9320889,
+   "sha256": "3ec6aeb653d83807b0c6627d84c4e17c8a3774fcface51d5a2cf30a728a9aec1",
+   "why": "192 MP PNG: reduced route, elastic admission",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\pano_192mp.png"
+  },
+  {
+   "name": "iphone_16_pro_IMG_3324.HEIC",
+   "bytes": 3247539,
+   "sha256": "56402d9d9399ccd8dc2e866c278a53d8dd1355f6ed07ca809f385208a21d2000",
+   "why": "iPhone HEIC with gain map",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\iphone_16_pro_IMG_3324.HEIC"
+  },
+  {
+   "name": "IMG_6705.HEIC",
+   "bytes": 1692213,
+   "sha256": "7b94757be83a5473422b1887ea8f886e35e1742841cf0c6c98ee4e63a36957cf",
+   "why": "iPhone HEIC",
+   "source": "D:\\Photos\\2024\\2024 - phone images\\202406__\\IMG_6705.HEIC"
+  },
+  {
+   "name": "-4_stops_exposure_PQ_Rec_2020_DSC08883_03.avif",
+   "bytes": 2144025,
+   "sha256": "cd09d470bd2ec0833db9d17b9dc67c4a508d975ef64178b62d2f9016e0b3033d",
+   "why": "PQ AVIF",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\-4_stops_exposure_PQ_Rec_2020_DSC08883_03.avif"
+  },
+  {
+   "name": "DSC08883.avif",
+   "bytes": 3848386,
+   "sha256": "37703a9918affd6a386047608b30b82d67b94153a63791ea2e1150cd7a70e8cf",
+   "why": "AVIF",
+   "source": "D:\\Photos\\2025\\20251210 Power Out\\darktable_exported\\DSC08883.avif"
+  },
+  {
+   "name": "LR-classic-hdr-source-test-1.avif",
+   "bytes": 25538842,
+   "sha256": "dd3c5bcac25573ac6344d59d58466b24708e57ec048acda1e377890bba256bce",
+   "why": "gain-map AVIF: needs more memory at 4 GB",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\LR-classic-hdr-source-test-1.avif"
+  },
+  {
+   "name": "DSC01302.jxl",
+   "bytes": 93608442,
+   "sha256": "7d439c38900d909cce24f4a2683a380acecfe5b4d708de15791363f57ed3991c",
+   "why": "JPEG XL needing interpretation",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\DSC01302.jxl"
+  },
+  {
+   "name": "jpeg_xl_16_bit_p3_color.jxl",
+   "bytes": 759421,
+   "sha256": "21ef4b87587a2b79e386c72a8f3b8305b9b5e52cd79e68a677ec19d9677e60a4",
+   "why": "16-bit P3 JPEG XL",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\jpeg_xl_16_bit_p3_color.jxl"
+  },
+  {
+   "name": "possibly-cat-prints-texture-v001.exr",
+   "bytes": 14321900,
+   "sha256": "f6ae4c79f581a6fed145b56e5a5c1b7a72467fc49a3458025512c473f97a4962",
+   "why": "EXR needing interpretation",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\possibly-cat-prints-texture-v001.exr"
+  },
+  {
+   "name": "DSC01287.exr",
+   "bytes": 494763463,
+   "sha256": "fd90a360c2dbae83ad688cc087399d69957c9e6f677add0ca4660e65a09f70b6",
+   "why": "EXR",
+   "source": "D:\\Photos\\HDR Test Images\\DSC01287.exr"
+  },
+  {
+   "name": "synthetic_24mp.hdr",
+   "bytes": 82394649,
+   "sha256": "b5a47c9cbb6f795816c4a7cf770684589edd040df3f72533c451aa84f43be609",
+   "why": "Radiance HDR",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\synthetic_24mp.hdr"
+  },
+  {
+   "name": "synthetic_24mp.pfm",
+   "bytes": 288000018,
+   "sha256": "8a6006a6eceb06fa927982534e86355d9d7c0d84e3aea812527186afa4ee29c5",
+   "why": "PFM",
+   "source": "D:\\AI\\AI Projects\\HDR Finisher Tool\\ai\\codebase\\output\\test-photos\\phase0\\synthetic_24mp.pfm"
+  }
+ ]
+}
