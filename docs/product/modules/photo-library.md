@@ -1,5 +1,18 @@
 # Module PRD: Photo Library
 
+## November 1: Decision 20 implemented; final acceptance pending
+
+Fitting jobs may pass a blocked photo within the same class. The oldest blocked
+photo then protects its turn and reclaims offscreen finished pictures/scenes
+and retained decoded sources through existing eviction paths. Visible finished
+pictures and the camera-preview fast lane remain. If memory still cannot fit,
+the job ends once with a memory notice, retains its camera preview, and is not
+a broken photo. Scroll return or Single can retry. No approved numbers changed.
+Focused scheduler/channel/memory checks pass (59 Python, 38 JavaScript).
+Final mixed-folder, Aceh and real-app regression results belong in
+[scheduler design 7.13](../../technical/briefs/library-resource-scheduler-design-2026-10-30.md).
+
+
 **Memory and cache sizes** (the whole-app RAM ceiling, each cache's share,
 disk allowances) are owned by [memory-and-caches](memory-and-caches.md).
 Read it before changing how much any Library cache keeps.
