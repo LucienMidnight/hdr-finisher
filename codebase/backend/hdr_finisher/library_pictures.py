@@ -39,8 +39,13 @@ def reduce_picture(image, edge):
         return np.asarray(image, dtype=np.float32)
     scale = edge / max(h, w)
     size = (max(1, round(w * scale)), max(1, round(h * scale)))
-    return np.stack([np.asarray(Image.fromarray(image[:, :, c].astype(np.float32)).resize(
-        size, Image.Resampling.BILINEAR)) for c in range(3)], axis=2)
+    def channel(index):
+        return np.asarray(Image.fromarray(image[:, :, index].astype(np.float32)).resize(
+            size, Image.Resampling.BILINEAR))
+    # Each channel resizes independently to the same pixels; only their order
+    # in time changes when a Library decode has the cores (cpu_budget).
+    from .cpu_budget import parallel_bands
+    return np.stack(list(parallel_bands(channel, range(image.shape[2]))), axis=2)
 
 
 def picture_key(path, edge, quality):
@@ -580,6 +585,14 @@ def reduced_bitmap(path, edge):
 
 
 def decode_picture(path, edge, quality):
+    # One Library photo decodes with its share of the cores; Grade's own
+    # import keeps its separate bands.
+    from .cpu_budget import library_bands
+    with library_bands():
+        return _decode_picture(path, edge, quality)
+
+
+def _decode_picture(path, edge, quality):
     suffix = path.suffix.lower()
     if suffix in raw_import.RAW_EXTENSIONS:
         if quality == "fast":
