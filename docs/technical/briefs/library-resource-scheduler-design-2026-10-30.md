@@ -2764,6 +2764,33 @@ This establishes an existing failure under this fresh-folder setup; it does
 not establish a precise timing regression or repair that separate folder-start
 path. Baseline record: `codebase/output/grade-final-baseline/`.
 
+### Focused release checks and cleanup
+
+Both requested drivers pass at committed `5f400db9c82f`: `library-live-grid.js`
+73.899 s and `library-gpu-recovery.js` 7.469 s, each through the release runner,
+sequentially, with zero flaky/known/new failures. All three read-only project
+hashes are unchanged. Reports:
+`codebase/output/release-checks/2026-11-01T11-36-28-679Z-5e60e53355d11d0202ac/`
+and `codebase/output/release-checks/2026-11-01T11-38-10-707Z-5701026fec59cbf26805/`.
+The later documentation commit changes no application code.
+
+The round passed its original two-hour allowance; Steve explicitly granted up
+to 45 additional minutes to finish the comparisons and investigation. Finished
+inside that extension. No number, shader, scene-size policy, export or Proof
+path was changed. No push or merge. Grade pause remains the existing failed
+gate; six existing source gates remain without finished comparison pixels.
+
+Removed the previous agent's requested trace folders and `output/drivers`,
+plus this round's large raw traces, temporary launch/edit scripts, half-float
+capture arrays and disposable profiles (including the two release profiles in
+Windows Temp). Retained every pair's hashes/finite result, capture reports,
+backend/connection logs under `library-freeze-pixels/profile-logs`, compact trace
+task summaries, final quick reports and the initial uncommitted-work backup.
+`output/benchmark-png.py` retains the small reproducible timing procedure.
+Start output 32.3 GB; final **32.1 GB**, including 29.7 GB reusable test photos,
+below 100 GB. No Electron/Crashpad processes remain. Real profile/cache and
+`D:\Photos` were not written; protected project hashes verify unchanged files.
+
 ## 8. Phases
 
 Each phase is one small set of commits that can be undone on its own, with
