@@ -800,6 +800,20 @@ recipes remain unqualified within the working room as listed above.
   in section 3 and update section 4 in the same commit as the code.
 - A new cache must name its share, its process and what it drops first.
 - Report memory per process and in total, using the method in section 7.
+
+**November 1: exact finished Library thumbnails.** The backend stores
+`library-thumbnails/<identity>.surface` in the existing 2 GB thumbnail disk
+allowance, counted and trimmed by `LibraryCache` alongside source scenes.
+Oldest managed files go first under its existing disk policy. The file holds
+a JSON identity/dimensions header and lossless DEFLATE blocks containing the
+exact GPU presentation bytes; HDR/SDR and canvas format have distinct keys.
+No retained RAM index or pixel pool is added. Restored renderer canvases use
+the existing fixed 512 MiB thumbnail share; oldest detached cells go first.
+Request-owned compressed bodies, GPU readback and response buffers are
+transient working memory and released after transfer. Captures share the
+existing two screen-preview save places, and local reads use the existing API
+worker pool. No ceiling, floor, reserve, share, development concurrency, GPU
+budget, per-type estimate or disk allowance changes.
 - Sources for this approach: darktable's fixed memory presets
   ([memory & performance tuning](https://docs.darktable.org/usermanual/4.8/en/special-topics/mem-performance))
   and Chromium's memory-pressure listener

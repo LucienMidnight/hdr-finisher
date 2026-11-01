@@ -501,6 +501,33 @@ def create_library_router(worker, browser, store=None):
     @router.post("/live-plan")
     @picture_errors.guard
     def live_plan(command: LiveSceneRequest):
+        # Prepared scenes trust the local index. FolderChecks reconciles source
+        # and sidecar changes in the background, including after restart.
+        from .library_finished_thumbnails import FinishedThumbnails
+        from .library_pictures import indexed_picture_key
+        indexed = FinishedThumbnails(live).current(command.path, "sdr", "bgra8unorm") if store is not None else None
+        if indexed:
+            facts, document = indexed
+            if document is not None:
+                from .models import EditDocument
+                from .projects import validate_saved
+                from .saved_grades import notice, whole_grade_fallback
+                saved = validate_saved(EditDocument, document)
+                document = saved.model_dump(mode="json")
+                if whole_grade_fallback(notice(saved)):
+                    document.pop("global_adjustments", None)
+            path = str(marks.source_path(command.path))
+            stamp = (facts["bytes"], facts["mtime_ns"])
+            source_quality = live_quality(document)
+            cached = live.cache.cached(path, command.edge, source_quality, stamp=stamp)
+            if cached:
+                live.cache.accept_transient(cached)
+                identity = indexed_picture_key(path, 0, source_quality, stamp)
+                scene_identity = indexed_picture_key(path, command.edge, source_quality, stamp)
+                return dict(cached=live.describe(command.path, cached, document=document, source_identity=scene_identity),
+                    bytes=stamp[0], revision=f"{stamp[1]}:{stamp[0]}", source_identity=identity,
+                    render_identity=identity+":"+sha256(json.dumps(document or {}, sort_keys=True).encode()).hexdigest(),
+                    warm_allowed=live.cache.managed.can_warm(), cloud_only=False, cpu_route=None, gpu_meta=None)
         # Cache discovery and stat only: never decode or claim a source slot.
         document = picture_document(command.path)
         path = marks.source_path(command.path)

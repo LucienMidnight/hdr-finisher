@@ -551,11 +551,13 @@
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr));
     for (const cell of [...state.cells.values(), ...state.filmCells.values()]) {
       pictureMode(cell.canvas, state.hdr);
+      if(cell.scene?.route==="finished-thumbnail"){cell.controller.abort();cell.element.remove();state.cells.delete(cell.photo.path);state.filmCells.delete(cell.photo.path);continue;}
       if (cell.fallback && cell.scene) void drawPicture(cell.scene, cell.fallback, cell.controller,
         () => cell.element.isConnected && !cell.controller.signal.aborted).then(() => {
           if (!cell.controller.signal.aborted) cell.displayEpoch = state.displayEpoch;
         }).catch(() => {});
     }
+    paintGrid();paintFilm();
     if (state.view === "single") showSingle();
   }
   $("hdr-button").addEventListener("click", toggleHDR);
@@ -669,15 +671,27 @@
           HDRLibraryStopwatch("folder_first_picture_requested", {path:opening.path,request:opening.request,
             reason:photo.path,duration_ms:performance.now()-opening.started});
         }
-        // live-plan reads the current saved grade itself. Folder details must
-        // not gate cached pictures behind sidecar/index upkeep.
-        void hydrateVisible(photo,current,cell.controller.signal).catch(error=>{
-          if(current()&&!aborted(error))status(error.message);
-        });
         if(!current())return;
         cell.identity=pictureIdentity(photo);
         const fallback = document.createElement("canvas"); cell.fallback = fallback;
         fallback.hidden = true; frame.append(fallback);
+        // Stored finished pixels get the first opportunity; a camera preview
+        // is requested only on a miss. Local edits invalidate this cell's owner.
+        const finished=await HDRLibraryFinishedThumbnails.load(photo,fallback,cell.controller.signal,current,state.hdr);
+        if(!current())return;
+        if(finished){
+          cell.meta=cell.scene=finished;cell.displayEpoch=state.displayEpoch;cell.elapsed=performance.now()-started;
+          fallback.hidden=false;canvas.hidden=true;element.classList.remove("loading");
+          HDRLibraryStopwatch("picture_shown",{path:photo.path,key:finished.key,route:finished.route,view:container===space?"grid":"filmstrip",duration_ms:cell.elapsed});
+          window.HDRLibraryFolderPresented?.({view:container===space?"grid":"filmstrip",path:photo.path});
+          overlays?.attach(photo,fallback,finished,cell.controller,current);
+          return;
+        }
+        // Cold pictures keep the existing visible-details hydration.
+        // Prepared surfaces use local facts and the background folder check.
+        void hydrateVisible(photo,current,cell.controller.signal).catch(error=>{
+          if(current()&&!aborted(error))status(error.message);
+        });
         const quickController=new AbortController();
         cell.controller.signal.addEventListener("abort",()=>quickController.abort(),{once:true});
         cell.quickController=quickController;
@@ -754,7 +768,7 @@
   // scrolling back shows them at once. Loading cells detach from shared preparation.
   function reconcile(map, start, end, container, position) {
     const span = end - start, keepStart = Math.max(0, start - span), keepEnd = Math.min(state.photos.length, end + span);
-    const kept = (cell, index) => index >= start && index < end || index >= keepStart && index < keepEnd && cell.meta && (!cell.fallback || cell.scene?.route === "library-live");
+    const kept = (cell, index) => index >= start && index < end || index >= keepStart && index < keepEnd && cell.meta && (!cell.fallback || ["library-live","finished-thumbnail"].includes(cell.scene?.route));
     const wanted = new Map(state.photos.slice(keepStart, keepEnd).map((photo, offset) => [photo.path, keepStart + offset]));
     map.shown = new Set(state.photos.slice(start, end).map(photo => photo.path));
     // Only the view Steve is looking at owns priority. While Single covers

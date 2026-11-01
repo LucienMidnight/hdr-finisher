@@ -20,7 +20,20 @@ Open work it leaves, in Steve's order:
    `live-plan` check that reads the photo drive, plus about 0.55 s in the
    queue. The draw itself takes 20–150 ms. Target: 90% of visible stored
    pictures within 100 ms (October 18), under the slow-storage rule (master
-   PRD, philosophy 11).
+   PRD, philosophy 11). Built November 1 on `stored-library-redisplay`:
+   exact 640-pixel GPU presentation bytes are saved on the local disk and
+   returned in one visible-cell request, before camera previews or source
+   work. Indexed source/grade facts replace source-drive checks for prepared
+   scenes; a known local edit or indexed source change rejects old surfaces.
+   The existing thumbnail pool retains finished cells during scrolling.
+   First use fills the new display cache from the existing scene; source
+   scene identity is unchanged, so this does not force redevelopment.
+   Fixture scroll-back: 27/27 within 100 ms. Folder reopen: 27/27 in
+   181–211 ms (0/27 within 100 ms), down from 242–1,928 ms. Steve accepted
+   this result on November 1 ("sounds fast enough mate"). The October 18
+   100 ms target remains unmet; no further latency work is requested now.
+   App restart uses the same persistent cache; restart/offline reuse is
+   covered by behavior tests, not a separate timed app-relaunch run.
 2. **Zeroed colour channels** in 42 MP RAW thumbnails (teal or black), seen
    in about 37% of A7R III thumbnails developed after the merge. No error is
    logged. Next step: compare one GPU development at a time with two, for
@@ -33,6 +46,48 @@ Open work it leaves, in Steve's order:
    check, `tools/measure-library-grade-grants.cjs`, still uses DevTools and
    times from folder opening.
 5. Fuji X-Trans development takes about 37.5 s including queueing (later).
+
+## November 1: stored thumbnail redisplay (implementation commit)
+
+Save the exact GPU canvas bytes at 640 pixels, with lossless compression,
+in the existing local thumbnail allowance. Visible cells request them as one
+batch and upload directly, bypassing source-drive probes and the serialized
+finishing queue. Existing stored scenes also use indexed source/grade facts
+on `live-plan`; cold development and camera-preview behavior stay in place.
+Own edits and known source changes reject stale captures/loads. Display
+lane and canvas format are part of the surface identity. No existing scene
+identity changes and no blanket source redevelopment is required.
+
+External-change policy: retain the existing visible-folder check cadence,
+**15 seconds between checks on a responsive folder, plus the scan time**;
+a slow scan backs off to ten times its duration. This avoids saturating a
+slow NAS/USB drive. It is not a hard wall-clock guarantee on slow/offline
+storage. Initial reconciliation follows the indexed rows, and only changed
+files/sidecars are enriched. Offline checks preserve stored rows/pictures.
+All approved budgets and concurrency numbers remain unchanged; exact cache
+ownership/eviction is in memory-and-caches section 9.
+
+Checks: final JavaScript suite **721 passed, 5 failed**; full pytest
+**2,949 passed, 3 skipped, 9 failed**; final focused cache checks **5 Python
+and 3 JavaScript passed**, including exact transfer bytes, saved identity,
+offline/restart reuse, stale publication and abandoned-cell rejection.
+The five JS failures also reproduce on untouched `72f75fb`: two picture-shape
+mocks and quick-draw lack `setDetectedVideoMemory`, scenes expects priority
+50 rather than 10, and single-ready lacks `HDRLibraryScreenPreviews`.
+The three backend failures touching changed modules also reproduce on main:
+RGB describe publication, source-baseline counting, and retouch cache mock
+(`defer_store`). The other full-pytest failures concern unchanged code/tests:
+local-scope preset wording, neutral-highlight legacy quality expectation,
+giant-memory resumption, CPU tier coalescing, loader mock signature, and
+render-cache entry expectation. They are left for their own work.
+
+The real GPU path was exercised by the short plain-Electron fixture check,
+with added scroll-back and actual folder close/reopen steps; no separate
+release sweep or long GPU driver. The generic quick-check exit remains
+nonzero for its initial frame-gap gate (also fails on main), so this is not
+a clean generic quick-check pass. Measurement details and accepted outcome
+are recorded in the follow-up harness/records commit. Steve's source data,
+real profile/cache, locked fixture and protected projects were not written.
 
 ## November 1: Fuji X-Trans thumbnails
 

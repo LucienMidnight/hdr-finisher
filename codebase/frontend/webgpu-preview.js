@@ -5548,6 +5548,7 @@
         encoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
       }
       this.device.queue.submit([encoder.finish()]);
+      sourceOptions?.onPresented?.(context.getCurrentTexture());
       if (hslSelection) {
         hslEngine.commit(hslSelection.token);
         if (hslEngine.retired.length) this.destroyAfterActiveRenders(() => hslEngine.dropRetired());
@@ -6692,7 +6693,7 @@
               alphaMode: "opaque",
               // The retained presentation target is copied into the canvas, so
               // the swap-chain texture must be a copy destination.
-              usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
+              usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
             });
             this.surfaceKeys.set(canvas, key);
           }
@@ -6709,7 +6710,7 @@
           format,
           colorSpace: "srgb",
           alphaMode: "opaque",
-          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST,
+          usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
         });
         this.surfaceKeys.set(canvas, key);
       }

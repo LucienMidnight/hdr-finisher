@@ -21,6 +21,7 @@ from .models import AdjustmentState, DenoiseDocumentSettings, LocalAdjustment, R
 from .projects import validate_saved
 from .render_cache import SessionRenderCache, encode_rgba_proxy_rows
 
+_UNSET = object()
 _registry = OrderedDict()
 _registry_lock = RLock()
 
@@ -253,8 +254,8 @@ class LivePictures:
         if whole_grade_fallback(notice(saved)): result.pop("global_adjustments", None)
         return result
 
-    def describe(self, path, metadata):
-        document = self.document(path) or {}
+    def describe(self, path, metadata, *, document=_UNSET, source_identity=None):
+        document = (self.document(path) if document is _UNSET else document) or {}
         if metadata["quality"] != quality(document):
             raise ValueError("The source settings changed while the preview was prepared.")
         if metadata.get("grade_notice"):
@@ -276,7 +277,7 @@ class LivePictures:
             "hdr_reference_white_nits": document.get("hdr_reference_white_nits", 203)}
         from .library_grades import grade_key
         grade_id = sha256(json.dumps(grade_key(finishing), sort_keys=True).encode()).hexdigest()
-        source_identity = picture_key(metadata["path"], metadata["edge"], quality(document))
+        source_identity = source_identity or picture_key(metadata["path"], metadata["edge"], quality(document))
         identity = "live-" + sha256((source_identity + grade_id).encode()).hexdigest()[:59]
         result = dict(metadata, route="library-live", source_key=metadata["key"], key=identity,
             path=str(path), adjustments=document.get("global_adjustments") or metadata["adjustments"],
