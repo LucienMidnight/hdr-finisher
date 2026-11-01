@@ -35,9 +35,39 @@ Open work it leaves, in Steve's order:
    App restart uses the same persistent cache; restart/offline reuse is
    covered by behavior tests, not a separate timed app-relaunch run.
 2. **Zeroed colour channels** in 42 MP RAW thumbnails (teal or black), seen
-   in about 37% of A7R III thumbnails developed after the merge. No error is
-   logged. Next step: compare one GPU development at a time with two, for
-   pictures and speed.
+   in about 37% of A7R III thumbnails developed after the merge (44 stored
+   640 pictures in Steve's cache). No error was logged. Guarded November 1
+   (branch `library-stall-teal`): a GPU development whose read-back colour
+   channel is entirely zero counts as a GPU failure, so the existing path
+   retries once and then develops on the CPU, and logs
+   `picture_development_empty_channel`. Not reproduced on a 40-photo test
+   copy (`output/test-photos/badminton-42mp`) with one or two GPU
+   developments; both runs were clean, so the cause stays unknown (most
+   likely a GPU failure only seen under Steve's real-session load). The
+   development's own GPU error list is a fresh empty list that nothing writes
+   to (`library-gpu-raw.js`, `allocationScope`), so validation errors are
+   not seen; left unchanged, because routing shared device errors there
+   could fail good photos. `tools/quick-library-check.cjs` now audits stored
+   pictures for zeroed channels after every run (`--folder=` measures a
+   test-photos copy). Bad pictures stored before the guard stay until they
+   are rebuilt.
+2a. **Development turns held unused (stall), fixed November 1** (branch
+   `library-stall-teal`). When scrolling took a development turn back from
+   a running photo, that photo kept its slot in the window's queue while it
+   asked for a new turn. Once every slot (about the square root of the CPU
+   cores) was held that way, the backend's two turns went to photos that
+   could not start: in Steve's 22:57 session two turns sat unused for 59 s
+   and only 2 of the folder's photos developed in 90 s (earlier sessions held
+   turns for 22–35 s). A photo that loses its turn now gives its slot back
+   and waits in line. Covered by two behaviour tests; the quick check does
+   not scroll mid-development, so Steve's use is the real-app check.
+2b. **Window freezes on a 42 MP folder:** the quick check on the
+   badminton copy showed a 2.5–3.1 s frame gap in both runs (the mixed
+   fixture shows about 0.1 s). Not investigated.
+2c. **Refresh thumbnail (Steve, November 1):** a right-click "Refresh
+   thumbnail" action that throws away a photo's stored pictures (scene and
+   finished display surfaces) and develops it again. Useful when a picture
+   looks wrong, and for testing.
 3. Finished gain-map AVIFs are slow to prepare (about 2 s each, 6–9 s for
    large ones) and mostly run one at a time because of their memory
    estimate. Candidate: GPU gain-map reconstruction.

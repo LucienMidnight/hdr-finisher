@@ -7,7 +7,11 @@ const root=path.resolve(__dirname,'..');
 const arg=(name,fallback)=>process.argv.find(x=>x.startsWith(`--${name}=`))?.slice(name.length+3)??fallback;
 const seconds=Number(arg('seconds',90)),label=arg('label','run');
 const singleMode=process.argv.includes('--single'),singleSteps=Number(arg('steps',10)),singlePace=Number(arg('pace',1500));
-const folder=path.join(root,'output/test-photos/library-mixed-v1-run');
+// --folder=<name> measures a reusable copy under output/test-photos instead of the locked fixture.
+const folderName=arg('folder',null);
+if(folderName!==null&&!/^[\w.-]+$/.test(folderName))throw Error('Folder must be a simple folder name under output/test-photos');
+const folder=path.join(root,'output/test-photos',folderName??'library-mixed-v1-run');
+if(folderName!==null&&!fs.existsSync(folder))throw Error('No such test-photos folder: '+folder);
 const out=path.resolve(root,'output/quick-library-check',label);
 if(path.dirname(out)!==path.join(root,'output/quick-library-check'))throw Error('Label must be a simple folder name');
 if(!Number.isFinite(seconds)||seconds<=0||seconds>110||!Number.isInteger(singleSteps)||singleSteps<0||!Number.isFinite(singlePace)||singlePace<0)throw Error('Invalid duration, steps or pace');
@@ -84,7 +88,7 @@ function analyse(text, openedAt, events, openedPageAt) {
   },130000);
   const signal=()=>{kill();try{cleanup();}catch{}process.exit(130);};process.once('SIGINT',signal);process.once('SIGTERM',signal);
   try{
-    execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-mixed-fixture.py'),'run-copy'],{stdio:'inherit',timeout:30000});
+    if(folderName===null)execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-mixed-fixture.py'),'run-copy'],{stdio:'inherit',timeout:30000});
     const config={folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE||'2560x1440').split('x').map(Number);
@@ -126,7 +130,12 @@ function analyse(text, openedAt, events, openedPageAt) {
     if(freezes.main_thread_blocks.longest_ms>250)failures.push(`main thread block ${freezes.main_thread_blocks.longest_ms} ms`);
     const errors=[...(result.errors||[])];if(!sampleCount||observerError)errors.push('Independent memory observer: '+(observerError||'no samples'));
     sampleIntervals.sort((a,b)=>a-b);
-    const report={label,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
+    // Stored pictures with a whole colour channel at zero (teal/black thumbnails).
+    let channels;
+    try{channels=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-channel-audit.py'),path.join(profile,'Cache')],{timeout:60000}).toString());}
+    catch(error){channels={error:String(error.message||error)};}
+    if(channels.one_channel_zero?.length||channels.all_channels_zero?.length)errors.push(`Zeroed colour channels in ${channels.one_channel_zero.length+channels.all_channels_zero.length} stored pictures`);
+    const report={label,folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
       ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,
       independent_memory:{...memory.report(),samples:sampleCount,lastBytes:memory.last?.totalBytes,sampleIntervalMs:{requested:250,median:sampleIntervals[Math.floor(sampleIntervals.length/2)],maximum:sampleIntervals.at(-1)},grants_note:'External process census; no DevTools WebSocket instrumentation.'},observerError,
       picture_timing_clock:'Library performance.now()',stage:result.stage,scenario_ms:result.scenario_ms,harness_total_ms:Date.now()-harnessAt,harness_outside_scenario_ms:Date.now()-harnessAt-result.scenario_ms,cdp_attached:false};
