@@ -2275,3 +2275,18 @@ items are listed there.
   `library_pictures.py`, `library_picture_errors.py`.
 * View sizes: `photo-library.js` `thumbnailEdge()` (640) and
   `library-gpu-raw.js` (the `[640, 2560, edge]` development sizes).
+
+
+### 7.14 Grade rerun, decision 21 and retained-memory investigation (November 1)
+
+Step 1 baseline on unchanged `b3d5eed`: pause **469 ms**, first ordinary
+picture **477 ms**, close/save **402 ms**, resume **261 ms**. Exposure 0.125
+was saved and protected projects were unchanged. The earlier slowdown did
+not reproduce. No evidence establishes a decision-20 regression or its cause;
+no speculative production fix has been made. The scheduler already excludes
+Grade from guard/admission waits and performs backend reclamation on a separate
+thread. A behavioral check covers Grade before reclamation, while both backend
+and owner acknowledgements are outstanding, and before the fresh census.
+Evidence: `codebase/output/grade-regression-baseline.json`.
+
+Decision 21 and final acceptance follow below.

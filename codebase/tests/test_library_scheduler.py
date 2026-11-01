@@ -446,3 +446,28 @@ def test_higher_classes_and_fast_lane_bypass_starvation_guard():
     quick = ask(s, "preview", FAST_BYTES, kind="quick")
     assert blocked.granted is None
     assert now.granted is not None and grade.granted is not None and quick.granted is not None
+
+
+def test_grade_preempts_guard_before_reclamation_and_during_owner_wait():
+    s = Scheduler()
+    s.update(total=2_500_000_000, available=60*GB, ram=68*GB)
+    active = ask(s, "active", 200_000_000)
+    blocked = ask(s, "blocked", 2*GB)
+    ask(s, "later", FAST_BYTES)
+    assert blocked.granted is None and blocked.bypassed
+    grade = ask(s, "grade-before", 8*GB, "Grade")
+    assert grade.ready.is_set() and grade.granted is not None
+    s.finish(grade.id)
+    s.heartbeat("window")
+    s.finish(active.id)
+    s.finish("later")
+    request = s.reclamation_request()
+    assert request and not blocked.ready.is_set()
+    grade = ask(s, "grade-during", 8*GB, "Grade")
+    assert grade.ready.is_set() and grade.granted is not None
+    assert s.reclamation["owners"] == {"window"}
+    assert not s.reclamation["backend_done"]
+    s.reclaimed(request["epoch"])
+    s.reclaimed(request["epoch"], "window")
+    # A census still has not arrived; Grade did not need it.
+    assert s.reclamation and not blocked.ready.is_set()

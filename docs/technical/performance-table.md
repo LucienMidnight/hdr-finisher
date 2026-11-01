@@ -268,3 +268,9 @@ October 31 acceptance clarification: the stopped phase 3c.2 AVIF sample
 (4.011418177 GB) passes the new ceiling +10% peak rule. Completion, duration
 and settling were not observed; no new timing is claimed. The default mixed
 folder will be rerun after Parts B/C. See scheduler design decision 16.
+
+
+November 1 Grade regression rerun on unchanged `b3d5eed`: pause 469 ms,
+first ordinary 477 ms, close/save 402 ms, resume 261 ms. Exposure saved;
+all existing limits pass. Earlier 2.705 s pause not reproduced; cause unresolved.
+Evidence: `codebase/output/grade-regression-baseline.json`.
