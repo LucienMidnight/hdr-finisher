@@ -1119,6 +1119,12 @@ groups U1 to U3), not here.
 
 ## 5. Open work, in order
 
+- **Retouch tool needs further work (Steve, November 2, 2026).**
+  Steve's manual review finds that the tool itself still needs work. Keep this
+  open separately from the Batch 2 Library loading/lease fix; passing loading
+  checks does not establish that the Retouch tool is satisfactory. Specific
+  problems and desired improvements still need to be captured with Steve.
+
 - **HSL performance follow-up, October 28:** the non-default 24 frames/s
   target at 100% remains unmet (Global 18-19, Local 9-12 on true 24 MP).
   Reduce Global per-tile repeated selection and Local multi-band preparation

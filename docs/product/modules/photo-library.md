@@ -2919,6 +2919,12 @@ crop route; its move to live native scenes remains open with that cleanup.
 
 ## 5. V1 open work, in order
 
+- **Virtual-copy creation is very slow (Steve, November 2, 2026).**
+  Reported during manual use after Batch 2. Steve has not tried this in a while,
+  so it may be an older bug; cause and connection to recent changes are unknown.
+  Investigate the whole wait from Create virtual copy to the copy appearing
+  and becoming usable before choosing a fix. No timing has been measured yet.
+
 **V1 scope (Steve, October 26, 2026):** the "Leftovers" item below (comfort
 cap, indexing settings, dimmed offline drives, drag a folder in to pin it)
 is moved to after v1. Batch-export metadata and the polish pass stay v1.
