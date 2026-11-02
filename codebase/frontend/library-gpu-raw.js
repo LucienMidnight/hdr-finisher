@@ -1009,6 +1009,10 @@
     root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
     const developed = gpuResult = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, grant, edges:[edge]}, signal);
     const gpuMs = performance.now() - started;
+    // `meta` lives on with the cell (renewal timer, redraw helpers). Drop its
+    // views into the downloaded source, or every cell keeps its whole source.
+    if(meta.sdr_reference)meta.sdr_reference.samples=null;
+    meta.dng_support=null;
     gpuDone();
     if(grant) await root.HDRLibraryGrants.gpuDone(grant);
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");

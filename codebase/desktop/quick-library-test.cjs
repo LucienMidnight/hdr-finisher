@@ -30,6 +30,7 @@ async function run({app, window, backend, configPath = process.env.HDR_FINISHER_
     const source = fs.readFileSync(path.join(__dirname, '../tools/quick-library-scenario.js'), 'utf8');
     const result = await frame.executeJavaScript(`(${source})(${JSON.stringify(config)})`);
     if(config.trace)await require('electron').contentTracing.stopRecording(path.join(profile,'diagnostic-trace.json'));
+    if(config.memoryProbe)result.memory_probe=await require('./quick-memory-probe.cjs').probe({app,window,frame});
     fs.writeFileSync(resultPath+'.tmp', JSON.stringify(result));
     fs.renameSync(resultPath+'.tmp', resultPath);
     stage('done');
