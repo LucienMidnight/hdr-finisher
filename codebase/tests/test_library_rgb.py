@@ -170,12 +170,22 @@ def test_shared_source_priority_and_clear_reach_bound_helper(tmp_path):
     assert cancelled==[True]
 
 @pytest.mark.parametrize("suffix",["png","jxl"])
-def test_http_source_coalesces_before_decode_and_clear_blocks_publication(tmp_path, monkeypatch, suffix):
+@pytest.mark.parametrize("admission_wait",[0,120])
+def test_http_source_coalesces_before_decode_and_clear_blocks_publication(tmp_path, monkeypatch, suffix, admission_wait):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from hdr_finisher.library_api import create_library_router
     from hdr_finisher.media_browser import MediaBrowserStore
     from hdr_finisher.library_gpu_raw import unframe, frame
+    from contextlib import asynccontextmanager
+    from hdr_finisher import library_source_jobs, library_grants
+    now=[0.0]
+    monkeypatch.setattr(library_source_jobs,'monotonic',lambda:now[0])
+    @asynccontextmanager
+    async def grant(*args, **kwargs):
+        now[0]+=admission_wait
+        yield 'admitted'
+    monkeypatch.setattr(library_grants,'backend_grant',grant)
     foreground=[]
     class Helper:
         def status(self):return {'running':True,'paused':False,'pending':0,'failure':None}
@@ -654,3 +664,37 @@ def test_banded_exr_read_matches_one_whole_read(tmp_path):
     for index,channel in enumerate("RGB"):
         np.testing.assert_array_equal(image[...,index],values[channel].reshape(600,7))
     assert set(metadata["library_exr_timings_ms"])=={"channels","interleave"}
+
+
+def test_source_admission_wait_does_not_spend_idle_lease(tmp_path, monkeypatch):
+    from hdr_finisher import library_source_jobs
+    path=tmp_path/'photo.png'; Image.new('RGB',(8,4)).save(path)
+    other=tmp_path/'other.png'; Image.new('RGB',(8,4)).save(other)
+    now=[0.0]; monkeypatch.setattr(library_source_jobs,'monotonic',lambda:now[0])
+    released=[]; jobs=SourceJobs(released=released.append)
+    token=jobs.claim(path,quality(None),640,10,0)
+    with jobs.holding(token,0):
+        now[0]=120
+        jobs.claim(other,quality(None),640,10,0)
+        assert token not in released
+        assert jobs.claim(path,quality(None),2560,0,0) is None
+        assert jobs.check(token,0)['edges']==[640,2560]
+    now[0]=179
+    assert jobs.check(token,0)['token']==token
+    now[0]=240
+    with pytest.raises(ValueError,match='expired'): jobs.check(token,0)
+    jobs.claim(other,quality(None),640,10,0)
+    assert token in released
+
+
+def test_active_source_still_rejects_invalidation_and_changed_file(tmp_path, monkeypatch):
+    from hdr_finisher import library_source_jobs
+    path=tmp_path/'photo.png'; Image.new('RGB',(8,4)).save(path)
+    now=[0.0]; monkeypatch.setattr(library_source_jobs,'monotonic',lambda:now[0])
+    jobs=SourceJobs(); token=jobs.claim(path,quality(None),640,10,0)
+    with jobs.holding(token,0):
+        now[0]=120
+        with pytest.raises(ValueError): jobs.check(token,1)
+        jobs.invalidate()
+        with pytest.raises(ValueError): jobs.check(token,0)
+    with pytest.raises(ValueError): jobs.check(token,0)

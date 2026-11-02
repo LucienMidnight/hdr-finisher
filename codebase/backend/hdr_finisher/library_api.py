@@ -576,65 +576,66 @@ def create_library_router(worker, browser, store=None):
         transfer = False
         from .library_gpu_raw import xtrans_cpu
         try:
-            use_gpu = command.gpu and not await run_in_threadpool(xtrans_cpu, path)
-            async with backend_grant(path,"source" if use_gpu else "cpu",command.priority,command.grant,request.is_disconnected,edge=command.edge):
-                if use_gpu:
-                    source_foreground(token, True)
-                    from . import library_gpu_raw, library_rgb
-                    from .models import RawImportSettings, SourceInterpretationOverride
-                    inputs = live_recipe(document)
-                    try:
-                        if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
-                            header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs, command.edge)
-                        elif Path(path).suffix.lower() == ".dng":
-                            from . import library_dng
-                            if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
-                                raise library_gpu_raw.NotEligible("DNG interpretation overrides retain the CPU route")
-                            def dng_source():
-                                return library_dng.decoded(Path(path), inputs,
-                                    progress=lambda stage,text: source_jobs.stage(token,stage,text),
-                                    cancelled=lambda: source_jobs.cancelled(token), edge=command.edge, max_storage_bytes=command.max_storage_bytes)
-                            header, parts = await run_in_threadpool(source_jobs.preparing, token, path, dng_source)
-                        else:
-                            if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
-                                raise library_gpu_raw.NotEligible("source interpretation uses Grade's CPU development")
-                            header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_gpu_raw.sensor, Path(path),
-                                RawImportSettings.model_validate(inputs["raw_import_settings"]))
-                        if inputs.get("repairs") and header.get("dng_warp"):
-                            raise library_gpu_raw.MemoryPending("Tiled DNG repair context exceeds the bounded GPU development route")
-                    except library_gpu_raw.MemoryPending as error:
-                        source_jobs.stage(token,"admission",str(error))
-                        scheduler.defer(command.grant, "bounded route pending")
-                        return JSONResponse({"detail":"library_pending","waiting":"memory"},status_code=409,headers={"X-Library-Wait":"memory"})
-                    except library_gpu_raw.NotEligible as error:
-                        log("picture_source_gpu_unsupported", path=path, reason=str(error), discarded_decode_ms=(time.perf_counter()-claimed_at)*1000)
-                        return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
-                    if inputs.get("repairs"):
-                        from .models import RepairRecord
-                        from .retouch_gpu import context_rectangles
-                        header["repairs"] = [dict(id=r.id,rectangles=context_rectangles(r.recipe))
-                            for r in map(RepairRecord.model_validate,inputs["repairs"]) if r.enabled]
+            with source_jobs.holding(token, file_commands.epoch):
+                use_gpu = command.gpu and not await run_in_threadpool(xtrans_cpu, path)
+                async with backend_grant(path,"source" if use_gpu else "cpu",command.priority,command.grant,request.is_disconnected,edge=command.edge):
+                    if use_gpu:
+                        source_foreground(token, True)
+                        from . import library_gpu_raw, library_rgb
+                        from .models import RawImportSettings, SourceInterpretationOverride
+                        inputs = live_recipe(document)
+                        try:
+                            if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
+                                header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs, command.edge)
+                            elif Path(path).suffix.lower() == ".dng":
+                                from . import library_dng
+                                if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
+                                    raise library_gpu_raw.NotEligible("DNG interpretation overrides retain the CPU route")
+                                def dng_source():
+                                    return library_dng.decoded(Path(path), inputs,
+                                        progress=lambda stage,text: source_jobs.stage(token,stage,text),
+                                        cancelled=lambda: source_jobs.cancelled(token), edge=command.edge, max_storage_bytes=command.max_storage_bytes)
+                                header, parts = await run_in_threadpool(source_jobs.preparing, token, path, dng_source)
+                            else:
+                                if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
+                                    raise library_gpu_raw.NotEligible("source interpretation uses Grade's CPU development")
+                                header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_gpu_raw.sensor, Path(path),
+                                    RawImportSettings.model_validate(inputs["raw_import_settings"]))
+                            if inputs.get("repairs") and header.get("dng_warp"):
+                                raise library_gpu_raw.MemoryPending("Tiled DNG repair context exceeds the bounded GPU development route")
+                        except library_gpu_raw.MemoryPending as error:
+                            source_jobs.stage(token,"admission",str(error))
+                            scheduler.defer(command.grant, "bounded route pending")
+                            return JSONResponse({"detail":"library_pending","waiting":"memory"},status_code=409,headers={"X-Library-Wait":"memory"})
+                        except library_gpu_raw.NotEligible as error:
+                            log("picture_source_gpu_unsupported", path=path, reason=str(error), discarded_decode_ms=(time.perf_counter()-claimed_at)*1000)
+                            return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
+                        if inputs.get("repairs"):
+                            from .models import RepairRecord
+                            from .retouch_gpu import context_rectangles
+                            header["repairs"] = [dict(id=r.id,rectangles=context_rectangles(r.recipe))
+                                for r in map(RepairRecord.model_validate,inputs["repairs"]) if r.enabled]
+                        source_jobs.check(token, file_commands.epoch)
+                        if await request.is_disconnected():
+                            raise HTTPException(499, "Library request cancelled.")
+                        header.setdefault("source_timings_ms", {}).update(checks_claim=(claimed_at-requested_at)*1000, decode_prepare=(time.perf_counter()-claimed_at)*1000)
+                        header.update(edge=command.edge, source_quality=source_quality, item_path=command.path, source_job=token)
+                        transfer = True
+                        return StreamingResponse(library_gpu_raw.frame_chunks(header, *parts), media_type="application/octet-stream")
+                    result = await helper_result(request, "live-scene", path=path, document=document,
+                        edge=command.edge, edges=source_jobs.check(token, file_commands.epoch)["edges"], priority=command.priority, source_token=token, draw_first=command.edge != 100000)
+                    if isinstance(result, Response): return result
                     source_jobs.check(token, file_commands.epoch)
-                    if await request.is_disconnected():
-                        raise HTTPException(499, "Library request cancelled.")
-                    header.setdefault("source_timings_ms", {}).update(checks_claim=(claimed_at-requested_at)*1000, decode_prepare=(time.perf_counter()-claimed_at)*1000)
-                    header.update(edge=command.edge, source_quality=source_quality, item_path=command.path, source_job=token)
-                    transfer = True
-                    return StreamingResponse(library_gpu_raw.frame_chunks(header, *parts), media_type="application/octet-stream")
-                result = await helper_result(request, "live-scene", path=path, document=document,
-                    edge=command.edge, edges=source_jobs.check(token, file_commands.epoch)["edges"], priority=command.priority, source_token=token, draw_first=command.edge != 100000)
-                if isinstance(result, Response): return result
-                source_jobs.check(token, file_commands.epoch)
-                publication_epoch = file_commands.epoch
-                def validate_cpu_store():
-                    if publication_epoch != file_commands.epoch or source_quality != live_quality(live.document(command.path)):
-                        raise ValueError("Source settings changed before saving preview data.")
-                for scene in result.pop("_pending_scenes", []):
-                    default = scene.pop("_default_document", None)
-                    pending = (path, scene["edge"], source_quality, default, validate_cpu_store) if scene.get("_transient") else None
-                    live.cache.accept_transient(scene, pending)
-                live.cache.accept_transient(result)
-                return await run_in_threadpool(live.describe, command.path, result)
+                    publication_epoch = file_commands.epoch
+                    def validate_cpu_store():
+                        if publication_epoch != file_commands.epoch or source_quality != live_quality(live.document(command.path)):
+                            raise ValueError("Source settings changed before saving preview data.")
+                    for scene in result.pop("_pending_scenes", []):
+                        default = scene.pop("_default_document", None)
+                        pending = (path, scene["edge"], source_quality, default, validate_cpu_store) if scene.get("_transient") else None
+                        live.cache.accept_transient(scene, pending)
+                    live.cache.accept_transient(result)
+                    return await run_in_threadpool(live.describe, command.path, result)
         finally:
             if not transfer:
                 source_jobs.release(token)

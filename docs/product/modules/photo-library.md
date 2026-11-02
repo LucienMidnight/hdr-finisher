@@ -5933,3 +5933,14 @@ samples still follow the sharp-scene share and preemption rules.
 The source baseline distinguishes sequential calls (two preparations) from
 actually overlapping paired calls (one). The different-size cancellation test
 again checks 640 and 2560 rather than two 640 requests.
+
+### November 2: Batch 2 — preparation lease begins at handoff
+
+The live-scene HTTP request now owns its source preparation while awaiting
+memory admission and backend decoding/helper completion. Those waits do not
+spend the idle lease. The unchanged 60-second lease starts when ownership is
+handed to the page, whose existing heartbeat keeps active GPU work alive.
+Disconnect/cancellation still releases ownership; abandoned handoffs expire,
+and source changes or invalidation still reject publication immediately.
+Previously the claim timestamp preceded admission, so a memory wait longer
+than 60 seconds could expire the source before it reached the GPU.

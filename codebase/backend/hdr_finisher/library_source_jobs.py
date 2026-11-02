@@ -1,4 +1,5 @@
 """Short-lived source-recipe ownership, before decoding or GPU allocation."""
+from contextlib import contextmanager
 from threading import RLock
 from time import monotonic
 from uuid import uuid4
@@ -82,8 +83,8 @@ class SourceJobs:
         with self.lock:
             now = monotonic()
             for job in self.jobs.values():
-                if now - job['touched'] >= 60: self.released(job['token'])
-            self.jobs = {k: v for k, v in self.jobs.items() if now - v['touched'] < 60}
+                if not job.get('active') and now - job['touched'] >= 60: self.released(job['token'])
+            self.jobs = {k: v for k, v in self.jobs.items() if v.get('active') or now - v['touched'] < 60}
             if key in self.jobs:
                 job = self.jobs[key]
                 if edge not in job['edges']: job['edges'].append(edge)
@@ -98,10 +99,29 @@ class SourceJobs:
     def check(self, token, epoch):
         with self.lock:
             job = next((v for v in self.jobs.values() if v['token'] == token), None)
-            if not job or monotonic() - job['touched'] >= 60 or job['epoch'] != epoch or picture_key(job['path'], 100000 if job['edge'] == 100000 else 0, job['quality']) != job['key']:
+            if not job or (not job.get('active') and monotonic() - job['touched'] >= 60) or job['epoch'] != epoch or picture_key(job['path'], 100000 if job['edge'] == 100000 else 0, job['quality']) != job['key']:
                 raise ValueError('Source preparation expired or was invalidated; request it again.')
             job['touched'] = monotonic()
             return {k:v for k,v in job.items() if k not in {'cancel','promote'}}
+
+    @contextmanager
+    def holding(self, token, epoch):
+        """An owned HTTP request keeps its preparation alive through admission.
+
+        Start the unchanged idle lease only when the request hands it off. A
+        disconnected request exits through the route's normal release path.
+        Invalidation and changed-source checks still apply while it waits.
+        """
+        with self.lock:
+            self.check(token, epoch)
+            job = next(v for v in self.jobs.values() if v['token'] == token)
+            job['active'] = True
+        try:
+            yield
+        finally:
+            with self.lock:
+                job['active'] = False
+                job['touched'] = monotonic()
 
     def release(self, token):
         self.released(token)
