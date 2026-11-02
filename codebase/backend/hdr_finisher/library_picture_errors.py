@@ -151,8 +151,9 @@ class PictureErrors:
             return None
         if old and old.get("grade_warning") and old.get("notice") == report:
             return old
+        from .saved_grades import summary_lines
         return self.save(dict(path=str(path), revision=revision, reason=report["reason"],
-                              details="\n".join(item["section"] + ": " + item["reason"] for item in report["issues"]),
+                              details="\n".join(summary_lines(report["issues"])),
                               grade_warning=True, notice=report, ignored=False, time=time.time()))
 
     @staticmethod

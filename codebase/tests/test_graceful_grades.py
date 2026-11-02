@@ -278,3 +278,14 @@ def test_retired_film_controls_only_warn_when_they_affected_the_picture(lane, of
         assert paths == {p for p in active if not p.startswith(prefix + effect + "_")}
     assert raw == before
     assert saved.global_adjustments.model_dump()[lane]["film_look"]["halation_amount"] == film["halation_amount"]
+
+
+def test_several_replaced_settings_in_one_feature_read_as_one_line():
+    film = {"look_strength": 100, "print_strength": 62, "print_toe": 12,
+            "bloom_enabled": True, "bloom_amount": 8, "bloom_sensitivity": 78,
+            "halation_enabled": True, "halation_amount": 13, "halation_sensitivity": 72}
+    report = notice(validate_saved(EditDocument, payload({"grade": {"global_adjustments": {"hdr": {"film_look": film}}}})))
+    assert len(report["issues"]) == 5
+    assert report["reason"] == "HDR Film Look: Some settings from an older version were replaced. It may look a little different."
+    one = payload({"grade": {"global_adjustments": {"hdr": {"film_look": {"bloom_amount": 15}}}}})
+    assert "Bloom amount" in notice(validate_saved(EditDocument, one))["reason"]

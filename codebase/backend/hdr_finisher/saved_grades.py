@@ -173,6 +173,26 @@ def _boundary(model, data, loc):
               "interpretation_override": "Source interpretation", "sdr_match": "SDR Match"}
     return (), [key] if key else [], labels.get(key, "Saved grade")
 
+_GROUPED = {"look": "Some settings from an older version were replaced. It may look a little different.",
+            "unreadable": "Some settings could not be read and were left out."}
+
+
+def summary_lines(issues):
+    """What people read: one line per section. Several replaced or unreadable
+    settings in one section become one short line; the issues keep each
+    setting for the app's own choices."""
+    groups = {}
+    for item in issues:
+        groups.setdefault((item["section"], item["kind"], item.get("repair_id")), []).append(item["reason"])
+    lines = []
+    for (label, kind, _), reasons in groups.items():
+        reasons = list(dict.fromkeys(reasons))
+        if len(reasons) > 1 and kind in _GROUPED:
+            reasons = [_GROUPED[kind]]
+        lines.extend(label + ": " + reason for reason in reasons)
+    return list(dict.fromkeys(lines))
+
+
 def read_saved(model, original):
     from .models import EditDocument
     data = deepcopy(original)
@@ -304,7 +324,7 @@ def read_saved(model, original):
         raise ValueError("Saved grade recovery did not finish.")
     if issues:
         report = dict(issues=issues, newer=newer, needs_choice=True,
-                      reason=" ".join(dict.fromkeys(item["section"] + ": " + item["reason"] for item in issues)),
+                      reason=" ".join(summary_lines(issues)),
                       sections=list(dict.fromkeys(item["section"] for item in issues)))
         object.__setattr__(value, "_saved_grade_notice", report)
         object.__setattr__(value, "_saved_grade_original", deepcopy(original))
@@ -340,7 +360,7 @@ def recover_repairs(document, session, checkpoint=lambda: None):
             report["issues"].append(dict(section="Retouch repair " + str(getattr(repair, "name", None) or repair.id),
                 reason="Could not read this repair; it was skipped: " + str(error), path=f"repairs.{index}", kind="unreadable", repair_id=repair.id))
     document.repairs = readable
-    report["reason"] = " ".join(dict.fromkeys(i["section"] + ": " + i["reason"] for i in report["issues"]))
+    report["reason"] = " ".join(summary_lines(report["issues"]))
     report["sections"] = list(dict.fromkeys(i["section"] for i in report["issues"]))
     object.__setattr__(document, "_saved_grade_notice", report)
     object.__setattr__(document, "_saved_grade_original", raw)
