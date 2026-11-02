@@ -29,6 +29,29 @@ untagged TIFFs failing):
 Open: long frame gaps (3.0-3.6 s) in the HDR Test Images quick check were
 present before these changes and are not addressed here.
 
+**Follow-ups after Steve's first try (November 2, built):**
+
+- **Old failures retry after an update.** Failures are remembered per
+  reader version; the assumed-colour change did not bump it, so TIFFs that
+  failed on November 1 kept showing the old failure. Bumped
+  (`assumed-colour-v1`). A side effect: dismissed "grade needs attention"
+  notices show once more.
+- **Plain words on failed photos.** Development-route reasons are
+  diagnostics. The photo shows "The Library can't show this photo. Open it in
+  Grade to work on it." (or the route's own "Not supported: ..." sentence);
+  the original text stays under Error details.
+- **Idle reads as idle.** Activity counts only pictures someone asked for.
+  Startup upkeep (about 6 minutes on D:\Photos) and idle look-ahead (one
+  thumbnail check a second) show as one plain "In the background: ..." line
+  in the panel, not in the footer count. Virtual copies show their file name
+  with "(copy)", never the internal key.
+- **Activity messages stay at least 1.5 s** (footer and each panel line);
+  only the display waits, never the work.
+- **Grade warnings group per feature.** Several replaced settings in one
+  section read as one line ("HDR Film Look: Some settings from an older
+  version were replaced. It may look a little different."); several
+  unreadable settings likewise. One setting keeps its own named line.
+
 ## November 1: Library scheduler finished; brief archived
 
 The one-scheduler work (phases 0 to 3c.2 Part C and the November 1 rounds)
