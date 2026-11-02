@@ -214,7 +214,7 @@ def test_adjustment_group_presets_are_scoped_persistent_and_available_in_headers
     assert 'path.join(library, "Grading")' in main
     assert '"hdr-denoise", "sdr-denoise"' in main
     assert 'schemaVersion: 1, ...preset' in main
-    assert "return { groupId, name, recipeVersion, values }" in main
+    # Saved values and writer versions round-trip in grading-preset-files.test.js.
     assert 'listGradingPresets: (groupId)' in preload
     assert 'saveGradingPreset: (preset)' in preload
     assert 'deleteGradingPreset: (presetId)' in preload

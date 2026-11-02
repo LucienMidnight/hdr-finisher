@@ -38,3 +38,27 @@ test("portable presets retain newer writer and section format versions", () => {
   const original = {groupId:"hdr-tone",name:"Future",recipeVersion:1,values:{"hdr.exposure":.5},app_version:"99.0.0",section_versions:{tone:9}};
   assert.deepEqual(files.decode(files.encode([original]))[0],original);
 });
+
+
+test("desktop presets persist scoped values and writer versions", () => {
+ const fs=require("node:fs"),path=require("node:path"),vm=require("node:vm"),os=require("node:os");
+ const source=fs.readFileSync(require.resolve("../desktop/main.js"),"utf8");
+ const folder=fs.mkdtempSync(path.join(os.tmpdir(),"hdr-test-presets-"));
+ const context=vm.createContext({fs,path,crypto:require("node:crypto"),
+  GRADING_PRESET_GROUPS:new Set(["hdr-tone","sdr-tone"]),gradingPresetDirectory:()=>folder});
+ try {
+  vm.runInContext(source.slice(source.indexOf("function cleanGradingPresetPayload("),source.indexOf("function semverParts(")),context);
+  const original={groupId:"hdr-tone",name:"  Future   tone  ",recipeVersion:1,
+   values:{"hdr.exposure":.5},app_version:"99.0.0",section_versions:{tone:9}};
+  const saved=context.saveGradingPreset(original);
+  original.values["hdr.exposure"]=2;
+  const [loaded]=JSON.parse(JSON.stringify(context.listGradingPresets("hdr-tone")));
+  assert.equal(loaded.name,"Future tone");assert.equal(loaded.values["hdr.exposure"],.5);
+  assert.equal(loaded.app_version,"99.0.0");assert.deepEqual(loaded.section_versions,{tone:9});
+  assert.equal(context.listGradingPresets("sdr-tone").length,0);
+  assert.throws(()=>context.saveGradingPreset({...original,groupId:"unknown"}));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(folder,saved.id),"utf8")).schemaVersion,1);
+  assert.equal(context.deleteGradingPreset(saved.id),true);
+  assert.equal(context.listGradingPresets("hdr-tone").length,0);
+ } finally {fs.rmSync(folder,{recursive:true,force:true});}
+});
