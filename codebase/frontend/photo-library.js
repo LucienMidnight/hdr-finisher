@@ -338,6 +338,7 @@
           {viewportDemand:true,cachedOnly:edge===640 && !options.allowSource,beforeSource:()=>beforeSource(photo,signal,importance),
             onSourceDemand:()=>{}});
         if (!meta) return null;
+        colourNote(photo, meta, null);
         if (!current()) throw new DOMException("Invalidated","AbortError");
         Object.defineProperty(meta,"trace",{get:getTrace,configurable:true});
         meta.draw_priority = importance;
@@ -504,6 +505,7 @@
           const meta = await (prepared || HDRLibraryScenes.load(photo.path,edge,controller.signal,priority,false,trace));
           prepared = null;
           if (!isCurrent()) return;
+          colourNote(photo, meta, null);
           meta.log_view = trace?.view || (edge <= 640 ? "grid" : logView());
           await drawPicture(meta,canvas,controller,isCurrent);
           if (!isCurrent()) return;
@@ -594,8 +596,8 @@
     const assumed = meta.assumed_interpretation || null, unsupported = meta.unsupported_colour || null;
     const changed = photo.colour_assumed !== assumed || photo.colour_unsupported !== unsupported;
     photo.colour_assumed = assumed; photo.colour_unsupported = unsupported;
-    let note = frame.querySelector(".library-colour-note");
-    if (unsupported && !note) { note = document.createElement("span"); note.className = "library-colour-note"; frame.append(note); }
+    let note = frame?.querySelector(".library-colour-note");
+    if (frame && unsupported && !note) { note = document.createElement("span"); note.className = "library-colour-note"; frame.append(note); }
     if (note && !unsupported) note.remove();
     else if (note) { note.textContent = `${unsupported} isn't supported`; note.title = `Shown as ${assumed}. Choose its colour in Grade.`; }
     if (changed && selected()?.path === photo.path) updateDetails();

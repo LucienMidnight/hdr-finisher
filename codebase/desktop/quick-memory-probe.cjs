@@ -23,6 +23,8 @@ async function probe({app, window, frame}) {
       canvas_mpx: Math.round(canvases.reduce((n,c)=>n+c.width*c.height,0)/1e6),
       images: document.images.length,
       blob_images: [...document.images].filter(i=>i.src.startsWith('blob:')).length,
+      details_colour: [...document.querySelectorAll('#details dt')].filter(dt=>dt.textContent==='Colour assumed').map(dt=>dt.nextElementSibling?.textContent),
+      colour_notes:[...document.querySelectorAll('.library-colour-note')].map(n=>[n.closest('.library-cell')?.dataset.path?.split(/[\\\\/]/).pop(),n.textContent,getComputedStyle(n).color]),
     };})()`);
   const gc = () => window.webContents.executeJavaScriptInIsolatedWorld(998, [{code:
     "(async()=>{if(typeof gc==='function')await gc({type:'major',execution:'async',flavor:'last-resort'});})()"}]);
