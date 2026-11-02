@@ -23,14 +23,42 @@
     if (index.waiting || index.checkWaiting) return "Checking folders waits while Grade is busy";
     return `Checking for new photos${running ? " · " + running.path.split(/[\\/]/).at(-1) : ""}`;
   }
+  // A virtual copy's key is "<file>|copy|<id>"; people see the file name.
+  const fileName = path => { const [file, copy] = String(path).split("|copy|"); return file.split(/[\\/]/).at(-1) + (copy ? " (copy)" : ""); };
   function sceneWork(health, snapshot = {}) {
-    const all = [...Object.values(snapshot).flatMap(queue => queue.jobs || []), ...(health.preparation || []), ...(health.helper.jobs || []), ...(health.grants || []), ...(typeof window!=="undefined"?window.HDRLibraryGrants?.snapshot().jobs||[]:[])].filter(job => job.path);
+    const scene = Object.values(snapshot).flatMap(queue => queue.jobs || []).filter(job => job.path);
+    // Idle look-ahead and startup upkeep are not pictures anyone asked for:
+    // they get their own plain line and never count as active work.
+    const asked = new Set(scene.filter(job => !job.background).map(job => job.path));
+    const quiet = new Set(scene.filter(job => job.background && !asked.has(job.path)).map(job => job.path));
+    const grants = health.grants || [], upkeep = grants.some(job => job.kind === "upkeep");
+    const all = [...scene, ...(health.preparation || []), ...(health.helper.jobs || []), ...grants.filter(job => job.kind !== "upkeep"), ...(typeof window!=="undefined"?window.HDRLibraryGrants?.snapshot().jobs||[]:[])].filter(job => job.path && !quiet.has(job.path));
     const jobs = [...new Map(all.map(job=>[job.path,job])).values()];
     const waiting=jobs.filter(j=>j.state==="waiting").length;
     const running=jobs.length-waiting;
     const failures=[...new Map([...Object.values(snapshot).flatMap(queue=>queue.failures || []), ...(health.picture_errors || [])].map(item=>[item.path,item])).values()];
-    return {jobs, failures, text:`Library pictures · ${running} active · ${waiting} waiting`,
-      lines:jobs.map(j=>`${j.path.split(/[\\/]/).at(-1)} · ${j.state==="waiting" ? "Waiting: " : j.state==="stopping" ? "Stopping after current step: " : ""}${j.stage}${health.helper.paused && j.state!=="waiting" ? " · current work still finishing" : ""}`)};
+    const entries=jobs.map(j=>[j.path,`${fileName(j.path)} · ${j.state==="waiting" ? "Waiting: " : j.state==="stopping" ? "Stopping after current step: " : ""}${j.stage}${health.helper.paused && j.state!=="waiting" ? " · current work still finishing" : ""}`]);
+    const background=[...(upkeep ? ["In the background: checking the library after startup"] : []), ...(quiet.size ? ["In the background: preparing thumbnails ahead of time"] : [])];
+    return {jobs, failures, background, entries, text:`Library pictures · ${running} active · ${waiting} waiting`, lines:entries.map(entry=>entry[1])};
+  }
+  // Each message stays on screen at least `ms` so it can be read. Only the
+  // display lags; the work itself is never held back. A message replaced or
+  // finished sooner stays until its time is up, then shows the latest state.
+  function createHold(ms = 1500, now = () => performance.now()) {
+    const shown = new Map();
+    return Object.freeze({ apply(current) {
+      const t = now(); let wait = null; const lines = [];
+      for (const [key, text] of current) if (!shown.has(key)) shown.set(key, { text, at: t });
+      for (const [key, item] of [...shown]) {
+        const want = current.has(key) ? current.get(key) : null;
+        if (want !== item.text) {
+          if (t - item.at >= ms) { if (want === null) { shown.delete(key); continue; } item.text = want; item.at = t; }
+          else wait = Math.min(wait ?? Infinity, item.at + ms - t);
+        }
+        lines.push([key, item.text]);
+      }
+      return { lines, wait };
+    } });
   }
   function summary(health) {
     const writer = health.writer, index = health.index, jobs = [];
@@ -47,8 +75,16 @@
     return (jobs[0] || "Activity") + (jobs.length > 1 ? ` +${jobs.length - 1}` : "") + extra;
   }
   function create({ button, panel, api, status, onHealth, onPictureError }) {
-    let health = null, exports = null;
-    const pending = new Set();
+    let health = null, exports = null, timer = null, due = Infinity;
+    const pending = new Set(), buttonHold = createHold(), lineHold = createHold();
+    // Show the next held message when its time is up.
+    const later = wait => {
+      if (wait == null) return;
+      const at = performance.now() + wait;
+      if (timer && due <= at) return;
+      clearTimeout(timer); due = at;
+      timer = setTimeout(() => { timer = null; due = Infinity; if (health) update(health, false); }, wait + 20);
+    };
     const node = (tag, text, className) => { const item = document.createElement(tag); item.textContent = text; if (className) item.className = className; return item; };
     async function refresh() {
       const values = await Promise.allSettled([api("/api/library/health"), api("/api/batch-export")]);
@@ -83,13 +119,20 @@
         const close=node("button","Close photo in Grade","text-button");close.onclick=()=>window.dispatchEvent(new Event("library-close-grade"));
         section.append(close);panel.append(section);
       }
-      if (work.jobs.length || health.helper.pending || health.helper.manual_paused) {
+      // Keys: "\u0000" the count line, "\u0001…" background lines, else a photo path.
+      const header = work.text + (health.helper.paused ? " · Reading paused" : "");
+      const held = lineHold.apply(new Map([...(work.jobs.length ? [["\u0000", header]] : []), ...work.entries, ...work.background.map(line => ["\u0001" + line, line])]));
+      later(held.wait);
+      const pictures = held.lines.filter(([key]) => !key.startsWith("\u0001")).sort(([a], [b]) => (b === "\u0000") - (a === "\u0000"));
+      const quiet = held.lines.filter(([key]) => key.startsWith("\u0001")).map(([, text]) => text);
+      if (pictures.length || health.helper.pending || health.helper.manual_paused) {
         const section = node("section", "", "library-activity-job");
-        section.append(node("p", work.text + (health.helper.paused ? " · Reading paused" : "")));
-        for (const line of work.lines) section.append(node("p", line));
+        if (pictures[0]?.[0] !== "\u0000") section.append(node("p", header));
+        for (const [, line] of pictures) section.append(node("p", line));
         section.append(action(health.helper.manual_paused ? "Resume reading" : "Pause reading", "scenes-pause", "/api/library/scene-work", {action:health.helper.manual_paused ? "resume" : "pause"}));
         panel.append(section);
       }
+      for (const line of quiet) panel.append(node("p", line));
       for (const job of exports?.jobs || (exports?.id ? [exports] : [])) {
         const section = node("section", "", "library-activity-job");
         const time = job.estimated_seconds ? ` · about ${Math.ceil(job.estimated_seconds / 60)} min left` : "";
@@ -121,7 +164,7 @@
       }
       panel.append(indexing, node("h3", "Needs attention", "panel-title"));
       for(const failure of work.failures) {
-        const item = node(failure.revision ? "button" : "p", `${failure.path.split(/[\\/]/).at(-1)} · ${failure.reason}${failure.ignored ? " · Ignored" : ""}`, failure.revision ? "text-button library-picture-error-link" : "");
+        const item = node(failure.revision ? "button" : "p", `${fileName(failure.path)} · ${failure.reason}${failure.ignored ? " · Ignored" : ""}`, failure.revision ? "text-button library-picture-error-link" : "");
         if (failure.revision) { item.type = "button"; item.dataset.action = "picture-error:" + failure.path; item.addEventListener("click", () => onPictureError?.(failure)); }
         panel.append(item);
       }
@@ -155,7 +198,13 @@
       if (focused) ([...panel.querySelectorAll("button")].find(item => item.dataset.action === focused) || button).focus({preventScroll:true});
       panel.scrollTop = scrollTop;
     }
-    function update(next, fetched = true) { health = next; button.hidden = false; button.textContent = (window.HDRLibraryBuildPreviews?.snapshot().job && ["running","paused"].includes(window.HDRLibraryBuildPreviews.snapshot().job.state) ? "Build previews · " : "") + (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next); if (fetched) onHealth?.(next); render(); }
+    function update(next, fetched = true) {
+      health = next; button.hidden = false;
+      const text = (window.HDRLibraryBuildPreviews?.snapshot().job && ["running","paused"].includes(window.HDRLibraryBuildPreviews.snapshot().job.state) ? "Build previews · " : "") + (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next);
+      const held = buttonHold.apply(new Map([["button", text]]));
+      button.textContent = held.lines[0][1]; later(held.wait);
+      if (fetched) onHealth?.(next); render();
+    }
     window.addEventListener("library-work-changed", () => { queueMicrotask(() => { if (health) update(health, false); }); });
     function close() { panel.hidden = true; button.setAttribute("aria-expanded", "false"); }
     button.addEventListener("click", () => { panel.hidden = !panel.hidden; button.setAttribute("aria-expanded", String(!panel.hidden)); render(); if (!panel.hidden) panel.querySelector("button")?.focus(); });
@@ -163,7 +212,7 @@
     document.addEventListener("keydown", event => { if (event.key === "Escape" && !panel.hidden) { event.preventDefault(); event.stopPropagation(); close(); button.focus(); } });
     return Object.freeze({ refresh, update });
   }
-  const exported = Object.freeze({ create, summary, writerText, indexText, sceneWork });
+  const exported = Object.freeze({ create, summary, writerText, indexText, sceneWork, createHold });
   if (typeof module !== "undefined") module.exports = exported;
   else window.HDRLibraryActivity = exported;
 })();

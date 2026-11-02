@@ -103,7 +103,7 @@ test("Activity stages reflect real execution and resource waits, then clear on c
  const result=queue.submit("photo",()=>new Promise(resolve=>finish=resolve),null,10,{path:"image.dng",stage:"Reading source"});
  await Promise.resolve();
  queue.stage("image.dng","Correcting DNG brightness");
-  assert.deepEqual(queue.snapshot().jobs,[{path:"image.dng",priority:10,stage:"Correcting DNG brightness",state:"running"}]);
+  assert.deepEqual(queue.snapshot().jobs,[{path:"image.dng",priority:10,stage:"Correcting DNG brightness",background:false,state:"running"}]);
  queue.stage("image.dng","Waiting for GPU preparation",true);
  assert.equal(queue.snapshot().jobs[0].state,"waiting");
  queue.stage("image.dng","Correcting DNG distortion on GPU");
@@ -287,4 +287,13 @@ test('a job that loses its development turn frees its slot for an admitted job (
  assert.equal(await other,'other done');assert.equal(await lost,'lost done');
  assert.deepEqual(order,['lost-1','other','lost-2']); await new Promise(r=>setImmediate(r));
  assert.equal(queue.snapshot().active,0);assert.equal(queue.snapshot().waiting,0);assert.deepEqual(queue.snapshot().failures,[]);
+});
+test('idle work is reported as background until someone asks for the same picture',async()=>{
+ const queue=create(1),block=gate();
+ const idle=queue.submit('thumb',()=>block.promise,undefined,80,{path:'a.arw',background:true});
+ assert.equal(queue.snapshot().jobs[0].background,true);
+ const asked=queue.submit('thumb',()=>assert.fail('Duplicate check'),undefined,10,{path:'a.arw'});
+ assert.equal(queue.snapshot().jobs[0].background,false);
+ block.resolve();await Promise.all([idle,asked]);
+ assert.equal(queue.snapshot().jobs.length,0);
 });

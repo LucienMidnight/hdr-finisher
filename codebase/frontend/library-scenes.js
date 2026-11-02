@@ -51,7 +51,7 @@ window.HDRLibraryScenes = (() => {
       const result = await response.json();
       if (!response.ok) throw failure(result);
       return result;
-    }, signal, priority, {path,edge,viewport:!!options.viewportDemand||idle,log_view:trace?.view,stage:edge <= 640 ? "Checking thumbnail cache" : edge === 100000 ? "Checking detail preview cache" : "Checking screen preview cache"});
+    }, signal, priority, {path,edge,viewport:!!options.viewportDemand||idle,background:idle||!!options.cachedOnly,log_view:trace?.view,stage:edge <= 640 ? "Checking thumbnail cache" : edge === 100000 ? "Checking detail preview cache" : "Checking screen preview cache"});
     window.HDRLibraryTrace?.mark(trace,"picture_cache_check",checked,{cache_hit:!!plan.cached});
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     if (generation!==(generations.get(path)||0)) throw new DOMException("Invalidated", "AbortError");
@@ -93,7 +93,7 @@ window.HDRLibraryScenes = (() => {
           if (history.size > 256) history.delete(history.keys().next().value);
         }
       }
-    }, signal, priority, {heavy,cost,path,edge,cpuRoute:plan.cpu_route,gpuMeta:plan.gpu_meta,viewport:!!options.viewportDemand||idle,retainDetached:!options.viewportDemand&&!idle,log_view:trace?.view,stage:"Developing photo"});
+    }, signal, priority, {heavy,cost,path,edge,cpuRoute:plan.cpu_route,gpuMeta:plan.gpu_meta,viewport:!!options.viewportDemand||idle,background:idle,retainDetached:!options.viewportDemand&&!idle,log_view:trace?.view,stage:"Developing photo"});
     options.onSourceDemand?.();
     const result=await pending;
     if(result && result.path && result.path!==path){

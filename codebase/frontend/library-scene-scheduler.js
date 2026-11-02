@@ -56,11 +56,13 @@
       for(const user of job.users){user.signal?.removeEventListener("abort",user.stop);error?user.reject(error):user.resolve(value);}
       job.users.clear();
     }
-    function submit(key,task,signal,priority=10,{heavy=false,cost=0,path=key,stage="Preparing photo",edge,log_view,log_step,viewport=true,retainDetached=false,gpuMeta=null,cpuRoute=null}={}){
+    function submit(key,task,signal,priority=10,{heavy=false,cost=0,path=key,stage="Preparing photo",edge,log_view,log_step,viewport=true,retainDetached=false,gpuMeta=null,cpuRoute=null,background=false}={}){
       if(signal?.aborted)return Promise.reject(cancelled());
       let job=jobs.get(key);
       if (job?.controller.signal.aborted) { jobs.delete(key); job = null; }
-      if(!job){for(let i=failures.length-1;i>=0;i--)if(failures[i].path===path)failures.splice(i,1);job={key,path,stage,edge,gpuMeta,cpuRoute,log_view,log_step,task,priority,heavy,cost:Math.max(0,Math.min(5,cost)),created:now(),sequence:sequence++,controller:new AbortController(),users:new Set()};jobs.set(key,job);waiting.push(job);onChange(job,"waiting");}
+      if(!job){for(let i=failures.length-1;i>=0;i--)if(failures[i].path===path)failures.splice(i,1);job={key,path,stage,edge,gpuMeta,cpuRoute,log_view,log_step,task,priority,heavy,background,cost:Math.max(0,Math.min(5,cost)),created:now(),sequence:sequence++,controller:new AbortController(),users:new Set()};jobs.set(key,job);waiting.push(job);onChange(job,"waiting");}
+      // Work someone asked for is never background, even if idle work started it.
+      else if(job.background&&!background){job.background=false;onChange(job,job.running?"running":"waiting");}
       const result=new Promise((resolve,reject)=>{
         const user={signal,resolve,reject,priority,viewport};
         if(retainDetached)job.retainDetached=true;
@@ -82,7 +84,7 @@
         if(job.running&&!job.users.size&&!retained){job.controller.abort();if(jobs.get(job.key)===job)jobs.delete(job.key);onChange(job,"stopping");}
       }},
       invalidate:predicate=>{for(const job of [...jobs.values()])if(predicate(job.path)){job.controller.abort();const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);settle(job,cancelled());}},
-      stage:(path,stage,waiting=false)=>{for(const job of jobs.values())if(job.path===path&&job.running&&(job.stage!==stage||job.resourceWaiting!==waiting)){job.stage=stage;job.resourceWaiting=waiting;onChange(job,"running");}},snapshot:()=>({failures:[...failures],active,waiting:waiting.filter(j=>!j.controller.signal.aborted).length,jobs:[...new Set([...jobs.values(),...runningJobs])].map(j=>({path:j.path,priority:j.priority,stage:j.stage,state:j.controller.signal.aborted?"stopping":j.running&&!j.resourceWaiting?"running":"waiting"}))})});
+      stage:(path,stage,waiting=false)=>{for(const job of jobs.values())if(job.path===path&&job.running&&(job.stage!==stage||job.resourceWaiting!==waiting)){job.stage=stage;job.resourceWaiting=waiting;onChange(job,"running");}},snapshot:()=>({failures:[...failures],active,waiting:waiting.filter(j=>!j.controller.signal.aborted).length,jobs:[...new Set([...jobs.values(),...runningJobs])].map(j=>({path:j.path,priority:j.priority,stage:j.stage,background:!!j.background,state:j.controller.signal.aborted?"stopping":j.running&&!j.resourceWaiting?"running":"waiting"}))})});
   }
   // One idle candidate at a time, once per identity in the current folder.
   // Foreground activity detaches pending demand; active source work may finish.

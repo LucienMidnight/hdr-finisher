@@ -57,3 +57,38 @@ test("Library work names every active file and distinguishes waiting and stoppin
   assert.match(work.lines.find(l=>l.includes("two.jpg")),/two.jpg.*Waiting/);assert.match(work.lines.find(l=>l.includes("three.png")),/three.png.*Stopping after current step/);
   assert.deepEqual(sceneWork(rest()).lines,[]);
 });
+
+test("idle look-ahead and startup upkeep read as idle, with their own plain line", () => {
+  const {sceneWork}=require("../frontend/library-activity.js"), health=rest();
+  health.grants=[{path:"C:/Users/x/AppData/Roaming/hdr-finisher-desktop",kind:"upkeep",state:"running",stage:"Developing photo"}];
+  const snapshot={probes:{jobs:[{path:"C:/photos/DSC07151.ARW",stage:"Checking thumbnail cache",state:"running",background:true}]}};
+  const work=sceneWork(health,snapshot);
+  assert.equal(work.jobs.length,0); assert.equal(work.lines.length,0);
+  assert.equal(work.background.length,2); assert.ok(work.background.every(line=>!/hdr-finisher-desktop|Developing photo/.test(line)));
+  const before=globalThis.window; globalThis.window={HDRLibraryScenes:{snapshot:()=>snapshot}};
+  try { assert.equal(summary(health),"Activity"); }
+  finally { globalThis.window=before; }
+  // The same photo asked for by the view counts as work.
+  snapshot.probes.jobs.push({path:"C:/photos/DSC07151.ARW",stage:"Checking thumbnail cache",state:"running",background:false});
+  assert.equal(sceneWork(health,snapshot).jobs.length,1);
+});
+
+test("a virtual copy shows its file name, not its internal key", () => {
+  const {sceneWork}=require("../frontend/library-activity.js"), health=rest();
+  const work=sceneWork(health,{probes:{jobs:[{path:"D:/Play_Raw/IMG_3129.CR2|copy|0e0c111fa21246d3b61a462def8a9412",stage:"Checking thumbnail cache",state:"running"}]}});
+  assert.equal(work.lines[0],"IMG_3129.CR2 (copy) · Checking thumbnail cache");
+});
+
+test("each Activity message stays on screen at least 1.5 s; only the display waits", () => {
+  const {createHold}=require("../frontend/library-activity.js");
+  let t=0; const hold=createHold(1500,()=>t);
+  assert.deepEqual(hold.apply(new Map([["a","one · Checking"]])).lines,[["a","one · Checking"]]);
+  t=200; let held=hold.apply(new Map([["a","one · Developing"],["b","two · Checking"]]));
+  assert.deepEqual(held.lines,[["a","one · Checking"],["b","two · Checking"]]); assert.equal(held.wait,1300);
+  t=400; held=hold.apply(new Map());
+  assert.deepEqual(held.lines.map(l=>l[0]),["a","b"]);
+  t=1500; held=hold.apply(new Map([["b","two · Checking"]]));
+  assert.deepEqual(held.lines,[["b","two · Checking"]]);
+  t=1700; held=hold.apply(new Map());
+  assert.deepEqual(held.lines,[]); assert.equal(held.wait,null);
+});
