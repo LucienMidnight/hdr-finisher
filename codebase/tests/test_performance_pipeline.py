@@ -71,6 +71,9 @@ def test_adjusted_frame_singleflight_shares_expensive_work(monkeypatch) -> None:
 def test_cache_budget_evicts_old_frames_and_reports_managed_bytes(monkeypatch) -> None:
     source = np.full((64, 64, 3), 0.18, dtype=np.float32)
     from hdr_finisher import app_memory
+    # Exercise this cache against an empty shared owner, independent of prior tests.
+    monkeypatch.setattr(app_memory, '_caches', {})
+    monkeypatch.setattr(app_memory, '_sample', (0, None))
     monkeypatch.setattr(app_memory, 'LIMITS', dict(app_memory.LIMITS, working=130_000))
     cache = SessionRenderCache(source, None, max_frames=12)
     for exposure in range(5):
