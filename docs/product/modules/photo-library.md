@@ -6026,3 +6026,34 @@ and 2 skips and was stopped after about 15 minutes. The apparent next cache
 check passes alone; all 1,047 not-yet-reported checks then complete separately
 (1,046 pass, 1 skip). This does not qualify the original full-suite invocation.
 Logs: `codebase/output/batch3/{node,pytest,pytest-picture-focused,pytest-remaining}.log`.
+
+
+### November 3, 2026 — Batch 3: full-size native detail handoff
+
+The October 31 requested-tier change removed the native override from both
+GPU development and handoff. A direct native request carrying screen edge
+2560 therefore developed only 2560 and failed the backend's full-size guard.
+Batch 2's source sharing retained that mistake; it did not introduce it.
+Native development and packing now use the existing 100000 full-source tier.
+The raw-sensor read keeps its bounded edge and `native_mode` contract; live
+native reads explicitly ask for full-source samples. Native demand excludes
+shared scene-tier sets. The existing 640/2560 sharing, cache shares, working
+allowance and VRAM reservations remain unchanged. Runtime regressions verify
+both entry points on a 6000 x 4000 source alongside a separate 2560 scene.
+
+The focused RAW Single driver now reaches full-size GPU development, then
+stalls at the native save handoff; it was stopped after approximately five
+minutes. That attempt recorded a brief 8.25 GB whole-app peak against the
+unchanged 4 GB ceiling, so full native qualification remains open. The first
+iteration's invalid sensor-edge request was corrected before the final fast
+checks. Evidence: `codebase/output/batch3/{raw-single,raw-single-rerun,native-handoff}.log`.
+No claim is made that this fixes the RGB/codec native window closures; those
+remain in Batch 6 and their native drivers were not changed or run here.
+
+The 90-second quick Library check completed all ten Single steps and passed
+stored-colour and memory acceptance (peak 3.56 GB, no ceiling breach), but
+failed the unchanged 250 ms drawing-gap limit with a 4,088 ms gap. No view
+errors were reported. This does not establish successful 100% native detail.
+Fast-check totals and the full Python invocation's stall are recorded above.
+Evidence: `codebase/output/quick-library-check/batch3/{report,scenario}.json`
+and `codebase/output/batch3/quick.log`. No push or installer build.

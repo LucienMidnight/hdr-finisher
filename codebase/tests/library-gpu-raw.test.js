@@ -259,3 +259,42 @@ for (const late of [false, true]) test(`different GPU tiers share one source wit
   assert.equal(reads,1);assert.equal(releases,1);
   assert.deepEqual(reductions.flat().sort((a,b)=>a-b),[640,2560]);
 });
+
+for (const liveScene of [false,true]) test(`native requests develop and hand off full size separately from scene demand (live=${liveScene})`,async()=>{
+  const fs=require('node:fs'),vm=require('node:vm');
+  const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+  const meta={path:'photo',identity:[],mosaic_bytes:0,width:6000,height:4000};
+  const header=Buffer.from(JSON.stringify(meta)),body=Buffer.alloc(4+header.length);
+  body.writeUInt32LE(header.length);header.copy(body,4);
+  const requests=[],reductions=[],handoffs=[];
+  const context={performance,crypto:require('node:crypto').webcrypto,DOMException,AbortController,
+    Uint8Array,Float32Array,DataView,TextDecoder,setInterval,clearInterval,
+    decodedSources:new Map(),directScenes:new Map(),cachedDirect:()=>null,
+    sourceStorageLimit:async()=>Infinity,quantile:()=>1,
+    handoffBody:globalThis.HDRLibraryGpuRaw.handoffBody,
+    fetch:async()=>({ok:true}),
+    scheduledDevelopment:async({edges})=>{
+      reductions.push([...edges]);
+      return {samples:[],peaks:{},timings:{},reduced:Object.fromEntries(edges.map(edge=>{
+        const [height,width]=reducedSize(meta,edge);
+        return [edge,{width,height,planes:[new ArrayBuffer(4)]}];
+      }))};
+    },
+    root:{HDRLibraryUpload:{
+      fetchSource:async(_url,{body:request})=>{requests.push(JSON.parse(request));return {ok:true,status:200,headers:{get:()=>''},arrayBuffer:async()=>body.buffer.slice(body.byteOffset,body.byteOffset+body.length)};},
+      send:async(_url,{body})=>{const n=new DataView(body).getUint32(0,true);const h=JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,n)));handoffs.push(h);return {ok:true,text:JSON.stringify({edge:h.edge,width:h.width,height:h.height})};}
+    }}
+  };
+  vm.runInNewContext(source.slice(source.indexOf('  async function develop(path,'),source.indexOf('  const warmup ='))+';this.request=thumbnail;',context);
+  const scene=context.request('photo',2560,null,{liveScene:true});
+  const native=context.request('photo',2560,null,{liveScene,nativeMode:true,edges:new Set([640,2560])});
+  assert.equal((await scene).width,2560);
+  const result=await native;
+  assert.equal(result.width,6000);assert.equal(result.height,4000);
+  assert.deepEqual(reductions.flat().sort((a,b)=>a-b),[2560,100000]);
+  assert.deepEqual(requests.map(r=>r.edge).sort((a,b)=>a-b),liveScene?[2560,100000]:[2560,2560]);
+  if (!liveScene) assert.equal(requests.find(r=>r.native_mode)?.edge,2560,'Sensor API keeps its bounded edge; native_mode selects the full sensor');
+  const full=handoffs.find(h=>h.edge===100000);
+  assert.equal(full.native_mode,!liveScene);
+  assert.equal(full.width,full.source_width);assert.equal(full.height,full.source_height);
+});

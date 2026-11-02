@@ -534,3 +534,18 @@ check passed, with preparation waits of 0.30–2.34 s across seven mixed-size
 JPEG/PNG/TIFF/EXR cases. Ultra HDR and the combined codec case closed their
 Electron windows before reporting a comparison or usable preparation wait.
 Evidence: `codebase/output/batch3/{dng,rgb-precision,rgb-ultrahdr,rgb-ultrahdr-codecs}.log`.
+
+
+**Batch 3 native / Single validation, November 3, 2026.** Current Batch 3
+native handoff correction; isolated Electron at 2560x1440, unchanged limits.
+The focused RAW Single driver completes full-size GPU development but does
+not finish its native save handoff; stopped after roughly five minutes.
+A brief whole-app memory peak was 8.25 GB against the unchanged 4 GB ceiling;
+this run does not qualify native detail. No CPU/GPU speed claim follows.
+The 90-second quick check completed ten Single steps: open 1.36 s; steps
+0.019–7.05 s, median 2.09 s. Longest drawing gap 4,088 ms fails the existing
+250 ms limit; main-thread lateness was 83 ms. Memory and stored-colour checks
+pass (3.56 GB peak, no breach). One observation, not a controlled comparison;
+no additional timing runs pursued these existing Library responsiveness issues.
+Evidence: `codebase/output/batch3/native-handoff.log` and
+`codebase/output/quick-library-check/batch3/{report,scenario}.json`.

@@ -961,7 +961,7 @@
       const late=await adoptKept();
       if(late){kept=late;sourceJob=late.token;break;}
       response = await root.HDRLibraryUpload.fetchSource(liveScene ? "/api/library/live-scene" : "/api/library/raw-sensor", { method: "POST", priority:"low", signal,
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge, grant, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, grant, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(liveScene ? {path, edge:nativeMode?100000:edge, grant, gpu:true,max_storage_bytes:sourceLimit,source_job:sourceJob,priority:importance()} : { path, edge, grant, saved_grade_only: savedGradeOnly, native_mode:nativeMode }) });
       if(grant && response.headers.get("X-Library-Wait")==="memory")await root.HDRLibraryGrants.wait(grant,signal);
       if (response.status !== 202) break;
       root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
@@ -1008,7 +1008,7 @@
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const started = performance.now();
     root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
-    const edges = sharedJob ? [...sharedJob.edges].filter(size=>!sharedJob.results.has(size)) : [edge];
+    const edges = nativeMode ? [100000] : sharedJob ? [...sharedJob.edges].filter(size=>!sharedJob.results.has(size)) : [edge];
     const developed = gpuResult = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, grant, edges}, signal);
     const gpuMs = performance.now() - started;
     // `meta` lives on with the cell (renewal timer, redraw helpers). Drop its
@@ -1124,6 +1124,8 @@
   // which stops only when every asker has scrolled past it.
   function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null, edges = null } = {}) {
     root.HDRIdleWarmup?.touch();
+    // Native demand stays selected-only, separate from shared scene tiers.
+    if (nativeMode) edges = new Set([edge]);
     const tier = liveScene && !nativeMode ? 0 : edge;
     const key = `${path}|${tier}|${savedGradeOnly}|${nativeMode}|${liveScene}|${sceneIdentity}`;
     let job = inflight.get(key);
