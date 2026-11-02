@@ -85,6 +85,19 @@ evidence only. A fresh checkout without that output honestly reports no history.
 The inventory never contains hand-entered durations. Preserve output/history
 if moving checkouts and wanting to preserve estimates.
 
+## Explicitly approved longer release run
+
+Only after Steve approves a longer release run, use
+`npm run test:release -- --release --approved-release-minutes 150` (add
+`--plan` first). The default stays 75 minutes. The explicit cap applies both
+to the estimate and elapsed time including resumed work; `--limit-minutes`
+can still reduce it. Resume with the same approved cap. No driver selection,
+retry, fixture protection or numerical threshold changes.
+
+November 2, 2026: Steve approved up to 150 minutes for the 93-driver main
+release check. The option was checked with the isolated runner, including
+default rejection, a stricter limit and resume without repeating a pass.
+
 ## Add a driver
 
 Add one entry to `drivers.json` with its path, purpose, area(s), tier and launch.

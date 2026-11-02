@@ -176,3 +176,23 @@ test('cross-revision continuation starts fresh and leaves prior evidence untouch
   assert.equal(Object.keys(next.results).length,4);
   assert.equal(next.results['tests/pass.js'].attempts.length,1);
 });
+
+test('explicit release approval raises only its cap and preserves stricter limits and resume', t => {
+  assert.throws(()=>runner.parse(['--approved-release-minutes','0']),/positive/);
+  assert.throws(()=>runner.parse(['--full','--approved-release-minutes','150']),/release selection/);
+  const fixture=isolatedRunner(t),out=path.join(fixture.root,'output/release-checks');
+  fs.mkdirSync(out,{recursive:true});
+  fs.writeFileSync(path.join(out,'history.jsonl'),JSON.stringify({driver:'tests/pass.js',durationSeconds:120*60,exitCode:0})+'\n');
+  const normal=fixture.run('--release');
+  assert.equal(normal.status,1);assert.match(normal.stderr,/exceeds the approved limit/);
+  const strict=fixture.run('--release','--approved-release-minutes','150','--limit-minutes','100');
+  assert.equal(strict.status,1);assert.match(strict.stderr,/exceeds the approved limit/);
+  const first=fixture.run('--release','--approved-release-minutes','150','--stop-after','1');
+  assert.equal(first.status,130,first.stdout+first.stderr);
+  assert.match(first.stdout,/Explicitly approved release cap: 150/);
+  assert.equal(fixture.states()[0].results['tests/pass.js'].attempts.length,1);
+  const resumed=fixture.run('--release','--approved-release-minutes','150');
+  assert.equal(resumed.status,1,resumed.stdout+resumed.stderr);
+  assert.equal(fixture.states().length,1);
+  assert.equal(fixture.states()[0].results['tests/pass.js'].attempts.length,1);
+});

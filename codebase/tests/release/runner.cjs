@@ -192,10 +192,12 @@ function parse(args) {
       else (options.alsoDrivers ||= []).push(value);
     }
     else if (name === 'fresh') options.fresh = true;
+    else if (name === 'approved-release-minutes') { options.approvedReleaseMinutes = Number(args[++i]); if (!Number.isFinite(options.approvedReleaseMinutes) || options.approvedReleaseMinutes <= 0) throw Error('--approved-release-minutes needs a positive number'); }
     else if (name === 'limit-minutes') { options.limitMinutes = Number(args[++i]); if (!Number.isFinite(options.limitMinutes) || options.limitMinutes <= 0) throw Error('--limit-minutes needs a positive number'); }
     else if (name === 'stop-after') { options.stopAfter = Number(args[++i]); if (!Number.isInteger(options.stopAfter) || options.stopAfter < 1) throw Error('--stop-after needs a positive driver count'); }
     else throw Error(`Unknown option: ${args[i]}`);
   }
+  if (options.approvedReleaseMinutes && options.mode !== 'release') throw Error('--approved-release-minutes requires a release selection');
   if (options.alsoDrivers && !options.unfinishedFrom) throw Error('--also-driver requires --unfinished-from');
   if (options.unfinishedFrom && options.mode !== 'full') throw Error('--unfinished-from requires explicit --full selection');
   return options;
@@ -219,16 +221,18 @@ async function main(args = process.argv.slice(2)) {
   const selection = previous ? unfinishedSelection(list, previous, options.alsoDrivers) : select(list, options.mode, options.value, changed);
   const timing = estimate(selection.rows, history(), known);
   const minutes = (timing.seconds + timing.retrySeconds) / 60;
+  const policyMinutes = options.mode === 'full' ? Infinity : options.mode === 'release' ? (options.approvedReleaseMinutes || 75) : 30;
   console.log(`${options.mode}${options.value ? ` ${options.value}` : ''}: ${selection.rows.length} drivers at ${revision.slice(0, 12)}${base ? `; changes since ${base}` : ''}`);
   if (base) console.log(`Changed areas: ${selection.areas.join(', ') || 'none'}`);
   for (const file of selection.unmapped) console.log(`Unmapped changed file: ${file}`);
   console.log(`History estimate: ${minutes.toFixed(1)} minutes (includes ${(timing.retrySeconds / 60).toFixed(1)} for previously failing drivers' retries).${timing.unknown.length ? ` INCOMPLETE: no history for ${timing.unknown.length} drivers; no guessed times.` : ''}`);
   for (const file of timing.unknown) console.log(`No timing history: ${file}`);
-  if (options.mode === 'release' && minutes > 75) console.log('STOP: the release estimate exceeds the 75-minute cap. Ask Steve before running.');
-  else if (options.mode === 'release' && minutes > 45) console.log('Estimate exceeds the 45-minute target; the 75-minute release cap still applies.');
+  if (options.approvedReleaseMinutes) console.log(`Explicitly approved release cap: ${policyMinutes} minutes (including resumed work).`);
+  if (options.mode === 'release' && minutes > policyMinutes) console.log(`STOP: the release estimate exceeds the ${policyMinutes}-minute cap. Ask Steve before running.`);
+  else if (options.mode === 'release' && minutes > 45) console.log(`Estimate exceeds the 45-minute target; the ${policyMinutes}-minute release cap still applies.`);
   for (const row of selection.rows) console.log(`  ${row.path} [${row.tier}; ${row.launch.method}] ${JSON.stringify(command(row, '<run-output>', list).args)}${row.launch.followupArgs ? `; then ${JSON.stringify(row.launch.followupArgs)}` : ''}${row.launch.requires ? `; requires: ${row.launch.requires}` : ''}`);
   if (options.plan) return { ...selection, timing };
-  if (minutes > Math.min(options.limitMinutes || Infinity, options.mode === 'full' ? Infinity : options.mode === 'release' ? 75 : 30)) throw Error('Estimated slow-test time exceeds the approved limit. Stop and ask Steve.');
+  if (minutes > Math.min(options.limitMinutes || Infinity, policyMinutes)) throw Error('Estimated slow-test time exceeds the approved limit. Stop and ask Steve.');
   if (git('status', '--porcelain', '--untracked-files=no')) throw Error('Commit tracked-file changes before running.');
   if (!selection.rows.length) throw Error('No drivers selected.');
   for (const row of selection.rows) if (row.launch.requires) throw Error(`Manual diagnostic invocation required for ${row.path}: ${row.launch.requires}`);
@@ -261,7 +265,6 @@ async function main(args = process.argv.slice(2)) {
     fs.unlinkSync(lock); fs.writeFileSync(lock, String(process.pid), { flag: 'wx' });
   }
   const started = Date.now(), previousElapsed = state.elapsedMs;
-  const policyMinutes = options.mode === 'full' ? Infinity : options.mode === 'release' ? 75 : 30;
   const capMs = Math.min(policyMinutes, options.limitMinutes || Infinity) * 60000;
   const deadline = started + capMs - previousElapsed;
   let active = null, stopped = false, capReached = false, fatal;
