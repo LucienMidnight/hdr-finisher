@@ -28,10 +28,13 @@ def test_giant_waits_with_message_does_not_block_fast_lane_and_resumes():
     s.update(available=40_000_000_000,ram=64_000_000_000)
     giant=s.ask("giant","w","pano.png","source",5_376_000_000)
     assert giant.granted is None and giant.reason=="needs more memory"
+    assert giant.ready.is_set() and giant.id not in s.jobs
     small=s.ask("small","w","small.jpg","quick",64_000_000)
     assert small.granted is not None
     s.set_ceiling(8_000_000_000)
     s.finish("small")
+    # A terminal notice releases its request; the window submits fresh demand.
+    giant=s.ask("giant-retry","w","pano.png","source",5_376_000_000)
     assert giant.granted is not None
     assert len(s.jobs)==1
 
