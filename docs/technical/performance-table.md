@@ -46,6 +46,14 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+Nov 2 memory fixes (`library-avif-gainmap-gpu`, `87bcb28`), cold 90 s quick
+checks, default 4 GB and two developments. Play_Raw AVIF copy (22 files):
+shown by 30/60 s 12/15 -> 17/22, needs-memory 7 -> 0, external peak 4.0 ->
+2.63 GB, settled (never before). HDR Test Images copy: 24 by 90 s, peak
+3.54 GB, settled, 0 refusals, 0 memory-check timeouts; longest frame gap
+3.0-3.6 s (pre-existing). Library EXR read: longest backend stall 0.90 ->
+0.04 s, decode 1.04 -> 1.06 s (`DSC01287.exr`).
+
 Nov 1 Fuji X-Trans repair (`library-xtrans-thumbnails`, local): final guarded
 Lanczos CPU scene development 640/2560 is 3.009-3.204 s warm, 3.193-3.325 s
 first-use; incremental private peak 587.7 MB, approved reservation 740.413 MB.

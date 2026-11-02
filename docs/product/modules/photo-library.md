@@ -1,5 +1,34 @@
 # Module PRD: Photo Library
 
+## November 2: no needless refusals, no window leak, assumed colour
+
+Built on `library-avif-gainmap-gpu` (commits `80decca` to `87bcb28`) after
+Steve's November 2 session (35 "needs more memory" refusals, a 5.14 GB peak,
+untagged TIFFs failing):
+
+- **Window leak fixed.** Each grid cell kept its whole downloaded source
+  (the gain-map SDR base or DNG support mask pointed into it). Gain-map AVIFs
+  left 60-430 MB each; the Library window reached 2.2-3.4 GB and stayed there
+  until the folder changed. That memory caused the overshoot and most
+  refusals. Play_Raw AVIF copy (22 files): 15 -> 22 shown, 7 -> 0 refusals,
+  window 2.3 -> 0.24 GB after the run, peak 4.0 -> 2.71 GB, now settles.
+- **A job that fits an empty app is never refused.** If freeing pictures
+  does not make room, it keeps its place, lets other photos run and frees
+  pictures again after 10 s. Larger jobs still get the notice.
+- **Assumed colour** for untagged TIFF/EXR (see
+  [import-and-raw](import-and-raw.md) item 3), with "Colour assumed" in
+  Details and an amber note for ProPhoto RGB.
+- **Memory check answers during EXR reads.** EXRs are read in 256-row bands;
+  the longest backend stall fell from 0.9 s to 0.04 s.
+
+- **Admission keeps a running job's unused reservation** until it ends
+  (it used to lapse at the first 0.5 s sample), which removed the remaining
+  4.45 GB peak in HDR Test Images (now 3.54 GB). See
+  [memory-and-caches](memory-and-caches.md), November 2.
+
+Open: long frame gaps (3.0-3.6 s) in the HDR Test Images quick check were
+present before these changes and are not addressed here.
+
 ## November 1: Library scheduler finished; brief archived
 
 The one-scheduler work (phases 0 to 3c.2 Part C and the November 1 rounds)

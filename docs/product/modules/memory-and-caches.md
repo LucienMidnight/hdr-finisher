@@ -200,6 +200,29 @@ reserve covers it. It is logged as "unknown size" with its measured peak.
 Revisit if those log lines show real photos taking this path often or
 waiting long on small machines; alternatives are in design decision 10.
 
+### November 2: overshoot causes found; estimates unchanged
+
+Steve's November 2 session peaked at 5.14 GB with 35 needless "needs more
+memory" refusals. Causes and fixes (`library-avif-gainmap-gpu`):
+
+- **Library window leak** (`80decca`): each grid cell kept its whole
+  downloaded source. Gain-map AVIFs left 60-430 MB each; the window held
+  2.2-3.4 GB that no cache share counted and reclaim could not free.
+- **Refusal after one reclaim** (`a487f9c`): a job up to the ceiling minus
+  the 1.3 GB starting memory now waits (retrying reclaim every 10 s) instead
+  of being refused. Larger jobs keep the notice.
+- **Lapsed reservations** (`2520301`): a running job's unused estimate now
+  counts until it finishes, not only until the first sample.
+- **Per-type estimates checked, none exceeded** (one development at a time,
+  HDR Test Images): DxO linear DNG 0.56-0.62 GB measured vs 1.18 GB estimate;
+  DJI DNG/TIFF 0.27-1.10 GB vs 1.32-1.34 GB. No rate change proposed.
+
+Results (90 s cold quick checks): HDR Test Images peak 4.45 -> 3.54 GB,
+settled; Play_Raw AVIF copy peak 4.0 -> 2.63 GB, settled, 0 refusals.
+The ceiling, 4.4 GB elastic maximum, floor, shares, reserve, saves,
+developments and GPU budget are unchanged. The November 1 EXR header gate is
+replaced by the assumed-colour decision ([import-and-raw](import-and-raw.md)).
+
 ## 1. Purpose
 
 HDR Finisher holds pictures in several processes at once: the Python backend

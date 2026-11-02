@@ -442,7 +442,16 @@ colour profiles) are after v1.
    agreed perceptual limits on some photos. The unchanged quick
    Single/fullscreen decoder is deferred to the speed exploration.
 2. Linux mounted drives in Locations.
-3. Unrecognised TIFF colour profiles: ask, or say clearly what was assumed.
+3. **Decided November 2 (Steve): assume, and say so.** Untagged or
+   unrecognised colour no longer stops the Library. It develops the photo
+   with an assumed interpretation: sRGB primaries and transfer for 8/16-bit
+   integer samples, linear Rec.709 for floating-point samples (TIFF and EXR).
+   The Details panel shows "Colour assumed". A colour space chosen in Grade
+   wins; the assumption is never saved. ROMM/ProPhoto ICC profiles are named
+   "ProPhoto RGB" but not supported: Grade asks for a choice, the Library
+   shows them as sRGB with an amber "ProPhoto RGB isn't supported" note.
+   Open: Grade still opens such files unconverted and asks; real ProPhoto
+   support (D50 primaries, 1.8 gamma) is not started.
 4. Source workflow checks (Photoshop EXR, GIMP, Adobe and DxO linear DNG)
    as documentation and test work.
 5. **Idea for v2 (Steve, October 27, 2026): a fringe tool in RAW
