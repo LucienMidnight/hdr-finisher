@@ -501,7 +501,9 @@ class Scheduler:
                 job.alone = True
             else:
                 reason = "room"
-            unmeasured = sum(j.estimate for j in running if j.id not in self.sampled_grants)
+            # A running job keeps the part of its reservation it has not yet
+            # used: most of its memory arrives after the first sample.
+            unmeasured = sum(self._outstanding(j) for j in running)
             # Decision 21 widens only the protected, drained turn. New grants
             # still consume physical headroom above, including the fast lane.
             guarded_alone = job is guard and not any(j.cls == job.cls for j in running)
@@ -585,11 +587,16 @@ class Scheduler:
             if job.notify:
                 job.notify(self._message(job, "granted"))
 
+    def _outstanding(self, job):
+        if job.id not in self.sampled_grants:
+            return job.estimate
+        return max(0, job.estimate-(job.peak or 0))
+
     def _log(self, job, event):
         log("library_grant_"+event, request=job.id, owner=job.owner, path=job.path,
             priority_class=job.cls, estimate_bytes=job.estimate, gpu_estimate_bytes=job.gpu_bytes, gpu_unified=job.gpu_unified, saving=job.saving,
             alone=job.alone, floor=job.floor, measured_total_bytes=self.total,
-            unmeasured_grant_bytes=sum(j.estimate for j in self.jobs.values() if j.granted is not None and j.id not in self.sampled_grants),
+            unmeasured_grant_bytes=sum(self._outstanding(j) for j in self.jobs.values() if j.granted is not None),
             measured_peak_bytes=job.peak, peak_scope="whole-app-increment",
             wait_ms=round(((job.granted if job.granted is not None else self.clock())-job.asked)*1000),
             reason=job.size_reason or job.reason or None, waited_for=job.reason or None, over_estimate=job.peak is not None and job.peak > job.estimate)

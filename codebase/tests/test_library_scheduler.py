@@ -651,3 +651,17 @@ def test_finished_and_refused_work_leaves_no_occupied_development_places():
     assert waiting.granted is not None  # No sample, timer or new folder action needed.
     s.finish(second.id); s.finish(waiting.id)
     assert not s.jobs
+
+
+def test_running_job_keeps_its_unused_reservation_after_first_sample():
+    # The 4.45 GB peak: a sampled job had not grown yet, so its room was lent.
+    s = Scheduler()
+    s.update(total=2*GB, available=60*GB, ram=68*GB)
+    first = ask(s, "first", 1_300_000_000)
+    s.update(total=2*GB, available=60*GB, ram=68*GB)  # sampled, not grown
+    second = ask(s, "second", 1_200_000_000)
+    assert first.granted is not None and second.granted is None
+    s.update(total=3_200_000_000, available=60*GB, ram=68*GB)  # first used its share
+    s.finish("first")
+    s.update(total=2*GB, available=60*GB, ram=68*GB)
+    assert second.granted is not None
