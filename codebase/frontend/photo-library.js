@@ -588,6 +588,18 @@
     updateDetails(); paintGrid(); paintFilm();
     status(`${state.photos.length.toLocaleString()} photos · ${state.hiddenFiles} unreadable files hidden`);
   }
+  // Assumed colour (Steve, Nov 2): the Details panel names the assumption, and
+  // an unsupported profile such as ProPhoto RGB gets an amber note.
+  function colourNote(photo, meta, frame) {
+    const assumed = meta.assumed_interpretation || null, unsupported = meta.unsupported_colour || null;
+    const changed = photo.colour_assumed !== assumed || photo.colour_unsupported !== unsupported;
+    photo.colour_assumed = assumed; photo.colour_unsupported = unsupported;
+    let note = frame.querySelector(".library-colour-note");
+    if (unsupported && !note) { note = document.createElement("span"); note.className = "library-colour-note"; frame.append(note); }
+    if (note && !unsupported) note.remove();
+    else if (note) { note.textContent = `${unsupported} isn't supported`; note.title = `Shown as ${assumed}. Choose its colour in Grade.`; }
+    if (changed && selected()?.path === photo.path) updateDetails();
+  }
   window.HDRLibraryCollectWaiting = async () => {
     await (window.hdrFinisherDesktop || window.parent?.hdrFinisherDesktop)?.reclaimLibraryStorage?.();
     await HDRLibraryRAM.report();
@@ -730,6 +742,7 @@
             // The strip under Single keeps a finished picture or its camera
             // preview; it never starts a development there (6.8).
             if (!meta) return;
+            colourNote(photo, meta, frame);
             await drawPicture(meta, fallback, cell.controller, current);
             if (!current()) return;
             cell.quickController?.abort();

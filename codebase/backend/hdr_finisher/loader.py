@@ -337,7 +337,7 @@ def _load_with_pillow(path: Path, *, encoded_samples: bool = False, draft_edge: 
             except Exception:
                 image = oriented.convert("RGB")
                 metadata["color_space"] = _classify_icc_profile_name(profile_name)
-                metadata["needs_color_override"] = metadata["color_space"] == "unknown"
+                metadata["needs_color_override"] = metadata["color_space"] in UNRESOLVED_PROFILES
         else:
             image = oriented.convert("RGB")
             metadata["color_space"] = "sRGB"
@@ -383,7 +383,7 @@ def _load_tiff(path: Path, *, library_edge: int | None = None) -> tuple[np.ndarr
                 profile_name = _read_icc_profile_name(color_profile.value)
                 metadata["icc_profile_name"] = profile_name
                 metadata["color_space"] = _classify_icc_profile_name(profile_name)
-                metadata["needs_color_override"] = metadata["color_space"] == "unknown"
+                metadata["needs_color_override"] = metadata["color_space"] in UNRESOLVED_PROFILES
 
     if np.issubdtype(array.dtype, np.integer):
         max_value = float(np.iinfo(array.dtype).max)
@@ -446,7 +446,14 @@ def _classify_icc_profile_name(profile_name: str) -> str:
         return "Display P3"
     if "srgb" in text or "rec.709" in text or "bt.709" in text:
         return "sRGB"
+    if "prophoto" in text or "romm" in text:
+        # Recognised but not supported: the photo still needs a colour choice.
+        return PROPHOTO
     return "unknown"
+
+
+PROPHOTO = "ProPhoto RGB"
+UNRESOLVED_PROFILES = {"unknown", PROPHOTO}
 
 
 def _load_exr(

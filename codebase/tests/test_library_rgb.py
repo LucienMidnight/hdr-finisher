@@ -217,12 +217,17 @@ def test_precision_tiff_preserves_decoder_samples_and_override_order(tmp_path, d
     tifffile.imwrite(path,array.transpose(2,0,1) if planar else array,photometric="rgb",
         planarconfig="separate" if planar else "contig",extratags=[(274,"H",1,6,False)])
     inputs=recipe(None)
-    with pytest.raises(library_rgb.NotEligible,match="primaries"):
-        library_rgb.decoded(path,inputs)
+    # Untagged: the Library assumes sRGB for integers, linear Rec.709 for floats.
+    header,_=library_rgb.decoded(path,inputs)
+    expected=("sRGB","sRGB") if dtype=="uint16" else ("linear Rec.709","LINEAR")
+    assert header["colour"]["assumed"]==expected[0] and header["colour"]["transfer"]==expected[1]
+    assert header["colour"]["override"]=={} and header["colour"]["descriptor"]["interpretation_mode"]=="auto"
+    assert library_rgb.assumed_interpretation(path)["label"]==expected[0]
     inputs["interpretation_override"].update(color_space="BT.2020",transfer_function="LINEAR",linear_reference="diffuse_white_1_0")
     header,parts=library_rgb.decoded(path,inputs)
     actual=np.frombuffer(parts[0],dtype="<f4").reshape(5,8,3)
     np.testing.assert_array_equal(actual,loader._load_tiff(path)[0])
+    assert header["colour"]["assumed"] is None  # a chosen interpretation wins
     assert header["orientation"]=={"original":6,"applied":False}
     assert header["colour"]["scale"]==.18 and not header["colour"]["authored_sdr"]
     assert header["layout"]["dtype"]=="float32"
@@ -601,7 +606,7 @@ def test_raf_header_without_xtrans_and_truncated_tags_are_not_guessed(tmp_path):
     assert not _xtrans_raf(path)
 
 @pytest.mark.parametrize("resolved,override", [(False,False),(True,False),(False,True)])
-def test_exr_header_interpretation_gate_precedes_pixels(tmp_path, monkeypatch, resolved, override):
+def test_exr_header_assumption_reads_no_pixels(tmp_path, monkeypatch, resolved, override):
     import OpenEXR, Imath
     path=tmp_path/"source.exr"
     header=OpenEXR.Header(2,2)
@@ -609,11 +614,41 @@ def test_exr_header_interpretation_gate_precedes_pixels(tmp_path, monkeypatch, r
     out=OpenEXR.OutputFile(str(path),header)
     out.writePixels({channel:np.zeros(4,np.float32).tobytes() for channel in "RGB"})
     out.close()
-    monkeypatch.setattr(library_rgb.loader,"_load_exr",lambda *a,**k:pytest.fail("header gate decoded pixels"))
+    monkeypatch.setattr(library_rgb.loader,"_load_exr",lambda *a,**k:pytest.fail("header check decoded pixels"))
     inputs=recipe(None)
     if override: inputs["interpretation_override"]["color_space"]="ACEScg"
+    assumed=library_rgb.assumed_interpretation(path,inputs["interpretation_override"])
     if not resolved and not override:
-        with pytest.raises(ValueError,match="Unresolved source primaries"):
-            library_rgb.preflight_interpretation(path,inputs)
+        assert assumed["label"]=="linear Rec.709" and assumed["transfer_function"]=="LINEAR"
     else:
-        library_rgb.preflight_interpretation(path,inputs)
+        assert assumed is None
+
+
+def test_prophoto_tiff_is_named_and_shown_as_srgb_with_a_note(tmp_path, monkeypatch):
+    import tifffile
+    from hdr_finisher import loader
+    path=tmp_path/"prophoto.tif"
+    profile=ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+    tifffile.imwrite(path,np.full((4,6,3),30000,np.uint16),photometric="rgb",extratags=[(34675,"B",len(profile),profile,False)])
+    monkeypatch.setattr(loader,"_read_icc_profile_name",lambda value:"ROMM RGB: ISO 22028-2:2013")
+    # Grade still asks for a colour choice; the Library names the profile.
+    assert loader._load_tiff(path)[1]["color_space"]=="ProPhoto RGB"
+    assert loader._load_tiff(path)[1]["needs_color_override"]
+    header,_=library_rgb.decoded(path,recipe(None))
+    assert header["colour"]["assumed"]=="sRGB" and header["colour"]["unsupported"]=="ProPhoto RGB"
+    assert library_rgb.assumed_interpretation(path)["unsupported"]=="ProPhoto RGB"
+
+
+def test_banded_exr_read_matches_one_whole_read(tmp_path):
+    # Bands keep the backend answering during long EXR reads; samples are exact.
+    import OpenEXR, Imath
+    from hdr_finisher import loader
+    path=tmp_path/"tall.exr"
+    header=OpenEXR.Header(7,600)
+    header["dataWindow"]=Imath.Box2i(Imath.V2i(-2,-5),Imath.V2i(4,594))
+    values={c:np.random.default_rng(i).normal(size=600*7).astype(np.float32) for i,c in enumerate("RGB")}
+    out=OpenEXR.OutputFile(str(path),header); out.writePixels({c:v.tobytes() for c,v in values.items()}); out.close()
+    image,metadata=loader._load_exr(path,combined_channels=True)
+    for index,channel in enumerate("RGB"):
+        np.testing.assert_array_equal(image[...,index],values[channel].reshape(600,7))
+    assert set(metadata["library_exr_timings_ms"])=={"channels","interleave"}

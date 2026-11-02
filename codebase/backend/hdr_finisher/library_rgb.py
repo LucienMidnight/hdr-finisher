@@ -16,22 +16,51 @@ VERSION = "library-rgb-reduced-v4"
 
 
 
-def preflight_interpretation(path, inputs):
-    """Reject an unresolved EXR from headers before reserving decode memory."""
+# Steve, November 2, 2026: the Library assumes a starting interpretation for
+# untagged or unrecognised colour instead of refusing the photo. Integer
+# samples are taken as sRGB, floating-point samples as linear Rec.709. A colour
+# space chosen in Grade always wins. Nothing is saved for an assumption.
+ASSUMED_SRGB = {"color_space": "sRGB", "transfer_function": "sRGB", "label": "sRGB"}
+ASSUMED_LINEAR = {"color_space": "sRGB", "transfer_function": "LINEAR", "label": "linear Rec.709"}
+
+
+def assumed_for(floating, override=None, declared=None):
+    """The assumption for decoded samples whose primaries are unresolved.
+    A recognised but unsupported profile (ProPhoto RGB) is named for the note."""
+    if (override or {}).get("color_space"):
+        return None
+    return dict(ASSUMED_LINEAR if floating else ASSUMED_SRGB,
+                unsupported=declared if declared == loader.PROPHOTO else None)
+
+
+def assumed_interpretation(path, override=None):
+    """Header-only: what the Library assumes for this file, or None when the
+    file states its colour (or Grade chose one). TIFF and EXR only."""
+    if (override or {}).get("color_space"):
+        return None
     from .file_gate import decode_suffix
-    if decode_suffix(Path(path)) != ".exr" or inputs["interpretation_override"].get("color_space"):
-        return
-    import OpenEXR
-    file = OpenEXR.InputFile(str(path))
-    try:
-        header = file.header()
-    finally:
-        file.close()
-    name, _, confident = loader._infer_exr_chromaticities(header.get("chromaticities"))
-    interop, _, interop_confident = loader._infer_exr_color_interop_id(header.get("colorInteropID"))
-    _, _, resolved, _ = loader._resolve_exr_color_space(name, confident, interop, interop_confident)
-    if not resolved:
-        raise ValueError("Unresolved source primaries retain Grade's interpretation gate")
+    suffix = decode_suffix(Path(path))
+    if suffix in {".tif", ".tiff"}:
+        import tifffile
+        with tifffile.TiffFile(path) as tif:
+            page = tif.pages[0]
+            tag = page.tags.get("InterColorProfile") or page.tags.get("ICCProfile")
+            declared = loader._classify_icc_profile_name(loader._read_icc_profile_name(tag.value)) if tag is not None else None
+            if declared is not None and declared not in loader.UNRESOLVED_PROFILES:
+                return None
+            return assumed_for(np.dtype(page.dtype).kind == "f", declared=declared)
+    if suffix == ".exr":
+        import OpenEXR
+        file = OpenEXR.InputFile(str(path))
+        try:
+            header = file.header()
+        finally:
+            file.close()
+        name, _, confident = loader._infer_exr_chromaticities(header.get("chromaticities"))
+        interop, _, interop_confident = loader._infer_exr_color_interop_id(header.get("colorInteropID"))
+        _, _, resolved, _ = loader._resolve_exr_color_space(name, confident, interop, interop_confident)
+        return None if resolved else assumed_for(True)
+    return None
 
 
 def decoded(path, inputs, edge=2560):
@@ -185,8 +214,15 @@ def decoded_precision(path, inputs, edge=2560):
     if override: metadata["user_override"] = override
     metadata["color_space"] = color.detect_color_space(metadata, suffix)
     metadata["transfer_function"] = metadata.get("transfer_function") or color.detect_transfer_function(metadata, suffix)
+    assumed = None
     if metadata.get("needs_color_override") or metadata["color_space"] is None:
-        raise NotEligible("Unresolved source primaries retain Grade's interpretation gate")
+        if decoder_normalized or reference is not None:
+            raise NotEligible("Unresolved source primaries retain Grade's interpretation gate")
+        assumed = assumed_for(str(metadata.get("bit_depth", "")).startswith("float") or suffix == ".exr", override,
+            declared=original_interpretation.get("color_space"))
+        metadata.update(color_space=assumed["color_space"], needs_color_override=False,
+            transfer_function=override.get("transfer_function") or assumed["transfer_function"],
+            assumed_interpretation=assumed["label"])
     operation_space = sample_space if decoder_normalized and not override else metadata["color_space"]
     operation_transfer = sample_transfer if decoder_normalized and not override else metadata["transfer_function"]
     transfer = color._canonical_transfer_function(operation_transfer)
@@ -243,7 +279,9 @@ def decoded_precision(path, inputs, edge=2560):
             "original_interpretation":original_interpretation, "reference_white_nits":inputs["hdr_reference_white_nits"],
             "linear_reference":linear_reference, "authored_sdr":authored, "scale":scale,
             "clip_working_negative":bool(metadata.get("clip_working_negative")),
-            "decoder_metadata":metadata, "descriptor":descriptor.model_dump(mode="json"), "override":override},
+            "decoder_metadata":metadata, "descriptor":descriptor.model_dump(mode="json"), "override":override,
+            "assumed":assumed["label"] if assumed else None,
+            "unsupported":assumed["unsupported"] if assumed else None},
         "rgb_to_acescg":matrix.tolist(), "acescg_to_srgb":_ACESCG_TO_LINEAR_SRGB.T.tolist(),
         "acescg_to_bt2020":_ACESCG_TO_LINEAR_BT2020.T.tolist(), "decode_ms":decode_ms,
         "decoder_version":loader.SOURCE_DECODER_VERSION, "colour_version":loader.SOURCE_COLOR_TRANSFORM_VERSION,
@@ -323,6 +361,8 @@ def developed(cache, path, header, payload):
         "source_width": source.width, "source_height": source.height,
         "source_fingerprint_sha256": fingerprint, "gpu_memory_peak_bytes": header["memory_peak_bytes"],
         "source_analysis": analysis.model_dump(mode="json"), "rgb_contract": {"colour": header["colour"], "layout": header.get("layout"), "orientation": header.get("orientation")},
+        **({"assumed_interpretation": colour["assumed"]} if colour.get("assumed") else {}),
+        **({"unsupported_colour": colour["unsupported"]} if colour.get("unsupported") else {}),
         **({"dng_tiles": header["dng_diagnostics"]} if header.get("dng_diagnostics") else {}),
         "source_timings_ms": header.get("timing_ms")}
     return cache.build(path, header["edge"], header["source_quality"], decoded=(pixels, reference, metadata))

@@ -536,9 +536,6 @@ def create_library_router(worker, browser, store=None):
         if cached:
             live.cache.accept_transient(cached)
         from .library_estimates import gpu_metadata
-        if not cached and not is_cloud_placeholder(stat):
-            from .library_rgb import preflight_interpretation
-            preflight_interpretation(path, live_recipe(document))
         from .library_gpu_raw import xtrans_cpu
         cpu_route = "xtrans" if not cached and not is_cloud_placeholder(stat) and xtrans_cpu(path) else None
         return {"cpu_route": cpu_route,

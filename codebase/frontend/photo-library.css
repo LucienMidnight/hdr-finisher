@@ -248,6 +248,7 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .picture-frame {position:relative;}
 .library-map-status {position:absolute;bottom:5px;right:5px;z-index:5;background:#17191de0;color:var(--muted);font-size:11px;padding:2px 5px;pointer-events:auto;border-radius:3px;}
 .library-source-overlay {image-rendering:pixelated;}
+.library-colour-note {position:absolute;top:5px;left:5px;z-index:5;max-width:calc(100% - 10px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:color-mix(in srgb, var(--panel) 88%, transparent);color:var(--attention);border:1px solid var(--attention);font-size:11px;padding:1px 5px;border-radius:3px;pointer-events:auto;}
 
 
 .library-map-status[data-kind="focus"] {bottom:24px;}

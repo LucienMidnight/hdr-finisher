@@ -108,11 +108,19 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     xtrans = xtrans_cpu(path)
     if xtrans:
         raw_threads(logical_cpus())
+    # Untagged colour gets the Library's starting assumption (Steve, Nov 2);
+    # the assumption is never written into the photo's document.
+    from .library_rgb import assumed_interpretation
+    assumed = assumed_interpretation(path, inputs["interpretation_override"])
+    interpretation = dict(inputs["interpretation_override"])
+    if assumed:
+        interpretation.update(color_space=assumed["color_space"],
+            transfer_function=interpretation.get("transfer_function") or assumed["transfer_function"])
     try:
         with source_work(priority=15, cancelled=cancelled):
             source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
                 raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
-                interpretation_override=SourceInterpretationOverride.model_validate(inputs["interpretation_override"]),
+                interpretation_override=SourceInterpretationOverride.model_validate(interpretation),
                 hdr_reference_white_nits=inputs["hdr_reference_white_nits"],
                 library_edge=5120 if edge <= 2560 and not inputs.get("repairs") else None)
     finally:
@@ -162,8 +170,15 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
         metadata["repair_fallback_reason"] = notice(source)
         if document and getattr(saved, "_saved_grade_notice", None):
             metadata["grade_notice"] = saved._saved_grade_notice
+        if assumed:
+            metadata["assumed_interpretation"] = assumed["label"]
+            if assumed.get("unsupported"):
+                metadata["unsupported_colour"] = assumed["unsupported"]
         if not document:
-            metadata["default_document"] = source.edit_document().model_dump(mode="json")
+            default = source.edit_document()
+            if assumed:
+                default.interpretation_override = SourceInterpretationOverride.model_validate(inputs["interpretation_override"])
+            metadata["default_document"] = default.model_dump(mode="json")
         item = cache.build(path, size, source_quality, cancelled,
             (reduce(source.image, size),
              reduce(source.sdr_reference_image, size) if source.sdr_reference_image is not None else None, metadata), defer_store=draw_first)
