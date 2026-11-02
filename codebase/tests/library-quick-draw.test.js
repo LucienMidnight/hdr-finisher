@@ -21,7 +21,7 @@ test('quick work runs independently and selected sharp follows only the in-fligh
 test('repeat Library model lookups coalesce and retain 16 request identities',async()=>{
  let requests=0;
  const window={};
-  const context=vm.createContext({window,document:{createElement:()=>({})},performance,HDRLibraryStopwatch:()=>{},fetch:async url=>({ok:true,status:200,json:async()=>({url,measurement:++requests})}),HDRWebGPUPreview:class {async initialize(){return true;}},HDRLibrarySceneScheduler:{create}});
+  const context=vm.createContext({window,document:{createElement:()=>({})},performance,HDRLibraryStopwatch:()=>{},fetch:async url=>({ok:true,status:200,json:async()=>({url,measurement:++requests})}),HDRWebGPUPreview:class {setDetectedVideoMemory(){} async initialize(){return true;}},HDRLibrarySceneScheduler:{create}});
  vm.runInContext(fs.readFileSync(require.resolve('../frontend/library-gpu'),'utf8'),context);
  const prepare=window.HDRLibraryPictures.prepareDenoise;
  const meta=(key='live-photo-grade1',edge=2560,geometry={})=>({key,edge,denoise:{hdr:{enabled:true},sdr:{enabled:true}},adjustments:{shared:{geometry}}});
