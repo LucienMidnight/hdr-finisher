@@ -78,11 +78,24 @@ window.HDRLibraryScenes = (() => {
     const elapsed = previous && previous.revision === plan.revision ? previous.ms : 0;
     const heavy = plan.bytes >= largeBytes || elapsed >= 2000;
     const cost = elapsed ? elapsed / 1000 : plan.bytes / largeBytes;
-    const pending = sources.submit((plan.source_identity || identity+"|"+sourceVersion)+"|"+edge, async (shared, importance, job) => {
+    const shareTiers = edge !== 100000;
+    const pending = sources.submit((plan.source_identity || identity+"|"+sourceVersion)+"|"+(shareTiers ? "scene" : edge), async (shared, importance, job) => {
       const started = performance.now();
       try {
         const result = await HDRLibraryGrants.run(path,!plan.cpu_route&&HDRLibraryGpuRaw.enabled()?"source":"cpu",shared,
-          (grant,owned)=>develop(path,edge,owned,importance,version,options.gpuOnly || idle || (priority >= 80 && !visible.has(path)),grant,plan.cpu_route),importance,job.grant,{requeueLane:true});
+          async (grant,owned)=>{
+            const run=size=>develop(path,size,owned,importance,version,options.gpuOnly || idle || (priority >= 80 && !visible.has(path)),grant,plan.cpu_route,shareTiers ? job.edges : null);
+            if(!shareTiers || (!plan.cpu_route && HDRLibraryGpuRaw.enabled()))return run(edge);
+            const tasks=new Map();
+            const add=size=>{if(!tasks.has(size)){const task=run(size);task.catch(()=>{});tasks.set(size,task);}};
+            job.onTier=add;
+            try {
+              for(const size of job.edges)add(size);
+              let values;
+              do {values=await Promise.all([...tasks.values()]);} while(values.length!==tasks.size);
+              return values[0];
+            } finally {job.onTier=null;}
+          },importance,job.grant,{requeueLane:true});
         if (result && (idle || signal?.aborted)) save(result);
         return result;
       }
@@ -112,16 +125,16 @@ window.HDRLibraryScenes = (() => {
     const identity = path + (edge === 100000 ? "|native" : "");
     let meta = await prepared(path, edge, signal, priority, identity, idle, trace, options);
     if (!meta) return null;
-    // Share only matching source/resolution. Another requested tier is
-    // developed on demand; a grid request never prepares a screen scene.
+    // Shared work may return the first tier. Discover the other stored tier
+    // without preparing a scene that nobody requested.
     if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge, false, trace, options);
     if (generation!==(generations.get(path)||0) || signal?.aborted) throw new DOMException("Invalidated", "AbortError");
     return {...meta, draw_priority:priority, trace, log_view:trace?.view || (edge <= 640 ? "grid,filmstrip" : "single,fullscreen,compare")};
   }
-  async function develop(path, edge, signal, importance, version, gpuOnly = false, grant = null, cpuRoute = null) {
+  async function develop(path, edge, signal, importance, version, gpuOnly = false, grant = null, cpuRoute = null, edges = null) {
     if (!cpuRoute && HDRLibraryGpuRaw.enabled()) {
       try {
-        const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal, importance, version, grant);
+        const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal, importance, version, grant, edges);
         if (meta) return meta;
       } catch (error) {
         if (error.name === "AbortError" || error.libraryError || error.libraryRequeue) throw error;

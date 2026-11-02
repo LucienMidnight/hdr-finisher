@@ -86,12 +86,13 @@ class SourceJobs:
             self.jobs = {k: v for k, v in self.jobs.items() if now - v['touched'] < 60}
             if key in self.jobs:
                 job = self.jobs[key]
+                if edge not in job['edges']: job['edges'].append(edge)
                 job['priority'] = min(priority, job['priority'])
                 if job.get('promote'): job['promote'](job['priority'])
                 return None
             token = token or uuid4().hex
             self.jobs[key] = dict(token=token, key=key, path=path, quality=quality, edge=edge,
-                                  priority=priority, epoch=epoch, touched=now)
+                                  priority=priority, epoch=epoch, touched=now, edges=[edge])
             return token
 
     def check(self, token, epoch):

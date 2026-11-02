@@ -40,7 +40,7 @@ class _Reduction:
             if np.any(keep): self.pixels[row]+=np.sum(horizontal[indices[keep]-start]*weights[keep,None,None],axis=0)
 
 
-def develop(root, path, document, edge, cancelled, cache, progress, draw_first):
+def develop(root, path, document, edge, cancelled, cache, progress, draw_first, prepared=None):
     import rawpy, tifffile
     from . import raw_import as raw
     from .library_live import quality, recipe
@@ -55,6 +55,8 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first):
     if edge > 2560 or recipe(document).get('repairs'):
         raise ValueError('CPU Library band development does not yet support native inspection or saved repairs.')
     check = lambda: check_cancelled(cancelled)
+    if prepared is not None and edge in prepared:
+        return cache.build(path, edge, quality(document), cancelled, prepared[edge], defer_store=draw_first)
     with TemporaryDirectory(prefix='hdr-library-bands-') as directory:
         folder = Path(directory)
         if progress: progress('unpack','Reading RAW sensor samples')
@@ -108,7 +110,7 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first):
             info,data=lens; n=info['gain_width']*info['gain_height']
             if n: gain=data[:n].reshape(info['gain_height'],info['gain_width'])
             if info['coordinate_width']: coordinates=data[n:].reshape(info['coordinate_height'],info['coordinate_width'],3,2)
-        reductions={size:_Reduction(out_w,out_h,size) for size in [edge]}
+        reductions={size:_Reduction(out_w,out_h,size) for size in ([640, 2560] if prepared is not None and edge != 100000 else [edge])}
         stride=max(1,int(np.ceil(np.sqrt(out_w*out_h/2_000_000))))
         samples=[]; peaks=dict(peak=0.,peak_luma=0.,peak_bt2020=0.)
         if progress: progress('reduction','Correcting and reducing RAW bands')
@@ -155,6 +157,8 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first):
                 wanted=(document or {}).get('source',{}).get('fingerprint_sha256')
                 if wanted and wanted!=fingerprint: raise ValueError('The source photo changed; its saved grade cannot be shown.')
                 meta.update(route='library-live',renderer='cpu',raw_start_brightness=brightness,source_fingerprint_sha256=fingerprint)
+                if prepared is not None: prepared[size] = (pixels,reference,meta)
+                if size != edge: return None
                 return cache.build(source,size,quality(document),cancelled,(pixels,reference,meta),defer_store=draw_first)
         result=None
         for size,reduction in reductions.items():

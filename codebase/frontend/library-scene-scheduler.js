@@ -66,6 +66,7 @@
       const result=new Promise((resolve,reject)=>{
         const user={signal,resolve,reject,priority,viewport};
         if(retainDetached)job.retainDetached=true;
+        if(edge!==undefined){if(!job.edges)job.edges=new Set();job.edges.add(edge);job.onTier?.(edge);}
         user.stop=()=>{const retained=typeof keepRunning==="function"?keepRunning(job):keepRunning;job.users.delete(user);reject(cancelled());demand(job);if(!job.users.size&&!(retained&&job.running)){job.controller.abort();if(!job.running){const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);}onChange(job,job.running?"stopping":"cancelled");if(jobs.get(key)===job)jobs.delete(key);}};
         job.users.add(user);demand(job);signal?.addEventListener("abort",user.stop,{once:true});
       });

@@ -223,3 +223,39 @@ test('cooperative uploads preserve aligned source bytes and allow cancellation b
  await assert.rejects(upload(device,{},view,view.length,controller.signal),{name:'AbortError'});
  assert.equal(target[0],71);assert.equal(target.at(-1),0);
 });
+
+for (const late of [false, true]) test(`different GPU tiers share one source with independent cancellation (${late ? 'during reduction' : 'during read'})`, async () => {
+  const fs=require('node:fs'),vm=require('node:vm');
+  const source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+  let unblock,entered;
+  const gate=new Promise(resolve=>{unblock=resolve;}),started=new Promise(resolve=>{entered=resolve;});
+  let reads=0,releases=0;const reductions=[];
+  const meta={source_job:'owner',path:'photo',identity:[],mosaic_bytes:0,width:1280,height:640};
+  const header=Buffer.from(JSON.stringify(meta)),body=Buffer.alloc(4+header.length);
+  body.writeUInt32LE(header.length);header.copy(body,4);
+  const context={performance,crypto:require('node:crypto').webcrypto,DOMException,AbortController,
+    Uint8Array,Float32Array,DataView,TextDecoder,setInterval,clearInterval,
+    decodedSources:new Map(),directScenes:new Map(),cachedDirect:()=>null,
+    sourceStorageLimit:async()=>Infinity,quantile:()=>1,
+    handoffBody:globalThis.HDRLibraryGpuRaw.handoffBody,
+    fetch:async(_url,options)=>{if(options.method==='DELETE')releases++;return {ok:true};},
+    scheduledDevelopment:async({edges})=>{
+      reductions.push([...edges]);if(late&&reductions.length===1){entered();await gate;}
+      return {samples:[],peaks:{},timings:{},reduced:Object.fromEntries(edges.map(edge=>[edge,{width:Math.min(edge,1280),height:320,planes:[new ArrayBuffer(4)]}]))};
+    },
+    root:{HDRLibraryUpload:{
+      fetchSource:async()=>{reads++;if(!late){entered();await gate;}return {ok:true,status:200,headers:{get:()=>''},arrayBuffer:async()=>body.buffer.slice(body.byteOffset,body.byteOffset+body.length)};},
+      send:async(_url,{body})=>{const n=new DataView(body).getUint32(0,true);const h=JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,n)));return {ok:true,text:JSON.stringify({edge:h.edge,width:h.width})};}
+    }}
+  };
+  vm.runInNewContext(source.slice(source.indexOf('  async function develop(path,'),source.indexOf('  const warmup ='))+';this.request=thumbnail;',context);
+  const cancel=new AbortController();
+  const small=context.request('photo',640,cancel.signal,{liveScene:true});
+  const rejected=assert.rejects(small,{name:'AbortError'});
+  await started;
+  const large=context.request('photo',2560,null,{liveScene:true});
+  cancel.abort();unblock();await rejected;
+  assert.equal((await large).edge,2560);
+  assert.equal(reads,1);assert.equal(releases,1);
+  assert.deepEqual(reductions.flat().sort((a,b)=>a-b),[640,2560]);
+});

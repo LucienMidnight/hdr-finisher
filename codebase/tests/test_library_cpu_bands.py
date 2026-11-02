@@ -23,3 +23,17 @@ def test_clipped_coordinate_batches_are_bounded_and_keep_row_order():
     rows=np.concatenate([row for row,column in chunks]);columns=np.concatenate([column for row,column in chunks])
     expected=np.nonzero(mask)
     np.testing.assert_array_equal(rows,expected[0]);np.testing.assert_array_equal(columns,expected[1])
+
+
+def test_shared_banded_source_reuses_its_reduced_companion_without_reading_raw(tmp_path, monkeypatch):
+    import rawpy
+    from hdr_finisher.library_cpu_bands import develop
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    path=tmp_path/'photo.arw';path.write_bytes(b'original remains untouched')
+    def forbidden(*args,**kwargs): raise AssertionError('The shared preparation must not read the RAW again')
+    monkeypatch.setattr(rawpy,'imread',forbidden)
+    prepared={2560:(np.full((32,64,3),.25,np.float32),None,{'route':'library-live','renderer':'cpu'})}
+    cache=LibraryPictureCache(tmp_path/'cache')
+    result=develop(tmp_path/'cache',path,None,2560,None,cache,None,False,prepared)
+    assert result['edge']==2560 and result['width']==64
+    assert path.read_bytes()==b'original remains untouched'

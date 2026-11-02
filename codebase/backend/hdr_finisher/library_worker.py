@@ -187,6 +187,15 @@ class LibraryWorker:
                 problem("helper_send_failed", arguments.get("path", arguments.get("paths", [])), exc, "request retained for automatic helper restart")
         return job_id, future
 
+    def require_scene_tier(self, path, source_quality, edge):
+        from .library_live import quality
+        with self._lock:
+            for job in self._requests.values():
+                if job.get("command") == "live-scene" and job.get("path") == path and quality(job.get("document")) == source_quality:
+                    edges = job.setdefault("edges", [job["edge"]])
+                    if edge not in edges: edges.append(edge)
+                    self._send(dict(command="scene-tier", id=job["id"], edge=edge))
+
     def prioritize(self, job_id, priority):
         with self._lock:
             request = self._requests.get(job_id)
@@ -503,6 +512,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     jobs: dict[str, Event] = {}
     stopping = Event()
     sequence = 0
+    scene_edges = {}
     state = {"paused": paused, "foreground": 0, "checking": 0, "source_busy": False, "developing": 0, "scanning": 0}
 
     def lane(job):
@@ -623,7 +633,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "live-scene":
                     from .library_live import develop_cpu
-                    output = develop_cpu(root, job["path"], job.get("document"), job["edge"], cancelled.is_set, progress=progress, draw_first=job.get("draw_first", False))
+                    output = develop_cpu(root, job["path"], job.get("document"), job["edge"], cancelled.is_set, progress=progress, draw_first=job.get("draw_first", False), edges=job.get("edges"))
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "picture":
                     output = pictures.build(job["path"], job["edge"], job["quality"], cancelled.is_set)
@@ -661,6 +671,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
             log(("picture_" if kind == "picture" else "") + ("helper_job_cancelled" if cancelled.is_set() or stopping.is_set() else "helper_job_finished"), job=job["id"], request=job.get("trace_id"), operation=job["command"], edge=job.get("edge"), path=job.get("path"), outcome="cancelled" if cancelled.is_set() or stopping.is_set() else "failed" if "error" in result else "completed", last_stage=last_stage[0], stage_ms=round((time.perf_counter()-last_stage[1])*1000,2), work_ms=round((time.perf_counter()-started-waited[0])*1000, 2), yield_ms=round(waited[0]*1000, 2))
             with condition:
                 jobs.pop(job["id"], None)
+                scene_edges.pop(job["id"], None)
                 if kind == "check":
                     state["checking"] -= 1
                 elif kind == "picture":
@@ -728,16 +739,22 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     pictures.pause_native(message["paused"])
                 elif message["command"] == "source-busy":
                     state["source_busy"] = message["active"]
+                elif message["command"] == "scene-tier":
+                    edges = scene_edges.get(message["id"])
+                    if edges is not None and message["edge"] not in edges: edges.append(message["edge"])
                 elif message["command"] == "prioritize":
                     queue[:] = [(message["priority"] if item[2]["id"] == message["id"] else item[0], item[1], item[2]) for item in queue]
                     heapq.heapify(queue)
                 elif message["command"] == "cancel":
+                    scene_edges.pop(message["id"], None)
                     event = jobs.pop(message["id"], None)
                     if event is not None:
                         event.set()
                     queue[:] = [item for item in queue if item[2]["id"] != message["id"]]
                     heapq.heapify(queue)
                 elif message["command"] in {"thumbnail", "picture", "native", "scan", "scan-page", "tree", "metadata", "kept-check", "overlay", "live-scene", "live-fallback", "stored-screen-write", "stored-screen-build"}:
+                    if message["command"] == "live-scene":
+                        scene_edges[message["id"]] = message.setdefault("edges", [message["edge"]])
                     message["queued_at"] = time.time()
                     sequence += 1
                     jobs[message["id"]] = Event()

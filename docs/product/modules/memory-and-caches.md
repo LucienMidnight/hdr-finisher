@@ -60,9 +60,13 @@ share; otherwise drop them. **No disk checkpoints and no increased allowance.**
 Log the priority wait through release; export should wait well under one second.
 This replaces the earlier “not thrown away” rule for GPU work.
 
-M17 sharing applies only to simultaneous requests for the same source at the
-same resolution. Grade's full-resolution work and a Library 640 development may
-both proceed, with Grade priority. No new cross-resolution sharing machinery.
+M17 sharing between Grade and Library applies only to simultaneous requests
+at the same resolution. Grade's full-resolution work and a Library 640
+development may both proceed, with Grade priority. November 2 Batch 2 restores
+sharing between overlapping Library 640/2560 demands for one source recipe:
+one admission owns the active preparation and releases it when demand ends.
+This adds no retention, cache share or memory allowance; selected native detail
+and Grade's full-resolution work remain separate.
 
 ### October 31: planning ceiling acceptance and overrun records (Steve)
 

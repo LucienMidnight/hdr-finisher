@@ -568,6 +568,8 @@ def create_library_router(worker, browser, store=None):
             return refused
         token = source_jobs.claim(path, source_quality, command.edge, command.priority, file_commands.epoch, command.source_job)
         if token is None:
+            if not command.gpu and hasattr(worker, "require_scene_tier"):
+                worker.require_scene_tier(path, source_quality, command.edge)
             return JSONResponse({"detail": "library_pending"}, status_code=202)
         claimed_at = time.perf_counter()
         log("picture_source_claim", path=path, checks_claim_ms=(claimed_at-requested_at)*1000, gpu=command.gpu)
@@ -620,7 +622,7 @@ def create_library_router(worker, browser, store=None):
                     transfer = True
                     return StreamingResponse(library_gpu_raw.frame_chunks(header, *parts), media_type="application/octet-stream")
                 result = await helper_result(request, "live-scene", path=path, document=document,
-                    edge=command.edge, priority=command.priority, source_token=token, draw_first=command.edge != 100000)
+                    edge=command.edge, edges=source_jobs.check(token, file_commands.epoch)["edges"], priority=command.priority, source_token=token, draw_first=command.edge != 100000)
                 if isinstance(result, Response): return result
                 source_jobs.check(token, file_commands.epoch)
                 publication_epoch = file_commands.epoch

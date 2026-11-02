@@ -5916,3 +5916,20 @@ counts and logs remain in `codebase/output/cold-mixed-*.log`.
 Output started and ended at **2.1 GB** (100 GB limit). Owned temporary
 photo/profile/pytest scratch was removed; only linked small evidence remains.
 Committed locally on `library-big-folder`; stop for Steve's retry.
+
+### November 2: Batch 2 — active source sharing across scene sizes
+
+Overlapping 640/2560 demands now share the CPU preparation or GPU source
+transfer by source recipe. Each caller can cancel independently. GPU demand
+arriving after the first reduction reuses the same downloaded samples; CPU
+reductions use the same prepared session. The banded RAW route holds only its
+reduced companions while the shared call runs. Native detail remains separate.
+Only requested scenes are published; memory shares and retention budgets stay
+unchanged. A completed call releases its prepared source: a later uncached
+2560 request may read/develop again (roughly the existing 8–10 s CPU large-RAW
+preparation, with additional slow-storage read time). Existing retained decoded
+samples still follow the sharp-scene share and preemption rules.
+
+The source baseline distinguishes sequential calls (two preparations) from
+actually overlapping paired calls (one). The different-size cancellation test
+again checks 640 and 2560 rather than two 640 requests.

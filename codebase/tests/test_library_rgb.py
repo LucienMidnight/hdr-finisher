@@ -78,7 +78,7 @@ def test_rgb_boundary_keeps_cpu_icc_and_orientation(tmp_path):
         library_rgb.decoded(path, changed)
 
 
-def test_cpu_simultaneous_matching_resolution_prepares_once_and_survives_one_cancel(tmp_path, monkeypatch):
+def test_cpu_simultaneous_different_resolutions_prepares_once_and_survives_one_cancel(tmp_path, monkeypatch):
     path = tmp_path/'photo.png'; Image.new('RGB',(800,400),(140,70,30)).save(path)
     original=SessionStore.prepare_session; entered=Event(); proceed=Event(); calls=[]
     cancelled=Event()
@@ -89,7 +89,7 @@ def test_cpu_simultaneous_matching_resolution_prepares_once_and_survives_one_can
     with ThreadPoolExecutor(2) as pool:
         a=pool.submit(develop_cpu,tmp_path/'cache',path,None,640,cancelled.is_set)
         assert entered.wait(5)
-        b=pool.submit(develop_cpu,tmp_path/'cache',path,None,640)
+        b=pool.submit(develop_cpu,tmp_path/'cache',path,None,2560)
         # Wait until the second demand is registered, without assuming timing.
         from hdr_finisher import library_live
         import time
@@ -101,7 +101,7 @@ def test_cpu_simultaneous_matching_resolution_prepares_once_and_survives_one_can
         else: pytest.fail('second demand did not register')
         cancelled.set();proceed.set()
         with pytest.raises(CancelledError):a.result()
-        assert b.result()['width']==640
+        assert b.result()['width']==800
     assert len(calls)==1
 
 

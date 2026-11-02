@@ -184,8 +184,8 @@ def measure(sample, repeats):
                     cached_ms = (perf_counter() - started) * 1000
                     warm = summarize(events[first:])
                     preparations = cold["calls"].get("prepare_session", 0)
-                    # Each explicitly requested resolution has its own preparation.
-                    assert preparations == 2, cold
+                    # Sequential work releases its source; overlapping tiers share it.
+                    assert preparations == (2 if mode == "sequential" else 1), cold
                     assert warm["calls"].get("prepare_session", 0) == 0, warm
                     assert [r["edge"] for r in results] == [640, 2560]
                     assert results[0]["source_fingerprint_sha256"] == fingerprint

@@ -204,3 +204,15 @@ def test_decoder_deadline_does_not_count_queued_or_grade_pause_time(tmp_path, mo
     helper._check_deadlines()
     assert helper._work['active']['elapsed'] == 0
     assert not any(f.done() for f in helper._pending.values())
+
+
+def test_helper_attaches_another_tier_to_the_active_source(worker, tmp_path):
+    from hdr_finisher.library_live import quality
+    image=source(tmp_path); before=image.read_bytes()
+    _,small=worker.submit_library('live-scene',path=str(image),edge=640)
+    worker.require_scene_tier(str(image),quality(None),2560)
+    assert small.result(timeout=30)['edge']==640
+    _,large=worker.submit_library('live-scene',path=str(image),edge=2560)
+    result=large.result(timeout=30)
+    assert result['edge']==2560 and result['cache_hit']
+    assert image.read_bytes()==before and not Path(str(image)+'.hdrf').exists()

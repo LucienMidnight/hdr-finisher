@@ -86,7 +86,7 @@ def quality(document):
     return value
 
 
-def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progress=None, draw_first=False):
+def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progress=None, draw_first=False, prepared=None):
     """Develop only the requested scene size; no CPU finishing."""
     from .sessions import SessionStore
     from .models import EditDocument
@@ -100,14 +100,12 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     if (Path(path).suffix.lower() == ".arw" and edge <= 2560 and not inputs.get("repairs")
             and highlights.get("method", "opposed_color_v1") == "opposed_color_v1"):
         from .library_cpu_bands import develop
-        return develop(root, path, document, edge, cancelled, cache, progress, draw_first)
+        return develop(root, path, document, edge, cancelled, cache, progress, draw_first, prepared)
     from .highlight_edge_gpu import source_work
     prepared_at = perf_counter()
     from .library_gpu_raw import xtrans_cpu
     from .cpu_budget import raw_threads, logical_cpus, native_threads
     xtrans = xtrans_cpu(path)
-    if xtrans:
-        raw_threads(logical_cpus())
     # Untagged colour gets the Library's starting assumption (Steve, Nov 2);
     # the assumption is never written into the photo's document.
     from .library_rgb import assumed_interpretation
@@ -116,39 +114,43 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     if assumed:
         interpretation.update(color_space=assumed["color_space"],
             transfer_function=interpretation.get("transfer_function") or assumed["transfer_function"])
-    try:
-        with source_work(priority=15, cancelled=cancelled):
-            source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
-                raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
-                interpretation_override=SourceInterpretationOverride.model_validate(interpretation),
-                hdr_reference_white_nits=inputs["hdr_reference_white_nits"],
-                library_edge=5120 if edge <= 2560 and not inputs.get("repairs") else None)
-    finally:
-        if xtrans:
-            raw_threads(native_threads())
-    preparation_ms = (perf_counter() - prepared_at) * 1000
-    if document:
-        saved = validate_saved(EditDocument, document)
-        wanted = saved.source.fingerprint_sha256
-        if wanted and wanted != source.source_fingerprint_sha256:
-            raise ValueError("The source photo changed; its saved grade cannot be shown.")
-        if saved.repairs:
-            from .retouch_source import install_repaired_source
-            from .saved_grades import recover_repairs
-            from .sessions import _source_mip_identity
-            source.repairs = saved.repairs
-            from concurrent.futures import CancelledError
-            def checkpoint():
-                if cancelled is not None and cancelled():
-                    raise CancelledError("Library repair cancelled")
-            try:
-                pixels = recover_repairs(saved, source, checkpoint)
+    source = prepared.get("source") if prepared is not None else None
+    saved = validate_saved(EditDocument, document) if document else None
+    if source is None:
+        if xtrans: raw_threads(logical_cpus())
+        try:
+            with source_work(priority=15, cancelled=cancelled):
+                source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
+                    raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
+                    interpretation_override=SourceInterpretationOverride.model_validate(interpretation),
+                    hdr_reference_white_nits=inputs["hdr_reference_white_nits"],
+                    library_edge=5120 if edge <= 2560 and not inputs.get("repairs") else None)
+        finally:
+            if xtrans:
+                raw_threads(native_threads())
+        if document:
+            wanted = saved.source.fingerprint_sha256
+            if wanted and wanted != source.source_fingerprint_sha256:
+                raise ValueError("The source photo changed; its saved grade cannot be shown.")
+            if saved.repairs:
+                from .retouch_source import install_repaired_source
+                from .saved_grades import recover_repairs
+                from .sessions import _source_mip_identity
                 source.repairs = saved.repairs
-                install_repaired_source(source, pixels, _source_mip_identity(source))
-            finally:
-                if source.retouch_worker is not None:
-                    source.retouch_worker.close()
-                    source.retouch_worker = None
+                from concurrent.futures import CancelledError
+                def checkpoint():
+                    if cancelled is not None and cancelled():
+                        raise CancelledError("Library repair cancelled")
+                try:
+                    pixels = recover_repairs(saved, source, checkpoint)
+                    source.repairs = saved.repairs
+                    install_repaired_source(source, pixels, _source_mip_identity(source))
+                finally:
+                    if source.retouch_worker is not None:
+                        source.retouch_worker.close()
+                        source.retouch_worker = None
+        if prepared is not None: prepared["source"] = source
+    preparation_ms = (perf_counter() - prepared_at) * 1000
     if progress: progress("reduction", "Preparing thumbnail and screen preview")
     result = None
     reduction_at = perf_counter()
@@ -195,25 +197,36 @@ _cpu_flights = {}
 _cpu_condition = Condition()
 
 
-def develop_cpu(root, path, document, edge, cancelled=None, progress=None, draw_first=False):
-    """Coalesce matching source/resolution calls before allocating a decoder."""
+def develop_cpu(root, path, document, edge, cancelled=None, progress=None, draw_first=False, edges=None):
+    """Share a preparation across active scene tiers, with independent cancellation."""
     from .library_pictures import picture_key, check_cancelled
-    key = (str(root), picture_key(path, edge, quality(document)))
+    key = (str(root), picture_key(path, 100000 if edge == 100000 else 0, quality(document)))
     demand = cancelled or (lambda: False)
     with _cpu_condition:
         flight = _cpu_flights.get(key)
-        owner = flight is None
+        owner = flight is None or (flight["done"] and edge not in flight["results"])
         if owner:
-            flight = {"users": [], "done": False, "cache": LibraryPictureCache(root)}
+            flight = {"users": [], "edges": [], "results": {}, "prepared": {}, "done": False, "cache": LibraryPictureCache(root)}
             _cpu_flights[key] = flight
         flight["users"].append(demand)
+        if edge not in flight["edges"]: flight["edges"].append(edge)
     try:
         if owner:
             try:
                 def all_cancelled():
                     with _cpu_condition:
                         return all(user() for user in flight["users"])
-                flight["result"] = _develop_cpu(root, path, document, edge, all_cancelled, flight["cache"], progress, draw_first)
+                while True:
+                    with _cpu_condition:
+                        for size in edges or []:
+                            if size not in flight["edges"]: flight["edges"].append(size)
+                        pending = [size for size in flight["edges"] if size not in flight["results"]]
+                        if not pending:
+                            flight["done"] = True
+                            break
+                    size = pending[0]
+                    flight["results"][size] = _develop_cpu(root, path, document, size, all_cancelled,
+                        flight["cache"], progress, draw_first, flight["prepared"])
             except BaseException as error:
                 flight["error"] = error
             finally:
@@ -228,7 +241,7 @@ def develop_cpu(root, path, document, edge, cancelled=None, progress=None, draw_
         check_cancelled(cancelled)
         if "error" in flight:
             raise flight["error"]
-        result = dict(flight["result"]) if owner else flight["cache"].cached(path, edge, quality(document))
+        result = dict(flight["results"][edge])
         if not result:
             raise ValueError("Source changed during Library preparation.")
         if draw_first:

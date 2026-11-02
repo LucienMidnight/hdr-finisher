@@ -47,16 +47,22 @@ test('cached pictures bypass both occupied sources and light demand gets the nex
  block.resolve();assert.equal((await quick).key,'quick');
  await Promise.all([a,b]);assert.deepEqual(started,['a','b','quick']);
 });
-test('different scene tiers develop independently while matching tiers share demand',async()=>{
- const block=gate(),started=[];
+test('different GPU tiers share admission and one cancellation keeps the other tier alive',async()=>{
+ const block=gate(),started=[];let sharedSignal;
  const plans={photo:{bytes:96e6,revision:'1'}};
- const {scenes}=setup(plans,async(p,edge)=>{started.push(edge);await block.promise;
-  return {edge,key:edge===2560?'large':'small'};});
+ const {scenes}=setup(plans,async(p,edge,signal,_priority,_version,_grant,edges)=>{
+  started.push(edge);sharedSignal=signal;await block.promise;
+  assert.deepEqual([...edges].sort((a,b)=>a-b),[640,2560]);
+  plans.photo.cached={edge:2560,key:'large'};
+  return {edge,key:'small'};
+ });
  const cancel=new AbortController();const first=scenes.load('photo',640,cancel.signal,80);
  const selected=scenes.load('photo',2560,undefined,0);await tick();
- cancel.abort();await assert.rejects(first,{name:'AbortError'});block.resolve();
- assert.equal((await selected).key,'large');assert.deepEqual(started,[2560,640]);
+ cancel.abort();await assert.rejects(first,{name:'AbortError'});
+ assert.equal(sharedSignal.aborted,false);assert.equal(scenes.snapshot().sources.active,1);
+ block.resolve();assert.equal((await selected).key,'large');assert.deepEqual(started,[640]);
 });
+
 test('observed slow files still borrow idle capacity, and source revisions remain usable',async()=>{
  const started=[];let block=gate(),hold=false;
  const plans={odd:{bytes:1,revision:'1'},other:{bytes:96e6,revision:'1'}};
@@ -331,4 +337,24 @@ test('unsupported source refusals never reopen the general CPU path',async()=>{
   await assert.rejects(scenes.load('photo',640),new RegExp(reason));
   assert.ok(requests.every(r=>r.gpu!==false));
  }
+});
+
+test('CPU tiers share admission and cancellation while both requests attach to the helper',async()=>{
+ const block=gate(),calls=[],signals=[];
+ const plans={photo:{bytes:96e6,source_identity:'recipe',cpu_route:'xtrans'}};
+ const {scenes,context}=setup(plans,()=>assert.fail('CPU route must not use GPU development'));
+ const original=context.fetch;
+ context.fetch=async(url,options)=>{
+  if(url!=='/api/library/live-scene')return original(url,options);
+  const request=JSON.parse(options.body);calls.push(request);signals.push(options.signal);
+  await block.promise;return {ok:true,json:async()=>({edge:request.edge,key:String(request.edge)})};
+ };
+ const cancel=new AbortController();const small=scenes.load('photo',640,cancel.signal,10,false,null,{viewportDemand:true});
+ const rejected=assert.rejects(small,{name:'AbortError'});await tick();
+ const large=scenes.load('photo',2560,null,0);await tick();
+ cancel.abort();await rejected;
+ assert.equal(scenes.snapshot().sources.active,1);assert.equal(signals[0].aborted,false);
+ assert.deepEqual(calls.map(x=>x.edge).sort((a,b)=>a-b),[640,2560]);
+ assert.equal(calls[0].grant,calls[1].grant);
+ plans.photo.cached={edge:2560,key:'2560'};block.resolve();assert.equal((await large).edge,2560);
 });

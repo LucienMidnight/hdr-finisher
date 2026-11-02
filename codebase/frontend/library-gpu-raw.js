@@ -934,7 +934,7 @@
   function cachedDirect(path,edge,version) {
     return directScenes.get(path+"|"+version)?.variants[edge] || null;
   }
-  async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null, gpuDone = () => {}) {
+  async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null, gpuDone = () => {}, sharedJob = null) {
     const begun = performance.now();
     const decodedKey=path+'|'+edge+'|'+sceneIdentity.split(':')[0];
     // Take over a retained decoded source when one exists: renew its claim,
@@ -948,7 +948,7 @@
       await fetch('/api/library/live-source/'+entry.token,{method:'DELETE'}).catch(()=>{});
       return null;
     };
-    let kept=await adoptKept();
+    let kept=sharedJob?.source || await adoptKept();
     let sourceJob=liveScene ? kept?.token || crypto.randomUUID().replaceAll("-", "") : null;
     let retainedSource = false, gpuResult, sourceRenewal, body;
     try {
@@ -995,6 +995,7 @@
           .catch(()=>{}).finally(()=>{renewing=false;});
       },10000);
     }
+    if(sharedJob && meta.source_job) sharedJob.source={body,token:meta.source_job};
     const mosaic = new Uint8Array(body, 4 + length, meta.mosaic_bytes);
     if(meta.dng_linear?.support){
       const mask=meta.dng_linear.support;meta.dng_support=new Float32Array(body,4+length+mask.offset,mask.bytes/4);
@@ -1007,7 +1008,8 @@
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const started = performance.now();
     root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
-    const developed = gpuResult = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, grant, edges:[edge]}, signal);
+    const edges = sharedJob ? [...sharedJob.edges].filter(size=>!sharedJob.results.has(size)) : [edge];
+    const developed = gpuResult = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, grant, edges}, signal);
     const gpuMs = performance.now() - started;
     // `meta` lives on with the cell (renewal timer, redraw helpers). Drop its
     // views into the downloaded source, or every cell keeps its whole source.
@@ -1023,7 +1025,7 @@
     let selectedResult;
     const handoffStarted = performance.now();
     const entries = [];
-    for (const storedEdge of [edge]) {
+    for (const storedEdge of edges) {
       const picture = developed.reduced[storedEdge];
       const header = { draw_first:false, rgb:meta.rgb, has_sdr_reference:!!meta.sdr_reference, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
       edge:storedEdge, sample_bytes:picture.sample_bytes || 4, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode && !liveScene, flip: meta.flip, height: picture.height, width: picture.width,
@@ -1049,6 +1051,7 @@
         path,edge:header.edge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes});
       const result=JSON.parse(stored.text || "{}");
       if(!stored.ok){const error=result.changed?new DOMException(result.detail,"AbortError"):Error(result.detail || "Library request failed.");error.status=stored.status;throw error;}
+      if(sharedJob) sharedJob.results.set(entry.header.edge,result);
       return result;
     };
     if(liveScene && meta.rgb && !nativeMode && !root.HDRLibraryProfileLegacy && entries.every(({picture})=>picture.textures?.length)){
@@ -1065,7 +1068,7 @@
         // Both sizes have been stored in the bounded saving stage already.
         const store=()=>Promise.resolve();
         for(const {picture} of entries)picture.planes=[];
-        await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
+        if(!sharedJob) await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
         for(const {header,picture} of entries){
           const value=variants[header.edge];
           value.directScene={device:developed.device,texture:lane=>!disposed && picture.textures?.[lane==="sdr" && value.adjustments.sdr.use_authored_base && value.has_reference ? 1 : 0],store};
@@ -1097,7 +1100,7 @@
     } finally {
       if(!decodedSources.has(decodedKey))clearInterval(sourceRenewal);
       if(!retainedSource)for(const picture of Object.values(gpuResult?.reduced || {}))for(const texture of picture.textures || [])texture.destroy();
-      if(sourceJob && !retainedSource) await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
+      if(sourceJob && !retainedSource && !sharedJob) await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
     }
   }
 
@@ -1119,31 +1122,47 @@
   }
   // The grid and the filmstrip can ask for the same photo: they share one job,
   // which stops only when every asker has scrolled past it.
-  function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null } = {}) {
+  function thumbnail(path, edge, signal, { savedGradeOnly = false, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null, edges = null } = {}) {
     root.HDRIdleWarmup?.touch();
-    const key = `${path}|${edge}|${savedGradeOnly}|${nativeMode}|${liveScene}|${sceneIdentity}`;
+    const tier = liveScene && !nativeMode ? 0 : edge;
+    const key = `${path}|${tier}|${savedGradeOnly}|${nativeMode}|${liveScene}|${sceneIdentity}`;
     let job = inflight.get(key);
-    if (job?.controller.signal.aborted) job = null;
+    if (job?.controller.signal.aborted || (job?.done && !job.results.has(edge))) job = null;
     if (!job) {
       const controller = new AbortController();
-      job = { controller, users: 0 };
+      job = { controller, users: 0, edges:edges || new Set([edge]), results:new Map(), source:null };
       job.promise = new Promise((resolve, reject) => {
-        waiting.push({ signal: controller.signal, resolve, reject, importance, task: gpuDone => develop(path, edge, controller.signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity, grant, gpuDone) });
+        waiting.push({ signal: controller.signal, resolve, reject, importance, task: async gpuDone => {
+          try {
+            do {
+              const size=[...job.edges].find(size=>!job.results.has(size));
+              const result=await develop(path, size, controller.signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity, grant, gpuDone, liveScene && !nativeMode ? job : null);
+              job.results.set(size,result);
+            } while([...job.edges].some(size=>!job.results.has(size)));
+            job.done=true;
+            return job.results;
+          } finally {
+            const token=job.source?.token;
+            if(token && ![...decodedSources.values()].some(value=>value.token===token))
+              await fetch("/api/library/live-source/"+token,{method:"DELETE"}).catch(()=>{});
+          }
+        } });
         pump();
       }).finally(() => { if (inflight.get(key) === job) inflight.delete(key); });
       job.promise.catch(() => {});
       inflight.set(key, job);
     }
+    job.edges.add(edge);
     job.users++;
     return new Promise((resolve, reject) => {
       const leave = () => { job.users--; if (job.users <= 0) job.controller.abort(); reject(cancelled()); };
       if (signal?.aborted) { leave(); return; }
       signal?.addEventListener("abort", leave, { once: true });
-      job.promise.then(value => {
+      job.promise.then(values => {
         signal?.removeEventListener("abort", leave);
-        if (value && !value.kept && !nativeMode && value.edge !== edge)
-          resolve(cachedDirect(path,edge,sceneIdentity) || develop(path, edge, signal, savedGradeOnly, nativeMode, liveScene, importance, sceneIdentity, grant));
-        else resolve(value);
+        const value=values.get(edge);
+        if(value) value.scene_stored=true;
+        resolve(cachedDirect(path,edge,sceneIdentity) || value);
       },
         error => { signal?.removeEventListener("abort", leave); reject(error); });
     });
@@ -1228,7 +1247,7 @@
     if(!response.ok)throw Error('GPU scheduling unavailable.');
     return {bytes:Math.max(0,(await response.json()).budget-(640*640*64+64*1024**2)),unified};
   }
-  const exported = Object.freeze({ reclaimDecoded:async(needed)=>{let released=0;for(const [key,value] of decodedSources){if(released>=needed)break;released+=value.body.byteLength;await dropDecoded(key);}for(const [key,entry] of directScenes){if(released>=needed)break;released+=entry.bytes;entry.dispose();directScenes.delete(key);}return released;}, preflight, cachedDirect, forgetDirect, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint,uploadBuffer,yieldToWindow}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant}) });
+  const exported = Object.freeze({ reclaimDecoded:async(needed)=>{let released=0;for(const [key,value] of decodedSources){if(released>=needed)break;released+=value.body.byteLength;await dropDecoded(key);}for(const [key,entry] of directScenes){if(released>=needed)break;released+=entry.bytes;entry.dispose();directScenes.delete(key);}return released;}, preflight, cachedDirect, forgetDirect, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint,uploadBuffer,yieldToWindow}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant, edges) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant,edges}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);
