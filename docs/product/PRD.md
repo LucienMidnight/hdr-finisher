@@ -55,10 +55,28 @@ may not contradict these.
    equally good pictures of the same photo. The SDR side is never just a
    by-product. HDR should win with brightness and range, not with stronger
    colour.
-3. **GPU first, CPU as the fallback** (Steve, October 18, 2026). Preview,
-   export, Proof and Library pictures should all run on the graphics card,
-   as darktable does. The CPU path keeps working, for machines without a
-   usable GPU, but it is not made faster.
+3. **Speed where it is felt; the GPU where it pays** (Steve, November 2,
+   2026; replaces "GPU first" of October 18). Judge speed by the wait the
+   user feels, measured from their action to the result on screen, not by
+   one step inside it. Before changing anything, measure where that whole
+   wait goes, then choose the cheapest change that removes a large part of
+   it: a better order or design, using more CPU cores, skipping work, or
+   the GPU.
+   - Move work to the graphics card only when it removes about half or more
+     of a wait the user can notice (rule of thumb: 50% faster), or when the
+     CPU cannot do it acceptably at all (interactive preview, batch export).
+     A GPU route that saves around 100 ms, or only matches the CPU, is not
+     worth it for v1: each one keeps the image maths in two places, needs
+     CPU/GPU agreement checks and graphics-memory budgets, and is exposed to
+     faulty graphics cards.
+   - The GPU routes that have already earned their place stay: preview,
+     Library development and drawing, and export/Proof delivery (a
+     45-photo batch went from an estimated 1.5 h to about 5 s a photo).
+     The CPU stays the fallback for them.
+   - The CPU path may be made faster when that is the cheaper way to a large
+     gain.
+   - Example (November 2): GPU RAW development in Grade cut one step but
+     moved the whole import only from 6.1 s to 5.9 s, so it was stopped.
    **Use the whole machine** (Steve, October 25, 2026). CPU work that cannot
    run on the GPU (decoding, encoding, indexing, preparation) should scale
    across the available cores rather than be limited to one thread or a fixed
@@ -188,8 +206,10 @@ each module's open work:
 | Desktop shell | `codebase/desktop/` | Electron windows. Starts one shared backend. |
 
 The image maths exists twice: in Python (the CPU path) and in GPU shaders.
-Parity checks keep the two within tolerance. Under GPU first, the shaders
-become the main path for export as well as preview.
+Parity checks keep the two within tolerance. The shaders are the main path
+for preview, Library pictures, export and Proof. Each extra GPU route adds to
+this second copy, which is why a new one must clearly pay for itself
+(philosophy 3).
 
 Technical detail: [code map](../technical/code-map.md),
 [architecture](../technical/architecture.md),
