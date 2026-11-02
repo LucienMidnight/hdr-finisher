@@ -211,10 +211,12 @@ def test_renderer_development_failure_is_remembered_until_explicit_retry(tmp_pat
     response = api.post("/api/library/development-error", json={"path": str(path), "source_identity": identity, "reason": reason})
     assert response.status_code == 200, response.text
     record = response.json()["error"]
-    assert record["reason"] == reason
+    # People read plain words; the diagnostic stays under Error details.
+    assert record["reason"] == "Development stopped after repeated attempts. Try again."
+    assert record["details"] == reason
     blocked = api.post("/api/library/live-scene", json={"path": str(path), "edge": 640})
     assert blocked.status_code == 422
-    assert blocked.json()["library_error"]["reason"] == reason
+    assert blocked.json()["library_error"]["reason"] == record["reason"]
     assert not helper.calls
     retry = api.post("/api/library/picture-error", json={"path": str(path), "revision": record["revision"], "action": "retry"})
     assert retry.status_code == 200, retry.text
@@ -281,7 +283,8 @@ def test_timeout_returns_retryable_response_without_broken_photo_receipt(tmp_pat
     assert response.json()["library_timeout"] is True
     assert api.get("/api/library/health").json()["picture_errors"]==[]
 
-def test_unresolved_exr_plan_reports_interpretation_before_requesting_source(tmp_path, monkeypatch):
+def test_untagged_exr_plan_is_not_a_broken_photo(tmp_path, monkeypatch):
+    # Untagged colour is assumed (linear Rec.709), never remembered as a failure.
     import OpenEXR, numpy as np
     path=tmp_path/"unknown.exr"
     out=OpenEXR.OutputFile(str(path),OpenEXR.Header(2,2))
@@ -291,7 +294,29 @@ def test_unresolved_exr_plan_reports_interpretation_before_requesting_source(tmp
     helper=Helper()
     with client(tmp_path/"profile",helper) as api:
         result=api.post("/api/library/live-plan",json={"path":str(path),"edge":640})
-        assert result.status_code==422
-        assert "Unresolved source primaries" in result.json()["detail"]
-        assert result.json()["library_error"]["path"]==str(path)
+        assert result.status_code==200,result.text
+        assert api.get("/api/library/health").json()["picture_errors"]==[]
     assert not helper.calls
+
+
+def test_development_failures_show_plain_words_and_keep_the_diagnostic():
+    from hdr_finisher.library_picture_errors import plain_development_reason
+    internal="RGB transfer ST2084 retains Grade's CPU normalization"
+    plain=plain_development_reason(internal)
+    assert "Grade's" not in plain and "retain" not in plain and "CPU" not in plain
+    assert plain_development_reason("Not supported: X-Trans sensor development is not available in the Library.")\
+        .startswith("Not supported: X-Trans")
+
+
+def test_failure_saved_by_an_older_version_is_retried(tmp_path, monkeypatch):
+    # Nov 2: TIFFs kept a failure saved before assumed colour existed.
+    path = tmp_path / "photo.png"
+    Image.new("RGB", (64, 32), (100, 120, 80)).save(path)
+    api = client(tmp_path / "app", Helper())
+    identity = api.post("/api/library/live-plan", json={"path": str(path), "edge": 640}).json()["source_identity"]
+    from hdr_finisher import library_picture_errors
+    monkeypatch.setattr(library_picture_errors, "_READER", "an older version")
+    assert api.post("/api/library/development-error", json={"path": str(path), "source_identity": identity, "reason": "old failure"}).status_code == 200
+    assert api.get("/api/library/health").json()["picture_errors"]
+    monkeypatch.undo()
+    assert not api.get("/api/library/health").json()["picture_errors"]

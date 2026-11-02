@@ -31,7 +31,7 @@ def _reader_identity():
     after an update instead of staying stuck until the photo changes."""
     from .models import EditDocument
     # A newly supported source route must retry failures saved by the old app.
-    identity = {"grade_schema": EditDocument.model_json_schema(), "library_source_routes": "xtrans-cpu-v1"}
+    identity = {"grade_schema": EditDocument.model_json_schema(), "library_source_routes": "assumed-colour-v1"}
     return sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
@@ -41,6 +41,17 @@ _READER = _reader_identity()
 def _listed(path):
     from .file_gate import path_listed
     return path_listed(path)
+
+
+def plain_development_reason(details):
+    """The development route's reasons are diagnostics; the photo shows plain
+    words and the original text stays under Error details."""
+    first = details.splitlines()[0] if details else ""
+    if first.startswith("Not supported:"):
+        return first
+    if first.startswith("Development stopped"):
+        return "Development stopped after repeated attempts. Try again."
+    return "The Library can't show this photo. Open it in Grade to work on it."
 
 
 class PictureErrors:
@@ -117,11 +128,13 @@ class PictureErrors:
     def dismiss_grade(self, path, original):
         self.save(dict(path=self._grade_receipt(path, original), revision=_READER, ignored=True))
 
-    def remember(self, path, error, revision):
+    def remember(self, path, error, revision, plain=None):
         if revision != self.revision(path):
             raise HTTPException(409, "The photo or settings changed. Request its preview again.")
         details = str(error)
-        if "validation error" in details:
+        if plain:
+            reason = plain
+        elif "validation error" in details:
             reason = "Saved edits contain settings this version cannot read."
         else:
             reason = details.splitlines()[0] if details else "The photo could not be read."

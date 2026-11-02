@@ -370,7 +370,9 @@ def create_library_router(worker, browser, store=None):
         current = picture_key(marks.source_path(command.path), 0, live_quality(live.document(command.path)))
         if current != command.source_identity:
             raise HTTPException(409, "Photo or source settings changed during development.")
-        return {"error": picture_errors.remember(command.path, RuntimeError(command.reason), revision)}
+        from .library_picture_errors import plain_development_reason
+        return {"error": picture_errors.remember(command.path, RuntimeError(command.reason), revision,
+                                                 plain=plain_development_reason(command.reason))}
 
     @router.post("/picture-error")
     def picture_error(command: PictureErrorCommand):

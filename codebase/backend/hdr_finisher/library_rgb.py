@@ -217,7 +217,7 @@ def decoded_precision(path, inputs, edge=2560):
     assumed = None
     if metadata.get("needs_color_override") or metadata["color_space"] is None:
         if decoder_normalized or reference is not None:
-            raise NotEligible("Unresolved source primaries retain Grade's interpretation gate")
+            raise NotEligible("Not supported: this photo does not say which colour space it uses. Open it in Grade to choose one.")
         assumed = assumed_for(str(metadata.get("bit_depth", "")).startswith("float") or suffix == ".exr", override,
             declared=original_interpretation.get("color_space"))
         metadata.update(color_space=assumed["color_space"], needs_color_override=False,
