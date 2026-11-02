@@ -5944,3 +5944,36 @@ Disconnect/cancellation still releases ownership; abandoned handoffs expire,
 and source changes or invalidation still reject publication immediately.
 Previously the claim timestamp preceded admission, so a memory wait longer
 than 60 seconds could expire the source before it reached the GPU.
+
+### November 2: Batch 2 — virtual-copy warnings and validation
+
+Warning cleanup now resolves a virtual-copy identifier to its physical source
+before checking whether the file still belongs to the Library. Warning records
+remain keyed to each copy; source removal and repaired-grade cleanup still
+remove obsolete records. Observing warnings does not write photos or sidecars.
+
+Fast checks: Node 737 passed; Python 2,986 passed, three skipped, no failures.
+Final CPU-band/helper checks after the last correction: 16 passed. Focused
+warning checks: 23 passed. Logs in `codebase/output/`:
+`batch2-node-fast.log`, `batch2-python-fast.log`, `batch2-final-focused.log`.
+
+The three app drivers ran once each, sequentially, at 2560x1440. Warning badges
+passed (four pictures, three badges; Leave preserved files and Continue kept a
+backup). Retouch passed loading/drawing but failed its later Blob-transport
+counter assertion; that counter wraps page fetch while uploads use the existing
+worker transport. Edge colour passed loading but stopped during Library GPU
+development on three invalid pixels, before Export/Proof. Neither driver hit
+the preparation-expiry error. These later failures remain outside this batch;
+no rendering math, acceptance limit or budget was changed. Evidence:
+`codebase/output/batch2-{retouch,edge-colour,badges}.log` and
+`batch2-{retouch,edge-colour}-backend.log` in the same folder;
+`codebase/output/edge-colour-raw/1793630579320/results.json`.
+
+The 90-second quick Library check failed drawing cadence: 2,934 ms against the
+unchanged 250 ms limit. Memory acceptance and the stored-colour audit passed;
+the existing unsupported JXL source-colour gate was also recorded. See
+`codebase/output/quick-library-check/batch2/{report.json,backend.log,scenario.json}`
+and `codebase/output/batch2-quick.log`. Steve should try the app before further
+responsiveness investigation. Owned temporary profiles, pytest scratch and
+large comparison buffers were removed; reusable photos and small linked logs
+remain. Output started at 28.5 GB and finished at 28.6 GB, below 100 GB.

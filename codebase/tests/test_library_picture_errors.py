@@ -320,3 +320,42 @@ def test_failure_saved_by_an_older_version_is_retried(tmp_path, monkeypatch):
     assert api.get("/api/library/health").json()["picture_errors"]
     monkeypatch.undo()
     assert not api.get("/api/library/health").json()["picture_errors"]
+
+
+def test_virtual_copy_warnings_survive_health_cleanup_and_clear_after_repair(broken):
+    root,path,sidecar=broken
+    document=json.loads(sidecar.read_text())
+    damaged=document.pop('grade')
+    healthy=SessionStore().prepare_session(path,owns_source_path=False).edit_document().model_dump(mode='json')
+    newer={**healthy,'app_version':'99.0.0'}
+    document['virtual_copies']=[dict(photo_id=key,name=key,marks={},grade=grade)
+        for key,grade in [('damaged',damaged),('unreadable','unreadable grade'),('newer',newer)]]
+    sidecar.write_text(json.dumps(document),encoding='utf-8')
+    before=path.read_bytes();saved=sidecar.read_bytes()
+    api=client(root,Helper())
+    keys=[str(path)+'|copy|'+item['photo_id'] for item in document['virtual_copies']]
+    for key in keys:
+        result=api.post('/api/library/live-plan',json={'path':key})
+        assert result.status_code==200,result.text
+    for _ in range(2):
+        warnings=api.get('/api/library/health').json()['picture_errors']
+        assert {record['path'] for record in warnings}==set(keys)
+        assert all(record['grade_warning'] for record in warnings)
+    assert path.read_bytes()==before and sidecar.read_bytes()==saved
+    for item in document['virtual_copies']: item['grade']=healthy
+    sidecar.write_text(json.dumps(document),encoding='utf-8')
+    assert api.get('/api/library/health').json()['picture_errors']==[]
+    for key in keys:
+        assert api.post('/api/library/live-plan',json={'path':key}).status_code==200
+    assert api.get('/api/library/health').json()['picture_errors']==[]
+    assert path.read_bytes()==before
+
+
+def test_virtual_copy_warning_disappears_when_its_source_is_deleted(tmp_path):
+    path=tmp_path/'photo.png'; Image.new('RGB',(8,4)).save(path)
+    marks=LibraryMarks(tmp_path/'profile'); errors=PictureErrors(marks)
+    key=str(path)+'|copy|copy-id'
+    errors.remember(key,ValueError('damaged'),errors.revision(key))
+    assert [record['path'] for record in errors.all()]==[key]
+    path.unlink()
+    assert errors.all()==[]

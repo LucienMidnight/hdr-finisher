@@ -500,3 +500,24 @@ No GPU driver directly covers native AOM decoding; the real-app checks
 exercise the existing GPU development route. Output remains about 26.9 GB
 under the 100 GB limit; native build intermediates and decoded RGB copies
 were removed, reusable photo copies retained.
+
+### November 2, 2026 — Batch 2 Library validation
+
+One isolated 90-second quick Library run at 2560x1440 with the existing mixed
+fixture folder and unchanged memory settings. These observations are not a
+controlled speed comparison; OS file cache was not flushed.
+
+| Action | Observed | Acceptance / result |
+| --- | --- | --- |
+| Folder open to first / 10 / 20 pictures shown | 8.6 / 16.5 / 29.0 s | One run; 28 visible pictures shown by 60 s |
+| Longest drawing gap | 2,934 ms | Failed unchanged 250 ms limit; main-thread lateness 95 ms |
+| DSC00264.ARW Grade first frame, CPU / GPU | 37.953 / 13.571 s | One observation each in edge-colour driver; later Library GPU development stopped on three invalid pixels |
+
+Quick-run memory acceptance and stored-colour checks passed. The existing JXL
+source-colour gate remained unsupported. The edge-colour driver did not reach
+Export/Proof, so no output-agreement claim follows from these timings. Later
+failures were left for the relevant batches; no limits or budgets changed.
+Evidence: `codebase/output/quick-library-check/batch2/{report.json,backend.log,scenario.json}`,
+`codebase/output/edge-colour-raw/1793630579320/results.json`, and
+`codebase/output/batch2-edge-colour.log`. See the Library module PRD's Batch 2
+validation note for the fast suites, other drivers and cleanup.

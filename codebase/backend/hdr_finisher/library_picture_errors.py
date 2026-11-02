@@ -104,7 +104,7 @@ class PictureErrors:
             for (path,) in paths:
                 # Files the Library no longer lists (macOS "._" companions,
                 # metadata folders) must not stay under Needs attention.
-                if not _listed(path):
+                if not _listed(self.marks.source_path(path)):
                     self.clear(path)
                 elif record := self.get(path):
                     records.append(record)
