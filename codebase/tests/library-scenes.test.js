@@ -291,16 +291,20 @@ test('offline cache reads cancel without a broken-photo receipt and notify the f
 });
 
 
-test('screen neighbours stay soon beside a visible filmstrip and stop when demand leaves',async()=>{
+test('screen neighbour priority follows the photo viewport and stops when demand leaves',async()=>{
  const block=gate(),plans={photo:{bytes:1,revision:'1'}},started=[];let shared;
  const {scenes}=setup(plans,async(p,edge,signal,importance)=>{
   shared=signal;started.push({edge,priority:importance()});await block.promise;return {edge};
  });
- scenes.viewport(['photo'],[]);
+ scenes.viewport([],['photo']);
  const controller=new AbortController();
  const neighbour=scenes.load('photo',2560,controller.signal,50,false,null,{viewportDemand:true});
  const stopped=assert.rejects(neighbour,{name:'AbortError'});await tick();
  assert.deepEqual(started,[{edge:2560,priority:50}]);
+ scenes.viewport(['photo'],[]);
+ assert.equal(scenes.snapshot().sources.jobs.find(job=>job.path==='photo').priority,10);
+ scenes.viewport([],['photo']);
+ assert.equal(scenes.snapshot().sources.jobs.find(job=>job.path==='photo').priority,50);
  controller.abort();await stopped;assert.equal(shared.aborted,true);block.resolve();
 });
 
