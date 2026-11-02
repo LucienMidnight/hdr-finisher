@@ -2181,6 +2181,8 @@
     window.addEventListener("keydown", event => {
       if (event.key === "F11" && libraryDesktop) { event.preventDefault(); void libraryDesktop.performWindowAction("fullscreen"); }
     });
+    // Mouse Back/Forward must not navigate the Library page away.
+    window.addEventListener("mouseup", event => { if (event.button === 3 || event.button === 4) event.preventDefault(); }, true);
   }
   function paintMemoryNeeds() {
     const jobs=[...window.HDRLibraryGrants.snapshot().jobs,...[...state.cells.values(),...state.filmCells.values()].map(c=>c.memoryNeed).filter(Boolean)];

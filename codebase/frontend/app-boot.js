@@ -512,6 +512,13 @@ function bindEvents() {
   window.addEventListener("unhandledrejection", (event) => {
     if (event.reason?.name === "AbortError") event.preventDefault();
   });
+  // Mouse Back/Forward buttons (3/4) would otherwise navigate the page.
+  // Back returns to the Library, the same as clicking its tab.
+  window.addEventListener("mouseup", (event) => {
+    if (event.button !== 3 && event.button !== 4) return;
+    event.preventDefault();
+    if (event.button === 3 && state.activeWorkflow !== "import") activateWorkflowTab("import");
+  }, true);
   els.workflowTabs.forEach((button) => {
     button.addEventListener("click", () => activateWorkflowTab(button.dataset.workflowTab));
     button.addEventListener("keydown", (event) => {

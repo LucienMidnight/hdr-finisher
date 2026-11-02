@@ -1376,6 +1376,9 @@ if (!gotLock) {
       }
       buildMenu();
       await mainWindow.loadURL(backend.url);
+      // The loading screen must not stay in history, or the mouse Back
+      // button returns to it and the app sits there forever.
+      mainWindow.webContents.navigationHistory.clear();
       if (process.env.HDR_FINISHER_QUICK_LIBRARY_CONFIG) {
         void require("./quick-library-test.cjs").run({app, window:mainWindow, backend})
           .catch(error => console.error("Quick Library check:", error));
