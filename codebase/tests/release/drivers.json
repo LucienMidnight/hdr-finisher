@@ -17,6 +17,19 @@
     "D:/Photos/Play_Raw/Fantastic light over village - AdamFromCanada/DSC00950.hdrfinisher"
   ],
   "sourceAreas": [
+    {"pattern":"^codebase/backend/hdr_finisher/(app_memory|cpu_budget|file_gate|instrument_work)\\.py$","areas":["export-proof","film","lens","library","masks","detail","geometry","preview","ui"]},
+    {"pattern":"^codebase/backend/hdr_finisher/(delivery(?:_[^/]*)?|hdr_ceiling|hdr_delivery)\\.py$","areas":["export-proof","library","preview"]},
+    {"pattern":"^codebase/(frontend|backend/hdr_finisher)/photo[-_]framing\\.(js|py)$","areas":["geometry","preview","export-proof"]},
+    {"pattern":"^codebase/backend/hdr_finisher/(retouch[^/]*\\.py|vendor/.*\\.py)$","areas":["masks","preview","export-proof","library"]},
+    {"pattern":"^codebase/backend/hdr_finisher/saved_grades\\.py$","areas":["library","preview","export-proof"]},
+    {"pattern":"^codebase/frontend/delivery-settings\\.js$","areas":["export-proof","ui"]},
+    {"pattern":"^codebase/frontend/(grade-paste|grading-preset-files)\\.js$","areas":["library","ui","preview","export-proof"]},
+    {"pattern":"^codebase/frontend/idle-warmup\\.js$","areas":["library","preview"]},
+    {"pattern":"^codebase/frontend/theme-startup\\.js$","areas":["ui"]},
+    {"pattern":"^codebase/(bin/(?!licenses/|README)[^/]+|requirements\\.txt$)","areas":["export-proof","film","lens","library","masks","detail","geometry","preview","ui"]},
+    {"pattern":"^codebase/(bin/(licenses/|README)|backend/hdr_finisher/vendor/.*(?:LICENSE|README\\.md)$)","areas":[]},
+    {"pattern":"^codebase/tools/(avif-rendition-decode/|iso-gainmap-probe/|fetch_exiftool\\.py$)","areas":["library","preview","export-proof"]},
+    {"pattern":"^codebase/tools/(?!avif-rendition-decode/|iso-gainmap-probe/|fetch_exiftool\\.py$)","areas":[]},
     {"pattern":"^codebase/(frontend|backend/hdr_finisher)/hsl", "areas":["preview","export-proof","masks","ui"]},
     {
       "pattern": "^(docs/|AGENTS\\.md$|README|\\.github/|packaging/|codebase/(tests/|desktop/tests/|package[^/]*\\.json$))",
