@@ -489,3 +489,11 @@ colour profiles) are after v1.
 
 Grade import bands and lens remap now use the shared machine-sized CPU pool. Source AVIF receives an explicit per-photo jobs budget. Library LibRaw gets a per-job OpenMP budget; selected development uses free CPUs first. Source hash keeps ordered SHA-256. Source decoder libraries and accuracy are unchanged. Full limits, scratch timings and validation are recorded in
 [Photo Library Part A](photo-library.md#part-a--use-the-whole-machine-october-25-2026).
+
+
+**November 3, 2026: bounded DNG signed-colour correction.** The shared RGB
+preparation shader now reads the negative-clamp flag from its own unused field,
+rather than DNG's tile width. Mandatory DNG distortion retains signed
+colour through the Grade correction handoff and the existing Library gamut
+boundary. Ordinary RGB/Ultra HDR clamp choices, Grade's later gamut boundary,
+export/Proof loaders, geometry and all agreed limits remain unchanged.

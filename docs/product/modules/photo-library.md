@@ -5985,3 +5985,44 @@ and `codebase/output/batch2-quick.log`. Steve should try the app before further
 responsiveness investigation. Owned temporary profiles, pytest scratch and
 large comparison buffers were removed; reusable photos and small linked logs
 remain. Output started at 28.5 GB and finished at 28.6 GB, below 100 GB.
+
+
+### November 3, 2026 — Batch 3: DNG distortion colour correction
+
+The October 24 Ultra HDR clamp flag shared `P.lensc.x` with bounded DNG's
+source-footprint width. Every DNG tile therefore clamped working-space
+negatives before the existing gamut boundary, including signed Grade handoffs.
+RGB now writes and reads that flag in the unused `P.lensc.z`; DNG keeps its
+width/height in `.xy` and zero in `.z`. The uniform stays 352 bytes. Ordinary
+RGB, Ultra HDR JPEG, TIFF and AVIF retain their previous clamp choice and
+conversion maths. Grade's signed correction is preserved; export and Proof
+code is unchanged. Exact host/shader layout pins cover the separate fields.
+
+Disposable Library scene-picture version v10 rebuilds existing stored pictures
+and their dependent finished previews, so previously wrong DNG pictures cannot
+survive the correction. Originals and saved grades are unchanged; no tolerance,
+cache size, memory allowance or VRAM budget changes.
+
+
+Validation: the focused Electron DNG driver passes all 59 synthetic geometry,
+signed-colour, seam, measurement, cancellation, budget and allocation/reuse
+cases, worst absolute error 0.00000859 against the unchanged 0.0001 limit.
+Its photographic comparison then stops at the existing 240-second mixed-folder
+wait on the first CPU case; no photographic DNG agreement claim follows.
+The RGB precision driver passes all 14 finished HDR/SDR comparisons across
+seven JPEG/PNG/TIFF/signed-EXR cases, both scene sizes, native reuse, saved
+grades and preemption. Ultra HDR alone and Ultra HDR with codecs both close
+their Electron window before comparison. These window closures and the DNG
+CPU wait are left outside this two-cause fix. No bad-VRAM pixel rerun was
+needed. Moving the same RGB clamp boolean changes no other route's pixel
+maths; the uncompleted codec comparisons remain unqualified.
+Evidence: `codebase/output/batch3/{dng,rgb-precision,rgb-ultrahdr,rgb-ultrahdr-codecs}.log`.
+Large generated fixture copies and decoded pixels are removed after validation.
+
+Fast validation for both Batch 3 causes: 740 Node checks pass. Python coverage
+finishes with 2,988 passes and 3 skips across a split run, no reported failures.
+The prescribed full invocation stopped reporting progress after 1,942 passes
+and 2 skips and was stopped after about 15 minutes. The apparent next cache
+check passes alone; all 1,047 not-yet-reported checks then complete separately
+(1,046 pass, 1 skip). This does not qualify the original full-suite invocation.
+Logs: `codebase/output/batch3/{node,pytest,pytest-picture-focused,pytest-remaining}.log`.

@@ -521,3 +521,16 @@ Evidence: `codebase/output/quick-library-check/batch2/{report.json,backend.log,s
 `codebase/output/edge-colour-raw/1793630579320/results.json`, and
 `codebase/output/batch2-edge-colour.log`. See the Library module PRD's Batch 2
 validation note for the fast suites, other drivers and cleanup.
+
+
+### November 3, 2026 — Batch 3 DNG / shared RGB validation
+
+Current Batch 3 DNG correction, isolated Electron at 2560x1440, unchanged
+settings and uncontrolled OS cache. These are validation observations, not
+a speed comparison. The focused DNG driver's first CPU mixed folder did not
+finish within its existing 240-second wait, after synthetic geometry passed;
+photographic DNG CPU/GPU completion was not measured. The shared RGB precision
+check passed, with preparation waits of 0.30–2.34 s across seven mixed-size
+JPEG/PNG/TIFF/EXR cases. Ultra HDR and the combined codec case closed their
+Electron windows before reporting a comparison or usable preparation wait.
+Evidence: `codebase/output/batch3/{dng,rgb-precision,rgb-ultrahdr,rgb-ultrahdr-codecs}.log`.
