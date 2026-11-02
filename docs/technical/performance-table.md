@@ -300,6 +300,23 @@ on this branch only. Results: `codebase/output/test-grade-gpu-raw/paused-results
 | Batch export pace | 5 s per photo | about 5.2 s per photo (GPU turn 2.7 s) | export-and-proof.md, Oct 20 | Not met (close) |
 | Full-size single export | under 15 s | 24 s | same | Not met |
 | Full-size Ultra HDR export, CPU | — | about 33 s | Oct 19 | Baseline |
+| Ultra HDR JPEG file write, 42 MP, by step | Part of the single-export target | 13.1 s total: HDR half-float prepare and raw write 1.95 s; SDR to 8-bit sRGB with dither 2.33 s; SDR JPEG 0.23 s; raw SDR write 0.27 s; ultrahdr_app encode 2.56 s; gain-map clean-up pass 5.43 s (its tool runs 0.21 s, the rest is Python filtering) | Nov 2, main `120a394`, synthetic 7968×5304 picture, quality 95, 4:4:4, full-size gain map, 12-core machine; pixel steps single-threaded, filter 2–3 threads | Ceiling check (philosophy 3): per-pixel steps are about 9.4 s, about 39% of a 24 s export, so not a GPU case; using all cores is the cheaper route |
+
+Ceiling checks, November 2 (philosophy 3; no code built). AVIF gain-map
+decode per step, fresh process, Steve's machine, nothing else running
+(`decode_avif`; the Library skips the colour-conversion step, so its wait is
+inspect + HDR rebuild + SDR rendition):
+
+| File (MP) | Helper AV1 decode | Helper HDR rebuild | Rest of rebuild step | SDR rendition | Colour conversion (Grade only) | Peak memory above baseline: rebuild step / other steps |
+| --- | --- | --- | --- | --- | --- | --- |
+| DSC01848_finished.avif (13.7) | 1.58 s | 2.95 s | 0.13 s | 0.33 s | 4.41 s | 1.75 / ≤0.42 GB |
+| DSC00264_finished.avif (18.0) | 1.81 s | 3.69 s | 0.15 s | 0.37 s | 5.73 s | 2.31 / ≤0.58 GB |
+| LR-classic-hdr-source-test-1.avif (42.2) | 3.90 s | 9.18 s | 0.23 s | 1.07 s | 13.92 s | 1.89 / ≤1.16 GB |
+
+The HDR rebuild is 57–61% of the Library's AVIF wait and the step that sets
+its memory peak (the helper already uses all 12 cores), so a GPU rebuild
+passes the bar and could also let two AVIFs develop at once. Grade's AVIF
+colour conversion (4.4–13.9 s) is a CPU-cores case, not a GPU one.
 
 ## 7. Background work and plumbing
 
