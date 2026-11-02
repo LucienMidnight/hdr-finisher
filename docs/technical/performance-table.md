@@ -279,6 +279,19 @@ these were corrected to exercise the intended tiered behavior.
 | Open the 297 MP line-scan DNG in Grade → first frame | — | import 19–30 s; first frame 34 s | Oct 30, Steve's app and disposable copies; backend holds 3.7 GB, spikes to 9.7 GB | Baseline |
 | Open a 50 MP ARW (DSC00636) in Grade → import | — | 7.8–9.6 s | Oct 30, disposable copy, headless Edge | Baseline |
 | Rating save (background) | — | about 110 ms | photo-library.md | Baseline |
+| Grade import, Sony 42 MP DSC07187.ARW, CPU / GPU trial | First frame <2.5 s proposed; about 2x faster opening | CPU 6.090 s; GPU trials 5.610-5.929 s (final 5.929 s); backend peak 3.728 / 1.525 GB | Nov 2, `grade-gpu-raw`, draft based on `3abfd5b`; shared AHD correction in this commit; disposable Electron profile, 2560x1440, test-photo copy, independent 0.1 s process census; import-job totals, not first frame | Speed target not met; Sony HDR fails; Grade GPU route disconnected |
+| Grade import, Canon IMG_7723.CR3, CPU / GPU trial | Report import total and backend peak | 1.826 / 3.453 s; backend 1.405 / 1.370 GB | Nov 2, same baseline draft, before shared AHD correction; one paired run; same isolated conditions | GPU slower; finished SDR/HDR passed before correction; not rerun afterward |
+| Grade import, Olympus P1010004.ORF, CPU / GPU trial | Report import total and backend peak | CPU 1.652 s; GPU 2.793-3.287 s; final corrected run 2.973 s, backend 1.117 / 0.672 GB | Nov 2, same branch and isolated conditions; CPU baseline plus GPU investigations; corrected full-size SDR/HDR checks pass | GPU slower; shared correction retained, Grade handoff stopped |
+
+November 2 stop decision: the final Sony trial's full readback cost 3.318 s.
+The 3.7/1.5 GB figures above are backend working sets, including Python
+helpers, not the whole app. Sony whole-app peaks were 5.116/4.190 GB, so the
+whole-app ceiling is not qualified. The final Sony trial included a denser
+four-pixel lens grid and larger transfer bands, both removed after the HDR
+failure (mean 1.06388, p99.9 7.58581). The mismatch was traced to sampled
+lens coordinates losing Lensfun's fine-scale full-size variation. No agreed
+number changed. Steve chose to stop; the uncommitted Grade GPU draft stays
+on this branch only. Results: `codebase/output/test-grade-gpu-raw/paused-results.json`.
 
 ## 6. Export and Proof
 

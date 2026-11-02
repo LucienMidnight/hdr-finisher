@@ -330,6 +330,55 @@ Grade variant and geometry probes cover its correction. Ignored evidence:
 `codebase/output/library-dng-warp/1792774852959/results.json` and
 `codebase/output/dng-grade/`. No visible window, broad sweep, push or installer.
 
+**November 2, 2026: shared Bayer colour correction; Grade GPU trial stopped.**
+The Library GPU developer now uses LibRaw 0.22.1's colour constants rather
+than legacy dcraw values. Its AHD Lab calculation preserves float32 matrix
+rounding and ordered accumulation, with a 65,536-entry float32 lookup instead
+of the GPU power approximation. The temporary lookup is 256 KiB and stays
+inside the existing reservation; no approved estimate, budget or tolerance
+changes. Stored Library pictures redevelop under scene-picture version v9,
+including dependent finished pictures; saved grades and originals are unchanged.
+
+Full-size P1010004.ORF, identical import settings and starting grade, before /
+after this shared correction: SDR mean/p99.9 Delta E 2000
+0.005654/2.15824 -> 0.0000000189/0; HDR mean/p99.9 Delta E ITP
+0.018744/6.80396 -> 0.0000000672/0. Both finished renditions now pass the
+unchanged mean <1 and p99.9 <=3 limits. These are source-development
+comparisons, not an encoded HDR ceiling qualification.
+
+The separate Grade GPU handoff remains a disconnected, uncommitted draft on
+`grade-gpu-raw`; it must not be merged into main as disabled production code.
+Steve stopped that approach on November 2. On the DSC07187.ARW test copy,
+CPU import was 6.1 s versus 5.9 s for the final trial, and independently
+sampled backend working-set peak was 3.7 versus 1.5 GB (decimal GB, including
+Python helpers). These are import-job totals, not click-to-first-frame; the
+2.5 s first-frame target was not met. Full GPU readback alone remained about
+3.3 s. Whole-app peaks were 5.12/4.19 GB: lower backend memory does not
+qualify the whole-app ceiling.
+
+Sony's remaining HDR mismatch was traced to lens-coordinate sampling:
+Lensfun's full-size coordinate field has fine-scale numerical variation that
+the sampled GPU grid loses. Even a four-pixel grid left HDR mean/p99.9
+1.06388/7.58581 (SDR 0.29574/1.83044). Denser-grid and larger-transfer-band
+experiments were removed. Exact bounded lens-coordinate transfers were not
+implemented. The documented full-size RAW Proof/export mismatch is still
+open: that check used the same CPU-developed source, so this RAW developer
+finding does not establish its cause.
+
+The Canon trial passed both finished limits before this correction; it was
+not rerun afterward. Fast suites earlier in this work had the known five
+Node and nine pytest failures, with no new failures; the five draft handoff
+tests passed. The existing GPU delivery smoke driver passed its process
+check while reporting its already documented stricter HDR disagreement.
+The final focused Library RAW/cache checks passed 28 tests; JavaScript syntax passed.
+No further GPU drivers, release sweep, merge, push or installer were run for
+this stop decision. Small retained results are in
+`codebase/output/test-grade-gpu-raw/paused-results.json`,
+`codebase/output/test-grade-raw-constants-compare.log` and
+`codebase/output/test-grade-raw-lens4-compare.log`; large scratch pixels and
+disposable profiles were removed. Timing details are in performance table
+section 5.
+
 **Not built**
 
 - GPU decode/demosaic for Grade's import, X-Trans sensors and DNG.
