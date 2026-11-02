@@ -560,7 +560,9 @@ def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, 
         grade[0] = EditDocument(hdr_reference_white_nits=203,
             global_adjustments=AdjustmentState.model_validate(described["adjustments"]),
             source=SourceReference(filename=photo.name, durable_path=str(photo), byte_size=photo.stat().st_size,
-                fingerprint_sha256=hashlib.sha256(photo.read_bytes()).hexdigest())).model_dump(mode="json")
+                fingerprint_sha256=hashlib.sha256(photo.read_bytes()).hexdigest(),
+                luminance={"luminance_semantics":"display_relative", "transfer_function":"SDR",
+                    "source_reference_white_nits":203, "sdr_rendition":"authored"})).model_dump(mode="json")
         new = client.post("/api/library/live-plan",json={"path":str(photo),"edge":640}).json()
         assert old["source_identity"] == new["source_identity"]
         assert old["render_identity"] != new["render_identity"]
