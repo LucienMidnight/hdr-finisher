@@ -201,7 +201,8 @@ def test_loader_wraps_unexpected_decoder_errors(monkeypatch, tmp_path) -> None:
     source_path = tmp_path / "broken.tif"
     source_path.write_bytes(b"not a tiff")
 
-    def fail_tiff_decode(path):
+    def fail_tiff_decode(path, *, library_edge=None):
+        assert library_edge is None
         _ = path
         raise ValueError("decoder exploded")
 

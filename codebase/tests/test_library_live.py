@@ -344,15 +344,11 @@ def test_materialised_neutral_highlight_default_reuses_authored_scene_identity()
     document["source"]["raw_import_settings"]["lens"]["mode"] = "off"
     document["source"]["raw_import_settings"]["highlight_reconstruction"].pop("edge_colour_expand_percent")
     assert quality(None) == quality({})
-    from hashlib import sha256
-    import json
-    from hdr_finisher.loader import SOURCE_DECODER_VERSION, SOURCE_COLOR_TRANSFORM_VERSION
-    from hdr_finisher.library_live import recipe
+    from hdr_finisher.library_live import recipe, _quality
     authored = recipe(document)
     authored["raw_import_settings"] = deepcopy(document["source"]["raw_import_settings"])
-    stored_quality = "live-scene-v2:" + sha256(json.dumps({"recipe": authored,
-        "decoder": SOURCE_DECODER_VERSION, "colour": SOURCE_COLOR_TRANSFORM_VERSION,
-        "rgb_adapter": "library-rgb-v3"}, sort_keys=True).encode()).hexdigest()
+    # An equivalent RAW default shares only the current decoder/adapter identity.
+    stored_quality = _quality(authored)
     before = quality(document)
     from hdr_finisher.library_live import equivalent_qualities
     assert stored_quality in equivalent_qualities(before)
