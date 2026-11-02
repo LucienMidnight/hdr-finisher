@@ -456,6 +456,9 @@ PROPHOTO = "ProPhoto RGB"
 UNRESOLVED_PROFILES = {"unknown", PROPHOTO}
 
 
+EXR_BAND_ROWS = 256
+
+
 def _load_exr(
     path: Path, *, cancelled: Callable[[], bool] | None = None, combined_channels: bool = False
 ) -> tuple[np.ndarray, dict[str, Any]]:
@@ -476,17 +479,24 @@ def _load_exr(
         image = np.empty((height, width, 3), dtype=np.float32)
         read_timings = None
         if combined_channels:
-            # Library-only opt-in. One binding call shares compressed-block work.
-            _raise_if_cancelled(cancelled)
-            started = perf_counter()
-            channels = file.channels(list(channel_names), float_type)
-            read_ms = (perf_counter() - started) * 1000
-            started = perf_counter()
-            for index, channel in enumerate(channels):
+            # Library-only opt-in. One binding call per band shares compressed-
+            # block work across channels. The binding holds Python's lock for
+            # the whole call, so read in 256-row bands (a multiple of every EXR
+            # block height): other requests, such as the memory check, are
+            # answered between bands. The samples are identical.
+            read_ms = interleave_ms = 0.0
+            for top in range(0, height, EXR_BAND_ROWS):
                 _raise_if_cancelled(cancelled)
-                image[..., index] = np.frombuffer(channel, dtype=np.float32).reshape(height, width)
-            del channels, channel
-            read_timings = {"channels": read_ms, "interleave": (perf_counter() - started) * 1000}
+                bottom = min(height, top + EXR_BAND_ROWS)
+                started = perf_counter()
+                channels = file.channels(list(channel_names), float_type, dw.min.y + top, dw.min.y + bottom - 1)
+                read_ms += (perf_counter() - started) * 1000
+                started = perf_counter()
+                for index, channel in enumerate(channels):
+                    image[top:bottom, :, index] = np.frombuffer(channel, dtype=np.float32).reshape(bottom - top, width)
+                del channels, channel
+                interleave_ms += (perf_counter() - started) * 1000
+            read_timings = {"channels": read_ms, "interleave": interleave_ms}
         else:
             for index, name in enumerate(channel_names):
                 _raise_if_cancelled(cancelled)
