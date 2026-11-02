@@ -24,10 +24,11 @@ def patch(root):
     prefix, body = text[:offset], text[offset:]
     assert body.count(old) == 1
     body = body.replace(old, """    // HDRF independent reconstruction rows; metadata reductions stay serial.
+    int64_t row;
 #ifdef _OPENMP
 #pragma omp parallel for if(clli == NULL && height >= 512)
 #endif
-    for (int64_t row = 0; row < (int64_t)height; ++row) {
+    for (row = 0; row < (int64_t)height; ++row) {
         const uint32_t j = (uint32_t)row;
         for (uint32_t i = 0; i < width; ++i) {
             float basePixelRGBA[4];""", 1)

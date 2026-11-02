@@ -10,6 +10,7 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include <cstdlib>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -54,6 +55,12 @@ static void compatibleHDR(const std::filesystem::path& path, const avifImage* ba
 }
 int main(int argc,char** argv) try {
     if(argc!=4 && argc!=5)throw std::runtime_error("Usage: hdrf-avif-decode input.avif output.rgb16 headroom [threads]");
+    // This process alone opts in; other DLL users keep their decoding policy.
+#ifdef _WIN32
+    _putenv_s("HDRF_AVIF_TILE_THREADS", "1");
+#else
+    setenv("HDRF_AVIF_TILE_THREADS", "1", 1);
+#endif
     avifDecoder* decoder=avifDecoderCreate();
     const int cores = std::max(1u,std::thread::hardware_concurrency());
     const int threads = argc == 5 ? std::max(1,std::min(cores,std::stoi(argv[4]))) : cores;
@@ -70,6 +77,13 @@ int main(int argc,char** argv) try {
     if(!base->gainMap || !base->gainMap->image || base->icc.size || base->gainMap->altICC.size ||
        base->transformFlags || base->alphaPlane)
         throw std::runtime_error("This AVIF retains the ordinary rendition decoder");
+    // Own the exact base/map samples, then release AV1 reference frames and
+    // worker scratch before allocating full-resolution reconstruction surfaces.
+    avifImage* owned = avifImageCreateEmpty();
+    if(!owned)throw std::runtime_error("Could not retain decoded AVIF planes");
+    check(avifImageCopy(owned, base, AVIF_PLANES_ALL));
+    avifDecoderDestroy(decoder);
+    base = owned;
     const auto decoded=std::chrono::steady_clock::now();
     compatibleHDR(argv[2],base,std::stof(argv[3]));
     const auto finished=std::chrono::steady_clock::now();
@@ -77,7 +91,7 @@ int main(int argc,char** argv) try {
       <<std::chrono::duration<double,std::milli>(decoded-start).count()
       <<" reconstruction_ms="<<std::chrono::duration<double,std::milli>(finished-decoded).count()<<'\n';
     std::cout<<"{\"width\":"<<base->width<<",\"height\":"<<base->height<<"}";
-    avifDecoderDestroy(decoder);
+    avifImageDestroy(owned);
     return 0;
 } catch(const std::exception& e) {
     std::cerr<<e.what()<<'\n';return 1;

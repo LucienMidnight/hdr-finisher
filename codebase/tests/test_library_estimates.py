@@ -207,3 +207,38 @@ def test_xtrans_cpu_uses_approved_exception_without_decoding(tmp_path, monkeypat
     path.write_bytes(header + data)
     assert not library_gpu_raw.xtrans_cpu(path)
     assert library_estimates.estimate_details(path, "cpu")[0] == 411_340_800
+
+
+@pytest.mark.parametrize("pixels", [14_000_000,18_000_000,42_000_000])
+@pytest.mark.parametrize("kind", ["source","cpu"])
+def test_measured_gain_map_avif_rate(pixels,kind):
+    assert estimate_pixels(".avif",pixels,1,kind,gain_map=True)==50*pixels
+
+
+def test_avif_gain_map_does_not_change_primary_only_quick_rate():
+    assert estimate_pixels(".avif",6000,4000,"quick",gain_map=True)==23*24_000_000
+
+
+@pytest.mark.parametrize("gain_map,rate",[(True,50),(False,56)])
+def test_avif_admission_reads_headers_without_decoding(monkeypatch,gain_map,rate):
+    from hdr_finisher import avif_info, library_estimates
+    monkeypatch.setattr(avif_info,"inspect_avif",lambda path:dict(resolution="6000x4000",gain_map_present=gain_map))
+    monkeypatch.setattr(library_estimates,"dimensions",lambda path:pytest.fail("AVIF pixels opened for admission"))
+    assert library_estimates.estimate_details("header.avif")== (rate*24_000_000,"")
+
+
+def test_unknown_avif_header_keeps_unknown_size_gate(monkeypatch):
+    from hdr_finisher import avif_info, library_estimates
+    def invalid(path):raise ValueError("bad header")
+    monkeypatch.setattr(avif_info,"inspect_avif",invalid)
+    assert library_estimates.estimate_details("bad.avif",ceiling=4_000_000_000)==(4_000_000_000,"unknown size")
+
+
+def test_two_measured_avifs_fit_default_budget_without_blocking_camera_preview():
+    from hdr_finisher.library_scheduler import Scheduler
+    scheduler=Scheduler(4_000_000_000)
+    scheduler.update(available=20_000_000_000,ram=32_000_000_000,total=1_850_000_000)
+    first=scheduler.ask("avif-a","library","a.avif","source",estimate_pixels(".avif",14_000_000,1,gain_map=True),cls="eventually")
+    second=scheduler.ask("avif-b","library","b.avif","source",estimate_pixels(".avif",18_000_000,1,gain_map=True),cls="eventually")
+    camera=scheduler.ask("camera","library","camera.arw","quick",64_000_000)
+    assert first.granted is not None and second.granted is not None and camera.granted is not None

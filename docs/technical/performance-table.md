@@ -412,3 +412,83 @@ Decode, Single edge 2560, median of three:
 | `LR-classic-hdr-source-test-1.avif` | 30326 ms | 24574 ms |
 
 Handoff per photo: request 9-86 ms, accept 86-310 ms, describe 6-27 ms.
+
+November 2 AVIF memory correction (after `d54a2c1`, Steve's approved
+measured-peak-plus-25% method; GPU reconstruction dropped): the uncommitted
+3 GB gain-map floor admitted neither AVIF at default 4 GB (1.989 GB peak,
+no picture after 90 s). It is discarded. Decoder-only GPU feasibility measured
+a combined 3.092 GB for the two helpers before reconstruction/handoff;
+with the roughly 1.85 GB app baseline this already exceeds 4.4 GB before a
+margin. Removing reconstruction at zero cost projected only 40.5/43.6%
+whole-wait savings; Steve explicitly rejected that GPU route.
+
+AOM 3.13.2's row-threaded path allocated full-frame superblock coefficient/
+palette buffers in the base and map, about 1.03/1.37 GB at 13.7/18.0 MP.
+Unchanged helper: one thread peaked 0.699/0.916 GB but AV1 decode took
+6.150/6.351 s; two threads already peaked 1.729/2.292 GB; 12 threads
+1.742/2.305 GB. Reconstruction added 0.41/0.54 GB in full base RGBA,
+rescaled map YUV/RGBA and output RGBA while decoder scratch remained alive.
+The fix opts only the helper into tile-only AOM decoding, copies exact
+base/map planes and metadata, then destroys the decoder before reconstruction.
+The existing reconstruction patch needed its loop index declared before the
+OpenMP loop for MSVC C; arithmetic is unchanged.
+
+Complete decode-tree peaks (Python, helper, console hosts) are now
+**539,377,662 / 686,570,347 / 1,580,237,384 bytes** at 13.7/18.0/42.2 MP,
+versus 1.807/2.369/1.944 GB. Decode boundary 2.150/2.485/5.090 s; whole offline
+calls 2.249/2.609/5.401 s. CPU-normalized fallback peaks 0.532/0.682 GB for
+the smaller files, whole calls 6.782/8.705 s (existing bounded/in-place colour
+conversion). Native RGB16 SHA256 matches the old helper on all three real
+files, and the existing exact native transport/fallback test passes.
+Largest measured peak-per-pixel plus 25% is 49.12, rounded up to **50 bytes/
+pixel** for header-confirmed gain-map AVIF source/CPU jobs, 64 MB minimum.
+Plain AVIF source remains 56; quick previews, budgets and picture identities
+are unchanged. Estimates at 14/18/42 MP: 0.70/0.90/2.10 GB. These measurements
+cover the specified files; other encodings still rely on estimation/overrun
+records. See the native helper README for the buffer sizes and build recipe.
+
+`avif-memory-after`: cold isolated profile, 2560x1440, unchanged default 4 GB,
+same two reusable AVIFs. Both grants overlap with zero admission wait.
+Independent peak **2,823,742,605 bytes**, no memory violation, settles below
+target; 2/2 shown, clean stored-channel audit, no cadence/errors failures.
+Folder-open-to-shown **8.680/9.347 s**, versus 8.775/9.632 baseline: within
+agreed 5% timing noise, no substantial whole-wait speed claim. Native AV1/
+reconstruction stages: 0.307/1.005 and 0.536/1.378 s. Memory is the goal.
+
+`avif-memory-mixed`: three existing reusable RAW copies temporarily moved
+into the folder then restored. Peak **2,561,039,210 bytes**, no violation,
+settles below target; all five pictures shown by 9.260 s, clean channels.
+Camera previews decoded in 0.521-0.582 s, 0 ms admission wait, before native
+AVIF work began. Full camera jobs waited 0 / 6.609 / 6.906 s for development/
+saving places while AVIF jobs occupied them. A **4,704 ms drawing gap** failed
+cadence acceptance; main-thread lateness stayed below 100 ms.
+
+`avif-camera-overlap`: measurement-only wrapper delayed camera preview
+requests by 1.2 s and was restored byte for byte. Preview grants at
+1.941-1.951 s from folder open had **0 ms admission wait** during AVIF work.
+Canon extraction finished in 37/50 ms. IMG_3129 preview presented at 2.035 s
+while DSC01848 native work ran about 1.876-3.281 s. IMG_0114 decoded at
+2.031 s but presented at 6.990 s: a **4,953 ms drawing gap** delayed it.
+Backend fast-lane delivery is confirmed; continuous on-screen preview flow
+is not fully qualified. Peak 2,566,915,214 bytes, no violation, settles below
+target; 5/5 shown, clean channels. Full camera jobs waited 0 / 6.532 / 6.828 s.
+The earlier pre-correction mixed check also failed cadence (1,958 ms); no
+cause or UI repair is claimed. Steve should try the folder before further UI
+investigation. Do not compare the staggered run's fill timing with normal runs.
+
+Evidence: `codebase/output/test-avif-admission/{thread-memory,native-memory-after,full-memory-after,cpu-memory-before,exact-baselines,decode-pair}.json`;
+`codebase/output/quick-library-check/{avif-admission-after,avif-memory-after,avif-memory-mixed,avif-camera-overlap}/`.
+
+Validation for this correction: exact native transport/fallback 1 passed;
+focused gain-map/admission checks 64 passed. Full Node checks: 723 passed,
+5 existing failures (camera/cached loading shape, repeat coalescing,
+screen-neighbour demand, Single finished canvas). Full Python checks:
+2964 passed, 3 skipped, 9 existing failures (preset header scope, neutral
+scene identity, reduced giant fast lane, simultaneous CPU tiers, RGB
+publication guard, source baseline instrumentation, decoder error wrapping,
+cache budget, retouch cache signature). Logs:
+`codebase/output/test-avif-admission/{node-tests-memory,pytest-memory}.log`.
+No GPU driver directly covers native AOM decoding; the real-app checks
+exercise the existing GPU development route. Output remains about 26.9 GB
+under the 100 GB limit; native build intermediates and decoded RGB copies
+were removed, reusable photo copies retained.

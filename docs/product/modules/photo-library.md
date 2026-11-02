@@ -76,20 +76,37 @@ Open work it leaves, in Steve's order:
    protected built previews ("Discard built previews…") stay. A virtual copy
    also refreshes its source photo's scene. Covered by two behaviour tests
    on real cache classes; the menu itself was first tried by Steve.
-3. Finished gain-map AVIFs are slow to prepare (about 2 s each, 6–9 s for
-   large ones) and mostly run one at a time because of their memory
-   estimate. Candidate: GPU gain-map reconstruction.
-   **November 2 baseline, main `fe2c3c0`:** the isolated quick check on the
-   reusable DSC01848/DSC00264 copies already ran both native AVIF helpers
-   concurrently. Pictures appeared at 8.775/9.632 s; 2/2 shown by 30/60 s.
-   Independent whole-app peak was 5,912,424,444 bytes, above the permitted
-   4.4 GB peak; settled below target. Stored-channel audit: 2 clean pictures.
-   This contradicts the GPU brief's premise that lower memory is needed to
-   allow two AVIF decodes. Stopped before implementation under its questions
-   protocol: Steve must choose whether to prototype GPU reconstruction with
-   admission unchanged or address AVIF admission first. No GPU rebuild is
-   built or qualified; the 56 bytes/pixel estimate and all budgets are unchanged.
-   Evidence: `codebase/output/quick-library-check/avif-gainmap-before/`.
+3. Cold gain-map AVIF pictures still take several seconds to appear. Steve
+   dropped GPU reconstruction on November 2: its optimistic 40-44% whole-wait
+   saving was below the 50% bar and it did not restore concurrency.
+   **November 2 CPU memory correction (built; mixed-folder drawing remains open):** AOM's
+   row-threaded decoder held full-frame coefficient/palette buffers for both
+   base and map, roughly 1.03/1.37 GB at 13.7/18.0 MP. Reconstruction also held
+   full base RGBA, rescaled map YUV/RGBA and output RGBA (0.41/0.54 GB) while
+   the decoder remained alive. The native helper now selects tile-only AOM
+   threads inside its own process, copies decoded planes and metadata exactly,
+   then releases decoder frames/scratch before the unchanged reconstruction.
+   Full decode-tree peaks (Python plus helpers) are 0.539/0.687 GB, below
+   Steve's roughly 0.8 GB goal; 42.2 MP is 1.580 GB. CPU conversion is already
+   bounded/in-place and measured below the same 14-18 MP limit. Exact native
+   transport test passes and all three real RGB16 hashes match the old helper.
+   The measured peak plus 25%, rounded up, gives 50 bytes/pixel for header-
+   confirmed gain-map AVIF source/CPU jobs; plain AVIF stays 56, quick previews
+   unchanged. The proposed 3 GB floor was never committed and is discarded.
+   At unchanged default 4 GB, the two-file quick check grants both together,
+   peaks at 2,823,742,605 bytes (previously 5,912,424,444), settles below target
+   and shows both pictures by 9.347 s, with no errors or cadence failures.
+   Cold fill timing remains within the agreed 5% of the 9.632 s baseline;
+   no substantial whole-wait speed-up is claimed. Mixed camera overlap and
+   final fast-check results are recorded in the performance table. Both mixed
+   runs fit memory (2.56-2.57 GB peak), but drawing gaps of 4.70-4.95 s failed
+   cadence acceptance. A staggered request confirms 0 ms camera-preview
+   admission wait during native AVIF work and one preview shown during it;
+   another decoded preview was delayed about 5 s by the drawing gap. Continuous
+   screen preview flow remains unqualified. Earlier mixed cadence also failed;
+   Steve should try this folder before further UI performance investigation.
+   Evidence: `codebase/output/test-avif-admission/{thread-memory,native-memory-after,full-memory-after,cpu-memory-before,exact-baselines}.json`
+   and `codebase/output/quick-library-check/avif-memory-after/`.
 4. The Grade pause message takes 3–4 s when a folder opens while Grade holds
    a large photo (target 1 s). About 2 s is the first-row disk checks. Its
    check, `tools/measure-library-grade-grants.cjs`, still uses DevTools and

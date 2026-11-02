@@ -167,6 +167,15 @@ positions, actual writer/shader-reader agreement and missing-use controls.
 The test source resolvers in `frontend-source.js` and `frontend_source.py`
 resolve both global and pass names through the production definitions.
 
+### Native AVIF rendition helper
+
+`codebase/tools/avif-rendition-decode/decode.cpp` preserves libavif's exact
+10-bit YUV/16-bit RGB gain-map reconstruction boundary. `parallel_gainmap.py`
+patches independent reconstruction rows; `low_memory_decode.py` opts only
+the helper process into AOM tile-only threading. It copies decoded base/map
+planes before releasing the decoder. Rebuild/copy the matching `avif.dll`
+and helper together; the tool README pins versions and build flags.
+
 ## Which checks cover what
 
 All in `codebase/tests/`. Rules for how much to run are in `AGENTS.md`.

@@ -1,4 +1,4 @@
-"""Header-only pixel counts and Steve's October 30 bytes-per-pixel table."""
+"""Header-only pixel counts and Steve's approved per-format estimates."""
 from pathlib import Path
 from .library_scheduler import MINIMUM
 from . import app_memory
@@ -93,10 +93,17 @@ def dimensions(path):
             return raw.sizes.raw_width, raw.sizes.raw_height
 
 
-def estimate_pixels(suffix, width, height, kind="source"):
+# Steve, November 2: complete decode peaks plus 25%, rounded up. Confirmed
+# gain-map AVIF only; plain AVIF and primary-only quick previews stay unchanged.
+AVIF_GAIN_MAP_RATE = 50
+
+
+def estimate_pixels(suffix, width, height, kind="source", *, gain_map=False):
     suffix = suffix.lower()
     if kind == "quick" and suffix in {".jpg", ".jpeg"}:
         return MINIMUM
+    if suffix == ".avif" and gain_map and kind != "quick":
+        return max(MINIMUM, AVIF_GAIN_MAP_RATE*int(width)*int(height))
     rate = 25 if kind == "cpu" else 23 if kind == "quick" else RATES.get(suffix, 7)
     return max(MINIMUM, rate*int(width)*int(height))
 
@@ -104,6 +111,15 @@ def estimate_pixels(suffix, width, height, kind="source"):
 def estimate_details(path, kind="source", ceiling=None, edge=2560):
     ceiling = app_memory.CEILING if ceiling is None else ceiling
     try:
+        if Path(path).suffix.lower() == ".avif" and kind != "quick":
+            from .avif_info import inspect_avif
+            # Header inspection only; malformed/unknown files retain the gate.
+            info = inspect_avif(Path(path))
+            width, height = map(int, info["resolution"].split("x"))
+            if width <= 0 or height <= 0:
+                raise ValueError("Missing AVIF source dimensions")
+            return estimate_pixels(".avif", width, height, kind,
+                gain_map=info["gain_map_present"]), ""
         width, height = dimensions(path)
         if width <= 0 or height <= 0:
             raise ValueError("Missing source dimensions")
