@@ -27,11 +27,11 @@ from .models import EditDocument, HDRAnalysis, HDRClassification, RawImportSetti
 from .source_luminance import describe_source_luminance
 
 ROUTE = "gpu-raw-thumbnail"
-# LibRaw constants used by AHD's CIELab conversion (dcraw xyz_rgb, d65_white).
-XYZ_RGB = np.array([[0.412453, 0.357580, 0.180423],
-                    [0.212671, 0.715160, 0.072169],
-                    [0.019334, 0.119193, 0.950227]])
-D65_WHITE = np.array([0.950456, 1.0, 1.088754])
+# LibRaw 0.22.1 colorconst.cpp constants for AHD CIELab (not legacy dcraw).
+XYZ_RGB = np.array([[0.4124564, 0.3575761, 0.1804375],
+                    [0.2126729, 0.7151522, 0.0721750],
+                    [0.0193339, 0.1191920, 0.9503041]])
+D65_WHITE = np.array([0.95047, 1.0, 1.08883], dtype=np.float32)
 LENS_FIELDS = ("camera_maker", "camera_model", "lens_maker", "lens_model", "lens_name",
                "focal_length_mm", "aperture", "focus_distance_m")
 
@@ -155,7 +155,12 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
     timings["mosaic_copy_metadata"] = (time.perf_counter()-mark)*1000
     # LibRaw cam_xyz_coeff: rows normalized to sum 1, then inverted (3 colours).
     cam_rgb /= cam_rgb.sum(axis=1, keepdims=True)
-    xyz_cam = (XYZ_RGB @ np.linalg.inv(cam_rgb)) / D65_WHITE[:, None]
+    # LibRaw stores rgb_cam as float before accumulating each Lab matrix term.
+    # Keep those rounding points: AHD's integer homogeneity votes depend on them.
+    rgb_cam = np.linalg.inv(cam_rgb).astype(np.float32)
+    xyz_cam = np.zeros((3, 3), dtype=np.float32)
+    for k in range(3):
+        xyz_cam += (XYZ_RGB[:, k, None] * rgb_cam[k] / D65_WHITE[:, None]).astype(np.float32)
     height, width = mosaic.shape
     out_h, out_w = (width, height) if flip in (5, 6) else (height, width)
     dr = fuji_dynamic_range(path)

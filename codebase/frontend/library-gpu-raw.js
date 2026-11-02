@@ -221,20 +221,20 @@
       out[1] = g0;
     }
     return out;
-  }
-  fn cbrt_lab(i: i32) -> f32 {
-    let x = f32(i) / 65535.0;
-    return select(7.787 * x + 16.0 / 116.0, pow(x, 1.0 / 3.0), x > 0.008856);
-  }
+  }`;
+
+  const AHD_LAB = /* wgsl */ `
+  @group(0) @binding(4) var<storage, read> labTable: array<f32>;
+  fn cbrt_lab(i: i32) -> f32 { return labTable[u32(i)]; }
   fn lab(v: vec3<i32>) -> vec3<i32> {
     let f = vec3<f32>(v);
-    let x = cbrt_lab(clip16(i32(0.5 + dot(p.x0.xyz, f))));
-    let y = cbrt_lab(clip16(i32(0.5 + dot(p.x1.xyz, f))));
-    let z = cbrt_lab(clip16(i32(0.5 + dot(p.x2.xyz, f))));
+    let x = cbrt_lab(clip16(i32(((0.5 + p.x0.x * f.x) + p.x0.y * f.y) + p.x0.z * f.z)));
+    let y = cbrt_lab(clip16(i32(((0.5 + p.x1.x * f.x) + p.x1.y * f.y) + p.x1.z * f.z)));
+    let z = cbrt_lab(clip16(i32(((0.5 + p.x2.x * f.x) + p.x2.y * f.y) + p.x2.z * f.z)));
     return vec3<i32>(i32(64.0 * (116.0 * y - 16.0)), i32(64.0 * 500.0 * (x - y)), i32(64.0 * 200.0 * (y - z)));
   }`;
 
-  const HOMOGENEITY = COMMON + AHD_RGB + /* wgsl */ `
+  const HOMOGENEITY = COMMON + AHD_RGB + AHD_LAB + /* wgsl */ `
   @group(0) @binding(3) var<storage, read_write> homo: array<u32>;
   @compute @workgroup_size(16, 16)
   fn main(@builtin(global_invocation_id) g0: vec3<u32>) {
@@ -671,7 +671,18 @@
       const gpack = make(n * 4);
       await run("GREEN", [uniform, ints, gpack], wgX, wgY);
       const homo = make(n * 4);
-      await run("HOMOGENEITY", [uniform, ints, gpack, homo], wgX, wgY);
+      // LibRaw builds this table once in float32. GPU pow approximations can
+      // change the integer Lab votes and choose the other demosaic direction.
+      const table = new Float32Array(65536), f = Math.fround;
+      for (let i = 0; i < table.length; i++) {
+        const x = f(i / 65535);
+        table[i] = x > f(0.008856) ? Math.pow(x, f(1 / 3)) : f(f(f(7.787) * x) + f(16 / 116));
+      }
+      const labTable = make(table.byteLength);
+      device.queue.writeBuffer(labTable, 0, table);
+      await run("HOMOGENEITY", [uniform, ints, gpack, homo, labTable], wgX, wgY);
+      await device.queue.onSubmittedWorkDone();
+      release(labTable);
       await stage("demosaic");
       const planes = [make(n * 4), make(n * 4), make(n * 4)];
       const peaks = make(16); let samples = make((edgeColour ? Math.max(n, sw * sh * 3) : sw * sh * 3) * 4);
