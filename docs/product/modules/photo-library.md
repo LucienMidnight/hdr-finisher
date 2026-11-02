@@ -535,7 +535,9 @@ mixed and Grade coexistence are now measured in the new section; forced GPU
 failures have a new driver; Single/neighbour coverage remains open.)
 
 Steve clarified that M17 shares only simultaneous work at the same source and
-resolution. Priority preemption discards Library GPU intermediates at a safe
+resolution. (Changed November 2, 2026, Steve: overlapping Library 640/2560
+demands for one photo now share one preparation; Grade stays separate. See
+memory-and-caches.) Priority preemption discards Library GPU intermediates at a safe
 point, keeps CPU samples only if free to retain, and requeues without spending
 an attempt. No disk checkpoint. These decisions are recorded in the scheduler
 design and memory-and-caches.

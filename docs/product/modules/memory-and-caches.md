@@ -62,8 +62,11 @@ This replaces the earlier “not thrown away” rule for GPU work.
 
 M17 sharing between Grade and Library applies only to simultaneous requests
 at the same resolution. Grade's full-resolution work and a Library 640
-development may both proceed, with Grade priority. November 2 Batch 2 restores
-sharing between overlapping Library 640/2560 demands for one source recipe:
+development may both proceed, with Grade priority. **Steve, November 2, 2026:**
+the earlier "no new cross-resolution sharing machinery" rule is lifted for
+Library-only demand, so a photo opened while its grid picture develops is read
+once (a second read costs about 8–10 s on a large RAW plus slow-storage time).
+Batch 2 (`68e2b4c`) shares overlapping Library 640/2560 demands for one source recipe:
 one admission owns the active preparation and releases it when demand ends.
 This adds no retention, cache share or memory allowance; selected native detail
 and Grade's full-resolution work remain separate.
