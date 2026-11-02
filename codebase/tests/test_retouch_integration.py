@@ -176,7 +176,8 @@ def test_library_native_source_uses_same_repair_before_reduction(photo, tmp_path
     # A capture cache inspects pixels actually passed to the Library store.
     class CaptureCache:
         def cached(self, *args): return None
-        def build(self, path, edge, source_quality, cancelled, pixels):
+        def build(self, path, edge, source_quality, cancelled, pixels, *, defer_store=False):
+            assert not defer_store
             np.testing.assert_array_equal(pixels[0], reduce_picture(session.image, edge))
             return edge
     assert _develop_cpu(tmp_path, session.source_path, saved, 32, cache=CaptureCache()) == 32
