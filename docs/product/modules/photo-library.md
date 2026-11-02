@@ -79,6 +79,17 @@ Open work it leaves, in Steve's order:
 3. Finished gain-map AVIFs are slow to prepare (about 2 s each, 6–9 s for
    large ones) and mostly run one at a time because of their memory
    estimate. Candidate: GPU gain-map reconstruction.
+   **November 2 baseline, main `fe2c3c0`:** the isolated quick check on the
+   reusable DSC01848/DSC00264 copies already ran both native AVIF helpers
+   concurrently. Pictures appeared at 8.775/9.632 s; 2/2 shown by 30/60 s.
+   Independent whole-app peak was 5,912,424,444 bytes, above the permitted
+   4.4 GB peak; settled below target. Stored-channel audit: 2 clean pictures.
+   This contradicts the GPU brief's premise that lower memory is needed to
+   allow two AVIF decodes. Stopped before implementation under its questions
+   protocol: Steve must choose whether to prototype GPU reconstruction with
+   admission unchanged or address AVIF admission first. No GPU rebuild is
+   built or qualified; the 56 bytes/pixel estimate and all budgets are unchanged.
+   Evidence: `codebase/output/quick-library-check/avif-gainmap-before/`.
 4. The Grade pause message takes 3–4 s when a folder opens while Grade holds
    a large photo (target 1 s). About 2 s is the first-row disk checks. Its
    check, `tools/measure-library-grade-grants.cjs`, still uses DevTools and

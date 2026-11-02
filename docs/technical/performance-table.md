@@ -318,6 +318,30 @@ its memory peak (the helper already uses all 12 cores), so a GPU rebuild
 passes the bar and could also let two AVIFs develop at once. Grade's AVIF
 colour conversion (4.4–13.9 s) is a CPU-cores case, not a GPU one.
 
+November 2 integrated AVIF baseline (`fe2c3c0`, unchanged main code),
+`node tools/quick-library-check.cjs --folder=avif-gainmap --label=avif-gainmap-before`,
+isolated test profile, default 2560x1440, cold picture caches, two reusable
+copies (DSC01848 and DSC00264 only; the 42 MP comparison was not run):
+
+| File | RGB decode | Native AV1 / HDR rebuild | Request to completed development | Folder open to shown |
+| --- | --- | --- | --- | --- |
+| DSC01848_finished.avif | 6.609 s | 2.259 / 3.552 s | 8.178 s | 8.775 s |
+| DSC00264_finished.avif | 7.835 s | 2.745 / 4.201 s | 9.060 s | 9.632 s |
+
+Both native helpers already overlapped. 2/2 pictures shown at 30 and 60 s;
+fill 9.632 s. Independent process-tree charge peaked at **5,912,424,444 bytes**,
+above 4.4 GB; the >4 GB episode lasted 5.293 s and settled below target.
+Backend-reported app-memory peak was 5.412 GB (not backend-only process RAM).
+No failed pictures or zeroed stored channels (2 audited); no frame/timer
+interval above the harness thresholds. Evidence:
+`codebase/output/quick-library-check/avif-gainmap-before/{report.json,backend.log,memory.jsonl}`.
+The earlier 57-61% claim describes the decoder boundary, not the measured
+whole screen wait: native reconstruction here is 43-46% of request-to-developed
+time. Avoiding the second SDR decode could add savings, but no GPU speed or
+memory improvement has been measured. Stopped before implementation under
+the brief's code-contradiction protocol for Steve's admission-order decision.
+No estimates, budgets, picture identities or processing code changed.
+
 ## 7. Background work and plumbing
 
 | Action | Target | Measured | Conditions | Status |
