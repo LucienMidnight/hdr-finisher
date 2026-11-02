@@ -10,7 +10,7 @@ window.HDRLibraryScenes = (() => {
   // likely lighter work first; expensive work can borrow an otherwise idle slot.
   const changed = (job,state,error) => {
     window.dispatchEvent?.(new Event("library-work-changed"));
-    window.HDRLibraryStopwatch?.("picture_work_"+state,{path:job.path,request:String(job.sequence),
+    window.HDRLibraryStopwatch?.("picture_work_"+String(state).replaceAll("-","_"),{path:job.path,request:String(job.sequence),
       ...window.HDRLibraryPictureLog?.(job),work_stage:job.stage,duration_ms:performance.now()-(job.loggedAt || performance.now()),reason:error?.message});
     job.loggedAt=performance.now();
   };

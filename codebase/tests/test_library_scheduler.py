@@ -419,8 +419,15 @@ def test_oldest_reclaims_then_starts_without_starvation_or_lower_admission():
     assert big.granted is not None and small.granted is None
 
 
-def test_exhausted_reclamation_ends_once_and_releases_the_queue():
-    s = fresh()
+class Clock:
+    def __init__(self): self.now = 100.0
+    def __call__(self): return self.now
+
+
+def test_exhausted_reclamation_keeps_a_job_that_fits_an_empty_app_waiting():
+    # 2 GB fits an empty app at this ceiling (3.3 GB - 1.3 GB starting memory).
+    clock = Clock()
+    s = Scheduler(ceiling=3_300_000_000, clock=clock)
     events = []
     s.update(total=2_500_000_000, available=60*GB, ram=68*GB)
     big = s.ask("big", "window", "big.avif", "source", 2*GB, notify=events.append)
@@ -428,10 +435,36 @@ def test_exhausted_reclamation_ends_once_and_releases_the_queue():
     request = s.reclamation_request()
     s.reclaimed(request["epoch"])
     s.update(total=2_500_000_000, available=60*GB, ram=68*GB)
-    assert big.outcome == "needs more memory" and big.ready.is_set()
-    assert "big" not in s.jobs and small.granted is not None
-    s.update(total=2_300_000_000, available=60*GB, ram=68*GB)
-    assert sum(e["type"] == "needs-memory" for e in events) == 1
+    # Freeing pictures did not make room: it waits, and the queue moves on.
+    assert big.outcome == "" and not big.ready.is_set() and "big" in s.jobs
+    assert small.granted is not None and not s.reclamation
+    s.finish("small")
+    clock.now += 5
+    s.update(total=2_500_000_000, available=60*GB, ram=68*GB)
+    assert not s.reclamation  # still in its cool-down
+    clock.now += 6
+    s.update(total=2_500_000_000, available=60*GB, ram=68*GB)
+    assert s.reclamation and s.reclamation["id"] == "big"  # frees pictures again
+    s.update(total=1_200_000_000, available=60*GB, ram=68*GB)
+    s.reclaimed(s.reclamation_request()["epoch"])
+    s.update(total=1_200_000_000, available=60*GB, ram=68*GB)
+    assert big.granted is not None
+    assert not any(e["type"] == "needs-memory" for e in events)
+
+
+def test_job_larger_than_an_empty_app_still_needs_more_memory():
+    s = Scheduler()  # 4 GB ceiling: an empty app holds jobs up to 2.7 GB
+    events = []
+    s.update(total=1_300_000_000, available=60*GB, ram=68*GB)
+    line_scan = s.ask("scan", "window", "scan.dng", "source", 6_800_000_000, notify=events.append)
+    assert line_scan.outcome == "needs more memory" and "scan" not in s.jobs
+    s.update(total=1_500_000_000, available=60*GB, ram=68*GB)
+    big = s.ask("big", "window", "big.tif", "source", 3*GB, notify=events.append)
+    s.update(total=1_500_000_000, available=60*GB, ram=68*GB)
+    s.reclaimed(s.reclamation_request()["epoch"])
+    s.update(total=1_500_000_000, available=60*GB, ram=68*GB)
+    assert big.outcome == "needs more memory" and "big" not in s.jobs
+    assert sum(e["type"] == "needs-memory" for e in events) == 2
 
 
 def test_higher_classes_and_fast_lane_bypass_starvation_guard():
@@ -482,7 +515,7 @@ def test_guarded_admission_uses_elastic_limit_but_ordinary_admission_does_not():
             assert request
             s.reclaimed(request["epoch"])
             s.update(total=total, available=60*GB, ram=68*GB)
-            assert big.outcome == "needs more memory"
+            assert big.outcome == "" and big.reason == "measured memory"  # waits; fits an empty app
         assert (big.granted is not None) == expected
 
 
@@ -586,7 +619,7 @@ def test_dead_upload_collection_precedes_eviction_and_fresh_fit_needs_no_reclaim
     assert ordinary.granted is not None and not ordinary.reclaimed and not s.reclamation
 
 
-def test_collection_that_cannot_fit_a_giant_continues_to_bounded_eviction():
+def test_collection_that_cannot_fit_a_large_job_continues_to_bounded_eviction():
     s = Scheduler()
     s.heartbeat("window")
     s.listeners.add(lambda value: None)
@@ -604,7 +637,8 @@ def test_collection_that_cannot_fit_a_giant_continues_to_bounded_eviction():
     backend = s.reclamation_request()
     s.reclaimed(backend["epoch"])
     s.update(total=3*GB, available=60*GB, ram=68*GB)
-    assert big.outcome == "needs more memory" and not s.jobs
+    # 2 GB fits an empty app, so it keeps waiting rather than being refused.
+    assert big.outcome == "" and "big" in s.jobs and big.granted is None and not s.reclamation
 
 
 def test_finished_and_refused_work_leaves_no_occupied_development_places():

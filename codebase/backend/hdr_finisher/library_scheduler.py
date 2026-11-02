@@ -16,6 +16,9 @@ DEVELOPMENTS = 1 if os.environ.get("HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS") == "
 SAVES = 2  # Steve approved the provisional bound in this chat, October 31.
 FLOOR = 1_000_000_000
 STARTING = 1_300_000_000
+# A job that fits an empty app is never refused. When freeing pictures did not
+# make room, it lets other photos run and asks again after this cool-down.
+RECLAIM_RETRY_SECONDS = 10
 CLASSES = {"Grade": 0, "now": 1, "soon": 2, "eventually": 3}
 
 
@@ -50,6 +53,7 @@ class Job:
     bypassed: bool = False
     reclaimed: bool = False
     collected: bool = False
+    retry_at: float = float("-inf")
     outcome: str = ""
     ready: Event = field(default_factory=Event)
 
@@ -426,8 +430,10 @@ class Scheduler:
         waiting = [j for j in self.jobs.values() if j.granted is None and not j.fast and not j.blocked]
         # Normal queuing is not a shortage. Only protect a memory wait after
         # running allocations drain and a census started after their release.
-        guards = [j for j in waiting if j.reason in memory_reasons and
-                  not any(k.cls == j.cls and k.sequence < j.sequence for k in waiting) and
+        now = self.clock()
+        cooling = {j.id for j in waiting if j.retry_at > now}
+        guards = [j for j in waiting if j.reason in memory_reasons and j.id not in cooling and
+                  not any(k.cls == j.cls and k.sequence < j.sequence and k.id not in cooling for k in waiting) and
                   not any(not k.fast for k in running) and
                   self.sample_started >= self.drained_at]
         guard = min(guards, key=lambda j: (CLASSES[j.cls], j.sequence), default=None)
@@ -539,8 +545,16 @@ class Scheduler:
                 elif (reason in memory_reasons and job is guard and
                       not any(not j.fast and CLASSES[j.cls] >= CLASSES[job.cls] for j in running) and
                       not any(CLASSES[j.cls] < CLASSES[job.cls] for j in running)):
-                    if job.reclaimed:
+                    if job.reclaimed and job.estimate > self.ceiling-STARTING:
                         self._terminal_memory(job)
+                        guard = None
+                        now_waiting = False
+                    elif job.reclaimed:
+                        # It fits an empty app: keep its place, let other
+                        # photos run, and free pictures again after a pause.
+                        job.reclaimed = job.collected = False
+                        job.retry_at = now+RECLAIM_RETRY_SECONDS
+                        self._log(job, "reclaim_retry")
                         guard = None
                         now_waiting = False
                     elif self.reclamation is None:
