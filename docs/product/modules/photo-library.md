@@ -1,5 +1,17 @@
 # Module PRD: Photo Library
 
+## November 3: Grade gesture pause release (Batch 3d)
+
+Canvas tools can consume pointer release before the old bubbling listener sees
+it, leaving `client:grading` set: the helper and settings writer wait forever,
+and a durably queued grade never reaches its sidecar. This predates Batch 3c;
+shared-source clearing does not own this pause. Release now runs in window
+capture, including cancellation/lost capture, and when leaving Grade or hiding
+the page. Tool errors cannot skip it. Save errors still use the existing error
+reporting and durable pending-write retry. No memory, pixel or file-format rule
+changes. Qualification results follow with the regression-check commit.
+
+
 ### November 3, 2026 — Batch 3c: completed shared sources release
 
 The HDR Test Images copy reproduced renderer retention. A heap capture after

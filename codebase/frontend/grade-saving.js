@@ -341,6 +341,15 @@
   document.addEventListener("pointerdown", event => {
     if (state.activeWorkflow === "grade" && !window.HDRLibraryHost?.isDetached() && event.target.closest("input,canvas,.instrument,.geometry-controls")) { clearTimeout(picturePauseTimer); void pausePictures(true); }
   }, true);
-  for (const event of ["pointerup", "pointercancel", "blur"]) window.addEventListener(event, () => { clearTimeout(picturePauseTimer); picturePauseTimer = setTimeout(() => pausePictures(false), 300); });
+  const releasePictures = () => { clearTimeout(picturePauseTimer); picturePauseTimer = setTimeout(() => pausePictures(false), 300); };
+  // Canvas tools consume release events. Observe them before document/target
+  // handlers so their success, failure or cancellation cannot strand the writer.
+  for (const event of ["pointerup", "pointercancel", "lostpointercapture"])
+    window.addEventListener(event, releasePictures, true);
+  window.addEventListener("blur", releasePictures);
+  window.addEventListener("hdrfinisher:workflowchange", () => {
+    if (state.activeWorkflow !== "grade") releasePictures();
+  });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) releasePictures(); });
   window.setInterval(() => { if (!busy && !asking) tickFlight = tick(); }, 500);
 })();
