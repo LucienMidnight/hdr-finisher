@@ -391,3 +391,16 @@ test('leaving during transient backoff cancels the retry',async()=>{
 });
 
 
+test('invalid GPU pixels finish on the CPU even for a background thumbnail',async()=>{
+ const {scenes,context,events,requests}=setup({photo:{source_identity:'a'.repeat(64)}},async()=>{
+  throw Object.assign(Error('GPU edge colour produced 141 invalid pixels; using the CPU.'),{gpuUnavailable:true,gpuInvalidPixels:true});
+ });
+ let released=0;context.HDRLibraryGpuRaw.releaseSource=()=>released++;
+ const original=context.fetch;
+ context.fetch=async(url,options)=>url==='/api/library/live-scene'?{ok:true,json:async()=>({edge:640,key:'cpu-result',route:'cpu'})}:original(url,options);
+ const result=await scenes.load('photo',640,undefined,80);
+ assert.equal(result.key,'cpu-result');assert.equal(released,1);
+ assert.equal(events.filter(e=>e.stage==='picture_source_gpu_fallback').length,1);
+ assert.equal(events.filter(e=>e.stage==='picture_source_cpu_completed').length,1);
+ assert.ok(requests.every(r=>!r.reason));
+});

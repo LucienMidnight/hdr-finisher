@@ -900,11 +900,11 @@
             attempts--;
             root.HDRLibraryStopwatch?.("picture_development_restart", {path:meta.path,attempt:attempts+1,reason:error.message});
           } else {
-            root.HDRLibraryStopwatch?.("picture_development_failed", {path:meta.path,attempt:attempts,reason:error.message});
+            root.HDRLibraryStopwatch?.(error.gpuInvalidPixels ? "picture_development_gpu_rejected" : "picture_development_failed", {path:meta.path,attempt:attempts,reason:error.message});
             // Repeating the same allocation cannot fix an underestimated footprint.
             // DOMException messages are read-only, so wrap rather than rewrite.
             throw Object.assign(Error(`Development stopped after ${attempts} attempt${attempts === 1 ? "" : "s"}: ${error?.message ?? error}`, {cause:error}),
-              {gpuUnavailable:error?.gpuUnavailable, yieldRaw:false});
+              {gpuUnavailable:error?.gpuUnavailable, gpuInvalidPixels:error?.gpuInvalidPixels, yieldRaw:false});
           }
         }
         // developRaw's finally has freed every buffer before Grade sees zero.
@@ -912,7 +912,7 @@
       }
     } catch (error) {
       root.HDRLibraryStopwatch?.("picture_development_outcome", {path:meta.path,reason:error.message,
-        work_stage:error.name === "AbortError" ? "cancelled" : "failed"});
+        work_stage:error.gpuInvalidPixels ? "CPU fallback" : error.name === "AbortError" ? "cancelled" : "failed"});
       throw error;
     } finally { activeGpuWorks.delete(key);await fetch(url, {method:"DELETE"}).catch(() => {}); }
   }

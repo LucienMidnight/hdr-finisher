@@ -1,3 +1,12 @@
+### November 3: Batch 3f — Library edge-colour fallback
+
+The shared invalid-output range check now marks rejected GPU pixels explicitly.
+Library scheduling preserves that signal and releases the GPU source before CPU
+admission, including background thumbnails. GPU rejection and CPU completion
+are separate log events; successful CPU development creates no failure receipt.
+The range check, threshold, pixel maths, memory allowances and saved formats are
+unchanged. Grade retains its existing CPU fallback.
+
 # Module PRD: Import and RAW
 
 - **Owner:** Steve

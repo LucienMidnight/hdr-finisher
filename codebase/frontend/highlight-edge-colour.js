@@ -198,7 +198,7 @@
       const limit=f(32*Math.max(input.largest,1e-6));
       const output=await scan(result,`if(bad(v)||any(abs(v)>vec3<f32>(${limit}))){atomicAdd(&n,1u);}`);
       if(input.rejected===0&&output.rejected>0)
-        throw Error(`GPU edge colour produced ${output.rejected} invalid pixels; using the CPU.`);
+        throw Object.assign(Error(`GPU edge colour produced ${output.rejected} invalid pixels; using the CPU.`),{gpuUnavailable:true,gpuInvalidPixels:true});
       for(const b of result)owned.delete(b);
       return {planes:result,applied:true,clip_luminance:median,clipped_pixel_fraction:count/(w*h)};
     } finally {await device.queue.onSubmittedWorkDone().catch(()=>{});for(const b of owned)release(b);u.destroy();}

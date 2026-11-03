@@ -322,3 +322,20 @@ for(const cancelAll of [false,true])test(`shared samples release after ${cancelA
  await assert.rejects(job.promise,cancelAll?{name:'AbortError'}:/handoff failed/);
  assert.equal(job.source,null);assert.equal(releases,1);
 });
+
+
+test('invalid-pixel rejection keeps its CPU fallback identity through the GPU scheduler',async()=>{
+ const source=fsRead();
+ function fsRead(){return require('node:fs').readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');}
+ const fn=source.slice(source.indexOf('  function allocationScope('),source.indexOf('  async function develop(path,'));
+ const events=[];
+ const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
+  gpu:async()=>({state:{lost:false}}),rawBudget:()=>60,
+  root:{HDRLibraryScenes:{stage(){}},HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},
+  fetch:async()=>({ok:true,json:async()=>({granted:true})}),
+  developRaw:async()=>{throw Object.assign(Error('GPU edge colour produced 141 invalid pixels; using the CPU.'),{gpuUnavailable:true,gpuInvalidPixels:true});}};
+ compileScheduled(context,fn);
+ await assert.rejects(context.run({meta:{path:'photo.arw'},edges:[640]},new AbortController().signal),error=>error.gpuUnavailable&&error.gpuInvalidPixels);
+ assert.equal(events.filter(e=>e.stage==='picture_development_failed').length,0);
+ assert.equal(events.filter(e=>e.stage==='picture_development_gpu_rejected').length,1);
+});

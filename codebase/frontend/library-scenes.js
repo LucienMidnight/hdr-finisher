@@ -159,6 +159,7 @@ window.HDRLibraryScenes = (() => {
     return {...meta, draw_priority:priority, trace, log_view:trace?.view || (edge <= 640 ? "grid,filmstrip" : "single,fullscreen,compare")};
   }
   async function develop(path, edge, signal, importance, version, gpuOnly = false, grant = null, cpuRoute = null, edges = null) {
+    let rejectedPixels=false;
     if (!cpuRoute && HDRLibraryGpuRaw.enabled()) {
       try {
         const meta = await HDRLibraryGpuRaw.liveScene(path, edge, signal, importance, version, grant, edges);
@@ -170,19 +171,21 @@ window.HDRLibraryScenes = (() => {
           error.developmentFailure=version.split(":")[0];
           throw error;
         }
+        rejectedPixels=!!error.gpuInvalidPixels;
         window.HDRLibraryStopwatch?.("picture_source_gpu_fallback",{path,reason:error.message});
         // The structured fallback event above carries the picture labels.
         // Release the retained GPU source so the CPU route can claim it.
         HDRLibraryGpuRaw.releaseSource?.(path);
       }
     }
-    if (!cpuRoute && (importance() >= 50 || (gpuOnly && importance() > 0))) return null;
+    if (!cpuRoute && !rejectedPixels && (importance() >= 50 || (gpuOnly && importance() > 0))) return null;
     const cpu=async (token,owned)=>{for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",priority:"low",signal:owned,
         headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,priority:importance(),grant:token})});
       if (response.status === 202) { sources.stage(path,"Waiting to develop photo",true); await wait(150, signal); continue; }
       const meta = await response.json();
       if (!response.ok) throw failure(meta);
+      window.HDRLibraryStopwatch?.("picture_source_cpu_completed",{path,edge,route:meta.route});
       return meta;
     }};
     if(!cpuRoute && HDRLibraryGpuRaw.enabled()){
