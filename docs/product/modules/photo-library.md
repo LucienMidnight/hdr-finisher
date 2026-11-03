@@ -1,5 +1,22 @@
 # Module PRD: Photo Library
 
+### November 3, 2026 — Batch 3c: completed shared sources release
+
+The HDR Test Images copy reproduced renderer retention. A heap capture after
+Library reclamation and garbage collection found 1.760 GB of backing storage:
+finished direct-scene callbacks retained their shared job, whose `source.body`
+still held the downloaded full-source samples. Dropping the backend source claim
+had not cleared that JavaScript reference. The shared job now clears its source
+on every completion path, after all requested sizes finish; the existing decoded
+source cache remains the sole owner when a preempted job explicitly retains it.
+Native detail and cross-size sharing are unchanged. The native backend weak-frame
+sharing introduced in Batch 3b is not the cause of this renderer retention.
+
+Grade continues to retain its open document when returning to Library; its unique
+source allocations are counted by admission and its existing close/save gate
+releases them. No Grade rule or approved memory number changes.
+
+
 ## November 2: no needless refusals, no window leak, assumed colour
 
 Built on `library-avif-gainmap-gpu` (commits `80decca` to `87bcb28`) after

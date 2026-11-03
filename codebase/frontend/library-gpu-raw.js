@@ -1146,6 +1146,11 @@
             return job.results;
           } finally {
             const token=job.source?.token;
+            // Finished direct-scene callbacks can outlive this job. They share
+            // its lexical context, so dropping the backend claim alone leaves
+            // every downloaded source buffer reachable through job.source.
+            // Only the explicit decoded-source cache may keep samples on yield.
+            job.source=null;
             if(token && ![...decodedSources.values()].some(value=>value.token===token))
               await fetch("/api/library/live-source/"+token,{method:"DELETE"}).catch(()=>{});
           }

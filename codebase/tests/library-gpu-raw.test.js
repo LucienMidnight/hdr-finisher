@@ -248,15 +248,17 @@ for (const late of [false, true]) test(`different GPU tiers share one source wit
       send:async(_url,{body,parts})=>{body=parts?.[0] || body;const n=new DataView(body).getUint32(0,true);const h=JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,n)));return {ok:true,text:JSON.stringify({edge:h.edge,width:h.width})};}
     }}
   };
-  vm.runInNewContext(source.slice(source.indexOf('  async function develop(path,'),source.indexOf('  const warmup ='))+';this.request=thumbnail;',context);
+  vm.runInNewContext(source.slice(source.indexOf('  async function develop(path,'),source.indexOf('  const warmup ='))+';this.request=thumbnail;this.jobs=inflight;',context);
   const cancel=new AbortController();
   const small=context.request('photo',640,cancel.signal,{liveScene:true});
   const rejected=assert.rejects(small,{name:'AbortError'});
   await started;
+  const completedJob=context.jobs.values().next().value;
   const large=context.request('photo',2560,null,{liveScene:true});
   cancel.abort();unblock();await rejected;
   assert.equal((await large).edge,2560);
   assert.equal(reads,1);assert.equal(releases,1);
+  assert.equal(completedJob.source,null,'Completed shared work must relinquish its downloaded samples even while picture callbacks keep the job alive');
   assert.deepEqual(reductions.flat().sort((a,b)=>a-b),[640,2560]);
 });
 
@@ -285,7 +287,7 @@ for (const liveScene of [false,true]) test(`native requests develop and hand off
       send:async(_url,{body,parts})=>{body=parts?.[0] || body;const n=new DataView(body).getUint32(0,true);const h=JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,n)));handoffs.push(h);return {ok:true,text:JSON.stringify({edge:h.edge,width:h.width,height:h.height})};}
     }}
   };
-  vm.runInNewContext(source.slice(source.indexOf('  async function develop(path,'),source.indexOf('  const warmup ='))+';this.request=thumbnail;',context);
+  vm.runInNewContext(source.slice(source.indexOf('  async function develop(path,'),source.indexOf('  const warmup ='))+';this.request=thumbnail;this.jobs=inflight;',context);
   const scene=context.request('photo',2560,null,{liveScene:true});
   const native=context.request('photo',2560,null,{liveScene,nativeMode:true,edges:new Set([640,2560])});
   assert.equal((await scene).width,2560);
@@ -297,4 +299,26 @@ for (const liveScene of [false,true]) test(`native requests develop and hand off
   const full=handoffs.find(h=>h.edge===100000);
   assert.equal(full.native_mode,!liveScene);
   assert.equal(full.width,full.source_width);assert.equal(full.height,full.source_height);
+});
+
+for(const cancelAll of [false,true])test(`shared samples release after ${cancelAll?'last requester cancels':'handoff fails'}`,async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+ let enter,release,releases=0;
+ const entered=new Promise(r=>enter=r),gate=new Promise(r=>release=r);
+ const meta={source_job:'owner',path:'photo',identity:[],mosaic_bytes:0,width:1280,height:640};
+ const header=Buffer.from(JSON.stringify(meta)),bytes=Buffer.alloc(4+header.length);bytes.writeUInt32LE(header.length);header.copy(bytes,4);
+ const context={performance,crypto:require('node:crypto').webcrypto,DOMException,AbortController,
+  Uint8Array,Float32Array,DataView,TextDecoder,setInterval,clearInterval,
+  decodedSources:new Map(),directScenes:new Map(),cachedDirect:()=>null,sourceStorageLimit:async()=>Infinity,quantile:()=>1,
+  handoffBody:globalThis.HDRLibraryGpuRaw.handoffBody,
+  fetch:async(_url,options)=>{if(options.method==='DELETE')releases++;return {ok:true};},
+  scheduledDevelopment:async()=>({samples:[],peaks:{},timings:{},reduced:{640:{width:640,height:320,planes:[]}}}),
+  root:{HDRLibraryUpload:{fetchSource:async()=>{enter();await gate;return {ok:true,status:200,headers:{get:()=>''},arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length)};},send:async()=>{throw Error('handoff failed');}}}};
+ vm.runInNewContext(source.slice(source.indexOf('  async function develop(path,'),source.indexOf('  const warmup ='))+';this.request=thumbnail;this.jobs=inflight;',context);
+ const controller=new AbortController(),request=context.request('photo',640,controller.signal,{liveScene:true});
+ const rejected=assert.rejects(request,cancelAll?{name:'AbortError'}:/handoff failed/);
+ await entered;const job=context.jobs.values().next().value;
+ if(cancelAll)controller.abort();release();await rejected;
+ await assert.rejects(job.promise,cancelAll?{name:'AbortError'}:/handoff failed/);
+ assert.equal(job.source,null);assert.equal(releases,1);
 });

@@ -1,5 +1,16 @@
 # Module PRD: Memory and caches
 
+### November 3: completed shared-source ownership
+
+Library shared preparations now clear their downloaded source reference when the
+last requested tier finishes or fails. Finished direct-scene callbacks can retain
+the job's lexical context beyond its backend claim; this previously kept about
+1.760 GB of full-source samples alive after reclamation in the HDR folder copy.
+Only the existing bounded decoded-source cache may retain samples after a yield.
+Sharing, native resolution, cache shares, estimates and all approved sizes remain
+unchanged. Grade's open source remains counted and uses the existing close gate.
+
+
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
 - **Last status check:** October 29, 2026, against the code on
