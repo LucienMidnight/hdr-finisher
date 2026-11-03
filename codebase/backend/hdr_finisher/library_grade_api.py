@@ -90,7 +90,7 @@ def add_grade_routes(router, marks, store):
     @router.post("/grade/{session_id}")
     def grade_command(session_id: str, request: GradeRequest):
         from .main import library_worker
-        with library_worker.busy() if request.action in {"load", "discard-for-paste"} else nullcontext():
+        with library_worker.busy(f"grade choice {request.action}") if request.action in {"load", "discard-for-paste"} else nullcontext():
             return apply_grade_command(session_id, request)
 
     def apply_grade_command(session_id: str, request: GradeRequest):

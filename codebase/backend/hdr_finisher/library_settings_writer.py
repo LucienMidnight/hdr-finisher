@@ -97,7 +97,7 @@ class LibrarySettingsWriter:
     def pause(self, paused):
         with self.marks._lock:
             self._paused = bool(paused)
-            self.log("writer_pause" if paused else "writer_resume", reason="user")
+            self.log("writer_pause" if paused else "writer_resume", reason="user", owner="settings writer user", action="manual pause" if paused else "manual resume")
         self.wake()
 
     def is_current(self, path, revision):
@@ -350,10 +350,13 @@ class LibrarySettingsWriter:
     def drain(self):
         """One pass; also used by deterministic checks, never a mark command."""
         self.status()  # Capture the queue size before this pass completes files.
-        busy = bool(self._busy())
+        owners = self._busy()
+        busy = bool(owners)
         if busy != self._busy_state:
-            self.log("writer_pause" if busy else "writer_resume", reason="Grade/import/export")
+            self.log("writer_pause" if busy else "writer_resume", reason="Grade/import/export",
+                owner=owners if busy else getattr(self, "_busy_owners", []), owners=owners, action="foreground hold" if busy else "foreground released")
             self._busy_state = busy
+        self._busy_owners = owners
         counts, examples, visible = Counter(), {}, set()
         for path in self._pending():
             with self._lane:

@@ -395,7 +395,7 @@ class DesktopRequestBoundary:
             request.url.path == "/api/library/grade-reverts" or
             (request.method == "GET" and request.url.path.startswith("/api/library/grade")))
         if not delivery_request and not library_read and (request.url.path == "/api/session" or request.url.path.startswith("/api/session/") or request.url.path.startswith("/api/library/grade")):
-            with library_worker.busy():
+            with library_worker.busy(f"{request.method} {request.url.path}"):
                 await self.app(scope, receive, send_hardened)
         else:
             await self.app(scope, receive, send_hardened)
@@ -2522,6 +2522,7 @@ def media_browser(path: str | None = Query(default=None), mode: str = Query(defa
 class LibraryPauseRequest(BaseModel):
     reason: Literal["grading", "export", "manual"]
     paused: bool
+    action: str = "client hold changed"
 
 
 @app.get("/api/library-worker/status")
@@ -2531,7 +2532,7 @@ def library_worker_status() -> dict[str, object]:
 
 @app.post("/api/library-worker/pause")
 def pause_library_worker(request: LibraryPauseRequest) -> dict[str, object]:
-    library_worker.pause(f"client:{request.reason}", request.paused)
+    library_worker.pause(f"client:{request.reason}", request.paused, action=request.action)
     return library_worker.status()
 
 

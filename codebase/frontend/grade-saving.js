@@ -337,11 +337,11 @@
   });
   // Scheduling only: an active control gesture pauses Library background work.
   let picturePauseTimer;
-  const pausePictures = paused => fetch("/api/library-worker/pause", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "grading", paused }) }).catch(() => {});
+  const pausePictures = (paused, action) => fetch("/api/library-worker/pause", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "grading", paused, action }) }).catch(() => {});
   document.addEventListener("pointerdown", event => {
-    if (state.activeWorkflow === "grade" && !window.HDRLibraryHost?.isDetached() && event.target.closest("input,canvas,.instrument,.geometry-controls")) { clearTimeout(picturePauseTimer); void pausePictures(true); }
+    if (state.activeWorkflow === "grade" && !window.HDRLibraryHost?.isDetached() && event.target.closest("input,canvas,.instrument,.geometry-controls")) { clearTimeout(picturePauseTimer); void pausePictures(true, `Grade pointerdown ${event.target.id || event.target.tagName}`); }
   }, true);
-  const releasePictures = () => { clearTimeout(picturePauseTimer); picturePauseTimer = setTimeout(() => pausePictures(false), 300); };
+  const releasePictures = event => { clearTimeout(picturePauseTimer); picturePauseTimer = setTimeout(() => pausePictures(false, `Grade release ${event?.type || "view hidden"}`), 300); };
   // Canvas tools consume release events. Observe them before document/target
   // handlers so their success, failure or cancellation cannot strand the writer.
   for (const event of ["pointerup", "pointercancel", "lostpointercapture"])

@@ -1,5 +1,12 @@
 # Module PRD: Photo Library
 
+## November 3: Grade pause follow-up diagnostics (Batch 3d2)
+
+Pause transitions now identify their request/control owner and action. Helper
+hold changes also record all remaining owners, including overlapping holds;
+worker status exposes those owners to settings-writer diagnostics. This is
+logging only. Steve's later stuck-pause session remains to be reproduced.
+
 ## November 3: Grade gesture pause release (Batch 3d)
 
 Canvas tools can consume pointer release before the old bubbling listener sees

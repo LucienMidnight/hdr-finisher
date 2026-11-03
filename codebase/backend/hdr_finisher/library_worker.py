@@ -245,15 +245,16 @@ class LibraryWorker:
             self._send({"command": "cancel", "id": job_id})
             return True
 
-    def pause(self, reason: str, paused: bool) -> None:
+    def pause(self, reason: str, paused: bool, *, action: str = "hold changed") -> None:
         with self._lock:
             was_paused = bool(self._paused)
             if paused:
                 self._paused.add(reason)
             else:
                 self._paused.discard(reason)
+            log("helper_hold", owner=reason, action=action, acquired=paused, owners=sorted(self._paused))
             if bool(self._paused) != was_paused:
-                log("helper_pause" if self._paused else "helper_resume", reason="Grade/import/export" if reason != "manual" else "manual", action="background lanes wait" if self._paused else "background lanes resume")
+                log("helper_pause" if self._paused else "helper_resume", reason="Grade/import/export" if reason != "manual" else "manual", owner=reason, owners=sorted(self._paused), action=action)
             self._send({"command": "pause", "paused": bool(self._paused)})
 
     def foreground_source(self, key, active):
@@ -266,8 +267,8 @@ class LibraryWorker:
             self._send({"command": "source-busy", "active": bool(self._source_foreground)})
 
     @contextmanager
-    def busy(self):
-        reason = uuid4().hex
+    def busy(self, owner="Grade operation"):
+        reason = f"{owner}:{uuid4().hex}"
         self.pause(reason, True)
         try:
             yield
@@ -438,7 +439,7 @@ class LibraryWorker:
         with self._lock:
             return {**self.info, "running": bool(self._process and self._process.is_alive()),
                     "jobs": list(self._work.values()) + [dict(path=r.get("path"),stage="Waiting to develop photo",state="waiting") for k,r in self._requests.items() if k not in self._work and r.get("command") in {"live-scene","live-fallback"}],
-                    "pending": len(self._pending), "source_busy": bool(self._source_foreground), "paused": bool(self._paused), "manual_paused": "manual" in self._paused,
+                    "pending": len(self._pending), "source_busy": bool(self._source_foreground), "paused": bool(self._paused), "pause_owners": sorted(self._paused), "manual_paused": "manual" in self._paused,
                     "failure": self._failure, "restarts": self._restarts, "recovering": self._recovering}
 
     def close(self) -> None:

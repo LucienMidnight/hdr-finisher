@@ -79,11 +79,11 @@ test("Grade gestures send the accepted pause reason and release it after the ges
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/grade-saving.js"), "utf8"), context);
   const control = { target: { closest: () => true } };
   documentEvents.get("pointerdown")(control);
-  assert.deepEqual(requests, [{ reason: "grading", paused: true }]);
+  assert.deepEqual(requests.map(({reason,paused})=>({reason,paused})), [{ reason: "grading", paused: true }]);
   windowEvents.get("pointerup")();
   for (const callback of timers.values()) callback();
   await Promise.resolve();
-  assert.deepEqual(requests, [{ reason: "grading", paused: true }, { reason: "grading", paused: false }]);
+  assert.deepEqual(requests.map(({reason,paused})=>({reason,paused})), [{ reason: "grading", paused: true }, { reason: "grading", paused: false }]);
   context.state.activeWorkflow = "library";
   documentEvents.get("pointerdown")(control);
   assert.equal(requests.length, 2);
