@@ -75,6 +75,9 @@ def cached_rows(index, store, photos, root=None):
     empty=dict(marks=Marks().model_dump(),albums=[],storage="none")
     for photo in photos:
         photo.update(rows.get(photo["path"],empty))
+        if photo["type"] in {"TIF", "TIFF"} and not photo.get("cloud"):
+            from .library_metadata import mezzanine_tiff
+            photo["mezzanine"] = mezzanine_tiff(photo["path"], photo["bytes"], photo["mtime_ns"])
     if store is not None:
         # Expand the indexed copy baseline without opening a settings file.
         states = marks.copies.states(paths)

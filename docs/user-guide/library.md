@@ -22,7 +22,9 @@ The Library keeps pinned folders up to date in the background. If you copy new p
 
 ### Which files the Library shows
 
-The Library shows these file types: JPEG (`.jpg`, `.jpeg`), PNG, TIFF (`.tif`, `.tiff`), HEIC and HEIF, AVIF, JPEG XL (`.jxl`), OpenEXR (`.exr`), Radiance HDR (`.hdr`), PFM, DNG, and camera RAW files: Sony `.arw`, Canon `.cr2` and `.cr3`, Nikon `.nef` and `.nrw`, Fujifilm `.raf`, Panasonic `.rw2`, Olympus `.orf` and `.ori`, Pentax `.pef` and Samsung `.srw`.
+By default, the Library shows camera RAW files (including DNG), EXR, PFM, Radiance HDR, and 16-bit or floating-point TIFF. Right-click a photo or the empty grid and choose **Show all files** to include export formats. This choice is remembered across Library windows.
+
+With **Show all files**, supported file types include: JPEG (`.jpg`, `.jpeg`), PNG, TIFF (`.tif`, `.tiff`), HEIC and HEIF, AVIF, JPEG XL (`.jxl`), OpenEXR (`.exr`), Radiance HDR (`.hdr`), PFM, DNG, and camera RAW files: Sony `.arw`, Canon `.cr2` and `.cr3`, Nikon `.nef` and `.nrw`, Fujifilm `.raf`, Panasonic `.rw2`, Olympus `.orf` and `.ori`, Pentax `.pef` and Samsung `.srw`.
 
 It leaves out files that are not photos, even when they have a photo extension:
 
@@ -54,7 +56,7 @@ Choose **100%** (Z) in Single view to see the photo at full detail. Move the pic
 
 ### Preview in HDR
 
-Choose **HDR** (H) to see the Library pictures in HDR on an HDR display. Choose it again to go back to SDR. Choose **RAW** to show only camera RAW files.
+Choose **HDR** (H) to see the Library pictures in HDR on an HDR display. Choose it again to go back to SDR. Unedited RAW camera pictures stay SDR even when HDR is enabled. The Filters panel still has a **RAW** select-all button.
 
 ### Compare two photos
 
@@ -292,11 +294,13 @@ failed photo; work resumes when enough memory is available.
 
 ### Unsupported photos, interrupted decoders and offline folders
 
-A camera preview can remain visible when full development is unavailable.
+Unedited RAWs show their embedded camera picture in the grid, filmstrip, Single, fullscreen and Compare when its long edge is at least 1024 pixels. They develop only for detail beyond that picture, or when you choose **Develop** from the right-click menu. Develop applies to the selection and never changes grades or sidecars. A quiet **Developed** label identifies HDR Finisher pictures, which remain while cached; after eviction, an unedited RAW returns to its camera picture.
+
+Edited photos, photos without usable camera pictures, and mezzanine or HDR files develop only when shown. Plain SDR files are drawn directly. No neighbours or idle photos develop in the background.
 The Library now explains these cases:
 
 - “Not supported: JPEG XL source colour is unresolved. Open it in Grade to choose its source interpretation.”
-- Fuji X-Trans photos first show the camera preview, then develop using the same decoder as Grade. Development can wait for memory or earlier work.
+- Fuji X-Trans photos use the camera picture under the same rules. When development is needed, they use the same decoder as Grade and may wait for memory or earlier work.
 - When development is refused and a preview is available, the preview stays visible. Hover over the photo for the reason.
 - “The photo decoder stopped while reading this file. The file was set aside; other photos continue.”
 - “The photo decoder took too long. The file was set aside; other photos continue.”

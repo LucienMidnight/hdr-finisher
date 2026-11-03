@@ -3,7 +3,7 @@
   function create(o) {
     const $ = id => document.getElementById(id);
     let enabled=false, left=null, settings={compare_layout:'side',compare_names:true}, divider=.5;
-    let queue=Promise.resolve(), generation=0, ahead=[], drag=null, wheelTimer;
+    let queue=Promise.resolve(), generation=0, drag=null, wheelTimer;
     const root=document.createElement('div');root.id='library-compare';root.hidden=true;
     root.innerHTML=`<div class="compare-panes"><section class="compare-side" data-side="left"><div class="compare-stage"><canvas class="compare-fit"></canvas><canvas class="compare-native" hidden></canvas></div><div class="compare-caption"></div><p class="compare-note"></p></section><section class="compare-side" data-side="right"><div class="compare-stage"><canvas class="compare-fit"></canvas><canvas class="compare-native" hidden></canvas></div><div class="compare-caption"></div><p class="compare-note"></p></section><div id="compare-divider" role="slider" tabindex="0" aria-valuemin="5" aria-valuemax="95" aria-valuenow="50" aria-label="Split divider"></div></div>`;
     $('single-stage').before(root);
@@ -30,8 +30,8 @@
     for(const type of ['pointerup','pointercancel'])handle.addEventListener(type,e=>{splitting=false;if(handle.hasPointerCapture(e.pointerId))handle.releasePointerCapture(e.pointerId);});
     handle.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){divider=Math.max(.05,Math.min(.95,divider+(e.key==='ArrowLeft'?-.02:.02)));handle.setAttribute('aria-valuenow',String(Math.round(divider*100)));layout();e.preventDefault();e.stopPropagation();}});
     function layout(){syncSwitches();root.dataset.layout=settings.compare_layout;root.style.setProperty('--compare-split',`${divider*100}%`);for(const side of sides)side.caption.hidden=!settings.compare_names;}
-    function cancel(){generation++;for(const s of sides){s.controller?.abort();s.nativeController?.abort();}for(const c of ahead)c.abort();ahead=[];}
-    function captions(){for(const s of sides){if(s.photo)s.caption.replaceChildren(document.createTextNode(s.photo.name),o.strip(s.photo));}}
+    function cancel(){generation++;for(const s of sides){s.controller?.abort();s.nativeController?.abort();}}
+    function captions(){for(const s of sides){if(s.photo)s.caption.replaceChildren(document.createTextNode(s.photo.name),o.strip(s.photo),...(s.meta&&!s.meta.bitmap?[document.createTextNode(" · Developed")]:[]));}}
     function command(action,step=1){
       const task=queue.then(async()=>{
         if(!o.selected())return;
@@ -58,11 +58,12 @@
       if(!o.zoom().enabled||!s.meta)return;
       if(s.photo.edited){s.note.textContent='Screen preview enlarged. Check detail in Grade.';return;}
       const z=o.zoom(),dpr=devicePixelRatio||1,percent=`${Math.round(z.scale*100)}%`;
-      if(s.meta.source_width&&s.meta.width>=s.meta.source_width*z.scale){s.note.textContent='';return;}
+      if(s.meta.source_width&&(s.meta.camera_long_edge ? s.meta.camera_long_edge/Math.max(s.meta.source_width,s.meta.source_height) : s.meta.width/s.meta.source_width)>=z.scale){s.note.textContent='';return;}
       const c=new AbortController();s.nativeController=c;
       const current=()=>enabled&&o.active()&&!c.signal.aborted&&s.photo?.path===s.fit.dataset.picturePath;
       s.note.textContent=`Preparing detail preview · ${percent}…`;
       try{
+        window.HDRLibraryStopwatch?.("picture_development_start",{path:s.photo.path,reason:"zoom detail",view:"compare"});
         await o.prepareNative?.(s.photo,c.signal);
         const m=await o.api('/api/library/native',{path:s.photo.path,center_x:z.x,center_y:z.y,width:Math.max(64,Math.min(4096,Math.ceil(s.stage.clientWidth*dpr/z.scale))),height:Math.max(64,Math.min(4096,Math.ceil(s.stage.clientHeight*dpr/z.scale)))},c.signal);
         if(!current())return;m.adjustments=s.meta.adjustments;await o.draw(m,s.native,c,current);if(!current())return;
@@ -71,16 +72,16 @@
     }
     async function show(){
       if(!enabled)return;cancel();root.hidden=false;$('single-stage').hidden=true;$('single-caption').hidden=true;layout();
-      const gen=generation,photos=[o.allPhotos().find(p=>p.path===left?.path)||left,o.selected()];
+      const gen=generation,photos=[o.photos().find(p=>p.path===left?.path)||o.photos().find(p=>p.path!==o.selected()?.path)||o.selected(),o.selected()];
       await Promise.all(sides.map(async(s,i)=>{
+        const fresh=s.fit.cloneNode(false);s.fit.replaceWith(fresh);s.fit=fresh;
         s.photo=photos[i];s.meta=null;s.nativeMeta=null;s.native.hidden=true;s.note.textContent='';s.fit.style.cssText='';
         const c=new AbortController();s.controller=c;const current=()=>enabled&&o.active()&&generation===gen&&!c.signal.aborted;
         if(!s.photo)return;
         try{const edge=Math.max(s.stage.clientWidth,s.stage.clientHeight)*(devicePixelRatio||1);s.meta=await o.load(s.photo,edge<=1280?1280:edge<=1920?1920:2560,s.fit,c,current,0);if(!current())return;position();captions();await native(s);}catch(e){if(e.name!=='AbortError')o.status(e.message);}
       }));
       if(generation!==gen)return;
-      const i=o.photos().findIndex(p=>p.path===o.selected()?.path);
-      for(const p of [o.photos()[i+1],o.photos()[i-1]])if(p&&p.path!==left?.path){const c=new AbortController();ahead.push(c);(o.preparePicture?.(p,1280,c.signal)||o.api('/api/library/picture',{path:p.path,edge:1280,quality:'quick',priority:50},c.signal)).catch(()=>{});}
+
     }
     function zoom(point,side=sides[1]){
       const z=o.zoom();let x=z.x,y=z.y;

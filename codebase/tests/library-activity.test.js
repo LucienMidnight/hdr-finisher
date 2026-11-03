@@ -92,3 +92,10 @@ test("each Activity message stays on screen at least 1.5 s; only the display wai
   t=1700; held=hold.apply(new Map());
   assert.deepEqual(held.lines,[]); assert.equal(held.wait,null);
 });
+
+
+test("hidden photo failures do not count in Needs attention", () => {
+  const health=rest();health.picture_errors=[{path:"hidden.jpg"},{path:"visible.arw"}];
+  assert.match(summary(health,path=>path.endsWith('.arw')),/Needs attention: 1/);
+  assert.equal(summary(health,()=>false),'Activity');
+});

@@ -1,6 +1,6 @@
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** decided by Steve, November 3, 2026. Not built. Build order is in
+**Status:** Batch 4a built November 3, 2026; Batches 4b-4d remain open. Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
@@ -94,10 +94,31 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 
 | Batch | Contents | Status |
 | --- | --- | --- |
-| 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Not started |
+| 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Built November 3, 2026 |
 | 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Not started |
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, settings-conflict UTF-8 errors. Recheck which still happen first. | Not started |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Not started |
+
+### Batch 4a implementation and checks
+
+Camera pictures of at least 1024 pixels now remain the SDR picture in every
+Library view. Edited photos, explicit Develop selections, missing/tiny camera
+pictures, zoom beyond embedded detail and shown HDR/mezzanine files retain the
+existing development routes and visible CPU fallback. Develop stores both
+Library tiers without touching grades or sidecars. Old automatic scene caches
+are invalidated by a disposable cache-version change; saved projects are unaffected.
+
+Removed neighbour RAW plans, read-ahead, idle warmers and their unused cache
+headroom gate; startup upkeep only reconciles caches/indexes. Stored neighbour
+pictures can still be retained. RAW/mezzanine filtering, remembered Show all
+files, quiet Developed indicators and picture-source/reason logs are built.
+Finished-thumbnail reads split into groups of at most 32.
+
+Tests deliberately changed from thumbnail-suppresses-camera to camera-eligible
+regardless of a cached thumbnail. Removed read-ahead, warmer, idle-headroom and
+RAW-plan tests with their retired features; demand/cancellation, default file
+visibility, camera eligibility, direct SDR pixels/orientation and 72-thumbnail
+batch tests cover the replacement behavior. Validation results follow below.
 
 ## November 3: Batch 3f — save admission and remaining CPU blocker
 

@@ -176,3 +176,12 @@ def read_metadata(paths, cancelled=lambda: False, *, parallel=False, allow_cloud
             problem("metadata_stat_failed", path, error, "facts unavailable; photo stays visible")
         photos.append(record)
     return {"photos": photos}
+
+def mezzanine_tiff(path, size, modified):
+    try:
+        import tifffile
+        with tifffile.TiffFile(path) as image:
+            dtype = image.pages[0].dtype
+            return dtype.kind == "f" or dtype.itemsize >= 2
+    except (OSError, ValueError, IndexError):
+        return False

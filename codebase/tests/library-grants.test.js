@@ -179,10 +179,10 @@ test('dead-upload collection acknowledges without evicting cache entries',async(
  controller.abort();await assert.rejects(pending,{name:'AbortError'});grants.close();
 });
 
-test('unsupported camera-preview formats need no grant',()=>{
+test('direct pictures cover RAW and SDR formats; mezzanine-only formats need no preview grant',()=>{
  const {previewSupported}=require('../frontend/library-grants');
- for(const p of ['ordinary.DNG','camera.ARW','image.JPG','image.png','image.cr2|copy|version'])assert.ok(previewSupported(p));
- for(const p of ['DSC01287.exr','image.tif','image.heic','image.avif','image.jxl'])assert.equal(previewSupported(p),false);
+ for(const p of ['ordinary.DNG','camera.ARW','image.JPG','image.png','image.cr2|copy|version','image.tif','image.heic','image.avif','image.jxl'])assert.ok(previewSupported(p));
+ for(const p of ['DSC01287.exr','image.pfm','image.hdr'])assert.equal(previewSupported(p),false);
 });
 
 test('a preempted turn is handed back instead of re-asked inside the caller slot',async()=>{

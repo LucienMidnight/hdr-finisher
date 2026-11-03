@@ -78,7 +78,7 @@
     if(value.reason==="system reserve")return `not enough free memory on this computer (needs ${(value.estimate/1e9).toFixed(2)} GB, ${(value.free/1e9).toFixed(2)} GB free)`;
     return value.reason==="connecting"?"Connecting to Library scheduler":"Waiting for working memory";
   }
-  function previewSupported(path){return /\.(jpe?g|png|dng|arw|cr2|cr3|nef|nrw|raf|rw2|orf|ori|pef|srw)(?:\|copy\||$)/i.test(path);}
+  function previewSupported(path){return /\.(jpe?g|png|webp|avif|heic|heif|jxl|tiff?|3fr|arw|cr2|cr3|dng|erf|fff|iiq|kdc|mef|mos|mrw|nef|nrw|orf|ori|pef|raf|raw|rw2|rwl|srw|x3f)(?:\|copy\||$)/i.test(path);}
   const api={create,waitingText,previewSupported};
   if(typeof module!=="undefined")module.exports=api;
   else {

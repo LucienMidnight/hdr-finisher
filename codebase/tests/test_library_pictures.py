@@ -256,3 +256,38 @@ def test_stand_in_request_gets_the_real_picture_once_it_is_cached(tmp_path, monk
     assert real["route"] == "quick-linear-dng"
     assert cache.cached(source, 512, "fast")["key"] == real["key"]
     assert cache.build(source, 512, "fast")["route"] == "quick-linear-dng"
+
+
+@pytest.mark.parametrize("dtype, expected", [(np.uint8, False), (np.uint16, True), (np.float32, True)])
+def test_default_mezzanine_filter_reads_tiff_header_without_pixels(tmp_path, monkeypatch, dtype, expected):
+    import tifffile
+    from hdr_finisher.library_metadata import mezzanine_tiff
+    path = tmp_path / "image.tif"
+    tifffile.imwrite(path, np.zeros((4, 8), dtype=dtype))
+    monkeypatch.setattr(tifffile.TiffPage, "asarray", lambda *args, **kw: pytest.fail("Filtering must not decode TIFF pixels"))
+    stat = path.stat()
+    assert mezzanine_tiff(path, stat.st_size, stat.st_mtime_ns) is expected
+
+
+def test_plain_sdr_picture_keeps_orientation_and_pixels_without_grade(tmp_path):
+    from base64 import b64decode
+    from io import BytesIO
+    from hdr_finisher.library_pictures import original_preview
+    path = tmp_path / "image.png"
+    exif = Image.Exif(); exif[274] = 6
+    Image.new("RGB", (80, 40), (120, 80, 20)).save(path, exif=exif)
+    preview = original_preview(path, 640)
+    assert preview["route"] == "original-file"
+    assert (preview["width"], preview["height"]) == (40, 80)
+    assert (preview["source_width"], preview["source_height"]) == (40, 80)
+    image = Image.open(BytesIO(b64decode(preview["url"].split(",", 1)[1])))
+    assert image.getpixel((0, 0)) == (120, 80, 20)
+    assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.parametrize("metadata", [{"jpegxl_direct_hdr": True}, {"needs_color_override": True}])
+def test_direct_jxl_does_not_flatten_hdr_or_assume_unknown_colour(tmp_path, monkeypatch, metadata):
+    from hdr_finisher import jpegxl
+    from hdr_finisher.library_pictures import original_preview
+    monkeypatch.setattr(jpegxl, "decode_jpegxl", lambda *args, **kw: (np.zeros((4, 8, 3), dtype=np.float32), metadata))
+    assert original_preview(tmp_path / "image.jxl", 640) is None

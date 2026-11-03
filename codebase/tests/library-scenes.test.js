@@ -17,8 +17,8 @@ function setup(plans,develop,cores=4){
 test('quick stored-scene misses never start a source; a stopped request may prepare it',async()=>{
  const started=[],plans={missing:{bytes:96e6,revision:'1'},stored:{cached:{edge:640,key:'current-grade'}}};
  const {scenes}=setup(plans,async(path,edge)=>{started.push(path);return {edge,key:'developed'};});
- assert.equal(await scenes.load('missing',640,null,0,false,null,{cachedOnly:true}),null);
- assert.equal((await scenes.load('stored',640,null,0,false,null,{cachedOnly:true})).key,'current-grade');
+ assert.equal(await scenes.load('missing',640,null,0,null,{cachedOnly:true}),null);
+ assert.equal((await scenes.load('stored',640,null,0,null,{cachedOnly:true})).key,'current-grade');
  assert.deepEqual(started,[]);
  assert.equal((await scenes.load('missing',640,null,0)).key,'developed');assert.deepEqual(started,['missing']);
 });
@@ -113,7 +113,7 @@ test('departed tile cancels its source job and invalidation rejects a fresh requ
  const {scenes}=setup({photo:{bytes:10,revision:'1'}},async(path,edge,signal)=>{
   shared=signal;started.push(path);await block.promise;return {edge,key:'stored'};
  });
- const cancel=new AbortController(),first=scenes.load('photo',640,cancel.signal,10,false,null,{viewportDemand:true});
+ const cancel=new AbortController(),first=scenes.load('photo',640,cancel.signal,10,null,{viewportDemand:true});
  await tick();cancel.abort();await assert.rejects(first,{name:'AbortError'});assert.equal(shared.aborted,true);
  const returned=scenes.load('photo',640);await tick();assert.deepEqual(started,['photo','photo']);
  scenes.invalidate(['photo']);await assert.rejects(returned,{name:'AbortError'});assert.equal(shared.aborted,true);
@@ -128,11 +128,6 @@ test('new source identity never joins a preparation for older pixels',async()=>{
  block.resolve();await Promise.all([rejected,fresh]);
 });
 
-test('idle cache refusal skips development but foreground can still request the photo',async()=>{
- let calls=0;const {scenes}=setup({photo:{bytes:1,warm_allowed:false}},async(path,edge)=>{calls++;return {edge};});
- assert.equal(await scenes.load('photo',640,null,80,true),null);assert.equal(calls,0);
- await scenes.load('photo',640,null,0);assert.equal(calls,1);
-});
 
 
 test('source admission scales with logical CPUs including heavy photos',async()=>{
@@ -148,14 +143,14 @@ test('source admission scales with logical CPUs including heavy photos',async()=
 test('selected source is admitted before development-ahead demand and both run in parallel',async()=>{
  const block=gate(),started=[],plans={selected:{bytes:96e6},ahead:{bytes:96e6}};
  const {scenes}=setup(plans,async(p,edge)=>{started.push(p);await block.promise;return {edge};});let ahead;
- const selected=scenes.load('selected',2560,null,0,false,null,{onSourceDemand:()=>{ahead=scenes.load('ahead',2560,null,5);}});
+ const selected=scenes.load('selected',2560,null,0,null,{onSourceDemand:()=>{ahead=scenes.load('ahead',2560,null,5);}});
  await tick();assert.deepEqual(started,['selected','ahead']);assert.equal(scenes.snapshot().sources.active,2);
  block.resolve();await Promise.all([selected,ahead]);
 });
 
 test('development-ahead GPU refusal never starts a background CPU fallback',async()=>{
  const {scenes,requests}=setup({photo:{bytes:96e6}},async()=>{throw Object.assign(Error('No hardware GPU'),{gpuUnavailable:true});});
- assert.equal(await scenes.load('photo',2560,null,5,false,null,{gpuOnly:true}),null);
+ assert.equal(await scenes.load('photo',2560,null,5,null,{gpuOnly:true}),null);
  assert.equal(requests.length,1,'Cache discovery only; no CPU development request');
 });
 
@@ -163,7 +158,7 @@ test('selected photo joining development-ahead keeps its CPU fallback if GPU fai
  const block=gate();
  const {context,scenes,requests}=setup({photo:{bytes:96e6}},async()=>{await block.promise;throw Object.assign(Error('GPU lost'),{gpuUnavailable:true});});
  const fetch=context.fetch;context.fetch=async(url,options)=>{const response=await fetch(url,options);return url==='/api/library/live-scene'?{ok:true,json:async()=>({edge:2560,key:'cpu'})}:response;};
- const ahead=scenes.load('photo',2560,null,5,false,null,{gpuOnly:true});await tick();
+ const ahead=scenes.load('photo',2560,null,5,null,{gpuOnly:true});await tick();
  const selected=scenes.load('photo',2560,null,0);await tick();block.resolve();
  const [a,b]=await Promise.all([ahead,selected]);assert.ok(a&&b);
  assert.ok(requests.some(request=>request.gpu===false&&request.priority===0));
@@ -176,7 +171,7 @@ test('direct scenes reuse both sizes only for the current finishing grade',async
  const forgotten=[];
  context.HDRLibraryGpuRaw.cachedDirect=(p,e,v)=>({path:p,edge:e,key:v});
  context.HDRLibraryGpuRaw.forgetDirect=p=>forgotten.push(p);
- assert.equal((await scenes.load('photo',640,null,0,false,null,{cachedOnly:true})).key,'grade-a');
+ assert.equal((await scenes.load('photo',640,null,0,null,{cachedOnly:true})).key,'grade-a');
  plans.photo.render_identity='grade-b';
  assert.equal((await scenes.load('photo',2560,null,0)).key,'grade-b');
  scenes.invalidate(['photo']);assert.deepEqual(forgotten,['photo']);
@@ -191,39 +186,15 @@ test('direct scene persistence waits for acceptance and starts after presentatio
  accepted.resolve();await tick();assert.deepEqual(calls,['accept','/api/library/live-store/current']);
 });
 
-test('nearby viewport retains source preparation across a returning grid scroll',async()=>{
- const block=gate(),controller=new AbortController();let starts=0,shared;
- const {scenes}=setup({photo:{bytes:96e6,revision:'same'}},async(path,edge,signal)=>{
-  starts++;shared=signal;await block.promise;return {edge,key:'finished'};
+test('leaving the visible range cancels source work even while its photo remains nearby',async()=>{
+ const controller=new AbortController();let signal;
+ const {scenes}=setup({photo:{bytes:1,revision:'same'}},async(path,edge,owned)=>{
+  signal=owned;await new Promise((resolve,reject)=>owned.addEventListener('abort',()=>reject(new DOMException('Cancelled','AbortError'))));
  });
  scenes.viewport(['photo'],['photo']);
- const first=scenes.load('photo',640,controller.signal,10,false,null,{viewportDemand:true});const rejected=assert.rejects(first,{name:'AbortError'});
- await tick();scenes.viewport([],['photo']);controller.abort();await rejected;
- assert.equal(shared.aborted,false);
- scenes.viewport(['photo'],['photo']);
- const returning=scenes.load('photo',640,undefined,10);await tick();
- assert.equal(starts,1);block.resolve();assert.equal((await returning).key,'finished');
-});
-
-
-test('needed explicit and viewport sources survive reranking and competing demand; abandoned viewport work stops',async()=>{
- const block=gate(),started=[],signals={};
- const plans=Object.fromEntries(['build','tile','selected'].map(p=>[p,{bytes:1,revision:'1'}]));
- const {scenes}=setup(plans,async(path,edge,signal)=>{
-  started.push(path);signals[path]=signal;await block.promise;return {edge,key:path};
- });
- scenes.viewport(['tile'],['tile']);
- const controller=new AbortController();
- const build=scenes.load('build',2560,undefined,99);
- const tile=scenes.load('tile',640,controller.signal,10,false,null,{viewportDemand:true});
- const cancelled=assert.rejects(tile,{name:'AbortError'});
- await tick();scenes.viewport([],[]);
- const selected=scenes.load('selected',2560,undefined,0);
- await tick();assert.equal(signals.build.aborted,false);assert.equal(signals.tile.aborted,false);
- assert.deepEqual(started,['tile','build']);
- scenes.viewport([],['tile']);controller.abort();await cancelled;assert.equal(signals.tile.aborted,false);
- scenes.viewport([],[]);assert.equal(signals.tile.aborted,true);assert.equal(signals.build.aborted,false);
- block.resolve();assert.equal((await build).key,'build');assert.equal((await selected).key,'selected');
+ const pending=scenes.load('photo',640,controller.signal,10,null,{viewportDemand:true});
+ const rejected=assert.rejects(pending,{name:'AbortError'});await tick();
+ scenes.viewport([],['photo']);controller.abort();await rejected;assert.equal(signal.aborted,true);
 });
 
 test('returning explicit demand at the same resolution reuses detached preparation',async()=>{
@@ -275,11 +246,6 @@ test('parallel thumbnail and screen cache lookups retain both callers after view
  assert.equal((await small).edge,640);assert.equal((await large).edge,2560);
 });
 
-test('idle no-GPU demand never develops on the CPU',async()=>{
- const {scenes,requests}=setup({photo:{bytes:1,warm_allowed:true}},async()=>{throw Object.assign(Error('No GPU'),{gpuUnavailable:true});});
- assert.equal(await scenes.load('photo',640,null,80,true),null);
- assert.ok(!requests.some(request=>request.gpu===false));
-});
 
 
 test('offline cache reads cancel without a broken-photo receipt and notify the folder', async()=>{
@@ -304,7 +270,7 @@ test('screen neighbour priority follows the photo viewport and stops when demand
  });
  scenes.viewport([],['photo']);
  const controller=new AbortController();
- const neighbour=scenes.load('photo',2560,controller.signal,50,false,null,{viewportDemand:true});
+ const neighbour=scenes.load('photo',2560,controller.signal,50,null,{viewportDemand:true});
  const stopped=assert.rejects(neighbour,{name:'AbortError'});await tick();
  assert.deepEqual(started,[{edge:2560,priority:50}]);
  scenes.viewport(['photo'],[]);
@@ -349,7 +315,7 @@ test('CPU tiers share admission and cancellation while both requests attach to t
   const request=JSON.parse(options.body);calls.push(request);signals.push(options.signal);
   await block.promise;return {ok:true,json:async()=>({edge:request.edge,key:String(request.edge)})};
  };
- const cancel=new AbortController();const small=scenes.load('photo',640,cancel.signal,10,false,null,{viewportDemand:true});
+ const cancel=new AbortController();const small=scenes.load('photo',640,cancel.signal,10,null,{viewportDemand:true});
  const rejected=assert.rejects(small,{name:'AbortError'});await tick();
  const large=scenes.load('photo',2560,null,0);await tick();
  cancel.abort();await rejected;
@@ -403,4 +369,33 @@ test('invalid GPU pixels finish on the CPU even for a background thumbnail',asyn
  assert.equal(events.filter(e=>e.stage==='picture_source_gpu_fallback').length,1);
  assert.equal(events.filter(e=>e.stage==='picture_source_cpu_completed').length,1);
  assert.ok(requests.every(r=>!r.reason));
+});
+
+for(const edge of [640,2560])test(`unedited RAW uses its usable camera picture at ${edge} without development`,async()=>{
+ const starts=[],{scenes,context}=setup({raw:{unedited_raw:true,bytes:1,revision:'1'}},async(path,edge)=>{starts.push(path);return {edge};});
+ context.HDRLibraryGrants.preview=async()=>({status:200,json:async()=>({url:'camera',camera_long_edge:1600,width:640,height:400})});
+ const result=await scenes.load('raw',edge,new AbortController().signal,0);
+ assert.equal(result.bitmap,true);assert.equal(result.picture_source,'camera picture');assert.deepEqual(starts,[]);
+});
+test('small or missing camera pictures, edits, Develop and zoom request only the chosen photo',async()=>{
+ for(const mode of ['small','missing','edited','develop','zoom']){
+  const starts=[],events=[],plan={unedited_raw:mode!=='edited',edited:mode==='edited',bytes:1,revision:'1'};
+  const s=setup({raw:plan},async(path,edge)=>{starts.push(path);return {edge};});
+  let previews=0;s.context.HDRLibraryGrants.preview=async()=>{previews++;return {status:mode==='missing'?204:200,json:async()=>({camera_long_edge:640})};};
+  await s.scenes.load('raw',mode==='zoom'?100000:2560,undefined,0,null,{develop:mode==='develop'});
+  assert.deepEqual(starts,['raw']);assert.equal(previews,['edited','develop','zoom'].includes(mode)?0:1);
+  assert.equal(s.events.filter(e=>e.stage==='picture_development_start')[0].reason,{small:'no usable camera picture',missing:'no usable camera picture',edited:'edited',develop:'Develop command',zoom:'zoom detail'}[mode]);
+ }
+});
+test('stored development takes precedence, and an evicted unedited RAW returns to its camera picture',async()=>{
+ const plans={raw:{unedited_raw:true,bytes:1,revision:'1',cached:{key:'stored',edge:2560,cache_hit:true}}};
+ const s=setup(plans,()=>assert.fail('Unexpected development'));
+ s.context.HDRLibraryGrants.preview=async()=>({status:200,json:async()=>({url:'camera',camera_long_edge:1600})});
+ assert.equal((await s.scenes.load('raw',2560)).key,'stored');delete plans.raw.cached;
+ assert.equal((await s.scenes.load('raw',2560)).picture_source,'camera picture');
+});
+test('plain SDR files use their file picture without development',async()=>{
+ const s=setup({file:{original_file:true,bytes:1,revision:'1'}},()=>assert.fail('Unexpected development'));
+ s.context.HDRLibraryGrants.preview=async()=>({status:200,json:async()=>({url:'file',width:800,height:600})});
+ assert.equal((await s.scenes.load('file',2560)).picture_source,'original file');
 });

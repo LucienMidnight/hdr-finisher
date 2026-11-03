@@ -52,6 +52,11 @@ is in the sprint; see its section 9.
 
 ## Frontend today
 
+Library browsing uses camera pictures for unedited RAWs and develops only visible
+photos that need it, zoom detail, or explicit Develop/Build previews selections.
+The former `library-read-ahead.js` module and scene idle warmer were removed
+in Batch 4a; finished neighbour surfaces may still be retained.
+
 ### How the files connect
 
 There is no build step. `index.html` loads scripts in a fixed order with

@@ -48,7 +48,8 @@
       if (action.separator) return make("hr", "library-menu-separator");
       if (action.header) return make("div", "library-menu-header", action.header);
       const button = make("button", action.danger ? "danger" : "", action.label);
-      if (action.key) button.append(make("kbd", "", action.key)); button.type = "button"; button.setAttribute("role", "menuitem"); button.disabled = !!action.disabled;
+      if(action.checked !== undefined){button.setAttribute("role","menuitemcheckbox");button.setAttribute("aria-checked",String(action.checked));button.prepend(document.createTextNode(action.checked ? "✓ " : ""));}
+      if (action.key) button.append(make("kbd", "", action.key)); button.type = "button"; if(action.checked === undefined)button.setAttribute("role", "menuitem"); button.disabled = !!action.disabled;
       button.addEventListener("click", async () => {
         const report = failed; closeMenu(true);
         try { await action.run(); } catch (error) { report(error); }

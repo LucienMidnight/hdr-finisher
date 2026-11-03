@@ -1,6 +1,7 @@
 /* Pure sort/filter rules shared by the Library and its fast checks. */
 (() => {
   const rawTypes = new Set(["3FR", "ARW", "CR2", "CR3", "DNG", "ERF", "FFF", "IIQ", "KDC", "MEF", "MOS", "MRW", "NEF", "NRW", "ORF", "ORI", "PEF", "RAF", "RAW", "RW2", "RWL", "SRW", "X3F"]);
+  const defaultVisible = photo => rawTypes.has(String(photo.type).toUpperCase()) || ["EXR","PFM","HDR"].includes(String(photo.type).toUpperCase()) || (["TIF","TIFF"].includes(String(photo.type).toUpperCase()) && photo.mezzanine === true);
   const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
   const compareText = (a, b) => collator.compare(String(a), String(b));
   const trim = (value, digits = 1) => String(Number(value.toFixed(digits)));
@@ -126,7 +127,7 @@
       return (descending ? -1 : 1) * (order || compareText(a.name, b.name) || compareText(a.path, b.path));
     });
   }
-  const api = Object.freeze({ apply, count, matches, values, describe, format, FIELDS, rawTypes });
+  const api = Object.freeze({ apply, count, matches, values, describe, format, FIELDS, rawTypes, defaultVisible });
   if (typeof module !== "undefined") module.exports = api;
   else globalThis.HDRLibraryQuery = api;
 })();

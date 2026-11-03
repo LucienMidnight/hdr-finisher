@@ -43,15 +43,18 @@ window.HDRLibraryFinishedThumbnails = (() => {
         const active=batch.filter(item=>!item.signal.aborted);
         try{
           if(!active.length)return;
+          for(let at=0;at<active.length;at+=32){
+          const group=active.slice(at,at+32);
           const response=await fetch('/api/library/finished-thumbnails?'+new URLSearchParams({lane:hdr?'hdr':'sdr',format}),
-            {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:active.map(item=>item.path)})});
+            {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:group.map(item=>item.path)})});
           if(!response.ok)throw Error('Finished thumbnail batch failed: '+response.status);
           const body=await response.arrayBuffer();
           const length=new DataView(body).getUint32(0,true),start=4+length;
           const records=new Map(JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,length))).map(row=>[row.path,row]));
-          for(const item of active){
+          for(const item of group){
             const row=records.get(item.path);
             item.resolve(row?{info:row.meta,body:new Uint8Array(body,start+row.offset,row.length)}:null);
+          }
           }
         }catch(error){for(const item of active)item.reject(error);}
         finally{for(const item of batch)if(item.signal.aborted)item.reject(new DOMException('Cancelled','AbortError'));}
@@ -61,16 +64,16 @@ window.HDRLibraryFinishedThumbnails = (() => {
   }
   async function load(photo,canvas,signal,current,hdr) {
     const started=performance.now();
-    const gpu=await HDRLibraryPictures.initialize().catch(error=>{if(error.gpuUnavailable)return null;throw error;});
-    if(!gpu)return null;
     // Do not allocate/configure an empty swap chain before the cache read.
     // Verify the actual format when the finished dimensions are available.
-    const format=hdr&&window.matchMedia?.('(dynamic-range: high)').matches?'rgba16float':navigator.gpu.getPreferredCanvasFormat();
+    const format=hdr&&window.matchMedia?.('(dynamic-range: high)').matches?'rgba16float':navigator.gpu?.getPreferredCanvasFormat?.() || "bgra8unorm";
     const result=await stored(photo.path,hdr,format,signal).catch(error=>{
       if(signal.aborted)throw error;
       console.debug('Finished thumbnail read:',error.message);return null;
     });
     if(!result)return null;
+    const gpu=await HDRLibraryPictures.initialize().catch(error=>{if(error.gpuUnavailable)return null;throw error;});
+    if(!gpu)return null;
     const {info,body}=result;
     if(body.byteLength!==info.stride*info.height)return null;
     if(signal.aborted||!current())throw new DOMException('Invalidated','AbortError');

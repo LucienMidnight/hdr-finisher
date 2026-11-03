@@ -210,15 +210,6 @@ class NativeRequest(BaseModel):
     height: int = Field(ge=64, le=4096)
 
 
-class RawPlanRequest(BaseModel):
-    paths: list[str] = Field(default_factory=list, max_length=16)
-    client: str = Field(default="", max_length=64)
-    revision: int = Field(default=0, ge=0)
-    retained: list[str] = Field(default_factory=list, max_length=16)
-    width: int = Field(default=2560, ge=1, le=16384)
-    height: int = Field(default=1440, ge=1, le=16384)
-
-
 class FolderRequest(BaseModel):
     path: str
     sort: Literal["time", "name", "rating", "pick", "state", "type", "modified"] = "time"
@@ -226,6 +217,7 @@ class FolderRequest(BaseModel):
 
 
 class CameraPreviewRequest(FolderRequest):
+    edge: Literal[640, 2560] = 640
     grant: str | None = Field(default=None, max_length=96)
     quick_draw: bool = False
     bytes: int | None = None
@@ -446,6 +438,8 @@ def create_library_router(worker, browser, store=None):
         check_contents(path)
         return None
 
+    library_raw_types = {".3fr", ".arw", ".cr2", ".cr3", ".dng", ".erf", ".fff", ".iiq", ".kdc", ".mef", ".mos", ".mrw", ".nef", ".nrw", ".orf", ".ori", ".pef", ".raf", ".raw", ".rw2", ".rwl", ".srw", ".x3f"}
+
     async def quick_preview(preview, path, edge, request, grant=None):
         from .library_pictures import camera_preview, cached_camera_preview
         if preview is camera_preview:
@@ -459,9 +453,7 @@ def create_library_router(worker, browser, store=None):
         from .library_pictures import camera_preview, original_preview
         if await request.is_disconnected(): return Response(status_code=499)
         path = str(marks.source_path(command.path))
-        original = Path(path).suffix.lower() in {".jpg", ".jpeg", ".png"}
-        if not original and not await run_in_threadpool(camera_raw, path):
-            return Response(status_code=204)
+        original = Path(path).suffix.lower() not in library_raw_types
         try:
             identity = Path(path).stat()
             if is_cloud_placeholder(identity):
@@ -473,12 +465,11 @@ def create_library_router(worker, browser, store=None):
                     # Folder JSON timestamps pass through JavaScript numbers;
                     # the before/after file identity above remains exact.
                     and (command.mtime_ns is None or float(stat.st_mtime_ns) == float(command.mtime_ns))
-                    and picture_document(command.path) is None
-                    and live.cache.cached(path, 640, live_quality(None)) is None)
+                    and not is_edited(command.path))
             if not await run_in_threadpool(eligible):
                 return Response(status_code=204)
             if await request.is_disconnected(): return Response(status_code=499)
-            preview = await quick_preview(original_preview if original else camera_preview, path, 640, request, command.grant)
+            preview = await quick_preview(original_preview if original else camera_preview, path, command.edge, request, command.grant)
             if preview is None: return Response(status_code=204)
             if await request.is_disconnected(): return Response(status_code=499)
             if not await run_in_threadpool(eligible):
@@ -521,6 +512,12 @@ def create_library_router(worker, browser, store=None):
         source_jobs.release(token)
         return {"released": True}
 
+    def is_edited(path):
+        grades = getattr(marks, "grades", None)
+        if grades is not None:
+            return grades.describe([path]).get(path, {}).get("edited", False)
+        return picture_document(path) is not None
+
     @router.post("/live-plan")
     @picture_errors.guard_cached
     def live_plan(command: LiveSceneRequest):
@@ -550,7 +547,7 @@ def create_library_router(worker, browser, store=None):
                 return dict(cached=live.describe(command.path, cached, document=document, source_identity=scene_identity),
                     bytes=stamp[0], revision=f"{stamp[1]}:{stamp[0]}", source_identity=identity,
                     render_identity=identity+":"+sha256(json.dumps(document or {}, sort_keys=True).encode()).hexdigest(),
-                    warm_allowed=live.cache.managed.can_warm(), cloud_only=False, cpu_route=None, gpu_meta=None)
+                    cloud_only=False, cpu_route=None, gpu_meta=None)
         # Cache discovery and stat only: never decode or claim a source slot.
         document = picture_document(command.path)
         path = marks.source_path(command.path)
@@ -561,13 +558,15 @@ def create_library_router(worker, browser, store=None):
         from .library_estimates import gpu_metadata
         from .library_gpu_raw import xtrans_cpu
         cpu_route = "xtrans" if not cached and not is_cloud_placeholder(stat) and xtrans_cpu(path) else None
-        return {"cpu_route": cpu_route,
+        return {"unedited_raw": not is_edited(command.path) and Path(path).suffix.lower() in library_raw_types,
+                "original_file": not is_edited(command.path) and Path(path).suffix.lower() not in library_raw_types | {".exr", ".pfm", ".hdr"},
+                "edited": is_edited(command.path),
+                "cpu_route": cpu_route,
                 "gpu_meta": gpu_metadata(path,document,command.edge) if not cached and not is_cloud_placeholder(stat) and not cpu_route else None,
                 "cached": live.describe(command.path, cached) if cached else None,
                 "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}",
                 "source_identity": picture_key(path, 0, live_quality(document)),
                 "render_identity": picture_key(path, 0, live_quality(document)) + ":" + sha256(json.dumps(document or {}, sort_keys=True).encode()).hexdigest(),
-                "warm_allowed": live.cache.managed.can_warm(),
                 # Online-only sync file: only the opened photo may read (download) it.
                 "cloud_only": is_cloud_placeholder(stat)}
 
@@ -1035,12 +1034,6 @@ def create_library_router(worker, browser, store=None):
     def options():
         raw_browsing.start()
         return {"timing": os.environ.get("HDR_FINISHER_DEV_LIBRARY_TIMING") == "1", "browsing": raw_browsing.limits}
-
-    @router.post("/raw-plan")
-    def raw_plan(command: RawPlanRequest):
-        paths = [str(marks.source_path(path)) for path in command.paths]
-        paths = [path for path in paths if camera_raw(path)]
-        return raw_browsing.plan(paths, command.width, command.height, command.client, command.revision, command.retained)
 
     @router.get("/raw-ready")
     def raw_ready():

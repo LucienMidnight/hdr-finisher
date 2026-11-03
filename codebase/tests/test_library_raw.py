@@ -7,9 +7,9 @@ from hdr_finisher.library_raw import RawBrowsing, allowances, identity, MIB
 
 def test_auto_limits_scale_down_without_losing_foreground_lane():
     small, large = allowances(8 * 1024**3), allowances(64 * 1024**3)
-    assert large["raw_files"] == 12 and large["ahead"] == 12 and large["gpu_pictures"] == 10
+    assert large["raw_files"] == 12 and large["gpu_pictures"] == 10
     assert small["raw_bytes"] < large["raw_bytes"]
-    assert small["ahead"] == 2 and small["gpu_pictures"] == 2
+    assert small["gpu_pictures"] == 2
 
 
 def test_windows_priority_promotion_uses_a_real_process_handle():
@@ -56,7 +56,7 @@ def test_full_size_disk_eviction_cannot_remove_thumbnail(tmp_path, monkeypatch):
     assert cache.file(thumb["key"]).is_file()
 
 
-def test_one_reader_bounds_raw_bytes_and_stale_plans(tmp_path, monkeypatch):
+def test_one_reader_bounds_foreground_raw_bytes(tmp_path, monkeypatch):
     files = []
     for i in range(5):
         path = tmp_path / f"{i}.arw"
@@ -65,9 +65,7 @@ def test_one_reader_bounds_raw_bytes_and_stale_plans(tmp_path, monkeypatch):
     service = RawBrowsing(tmp_path)
     service.limits.update(raw_files=2, raw_bytes=3*MIB)
     monkeypatch.setattr(service, "start", lambda: None)
-    future = service.request(files[0], 60)
-    service.plan([files[4]])
-    assert future.cancelled(), "Stale queued read-ahead must be discarded"
+    service.request(files[4], 0)
     reader = Thread(target=service._read, daemon=True)
     service.threads.append(reader)
     reader.start()
@@ -95,30 +93,6 @@ def test_small_display_keeps_full_preview_tier_and_one_size(tmp_path):
     assert full["edge"] >= 1280
     assert full["key"] == service.metadata(meta, 1280)["key"]
     assert service.metadata(meta, 512)["edge"] == 512
-    service.close()
-
-
-def test_rapid_selection_reserves_foreground_for_latest_photo(tmp_path, monkeypatch):
-    paths = [tmp_path / f"{i}.arw" for i in range(3)]
-    for path in paths:
-        path.write_bytes(b"raw")
-    service = RawBrowsing(tmp_path)
-    monkeypatch.setattr(service, "start", lambda: None)
-    old = service.request(paths[0], 0)
-    nearby = service.request(paths[1], 0)
-    service.plan([paths[2], paths[1]])
-    assert old.cancelled()
-    assert not nearby.cancelled()
-    assert service.jobs[identity(paths[1])[0]]["priority"] > 0
-    assert service.jobs[identity(paths[2])[0]]["priority"] == 0
-    service.plan([paths[0]], client="page", revision=3)
-    service.plan([paths[2]], client="page", revision=2)
-    assert service.selected == identity(paths[0])[0], "Late HTTP requests must not replace the newer selection"
-    service.close()
-    service = RawBrowsing(tmp_path)
-    monkeypatch.setattr(service, "start", lambda: None)
-    service.plan([paths[0]], retained=[identity(paths[0])[0]])
-    assert not service.jobs, "A retained GPU picture needs no duplicate CPU decode"
     service.close()
 
 

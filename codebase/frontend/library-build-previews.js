@@ -24,7 +24,7 @@ window.HDRLibraryBuildPreviews=(()=>{
             try{await HDRLibraryPictures.initialize();}catch(error){if(!error.gpuUnavailable&&!HDRLibraryPictures.lost?.())throw error;usable=false;}
             if(!usable){const result=await api('/cpu',{path,...HDRLibraryScreenPreviews.display()},controller.signal);if(!result.saved)throw Error('Preview was not saved.');}
             else {
-              const meta=await HDRLibraryScenes.load(path,2560,controller.signal,99);
+              const meta=await HDRLibraryScenes.load(path,2560,controller.signal,99,null,{develop:true});
               meta.buildPreview=true;meta.draw_priority=99;meta.log_view='build previews';
               const canvas=document.createElement('canvas');
               for(const hdr of [true,false])await HDRLibraryPictures.show(meta,canvas,controller.signal,()=>!controller.signal.aborted,hdr);

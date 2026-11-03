@@ -28,7 +28,7 @@ machine_memory = app_memory.machine_memory
 def allowances(ram):
     _, shares = app_memory.budgets(ram)
     return dict(raw_files=12,raw_bytes=shares['raw'],transport_bytes=shares['handoff'],
-                ahead=12 if shares['raw']>=768_000_000 else 2,gpu_pictures=10 if shares['sharp']>=512_000_000 else 2)
+                gpu_pictures=10 if shares['sharp']>=512_000_000 else 2)
 
 
 def identity(path):
@@ -68,12 +68,9 @@ class RawBrowsing:
         self.stopped = False
         self.threads = []
         self.processes = []
-        self.selected = None
-        self.wanted = []
         self.screen = (2560, 1440)
         self.sequence = 0
         self.failure = None
-        self.plan_revisions = OrderedDict()
 
     @property
     def root(self):
@@ -143,34 +140,6 @@ class RawBrowsing:
                 finally:
                     kernel.CloseHandle(handle)
 
-    def plan(self, paths, width=2560, height=1440, client="", revision=0, retained=()):
-        paths = paths[:self.limits["ahead"] + 3]
-        with self.cv:
-            if client:
-                if revision <= self.plan_revisions.get(client, -1):
-                    return self.status()
-                self.plan_revisions[client] = revision
-                self.plan_revisions.move_to_end(client)
-                while len(self.plan_revisions) > 32:
-                    self.plan_revisions.popitem(last=False)
-            self.screen = (max(1280, min(2560, width)), max(720, min(2560, height)))
-            self.wanted = [identity(path)[0] for path in paths]
-            self.selected = self.wanted[0] if self.wanted else None
-            # Drop queued stale read-ahead; completed/in-flight work remains useful.
-            for key, job in list(self.jobs.items()):
-                if job["priority"] == 0 and key != self.selected and not job["active"]:
-                    job["priority"] = 50 + (self.wanted.index(key) if key in self.wanted else len(self.wanted))
-                if job["priority"] >= 50 and key not in self.wanted and not job["active"]:
-                    job["future"].cancel()
-                    del self.jobs[key]
-                    from .library_scheduler import scheduler
-                    scheduler.finish("raw-decode-"+key,outcome="cancelled")
-            for i, path in enumerate(paths):
-                if self.wanted[i] not in retained:
-                    self.request(path, 0 if i == 0 else 50 + i)
-            self.cv.notify_all()
-        return self.status()
-
     def metadata(self, meta, edge):
         w, h = meta["raw_width"], meta["raw_height"]
         scale = min(self.screen[0] / w, self.screen[1] / h, 1) if edge >= 1280 else min(512 / max(w, h), 1)
@@ -182,13 +151,12 @@ class RawBrowsing:
         # edge identifies the preview tier; dimensions remain fitted to the screen.
         return meta | {"key": key, "width": width, "height": height, "edge": max(1280, width, height) if edge >= 1280 else max(width, height),
             "browse_width": bw, "browse_height": bh, "browse_key": browse_key,
-            "prepare_full": meta["transport_key"] in self.wanted[:max(1,self.limits["gpu_pictures"]-2)],
             "quality": "quick", "stored_bytes": 0, "cache_hit": False}
 
     def status(self):
         with self.cv:
             return {"limits": self.limits, "ready": [self.metadata(self.outputs[key][1], 2560)
-                for key in self.wanted if key in self.outputs], "raw_files": len(self.raw),
+                for key in self.outputs], "raw_files": len(self.raw),
                 "raw_bytes": sum(item[1] for item in self.raw.values()),
                 "transport_bytes": sum(item[0].size for item in self.outputs.values()),
                 "pending": len(self.jobs), "paused": self.paused()}

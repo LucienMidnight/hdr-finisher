@@ -17,7 +17,7 @@ from hdr_finisher.sessions import SessionStore
 
 @pytest.mark.parametrize('suffix', ['ARW', 'jpg', 'png'])
 @pytest.mark.parametrize('state', ['cold', 'edited', 'thumbnail', 'changed_source', 'edited_during_read', 'thumbnail_during_read'])
-def test_camera_quick_draw_requires_current_unedited_photo_without_thumbnail(tmp_path, monkeypatch, state, suffix):
+def test_camera_picture_requires_current_unedited_photo_regardless_of_other_cached_tiers(tmp_path, monkeypatch, state, suffix):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from hdr_finisher.library_api import create_library_router
@@ -45,8 +45,8 @@ def test_camera_quick_draw_requires_current_unedited_photo_without_thumbnail(tmp
     with TestClient(app) as client:
         response = client.post('/api/library/preview', json={'path': str(path), 'quick_draw': True,
             'bytes': stat.st_size, 'mtime_ns': int(float(stat.st_mtime_ns)) + (2_000_000_000 if state == 'changed_source' else 0)})
-    assert response.status_code == (200 if state == 'cold' else 204)
-    assert len(calls) == (0 if state in {'edited', 'thumbnail', 'changed_source'} else 1)
+    assert response.status_code == (200 if state in {'cold', 'thumbnail', 'thumbnail_during_read'} else 204)
+    assert len(calls) == (0 if state in {'edited', 'changed_source'} else 1)
     assert path.read_bytes() == b'camera-source'
     assert not Path(str(path) + '.hdrf').exists()
 

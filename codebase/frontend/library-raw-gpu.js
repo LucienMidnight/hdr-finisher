@@ -85,9 +85,6 @@ window.HDRLibraryRawGPU = (() => {
       HDRLibraryStopwatch('picture_raw_uploaded', {...window.HDRLibraryPictureLog?.(meta),key:meta.key,duration_ms:performance.now()-started});
       const resources = [raw], made = [], encoder = device.createCommandEncoder();
       const sizes = [meta];
-      if (meta.edge < 1280 && meta.prepare_full) {
-        sizes.push({...meta,key:meta.browse_key,width:meta.browse_width,height:meta.browse_height,edge:Math.max(1280,meta.browse_width,meta.browse_height)});
-      }
       if (meta.edge >= 1280) {
         const scale = Math.min(512 / Math.max(meta.raw_width, meta.raw_height), 1);
         sizes.push({...meta,key:meta.transport_key + ':thumb',width:Math.round(meta.raw_width*scale),height:Math.round(meta.raw_height*scale),edge:512});

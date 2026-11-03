@@ -25,7 +25,7 @@
   }
   // A virtual copy's key is "<file>|copy|<id>"; people see the file name.
   const fileName = path => { const [file, copy] = String(path).split("|copy|"); return file.split(/[\\/]/).at(-1) + (copy ? " (copy)" : ""); };
-  function sceneWork(health, snapshot = {}) {
+  function sceneWork(health, snapshot = {}, accepts = () => true) {
     const scene = Object.values(snapshot).flatMap(queue => queue.jobs || []).filter(job => job.path);
     // Idle look-ahead and startup upkeep are not pictures anyone asked for:
     // they get their own plain line and never count as active work.
@@ -36,7 +36,7 @@
     const jobs = [...new Map(all.map(job=>[job.path,job])).values()];
     const waiting=jobs.filter(j=>j.state==="waiting").length;
     const running=jobs.length-waiting;
-    const failures=[...new Map([...Object.values(snapshot).flatMap(queue=>queue.failures || []), ...(health.picture_errors || [])].map(item=>[item.path,item])).values()];
+    const failures=[...new Map([...Object.values(snapshot).flatMap(queue=>queue.failures || []), ...(health.picture_errors || [])].filter(item=>accepts(item.path)).map(item=>[item.path,item])).values()];
     const entries=jobs.map(j=>[j.path,`${fileName(j.path)} · ${j.state==="waiting" ? "Waiting: " : j.state==="stopping" ? "Stopping after current step: " : ""}${j.stage}${health.helper.paused && j.state!=="waiting" ? " · current work still finishing" : ""}`]);
     const background=[...(upkeep ? ["In the background: checking the library after startup"] : []), ...(quiet.size ? ["In the background: preparing thumbnails ahead of time"] : [])];
     return {jobs, failures, background, entries, text:`Library pictures · ${running} active · ${waiting} waiting`, lines:entries.map(entry=>entry[1])};
@@ -60,7 +60,7 @@
       return { lines, wait };
     } });
   }
-  function summary(health) {
+  function summary(health, accepts = () => true) {
     const writer = health.writer, index = health.index, jobs = [];
     if (writer.waiting) jobs.push(writerText(writer));
     if (checkText(index)) jobs.push(checkText(index));
@@ -68,13 +68,13 @@
     if (health.file_commands?.jobs?.length) jobs.unshift(`File commands: ${health.file_commands.jobs[0].done} of ${health.file_commands.jobs[0].total}`);
     const pause=(typeof window!=="undefined"?window.HDRLibraryGrants?.snapshot().jobs:health.grants)?.find(j=>j.reason==="paused for Grade");
     if(pause)return `Library paused: memory is in use by ${pause.grade} in Grade`;
-    const work = sceneWork(health, typeof window !== "undefined" ? window.HDRLibraryScenes?.snapshot() : undefined);
+    const work = sceneWork(health, typeof window !== "undefined" ? window.HDRLibraryScenes?.snapshot() : undefined, accepts);
     if (work.jobs.length || health.helper.manual_paused) jobs.unshift(work.jobs.length ? work.text : "Library reading paused");
     const problems = work.failures.filter(item => !item.ignored).length + (health.file_commands?.attention?.length || 0) + writer.attention.reduce((sum, group) => sum + group.count, 0) + (health.conflicts || []).length + (index.checks?.folders || []).filter(folder => folder.failure || folder.warnings?.length).length;
     const extra = problems ? ` · Needs attention: ${count(problems)}` : index.state === "failed" || index.state === "retrying" || health.helper.failure || health.helper.recovering ? " · Needs attention" : "";
     return (jobs[0] || "Activity") + (jobs.length > 1 ? ` +${jobs.length - 1}` : "") + extra;
   }
-  function create({ button, panel, api, status, onHealth, onPictureError }) {
+  function create({ button, panel, api, status, onHealth, onPictureError, acceptsPhoto = () => true }) {
     let health = null, exports = null, timer = null, due = Infinity;
     const pending = new Set(), buttonHold = createHold(), lineHold = createHold();
     // Show the next held message when its time is up.
@@ -112,7 +112,7 @@
       const built=window.HDRLibraryBuildPreviews?.snapshot();
       if(built?.usage){const u=built.usage;panel.append(node('p',`Protected screen previews: ${(u.protected_bytes/1024**3).toFixed(2)} of ${(u.limit_bytes/1024**3).toFixed(0)} GiB · ${u.protected_previews} HDR/SDR files${u.protected_bytes>=u.limit_bytes?' · Limit reached: discard some previews before building more':''}`));}
       if(built?.job){const j=built.job,section=node('section','','library-activity-job');section.append(node('p',`Build previews: ${j.done} of ${j.total} · ${j.state}${j.error?' · '+j.error:''}`));if(['running','paused'].includes(j.state)){const cancel=node('button','Cancel building previews','text-button');cancel.onclick=()=>window.HDRLibraryBuildPreviews.cancel();section.append(cancel);}panel.append(section);}
-      const work = sceneWork(health, window.HDRLibraryScenes?.snapshot());
+      const work = sceneWork(health, window.HDRLibraryScenes?.snapshot(), acceptsPhoto);
       if(work.jobs.some(j=>j.reason==="paused for Grade")){
         const section=node("section","","library-activity-job");
         section.append(node("h3","This photo needs the app's memory while it is open in Grade. Close it in Grade to resume Library browsing.","panel-title"));
@@ -199,11 +199,13 @@
       panel.scrollTop = scrollTop;
     }
     function update(next, fetched = true) {
+      const complete = next;
+      next = {...next,picture_errors:(next.picture_errors || []).filter(item=>acceptsPhoto(item.path))};
       health = next; button.hidden = false;
-      const text = (window.HDRLibraryBuildPreviews?.snapshot().job && ["running","paused"].includes(window.HDRLibraryBuildPreviews.snapshot().job.state) ? "Build previews · " : "") + (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next);
+      const text = (window.HDRLibraryBuildPreviews?.snapshot().job && ["running","paused"].includes(window.HDRLibraryBuildPreviews.snapshot().job.state) ? "Build previews · " : "") + (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next, acceptsPhoto);
       const held = buttonHold.apply(new Map([["button", text]]));
       button.textContent = held.lines[0][1]; later(held.wait);
-      if (fetched) onHealth?.(next); render();
+      if (fetched) onHealth?.(complete); render();
     }
     window.addEventListener("library-work-changed", () => { queueMicrotask(() => { if (health) update(health, false); }); });
     function close() { panel.hidden = true; button.setAttribute("aria-expanded", "false"); }

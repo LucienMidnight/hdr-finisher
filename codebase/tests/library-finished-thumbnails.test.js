@@ -5,7 +5,7 @@ function setup({stale=false}={}){
   const context={navigator:{gpu:{getPreferredCanvasFormat:()=>"bgra8unorm"}},console,performance,URLSearchParams,TextDecoder,TextEncoder,DataView,Uint8Array,DOMException,queueMicrotask,
     HDRLibraryPictures:{initialize:async()=>gpu},HDRLibraryStopwatch:()=>{},
     fetch:async(url,options)=>{
-      requests.push(url);const paths=JSON.parse(options.body).paths,parts=paths.map((_,i)=>Uint8Array.from([i+1,2,3,4]));
+      requests.push(url);const paths=JSON.parse(options.body).paths;assert.ok(paths.length<=32);const parts=paths.map((_,i)=>Uint8Array.from([i+1,2,3,4]));
       let offset=0;
       const rows=paths.map((path,i)=>{const row={path,offset,length:parts[i].length,meta:{key:'surface-'+i,width:1,height:1,stride:4,identity:{format:"bgra8unorm",bytes:12,mtime_ns:100,grade:stale?'changed':'grade'}}};offset+=parts[i].length;return row;});
       const header=new TextEncoder().encode(JSON.stringify(rows)),body=new Uint8Array(4+header.length+offset);
@@ -30,4 +30,11 @@ test('a known changed grade cannot upload an old finished surface',async()=>{
 test('an abandoned cell cannot publish a cached surface',async()=>{
   const s=setup(),a=s.load('a',{current:()=>false});
   await assert.rejects(a.promise,{name:'AbortError'});assert.deepEqual(s.writes,[]);assert.equal(a.target.dataset.pictureKey,undefined);
+});
+
+test('72 visible finished thumbnails are fetched within the 32-path limit and all publish',async()=>{
+ const s=setup(),items=Array.from({length:72},(_,i)=>s.load('photo-'+i));
+ const results=await Promise.all(items.map(item=>item.promise));
+ assert.equal(s.requests.length,3);assert.equal(s.writes.length,72);
+ assert.ok(results.every(value=>value.route==='finished-thumbnail'));
 });

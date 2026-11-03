@@ -184,7 +184,7 @@ class PictureErrors:
             if cached and not cached.get("grade_warning"):
                 if cache_probe:
                     result = await run_in_threadpool(handler, command, *args, **kwargs)
-                    if isinstance(result, dict) and result.get("cached"):
+                    if isinstance(result, dict) and (result.get("cached") or result.get("unedited_raw") or result.get("original_file")):
                         return result
                 return self.response(cached)
             revision = await run_in_threadpool(self.revision, path)

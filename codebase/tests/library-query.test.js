@@ -55,3 +55,12 @@ test("Grade filters use saved grades independently of marks, including virtual c
  assert.deepEqual(apply(rows, "name", false, {rules:[{field:"state",value:"not edited"}]}).map(p=>p.path), ["a"]);
  assert.deepEqual(apply(rows, "name", false, {rules:[{field:"state",value:"edited"},{field:"rating",op:"at-least",value:2}]}).map(p=>p.path), ["b"]);
 });
+
+test('default file visibility uses the full RAW list and only mezzanine TIFFs',()=>{
+ const q=require('../frontend/library-query');
+ for(const type of q.rawTypes)assert.equal(q.defaultVisible({type}),true);
+ for(const type of ['EXR','PFM','HDR'])assert.equal(q.defaultVisible({type}),true);
+ for(const type of ['JPEG','PNG','AVIF','HEIC','JXL','WEBP'])assert.equal(q.defaultVisible({type}),false);
+ assert.equal(q.defaultVisible({type:'TIFF',mezzanine:true}),true);
+ assert.equal(q.defaultVisible({type:'TIFF',mezzanine:false}),false);
+});

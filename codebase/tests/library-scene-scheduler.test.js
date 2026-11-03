@@ -149,33 +149,6 @@ test('explicit invalidation aborts detached work while retaining its occupied sl
  block.resolve();await second;assert.equal(secondStarted,true);
 });
 
-test('idle pass is sequential, yields to activity, and stops at cache headroom without cycling',async()=>{
- const {createWarmer}=require('../frontend/library-scene-scheduler');
- let time=0,foreground=false;const calls=[],block=gate();let active=0,peak=0;
- const warmer=createWarmer({now:()=>time,idle:()=>!foreground,load:async(path,signal)=>{
-  calls.push(path);peak=Math.max(peak,++active);
-  try{if(path==='a')await block.promise;return path==='full'?null:{cached:true};}finally{active--;}
- }});
- const rows=['a','b','full','never'].map(path=>({path,identity:path}));
- warmer.update('folder',rows);await warmer.tick();assert.deepEqual(calls,[]);
- time=1001;foreground=true;await warmer.tick();assert.deepEqual(calls,[]);
- foreground=false;const first=warmer.tick();await warmer.tick();assert.deepEqual(calls,['a']);
- block.resolve();await first;await warmer.tick();await warmer.tick();
- for(let i=0;i<10;i++){warmer.update('folder',rows);await warmer.tick();}
- assert.deepEqual(calls,['a','b','full']);assert.equal(peak,1);
- warmer.update('other',[{path:'b',identity:'b'}]);time+=1001;await warmer.tick();assert.equal(calls.length,4);
-});
-
-test('idle activity detaches queued demand and retries it after the next idle period',async()=>{
- const {createWarmer}=require('../frontend/library-scene-scheduler');let time=0,calls=0;
- const warmer=createWarmer({now:()=>time,idle:()=>true,load:async(path,signal)=>{
-  calls++;if(calls===1)await new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Cancelled','AbortError'))));return {};
- }});
- warmer.update('folder',[{path:'a',identity:'a'}]);time=1001;
- const pending=warmer.tick();warmer.touch();await pending;await warmer.tick();assert.equal(calls,1);
- time+=1001;await warmer.tick();assert.equal(calls,2);
-});
-
 test('visible heavy demand keeps the next slot ahead of nearby light work',async()=>{
  const queue=create(2,undefined,{heavyLimit:1}),a=gate(),b=gate(),started=[];
  const first=queue.submit('first',()=>a.promise,null,10,{heavy:true});

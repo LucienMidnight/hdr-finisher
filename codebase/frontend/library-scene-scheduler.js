@@ -87,24 +87,6 @@
       invalidate:predicate=>{for(const job of [...jobs.values()])if(predicate(job.path)){job.controller.abort();const index=waiting.indexOf(job);if(index>=0)waiting.splice(index,1);settle(job,cancelled());}},
       stage:(path,stage,waiting=false)=>{for(const job of jobs.values())if(job.path===path&&job.running&&(job.stage!==stage||job.resourceWaiting!==waiting)){job.stage=stage;job.resourceWaiting=waiting;onChange(job,"running");}},snapshot:()=>({failures:[...failures],active,waiting:waiting.filter(j=>!j.controller.signal.aborted).length,jobs:[...new Set([...jobs.values(),...runningJobs])].map(j=>({path:j.path,priority:j.priority,stage:j.stage,background:!!j.background,state:j.controller.signal.aborted?"stopping":j.running&&!j.resourceWaiting?"running":"waiting"}))})});
   }
-  // One idle candidate at a time, once per identity in the current folder.
-  // Foreground activity detaches pending demand; active source work may finish.
-  function createWarmer({load,idle,now=()=>Date.now(),delay=1000}){
-    let scope=null,items=[],attempted=new Set(),controller=null,touched=now(),stopped=false;
-    function touch(){touched=now();controller?.abort();}
-    return Object.freeze({touch,
-      update:(key,rows)=>{if(key!==scope){touch();scope=key;attempted=new Set();stopped=false;}items=rows;},
-      async tick(){
-        if(controller||stopped||now()-touched<delay||!idle())return;
-        const item=items.find(row=>!attempted.has(row.identity));if(!item)return;
-        const owner=new AbortController();controller=owner;const pass=attempted;
-        pass.add(item.identity);
-        try{if(await load(item.path,owner.signal)===null&&pass===attempted)stopped=true;}
-        catch(error){if(error.name==='AbortError')pass.delete(item.identity);}
-        finally{if(controller===owner)controller=null;}
-      }
-    });
-  }
-  const api=Object.freeze({create,createWarmer});
+  const api=Object.freeze({create});
   if(typeof module!=="undefined")module.exports=api;else root.HDRLibrarySceneScheduler=api;
 })(typeof window==="undefined"?globalThis:window);

@@ -182,6 +182,16 @@ const HDRLibraryPictureFactory = (quick = false) => {
     try { return await ready; } catch (error) { ready = null; throw error; }
   }
   function show(meta, canvas, signal, isCurrent, hdr = false) {
+    if (meta.bitmap) return (async()=>{
+      const image = new Image(); image.src = meta.url; await image.decode();
+      if (signal.aborted || !isCurrent()) throw new DOMException("Cancelled","AbortError");
+      canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
+      canvas.getContext("2d").drawImage(image,0,0);
+      canvas.style.dynamicRangeLimit="standard";canvas.dataset.rendition="sdr";
+      canvas.dataset.picturePath=meta.path;canvas.dataset.pictureKey=meta.key;canvas.dataset.cameraPreview="true";
+      if(meta.picture_source==="camera picture")window.HDRLibraryTrace?.mark(meta.trace,"picture_camera_preview_decoded",performance.now(),{picture_size:"camera preview",route:meta.route});
+      HDRLibraryStopwatch("picture_shown",{path:meta.path,route:meta.route,reason:meta.picture_source,view:meta.log_view});
+    })();
     const queued = performance.now();
     foreground++;
     const originalCurrent = isCurrent, originalSignal = signal;

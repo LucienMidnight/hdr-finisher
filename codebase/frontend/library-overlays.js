@@ -28,6 +28,7 @@
       layer.style.pointerEvents='none';layer.style.zIndex=item.kind==='focus'?'4':'3';layer.style.padding=getComputedStyle(c).padding;layer.style.boxSizing='border-box';}}
     function remove(r){for(const item of Object.values(r.items)){item.request?.abort();item.layer.remove();item.badge.remove();}r.observer.disconnect();r.resize.disconnect();if(records.get(r.canvas)===r)records.delete(r.canvas);r.controller.signal.removeEventListener('abort',r.cleanup);}
     function attach(photo,canvas,meta,controller,current){
+      if(meta.bitmap)return;
       const old=records.get(canvas);if(old)remove(old);if(!Object.values(enabled).some(Boolean)||!current()||controller.signal.aborted)return;
       const r={photo,canvas,meta,controller,current,items:{}};records.set(canvas,r);r.cleanup=()=>remove(r);
       for(const kind of ['exposure','focus']){if(!enabled[kind])continue;const layer=document.createElement('canvas');layer.className='library-source-overlay';layer.dataset.kind=kind;layer.hidden=true;canvas.parentElement.append(layer);

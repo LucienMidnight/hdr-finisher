@@ -20,7 +20,7 @@ window.HDRLibraryScenes = (() => {
   const cpuLanes = Math.max(1, Math.floor(Math.sqrt(globalThis.navigator?.hardwareConcurrency || 1)));
   const probes = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {onChange:changed});
   // Explicit preparations finish their cache even if the immediate waiter
-  // detaches. Grid/filmstrip and speculative demand use viewport ownership.
+  // detaches. Grid and filmstrip demand use viewport ownership.
   const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {
     heavyLimit:cpuLanes,onChange:changed,fifo:true,
     admit:async job=>{
@@ -28,7 +28,7 @@ window.HDRLibraryScenes = (() => {
       job.grant=await HDRLibraryGrants.acquire(job.path,!job.cpuRoute&&HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority,job.edge,gpu.bytes,gpu.unified,!!job.front);
       return true;
     },
-    keepRunning:job=>job.retainDetached||(job.edge<=640&&(visible.has(job.path)||nearby.has(job.path)))});
+    keepRunning:job=>job.retainDetached||(job.edge<=640&&visible.has(job.path))});
   const versions = new Map();
   const history = new Map(), generations = new Map();
   let visible = new Set(), nearby = new Set(), reviewPath = null;
@@ -43,7 +43,7 @@ window.HDRLibraryScenes = (() => {
     error.libraryError = result.library_error || (result.library_timeout ? {path:result.path,reason:result.detail,timeout:true,time:Date.now()/1000} : undefined);
     return error;
   }
-  async function prepared(path, edge, signal, priority, identity, idle = false, trace = null, options = {}) {
+  async function prepared(path, edge, signal, priority, identity, trace = null, options = {}) {
     const checked = performance.now();
     const generation=generations.get(path)||0;
     const plan = await probes.submit(path+"|"+edge+"|"+generation, async shared => {
@@ -52,7 +52,7 @@ window.HDRLibraryScenes = (() => {
       const result = await response.json();
       if (!response.ok) throw failure(result);
       return result;
-    }, signal, priority, {path,edge,viewport:!!options.viewportDemand||idle,background:idle||!!options.cachedOnly,log_view:trace?.view,stage:edge <= 640 ? "Checking thumbnail cache" : edge === 100000 ? "Checking detail preview cache" : "Checking screen preview cache"});
+    }, signal, priority, {path,edge,viewport:!!options.viewportDemand,background:!!options.cachedOnly,log_view:trace?.view,stage:edge <= 640 ? "Checking thumbnail cache" : edge === 100000 ? "Checking detail preview cache" : "Checking screen preview cache"});
     window.HDRLibraryTrace?.mark(trace,"picture_cache_check",checked,{cache_hit:!!plan.cached});
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     if (generation!==(generations.get(path)||0)) throw new DOMException("Invalidated", "AbortError");
@@ -71,10 +71,16 @@ window.HDRLibraryScenes = (() => {
     // the disk cache; it is the fastest reuse and reports as a cache hit.
     if (direct) { options.onSourceDemand?.(); return direct.cache_hit ? direct : {...direct, cache_hit:true}; }
     if (plan.cached) { options.onSourceDemand?.(); return plan.cached; }
+    if ((plan.unedited_raw || plan.original_file) && edge !== 100000 && !options.develop) {
+      const response = await HDRLibraryGrants.preview({path,edge:edge <= 640 ? 640 : 2560,quick_draw:true},signal);
+      if (response.status === 200) {
+        const camera = await response.json();
+        if (plan.original_file || camera.camera_long_edge >= 1024) return {...camera,path,edge,bitmap:true,key:"original:"+sourceVersion.split(":")[0],cache_hit:true,picture_source:plan.original_file ? "original file" : "camera picture"};
+      }
+    }
     if (options.cachedOnly) return null;
     await options.beforeSource?.();
     if (signal?.aborted) throw new DOMException("Cancelled","AbortError");
-    if (idle && !plan.warm_allowed) return null;
     const previous = history.get(path);
     const elapsed = previous && previous.revision === plan.revision ? previous.ms : 0;
     const heavy = plan.bytes >= largeBytes || elapsed >= 2000;
@@ -82,10 +88,11 @@ window.HDRLibraryScenes = (() => {
     const shareTiers = edge !== 100000;
     const pending = sources.submit((plan.source_identity || identity+"|"+sourceVersion)+"|"+(shareTiers ? "scene" : edge), async (shared, importance, job) => {
       const started = performance.now();
+      window.HDRLibraryStopwatch?.("picture_development_start",{path,reason:options.develop ? "Develop command" : edge === 100000 ? "zoom detail" : plan.edited ? "edited" : plan.unedited_raw ? "no usable camera picture" : "HDR non-RAW",view:trace?.view});
       try {
         const result = await HDRLibraryGrants.run(path,!plan.cpu_route&&HDRLibraryGpuRaw.enabled()?"source":"cpu",shared,
           async (grant,owned)=>{
-            const run=size=>develop(path,size,owned,importance,version,options.gpuOnly || idle || (priority >= 80 && !visible.has(path)),grant,plan.cpu_route,shareTiers ? job.edges : null);
+            const run=size=>develop(path,size,owned,importance,version,options.gpuOnly || (priority >= 80 && !visible.has(path)),grant,plan.cpu_route,shareTiers ? job.edges : null);
             if(!shareTiers || (!plan.cpu_route && HDRLibraryGpuRaw.enabled()))return run(edge);
             const tasks=new Map();
             const add=size=>{if(!tasks.has(size)){const task=run(size);task.catch(()=>{});tasks.set(size,task);}};
@@ -97,7 +104,7 @@ window.HDRLibraryScenes = (() => {
               return values[0];
             } finally {job.onTier=null;}
           },importance,job.grant,{requeueLane:true});
-        if (result && (idle || signal?.aborted)) save(result);
+        if (result && signal?.aborted) save(result);
         return result;
       }
       finally {
@@ -107,7 +114,7 @@ window.HDRLibraryScenes = (() => {
           if (history.size > 256) history.delete(history.keys().next().value);
         }
       }
-    }, signal, priority, {heavy,cost,path,edge,cpuRoute:plan.cpu_route,gpuMeta:plan.gpu_meta,viewport:!!options.viewportDemand||idle,background:idle,retainDetached:!options.viewportDemand&&!idle,log_view:trace?.view,stage:"Developing photo"});
+    }, signal, priority, {heavy,cost,path,edge,cpuRoute:plan.cpu_route,gpuMeta:plan.gpu_meta,viewport:!!options.viewportDemand,retainDetached:!options.viewportDemand,log_view:trace?.view,stage:"Developing photo"});
     options.onSourceDemand?.();
     const result=await pending;
     if(result && result.path && result.path!==path){
@@ -124,10 +131,10 @@ window.HDRLibraryScenes = (() => {
   function temporary(error) {
     return !!error.libraryError?.timeout || /timeout|timed out|took too long|grant expired|preparation expired|cancelled|canceled|aborted|waiting for memory|upload.*expired|network|failed to fetch|fetch failed|helper stopped|time limit exceeded|stall/i.test(error.message);
   }
-  async function load(path, edge, signal, priority = 10, idle = false, trace = null, options = {}) {
+  async function load(path, edge, signal, priority = 10, trace = null, options = {}) {
     const generation=generations.get(path)||0;
     for(let attempt=1;;attempt++){
-      try { return await loadOnce(path,edge,signal,priority,idle,trace,options); }
+      try { return await loadOnce(path,edge,signal,priority,trace,options); }
       catch(error){
         if(error.name==="AbortError" || signal?.aborted || generation!==(generations.get(path)||0) || error.laneRequeue || error.cloudOnly || error.needsMemory)throw error;
         const retryable=temporary(error);
@@ -147,14 +154,14 @@ window.HDRLibraryScenes = (() => {
       }
     }
   }
-  async function loadOnce(path, edge, signal, priority = 10, idle = false, trace = null, options = {}) {
+  async function loadOnce(path, edge, signal, priority = 10, trace = null, options = {}) {
     const generation=generations.get(path)||0;
     const identity = path + (edge === 100000 ? "|native" : "");
-    let meta = await prepared(path, edge, signal, priority, identity, idle, trace, options);
+    let meta = await prepared(path, edge, signal, priority, identity, trace, options);
     if (!meta) return null;
     // Shared work may return the first tier. Discover the other stored tier
     // without preparing a scene that nobody requested.
-    if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge, false, trace, options);
+    if (meta.edge !== edge) meta = await prepared(path, edge, signal, priority, path+"|"+edge, trace, options);
     if (generation!==(generations.get(path)||0) || signal?.aborted) throw new DOMException("Invalidated", "AbortError");
     return {...meta, draw_priority:priority, trace, log_view:trace?.view || (edge <= 640 ? "grid,filmstrip" : "single,fullscreen,compare")};
   }
@@ -227,7 +234,7 @@ window.HDRLibraryScenes = (() => {
   }
   let reclaim = async () => {};
   function save(meta, presented = false) {
-    if (meta.route === 'stored-screen-preview' || meta.scene_stored) return;
+    if (meta.bitmap || meta.route === 'stored-screen-preview' || meta.scene_stored) return;
     if (reviewPath === meta.path && !presented) return;
     const started = performance.now();
     void Promise.resolve().then(()=>meta.directScene?.store()).then(()=>fetch("/api/library/live-store/"+meta.key,{method:"POST"})).then(response=>{

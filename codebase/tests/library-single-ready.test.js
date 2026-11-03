@@ -12,7 +12,7 @@ test('Single swaps the correct finished canvas and hides the previous grade whil
  const key=p=>p.path+':'+p.grade_identity;
  const readyWindow=create({key,load:async p=>{const value={canvas:canvas(p),meta:{key:p.grade_identity,edge:2560}};if(block)await block;return value;},dispose:value=>{disposed.push(value);if(value.canvas===visible)value.canvas.hidden=true;}});
  const surfaces={has:()=>true,get:()=>undefined};
- const context={HDRLibraryScreenPreviews:{display:()=>({})},state,navigationTrace:null,selected:()=>state.photos[state.index],singleEdge:()=>2560,readyKey:key,readyWindow,readySurfaces:surfaces,
+ const context={HDRLibraryStopwatch(){},logView:()=>"single",HDRLibraryScreenPreviews:{display:()=>({})},state,navigationTrace:null,selected:()=>state.photos[state.index],singleEdge:()=>2560,readyKey:key,readyWindow,readySurfaces:surfaces,
    HDRLibraryScenes:{review(){},save(){}},quickWindow:{update(){},get:async()=>null},navigationGate:{touch(){}},beforeSource:async()=>{},showQuick(){},showCameraPreview(){},performance,
    readAhead:{update(){}},developmentNeighbours:()=>[],developAhead(){},
   compare:{enabled:()=>false,hide(){}},HDRLibraryTrace:{begin:()=>({}),end(){},mark(){},present:(trace,current)=>{assert.ok(current());assert.equal(visible.pixels,key(state.photos[state.index]));}},
@@ -20,34 +20,12 @@ test('Single swaps the correct finished canvas and hides the previous grade whil
   HDRLibraryPictures:{usable:()=>true},loadAndShow:()=>assert.fail('Unexpected fallback'),aborted:e=>e.name==='AbortError',removeUnreadable:(_p,e)=>{throw e;},$:id=>id==='single-picture'?visible:{hidden:true}};
  vm.runInNewContext(fn+';this.showSingle=showSingle;',context);
  await context.showSingle();assert.equal(visible.pixels,'a:old');
- state.index=1;await readyWindow.get(b);const previous=visible;const swapping=context.showSingle();assert.equal(previous.hidden,false,'Ready swap preserves the displayed surface until replacement');await swapping;assert.equal(visible.pixels,'b:old');
+ state.index=1;readyWindow.update(b,[a]);await readyWindow.get(b);const previous=visible;const swapping=context.showSingle();assert.equal(previous.hidden,false,'Ready swap preserves the displayed surface until replacement');await swapping;assert.equal(visible.pixels,'b:old');
  state.index=0;await context.showSingle();assert.equal(visible.pixels,'a:old');
  a.grade_identity='new';let release;block=new Promise(r=>release=r);
  const pending=context.showSingle();await Promise.resolve();assert.equal(visible.hidden,true);
  release();await pending;assert.equal(visible.pixels,'a:new');assert.equal(visible.hidden,false);
  assert.equal(visible.dataset.picturePath,'a');assert.equal(visible.dataset.pictureKey,'new');
-});
-
-test('camera quick draw rejects edits, navigation changes and late delivery after HDRF pixels',async()=>{
- const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
- const fn=source.slice(source.indexOf('  async function showCameraPreview('),source.indexOf('  HDRLibraryScenes.onReclaim'));
- for(const change of ['none','edited','navigated','source','thumbnail','sharp','quick']){
-  const photo={path:'a',type:'ARW',bytes:1,mtime_ns:1,edited:change==='edited'};let selected=photo,sharp=false,thumbnail=false,quick=null,requests=0,presents=0;
-  const images=[],stage={querySelector:()=>quick,append(image){images.push(image);image.isConnected=true;quick=image;}};
-  const context={photo,rawTypes:new Set(['ARW']),pictureIdentity:p=>`${p.path}|${p.bytes}|${p.mtime_ns}`,selected:()=>selected,
-   readyWindow:{has:()=>sharp},quickWindow:{has:()=>thumbnail},performance,console,AbortController,
-   HDRLibraryGrants:{preview:async()=>{requests++;return {status:200,json:async()=>({url:'camera',route:'camera-preview'})};}},
-   document:{createElement:()=>({dataset:{},style:{},isConnected:false,async decode(){
-    if(change==='navigated')selected={...photo,path:'b'};if(change==='source')photo.mtime_ns=2;
-    if(change==='thumbnail')thumbnail=true;if(change==='sharp')sharp=true;if(change==='quick')quick={};
-   },remove(){this.isConnected=false;quick=null;},removeAttribute(){}})},$:()=>stage,restoreStandIn(){},pictureMode(image,hdr){assert.equal(hdr,false);},
-   HDRLibraryTrace:{mark(){},present(_trace,current,fields){assert.ok(current());assert.equal(fields.picture_size,'camera preview');presents++;}},aborted:e=>e.name==='AbortError'};
-  vm.runInNewContext(fn+';this.showCameraPreview=showCameraPreview;',context);
-  const controller=new AbortController();await context.showCameraPreview(photo,controller,()=>true,{});
-  assert.equal(requests,change==='edited'?0:1);assert.equal(presents,change==='none'?1:0);
-  assert.equal(images.length,change==='none'?1:0);
-  if(change==='none'){assert.equal(images[0].dataset.picturePath,'a');controller.abort();assert.equal(images[0].isConnected,false);}
- }
 });
 
 test('selected Denoise measurements pass queued neighbours while quick draws stay independent',async()=>{
@@ -73,7 +51,7 @@ test('memory polling preserves the stopped selection during source work and stil
  const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
  const fn=source.slice(source.indexOf('  async function pollReadyMemory()'),source.indexOf('  setInterval(pollReadyMemory'));
  let invalidated=0,finished=false,sourceActive=1,budget=100,permit={ready:true,idle:false};
- const context={readyPolling:false,readyBytes:50,state:{active:true,view:'single',singleIdentity:'selected'},
+ const context={readySurfaces:new Map([["gpu",{meta:{}}]]),readyPolling:false,readyBytes:50,state:{active:true,view:'single',singleIdentity:'selected'},
    api:async()=>permit,HDRLibraryPictures:{readyMemory:async()=>budget},
    HDRLibraryScenes:{snapshot:()=>({draws:{active:0},sources:{active:sourceActive},probes:{active:0}})},
    tilePool:{snapshot:()=>({bytes:0})},quickWindow:{invalidate(){}},readyWindow:{has:()=>finished,invalidate:()=>invalidated++},selected:()=>({path:'a'}),compare:{enabled:()=>false}};
@@ -84,4 +62,17 @@ test('memory polling preserves the stopped selection during source work and stil
  permit={ready:false,idle:false};sourceActive=1;await context.poll();assert.equal(invalidated,2,'Grade still preempts');
  permit={ready:true,idle:true};budget=25;await context.poll();assert.equal(invalidated,2,'Own reservation must not cancel its draw');
  sourceActive=0;await context.poll();assert.equal(invalidated,3,'Existing budget still enforced');
+});
+
+
+test('Develop stores only the selected photos at both tiers without changing grades',async()=>{
+ const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
+ const fn=source.slice(source.indexOf('  async function developSelection('),source.indexOf('  const showAllKey='));
+ const photos=[{path:'a.arw',name:'a'},{path:'b.dng',name:'b'}],before=JSON.stringify(photos),calls=[],stored=[];
+ const context={status(){},HDRLibraryScenes:{async load(path,edge,signal,priority,trace,options){assert.equal(options.develop,true);calls.push([path,edge]);return {key:path+edge,directScene:{async store(){stored.push(path+edge);}}};}},
+  async fetch(url,options){assert.match(url,/^\/api\/library\/live-store\//);assert.equal(options.method,'POST');return {ok:true};},
+  tilePool:{clear(){}},clearCells(){},state:{cells:new Map(),filmCells:new Map(),view:'grid'},readyWindow:{invalidate(){}},quickWindow:{invalidate(){}},paintGrid(){},paintFilm(){}};
+ vm.runInNewContext(fn+';this.run=developSelection;',context);await context.run(photos);
+ assert.deepEqual(calls,[['a.arw',640],['a.arw',2560],['b.dng',640],['b.dng',2560]]);
+ assert.equal(stored.length,4);assert.equal(JSON.stringify(photos),before);
 });

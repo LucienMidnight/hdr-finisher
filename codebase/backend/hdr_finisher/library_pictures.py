@@ -27,7 +27,7 @@ from .projects import validate_saved
 from .render_cache import encode_rgba_proxy_rows
 
 SIDECAR_SUFFIX = ".hdrf"
-PICTURE_VERSION = "library-scene-reduced-v10"
+PICTURE_VERSION = "library-scene-demand-v11"
 CACHE_LIMIT_BYTES = 2 * 1024**3
 _CACHE_LOCKS = [RLock() for _ in range(64)]
 _TRIM_LOCK = RLock()
@@ -524,28 +524,50 @@ def check_cancelled(cancelled):
 
 
 def original_preview(path, edge):
-    """An unedited, resolved SDR file can stand in while its scene develops."""
+    """Decode a plain SDR file for display, without developing or saving a grade."""
     path = Path(path)
-    if path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
-        raise ValueError("No original quick draw for this format")
-    if path.suffix.lower() != ".png" and loader.is_ultrahdr_jpeg(path):
-        raise ValueError("Gain-map JPEG needs its HDR interpretation")
-    if path.suffix.lower() == ".png":
-        from .library_reduced import png
-        pixels, metadata = png(path)
+    suffix = path.suffix.lower()
+    if suffix in {".exr", ".pfm", ".hdr"}:
+        return None
+    if suffix in {".tif", ".tiff"}:
+        from .library_metadata import mezzanine_tiff
+        stat = path.stat()
+        if mezzanine_tiff(str(path), stat.st_size, stat.st_mtime_ns): return None
+    if suffix in {".jpg", ".jpeg"} and loader.is_ultrahdr_jpeg(path): return None
+    if suffix == ".avif":
+        from .avif_info import inspect_avif
+        info = inspect_avif(path)
+        if info.get("gain_map_present") or info.get("transfer_char") in {16, 18, "PQ", "HLG"}: return None
+    if suffix in {".heic", ".heif"}:
+        from pillow_heif import open_heif
+        image_file = open_heif(path, convert_hdr_to_8bit=False)
+        info = image_file[image_file.primary_index].info
+        if info.get("aux") or loader._heif_transfer_from_info(info) in {"PQ", "HLG"}: return None
+        from pillow_heif import register_heif_opener
+        register_heif_opener()
+    if suffix == ".jxl":
+        from .jpegxl import decode_jpegxl, _srgb_oetf
+        from .color import acescg_to_linear_srgb
+        pixels, metadata = decode_jpegxl(path, encoded_samples=True)
+        if metadata.get("jpegxl_direct_hdr") or metadata.get("needs_color_override"): return None
+        normalized = normalize_to_acescg(pixels, metadata["sample_color_space"], metadata["sample_transfer_function"])
+        signal = _srgb_oetf(np.maximum(acescg_to_linear_srgb(normalized), 0))
+        image = Image.fromarray(np.clip(signal * 255, 0, 255).astype(np.uint8))
     else:
-        from .library_reduced import jpeg_open
-        pixels, metadata = loader._load_with_pillow(path, encoded_samples=True, draft_edge=edge, image_factory=jpeg_open)
-    if metadata.get("needs_color_override") or metadata.get("color_space") != "sRGB":
-        raise ValueError("Original quick draw needs resolved SDR colour")
-    # Grade's decoder already applied ICC and orientation. Only this temporary
-    # stand-in is reduced/encoded; the finished scene uses the normal pipeline.
-    image = Image.fromarray(pixels)
+        with Image.open(path) as source:
+            width, height = source.size
+            if source.getexif().get(274) in {5, 6, 7, 8}: width, height = height, width
+            source.draft("RGB", (edge, edge))
+            image = ImageOps.exif_transpose(source).convert("RGB")
+            profile = source.info.get("icc_profile")
+            if profile:
+                image = ImageCms.profileToProfile(image, ImageCms.ImageCmsProfile(BytesIO(profile)), ImageCms.createProfile("sRGB"), outputMode="RGB")
+    width, height = (width, height) if suffix != ".jxl" else image.size
     image.thumbnail((edge, edge))
     output = BytesIO()
     image.save(output, format="PNG")
-    return {"route": "original-preview-placeholder", "url": "data:image/png;base64," + base64.b64encode(output.getvalue()).decode(),
-        "width": image.width, "height": image.height, "edge": edge, "kept": False}
+    return {"route": "original-file", "url": "data:image/png;base64," + base64.b64encode(output.getvalue()).decode(),
+        "width": image.width, "height": image.height, "source_width": width, "source_height": height, "edge": edge}
 
 
 _CAMERA_PREVIEWS = OrderedDict()
@@ -612,6 +634,9 @@ def _extract_camera_preview(path, edge):
         raw.open_file(str(path))
         thumb = raw.extract_thumb()
         image = Image.open(BytesIO(thumb.data)) if thumb.format == rawpy.ThumbFormat.JPEG else Image.fromarray(thumb.data)
+        camera_width, camera_height = image.size
+        source_width, source_height = raw.sizes.width, raw.sizes.height
+        if raw.sizes.flip in {5, 6}: source_width, source_height = source_height, source_width
         if thumb.format == rawpy.ThumbFormat.JPEG: image.draft("RGB", (edge, edge))
         image = ImageOps.exif_transpose(image).convert("RGB")
         image.thumbnail((edge, edge))
@@ -619,7 +644,9 @@ def _extract_camera_preview(path, edge):
         image.save(output, format="JPEG", quality=90)
     log("picture_camera_preview_ready", path=str(path), route="camera-preview-extract", cache_hit=False, duration_ms=(perf_counter()-started)*1000)
     return {"route": "camera-preview-placeholder", "url": "data:image/jpeg;base64," + base64.b64encode(output.getvalue()).decode(),
-        "width": image.width, "height": image.height, "edge": edge, "kept": False}
+        "width": image.width, "height": image.height, "edge": edge, "kept": False,
+        "camera_long_edge": max(camera_width, camera_height),
+        "source_width": source_width, "source_height": source_height}
 
 
 def embedded_picture(path, edge):
