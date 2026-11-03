@@ -206,13 +206,13 @@ def test_renderer_development_failure_is_remembered_until_explicit_retry(tmp_pat
     Image.new("RGB", (64, 32), (100, 120, 80)).save(path)
     helper = Helper()
     api = client(tmp_path / "app", helper)
-    reason = "Development stopped after 3 attempts: Yielding GPU RAW to shared work."
+    reason = "Development stopped after 3 attempts: Invalid source data."
     identity = api.post("/api/library/live-plan", json={"path": str(path), "edge": 640}).json()["source_identity"]
     response = api.post("/api/library/development-error", json={"path": str(path), "source_identity": identity, "reason": reason})
     assert response.status_code == 200, response.text
     record = response.json()["error"]
     # People read plain words; the diagnostic stays under Error details.
-    assert record["reason"] == "Development stopped after repeated attempts. Try again."
+    assert record["reason"] == reason
     assert record["details"] == reason
     blocked = api.post("/api/library/live-scene", json={"path": str(path), "edge": 640})
     assert blocked.status_code == 422
@@ -359,3 +359,39 @@ def test_virtual_copy_warning_disappears_when_its_source_is_deleted(tmp_path):
     assert [record['path'] for record in errors.all()]==[key]
     path.unlink()
     assert errors.all()==[]
+
+
+@pytest.mark.parametrize("reason", ["Library upload timed out.", "Library grant expired; request it again.",
+    "Library request cancelled.", "Waiting for memory", "Save stalled"])
+def test_recoverable_renderer_failure_never_blocks_next_open(tmp_path, reason):
+    from hdr_finisher.library_picture_errors import temporary_development_failure
+    path=tmp_path/"photo.png"; Image.new("RGB",(8,4)).save(path)
+    api=client(tmp_path/"app",Helper())
+    identity=api.post("/api/library/live-plan",json={"path":str(path)}).json()["source_identity"]
+    assert temporary_development_failure(reason)
+    result=api.post("/api/library/development-error",json={"path":str(path),"source_identity":identity,"reason":reason})
+    assert result.json()["temporary"]
+    assert api.get("/api/library/health").json()["picture_errors"]==[]
+    assert api.post("/api/library/live-plan",json={"path":str(path)}).status_code==200
+
+
+@pytest.mark.parametrize("reason", ["Library upload timed out.", "Library grant expired", "Save stalled", "Operation aborted"])
+def test_temporary_wording_and_guard_do_not_write_a_receipt(tmp_path, reason):
+    import asyncio
+    from types import SimpleNamespace
+    from fastapi import HTTPException
+    from hdr_finisher.library_picture_errors import plain_development_reason
+    errors=PictureErrors(LibraryMarks(tmp_path))
+    assert plain_development_reason(reason)=="Couldn't finish preparing this photo. Try again."
+    @errors.guard
+    def fail(command): raise ValueError(reason)
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(fail(SimpleNamespace(path=str(tmp_path/"photo.png"))))
+    assert caught.value.status_code==503
+    assert errors.all()==[]
+
+
+def test_single_attempt_wording_does_not_claim_repeated_attempts():
+    from hdr_finisher.library_picture_errors import plain_development_reason
+    reason="Development stopped after 1 attempt: Invalid source data."
+    assert plain_development_reason(reason)==reason

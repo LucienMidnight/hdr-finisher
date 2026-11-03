@@ -39,6 +39,7 @@ window.HDRLibraryScenes = (() => {
   function failure(result) {
     const error = result.changed || result.offline ? new DOMException(result.detail,"AbortError") : Error(result.detail || "The photo could not be prepared.");
     if (result.offline) window.dispatchEvent(new CustomEvent("library-offline", {detail:result}));
+    error.status = result.status;
     error.libraryError = result.library_error || (result.library_timeout ? {path:result.path,reason:result.detail,timeout:true,time:Date.now()/1000} : undefined);
     return error;
   }
@@ -120,7 +121,33 @@ window.HDRLibraryScenes = (() => {
   // Quick draws use thumbnails and their own renderer and priority queue.
   const draws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed});
   const quickDraws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed});
+  function temporary(error) {
+    return !!error.libraryError?.timeout || /timeout|timed out|took too long|grant expired|preparation expired|cancelled|canceled|aborted|waiting for memory|upload.*expired|network|failed to fetch|fetch failed|stall/i.test(error.message);
+  }
   async function load(path, edge, signal, priority = 10, idle = false, trace = null, options = {}) {
+    const generation=generations.get(path)||0;
+    for(let attempt=1;;attempt++){
+      try { return await loadOnce(path,edge,signal,priority,idle,trace,options); }
+      catch(error){
+        if(error.name==="AbortError" || signal?.aborted || generation!==(generations.get(path)||0) || error.laneRequeue || error.cloudOnly || error.needsMemory)throw error;
+        const retryable=temporary(error);
+        if(!retryable && !error.developmentFailure)throw error;
+        if(attempt<3){
+          window.HDRLibraryStopwatch?.("picture_preparation_retry",{path,attempt,reason:error.message});
+          await wait(attempt===1?500:1500,signal);continue;
+        }
+        if(retryable){
+          error.libraryError={path,reason:"Couldn't finish preparing this photo. Try again.",details:error.message,timeout:true,time:Date.now()/1000};
+        }else{
+          const response=await fetch("/api/library/development-error",{method:"POST",signal,
+            headers:{"Content-Type":"application/json"},body:JSON.stringify({path,source_identity:error.developmentFailure,reason:`Development stopped after ${attempt} attempts: ${error.message}`})});
+          if(response.ok)error.libraryError=(await response.json()).error;
+        }
+        throw error;
+      }
+    }
+  }
+  async function loadOnce(path, edge, signal, priority = 10, idle = false, trace = null, options = {}) {
     const generation=generations.get(path)||0;
     const identity = path + (edge === 100000 ? "|native" : "");
     let meta = await prepared(path, edge, signal, priority, identity, idle, trace, options);
@@ -140,9 +167,7 @@ window.HDRLibraryScenes = (() => {
         if (error.name === "AbortError" || error.libraryError || error.libraryRequeue) throw error;
         if (!error.gpuUnavailable) {
           if(!version)throw error;
-          const response = await fetch("/api/library/development-error", {method:"POST",signal,
-            headers:{"Content-Type":"application/json"},body:JSON.stringify({path,source_identity:version.split(":")[0],reason:error.message})});
-          if(response.ok)error.libraryError=(await response.json()).error;
+          error.developmentFailure=version.split(":")[0];
           throw error;
         }
         window.HDRLibraryStopwatch?.("picture_source_gpu_fallback",{path,reason:error.message});

@@ -358,3 +358,36 @@ test('CPU tiers share admission and cancellation while both requests attach to t
  assert.equal(calls[0].grant,calls[1].grant);
  plans.photo.cached={edge:2560,key:'2560'};block.resolve();assert.equal((await large).edge,2560);
 });
+
+
+test('a save timeout or lost grant retries fresh work and never writes a failure receipt',async()=>{
+ for(const message of ['Library upload timed out.','Library grant expired; request it again.']){
+  let calls=0;
+  const {scenes,requests,events}=setup({photo:{source_identity:'a'.repeat(64)}},async(p,edge)=>{
+   if(++calls===1)throw Error(message);return {edge,key:'recovered'};
+  });
+  assert.equal((await scenes.load('photo',640,undefined,0)).key,'recovered');
+  assert.equal(calls,2);assert.equal(events.filter(e=>e.stage==='picture_preparation_retry').length,1);
+  assert.ok(requests.every(r=>!r.reason));
+ }
+});
+
+test('temporary retries stop after three attempts with a local retryable warning',async()=>{
+ let calls=0;
+ const {scenes,requests}=setup({photo:{source_identity:'a'.repeat(64)}},async()=>{calls++;throw Error('Library upload timed out.');});
+ await assert.rejects(scenes.load('photo',640,undefined,0),error=>{
+  assert.equal(error.libraryError.timeout,true);
+  assert.equal(error.libraryError.reason,"Couldn't finish preparing this photo. Try again.");return true;
+ });
+ assert.equal(calls,3);assert.ok(requests.every(r=>!r.reason));
+});
+
+test('leaving during transient backoff cancels the retry',async()=>{
+ let calls=0;const cancel=new AbortController();
+ const {scenes,events}=setup({photo:{source_identity:'a'.repeat(64)}},async()=>{calls++;throw Error('Library upload timed out.');});
+ const work=scenes.load('photo',640,cancel.signal,0);
+ while(!events.some(e=>e.stage==='picture_preparation_retry'))await tick();
+ cancel.abort();await assert.rejects(work,{name:'AbortError'});assert.equal(calls,1);
+});
+
+

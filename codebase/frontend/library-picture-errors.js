@@ -101,6 +101,6 @@ window.HDRLibraryPictureErrors = Object.freeze({
       paint(cell);
       if (!cell.hasCameraPreview) cell.controller.abort();
     }
-    return Object.freeze({remember, update, show, paint, failed, canPrepare:path => !records.has(path) || !!records.get(path).grade_warning, get:path => records.get(path)});
+    return Object.freeze({remember, update, show, paint, failed, canPrepare:path => !records.has(path) || !!records.get(path).grade_warning || !!records.get(path).timeout, get:path => records.get(path)});
   }
 });

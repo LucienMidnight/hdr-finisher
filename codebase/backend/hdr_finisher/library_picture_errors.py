@@ -31,7 +31,7 @@ def _reader_identity():
     after an update instead of staying stuck until the photo changes."""
     from .models import EditDocument
     # A newly supported source route must retry failures saved by the old app.
-    identity = {"grade_schema": EditDocument.model_json_schema(), "library_source_routes": "assumed-colour-v1"}
+    identity = {"grade_schema": EditDocument.model_json_schema(), "library_source_routes": "recoverable-development-v2"}
     return sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
@@ -43,15 +43,24 @@ def _listed(path):
     return path_listed(path)
 
 
+def temporary_development_failure(details):
+    text = str(details).lower()
+    return any(word in text for word in ("timeout", "timed out", "took too long", "cancelled", "canceled",
+        "aborted", "memory", "busy", "in progress", "changed during", "changed while", "expired",
+        "invalidated", "stall", "yielding", "waiting for", "fetch failed", "failed to fetch", "network"))
+
+
 def plain_development_reason(details):
     """The development route's reasons are diagnostics; the photo shows plain
     words and the original text stays under Error details."""
     first = details.splitlines()[0] if details else ""
     if first.startswith("Not supported:"):
         return first
-    if first.startswith("Development stopped"):
-        return "Development stopped after repeated attempts. Try again."
-    return "The Library can't show this photo. Open it in Grade to work on it."
+    if temporary_development_failure(details):
+        return "Couldn't finish preparing this photo. Try again."
+    if "no supported GPU development route" in first or first.startswith("RGB transfer "):
+        return "The Library can't show this photo. Open it in Grade to work on it."
+    return first or "Photo development failed. Try again."
 
 
 class PictureErrors:
@@ -132,6 +141,8 @@ class PictureErrors:
         if revision != self.revision(path):
             raise HTTPException(409, "The photo or settings changed. Request its preview again.")
         details = str(error)
+        if temporary_development_failure(details):
+            raise HTTPException(503, plain_development_reason(details)) from error
         if plain:
             reason = plain
         elif "validation error" in details:
@@ -183,8 +194,7 @@ class PictureErrors:
                 return JSONResponse({"detail": "This folder is offline. Reconnect the drive, then open the folder again.",
                                      "offline": True, "path": str(path)}, status_code=503)
             # Admission failures and interruptions are not broken photos.
-            text = str(failure).lower()
-            if any(word in text for word in ("cancelled", "memory", "busy", "in progress", "changed during", "changed while", "expired", "invalidated")):
+            if temporary_development_failure(failure):
                 raise HTTPException(503, str(failure)) from failure
             record = await run_in_threadpool(self.remember, path, failure, revision)
             return self.response(record)

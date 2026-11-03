@@ -1,3 +1,15 @@
+## November 3: Batch 3f — temporary preparation failures
+
+Timeouts, lost grants, interruptions and stalls do not create a durable broken-photo
+receipt. A live request gets at most three fresh preparations, spaced by 0.5 and
+1.5 seconds, after each failed owner releases its resources. Leaving the view or
+changing the source cancels the request. Exhaustion shows “Couldn't finish
+preparing this photo. Try again.” and permits another visit to try afresh.
+Repeatable development failures keep their cause and actual attempt count.
+Unsupported Library routes alone use the Grade-only explanation. The disposable
+failure-reader identity is renewed once so receipts from the timeout/fallback bug
+are retried on the next open; no saved grades or originals are changed.
+
 # Module PRD: Photo Library
 
 ## November 3: Grade pause follow-up diagnostics (Batch 3d2)
