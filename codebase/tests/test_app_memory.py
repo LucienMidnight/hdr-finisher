@@ -325,3 +325,75 @@ def test_shortage_releases_only_needed_bytes_and_stops_before_next_owner(monkeyp
     assert app_memory.reclaim("shortage", 100) == 100
     assert released == [("working", 100)]
     assert app_memory.cache_snapshot()["raw"]["bytes"] == 500
+
+
+def test_memory_polls_never_wait_for_grade_lock(tmp_path, monkeypatch):
+    import asyncio, httpx, time
+    import numpy as np
+    from types import SimpleNamespace
+    from fastapi import FastAPI
+    from hdr_finisher.sessions import SessionStore
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.library_worker import LibraryWorker
+    from hdr_finisher.media_browser import MediaBrowserStore
+    store = SessionStore()
+    pixels = np.ones((4, 4, 3), dtype=np.float32)
+    session = SimpleNamespace(image=pixels, retouch_original=pixels, sdr_reference_image=None,
+                              source=SimpleNamespace(filename='test.raw'), to_payload=lambda: None,
+                              owns_source_path=False, retouch_worker=None)
+    store.activate_session(session)
+    assert store._retained_session_bytes() == pixels.nbytes
+    monkeypatch.setattr(app_memory, 'grade_bytes_provider', store._retained_session_bytes)
+    monkeypatch.setattr(app_memory, 'process_tree', lambda root: [dict(pid=1, workingSetBytes=100)])
+    worker = LibraryWorker(tmp_path)
+    app = FastAPI(); app.include_router(create_library_router(worker, MediaBrowserStore(tmp_path)))
+    entered, release = Event(), Event()
+    def hold():
+        with store._lock:
+            entered.set(); assert release.wait(5)
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            for _ in range(8):
+                at = time.monotonic()
+                response = await asyncio.wait_for(client.get('/api/library/memory'), .5)
+                assert response.is_success
+                assert response.json()['gradeBytes'] == pixels.nbytes
+                assert time.monotonic()-at < .5
+                await asyncio.sleep(.3)
+    with ThreadPoolExecutor(1) as pool:
+        task = pool.submit(hold)
+        try:
+            assert entered.wait(1)
+            asyncio.run(run())
+        finally: release.set()
+        task.result()
+    store.clear()
+    assert store._retained_session_bytes() == 0
+
+
+def test_memory_endpoint_coalesces_a_stuck_sample(tmp_path, monkeypatch):
+    import asyncio, httpx
+    from fastapi import FastAPI
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.library_worker import LibraryWorker
+    from hdr_finisher.media_browser import MediaBrowserStore
+    entered, release = Event(), Event()
+    calls = []
+    def sample(**kwargs):
+        calls.append(1)
+        if len(calls)>1: entered.set(); assert release.wait(4)
+        return {'totalBytes': 100}
+    monkeypatch.setattr(app_memory, 'snapshot', sample)
+    app = FastAPI(); app.include_router(create_library_router(LibraryWorker(tmp_path), MediaBrowserStore(tmp_path)))
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            try:
+                assert (await client.get('/api/library/memory')).json()['totalBytes'] == 100
+                for _ in range(10):
+                    assert (await asyncio.wait_for(client.get('/api/library/memory'), .3)).is_success
+                    await asyncio.sleep(.01)
+                assert entered.is_set()
+                assert len(calls) == 2
+            finally:
+                release.set(); await asyncio.sleep(.05)
+    asyncio.run(run())

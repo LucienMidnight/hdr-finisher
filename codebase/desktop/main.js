@@ -1337,7 +1337,7 @@ if (!gotLock) {
           const response = await fetch(`${activeBackend.url}/api/library/memory`, {
             headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret}, signal:AbortSignal.timeout(2000)});
           if (!response.ok) throw Error(`Memory sampling failed (${response.status})`);
-          const value = await response.json();
+          const value = await memoryPressureRelay.withDeadline(response.json());
           // The backend's level comes from measurement and the OS only, never
           // from a refused admission. Trim once when it rises, then at most
           // once per cool-down while it lasts.
@@ -1357,12 +1357,16 @@ if (!gotLock) {
             // native pressure notification to discard dead upload/readback
             // storage in renderer, browser and GPU host processes.
             const pressureStarted = Date.now();
-            await memoryPressureRelay.notifyChromiumPressure(mainWindow.webContents, trimLevel);
+            try {
+              await memoryPressureRelay.notifyChromiumPressure(mainWindow.webContents, trimLevel);
+            } catch (error) {
+              libraryStage("chromium_pressure_error", {reason:error.message});
+            }
             libraryStage("chromium_pressure_timing", {level:trimLevel,duration_ms:Date.now()-pressureStarted});
             const reclaimed=await fetch(`${activeBackend.url}/api/library/memory-reclaim`, {method:"POST",
               headers:{"X-HDR-Finisher-Token":activeBackend.authoringSecret,"Content-Type":"application/json"},
               body:JSON.stringify({pressure:trimLevel}),signal:AbortSignal.timeout(2000)});
-            await reclaimed.arrayBuffer();
+            await memoryPressureRelay.withDeadline(reclaimed.arrayBuffer());
           }
         } catch (error) {
           libraryStage("memory_controller_error", {reason:error.message});

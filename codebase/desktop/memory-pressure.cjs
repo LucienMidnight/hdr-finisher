@@ -1,8 +1,21 @@
 // Reclaim without a DevTools session. Both calls run in the renderer isolate;
 // critical pressure also clears Blink's native resource caches in the preload.
-async function notifyChromiumPressure(contents, level) {
-  await contents.executeJavaScriptInIsolatedWorld(998, [{code:
-    "(async()=>{if(typeof gc!=='function')throw Error('Renderer GC unavailable');await gc({type:'major',execution:'async',flavor:'last-resort'});})()"}]);
+const pendingCollections = new WeakMap();
+function withDeadline(promise, ms = 2000, label = 'Memory operation') {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Error(`${label} timed out`)), ms);
+  })]).finally(() => clearTimeout(timer));
+}
+async function notifyChromiumPressure(contents, level, timeoutMs = 1000) {
+  let collection = pendingCollections.get(contents);
+  if (!collection) {
+    collection = Promise.resolve().then(() => contents.executeJavaScriptInIsolatedWorld(998, [{code:
+    "(async()=>{if(typeof gc!=='function')throw Error('Renderer GC unavailable');await gc({type:'major',execution:'async',flavor:'last-resort'});})()"}]));
+    pendingCollections.set(contents, collection);
+    collection.finally(() => { if (pendingCollections.get(contents) === collection) pendingCollections.delete(contents); }).catch(() => {});
+  }
+  await withDeadline(collection, timeoutMs, 'Renderer memory collection');
   if (level === 'critical') contents.send('desktop:clear-native-cache');
 }
 // Decide when a measured pressure level trims caches. A rise trims at once;
@@ -20,4 +33,4 @@ function pressureGate(cooldownMs = COOLDOWN_MS) {
     return level;
   };
 }
-module.exports = {notifyChromiumPressure, pressureGate, COOLDOWN_MS};
+module.exports = {notifyChromiumPressure, withDeadline, pressureGate, COOLDOWN_MS};

@@ -243,6 +243,8 @@ class SessionStore:
         self._grade_import_parallel = grade_import_parallel
         self._lock = RLock()
         self._current: LoadedSession | None = None
+        self._published_retained_bytes = 0
+        self._published_grade_name = ""
 
     def create_session(
         self,
@@ -365,6 +367,7 @@ class SessionStore:
         with self._lock:
             previous = self._current
             self._current = session
+            self._publish_retained_session_bytes()
         if previous is not None and previous.owns_source_path:
             _remove_owned_source(previous.source_path)
         if previous is not None and previous.retouch_worker is not None:
@@ -402,6 +405,7 @@ class SessionStore:
             restore_repairs(developed, _source_mip_identity(developed))
             payload = developed.to_payload()
             self._current = developed
+            self._publish_retained_session_bytes()
             if current.retouch_worker is not None:
                 current.retouch_worker.close()
             if getattr(self, "grade_recovery_observer", None):
@@ -413,9 +417,15 @@ class SessionStore:
             return self._current
 
     def _retained_session_bytes(self) -> int:
-        current = self.current()
+        # Published by source/session mutations. Monitoring never takes Grade's lock.
+        return self._published_retained_bytes
+
+    def _publish_retained_session_bytes(self) -> None:
+        current = self._current
+        self._published_grade_name = current.source.filename if current is not None else ""
         if current is None:
-            return 0
+            self._published_retained_bytes = 0
+            return
         arrays = [current.image, current.retouch_original, current.sdr_reference_image]
         retained = {}
         for array in arrays:
@@ -423,12 +433,13 @@ class SessionStore:
             while isinstance(getattr(array,"base",None),np.ndarray):
                 array = array.base
             retained[id(array)] = int(array.nbytes)
-        return sum(retained.values())
+        self._published_retained_bytes = sum(retained.values())
 
     def clear(self) -> None:
         with self._lock:
             previous = self._current
             self._current = None
+            self._publish_retained_session_bytes()
         if previous is not None and previous.owns_source_path:
             _remove_owned_source(previous.source_path)
         if previous is not None and previous.retouch_worker is not None:
@@ -550,6 +561,7 @@ class SessionStore:
                 if repaired_pixels is not None:
                     from .retouch_source import install_repaired_source
                     install_repaired_source(session, repaired_pixels, _source_mip_identity(session))
+                    self._publish_retained_session_bytes()
             except Exception:
                 (
                     session.adjustments,
@@ -573,6 +585,7 @@ class SessionStore:
                         identity=_source_mip_identity(session), sdr_identity=session.render_cache.sdr_identity)
                 session.render_cache.set_color_context(session.color_context)
                 session.render_cache.clear_adjusted()
+                self._publish_retained_session_bytes()
                 raise
             if getattr(self, "grade_recovery_observer", None):
                 self.grade_recovery_observer(session)
@@ -972,6 +985,7 @@ class SessionStore:
             session.retouch_original = image
             session.retouch_generation += 1
             session.sdr_reference_image = sdr_reference_image
+            self._publish_retained_session_bytes()
             session.source = source
             session.metadata = metadata
             session.source_luminance = describe_source_luminance(

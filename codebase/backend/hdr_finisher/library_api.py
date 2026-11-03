@@ -803,10 +803,38 @@ def create_library_router(worker, browser, store=None):
     from .library_file_commands import add_file_routes
     file_commands = add_file_routes(router, marks, browser, index, worker, store)
 
+    memory_pending = None
+    memory_completed = None
+
     @router.get("/memory")
     async def memory_snapshot():
+        nonlocal memory_pending, memory_completed
         from .app_memory import snapshot
-        return await asyncio.get_running_loop().run_in_executor(_memory_sampler, lambda: snapshot(cached_only=True))
+        # One in-flight census, shared even when the HTTP caller times out.
+        # A blocked sample can never build a queue on the one-thread lane.
+        if memory_pending is not None and memory_pending.done():
+            try:
+                memory_completed = memory_pending.result()
+            finally:
+                memory_pending = None
+        if memory_pending is None:
+            queued = time.perf_counter()
+            def sample():
+                started = time.perf_counter()
+                try:
+                    return snapshot(cached_only=True)
+                finally:
+                    ended = time.perf_counter()
+                    if ended-queued > .25:
+                        log("memory_endpoint", wait_ms=(started-queued)*1000, run_ms=(ended-started)*1000)
+            memory_pending = asyncio.get_running_loop().run_in_executor(_memory_sampler, sample)
+        if memory_completed is not None:
+            return memory_completed
+        try:
+            memory_completed = await asyncio.wait_for(asyncio.shield(memory_pending), .5)
+            return memory_completed
+        except asyncio.TimeoutError:
+            raise HTTPException(503, "Memory sample still running")
 
     @router.get("/memory-setting")
     def memory_setting():

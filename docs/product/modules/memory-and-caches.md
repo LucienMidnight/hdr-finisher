@@ -1006,3 +1006,14 @@ No ceiling, reserve, cache share, working minimum, VRAM rate or budget changed.
 Overlapping native proxy/peak/tile requests also share one weakly held scene
 read while those requests own it. The final request releases its decoded pixels;
 this adds no resident scene cache or allowance.
+
+### November 3, 2026 - Batch 3g: monitor isolation
+
+Grade publishes retained source bytes when activating, redeveloping, editing
+repairs, replacing interpretation or clearing its session. Both the HTTP memory
+reader and grant census read published values without the Grade lock. The memory
+endpoint shares one pending sample and serves the latest completed sample; slow
+work cannot accumulate queued polls. A first sample has a bounded 500 ms wait.
+`memory_endpoint` records queue/run time only above 250 ms. Desktop awaits are
+bounded, renderer collections coalesce, and a renderer timeout still allows
+backend reclamation and later polling. Accounting, levels and budgets are unchanged.

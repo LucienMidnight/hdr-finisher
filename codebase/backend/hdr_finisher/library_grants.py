@@ -25,9 +25,8 @@ class Runtime:
         self.reclaimer = None
 
     def sample(self):
-        session = self.store.current() if self.store is not None else None
-        grade_bytes = self.store._retained_session_bytes() if session is not None else 0
-        grade_name = session.source.filename if session is not None else ""
+        grade_bytes = self.store._retained_session_bytes() if self.store is not None else 0
+        grade_name = self.store._published_grade_name if self.store is not None else ""
         with scheduler.lock:
             sampled = {j.id for j in scheduler.jobs.values() if j.granted is not None}
         sample_started = time.monotonic()

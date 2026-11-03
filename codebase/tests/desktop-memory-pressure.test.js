@@ -35,3 +35,10 @@ test('critical reclaim also requests native cache eviction',async()=>{
 test('failed renderer collection surfaces to the caller',async()=>{
  await assert.rejects(notifyChromiumPressure({executeJavaScriptInIsolatedWorld:async()=>{throw Error('unavailable');}},'moderate'),/unavailable/);
 });
+
+ test('stuck renderer times out without queuing more collections',async()=>{
+ let calls=0;const contents={executeJavaScriptInIsolatedWorld:()=>{calls++;return new Promise(()=>{});}};
+ await assert.rejects(notifyChromiumPressure(contents,'moderate',20),/timed out/);
+ await assert.rejects(notifyChromiumPressure(contents,'moderate',20),/timed out/);
+ assert.equal(calls,1);
+});
