@@ -50,6 +50,11 @@ def test_slow_conflict_disk_read_does_not_own_marks_lock(tmp_path,monkeypatch):
 def test_process_sampler_counts_current_process():
     rows=app_memory.process_tree(os.getpid())
     assert any(row['pid']==os.getpid() and row['workingSetBytes']>0 for row in rows)
+    if os.name == 'nt':
+        assert next(row for row in rows if row['pid']==os.getpid())['privateBytes'] > 0
+    heap = app_memory.backend_heap()
+    assert heap['pythonAllocatedBlocks'] > 0
+    assert heap['liveBytes'] is None or heap['liveBytes'] >= 0
 
 def test_recovery_disk_publication_does_not_own_marks_lock(tmp_path,monkeypatch):
     import hdr_finisher.library_membership as module

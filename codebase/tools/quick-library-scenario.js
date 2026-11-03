@@ -3,6 +3,12 @@ async function scenario(config) {
   let stage = 'start', stopped = false;
   const mark = value => { stage = value; console.log('QUICK_LIBRARY_STAGE:' + value); };
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const memoryDiagnostic=[];
+  const memoryPoint=async label=>{
+    if(!config.memoryDiagnostic)return;
+    await sleep(600);
+    memoryDiagnostic.push({label,at:performance.now(),snapshot:await (await fetch('/api/library/memory')).json()});
+  };
   const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
   const probe = {started, frame_gaps:[], main_blocks:[], long_tasks:[]};
   const gridProgress=[], gridSeen=new Set();let gridAt=started;
@@ -98,6 +104,7 @@ async function scenario(config) {
       // Switching folders first releases the callbacks and masks the leak.
       const gradePhoto=(config.gradeReturn&&HDRLibrary.getSnapshot().paths.find(p=>/DSC06615\.ARW$/i.test(p)))||HDRLibrary.getSnapshot().paths.find(p=>/\.ARW$/i.test(p));
       if(!gradePhoto)throw Error('Retention workload needs a full-size RAW copy');
+      await memoryPoint('before Grade');
       mark('open Grade');
       if(config.gradeReturn){
         const cell=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===gradePhoto);
@@ -107,6 +114,7 @@ async function scenario(config) {
       await wait(()=>parent.HDRGradeSaving.active(),60000);
       if(config.gradeReturn){
         await wait(()=>parent.HDRGradeSaving.ready()&&!parent.document.body.classList.contains('grade-opening'),60000);
+        await memoryPoint('Grade loaded');
         mark('adjust Grade slider');
         const control=parent.document.getElementById('hdr-exposure');
         control.dispatchEvent(new parent.PointerEvent('pointerdown',{bubbles:true,pointerId:991}));
@@ -130,15 +138,18 @@ async function scenario(config) {
         const worker=await (await fetch('/api/library-worker/status')).json();
         console.log('GRADE_RETURN_HOLDS:'+JSON.stringify(worker.pause_owners));
         if(worker.paused)throw Error('Helper stayed paused after leaving Grade: '+JSON.stringify(worker.pause_owners));
+        await memoryPoint('after leaving Grade');
         const findCell=()=>[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path?.replaceAll('\\','/')===gradePhoto.replaceAll('\\','/'));
         await wait(()=>findCell(),30000);
         const cell=findCell();
         cell.click();
+        config.gradeReturnResult.fullscreenAt=performance.now();
         mark('Grade photo full screen');
         document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true}));
-        await wait(()=>{const c=document.getElementById('single-picture');return visible(c)&&c.dataset.picturePath===gradePhoto&&Number(c.dataset.pictureEdge)===2560;},60000);
+        await wait(()=>{const c=document.getElementById('single-picture');return visible(c)&&c.dataset.picturePath===gradePhoto&&Number(c.dataset.pictureEdge)===2560;},60000).catch(error=>{if(!config.memoryDiagnostic)throw error;errors.push(String(error));});
         document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true}));
         document.getElementById('grid-view').click();
+        config.gradeReturnResult.compareAt=performance.now();
         document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'[',bubbles:true}));
         mark('Compare after Grade');
         await wait(()=>HDRLibrary.getSnapshot().compare.enabled,10000);
@@ -152,9 +163,17 @@ async function scenario(config) {
           const panes=[...document.querySelectorAll('#library-compare .compare-fit')].filter(c=>visible(c)&&c.dataset.pictureKey&&Number(c.dataset.pictureEdge)>=1280);
           const paths=panes.map(c=>c.dataset.picturePath);
           return panes.length===2&&new Set(paths).size===2&&paths.includes(gradePhoto)&&(!alternate||paths.includes(alternate));
-        },60000);
+        },60000).catch(error=>{if(!config.memoryDiagnostic)throw error;errors.push(String(error));});
         const compareWorker=await (await fetch('/api/library-worker/status')).json();
         if(compareWorker.paused)throw Error('Grade holds returned during Compare: '+JSON.stringify(compareWorker.pause_owners));
+        if(config.memoryDiagnostic){
+          await memoryPoint('Compare');
+          mark('idle in Library 60 seconds');await sleep(60000);
+          await memoryPoint('idle before trim');
+          const pid=memoryDiagnostic.at(-1).snapshot.backendPid;
+          mark('trim backend '+pid);await sleep(3000);
+          await memoryPoint('after trim');
+        }
         document.getElementById('grid-view').click();
         mark('keyboard return from Grade');
         parent.document.querySelector('[data-workflow-tab="grade"]').click();
@@ -165,6 +184,7 @@ async function scenario(config) {
         parent.document.getElementById('eject-button').click();
         await wait(()=>parent.document.getElementById('eject-button').disabled,15000);
         await settle('Grade save, full screen and Compare');
+        await memoryPoint('Grade closed');
       } else {
       parent.activateWorkflowTab('import');
       await settle('return from Grade in same folder');
@@ -223,9 +243,9 @@ async function scenario(config) {
       record.app_trace_starts_after_input_ms=app?Math.round(app.at-app.duration_ms-record.started_ms):null;
       record.app_event_after_presentation_ms=app?Math.round(app.at-record.presented_ms):null;
     }
-    return {opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,redisplay,retention,grade_return:config.gradeReturnResult,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
+    return {opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_return:config.gradeReturnResult,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
   } catch(error) {
-    return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,redisplay,retention,grade_return:config.gradeReturnResult,events,errors:[...errors,String(error.stack||error)],stage};
+    return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_return:config.gradeReturnResult,events,errors:[...errors,String(error.stack||error)],stage};
   } finally {
     stopped=true;clearInterval(timer);clearInterval(gridTimer);observer?.disconnect();window.HDRLibraryStopwatch=inherited;
     window.removeEventListener('error',onError);window.removeEventListener('unhandledrejection',onError);

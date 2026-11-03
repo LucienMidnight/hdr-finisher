@@ -1034,3 +1034,80 @@ RAW metadata under the raw-browsing condition, and small response/header JSON
 construction. Broader handler/lock restructuring is deferred. Finished-thumbnail
 `too_long` is a validation error: its request uses MetadataRequest's maximum
 path count, not a time measurement. This batch does not change that limit.
+
+### November 3, 2026 - Batch 3g: memory diagnostics
+
+The existing five-second app_memory log now includes Windows PrivateUsage as
+`privateBytes` beside each process working set. These fields do not enter the
+budget calculation. Electron metric rows label main-window,
+hidden-gpu-delivery-window and other. Backend telemetry includes its PID and
+Python allocated-block count. Optional `HDR_FINISHER_TRACE_ALLOCATIONS=1`
+collects live/peak traced Python and NumPy bytes using one tracing frame;
+reading the counters is constant-cost, but allocation tracing itself has
+overhead, so normal app sessions leave it disabled. It excludes native
+allocations outside Python/NumPy's tracing hooks and allocations made before
+tracing started; it is not a complete native-heap census.
+
+`tools/trim-backend-working-set.py --pid PID` is a standalone Windows diagnostic.
+It verifies that the selected process is Python, samples working set/private
+bytes, trims that process only, and samples immediately and 500 ms later.
+It is never part of memory control. The plain-Electron quick-check flag
+`--memory-diagnostic --folder=library-live-grid` runs Grade edit/return/F/Compare,
+observes 60 seconds idle and invokes this script. Normal quick-check acceptance
+and its limits are unchanged; diagnostic display timeouts are recorded while
+continuing to collect idle/trim evidence.
+
+Retouch framed uploads now use the same worker-copy receiver, and RAW source
+framing runs on a worker too. Remaining request-loop candidates include chunked
+bodies without a declared length, source-path and owner/status locks, RAW metadata
+under its condition, and small JSON responses.
+They have not been established as multi-second stalls by this batch's heartbeat;
+finished-thumbnail joining is deliberately unchanged.
+
+The one diagnostic session completed on three existing test RAW copies, with
+allocation tracing enabled. Figures below are decimal MB, not budget charges:
+
+| Backend point | Working set | Private commit | Traced live heap | Published Grade source |
+| --- | ---: | ---: | ---: | ---: |
+| Before Grade | 161 | 541 | 23 | 0 |
+| Grade loaded | 1,242 | 2,024 | 581 | 509 |
+| After leaving Grade | 710 | 1,461 | 559 | 509 |
+| After 60 seconds idle | 711 | 1,462 | 560 | 509 |
+| After trim (500 ms) | 62 | 1,462 | about 560 | 509 |
+| After explicitly closing Grade | 123 | 952 | 52 | 0 |
+
+The trim's immediate working set was 10 MB; it rebounded to 62 MB at 500 ms
+and 65 MB in the next endpoint sample. Private commit did not change. This
+shows reclaimable residency, not proof that those pages were all freed: Windows
+can trim live pages too. The retained 509 MB source is genuinely live after
+leaving Grade. Explicit close removes it from both private commit and traced
+live heap. The remainder of private commit includes untraced native allocations
+and possibly allocator-held memory; this run cannot separate them. No Grade
+release change or automatic working-set trim is introduced.
+
+The five-second Electron metric maxima were main-window PID 48452: 625 MB;
+hidden-gpu-delivery-window PID 13144: 118 MB. The main window was the larger
+Tab, but the reported 2 GB Tab and extra 2-3 GB backend did not reproduce in
+this small workload. Whole-app charged peak was 3.187 GB, with no memory
+violation. Full screen did issue foreground development for the graded
+DSC07060.ARW, reason "selected photo"; the quick thumbnail appeared in 4.1 ms
+and sharp draw was published after 2.724 s. The scenario navigated away before
+the final physical-presentation event, so that is not a complete visible-sharp
+timing. Full-screen/Grade-return fixes remain Batch 3h work.
+
+No event_loop_lag, memory_endpoint, memory_controller_error or
+chromium_pressure_error occurred in this session or the clean retry,
+double-rejection and native RAW checks. Controlled fast tests separately prove
+that a held Grade lock and a blocked cache acceptance do not block memory
+polling, and that stuck renderer collection is bounded and coalesced. This
+supports the specific fixes; it does not rule out every possible future stall.
+
+Evidence: codebase/output/batch3g/diagnostic-summary.json and
+codebase/output/quick-library-check/batch3g-diagnostic/{report,scenario,trim}.json,
+backend.log, electron.log and memory.jsonl. Final fast suites: 768 JavaScript
+passed; 3,023 Python passed, 3 skipped, zero failures. The final framing follow-up
+also passed its 44 affected Python checks. The clean retry and native RAW checks
+pass; the forced double rejection still fails later CPU preparation as expected
+(6.138 GB logged peak), deferred to the bounded-memory CPU work. No budget,
+limit, level, pixel tolerance or saved format changes. Output started and ended
+at 28.6 GB (100 GB limit); owned profiles and temporary scratch were removed.

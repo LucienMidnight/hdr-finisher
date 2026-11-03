@@ -10,6 +10,19 @@ import sys
 from threading import RLock, Lock
 import time
 import weakref
+import tracemalloc
+
+# Opt-in for the one-off diagnostic only: tracing allocations has overhead.
+if os.environ.get("HDR_FINISHER_TRACE_ALLOCATIONS") == "1":
+    tracemalloc.start(1)
+
+def backend_heap():
+    tracing = tracemalloc.is_tracing()
+    live, peak = tracemalloc.get_traced_memory() if tracing else (None, None)
+    # NumPy data allocations participate in tracemalloc. No heap walk/snapshot.
+    return dict(tracing=tracing, liveBytes=live, peakBytes=peak,
+                pythonAllocatedBlocks=sys.getallocatedblocks())
+
 
 WORKING = 600_000_000
 STARTING = 1_300_000_000
@@ -269,7 +282,7 @@ def process_tree(root):
         class Entry(ctypes.Structure):
             _fields_ = [('size',wintypes.DWORD),('usage',wintypes.DWORD),('pid',wintypes.DWORD),('heap',ctypes.c_size_t),('module',wintypes.DWORD),('threads',wintypes.DWORD),('parent',wintypes.DWORD),('priority',wintypes.LONG),('flags',wintypes.DWORD),('name',wintypes.WCHAR*260)]
         class Memory(ctypes.Structure):
-            _fields_ = [('size',wintypes.DWORD),('faults',wintypes.DWORD),('peak',ctypes.c_size_t),('working',ctypes.c_size_t),('paged_peak',ctypes.c_size_t),('paged',ctypes.c_size_t),('nonpaged_peak',ctypes.c_size_t),('nonpaged',ctypes.c_size_t),('pagefile',ctypes.c_size_t),('pagefile_peak',ctypes.c_size_t)]
+            _fields_ = [('size',wintypes.DWORD),('faults',wintypes.DWORD),('peak',ctypes.c_size_t),('working',ctypes.c_size_t),('paged_peak',ctypes.c_size_t),('paged',ctypes.c_size_t),('nonpaged_peak',ctypes.c_size_t),('nonpaged',ctypes.c_size_t),('pagefile',ctypes.c_size_t),('pagefile_peak',ctypes.c_size_t),('private',ctypes.c_size_t)]
         kernel = ctypes.WinDLL('kernel32', use_last_error=True)
         psapi = ctypes.WinDLL('psapi', use_last_error=True)
         kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
@@ -320,7 +333,8 @@ def process_tree(root):
                     raise
             finally: kernel.CloseHandle(handle)
         result.append({'pid':pid,'parentPid':rows.get(pid,(0,0))[0],'name':names.get(pid,''),'workingSetBytes':working,
-                       'chargedBytes':charged if os.name == 'nt' else linux_pss(pid, working)})
+                       'chargedBytes':charged if os.name == 'nt' else linux_pss(pid, working),
+                       'privateBytes':memory.private if os.name == 'nt' else None})
     return result
 
 
@@ -355,7 +369,7 @@ def snapshot(refresh=False, cached_only=False):
     level=pressure_level(safety_total,pressure)
     # A refused admission ("waiting") is reported for logs only. It is never
     # pressure: only measured memory and the operating system are.
-    return dict(totalBytes=total,workingSetBytes=sum(r['workingSetBytes'] for r in rows),
+    return dict(backendPid=os.getpid(), backendHeap=backend_heap(), totalBytes=total,workingSetBytes=sum(r['workingSetBytes'] for r in rows),
                 measurement='physical-footprint' if sys.platform=='darwin' else 'proportional-resident',processes=rows,ceilingBytes=CEILING,
                 targetBytes=TARGET,reservedBytes=reserved,caches=cache_snapshot(),
                 pressure=pressure,level=level,waiting=waiting,budgetPressure=safety_total>TARGET,gradeBytes=grade_bytes,

@@ -1349,7 +1349,9 @@ if (!gotLock) {
           if (Date.now()-memoryLastLog > 5000) {
             memoryLastLog = Date.now();
             libraryStage("app_memory", {...value, main:process.memoryUsage(),
-              electron:app.getAppMetrics().map(item=>({pid:item.pid,type:item.type,bytes:item.memory.workingSetSize*1024}))});
+              electron:app.getAppMetrics().map(item=>({pid:item.pid,type:item.type,bytes:item.memory.workingSetSize*1024,
+                role:item.pid===mainWindow?.webContents.getOSProcessId() ? "main-window" :
+                  item.pid===deliveryWindow?.webContents.getOSProcessId() ? "hidden-gpu-delivery-window" : "other"}))});
           }
           for (const record of windows.values()) if (!record.window.isDestroyed()) record.window.webContents.send("desktop:memory-pressure",value);
           if (value.reclaim) {

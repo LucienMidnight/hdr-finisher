@@ -705,3 +705,34 @@ passed, 3 skipped, zero failures. The initial Python run exposed 46 failures
 from widening a shared source-context tuple; a48a803 fixes that common cause.
 The final forced save-timeout check passes; invalid-GPU CPU display fails.
 Evidence: `codebase/output/batch3f/{fixed-faults,final-app-evidence}.json`.
+
+## November 3 - Batch 3g focused recovery/native checks
+
+Diagnostic observations on 2560x1440 Electron, local test-photo copies, starting
+from ab5023b. No timing threshold changes or controlled speed claim:
+
+| Action | Observed | Conditions/result |
+| --- | --- | --- |
+| DSC00264 invalid GPU reconstruction | Clean on GPU attempt 2; four scans | One forced first-output rejection; no CPU route, remembered failure or stranded grant |
+| DSC00264 forced two-output rejections, CPU reconstruction | 28.05-28.78 s | The existing 66 s reconstruction allowance is enough, but later preparation exceeds its unchanged deadline; helper recovery stopped after evidence; logged app peak 6.138 GB |
+| Three 42 MP RAW cold screens | 1.135-1.651 s | RAW Single regression passes all 18 existing HDR/SDR screen/crop comparisons |
+| Reused screen | 13.8-15.8 ms | Same run; native handoff 3.715-4.196 s; prepared neighbour 14 ms |
+| Native RAW whole-app memory | Peak 4.332 GB; settled 1.940 GB | Existing bounded-episode rule passes, no violation; OS reserve untouched |
+| Grade-return diagnostic full screen, DSC07060.ARW | Quick thumbnail 4.1 ms; sharp draw published 2.724 s | November 3, Batch 3g diagnostic; foreground selected-photo source request confirmed; navigated away before final physical-presentation event, so no complete visible-sharp timing |
+| Grade-return diagnostic session | 209.336 s total | Three RAW test copies, one tracing-enabled session including edit, Library, F, Compare, 60 s idle, trim and explicit Grade close; no scenario errors |
+| Backend working-set trim, idle after Grade | 711 MB before, 10 MB immediate, 62 MB after 500 ms | Private commit unchanged at 1,462 MB; live Grade source 509 MB; one-off diagnostic only |
+
+Evidence: `codebase/output/batch3g/{retry,both-invalid,raw-single}.log`,
+`both-invalid-observed.json` and `monitor-events.json` in that folder, plus
+`codebase/output/library-gpu-raw-single/1793698355066/` JSON records.
+The stopped baseline real-app injection was rejected by CSP before recovery ran;
+the fast behavioral loop regression instead fails against ab5023b (one attempt)
+and passes against the fixed implementation (two). No slow reruns.
+
+
+Diagnostic evidence: codebase/output/batch3g/diagnostic-summary.json and
+codebase/output/quick-library-check/batch3g-diagnostic/{report,scenario,trim}.json.
+The memory module records the interpretation and renderer roles. All four app
+checks recorded no slow-memory-endpoint or event-loop-lag events. Final fast
+checks: 768 JavaScript passed; 3,023 Python passed, 3 skipped; zero failures.
+The final worker-framing follow-up passed 44 affected Python checks separately.
