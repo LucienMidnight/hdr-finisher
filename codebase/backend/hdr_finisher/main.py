@@ -395,7 +395,7 @@ class DesktopRequestBoundary:
             request.url.path == "/api/library/grade-reverts" or
             (request.method == "GET" and request.url.path.startswith("/api/library/grade")))
         if not delivery_request and not library_read and (request.url.path == "/api/session" or request.url.path.startswith("/api/session/") or request.url.path.startswith("/api/library/grade")):
-            with library_worker.busy(f"{request.method} {request.url.path}"):
+            with library_worker.busy(f"{request.method} {request.url.path}", grade=request.url.path != "/api/session"):
                 await self.app(scope, receive, send_hardened)
         else:
             await self.app(scope, receive, send_hardened)
@@ -713,6 +713,7 @@ def get_session(session_id: str) -> SessionSummary:
 
 @app.delete("/api/session/current")
 def clear_session() -> dict[str, str]:
+    library_worker.grade_active(False)
     store.clear()
     return {"status": "cleared"}
 
@@ -2523,6 +2524,7 @@ class LibraryPauseRequest(BaseModel):
     reason: Literal["grading", "export", "manual"]
     paused: bool
     action: str = "client hold changed"
+    grade_active: bool | None = None
 
 
 @app.get("/api/library-worker/status")
@@ -2532,6 +2534,8 @@ def library_worker_status() -> dict[str, object]:
 
 @app.post("/api/library-worker/pause")
 def pause_library_worker(request: LibraryPauseRequest) -> dict[str, object]:
+    if request.reason == "grading" and request.grade_active is not None:
+        library_worker.grade_active(request.grade_active)
     library_worker.pause(f"client:{request.reason}", request.paused, action=request.action)
     return library_worker.status()
 

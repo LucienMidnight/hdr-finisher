@@ -72,7 +72,7 @@ def test_settings_poll_and_save_do_not_pause_helper_but_loading_grade_does(setup
     photo, store, session, marks, grades = setup
     pauses = []
     @contextmanager
-    def busy():
+    def busy(*args, **kwargs):
         pauses.append(True)
         yield
     monkeypatch.setattr(library_worker, "busy", busy)
@@ -371,3 +371,21 @@ def test_conflict_clears_when_the_file_returns_to_the_saved_grade(setup):
     assert not grades.check(str(session.session_id), unsaved=True)["conflict"]
     assert grades._get(str(photo))["previous_grade"] == external
     assert "changed_again" not in grades.resolve(str(session.session_id), "mine", external)
+
+
+def test_grade_save_reaches_disk_while_grade_scope_and_gesture_hold_helper(setup):
+    from hdr_finisher.library_worker import LibraryWorker
+    photo, store, session, marks, grades = setup
+    worker = LibraryWorker(photo.parent / "worker")
+    marks.writer._busy = lambda: worker.status()["writer_pause_owners"]
+    try:
+        with worker.busy("POST /api/session/photo/scopes", grade=True):
+            worker.pause("client:grading", True)
+            expected = edit(store, session)
+            assert grades.save(str(session.session_id))["pending"]
+            marks.writer.drain()
+            assert worker.status()["paused"]
+            assert not grades.status(str(session.session_id))["pending"]
+            assert settings(photo)["grade"] == expected
+    finally:
+        worker.close()

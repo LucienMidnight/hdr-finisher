@@ -337,7 +337,21 @@
   });
   // Scheduling only: an active control gesture pauses Library background work.
   let picturePauseTimer;
-  const pausePictures = (paused, action) => fetch("/api/library-worker/pause", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "grading", paused, action }) }).catch(() => {});
+  let pauseFlight = Promise.resolve();
+  const pausePictures = (paused, action, grade_active) => {
+    pauseFlight = pauseFlight.catch(() => {}).then(() => {
+      // A queued notification may outlive a rapid tab switch. Only the current
+      // view can acquire a hold or re-enable request leases at send time.
+      const active = !document.hidden && ["grade", "proof"].includes(state.activeWorkflow);
+      if (paused && (!active || state.activeWorkflow !== "grade")) paused = false;
+      if (grade_active !== undefined) {
+        grade_active = active;
+        action = active ? "Grade view entered" : "Grade view left";
+      }
+      return fetch("/api/library-worker/pause", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason: "grading", paused, action, grade_active }) });
+    });
+    return pauseFlight.catch(() => {});
+  };
   document.addEventListener("pointerdown", event => {
     if (state.activeWorkflow === "grade" && !window.HDRLibraryHost?.isDetached() && event.target.closest("input,canvas,.instrument,.geometry-controls")) { clearTimeout(picturePauseTimer); void pausePictures(true, `Grade pointerdown ${event.target.id || event.target.tagName}`); }
   }, true);
@@ -347,9 +361,15 @@
   for (const event of ["pointerup", "pointercancel", "lostpointercapture"])
     window.addEventListener(event, releasePictures, true);
   window.addEventListener("blur", releasePictures);
-  window.addEventListener("hdrfinisher:workflowchange", () => {
-    if (state.activeWorkflow !== "grade") releasePictures();
-  });
-  document.addEventListener("visibilitychange", () => { if (document.hidden) releasePictures(); });
+  const syncGradeView = () => {
+    clearTimeout(picturePauseTimer);
+    const active = !document.hidden && ["grade", "proof"].includes(state.activeWorkflow);
+    if (!active) suspendGradeInstruments();
+    void pausePictures(false, active ? "Grade view entered" : "Grade view left", active).then(() => {
+      if (active && state.session && !document.hidden && ["grade", "proof"].includes(state.activeWorkflow)) void refreshScopes();
+    });
+  };
+  window.addEventListener("hdrfinisher:workflowchange", syncGradeView);
+  document.addEventListener("visibilitychange", syncGradeView);
   window.setInterval(() => { if (!busy && !asking) tickFlight = tick(); }, 500);
 })();

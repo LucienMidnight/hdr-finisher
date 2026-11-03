@@ -636,3 +636,14 @@ in 3.746 s; ten steps have median 3.157 s and maximum 6.905 s. Drawing gap
 investigation or relaxed limit. Memory passes, peak 3.044 GB, final 1.570 GB.
 Evidence: `codebase/output/quick-library-check/batch3d/report.json` and
 `codebase/output/library-gpu-raw-single/1793679786582/comparison.json`.
+
+
+### November 3 — Batch 3d2 Grade pause follow-up
+
+The exact `68c3a1f` app source fails the revised UI-event workload after the
+Library tab click: helper 3 pauses / 2 resumes, writer 1 / 0, no completed
+save. A logging-only reproduction (`68f1145`) identifies three CPU scopes
+requests as outstanding owners. The prior small ungraded-RAW fixture passed
+and saved in 110–126 ms; it did not exercise the expensive saved DSC06615
+grade. Reports: `codebase/output/quick-library-check/batch3d2-{baseline,exact-photo,reproduce}/report.json`.
+Final fixed-code save timings and picture results follow after validation.

@@ -5,7 +5,27 @@
 Pause transitions now identify their request/control owner and action. Helper
 hold changes also record all remaining owners, including overlapping holds;
 worker status exposes those owners to settings-writer diagnostics. This is
-logging only. Steve's later stuck-pause session remains to be reproduced.
+logging only in `68f1145`.
+
+The follow-up reproduces the failure on exact `68c3a1f` app source using
+DSC06615.ARW's reusable copy and normal UI handlers: scopes CPU requests retain
+middleware holds after the Library-tab click; helper 3/2, writer 1/0 and no
+completed grade save. With logging, the outstanding owners are three
+`POST /api/session/.../scopes` requests. The old real-session log has no owner
+identity, so scopes are confirmed in the matching reproduction, inferred for
+Steve's original interval rather than retrospectively proven.
+
+Grade request holds are now revocable view leases. Leaving Grade/Proof,
+hiding the page or closing the session revokes them; returning cannot revive
+an old request's lease. Queued/active scope and overlay requests are cancelled,
+and hidden Grade cannot enqueue more scopes. Input holds are serialized so
+an acquisition cannot arrive after its release. Request exceptions still
+release through `finally`. Grade render/gesture holds no longer gate the tiny
+settings writes, so saving cannot wait behind its own scopes. Other owners
+keep their independent holds. No memory allowance, processing or saved format
+changes. Focused checks: 18 frontend scope/gesture tests and 74 backend
+worker/writer/grade tests passed (the new save fixture's initial invalid root
+was corrected). Full suites and final real-app checks are pending.
 
 ## November 3: Grade gesture pause release (Batch 3d)
 

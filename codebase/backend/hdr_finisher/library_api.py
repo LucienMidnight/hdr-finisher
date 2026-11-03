@@ -323,7 +323,7 @@ def create_library_router(worker, browser, store=None):
         with startup_phase("file_recovery"):
             await run_in_threadpool(file_commands.start)
         with startup_phase("settings_writer"):
-            await run_in_threadpool(marks.writer.start, lambda: worker.status().get("pause_owners", worker.status()["paused"]))
+            await run_in_threadpool(marks.writer.start, lambda: worker.status().get("writer_pause_owners", worker.status()["paused"]))
         grant_runtime.start()
         try:
             yield

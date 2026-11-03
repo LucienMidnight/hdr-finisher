@@ -1,3 +1,15 @@
+function suspendGradeInstruments() {
+  state.previewScheduler?.cancel();
+  state.scopeGeneration += 1;
+  state.scopeRequestInFlight?.controller?.abort();
+  state.pendingScopeRequest?.resolve(false);
+  state.pendingGpuScopeRequest?.resolve(false);
+  state.pendingScopeRequest = null;
+  state.pendingGpuScopeRequest = null;
+  state.scopeAwaitingPresentation = null;
+  state.overlayAbortController?.abort();
+}
+
 function scopeLongEdge(tier) {
   // Interactive scopes favor visible motion; the settled pass restores the
   // denser authoring result immediately after the drag ends.
@@ -8,7 +20,7 @@ function scopeLongEdge(tier) {
 }
 
 function refreshScopes(longEdge = 960, { tier = "settled", generation = null, lane = state.currentView } = {}) {
-  if (!state.session || geometryDraftActive()) return Promise.resolve(false);
+  if (["import", "export"].includes(state.activeWorkflow) || document.hidden || !state.session || geometryDraftActive()) return Promise.resolve(false);
   // Scopes describe the lane on screen. A request left over from the lane just
   // switched away from could only be a whole-picture CPU grade, and its answer
   // is discarded on arrival.
@@ -300,6 +312,7 @@ function scopeFreshnessLabel(tier) {
 }
 
 async function runScopeRequest(request) {
+  if (["import", "export"].includes(state.activeWorkflow) || document.hidden) { request.resolve(false); return; }
   const controller = new AbortController();
   request.controller = controller;
   state.scopeRequestInFlight = request;

@@ -8,7 +8,8 @@ function harness() {
   const detached = false;
   const requests = [], listeners = [];
   const timers = new Map();
-  const c = { state: { activeWorkflow: "grade" },
+  let suspended = 0;
+  const c = { suspendGradeInstruments:()=>suspended++, state: { activeWorkflow: "grade" },
     document: { createElement: () => ({hidden:true,contains:()=>true,setAttribute(){},addEventListener(){}}), body:{append(){}},
       getElementById: () => ({hidden:true,contains:()=>true,addEventListener(){}}),
       addEventListener: (name, fn, capture) => listeners.push({surface:"document",name,fn,capture}) },
@@ -17,7 +18,7 @@ function harness() {
     HDRLibraryHost:{isDetached:()=>detached}, fetch: async (url,options)=>{requests.push(JSON.parse(options.body));return {ok:true};} };
   c.window=c; vm.createContext(c);
   vm.runInContext(fs.readFileSync(path.join(__dirname,"../frontend/grade-saving.js"),"utf8"),c);
-  return {c,requests,async fire(name,{swallowed=false,elementBlur=false}={}) {
+  return {c,requests,get suspended(){return suspended;},async fire(name,{swallowed=false,elementBlur=false}={}) {
     // A canvas tool stops the event during document capture (HSL) or at the target (Retouch).
     for(const l of listeners.filter(l=>l.name===name).sort((a,b)=>Number(Boolean(b.capture))-Number(Boolean(a.capture)))) {
       if(elementBlur && !l.capture)continue;
@@ -38,6 +39,8 @@ for (const end of ["pointerup", "pointercancel", "lostpointercapture"]) {
 test("leaving Grade releases an interrupted gesture", async()=>{
   const h=harness();await h.fire("pointerdown");h.c.state.activeWorkflow="import";
   await h.fire("hdrfinisher:workflowchange");
+  assert.equal(h.suspended,1);
+  assert.equal(h.requests.at(-1).grade_active,false);
   assert.deepEqual(h.requests.map(r=>r.paused),[true,false]);
 });
 
@@ -62,6 +65,7 @@ test("Grade gestures send the accepted pause reason and release it after the ges
       addEventListener: (name, handler) => documentEvents.set(name, handler),
     },
     addEventListener: (name, handler) => windowEvents.set(name, handler),
+    suspendGradeInstruments() {},
     setInterval() {},
     setTimeout: handler => { const id = Symbol(); timers.set(id, handler); return id; },
     clearTimeout: id => timers.delete(id),
@@ -79,12 +83,31 @@ test("Grade gestures send the accepted pause reason and release it after the ges
   vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend/grade-saving.js"), "utf8"), context);
   const control = { target: { closest: () => true } };
   documentEvents.get("pointerdown")(control);
+  for(let i=0;i<8;i++)await Promise.resolve();
   assert.deepEqual(requests.map(({reason,paused})=>({reason,paused})), [{ reason: "grading", paused: true }]);
   windowEvents.get("pointerup")();
   for (const callback of timers.values()) callback();
-  await Promise.resolve();
+  for(let i=0;i<8;i++)await Promise.resolve();
   assert.deepEqual(requests.map(({reason,paused})=>({reason,paused})), [{ reason: "grading", paused: true }, { reason: "grading", paused: false }]);
   context.state.activeWorkflow = "library";
   documentEvents.get("pointerdown")(control);
   assert.equal(requests.length, 2);
+});
+
+
+test("a delayed hold cannot re-enable Grade after rapid tab changes",async()=>{
+  const h=harness();let finish;
+  h.c.fetch=async(url,options)=>{
+    h.requests.push(JSON.parse(options.body));
+    if(h.requests.length===1)await new Promise(resolve=>{finish=resolve;});
+    return {ok:true};
+  };
+  await h.fire("pointerdown");
+  h.c.state.activeWorkflow="import";await h.fire("hdrfinisher:workflowchange");
+  h.c.state.activeWorkflow="grade";await h.fire("hdrfinisher:workflowchange");
+  h.c.state.activeWorkflow="import";await h.fire("hdrfinisher:workflowchange");
+  assert.equal(h.requests.length,1);
+  finish();for(let i=0;i<50;i++)await Promise.resolve();
+  assert.equal(h.requests.length,4);
+  assert.ok(h.requests.slice(1).every(r=>!r.paused&&r.grade_active===false));
 });

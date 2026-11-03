@@ -216,3 +216,30 @@ def test_helper_attaches_another_tier_to_the_active_source(worker, tmp_path):
     result=large.result(timeout=30)
     assert result['edge']==2560 and result['cache_hit']
     assert image.read_bytes()==before and not Path(str(image)+'.hdrf').exists()
+
+
+def test_grade_view_revokes_render_holds_without_releasing_other_owners(worker):
+    worker.pause("export:delivery", True)
+    with worker.busy("POST /api/session/photo/scopes", grade=True):
+        worker.pause("client:grading", True)
+        assert len(worker.status()["pause_owners"]) == 3
+        assert worker.status()["writer_pause_owners"] == ["export:delivery"]
+        worker.grade_active(False)
+        assert worker.status()["pause_owners"] == ["export:delivery"]
+        worker.grade_active(True)
+        assert worker.status()["pause_owners"] == ["export:delivery"]
+    worker.pause("export:delivery", False)
+    assert not worker.status()["paused"]
+
+
+def test_hidden_grade_requests_and_errors_cannot_strand_holds(worker):
+    worker.grade_active(False)
+    with worker.busy("late hidden scope", grade=True):
+        assert not worker.status()["paused"]
+    worker.grade_active(True)
+    with pytest.raises(RuntimeError):
+        with worker.busy("scope failure", grade=True):
+            assert worker.status()["paused"]
+            assert not worker.status()["writer_pause_owners"]
+            raise RuntimeError("scope failed")
+    assert not worker.status()["paused"]

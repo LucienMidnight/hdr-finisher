@@ -37,6 +37,8 @@ class LibraryWorker:
         self._recovering = False
         self._restart_limit = 3
         self._paused: set[str] = set()
+        self._grade_holds: set[str] = set()
+        self._grade_active = True
         self._source_foreground = set()
         self._closed = False
         self._failure: str | None = None
@@ -266,14 +268,29 @@ class LibraryWorker:
                 self._source_foreground.discard(key)
             self._send({"command": "source-busy", "active": bool(self._source_foreground)})
 
+    def grade_active(self, active):
+        """Revoke this view's leases; an old request cannot reacquire on return."""
+        with self._lock:
+            self._grade_active = bool(active)
+            if not active:
+                for reason in tuple(self._grade_holds) + ("client:grading",):
+                    self.pause(reason, False, action="Grade view left")
+                self._grade_holds.clear()
+
     @contextmanager
-    def busy(self, owner="Grade operation"):
+    def busy(self, owner="Grade operation", *, grade=False):
         reason = f"{owner}:{uuid4().hex}"
-        self.pause(reason, True)
+        with self._lock:
+            if not grade or self._grade_active:
+                if grade:
+                    self._grade_holds.add(reason)
+                self.pause(reason, True, action="request started")
         try:
             yield
         finally:
-            self.pause(reason, False)
+            with self._lock:
+                self.pause(reason, False, action="request finished or cancelled")
+                self._grade_holds.discard(reason)
 
     def _send(self, message: dict) -> None:
         if self._connection is not None and not self._closed and not self._failure:
@@ -439,7 +456,7 @@ class LibraryWorker:
         with self._lock:
             return {**self.info, "running": bool(self._process and self._process.is_alive()),
                     "jobs": list(self._work.values()) + [dict(path=r.get("path"),stage="Waiting to develop photo",state="waiting") for k,r in self._requests.items() if k not in self._work and r.get("command") in {"live-scene","live-fallback"}],
-                    "pending": len(self._pending), "source_busy": bool(self._source_foreground), "paused": bool(self._paused), "pause_owners": sorted(self._paused), "manual_paused": "manual" in self._paused,
+                    "pending": len(self._pending), "source_busy": bool(self._source_foreground), "paused": bool(self._paused), "pause_owners": sorted(self._paused), "writer_pause_owners": sorted(self._paused - self._grade_holds - {"client:grading"}), "manual_paused": "manual" in self._paused,
                     "failure": self._failure, "restarts": self._restarts, "recovering": self._recovering}
 
     def close(self) -> None:
