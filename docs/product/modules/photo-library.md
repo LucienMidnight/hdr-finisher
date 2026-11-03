@@ -96,7 +96,7 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | --- | --- | --- |
 | 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Built November 3, 2026 |
 | 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Not started |
-| 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, settings-conflict UTF-8 errors. Recheck which still happen first. | Not started |
+| 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Not started |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Not started |
 
 ### Batch 4a implementation and checks
