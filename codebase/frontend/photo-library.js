@@ -696,6 +696,7 @@
         if(finished){
           cell.meta=cell.scene=finished;cell.displayEpoch=state.displayEpoch;cell.elapsed=performance.now()-started;
           fallback.hidden=false;canvas.hidden=true;element.classList.remove("loading");
+          pictureErrors.paint(cell);
           HDRLibraryStopwatch("picture_shown",{path:photo.path,key:finished.key,route:finished.route,view:container===space?"grid":"filmstrip",duration_ms:cell.elapsed});
           window.HDRLibraryFolderPresented?.({view:container===space?"grid":"filmstrip",path:photo.path});
           overlays?.attach(photo,fallback,finished,cell.controller,current);
@@ -750,6 +751,7 @@
             cell.quickController?.abort();
             cell.meta = cell.scene = meta; cell.displayEpoch = state.displayEpoch; cell.elapsed = performance.now() - started;
             fallback.hidden = false; canvas.hidden = true; canvas.removeAttribute("src"); element.classList.remove("loading");
+            pictureErrors.paint(cell);
             fallback.dataset.pictureKey=meta.key; fallback.dataset.picturePath=photo.path;
             HDRLibraryStopwatch("picture_shown",{...window.HDRLibraryPictureLog?.(meta),view:container === space ? "grid" : "filmstrip",path:photo.path,key:meta.key,duration_ms:cell.elapsed});
             HDRLibraryTrace.present(trace,current,{picture_size:"thumbnail",route:meta.route});

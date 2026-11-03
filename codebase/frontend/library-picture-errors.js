@@ -77,8 +77,9 @@ window.HDRLibraryPictureErrors = Object.freeze({
     function paint(cell) {
       const record = records.get(cell.photo.path);
       let tag = cell.element.querySelector(".library-picture-error");
-      const previewOnly = !!record && !record.grade_warning && !!cell.hasCameraPreview;
-      cell.element.classList.toggle("picture-failed", !!record && !record.grade_warning && !previewOnly);
+      const hasPicture = !!cell.hasCameraPreview || !!cell.meta || !!cell.scene;
+      const previewOnly = !!record && !record.grade_warning && !!cell.hasCameraPreview && !cell.meta && !cell.scene;
+      cell.element.classList.toggle("picture-failed", !!record && !record.grade_warning && !hasPicture);
       if (previewOnly) { cell.element.title = record.reason; tag?.remove(); return; }
       if (!record) { tag?.remove(); return; }
       cell.element.classList.remove("loading");
@@ -89,7 +90,7 @@ window.HDRLibraryPictureErrors = Object.freeze({
         cell.element.querySelector(".picture-frame").append(tag);
       }
       if (record.grade_warning && record.ignored) { tag.remove(); return; }
-      tag.textContent = record.timeout ? "Took too long · Try again" : record.grade_warning ? "Grade needs attention" : record.ignored ? "Error · ignored" : `Failed · ${record.reason}`;
+      tag.textContent = hasPicture && !record.grade_warning ? "Preview needs attention" : record.timeout ? "Took too long · Try again" : record.grade_warning ? "Grade needs attention" : record.ignored ? "Error · ignored" : `Failed · ${record.reason}`;
       tag.title = record.reason;
       tag.setAttribute("aria-label", `${cell.photo.name}: ${record.reason} Review error`);
     }
@@ -99,7 +100,7 @@ window.HDRLibraryPictureErrors = Object.freeze({
       await cell.previewPromise;
       if (!current()) return;
       paint(cell);
-      if (!cell.hasCameraPreview) cell.controller.abort();
+      if (!cell.hasCameraPreview && !cell.meta && !cell.scene) cell.controller.abort();
     }
     return Object.freeze({remember, update, show, paint, failed, canPrepare:path => !records.has(path) || !!records.get(path).grade_warning || !!records.get(path).timeout, get:path => records.get(path)});
   }

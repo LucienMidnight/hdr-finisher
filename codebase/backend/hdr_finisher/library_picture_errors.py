@@ -171,12 +171,21 @@ class PictureErrors:
     def response(record):
         return JSONResponse({"detail": record["reason"], "library_error": record}, status_code=422)
 
-    def guard(self, handler):
+    def guard_cached(self, handler):
+        # Cache discovery is read-only: a later failed development cannot hide
+        # a valid scene of this same source and grade from Single or Compare.
+        return self.guard(handler, cache_probe=True)
+
+    def guard(self, handler, cache_probe=False):
         @wraps(handler)
         async def checked(command, *args, **kwargs):
             path = command.path
             cached = await run_in_threadpool(self.get, path)
             if cached and not cached.get("grade_warning"):
+                if cache_probe:
+                    result = await run_in_threadpool(handler, command, *args, **kwargs)
+                    if isinstance(result, dict) and result.get("cached"):
+                        return result
                 return self.response(cached)
             revision = await run_in_threadpool(self.revision, path)
             try:

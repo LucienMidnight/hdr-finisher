@@ -503,7 +503,7 @@ def create_library_router(worker, browser, store=None):
         return {"released": True}
 
     @router.post("/live-plan")
-    @picture_errors.guard
+    @picture_errors.guard_cached
     def live_plan(command: LiveSceneRequest):
         # Prepared scenes trust the local index. FolderChecks reconciles source
         # and sidecar changes in the background, including after restart.

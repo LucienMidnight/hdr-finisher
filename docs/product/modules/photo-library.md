@@ -1,3 +1,12 @@
+### November 3: Batch 3f — keep current-grade pictures visible
+
+A later preparation error leaves an existing developed thumbnail or scene visible,
+with a small “Preview needs attention” badge. Failure cleanup does not abort its
+picture owner. Cache discovery can return an existing matching source/grade scene
+through a remembered failure, so Single, fullscreen and Compare can still use it;
+a missing tier remains blocked by a genuine remembered failure. Camera-preview
+handling and grade-warning choices remain available.
+
 ## November 3: Batch 3f — temporary preparation failures
 
 Timeouts, lost grants, interruptions and stalls do not create a durable broken-photo

@@ -571,3 +571,24 @@ def test_overlapping_native_requests_share_source_only_while_owned(tmp_path, mon
     replacement = service.frame(meta)
     assert calls == ['native-one','native-one']
     assert service.frame({'edge':100000,'key':'different-grade'}) is not replacement
+
+
+def test_remembered_failure_does_not_hide_current_grade_cached_scene(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.library_picture_errors import PictureErrors
+    from hdr_finisher.media_browser import MediaBrowserStore
+    class NoPreparation:
+        def submit_library(self,*args,**kwargs): pytest.fail("Cached scene must not redevelop")
+    path=photo(tmp_path); profile=tmp_path/"profile"
+    develop_cpu(profile,path,None,640)
+    app=FastAPI();app.include_router(create_library_router(NoPreparation(),MediaBrowserStore(profile)))
+    errors=PictureErrors(LibraryMarks(profile))
+    errors.remember(path,ValueError("Later native development failed"),errors.revision(path))
+    with TestClient(app) as api:
+        result=api.post('/api/library/live-plan',json={'path':str(path),'edge':640})
+        assert result.status_code==200,result.text
+        assert result.json()['cached']['edge']==640
+        missing=api.post('/api/library/live-plan',json={'path':str(path),'edge':2560})
+        assert missing.status_code==422,missing.text

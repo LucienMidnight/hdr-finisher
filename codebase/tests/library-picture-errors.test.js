@@ -31,3 +31,19 @@ test('a missing preview still releases the failed cell and an obsolete preview c
  await errors.failed(cell,()=>true);assert.equal(cell.controller.signal.aborted,true);assert.equal(paints,1);
  paints=0;await errors.failed(cell,()=>false);assert.equal(paints,0);
 });
+
+
+for(const route of ['finished-thumbnail','stored-scene'])test('a remembered failure keeps a '+route+' visible',async()=>{
+ const {errors}=setup(),classes=new Map();
+ errors.remember({path:'photo.arw',reason:'Development failed'});
+ const tag={setAttribute(){},remove(){},textContent:''};
+ const cell={photo:{path:'photo.arw'},meta:{route,key:'current-grade'},controller:new AbortController(),
+  element:{querySelector:()=>tag,classList:{toggle:(key,value)=>classes.set(key,value),remove(){}}}};
+ await errors.failed(cell,()=>true);
+ assert.equal(classes.get('picture-failed'),false);assert.equal(cell.controller.signal.aborted,false);
+ assert.equal(tag.textContent,'Preview needs attention');
+});
+
+test('an exhausted temporary failure allows a fresh visit to prepare the photo',()=>{
+ const {errors}=setup();errors.remember({path:'photo.arw',timeout:true});assert.equal(errors.canPrepare('photo.arw'),true);
+});
