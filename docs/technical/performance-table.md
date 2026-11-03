@@ -739,3 +739,20 @@ The memory module records the interpretation and renderer roles. All four app
 checks recorded no slow-memory-endpoint or event-loop-lag events. Final fast
 checks: 768 JavaScript passed; 3,023 Python passed, 3 skipped; zero failures.
 The final worker-framing follow-up passed 44 affected Python checks separately.
+
+## November 4 — Batch 4b checkpoint (in progress, parent 6ca7f4a)
+
+Plain Electron, 2560x1440, three reusable `library-live-grid` test copies,
+4 GB ceiling. Saving policy and autosave wait unchanged. The Grade picture is
+prepared in the retained hidden Library pool; these timings measure picture
+readiness there, not physical scanout of a hidden window.
+
+| Action | Target | Observed | Conditions/result |
+| --- | --- | --- | --- |
+| Saved grade available → Library picture ready | 500 ms | Final autosave 391 ms; manual Save 374 ms | HDR Grade capture; screen and thumbnail stored before publication. Earlier iterations 415–519 ms; final removed redundant settings-status lookup |
+| Slider release → Library picture ready | Log separately; autosave wait unchanged | Autosave 1.375 s; manual Save 1.877 s | Manual case deliberately waits 1.5 s with autosave off; the saved Library grade stays unchanged during that wait |
+| Return from Grade → retained grid | No blank tiles or redraw | Zero blank tiles in 30 frames; two unchanged thumbnails reused exactly | Short three-photo test only; detached/geometry acceptance outstanding |
+
+Evidence: `codebase/output/quick-library-check/batch4b/{report,scenario}.json`
+and `backend.log`. Checkpoint remains in progress; see the Batch 4b resume
+notes in the Library module PRD. No broad speed or responsiveness claim.

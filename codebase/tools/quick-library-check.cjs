@@ -1,5 +1,6 @@
 // Plain Electron quick check: no Playwright, DevTools or remote debugging port.
 // node tools/quick-library-check.cjs [--seconds=90] [--label=name] [--single] [--redisplay]
+// --grade-handoff --folder=library-live-grid --seconds=6: one saved exposure hand-off and blank-tile check.
 // --grade-return --folder=library-live-grid: Grade slider + typed value, Library tab + keyboard, F, Compare, settle.
 // --retention --folder=hdr-test: focused memory acceptance across cancel/Grade/100% views; cadence is diagnostic.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
@@ -8,6 +9,7 @@ const {MemoryMonitor}=require('./library-memory-monitor.cjs');
 const root=path.resolve(__dirname,'..');
 const arg=(name,fallback)=>process.argv.find(x=>x.startsWith(`--${name}=`))?.slice(name.length+3)??fallback;
 const seconds=Number(arg('seconds',90)),label=arg('label','run');
+const gradeHandoffMode=process.argv.includes("--grade-handoff");
 const memoryDiagnostic=process.argv.includes('--memory-diagnostic');
 const gradeReturnMode=process.argv.includes('--grade-return')||memoryDiagnostic;
 const retentionMode=process.argv.includes('--retention')||gradeReturnMode;
@@ -96,13 +98,13 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
   },retentionMode?420000:130000);
   const signal=()=>{kill();try{cleanup();}catch{}process.exit(130);};process.once('SIGINT',signal);process.once('SIGTERM',signal);
   try{
-  if(retentionMode)for(const directory of [folder,path.join(root,'output/test-photos/library-live-grid')]){
+  if(retentionMode||gradeHandoffMode)for(const directory of [folder,path.join(root,'output/test-photos/library-live-grid')]){
     for(const name of fs.readdirSync(directory).filter(n=>/\.ARW$/i.test(n))){
       const file=path.join(directory,name+'.hdrf');sidecars.set(file,fs.existsSync(file)?fs.readFileSync(file):null);
     }
   }
     if(folderName===null)execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-mixed-fixture.py'),'run-copy'],{stdio:'inherit',timeout:30000});
-    const config={memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
+    const config={gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE||'2560x1440').split('x').map(Number);
     fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width,height}));
@@ -179,7 +181,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     catch(error){channels={error:String(error.message||error)};}
     if(channels.one_channel_zero?.length||channels.all_channels_zero?.length)errors.push(`Zeroed colour channels in ${channels.one_channel_zero.length+channels.all_channels_zero.length} stored pictures`);
     const report={label,acceptance_scope:retentionMode?'whole-app retention (cadence recorded separately)':'Library quick check',folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
-      ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms,result.visible_files),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,memory_diagnostic:result.memory_diagnostic,grade_return:result.grade_return,grade_return_saves:result.grade_return_saves,
+      ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms,result.visible_files),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,memory_diagnostic:result.memory_diagnostic,grade_handoff:result.grade_handoff,grade_return:result.grade_return,grade_return_saves:result.grade_return_saves,
       independent_memory:{...memory.report(),samples:sampleCount,lastBytes:memory.last?.totalBytes,sampleIntervalMs:{requested:250,median:sampleIntervals[Math.floor(sampleIntervals.length/2)],maximum:sampleIntervals.at(-1)},grants_note:'External process census; no DevTools WebSocket instrumentation.'},observerError,
       picture_timing_clock:'Library performance.now()',stage:result.stage,scenario_ms:result.scenario_ms,harness_total_ms:Date.now()-harnessAt,harness_outside_scenario_ms:Date.now()-harnessAt-result.scenario_ms,cdp_attached:false};
     if(failures.length&&!retentionMode){console.error(`FREEZE: ${failures.join('; ')} (limit 250 ms)`);process.exitCode=1;}

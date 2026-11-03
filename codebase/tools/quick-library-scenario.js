@@ -94,6 +94,65 @@ async function scenario(config) {
     mark('observe');
     await sleep(Math.max(0,config.seconds*1000-(performance.now()-openedAt)));
     await frame();
+    if(config.gradeHandoff){
+      mark('handoff: finish initial grid');
+      const cells=()=>[...document.querySelectorAll('#grid-space .library-cell')];
+      const ready=c=>!!c?.querySelector('canvas[data-picture-key]:not([hidden])');
+      await wait(()=>cells().length>0&&cells().every(ready),30000);
+      if(!HDRLibrary.getSnapshot().hdr)document.getElementById('hdr-button').click();
+      await wait(()=>cells().every(c=>{const canvas=c.querySelector('canvas[data-picture-key]:not([hidden])');return ready(c)&&(canvas.dataset.cameraPreview==='true'||canvas.dataset.rendition==='hdr');}),30000);
+      await frame();await frame();
+      const before=new Map(cells().map(c=>[c.dataset.path,c.querySelector('canvas[data-picture-key]')]));
+      const photo=HDRLibrary.getSnapshot().paths.find(p=>/DSC07061\.ARW$/i.test(p))||HDRLibrary.getSnapshot().paths.find(p=>/\.ARW$/i.test(p));
+      const cell=cells().find(c=>c.dataset.path===photo);if(!cell)throw Error('No visible RAW to edit');
+      mark('handoff: open Grade');cell.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
+      await wait(()=>parent.HDRGradeSaving.ready(),60000);
+      await wait(()=>parent.HDRGradeLibraryPictures.getSnapshot().clean,30000);
+      mark('handoff: release exposure');
+      const control=parent.document.getElementById('hdr-exposure');
+      control.dispatchEvent(new parent.PointerEvent('pointerdown',{bubbles:true,pointerId:991}));
+      control.value=String(Number(control.value)+.5);const exposure=Number(control.value);
+      control.dispatchEvent(new parent.Event('input',{bubbles:true}));control.dispatchEvent(new parent.Event('change',{bubbles:true}));
+      control.dispatchEvent(new parent.PointerEvent('pointerup',{bubbles:true,pointerId:991}));
+      const releasedAt=performance.timeOrigin+performance.now();
+      await wait(()=>events.some(e=>e.stage==='grade_picture_handoff'&&e.path===photo),30000);
+      const handoff=events.filter(e=>e.stage==='grade_picture_handoff'&&e.path===photo).at(-1);
+      if(!handoff.route.startsWith('Grade picture'))errors.push('Clean Grade picture was not handed off: '+JSON.stringify(handoff));
+      if(handoff.available_to_picture_ms===null||handoff.available_to_picture_ms>500)errors.push('Grade picture missed the 500 ms availability target: '+handoff.available_to_picture_ms);
+      const returnedAt=performance.timeOrigin+performance.now();
+      mark('handoff: return to Library');parent.document.querySelector('[data-workflow-tab="import"]').click();
+      let blanks=0;
+      for(let i=0;i<30;i++){await frame();for(const c of cells())if(!ready(c))blanks++;}
+      const edited=cells().find(c=>c.dataset.path===photo)?.querySelector('canvas[data-grade-handoff]');
+      if(!edited)errors.push('Edited tile did not reuse its handed-off picture');
+      const reused=cells().filter(c=>c.dataset.path!==photo&&c.querySelector('canvas[data-picture-key]')===before.get(c.dataset.path)).length;
+      if(reused!==before.size-1)errors.push('Unedited visible thumbnails were rebuilt on return');
+      if(blanks)errors.push('Blank tiles after returning from Grade: '+blanks);
+      const row=await (await fetch('/api/library/settings-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[photo]})})).json();
+      if(row.photos[0].grade_identity!==handoff.grade_identity)errors.push('Library picture is not the latest grade');
+      await sleep(600);
+      const after=events.filter(e=>e.at+performance.timeOrigin>=returnedAt&&e.path===photo);
+      if(after.some(e=>e.stage==='picture_drawn'))errors.push('Edited photo was redrawn on return');
+      config.gradeHandoffResult={path:photo,exposure,releasedAt,returnedAt,blank_tiles:blanks,reused,visible:before.size,handoff};
+      mark('handoff: autosave off');parent.document.querySelector('[data-workflow-tab="grade"]').click();
+      parent.document.getElementById('grade-autosave').click();
+      await wait(()=>parent.document.getElementById('grade-autosave').getAttribute('aria-pressed')==='false');
+      control.dispatchEvent(new parent.PointerEvent('pointerdown',{bubbles:true,pointerId:992}));
+      control.value=String(exposure+.25);control.dispatchEvent(new parent.Event('input',{bubbles:true}));
+      control.dispatchEvent(new parent.Event('change',{bubbles:true}));control.dispatchEvent(new parent.PointerEvent('pointerup',{bubbles:true,pointerId:992}));
+      await sleep(1500);
+      const unsaved=await (await fetch('/api/library/settings-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[photo]})})).json();
+      if(unsaved.photos[0].grade_identity!==handoff.grade_identity)errors.push('Autosave off changed the Library grade before Save');
+      if(events.some(e=>e.stage==='grade_picture_handoff'&&e.path===photo&&e.request!==handoff.request))errors.push('Unsaved grade published a picture');
+      mark('handoff: manual save');parent.document.getElementById('grade-save-now').click();
+      await wait(()=>events.some(e=>e.stage==='grade_picture_handoff'&&e.path===photo&&e.request!==handoff.request),30000);
+      const manual=events.filter(e=>e.stage==='grade_picture_handoff'&&e.path===photo).at(-1);
+      if(manual.grade_identity===handoff.grade_identity||!manual.route.startsWith('Grade picture'))errors.push('Manual save did not hand off its new grade');
+      if(manual.available_to_picture_ms===null||manual.available_to_picture_ms>500)errors.push('Manual save missed the 500 ms target: '+manual.available_to_picture_ms);
+      if(manual.release_to_picture_ms<1500)errors.push('Manual Save replaced the original slider-release timestamp');
+      config.gradeHandoffResult.manual_save=manual;config.gradeHandoffResult.autosave_off_preserved=true;
+      parent.document.getElementById('grade-autosave').click();
+    }
     if(config.retention){
       retention=[];
       const settle=async name=>{
@@ -243,9 +302,9 @@ async function scenario(config) {
       record.app_trace_starts_after_input_ms=app?Math.round(app.at-app.duration_ms-record.started_ms):null;
       record.app_event_after_presentation_ms=app?Math.round(app.at-record.presented_ms):null;
     }
-    return {visible_files:HDRLibrary.getSnapshot().paths,opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_return:config.gradeReturnResult,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
+    return {visible_files:HDRLibrary.getSnapshot().paths,opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_return:config.gradeReturnResult,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
   } catch(error) {
-    return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_return:config.gradeReturnResult,events,errors:[...errors,String(error.stack||error)],stage};
+    return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_frame:config.gradeHandoff?parent.HDRGradeLibraryPictures?.getSnapshot():null,handoff_state:config.gradeHandoff?window.HDRLibraryGradeHandoffSnapshot?.():null,grade_return:config.gradeReturnResult,events,errors:[...errors,String(error.stack||error)],stage};
   } finally {
     stopped=true;clearInterval(timer);clearInterval(gridTimer);observer?.disconnect();window.HDRLibraryStopwatch=inherited;
     window.removeEventListener('error',onError);window.removeEventListener('unhandledrejection',onError);
