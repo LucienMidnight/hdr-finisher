@@ -13,11 +13,15 @@ self.onmessage=async({data})=>{
           const view=new Uint8Array(parts[i]);
           for(let at=0;at<view.length;at+=4*1024*1024){
             const chunk=view.subarray(at,Math.min(view.length,at+4*1024*1024));
-            let response;
-            do{
-              response=await fetch(upload+'?offset='+offset+'&total='+total,{method:'POST',headers,body:chunk,signal:controller.signal});
-              if(response.status===202)await new Promise(resolve=>setTimeout(resolve,150));
-            }while(response.status===202 && !controller.signal.aborted);
+            const response=await fetch(upload+'?offset='+offset+'&total='+total,{method:'POST',headers,body:chunk,signal:controller.signal});
+            if(response.status===202){
+              // Do not wait while owning the producer's full-size planes. A
+              // refused receiving buffer may need those bytes freed to fit.
+              // Unwind the whole preparation so its scheduler grant and GPU
+              // output are released before fresh admission, not after 45 s.
+              self.postMessage({id,ok:false,status:503,text:JSON.stringify({detail:'Waiting for memory to save detail; request it again.'})});
+              return;
+            }
             if(!response.ok){self.postMessage({id,ok:false,status:response.status,text:await response.text()});return;}
             offset+=chunk.byteLength;
           }

@@ -1,13 +1,12 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs'),vm=require('node:vm');
-test('native planes transfer once, upload bounded pieces, wait for memory and release ownership',async()=>{
- const chunks=[],calls=[];let waited=false,worker;
+test('native planes transfer once, upload bounded pieces and release ownership',async()=>{
+ const chunks=[],calls=[];let worker;
  const context={ArrayBuffer,Uint8Array,AbortController,crypto:require('node:crypto').webcrypto,
   setTimeout:fn=>setImmediate(fn),self:{postMessage:data=>worker.onmessage({data})},
   fetch:async(url,options)=>{
    calls.push([url,options]);
-   if(url.includes('?offset=0&')&&!waited){waited=true;return {ok:true,status:202};}
    if(url.includes('?offset=')){chunks.push(Buffer.from(options.body));return {ok:true,status:200};}
    return {ok:true,status:200,text:async()=>'{"native_ready":true}'};
   }};
@@ -24,6 +23,19 @@ test('native planes transfer once, upload bounded pieces, wait for memory and re
  assert.equal(result.ok,true);assert.deepEqual(JSON.parse(result.text),{native_ready:true});
  assert.ok(parts.every(p=>p.byteLength===0),'window relinquishes its planes');
  assert.ok(chunks.every(c=>c.length<=4*1024*1024));assert.deepEqual(Buffer.concat(chunks),expected);
- assert.ok(waited);assert.equal(calls.at(-1)[1].method,'DELETE');
+ assert.equal(calls.at(-1)[1].method,'DELETE');
  assert.ok(calls.at(-2)[1].headers['X-Library-Native-Upload']);
+});
+
+
+test('receiving memory refusal releases the producer instead of polling with its planes held',async()=>{
+ const calls=[];let reply;
+ const context={Uint8Array,AbortController,crypto:require('node:crypto').webcrypto,
+  self:{postMessage:data=>reply=data},
+  fetch:async(url,options)=>{calls.push([url,options.method]);return {ok:true,status:202};}};
+ vm.runInNewContext(fs.readFileSync(require.resolve('../frontend/library-upload-worker.js'),'utf8'),context);
+ await context.self.onmessage({data:{id:1,url:'/api/library/live-developed',parts:[new ArrayBuffer(16)]}});
+ assert.equal(reply.status,503);assert.match(JSON.parse(reply.text).detail,/Waiting for memory/);
+ assert.equal(calls.length,2,'one admission, then ownership release; never poll while holding full output');
+ assert.equal(calls.at(-1)[1],'DELETE');
 });
