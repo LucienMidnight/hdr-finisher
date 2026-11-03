@@ -65,13 +65,14 @@ async def receive_frame(request):
     length = int(request.headers.get("content-length", 0))
     if not length:
         return unframe(await request.body())
-    body = bytearray(length)
+    from starlette.concurrency import run_in_threadpool
+    body = await run_in_threadpool(bytearray, length)
     offset = 0
     async for chunk in request.stream():
         end = offset + len(chunk)
         if end > length:
             raise ValueError("The developed picture was incomplete.")
-        body[offset:end] = chunk
+        await run_in_threadpool(body.__setitem__, slice(offset, end), chunk)
         offset = end
     if offset != length:
         raise ValueError("The developed picture was incomplete.")

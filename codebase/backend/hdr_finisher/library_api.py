@@ -96,11 +96,24 @@ class OverlaySwitch(BaseModel):
     enabled: bool
 
 
+_loop_requests = {}
+
+async def loop_lag_heartbeat():
+    while True:
+        expected = time.perf_counter()+.1
+        await asyncio.sleep(.1)
+        lag = time.perf_counter()-expected
+        if lag > .25:
+            log("event_loop_lag", lag_ms=lag*1000,
+                active_requests=list(_loop_requests.values()))
+
+
 class LibraryRoute(APIRoute):
     def get_route_handler(self):
         handler = super().get_route_handler()
         async def checked(request):
             request.state.library_arrived = time.perf_counter()
+            _loop_requests[id(request)] = request.url.path
             async def context():
                 if request.method != "POST" or "application/json" not in request.headers.get("content-type", ""):
                     return dict(request.query_params)
@@ -131,6 +144,8 @@ class LibraryRoute(APIRoute):
                     return JSONResponse({"detail":str(error),"changed":True},status_code=409)
                 log("request_failed", operation=request.url.path, context=await context(), reason=repr(error), traceback=traceback.format_exc(), action="request stopped; saved marks retained")
                 return JSONResponse({"detail": "The Library could not finish that request. Saved marks are safe; try again."}, status_code=500)
+            finally:
+                _loop_requests.pop(id(request), None)
         return checked
 
 
@@ -326,9 +341,12 @@ def create_library_router(worker, browser, store=None):
         with startup_phase("settings_writer"):
             await run_in_threadpool(marks.writer.start, lambda: worker.status().get("writer_pause_owners", worker.status()["paused"]))
         grant_runtime.start()
+        heartbeat = asyncio.create_task(loop_lag_heartbeat())
         try:
             yield
         finally:
+            heartbeat.cancel()
+            await asyncio.gather(heartbeat, return_exceptions=True)
             await run_in_threadpool(raw_browsing.close)
             grant_runtime.close()
             file_commands._stop.set()
@@ -562,7 +580,7 @@ def create_library_router(worker, browser, store=None):
         source_quality = live_quality(document)
         cached = await run_in_threadpool(live.cache.cached, path, command.edge, source_quality)
         if cached:
-            live.cache.accept_transient(cached)
+            await run_in_threadpool(live.cache.accept_transient, cached)
             return await run_in_threadpool(live.describe, command.path, cached)
         if worker.status()["paused"]:
             return JSONResponse({"detail": "library_pending"}, status_code=202)
@@ -637,8 +655,8 @@ def create_library_router(worker, browser, store=None):
                     for scene in result.pop("_pending_scenes", []):
                         default = scene.pop("_default_document", None)
                         pending = (path, scene["edge"], source_quality, default, validate_cpu_store) if scene.get("_transient") else None
-                        live.cache.accept_transient(scene, pending)
-                    live.cache.accept_transient(result)
+                        await run_in_threadpool(live.cache.accept_transient, scene, pending)
+                    await run_in_threadpool(live.cache.accept_transient, result)
                     return await run_in_threadpool(live.describe, command.path, result)
         finally:
             if not transfer:
@@ -650,7 +668,7 @@ def create_library_router(worker, browser, store=None):
         from .models import RepairRecord
         from .retouch_gpu import packet, context_rectangles, BoundedSource
         import numpy as np
-        header, body = library_gpu_raw.unframe(await request.body())
+        header, body = await library_gpu_raw.receive_frame(request)
         owner = source_jobs.check(header['source_job'],file_commands.epoch)
         path = str(marks.source_path(header['item_path']))
         document = await run_in_threadpool(live.document,header['item_path'])
@@ -675,7 +693,7 @@ def create_library_router(worker, browser, store=None):
         accepted_at = time.perf_counter()
         from . import library_gpu_raw
         try:
-            header, body = library_gpu_raw.unframe(cache.native_upload(request.headers["x-library-native-upload"])) if "x-library-native-upload" in request.headers else await library_gpu_raw.receive_frame(request)
+            header, body = await run_in_threadpool(lambda: library_gpu_raw.unframe(cache.native_upload(request.headers["x-library-native-upload"]))) if "x-library-native-upload" in request.headers else await library_gpu_raw.receive_frame(request)
             if header.get("source_job"):
                 source_jobs.check(header["source_job"], file_commands.epoch)
             item = header["item_path"]
@@ -983,8 +1001,12 @@ def create_library_router(worker, browser, store=None):
             if epoch != file_commands.epoch:
                 raise HTTPException(409, "Photos changed during this read. Open the folder again.")
             result = future.result()
-            if command in {'picture', 'native'}: cache.accept_transient(result)
-            elif command == 'overlay': overlay_maps.cache.accept_transient(result)
+            def accept_result():
+                if epoch != file_commands.epoch:
+                    raise HTTPException(409, "Photos changed during this read. Open the folder again.")
+                if command in {'picture', 'native'}: cache.accept_transient(result)
+                elif command == 'overlay': overlay_maps.cache.accept_transient(result)
+            await run_in_threadpool(accept_result)
             result['_file_epoch'] = epoch
             return result
         except DecoderTimeout as exc:
@@ -1437,7 +1459,8 @@ def create_library_router(worker, browser, store=None):
         except (ValueError, OSError) as error:
             raise HTTPException(status_code=400, detail=user_error(error)) from error
         header["edge"] = command.edge
-        return Response(library_gpu_raw.frame(header, *payload), media_type="application/octet-stream")
+        body = await run_in_threadpool(library_gpu_raw.frame, header, *payload)
+        return Response(body, media_type="application/octet-stream")
 
     @router.post("/native-upload/{token}")
     async def native_upload(token: str, request: Request, offset: int, total: int):
@@ -1463,7 +1486,7 @@ def create_library_router(worker, browser, store=None):
     @router.post("/raw-developed")
     async def raw_developed(request: Request):
         try:
-            header, payload = library_gpu_raw.unframe(cache.native_upload(request.headers["x-library-native-upload"])) if "x-library-native-upload" in request.headers else await library_gpu_raw.receive_frame(request)
+            header, payload = await run_in_threadpool(lambda: library_gpu_raw.unframe(cache.native_upload(request.headers["x-library-native-upload"]))) if "x-library-native-upload" in request.headers else await library_gpu_raw.receive_frame(request)
             path = str(marks.source_path(header["path"]))
             started = time.perf_counter()
             result = await run_in_threadpool(library_gpu_raw.developed, cache, path, header, payload)

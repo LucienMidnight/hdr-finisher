@@ -397,3 +397,55 @@ def test_memory_endpoint_coalesces_a_stuck_sample(tmp_path, monkeypatch):
             finally:
                 release.set(); await asyncio.sleep(.05)
     asyncio.run(run())
+
+
+def test_loop_lag_heartbeat_reports_delayed_loop(monkeypatch):
+    import asyncio, time
+    from hdr_finisher import library_api
+    logs = []
+    monkeypatch.setattr(library_api, 'log', lambda stage, **fields: logs.append((stage, fields)))
+    async def run():
+        task = asyncio.create_task(library_api.loop_lag_heartbeat())
+        try:
+            await asyncio.sleep(.02)
+            time.sleep(.4)
+            await asyncio.sleep(.02)
+        finally:
+            task.cancel(); await asyncio.gather(task, return_exceptions=True)
+    asyncio.run(run())
+    assert len(logs) == 1
+    assert logs[0][0] == 'event_loop_lag'
+    assert logs[0][1]['lag_ms'] > 250
+
+
+def test_preview_acceptance_does_not_block_memory_poll(tmp_path, monkeypatch):
+    import asyncio, httpx
+    from fastapi import FastAPI
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.library_worker import LibraryWorker
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.library_live import LivePictures
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    photo = tmp_path/'test.raw'; photo.write_bytes(b'test')
+    entered, release = Event(), Event()
+    def accept(self, result):
+        entered.set(); assert release.wait(3)
+    monkeypatch.setattr(LivePictures, 'document', lambda *args: None)
+    monkeypatch.setattr(LivePictures, 'describe', lambda *args: {'key': 'accepted'})
+    monkeypatch.setattr(LibraryPictureCache, 'cached', lambda *args: {'key': 'cached'})
+    monkeypatch.setattr(LibraryPictureCache, 'accept_transient', accept)
+    monkeypatch.setattr(app_memory, 'process_tree', lambda root: [dict(pid=1, workingSetBytes=100)])
+    app = FastAPI(); app.include_router(create_library_router(LibraryWorker(tmp_path), MediaBrowserStore(tmp_path)))
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            task = asyncio.create_task(client.post('/api/library/live-scene', json={'path':str(photo), 'edge':640}))
+            try:
+                for _ in range(100):
+                    if entered.is_set(): break
+                    await asyncio.sleep(.005)
+                assert entered.is_set()
+                response = await asyncio.wait_for(client.get('/api/library/memory'), .5)
+                assert response.is_success
+            finally: release.set()
+            assert (await task).json()['key'] == 'accepted'
+    asyncio.run(run())

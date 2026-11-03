@@ -1017,3 +1017,20 @@ work cannot accumulate queued polls. A first sample has a bounded 500 ms wait.
 `memory_endpoint` records queue/run time only above 250 ms. Desktop awaits are
 bounded, renderer collections coalesce, and a renderer timeout still allows
 backend reclamation and later polling. Accounting, levels and budgets are unchanged.
+
+### November 3, 2026 - Batch 3g: request-loop spills
+
+The audited live-developed acceptance already runs inside adapter.developed on
+a worker. The actual inline spill sites were cached live-scene acceptance,
+CPU pending scene acceptance, and picture/native/overlay helper acceptance;
+these now run sequentially on workers with the existing source validation.
+Native-upload buffer lookup also leaves the loop (it takes the upload lock),
+as do large receive-buffer allocation/copies. Finished-thumbnail joins remain.
+A 100 ms heartbeat logs only delays above 250 ms and active Library routes;
+those routes are candidates, not proof of which request blocked the loop.
+
+Other async operations still worth measuring: source-path/owner/status locks,
+RAW metadata under the raw-browsing condition, and small response/header JSON
+construction. Broader handler/lock restructuring is deferred. Finished-thumbnail
+`too_long` is a validation error: its request uses MetadataRequest's maximum
+path count, not a time measurement. This batch does not change that limit.
