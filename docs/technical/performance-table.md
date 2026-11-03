@@ -646,4 +646,20 @@ save. A logging-only reproduction (`68f1145`) identifies three CPU scopes
 requests as outstanding owners. The prior small ungraded-RAW fixture passed
 and saved in 110–126 ms; it did not exercise the expensive saved DSC06615
 grade. Reports: `codebase/output/quick-library-check/batch3d2-{baseline,exact-photo,reproduce}/report.json`.
-Final fixed-code save timings and picture results follow after validation.
+Fixed code `4306c34` saves in 461 ms with the Grade hold released. Final UI
+acceptance fails: full screen does not finish within 60 seconds, Compare and
+settle are not reached, and peak memory is 5.807 GB. Source/development logs
+show memory admission delays, not a retained Grade pause. An earlier fixed
+iteration finished full screen/Compare and saved in 627–691 ms but failed
+memory/unfinished work; it is not an acceptance pass. No budget changed.
+Evidence: `codebase/output/quick-library-check/batch3d2-grade-return/report.json`.
+
+Native RAW passes 18 pixel comparisons and memory acceptance: cold screen
+1.111–1.696 s, reuse 12.3–13.4 ms, native crop/handoff 3.695–7.075 s, resident
+neighbour 11 ms. Peak 4.368 GB is a 1.62-second bounded episode accepted by the
+existing memory rule; final 1.992 GB. The standard mixed 90-second check opens
+Single in 1.462 s; ten steps median 1.968 s, maximum 5.580 s. Drawing gap
+3.942 s fails the unchanged 250 ms limit; memory passes, peak 3.607 GB, final
+1.521 GB. No repeat or separate performance investigation.
+Evidence: `codebase/output/library-gpu-raw-single/1793682039136/{comparison,memory-summary}.json`
+and `codebase/output/quick-library-check/batch3d2/report.json`.

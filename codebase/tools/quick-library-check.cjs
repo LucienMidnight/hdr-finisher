@@ -1,6 +1,6 @@
 // Plain Electron quick check: no Playwright, DevTools or remote debugging port.
 // node tools/quick-library-check.cjs [--seconds=90] [--label=name] [--single] [--redisplay]
-// --grade-return --folder=library-live-grid: consumed Grade release, saved adjustment, fullscreen, Compare, settle.
+// --grade-return --folder=library-live-grid: Grade slider + typed value, Library tab + keyboard, F, Compare, settle.
 // --retention --folder=hdr-test: focused memory acceptance across cancel/Grade/100% views; cadence is diagnostic.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {execFileSync,spawn}=require('node:child_process');
@@ -139,7 +139,7 @@ function analyse(text, openedAt, events, openedPageAt) {
     const text=fs.existsSync(logPath)?fs.readFileSync(logPath,'utf8'):'';fs.writeFileSync(path.join(out,'backend.log'),text);
     const freezes=freezeSummary(result.probe),failures=[];
     if(gradeReturnMode){
-      if(!result.grade_return)result.errors.push('Grade return sequence did not complete');
+      if(!result.grade_return||result.stage!=='done')result.errors.push('Grade return sequence did not complete');
       else {
         const saved=JSON.parse(fs.readFileSync(result.grade_return.path+'.hdrf','utf8'));
         if(saved.grade?.global_adjustments?.hdr?.exposure!==result.grade_return.exposure)result.errors.push('Adjusted exposure did not reach the sidecar');
@@ -147,9 +147,19 @@ function analyse(text, openedAt, events, openedPageAt) {
       for(const lane of ['helper','writer']){
         const pauses=text.split('\n').filter(l=>l.startsWith('[library] '+lane+'_pause ')).length;
         const resumes=text.split('\n').filter(l=>l.startsWith('[library] '+lane+'_resume ')).length;
-        if(!pauses||pauses!==resumes)result.errors.push(`${lane}: ${pauses} pauses, ${resumes} resumes`);
+        if(pauses!==resumes)result.errors.push(`${lane}: ${pauses} pauses, ${resumes} resumes`);
       }
-      if(!text.includes('[library] grade_saved '))result.errors.push('No completed grade save');
+      const queued=new Map(), saves=[];
+      for(const line of text.split('\n')){
+        const match=line.match(/^\[library\] (grade_save_queued|grade_saved) (\{.*\})$/);if(!match)continue;
+        const d=JSON.parse(match[2]);
+        if(match[1]==='grade_save_queued')queued.set(d.photo,[...(queued.get(d.photo)||[]),d.time]);
+        else for(const at of queued.get(d.photo)||[]){saves.push({photo:d.photo,ms:(d.time-at)*1000});queued.delete(d.photo);}
+      }
+      if(!saves.length)result.errors.push('No completed grade save');
+      if(queued.size)result.errors.push('Grade saves remain queued');
+      for(const save of saves)if(save.ms>1000)result.errors.push(`Grade save took ${Math.round(save.ms)} ms (limit 1000)`);
+      result.grade_return_saves=saves;
     }
     if(freezes.frame_gaps.longest_ms>250)failures.push(`frame gap ${freezes.frame_gaps.longest_ms} ms`);
     if(freezes.main_thread_blocks.longest_ms>250)failures.push(`main thread block ${freezes.main_thread_blocks.longest_ms} ms`);
@@ -161,7 +171,7 @@ function analyse(text, openedAt, events, openedPageAt) {
     catch(error){channels={error:String(error.message||error)};}
     if(channels.one_channel_zero?.length||channels.all_channels_zero?.length)errors.push(`Zeroed colour channels in ${channels.one_channel_zero.length+channels.all_channels_zero.length} stored pictures`);
     const report={label,acceptance_scope:retentionMode?'whole-app retention (cadence recorded separately)':'Library quick check',folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
-      ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,grade_return:result.grade_return,
+      ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,grade_return:result.grade_return,grade_return_saves:result.grade_return_saves,
       independent_memory:{...memory.report(),samples:sampleCount,lastBytes:memory.last?.totalBytes,sampleIntervalMs:{requested:250,median:sampleIntervals[Math.floor(sampleIntervals.length/2)],maximum:sampleIntervals.at(-1)},grants_note:'External process census; no DevTools WebSocket instrumentation.'},observerError,
       picture_timing_clock:'Library performance.now()',stage:result.stage,scenario_ms:result.scenario_ms,harness_total_ms:Date.now()-harnessAt,harness_outside_scenario_ms:Date.now()-harnessAt-result.scenario_ms,cdp_attached:false};
     if(failures.length&&!retentionMode){console.error(`FREEZE: ${failures.join('; ')} (limit 250 ms)`);process.exitCode=1;}

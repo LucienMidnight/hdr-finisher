@@ -25,7 +25,36 @@ settings writes, so saving cannot wait behind its own scopes. Other owners
 keep their independent holds. No memory allowance, processing or saved format
 changes. Focused checks: 18 frontend scope/gesture tests and 74 backend
 worker/writer/grade tests passed (the new save fixture's initial invalid root
-was corrected). Full suites and final real-app checks are pending.
+was corrected).
+
+The updated check uses the grid double-click, slider/typed-value events,
+Library-tab click, F from the grid, Compare with 2L1B8631.CR2, a separate
+keyboard tab-return trial and the normal Close control. It does not call the
+Grade open/save/leave functions directly. Every queued save must finish within
+one second, and both Compare panes must identify distinct finished pictures.
+
+Final acceptance is **not passed**. On `4306c34`, the helper releases and the
+save completes in 461 ms, but full screen times out at 60 seconds among 50
+mixed files; Compare, the final keyboard trial and the settle phase are not
+reached. Peak memory is 5.807 GB, outside the unchanged rule. Logs show photo
+development waiting for memory admission, rather than a retained Grade pause.
+An earlier fixed-code iteration reached full screen, Compare and keyboard
+return but failed memory/unfinished foreground work, so it does not qualify
+acceptance either. Further memory/loading work remains open.
+
+Native RAW Single passes all 18 screen/native pixel comparisons and its memory
+rule. The standard 90-second Library check with ten Single steps completes
+pictures and passes memory, but still fails the existing drawing-gap limit
+(3.942 seconds versus 250 ms). These remaining failures were recorded without
+changing limits or expanding this pause fix. Full-suite results: 755 JavaScript passed; 2,997 Python passed, three skipped; zero failures.
+The first full Python run found one outdated delivery-test substitute that did
+not accept owner/Grade arguments (2,996 passed, three skipped). It now records
+those arguments without weakening the delivery exclusions; its 16 focused
+tests pass. The final Python suite follows that test-only correction.
+Evidence: `codebase/output/quick-library-check/batch3d2-{baseline,exact-photo,grade-return}/report.json`,
+`codebase/output/quick-library-check/batch3d2/report.json` and
+`codebase/output/library-gpu-raw-single/1793682039136/comparison.json`.
+
 
 ## November 3: Grade gesture pause release (Batch 3d)
 
@@ -38,10 +67,11 @@ the page. Tool errors cannot skip it. Save errors still use the existing error
 reporting and durable pending-write retry. No memory, pixel or file-format rule
 changes.
 
-The new `quick-library-check.cjs --grade-return --folder=library-live-grid
+The original `quick-library-check.cjs --grade-return --folder=library-live-grid
 --seconds=15` check injects the release interception used by canvas tools,
 adjusts a reusable RAW, saves, returns to Library, opens full screen, and compares
-with a second photo. It checks the saved exposure, completed save log, balanced
+with a second photo. Batch 3d2 above replaces that artificial release case
+with Steve's UI sequence and the expensive saved grade. It checks the saved exposure, completed save log, balanced
 helper/writer pauses, finished pictures and the unchanged 30-second memory
 settling rule. Exact `9587a8c` Grade source fails (save queued, helper 6/5,
 writer 1/0); fixed source passes, peak 3.097 GB, settled 1.290 GB and no unfinished

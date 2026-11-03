@@ -90,8 +90,8 @@ def test_delivery_does_not_hold_the_blanket_library_pause(monkeypatch):
     from hdr_finisher import main
     pauses=[]
     @contextmanager
-    def busy():
-        pauses.append(True)
+    def busy(owner, *, grade=False):
+        pauses.append((owner, grade))
         yield
     monkeypatch.setattr(main, "library_worker", SimpleNamespace(busy=busy))
     monkeypatch.setattr(main, "desktop_authoring_secret", "")
@@ -110,7 +110,7 @@ def test_delivery_does_not_hold_the_blanket_library_pause(monkeypatch):
         assert client.post("/api/library/grade/photo", json={"action":"save"}).status_code==200
         assert pauses==[]
         assert client.post("/api/session/photo/adjustments").status_code==200
-        assert pauses==[True]
+        assert pauses==[("POST /api/session/photo/adjustments", True)]
 
 
 def _broker(tmp_path, monkeypatch):

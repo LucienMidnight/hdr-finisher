@@ -96,36 +96,44 @@ async function scenario(config) {
       };
       // Keep this folder and its finished cells alive while opening Grade.
       // Switching folders first releases the callbacks and masks the leak.
-      const gradePhoto=HDRLibrary.getSnapshot().paths.find(p=>/\.ARW$/i.test(p));
+      const gradePhoto=(config.gradeReturn&&HDRLibrary.getSnapshot().paths.find(p=>/DSC06615\.ARW$/i.test(p)))||HDRLibrary.getSnapshot().paths.find(p=>/\.ARW$/i.test(p));
       if(!gradePhoto)throw Error('Retention workload needs a full-size RAW copy');
       mark('open Grade');
-      await parent.openDesktopSelection({kind:'source',...await parent.hdrFinisherDesktop.grantSourcePath(gradePhoto),fromLibrary:true});
+      if(config.gradeReturn){
+        const cell=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===gradePhoto);
+        if(!cell)throw Error('Grade RAW is not visible in grid');
+        cell.dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));
+      }else await parent.openDesktopSelection({kind:'source',...await parent.hdrFinisherDesktop.grantSourcePath(gradePhoto),fromLibrary:true});
       await wait(()=>parent.HDRGradeSaving.active(),60000);
       if(config.gradeReturn){
-        mark('adjust Grade with consumed release');
-        const canvas=parent.document.querySelector('canvas');
-        if(!canvas)throw Error('Grade canvas missing');
-        // Reproduce HSL/Retouch's consumed release without changing their tools.
-        parent.document.addEventListener('pointerup',e=>e.stopImmediatePropagation(),{capture:true,once:true});
-        canvas.dispatchEvent(new parent.PointerEvent('pointerdown',{bubbles:true,pointerId:991}));
-        await sleep(1400); // Cover the writer's one-second polling interval.
+        await wait(()=>parent.HDRGradeSaving.ready()&&!parent.document.body.classList.contains('grade-opening'),60000);
+        mark('adjust Grade slider');
         const control=parent.document.getElementById('hdr-exposure');
+        control.dispatchEvent(new parent.PointerEvent('pointerdown',{bubbles:true,pointerId:991}));
         control.value=String(Number(control.value)+.25);
-        const exposure=Number(control.value);
+        let exposure=Number(control.value);
         control.dispatchEvent(new parent.Event('input',{bubbles:true}));
         control.dispatchEvent(new parent.Event('change',{bubbles:true}));
-        canvas.dispatchEvent(new parent.PointerEvent('pointerup',{bubbles:true,pointerId:991}));
+        control.dispatchEvent(new parent.PointerEvent('pointerup',{bubbles:true,pointerId:991}));
         await sleep(1200);
-        mark('save Grade');
-        if(!await parent.HDRGradeSaving.save({waitForDisk:true}))throw Error('Grade save did not finish');
-        const worker=await (await fetch('/api/library-worker/status')).json();
-        if(worker.paused)throw Error('Helper stayed paused after Grade save');
+        mark('type Grade exposure');
+        const output=parent.document.querySelector('[data-value-path="hdr.exposure"]');
+        output.dispatchEvent(new parent.MouseEvent('dblclick',{bubbles:true}));
+        exposure+=.15;output.textContent=String(exposure);
+        output.dispatchEvent(new parent.InputEvent('input',{bubbles:true,inputType:'insertText',data:String(exposure)}));
+        output.dispatchEvent(new parent.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+        await sleep(1600);
         config.gradeReturnResult={path:gradePhoto,exposure};
-        parent.activateWorkflowTab('import');
+        mark('click Library tab');
+        parent.document.querySelector('[data-workflow-tab="import"]').click();
+        await sleep(600);
+        const worker=await (await fetch('/api/library-worker/status')).json();
+        console.log('GRADE_RETURN_HOLDS:'+JSON.stringify(worker.pause_owners));
+        if(worker.paused)throw Error('Helper stayed paused after leaving Grade: '+JSON.stringify(worker.pause_owners));
         const findCell=()=>[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path?.replaceAll('\\','/')===gradePhoto.replaceAll('\\','/'));
         await wait(()=>findCell(),30000);
         const cell=findCell();
-        cell.click();document.getElementById('single-view').click();
+        cell.click();
         mark('Grade photo full screen');
         document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true}));
         await wait(()=>{const c=document.getElementById('single-picture');return visible(c)&&c.dataset.picturePath===gradePhoto&&Number(c.dataset.pictureEdge)===2560;},60000);
@@ -134,10 +142,28 @@ async function scenario(config) {
         document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'[',bubbles:true}));
         mark('Compare after Grade');
         await wait(()=>HDRLibrary.getSnapshot().compare.enabled,10000);
-        if(!HDRLibrary.getSnapshot().zoom)document.getElementById('zoom-button').click();
-        await wait(()=>[...document.querySelectorAll('#library-compare .compare-fit')].filter(c=>visible(c)&&c.dataset.pictureKey&&c.dataset.picturePath).length===2,60000);
+        const alternate=HDRLibrary.getSnapshot().paths.find(p=>/2L1B8631\.CR2$/i.test(p));
+        if(alternate){
+          const filmCell=[...document.querySelectorAll('.library-cell')].find(c=>c.dataset.path===alternate);
+          if(filmCell)filmCell.click();
+          else throw Error('Named Compare alternate is not available in filmstrip');
+        }
+        await wait(()=>{
+          const panes=[...document.querySelectorAll('#library-compare .compare-fit')].filter(c=>visible(c)&&c.dataset.pictureKey&&Number(c.dataset.pictureEdge)>=1280);
+          const paths=panes.map(c=>c.dataset.picturePath);
+          return panes.length===2&&new Set(paths).size===2&&paths.includes(gradePhoto)&&(!alternate||paths.includes(alternate));
+        },60000);
+        const compareWorker=await (await fetch('/api/library-worker/status')).json();
+        if(compareWorker.paused)throw Error('Grade holds returned during Compare: '+JSON.stringify(compareWorker.pause_owners));
         document.getElementById('grid-view').click();
-        await parent.closePhotoInGrade();
+        mark('keyboard return from Grade');
+        parent.document.querySelector('[data-workflow-tab="grade"]').click();
+        parent.document.querySelector('[data-workflow-tab="grade"]').dispatchEvent(new parent.KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true}));
+        await sleep(600);
+        const keyboardWorker=await (await fetch('/api/library-worker/status')).json();
+        if(keyboardWorker.paused)throw Error('Helper stayed paused after keyboard return: '+JSON.stringify(keyboardWorker.pause_owners));
+        parent.document.getElementById('eject-button').click();
+        await wait(()=>parent.document.getElementById('eject-button').disabled,15000);
         await settle('Grade save, full screen and Compare');
       } else {
       parent.activateWorkflowTab('import');
@@ -199,7 +225,7 @@ async function scenario(config) {
     }
     return {opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,redisplay,retention,grade_return:config.gradeReturnResult,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
   } catch(error) {
-    return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,redisplay,retention,events,errors:[...errors,String(error.stack||error)],stage};
+    return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,redisplay,retention,grade_return:config.gradeReturnResult,events,errors:[...errors,String(error.stack||error)],stage};
   } finally {
     stopped=true;clearInterval(timer);clearInterval(gridTimer);observer?.disconnect();window.HDRLibraryStopwatch=inherited;
     window.removeEventListener('error',onError);window.removeEventListener('unhandledrejection',onError);
