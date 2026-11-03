@@ -3919,6 +3919,13 @@
         "launch": {"method": "electron"}
       },
       {
+      "path": "tests/library-temporary-recovery.js",
+      "areas": ["library", "ui"],
+      "tier": "area",
+      "protects": "A real upload timeout and edge-colour output rejection recover without durable errors.",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/library-picture-errors.js",
       "areas": ["library", "ui"],
       "tier": "area",
