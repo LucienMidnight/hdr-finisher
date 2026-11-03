@@ -120,7 +120,7 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     if source is None:
         if xtrans: raw_threads(logical_cpus())
         try:
-            with source_work(priority=15, cancelled=cancelled):
+            with source_work(priority=15, cancelled=cancelled, cpu_only=True):
                 source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
                     raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
                     interpretation_override=SourceInterpretationOverride.model_validate(interpretation),

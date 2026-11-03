@@ -54,3 +54,13 @@ def test_edge_turn_round_trips_planes_and_cancelled_turn_releases_memory(monkeyp
         assert not list(Path(gpu_delivery.os.environ[gpu_delivery.ROOT_ENV]).glob("delivery-*"))
         with pytest.raises(CancelledError):
             highlight_edge_gpu.reconstruct(image, ratio, .5, lambda: True)
+
+
+def test_cpu_source_does_not_reenter_delivery_after_gpu_rejection(monkeypatch):
+    image = np.ones((2, 3, 3), np.float32)
+    monkeypatch.setattr(delivery, "preferences", lambda: (_ for _ in ()).throw(AssertionError("CPU fallback consulted GPU policy")))
+    with highlight_edge_gpu.source_work(priority=15, cpu_only=True):
+        result, diagnostics = highlight_edge_gpu.reconstruct(image, image[..., 0], .5)
+    assert result is None and diagnostics["renderer"] == "cpu"
+    assert highlight_edge_gpu._work.get() == (0, None, False)
+    np.testing.assert_array_equal(image, np.ones_like(image))

@@ -18,12 +18,12 @@ import numpy as np
 from .color import _ACESCG_TO_LINEAR_BT2020, _LINEAR_BT2020_TO_ACESCG
 from .delivery_memory import DeliveryMemory
 
-_work = ContextVar("edge_colour_source_work", default=(0, None))
+_work = ContextVar("edge_colour_source_work", default=(0, None, False))
 
 
 @contextmanager
-def source_work(*, priority, cancelled=None):
-    token = _work.set((priority, cancelled))
+def source_work(*, priority, cancelled=None, cpu_only=False):
+    token = _work.set((priority, cancelled, cpu_only))
     try:
         yield
     finally:
@@ -36,10 +36,10 @@ def reconstruct(image, ratio, expand, cancelled=None):
     directory = None
     memory = DeliveryMemory()
     started = time.perf_counter()
-    priority, source_cancelled = _work.get()
+    priority, source_cancelled, cpu_only = _work.get()
     cancelled = cancelled or source_cancelled
     try:
-        if preferences()["effective_force_cpu"]:
+        if cpu_only or preferences()["effective_force_cpu"]:
             raise RuntimeError("CPU rendering was selected.")
         root = Path(os.environ[delivery.ROOT_ENV]) if os.environ.get(delivery.ROOT_ENV) else None
         if root is None or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 5:
