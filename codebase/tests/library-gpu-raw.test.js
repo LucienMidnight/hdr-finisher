@@ -245,7 +245,7 @@ for (const late of [false, true]) test(`different GPU tiers share one source wit
     },
     root:{HDRLibraryUpload:{
       fetchSource:async()=>{reads++;if(!late){entered();await gate;}return {ok:true,status:200,headers:{get:()=>''},arrayBuffer:async()=>body.buffer.slice(body.byteOffset,body.byteOffset+body.length)};},
-      send:async(_url,{body})=>{const n=new DataView(body).getUint32(0,true);const h=JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,n)));return {ok:true,text:JSON.stringify({edge:h.edge,width:h.width})};}
+      send:async(_url,{body,parts})=>{body=parts?.[0] || body;const n=new DataView(body).getUint32(0,true);const h=JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,n)));return {ok:true,text:JSON.stringify({edge:h.edge,width:h.width})};}
     }}
   };
   vm.runInNewContext(source.slice(source.indexOf('  async function develop(path,'),source.indexOf('  const warmup ='))+';this.request=thumbnail;',context);
@@ -282,7 +282,7 @@ for (const liveScene of [false,true]) test(`native requests develop and hand off
     },
     root:{HDRLibraryUpload:{
       fetchSource:async(_url,{body:request})=>{requests.push(JSON.parse(request));return {ok:true,status:200,headers:{get:()=>''},arrayBuffer:async()=>body.buffer.slice(body.byteOffset,body.byteOffset+body.length)};},
-      send:async(_url,{body})=>{const n=new DataView(body).getUint32(0,true);const h=JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,n)));handoffs.push(h);return {ok:true,text:JSON.stringify({edge:h.edge,width:h.width,height:h.height})};}
+      send:async(_url,{body,parts})=>{body=parts?.[0] || body;const n=new DataView(body).getUint32(0,true);const h=JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,n)));handoffs.push(h);return {ok:true,text:JSON.stringify({edge:h.edge,width:h.width,height:h.height})};}
     }}
   };
   vm.runInNewContext(source.slice(source.indexOf('  async function develop(path,'),source.indexOf('  const warmup ='))+';this.request=thumbnail;',context);

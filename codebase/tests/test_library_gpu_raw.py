@@ -220,3 +220,98 @@ def test_shared_fingerprint_expires_and_separates_identities(tmp_path, monkeypat
     assert len(calls) == 2
     library_source_jobs.shared_fingerprint(None, photo, ["1", "3"], compute)
     assert len(calls) == 3
+
+
+def test_received_frame_fills_one_buffer_and_rejects_incomplete_stream():
+    import asyncio
+    payload = np.arange(24, dtype="<f4").tobytes()
+    framed = gpu_raw.frame({"width": 4}, payload)
+    class Request:
+        headers = {"content-length": str(len(framed))}
+        async def stream(self):
+            for start in range(0, len(framed), 7):
+                yield framed[start:start+7]
+        async def body(self):
+            pytest.fail("Receiving a known-size frame must not join a second body")
+    header, body = asyncio.run(gpu_raw.receive_frame(Request()))
+    assert header == {"width": 4} and bytes(body) == payload
+    assert isinstance(body.obj, bytearray)
+    request = Request(); request.headers = {"content-length": str(len(framed)+1)}
+    with pytest.raises(ValueError, match="incomplete"):
+        asyncio.run(gpu_raw.receive_frame(request))
+
+
+def test_native_retention_refusal_never_reports_ready(tmp_path, monkeypatch):
+    from hdr_finisher import app_memory
+    cache = LibraryPictureCache(tmp_path/'cache')
+    photo = tmp_path/'photo.ARW'; photo.write_bytes(b'original')
+    monkeypatch.setattr(app_memory, 'claim', lambda *args, **kwargs: False)
+    with pytest.raises(ValueError, match="memory"):
+        cache.retain_gpu_native(photo, np.ones((4,6,3), dtype=np.float32), {}, {})
+    assert not cache.gpu_native_ready(photo)
+
+
+def test_native_chunk_owner_admits_before_allocation_and_survives_trim(tmp_path, monkeypatch):
+    from hdr_finisher import app_memory
+    monkeypatch.setattr(app_memory, '_caches', {})
+    monkeypatch.setattr(app_memory, '_sample', (0,None))
+    photo = tmp_path/'photo.ARW'; photo.write_bytes(b'original')
+    cache = LibraryPictureCache(tmp_path/'cache')
+    header = _header(photo,height=8,width=12)
+    header.update(native_mode=True,edge=100000,source_width=12,source_height=8)
+    framed = gpu_raw.frame(header, _payload(8,12,(.1,.2,.3)))
+    with monkeypatch.context() as pressure:
+        pressure.setattr(app_memory, 'claim', lambda *a, **k: False)
+        assert not cache.upload_native('one',0,len(framed),framed[:7])
+        assert cache._native_upload is None
+    assert cache.upload_native('one',0,len(framed),framed[:7])
+    assert app_memory.cache_snapshot()['working']['bytes'] == len(framed)
+    cache.trim_native(0)
+    assert not cache.upload_native('other',0,len(framed),framed[:7])
+    assert cache.upload_native('one',7,len(framed),framed[7:])
+    body = cache.native_upload('one')
+    h,payload = gpu_raw.unframe(body)
+    gpu_raw.developed(cache,str(photo),h,payload)
+    assert np.shares_memory(cache._native_source[1], np.frombuffer(payload,dtype='<f4'))
+    cache.finish_native_upload('one')
+    assert cache.gpu_native_ready(photo)
+    assert app_memory.cache_snapshot()['working']['bytes'] == 8*12*12
+    crop = cache.build_native(photo,.5,.5,6,4)
+    assert crop['renderer'] == 'gpu'
+    cache.trim_native(0)
+    assert not cache.gpu_native_ready(photo)
+    assert app_memory.cache_snapshot()['working']['bytes'] == 0
+    assert cache.upload_native('cancel',0,len(framed),framed[:7])
+    cache.finish_native_upload('cancel')
+    with pytest.raises(ValueError,match='expired'):
+        cache.native_upload('cancel')
+    assert app_memory.cache_snapshot()['working']['bytes'] == 0
+
+
+def test_abandoned_native_upload_releases_owner_without_expiring_replacement(tmp_path, monkeypatch):
+    from hdr_finisher import app_memory
+    monkeypatch.setattr(app_memory, '_caches', {})
+    monkeypatch.setattr(app_memory, '_sample', (0,None))
+    cache = LibraryPictureCache(tmp_path/'cache')
+    assert cache.upload_native('closed',0,16,b'ab')
+    timer = cache._native_upload_timer
+    timer.function(*timer.args)  # Renderer closed without its final DELETE.
+    assert cache._native_upload is None
+    assert app_memory.cache_snapshot()['working']['bytes'] == 0
+    assert cache.upload_native('new',0,16,b'cd')
+    timer.function(*timer.args)
+    assert cache._native_upload[0] == 'new'
+    cache.finish_native_upload('new')
+
+
+def test_live_native_handoff_keeps_received_planes_without_interleaved_copy(tmp_path):
+    photo = tmp_path/'photo.ARW'; photo.write_bytes(b'original')
+    header = _header(photo,height=8,width=12)
+    header.update(edge=100000,source_width=12,source_height=8)
+    payload = _payload(8,12,(.1,.2,.3))
+    class Scene:
+        def build(self, path, edge, quality, decoded):
+            assert np.shares_memory(decoded[0], np.frombuffer(payload,dtype='<f4'))
+            np.testing.assert_allclose(decoded[0][0,0], [.1,.2,.3])
+            return {'width':12,'height':8}
+    assert gpu_raw.developed(Scene(),str(photo),header,payload)['width'] == 12

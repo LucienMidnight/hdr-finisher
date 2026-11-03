@@ -671,7 +671,7 @@ def create_library_router(worker, browser, store=None):
         accepted_at = time.perf_counter()
         from . import library_gpu_raw
         try:
-            header, body = library_gpu_raw.unframe(await request.body())
+            header, body = library_gpu_raw.unframe(cache.native_upload(request.headers["x-library-native-upload"])) if "x-library-native-upload" in request.headers else await library_gpu_raw.receive_frame(request)
             if header.get("source_job"):
                 source_jobs.check(header["source_job"], file_commands.epoch)
             item = header["item_path"]
@@ -1390,6 +1390,8 @@ def create_library_router(worker, browser, store=None):
                     return refused
             if command.native_mode and cache.gpu_native_ready(command.path):
                 return {"native_ready": True}
+            if command.native_mode:
+                cache.trim_native(0)
             cached = None if command.native_mode else await run_in_threadpool(cache.cached, command.path, command.edge, "grade-thumbnail")
             if cached: return cached
             started = time.perf_counter()
@@ -1405,10 +1407,31 @@ def create_library_router(worker, browser, store=None):
         header["edge"] = command.edge
         return Response(library_gpu_raw.frame(header, *payload), media_type="application/octet-stream")
 
+    @router.post("/native-upload/{token}")
+    async def native_upload(token: str, request: Request, offset: int, total: int):
+        if len(token) != 32 or any(c not in "0123456789abcdef" for c in token):
+            raise HTTPException(400, "Invalid detail upload")
+        if int(request.headers.get("content-length",0)) > 4*1024*1024:
+            raise HTTPException(400, "Detail upload piece too large")
+        try:
+            chunk = await request.body()
+            if len(chunk) > 4*1024*1024:
+                raise HTTPException(400, "Detail upload piece too large")
+            if not await run_in_threadpool(cache.upload_native, token, offset, total, chunk):
+                return JSONResponse({"detail": "Waiting for memory"}, status_code=202)
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+        return {"received": True}
+
+    @router.delete("/native-upload/{token}")
+    def release_native_upload(token: str):
+        cache.finish_native_upload(token)
+        return {"released": True}
+
     @router.post("/raw-developed")
     async def raw_developed(request: Request):
         try:
-            header, payload = library_gpu_raw.unframe(await request.body())
+            header, payload = library_gpu_raw.unframe(cache.native_upload(request.headers["x-library-native-upload"])) if "x-library-native-upload" in request.headers else await library_gpu_raw.receive_frame(request)
             path = str(marks.source_path(header["path"]))
             started = time.perf_counter()
             result = await run_in_threadpool(library_gpu_raw.developed, cache, path, header, payload)

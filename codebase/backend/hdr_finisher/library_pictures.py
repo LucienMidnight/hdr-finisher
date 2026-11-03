@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from threading import RLock
+from threading import RLock, Timer
 from time import perf_counter
 
 import numpy as np
@@ -78,6 +78,8 @@ class LibraryPictureCache:
         self.pending_stores = {}
         self._native_lock = RLock()
         self._native_source = None
+        self._native_upload = None
+        self._native_upload_timer = None
         self._native_paused = False
 
     def _handoff_bytes(self):
@@ -296,10 +298,16 @@ class LibraryPictureCache:
                 decode_ms=(perf_counter() - started) * 1000)
             log("picture_look_prepared", path=str(path), key=key, edge=edge, duration_ms=(perf_counter()-look_started)*1000)
             store_started = perf_counter()
-            arrays = {"pixels": np.clip(pixels, 0, 65504).astype(np.float16),
+            def half(values):
+                # Keep the saved values identical without a full float32 clip copy.
+                result = np.empty(values.shape, dtype=np.float16)
+                for row in range(0, values.shape[0], 128):
+                    result[row:row+128] = np.clip(values[row:row+128], 0, 65504).astype(np.float16)
+                return result
+            arrays = {"pixels": half(pixels),
                 "metadata": np.asarray(json.dumps(metadata))}
             if reference is not None:
-                arrays["reference"] = np.clip(reference, 0, 65504).astype(np.float16)
+                arrays["reference"] = half(reference)
             if defer_store:
                 # Publish validated half-float data in the existing bounded RAM
                 # transport. Encoding to disk starts only after the first draw.
@@ -414,13 +422,65 @@ class LibraryPictureCache:
                 self._native_source[0] == picture_key(path, 100000, "native") and
                 self._native_source[3].get("renderer") == "gpu")
 
+    def upload_native(self, token, offset, total, chunk):
+        """Receive bounded pieces into the same admitted owner used by detail."""
+        with self._native_lock:
+            if offset == 0:
+                if total <= 0 or total > app_memory.limit('working'):
+                    raise ValueError("Not enough memory for full-size detail. Wait for memory and try again.")
+                if self._native_upload is not None:
+                    return False
+                self.trim_native(0)
+                if not app_memory.claim(self.native_key,'working',total):
+                    return False
+                try:
+                    self._native_upload = (token, bytearray(total), 0)
+                    # Match the upload worker's existing 45-second deadline.
+                    # A closed renderer cannot send its final DELETE.
+                    self._native_upload_timer = Timer(45, self.finish_native_upload, (token,))
+                    self._native_upload_timer.daemon = True
+                    self._native_upload_timer.start()
+                except BaseException:
+                    self.trim_native(0)
+                    raise
+            upload = self._native_upload
+            if upload is None or upload[0] != token or upload[2] != offset or len(upload[1]) != total or offset+len(chunk)>total:
+                raise ValueError("Full-size detail upload expired; try again.")
+            upload[1][offset:offset+len(chunk)] = chunk
+            self._native_upload = (token, upload[1], offset+len(chunk))
+            return True
+
+    def native_upload(self, token):
+        with self._native_lock:
+            upload = self._native_upload
+            if upload is None or upload[0] != token or upload[2] != len(upload[1]):
+                raise ValueError("Full-size detail upload expired; try again.")
+            return upload[1]
+
+    def finish_native_upload(self, token):
+        with self._native_lock:
+            if self._native_upload is not None and self._native_upload[0] == token:
+                self._native_upload = None
+                if self._native_upload_timer is not None:
+                    self._native_upload_timer.cancel()
+                    self._native_upload_timer = None
+                app_memory.report(self.native_key,'working', self._native_source[1].nbytes if self._native_source else 0)
+
     def retain_gpu_native(self, path, pixels, metadata, grade):
         with self._native_lock:
-            if app_memory.claim(self.native_key,'working',pixels.nbytes):
-                self._native_source = (picture_key(path, 100000, "native"), pixels, None, metadata, grade)
+            # Chunk reception admitted this same owner before allocating it.
+            # Retaining its planes does not reserve the same bytes again.
+            if not app_memory.claim(self.native_key,'working',pixels.nbytes):
+                raise ValueError("Not enough memory for full-size detail. Wait for memory and try again.")
+            self._native_source = (picture_key(path, 100000, "native"), pixels, None, metadata, grade)
 
     def trim_native(self,target):
         with self._native_lock:
+            # An admitted upload owns its buffer until publication or release.
+            # Reclaiming it mid-transfer strands the job on its own memory.
+            if self._native_upload is not None:
+                return
+            self._native_upload=None
             self._native_source=None
             app_memory.claim(self.native_key,'working',0)
 

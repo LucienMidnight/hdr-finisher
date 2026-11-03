@@ -1039,14 +1039,15 @@
     }
     const send = async (entry, describeOnly = false) => {
       const {header,picture}=entry, packedAt=performance.now();
-      const framed=handoffBody(describeOnly ? {...header,describe_only:true} : header,describeOnly ? [] : picture.planes);
-      // The upload worker keeps the multi-megabyte stream off this window's
-      // thread, and a plain buffer body keeps it out of Electron's browser
-      // process. Development has already finished, so a cancelled view cannot
-      // strand the upload.
-      const payload=framed, bytes=framed.byteLength, sentAt=performance.now();
+      // Transfer native planes individually. A full-size contiguous fetch body
+      // makes Chromium duplicate hundreds of MB before the backend sees it.
+      const parts=nativeMode ? [handoffBody(header,[]),...picture.planes] : null;
+      const framed=parts ? null : handoffBody(describeOnly ? {...header,describe_only:true} : header,describeOnly ? [] : picture.planes);
+      // The worker owns transferred buffers. Native uploads use small pieces
+      // so Chromium cannot retain another contiguous full-size request body.
+      const payload=framed, bytes=parts ? parts.reduce((n,p)=>n+p.byteLength,0) : framed.byteLength, sentAt=performance.now();
       const stored=await root.HDRLibraryUpload.send(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed",
-        {body:payload,signal,headers:{"Content-Type":"application/octet-stream"}});
+        {body:payload,parts,signal,headers:{"Content-Type":"application/octet-stream"}});
       root.HDRLibraryStopwatch?.(describeOnly ? "picture_scene_description" : "picture_scene_handoff",{
         path,edge:header.edge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes});
       const result=JSON.parse(stored.text || "{}");

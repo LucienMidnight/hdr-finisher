@@ -974,3 +974,14 @@ The accompanying EXR header gate avoids reserving an unusable decode before
 its existing interpretation requirement is known. Grade coexistence and the
 two requested release checks pass at `b6754a2`.
 The 4 GB ceiling, 4.4 GB elastic maximum and all cache shares are unchanged.
+
+
+### November 3: native RAW upload ownership (Batch 3b)
+
+Full-source RAW planes cross the upload worker without full-body packing.
+The backend admits one receive buffer to its existing native working-cache
+owner before allocation, keeps that owner busy through publication, and
+releases abandoned uploads at the worker's existing deadline. Native crops
+read planar views; live scene saving clips/converts in bands. Retention refusal
+returns the existing memory notice instead of advertising an absent GPU source.
+No ceiling, reserve, cache share, working minimum, VRAM rate or budget changed.

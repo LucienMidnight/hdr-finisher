@@ -6057,3 +6057,18 @@ errors were reported. This does not establish successful 100% native detail.
 Fast-check totals and the full Python invocation's stall are recorded above.
 Evidence: `codebase/output/quick-library-check/batch3/{report,scenario}.json`
 and `codebase/output/batch3/quick.log`. No push or installer build.
+
+
+### November 3, 2026 — Batch 3b: bounded full-size RAW handoff
+
+The stalled native handoff reproduced as a renderer out-of-memory exit before
+Python received the developed body. Packing and network handling retained
+multiple full-size copies. Native uploads now transfer the original planes to
+the upload worker and send bounded pieces into one admitted backend owner.
+That owner survives reclamation until publication or cancellation; a closed
+renderer releases it at the existing upload deadline. A refused retention
+cannot report `native_ready` and silently trigger a second CPU development.
+Native crops retain planar views, and live full-source saving converts to the
+same half-float values in bands rather than making full-frame temporary copies.
+Resolution, pixels, formats, rates, cache shares and all memory rules are unchanged.
+

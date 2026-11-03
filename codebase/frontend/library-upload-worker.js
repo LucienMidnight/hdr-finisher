@@ -2,8 +2,33 @@
 const uploads=new Map();
 self.onmessage=async({data})=>{
   if(data.cancel){uploads.get(data.cancel)?.abort();return;}
-  let {id,url,body,headers,responseType,priority}=data||{};const controller=new AbortController();uploads.set(id,controller);
+  let {id,url,body,parts,headers,responseType,priority}=data||{};const controller=new AbortController();uploads.set(id,controller);
   try{
+    if(parts){
+      const token=crypto.randomUUID().replaceAll('-',''),total=parts.reduce((n,p)=>n+p.byteLength,0);
+      const upload='/api/library/native-upload/'+token;
+      try{
+        let offset=0;
+        for(let i=0;i<parts.length;i++){
+          const view=new Uint8Array(parts[i]);
+          for(let at=0;at<view.length;at+=4*1024*1024){
+            const chunk=view.subarray(at,Math.min(view.length,at+4*1024*1024));
+            let response;
+            do{
+              response=await fetch(upload+'?offset='+offset+'&total='+total,{method:'POST',headers,body:chunk,signal:controller.signal});
+              if(response.status===202)await new Promise(resolve=>setTimeout(resolve,150));
+            }while(response.status===202 && !controller.signal.aborted);
+            if(!response.ok){self.postMessage({id,ok:false,status:response.status,text:await response.text()});return;}
+            offset+=chunk.byteLength;
+          }
+          parts[i]=null;
+        }
+        parts=null;data.parts=null;
+        const response=await fetch(url,{method:'POST',headers:{...headers,'X-Library-Native-Upload':token},signal:controller.signal});
+        self.postMessage({id,ok:response.ok,status:response.status,text:await response.text()});
+      }finally{await fetch(upload,{method:'DELETE'}).catch(()=>{});}
+      return;
+    }
     const request=fetch(url,{method:'POST',headers,body,priority,signal:controller.signal});
     // Fetch owns its request now; the message must not retain another body root.
     body=null;data.body=null;

@@ -10,7 +10,7 @@ window.HDRLibraryUpload = (() => {
     worker=null;current.terminate();
     for(const task of pending.values())task.reject(error);
   }
-  async function send(url,{body,headers={},signal,responseType,priority,timeoutMs=45000}={}){
+  async function send(url,{body,parts,headers={},signal,responseType,priority,timeoutMs=45000}={}){
     if(signal?.aborted)throw cancelled();
     if(!worker){
       const current=new Worker(workerURL);worker=current;
@@ -28,7 +28,7 @@ window.HDRLibraryUpload = (() => {
       const timer=setTimeout(()=>{try{current.postMessage({cancel:id});}catch{}finish(reject,Error('Library upload timed out.'));},timeoutMs);
       pending.set(id,{resolve:value=>finish(resolve,value),reject:error=>finish(reject,error)});
       signal?.addEventListener('abort',stop,{once:true});
-      try{current.postMessage({id,url,body,headers,responseType,priority},body instanceof ArrayBuffer?[body]:[]);}
+      try{current.postMessage({id,url,body,parts,headers,responseType,priority},parts || (body instanceof ArrayBuffer?[body]:[]));}
       catch(error){finish(reject,error);}
     });
   }
