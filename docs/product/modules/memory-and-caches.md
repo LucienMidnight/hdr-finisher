@@ -11,6 +11,12 @@ Sharing, native resolution, cache shares, estimates and all approved sizes remai
 unchanged. Grade's open source remains counted and uses the existing close gate.
 
 
+The stronger whole-app check still fails the unchanged peak rule: Grade import
+reaches 4.870 GB, although Grade return, close, Single exit and Compare exit
+settle below target. Steve kept that separate import peak out of Batch 3c.
+The same-folder scroll checkpoint also has unfinished work at 30 seconds;
+full retention acceptance is still open (see photo-library, November 3).
+
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
 - **Last status check:** October 29, 2026, against the code on

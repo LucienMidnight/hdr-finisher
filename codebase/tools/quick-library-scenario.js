@@ -36,7 +36,7 @@ async function scenario(config) {
   };
   const visible = e => e && !e.hidden && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden' && e.getBoundingClientRect().width > 0;
   const nameOf = p => String(p).replaceAll('\\','/').split('/').pop();
-  let openedAt, single=null, redisplay=null;
+  let openedAt, single=null, redisplay=null, retention=null;
   try {
     mark('memory setting');
     const set=await fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:4e9})});
@@ -88,6 +88,43 @@ async function scenario(config) {
     mark('observe');
     await sleep(Math.max(0,config.seconds*1000-(performance.now()-openedAt)));
     await frame();
+    if(config.retention){
+      retention=[];
+      const settle=async name=>{
+        mark('settle '+name);const at=performance.now();await sleep(30000);
+        retention.push({stage:name,start_epoch_ms:performance.timeOrigin+at,end_epoch_ms:performance.timeOrigin+performance.now(),snapshot:HDRLibraryScenes.snapshot()});
+      };
+      // Keep this folder and its finished cells alive while opening Grade.
+      // Switching folders first releases the callbacks and masks the leak.
+      const gradePhoto=HDRLibrary.getSnapshot().paths.find(p=>/\.ARW$/i.test(p));
+      if(!gradePhoto)throw Error('Retention workload needs a full-size RAW copy');
+      mark('open Grade');
+      await parent.openDesktopSelection({kind:'source',...await parent.hdrFinisherDesktop.grantSourcePath(gradePhoto),fromLibrary:true});
+      await wait(()=>parent.HDRGradeSaving.active(),60000);
+      parent.activateWorkflowTab('import');
+      await settle('return from Grade in same folder');
+      // Returning keeps the open Grade document by design; close through its save gate too.
+      await parent.closePhotoInGrade();await settle('close Grade');
+      mark('cancel and scroll away');
+      const grid=document.getElementById('library-grid');
+      grid.scrollTop=grid.scrollHeight;grid.dispatchEvent(new Event('scroll'));await sleep(1000);
+      await settle('cancel in same folder');
+      await HDRLibrary.browse(config.retentionFolder);
+      await wait(()=>document.querySelector('#grid-space canvas[data-picture-key]'),60000);
+      await settle('scroll away');
+      const cell=document.querySelector('#grid-space .library-cell');cell.click();
+      const photo=HDRLibrary.getSnapshot().selected;
+      document.getElementById('single-view').click();
+      await wait(()=>document.getElementById('single-picture').dataset.picturePath===photo,60000);
+      document.getElementById('zoom-button').click();
+      await wait(()=>!document.getElementById('native-picture').hidden&&!!document.getElementById('native-picture').dataset.picturePath,60000);
+      document.getElementById('grid-view').click();await settle('leave Single');
+      document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'[',bubbles:true}));
+      await wait(()=>HDRLibrary.getSnapshot().compare.enabled,10000);
+      if(!HDRLibrary.getSnapshot().zoom)document.getElementById('zoom-button').click();
+      await wait(()=>HDRLibrary.getSnapshot().compare.sides.every(s=>s.native),60000);
+      document.getElementById('grid-view').click();await settle('leave Compare');
+    }
     if(config.redisplay){
       const grid=document.getElementById('library-grid');
       if(!grid)throw Error('Grid scroller missing');
@@ -120,9 +157,9 @@ async function scenario(config) {
       record.app_trace_starts_after_input_ms=app?Math.round(app.at-app.duration_ms-record.started_ms):null;
       record.app_event_after_presentation_ms=app?Math.round(app.at-record.presented_ms):null;
     }
-    return {opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,redisplay,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
+    return {opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,redisplay,retention,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
   } catch(error) {
-    return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,redisplay,events,errors:[...errors,String(error.stack||error)],stage};
+    return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,redisplay,retention,events,errors:[...errors,String(error.stack||error)],stage};
   } finally {
     stopped=true;clearInterval(timer);clearInterval(gridTimer);observer?.disconnect();window.HDRLibraryStopwatch=inherited;
     window.removeEventListener('error',onError);window.removeEventListener('unhandledrejection',onError);

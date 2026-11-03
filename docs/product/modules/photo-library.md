@@ -17,6 +17,42 @@ source allocations are counted by admission and its existing close/save gate
 releases them. No Grade rule or approved memory number changes.
 
 
+The quick check already sampled the whole process tree and used large fixtures
+(including 42 MP RAWs, a 192 MP panorama and a 297 MP DNG), but did not enforce
+its recorded memory violation or settled result. Its normal grid/Single workload
+also omitted Grade return, same-folder cancellation and 100% Compare exit.
+`--retention --folder=hdr-test --seconds=60` now exercises those transitions in
+plain Electron, retains finished cells while opening Grade, and requires the
+last two seconds of each 30-second settling window below 3.4 GB with no unfinished
+foreground jobs. Peak/reserve violations now fail both quick-check modes. The
+focused mode records cadence separately; the default quick check retains its
+250 ms responsiveness limit. Grade sidecars on reusable copies are restored.
+
+The required native RAW driver passes all 18 screen/native HDR/SDR pixel
+comparisons; peak 4.315 GB and final 1.961 GB satisfy the unchanged memory rule.
+`codebase/output/library-gpu-raw-single/1793668211849/{comparison,memory-summary}.json`.
+
+The default quick check with ten Single steps passes memory (peak 2.978 GB,
+final 1.478 GB), but fails the unchanged responsiveness limit with a 4492 ms
+drawing gap, already open in prior batches. `codebase/output/quick-library-check/batch3c/report.json`.
+
+Final fast checks: 745 JavaScript passed; 2994 Python passed, three skipped;
+zero failures. Source-sharing regression assertions fail on the old code and pass
+on the fix, including handoff failure and final-request cancellation. Logs:
+`codebase/output/quick-library-check/batch3c-{node,pytest,source-before}.log`.
+
+Qualification remains incomplete. Exact pre-fix production source from `2896f3e`
+with the new workload failed at 4.922 GB and unfinished jobs after Grade return,
+close and cancellation. Fixed source (`6f4275e`) finishes Grade-return work and
+settles at 2.710 GB (1.525 GB after closing Grade), 1.860 GB after Single and
+2.352 GB after Compare. It still peaks at 4.870 GB during Grade import, mainly
+3.420 GB in the backend; Steve chose to leave that separate peak out of this
+batch. Same-folder scrolling leaves eight DNG/HEIC foreground jobs unfinished
+at 30 seconds (3.259 GB); this is a failed checkpoint, not a settling pass.
+One HDR-copy ARW also reports invalid GPU pixels. No budget or pixel tolerance
+was relaxed. Reports: `codebase/output/quick-library-check/{batch3c-retention-baseline,batch3c-retention}/report.json`;
+heap ownership summary: `codebase/output/quick-library-check/batch3c-objects/source-retention.json`.
+
 ## November 2: no needless refusals, no window leak, assumed colour
 
 Built on `library-avif-gainmap-gpu` (commits `80decca` to `87bcb28`) after

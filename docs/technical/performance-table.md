@@ -574,3 +574,36 @@ Full Python suite, one invocation on the final Batch 3b code: 463.22 s
 in 409.49-504.96 s as regressions were added; the old 15-minute stall did not
 recur. Final JavaScript suite: 741 passes in 9.89 s. No fast-check timing target
 changed. `codebase/output/batch3b/{pytest-acceptance,node-final}.log`.
+
+### November 3, 2026 — Batch 3c retention ownership and acceptance
+
+Source fix `6f4275e`, isolated 2560x1440 plain Electron, default 4 GB, reusable
+HDR Test Images copy, 60 seconds of grid followed by six 30-second settling
+windows. Whole scenario 267.44 s, harness 275.38 s. First/ten/twenty pictures
+7.6/20.4/49.9 s. This mixed retention workload is not a cadence qualification:
+its longest picture gap is 41.7 s. Exact `2896f3e` production source with the
+same stronger checker takes 263 s and fails at 4.922 GB with unfinished jobs
+after Grade return, close and scrolling. Fixed source clears Grade-return jobs,
+settling at 2.710 GB (close 1.525), Single exit 1.860 and Compare exit 2.352 GB.
+It still fails at a separate Grade-import peak of 4.870 GB and eight unfinished
+foreground jobs 30 s after same-folder scrolling (3.259 GB). Steve kept the
+import peak out of scope; full retention acceptance remains open.
+Evidence: `codebase/output/quick-library-check/{batch3c-retention-baseline,batch3c-retention}/report.json`.
+
+Native RAW source preparation, three 7968 x 5320 reusable ARWs: cold screen
+1.032–1.514 s, screen reuse 12.7–15.8 ms, native development through crop
+3.526–3.926 s. No new timing target or speed claim; limits and resolution
+unchanged. Evidence: `codebase/output/library-gpu-raw-single/1793668211849/result.json`.
+
+The native RAW driver passes all 18 finished-pixel comparisons; prepared neighbour
+13 ms, whole-app peak 4.315 GB, final 1.961 GB, within unchanged acceptance.
+`codebase/output/library-gpu-raw-single/1793668211849/{comparison,memory-summary}.json`.
+
+Default 90-second quick check with ten Single steps, serial after the RAW check:
+98.36 s harness, Single open 1457 ms (first preview 31 ms), ten steps 10–5407 ms,
+median 2116 ms. Peak 2.978 GB, final 1.478 GB, memory passes. Drawing gap 4492 ms
+fails the unchanged 250 ms limit, consistent with the already-open 3b drawing
+pause; no extra timing investigation. `codebase/output/quick-library-check/batch3c/report.json`.
+Full JavaScript suite: 745 passes, zero failures, 9.71 s. Full Python suite, one
+invocation: 2994 passed, three skipped, zero failures, 502.47 s. Fast-check logs:
+`codebase/output/quick-library-check/batch3c-{node,pytest}.log`. No timing target changed.

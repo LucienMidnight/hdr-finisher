@@ -21,6 +21,12 @@ class MemoryMonitor {
   if(!this.violation&&(sample.totalBytes>ceiling*1.1||reserveBreach))
    this.violation={reason:reserveBreach?'system reserve':'ceiling plus 10%',sample,grants:activeGrants,ceilingBytes:ceiling};
  }
+ failures() {
+  const errors=[];
+  if(this.violation)errors.push('Whole-app memory: '+this.violation.reason);
+  if(!this.report().settledUnderTarget)errors.push('Whole-app memory did not settle below ceiling minus 600 MB');
+  return errors;
+ }
  report() { return {peakBytes:this.peakBytes,peakSample:this.peakSample,grantsAtPeak:this.grantsAtPeak,overCeilingBytes:Math.max(0,this.peakBytes-this.ceiling),overCeilingEpisodes:this.episodes,memoryViolation:this.violation,settledUnderTarget:!!this.last&&this.last.totalBytes<=this.ceiling-600_000_000}; }
 }
 module.exports={MemoryMonitor};

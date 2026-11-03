@@ -1,11 +1,13 @@
 // Plain Electron quick check: no Playwright, DevTools or remote debugging port.
 // node tools/quick-library-check.cjs [--seconds=90] [--label=name] [--single] [--redisplay]
+// --retention --folder=hdr-test: focused memory acceptance across cancel/Grade/100% views; cadence is diagnostic.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {execFileSync,spawn}=require('node:child_process');
 const {MemoryMonitor}=require('./library-memory-monitor.cjs');
 const root=path.resolve(__dirname,'..');
 const arg=(name,fallback)=>process.argv.find(x=>x.startsWith(`--${name}=`))?.slice(name.length+3)??fallback;
 const seconds=Number(arg('seconds',90)),label=arg('label','run');
+const retentionMode=process.argv.includes('--retention');
 const singleMode=process.argv.includes('--single'),singleSteps=Number(arg('steps',10)),singlePace=Number(arg('pace',1500));
 // --folder=<name> measures a reusable copy under output/test-photos instead of the locked fixture.
 const folderName=arg('folder',null);
@@ -70,26 +72,34 @@ function analyse(text, openedAt, events, openedPageAt) {
   const profile=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-finisher-test-quick-'));
   const logPath=path.join(profile,'logs/backend.log');
   let app,observer,stage='fixture',done=false;
+  // Grade close writes a sidecar through its normal save gate. Restore copies too.
+  const sidecars=new Map();
   const kill=()=>{
     observer?.kill();
     if(app?.pid){try{execFileSync('taskkill',['/pid',String(app.pid),'/T','/F'],{stdio:'ignore',timeout:5000});}catch{try{app.kill('SIGKILL');}catch{}}}
   };
   const cleanup=()=>{
+    for(const [file,original] of sidecars){if(original)fs.writeFileSync(file,original);else if(fs.existsSync(file))fs.unlinkSync(file);}
     // Native PowerShell avoids Windows' extended-path removal failures.
     const script = '$target=[IO.Path]::GetFullPath($env:HDR_QUICK_PROFILE); $base=[IO.Path]::GetFullPath($env:HDR_QUICK_OUTPUT); if(!$target.StartsWith($base+[IO.Path]::DirectorySeparatorChar) -or !(Split-Path -Leaf $target).StartsWith("hdr-finisher-test-quick-")){throw "Unsafe cleanup target"}; if(Test-Path -LiteralPath $target){Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop}';
     execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{env:{...process.env,HDR_QUICK_PROFILE:profile,HDR_QUICK_OUTPUT:os.tmpdir()},windowsHide:true,stdio:'ignore',timeout:10000});
   };
   const currentStage=()=>{try{return JSON.parse(fs.readFileSync(path.join(profile,'quick-stage.json'),'utf8')).stage;}catch{return stage;}};
   const deadline=setTimeout(()=>{
-    const failure=`Hard timeout (130 s; shutdown bounded to 15 s), stage: ${currentStage()}`;
+    const failure=`Hard timeout (${retentionMode?420:130} s; shutdown bounded to 15 s), stage: ${currentStage()}`;
     console.error(failure);kill();
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({label,error:failure,stage:currentStage(),harness_total_ms:Date.now()-harnessAt},null,1));
     try{cleanup();}catch{}process.exit(1);
-  },130000);
+  },retentionMode?420000:130000);
   const signal=()=>{kill();try{cleanup();}catch{}process.exit(130);};process.once('SIGINT',signal);process.once('SIGTERM',signal);
   try{
+  if(retentionMode)for(const directory of [folder,path.join(root,'output/test-photos/library-live-grid')]){
+    for(const name of fs.readdirSync(directory).filter(n=>/\.ARW$/i.test(n))){
+      const file=path.join(directory,name+'.hdrf');sidecars.set(file,fs.existsSync(file)?fs.readFileSync(file):null);
+    }
+  }
     if(folderName===null)execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-mixed-fixture.py'),'run-copy'],{stdio:'inherit',timeout:30000});
-    const config={folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
+    const config={retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE||'2560x1440').split('x').map(Number);
     fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width,height}));
@@ -135,14 +145,25 @@ function analyse(text, openedAt, events, openedPageAt) {
     try{channels=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-channel-audit.py'),path.join(profile,'Cache')],{timeout:60000}).toString());}
     catch(error){channels={error:String(error.message||error)};}
     if(channels.one_channel_zero?.length||channels.all_channels_zero?.length)errors.push(`Zeroed colour channels in ${channels.one_channel_zero.length+channels.all_channels_zero.length} stored pictures`);
-    const report={label,folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
+    const report={label,acceptance_scope:retentionMode?'whole-app retention (cadence recorded separately)':'Library quick check',folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
       ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,
       independent_memory:{...memory.report(),samples:sampleCount,lastBytes:memory.last?.totalBytes,sampleIntervalMs:{requested:250,median:sampleIntervals[Math.floor(sampleIntervals.length/2)],maximum:sampleIntervals.at(-1)},grants_note:'External process census; no DevTools WebSocket instrumentation.'},observerError,
       picture_timing_clock:'Library performance.now()',stage:result.stage,scenario_ms:result.scenario_ms,harness_total_ms:Date.now()-harnessAt,harness_outside_scenario_ms:Date.now()-harnessAt-result.scenario_ms,cdp_attached:false};
+    if(failures.length&&!retentionMode){console.error(`FREEZE: ${failures.join('; ')} (limit 250 ms)`);process.exitCode=1;}
+    errors.push(...memory.failures());
+    if(result.retention){
+      const samples=fs.readFileSync(memoryPath,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+      report.retention=result.retention.map(check=>{
+        const tail=samples.filter(s=>s.at>=check.end_epoch_ms-2000&&s.at<=check.end_epoch_ms);
+        const unfinished=Object.values(check.snapshot||{}).flatMap(q=>q.jobs||[]).filter(j=>!j.background);
+        const settled=tail.length>=4&&tail.every(s=>s.totalBytes<3.4e9)&&unfinished.length===0;
+        if(!settled)errors.push('Retention did not settle after '+check.stage);
+        return {...check,settled,unfinished,settledBytes:tail.length?Math.max(...tail.map(s=>s.totalBytes)):null,samples:tail.length};
+      });
+    }
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,1));
     console.log(JSON.stringify(report,null,1));
-    if(failures.length){console.error(`FREEZE: ${failures.join('; ')} (limit 250 ms)`);process.exitCode=1;}
-    if(errors.length)process.exitCode=1;
+    if(errors.length){console.error(errors.join('; '));process.exitCode=1;}
   }catch(error){console.error(error);process.exitCode=1;
     fs.writeFileSync(path.join(out,'failure.json'),JSON.stringify({error:String(error.stack||error),stage:currentStage(),done},null,1));
   }finally{

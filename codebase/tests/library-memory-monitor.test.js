@@ -22,3 +22,16 @@ test('reserve remains hard even below planning ceiling',()=>{
 test('being below ceiling is insufficient until below target',()=>{
  const m=new MemoryMonitor(4*GB);m.sample(sample(0,3.5*GB));assert.equal(m.report().settledUnderTarget,false);
 });
+
+test('quick acceptance fails a whole-app peak even after it settles',()=>{
+ const m=new MemoryMonitor(4*GB);
+ m.sample(sample(0,4.5*GB));m.sample(sample(30000,2*GB));
+ assert.deepEqual(m.failures(),['Whole-app memory: ceiling plus 10%']);
+});
+test('quick acceptance requires a settled whole-app total and an intact reserve',()=>{
+ const m=new MemoryMonitor(4*GB);m.sample(sample(0,3.5*GB));
+ assert.equal(m.failures().length,1);
+ m.sample(sample(30000,3.3*GB));assert.deepEqual(m.failures(),[]);
+ m.sample(sample(31000,3*GB,1*GB));
+ assert.deepEqual(m.failures(),['Whole-app memory: system reserve']);
+});
