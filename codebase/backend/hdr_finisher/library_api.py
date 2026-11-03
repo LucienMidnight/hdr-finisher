@@ -166,6 +166,7 @@ class LiveSceneRequest(BaseModel):
     source_job: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     edge: Literal[640, 2560, 100000] = 640
     gpu: bool = True
+    gpu_invalid_pixels: bool = False
     max_storage_bytes: int | None = Field(default=None, gt=0)
     priority: int = Field(default=30, ge=0, le=100)
 
@@ -580,7 +581,7 @@ def create_library_router(worker, browser, store=None):
         try:
             with source_jobs.holding(token, file_commands.epoch):
                 use_gpu = command.gpu and not await run_in_threadpool(xtrans_cpu, path)
-                async with backend_grant(path,"source" if use_gpu else "cpu",command.priority,command.grant,request.is_disconnected,edge=command.edge):
+                async with backend_grant(path,"source" if use_gpu else "edge-cpu" if command.gpu_invalid_pixels else "cpu",command.priority,command.grant,request.is_disconnected,edge=command.edge):
                     if use_gpu:
                         source_foreground(token, True)
                         from . import library_gpu_raw, library_rgb
@@ -625,7 +626,8 @@ def create_library_router(worker, browser, store=None):
                         transfer = True
                         return StreamingResponse(library_gpu_raw.frame_chunks(header, *parts), media_type="application/octet-stream")
                     result = await helper_result(request, "live-scene", path=path, document=document,
-                        edge=command.edge, edges=source_jobs.check(token, file_commands.epoch)["edges"], priority=command.priority, source_token=token, draw_first=command.edge != 100000)
+                        edge=command.edge, edges=source_jobs.check(token, file_commands.epoch)["edges"], priority=command.priority, source_token=token, draw_first=command.edge != 100000,
+                        **({"gpu_invalid_pixels":True} if command.gpu_invalid_pixels else {}))
                     if isinstance(result, Response): return result
                     source_jobs.check(token, file_commands.epoch)
                     publication_epoch = file_commands.epoch

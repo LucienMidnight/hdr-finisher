@@ -100,6 +100,7 @@ AVIF_GAIN_MAP_RATE = 50
 
 def estimate_pixels(suffix, width, height, kind="source", *, gain_map=False):
     suffix = suffix.lower()
+    if kind == "edge-cpu": kind = "cpu"
     if kind == "quick" and suffix in {".jpg", ".jpeg"}:
         return MINIMUM
     if suffix == ".avif" and gain_map and kind != "quick":
@@ -109,6 +110,7 @@ def estimate_pixels(suffix, width, height, kind="source", *, gain_map=False):
 
 
 def estimate_details(path, kind="source", ceiling=None, edge=2560):
+    if kind == "edge-cpu": kind = "cpu"
     ceiling = app_memory.CEILING if ceiling is None else ceiling
     try:
         if Path(path).suffix.lower() == ".avif" and kind != "quick":

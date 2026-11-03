@@ -47,7 +47,7 @@ def temporary_development_failure(details):
     text = str(details).lower()
     return any(word in text for word in ("timeout", "timed out", "took too long", "cancelled", "canceled",
         "aborted", "memory", "busy", "in progress", "changed during", "changed while", "expired",
-        "invalidated", "stall", "yielding", "waiting for", "fetch failed", "failed to fetch", "network"))
+        "invalidated", "helper stopped", "time limit exceeded", "stall", "yielding", "waiting for", "fetch failed", "failed to fetch", "network"))
 
 
 def plain_development_reason(details):

@@ -11,7 +11,7 @@
       current.onopen=()=>{lastMessage=Date.now();if(!visible)send({type:"visibility",visible});for(const j of jobs.values())send({type:"ask",id:j.id,path:j.path,kind:j.kind,edge:j.edge,gpu_bytes:j.gpu_bytes,gpu_unified:j.gpu_unified,priority:j.priority,order:j.front?-1:screenOrder.get(j.path)});heartbeat=interval(()=>{if(Date.now()-lastMessage>15000)current.close();else send({type:"heartbeat"});},5000);};
       current.onmessage=event=>{
         lastMessage=Date.now();const value=JSON.parse(event.data);
-        if(value.type==="grade"){grade=value;for(const job of jobs.values())job.status.grade=value.name;}
+        if(value.type==="grade"){grade=value;for(const job of jobs.values()){job.status.grade=value.name;if(value.name&&job.kind==="edge-cpu")job.connection.abort();}}
         if(value.type==="reclaim"||value.type==="collect"){
           Promise.resolve().then(()=>value.type==="collect"?collect():reclaim(value.bytes)).catch(error=>{console.debug(error);return 0;}).then(released=>send({type:"reclaimed",epoch:value.epoch,released:released||0}));return;
         }

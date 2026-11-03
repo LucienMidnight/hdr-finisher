@@ -663,3 +663,45 @@ Single in 1.462 s; ten steps median 1.968 s, maximum 5.580 s. Drawing gap
 1.521 GB. No repeat or separate performance investigation.
 Evidence: `codebase/output/library-gpu-raw-single/1793682039136/{comparison,memory-summary}.json`
 and `codebase/output/quick-library-check/batch3d2/report.json`.
+
+
+## November 3 — Batch 3f recovery investigation (not accepted)
+
+Native receiving-buffer refusal used to hold the producer and poll until the
+unchanged 45 s timeout; it now releases the attempt before fresh admission.
+Historical failures occurred under memory pressure but contain no chunk-level
+record proving the memory-controller timeout shares the same cause.
+
+Steve's decision, November 3, 2026: CPU edge-colour reconstruction after GPU
+invalid-pixel rejection alone gets 66 s, approximately twice the slower measured
+32.70 s, with a fixed 120 s upper cap. Actual 42 MP ARW reconstruction: 29.47 s;
+48 MP DJI developed pixels with a controlled brightest-one-percent clipping mask:
+32.70 s (the usual DJI opcode route does not run this reconstruction). Full ARW
+decode plus reconstruction measured 36.56 s. Existing helper and decoder deadlines
+outside this reconstruction stage stay unchanged. Work is cancellable and has
+its own background lane; it yields to Grade and foreground memory demand.
+Evidence: `codebase/output/batch3f/cpu-measurements.json`.
+
+The scoped stage completes in the app in 28.2-28.8 s, but ordinary preparation
+outside it still exceeds the unchanged approximately 8.8 s ARW deadline. Final
+buffer-lifetime cleanup and lazy Grade peak scanning still fail acceptance:
+reconstruction completes in 28.22-28.33 s, ordinary preparation times out during
+reduction, and peak app memory reaches 6.91 GB against the unchanged 4 GB ceiling.
+Slow testing stopped after this one additional run, as Steve requested.
+Baseline 2e0d7bf fails both forced faults; fixed save-timeout recovery passes;
+fixed invalid-output CPU recovery has not passed. No other budget was relaxed.
+Evidence: `codebase/output/batch3f/{baseline,fixed}-faults.json`.
+
+
+Batch 3f native RAW acceptance passes all 18 perceptual pixel checks and the
+unchanged memory rule. Cold screen 1.127–1.830 s; reused screen 14.6–15.9 ms;
+native crop/handoff 3.711–4.152 s. Peak 4.303 GB has a 1.501 s bounded episode;
+settled memory 1.971 GB, no memory violation. These are diagnostic ranges,
+not a controlled speed comparison. Evidence:
+`codebase/output/batch3f/raw-{timings,comparison,memory-summary}.json`.
+
+Batch 3f final fast checks: 765 JavaScript tests passed; 3,019 Python tests
+passed, 3 skipped, zero failures. The initial Python run exposed 46 failures
+from widening a shared source-context tuple; a48a803 fixes that common cause.
+The final forced save-timeout check passes; invalid-GPU CPU display fails.
+Evidence: `codebase/output/batch3f/{fixed-faults,final-app-evidence}.json`.

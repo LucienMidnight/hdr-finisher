@@ -1,3 +1,52 @@
+## November 3: Batch 3f — save admission and remaining CPU blocker
+
+Native upload previously polled a refused (202) receiving-buffer admission while
+retaining the producing photo planes and work grant. Admission checks measured
+memory plus the new buffer against the unchanged target; holding the producer
+can prevent that condition from clearing. A refusal now unwinds the preparation,
+including upload ownership, before the bounded fresh retry. The 45-second limit
+is unchanged. A worker regression checks one refusal, one response and release.
+
+Steve's historical save failures occurred above the admission target, with no
+completed native handoff. This supports the admission-pressure explanation, but
+the old log does not record individual refused chunks or a blocked stack. It does
+not prove a shared cause for the memory-controller timeouts. Grade-retained memory
+and controller responsiveness remain for the next batch; no memory budget changed.
+
+Steve's decision, November 3, 2026: only CPU edge-colour reconstruction after
+GPU invalid-pixel rejection gets a measured 66-second allowance, with a fixed
+120-second upper cap. Actual 42 MP DSC00264.ARW reconstruction measured 29.47 s.
+The 48 MP DJI_0071.DNG's usual opcode route skips this stage, so its actual
+48 MP developed pixels were measured with a controlled brightest-one-percent
+clipping mask: 32.70 s. The allowance rounds twice that slower time upward.
+No other helper or decoder deadline changes, including time outside reconstruction.
+Measurements: `codebase/output/batch3f/cpu-measurements.json`.
+
+This work uses a cancellable background lane, taking no ordinary development or
+save place. Opening Grade or losing its view request cancels it; a foreground
+photo needing memory can preempt it. Cancellation and reconstruction timeout
+release the attempt and remain temporary, permitting a later fresh request.
+The CPU route explicitly disables shared GPU reconstruction, which previously
+sent rejected work back to the GPU. Full-size intermediates are freed after
+their last use; Grade-only peak-candidate scanning is lazy for this Library path.
+The image calculations and memory allowances are unchanged.
+
+Real-app fault checks on reused photo copies reproduce both requested failures
+on 2e0d7bf. Fixed save-timeout recovery displays a 640-pixel picture. The scoped
+CPU stage subsequently completes in 28.2-28.8 s, but the invalid-output check
+still FAILS: ordinary preparation outside that stage exceeds the unchanged
+approximately 8.8-second ARW deadline. This batch is not accepted until a real
+CPU picture is displayed. Helper stoppage is temporary and creates no durable
+broken-photo receipt. The final authorised app check also fails after buffer-lifetime cleanup:
+reconstruction takes 28.22-28.33 s, then ordinary preparation reaches reduction
+and times out. Peak measured app memory is 6.91 GB against the unchanged 4 GB
+ceiling. No further slow runs were made, as Steve instructed. The CPU path
+needs bounded-memory Library preparation; extending another deadline would
+not resolve that resource problem. The requested end-to-end recovery remains open.
+
+Unrelated finished-thumbnails `too_long` and settings-conflict UTF-8 errors were
+observed in Steve's log and left unchanged as requested.
+
 ### November 3: Batch 3f — keep current-grade pictures visible
 
 A later preparation error leaves an existing developed thumbnail or scene visible,
@@ -6298,3 +6347,9 @@ failure remains; the older intermittent Python stall is still unexplained.
 Owned temporary app/pytest profiles, duplicate RAWs and disposable exFAT test
 folders were removed. Scratch output starts/ends at 28.6 GB (100 GB limit);
 only referenced evidence and reusable test photos remain. No push or installer.
+
+Batch 3f final fast checks: 765 JavaScript tests passed; 3,019 Python tests
+passed, 3 skipped, zero failures. The initial Python run exposed 46 failures
+from widening a shared source-context tuple; a48a803 fixes that common cause.
+The final forced save-timeout check passes; invalid-GPU CPU display fails.
+Evidence: `codebase/output/batch3f/{fixed-faults,final-app-evidence}.json`.

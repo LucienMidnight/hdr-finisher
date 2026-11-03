@@ -257,6 +257,10 @@ class LibraryWorker:
             log("helper_hold", owner=reason, action=action, acquired=paused, owners=sorted(self._paused))
             if bool(self._paused) != was_paused:
                 log("helper_pause" if self._paused else "helper_resume", reason="Grade/import/export" if reason != "manual" else "manual", owner=reason, owners=sorted(self._paused), action=action)
+            if paused:
+                for key, request in list(self._requests.items()):
+                    if request.get("gpu_invalid_pixels"):
+                        self.cancel(key)
             self._send({"command": "pause", "paused": bool(self._paused)})
 
     def foreground_source(self, key, active):
@@ -349,6 +353,13 @@ class LibraryWorker:
                 request = self._requests.get(key, {})
                 if request.get("command") not in {"thumbnail", "picture", "native", "live-scene", "live-fallback"}:
                     continue
+                if request.get("gpu_invalid_pixels") and work.get("phase") == "cpu_edge_fallback":
+                    from .library_edge_fallback import RECONSTRUCTION_TIMEOUT_SECONDS
+                    work["edge_elapsed"] = work.get("edge_elapsed", 0) + elapsed
+                    if work["edge_elapsed"] > RECONSTRUCTION_TIMEOUT_SECONDS:
+                        self._send({"command":"cancel", "id":key})
+                        self._set_aside(key, "Library CPU edge colour reconstruction timed out. Try again.", timed_out=True)
+                    continue
                 if not self._paused:
                     work["elapsed"] = work.get("elapsed", 0) + elapsed
                 if work.get("elapsed", 0) > self.decoder_timeout(request.get("path")):
@@ -405,7 +416,7 @@ class LibraryWorker:
                             previous = self._work.get(message["id"], {})
                             self._work[message["id"]] = dict(path=message.get("path"), stage=message["stage"],
                                 state=previous.get("state", "running" if message["id"] in self._pending else "stopping"),
-                                elapsed=previous.get("elapsed", 0))
+                                elapsed=previous.get("elapsed", 0), edge_elapsed=previous.get("edge_elapsed", 0), phase=message.get("phase"))
                     continue
                 if message.get("event") == "ready":
                     log("helper_ready", pid=message.get("pid"))
@@ -534,6 +545,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     state = {"paused": paused, "foreground": 0, "checking": 0, "source_busy": False, "developing": 0, "scanning": 0}
 
     def lane(job):
+        if job.get("gpu_invalid_pixels") and job["command"] == "live-scene":
+            return "edge-cpu"
         if job["command"] in {"stored-screen-write", "stored-screen-build"}:
             return "stored"
         if job["command"] in {"picture", "native", "live-scene", "live-fallback"}:
@@ -625,7 +638,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                 log("picture_preparation_stage", edge=job.get("edge"), job=job["id"], path=job.get("path"), stage=stage,
                     previous_stage=last_stage[0], duration_ms=(now-last_stage[1])*1000)
                 last_stage[:] = [stage, now]
-                reply({"event":"work", "id":job["id"], "path":job.get("path"), "stage":text})
+                reply({"event":"work", "id":job["id"], "path":job.get("path"), "stage":text, "phase":stage})
             if job["command"] in {"thumbnail", "picture", "native", "live-scene", "live-fallback"}:
                 progress("reading", "Reading photo")
             check = yielding if kind in {"index", "check", "kept", "stored"} else cancelled.is_set
@@ -651,7 +664,9 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "live-scene":
                     from .library_live import develop_cpu
-                    output = develop_cpu(root, job["path"], job.get("document"), job["edge"], cancelled.is_set, progress=progress, draw_first=job.get("draw_first", False), edges=job.get("edges"))
+                    from .library_edge_fallback import rejected_gpu_pixels
+                    with rejected_gpu_pixels(job.get("gpu_invalid_pixels", False)):
+                        output = develop_cpu(root, job["path"], job.get("document"), job["edge"], cancelled.is_set, progress=progress, draw_first=job.get("draw_first", False), edges=job.get("edges"))
                     result = {"id": job["id"], "result": output}
                 elif job["command"] == "picture":
                     output = pictures.build(job["path"], job["edge"], job["quality"], cancelled.is_set)
@@ -718,6 +733,8 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     # native teams together stay within the machine partition.
     for index in range(lanes):
         Thread(target=decode, args=("picture",), name=f"hdr-library-picture-{index}", daemon=True).start()
+    # A rejected GPU photo never occupies an ordinary development/save lane.
+    Thread(target=decode, args=("edge-cpu",), name="hdr-library-edge-cpu", daemon=True).start()
     # Unvisited pinned folders are indexed on their own lane, so a long
     # background scan never queues ahead of the folder the user just clicked.
     Thread(target=decode, args=("index",), name="hdr-library-index", daemon=True).start()

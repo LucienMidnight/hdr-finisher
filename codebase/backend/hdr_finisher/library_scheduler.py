@@ -191,7 +191,7 @@ class Scheduler:
         """
         limit = CLASSES[cls]
         candidates = [j for j in self.jobs.values()
-                      if j.granted is not None and j.development and CLASSES[j.cls] > limit]
+                      if j.granted is not None and ((j.development and CLASSES[j.cls] > limit) or j.kind == "edge-cpu")]
         if not candidates:
             return
         job = max(candidates, key=lambda j: (CLASSES[j.cls], j.sequence))

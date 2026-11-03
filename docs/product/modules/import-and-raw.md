@@ -6,8 +6,9 @@ admission, including background thumbnails. GPU rejection and CPU completion
 are separate log events; successful CPU development creates no failure receipt.
 The Library CPU source context explicitly disables shared GPU reconstruction,
 so rejecting bad GPU memory cannot send the same work back to another GPU lane.
-The real-photo CPU recovery is still blocked by the existing helper deadline;
-see the Batch 3f photo-library note.
+Steve authorised a measured 66-second allowance only for CPU reconstruction
+after invalid GPU pixels (November 3). Ordinary preparation still exceeds its
+unchanged deadline in the real-photo check; see the Batch 3f photo-library note.
 The range check, threshold, pixel maths, memory allowances and saved formats are
 unchanged. Grade retains its existing CPU fallback.
 

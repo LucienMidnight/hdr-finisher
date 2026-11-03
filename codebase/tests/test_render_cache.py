@@ -1003,3 +1003,23 @@ def test_deferred_mip_disk_io_does_not_block_foreground_memory_hits(tmp_path, mo
         finally:
             release.set()
         flight.result()
+
+
+def test_lazy_peak_candidates_match_eager_results(monkeypatch):
+    from hdr_finisher import peak_candidates
+    original = peak_candidates.source_candidates
+    calls = []
+    def measured(image):
+        calls.append(image.shape)
+        return original(image)
+    monkeypatch.setattr(peak_candidates, "source_candidates", measured)
+    image = np.random.default_rng(7).random((60, 80, 3), dtype=np.float32)
+    lazy = SessionRenderCache(image, None, eager_peak_candidates=False)
+    assert not calls
+    eager = SessionRenderCache(image, None)
+    assert len(calls) == 1
+    expected = eager.peak_candidates(PreviewKind.HDR, AdjustmentState())
+    assert lazy.peak_candidates(PreviewKind.HDR, AdjustmentState()) == expected
+    assert len(calls) == 2
+    assert lazy.peak_candidates(PreviewKind.HDR, AdjustmentState()) == expected
+    assert len(calls) == 2

@@ -194,3 +194,17 @@ test('a preempted turn is handed back instead of re-asked inside the caller slot
  assert.equal(attempts,1);assert.equal(sockets[0].sent.filter(v=>v.type==='ask').length,1);
  assert.equal(sockets[0].sent.at(-1).type,'cancel');assert.equal(grants.snapshot().jobs.length,0);grants.close();
 });
+
+
+test('Grade cancels rejected-GPU CPU work and releases its grant',async()=>{
+ const {grants,sockets}=setup();
+ const work=grants.run('photo.arw','edge-cpu',null,async(id,signal)=>{
+  await new Promise((resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('cancelled','AbortError'))));
+ },80,null,{requeueLane:true});
+ sockets[0].open();const id=sockets[0].sent[0].id;sockets[0].receive({type:'granted',id});await tick();
+ sockets[0].receive({type:'grade',name:'opening'});
+ await assert.rejects(work,{name:'AbortError'});
+ assert.equal(grants.snapshot().jobs.length,0);
+ assert.equal(sockets[0].sent.at(-1).type,'cancel');
+ grants.close();
+});

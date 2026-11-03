@@ -120,12 +120,14 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     if source is None:
         if xtrans: raw_threads(logical_cpus())
         try:
+            from .library_edge_fallback import _active as rejected_gpu_pixels
             with source_work(priority=15, cancelled=cancelled, cpu_only=True):
                 source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
                     raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
                     interpretation_override=SourceInterpretationOverride.model_validate(interpretation),
                     hdr_reference_white_nits=inputs["hdr_reference_white_nits"],
-                    library_edge=5120 if edge <= 2560 and not inputs.get("repairs") else None)
+                    library_edge=5120 if edge <= 2560 and not inputs.get("repairs") else None,
+                    **({"eager_peak_candidates":False} if rejected_gpu_pixels.get() and not inputs.get("repairs") else {}))
         finally:
             if xtrans:
                 raw_threads(native_threads())

@@ -132,6 +132,7 @@ class LoadedSession:
     redo_history: list[HistoryEntry] = field(default_factory=list, repr=False)
     history_bytes: int = 0
     prepared_fingerprint: InitVar[str | None] = None
+    eager_peak_candidates: InitVar[bool] = True
     source_fingerprint_sha256: str = field(init=False)
     source_byte_size: int = field(init=False)
     preview: PreviewSettings = field(default_factory=PreviewSettings)
@@ -139,7 +140,7 @@ class LoadedSession:
     scope_tokens: dict[PreviewKind, int] = field(default_factory=lambda: {PreviewKind.HDR: 0, PreviewKind.SDR: 0})
     render_cache: SessionRenderCache = field(init=False, repr=False)
 
-    def __post_init__(self, prepared_fingerprint: str | None) -> None:
+    def __post_init__(self, prepared_fingerprint: str | None, eager_peak_candidates: bool) -> None:
         self.retouch_original = self.image
         self.color_context = RenderColorContext(self.hdr_reference_white_nits)
         self.hdr_reference_white_nits = self.color_context.hdr_reference_white_nits
@@ -160,6 +161,7 @@ class LoadedSession:
             source_identity=_source_mip_identity(self),
             sdr_identity=_source_mip_identity(self, lane="sdr") if self.sdr_reference_image is not None else None,
             mip_store=default_source_mip_store(),
+            eager_peak_candidates=eager_peak_candidates,
         )
         self.metadata.setdefault("import_timings_ms", {})["render_cache"] = (perf_counter()-session_at)*1000
         session_at = perf_counter()
@@ -272,6 +274,7 @@ class SessionStore:
         cancelled: Callable[[], bool] | None = None,
         hdr_reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS,
         library_edge: int | None = None,
+        eager_peak_candidates: bool = True,
     ) -> LoadedSession:
         try:
             resolved_raw_settings = raw_import_settings or RawImportSettings()
@@ -340,6 +343,7 @@ class SessionStore:
                 session_id=uuid4().hex,
                 source_path=source_path,
                 prepared_fingerprint=prepared_fingerprint,
+                eager_peak_candidates=eager_peak_candidates,
                 image=image,
                 sdr_reference_image=sdr_reference_image,
                 source=source,

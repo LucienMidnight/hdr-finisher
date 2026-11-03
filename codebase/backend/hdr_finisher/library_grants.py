@@ -167,7 +167,7 @@ def add_routes(router, marks):
                         raise ValueError("Invalid grant identifier")
                     path = str(await asyncio.to_thread(marks.source_path, command["path"]))
                     kind = command.get("kind", "source")
-                    if kind not in {"source","cpu","quick","sensor"}:
+                    if kind not in {"source","cpu","edge-cpu","quick","sensor"}:
                         raise ValueError("Invalid Library job")
                     amount, reason = await asyncio.to_thread(estimate_details, path, kind, scheduler.ceiling, int(command.get("edge",2560)))
                     scheduler.ask(id,owner,path,kind,amount,

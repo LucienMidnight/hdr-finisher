@@ -375,7 +375,7 @@ def test_recoverable_renderer_failure_never_blocks_next_open(tmp_path, reason):
     assert api.post("/api/library/live-plan",json={"path":str(path)}).status_code==200
 
 
-@pytest.mark.parametrize("reason", ["Library upload timed out.", "Library grant expired", "Save stalled", "Operation aborted"])
+@pytest.mark.parametrize("reason", ["Library upload timed out.", "Library grant expired", "Save stalled", "Operation aborted", "Library helper stopped after repeated problems.", "Library decoder time limit exceeded"])
 def test_temporary_wording_and_guard_do_not_write_a_receipt(tmp_path, reason):
     import asyncio
     from types import SimpleNamespace

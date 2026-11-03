@@ -122,7 +122,7 @@ window.HDRLibraryScenes = (() => {
   const draws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed});
   const quickDraws = HDRLibrarySceneScheduler.create(1, undefined, {onChange:changed});
   function temporary(error) {
-    return !!error.libraryError?.timeout || /timeout|timed out|took too long|grant expired|preparation expired|cancelled|canceled|aborted|waiting for memory|upload.*expired|network|failed to fetch|fetch failed|stall/i.test(error.message);
+    return !!error.libraryError?.timeout || /timeout|timed out|took too long|grant expired|preparation expired|cancelled|canceled|aborted|waiting for memory|upload.*expired|network|failed to fetch|fetch failed|helper stopped|time limit exceeded|stall/i.test(error.message);
   }
   async function load(path, edge, signal, priority = 10, idle = false, trace = null, options = {}) {
     const generation=generations.get(path)||0;
@@ -181,7 +181,7 @@ window.HDRLibraryScenes = (() => {
     if (!cpuRoute && !rejectedPixels && (importance() >= 50 || (gpuOnly && importance() > 0))) return null;
     const cpu=async (token,owned)=>{for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",priority:"low",signal:owned,
-        headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,priority:importance(),grant:token})});
+        headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,gpu_invalid_pixels:rejectedPixels,priority:importance(),grant:token})});
       if (response.status === 202) { sources.stage(path,"Waiting to develop photo",true); await wait(150, signal); continue; }
       const meta = await response.json();
       if (!response.ok) throw failure(meta);
@@ -190,7 +190,7 @@ window.HDRLibraryScenes = (() => {
     }};
     if(!cpuRoute && HDRLibraryGpuRaw.enabled()){
       HDRLibraryGrants.release(grant);
-      return HDRLibraryGrants.run(path,"cpu",signal,cpu,importance);
+      return HDRLibraryGrants.run(path,rejectedPixels?"edge-cpu":"cpu",signal,cpu,importance,null,{requeueLane:rejectedPixels});
     }
     return cpu(grant,signal);
   }

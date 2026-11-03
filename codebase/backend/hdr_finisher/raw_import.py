@@ -357,6 +357,9 @@ def _apply_raw_corrections(
         image = _camera_rgb_to_acescg_float32(
             camera_linear, decoded.bridge_metadata, cancelled=cancelled
         )
+        # Conversion owns the same buffer until reconstruction returns a new one.
+        # Drop the extra reference so that old full-size pixels can then be freed.
+        del camera_linear
         if edge_colour:
             from .highlight_edge_colour import reconstruct_edge_colour
 
@@ -370,9 +373,11 @@ def _apply_raw_corrections(
             )
             _raise_if_cancelled(cancelled)
             if gpu_image is None:
-                image, edge_diagnostics = reconstruct_edge_colour(
-                    image, clip_ratio, highlights.edge_colour_expand_percent
-                )
+                from .library_edge_fallback import reconstruction
+                with reconstruction(progress, cancelled) as checkpoint:
+                    image, edge_diagnostics = reconstruct_edge_colour(
+                        image, clip_ratio, highlights.edge_colour_expand_percent, cancelled=checkpoint
+                    )
                 edge_diagnostics.update(gpu_diagnostics)
             else:
                 image, edge_diagnostics = gpu_image, gpu_diagnostics

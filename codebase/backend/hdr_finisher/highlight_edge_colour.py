@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from concurrent.futures import CancelledError
 
 from .color import acescg_to_linear_bt2020, linear_bt2020_to_acescg
 
@@ -60,7 +61,7 @@ def _upsample(values: np.ndarray, factor: int, size: int, axis: int) -> np.ndarr
     return np.take(values, lower, axis=axis) * (1.0 - weight) + np.take(values, upper, axis=axis) * weight
 
 
-def blur(values: np.ndarray, sigma: float) -> np.ndarray:
+def blur(values: np.ndarray, sigma: float, cancelled=None) -> np.ndarray:
     """Approximately Gaussian blur of an H×W or H×W×C array (three box passes)."""
     if sigma < 0.5:
         return values.astype(np.float32, copy=False)
@@ -74,6 +75,7 @@ def blur(values: np.ndarray, sigma: float) -> np.ndarray:
     grid_sigma = sigma / factor
     radius = max(1, int(round((np.sqrt(4.0 * grid_sigma * grid_sigma + 1.0) - 1.0) / 2.0)))
     for _ in range(3):
+        if cancelled and cancelled(): raise CancelledError("CPU edge colour cancelled.")
         small = _box(_box(small, radius, 0), radius, 1)
     if factor == 1:
         return small
@@ -81,13 +83,21 @@ def blur(values: np.ndarray, sigma: float) -> np.ndarray:
 
 
 def reconstruct_edge_colour(
-    image: np.ndarray, clip_ratio: np.ndarray, expand_percent: float
+    image: np.ndarray, clip_ratio: np.ndarray, expand_percent: float, *, cancelled=None
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Return the ACEScg picture with clipped areas recoloured from their surroundings.
 
     ``clip_ratio`` is each pixel's brightest camera channel divided by the
     clipping level opposed colour used (1.0 = clipped).
     """
+    def checkpoint():
+        if cancelled and cancelled(): raise CancelledError("CPU edge colour cancelled.")
+    def smooth(values, sigma):
+        checkpoint()
+        result = blur(values, sigma, cancelled)
+        checkpoint()
+        return result
+    checkpoint()
     clipped = _smoothstep(CLIP_SOFT_START, 1.0, clip_ratio.astype(np.float32))
     diagnostics: dict[str, Any] = {
         "algorithm_version": "hdr-finisher-edge-colour-v1",
@@ -106,21 +116,23 @@ def reconstruct_edge_colour(
     luma = np.maximum(transport @ BT2020_LUMA, 0.0)
     total = np.maximum(transport.sum(axis=-1), 1e-12)
     chroma = np.clip(transport, 0.0, None) / total[..., None]
+    del total
     clip_luma = float(np.median(luma[clipped >= 0.5]))
     diagnostics["clip_luminance"] = clip_luma
 
     # Colour sources: unclipped, not hugging the clip line, similarly bright.
-    near_clip = blur(clipped, 2.0)
+    near_clip = smooth(clipped, 2.0)
     source = (1.0 - clipped) * (1.0 - _smoothstep(0.02, 0.2, near_clip)) * _smoothstep(
         0.25, 0.5, luma / max(clip_luma, 1e-12)
     )
+    del near_clip
     # Nearest sources first; coarser scales only where finer ones found none.
     carried = None
     found = None
     sigma = max(2.0, 0.003 * long_edge)
     while sigma < 0.2 * long_edge:
-        weight = blur(source, sigma)
-        colour = blur(chroma * source[..., None], sigma) / np.maximum(weight, 1e-9)[..., None]
+        weight = smooth(source, sigma)
+        colour = smooth(chroma * source[..., None], sigma) / np.maximum(weight, 1e-9)[..., None]
         coverage = _smoothstep(0.0, 0.08, weight)
         if carried is None:
             carried, found = colour, coverage
@@ -128,25 +140,33 @@ def reconstruct_edge_colour(
             take = (1.0 - found)[..., None]
             carried = carried * (1.0 - take) + colour * take
             found = np.maximum(found, coverage)
+            del take
+        del weight, colour, coverage
         sigma *= 3.0
+    del source, found
     carried = carried / np.maximum(carried.sum(axis=-1, keepdims=True), 1e-12)
 
     # Colour: the clipped area softened, feathered outward by Expand.
-    zone = blur(clipped, 2.0)
+    zone = smooth(clipped, 2.0)
     if expand_px >= 0.5:
-        zone = np.maximum(zone, _smoothstep(0.0, 0.5, blur(clipped, expand_px)))
+        zone = np.maximum(zone, _smoothstep(0.0, 0.5, smooth(clipped, expand_px)))
     zone = np.clip(zone, 0.0, 1.0)[..., None]
     new_chroma = chroma + zone * (carried - chroma)
 
+    del chroma, zone, carried
+
     # Brightness: smooth only a band along the clip line, bright with bright.
     edge_sigma = max(3.0, expand_px / 2.0)
-    side = blur(clipped, edge_sigma)
+    side = smooth(clipped, edge_sigma)
     bright = _smoothstep(0.35, 0.7, luma / max(clip_luma, 1e-12))
-    bright_mean = blur(luma * bright, edge_sigma) / np.maximum(blur(bright, edge_sigma), 1e-6)
+    bright_mean = smooth(luma * bright, edge_sigma) / np.maximum(smooth(bright, edge_sigma), 1e-6)
     band = np.clip(4.0 * side * (1.0 - side), 0.0, 1.0) * bright
     luma = luma + band * (bright_mean - luma)
 
+    del clipped, side, bright, bright_mean, band
+    checkpoint()
     rebuilt = new_chroma * (luma / np.maximum(new_chroma @ BT2020_LUMA, 1e-12))[..., None]
     rebuilt = np.where(transport < 0.0, transport, rebuilt)  # out-of-gamut negatives untouched
+    checkpoint()
     diagnostics["applied"] = True
     return np.ascontiguousarray(linear_bt2020_to_acescg(rebuilt.astype(np.float32)), dtype=np.float32), diagnostics

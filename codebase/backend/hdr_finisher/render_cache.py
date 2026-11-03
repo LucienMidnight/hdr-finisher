@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from dataclasses import dataclass, field, replace
+from dataclasses import InitVar, dataclass, field, replace
 import hashlib
 import json
 import logging
@@ -775,12 +775,16 @@ class SessionRenderCache:
     _source_level_states: dict[int, str] = field(default_factory=dict, init=False, repr=False)
     _peak_candidates: dict[str, np.ndarray] = field(default_factory=dict, init=False, repr=False)
 
-    def __post_init__(self) -> None:
+    eager_peak_candidates: InitVar[bool] = True
+
+    def __post_init__(self, eager_peak_candidates: bool) -> None:
         self._hue_stages: OrderedDict = OrderedDict()
         self._ram_lru = OrderedDict()
         self._ram_key = 'grade-session-' + str(id(self))
         app_memory.register(self._ram_key, 'working', self.trim_memory)
-        self._build_peak_candidates()
+        self._peak_candidates = {}
+        if eager_peak_candidates:
+            self._build_peak_candidates()
         self._rebalance_locked()
 
     def _build_peak_candidates(self) -> None:
