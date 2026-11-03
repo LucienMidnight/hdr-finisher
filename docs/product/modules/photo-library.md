@@ -6353,3 +6353,11 @@ passed, 3 skipped, zero failures. The initial Python run exposed 46 failures
 from widening a shared source-context tuple; a48a803 fixes that common cause.
 The final forced save-timeout check passes; invalid-GPU CPU display fails.
 Evidence: `codebase/output/batch3f/{fixed-faults,final-app-evidence}.json`.
+
+### November 3, 2026 - Batch 3g: invalid GPU retry
+
+Library edge-colour output rejection now retries development once from the
+original sensor samples, after destroying the first attempt buffers. The same
+unchanged invalid-pixel scan accepts the retry; a second rejection takes the
+existing edge-CPU allowance. Retry start, clean retry and second rejection are
+logged. Grade still takes its existing CPU fallback immediately; unchanged.

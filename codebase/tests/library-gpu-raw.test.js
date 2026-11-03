@@ -328,14 +328,16 @@ test('invalid-pixel rejection keeps its CPU fallback identity through the GPU sc
  const source=fsRead();
  function fsRead(){return require('node:fs').readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');}
  const fn=source.slice(source.indexOf('  function allocationScope('),source.indexOf('  async function develop(path,'));
- const events=[];
- const context={performance,crypto:require('node:crypto').webcrypto,DOMException,
+ const events=[];let attempts=0;
+ const context={performance,crypto:require('node:crypto').webcrypto,DOMException,wait:async()=>{},
   gpu:async()=>({state:{lost:false}}),rawBudget:()=>60,
   root:{HDRLibraryScenes:{stage(){}},HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},
   fetch:async()=>({ok:true,json:async()=>({granted:true})}),
-  developRaw:async()=>{throw Object.assign(Error('GPU edge colour produced 141 invalid pixels; using the CPU.'),{gpuUnavailable:true,gpuInvalidPixels:true});}};
+  developRaw:async()=>{attempts++;throw Object.assign(Error('GPU edge colour produced 141 invalid pixels; using the CPU.'),{gpuUnavailable:true,gpuInvalidPixels:true});}};
  compileScheduled(context,fn);
  await assert.rejects(context.run({meta:{path:'photo.arw'},edges:[640]},new AbortController().signal),error=>error.gpuUnavailable&&error.gpuInvalidPixels);
  assert.equal(events.filter(e=>e.stage==='picture_development_failed').length,0);
  assert.equal(events.filter(e=>e.stage==='picture_development_gpu_rejected').length,1);
+ assert.equal(attempts,2);
+ assert.equal(events.filter(e=>e.stage==='picture_development_gpu_retry').length,1);
 });

@@ -826,7 +826,7 @@
     try {
       // Finished Library surfaces are disposable, not a reason to abandon GPU development.
       if (background) await root.HDRLibraryScenes?.reclaim(bytes,true);
-      let reclaimed = false, attempts = 0;
+      let reclaimed = false, attempts = 0, invalidAttempts = 0;
       for (;;) {
         const value = await lease(false);
         if(grant && value.fallback)throw Object.assign(Error(value.fallback),{gpuUnavailable:true});
@@ -877,6 +877,7 @@
           const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, signal, context:allocations.context, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy});
           try{await allocations.check();}
           catch(error){for(const picture of Object.values(result.reduced || {}))for(const texture of picture.textures || [])texture.destroy();throw error;}
+          if (invalidAttempts) root.HDRLibraryStopwatch?.("picture_development_gpu_retry_passed", {path:meta.path,attempt:2});
           gpuFailures.delete(key);
           root.HDRLibraryStopwatch?.('picture_development_gpu_done',{path:meta.path,gpu_estimate_bytes:bytes,gpu_peak_bytes:result.memory_peak_bytes,peak_scope:'job-allocated'});
           return result;
@@ -895,7 +896,11 @@
           if (signal?.aborted || error?.name === "AbortError") throw error;
           // Yielding to more urgent work is not a failure either: release the
           // lease and wait for the next turn without spending an attempt.
-          if (error.yieldRaw) {
+          if (error.gpuInvalidPixels && ++invalidAttempts === 1) {
+            // developRaw has fenced and destroyed all attempt-owned buffers.
+            // Rebuild from the original sensor samples with fresh allocations.
+            root.HDRLibraryStopwatch?.("picture_development_gpu_retry", {path:meta.path,attempt:2,reason:error.message});
+          } else if (error.yieldRaw) {
             if(grant)throw Object.assign(error,{libraryRequeue:true});
             attempts--;
             root.HDRLibraryStopwatch?.("picture_development_restart", {path:meta.path,attempt:attempts+1,reason:error.message});
