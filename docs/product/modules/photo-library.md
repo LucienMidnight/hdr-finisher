@@ -1,3 +1,104 @@
+## November 3: development on demand (decided; replaces develop-everything)
+
+**Status:** decided by Steve, November 3, 2026. Not built. Build order is in
+"Batches" below. This changes the Library's development architecture; tuning
+of memory and speed waits until it is built.
+
+### Why
+
+Steve compared Lightroom Classic, darktable and DxO PhotoLab on
+`D:\Photos\HDR Test Images` (recordings in
+`D:\AI\AI Projects\HDR Finisher Tool\ram-compare`). Lightroom and darktable
+never develop an unedited RAW just to browse it: grid, filmstrip and
+fullscreen show the camera's embedded picture. Only edited photos, or photos
+the user asks for (Lightroom's "Embedded Preview" button), get a real RAW
+picture. That is why their browsing feels instant. HDR Finisher develops every
+visible RAW and its neighbours in the background; that work, its memory
+reservations and its queue cause most recent Library failures (black frames,
+20-28 s fullscreen stalls, refused detail saves, the app sitting over its
+memory ceiling).
+
+Measured peaks on the same steps (RAM / graphics memory): darktable
+3.9 / 0.2 GB, HDR Finisher 5.5 / 2.9 GB, DxO 6.8 / 1.3 GB, Lightroom
+5.2 / 5.3 GB.
+
+### Decisions
+
+1. **Unedited RAWs show the camera's embedded picture everywhere**: grid,
+   filmstrip, Single, fullscreen and Compare. No HDR Finisher development is
+   made for them unless rule 3 applies. On an HDR screen it is shown as SDR.
+2. **Edited photos always show HDR Finisher's picture.** "Edited" means the
+   photo has a saved or pending HDR Finisher grade, including a pasted one.
+   Opening a photo in Grade without changing it does not make it edited.
+   Edits made by other apps (for example Lightroom sidecars) are not read;
+   those photos are treated as unedited. The camera picture is never shown
+   for an edited photo.
+3. **HDR Finisher develops a photo only when it is needed or asked for:**
+   - the photo is edited and is on screen (visible cell, Single, fullscreen,
+     Compare) and its stored picture for that view is missing or stale;
+   - the user chooses **Develop** from the right-click menu (one photo or a
+     selection);
+   - the photo has no usable camera picture: none embedded, or one whose long
+     edge is under 1024 pixels (proposed threshold, Steve may adjust), and it
+     is on screen;
+   - the user zooms an unedited photo past what its camera picture can show
+     (true detail, as Lightroom's 1:1);
+   - the photo is a non-RAW HDR file (rule 6) and is on screen.
+4. **No background or ahead development.** No idle warming, no developing
+   neighbours ahead, no startup development of unedited photos. Reading
+   pictures that are already stored (disk or memory) for neighbours is still
+   allowed, because it is cheap. Develop-ahead for edited neighbours can be
+   reconsidered after this is built, with measurements.
+5. **A developed unedited photo keeps its picture.** After Develop, the
+   Library uses HDR Finisher's picture for that photo while it stays in the
+   cache, and shows it as developed. If the cache drops it, the photo falls
+   back to its camera picture until it is developed again. Develop never
+   changes the photo's grade or sidecar (principle 3).
+6. **Only RAW and mezzanine files are shown by default.**
+   - RAW: the existing `rawTypes` list in `library-query.js`, including DNG and
+     linear DNG.
+   - Mezzanine: 16-bit and floating-point TIFF, EXR, PFM and Radiance HDR.
+   - Hidden by default: JPEG, PNG, 8-bit TIFF, HEIC/HEIF, AVIF, JPEG XL, WebP
+     and other export formats.
+   - **Show all files** in the right-click menu shows them. It is a remembered
+     app-wide choice, off by default. When shown, HDR files (gain-map AVIF and
+     JPEG, HDR HEIC and JPEG XL) are prepared as HDR when on screen; plain SDR
+     files are shown from the file itself.
+   - The toolbar **RAW** button (`#raw-only`) is removed; the right-click
+     option replaces it. The Filters panel's "RAW" select-all button stays.
+   - Counts, Needs attention, selection and keyboard navigation follow what is
+     shown.
+7. **Grade hands its picture to the Library.** When an edit settles in Grade
+   (slider released, paste, undo), the Library's thumbnail and screen preview
+   for that photo are made from Grade's displayed picture, not developed
+   again. Library and Grade share one set of thumbnails; moving between them
+   never empties or redevelops the filmstrip or grid.
+8. **Grade keeps its memory while open,** because the Library can be popped
+   out on another display. Sharing memory between Library and Grade (the
+   Library shrinking while hidden, giving memory back when idle) is tuned
+   after this architecture is built.
+
+### What this replaces or amends
+
+| Earlier decision | Now |
+| --- | --- |
+| Camera preview as a quick draw, unedited photos only (October 25) | Replaced: the camera picture is the picture for unedited RAWs, not a quick draw |
+| Fullscreen excludes camera previews | Replaced by decision 1 |
+| Cold-folder culling: every format needs a fast first picture (October 25) | Amended: RAWs use the camera picture; non-RAW exports are hidden by default |
+| Develop once, draw live (October 19) | Still applies to edited and developed photos only |
+| Fullscreen stand-in: the photo's own finished grid picture (October 25) | Still applies to edited and developed photos only |
+| Picture tiers: tier 0 camera preview replaced by the real thumbnail (October 12) | Amended: replacement happens only for edited or developed photos |
+| Toolbar RAW button | Removed; Show all files in the right-click menu |
+
+### Batches
+
+| Batch | Contents | Status |
+| --- | --- | --- |
+| 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Not started |
+| 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Not started |
+| 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, settings-conflict UTF-8 errors. Recheck which still happen first. | Not started |
+| 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Not started |
+
 ## November 3: Batch 3f — save admission and remaining CPU blocker
 
 Native upload previously polled a refused (202) receiving-buffer admission while
@@ -2723,6 +2824,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | **Stored screen previews follow the live HDR ceiling.** When Highlight compression is on, the decoded stored HDR preview never exceeds its target (encoder rounding only; a post-decode clamp is fine). When it is off, the stored preview matches the live screen preview with no extra cap, so a stored preview never looks different from a fresh one. | Steve, 2026-10-26 |
 | **Cold non-RAW sharp-draw target: within 1 s.** About 0.85-0.9 s for never-prepared JPEGs (8b64302) is accepted for now; faster is wanted later. | Steve, 2026-10-26 |
 | **Manual built previews work per photo** (any selection, also offered on folders), protected until discarded. Native 100% previews wait until everything else is fast. Design open; see Prepared-folder fullscreen culling. | Steve, 2026-10-25 |
+| **Development on demand (supersedes develop-everything browsing).** Unedited RAWs show the camera picture everywhere; HDR Finisher develops only edited photos, right-click Develop, photos without a usable camera picture, true-detail zoom and on-screen HDR non-RAW files. No background or ahead development. RAW and mezzanine files only by default; Show all files in the right-click menu replaces the RAW button. Grade hands its picture to the Library. See "November 3: development on demand". | Steve, 2026-11-03 |
 
 **V2 scope decision (Steve, October 21, 2026):** Library Looks (slice 7),
 linked photos (slice 7b) and portable projects (slice 10) are deferred to
