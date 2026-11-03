@@ -607,3 +607,32 @@ pause; no extra timing investigation. `codebase/output/quick-library-check/batch
 Full JavaScript suite: 745 passes, zero failures, 9.71 s. Full Python suite, one
 invocation: 2994 passed, three skipped, zero failures, 502.47 s. Fast-check logs:
 `codebase/output/quick-library-check/batch3c-{node,pytest}.log`. No timing target changed.
+
+
+### November 3, 2026 — Batch 3d Grade pause release
+
+Focused plain-Electron `--grade-return --folder=library-live-grid --seconds=15`,
+2560x1440, isolated profile, reusable ARWs: the exact starting Grade script from
+`9587a8c` leaves the save queued through the existing 10-second disk-save gate;
+helper 6 pauses / 5 resumes, writer 1 / 0. The harness injects a consumed release
+with the same propagation behavior as HSL/Retouch, then edits HDR Exposure.
+Steve's log does not identify his exact gesture. No exception around the pause
+or save appears in backend.log; desktop.log has no exception in that session.
+
+With the capture fix (`6836fd9`, finalized as `841c3bc` with ordinary window blur
+kept separate), all observed pauses resume, three queued saves reach sidecars
+in 0.115–0.132 s, full screen and Compare finish, and the 30-second post-close
+checkpoint has no foreground jobs and settles at 1.290 GB; peak 3.097 GB. This
+qualifies the focused save/return sequence, not the separate large-corpus peak
+or scrolling failures left open in 3c. No timing or memory target changed.
+Evidence: `codebase/output/quick-library-check/{batch3d-before,batch3d-grade-return}/report.json`.
+
+
+Native RAW preparation in this batch: cold screen 1.048–1.572 s; screen reuse
+13.2–14.5 ms; native crop/handoff 4.086–4.389 s across the same three 42 MP ARWs.
+All 18 pixel checks pass. The default mixed 90-second quick check opens Single
+in 3.746 s; ten steps have median 3.157 s and maximum 6.905 s. Drawing gap
+4.019 s still fails the existing 250 ms rule (3c: 4.492 s); no new timing
+investigation or relaxed limit. Memory passes, peak 3.044 GB, final 1.570 GB.
+Evidence: `codebase/output/quick-library-check/batch3d/report.json` and
+`codebase/output/library-gpu-raw-single/1793679786582/comparison.json`.

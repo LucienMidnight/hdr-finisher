@@ -9,7 +9,33 @@ shared-source clearing does not own this pause. Release now runs in window
 capture, including cancellation/lost capture, and when leaving Grade or hiding
 the page. Tool errors cannot skip it. Save errors still use the existing error
 reporting and durable pending-write retry. No memory, pixel or file-format rule
-changes. Qualification results follow with the regression-check commit.
+changes.
+
+The new `quick-library-check.cjs --grade-return --folder=library-live-grid
+--seconds=15` check injects the release interception used by canvas tools,
+adjusts a reusable RAW, saves, returns to Library, opens full screen, and compares
+with a second photo. It checks the saved exposure, completed save log, balanced
+helper/writer pauses, finished pictures and the unchanged 30-second memory
+settling rule. Exact `9587a8c` Grade source fails (save queued, helper 6/5,
+writer 1/0); fixed source passes, peak 3.097 GB, settled 1.290 GB and no unfinished
+foreground work. Steve's exact gesture was not logged; this is a controlled
+reproduction of the same failure, using three RAW copies rather than his whole
+folder. Reports: `codebase/output/quick-library-check/{batch3d-before,batch3d-grade-return}/report.json`.
+
+Native RAW check: all 18 screen/native HDR/SDR comparisons pass; memory passes
+(peak 4.272 GB, settled 1.927 GB). Summary:
+`codebase/output/library-gpu-raw-single/1793679786582/{comparison,memory-summary}.json`.
+Default quick check with ten Single steps passes pictures and memory, but fails
+the already-open responsiveness rule (4019 ms drawing gap); no limit changed.
+`codebase/output/quick-library-check/batch3d/report.json`.
+
+The three finished-thumbnail `too_long` failures are unrelated to the pause.
+Startup-upkeep grant churn is separate load, not a pause owner.
+The 4.85 GB real-session peak is the separate Grade/Library overlap already
+seen in 3c, not the cause of the stuck pause.
+
+Fast validation: 751 JavaScript passed, zero failures; 2994 Python passed, three skipped, zero failures. Logs:
+`codebase/output/quick-library-check/batch3d-{node,pytest}.log`.
 
 
 ### November 3, 2026 — Batch 3c: completed shared sources release

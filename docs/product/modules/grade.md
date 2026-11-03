@@ -9,7 +9,9 @@ shared-source clearing does not own this pause. Release now runs in window
 capture, including cancellation/lost capture, and when leaving Grade or hiding
 the page. Tool errors cannot skip it. Save errors still use the existing error
 reporting and durable pending-write retry. No memory, pixel or file-format rule
-changes. Qualification results follow with the regression-check commit.
+changes. The focused before/after Grade-save, full-screen, Compare and pause
+regression passes after failing on `9587a8c`. Full results and remaining unrelated
+limits are recorded in [Photo Library](photo-library.md#november-3-grade-gesture-pause-release-batch-3d).
 
 
 ## October 31: long file names stay inside the Metadata rail

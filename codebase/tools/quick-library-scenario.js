@@ -101,6 +101,45 @@ async function scenario(config) {
       mark('open Grade');
       await parent.openDesktopSelection({kind:'source',...await parent.hdrFinisherDesktop.grantSourcePath(gradePhoto),fromLibrary:true});
       await wait(()=>parent.HDRGradeSaving.active(),60000);
+      if(config.gradeReturn){
+        mark('adjust Grade with consumed release');
+        const canvas=parent.document.querySelector('canvas');
+        if(!canvas)throw Error('Grade canvas missing');
+        // Reproduce HSL/Retouch's consumed release without changing their tools.
+        parent.document.addEventListener('pointerup',e=>e.stopImmediatePropagation(),{capture:true,once:true});
+        canvas.dispatchEvent(new parent.PointerEvent('pointerdown',{bubbles:true,pointerId:991}));
+        await sleep(1400); // Cover the writer's one-second polling interval.
+        const control=parent.document.getElementById('hdr-exposure');
+        control.value=String(Number(control.value)+.25);
+        const exposure=Number(control.value);
+        control.dispatchEvent(new parent.Event('input',{bubbles:true}));
+        control.dispatchEvent(new parent.Event('change',{bubbles:true}));
+        canvas.dispatchEvent(new parent.PointerEvent('pointerup',{bubbles:true,pointerId:991}));
+        await sleep(1200);
+        mark('save Grade');
+        if(!await parent.HDRGradeSaving.save({waitForDisk:true}))throw Error('Grade save did not finish');
+        const worker=await (await fetch('/api/library-worker/status')).json();
+        if(worker.paused)throw Error('Helper stayed paused after Grade save');
+        config.gradeReturnResult={path:gradePhoto,exposure};
+        parent.activateWorkflowTab('import');
+        const findCell=()=>[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path?.replaceAll('\\','/')===gradePhoto.replaceAll('\\','/'));
+        await wait(()=>findCell(),30000);
+        const cell=findCell();
+        cell.click();document.getElementById('single-view').click();
+        mark('Grade photo full screen');
+        document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true}));
+        await wait(()=>{const c=document.getElementById('single-picture');return visible(c)&&c.dataset.picturePath===gradePhoto&&Number(c.dataset.pictureEdge)===2560;},60000);
+        document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true}));
+        document.getElementById('grid-view').click();
+        document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'[',bubbles:true}));
+        mark('Compare after Grade');
+        await wait(()=>HDRLibrary.getSnapshot().compare.enabled,10000);
+        if(!HDRLibrary.getSnapshot().zoom)document.getElementById('zoom-button').click();
+        await wait(()=>[...document.querySelectorAll('#library-compare .compare-fit')].filter(c=>visible(c)&&c.dataset.pictureKey&&c.dataset.picturePath).length===2,60000);
+        document.getElementById('grid-view').click();
+        await parent.closePhotoInGrade();
+        await settle('Grade save, full screen and Compare');
+      } else {
       parent.activateWorkflowTab('import');
       await settle('return from Grade in same folder');
       // Returning keeps the open Grade document by design; close through its save gate too.
@@ -124,6 +163,7 @@ async function scenario(config) {
       if(!HDRLibrary.getSnapshot().zoom)document.getElementById('zoom-button').click();
       await wait(()=>HDRLibrary.getSnapshot().compare.sides.every(s=>s.native),60000);
       document.getElementById('grid-view').click();await settle('leave Compare');
+      }
     }
     if(config.redisplay){
       const grid=document.getElementById('library-grid');
@@ -157,7 +197,7 @@ async function scenario(config) {
       record.app_trace_starts_after_input_ms=app?Math.round(app.at-app.duration_ms-record.started_ms):null;
       record.app_event_after_presentation_ms=app?Math.round(app.at-record.presented_ms):null;
     }
-    return {opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,redisplay,retention,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
+    return {opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,redisplay,retention,grade_return:config.gradeReturnResult,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
   } catch(error) {
     return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,redisplay,retention,events,errors:[...errors,String(error.stack||error)],stage};
   } finally {

@@ -1,5 +1,6 @@
 // Plain Electron quick check: no Playwright, DevTools or remote debugging port.
 // node tools/quick-library-check.cjs [--seconds=90] [--label=name] [--single] [--redisplay]
+// --grade-return --folder=library-live-grid: consumed Grade release, saved adjustment, fullscreen, Compare, settle.
 // --retention --folder=hdr-test: focused memory acceptance across cancel/Grade/100% views; cadence is diagnostic.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
 const {execFileSync,spawn}=require('node:child_process');
@@ -7,7 +8,8 @@ const {MemoryMonitor}=require('./library-memory-monitor.cjs');
 const root=path.resolve(__dirname,'..');
 const arg=(name,fallback)=>process.argv.find(x=>x.startsWith(`--${name}=`))?.slice(name.length+3)??fallback;
 const seconds=Number(arg('seconds',90)),label=arg('label','run');
-const retentionMode=process.argv.includes('--retention');
+const gradeReturnMode=process.argv.includes('--grade-return');
+const retentionMode=process.argv.includes('--retention')||gradeReturnMode;
 const singleMode=process.argv.includes('--single'),singleSteps=Number(arg('steps',10)),singlePace=Number(arg('pace',1500));
 // --folder=<name> measures a reusable copy under output/test-photos instead of the locked fixture.
 const folderName=arg('folder',null);
@@ -99,7 +101,7 @@ function analyse(text, openedAt, events, openedPageAt) {
     }
   }
     if(folderName===null)execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-mixed-fixture.py'),'run-copy'],{stdio:'inherit',timeout:30000});
-    const config={retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
+    const config={gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE||'2560x1440').split('x').map(Number);
     fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width,height}));
@@ -136,6 +138,19 @@ function analyse(text, openedAt, events, openedPageAt) {
     if(result.error)throw Error(result.error);
     const text=fs.existsSync(logPath)?fs.readFileSync(logPath,'utf8'):'';fs.writeFileSync(path.join(out,'backend.log'),text);
     const freezes=freezeSummary(result.probe),failures=[];
+    if(gradeReturnMode){
+      if(!result.grade_return)result.errors.push('Grade return sequence did not complete');
+      else {
+        const saved=JSON.parse(fs.readFileSync(result.grade_return.path+'.hdrf','utf8'));
+        if(saved.grade?.global_adjustments?.hdr?.exposure!==result.grade_return.exposure)result.errors.push('Adjusted exposure did not reach the sidecar');
+      }
+      for(const lane of ['helper','writer']){
+        const pauses=text.split('\n').filter(l=>l.startsWith('[library] '+lane+'_pause ')).length;
+        const resumes=text.split('\n').filter(l=>l.startsWith('[library] '+lane+'_resume ')).length;
+        if(!pauses||pauses!==resumes)result.errors.push(`${lane}: ${pauses} pauses, ${resumes} resumes`);
+      }
+      if(!text.includes('[library] grade_saved '))result.errors.push('No completed grade save');
+    }
     if(freezes.frame_gaps.longest_ms>250)failures.push(`frame gap ${freezes.frame_gaps.longest_ms} ms`);
     if(freezes.main_thread_blocks.longest_ms>250)failures.push(`main thread block ${freezes.main_thread_blocks.longest_ms} ms`);
     const errors=[...(result.errors||[])];if(!sampleCount||observerError)errors.push('Independent memory observer: '+(observerError||'no samples'));
@@ -146,7 +161,7 @@ function analyse(text, openedAt, events, openedPageAt) {
     catch(error){channels={error:String(error.message||error)};}
     if(channels.one_channel_zero?.length||channels.all_channels_zero?.length)errors.push(`Zeroed colour channels in ${channels.one_channel_zero.length+channels.all_channels_zero.length} stored pictures`);
     const report={label,acceptance_scope:retentionMode?'whole-app retention (cadence recorded separately)':'Library quick check',folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
-      ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,
+      ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,grade_return:result.grade_return,
       independent_memory:{...memory.report(),samples:sampleCount,lastBytes:memory.last?.totalBytes,sampleIntervalMs:{requested:250,median:sampleIntervals[Math.floor(sampleIntervals.length/2)],maximum:sampleIntervals.at(-1)},grants_note:'External process census; no DevTools WebSocket instrumentation.'},observerError,
       picture_timing_clock:'Library performance.now()',stage:result.stage,scenario_ms:result.scenario_ms,harness_total_ms:Date.now()-harnessAt,harness_outside_scenario_ms:Date.now()-harnessAt-result.scenario_ms,cdp_attached:false};
     if(failures.length&&!retentionMode){console.error(`FREEZE: ${failures.join('; ')} (limit 250 ms)`);process.exitCode=1;}
