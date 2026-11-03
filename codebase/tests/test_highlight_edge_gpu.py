@@ -62,5 +62,6 @@ def test_cpu_source_does_not_reenter_delivery_after_gpu_rejection(monkeypatch):
     with highlight_edge_gpu.source_work(priority=15, cpu_only=True):
         result, diagnostics = highlight_edge_gpu.reconstruct(image, image[..., 0], .5)
     assert result is None and diagnostics["renderer"] == "cpu"
-    assert highlight_edge_gpu._work.get() == (0, None, False)
+    assert highlight_edge_gpu._work.get() == (0, None)
+    assert not highlight_edge_gpu._cpu_only.get()
     np.testing.assert_array_equal(image, np.ones_like(image))

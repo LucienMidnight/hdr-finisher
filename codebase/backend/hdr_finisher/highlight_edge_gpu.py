@@ -18,16 +18,19 @@ import numpy as np
 from .color import _ACESCG_TO_LINEAR_BT2020, _LINEAR_BT2020_TO_ACESCG
 from .delivery_memory import DeliveryMemory
 
-_work = ContextVar("edge_colour_source_work", default=(0, None, False))
+_work = ContextVar("edge_colour_source_work", default=(0, None))
+_cpu_only = ContextVar("edge_colour_cpu_only", default=False)
 
 
 @contextmanager
 def source_work(*, priority, cancelled=None, cpu_only=False):
-    token = _work.set((priority, cancelled, cpu_only))
+    token = _work.set((priority, cancelled))
+    cpu_token = _cpu_only.set(cpu_only)
     try:
         yield
     finally:
         _work.reset(token)
+        _cpu_only.reset(cpu_token)
 
 
 def reconstruct(image, ratio, expand, cancelled=None):
@@ -36,10 +39,10 @@ def reconstruct(image, ratio, expand, cancelled=None):
     directory = None
     memory = DeliveryMemory()
     started = time.perf_counter()
-    priority, source_cancelled, cpu_only = _work.get()
+    priority, source_cancelled = _work.get()
     cancelled = cancelled or source_cancelled
     try:
-        if cpu_only or preferences()["effective_force_cpu"]:
+        if _cpu_only.get() or preferences()["effective_force_cpu"]:
             raise RuntimeError("CPU rendering was selected.")
         root = Path(os.environ[delivery.ROOT_ENV]) if os.environ.get(delivery.ROOT_ENV) else None
         if root is None or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 5:
