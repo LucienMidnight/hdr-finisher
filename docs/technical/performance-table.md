@@ -561,3 +561,16 @@ not a proposed new timing target. Bounded handoff/packing and request-scoped nat
 scene sharing replace the previous incomplete five-minute handoff. Final driver
 and whole-app acceptance are recorded in photo-library's Batch 3b entry.
 Evidence: `codebase/output/library-gpu-raw-single/1793665307761/result.json`.
+
+The same native Single interaction steps to its prepared neighbour in 302 ms.
+The plain 90-second mixed-folder quick check completes ten Single steps:
+16-6,875 ms, median 2,289 ms; a 4,781 ms drawing gap fails the existing 250 ms
+limit. This already-open drawing pause is outside Batch 3b. Python fast checks
+were running during these measurements, so no timing regression/speedup claim
+is inferred. `codebase/output/quick-library-check/batch3b/report.json`.
+
+Full Python suite, one invocation on the final Batch 3b code: 463.22 s
+(2,994 passed, three skipped). Earlier diagnostic full invocations completed
+in 409.49-504.96 s as regressions were added; the old 15-minute stall did not
+recur. Final JavaScript suite: 741 passes in 9.89 s. No fast-check timing target
+changed. `codebase/output/batch3b/{pytest-acceptance,node-final}.log`.

@@ -6081,3 +6081,51 @@ resident decoded-scene pool. A regression overlaps two requests, verifies one
 source read, drops both and verifies release and a fresh subsequent read.
 The affected RAW/scene/picture group passes 62 checks. Initial qualification
 before this fix peaked at 4.91 GB; final acceptance is recorded below.
+
+DevTools also copied binary request bodies into debug JSON during this driver.
+Its existing bounded-metadata helper is now enabled for the RAW Single check;
+image requests and comparisons are unchanged. The driver reuses test-photos,
+selects its first RAW explicitly and exercises legacy RAW resident surfaces
+separately from the live-scene Single UI. It measures the whole app independently.
+
+Final RAW Single driver passes: all three full-source 7968 x 5320 ARWs complete,
+Single navigation/100%/fullscreen succeeds, and all 18 original HDR/SDR finished
+screen/native-crop comparisons pass with unchanged tolerances. Whole-app peak
+4.341 GB, over-ceiling episodes 1.76 s and 0.23 s, final idle 1.890 GB; the hard
+system reserve remains untouched. Native preparation/crop takes 3.85-4.08 s,
+prepared-neighbour navigation 302 ms. Evidence:
+`codebase/output/library-gpu-raw-single/1793665307761/{result,comparison,memory-summary}.json`
+and `codebase/output/batch3b/{raw-shared,native-oom-events,native-diagnostic}.log`.
+The intermediate 4.91 GB overrun is retained in `codebase/output/batch3b/native-overrun.json`.
+One intermediate comparison run was invalidated by mistakenly cleaning its active
+temporary profile; it was rerun, not counted as a pixel pass.
+
+The earlier Python hang could not be reproduced. The suspected next test,
+`test_non_raw_decode_keeps_completed_pixels_after_viewer_cancels`, passes alone,
+after the preceding Library modules, and after all 1,944 preceding outcomes
+in both verbose and quiet runs. Two complete invocations pass 2,991/2,993 tests
+with three skips in 409.49/504.96 seconds as native regressions are added.
+No earlier setup or app deadlock has been identified; the old intermittent
+failure remains open, not a diagnosed app or isolation fix. Stack dumps in these
+successful runs show a slow cache-publication test that subsequently completes.
+No source-preparation cancellation/sharing behavior was changed speculatively to hide the hang.
+Evidence: `codebase/output/batch3b/{prefix,prefix-quiet,pytest,pytest-final}.log`.
+
+The plain 90-second quick check completes all ten Single steps, with zero view
+errors and all 14 stored pictures retaining their channels. Independent peak
+3.598 GB, final 1.797 GB, no reserve/ceiling violation. It still fails the
+unchanged 250 ms drawing-gap limit at 4,781 ms. This is the explicitly deferred
+drawing-pause work; it was not investigated or rerun. Evidence:
+`codebase/output/quick-library-check/batch3b/{report,scenario}.json` and
+`codebase/output/batch3b/quick.log`. Node: 741 passed, zero failures (9.89 s).
+The full Python checks were active during the slow checks; action timings are
+conditions for this run, not a CPU/GPU speed or general latency claim.
+
+Final full invocation after the native request-sharing fix: **2,994 passed,
+three skipped, zero failures in 463.22 s (7 min 43 s)**, without stalling.
+`codebase/output/batch3b/pytest-acceptance.log`; final Node output is
+`codebase/output/batch3b/node-final.log`. Only the known drawing-gap slow-check
+failure remains; the older intermittent Python stall is still unexplained.
+Owned temporary app/pytest profiles, duplicate RAWs and disposable exFAT test
+folders were removed. Scratch output starts/ends at 28.6 GB (100 GB limit);
+only referenced evidence and reusable test photos remain. No push or installer.
