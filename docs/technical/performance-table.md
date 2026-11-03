@@ -549,3 +549,15 @@ pass (3.56 GB peak, no breach). One observation, not a controlled comparison;
 no additional timing runs pursued these existing Library responsiveness issues.
 Evidence: `codebase/output/batch3/native-handoff.log` and
 `codebase/output/quick-library-check/batch3/{report,scenario}.json`.
+
+
+### November 3, 2026 — Batch 3b native RAW handoff
+
+Three 7968 x 5320 ARWs, one reusable copy under `output/test-photos/library-live-grid`,
+isolated Electron at 2560x1440, unchanged limits. Native GPU development through
+retained-source crop completes in **3.85–4.08 s**; cold grid/screen preparation
+**1.08–1.81 s**, screen cache reuse **14–21 ms**. These are action timings,
+not a proposed new timing target. Bounded handoff/packing and request-scoped native
+scene sharing replace the previous incomplete five-minute handoff. Final driver
+and whole-app acceptance are recorded in photo-library's Batch 3b entry.
+Evidence: `codebase/output/library-gpu-raw-single/1793665307761/result.json`.

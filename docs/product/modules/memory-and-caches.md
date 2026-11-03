@@ -985,3 +985,7 @@ releases abandoned uploads at the worker's existing deadline. Native crops
 read planar views; live scene saving clips/converts in bands. Retention refusal
 returns the existing memory notice instead of advertising an absent GPU source.
 No ceiling, reserve, cache share, working minimum, VRAM rate or budget changed.
+
+Overlapping native proxy/peak/tile requests also share one weakly held scene
+read while those requests own it. The final request releases its decoded pixels;
+this adds no resident scene cache or allowance.

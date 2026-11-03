@@ -12,6 +12,7 @@ from pathlib import Path
 from time import perf_counter
 from threading import RLock, Condition
 from types import SimpleNamespace
+from weakref import WeakValueDictionary
 
 import numpy as np
 
@@ -263,10 +264,16 @@ def develop_cpu(root, path, document, edge, cancelled=None, progress=None, draw_
                 del _cpu_flights[key]
 
 
+class _NativeFrame(SimpleNamespace):
+    """Weakly shared while drawing requests own the scene."""
+
+
 class LivePictures:
     def __init__(self, root, marks, documents=None):
         self.cache = LibraryPictureCache(root)
         self.root, self.marks, self.documents = root, marks, documents
+        self._native_frames = WeakValueDictionary()
+        self._native_frames_lock = RLock()
 
     def document(self, path):
         raw = self.documents.request(path)["grade"] if self.documents else None
@@ -352,13 +359,23 @@ class LivePictures:
         return body, pixels.shape[1], pixels.shape[0], stride, space
 
     def frame(self, metadata):
-        # No resident decoded scene pool in the backend: each endpoint owns its
-        # arrays for the duration of that request. Finished tiles retain pixels.
+        if metadata["edge"] != 100000:
+            return self._frame(metadata)
+        # Native proxy/peak/tile requests overlap. Share their one source read,
+        # with no resident pool: the last request dropping it frees the pixels.
+        with self._native_frames_lock:
+            frame = self._native_frames.get(metadata["key"])
+            if frame is None:
+                frame = self._frame(metadata)
+                self._native_frames[metadata["key"]] = frame
+            return frame
+
+    def _frame(self, metadata):
         with np.load(self.cache.open(metadata["source_key"]), allow_pickle=False) as stored:
             pixels = stored["pixels"].astype(np.float32)
             reference = stored["reference"].astype(np.float32) if "reference" in stored else None
         context = RenderColorContext(metadata["white"])
-        return SimpleNamespace(session_id=metadata["key"], image=pixels, sdr_reference_image=reference,
+        return _NativeFrame(session_id=metadata["key"], image=pixels, sdr_reference_image=reference,
             source=SimpleNamespace(width=pixels.shape[1], height=pixels.shape[0]),
             adjustments=validate_saved(AdjustmentState, metadata["adjustments"]),
             local_adjustments=[validate_saved(LocalAdjustment, item) for item in metadata["locals"]],

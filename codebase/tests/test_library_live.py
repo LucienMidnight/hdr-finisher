@@ -540,3 +540,34 @@ def test_non_xtrans_gpu_refusal_never_submits_cpu_helper(tmp_path, monkeypatch):
         response = client.post('/api/library/live-scene', json={"path":str(path),"edge":640,"gpu":True})
     assert response.status_code == 204
     assert response.headers["X-Library-Fallback"] == "unsupported source recipe"
+
+
+def test_overlapping_native_requests_share_source_only_while_owned(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    import gc, weakref
+    from hdr_finisher import library_live
+    service = LivePictures(tmp_path/'cache',None)
+    calls = []
+    def read(meta):
+        calls.append(meta['key'])
+        return library_live._NativeFrame(image=np.ones((8,12,3),np.float32))
+    monkeypatch.setattr(service,'_frame',read)
+    meta = {'edge':100000,'key':'native-one'}
+    barrier = Barrier(3)
+    def request():
+        frame = service.frame(meta)
+        barrier.wait(timeout=5)  # Both endpoints retain their source together.
+        return frame
+    with ThreadPoolExecutor(2) as workers:
+        a,b = workers.submit(request),workers.submit(request)
+        barrier.wait(timeout=5)
+        first,second = a.result(),b.result()
+    assert first is second and calls == ['native-one']
+    reference = weakref.ref(first)
+    del first,second,a,b
+    gc.collect()
+    assert reference() is None and not service._native_frames
+    replacement = service.frame(meta)
+    assert calls == ['native-one','native-one']
+    assert service.frame({'edge':100000,'key':'different-grade'}) is not replacement

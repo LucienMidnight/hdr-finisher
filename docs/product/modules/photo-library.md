@@ -6072,3 +6072,12 @@ Native crops retain planar views, and live full-source saving converts to the
 same half-float values in bands rather than making full-frame temporary copies.
 Resolution, pixels, formats, rates, cache shares and all memory rules are unchanged.
 
+
+A separate Single native-drawing overrun remained after handoff: overlapping
+proxy, peak and tile endpoints each expanded the same stored full-source scene.
+These requests now share one weakly held native frame, scoped to that scene's
+grade identity. Their last strong request reference releases it; there is no
+resident decoded-scene pool. A regression overlaps two requests, verifies one
+source read, drops both and verifies release and a fresh subsequent read.
+The affected RAW/scene/picture group passes 62 checks. Initial qualification
+before this fix peaked at 4.91 GB; final acceptance is recorded below.
