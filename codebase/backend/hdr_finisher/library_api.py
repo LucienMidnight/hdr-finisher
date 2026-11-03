@@ -77,6 +77,10 @@ class StopwatchEvent(BaseModel):
     sensor_ms: float | None = None
     quantiles_ms: float | None = None
     handoff_ms: float | None = None
+    grade_identity: str | None = None
+    lanes: list[str] | None = None
+    available_to_picture_ms: float | None = None
+    release_to_picture_ms: float | None = None
     source_ms: dict[str, float | None] | None = Field(default=None, max_length=32)
     gpu_stages_ms: dict[str, float] | None = Field(default=None, max_length=32)
     reason: str | None = Field(default=None, max_length=2048)
@@ -361,7 +365,7 @@ def create_library_router(worker, browser, store=None):
     from .library_live import LivePictures, quality as live_quality, recipe as live_recipe
     live = LivePictures(browser.root, marks, documents if store is not None else None)
     from .library_screen_previews import add_screen_preview_routes
-    add_screen_preview_routes(router, live, worker)
+    add_screen_preview_routes(router, live, worker, store)
     from .library_build_previews import add_build_preview_routes
     add_build_preview_routes(router, live, index, store, worker)
     from .library_picture_errors import PictureErrors

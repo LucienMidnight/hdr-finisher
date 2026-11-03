@@ -6565,7 +6565,7 @@
       return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
     }
 
-    async analyzeScope(canvas, { width = 256, height = 128, generation = 0, tier = "interactive", raw = false, snapshot = false } = {}) {
+    async analyzeScope(canvas, { width = 256, height = 128, generation = 0, tier = "interactive", raw = false, snapshot = false, transient = false } = {}) {
       if (!this.available) return null;
       const source = this.scopeSources.get(canvas);
       if (!source) return null;
@@ -6615,7 +6615,7 @@
       const submittedAt = performance.now();
       return scopeReadback().readAnalysis(this, {
         canvas, source, resource, width, height, generation, tier,
-        startedAt, encodedAt, submittedAt, halfToFloat, raw, snapshot,
+        startedAt, encodedAt, submittedAt, halfToFloat, raw, snapshot, transient,
       });
     }
 

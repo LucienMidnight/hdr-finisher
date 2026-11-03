@@ -16,7 +16,7 @@ window.HDRLibraryFinishedThumbnails = (() => {
     encoder.copyTextureToBuffer({texture},{buffer,bytesPerRow:stride,rowsPerImage:height},[width,height]);
     gpu.device.queue.submit([encoder.finish()]);
     } catch(error){buffer?.destroy();pending--;HDRLibraryScreenPreviews.endCapture();console.debug("Finished thumbnail capture:",error.message);return;}
-    void (async()=>{
+    return (async()=>{
       try {
         await buffer.mapAsync(GPUMapMode.READ);
         if(!current())return;

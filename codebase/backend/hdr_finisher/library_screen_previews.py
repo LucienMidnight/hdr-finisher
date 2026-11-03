@@ -98,7 +98,7 @@ class StoredScreenPreviews:
                 result=result, decode_ms=round((perf_counter()-started)*1000, 2),
                 read_ms=round(read_ms, 2), codec_ms=round(codec_ms, 2), pack_ms=round(pack_ms, 2), picture_size='screen preview')
 
-    def write(self, identity, body, width, height, stride, cancelled=lambda: False, source_width=None, source_height=None, protected=False):
+    def write(self, identity, body, width, height, stride, cancelled=lambda: False, source_width=None, source_height=None, protected=False, grade_picture=False):
         import imagecodecs
         from .color import acescg_to_linear_bt2020
         from .jpegxl import _pq_oetf, _srgb_oetf
@@ -134,6 +134,7 @@ class StoredScreenPreviews:
         filename = identity['key'] + '-' + uuid4().hex + '.jxl'
         file = directory / filename
         with _lock:
+            if cancelled(): return False
             info_path=directory / (identity['slot'] + '.json')
             try: previous=json.loads(info_path.read_text('utf-8'))
             except (FileNotFoundError,ValueError): previous={}
@@ -146,7 +147,7 @@ class StoredScreenPreviews:
             file.write_bytes(encoded)
             atomic_json(directory / (identity['slot'] + '.json'), dict(identity=identity,
                 file=filename, protected=bool(protected), width=width, height=height,
-                source_width=source_width or width, source_height=source_height or height))
+                source_width=source_width or width, source_height=source_height or height, grade_picture=grade_picture))
             if previous.get('file') and previous['file']!=filename and Path(previous['file']).name==previous['file']:
                 (directory / previous['file']).unlink(missing_ok=True)
             self.trim()
@@ -201,7 +202,7 @@ class StoredScreenPreviews:
             total -= size
 
 
-def add_screen_preview_routes(router, live, worker):
+def add_screen_preview_routes(router, live, worker, store=None):
     import asyncio
     from fastapi import HTTPException, Request
     from fastapi.responses import Response
@@ -211,6 +212,9 @@ def add_screen_preview_routes(router, live, worker):
     slots = BoundedSemaphore(2)  # Bounded uploads; no folder-sized RAM queue.
     from .library_finished_thumbnails import add_finished_thumbnail_routes
     add_finished_thumbnail_routes(router, live, slots)
+    if store is not None:
+        from .library_grade_pictures import add_grade_picture_routes
+        add_grade_picture_routes(router, live, store, slots)
     from .library_refresh import add_refresh_route
     add_refresh_route(router, live, cache)
 
@@ -223,9 +227,16 @@ def add_screen_preview_routes(router, live, worker):
     def read(path: str, display_width: int, display_height: int, lane: str):
         current = identity(path, display_width, display_height, lane)
         result = cache.read(current) if cache.cache.preferences()['enabled'] else None
+        if not result and cache.cache.preferences()['enabled']:
+            # Grade's whole frame is display independent. A popped-out Library
+            # on a different monitor uses the same picture, not another finish.
+            handed = identity(path, 2560, 2560, lane)
+            candidate = cache.read(handed)
+            if candidate and candidate[0].get('grade_picture'):
+                current, result = handed, candidate
         if not result: return Response(status_code=204)
         info, body = result
-        if current != identity(path, display_width, display_height, lane):
+        if current != identity(path, current['display_width'], current['display_height'], lane):
             return Response(status_code=204)
         meta = dict(current, width=info['width'], height=info['height'],
             source_width=info['source_width'], source_height=info['source_height'])

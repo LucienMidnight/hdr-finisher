@@ -252,9 +252,15 @@ class LibraryGrades:
             if session.edit_revision == revision:
                 session.dirty = False
             registered = perf_counter()
+            from time import time
+            available_at = time()*1000
             log("grade_save_queued", photo=path, action="grade retained; settings writer notified")
             scheduled = perf_counter()
             result = self.status(session_id)
+            # Pixels may only follow the grade already selected by the Library.
+            # Recovery (autosave off) never receives a publication ticket.
+            result["picture"] = dict(path=path, revision=revision,
+                grade_identity=identity(desired), available_at=available_at)
             ended = perf_counter()
             log("grade_save_timing", photo=path, duration_ms=(ended-started)*1000,
                 lock_wait_ms=((locked-started)+(relocked-preflight))*1000,

@@ -16,7 +16,7 @@ window.HDRLibraryScreenPreviews = (() => {
     HDRLibraryStopwatch('picture_stored_screen_preview_capture',{path:meta.path,picture_size:'screen preview'});
     const params = query(meta.path,hdr);
     if(meta.buildPreview)params.set("protected","true");
-    for (const [key,value] of Object.entries({grade_identity:meta.grade_identity,source_key:meta.source_key,
+    for (const [key,value] of Object.entries({grade_identity:meta.screen_grade_identity || meta.grade_identity,source_key:meta.source_key,
       source_width:meta.source_width,source_height:meta.source_height})) params.set(key,value);
     // Commands are submitted after the current draw; mapping/HTTP/encoding
     // are deliberately not awaited by the draw or its scene lease.
@@ -29,7 +29,7 @@ window.HDRLibraryScreenPreviews = (() => {
         status.stage='accepted';status.http=response.status;
         if (!response.ok || (meta.buildPreview && response.status!==200)) throw Error('Stored screen preview was not saved: '+response.status);
       }).finally(()=>pending--);
-    if(meta.buildPreview)return task;
+    if(meta.buildPreview || meta.handoff)return task;
     void task.catch(error=>{status.stage='failed';status.error=error.message;console.debug('Stored screen preview:',error.message);});
   }
   const shader = `

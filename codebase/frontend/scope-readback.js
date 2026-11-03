@@ -36,6 +36,7 @@
     halfToFloat,
     raw = false,
     snapshot = false,
+    transient = false,
   }) {
     try {
       await resource.readBuffer.mapAsync(GPUMapMode.READ);
@@ -111,6 +112,11 @@
       return null;
     } finally {
       if (resource.readBuffer.mapState === "mapped") resource.readBuffer.unmap();
+      if (transient) {
+        const key = `${width}x${height}`, pool = renderer.scopeResources.get(key);
+        if (pool) { const index = pool.indexOf(resource); if (index >= 0) pool.splice(index, 1); if (!pool.length) renderer.scopeResources.delete(key); }
+        resource.texture.destroy(); resource.readBuffer.destroy(); resource.paramBuffer.destroy();
+      }
       resource.busy = false;
       renderer.activeScopeCount = Math.max(0, renderer.activeScopeCount - 1);
       renderer.flushDeferredDestroy();

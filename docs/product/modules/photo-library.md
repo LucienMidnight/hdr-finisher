@@ -1,6 +1,6 @@
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** Batch 4a built November 3, 2026; Batches 4b-4d remain open. Build order is in
+**Status:** Batch 4a built November 3, 2026; Batch 4b is in progress (November 4 checkpoint); Batches 4c-4d remain open. Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
@@ -95,9 +95,53 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | Batch | Contents | Status |
 | --- | --- | --- |
 | 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Built November 3, 2026 |
-| 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Not started |
+| 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | In progress — local checkpoint November 4; resume notes below |
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Not started |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Not started |
+
+### Batch 4b checkpoint — November 4, paused at Steve's bedtime
+
+Saving policy and the autosave delay are unchanged. Steve clarified that the
+500 ms hand-off target starts when the saved/pending grade becomes available
+to the Library, after the existing autosave wait or manual Save. With autosave
+off the Library continues showing the saved grade. Logs also retain the actual
+slider-release-to-picture interval, including a later manual Save wait.
+
+The current implementation captures Grade's clean, whole-frame output texture
+after presentation, validates the saved identity, stores thumbnails and screen
+previews in the existing allowances, then releases the capture resources. It
+broadcasts to the docked or detached Library, atomically replaces retained
+tiles, and loans Grade's developed source for missing-lane/uncapturable-frame
+finishing. The Sony CPU band decoder is bypassed for a Grade-owned source.
+Older tickets cannot replace newer grades; Export/Proof processing is unchanged.
+
+Latest targeted app check passes: autosave hand-off 391 ms after availability,
+1.375 s after release; manual Save 374 ms after availability, 1.877 s after
+release (including the deliberate 1.5 s unsaved wait). Autosave off kept the
+saved grade. Zero blank tiles, both untouched thumbnails reused, no redraw on
+return, and no fresh import in the source-loan fallback. Earlier runs measured
+415–519 ms; the last optimization removes a redundant settings-status lookup.
+Evidence: `codebase/output/quick-library-check/batch4b/` and
+`codebase/output/batch4b-{app,node,pytest,focused,baseline}.log`.
+
+773 JavaScript checks passed. Full Python: 3,029 passed, three skipped, one
+failure in `test_remembered_failure_does_not_hide_current_grade_cached_scene`;
+the same failure reproduces against untouched parent `6ca7f4a` in the small
+read-only baseline extract. All 37 focused Python checks pass. Output is
+28.62 GB against the unchanged 100 GB limit. No files in `D:\Photos` were used
+or written. No push or installer build.
+
+**Resume before marking built:** the last tile-replacement optimization uses
+`edited:true` from the save ticket. Supply the correct edited/default flag so
+resetting to the default grade preserves the camera-picture policy; do not
+ship that assumption. Recheck source/capture admission failure cleanup and
+review the final diff. The popped-out Library path is wired but has not had a
+real-app acceptance check, nor have zoom/geometry/overlay cases; those need
+focused review. Do not infer broad responsiveness or all-lane timing acceptance
+from this short three-photo HDR check. About six minutes of targeted slow
+checks have been used, below the brief's approximate ten-minute allowance.
+Steve asked to stop here and continue tomorrow; this is a checkpoint, not a
+completed Batch 4b.
 
 ### Batch 4a implementation and checks
 

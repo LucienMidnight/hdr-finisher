@@ -764,7 +764,7 @@ async function renderGpuDraftInner(
           animationFrameAt,
         });
         window.dispatchEvent(new CustomEvent("hdrfinisher:preview-presented", {
-          detail: { serial, sourceSerial: result.sourceSerial, generation, lane, longEdge, submittedAt, presentedAt },
+          detail: { serial, sourceSerial: result.sourceSerial, generation, lane, longEdge, submittedAt, presentedAt, sessionId, tier, coarse:Boolean(request.coarse), wholeFrame:!request.viewport, execution: result.execution },
         }));
         if (maskOverlay) {
           window.dispatchEvent(new CustomEvent("hdrfinisher:mask-presented", {

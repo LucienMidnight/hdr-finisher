@@ -226,7 +226,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
       const lease = meta.route === "library-live" ? await HDRLibraryScenes.lease(meta, signal, native) : null;
       window.HDRLibraryTrace?.mark(meta.trace,"picture_lease_wait",leasing,{...window.HDRLibraryPictureLog?.(meta),key:meta.key});
       if (lease) { clearInterval(gpu.deliveryActivityTimer); gpu.deliveryActivityTimer = null; }
-      let result, refusal;
+      let result, refusal, thumbnailSave;
       const rendering = performance.now();
       gpu.libraryFetchMs = 0; gpu.libraryUploadMs = 0;
       const previousBudget = gpu.deliveryBudgetBytes;
@@ -251,7 +251,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
         sampleCurvePoints, edge, meta.locals || [], 0, null, meta.white,
         { width: meta.width, height: meta.height }, { scopeAnalysis: !native, isCurrent,
           ...(native ? {viewport:meta.viewport,frameSize:{width:meta.width,height:meta.height}} : {}),
-          onPresented:texture=>window.HDRLibraryFinishedThumbnails?.capture(gpu,meta,texture,hdr,isCurrent),
+          onPresented:texture=>{thumbnailSave=window.HDRLibraryFinishedThumbnails?.capture(gpu,meta,texture,hdr,isCurrent);},
           ...(lease ? {beforeDeliverySubmit:lease.check} : {}) });
       if (native && result?.rendered && isCurrent() && !signal.aborted) {
         // Retain only the visible crop after Grade finishes its frame-anchored
@@ -266,8 +266,9 @@ const HDRLibraryPictureFactory = (quick = false) => {
         gpu.device.queue.submit([encoder.finish()]);
       }
       await gpu.waitForSubmittedWork();
+      if(meta.handoff)await thumbnailSave;
       if (result?.rendered || result?.execution === "direct")
-        if(meta.buildPreview)await window.HDRLibraryScreenPreviews.capture(gpu,meta,canvas,hdr);
+        if(meta.buildPreview || meta.handoff)await window.HDRLibraryScreenPreviews.capture(gpu,meta,canvas,hdr);
         else window.HDRLibraryScreenPreviews?.capture(gpu,meta,canvas,hdr);
       window.HDRLibraryTrace?.mark(meta.trace,"picture_render",rendering,{...window.HDRLibraryPictureLog?.(meta),key:meta.key,
         duration_ms:performance.now()-rendering-gpu.libraryFetchMs-gpu.libraryUploadMs});

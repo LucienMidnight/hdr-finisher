@@ -392,6 +392,7 @@ class DesktopRequestBoundary:
         # browsing. Actual Grade loads acquire busy() inside their route.
         library_read = (request.url.path.startswith("/api/session/live-") or
             request.url.path.startswith("/api/library/grade/") or
+            request.url.path.startswith("/api/library/grade-picture") or
             request.url.path == "/api/library/grade-reverts" or
             (request.method == "GET" and request.url.path.startswith("/api/library/grade")))
         if not delivery_request and not library_read and (request.url.path == "/api/session" or request.url.path.startswith("/api/session/") or request.url.path.startswith("/api/library/grade")):

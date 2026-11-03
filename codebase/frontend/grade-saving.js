@@ -21,7 +21,7 @@
     els.sessionName.textContent = currentName || state.session.source.filename;
     const dirty = state.documentDirty;
     const token = `${state.editRevision}:${state.globalEditGeneration}:${dirty}`;
-    if (token !== lastToken) { lastToken = token; lastChange = performance.now(); }
+    if (token !== lastToken) { lastToken = token; lastChange = performance.now(); if (dirty) window.HDRGradeLibraryPictures?.changed(`${state.session?.session_id}:${state.previewGeneration.hdr}:${state.previewGeneration.sdr}:${state.globalEditGeneration}`); }
     byId("grade-save-state").textContent = result.grade_notice ? "Saving paused — grade needs attention" : result.conflict ? "Saving paused — grade changed elsewhere"
       : result.reason ? "Waiting to write settings — grade kept safely in the Library"
       : saving || result.pending ? "Saving…" : dirty ? "Unsaved changes"
@@ -86,6 +86,7 @@
       await flush();
       const savedToken = `${state.editRevision}:${state.globalEditGeneration}`;
       result = await command("save");
+      if (result.picture) window.HDRGradeLibraryPictures?.available(result.picture);
       if(waitForDisk){
         const started=performance.now();
         // Saving is queued durably first; Close also requires the file write.

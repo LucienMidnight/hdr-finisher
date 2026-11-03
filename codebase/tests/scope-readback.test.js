@@ -94,3 +94,14 @@ test("a failed peak mapping returns null and frees the target", async () => {
   assert.equal(target.busy, false);
   assert.equal(readBuffer.unmapped, 0);
 });
+
+test("a hand-off readback releases its GPU copy instead of retaining another scope pool", async () => {
+  const readBuffer=mappedBuffer(new Uint16Array(128));let destroyed=0;
+  readBuffer.destroy=()=>destroyed++;
+  const resource={readBuffer,bytesPerRow:256,busy:true,texture:{destroy:()=>destroyed++},paramBuffer:{destroy:()=>destroyed++}};
+  const renderer={scopeSources:new Map(),scopeResources:new Map([['1x1',[resource]]]),activeScopeCount:1,flushDeferredDestroy(){}};
+  const result=await HDRScopeReadback.readAnalysis(renderer,{canvas:{},source:{},resource,width:1,height:1,
+    raw:'rgba',snapshot:true,transient:true});
+  assert.equal(result.body.byteLength,256);assert.equal(destroyed,3);
+  assert.equal(renderer.scopeResources.size,0);assert.equal(renderer.activeScopeCount,0);
+});

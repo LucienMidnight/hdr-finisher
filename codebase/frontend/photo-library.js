@@ -384,9 +384,20 @@
       void reopen(); return;
     }
     if (!active) {
-      tilePool.clear();
       compare.cancel();
-      clearCells(state.cells); clearCells(state.filmCells); clearPrefetch(); state.single?.abort();
+      // A tab change cancels unfinished work, but finished thumbnails retain
+      // their existing bounded owner and are reused on return.
+      for (const map of [state.cells,state.filmCells]) {
+        for (const cell of map.values()) {
+          cell.element.remove();
+          if (cell.meta && cell.fallback && !cell.controller.signal.aborted && cell.displayEpoch===state.displayEpoch) {
+            overlays?.detach(cell.fallback);
+            tilePool.put(tileKey(map,cell.identity),cell,cell.fallback.width*cell.fallback.height*16);
+          } else cell.controller.abort();
+        }
+        map.clear();
+      }
+      clearPrefetch(); state.single?.abort();
       state.native?.abort(); state.nativeSource?.abort();
     } else if ((state.path || state.collection) && !state.photos.length) void reopen();
     else { paintGrid(); paintFilm(); if (state.view === "single") showSingle(); }
@@ -576,7 +587,8 @@
     if (cell.started) return;
     cell.started = true;
     const started = performance.now();
-    const current = () => state.active && element.isConnected && !cell.controller.signal.aborted;
+    const owner = cell.controller;
+    const current = () => state.active && element.isConnected && cell.controller===owner && !owner.signal.aborted;
     pictureErrors.paint(cell);
     {
       void (async () => {
@@ -1846,6 +1858,118 @@
     } catch (error) { if (!aborted(error)) status(error.message); }
     finally { refreshingCheck = false; }
   }
+  // One metadata ticket per edited photo, no retained hand-off pixel copies.
+  const gradeHandoffs = new Map();
+  window.HDRLibraryGradeHandoffSnapshot=()=>[...gradeHandoffs.values()].map(({queue,controller,...entry})=>entry);
+  const gradePictureChannel = new BroadcastChannel("hdr-library-grade-picture");
+  window.addEventListener("pagehide",()=>gradePictureChannel.close());
+  async function replaceGradeThumbnail(packet) {
+    const entry=gradeHandoffs.get(packet.path);
+    const current=()=>gradeHandoffs.get(packet.path)===entry&&!entry.controller.signal.aborted;
+    const photo=state.allPhotos.find(photo=>photo.path===packet.path);
+    if(!photo||!current())return false;
+    // The saved ticket supplies the intended grade. The finished-thumbnail
+    // batch validates the current indexed grade again before returning pixels,
+    // and load() rejects any response for a different ticket/source identity.
+    const row={...photo,edited:true,grade_identity:packet.grade_identity};
+    const targets=[];
+    for(const map of [state.cells,state.filmCells]) {
+      const key=tileKey(map,pictureIdentity(photo));
+      const cell=map.get(photo.path);
+      // Pool keys are view-specific; take/return below keeps one bounded owner.
+      const pooled=cell?null:tilePool.take(key);
+      const target=cell||pooled;
+      if(target)targets.push({map,key,cell:target,pooled:!!pooled});
+    }
+    try {
+      for(const target of targets) {
+        const canvas=document.createElement("canvas");
+        const meta=await HDRLibraryFinishedThumbnails.load({...photo,...row},canvas,entry.controller.signal,current,state.hdr);
+        if(!meta||!current()){canvas.getContext("webgpu")?.unconfigure();canvas.width=canvas.height=0;return false;}
+        target.canvas=canvas;target.meta=meta;
+      }
+      if(!current())return false;
+      for(const target of targets) {
+        const {cell,canvas,meta}=target;
+        // Abort the previous owner and install its replacement in the same
+        // turn: there is never a frame with an empty tile.
+        overlays?.detach(cell.fallback);
+        cell.controller.abort();cell.fallback?.remove();
+        cell.controller=new AbortController();cell.fallback=canvas;
+        cell.controller.signal.addEventListener("abort",()=>{canvas.getContext("webgpu")?.unconfigure();canvas.width=canvas.height=0;},{once:true});
+        cell.element.querySelector(".picture-frame").append(canvas);
+        cell.canvas.hidden=true;canvas.hidden=false;cell.hasCameraPreview=false;
+        cell.meta=cell.scene=meta;cell.displayEpoch=state.displayEpoch;
+        cell.identity=pictureIdentity({...photo,...row});cell.element.classList.remove("loading");
+        if(target.pooled){cell.poolKey=tileKey(target.map,cell.identity);tilePool.put(cell.poolKey,cell,canvas.width*canvas.height*16);}
+        canvas.dataset.gradeHandoff=packet.id;
+      }
+      Object.assign(photo,{edited:row.edited,grade_identity:row.grade_identity});
+      readyWindow.invalidate(p=>p.path===photo.path);quickWindow.invalidate(p=>p.path===photo.path);
+      HDRLibraryScenes.invalidate([photo.path],{finishingOnly:true});
+      for(const [key] of recentPictures)if(key.startsWith(photo.path+"|"))recentPictures.delete(key);
+      entry.shown_at=Date.now();
+      if(state.active){paintGrid();paintFilm();if(state.view==="single"&&selected()?.path===photo.path){state.singleIdentity="";void showSingle();}}
+      return true;
+    } finally {
+      for(const target of targets) {
+        if(target.canvas&&target.cell.fallback!==target.canvas){target.canvas.getContext("webgpu")?.unconfigure();target.canvas.width=target.canvas.height=0;}
+        if(target.pooled&&!target.cell.controller.signal.aborted&&target.cell.fallback!==target.canvas)tilePool.put(target.key,target.cell,target.cell.fallback.width*target.cell.fallback.height*16);
+      }
+    }
+  }
+  gradePictureChannel.onmessage=event=>{
+    const packet=event.data;
+    if(packet.audience!==(standalone?"standalone":"docked"))return;
+    if(packet.stage==="pending") {
+      gradeHandoffs.get(packet.path)?.controller.abort();
+      gradeHandoffs.delete(packet.path);
+      gradeHandoffs.set(packet.path,{...packet,controller:new AbortController(),queue:Promise.resolve()});
+      while(gradeHandoffs.size>64){const key=gradeHandoffs.keys().next().value;gradeHandoffs.get(key).controller.abort();gradeHandoffs.delete(key);}
+      return;
+    }
+    const entry=gradeHandoffs.get(packet.path);
+    if(!entry||entry.id!==packet.id)return;
+    entry.queue=entry.queue.catch(()=>{}).then(async()=>{
+      const current=()=>gradeHandoffs.get(packet.path)===entry&&!entry.controller.signal.aborted;
+      if(!current())return;
+      entry.stage=packet.stage;
+      if(packet.stage==="picture") {
+        entry.captured_lane=packet.lane;
+        if((state.hdr?"hdr":"sdr")===packet.lane)await replaceGradeThumbnail(packet);
+      } else if(packet.stage==="sources") {
+        const lane=state.hdr?"hdr":"sdr";
+        // Only this edit's missing lanes are finished. This is explicit
+        // hand-off work, never idle, neighbour or ahead development.
+        for(const rendition of [lane,lane==="hdr"?"sdr":"hdr"]) {
+          if(rendition===packet.captured_lane)continue;
+          for(const scene of packet.scenes) {
+            if(!current())return;
+            const canvas=document.createElement("canvas");
+            try {await HDRLibraryPictures.show({...scene,handoff:true,draw_priority:10},canvas,entry.controller.signal,current,rendition==="hdr");}
+            finally {canvas.getContext("webgpu")?.unconfigure();canvas.width=canvas.height=0;}
+            if(scene.edge===640&&rendition===lane)await replaceGradeThumbnail(packet);
+          }
+        }
+        if(!current())return;
+        HDRLibraryStopwatch("grade_picture_handoff",{path:packet.path,request:packet.id,grade_identity:packet.grade_identity,
+          lanes:["hdr","sdr"],route:packet.captured_lane?"Grade picture + finishing redraw":"finishing redraw",reason:packet.reason,
+          available_to_picture_ms:entry.shown_at?entry.shown_at-packet.available_at:null,
+          release_to_picture_ms:entry.shown_at?entry.shown_at-packet.settled_at:null,active:state.active,view:logView()});
+      } else if(packet.stage==="failed") {
+        gradeHandoffs.delete(packet.path);
+        HDRLibraryStopwatch("grade_picture_handoff",{path:packet.path,request:packet.id,grade_identity:packet.grade_identity,
+          route:"finishing redraw",reason:packet.reason,active:state.active});
+      }
+    }).catch(error=>{
+      if(gradeHandoffs.get(packet.path)!==entry||aborted(error))return;
+      gradeHandoffs.delete(packet.path);
+      HDRLibraryStopwatch("grade_picture_handoff",{path:packet.path,request:packet.id,grade_identity:packet.grade_identity,
+        route:entry.captured_lane?"Grade picture + finishing redraw":"finishing redraw",reason:error.message,active:state.active,
+        available_to_picture_ms:entry.shown_at?entry.shown_at-packet.available_at:null,
+        release_to_picture_ms:entry.shown_at?entry.shown_at-packet.settled_at:null});
+    });
+  };
   let writerEvent = 0;
   async function pollSettings() {
     if (state.active && !document.hidden) {
@@ -1868,6 +1992,9 @@
         for (const photo of state.allPhotos) {
           const row = byPath.get(photo.path);
           if (row && (row.grade_identity || "") !== (photo.grade_identity || "")) {
+            // Saved-grade hand-offs replace surfaces atomically. Polling must
+            // not remove their old tiles while capture/storage is in flight.
+            if (gradeHandoffs.get(photo.path)?.grade_identity===row.grade_identity) continue;
             tilePool.discard(cell => cell.photo.path === photo.path);
             Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity });
             for (const map of [state.cells, state.filmCells]) { const cell = map.get(photo.path); if (cell) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); } }

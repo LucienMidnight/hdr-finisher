@@ -98,7 +98,7 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
         return cached
     inputs = recipe(document)
     highlights = inputs["raw_import_settings"].get("highlight_reconstruction", {})
-    if (Path(path).suffix.lower() == ".arw" and edge <= 2560 and not inputs.get("repairs")
+    if (not (prepared and prepared.get("source")) and Path(path).suffix.lower() == ".arw" and edge <= 2560 and not inputs.get("repairs")
             and highlights.get("method", "opposed_color_v1") == "opposed_color_v1"):
         from .library_cpu_bands import develop
         return develop(root, path, document, edge, cancelled, cache, progress, draw_first, prepared)
