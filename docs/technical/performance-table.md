@@ -269,6 +269,9 @@ these were corrected to exercise the intended tiered behavior.
 
 | Action | Target | Measured | Conditions | Status |
 | --- | --- | --- | --- | --- |
+| Unedited RAW camera picture, Single input to presentation | — | 78–599 ms (seven RAWs, includes first open) | Nov 3, Batch 4a implementation `75f1de9` (run before commit, final small fixes covered by fast tests); mixed fixture copy, 90 s `--single`, default RAW/mezzanine filter; `codebase/output/quick-library-check/batch4a/report.json` | Baseline; no development for those camera-picture files |
+| Required development, Single input to presentation | — | Edited ARWs 1.768–1.899 s; two DNGs without usable camera pictures 11.278–11.409 s | Same run; no ahead development | Baseline; required cold development still takes seconds |
+| Batch 4a window responsiveness | No frame/timer interval >250 ms | Frame gap 4438 ms; timer block 62 ms; external peak 3.773 GB, settled 1.526 GB | Same run, 31 eligible files, ten Single steps; memory ceiling/target unchanged | Not met for frame gap; retained for Batch 4c |
 | Stored screen preview: first / next SDR / HDR draw | about 100 ms | 226 / 115 / 162 ms | Oct 26, disposable restart | Not met |
 | Cold non-RAW sharp draw (JPEG) | within 1 s (Steve, Oct 26) | 0.85–0.9 s | Oct 26, 8b64302 | Met |
 | Fullscreen sharp draw, cold RAW (CR2) | — | 2.52 s | Oct 30 18:18, 2L1B8631.CR2 | Baseline |

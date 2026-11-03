@@ -118,7 +118,29 @@ Tests deliberately changed from thumbnail-suppresses-camera to camera-eligible
 regardless of a cached thumbnail. Removed read-ahead, warmer, idle-headroom and
 RAW-plan tests with their retired features; demand/cancellation, default file
 visibility, camera eligibility, direct SDR pixels/orientation and 72-thumbnail
-batch tests cover the replacement behavior. Validation results follow below.
+batch tests cover the replacement behavior. Final checks: 767 JavaScript tests passed; 173 focused Python checks passed.
+The full Python run had 3,017 passes, three skips and six failures from the
+retired thumbnail-suppresses-camera expectation; all six corrected cases pass
+in the focused run. The full suite was not repeated. Logs:
+`codebase/output/batch4a-{node,pytest,pytest-focused}.log`.
+
+The 90-second real-app check with ten Single steps completed, with no picture
+errors or zeroed stored channels. Backend source logs show seven distinct RAWs
+using camera pictures and no development starts for those files. Starts were
+limited to edited ARWs, two DNGs without usable embedded pictures and the shown
+EXR. The default list contains 31 of the 50 fixture files. External peak was
+3.77 GB, settling at 1.53 GB; output remains 28.6 GB (100 GB limit). Evidence:
+`codebase/output/quick-library-check/batch4a/{report.json,backend.log,scenario.json,memory.jsonl}`.
+
+The app check still exits with a failure for a 4.438-second frame gap; longest
+timer block was 62 ms. This is not a clean responsiveness acceptance. Record
+it for Batch 4c rather than extending this batch to chase fullscreen faults.
+No dedicated GPU driver covers the new camera/direct-bitmap policy; the real
+app exercised its presentation alongside existing GPU development. Grade,
+Export and Proof pixels and all memory/cache allowances were left unchanged.
+Third-party JPEG XL with unresolved source colour still requires the existing
+Grade interpretation step; it is never silently treated as SDR. Batches 4b-4d
+remain unbuilt. Timings are in the performance table.
 
 ## November 3: Batch 3f — save admission and remaining CPU blocker
 

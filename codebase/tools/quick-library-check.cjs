@@ -37,7 +37,7 @@ function freezeSummary(probe = {}) {
     long_tasks: { count: tasks.length, total_ms: Math.round(tasks.reduce((a, b) => a + b, 0)), longest_ms: tasks[0] ?? 0 } };
 }
 
-function analyse(text, openedAt, events, openedPageAt) {
+function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
   const shown = new Map(), preview = new Map(), failed = new Map(), reclaims = [], memory = [], developed = [];
   for (const line of text.split('\n')) {
     const m = line.match(/^\[library\] (\w+) (\{.*\})\s*$/);
@@ -60,11 +60,11 @@ function analyse(text, openedAt, events, openedPageAt) {
   let gap = 0, last = 0;
   for (const x of times) { gap = Math.max(gap, x - last); last = x; }
   return {
-    photos: 50, shown_by: { s15: by(15), s30: by(30), s60: by(60), s90: by(90), end: times.length },
+    photos: visibleFiles?.length ?? 50, shown_by: { s15: by(15), s30: by(30), s60: by(60), s90: by(90), end: times.length },
     time_to: { first: at(1), ten: at(10), twenty: at(20), thirty: at(30), forty: at(40) },
     longest_picture_gap_s: +gap.toFixed(1), developments: developed.length,
     camera_previews: preview.size, reclaims, peak_gb: +(Math.max(0, ...memory.map(x => x[1])) / 1e9).toFixed(3),
-    failed: Object.fromEntries(failed), not_shown: fs.readdirSync(folder).filter(n => !n.endsWith('.hdrf') && !shown.has(n)),
+    failed: Object.fromEntries(failed), not_shown: (visibleFiles ? visibleFiles.map(file=>path.basename(file)) : fs.readdirSync(folder).filter(n=>!n.endsWith(".hdrf"))).filter(n=>!shown.has(n)),
   };
 }
 
@@ -179,7 +179,7 @@ function analyse(text, openedAt, events, openedPageAt) {
     catch(error){channels={error:String(error.message||error)};}
     if(channels.one_channel_zero?.length||channels.all_channels_zero?.length)errors.push(`Zeroed colour channels in ${channels.one_channel_zero.length+channels.all_channels_zero.length} stored pictures`);
     const report={label,acceptance_scope:retentionMode?'whole-app retention (cadence recorded separately)':'Library quick check',folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
-      ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,memory_diagnostic:result.memory_diagnostic,grade_return:result.grade_return,grade_return_saves:result.grade_return_saves,
+      ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms,result.visible_files),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,memory_diagnostic:result.memory_diagnostic,grade_return:result.grade_return,grade_return_saves:result.grade_return_saves,
       independent_memory:{...memory.report(),samples:sampleCount,lastBytes:memory.last?.totalBytes,sampleIntervalMs:{requested:250,median:sampleIntervals[Math.floor(sampleIntervals.length/2)],maximum:sampleIntervals.at(-1)},grants_note:'External process census; no DevTools WebSocket instrumentation.'},observerError,
       picture_timing_clock:'Library performance.now()',stage:result.stage,scenario_ms:result.scenario_ms,harness_total_ms:Date.now()-harnessAt,harness_outside_scenario_ms:Date.now()-harnessAt-result.scenario_ms,cdp_attached:false};
     if(failures.length&&!retentionMode){console.error(`FREEZE: ${failures.join('; ')} (limit 250 ms)`);process.exitCode=1;}
