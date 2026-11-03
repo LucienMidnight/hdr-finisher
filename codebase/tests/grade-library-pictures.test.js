@@ -49,3 +49,22 @@ test('acknowledging the same edit keeps its release time; a new edit resets it',
   api.available({revision:1,grade_identity:'a',available_at:100});assert.equal(sent.at(-1).settled_at,20);
   api.changed('edit-2');api.available({revision:1,grade_identity:'b',available_at:100});assert.equal(sent.at(-1).settled_at,80);
 });
+
+for(const failure of ['capture','store'])test(failure+' failure falls back to the developed source',async()=>{
+  const sent=[],tasks=[];let loans=0;
+  const api=create({snapshot:()=>({sessionId:'s',revision:1,lane:'hdr',clean:true}),
+    capture:async()=>{if(failure==='capture')throw Error('device lost');return {};},
+    store:async()=>{throw Error('upload interrupted');},sources:async()=>{loans++;return {scenes:[]};},
+    send:p=>sent.push(p),defer:f=>tasks.push(f)});
+  api.available({revision:1,grade_identity:'saved'});await tasks.shift()();
+  assert.equal(loans,1);assert.equal(sent.at(-1).stage,'sources');
+  assert.equal(sent.at(-1).captured_lane,null);assert.match(sent.at(-1).reason,/capture failed/);
+});
+test('closing Grade cancels a queued publication',async()=>{
+  const s=setup();s.api.available({revision:1,grade_identity:'saved'});s.api.dispose();
+  await s.tasks.shift()();assert.deepEqual(s.stored,[]);assert.deepEqual(s.finished,[]);
+});
+test('changing photos before capture clears the pending hand-off',async()=>{
+  const s=setup();s.api.available({revision:1,grade_identity:'saved'});s.setFrame({sessionId:'other'});
+  await s.tasks.shift()();assert.equal(s.sent.at(-1).stage,'failed');assert.deepEqual(s.finished,[]);
+});

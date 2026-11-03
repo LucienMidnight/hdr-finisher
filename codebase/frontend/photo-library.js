@@ -1871,7 +1871,7 @@
     // The saved ticket supplies the intended grade. The finished-thumbnail
     // batch validates the current indexed grade again before returning pixels,
     // and load() rejects any response for a different ticket/source identity.
-    const row={...photo,edited:true,grade_identity:packet.grade_identity};
+    const row={...photo,edited:packet.edited,grade_identity:packet.grade_identity};
     const targets=[];
     for(const map of [state.cells,state.filmCells]) {
       const key=tileKey(map,pictureIdentity(photo));
@@ -1908,7 +1908,7 @@
       readyWindow.invalidate(p=>p.path===photo.path);quickWindow.invalidate(p=>p.path===photo.path);
       HDRLibraryScenes.invalidate([photo.path],{finishingOnly:true});
       for(const [key] of recentPictures)if(key.startsWith(photo.path+"|"))recentPictures.delete(key);
-      entry.shown_at=Date.now();
+      if(targets.length)entry.shown_at=Date.now();
       if(state.active){paintGrid();paintFilm();if(state.view==="single"&&selected()?.path===photo.path){state.singleIdentity="";void showSingle();}}
       return true;
     } finally {

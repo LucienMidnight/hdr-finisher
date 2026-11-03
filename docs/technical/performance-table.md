@@ -740,19 +740,19 @@ checks recorded no slow-memory-endpoint or event-loop-lag events. Final fast
 checks: 768 JavaScript passed; 3,023 Python passed, 3 skipped; zero failures.
 The final worker-framing follow-up passed 44 affected Python checks separately.
 
-## November 4 — Batch 4b checkpoint (in progress, parent 6ca7f4a)
+## November 4 — Batch 4b Grade picture hand-off (completion, parent 51ba95c)
 
 Plain Electron, 2560x1440, three reusable `library-live-grid` test copies,
-4 GB ceiling. Saving policy and autosave wait unchanged. The Grade picture is
-prepared in the retained hidden Library pool; these timings measure picture
-readiness there, not physical scanout of a hidden window.
+4 GB ceiling. Saving policy and autosave wait unchanged. Docked timings measure
+picture readiness in the retained hidden Library pool, not hidden-window
+scanout. Detached check uses visible windows side by side.
 
 | Action | Target | Observed | Conditions/result |
 | --- | --- | --- | --- |
-| Saved grade available → Library picture ready | 500 ms | Final autosave 391 ms; manual Save 374 ms | HDR Grade capture; screen and thumbnail stored before publication. Earlier iterations 415–519 ms; final removed redundant settings-status lookup |
-| Slider release → Library picture ready | Log separately; autosave wait unchanged | Autosave 1.375 s; manual Save 1.877 s | Manual case deliberately waits 1.5 s with autosave off; the saved Library grade stays unchanged during that wait |
-| Return from Grade → retained grid | No blank tiles or redraw | Zero blank tiles in 30 frames; two unchanged thumbnails reused exactly | Short three-photo test only; detached/geometry acceptance outstanding |
+| Saved grade available → Library picture ready | 500 ms | Autosave 435 ms; manual Save 422 ms; detached 249 ms | HDR Grade capture; screen and thumbnail stored before publication. Earlier checkpoint 374–519 ms. Concurrent full Python sweep: autosave 734 ms, manual 488 ms; that autosave run missed target |
+| Slider release → Library picture ready | Log separately; autosave wait unchanged | Autosave 1.575 s; manual Save 1.945 s; detached 1.498 s | Manual case deliberately waits 1.5 s with autosave off; Library keeps its saved grade during that wait |
+| Return from Grade → retained grid | No blank tiles or redraw | Zero blank tiles in 30 frames; two untouched thumbnails reused exactly | Three-photo acceptance; no edited-picture redraw on return. Detached update also had zero blank tiles |
 
 Evidence: `codebase/output/quick-library-check/batch4b/{report,scenario}.json`
-and `backend.log`. Checkpoint remains in progress; see the Batch 4b resume
-notes in the Library module PRD. No broad speed or responsiveness claim.
+and `backend.log`. Final acceptance has no scenario errors. No broad speed or
+responsiveness claim; Batch 4c/4d work remains separate.

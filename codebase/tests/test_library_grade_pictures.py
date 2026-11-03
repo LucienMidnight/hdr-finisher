@@ -111,3 +111,41 @@ def test_sony_fallback_never_enters_the_raw_band_decoder(setup, monkeypatch):
     result = _develop_cpu(cache.live.root, raw, saved, 640,
         cache=cache.live.cache, prepared={"source": session})
     assert result["edge"] == 640
+
+
+def test_saving_default_grade_clears_edited_flag(setup):
+    photo, store, session, marks, grades = setup
+    original = session.edit_document().model_copy(deep=True)
+    edit(store, session)
+    assert grades.save(str(session.session_id))["picture"]["edited"] is True
+    store.replace_edit_document(str(session.session_id), original, session.edit_revision)
+    ticket = grades.save(str(session.session_id))["picture"]
+    assert ticket["edited"] is False
+    assert grades.describe([photo])[str(photo)]["edited"] is False
+
+
+def test_source_fallback_waits_for_existing_upload_allowance(setup, monkeypatch):
+    import asyncio
+    from fastapi import APIRouter
+    from threading import BoundedSemaphore
+    from hdr_finisher.library_grade_pictures import add_grade_picture_routes
+    cache = service(setup)
+    slots = BoundedSemaphore(1)
+    slots.acquire()
+    calls = []
+    monkeypatch.setattr(GradePictures, "sources", lambda self, session, grade: calls.append(grade) or {"scenes": []})
+    router = APIRouter()
+    add_grade_picture_routes(router, cache.live, cache.store, slots)
+    endpoint = next(r.endpoint for r in router.routes if r.path.startswith("/grade-picture-source/"))
+    class Request:
+        async def is_disconnected(self): return False
+    async def run():
+        job = asyncio.create_task(endpoint("session", "saved", Request()))
+        await asyncio.sleep(.06)
+        assert not calls and not job.done()
+        slots.release()
+        assert await job == {"scenes": []}
+        assert calls == ["saved"]
+        assert slots.acquire(blocking=False)
+        slots.release()
+    asyncio.run(run())

@@ -147,8 +147,11 @@ def add_grade_picture_routes(router, live, store, slots):
             slots.release()
 
     @router.post("/grade-picture-source/{session_id}")
-    async def sources(session_id: str, grade: str):
-        if not slots.acquire(blocking=False): return Response(status_code=503)
+    async def sources(session_id: str, grade: str, request: Request):
+        import asyncio
+        while not slots.acquire(blocking=False):
+            if await request.is_disconnected(): return Response(status_code=499)
+            await asyncio.sleep(.05)
         try:
             return await run_in_threadpool(pictures.sources, session_id, grade)
         finally:

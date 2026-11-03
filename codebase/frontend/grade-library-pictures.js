@@ -17,18 +17,21 @@
       defer(async()=>{
         let lane=null,reason="No clean full-frame Grade picture";
         try {
+          if(!current())return;
           const frame=snapshot();
-          if(frame.sessionId!==packet.sessionId)return;
+          if(frame.sessionId!==packet.sessionId)throw Error("Grade photo changed before hand-off");
           reason=frame.reason||reason;
           if(frame.revision===ticket.revision&&frame.clean) {
-            const pixels=await capture(frame);
-            if(!current())return;
-            if(pixels) {
-              const saved=await store(packet,frame.lane,pixels,controller.signal);
+            try {
+              const pixels=await capture(frame);
               if(!current())return;
-              if(saved){lane=frame.lane;send({...packet,stage:"picture",lane,source:"Grade picture"});}
-              else reason="Capture could not be stored for the saved grade";
-            }
+              if(pixels) {
+                const saved=await store(packet,frame.lane,pixels,controller.signal);
+                if(!current())return;
+                if(saved){lane=frame.lane;send({...packet,stage:"picture",lane,source:"Grade picture"});}
+                else reason="Capture could not be stored for the saved grade";
+              }
+            } catch(error) { if(!current())return;reason="Grade picture capture failed: "+error.message; }
           }
           if(!current())return;
           // The other lane (or both lanes on a capture miss) only finishes
@@ -41,7 +44,7 @@
         }
       });
     }
-    return Object.freeze({available,changed,released,getSnapshot:snapshot});
+    return Object.freeze({available,changed,released,getSnapshot:snapshot,dispose(){latest++;flight?.abort();}});
   }
   const api={create};
   if(typeof module!=="undefined"&&module.exports){module.exports=api;return;}
@@ -91,5 +94,5 @@
       if(state.activeWorkflow==="grade"&&event.target.closest?.("input,canvas,.instrument,.geometry-controls"))
         root.HDRGradeLibraryPictures.released();
     },true);
-  window.addEventListener("pagehide",()=>channel.close());
+  window.addEventListener("pagehide",()=>{root.HDRGradeLibraryPictures.dispose();channel.close();});
 })(typeof window==="undefined"?globalThis:window);

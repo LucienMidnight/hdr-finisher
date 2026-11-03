@@ -260,7 +260,8 @@ class LibraryGrades:
             # Pixels may only follow the grade already selected by the Library.
             # Recovery (autosave off) never receives a publication ticket.
             result["picture"] = dict(path=path, revision=revision,
-                grade_identity=identity(desired), available_at=available_at)
+                grade_identity=identity(desired), edited=grade_key(desired) != grade_key(state.get("default")),
+                available_at=available_at)
             ended = perf_counter()
             log("grade_save_timing", photo=path, duration_ms=(ended-started)*1000,
                 lock_wait_ms=((locked-started)+(relocked-preflight))*1000,

@@ -1,6 +1,6 @@
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** Batch 4a built November 3, 2026; Batch 4b is in progress (November 4 checkpoint); Batches 4c-4d remain open. Build order is in
+**Status:** Batch 4a built November 3, 2026; Batch 4b built November 4, 2026; Batches 4c-4d remain open. Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
@@ -68,8 +68,8 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
      option replaces it. The Filters panel's "RAW" select-all button stays.
    - Counts, Needs attention, selection and keyboard navigation follow what is
      shown.
-7. **Grade hands its picture to the Library.** When an edit settles in Grade
-   (slider released, paste, undo), the Library's thumbnail and screen preview
+7. **Grade hands its picture to the Library.** When a saved grade becomes
+   available after the existing autosave wait or manual Save, the Library's thumbnail and screen preview
    for that photo are made from Grade's displayed picture, not developed
    again. Library and Grade share one set of thumbnails; moving between them
    never empties or redevelops the filmstrip or grid.
@@ -95,53 +95,59 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | Batch | Contents | Status |
 | --- | --- | --- |
 | 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Built November 3, 2026 |
-| 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | In progress — local checkpoint November 4; resume notes below |
+| 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Built November 4, 2026 |
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Not started |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Not started |
 
-### Batch 4b checkpoint — November 4, paused at Steve's bedtime
+### Batch 4b implementation and checks — November 4, 2026
 
-Saving policy and the autosave delay are unchanged. Steve clarified that the
-500 ms hand-off target starts when the saved/pending grade becomes available
-to the Library, after the existing autosave wait or manual Save. With autosave
-off the Library continues showing the saved grade. Logs also retain the actual
-slider-release-to-picture interval, including a later manual Save wait.
+Saving policy and the autosave delay are unchanged. The 500 ms hand-off target
+starts when the saved/pending grade becomes available to the Library, after
+the existing autosave wait or manual Save. With autosave off the Library keeps
+showing the saved grade. Logs separately retain slider-release-to-picture time,
+including time spent waiting for a manual Save.
 
-The current implementation captures Grade's clean, whole-frame output texture
-after presentation, validates the saved identity, stores thumbnails and screen
-previews in the existing allowances, then releases the capture resources. It
-broadcasts to the docked or detached Library, atomically replaces retained
-tiles, and loans Grade's developed source for missing-lane/uncapturable-frame
-finishing. The Sony CPU band decoder is bypassed for a Grade-owned source.
-Older tickets cannot replace newer grades; Export/Proof processing is unchanged.
+Grade captures its clean, whole-frame output texture after presentation,
+validates the saved identity, stores thumbnails and screen previews in the
+existing allowances, then releases capture resources. Completed grid and
+filmstrip surfaces survive Grade navigation. The docked or detached Library
+atomically replaces the edited thumbnail. Missing lanes, zoom/tiled pictures
+and capture failures use Grade's already developed source for finishing only;
+the Sony CPU band decoder is bypassed for this source. Older tickets cannot
+replace newer grades. Resetting to the default grade clears the edited flag;
+its developed picture follows decision 5. Export/Proof processing is unchanged.
 
-Latest targeted app check passes: autosave hand-off 391 ms after availability,
-1.375 s after release; manual Save 374 ms after availability, 1.877 s after
-release (including the deliberate 1.5 s unsaved wait). Autosave off kept the
-saved grade. Zero blank tiles, both untouched thumbnails reused, no redraw on
-return, and no fresh import in the source-loan fallback. Earlier runs measured
-415–519 ms; the last optimization removes a redundant settings-status lookup.
-Evidence: `codebase/output/quick-library-check/batch4b/` and
-`codebase/output/batch4b-{app,node,pytest,focused,baseline}.log`.
+Final plain-Electron acceptance on three reusable RAW copies: autosave picture
+ready in 435 ms after availability (1.575 s after release); manual Save 422 ms
+(1.945 s after release, including a deliberate 1.5 s unsaved wait); detached
+Library 249 ms (1.498 s after release). Autosave off preserved the saved grade.
+Zero blank tiles in docked and detached checks, two untouched thumbnails reused
+exactly, no edited-picture redraw on return. A preceding run alongside the full
+Python suite missed the autosave target at 734 ms; manual Save was 488 ms.
+These are short acceptance measurements, not a broad responsiveness guarantee.
 
-773 JavaScript checks passed. Full Python: 3,029 passed, three skipped, one
-failure in `test_remembered_failure_does_not_hide_current_grade_cached_scene`;
-the same failure reproduces against untouched parent `6ca7f4a` in the small
-read-only baseline extract. All 37 focused Python checks pass. Output is
-28.62 GB against the unchanged 100 GB limit. No files in `D:\Photos` were used
-or written. No push or installer build.
+777 JavaScript checks passed. The full Python run finished with 3,030 passed,
+three skipped and two failures: the previously confirmed baseline failure
+`test_remembered_failure_does_not_hide_current_grade_cached_scene`, and a wrong
+argument in the newly added default-grade test. That assertion was corrected;
+all seven focused Python checks pass, including default-grade metadata, stored
+pixels/restart, exact HDR cap, stale tickets, source loans and upload admission.
+Other behavioral checks cover zoom/overlay fallback selection and capture
+failure cleanup. No dedicated visual zoom/overlay comparison was run.
 
-**Resume before marking built:** the last tile-replacement optimization uses
-`edited:true` from the save ticket. Supply the correct edited/default flag so
-resetting to the default grade preserves the camera-picture policy; do not
-ship that assumption. Recheck source/capture admission failure cleanup and
-review the final diff. The popped-out Library path is wired but has not had a
-real-app acceptance check, nor have zoom/geometry/overlay cases; those need
-focused review. Do not infer broad responsiveness or all-lane timing acceptance
-from this short three-photo HDR check. About six minutes of targeted slow
-checks have been used, below the brief's approximate ten-minute allowance.
-Steve asked to stop here and continue tomorrow; this is a checkpoint, not a
-completed Batch 4b.
+Evidence: `codebase/output/quick-library-check/batch4b/{report,scenario}.json`,
+`backend.log`, and `codebase/output/batch4b-{app,node,pytest,focused,baseline}.log`.
+The final run peaked at 2.95 GB and settled at 2.11 GB under the unchanged 4 GB
+ceiling. Scratch output is 28.6 GB against the unchanged 100 GB limit. Total
+slow checks stayed below the brief's approximate ten-minute budget. No writes
+to `D:\Photos`, push or installer build.
+
+To try: open a test photo in Grade, change exposure and release, then return
+to Library. Its updated picture and the untouched thumbnails should already
+be present. Pop Library out, place it beside Grade or on a second display,
+and repeat while watching the thumbnail. With autosave off, it should change
+only after Save. Also compare HDR/SDR and a cropped/zoomed Grade view by eye.
+Batch 4c fullscreen/zoom faults and Batch 4d memory sharing remain open.
 
 ### Batch 4a implementation and checks
 

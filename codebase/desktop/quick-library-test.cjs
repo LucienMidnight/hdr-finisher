@@ -29,6 +29,25 @@ async function run({app, window, backend, configPath = process.env.HDR_FINISHER_
     if(config.pixelCapture){await require('./library-pixel-test.cjs').run({frame,config,stage});stage('done');return;}
     const source = fs.readFileSync(path.join(__dirname, '../tools/quick-library-scenario.js'), 'utf8');
     const result = await frame.executeJavaScript(`(${source})(${JSON.stringify(config)})`);
+    if(config.gradeHandoffPopout&&result.grade_handoff&&result.stage==='done'){
+      stage('handoff: pop out Library');
+      await frame.executeJavaScript(`document.getElementById('popout-library').click()`);
+      const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+      const wait=async predicate=>{const end=Date.now()+30000;while(!await predicate()){if(Date.now()>end)throw Error('Detached hand-off timed out');await sleep(25);}};
+      let detached;
+      await wait(()=>{detached=require('electron').BrowserWindow.getAllWindows().find(w=>w!==window&&/\/library(?:\?|$)/.test(w.webContents.getURL()));return !!detached;});
+      window.setBounds({x:0,y:0,width:1200,height:1000});detached.setBounds({x:1220,y:0,width:1200,height:1000});
+      await wait(()=>detached.webContents.executeJavaScript(`document.body.dataset.libraryReady==='true'&&HDRLibrary.getSnapshot().visible>0&&[...document.querySelectorAll('#grid-space .library-cell')].every(c=>c.querySelector('canvas[data-picture-key]:not([hidden])'))`));
+      await detached.webContents.executeJavaScript(`window.handoffEvents=[];window.handoffBlanks=0;const originalStopwatch=HDRLibraryStopwatch;window.HDRLibraryStopwatch=(stage,fields)=>{if(stage==='grade_picture_handoff')handoffEvents.push(fields);originalStopwatch(stage,fields);};window.handoffBlankTimer=setInterval(()=>{for(const c of document.querySelectorAll('#grid-space .library-cell'))if(!c.querySelector('canvas[data-picture-key]:not([hidden])'))handoffBlanks++;},16);`);
+      await window.webContents.executeJavaScript(`activateWorkflowTab('grade')`);window.focus();
+      await wait(()=>window.webContents.executeJavaScript(`HDRGradeSaving.ready()&&HDRGradeLibraryPictures.getSnapshot().clean`));
+      await window.webContents.executeJavaScript(`(()=>{const control=document.getElementById('hdr-exposure');control.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:993}));control.value=String(Number(control.value)+.25);control.dispatchEvent(new Event('input',{bubbles:true}));control.dispatchEvent(new Event('change',{bubbles:true}));control.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:993}));})()`);
+      await wait(()=>detached.webContents.executeJavaScript(`handoffEvents.length>0`));
+      const popout=await detached.webContents.executeJavaScript(`(()=>{clearInterval(handoffBlankTimer);return {handoff:handoffEvents.at(-1),blank_tiles:handoffBlanks,marked:!!document.querySelector('canvas[data-grade-handoff]')};})()`);
+      result.grade_handoff.popout=popout;
+      if(!popout.marked||popout.blank_tiles||!popout.handoff.route.startsWith('Grade picture'))result.errors.push('Detached Library failed to reuse Grade picture: '+JSON.stringify(popout));
+      if(popout.handoff.available_to_picture_ms>500)result.errors.push('Detached hand-off missed 500 ms: '+popout.handoff.available_to_picture_ms);
+    }
     if(config.trace)await require('electron').contentTracing.stopRecording(path.join(profile,'diagnostic-trace.json'));
     if(config.memoryProbe)result.memory_probe=await require('./quick-memory-probe.cjs').probe({app,window,frame});
     fs.writeFileSync(resultPath+'.tmp', JSON.stringify(result));
