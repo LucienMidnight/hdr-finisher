@@ -298,6 +298,12 @@ async def stream_folder(index, store, request, root, enrich, sort="time", descen
                     for at in range(0,len(read),16):
                         batch=read[at:at+16]
                         output.extend(enrich(dict(path=root,photos=batch,unreadable_folders=[]))["photos"])
+                    # A folder's first disk pass must classify TIFFs as the
+                    # indexed rows do, or 16-bit/float TIFFs stay hidden.
+                    for photo in output:
+                        if photo.get("type") in {"TIF", "TIFF"} and not photo.get("cloud") and "mezzanine" not in photo:
+                            from .library_metadata import mezzanine_tiff
+                            photo["mezzanine"] = mezzanine_tiff(photo["path"], photo["bytes"], photo["mtime_ns"])
                     return output
                 rows=await run_in_threadpool(accept)
                 log("folder_disk_page",folder=root,request=token,count=len(photos),helper_ms=helper_ms,
