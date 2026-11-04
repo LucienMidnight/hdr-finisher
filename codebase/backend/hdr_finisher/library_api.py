@@ -77,6 +77,10 @@ class StopwatchEvent(BaseModel):
     sensor_ms: float | None = None
     quantiles_ms: float | None = None
     handoff_ms: float | None = None
+    pack_ms: float | None = None
+    request_ms: float | None = None
+    bytes: int | None = None
+    edge: int | None = None
     grade_identity: str | None = None
     lanes: list[str] | None = None
     available_to_picture_ms: float | None = None
@@ -743,8 +747,9 @@ def create_library_router(worker, browser, store=None):
                         metadata.pop("default_document", None)
                         result = dict(metadata, key=picture_key(source, edge, header["source_quality"]),
                             path=str(source), edge=edge, quality=header["source_quality"],
-                            width=header["width"], height=header["height"], adjustments=look,
-                            white=203, has_reference=bool(header["colour"].get("authored_sdr", True) or header.get("has_sdr_reference")),
+                            width=header["height"] if not header.get("rgb") and header.get("flip") in (5, 6) else header["width"],
+                            height=header["width"] if not header.get("rgb") and header.get("flip") in (5, 6) else header["height"], adjustments=look,
+                            white=203, has_reference=bool((header.get("colour") or {}).get("authored_sdr", bool(header.get("rgb"))) or header.get("has_sdr_reference")),
                             cache_hit=False, stored_bytes=0)
                         return result
                     result = live.cache.build(source, edge, header["source_quality"],
@@ -753,8 +758,8 @@ def create_library_router(worker, browser, store=None):
                     return result
             from . import library_rgb
             adapter = library_rgb if header.get("rgb") else library_gpu_raw
-            if header.get("describe_only") and (not header.get("rgb") or header["edge"] == 100000 or body):
-                raise ValueError("Only reduced RGB scene metadata can be described without pixels.")
+            if header.get("describe_only") and (header["edge"] == 100000 or body):
+                raise ValueError("Only reduced scene metadata can be described without pixels.")
             developed_at = time.perf_counter()
             result = await run_in_threadpool(adapter.developed, SceneCache(), path, header, None if header.get("describe_only") else body)
             describe_at = time.perf_counter()
@@ -765,7 +770,7 @@ def create_library_router(worker, browser, store=None):
                 accept_ms=(describe_at-developed_at)*1000,
                 describe_ms=(time.perf_counter()-describe_at)*1000,
                 describe_only=bool(header.get("describe_only")))
-            if header.get("rgb") and header["edge"] != 100000:
+            if header["edge"] != 100000:
                 from .models import GeometryAdjustments, AdjustmentState
                 from .projects import validate_saved
                 adjustments = validate_saved(AdjustmentState, described["adjustments"])

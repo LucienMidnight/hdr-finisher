@@ -120,20 +120,46 @@ def _uncompressed_tiff(path, page_index, edge):
     radius = 3 * max(1., ratio)
     # Bound each source band to about 32 MB, plus the Lanczos overlap.
     block = max(1, min(32, int(32_000_000 / (iw * bands * dtype.itemsize * ratio))))
-    with open(path, "rb") as source:
+    from concurrent.futures import ThreadPoolExecutor
+    from collections import deque
+    from .cpu_budget import logical_cpus
+    from time import perf_counter
+    from .library_diagnostics import log
+    started = perf_counter()
+    read_ms = 0.0
+    def resize_band(row, count, y0, body):
+        samples = np.frombuffer(body, dtype=dtype).reshape(-1, iw, bands)
+        top, bottom = row*ratio, (row+count)*ratio
+        for band in range(bands):
+            resized = np.asarray(Image.fromarray(samples[...,band].astype(np.float32)).resize(
+                (tw, count), Image.Resampling.LANCZOS, box=(0, top-y0, iw, bottom-y0)))
+            if dtype.kind in {"u", "i"}:
+                resized = np.clip(np.rint(resized), np.iinfo(dtype).min, np.iinfo(dtype).max)
+            result[row:row+count,:,band] = resized
+    # One sequential reader (including overlapping Lanczos support), while
+    # independent Pillow bands release the GIL. Bound queued input AND float
+    # scratch to the previous 32 MB band allowance; this is a memory bound,
+    # not a CPU cap. Submitted tasks never keep a second full source.
+    band_bytes = (math.ceil(block*ratio+2*radius)+2)*iw*bands*dtype.itemsize
+    pending_limit = max(1, min(logical_cpus(), 32_000_000 // max(1, band_bytes*4)))
+    pending = deque()
+    with ThreadPoolExecutor(max_workers=logical_cpus()) as pool, open(path, "rb") as source:
         for row in range(0, th, block):
+            if len(pending) >= pending_limit:
+                pending.popleft().result()
             count = min(block, th-row)
             top, bottom = row*ratio, (row+count)*ratio
             y0, y1 = max(0, math.floor(top-radius)), min(ih, math.ceil(bottom+radius))
+            reading = perf_counter()
             source.seek(offset + y0*iw*bands*dtype.itemsize)
             body = source.read((y1-y0)*iw*bands*dtype.itemsize)
-            samples = np.frombuffer(body, dtype=dtype).reshape(y1-y0, iw, bands)
-            for band in range(bands):
-                resized = np.asarray(Image.fromarray(samples[...,band].astype(np.float32)).resize(
-                    (tw, count), Image.Resampling.LANCZOS, box=(0, top-y0, iw, bottom-y0)))
-                if dtype.kind in {"u", "i"}:
-                    resized = np.clip(np.rint(resized), np.iinfo(dtype).min, np.iinfo(dtype).max)
-                result[row:row+count,:,band] = resized
+            read_ms += (perf_counter()-reading)*1000
+            pending.append(pool.submit(resize_band, row, count, y0, body))
+        for task in pending:
+            task.result()
+    log('picture_tiff_reduction', path=str(path), read_ms=round(read_ms, 2),
+        duration_ms=round((perf_counter()-started)*1000, 2), workers=logical_cpus(),
+        in_flight=pending_limit, width=tw, height=th)
     return result, (iw, ih)
 
 

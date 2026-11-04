@@ -153,3 +153,27 @@ def test_png_uint16_keeps_existing_high_byte_and_alpha_boundary(tmp_path, monkey
     expected = np.repeat(high, 3, axis=2) if channels == 1 else high[..., :3]
     np.testing.assert_array_equal(actual, expected)
     assert metadata["bit_depth"] == "uint8"
+
+
+@pytest.mark.parametrize('dtype',[np.uint16,np.float32])
+def test_parallel_tiff_bands_match_serial_finished_samples(tmp_path,dtype):
+    import math
+    import tifffile
+    image = np.random.default_rng(9).uniform(0,20000,(603,907,3)).astype(dtype)
+    path = tmp_path/'bands.tif'
+    tifffile.imwrite(path,image,photometric='rgb')
+    actual, original = read(path,edge=256)
+    assert original == (907,603)
+    th,tw = actual.shape[:2]
+    expected = np.empty_like(actual)
+    ratio = 603/th; radius = 3*max(1.,ratio)
+    block = max(1,min(32,int(32_000_000/(907*3*np.dtype(dtype).itemsize*ratio))))
+    for row in range(0,th,block):
+        count=min(block,th-row);top,bottom=row*ratio,(row+count)*ratio
+        y0,y1=max(0,math.floor(top-radius)),min(603,math.ceil(bottom+radius))
+        for band in range(3):
+            values=np.asarray(Image.fromarray(image[y0:y1,:,band].astype(np.float32)).resize(
+                (tw,count),Image.Resampling.LANCZOS,box=(0,top-y0,907,bottom-y0)))
+            if dtype == np.uint16: values=np.clip(np.rint(values),0,65535)
+            expected[row:row+count,:,band]=values
+    np.testing.assert_array_equal(actual,expected)

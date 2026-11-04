@@ -54,3 +54,41 @@ def test_oldest_first_limit_does_not_touch_scenes(tmp_path, monkeypatch):
     cache.trim()
     assert sum(p.stat().st_size for p in cache.directory.iterdir()) <= 64
     assert (scene / 'scene.npz').read_bytes() == b'keep scene'
+
+
+def test_indexed_screen_preview_survives_offline_source_and_rejects_pending_grade(tmp_path):
+    from hdr_finisher.library_marks import LibraryMarks
+    from hdr_finisher.library_live import LivePictures
+    from hdr_finisher.library_finished_thumbnails import FinishedThumbnails
+    from hdr_finisher.models import EditDocument, AdjustmentState
+    from hdr_finisher.library_pictures import picture_key
+    from hdr_finisher.library_live import quality
+    root = tmp_path / 'app'
+    root.mkdir()
+    photo = tmp_path / 'photo.ARW'
+    photo.write_bytes(b'original')
+    marks = LibraryMarks(root)
+    db = marks._connect()
+    db.execute('CREATE TABLE photo_grades(path TEXT PRIMARY KEY,state TEXT)')
+    stat = photo.stat()
+    document = EditDocument(hdr_reference_white_nits=203, source=dict(filename=photo.name, durable_path=str(photo), luminance=dict(luminance_semantics='scene_relative', transfer_function='linear'))).model_dump(mode='json')
+    db.execute('INSERT INTO files VALUES (?,?,?,NULL)', (str(photo),stat.st_size,stat.st_mtime_ns))
+    db.execute('INSERT INTO photo_grades VALUES (?,?)', (str(photo),json.dumps({'indexed_grade':document})))
+    db.commit()
+    live = LivePictures(root, marks)
+    cache = StoredScreenPreviews(root, indexed=FinishedThumbnails(live).current)
+    identity = cache.identity(str(photo),2560,1440,'hdr')
+    physical = StoredScreenPreviews(root, lambda _:document).identity(str(photo),2560,1440,'hdr')
+    assert identity == physical
+    meta = live.describe(str(photo), dict(path=str(photo),key=picture_key(photo,2560,quality(document)),
+        edge=2560,quality=quality(document),adjustments=AdjustmentState().model_dump(mode='json'),
+        width=32,height=8,source_width=32,source_height=8),document=document)
+    assert meta['screen_grade_identity'] == identity['grade_identity']
+    assert cache.write(identity,np.full((8,32,4),.5,dtype='<f2').tobytes(),32,8,256)
+    photo.unlink()
+    restarted = StoredScreenPreviews(root,indexed=FinishedThumbnails(live).current)
+    assert restarted.read(restarted.identity(str(photo),2560,1440,'hdr')) is not None
+    document['global_adjustments']['hdr']['exposure'] = 1
+    db.execute('UPDATE photo_grades SET state=?', (json.dumps({'pending':True,'desired':document}),))
+    db.commit();db.close()
+    assert restarted.read(restarted.identity(str(photo),2560,1440,'hdr')) is None

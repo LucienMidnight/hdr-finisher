@@ -237,8 +237,20 @@ window.HDRLibraryScenes = (() => {
     if (meta.bitmap || meta.route === 'stored-screen-preview' || meta.scene_stored) return;
     if (reviewPath === meta.path && !presented) return;
     const started = performance.now();
-    void Promise.resolve().then(()=>meta.directScene?.store()).then(()=>fetch("/api/library/live-store/"+meta.key,{method:"POST"})).then(response=>{
-      window.HDRLibraryTrace?.mark(meta.trace,"picture_store",started,{picture_size:"thumbnail,screen preview",scope:"shared",key:meta.key,success:response.ok});
+    void new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))).then(async()=>{
+      for(let attempt=1;;attempt++){
+        try {
+          await meta.directScene?.store();
+          const response=await fetch("/api/library/live-store/"+meta.key,{method:"POST"});
+          if(!response.ok)throw Object.assign(Error("Preview save failed: "+response.status),{retryStore:response.status>=500});
+          window.HDRLibraryTrace?.mark(meta.trace,"picture_store",started,{picture_size:"thumbnail,screen preview",scope:"shared",key:meta.key,success:true});
+          return;
+        } catch(error){
+          window.HDRLibraryStopwatch?.("picture_store_failed",{path:meta.path,attempt,reason:error.message});
+          if(attempt>=3 || !(error.retryStore || temporary(error)))throw error;
+          await wait(attempt===1?500:1500);
+        }
+      }
     }).catch(error=>{window.HDRLibraryTrace?.mark(meta.trace,"picture_store",started,{key:meta.key,success:false,reason:error.message});});
   }
   return Object.freeze({load,lease,save,review:path=>{reviewPath=path;},

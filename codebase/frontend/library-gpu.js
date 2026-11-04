@@ -119,6 +119,26 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
       HDRLibraryStopwatch("picture_direct_scene",{...window.HDRLibraryPictureLog?.(this.libraryMeta),key:sessionId});
       return proxy;
     }
+    const planes=direct?.planes?.();
+    if(planes?.length && typeof Float16Array !== 'undefined'){
+      const started=performance.now(),width=this.libraryMeta.scene_width,height=this.libraryMeta.scene_height;
+      const authored=lane==="sdr" && this.libraryMeta.adjustments.sdr.use_authored_base && this.libraryMeta.has_reference;
+      const source=planes.slice(authored?3:0,authored?6:3).map(p=>direct.sampleBytes===2 ? new Float16Array(p) : new Float32Array(p));
+      const rgba=new Float16Array(width*height*4),rw=direct.rawWidth,rh=direct.rawHeight;
+      for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+        const sx=direct.flip===6 ? y : direct.flip===5 ? rw-1-y : direct.flip===3 ? rw-1-x : x;
+        const sy=direct.flip===6 ? rh-1-x : direct.flip===5 ? x : direct.flip===3 ? rh-1-y : y;
+        const i=sy*rw+sx,j=(y*width+x)*4;
+        for(let c=0;c<3;c++)rgba[j+c]=Math.min(65504,Math.max(0,source[c][i]));
+        rgba[j+3]=1;
+      }
+      const texture=this.device.createTexture({size:[width,height],format:'rgba16float',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.COPY_SRC});
+      this.device.queue.writeTexture({texture},rgba,{bytesPerRow:width*8},[width,height]);
+      const proxy={texture,width,height,sessionId,lane,longEdge,workingSpace:authored?'linear-srgb':'acescg',pixelFormat:'rgba16float',geometrySignature,sourceIdentity,identity:key,byteSize:rgba.byteLength,bindGroups:new Map()};
+      this.proxies.set(key,proxy);
+      HDRLibraryStopwatch('picture_direct_scene',{...window.HDRLibraryPictureLog?.(this.libraryMeta),duration_ms:performance.now()-started,key:sessionId});
+      return proxy;
+    }
     if(direct)await direct.store();
     const started = performance.now();
     const url = this.libraryMeta?.route === "library-live" ? `/api/library/live-pixels/${sessionId}?lane=${lane}` : this.libraryMeta?.route === "camera-raw-scene" ? `/api/library/raw-thumbnail/${sessionId}` : `/api/library/pixels/${sessionId}?lane=${lane}`;
@@ -275,7 +295,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
       refusal = gpu.lastRenderRefusal?.reason;
       } finally {
         if (native) { gpu.deliveryBudgetBytes = previousBudget; gpu.gpuAllocator?.setBudget(gpu.memoryBudgetBytes()); }
-        if (lease) { gpu.resetSession(null); await lease.release(); }
+        if (lease) { if (native) gpu.resetSession(null); await lease.release(); }
       }
       if (signal.aborted || !isCurrent()) return;
       if (!result?.rendered && result?.execution !== "direct") throw new Error("The Library preview could not be drawn: " + (result?.reason || refusal || "render refused"));

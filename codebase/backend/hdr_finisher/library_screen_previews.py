@@ -15,16 +15,17 @@ from .library_copies import source
 from .library_live import quality
 from .library_pictures import picture_key, PICTURE_VERSION
 
-VERSION = 'stored-screen-preview-jxl-v1:' + PICTURE_VERSION
+VERSION = 'stored-screen-preview-jxl-v2:' + PICTURE_VERSION
 LIMIT_BYTES = 10 * 1024**3
 _lock = RLock()
 
 
 class StoredScreenPreviews:
-    def __init__(self, root, document=None):
+    def __init__(self, root, document=None, indexed=None):
         from .library_cache import LibraryCache
         self.cache = LibraryCache(root)
         self.document = document or (lambda path: None)
+        self.indexed = indexed
 
     @property
     def directory(self):
@@ -32,13 +33,31 @@ class StoredScreenPreviews:
 
     def identity(self, path, display_width, display_height, lane):
         physical = source(path)
-        document = self.document(path) or {}
+        if self.indexed is not None:
+            current = self.indexed(path, lane, 'screen')
+            if current is None:
+                return None
+            facts, raw = current
+            from .models import EditDocument
+            from .projects import validate_saved
+            from .saved_grades import notice, whole_grade_fallback
+            saved = validate_saved(EditDocument, raw) if raw is not None else None
+            document = saved.model_dump(mode="json") if saved else {}
+            if saved and whole_grade_fallback(notice(saved)):
+                document.pop('global_adjustments', None)
+            stamp = [facts['bytes'], facts['mtime_ns']]
+            from .library_pictures import indexed_picture_key
+            source_key = indexed_picture_key(physical, 2560, quality(document), stamp)
+        else:
+            document = self.document(path) or {}
+            stat = Path(physical).stat()
+            stamp = [stat.st_size, stat.st_mtime_ns]
+            source_key = picture_key(physical, 2560, quality(document))
         grade = sha256(json.dumps(document, sort_keys=True).encode()).hexdigest()
-        stat = Path(physical).stat()
         identity = dict(version=VERSION, path=str(path), lane=lane,
             display_width=display_width, display_height=display_height,
-            source_key=picture_key(physical, 2560, quality(document)),
-            stamp=[stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns], grade_identity=grade)
+            source_key=source_key,
+            stamp=stamp, grade_identity=grade)
         key = sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         slot = sha256(json.dumps([str(path), lane, display_width, display_height]).encode()).hexdigest()
         # Live Library's HDR route currently uses the fixed 1000-nit target.
@@ -125,7 +144,7 @@ class StoredScreenPreviews:
             lossless=False, usecontainer=True, numthreads=os.cpu_count() or 1, **tags)
         if cancelled(): return False
         stat = Path(source(identity['path'])).stat()
-        if identity['stamp'] != [stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns]: return False
+        if identity['stamp'] != [stat.st_size, stat.st_mtime_ns]: return False
         self.cache.prepare()
         directory = self.directory
         if directory.is_symlink() or getattr(directory, 'is_junction', lambda: False)():
@@ -207,7 +226,8 @@ def add_screen_preview_routes(router, live, worker, store=None):
     from fastapi import HTTPException, Request
     from fastapi.responses import Response
     from starlette.concurrency import run_in_threadpool
-    cache = StoredScreenPreviews(live.root, live.document)
+    from .library_finished_thumbnails import FinishedThumbnails
+    cache = StoredScreenPreviews(live.root, live.document, FinishedThumbnails(live).current)
     from threading import BoundedSemaphore
     slots = BoundedSemaphore(2)  # Bounded uploads; no folder-sized RAM queue.
     from .library_finished_thumbnails import add_finished_thumbnail_routes
@@ -226,12 +246,12 @@ def add_screen_preview_routes(router, live, worker, store=None):
     @router.get('/stored-screen-preview')
     def read(path: str, display_width: int, display_height: int, lane: str):
         current = identity(path, display_width, display_height, lane)
-        result = cache.read(current) if cache.cache.preferences()['enabled'] else None
+        result = cache.read(current) if current and cache.cache.preferences()['enabled'] else None
         if not result and cache.cache.preferences()['enabled']:
             # Grade's whole frame is display independent. A popped-out Library
             # on a different monitor uses the same picture, not another finish.
             handed = identity(path, 2560, 2560, lane)
-            candidate = cache.read(handed)
+            candidate = cache.read(handed) if handed else None
             if candidate and candidate[0].get('grade_picture'):
                 current, result = handed, candidate
         if not result: return Response(status_code=204)
@@ -254,7 +274,10 @@ def add_screen_preview_routes(router, live, worker, store=None):
             if not 1 <= width <= 2560 or not 1 <= height <= 2560 or stride != ((width*8+255)//256)*256:
                 raise HTTPException(400, 'Invalid screen preview dimensions')
             current = await run_in_threadpool(identity, path, display_width, display_height, lane)
-            if current['grade_identity'] != grade_identity or current['source_key'] != source_key:
+            if not current or current['grade_identity'] != grade_identity or current['source_key'] != source_key:
+                log('stored_screen_preview_rejected', path=path, indexed=current is not None,
+                    grade_match=bool(current and current['grade_identity'] == grade_identity),
+                    source_match=bool(current and current['source_key'] == source_key))
                 return Response(status_code=409)
             if int(request.headers.get('content-length', '0')) != stride*height:
                 raise HTTPException(400, 'Invalid screen preview byte count')

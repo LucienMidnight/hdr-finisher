@@ -775,3 +775,28 @@ sign-off; the target remains unchanged.
 Evidence: `codebase/output/quick-library-check/batch4b-followup/{pixels,report,scenario}.json`
 and six before/after PNGs. The focused run peaked at 5.14 GB and settled at
 2.16 GB. The memory ceiling-plus-10% check also fails; no allowances changed. This is an incomplete checkpoint, not release acceptance.
+
+## November 4, 2026 — batch 5a partial checkpoint
+
+Measured on parent `8d2d442` and the batch 5a working tree, isolated Electron
+2560×1440, reused real-photo copies; no photo originals written. Indicative
+Library load-to-two-frames harness timings, not a controlled normal-navigation
+benchmark. Initial renderer setup excluded; original first-run costs included;
+new pixel readback overhead excluded; Python tests overlapped part of the run.
+
+| Action | Target | Before → after | Conditions / result |
+| --- | --- | --- | --- |
+| Edited 42 MP DSC07060.ARW first sharp | about 2 s | 7.857 → 2.026 s | +0.7 exposure; exact baseline HDR pixels; source/transfer 751 ms, GPU 527 ms, quantiles 34 ms, metadata handoff 204 ms, direct upload 90 ms; remaining setup/draw/presentation about 420 ms |
+| Edited Nikon D7500 NEF first sharp | faster | 4.446 → 1.645 s | Same temporary global grade; exact HDR pixels; source/transfer 825 ms, GPU 300 ms, quantiles 38 ms, metadata 174 ms; remaining draw/presentation about 307 ms |
+| DxO 16-bit TIFF first sharp | about 3 s | 5.564 → 2.332 s | Corrected RGB half precision, exact HDR pixels; source/transfer 1016 ms, GPU 805 ms, quantiles 31 ms, metadata 210 ms; remaining draw/presentation 269 ms |
+| TIFF source band reduction | RAW-like | 2.554 → 0.573 s | 5304×7952 → 3416×5120 uint16; old standalone profile vs app observation, OS cache differs; new reads 122 ms; pipeline default workers 12, bounded in-flight 4 |
+| Stored-screen miss check | tens of ms | 13–39 ms | Local indexed stamp/grade only; offline source unit check passes |
+| First same-session stored sharp | <0.5 s | 0.899–1.093 s | Not met: decode/pack 68–75 ms, body fetch 862–1017 ms, setup/upload/draw 37–76 ms |
+| Restart stored ARW / NEF sharp | <0.5 s | 0.243 / 0.259 s | Met in API harness; next loads 0.136 / 0.183 s; no scan call; corrected TIFF restart remains open |
+| Mixed Library Single smoke | ten steps, frame gap ≤250 ms | stops at step 1; frame gap 3680 ms | Not qualified: expired grants; app peak 2.696 GB |
+
+Whole-app focused peaks: 3.406 GB (three-photo run), 2.734 GB (corrected TIFF).
+No paired original peak: the proposed +5% comparison is unproven. No allowance
+changes. Heavy local/geometry/denoise grades retain the fallback handoff; 5a
+remains partial. Evidence retained in `codebase/output/batch5a/results.json`,
+`restart.json` and `stages.json`, plus `output/quick-library-check/batch5a/report.json`.

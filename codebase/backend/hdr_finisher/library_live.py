@@ -320,7 +320,8 @@ class LivePictures:
             path=str(path), adjustments=document.get("global_adjustments") or metadata["adjustments"],
             locals=document.get("local_adjustments", []), denoise=document.get("denoise", {}),
             framing=document.get("framing"),
-            white=document.get("hdr_reference_white_nits", 203), grade_identity=grade_id)
+            white=document.get("hdr_reference_white_nits", 203), grade_identity=grade_id,
+            screen_grade_identity=sha256(json.dumps(document, sort_keys=True).encode()).hexdigest())
         from .finishing import geometry_output_dimensions
         adjustments = validate_saved(AdjustmentState, result["adjustments"])
         result["scene_width"], result["scene_height"] = metadata["width"], metadata["height"]

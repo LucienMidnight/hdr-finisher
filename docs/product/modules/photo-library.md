@@ -1,6 +1,6 @@
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in
+**Status:** Batch 5a partial checkpoint November 4, 2026 (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
@@ -97,7 +97,67 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Built November 3, 2026 |
 | 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Follow-up incomplete November 4, 2026 |
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Not started |
+| 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction. | Partial November 4, 2026; focused global-grade pixels pass; smoke, heavy-grade and full reopening acceptance open |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Not started |
+
+### Batch 5a checkpoint — November 4, 2026
+
+Partial implementation; acceptance remains open. Steve reports 4a–4c smooth
+in the November 4 brief; the older checkpoints below retain their own dates.
+Reduced RAW and RGB grades with default geometry, no locals and no enabled
+denoise can draw from their developed planes before uploading/storing them.
+RAW orientation and RGB half precision are preserved. Persistence starts after
+two presentation frames, retains its source claim, and does not clear the
+current picture's prepared masks/proxies until its identity changes. Existing
+cache shares, allowances, priorities, on-demand development and Fit rules stay.
+Geometry/local/denoise grades still use the backend acceptance/pixel route;
+this is a significant remaining part of the heavily graded-photo request.
+
+Screen captures previously compared the finishing-only grade hash with a
+whole-document hash and were rejected. Live metadata now carries both hashes.
+Screen cache reads validate against the local indexed source stamp and saved
+or pending grade, without statting or opening the source/sidecar drive. A unit
+test removes the source before reopening and rejects a changed pending grade.
+Preview identity v2 invalidates existing disposable screen pictures; saved
+projects are unaffected. Rejected captures now log which identity differed.
+
+Uncompressed integer/float TIFF reduction pipelines its sequential reads with
+parallel Lanczos bands, using all available CPU workers within the previous
+32 MB band-work allowance. Tests compare uint16/float output exactly with the
+previous serial calculation. The copied 42 MP DxO target reduced in 0.573 s
+(0.122 s file reads); preparation including checks was 0.739 s. Multi-TIFF
+selected-photo contention has not been qualified.
+
+Focused Electron checks at 2560×1440 used reused photo copies and temporary
++0.7 exposure grades for ARW/NEF, restoring their sidecars afterward. First
+load to two presentation frames: ARW 7.857 → 2.026 s; NEF 4.446 → 1.645 s;
+TIFF 5.564 → 2.332 s. These are direct Library API harness observations, not
+normal UI-navigation qualification: initial GPU setup is outside the timer,
+pixel-readback time is excluded from the new timings, the baseline includes
+first-run costs, and the Python suite overlapped some measurements. All three
+finished HDR arrays match the baseline exactly (perceptual difference zero);
+all measured pixels remain below the exact 1000-nit ceiling. This is a global
+exposure-grade check, not a heavy local/retouch grade qualification.
+
+Miss checks: 13–39 ms. First same-session stored redraw: 0.90–1.09 s, missing
+the 0.5 s target; backend decode/pack is 68–75 ms while fetch/body completion
+is 0.86–1.02 s. ARW and NEF restart redraws: 0.243/0.259 s, then 0.136/0.183 s,
+without a folder scan in the driver. TIFF restart qualification must be repeated
+with the corrected picture (the earlier restart used the rejected black-picture
+candidate). No retained-pixel maximum was relaxed. Proposed memory tolerance
+was +5%; measured whole-app peaks 3.406 GB for the three-photo run and 2.734 GB
+for the corrected TIFF run, but no paired baseline peak exists, so memory
+non-regression is unproven.
+
+Validation: 782 JavaScript checks pass; 56 focused backend checks pass. Full
+Python: 3037 pass, 3 skip, one unrelated existing live-plan cached-scene test
+fails (expected a remembered-error 422; got 200). Required plain-Electron
+`quick-library-check --single` stops at Single step 1: expired grants,
+3.680 s frame gap, 2.696 GB peak. No claim that normal navigation or 4a–4c
+regression acceptance passes. Slow checks stopped at the original allowance
+plus Steve's approved extra ten minutes. Remaining work: heavy grades, first
+stored-body delivery, corrected TIFF restart, mixed navigation, contention,
+SDR qualification and paired peak memory. No push or installer.
 
 ### Batch 4b follow-up checkpoint — November 4, 2026
 
@@ -135,7 +195,7 @@ and opens memory settings. No tokens or allowances changed. Registered Library
 windows may query video memory through the existing window-level handler;
 photo commands stay main-only. The popped-out query completed without error.
 
-781 JavaScript checks passed. Final Python: 3,033 passed, three skipped, one known
+782 JavaScript checks passed. Final Python: 3,033 passed, three skipped, one known
 baseline failure, `test_remembered_failure_does_not_hide_current_grade_cached_scene`.
 The app check also exceeded the unchanged memory ceiling plus 10%; the baseline
 diagnostic exceeded it too. The final focused check peaked at 5.14 GB and

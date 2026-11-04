@@ -315,3 +315,15 @@ def test_live_native_handoff_keeps_received_planes_without_interleaved_copy(tmp_
             np.testing.assert_allclose(decoded[0][0,0], [.1,.2,.3])
             return {'width':12,'height':8}
     assert gpu_raw.developed(Scene(),str(photo),header,payload)['width'] == 12
+
+
+def test_reduced_raw_description_needs_no_pixel_upload(tmp_path):
+    photo = tmp_path/'photo.ARW'; photo.write_bytes(b'original')
+    header = _header(photo)
+    class Description:
+        def build(self, path, edge, quality, decoded):
+            pixels, reference, meta = decoded
+            assert pixels is None and reference is None
+            assert meta['starting_look'] and meta['default_document']
+            return {'described':True}
+    assert gpu_raw.developed(Description(),str(photo),header,None) == {'described':True}

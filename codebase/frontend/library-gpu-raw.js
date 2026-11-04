@@ -1032,7 +1032,7 @@
     const entries = [];
     for (const storedEdge of edges) {
       const picture = developed.reduced[storedEdge];
-      const header = { draw_first:false, rgb:meta.rgb, has_sdr_reference:!!meta.sdr_reference, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
+      const header = { draw_first:liveScene && !nativeMode, rgb:meta.rgb, has_sdr_reference:!!meta.sdr_reference, colour:meta.colour, layout:meta.layout, orientation:meta.orientation, source_job:meta.source_job, path: meta.path, identity: meta.identity, raw_import_settings: meta.raw_import_settings,
       edge:storedEdge, sample_bytes:picture.sample_bytes || 4, source_quality:meta.source_quality, item_path:meta.item_path, native_mode:nativeMode && !liveScene, flip: meta.flip, height: picture.height, width: picture.width,
       source_width: meta.flip === 5 || meta.flip === 6 ? meta.height : meta.width, source_height: meta.flip === 5 || meta.flip === 6 ? meta.width : meta.height,
       peaks: developed.peaks, robust, lens_corrected: !!meta.lens_grid, raw_start_brightness: meta.raw_start_brightness, gpu_ms: Math.round(gpuMs),
@@ -1042,7 +1042,7 @@
       timing_ms: { ...meta.source_timings_ms, ...developed.timings, preparation:Math.round(performance.now()-begun), exr_channels:meta.colour?.decoder_metadata?.library_exr_timings_ms?.channels, exr_interleave:meta.colour?.decoder_metadata?.library_exr_timings_ms?.interleave, decode:meta.decode_ms, gain_map:developed.timings.gain_map ?? meta.gain_map_ms, highlight_support:meta.highlight_support_ms, sensor: Math.round(sensorMs), gpu: Math.round(gpuMs), quantiles: Math.round(quantileMs) } };
       entries.push({header,picture});
     }
-    const send = async (entry, describeOnly = false) => {
+    const send = async (entry, describeOnly = false, background = false) => {
       const {header,picture}=entry, packedAt=performance.now();
       // Transfer native planes individually. A full-size contiguous fetch body
       // makes Chromium duplicate hundreds of MB before the backend sees it.
@@ -1052,7 +1052,7 @@
       // so Chromium cannot retain another contiguous full-size request body.
       const payload=framed, bytes=parts ? parts.reduce((n,p)=>n+p.byteLength,0) : framed.byteLength, sentAt=performance.now();
       const stored=await root.HDRLibraryUpload.send(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed",
-        {body:payload,parts,signal,headers:{"Content-Type":"application/octet-stream"}});
+        {body:payload,parts,signal:background ? undefined : signal,headers:{"Content-Type":"application/octet-stream"}});
       root.HDRLibraryStopwatch?.(describeOnly ? "picture_scene_description" : "picture_scene_handoff",{
         path,edge:header.edge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes});
       const result=JSON.parse(stored.text || "{}");
@@ -1060,33 +1060,39 @@
       if(sharedJob) sharedJob.results.set(entry.header.edge,result);
       return result;
     };
-    if(liveScene && meta.rgb && !nativeMode && !root.HDRLibraryProfileLegacy && entries.every(({picture})=>picture.textures?.length)){
+    if(liveScene && !nativeMode && !root.HDRLibraryProfileLegacy && entries.every(({picture})=>picture.planes?.length)){
       const variants={};
-      for(const entry of entries)variants[entry.header.edge]=await send(entry);
-      selectedResult=variants[edge];
+      for(const entry of entries)variants[entry.header.edge]=await send(entry,true);
       if(Object.values(variants).every(value=>value.direct_supported && value.render_identity===sceneIdentity) && entries.reduce((n,{picture})=>n+picture.planes.reduce((m,p)=>m+p.byteLength,0)+picture.width*picture.height*8*(picture.textures?.length || 0),0)<=(root.HDRLibraryRAM?.limit('sharp') ?? 512_000_000)){
         const poolKey=path+"|"+sceneIdentity;
         let disposed=false;
         const dispose=()=>{
-          if(disposed)return;disposed=true;clearTimeout(timer);
+          if(disposed)return;disposed=true;clearTimeout(timer);clearInterval(sourceRenewal);
           for(const {picture} of entries)for(const texture of picture.textures || [])texture.destroy();
         };
-        // Both sizes have been stored in the bounded saving stage already.
-        const store=()=>Promise.resolve();
-        for(const {picture} of entries)picture.planes=[];
-        if(!sharedJob) await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
+        let storing, stored=false;
+        const store=()=>{
+          if(stored)return Promise.resolve();
+          if(!storing)storing=(async()=>{
+            for(const entry of entries)await send(entry,false,true);
+            stored=true;clearInterval(sourceRenewal);
+            for(const {picture} of entries)picture.planes=[];
+            await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
+          })().catch(error=>{storing=null;throw error;});
+          return storing;
+        };
         for(const {header,picture} of entries){
           const value=variants[header.edge];
-          value.directScene={device:developed.device,texture:lane=>!disposed && picture.textures?.[lane==="sdr" && value.adjustments.sdr.use_authored_base && value.has_reference ? 1 : 0],store};
+          value.directScene={planes:()=>!disposed && picture.planes,sampleBytes:header.sample_bytes || 4,flip:meta.rgb ? 0 : meta.flip,rawWidth:picture.width,rawHeight:picture.height,device:developed.device,texture:lane=>!disposed && picture.textures?.[lane==="sdr" && value.adjustments.sdr.use_authored_base && value.has_reference ? 1 : 0],store};
         }
         const bytes=entries.reduce((n,{picture})=>n+picture.planes.reduce((m,p)=>m+p.byteLength,0)+picture.width*picture.height*8*(picture.textures?.length || 0),0);
-        const timer=setTimeout(()=>{dispose();if(directScenes.get(poolKey)?.variants===variants)directScenes.delete(poolKey);},30000);
+        const timer=setTimeout(()=>{void store().catch(error=>root.HDRLibraryStopwatch?.("picture_store_failed",{path,reason:error.message})).finally(()=>{dispose();if(directScenes.get(poolKey)?.variants===variants)directScenes.delete(poolKey);});},30000);
         timer.unref?.();
         directScenes.get(poolKey)?.dispose();
         directScenes.set(poolKey,{path,variants,bytes,dispose,store});
         root.HDRLibraryRAM?.enforce();
         while(directBytes()>(root.HDRLibraryRAM?.limit('sharp') ?? 512_000_000) && directScenes.size>1){const key=directScenes.keys().next().value;directScenes.get(key).dispose();directScenes.delete(key);}
-        retainedSource=true;
+        retainedSource=true;if(sharedJob)sharedJob.retainedToken=sourceJob;
         selectedResult=variants[edge];
       }
     }
@@ -1095,7 +1101,7 @@
       finally {for(const {picture} of entries)for(const texture of picture.textures || [])texture.destroy();}
     }
     root.HDRLibraryStopwatch?.("picture_development", {path, duration_ms:performance.now()-begun, gpu_ms:gpuMs, sensor_ms:sensorMs, source_ms:meta.source_timings_ms, gpu_stages_ms:developed.timings, quantiles_ms:quantileMs, handoff_ms:performance.now()-handoffStarted});
-    selectedResult.scene_stored=true;
+    selectedResult.scene_stored=!liveScene || nativeMode;
     return selectedResult;
     } catch(error){
       if(error.libraryRequeue && !error.gpuRetry && body && sourceJob && root.HDRLibraryRAM?.admit('sharp',body.byteLength)){
@@ -1104,7 +1110,7 @@
       }
       throw error;
     } finally {
-      if(!decodedSources.has(decodedKey))clearInterval(sourceRenewal);
+      if(!retainedSource)clearInterval(sourceRenewal);
       if(!retainedSource)for(const picture of Object.values(gpuResult?.reduced || {}))for(const texture of picture.textures || [])texture.destroy();
       if(sourceJob && !retainedSource && !sharedJob) await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
     }
@@ -1156,7 +1162,7 @@
             // every downloaded source buffer reachable through job.source.
             // Only the explicit decoded-source cache may keep samples on yield.
             job.source=null;
-            if(token && ![...decodedSources.values()].some(value=>value.token===token))
+            if(token && job.retainedToken!==token && ![...decodedSources.values()].some(value=>value.token===token))
               await fetch("/api/library/live-source/"+token,{method:"DELETE"}).catch(()=>{});
           }
         } });
@@ -1174,7 +1180,6 @@
       job.promise.then(values => {
         signal?.removeEventListener("abort", leave);
         const value=values.get(edge);
-        if(value) value.scene_stored=true;
         resolve(cachedDirect(path,edge,sceneIdentity) || value);
       },
         error => { signal?.removeEventListener("abort", leave); reject(error); });

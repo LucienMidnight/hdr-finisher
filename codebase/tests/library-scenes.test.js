@@ -5,7 +5,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const gate=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {resolve,promise};};
 function setup(plans,develop,cores=4){
  let time=0;const requests=[],events=[];
- const context={navigator:{hardwareConcurrency:cores},window:{HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},HDRLibrarySceneScheduler:scheduler,AbortController,DOMException,setTimeout,clearTimeout,setInterval,clearInterval,
+ const context={navigator:{hardwareConcurrency:cores},window:{HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields})},HDRLibrarySceneScheduler:scheduler,AbortController,DOMException,requestAnimationFrame:callback=>setImmediate(callback),setTimeout,clearTimeout,setInterval,clearInterval,
   performance:{now:()=>time},console,crypto:require('node:crypto').webcrypto,
   HDRLibraryGrants:{acquire:async()=>({id:"test"}),run:async(p,k,s,task)=>task("test",s),promote:()=>{},release:()=>{}},
   HDRLibraryGpuRaw:{enabled:()=>true,liveScene:develop},
@@ -182,7 +182,7 @@ test('direct scene persistence waits for acceptance and starts after presentatio
  context.fetch=async url=>{calls.push(url);return {ok:true};};
  const meta={path:'photo',key:'current',directScene:{store:()=>{calls.push('accept');return accepted.promise;}}};
  scenes.review('photo');scenes.save(meta);await tick();assert.deepEqual(calls,[]);
- scenes.save(meta,true);await tick();assert.deepEqual(calls,['accept']);
+ scenes.save(meta,true);await tick();await tick();await tick();assert.deepEqual(calls,['accept']);
  accepted.resolve();await tick();assert.deepEqual(calls,['accept','/api/library/live-store/current']);
 });
 
@@ -398,4 +398,18 @@ test('plain SDR files use their file picture without development',async()=>{
  const s=setup({file:{original_file:true,bytes:1,revision:'1'}},()=>assert.fail('Unexpected development'));
  s.context.HDRLibraryGrants.preview=async()=>({status:200,json:async()=>({url:'file',width:800,height:600})});
  assert.equal((await s.scenes.load('file',2560)).picture_source,'original file');
+});
+
+
+test('a transient post-presentation save failure retries without replacing the shown picture',async()=>{
+ const {context,scenes}=setup({},()=>{}),events=[],calls=[];
+ context.setTimeout=callback=>setImmediate(callback);context.clearTimeout=clearImmediate;
+ context.window.HDRLibraryStopwatch=(name,fields)=>events.push({name,...fields});
+ context.fetch=async url=>{calls.push(url);return {ok:calls.length>1,status:calls.length>1?200:503};};
+ const shown={path:'photo',key:'drawn',directScene:{store:async()=>{}}};
+ scenes.save(shown,true);
+ for(let i=0;i<12;i++)await tick();
+ assert.deepEqual(calls,['/api/library/live-store/drawn','/api/library/live-store/drawn']);
+ assert.equal(events.filter(event=>event.name==='picture_store_failed').length,1);
+ assert.equal(shown.key,'drawn');
 });
