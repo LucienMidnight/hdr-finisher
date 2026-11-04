@@ -8,6 +8,7 @@ async function run({app, window, backend, configPath = process.env.HDR_FINISHER_
   const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
   const stagePath = path.join(profile, 'quick-stage.json');
   const resultPath = path.join(profile, 'quick-result.json');
+  const quitTimer=setInterval(()=>{if(fs.existsSync(path.join(profile,'quick-quit'))){clearInterval(quitTimer);for(const w of require('electron').BrowserWindow.getAllWindows())w.destroy();app.quit();}},50);quitTimer.unref();
   const stage = name => fs.writeFileSync(stagePath, JSON.stringify({stage:name}));
   window.webContents.on('console-message', (_event, ...args) => {
     const message = args.find(value => typeof value === 'string' && value.startsWith('QUICK_LIBRARY_STAGE:'));
@@ -27,7 +28,7 @@ async function run({app, window, backend, configPath = process.env.HDR_FINISHER_
     const frame = window.webContents.mainFrame.framesInSubtree.find(frame => /\/library(?:\?|$)/.test(frame.url));
     if (!frame) throw Error('Library frame missing');
     if(config.pixelCapture){await require('./library-pixel-test.cjs').run({frame,config,stage});stage('done');return;}
-    if(config.batch5c){const result=await require('./library-wait-check.cjs').run({window,frame,config,stage});fs.writeFileSync(resultPath,JSON.stringify(result));stage('done');return;}
+    if(config.batch5c){const result=await require('./library-wait-check.cjs').run({window,frame,config,stage});result.appStartToScenarioDoneMs=Date.now()-config.appStartedAt;fs.writeFileSync(resultPath,JSON.stringify(result));stage('done');return;}
     const source = fs.readFileSync(path.join(__dirname, '../tools/quick-library-scenario.js'), 'utf8');
     const result = config.gradeHandoffPixels ? await require('./library-grade-picture-check.cjs').run({window,frame,config,stage}) : await frame.executeJavaScript(`(${source})(${JSON.stringify(config)})`);
     if(config.gradeHandoffPopout&&result.grade_handoff&&result.stage==='done'){

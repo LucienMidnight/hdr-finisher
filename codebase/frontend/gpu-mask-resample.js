@@ -38,16 +38,28 @@
       return vec4f(vec3f(textureLoad(sourceTexture, at, 0).r), 1.0);
     }`;
 
+  function descriptors(renderer) {
+    const module=renderer.device.createShaderModule({code:window.HDRWebGPUShaders.LUMA_MASK_SHADER_SOURCE+SHADER});
+    return ['maskResampleFragmentMain','maskCropFragmentMain'].map(entryPoint=>({layout:renderer.maskPipelineLayout,
+      vertex:{module,entryPoint:'vertexMain'},fragment:{module,entryPoint,targets:[{format:'r16float'}]},primitive:{topology:'triangle-list'}}));
+  }
+  async function warm(renderer,beforeNext) {
+    const device=renderer.device;
+    if(renderer.maskResampleDevice===device)return;
+    const created=[];
+    for(const descriptor of descriptors(renderer)){
+      await beforeNext();
+      if(renderer.maskResampleDevice===device)return;
+      created.push(await device.createRenderPipelineAsync(descriptor));
+    }
+    if(renderer.device!==device || renderer.maskResampleDevice===device)return;
+    [renderer.maskResamplePipeline,renderer.maskCropPipeline]=created;
+    renderer.maskResampleDevice=device;
+  }
   function pipelines(renderer) {
     const d = renderer.device;
     if (renderer.maskResampleDevice !== d) {
-      const module = d.createShaderModule({ code: window.HDRWebGPUShaders.LUMA_MASK_SHADER_SOURCE + SHADER });
-      const make = entryPoint => d.createRenderPipeline({ layout: renderer.maskPipelineLayout,
-        vertex: { module, entryPoint: 'vertexMain' },
-        fragment: { module, entryPoint, targets: [{ format: 'r16float' }] },
-        primitive: { topology: 'triangle-list' } });
-      renderer.maskResamplePipeline = make('maskResampleFragmentMain');
-      renderer.maskCropPipeline = make('maskCropFragmentMain');
+      [renderer.maskResamplePipeline,renderer.maskCropPipeline]=descriptors(renderer).map(descriptor=>d.createRenderPipeline(descriptor));
       renderer.maskResampleDevice = d;
     }
     return renderer;
@@ -83,5 +95,5 @@
     return new Float32Array(PASS_LAYOUTS.record("RESAMPLE", { MATRIX_00: x[0], MATRIX_01: x[1], MATRIX_02: x[2], MATRIX_10: y[0], MATRIX_11: y[1], MATRIX_12: y[2], MATRIX_20: k[6], MATRIX_21: k[7], MATRIX_22: divisor, MINIMUM: extent.min, MAXIMUM: extent.max }));
   }
 
-  window.HDRGpuMaskResample = Object.freeze({ pipeline, cropPipeline, sourceRect, parameters });
+  window.HDRGpuMaskResample = Object.freeze({ warm, pipeline, cropPipeline, sourceRect, parameters });
 })();

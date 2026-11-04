@@ -1471,6 +1471,7 @@
     const opening=state.folderOpen;
     if(!opening || opening.controller.signal.aborted || trace.view!=="grid")return;
     if(!opening.presented){opening.presented=true;
+      window.HDRIdleWarmup?.gridShown();
       HDRLibraryStopwatch("folder_first_grid_picture",{path:opening.path,request:opening.request,duration_ms:performance.now()-opening.started});
     }
     const camera=fields.picture_size==="camera preview";
@@ -2225,7 +2226,14 @@
       if (message.action === "theme") applyTheme(message.theme);
       if (message.action === "close") void libraryDesktop.dockLibrary(portableState()).catch(error => status(error.message));
     });
-    libraryDesktop?.onDisplayStateChanged(() => {
+    const displayIdentity=environment=>HDRLibraryReadyWindow.displayIdentity(environment,window.matchMedia?.('(dynamic-range: high)').matches);
+    let displayKey;
+    const initialDisplay=libraryDesktop?.environment().then(environment=>{displayKey=displayIdentity(environment);}).catch(()=>{});
+    libraryDesktop?.onDisplayStateChanged(async environment => {
+      await initialDisplay;
+      const key=displayIdentity(environment);
+      if(key===displayKey)return; // Bounds/fullscreen notifications do not change the output display.
+      displayKey=key;
       readyWindow.invalidate(); quickWindow.invalidate();
       state.displayEpoch += 1;
       if (state.view === "single") showSingle(); else { clearCells(state.cells); paintGrid(); }

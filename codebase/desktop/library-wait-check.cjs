@@ -4,7 +4,8 @@ async function run({window,frame,config,stage}) {
  let target=window,lib=code=>frame.executeJavaScript(code);
  const wait=async(code,timeout=45000)=>{const end=Date.now()+timeout;while(!await lib(code)){if(Date.now()>end)throw Error('Timed out: '+code);await sleep(30);}};
  if(config.coldPipelines)await lib(`(()=>{const render=HDRLibraryGPU.prototype.renderTo;HDRLibraryGPU.prototype.renderTo=async function(...args){for(const format of [navigator.gpu.getPreferredCanvasFormat(),'rgba16float']){if(this.pipelines.has(format))continue;const staged=HDRWebGPUPreview.prototype.pipelineFor.call(this,format,descriptor=>descriptor),compiled={};for(const [name,descriptor] of Object.entries(staged)){const start=performance.now();compiled[name]=await this.device.createRenderPipelineAsync(descriptor);HDRLibraryStopwatch('picture_pipeline_compile',{format,name,path:this.libraryMeta?.path,duration_ms:performance.now()-start});}this.pipelines.set(format,compiled);}return render.apply(this,args);};})()`);
- await lib(`window.waitEvents=[];const old=HDRLibraryStopwatch;window.HDRLibraryStopwatch=(stage,fields={})=>{waitEvents.push({stage,at:performance.now(),...fields});old(stage,fields)};void HDRLibrary.browse(${JSON.stringify(config.folder)});true`);
+ if(config.noStartupWarm||config.startupWarm)await lib(`window.HDRIdleWarmupSuppressed=true;true`);
+ await lib(`window.waitEvents=[];const old=HDRLibraryStopwatch;window.HDRLibraryStopwatch=(stage,fields={})=>{waitEvents.push({stage,at:performance.now(),...fields});old(stage,fields)};void HDRLibrary.browse(${JSON.stringify(config.startupWarm?config.warmupFolder:config.folder)});true`);
  await wait(`HDRLibrary.getSnapshot().paths.length>=2 && document.querySelector('#grid-space .library-cell')`);
  if(config.popout){
   await lib(`document.getElementById('popout-library').click();true`);
@@ -16,11 +17,20 @@ async function run({window,frame,config,stage}) {
  }
  if(config.hdr)await lib(`if(!HDRLibrary.getSnapshot().hdr)document.getElementById('hdr-button').click();true`);
  if(config.idle)await wait(`HDRLibraryScenes.snapshot().sources.jobs.length===0 && document.querySelector('#grid-space canvas[data-picture-key]')`);
+ let pipelineMemory=null;
+ const gpuMemory=()=>{
+   const pids=require('electron').app.getAppMetrics().map(p=>p.pid);
+   const script='$ids=@('+pids.join(',')+'); $rows=Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUProcessMemory | Where-Object { $_.Name -match "^pid_(\\d+)_" -and $ids -contains [int]$Matches[1] }; [pscustomobject]@{dedicated=($rows | Measure-Object DedicatedUsage -Sum).Sum; shared=($rows | Measure-Object SharedUsage -Sum).Sum; committed=($rows | Measure-Object TotalCommitted -Sum).Sum} | ConvertTo-Json -Compress';
+   return JSON.parse(require('node:child_process').execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{encoding:'utf8',windowsHide:true,timeout:10000}));
+ };
+ if(config.startupWarm){stage('startup pipeline preparation');await wait(`HDRLibraryScenes.snapshot().sources.jobs.length===0 && document.querySelector('#grid-space canvas[data-picture-key]')`);const before=gpuMemory();await lib(`window.HDRIdleWarmupSuppressed=false;true`);await wait(`HDRIdleWarmup.results.library==='ready' && HDRIdleWarmup.results['library-quick']==='ready'`,90000);pipelineMemory={before,after:gpuMemory()};await lib(`void HDRLibrary.browse(${JSON.stringify(config.folder)});true`);await wait(`HDRLibrary.getSnapshot().paths.length>=2 && document.querySelector('#grid-space .library-cell')`);}
+ if(config.busy){stage('grid actively developing');await wait(`HDRLibraryScenes.snapshot().sources.active>0 || HDRLibraryScenes.snapshot().draws.active>0`);}
+ const startup=await lib(`({timeOrigin:performance.timeOrigin,warmup:{...HDRIdleWarmup.results},at:performance.now(),events:waitEvents.filter(e=>e.stage.startsWith('folder_')),jobs:HDRLibraryScenes.snapshot()})`);
  const photo=config.diagnosticPhoto||'DSC04375_DxO_clipped_target.tif';
  const choose=`(()=>{const cells=[...document.querySelectorAll('.library-cell')];const c=cells.find(c=>c.dataset.path.endsWith(${JSON.stringify(photo)}));if(!c)throw Error('Missing '+${JSON.stringify(photo)});c.click();document.getElementById('single-view').click();if(!document.querySelector('.library.review'))document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true}));})()`;
  if(config.idle)await wait(`[...document.querySelectorAll('#grid-space .library-cell')].some(c=>c.dataset.path.endsWith(${JSON.stringify(photo)})&&c.querySelector('canvas[data-picture-key]:not([hidden])'))`);
  const measures=[];
- for(let n=0;n<3;n++){
+ for(let n=0;n<(config.timingOnly?1:3);n++){
   if(n===2){await lib(`window.waitBackKey=HDRLibrary.getSnapshot().paths.at(-1)===HDRLibrary.getSnapshot().selected?'ArrowLeft':'ArrowRight';document.body.dispatchEvent(new KeyboardEvent('keydown',{key:waitBackKey,bubbles:true}));document.body.dispatchEvent(new KeyboardEvent('keyup',{key:waitBackKey,bubbles:true}));true`);await sleep(150);await lib(`const back=waitBackKey==='ArrowLeft'?'ArrowRight':'ArrowLeft';document.body.dispatchEvent(new KeyboardEvent('keydown',{key:back,bubbles:true}));document.body.dispatchEvent(new KeyboardEvent('keyup',{key:back,bubbles:true}));true`);}
 
   if(n===1){await lib(`document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));document.getElementById('grid-view').click();true`);await sleep(2100);}
@@ -39,6 +49,7 @@ async function run({window,frame,config,stage}) {
   measures.push({ms:samples.at(-1).at_ms,samples});await sleep(800);
  }
  fs.writeFileSync(path.join(out,'wait-check.json'),JSON.stringify({photo,measures},null,2));
+ if(config.timingOnly)return {stage:'done',appStartedAt:config.appStartedAt,pipelineMemory,startup,errors:[],probe:{},events:await lib('waitEvents'),wait_check:{photo,hdr:config.hdr,popout:config.popout,idle:config.idle,measures},scenario_ms:measures[0].ms};
  stage('compare pixels');
  await lib(`document.getElementById('compare-enabled').click();true`);
  const compareSamples=[];
@@ -62,8 +73,8 @@ async function run({window,frame,config,stage}) {
  stage('detail refusal');
  await lib(`document.getElementById('zoom-button').click();true`);await sleep(5000);
  const events=await lib('waitEvents'),snapshot=await lib('HDRLibrary.getSnapshot()'),notice=await lib(`document.getElementById('library-status')?.textContent || document.querySelector('[role=status]')?.textContent || ''`);
- const errors=[];if(events.some(e=>e.stage==='picture_development_start'&&e.reason==='zoom detail'&&e.at<deliberateAt))errors.push('Detail started before explicit zoom');if(events.filter(e=>e.stage==='picture_development_start'&&e.reason==='zoom detail'&&e.at>=deliberateAt).length>1)errors.push('Repeated detail development');if(measures.some(m=>m.samples.some(s=>s.standin&&s.lit_fraction<.01))||compareSamples.some(s=>s.standin&&s.lit_fraction<.01))errors.push('Black pixels while stand-in exists');if(events.some(e=>e.stage==='picture_surface_fault'))errors.push('Hidden presentation');
- const result={stage:'done',errors,probe:{},events,wait_check:{photo,hdr:config.hdr,popout:config.popout,idle:config.idle,measures,compareSamples,snapshot,notice,deliberateAt},scenario_ms:events.length?events.at(-1).at-events[0].at:0};
+ const errors=[];if(events.some(e=>e.stage==='picture_development_start'&&e.reason==='zoom detail'&&e.at<deliberateAt))errors.push('Detail started before explicit zoom');if(events.filter(e=>e.stage==='picture_development_start'&&e.reason==='zoom detail'&&e.at>=deliberateAt).length>1)errors.push('Repeated detail development');if(measures.slice(0,2).some(m=>{const first=m.samples.findIndex(s=>s.standin&&s.lit_fraction>=.01);return first>=0&&m.samples.slice(first).some(s=>s.lit_fraction<.01);})||compareSamples.some(s=>s.standin&&s.lit_fraction<.01))errors.push('Black pixels while stand-in exists');if(events.some(e=>e.stage==='picture_surface_fault'))errors.push('Hidden presentation');
+ const result={stage:'done',appStartedAt:config.appStartedAt,pipelineMemory,startup,errors,probe:{},events,wait_check:{photo,hdr:config.hdr,popout:config.popout,idle:config.idle,measures,compareSamples,snapshot,notice,deliberateAt},scenario_ms:events.length?events.at(-1).at-events[0].at:0};
  fs.writeFileSync(path.join(out,'wait-check.json'),JSON.stringify(result.wait_check,null,2));
  return result;
 }

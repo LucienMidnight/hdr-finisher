@@ -504,14 +504,22 @@
         for(const [key,work] of activeGpuWorks)if(work.state===state)gpuFailures.set(key,(gpuFailures.get(key)||0)+1);
         root.HDRLibraryGrants?.gpuLost();
       });
-      const pipelines = {};
-      for (const [name, code] of Object.entries({ NORMALIZE, DILATE, RESIDUAL, REPAIR, GREEN, HOMOGENEITY, COMBINE, EDGE_FINISH, REMAP, REDUCE })) {
-        await beforeNext();
-        pipelines[name] = await device.createComputePipelineAsync({ layout: "auto", compute: { module: device.createShaderModule({ code }), entryPoint: "main" } });
-      }
-      return { device, pipelines, errors, state };
+      return { device, pipelines: {}, errors, state, compilation: new Map() };
     })();
     try { return await shared; } catch (error) { shared = null; throw error; }
+  }
+
+  async function preparePipelines(context, beforeNext = async () => {}, names = null) {
+    const {device,pipelines,compilation}=context;
+    const codes={ NORMALIZE, DILATE, RESIDUAL, REPAIR, GREEN, HOMOGENEITY, COMBINE, EDGE_FINISH, REMAP, REDUCE };
+    for(const name of names || Object.keys(codes)) {
+      await beforeNext();
+      if(pipelines[name])continue;
+      if(!compilation.has(name))compilation.set(name,device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code:codes[name]}),entryPoint:"main"}})
+        .then(value=>pipelines[name]=value).catch(error=>{compilation.delete(name);throw error;}));
+      await compilation.get(name);
+    }
+    return pipelines;
   }
 
   // Python's round(): halves go to the even neighbour (Pillow sizes come from it).
@@ -574,7 +582,9 @@
   }
 
   async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity, signal = null, context = null }) {
-    const { device, pipelines, errors } = context || await gpu();
+    const sharedContext = context || await gpu();
+    await preparePipelines(sharedContext);
+    const { device, pipelines, errors } = sharedContext;
     const errorStart = errors.length;
     const w = meta.width, h = meta.height, n = w * h;
     const cw = Math.ceil(w / 3), chh = Math.ceil(h / 3);
@@ -1210,7 +1220,7 @@
     });
   }
 
-  const warmup = async beforeNext => { if (enabled()) await gpu(() => beforeNext(() => inflight.size > 0)); };
+  const warmup = async beforeNext => { if (enabled()) await preparePipelines(await gpu(),beforeNext); };
   // Interval arithmetic encloses every channel's distorted source footprint,
   // including non-monotone radial/tangential terms; corner sampling cannot.
   function dngFootprint(warp, x, y, width, height) {
@@ -1289,7 +1299,7 @@
     if(!response.ok)throw Error('GPU scheduling unavailable.');
     return {bytes:Math.max(0,(await response.json()).budget-(640*640*64+64*1024**2)),unified};
   }
-  const exported = Object.freeze({ reclaimDecoded:async(needed)=>{let released=0;for(const [key,value] of decodedSources){if(released>=needed)break;released+=value.body.byteLength;await dropDecoded(key);}for(const [key,entry] of directScenes){if(released>=needed)break;released+=entry.bytes;entry.dispose();directScenes.delete(key);}return released;}, preflight, cachedDirect, forgetDirect, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,COMMON,TURN,FINISHING,reducedSize,dngFootprint,uploadBuffer,yieldToWindow}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant, edges) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant,edges}) });
+  const exported = Object.freeze({ reclaimDecoded:async(needed)=>{let released=0;for(const [key,value] of decodedSources){if(released>=needed)break;released+=value.body.byteLength;await dropDecoded(key);}for(const [key,entry] of directScenes){if(released>=needed)break;released+=entry.bytes;entry.dispose();directScenes.delete(key);}return released;}, preflight, cachedDirect, forgetDirect, releaseSource, directBytes, rawBudget, handoffBody, shared:Object.freeze({gpu,preparePipelines,COMMON,TURN,FINISHING,reducedSize,dngFootprint,uploadBuffer,yieldToWindow}), developRaw, thumbnail, enabled, quantile, reducedSize, warmup, liveScene:(path, edge, signal, importance, sceneIdentity, grant, edges) => thumbnail(path, edge, signal, {liveScene:true,nativeMode:edge===100000,importance,sceneIdentity,grant,edges}) });
   root.HDRLibraryGpuRaw = exported;
   root.developRaw = developRaw;
 })(typeof window === "undefined" ? globalThis : window);

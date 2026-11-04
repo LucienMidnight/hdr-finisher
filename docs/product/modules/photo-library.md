@@ -1,6 +1,6 @@
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** Batch 5c partially built November 4, 2026: explicit detail admission and visible-stand-in safeguards; busy cold drawing and full black-screen acceptance remain open. Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in
+**Status:** Batch 5d built November 4, 2026: startup drawing-pipeline preparation and four-way fullscreen visibility accepted; busy-grid first sharp drawing now meets the +about 1 s target. Batch 5c fixes retained: explicit detail admission and visible-stand-in safeguards; its busy cold drawing and black-screen follow-ups are completed by 5d. Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
@@ -100,7 +100,76 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Open: selected-photo priority over grid developments (48 MP float TIFF 19.8 s), brush-mask and warp CPU time |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Not started |
 | 5b | The on-screen photo takes priority; recover lost reservations and hand over completed thumbnails; parallel screen perspective and mask warps. | Partial November 4, 2026: 32.65 s abandoned TIFF wait removed (2.06 s ordinary open; forced lost reservation 2.80 s). Four-photo SDR/HDR stored pixels identical to 5a. Busy cold fullscreen still 7.0–7.2 s versus idle 1.98–2.23 s; ARW ordinary first open 2.48–2.55 s. See checkpoint below. |
-| 5c | Visible TIFF/RAW stand-ins, explicit detail demand, memory admission before decoding and same-photo reopen investigation. | Partial November 4, 2026: Fit/native visibility and refusal retry fixes built. Same-name cache misses were different source paths. Busy first drawing still misses the +about 1 s target; see 5c checkpoint and performance table. |
+| 5c | Visible TIFF/RAW stand-ins, explicit detail demand, memory admission before decoding and same-photo reopen investigation. | Partial November 4, 2026: Fit/native visibility and refusal retry fixes built. Same-name cache misses were different source paths. At the 5c checkpoint busy first drawing still missed the +about 1 s target; completed by 5d below. |
+| 5d | Prepare drawing pipelines after the first grid picture; preserve popped-out SDR stand-ins on reopen. | Built November 4, 2026: prepared busy TIFF 2.12 s and heavy ARW 3.02 s; four docked/popped-out SDR/HDR pixel checks pass. See checkpoint below. |
+
+
+### Batch 5d checkpoint - November 4, 2026
+
+Startup now prepares the existing drawing pipelines once per renderer, after
+its first grid picture and a two-second quiet period. It yields between
+compilations for input, foreground drawing and scheduler pauses. Preparation
+can overlap source loading; it no longer waits for the entire busy grid to
+finish. Main and quick renderers prepare sequentially, covering SDR/HDR finish,
+RAW and RGB/TIFF development, denoise, masks and geometry. A popped-out Library
+prepares its own devices after showing its grid. Foreground requests can fill
+missing pipelines directly while the startup task is yielding. No photo is
+read or developed by preparation; Batch 4a remains in force. Shared RAW device
+creation no longer waits for every RAW shader before RGB/TIFF can use it.
+
+The popped-out black frame was caused by fullscreen/window-bounds notifications
+invalidating all pictures although the output display had not changed. Only a
+real display identity change now invalidates them. The existing stand-in remains
+until sharp presentation. Captured screen pixels pass docked SDR/HDR and
+popped-out SDR/HDR, including reopen. Reopen took 233/456/404/362 ms respectively;
+minimum lit-pixel fractions through entry/reopen were 0.9363/0.9356/0.3390/0.3390
+(the popped-out transition crop includes surrounding black). No all-black sample
+occurred after the first visible stand-in. The zoomed arrow-key flash remains
+out of scope.
+
+On Steve's machine, active-grid first sharp TIFF/ARW was 3.234/4.499 s when
+entered immediately with no startup pipelines ready, and 2.123/3.023 s after
+preparation. Against the 5c idle 2.050/2.421 s, prepared waits add only
+0.073/0.602 s. The ARW prepared run is also a second launch of the same test
+profile. App start to first thumbnail was 4.507 s enabled versus 4.555 s
+suppressed (folder-to-thumbnail 896 versus 941 ms): no measured startup penalty.
+These are single-run observations, not a claim of millisecond repeatability.
+
+Dawn's disk cache works on this machine: a fresh test profile wrote 134 entries
+and 7,570,202 bytes; a clean second launch retained the same shader-blob hashes
+and entry count while main preparation fell from 5.059 to 1.562 s (quick renderer
+0.343 to 0.384 s). No cache-disabling flags were added. Read-only inspection of
+Steve's normal desktop profile found a valid 7,655,408-byte Dawn cache, zero
+recorded corruption, and valid GPU/Graphite caches. Chromium's historical
+"Invalid cache (current) size" is a generic blockfile-cache size validation
+warning, not enough to identify Dawn: it was not reproduced on the clean
+restart. Its original cache cannot be attributed; it is not evidence that the
+current shader cache is broken. The harness now exits cleanly before recording
+cache state rather than force-killing a healthy app.
+
+WDDM process counters around preparation showed an extra 17.5-22.9 MB dedicated
+GPU memory and 557-845 MB shared GPU-addressed memory across these runs. These
+include renderer/driver allocations, not an exact per-pipeline byte count
+(WebGPU exposes none). Independent whole-app memory peaks across the four
+visibility checks were 3.12-3.40 GB, within existing rules. No cache allowance or
+memory budget changed. All shader math, descriptors and the exact HDR
+highlight-compression peak limit are unchanged; no output-path changes were
+made. Fit on entry, detail only on explicit zoom, selected-photo priority,
+single refusal and show-first/save-after remain intact.
+
+Checks: Node 797 passed. Python 3051 passed, 3 skipped, one already-known
+`test_remembered_failure_does_not_hide_current_grade_cached_scene` failure
+(expected 422, got 200, also recorded in 5b/5c). Fast logs:
+`codebase/output/batch5d-node.log`, `codebase/output/batch5d-pytest.log`.
+Sequential plain-Electron app checks totalled 8.2 minutes, including discarded
+investigation runs. Accepted local evidence under
+`codebase/output/quick-library-check/`: `batch5d-busy-immediate-tiff`,
+`batch5d-busy-immediate-arw`, `batch5d-busy-ready-tiff`, `batch5d-busy-ready-arw`,
+`batch5d-visible-dock-sdr`, `batch5d-visible-dock-hdr`, `batch5d-visible-pop-sdr`,
+`batch5d-visible-pop-hdr`, `batch5d-grid-control`, `batch5d-ready-arw` and
+`batch5d-restart-tiff` (reports, timings, pixel crops and cache inventories).
+Output ended at 29.2 GB (29.1 GB at start). Temporary profiles and rejected-run scratch removed; reusable test photos
+retained. No writes to D:\Photos, push, installer or release sweep.
 
 ### Batch 5c checkpoint - November 4, 2026 (partial)
 

@@ -5735,7 +5735,7 @@
       });
     }
 
-    async ensureAdaptiveDenoisePipelines() {
+    async ensureAdaptiveDenoisePipelines(beforeNext = null) {
       if (this.adaptiveDenoisePipelines) return this.adaptiveDenoisePipelines;
       const module = this.device.createShaderModule({ code: ADAPTIVE_DENOISE_SHADER_SOURCE });
       const compilation = await module.getCompilationInfo();
@@ -5759,10 +5759,15 @@
       });
       const pipelineLayout = this.device.createPipelineLayout({ bindGroupLayouts: [layout] });
       const names = ["Load", "Blur", "Noise", "EnergyHorizontal", "EnergyVertical", "Accumulate", "Final"];
-      const created = await Promise.all(names.map((name) => this.device.createComputePipelineAsync({
+      const create = name => this.device.createComputePipelineAsync({
         layout: pipelineLayout,
         compute: { module, entryPoint: `adaptive${name}Main` },
-      })));
+      });
+      const created = [];
+      if (beforeNext) {
+        for (const name of names) { await beforeNext(); created.push(await create(name)); }
+        if (this.adaptiveDenoisePipelines) return this.adaptiveDenoisePipelines;
+      } else created.push(...await Promise.all(names.map(create)));
       const dummy = (format, usage) => this.device.createTexture({ size: { width: 1, height: 1 }, format, usage });
       this.adaptiveDenoisePipelines = {
         layout,

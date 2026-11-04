@@ -81,7 +81,21 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
   const harnessAt=Date.now();
   // Always create our own empty profile; inherited real-app profile settings are ignored.
   const profile=keepProfile===null?fs.mkdtempSync(path.join(os.tmpdir(),'hdr-finisher-test-quick-')):path.join(os.tmpdir(),'hdr-finisher-test-quick-kept-'+keepProfile);
-  if(keepProfile!==null){fs.mkdirSync(profile,{recursive:true});for(const name of ['quick-result.json','quick-stage.json'])fs.rmSync(path.join(profile,name),{force:true});}
+  if(keepProfile!==null){fs.mkdirSync(profile,{recursive:true});for(const name of ['quick-result.json','quick-stage.json','quick-quit'])fs.rmSync(path.join(profile,name),{force:true});}
+  const cacheInventory=()=>Object.fromEntries(['DawnWebGPUCache','GPUCache','DawnGraphiteCache'].map(name=>{
+    const directory=path.join(profile,name),files=fs.existsSync(directory)?fs.readdirSync(directory).filter(n=>fs.statSync(path.join(directory,n)).isFile()).map(n=>{const body=fs.readFileSync(path.join(directory,n));return {name:n,bytes:body.length,sha256:require('node:crypto').createHash('sha256').update(body).digest('hex')};}):[];
+    let entries=[];
+    const data=path.join(directory,'data_1');
+    if(name==='DawnWebGPUCache'&&fs.existsSync(data)){
+      const bytes=fs.readFileSync(data);
+      if(bytes.readUInt32LE(12)===256)for(let offset=8192;offset+256<=bytes.length;offset+=256){
+        const length=bytes.readInt32LE(offset+32),hash=bytes.readUInt32LE(offset);
+        if(hash&&bytes.readInt32LE(offset+20)===0&&length>0&&length<=928)entries.push({hash,reuse:bytes.readInt32LE(offset+12),created:bytes.readBigUInt64LE(offset+24).toString()});
+      }
+    }
+    return [name,{files,entries}];
+  }));
+  const cacheBefore=cacheInventory();
   const logPath=path.join(profile,'logs/backend.log');
   let app,observer,stage='fixture',done=false;
   // Grade close writes a sidecar through its normal save gate. Restore copies too.
@@ -122,7 +136,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
         fs.renameSync(file,hidden);hiddenFiles.push([file,hidden]);
       }
     }
-    const config={coldPipelines:process.argv.includes("--cold-pipelines"),batch5c:process.argv.includes("--batch5c"),popout:process.argv.includes("--popout"),idle:process.argv.includes('--idle'),loseReservation:process.argv.includes('--lose-reservation'),fullscreen:process.argv.includes('--fullscreen'),busy:process.argv.includes('--busy'),pixelReviewOut:out,gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,back:process.argv.includes('--back'),hdr:process.argv.includes('--hdr'),redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
+    const config={timingOnly:process.argv.includes("--timing-only"),appStartedAt:Date.now(),warmupFolder:path.join(root,'output/test-photos/library-live-grid').replaceAll('\\','/'),startupWarm:process.argv.includes("--startup-warm"),noStartupWarm:process.argv.includes("--no-startup-warm"),coldPipelines:process.argv.includes("--cold-pipelines"),batch5c:process.argv.includes("--batch5c"),popout:process.argv.includes("--popout"),idle:process.argv.includes('--idle'),loseReservation:process.argv.includes('--lose-reservation'),fullscreen:process.argv.includes('--fullscreen'),busy:process.argv.includes('--busy'),pixelReviewOut:out,gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,back:process.argv.includes('--back'),hdr:process.argv.includes('--hdr'),redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE||'2560x1440').split('x').map(Number);
     fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width,height}));
@@ -162,6 +176,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     // Read the scenario and backend evidence only after completion.
     const result=JSON.parse(fs.readFileSync(resultPath,'utf8'));done=true;
     fs.writeFileSync(path.join(out,'scenario.json'),JSON.stringify(result,null,1));
+    fs.writeFileSync(path.join(out,'gpu-cache.json'),JSON.stringify({before:cacheBefore,after:cacheInventory()},null,1));
     if(config.trace)fs.copyFileSync(path.join(profile,'diagnostic-trace.json'),path.join(out,'diagnostic-trace.json'));
     if(result.error)throw Error(result.error);
     if(result.pixelReview&&result.pixelReview!==out)for(const name of fs.readdirSync(result.pixelReview))fs.copyFileSync(path.join(result.pixelReview,name),path.join(out,name));
@@ -221,7 +236,10 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
   }catch(error){console.error(error);process.exitCode=1;
     fs.writeFileSync(path.join(out,'failure.json'),JSON.stringify({error:String(error.stack||error),stage:currentStage(),done},null,1));
   }finally{
-    clearTimeout(deadline);const shutdownAt=Date.now();kill();process.removeListener('SIGINT',signal);process.removeListener('SIGTERM',signal);
+    clearTimeout(deadline);const shutdownAt=Date.now();
+    if(done && app?.exitCode===null){fs.writeFileSync(path.join(profile,'quick-quit'),'quit');const end=Date.now()+4000;while(app.exitCode===null&&Date.now()<end)await sleep(50);}
+    fs.writeFileSync(path.join(out,'gpu-cache.json'),JSON.stringify({before:cacheBefore,after:cacheInventory()},null,1));
+    kill();process.removeListener('SIGINT',signal);process.removeListener('SIGTERM',signal);
     cleanup();
     const reportPath=path.join(out,'report.json');
     if(fs.existsSync(reportPath)){const final=JSON.parse(fs.readFileSync(reportPath,'utf8'));final.shutdown_cleanup_ms=Date.now()-shutdownAt;final.harness_total_ms=Date.now()-harnessAt;final.harness_outside_scenario_ms=final.harness_total_ms-(final.scenario_ms||0);fs.writeFileSync(reportPath,JSON.stringify(final,null,1));}

@@ -61,6 +61,11 @@
       async settled(signal) { while(now()-touched<delay) await Promise.race([wait(delay-(now()-touched),signal),released]); }
     });
   }
-  const api = Object.freeze({create, standIn, navigationGate});
+  function displayIdentity(environment, high) {
+    const d=environment?.currentDisplay;
+    return JSON.stringify([environment?.renderingMode,d?.id,d?.colorSpace,d?.colorDepth,d?.depthPerComponent,
+      d?.scaleFactor,d?.bounds?.width,d?.bounds?.height,!!high]);
+  }
+  const api = Object.freeze({create, standIn, navigationGate, displayIdentity});
   if (typeof module !== "undefined") module.exports = api; else root.HDRLibraryReadyWindow = api;
 })(typeof window === "undefined" ? globalThis : window);

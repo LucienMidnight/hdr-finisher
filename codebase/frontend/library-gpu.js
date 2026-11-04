@@ -130,7 +130,9 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
       if(this.pipelines.get(format)!==pipelines)return;
       const token=tokens[name];
       if (!token || token.pipeline) continue;
-      token.pending ||= this.device.createRenderPipelineAsync(token.descriptor).then(pipeline=>token.pipeline ||= pipeline);
+      if(!token.pending){const started=performance.now();token.pending=this.device.createRenderPipelineAsync(token.descriptor).then(pipeline=>{
+        HDRLibraryStopwatch('picture_pipeline_prepared',{name,format,duration_ms:performance.now()-started});return token.pipeline ||= pipeline;
+      }).catch(error=>{token.pending=null;throw error;});}
       await token.pending;
     }
   }
@@ -401,16 +403,26 @@ const HDRLibraryPictureFactory = (quick = false) => {
     await beforeNext();
     const gpu = await initialize(true, beforeNext);
     if (gpu.adapterInfo?.fallback) return;
+    for(const format of [navigator.gpu.getPreferredCanvasFormat(),"rgba16float"]) {
+      await gpu.prepareLibraryPipelines(format,['finish','base','response','scan','local','localCandidate','hslFields','hslMask'],beforeNext);
+    }
+    if(!quick) {
+      await HDRLibraryRGB.warmup(beforeNext);
+      await HDRLibraryGpuRaw.warmup(beforeNext);
+    }
     await gpu.warmPipelines("rgba16float", beforeNext);
     await gpu.warmPipelines(navigator.gpu.getPreferredCanvasFormat(), beforeNext);
+    await beforeNext();
+    await window.HDRDenoiseMeasurement?.warm(gpu.device);
+    await beforeNext();
+    await gpu.ensureAdaptiveDenoisePipelines(beforeNext);
+    await beforeNext();
+    await window.HDRGpuMaskResample?.warm(gpu,beforeNext);
     if (quick) return; // Quick scenes never develop RAW sensors.
     await beforeNext();
     gpu.rawPictures ||= HDRLibraryRawGPU.create(gpu);
     await gpu.rawPictures.initialize();
-    await beforeNext();
-    await fetch('/api/library/denoise-warmup',{method:'POST'});
-    await beforeNext();
-    await HDRLibraryGpuRaw.warmup(beforeNext);
+
   }, () => foreground > 0);
   let readyClient;
   let readyReports = Promise.resolve();

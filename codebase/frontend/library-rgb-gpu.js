@@ -215,16 +215,23 @@ window.HDRLibraryRGB = (() => {
       let subnormal=(base+increment)/16777216.0;
       textureStore(out,vec2i(p.xy),vec4f(select(subnormal,normal,v>=vec3f(0.00006103515625)),1));
     }`;
+  async function warmup(beforeNext = async () => {}, shared = null) {
+    shared ||= await gpu();
+    await HDRLibraryGpuRaw.shared.preparePipelines(shared,beforeNext,['REDUCE']);
+    const device=shared.baseDevice || shared.device;
+    let cache=compiled.get(device);
+    if(!cache){cache={REDUCE:shared.pipelines.REDUCE};compiled.set(device,cache);}
+    for(const [name,code] of Object.entries({RGB,RGB_SDR,REFERENCE,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GRADE,DNG_TILE_GAIN,DNG_LINEAR,PACK})) {
+      await beforeNext();
+      if(!cache[name])cache[name]=device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code}),entryPoint:"main"}})
+        .catch(error=>{delete cache[name];throw error;});
+      await cache[name];
+    }
+    return Object.fromEntries(await Promise.all(Object.entries(cache).map(async([name,value])=>[name,await value])));
+  }
   async function developFrame({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity, direct = false, signal = null, context = null }) {
     const shared = context || await gpu(), {device,errors} = shared;
-    const compileDevice=shared.baseDevice || device;
-    let pipelines=compiled.get(compileDevice);
-    if(!pipelines){
-      pipelines={REDUCE:shared.pipelines.REDUCE};
-      for(const [name,code] of Object.entries({RGB,RGB_SDR,REFERENCE,DNG_RGB,DNG_GAIN,DNG_TILE_RGB,DNG_TILE_GRADE,DNG_TILE_GAIN,DNG_LINEAR,PACK}))
-        pipelines[name]=await device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code}),entryPoint:"main"}});
-      compiled.set(compileDevice,pipelines);
-    }
+    const pipelines=await warmup(undefined,shared);
     if(meta.dng_warp)return developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines,signal});
     errors.length = 0;
     const w = meta.width, h = meta.height, n = w * h;
@@ -536,5 +543,5 @@ window.HDRLibraryRGB = (() => {
     }finally{await device.queue.onSubmittedWorkDone().catch(()=>{});for(const b of [...owned])free(b);}
   }
 
-  return Object.freeze({develop:developRGB});
+  return Object.freeze({develop:developRGB,warmup});
 })();

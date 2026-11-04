@@ -964,3 +964,54 @@ a thumbnail stand-in existed (batch5c-visible-sdr-pop); this remains open.
 Docked HDR visibility passed (batch5c-visible-hdr-dock). Python: 3051 passed,
 3 skipped, one previously known library-live failure (expected 422, got 200).
 The 15-minute follow-up ended without further app checks.
+
+
+## November 4, 2026 - Batch 5d startup preparation (parent caa8218)
+
+Plain Electron, no DevTools, 2560 x 1440, existing copied photos. Busy timing
+runs explicitly wait for an active grid source/draw, not just listed rows.
+Whole wait is fullscreen action to first sharp presentation. Values are single
+observations; the brief's approximately +1 s idle allowance is the target.
+
+| Photo | 5c busy | 5d immediate, nothing ready | 5d prepared, grid busy | 5c idle | Prepared minus idle | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| 16-bit TIFF | 3.544 s | 3.234 s | 2.123 s | 2.050 s | +0.073 s | Met |
+| Heavy ARW | 4.651 s | 4.499 s | 3.023 s (second launch) | 2.421 s | +0.602 s | Met |
+
+App start to first grid thumbnail: preparation enabled 4.507 s, suppressed
+4.555 s (-1.0%); folder-to-thumbnail 896/941 ms (-4.7%). Meets <=10% regression.
+Preparation starts after that first thumbnail; it reads/develops no photo.
+A second launch reuses Dawn cache: main preparation 5.059 -> 1.562 s; quick
+0.343 -> 0.384 s. Cache holds 134 entries / 7,570,202 bytes both launches;
+external shader blobs retain identical hashes. The normal desktop profile's
+Dawn cache was valid (7,655,408 bytes, recorded corruption zero). Historical
+"Invalid cache (current) size" was not reproduced and cannot be assigned to a
+particular cache from that text alone. Chromium emits it from generic
+[blockfile cache validation](https://chromium.googlesource.com/chromium/src/+/refs/heads/main/net/disk_cache/blockfile/backend_impl.cc).
+
+| Visibility, captured pixels through entry and reopen | Reopen sharp | Minimum lit fraction | Result |
+| --- | --- | --- | --- |
+| Docked SDR | 233 ms | 0.9363 | Pass |
+| Docked HDR | 456 ms | 0.9356 | Pass |
+| Popped-out SDR | 404 ms | 0.3390 | Pass |
+| Popped-out HDR | 362 ms | 0.3390 | Pass |
+
+Popped-out crops include surrounding black during window transitions. No black
+sample after the first visible stand-in in any combination. Real display
+changes still invalidate pictures; fullscreen bounds notifications no longer do.
+
+Preparation held approximately 17.5-22.9 MB extra dedicated GPU memory and
+557-845 MB shared GPU-addressed memory (WDDM process counters include driver
+and renderer overhead; no exact per-pipeline allocation API). Independent
+whole-app visibility peaks 3.12-3.40 GB remain within existing limits. No budget
+or processing/output-math changes, including the exact HDR peak limit.
+
+Evidence: `codebase/output/quick-library-check/batch5d-busy-{immediate,ready}-{tiff,arw}`,
+`batch5d-visible-{dock,pop}-{sdr,hdr}`, `batch5d-grid-control`, `batch5d-ready-arw`,
+`batch5d-restart-tiff`. The last pair supplies cache inventories and preparation
+timings; its earlier timing helper did not require an active grid and those
+first-sharp times are not used in the busy table above. Pixel PNG crops and
+`wait-check.json` accompany the visibility reports. Slow checks: 8.2 minutes
+total. Node 797 passed; Python 3051 passed, 3 skipped, the same known library-live
+422/200 failure as 5b/5c. Fast logs: `codebase/output/batch5d-{node,pytest}.log`.
+Output 29.1 -> 29.2 GB; temporary profiles and rejected-run scratch removed, test photos retained.
