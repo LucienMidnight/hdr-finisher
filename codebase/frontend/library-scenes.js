@@ -201,11 +201,12 @@ window.HDRLibraryScenes = (() => {
     }
     return cpu(grant,signal);
   }
-  async function lease(meta, signal, nativeBudget = false) {
+  async function lease(meta, signal, nativeBudget = false, extraBytes = 0) {
     const url = `/api/delivery/gpu/raw-budget/${crypto.randomUUID()}`;
     // Grade's planner still enforces the shared budget. Reserve room for a small
-    // picture graph, including its source and transient render targets.
-    let bytes = meta.width * meta.height * 64 + 64 * 1024 * 1024;
+    // picture graph, including its source and transient render targets, plus
+    // any one-off GPU work the caller runs inside the lease.
+    let bytes = meta.width * meta.height * 64 + 64 * 1024 * 1024 + extraBytes;
     // Native inspection uses Grade's bounded viewport graph. Wait for the
     // broker's existing budget; never increase it or compete with delivery.
     if (nativeBudget) {

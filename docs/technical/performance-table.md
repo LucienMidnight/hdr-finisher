@@ -802,3 +802,28 @@ No paired original peak: the proposed +5% comparison is unproven. No allowance
 changes. Heavy local/geometry/denoise grades retain the fallback handoff; 5a
 remains partial. Evidence retained in `codebase/output/batch5a/results.json`,
 `restart.json` and `stages.json`, plus `output/quick-library-check/batch5a/report.json`.
+
+## November 4, 2026 — batch 5a follow-up (heavy grades)
+
+Real navigation, plain Electron 2560×1440, `quick-library-check --single --back`
+on copies of Steve's edited photos (`output/test-photos/batch5-edited`, real
+sidecars): before = `1f0a959`, after = this commit; fresh profile each, then a
+restart with the same profile (`--keep-profile`, `--warm`). Navigation to the
+presented sharp picture (app clock). Run-to-run spread about ±15%.
+
+| Action | Target | Before → after | Conditions / result |
+| --- | --- | --- | --- |
+| Edited 42 MP ARW, perspective + crop + brush mask, first sharp | about 2 s | 3.36 → 2.27–2.52 s | 20250412_0039.ARW. Hand-off 0.78 → 0.47 s (no description round trip, half-float planes, no base64 copy); warp 354 → 164 ms (channels on 3 cores); one scene rebuild instead of two (−130 ms). Left: pixel fetch with CPU warp about 370 ms, brush mask about 350 ms (CPU mask compile) |
+| Edited NEF, denoise on, first sharp | faster | 4.79 → 1.82–2.20 s | DSC_3931.NEF. GPU noise measurement 2.1 s CPU fallback → 0.12–0.17 s: the draw lease now includes the measurement's buffers |
+| Edited film-scan TIFF, crop only, first sharp | faster | 3.50 → 1.94–2.24 s | 2026-03-30-0072.tif. Plain crops draw from the page's developed planes (no hand-off before the draw) |
+| 16-bit DxO TIFF first sharp | about 3 s | 2.10 → 1.89–2.27 s | DSC04375_DxO_clipped_-1.5EV.tif, direct draw |
+| Same-session reopen (Single, back) | <0.5 s | 0.14–0.17 → 0.14–0.22 s | Stored screen pictures; the 0.9–1.1 s above was the API harness reopening 4 s after a save |
+| Reopen after restart | <0.5 s | — → 0.15–0.26 s | All four from stored screen pictures, no development |
+| 48 MP float TIFF in mixed folder, first sharp | about 3 s | not shown → 19.8 s | DJI_0071-2.tif, newly visible (first-browse mezzanine fix). 15.4 s queued behind grid developments, 4.2 s TIFF reduction under contention. Not met |
+
+Finished pixels (stored screen pictures, SDR and HDR): ARW and both TIFFs
+identical to the before build; NEF within the denoise GPU/CPU tolerance
+(HDR ΔE ITP mean 0.15, p99 1.75; SDR ΔE2000 mean 0.18, p99 1.20). Maximum
+HDR 758 nits (1000-nit ceiling). Peaks: 1.95–2.45 GB (four-photo runs) against
+1.72–2.16 GB before; mixed quick check 3.28 GB (33 photos now shown) against
+2.86 GB (31).

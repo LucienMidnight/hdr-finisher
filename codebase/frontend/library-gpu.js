@@ -3,6 +3,20 @@ window.clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, 
 // Small exact models survive fullscreen revisits without grid cache churn.
 // No pixel arrays or GPU resources are retained by this 16-entry LRU.
 const libraryDenoiseModels = new Map();
+// The backend's crop of a reduced scene (finishing.apply_geometry): Python's
+// half-to-even rounding on the scene size. Null when the result would not be
+// the described picture size, so the backend route draws it instead.
+function libraryDirectCrop(meta) {
+  const crop=meta.adjustments?.shared?.geometry?.crop || {x:0,y:0,width:1,height:1};
+  const sceneWidth=meta.scene_width,sceneHeight=meta.scene_height;
+  const round=value=>{const floor=Math.floor(value),rest=value-floor;return rest>.5||(rest===.5&&floor%2!==0)?floor+1:floor;};
+  const left=Math.min(sceneWidth-1,Math.max(0,round(crop.x*sceneWidth)));
+  const top=Math.min(sceneHeight-1,Math.max(0,round(crop.y*sceneHeight)));
+  const right=Math.min(sceneWidth,Math.max(left+1,round((crop.x+crop.width)*sceneWidth)));
+  const bottom=Math.min(sceneHeight,Math.max(top+1,round((crop.y+crop.height)*sceneHeight)));
+  const result={left,top,width:right-left,height:bottom-top};
+  return result.width===meta.width && result.height===meta.height ? result : null;
+}
 const libraryDenoiseMeasurements = HDRLibrarySceneScheduler.create(1);
 async function libraryDenoiseModel(url, meta = {}, measure) {
   const priority = typeof meta.draw_priority === 'function' ? meta.draw_priority() : meta.draw_priority ?? 5;
@@ -106,12 +120,13 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
       this.proxies.set(key, proxy);
       return proxy;
     }
-    const direct=this.libraryMeta?.directScene, retained=direct?.texture(lane);
+    const direct=this.libraryMeta?.directScene, cropped=direct && libraryDirectCrop(this.libraryMeta);
+    const retained=cropped && direct.texture(lane);
     if(retained && direct.device===this.device){
-      const width=this.libraryMeta.scene_width,height=this.libraryMeta.scene_height;
+      const {left,top,width,height}=cropped;
       const texture=this.device.createTexture({size:[width,height],format:"rgba16float",
         usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.COPY_SRC});
-      const encoder=this.device.createCommandEncoder();encoder.copyTextureToTexture({texture:retained},{texture},[width,height]);
+      const encoder=this.device.createCommandEncoder();encoder.copyTextureToTexture({texture:retained,origin:{x:left,y:top}},{texture},[width,height]);
       this.device.queue.submit([encoder.finish()]);
       const proxy={texture,width,height,sessionId,lane,longEdge,workingSpace:lane==="sdr" && this.libraryMeta.adjustments.sdr.use_authored_base && this.libraryMeta.has_reference ? "linear-srgb" : "acescg",
         pixelFormat:"rgba16float",geometrySignature,sourceIdentity,identity:key,byteSize:width*height*8,bindGroups:new Map()};
@@ -119,16 +134,17 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
       HDRLibraryStopwatch("picture_direct_scene",{...window.HDRLibraryPictureLog?.(this.libraryMeta),key:sessionId});
       return proxy;
     }
-    const planes=direct?.planes?.();
+    const planes=cropped && direct.planes?.();
     if(planes?.length && typeof Float16Array !== 'undefined'){
-      const started=performance.now(),width=this.libraryMeta.scene_width,height=this.libraryMeta.scene_height;
+      const started=performance.now(),{left,top,width,height}=cropped;
       const authored=lane==="sdr" && this.libraryMeta.adjustments.sdr.use_authored_base && this.libraryMeta.has_reference;
       const source=planes.slice(authored?3:0,authored?6:3).map(p=>direct.sampleBytes===2 ? new Float16Array(p) : new Float32Array(p));
       const rgba=new Float16Array(width*height*4),rw=direct.rawWidth,rh=direct.rawHeight;
-      for(let y=0;y<height;y++)for(let x=0;x<width;x++){
+      for(let oy=0;oy<height;oy++)for(let ox=0;ox<width;ox++){
+        const x=ox+left,y=oy+top,j=(oy*width+ox)*4;
         const sx=direct.flip===6 ? y : direct.flip===5 ? rw-1-y : direct.flip===3 ? rw-1-x : x;
         const sy=direct.flip===6 ? rh-1-x : direct.flip===5 ? x : direct.flip===3 ? rh-1-y : y;
-        const i=sy*rw+sx,j=(y*width+x)*4;
+        const i=sy*rw+sx;
         for(let c=0;c<3;c++)rgba[j+c]=Math.min(65504,Math.max(0,source[c][i]));
         rgba[j+3]=1;
       }
@@ -383,7 +399,11 @@ const HDRLibraryPictureFactory = (quick = false) => {
       const response=await fetch(url.replace("/denoise-model/","/denoise-measurement/"));
       if(response.status===200)return response.json();
       if(!response.ok)throw Error(`Denoise measurement request failed (${response.status}).`);
-      const lease=await HDRLibraryScenes.lease(meta,undefined,meta.edge===100000);
+      // The GPU measurement holds eight 16-byte-per-sample buffers over at most
+      // 4 MP (denoise-measurement.js). Without room for them it fell back to
+      // the CPU, about 2 s for a screen preview.
+      const measured=Math.min(4194304,(meta.width||0)*(meta.height||0));
+      const lease=await HDRLibraryScenes.lease(meta,undefined,meta.edge===100000,meta.edge===100000?0:measured*16*8+16*1024*1024);
       const previous=gpu.deliveryBudgetBytes;
       try {
         gpu.deliveryBudgetBytes=Math.min(gpu.memoryBudgetBytes(),lease.bytes);

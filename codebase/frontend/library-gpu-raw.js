@@ -1047,7 +1047,19 @@
       // Transfer native planes individually. A full-size contiguous fetch body
       // makes Chromium duplicate hundreds of MB before the backend sees it.
       const parts=nativeMode ? [handoffBody(header,[]),...picture.planes] : null;
-      const framed=parts ? null : handoffBody(describeOnly ? {...header,describe_only:true} : header,describeOnly ? [] : picture.planes);
+      // Reduced scenes are stored as half floats. Converting here (round to
+      // nearest even, as numpy does) halves the transfer and stores the same
+      // values; the backend still clamps and rejects non-finite samples.
+      const half=!parts && !describeOnly && (header.sample_bytes || 4)===4 && typeof Float16Array!=="undefined";
+      const toHalf=plane=>{
+        // Finite samples above the half range clamp as the backend would;
+        // infinities and NaN stay invalid and are still refused.
+        const source=new Float32Array(plane),out=new Float16Array(source.length);
+        for(let i=0;i<source.length;i++){const v=source[i];out[i]=v<Infinity?Math.min(v,65504):v;}
+        return out.buffer;
+      };
+      const planes=describeOnly ? [] : half ? picture.planes.map(toHalf) : picture.planes;
+      const framed=parts ? null : handoffBody(describeOnly ? {...header,describe_only:true} : half ? {...header,sample_bytes:2} : header,planes);
       // The worker owns transferred buffers. Native uploads use small pieces
       // so Chromium cannot retain another contiguous full-size request body.
       const payload=framed, bytes=parts ? parts.reduce((n,p)=>n+p.byteLength,0) : framed.byteLength, sentAt=performance.now();
@@ -1060,7 +1072,9 @@
       if(sharedJob) sharedJob.results.set(entry.header.edge,result);
       return result;
     };
-    if(liveScene && !nativeMode && !root.HDRLibraryProfileLegacy && entries.every(({picture})=>picture.planes?.length)){
+    // Masks, warps and denoise need the backend's copy: skip the description
+    // round trip and hand the scene over at once (meta.direct_eligible).
+    if(liveScene && !nativeMode && !root.HDRLibraryProfileLegacy && meta.direct_eligible!==false && entries.every(({picture})=>picture.planes?.length)){
       const variants={};
       for(const entry of entries)variants[entry.header.edge]=await send(entry,true);
       if(Object.values(variants).every(value=>value.direct_supported && value.render_identity===sceneIdentity) && entries.reduce((n,{picture})=>n+picture.planes.reduce((m,p)=>m+p.byteLength,0)+picture.width*picture.height*8*(picture.textures?.length || 0),0)<=(root.HDRLibraryRAM?.limit('sharp') ?? 512_000_000)){

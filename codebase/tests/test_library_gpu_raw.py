@@ -327,3 +327,26 @@ def test_reduced_raw_description_needs_no_pixel_upload(tmp_path):
             assert meta['starting_look'] and meta['default_document']
             return {'described':True}
     assert gpu_raw.developed(Description(),str(photo),header,None) == {'described':True}
+
+
+def test_half_float_handoff_stores_the_same_scene_as_float32(tmp_path):
+    # The page may send reduced scenes as half floats, clamping finite samples
+    # to the half range first; the stored scene must equal the float32 hand-off's.
+    values = np.array([0.0, 1e-8, 0.1234567, 3.3, -0.25, 65504.0, 70000.0, 1e6], dtype="<f4")
+    planes = np.resize(values, 3 * 8 * 12).reshape(3, 8, 12).astype("<f4")
+    stored = []
+    for name, payload, header in (("full", planes.tobytes(), {}),
+                                  ("half", np.minimum(planes, 65504).astype("<f2").tobytes(), {"sample_bytes": 2})):
+        photo = tmp_path / f"{name}.ARW"
+        photo.write_bytes(b"read-only fixture")
+        cache = LibraryPictureCache(tmp_path / f"cache-{name}")
+        result = gpu_raw.developed(cache, str(photo), {**_header(photo, flip=6), **header}, payload)
+        with np.load(cache.open(result["key"]), allow_pickle=False) as scene:
+            stored.append(scene["pixels"])
+    assert stored[0].dtype == stored[1].dtype == np.float16
+    np.testing.assert_array_equal(stored[0], stored[1])
+    photo = tmp_path / "bad.ARW"
+    photo.write_bytes(b"read-only fixture")
+    with pytest.raises(ValueError):
+        gpu_raw.developed(LibraryPictureCache(tmp_path / "bad"), str(photo), {**_header(photo), "sample_bytes": 2},
+                          np.full((3, 8, 12), np.nan, dtype="<f2").tobytes())

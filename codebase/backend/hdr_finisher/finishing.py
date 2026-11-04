@@ -617,8 +617,8 @@ def _warp_perspective_to_valid_pixels(
     height, width = image.shape[:2]
     inverse = _perspective_inverse_matrix(width, height, straighten_angle, horizontal, vertical)
     coefficients = tuple(float(value) for value in inverse.ravel()[:8])
-    channels: list[np.ndarray] = []
-    for index in range(image.shape[2]):
+
+    def warp(index: int) -> np.ndarray:
         source = image[..., index].astype(np.float32, copy=False)
         transformed = Image.fromarray(source).transform(
             (width, height),
@@ -628,8 +628,9 @@ def _warp_perspective_to_valid_pixels(
             fillcolor=0.0,
         )
         channel = np.asarray(transformed, dtype=np.float32)
-        channels.append(np.clip(channel, float(np.min(source)), float(np.max(source))))
-    result = np.stack(channels, axis=-1)
+        return np.clip(channel, float(np.min(source)), float(np.max(source)))
+
+    result = np.stack(_each_channel(image, warp), axis=-1)
     left, top, right, bottom = _perspective_safe_rectangle(
         width,
         height,
@@ -752,6 +753,20 @@ def _largest_true_rectangle(mask: np.ndarray) -> tuple[int, int, int, int] | Non
     return best
 
 
+def _each_channel(image: np.ndarray, resample) -> list[np.ndarray]:
+    """Resample colour channels at once; Pillow releases the GIL, so the
+    values are the same as one at a time, only computed on more cores.
+
+    Screen-sized pictures only: a full-size export keeps one channel's Pillow
+    copies in flight at a time, so its peak memory does not grow."""
+    count = image.shape[2]
+    if count == 1 or image.shape[0] * image.shape[1] > 6_000_000:
+        return [resample(index) for index in range(count)]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=count) as pool:
+        return list(pool.map(resample, range(count)))
+
+
 def _rotate_to_valid_pixels(image: np.ndarray, angle_degrees: float) -> np.ndarray:
     try:
         from PIL import Image
@@ -759,15 +774,16 @@ def _rotate_to_valid_pixels(image: np.ndarray, angle_degrees: float) -> np.ndarr
         raise RuntimeError("Pillow is required for straightening") from exc
 
     height, width = image.shape[:2]
-    channels: list[np.ndarray] = []
-    for index in range(image.shape[2]):
+
+    def rotate(index: int) -> np.ndarray:
         source = image[..., index].astype(np.float32, copy=False)
         rotated = Image.fromarray(source).rotate(
             float(angle_degrees), resample=Image.Resampling.BICUBIC, expand=True, fillcolor=0.0
         )
         channel = np.asarray(rotated, dtype=np.float32)
-        channels.append(np.clip(channel, float(np.min(source)), float(np.max(source))))
-    result = np.stack(channels, axis=-1)
+        return np.clip(channel, float(np.min(source)), float(np.max(source)))
+
+    result = np.stack(_each_channel(image, rotate), axis=-1)
     safe_width, safe_height = _largest_rotated_rectangle(width, height, math.radians(abs(angle_degrees)))
     # Bicubic support reaches two samples beyond the nominal coordinate. Keep a
     # two-pixel inset on each edge so even the resampling kernel sees source

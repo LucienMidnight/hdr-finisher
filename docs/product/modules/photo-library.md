@@ -1,6 +1,6 @@
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** Batch 5a partial checkpoint November 4, 2026 (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in
+**Status:** Batch 5a mostly built November 4, 2026; selected-photo priority open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
@@ -97,8 +97,49 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Built November 3, 2026 |
 | 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Follow-up incomplete November 4, 2026 |
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Not started |
-| 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction. | Partial November 4, 2026; focused global-grade pixels pass; smoke, heavy-grade and full reopening acceptance open |
+| 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Open: selected-photo priority over grid developments (48 MP float TIFF 19.8 s), brush-mask and warp CPU time |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Not started |
+
+### Batch 5a follow-up — November 4, 2026 (heavy grades)
+
+Measured with real navigation on copies of Steve's edited photos (see the
+performance table, "batch 5a follow-up"). Built:
+
+- **Plain crops draw directly.** A grade whose geometry is only a crop, with
+  no local adjustments or denoise, draws from the page's developed planes
+  (the backend's crop, same rounding). Rotation, flips, straighten,
+  perspective, masks and denoise still use the backend's copy.
+- **Heavy grades hand over faster.** The backend tells the page up front when
+  the direct draw cannot be used, so the page skips the description round
+  trip. Reduced RAW scenes travel as half floats (the values they are stored
+  as; stored scene unchanged, tested). The in-process hand-off no longer
+  base64-encodes the scene.
+- **Backend draw work.** Straighten/perspective warps run their colour
+  channels on separate cores (identical output; full-size export keeps one
+  channel at a time, so its peak memory is unchanged). The latest screen-size
+  scene is kept for 5 s, so the mask/denoise requests that follow the pixel
+  fetch reuse it.
+- **Denoise.** The draw lease now includes the GPU noise measurement's
+  buffers. It used to be refused and fall back to the CPU (about 2 s).
+- **First browse shows 16-bit/float TIFFs.** A folder's first disk pass now
+  marks mezzanine TIFFs, as indexed rows already did; before, they stayed
+  hidden in a newly opened folder.
+
+Results: edited ARW (perspective, crop, brush) 3.36 → 2.27–2.52 s; edited NEF
+(denoise) 4.79 → 1.82–2.20 s; edited film-scan TIFF (crop) 3.50 → 1.94–2.24 s;
+DxO 16-bit TIFF 1.89–2.27 s; reopen 0.14–0.22 s in session and 0.15–0.26 s
+after restart, with no development. The earlier 0.9–1.1 s in-session figure
+came from the API harness reopening while the save was still running. Pixels:
+ARW and TIFFs identical to `1f0a959` in SDR and HDR; the NEF is within the
+denoise GPU/CPU tolerance (GPU measurement now used, as Grade does).
+
+Open: the selected photo does not yet take priority over grid developments
+of other edited or mezzanine photos (48 MP float TIFF waited 15.4 s, then
+reduced in 4.2 s under contention); the ARW's remaining time is mostly CPU
+warp (about 370 ms with transfer) and the CPU brush-mask compile (about
+350 ms); a page record refresh can redraw the selected photo once in a newly
+opened folder (seen once, NEF, fresh profile). Peak memory rose slightly in
+the four-photo runs (1.95–2.45 GB against 1.72–2.16 GB); no allowances changed.
 
 ### Batch 5a checkpoint — November 4, 2026
 

@@ -326,13 +326,17 @@ def developed(cache, path: str, header: dict, payload) -> dict:
         raise ValueError("Photo changed while its Library picture was being developed.")
     height, width, edge = int(header["height"]), int(header["width"]), int(header["edge"])
     pixels = None
+    # Reduced scenes may arrive as half floats: the values they are stored as.
+    half = int(header.get("sample_bytes", 4)) == 2 and edge != 100000 and not header.get("native_mode")
     if payload is not None:
-        planes = np.frombuffer(payload, dtype="<f4", count=3 * height * width).reshape(3, height, width)
+        if len(payload) < 3 * height * width * (2 if half else 4):
+            raise ValueError("The GPU development payload is incomplete.")
+        planes = np.frombuffer(payload, dtype="<f2" if half else "<f4", count=3 * height * width).reshape(3, height, width)
         pixels = _orient(planes.transpose(1, 2, 0), int(header["flip"]))
     # Native crops can read planar strides directly. Retain the received planes
     # instead of another full-size interleaved copy; validate in bounded bands.
     if pixels is not None and edge != 100000 and not header.get("native_mode"):
-        pixels = np.ascontiguousarray(pixels, dtype=np.float32)
+        pixels = np.ascontiguousarray(pixels, dtype=np.float16 if half else np.float32)
     for row in range(0, pixels.shape[0] if pixels is not None else 0, 128):
         if not np.all(np.isfinite(pixels[row:row + 128])):
             raise ValueError("The GPU development produced invalid pixels.")

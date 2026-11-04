@@ -157,6 +157,33 @@ class LibraryRoute(APIRoute):
         return checked
 
 
+def direct_drawable(geometry, local_adjustments, denoise) -> bool:
+    """A reduced scene the page can draw from its own developed planes.
+
+    A plain crop is a rectangle of those planes (library-gpu.js applies it
+    with the backend's rounding). Masks, denoise models and any resampling
+    geometry still need the backend's copy of the scene."""
+    resampled = (geometry.rotation or geometry.flip_horizontal or geometry.flip_vertical
+        or geometry.straighten_angle or geometry.perspective_rotate
+        or geometry.perspective_horizontal or geometry.perspective_vertical)
+    return (not resampled and not local_adjustments
+        and not any(v.get("enabled") for v in (denoise or {}).values() if isinstance(v, dict)))
+
+
+def direct_eligible(document) -> bool:
+    """Prediction from the saved grade; the description stays authoritative."""
+    if not document:
+        return True
+    try:
+        from .models import AdjustmentState
+        from .projects import validate_saved
+        geometry = validate_saved(AdjustmentState, document["global_adjustments"]).shared.geometry if document.get("global_adjustments") else None
+    except (ValueError, KeyError, TypeError):
+        return True
+    from .models import GeometryAdjustments
+    return direct_drawable(geometry or GeometryAdjustments(), document.get("local_adjustments", []), document.get("denoise", {}))
+
+
 def helper_error(error):
     if "queue is full" in str(error):
         return "The Library helper is busy. Saved marks are safe; try again in a moment."
@@ -657,6 +684,9 @@ def create_library_router(worker, browser, store=None):
                             raise HTTPException(499, "Library request cancelled.")
                         header.setdefault("source_timings_ms", {}).update(checks_claim=(claimed_at-requested_at)*1000, decode_prepare=(time.perf_counter()-claimed_at)*1000)
                         header.update(edge=command.edge, source_quality=source_quality, item_path=command.path, source_job=token)
+                        # Lets the page skip a description round trip for grades
+                        # whose sharp draw needs the backend (masks, warps, denoise).
+                        header["direct_eligible"] = await run_in_threadpool(direct_eligible, document)
                         transfer = True
                         return StreamingResponse(library_gpu_raw.frame_chunks(header, *parts), media_type="application/octet-stream")
                     result = await helper_result(request, "live-scene", path=path, document=document,
@@ -780,13 +810,11 @@ def create_library_router(worker, browser, store=None):
                 describe_ms=(time.perf_counter()-describe_at)*1000,
                 describe_only=bool(header.get("describe_only")))
             if header["edge"] != 100000:
-                from .models import GeometryAdjustments, AdjustmentState
+                from .models import AdjustmentState
                 from .projects import validate_saved
                 adjustments = validate_saved(AdjustmentState, described["adjustments"])
                 described["render_identity"] = picture_key(path, 0, header["source_quality"]) + ":" + sha256(json.dumps(document or {}, sort_keys=True).encode()).hexdigest()
-                described["direct_supported"] = (adjustments.shared.geometry == GeometryAdjustments()
-                    and not described["locals"]
-                    and not any(v.get("enabled") for v in described["denoise"].values() if isinstance(v, dict)))
+                described["direct_supported"] = direct_drawable(adjustments.shared.geometry, described["locals"], described["denoise"])
             return described
         except (ValueError, OSError, KeyError) as error:
             raise HTTPException(409, str(error)) from error

@@ -149,29 +149,36 @@ class LibraryPictureCache:
     def accept_transient(self, result, pending=None):
         encoded = result.pop('_transient', None)
         if encoded:
-            body = base64.b64decode(encoded)
-            key = result['key']
-            with self.transient_lock:
-                if pending is not None:
-                    self.pending_stores[key] = pending
-                self.transient[key] = body
-                self.transient.move_to_end(key)
-                keys = sorted(self.transient, key=lambda item: item in self.pending_stores)
-            for candidate in keys:
-                if app_memory.claim(self.memory_key, 'handoff', self._handoff_bytes()):
-                    break
-                self._evict_transient(candidate)
-            self._report_handoff()
+            self._accept_body(result['key'], base64.b64decode(encoded), pending)
         return result
 
-    def transient_result(self, key, arrays, metadata, validate=None, pending=None):
+    def _accept_body(self, key, body, pending=None):
+        with self.transient_lock:
+            if pending is not None:
+                self.pending_stores[key] = pending
+            self.transient[key] = body
+            self.transient.move_to_end(key)
+            keys = sorted(self.transient, key=lambda item: item in self.pending_stores)
+        for candidate in keys:
+            if app_memory.claim(self.memory_key, 'handoff', self._handoff_bytes()):
+                break
+            self._evict_transient(candidate)
+        self._report_handoff()
+
+    def transient_result(self, key, arrays, metadata, validate=None, pending=None, portable=True):
+        """Keep a picture in the bounded hand-off memory.
+
+        ``portable`` also returns it as base64 for results that cross the
+        helper-process boundary; in-process callers skip that copy."""
         stream = BytesIO()
         np.savez(stream, **arrays)
         if validate:
             validate()
-        result = metadata | {'key': key, 'cache_hit': False, 'stored_bytes': 0,
-            '_transient': base64.b64encode(stream.getvalue()).decode()}
-        self.accept_transient(dict(result), pending)
+        body = stream.getvalue()
+        self._accept_body(key, body, pending)
+        result = metadata | {'key': key, 'cache_hit': False, 'stored_bytes': 0}
+        if portable:
+            result['_transient'] = base64.b64encode(body).decode()
         return result
 
     def open(self, key, file=None):
@@ -316,9 +323,7 @@ class LibraryPictureCache:
                     if picture_key(path, edge, quality) != key:
                         raise ValueError("Photo changed before publishing preview data.")
                 pending = (str(path), edge, quality, default_document, store_validate)
-                result = self.transient_result(key, arrays, metadata, validate_memory, pending)
-                result.pop('_transient', None)
-                return result
+                return self.transient_result(key, arrays, metadata, validate_memory, pending, portable=False)
             destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
             if not self.managed.preferences()['enabled']:
                 return self.transient_result(key, arrays, metadata)

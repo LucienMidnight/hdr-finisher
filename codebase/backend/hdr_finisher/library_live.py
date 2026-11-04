@@ -276,6 +276,8 @@ class LivePictures:
         self.root, self.marks, self.documents = root, marks, documents
         self._native_frames = WeakValueDictionary()
         self._native_frames_lock = RLock()
+        self._held = None
+        self._held_timer = None
 
     def document(self, path):
         raw = self.documents.request(path)["grade"] if self.documents else None
@@ -362,16 +364,41 @@ class LivePictures:
         return body, pixels.shape[1], pixels.shape[0], stride, space
 
     def frame(self, metadata):
-        if metadata["edge"] != 100000:
-            return self._frame(metadata)
-        # Native proxy/peak/tile requests overlap. Share their one source read,
-        # with no resident pool: the last request dropping it frees the pixels.
+        # Overlapping requests share one source read, with no resident pool:
+        # the last request dropping a native frame frees its pixels. A reduced
+        # sharp draw asks again within a second (pixels, then masks or denoise),
+        # so the latest reduced frame alone is also held for a few seconds.
+        native = metadata["edge"] == 100000
         with self._native_frames_lock:
             frame = self._native_frames.get(metadata["key"])
-            if frame is None:
-                frame = self._frame(metadata)
-                self._native_frames[metadata["key"]] = frame
-            return frame
+            if frame is None and native:
+                frame = self._native_frames[metadata["key"]] = self._frame(metadata)
+        if frame is None:
+            # Reduced frames of different photos (grid thumbnails) build in parallel.
+            started = perf_counter()
+            built = self._frame(metadata)
+            with self._native_frames_lock:
+                frame = self._native_frames.setdefault(metadata["key"], built)
+            from .library_diagnostics import log
+            log("library_scene_frame", path=metadata.get("path"), edge=metadata["edge"],
+                duration_ms=round((perf_counter()-started)*1000, 1))
+        if not native and metadata["edge"] >= 1280:
+            with self._native_frames_lock:
+                self._hold(frame)
+        return frame
+
+    def _hold(self, frame, seconds=5.0):
+        from threading import Timer
+        if self._held_timer is not None:
+            self._held_timer.cancel()
+        self._held = frame
+        def release():
+            with self._native_frames_lock:
+                if self._held is frame:
+                    self._held = None
+        self._held_timer = Timer(seconds, release)
+        self._held_timer.daemon = True
+        self._held_timer.start()
 
     def _frame(self, metadata):
         with np.load(self.cache.open(metadata["source_key"]), allow_pickle=False) as stored:
