@@ -177,3 +177,39 @@ def test_parallel_tiff_bands_match_serial_finished_samples(tmp_path,dtype):
             if dtype == np.uint16: values=np.clip(np.rint(values),0,65535)
             expected[row:row+count,:,band]=values
     np.testing.assert_array_equal(actual,expected)
+
+
+@pytest.mark.parametrize('dtype,compression,predictor',[(np.float32,'zlib',3),(np.uint16,'lzw',2),(np.float32,'zstd',None)])
+def test_compressed_strip_tiff_matches_uncompressed_bands(tmp_path,dtype,compression,predictor):
+    import tifffile
+    image = np.random.default_rng(4).uniform(0,20000,(611,903,3)).astype(dtype)
+    plain, packed = tmp_path/'plain.tif', tmp_path/'packed.tif'
+    tifffile.imwrite(plain,image,photometric='rgb')
+    tifffile.imwrite(packed,image,photometric='rgb',compression=compression,predictor=predictor,rowsperstrip=16)
+    expected, original = read(plain,edge=256)
+    actual, packed_original = read(packed,edge=256)
+    assert packed_original == original == (903,611)
+    assert actual.dtype == expected.dtype and actual.shape == expected.shape
+    # Same Lanczos bands; only band boundaries differ, far below visibility.
+    np.testing.assert_allclose(actual.astype(np.float64),expected.astype(np.float64),rtol=1e-4,atol=1.0 if dtype == np.uint16 else 1e-2)
+
+
+@pytest.mark.parametrize('layout',['plain','compressed','tiled'])
+def test_tiff_reading_stops_when_photo_is_no_longer_wanted(tmp_path,layout):
+    import tifffile
+    from hdr_finisher.library_reduced import Cancelled
+    # libvips reports progress (where the tiled route stops) only on larger images.
+    shape = (3000,4000,3) if layout == 'tiled' else (1200,1600,3)
+    image = np.random.default_rng(5).uniform(0,1,shape).astype(np.float32)
+    path = tmp_path/f'{layout}.tif'
+    options = {'plain':{}, 'compressed':dict(compression='zlib',predictor=3,rowsperstrip=16), 'tiled':dict(compression='zlib',tile=(256,256))}[layout]
+    tifffile.imwrite(path,image,photometric='rgb',**options)
+    calls = []
+    def cancelled():
+        calls.append(1)
+        return len(calls) > 2
+    with pytest.raises(Cancelled):
+        read(path,edge=1024 if layout == 'tiled' else 256,cancelled=cancelled)
+    # Not wanted from the start: stops before decoding anything.
+    with pytest.raises(Cancelled):
+        read(path,edge=256,cancelled=lambda: True)

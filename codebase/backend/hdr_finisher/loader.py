@@ -351,7 +351,7 @@ def _load_with_pillow(path: Path, *, encoded_samples: bool = False, draft_edge: 
     return normalized, metadata
 
 
-def _load_tiff(path: Path, *, library_edge: int | None = None) -> tuple[np.ndarray, dict[str, Any]]:
+def _load_tiff(path: Path, *, library_edge: int | None = None, cancelled=None) -> tuple[np.ndarray, dict[str, Any]]:
     try:
         import tifffile
     except ImportError as exc:
@@ -362,7 +362,7 @@ def _load_tiff(path: Path, *, library_edge: int | None = None) -> tuple[np.ndarr
         from .cpu_budget import logical_cpus
         if library_edge is not None:
             from .library_reduced import read
-            array, _ = read(path, edge=library_edge)
+            array, _ = read(path, edge=library_edge, cancelled=cancelled)
         else:
             array = series.asarray(maxworkers=logical_cpus())
         if library_edge is None:

@@ -610,11 +610,18 @@ def create_library_router(worker, browser, store=None):
                     if use_gpu:
                         source_foreground(token, True)
                         from . import library_gpu_raw, library_rgb
+                        from .library_reduced import Cancelled as library_reduced_cancelled
                         from .models import RawImportSettings, SourceInterpretationOverride
                         inputs = live_recipe(document)
                         try:
                             if Path(path).suffix.lower() in {".jpg", ".jpeg", ".png", ".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
-                                header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs, command.edge)
+                                # Stop reading once the photo is no longer wanted: its
+                                # window grant was cancelled (navigation moved on) or
+                                # the source job was released.
+                                window_grant = command.grant
+                                def unwanted():
+                                    return source_jobs.cancelled(token) or bool(window_grant and not scheduler.valid(window_grant, path))
+                                header, parts = await run_in_threadpool(source_jobs.preparing, token, path, library_rgb.decoded, Path(path), inputs, command.edge, unwanted)
                             elif Path(path).suffix.lower() == ".dng":
                                 from . import library_dng
                                 if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
@@ -638,6 +645,8 @@ def create_library_router(worker, browser, store=None):
                         except library_gpu_raw.NotEligible as error:
                             log("picture_source_gpu_unsupported", path=path, reason=str(error), discarded_decode_ms=(time.perf_counter()-claimed_at)*1000)
                             return Response(status_code=204, headers={"X-Library-Fallback": str(error)})
+                        except library_reduced_cancelled:
+                            return Response(status_code=499)
                         if inputs.get("repairs"):
                             from .models import RepairRecord
                             from .retouch_gpu import context_rectangles

@@ -790,6 +790,8 @@ new pixel readback overhead excluded; Python tests overlapped part of the run.
 | Edited Nikon D7500 NEF first sharp | faster | 4.446 → 1.645 s | Same temporary global grade; exact HDR pixels; source/transfer 825 ms, GPU 300 ms, quantiles 38 ms, metadata 174 ms; remaining draw/presentation about 307 ms |
 | DxO 16-bit TIFF first sharp | about 3 s | 5.564 → 2.332 s | Corrected RGB half precision, exact HDR pixels; source/transfer 1016 ms, GPU 805 ms, quantiles 31 ms, metadata 210 ms; remaining draw/presentation 269 ms |
 | TIFF source band reduction | RAW-like | 2.554 → 0.573 s | 5304×7952 → 3416×5120 uint16; old standalone profile vs app observation, OS cache differs; new reads 122 ms; pipeline default workers 12, bounded in-flight 4 |
+| Compressed float TIFF source reduction (48 MP Deflate, float predictor) | RAW-like | 1.533 → 0.724–0.864 s | DJI_0072-2.tif 8000×6000 → 5120×3840 float32, alone, warm OS cache; strip bands on 12 workers replace libvips sequential reading; luminance difference mean 0, max 0.7%; numpy peak 440 MB (result 236 MB). Nov 4 |
+| Stop an unwanted TIFF read | prompt | 10–16 s kept running → 94 ms | Same file, told to stop 0.15 s in; plain, compressed and tiled routes checked in tests. Nov 4 |
 | Stored-screen miss check | tens of ms | 13–39 ms | Local indexed stamp/grade only; offline source unit check passes |
 | First same-session stored sharp | <0.5 s | 0.899–1.093 s | Not met: decode/pack 68–75 ms, body fetch 862–1017 ms, setup/upload/draw 37–76 ms |
 | Restart stored ARW / NEF sharp | <0.5 s | 0.243 / 0.259 s | Met in API harness; next loads 0.136 / 0.183 s; no scan call; corrected TIFF restart remains open |

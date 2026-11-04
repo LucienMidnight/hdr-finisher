@@ -63,12 +63,12 @@ def assumed_interpretation(path, override=None):
     return None
 
 
-def decoded(path, inputs, edge=2560):
+def decoded(path, inputs, edge=2560, cancelled=None):
     from .file_gate import decode_suffix
     path = Path(path).resolve(strict=True)
     suffix = decode_suffix(path)  # by contents when they differ from the extension
     if suffix in {".exr", ".hdr", ".pfm", ".tif", ".tiff", ".jxl", ".avif", ".heic", ".heif"}:
-        return decoded_precision(path, inputs, edge=edge)
+        return decoded_precision(path, inputs, edge=edge, cancelled=cancelled)
     if suffix not in {".jpg", ".jpeg", ".png"}:
         raise NotEligible("RGB preparation currently supports ordinary JPEG/PNG only")
     if SourceInterpretationOverride.model_validate(inputs["interpretation_override"]) != SourceInterpretationOverride():
@@ -122,7 +122,7 @@ def decoded(path, inputs, edge=2560):
     }, [memoryview(np.ascontiguousarray(pixels)).cast("B")]
 
 
-def decoded_precision(path, inputs, edge=2560):
+def decoded_precision(path, inputs, edge=2560, cancelled=None):
     """Use decoder-owned float32 samples, before transfer/gamut preparation."""
     from . import color
     from .file_gate import decode_suffix
@@ -177,7 +177,7 @@ def decoded_precision(path, inputs, edge=2560):
         finally:
             file.close()
     elif suffix in {".tif", ".tiff"}:
-        pixels, metadata = loader._load_tiff(path, library_edge=5120 if edge <= 2560 else None)
+        pixels, metadata = loader._load_tiff(path, library_edge=5120 if edge <= 2560 else None, cancelled=cancelled)
         import tifffile
         with tifffile.TiffFile(path) as tif:
             page = tif.pages[0]

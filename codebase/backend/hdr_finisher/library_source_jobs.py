@@ -55,7 +55,8 @@ class SourceJobs:
             log("picture_source_preparation_cancelled" if stopping else "picture_source_preparation_completed", path=str(path), job=token, duration_ms=(monotonic()-started)*1000, last_stage=job.get("stage"), stage_ms=(monotonic()-job.get("stage_started",started))*1000)
             return result
         except Exception as error:
-            with self.lock: job=dict(self.preparations.get(token,{})); stopping=job.get("state")=="stopping"
+            from .library_reduced import Cancelled
+            with self.lock: job=dict(self.preparations.get(token,{})); stopping=job.get("state")=="stopping" or isinstance(error, Cancelled)
             log("picture_source_preparation_cancelled" if stopping else "picture_source_preparation_failed", path=str(path), job=token, reason=str(error), duration_ms=(monotonic()-started)*1000, last_stage=job.get("stage"), stage_ms=(monotonic()-job.get("stage_started",started))*1000)
             raise
         finally:
