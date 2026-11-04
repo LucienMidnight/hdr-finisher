@@ -46,12 +46,12 @@
     return Object.freeze({get, update, invalidate, contains:photo => entries.has(key(photo)),
       evictFinished:(predicate=()=>true,needed=Infinity)=>{let released=0;for(const [id,entry] of entries){if(released>=needed)break;if(entry.value && predicate(entry.photo)){released+=entry.value.bytes||0;remove(id);}}return released;}, has:photo => !!entries.get(key(photo))?.value, size:() => entries.size});
   }
-  // Only the finished live surface qualifies, never its camera JPEG sibling.
+  // Borrow only the current photo/grade/rendition, including a shown camera picture.
   function standIn(cells, identity, epoch, hdr) {
     return cells.find(cell => cell.identity === identity && cell.displayEpoch === epoch &&
-      !cell.controller.signal.aborted && ["library-live","finished-thumbnail"].includes(cell.meta?.route) &&
+      !cell.controller.signal.aborted && (["library-live","finished-thumbnail"].includes(cell.meta?.route) || cell.meta?.bitmap) &&
       cell.fallback?.dataset.rendition === (hdr ? "hdr" : "sdr") &&
-      cell.fallback.dataset.picturePath === cell.photo.path && !cell.fallback.hidden);
+      cell.fallback.dataset.picturePath === cell.photo.path && !cell.fallback.hidden && !cell.fallback.dataset.standIn);
   }
   function navigationGate({wait, now=()=>performance.now(), delay=350}) {
     let touched = -Infinity, wake;

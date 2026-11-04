@@ -186,30 +186,36 @@
   const browsingSize = {width:Math.min(2560,Math.round(screen.width*(devicePixelRatio||1))),height:Math.min(2560,Math.round(screen.height*(devicePixelRatio||1)))};
 
   let restoreStandIn = () => {};
-  function showStandIn(photo, controller, current, trace) {
-    restoreStandIn();
+  function borrowStandIn(photo, stage, controller, current, trace) {
     const cell = HDRLibraryReadyWindow.standIn([...state.cells.values(), ...state.filmCells.values(), ...tilePool.values()],
       pictureIdentity(photo), state.displayEpoch, state.hdr);
     HDRLibraryTrace.mark(trace,"picture_quick_draw_lookup",performance.now(),{quick_draw:true,cache_hit:!!cell});
-    if (!cell) return false;
+    if (!cell) return null;
     // Borrow the actual finished HDR/SDR surface: no readback, JPEG or gamut conversion.
     const canvas = cell.fallback, home = canvas.parentNode, style = canvas.style.cssText;
     overlays?.detach(canvas);
     canvas.dataset.standIn = "true";
-    canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none";
-    $("single-stage").append(canvas);
+    canvas.style.cssText = "position:absolute;z-index:3;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none";
+    canvas.hidden = false; canvas.style.visibility = "";
+    stage.append(canvas);
+    let restored = false;
     const restore = () => {
+      if (restored) return; restored = true;
       canvas.remove(); home.append(canvas); canvas.style.cssText = style;
       delete canvas.dataset.standIn;
       controller.signal.removeEventListener("abort",restore);
       cell.controller.signal.removeEventListener("abort",restore);
-      if (restoreStandIn === restore) restoreStandIn = () => {};
     };
-    restoreStandIn = restore;
     controller.signal.addEventListener("abort",restore,{once:true});
     cell.controller.signal.addEventListener("abort",restore,{once:true});
-    HDRLibraryTrace.present(trace,()=>current() && canvas.dataset.standIn === "true",{route:cell.meta.route,quick_draw:true,sharp_draw:false});
-    return true;
+    HDRLibraryTrace.present(trace,()=>current() && canvas.dataset.standIn === "true",{route:cell.meta.route,quick_draw:true,sharp_draw:false},canvas);
+    return restore;
+  }
+  function showStandIn(photo, controller, current, trace) {
+    restoreStandIn();
+    const restore=borrowStandIn(photo,$("single-stage"),controller,current,trace);
+    restoreStandIn=restore || (()=>{});
+    return !!restore;
   }
   const readySurfaces = new Map();
   let readyBytes = 0, readyPolling = false;
@@ -326,7 +332,7 @@
     restoreStandIn();
     const canvas = value.canvas;
     canvas.dataset.standIn = "true";
-    canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none";
+    canvas.style.cssText = "position:absolute;z-index:3;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none";
     $("single-stage").append(canvas); canvas.hidden = false;
     const restore = () => {
       canvas.remove(); delete canvas.dataset.standIn;
@@ -335,7 +341,7 @@
     };
     restoreStandIn = restore;
     controller.signal.addEventListener("abort",restore,{once:true});
-    HDRLibraryTrace.present(trace,()=>current() && canvas.dataset.standIn === "true",{key:value.meta.key,quick_draw:true,sharp_draw:false});
+    HDRLibraryTrace.present(trace,()=>current() && canvas.dataset.standIn === "true",{key:value.meta.key,quick_draw:true,sharp_draw:false},canvas);
   }
   HDRLibraryScenes.onReclaim(async (bytes,required=false) => {
     let held = readyBytes + tilePool.snapshot().bytes;
@@ -412,6 +418,7 @@
   async function loadAndShow(photo, edge, canvas, controller, isCurrent, priority = 10, prepared = null, trace = null) {
     const started = performance.now();
     let fallback = null;
+    const restore = edge > 640 ? borrowStandIn(photo,canvas.parentNode,controller,isCurrent,trace) : null;
     try {
       while (isCurrent() && !controller.signal.aborted) {
         try {
@@ -448,7 +455,7 @@
           await sleep(2000,controller.signal);
         }
       }
-    } finally { fallback?.remove(); }
+    } finally { fallback?.remove(); restore?.(); }
   }
   async function drawPicture(meta, canvas, controller, isCurrent) {
     for (;;) {
@@ -1150,8 +1157,8 @@
     const left = stage.clientWidth / 2 - center.x * width / dpr, top = stage.clientHeight / 2 - center.y * height / dpr;
     HDRPhotoFraming.draw(stage,box,framing,{scale:scale/dpr,left:`${left+width/dpr/2}px`,top:`${top+height/dpr/2}px`});
     canvas.style.cssText = `position:absolute;z-index:1;width:${width / dpr}px;height:${height / dpr}px;left:${left}px;top:${top}px;object-fit:fill`;
-    if (state.fitMeta?.route === 'stored-screen-preview') canvas.style.visibility = state.zoom ? 'hidden' : '';
-    native.hidden=!state.zoom;
+    canvas.style.visibility = ''; // Keep Fit visible until a finished native crop covers it.
+    native.hidden=!(state.zoom && state.nativeMeta);
     if (state.zoom && state.nativeMeta) {
       const crop = state.nativeMeta;
       native.style.cssText = `z-index:2;width:${crop.width * scale / dpr}px;height:${crop.height * scale / dpr}px;left:${left + crop.crop_x * scale / dpr}px;top:${top + crop.crop_y * scale / dpr}px`;
@@ -1159,6 +1166,8 @@
     }
   }
   async function prepareRawNative(photo, signal) {
+    const plan = await api('/api/library/live-plan',{path:photo.path,edge:100000},signal);
+    if (plan.detail_memory && !plan.detail_memory.available) throw Object.assign(Error("Not enough memory for full-size detail. Open this photo in Grade."),{needsMemory:true});
     if (!rawCandidate(photo)) return;
     if (!HDRLibraryGpuRaw.enabled()) {
       HDRLibraryStopwatch("picture_gpu_raw_fallback",{picture_size:"detail preview",view:logView(),path:photo.path,reason:"WebGPU is unavailable or disabled."}); return;
@@ -1167,7 +1176,7 @@
     catch(error) { if (aborted(error)) throw error; HDRLibraryStopwatch("picture_gpu_raw_fallback",{picture_size:"detail preview",view:logView(),path:photo.path,reason:error.message}); }
   }
   async function showNative() {
-    const photo = selected(); if (!photo || !state.fitMeta || !state.zoom || !state.active || state.view !== "single") return;
+    const photo = selected(); if (!photo || !state.fitMeta || !state.zoom || state.detailRequested !== photo.path || !state.active || state.view !== "single") return;
     const stage = $("single-stage"), dpr = window.devicePixelRatio || 1, scale = state.zoomScale, percent = `${Math.round(scale * 100)}%`;
     const fit = state.fitMeta;
     if (fit.route !== 'stored-screen-preview' && fit.source_width && (fit.camera_long_edge ? fit.camera_long_edge / Math.max(fit.source_width,fit.source_height) : fit.width / fit.source_width) >= scale) {
@@ -1183,7 +1192,7 @@
       if (!state.fullDetail) {
         const pending = HDRLibraryScenes.load(photo.path,100000,state.nativeSource.signal,0);
         state.fullDetail = pending;
-        pending.catch(()=>{ if (state.fullDetail === pending) state.fullDetail = null; });
+        pending.catch(error=>{ if (state.fullDetail === pending) { state.detailRefused = !!error.needsMemory; if (error.needsMemory) HDRLibraryStopwatch("picture_detail_refused",{path:photo.path,reason:error.message,estimate:error.estimate}); else state.fullDetail = null; } });
       }
       let full = await state.fullDetail;
       if (!current()) return;
@@ -1208,6 +1217,7 @@
       state.nativeMeta = {...meta,width,height,crop_x:x,crop_y:y}; next.dataset.picturePath = photo.path; positionZoom();
       status(`${percent} · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
     } catch (error) {
+      if (error.needsMemory) state.detailRefused = true;
       if (error.libraryYield && current()) { setTimeout(()=>{ if (current()) void showNative(); },100); }
       else if (!aborted(error) && current()) status(`${percent} unavailable · ${error.message}`);
     }
@@ -1218,6 +1228,8 @@
     if (state.view !== "single" || !selected()) return;
     if (compare.enabled()) { compare.zoom(); return; }
     state.zoom = !state.zoom; state.zoomScale = 1; state.native?.abort(); state.nativeLoading = false; state.nativeMeta = null;
+    state.detailRequested = state.zoom ? selected().path : null; if (state.zoom && state.detailRefused) { state.fullDetail = null; state.detailRefused = false; }
+    HDRLibraryStopwatch("picture_zoom_requested",{path:selected().path,enabled:state.zoom,scale:state.zoomScale,reason:"click or Z"});
     if (state.zoom && point && state.fitMeta) {
       const stage = $("single-stage"), meta = state.fitMeta;
       const center = HDRLibraryZoom.click(point.x, point.y, stage.clientWidth, stage.clientHeight, meta.source_width || meta.width, meta.source_height || meta.height,singleFrameInset(meta));
@@ -1272,6 +1284,8 @@
     const start = state.zoom ? { x: state.zoomX, y: state.zoomY } : { x: .5, y: .5 };
     const center = HDRLibraryZoom.anchor(start.x, start.y, (event.clientX - rect.left) * dpr, (event.clientY - rect.top) * dpr, width, height, sourceWidth, sourceHeight, from, to,singleFrameInset(meta));
     state.zoom = true; state.zoomScale = to; state.zoomX = center.x; state.zoomY = center.y;
+    state.detailRequested = selected().path; if (state.detailRefused) { state.fullDetail = null; state.detailRefused = false; }
+    HDRLibraryStopwatch("picture_zoom_requested",{path:selected().path,enabled:true,scale:to,reason:"wheel"});
     $("zoom-button").setAttribute("aria-pressed", "true");
     positionZoom(); nativeTimer = setTimeout(showNative, 150);
   }, { passive: false });
@@ -1296,7 +1310,12 @@
   }
   function setReview(review) {
     if (review && !selected()) return;
-    if (review) state.beforeReview = state.view;
+    if (review) {
+      state.beforeReview = state.view;
+      state.zoom = false; state.detailRequested = null;
+      state.native?.abort(); state.nativeMeta = null;
+      $("zoom-button").setAttribute("aria-pressed", "false");
+    }
     state.review = review; library.classList.toggle("review", review);
     if (review) setView("single"); else setView(state.beforeReview);
     postParent("review", { enabled: review });

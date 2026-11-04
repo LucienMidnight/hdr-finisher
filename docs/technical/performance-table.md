@@ -901,3 +901,44 @@ backend code; it is pre-existing and was left unchanged. Logs: `output/batch5b-n
 `output/batch5b-pytest.log`, `output/batch5b-baseline-python.log`. Output
 remains 29.1 GB, below 100 GB; temporary profiles removed and fixture TIFF names
 restored. No release sweep, installer or push.
+
+## November 4, 2026 - batch 5c partial checkpoint
+
+Copied photos, isolated plain Electron profiles, actual screen crops and
+independent whole-app process census. Budget and tolerances unchanged. Stand-in
+pixels below are screen captures, not presentation-event assertions.
+
+| Check | Result | Acceptance |
+| --- | --- | --- |
+| TIFF busy / idle, docked SDR | 6.486 / 2.050 s (baseline 6.827 / 1.851 s) | Busy gap still fails +about 1 s; no worthwhile speed gain claimed |
+| TIFF busy, docked HDR / popped SDR / popped HDR | 6.486 / 7.178 / 7.368 s | Cold cost remains; popped HDR idle 2.382 s |
+| Heavy edited 20250412_0039.ARW busy / idle | 6.665 / 2.421 s | Busy gap still fails; same recipe and copied folder |
+| TIFF first reopen after 2.1 s | Dock SDR .212 s; dock HDR .232 s; pop SDR .376 s; pop HDR .467 s; idle pop HDR .340 s | Stored screen fetch, no source development for reopen; initial alleged cache miss was two distinct source paths |
+| Actual waiting stand-in pixels | Dock SDR TIFF 17 samples, pop HDR TIFF 21, edited ARW 22; Compare 3 TIFF / 12 ARW | None black. Other cold matrix cases lacked stand-ins, so full original-incident acceptance remains open |
+| Explicit TIFF zoom too large to save | One 1,012,323,328-byte refusal; zero source/GPU starts and zero preparation retries during 5 s | Pass; header-only admission before work. Fit starts zero detail jobs |
+| Final focused memory | 2.34-3.59 GB peak; 1.60-2.64 GB final | Below 4 GB and existing +10% elastic allowance; settles below 3.4 GB |
+| Standard Single check | Step 9 timeout at scan DNG needing about 6.8 GB | Incomplete; out-of-scope large DNG admission, no budget change |
+
+The original black screen did not reproduce in the baseline idle capture.
+The change fixes the empty native surface covering the stored Fit picture,
+explicit Fit/zoom demand, and stand-in visibility/ownership in Single/Compare.
+It does not establish that these hazards explain Steve's observed incident.
+No finishing/shader/export/Proof path changed; batch 5b's numerical output
+qualification was not repeated. A rejected pipeline-preparation experiment was
+removed because the whole wait changed only 6.827 to 6.298 s.
+
+Evidence (ignored local output): output/quick-library-check/batch5c-before,
+batch5c-before-idle, batch5c-final-*, batch5c-arw-busy, batch5c-arw-idle,
+batch5c-refusal and batch5c-detail-final (report/scenario/backend logs;
+wait-check.json and small PNG crops). batch5c-smoke records the DNG timeout.
+The opt-in `--batch5c` quick-check helper now records pixels, Compare, and the
+explicit zoom event/refusal. Initial helper runs needed navigation/Compare
+corrections; those runs are not counted as acceptance passes. Total slow
+validation reached roughly ten minutes including those corrections; stopped
+here without another sweep. PRD 5c remains partial.
+
+Fast checks: JavaScript 794 passed. Python 3051 passed, 3 skipped, 1 pre-existing failure
+(`test_library_live.py::test_remembered_failure_does_not_hide_current_grade_cached_scene`,
+expected 422, got 200; same failure recorded in 5b). Full fast-suite logs:
+`output/batch5c-node.log`, `output/batch5c-pytest.log`. Output remains
+29.1 GB (start/end), below 100 GB; rejected-experiment scratch removed. No push, installer or release sweep.

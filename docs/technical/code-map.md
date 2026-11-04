@@ -445,7 +445,7 @@ XL refusal lives in `library_rgb.py`. Header-confirmed X-Trans RAF CPU routing l
 
 | Library diagnostics | Files |
 | --- | --- |
-| Library quick check | `codebase/tools/quick-library-check.cjs`: plain Electron child, isolated profile, deadline and external memory census; `desktop/quick-library-test.cjs`: explicit-switch-only startup and file result; `tools/quick-library-scenario.js`: in-page inputs, presentation timing, grid progress and responsiveness probes; `tools/library-quick-metrics.cjs`: page-clock picture totals |
+| Library quick check | `codebase/tools/quick-library-check.cjs`: plain Electron child, isolated profile, deadline and external memory census; `desktop/quick-library-test.cjs`: explicit-switch-only startup and file result; `tools/quick-library-scenario.js`: in-page inputs, presentation timing, grid progress and responsiveness probes; `tools/library-quick-metrics.cjs`: page-clock picture totals; `desktop/library-wait-check.cjs`: opt-in `--batch5c` screen-pixel sampling, Compare and detail-refusal acceptance |
 | Library uploads | `codebase/frontend/library-upload.js` and `library-upload-worker.js`: transferable upload/download buffers, HTTP status, cancellation, worker/network failure and bounded completion |
 | Library fixture comparison | `codebase/tools/capture-library-fixtures-native.cjs`, `desktop/library-pixel-test.cjs` and `tools/library-pixel-scenario.js`: plain-Electron finished SDR/HDR GPU readback at grid/Single sizes; `tools/capture-library-fixtures.cjs`: earlier CDP diagnostic; `tools/compare-library-fixtures.py`: exact hashes, finite-pixel checks, perceptual RAF exception and small difference review images |
 

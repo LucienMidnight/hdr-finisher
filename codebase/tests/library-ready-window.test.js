@@ -76,3 +76,11 @@ test('bounded eviction preserves wanted pictures and stops after one indivisible
  assert.equal(cache.evictFinished(p=>p.id!=='next',60),100);
  assert.deepEqual(disposed,['old']);assert.ok(cache.has(keep)&&cache.has(later));
 });
+
+
+test('a current camera picture can stand in, but cannot be borrowed twice',()=>{
+ const cell={identity:'current',displayEpoch:1,controller:new AbortController(),photo:{path:'a'},meta:{route:'camera',bitmap:true},fallback:{hidden:false,dataset:{picturePath:'a',rendition:'sdr'}}};
+ const {standIn}=require('../frontend/library-ready-window');
+ assert.equal(standIn([cell],'current',1,false),cell);
+ cell.fallback.dataset.standIn='true';assert.equal(standIn([cell],'current',1,false),undefined);
+});

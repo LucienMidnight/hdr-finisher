@@ -79,6 +79,11 @@ window.HDRLibraryScenes = (() => {
       }
     }
     if (options.cachedOnly) return null;
+    if (edge === 100000 && plan.detail_memory && !plan.detail_memory.available) {
+      const error = Error("Not enough memory for full-size detail. Open this photo in Grade.");
+      error.needsMemory = true; error.estimate = plan.detail_memory.bytes;
+      throw error;
+    }
     await options.beforeSource?.();
     window.HDRLibraryGrants?.promote(path,reviewPaths.size ? rank(path) : urgency);
     if (signal?.aborted) throw new DOMException("Cancelled","AbortError");
@@ -138,6 +143,7 @@ window.HDRLibraryScenes = (() => {
       try { return await loadOnce(path,edge,signal,priority,trace,options); }
       catch(error){
         if(error.name==="AbortError" || signal?.aborted || generation!==(generations.get(path)||0) || error.laneRequeue || error.cloudOnly || error.needsMemory)throw error;
+        if (/not enough memory|waiting for memory to save detail/i.test(error.message)) { error.needsMemory=true; throw error; }
         const retryable=temporary(error);
         if(!retryable && !error.developmentFailure)throw error;
         if(attempt<3){

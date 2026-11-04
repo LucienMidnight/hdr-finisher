@@ -1,6 +1,6 @@
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in
+**Status:** Batch 5c partially built November 4, 2026: explicit detail admission and visible-stand-in safeguards; busy cold drawing and full black-screen acceptance remain open. Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
@@ -100,6 +100,57 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Open: selected-photo priority over grid developments (48 MP float TIFF 19.8 s), brush-mask and warp CPU time |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Not started |
 | 5b | The on-screen photo takes priority; recover lost reservations and hand over completed thumbnails; parallel screen perspective and mask warps. | Partial November 4, 2026: 32.65 s abandoned TIFF wait removed (2.06 s ordinary open; forced lost reservation 2.80 s). Four-photo SDR/HDR stored pixels identical to 5a. Busy cold fullscreen still 7.0–7.2 s versus idle 1.98–2.23 s; ARW ordinary first open 2.48–2.55 s. See checkpoint below. |
+| 5c | Visible TIFF/RAW stand-ins, explicit detail demand, memory admission before decoding and same-photo reopen investigation. | Partial November 4, 2026: Fit/native visibility and refusal retry fixes built. Same-name cache misses were different source paths. Busy first drawing still misses the +about 1 s target; see 5c checkpoint and performance table. |
+
+### Batch 5c checkpoint - November 4, 2026 (partial)
+
+Fullscreen entry resets to Fit. Single detail now requires an explicit zoom
+request for that photo; a stored Fit picture stays visible until a finished
+native crop can cover it. Quick surfaces are shown above empty native surfaces,
+restored idempotently, and reused in Compare too. Current camera pictures may
+also stand in. Hidden stand-in presentation is a logged fault, not a success.
+The original black fullscreen symptom was not reproduced before the change:
+the baseline idle TIFF stand-in was already visible in sampled screen pixels.
+These are fixes to identifiable visibility hazards, not proof of that incident's
+exact cause.
+
+Full-size admission checks header dimensions and the six-float-plane hand-off
+against the existing working share and whole-app target before decoding. The
+same check protects direct backend requests and Compare preparation. A memory
+refusal is retained until another explicit zoom request; it cannot enter the
+preparation retry loop. Final copied TIFF check: one 1,012,323,328-byte refusal,
+zero full-size source/GPU starts and no retries over five seconds. Fit never
+started detail. No memory allowance changed.
+
+The apparent three-second cache miss in Steve's log was a different source:
+first `D:\Photos\HDR Test Images\DSC04375_DxO_clipped_target.tif`, then
+`D:\Photos\HDR Test Images\DJI Samples\DSC04375_DxO_clipped_target.tif`.
+The second path was saved and subsequently hit. Do not merge their cache keys.
+Same copied-photo reopens after 2.1 seconds use stored screen pictures in SDR/HDR.
+
+Measured busy first sharp TIFF: 6.486 s docked SDR/HDR, 7.178/7.368 s popped out;
+idle 2.050 s docked SDR and 2.382 s popped-out HDR. Heavy edited ARW:
+6.665 s busy versus 2.421 s idle. The +about 1 s target remains open. Removing
+detail retries did not remove this cold first-draw cost. A render-pipeline
+preparation experiment only moved the whole wait 6.827 to 6.298 s and was
+removed under the project's speed rule. No shader, finishing, export, Proof,
+HDR cap or output tolerance was changed; no new output-equivalence claim.
+
+Screen crops were sampled during Single/fullscreen and Compare in SDR/HDR,
+docked/popped out. Actual waiting stand-ins were exercised in docked SDR TIFF
+(17 samples), popped-out HDR TIFF (21), and edited ARW (22; Compare 12).
+All were nonblack. Other matrix runs had no stand-in during their cold wait,
+so they do not prove hidden-stand-in absence for every mode. Steve's original
+rapid-switch case and the remaining matrix coverage still need acceptance.
+Final focused memory peaks were 2.34-3.59 GB, settling at 1.60-2.64 GB;
+no ceiling/elastic violation. Sources were reused under output/test-photos;
+no writes to D:\Photos.
+
+Fast checks and evidence are recorded in the performance table. The broader
+Single smoke check timed out at step 9 on the existing scan DNG admission
+request for about 6.8 GB; no budget was raised. Slow checks, including corrected
+harness runs, reached roughly the ten-minute allowance; further slow work
+requires Steve's go-ahead. This batch is not complete.
 
 ### Batch 5b checkpoint — November 4, 2026 (partial)
 

@@ -553,6 +553,19 @@ def create_library_router(worker, browser, store=None):
             return grades.describe([path]).get(path, {}).get("edited", False)
         return picture_document(path) is not None
 
+    def detail_memory(path):
+        from . import app_memory
+        from .library_estimates import dimensions
+        width, height = dimensions(path)
+        # Same six float32 output planes and bounded JSON framing as native upload.
+        needed = width * height * 24 + 65536
+        limit = app_memory.limit("working")
+        snapshot = app_memory.cache_snapshot()
+        used = snapshot["working"]["bytes"]
+        total = app_memory.snapshot(cached_only=True)["totalBytes"]
+        return dict(bytes=needed, limit=limit,
+                    available=needed <= limit-used and total+needed <= app_memory.TARGET)
+
     @router.post("/live-plan")
     @picture_errors.guard_cached
     def live_plan(command: LiveSceneRequest):
@@ -598,6 +611,7 @@ def create_library_router(worker, browser, store=None):
                 "edited": is_edited(command.path),
                 "cpu_route": cpu_route,
                 "gpu_meta": gpu_metadata(path,document,command.edge) if not cached and not is_cloud_placeholder(stat) and not cpu_route else None,
+                "detail_memory": detail_memory(path) if command.edge == 100000 and not cached else None,
                 "cached": live.describe(command.path, cached) if cached else None,
                 "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}",
                 "source_identity": picture_key(path, 0, live_quality(document)),
@@ -616,6 +630,11 @@ def create_library_router(worker, browser, store=None):
         if cached:
             await run_in_threadpool(live.cache.accept_transient, cached)
             return await run_in_threadpool(live.describe, command.path, cached)
+        if command.edge == 100000:
+            memory = await run_in_threadpool(detail_memory, path)
+            if not memory["available"]:
+                return JSONResponse({"detail": "Not enough memory for full-size detail. Open this photo in Grade.",
+                                     "needs_memory": True, "estimate": memory["bytes"]}, status_code=409)
         if worker.status()["paused"]:
             return JSONResponse({"detail": "library_pending"}, status_code=202)
         refused = await run_in_threadpool(source_gate, path, command.priority)

@@ -59,11 +59,19 @@ window.HDRLibraryTrace = Object.freeze({
     trace.ended = true;
     this.mark(trace,"picture_review_outcome",trace.started,{blank:!trace.presented,quick_draw:!!trace.standInPresented,sharp_draw:!!trace.sharpPresented,reason});
   },
-  present(trace, current, fields = {}) {
+  present(trace, current, fields = {}, surface = null) {
     if (!trace) return;
     const submitted = performance.now();
     requestAnimationFrame(() => requestAnimationFrame(() => {
       if (!current()) return;
+      if (surface) {
+        let visible = surface.isConnected && surface.width > 0 && surface.height > 0 && surface.getBoundingClientRect().width > 0;
+        for (let node=surface; node && visible; node=node.parentElement) {
+          const style=getComputedStyle(node);
+          visible = !node.hidden && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) !== 0;
+        }
+        if (!visible) { this.mark(trace,"picture_surface_fault",submitted,{...fields,reason:"Presented picture surface is hidden"}); return; }
+      }
       trace.presented = true;
       window.HDRLibraryFolderPresented?.(trace,{picture_size:trace.picture_size,...fields});
       if (fields.quick_draw) trace.standInPresented = true;

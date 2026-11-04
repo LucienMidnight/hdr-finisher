@@ -439,3 +439,17 @@ test('a delayed thumbnail demand cannot demote the photo selected while it waite
  await tick();scenes.review('photo');block.resolve();await pending;
  assert.deepEqual(promoted.filter(([p])=>p==='photo').at(-1),['photo',0]);
 });
+
+
+test('detail admission refuses before any development or retry',async()=>{
+ let reads=0;
+ const {scenes,events}=setup({large:{bytes:506e6,detail_memory:{available:false,bytes:1012e6}}},async()=>{reads++;});
+ await assert.rejects(scenes.load('large',100000),e=>e.needsMemory&&e.estimate===1012e6);
+ assert.equal(reads,0);assert.equal(events.filter(e=>e.stage==='picture_preparation_retry').length,0);
+});
+
+test('a late detail memory refusal never repeats GPU development',async()=>{
+ let reads=0;const {scenes,events}=setup({large:{bytes:506e6}},async()=>{reads++;throw Error('Not enough memory for full-size detail.');});
+ await assert.rejects(scenes.load('large',100000),e=>e.needsMemory);
+ assert.equal(reads,1);assert.equal(events.filter(e=>e.stage==='picture_preparation_retry').length,0);
+});

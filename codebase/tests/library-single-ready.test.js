@@ -76,3 +76,56 @@ test('Develop stores only the selected photos at both tiers without changing gra
  assert.deepEqual(calls,[['a.arw',640],['a.arw',2560],['b.dng',640],['b.dng',2560]]);
  assert.equal(stored.length,4);assert.equal(JSON.stringify(photos),before);
 });
+
+
+test('a stored Fit remains visible while native detail is unavailable',()=>{
+ const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
+ const fn=source.slice(source.indexOf('  function positionZoom()'),source.indexOf('  async function prepareRawNative('));
+ const fit={style:{visibility:'hidden'}},native={hidden:false,style:{}},stage={clientWidth:1000,clientHeight:800,classList:{toggle(){}},querySelector(){}};
+ const state={zoom:true,zoomScale:1,zoomX:.5,zoomY:.5,fitMeta:{route:'stored-screen-preview',width:1000,height:800},nativeMeta:null};
+ const context={state,window:{devicePixelRatio:1},$:id=>id==='single-picture'?fit:id==='native-picture'?native:stage,HDRPhotoFraming:{layout:()=>({width:2000,height:1600,frame:0,border:0}),draw(){}},HDRLibraryZoom:{center:()=>({x:.5,y:.5})}};
+ vm.runInNewContext(fn+';this.run=positionZoom;',context);context.run();
+ assert.equal(fit.style.visibility,'');assert.equal(native.hidden,true);
+ state.nativeMeta={width:100,height:100,crop_x:0,crop_y:0};context.run();assert.equal(native.hidden,false);
+});
+
+test('inherited zoom state cannot develop detail without this photos explicit request',async()=>{
+ const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
+ const fn=source.slice(source.indexOf('  async function showNative()'),source.indexOf('  function singleFrameInset('));
+ const context={state:{fitMeta:{},zoom:true,active:true,view:'single',detailRequested:null},selected:()=>({path:'photo'}),$:()=>assert.fail('Unrequested detail reached the surface')};
+ vm.runInNewContext(fn+';this.run=showNative;',context);await context.run();
+});
+
+
+test('a hidden stand-in is a presentation fault, never a presented picture',()=>{
+ const source=fs.readFileSync(require.resolve('../frontend/library-stopwatch'),'utf8');
+ const events=[],parent={hidden:true,parentElement:null},canvas={isConnected:true,width:100,height:100,hidden:false,parentElement:parent,getBoundingClientRect:()=>({width:100})};
+ const context={window:{},performance,HDRLibraryStopwatch:(stage,fields)=>events.push({stage,...fields}),requestAnimationFrame:f=>f(),getComputedStyle:()=>({display:'block',visibility:'visible',opacity:'1'})};
+ vm.runInNewContext(source.slice(source.indexOf('window.HDRLibraryTrace =')),context);
+ const trace={started:performance.now()};context.window.HDRLibraryTrace.present(trace,()=>true,{quick_draw:true},canvas);
+ assert.equal(events.filter(e=>e.stage==='picture_surface_fault').length,1);assert.equal(trace.presented,undefined);
+ parent.hidden=false;context.window.HDRLibraryTrace.present(trace,()=>true,{quick_draw:true},canvas);
+ assert.equal(trace.standInPresented,true);assert.equal(events.filter(e=>e.stage==='picture_present').length,1);
+});
+
+
+test('fullscreen entry resets inherited zoom and explicit detail demand to Fit',()=>{
+ const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
+ const fn=source.slice(source.indexOf('  function setReview('),source.indexOf('  function openGrade('));
+ let aborted=false,view;
+ const state={zoom:true,detailRequested:'photo',nativeMeta:{},native:{abort(){aborted=true;}},view:'single'};
+ const context={state,selected:()=>({path:'photo'}),$:()=>({setAttribute(){}}),library:{classList:{toggle(){}}},setView:v=>view=v,postParent(){}};
+ vm.runInNewContext(fn+';this.run=setReview;',context);context.run(true);
+ assert.equal(state.zoom,false);assert.equal(state.detailRequested,null);assert.equal(state.nativeMeta,null);assert.equal(aborted,true);assert.equal(view,'single');
+});
+
+
+test('a retained failed detail request becomes eligible for an explicit user retry',async()=>{
+ const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
+ const fn=source.slice(source.indexOf('  async function showNative()'),source.indexOf('  function singleFrameInset('));
+ const error=Object.assign(Error('Not enough memory'),{needsMemory:true});
+ const state={fitMeta:{route:'stored-screen-preview'},zoom:true,detailRequested:'photo',active:true,view:'single',zoomScale:1,fullDetail:Promise.reject(error)};
+ const messages=[],context={state,selected:()=>({path:'photo',name:'photo'}),window:{devicePixelRatio:1},$:()=>({}),AbortController,aborted:()=>false,status:s=>messages.push(s)};
+ vm.runInNewContext(fn+';this.run=showNative;',context);await context.run();
+ assert.equal(state.detailRefused,true);assert.equal(state.nativeLoading,false);assert.match(messages.at(-1),/unavailable/);
+});

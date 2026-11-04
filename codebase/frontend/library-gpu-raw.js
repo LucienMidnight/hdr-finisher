@@ -1073,7 +1073,7 @@
       root.HDRLibraryStopwatch?.(describeOnly ? "picture_scene_description" : "picture_scene_handoff",{
         path,edge:header.edge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes});
       const result=JSON.parse(stored.text || "{}");
-      if(!stored.ok){const error=result.changed?new DOMException(result.detail,"AbortError"):Error(result.detail || "Library request failed.");error.status=stored.status;throw error;}
+      if(!stored.ok){const error=result.changed?new DOMException(result.detail,"AbortError"):Error(result.detail || "Library request failed.");error.status=stored.status;error.needsMemory=!!result.needs_memory || /not enough memory|waiting for memory to save detail/i.test(error.message);throw error;}
       if(sharedJob) sharedJob.results.set(entry.header.edge,result);
       return result;
     };

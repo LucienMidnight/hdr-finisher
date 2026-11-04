@@ -267,6 +267,8 @@
     }
   ],
   "drivers": [
+    {"path":"tools/quick-library-check.cjs","areas":["library"],"tier":"diagnostic","protects":"Plain Electron Library acceptance, including opt-in --batch5c screen-pixel capture on copied photos.","launch":{"method":"node","args":["--batch5c"],"requires":"Use an existing output/test-photos copy; choose --folder, --idle, --hdr or --popout as appropriate."}},
+    {"path":"desktop/library-wait-check.cjs","areas":["library"],"tier":"diagnostic","protects":"Pixel-visible stand-ins and full-size detail refusal through the quick Library check.","launch":{"method":"helper","via":["tools/quick-library-check.cjs"]}},
     {"path":"tests/retouch-photo-review.js","areas":["preview","ui"],"tier":"diagnostic","protects":"DSC04375 labelled GPU/CPU native and Fit repair crops with informational finished-colour differences.","launch":{"method":"electron"}},
     {"path":"tests/retouch-library-gpu.js","areas":["library"],"tier":"area","protects":"A saved repaired RAW uses GPU development before thumbnail reduction, with bounded frozen source regions and warm reuse.","launch":{"method":"electron"}},
     {"path":"tests/retouch_gpu_cases.py","areas":["preview"],"tier":"area","protects":"Deterministic bounded and whole-photo input fixtures for the hardware repair check.","launch":{"method":"helper","via":["tests/retouch-gpu-kernels.js"]}},
