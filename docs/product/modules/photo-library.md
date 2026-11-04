@@ -98,7 +98,7 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Follow-up incomplete November 4, 2026 |
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Not started |
 | 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Open: selected-photo priority over grid developments (48 MP float TIFF 19.8 s), brush-mask and warp CPU time |
-| 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Not started |
+| 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Measured November 4, 2026 (`3b24d92`); the rest is tabled for polish until Steve tests on a MacBook Neo (polish pass) |
 | 5b | The on-screen photo takes priority; recover lost reservations and hand over completed thumbnails; parallel screen perspective and mask warps. | Partial November 4, 2026: 32.65 s abandoned TIFF wait removed (2.06 s ordinary open; forced lost reservation 2.80 s). Four-photo SDR/HDR stored pixels identical to 5a. Busy cold fullscreen still 7.0–7.2 s versus idle 1.98–2.23 s; ARW ordinary first open 2.48–2.55 s. See checkpoint below. |
 | 5c | Visible TIFF/RAW stand-ins, explicit detail demand, memory admission before decoding and same-photo reopen investigation. | Partial November 4, 2026: Fit/native visibility and refusal retry fixes built. Same-name cache misses were different source paths. At the 5c checkpoint busy first drawing still missed the +about 1 s target; completed by 5d below. |
 | 5d | Prepare drawing pipelines after the first grid picture; preserve popped-out SDR stand-ins on reopen. | Built November 4, 2026: prepared busy TIFF 2.12 s and heavy ARW 3.02 s; four docked/popped-out SDR/HDR pixel checks pass. See checkpoint below. |
@@ -4429,6 +4429,30 @@ previews, codecs and Prepare/Build previews remain separate work. Stop at Step 3
       left/right arrow correctly opens the next photo at the same zoom and
       position, but it briefly flashes (apparently the Fit view) before
       zooming. Go straight to the zoomed view.
+    - Grade-opening memory peak and the 8 GB Mac (Steve, November 4:
+      tabled for polish). Opening a 42 MP photo in Grade briefly reaches
+      about 5 GB (backend import work); rest is 1.4 GB Library, 1.9 GB
+      Grade (memory-and-caches, "November 4: Library + Grade measurement").
+      Steve will test on a real MacBook Neo first; some swap is acceptable.
+      Batch 4d (sharing, idle give-back, counting GPU memory on Macs)
+      waits for that test.
+    - Library speed leftovers (Steve, November 4: moved to polish before v1;
+      he will retest in use first, in case related issues turn up):
+      - DNG grid thumbnails: DxO DNGs took 4-5 s to appear.
+      - Cold-folder camera pictures: 1.5-2.4 s to fill in on a fresh folder;
+        time against darktable on the same cold folder.
+      - Retouch on the sharp draw: 1.9 s on IMG_3129.CR2.
+      - Heavy-grade photos: about 3 s for 20250412_0039.ARW (perspective
+        warp and brush mask built on the CPU).
+      - Large TIFF reading: 1.4-2.2 s of each first open.
+      - Settings-file read errors: 11 `.hdrfinisher` files in HDR Test Images
+        (for example DSC05884) fail UTF-8 decoding and are re-checked about 28
+        times per session. Find whether they are damaged or old, and stop the
+        repeated checks.
+      - Grid scroll position snapping back while new files are added
+        (badminton import, November 3); retest.
+      - Known failing test `test_library_live.py::test_remembered_failure_does_not_hide_current_grade_cached_scene`:
+        fix or retire it.
 6. Installer and a methodical bug hunt.
 
 ### 5.1 Non-RAW Library source speed: batch plan (October 20, 2026)
