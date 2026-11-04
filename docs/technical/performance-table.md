@@ -1055,3 +1055,23 @@ acceptance errors, external peak 3.202 GB. Evidence:
 `codebase/output/quick-library-check/thumbnail-memory/{scenario,report}.json`
 and `thumbnail-memory-standard/report.json`. Prompt delivery-buffer release
 and Grade peak memory remain open; see the thumbnail-stall brief.
+
+
+November 5 hidden delivery lifetime (parent `be9f70b`; this change; isolated
+Electron, 2560 x 1440): DSC07060.ARW 4000 x 2671 GPU delivery turns are
+6.547 -> 6.705 s for export (+2.42%) and 2.768 -> 2.697 s for Proof (-2.58%);
+both meet the 5% allowance. Complete export 28.370 -> 28.619 s (+0.88%).
+Before/after export and Proof have the same encoded hash and 798.184-nit peak
+against 800 nits. The DSC07061 edge-colour job pair is 5.138 -> 4.305 s;
+this is one cold-profile pair, not a repeatable speed improvement claim.
+Private bytes fall from 1.745 GB peak to 42.6 MB at two seconds (42.1 MB
+pre-job), within 200 MB; the idle collector's ~415 ms observation is already
+within tolerance. The previous loop held 1.230 GB at two seconds. No large
+photo backing stores remain in the post-job heap. Keep existing idle GC.
+DxO grid after Grade: ten pictures in 0.275-0.671 s, zero measured-memory
+waits. Standard 90-second grid: 33 pictures, 3.290 GB external peak, passes.
+Focused Grade peak remains 5.234 GB, outside the existing allowance; separate
+Grade peak work remains. Evidence and exact conditions: archived
+`library-thumbnail-memory-stall-2026-11-04.md`,
+`codebase/output/delivery-lifetime/export-proof.json` and
+`codebase/output/quick-library-check/delivery-lifetime-{before,after,standard}/`.

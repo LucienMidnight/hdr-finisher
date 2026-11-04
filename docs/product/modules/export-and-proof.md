@@ -1,5 +1,18 @@
 # Module PRD: Export and Proof
 
+## November 5: delivery-job buffer lifetime
+
+The hidden delivery worker ends each job's async frame before waiting for the
+next one. Rendering, finishing, encoding and GPU budgets are unchanged.
+The real 42 MP saved-grade GPU export and full-size Proof check passes at
+4000 x 2671: all before/after export/Proof files have identical encoded hashes
+and decode to 798.184 nits against the existing 800-nit target. Delivery turns
+move +2.42% for export and -2.58% for Proof, inside the agreed 5%. The small
+Denoise-enabled GPU/CPU check also passes its agreed limits; its older stricter
+HDR p99.9 3.377 failure remains the documented v1 limitation. Checks ran once
+on the change, with one unchanged-code timing/pixel baseline. Details:
+`../../technical/archive/briefs/library-thumbnail-memory-stall-2026-11-04.md`.
+
 ## October 27: source metadata and reusable templates
 
 All six export formats use bundled ExifTool 13.59 after encoding, in single

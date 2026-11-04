@@ -6942,4 +6942,12 @@ holds 1.187 GB of completed-job input/output buffers after forced GC. Prompt
 release and broader Grade memory acceptance remain open. Old binary
 `.hdrfinisher` files being mistaken for settings conflicts also remain batch
 4c work; periodic folder-check log naming is separate. Review and evidence:
-`../../technical/briefs/library-thumbnail-memory-stall-2026-11-04.md`.
+`../../technical/archive/briefs/library-thumbnail-memory-stall-2026-11-04.md`.
+
+
+November 5 follow-up: completed delivery-job buffers now leave scope before
+the worker waits again. The hidden renderer returns within 0.475 MB of idle
+at two seconds; its 1.187 GB of former live photo backing stores are absent
+from the heap. The existing idle collector stays. This closes prompt hidden
+memory release; broader Grade peak memory remains separate. See the archived
+thumbnail-stall brief linked above.

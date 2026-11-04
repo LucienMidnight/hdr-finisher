@@ -29,12 +29,11 @@
       if(value.preempt)throw Error(value.reason);
       if(value.ready){permitted=performance.now();return;}await pause(30);}
   }
-  for(;;){
-    let job,finishing;
+  // Finish this async frame before polling again: a suspended polling frame
+  // otherwise keeps the completed photo in its parameters and registers.
+  async function runJob(job){
+    let finishing;
     try{
-      const response=await fetch("/api/delivery/gpu/next");if(!response.ok)throw Error("Delivery queue unavailable.");job=await response.json();
-      if(!job){await pause(50);continue;}
-      window.hdrDeliveryMemory?.idle(false);
       identity=job.id;permitted=0;
       const timings={},started=performance.now();let mark=started;
       const stamp=(name,lane)=>{const now=performance.now(),spent=now-mark;timings[name]=(timings[name]||0)+spent;
@@ -58,7 +57,7 @@
         if(!stored.ok)throw Error("GPU repair result handoff failed.");
         await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({reserved_bytes:result.reservedBytes,total_ms:performance.now()-started})});
-        continue;
+        return;
       }
       if(job.operation === "dng_correction") {
         const required=HDRLibraryGpuRaw.rawBudget(job.dng,[100000]);
@@ -83,7 +82,7 @@
           input_handoff_and_initialization_ms:inputHandoffMs,output_handoff_ms:performance.now()-handingOff};
         await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({dng_diagnostics:diagnostics,timings_ms:result.timings,total_ms:performance.now()-started})});
-        continue;
+        return;
       }
       if(job.operation === "edge_colour") {
         const required=job.width*job.height*44+64*1024*1024;
@@ -128,7 +127,7 @@
           stage:"acescg_after_camera_conversion_before_lens_correction",expand_percent:job.expand,memory_peak_bytes:peak};
         await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({edge_diagnostics:diagnostics,total_ms:performance.now()-started})});
-        continue;
+        return;
       }
       if(job.raw){
         // RAW scratch is released before the creative graph starts.
@@ -233,7 +232,19 @@
       await pause(100);
     }finally{
       identity=null;finishing?.destroy();gpu?.resetSession(null);
-      if (job) window.hdrDeliveryMemory?.idle(true);
+    }
+  }
+  for(;;){
+    try{
+      const response=await fetch("/api/delivery/gpu/next");if(!response.ok)throw Error("Delivery queue unavailable.");
+      const job=await response.json();
+      if(!job){await pause(50);continue;}
+      window.hdrDeliveryMemory?.idle(false);
+      try{await runJob(job);}
+      finally{window.hdrDeliveryMemory?.idle(true);}
+    }catch(error){
+      console.error("GPU delivery",error);
+      await pause(100);
     }
   }
 })();

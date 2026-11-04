@@ -1346,8 +1346,32 @@ async loop (one input and three output ArrayBuffers). After a real Grade
 handoff, private commit only changes 1,230,790,656 -> 1,230,544,896 bytes.
 Do not mark prompt hidden-memory release complete. The focused Grade run
 still exceeds memory acceptance; the standard 90-second grid passes.
-Details and evidence: `../../technical/briefs/library-thumbnail-memory-stall-2026-11-04.md`.
+Details and evidence: `../../technical/archive/briefs/library-thumbnail-memory-stall-2026-11-04.md`.
 
 Validation note: 801 JS passed; Python 3,053 passed / three skipped / one
 unrelated failed PNG remembered-error route test (expected 422, received
 200). Left unchanged. Output and numeric evidence remain in the open brief.
+
+### November 5: completed delivery-job storage is released promptly
+
+The delivery renderer now runs each job in a separate async frame, ending
+all local input/output/upload references before it waits for the next job.
+This closes the live-buffer follow-up above; success, failure and cancellation
+use the same boundary for every operation. Existing pressure/waiting-photo
+collection and the 250 ms idle collector remain. Keep idle collection: freeing
+references allows it to work, but does not guarantee spontaneous collection
+within the required two seconds. No ceiling, priority, Grade retention, GPU
+budget, order or pixel computation changed.
+
+Acceptance is private commit within 200 MB of pre-job idle within two seconds.
+The real 42 MP Grade job starts at 42,119,168 bytes, peaks at 1,744,891,904,
+and returns to 42,594,304 at 2,005 ms (0.475 MB above idle). The old loop still
+held 1,230,323,712 bytes at two seconds. The new heap snapshot contains none
+of its former 1,186,913,280 bytes of photo backing stores. The broader Grade
+processing peak remains above whole-app acceptance and is separate.
+Review, checks and evidence: `../../technical/archive/briefs/library-thumbnail-memory-stall-2026-11-04.md`.
+Validation: 802 JS passed; Python 3,053 passed / three skipped / the same
+unrelated remembered-PNG 422/200 failure. Fifteen delivery lifetime cases pass.
+Real 42 MP export/Proof match the unchanged-code baseline exactly; per-job
+GPU timing changes +2.42% / -2.58% meet 5%. Standard Library check passes;
+focused Grade processing peak remains separate. Output 29.2 GB; no push.

@@ -465,5 +465,8 @@ the actual edge. Desktop's existing collect/reclaim and pressure paths include
 delivery, whose narrow `delivery-memory-preload.cjs` reports job idle/busy.
 `desktop/library-thumbnail-memory-check.cjs` is an opt-in helper through
 `quick-library-check.cjs --thumbnail-memory`, exercising Grade on test copies
-and browsing original DxO DNGs read-only. It measures private bytes/retainers;
-it does not fix the completed-job references found in `gpu-delivery.js`.
+and browsing original DxO DNGs read-only. It measures pre-job/peak/two-second
+private bytes and takes a post-job heap snapshot. November 5: `gpu-delivery.js`
+runs every job in a separate async frame before signaling idle; the polling
+frame no longer retains photo buffers. `tests/gpu-delivery-lifetime.test.js`
+checks reachability across all five routes on success, failure and cancellation.

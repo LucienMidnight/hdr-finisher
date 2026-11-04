@@ -1,6 +1,6 @@
 # Library thumbnails stall after leaving Grade (proposal)
 
-Status: reviewed and implemented in part, November 4, 2026. Thumbnail admission passes; collection is wired, but live delivery buffers still prevent the requested memory release. See Codex outcome below.
+Status: completed November 5, 2026. Thumbnail admission and prompt release of completed delivery-job buffers are implemented. Broader Grade peak-memory acceptance remains separate. See both Codex outcomes below.
 
 ## What Steve saw
 
@@ -225,3 +225,105 @@ The 66 estimate tests and final 26 grant/collection tests pass. The registered
 diagnostic helper and standard checker both pass syntax checks. This change
 is deliberately incomplete for prompt delivery-memory release; the next fix
 needs to remove the proven completed-job references, not add more GC loops.
+
+## Codex follow-up outcome (November 5, 2026)
+
+The cause was the lifetime of the perpetual async polling frame, not a missing
+collection. Its saved registers held local inputs and read-back outputs from
+the last job while awaiting the next queue response. Each job now runs in its
+own `runJob(job)` async function. Its three specialized branches return; the
+ordinary finishing/RAW route finishes normally. The same catch/finally handles
+success, upload errors, scheduler cancellation and GPU failures. The caller
+signals idle only after that function has settled and its photo-bearing frame
+has ended. Serial order, GPU resets/destruction, error reporting, retry delay,
+all budgets, Grade retention and pixel operations are unchanged.
+
+**Agreed acceptance:** within two seconds after completion, hidden-window
+private bytes must be no more than 200,000,000 above their pre-job idle level.
+This permits allocator/driver noise around the roughly 100 MB expected idle.
+No delivery slowdown above 5% is allowed; existing pixel/ceiling tolerances
+stay unchanged. Sampling is every 25 ms in the opt-in diagnostic only; it
+adds no production collection loop or timer. Existing 250 ms idle collection,
+waiting-photo reclamation and pressure wiring from `be9f70b` stay.
+
+Matched plain-Electron 2560 x 1440 Grade edge-colour runs, on the reusable
+DSC07061.ARW copy, record these Windows private bytes (Electron KiB x 1024):
+
+| Run | Before job | Peak during job | Two seconds after job |
+| --- | ---: | ---: | ---: |
+| Previous loop (`be9f70b`) | 40,501,248 | 1,743,400,960 | 1,230,323,712 (2,006 ms) |
+| Per-job frame | 42,119,168 | 1,744,891,904 | 42,594,304 (2,005 ms) |
+
+The remaining 475,136 bytes above idle pass the 200 MB allowance. At the
+existing idle collector, private bytes fall from 1,235,247,104 to 43,565,056
+bytes (the after reading includes the diagnostic's 100 ms observation delay).
+This reading is about 415 ms after job completion, already within tolerance.
+The snapshot taken after the two-second reading, before the diagnostic's
+later explicit pressure call, contains **none** of the four prior photo
+backing stores: 678,236,160 plus three times 169,559,040 bytes. In fact, no
+JSArrayBufferData backing store of 1 MB or more remains. Before the fix, the
+same snapshot contains all four (1,186,913,280 bytes). No new job overwrites
+them between completion and measurement.
+
+**Recommendation: keep the existing idle collection.** Ending references
+makes collection effective; it does not require Chromium to collect within
+two seconds on its own. Here the existing collector promptly released about
+1.19 GB. Removing it would risk the same waiting-photo delay. No collection
+wiring or cadence was removed, and no new production machinery was added.
+
+A behavioral regression test runs the actual script with small mocked GPU
+jobs and forced test-process collection. It checks that tracked input/upload/
+readback buffers become unreachable before the next job for retouch, DNG
+correction, edge colour, ordinary finishing and RAW finishing, each on success,
+upload failure and cancellation (15 cases). It also checks the completion
+result so an accidental error cannot masquerade as a successful memory test.
+The previous loop fails this test; the new loop passes. These test-process
+collections do not change the application's collection policy.
+
+Retained evidence: `codebase/output/quick-library-check/delivery-lifetime-{before,after}/`
+contains `delivery-jobs.json`, `delivery-collections.json`,
+`delivery-after-job.heapsnapshot`, `retained-buffers.json`, `report.json`,
+`scenario.json` and `backend.log`. The snapshot confirms reachability, while
+the earlier two-second private-byte sample judges the memory tolerance.
+
+Export/Proof validation: `gpu-delivery-ceiling.js --gpu-only`, once on the
+change and once on unchanged `be9f70b` for timing/pixel baseline, using the
+same reusable DSC07060.ARW source and saved grade. At 4000 x 2671, all four
+files (before/after, export/Proof) have the same SHA-256
+`c22b89b04895c6453f08cc20b5e25327b99467d9f3846957bb20da7aaeaaf892`.
+Both decoded peaks are 798.184 nits against the unchanged 800-nit target.
+GPU delivery turns: export 6,546.5 -> 6,704.8 ms (+2.42%); Proof
+2,768.1 -> 2,696.7 ms (-2.58%). Both meet 5%. Complete export request
+28.370 -> 28.619 s (+0.88%); combined export/Proof/decode check
+60.027 -> 60.699 s (+1.12%). Grade edge-colour delivery takes
+5.138 -> 4.305 s; that single pair is faster, not a repeated speed benchmark.
+
+`gpu-delivery-smoke.js` also runs once on the change: GPU and CPU export/Proof
+routes complete, and the agreed Denoise comparison passes (HDR mean 0.780 /
+p99 2.629, SDR mean 0.586 / p99 2.036). Its existing stricter HDR p99.9 result
+is still 3.377 against 3.0, unchanged from the documented baseline; it is not
+a new pixel regression. No limit was relaxed or extra sweep run.
+Evidence: `codebase/output/delivery-lifetime/{export-proof.json,before-backend.log,after-backend.log,smoke-backend.log}`
+and `codebase/output/delivery-lifetime-{ceiling,ceiling-before,smoke}.log`.
+Large intermediate JPEGs and the three isolated GPU-check profiles were
+removed after recording hashes, metrics and logs.
+
+Real-app acceptance: the standard 90-second Library check passes, 33 pictures,
+3.290 GB independently sampled whole-app peak, no acceptance errors. The focused
+Grade/DxO check displays all ten camera pictures in 0.275-0.671 s with no
+measured-memory waits. That focused run still exceeds the existing whole-app
+processing-peak allowance (5.234 GB external peak), but now settles within its
+existing acceptance. This is a separate Grade coexistence/peak issue, not
+remaining completed-job storage. No original photo folder was written.
+Evidence: `codebase/output/quick-library-check/delivery-lifetime-standard/report.json`
+and the focused before/after folders above.
+
+Final checks: 802 JavaScript tests passed. Python: 3,053 passed, three
+skipped, one existing unrelated failure in
+`test_library_live.py::test_remembered_failure_does_not_hide_current_grade_cached_scene`
+(the remembered PNG failure expects 422, gets 200). Left unchanged and not
+rerun separately. The final strengthened 15-case lifetime test also passes;
+frontend/diagnostic syntax and diff checks pass. No broad GPU sweep, installer
+or push. Output starts and ends at 29.2 GB, below 100 GB; owned temporary
+profiles and intermediate exports were removed. Local commit includes the
+implementation, diagnostic, regression test, archived brief and module records.
