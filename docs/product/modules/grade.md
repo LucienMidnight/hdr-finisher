@@ -1808,4 +1808,6 @@ Saved-picture publication waits for the current presented frame. Tiled Fit can
 reuse Grade's bounded scope picture or produce that picture after presentation,
 without changing the viewer canvas. Zoom/overlay exceptions retain finishing
 fallback. Saving rules, rendering controls, Export and Proof are unchanged.
-The Library PRD records incomplete timing and second-photo acceptance.
+The Library PRD records confirmed second-photo installation and incomplete timing acceptance. The
+auxiliary scope canvas serializes scope and publication rendering; publication
+can reuse its completed picture before histogram analysis finishes.

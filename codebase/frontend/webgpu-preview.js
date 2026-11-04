@@ -6517,7 +6517,17 @@
       for (const texture of Object.values(selector.cache?.adaptiveScratch?.textures || {})) texture.destroy();
     }
 
-    async renderScopeProxy(sessionId, lane, adjustments, curveSampler, longEdge, locals, revision, white, sourceSize, options) {
+    async renderScopeProxy(...args) {
+      while(this.scopeProxyFlight)await this.scopeProxyFlight.catch(()=>{});
+      const options=args[9];
+      if(options?.isCurrent?.()===false)return null;
+      const work=this.renderScopeProxyFrame(...args);
+      this.scopeProxyFlight=work;
+      try{return await work;}
+      finally{if(this.scopeProxyFlight===work)this.scopeProxyFlight=null;}
+    }
+
+    async renderScopeProxyFrame(sessionId, lane, adjustments, curveSampler, longEdge, locals, revision, white, sourceSize, options) {
       this.scopeAnalysisCanvas ||= document.createElement("canvas");
       const canvas = this.scopeAnalysisCanvas;
       const rendered = await this.renderTo(canvas, sessionId, lane, adjustments, curveSampler,

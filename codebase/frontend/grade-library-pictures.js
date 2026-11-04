@@ -78,7 +78,7 @@
       sourceSerial:source?.serial,generation:frame?.applicationGeneration};
   };
   root.HDRGradeLibraryPictures=create({snapshot,
-    defer:work=>requestAnimationFrame(()=>setTimeout(()=>void work(),0)),
+    defer:work=>setTimeout(()=>void work(),0),
     capture:async (frame,signal)=>{
       const gpu=state.gpuPreview;
       const current=()=>!signal.aborted&&state.session?.session_id===frame.sessionId&&state.editRevision===frame.revision
@@ -86,7 +86,11 @@
       // Reuse the settled whole-frame Grade scope picture for tiled Fit.
       // If it is not ready, Grade produces that same bounded clean picture
       // after its visible frame. Never change or resize the viewer canvas.
-      while(current()&&(state.gpuDraftInFlight||gpu.activeRenderCount>0))await new Promise(r=>setTimeout(r,16));
+      const scopeReady=()=>{
+        const source=gpu.scopeAnalysisCanvas&&gpu.scopeSources.get(gpu.scopeAnalysisCanvas);
+        return source?.sessionId===frame.sessionId&&source.lane===frame.lane&&source.applicationGeneration===frame.generation;
+      };
+      while(current()&&(state.gpuDraftInFlight||gpu.activeRenderCount>0||gpu.scopeProxyFlight||(state.gpuScopeRequestInFlight&&!scopeReady())))await new Promise(r=>setTimeout(r,16));
       if(!current())return null;
       let canvas=els.previewCanvas,source=gpu.scopeSources.get(canvas);
       if(frame.execution!=="direct"||!source||Math.max(source.width,source.height)>2560){

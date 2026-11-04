@@ -75,32 +75,41 @@ class FinishedThumbnails:
         except (OSError, ValueError, KeyError, TypeError, EOFError, zlib.error):
             return None
 
-    def write(self, path, lane, format, meta, body, width, height, stride):
+    def write(self, path, lane, format, meta, body, width, height, stride, *, validation=None):
         current = self.current(path, lane, format)
         if current is None or not self.cache.preferences()["enabled"]:
             return False
         value, document = current
-        # Publication must match the source and finishing grade that was drawn.
-        from .library_live import quality
-        from .library_grades import grade_key
-        physical = source(value["path"])
-        source_key = sha256(f"{PICTURE_VERSION}:{physical}:{value['mtime_ns']}:{value['bytes']}:640:{quality(document)}".encode()).hexdigest()
-        if document is not None:
-            from .models import EditDocument
+        # A single Grade picture publishes several surface formats. Reuse its
+        # successful validation only within that call, for the exact same meta
+        # object and indexed path/stamp/grade. Every file still checks the current
+        # identity again before replacement; no validation survives the request.
+        token = (value["path"], value["bytes"], value["mtime_ns"], value["grade"])
+        verified = validation is not None and validation.get("identity") == token and validation.get("meta") is meta
+        if not verified:
+            # Publication must match the source and finishing grade that was drawn.
+            from .library_live import quality
+            from .library_grades import grade_key
+            physical = source(value["path"])
+            source_key = sha256(f"{PICTURE_VERSION}:{physical}:{value['mtime_ns']}:{value['bytes']}:640:{quality(document)}".encode()).hexdigest()
+            if document is not None:
+                from .models import EditDocument
+                from .projects import validate_saved
+                document = validate_saved(EditDocument, document).model_dump(mode="json")
+            document = document or {}
+            from .models import AdjustmentState
             from .projects import validate_saved
-            document = validate_saved(EditDocument, document).model_dump(mode="json")
-        document = document or {}
-        from .models import AdjustmentState
-        from .projects import validate_saved
-        adjustments = validate_saved(AdjustmentState, meta["adjustments"]).model_dump(mode="json")
-        finishing = dict(global_adjustments=document.get("global_adjustments") or adjustments,
-            local_adjustments=document.get("local_adjustments", []), denoise=document.get("denoise", {}),
-            framing=document.get("framing"), hdr_reference_white_nits=document.get("hdr_reference_white_nits", 203))
-        finishing_key = sha256(json.dumps(grade_key(finishing), sort_keys=True).encode()).hexdigest()
-        if meta.get("source_key") != source_key or meta.get("grade_identity") != finishing_key:
-            from .library_diagnostics import log
-            log("finished_thumbnail_rejected",path=path,source_match=meta.get("source_key")==source_key,grade_match=meta.get("grade_identity")==finishing_key)
-            return False
+            adjustments = validate_saved(AdjustmentState, meta["adjustments"]).model_dump(mode="json")
+            finishing = dict(global_adjustments=document.get("global_adjustments") or adjustments,
+                local_adjustments=document.get("local_adjustments", []), denoise=document.get("denoise", {}),
+                framing=document.get("framing"), hdr_reference_white_nits=document.get("hdr_reference_white_nits", 203))
+            finishing_key = sha256(json.dumps(grade_key(finishing), sort_keys=True).encode()).hexdigest()
+            if meta.get("source_key") != source_key or meta.get("grade_identity") != finishing_key:
+                from .library_diagnostics import log
+                log("finished_thumbnail_rejected",path=path,source_match=meta.get("source_key")==source_key,grade_match=meta.get("grade_identity")==finishing_key)
+                return False
+            if validation is not None:
+                validation.update(identity=token, meta=meta)
         self.cache.prepare()
         destination = self.file(value["key"])
         destination.parent.mkdir(exist_ok=True)

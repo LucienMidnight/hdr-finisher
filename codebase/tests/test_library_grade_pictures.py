@@ -149,3 +149,19 @@ def test_source_fallback_waits_for_existing_upload_allowance(setup, monkeypatch)
         assert slots.acquire(blocking=False)
         slots.release()
     asyncio.run(run())
+
+
+def test_surface_validation_reuse_cannot_authorize_a_new_grade(setup):
+    photo, store, session, marks, grades = setup
+    cache = service(setup)
+    edit(store, session, 1)
+    ticket = grades.save(str(session.session_id))["picture"]
+    path, document, session = cache.owner(str(session.session_id), ticket["grade_identity"])
+    meta = cache.thumbnail_meta(path, document, session)
+    validation = {}
+    body = bytes(256 * 16)
+    assert cache.thumbnails.write(path, "hdr", "rgba8unorm", meta, body, 32, 16, 256, validation=validation)
+    assert cache.thumbnails.write(path, "hdr", "bgra8unorm", meta, body, 32, 16, 256, validation=validation)
+    edit(store, session, 2)
+    grades.save(str(session.session_id))
+    assert not cache.thumbnails.write(path, "hdr", "rgba8unorm", meta, body, 32, 16, 256, validation=validation)

@@ -101,6 +101,7 @@ class GradePictures:
         formats["rgba8unorm"] = np.round(np.clip(encoded, 0, 1)*255).astype("u1")
         formats["bgra8unorm"] = formats["rgba8unorm"][..., [2,1,0]]
         meta = self.thumbnail_meta(path, document, session)
+        validation = {}
         for format, rgb in formats.items():
             h, w = rgb.shape[:2]
             stride = ((w*4*rgb.dtype.itemsize+255)//256)*256
@@ -108,7 +109,7 @@ class GradePictures:
             rgba = rows[:, :w*4].reshape(h, w, 4)
             rgba[..., :3] = rgb
             rgba[..., 3] = 1 if format == "rgba16float" else 255
-            if not self.thumbnails.write(path, lane, format, meta, rows.tobytes(), w, h, stride):
+            if not self.thumbnails.write(path, lane, format, meta, rows.tobytes(), w, h, stride, validation=validation):
                 raise HTTPException(409, "Grade changed while storing its thumbnail.")
 
     def sources(self, session_id, grade):

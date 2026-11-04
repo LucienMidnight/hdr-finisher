@@ -111,29 +111,45 @@ has the old identity. Logging distinguishes actual tile installation from
 completion of the other rendition. These fixes do not yet establish the exact
 cause of every missing update in Steve's original session.
 
+The follow-up confirmed why the second photo had no install: the hidden
+Library's current visibility list was empty, and its retained cell was absent.
+The Library now records the shown paths before opening Grade and can rebuild
+only those missing hand-off targets. Grade scope analysis and hand-off capture
+serialize ownership of the auxiliary scope canvas; the hand-off reuses a ready
+picture without waiting for the scope's histogram analysis. Per-upload surface
+validation is reused across formats only for the same metadata object and
+indexed path/stamp/grade; each file still verifies its current identity before
+replacement. No pixel cache or allowance was added.
+
 Plain Electron, two reusable Sony 42 MP copies, Fit forced tiled: actual tile
 screenshots changed after +1 EV for the first docked photo, the second photo
 in the same page session, and the popped-out Library. Changed crop pixels were
-98%, 96%, and 59%. This checked the HDR Library rendition after HDR exposure;
-it does not establish SDR-rendition behavior. The first and detached installs
-logged `Grade picture`; the second logged `Grade picture + finishing redraw`
-with no confirmed install time. Therefore the every-photo hand-off requirement
-remains open. Stored screen-preview pixels and filmstrip pixels were not
-separately compared. The 500 ms target also fails; see the performance table.
+100%, 97%, and 59%. This checked the HDR Library rendition after HDR exposure;
+it does not establish SDR-rendition behavior. All three installs logged
+`Grade picture`, including the second photo in the same page session. The harness waits for tiled Fit before editing,
+so changing the diagnostic execution override is outside the timed exposure.
+Stored screen-preview pixels and filmstrip pixels were not separately compared. The 500 ms target also fails; see the performance table.
 
 The memory-needed tile button uses the existing `library-picture-error` style
 and opens memory settings. No tokens or allowances changed. Registered Library
 windows may query video memory through the existing window-level handler;
 photo commands stay main-only. The popped-out query completed without error.
 
-779 JavaScript checks passed. Python: 3,032 passed, three skipped, one known
+781 JavaScript checks passed. Final Python: 3,033 passed, three skipped, one known
 baseline failure, `test_remembered_failure_does_not_hide_current_grade_cached_scene`.
 The app check also exceeded the unchanged memory ceiling plus 10%; the baseline
-diagnostic exceeded it too. Slow checks stopped at Steve's approximate limit;
-the separate default 90-second browsing check was not run. No release sign-off.
+diagnostic exceeded it too. The final focused check peaked at 5.14 GB and
+settled at 2.16 GB against the unchanged 4 GB ceiling. The new focused Python
+checks pass (13), including validation reuse across formats and rejection after
+a newer grade. The default 90-second browsing check completed with no other
+scenario errors, but its independent memory observer collected no samples;
+that run's memory result is invalid. The separate focused 42 MP memory result
+above is valid and fails. The 500 ms target remains open; no release sign-off.
+Scratch output remains 28.6 GB against the unchanged 100 GB limit.
 Evidence: `codebase/output/quick-library-check/batch4b-followup/` contains
 before/after PNGs, `pixels.json`, `scenario.json`, `report.json`, and backend log.
-Fast-check logs: `codebase/output/batch4b-followup-{node,pytest}.log`.
+Fast-check logs: `codebase/output/batch4b-followup-{node,pytest,focused}.log`.
+Default browse evidence: `codebase/output/quick-library-check/batch4b-followup-browse/`.
 No writes to `D:\Photos`; no push or installer build. Batch 4c stays separate.
 
 ### Batch 4b implementation and earlier checks — November 4, 2026

@@ -60,3 +60,25 @@ test('regional graph outputs are protected before loading another local', () => 
   target.retainLocalMask({byteSize:1},7968);
   assert.equal(target.localMasks.get(key),entry); assert.equal(entry.lastUseSerial,2);
 });
+
+
+test('scope picture renders serialize shared canvas ownership and recover after rejection',async()=>{
+  const target=Object.create(proto),calls=[];let release;
+  target.renderScopeProxyFrame=async id=>{calls.push(id);if(id==='first')await new Promise(r=>release=r);if(id==='bad')throw Error('refused');return id;};
+  const first=target.renderScopeProxy('first');
+  const second=target.renderScopeProxy('second');
+  assert.deepEqual(calls,['first']);release();
+  assert.deepEqual(await Promise.all([first,second]),['first','second']);
+  await assert.rejects(target.renderScopeProxy('bad'),/refused/);
+  assert.equal(await target.renderScopeProxy('last'),'last');
+  assert.equal(target.scopeProxyFlight,null);
+});
+
+test('a queued stale scope picture never starts a render',async()=>{
+  const target=Object.create(proto);let release,current=true;const calls=[];
+  target.renderScopeProxyFrame=async id=>{calls.push(id);await new Promise(r=>release=r);};
+  const first=target.renderScopeProxy('first');
+  const args=['stale',null,null,null,null,null,null,null,null,{isCurrent:()=>current}];
+  const queued=target.renderScopeProxy(...args);current=false;release();await first;
+  assert.equal(await queued,null);assert.deepEqual(calls,['first']);
+});

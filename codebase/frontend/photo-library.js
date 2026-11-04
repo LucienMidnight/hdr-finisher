@@ -1304,6 +1304,7 @@
   function openGrade() {
     if (!selected() || selected()._pending) return;
     if (state.review) setReview(false);
+    for(const map of [state.cells,state.filmCells])map.handoffShown=new Set(map.shown||[]);
     const clickedAt = performance.timeOrigin + performance.now();
     HDRLibraryStopwatch("grade_open_click", { path: selected().path });
     postParent("open-source", { path: selected().source_path || selected().path, itemKey: selected().path, clickedAt });
@@ -1884,7 +1885,7 @@
       if(!cell&&!pooled)for(const candidate of tilePool.values()){
         if(candidate.photo.path===photo.path){pooled=tilePool.take(tileKey(map,candidate.identity));if(pooled)break;}
       }
-      if(!cell&&!pooled&&!state.active&&map.shown?.has(photo.path)){
+      if(!cell&&!pooled&&!state.active&&(map.shown?.has(photo.path)||map.handoffShown?.has(photo.path))){
         pooled=makeCell(photo,map===state.cells?space:film,state.photos.findIndex(p=>p.path===photo.path),true);
         pooled.started=true;pooled.element.remove();
       }
@@ -1932,7 +1933,7 @@
     } finally {
       for(const target of targets) {
         if(target.canvas&&target.cell.fallback!==target.canvas){target.canvas.getContext("webgpu")?.unconfigure();target.canvas.width=target.canvas.height=0;}
-        if(target.pooled&&!target.cell.controller.signal.aborted&&target.cell.fallback!==target.canvas)tilePool.put(target.key,target.cell,target.cell.fallback.width*target.cell.fallback.height*16);
+        if(target.pooled&&target.cell.fallback&&!target.cell.controller.signal.aborted&&target.cell.fallback!==target.canvas)tilePool.put(target.key,target.cell,target.cell.fallback.width*target.cell.fallback.height*16);
       }
     }
   }
