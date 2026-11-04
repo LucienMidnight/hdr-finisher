@@ -14,6 +14,12 @@ const memoryDiagnostic=process.argv.includes('--memory-diagnostic');
 const gradeReturnMode=process.argv.includes('--grade-return')||memoryDiagnostic;
 const retentionMode=process.argv.includes('--retention')||gradeReturnMode;
 const singleMode=process.argv.includes('--single'),singleSteps=Number(arg('steps',10)),singlePace=Number(arg('pace',1500));
+// --back steps back over the same photos (same-session reopening); --hdr
+// switches the Library to its HDR rendition before Single opens.
+// --keep-profile=<name> reuses a named temporary profile, so a second run
+// measures reopening after restart; remove it with --drop-profile on the last run.
+const keepProfile=arg('keep-profile',null),dropProfile=process.argv.includes('--drop-profile');
+if(keepProfile!==null&&!/^[\w-]+$/.test(keepProfile))throw Error('Profile name must be simple');
 // --folder=<name> measures a reusable copy under output/test-photos instead of the locked fixture.
 const folderName=arg('folder',null);
 if(folderName!==null&&!/^[\w.-]+$/.test(folderName))throw Error('Folder must be a simple folder name under output/test-photos');
@@ -74,7 +80,8 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
 (async()=>{
   const harnessAt=Date.now();
   // Always create our own empty profile; inherited real-app profile settings are ignored.
-  const profile=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-finisher-test-quick-'));
+  const profile=keepProfile===null?fs.mkdtempSync(path.join(os.tmpdir(),'hdr-finisher-test-quick-')):path.join(os.tmpdir(),'hdr-finisher-test-quick-kept-'+keepProfile);
+  if(keepProfile!==null){fs.mkdirSync(profile,{recursive:true});for(const name of ['quick-result.json','quick-stage.json'])fs.rmSync(path.join(profile,name),{force:true});}
   const logPath=path.join(profile,'logs/backend.log');
   let app,observer,stage='fixture',done=false;
   // Grade close writes a sidecar through its normal save gate. Restore copies too.
@@ -85,6 +92,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
   };
   const cleanup=()=>{
     for(const [file,original] of sidecars){if(original)fs.writeFileSync(file,original);else if(fs.existsSync(file))fs.unlinkSync(file);}
+    if(keepProfile!==null&&!dropProfile)return;
     // Native PowerShell avoids Windows' extended-path removal failures.
     const script = '$target=[IO.Path]::GetFullPath($env:HDR_QUICK_PROFILE); $base=[IO.Path]::GetFullPath($env:HDR_QUICK_OUTPUT); if(!$target.StartsWith($base+[IO.Path]::DirectorySeparatorChar) -or !(Split-Path -Leaf $target).StartsWith("hdr-finisher-test-quick-")){throw "Unsafe cleanup target"}; if(Test-Path -LiteralPath $target){Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop}';
     execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{env:{...process.env,HDR_QUICK_PROFILE:profile,HDR_QUICK_OUTPUT:os.tmpdir()},windowsHide:true,stdio:'ignore',timeout:10000});
@@ -104,7 +112,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     }
   }
     if(folderName===null)execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-mixed-fixture.py'),'run-copy'],{stdio:'inherit',timeout:30000});
-    const config={pixelReviewOut:out,gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
+    const config={pixelReviewOut:out,gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,back:process.argv.includes('--back'),hdr:process.argv.includes('--hdr'),redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE||'2560x1440').split('x').map(Number);
     fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width,height}));

@@ -77,6 +77,7 @@ async function scenario(config) {
         console.log('QUICK_LIBRARY_STEP:'+JSON.stringify(record));
         return record;
       }
+      if(config.hdr&&!HDRLibrary.getSnapshot().hdr)document.getElementById('hdr-button').click();
       const singleAt=performance.now();
       const open=await measure(0,()=>{(config.diagnosticPhoto?[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path.endsWith(config.diagnosticPhoto)):document.querySelector('#grid-space .library-cell')).click();document.getElementById('single-view').click();});
       const steps=[];let lastAt=open.started_ms;
@@ -84,6 +85,11 @@ async function scenario(config) {
         await sleep(Math.max(0,config.pace-(performance.now()-lastAt)));
         const step=await measure(i,()=>document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})));
         steps.push(step);lastAt=step.started_ms;
+      }
+      for(let i=1;config.back&&i<=config.steps;i++){
+        await sleep(Math.max(0,config.pace-(performance.now()-lastAt)));
+        const step=await measure(config.steps+i,()=>document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true})));
+        step.back=true;steps.push(step);lastAt=step.started_ms;
       }
       const times=steps.map(s=>s.ms).sort((a,b)=>a-b);
       single={first_photo:open.name,open_ms:open.ms,open_wall_ms:open.ms,open_first_ms:open.first_ms,open,steps,
