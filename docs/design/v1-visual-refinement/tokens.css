@@ -1,0 +1,284 @@
+/* HDR Finisher — generated from tokens.json */
+@font-face { font-family: "Afacad"; src: url("fonts/Afacad-Variable-latin.woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Afacad"; src: url("fonts/Afacad-Variable-latin-ext.woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "IBM Plex Mono"; src: url("fonts/IBMPlexMono-Regular.ttf"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "IBM Plex Mono"; src: url("fonts/IBMPlexMono-Medium.ttf"); font-weight: 500; font-style: normal; font-display: swap; }
+:root, [data-theme="default-dark"] {
+  --viewer: #080808;
+  --app: #0c0c0c;
+  --panel: #121212;
+  --raised: #191919;
+  --input: #151515;
+  --deep: #070707;
+  --hairline: rgba(255, 255, 255, 0.07);
+  --border: #2a2a2a;
+  --tooltip: #161616;
+  --backdrop: #050607c7;
+  --shadow: #00000059;
+  --text: #f2f2f2;
+  --body: #c8c8c8;
+  --muted: #949494;
+  --quiet: #6b6b6b;
+  --error-text: #f2b5ac;
+  --inverse: #0c0c0c;
+  --accent: #d0612a;
+  --accent-strong: #e8834f;
+  --accent-low: #a8481a;
+  --accent-bed: #2a170e;
+  --on-accent: #140904;
+  --accent-preset-burnt-orange: #d0612a;
+  --accent-preset-blue-gray: #566481;
+  --accent-preset-coating-blue: #38a3dc;
+  --ready: #8cbf9a;
+  --headroom: #ffb020;
+  --attention: #f0c53a;
+  --blocking: #d4796b;
+  --clip: var(--blocking);
+  --success: #62b78f;
+  --star: #e8e8e8;
+  --label-red: #e5484d;
+  --label-orange: #f2994a;
+  --label-green: #3fb96b;
+  --label-blue: #4d9cff;
+  --hf-chassis: var(--viewer);
+  --hf-panel: var(--panel);
+  --hf-raised: var(--raised);
+  --hf-channel: var(--deep);
+  --hf-ink-1: var(--text);
+  --hf-ink-2: var(--muted);
+  --hf-accent: var(--accent);
+  --panel-border-external: var(--border);
+  --panel-border-internal: var(--hairline);
+  --group-divider: var(--panel-border-internal);
+  --bypass-icon-visible: var(--accent);
+  --bypass-icon-hidden: var(--quiet);
+  --frame-color: var(--viewer);
+  --scope-red: #ff5b61;
+  --scope-green: #55e579;
+  --scope-blue: #4d9cff;
+  --scope-luma: #d8dddf;
+  --scope-grid-line: rgba(224, 232, 235, 0.08);
+  --scope-guide-line: rgba(224, 232, 235, 0.08);
+  --scope-guide-line-labeled: rgba(224, 232, 235, 0.17);
+  --scope-guide-label: rgba(224, 232, 235, 0.62);
+  --curve-red: #ff8585;
+  --curve-green: #7fe6a8;
+  --curve-blue: #7db8ff;
+  --curve-neutral: #ece9df;
+  --curve-endpoint: #7f7a6f;
+  --curve-selected: #efbb55;
+  --curve-selected-ring: #edf0f1;
+  --curve-grid: #ffffff14;
+  --curve-identity: #ece9df2e;
+  --curve-axis-label: #e0e8ebad;
+  --curve-reference-line: #97e0ec7a;
+  --exposure-band-deep-shadow: #2e006b;
+  --exposure-band-shadow: #002ed9;
+  --exposure-band-low-mid: #009eff;
+  --exposure-band-mid: #00d959;
+  --exposure-band-white: #fae02e;
+  --exposure-band-highlight: #ff7a1f;
+  --exposure-band-peak: #ff1f1f;
+  --equalizer-selected: #efbb55;
+  --equalizer-grid: #ffffff14;
+  --equalizer-grid-strong: #ece9df42;
+  --equalizer-zero: #9b7bff52;
+  --equalizer-pq: #d9b672a6;
+  --equalizer-axis: #9fbcca;
+  --equalizer-curve: #edf0f1;
+  --equalizer-node: #ece9df;
+  --equalizer-disabled: #7f878d;
+  --equalizer-influence-wash: #efbb5517;
+  --graph-home-cue-color: #edf0f1;
+  --depth-channel: inset 0 2.5px 3px rgba(0, 0, 0, 0.98), inset 0 -1.5px 0 rgba(255, 255, 255, 0.11);
+  --depth-raised: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 6px 16px -6px rgba(0, 0, 0, 0.9);
+  --instrument-slider-channel-shadow: inset 0 2.5px 3px rgba(0, 0, 0, 0.98), inset 0 -1.5px 0 rgba(255, 255, 255, 0.11), 0 1px 0 rgba(255, 255, 255, 0.025);
+  --instrument-slider-thumb-shadow: 0 2px 5px rgba(0, 0, 0, 0.6), inset 0 -1px 1px rgba(0, 0, 0, 0.12);
+  --instrument-slider-thumb-focus-shadow: 0 0 0 2px rgba(235, 238, 237, 0.2), 0 0 8px rgba(235, 238, 237, 0.3), 0 1px 2px rgba(0, 0, 0, 0.92);
+  --segment-selected-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.5);
+  --panel-collapse-button-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 2px 5px rgba(0, 0, 0, 0.38);
+  --plate-lift: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 0 rgba(255, 255, 255, 0.035), 0 2px 3px rgba(0, 0, 0, 0.5);
+  --plate-press: inset 0 1px 3px rgba(0, 0, 0, 0.75), inset 0 0 0 1px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.04);
+  --switch-track-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.85), 0 1px 0 rgba(255, 255, 255, 0.05);
+  --thumb-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 1px 2px rgba(0, 0, 0, 0.7), 0 0 0 0.5px rgba(0, 0, 0, 0.6);
+  --popover-shadow: 0 12px 28px rgba(0, 0, 0, 0.52);
+  --tooltip-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+[data-theme="default-light"] {
+  --viewer: #dcdcdc;
+  --app: #eaeaea;
+  --panel: #f1f1f1;
+  --raised: #fafafa;
+  --input: #f5f5f5;
+  --deep: #d6d6d6;
+  --hairline: rgba(0, 0, 0, 0.08);
+  --border: #d4d4d4;
+  --tooltip: #fbfbfb;
+  --text: #1c1c1c;
+  --body: #3c3c3c;
+  --muted: #6b6b6b;
+  --quiet: #8f8f8f;
+  --error-text: #9a2f22;
+  --inverse: #f7f7f7;
+  --accent: #a9471a;
+  --accent-strong: #8a3a14;
+  --accent-low: #c25a26;
+  --accent-bed: #f0ddd2;
+  --on-accent: #ffffff;
+  --attention: #735600;
+  --clip: var(--blocking);
+  --star: #1c1c1c;
+  --hf-chassis: var(--viewer);
+  --hf-panel: var(--panel);
+  --hf-raised: var(--raised);
+  --hf-channel: var(--deep);
+  --hf-ink-1: var(--text);
+  --hf-ink-2: var(--muted);
+  --hf-accent: var(--accent);
+  --panel-border-external: var(--border);
+  --panel-border-internal: var(--hairline);
+  --group-divider: var(--panel-border-internal);
+  --bypass-icon-visible: var(--accent);
+  --bypass-icon-hidden: var(--quiet);
+  --frame-color: var(--viewer);
+  --scope-luma: #3a3a3a;
+  --scope-grid-line: rgba(44, 44, 44, 0.1);
+  --scope-guide-line: rgba(44, 44, 44, 0.1);
+  --scope-guide-line-labeled: rgba(44, 44, 44, 0.22);
+  --scope-guide-label: rgba(44, 44, 44, 0.75);
+  --curve-red: #c23b3b;
+  --curve-green: #2f8f5b;
+  --curve-blue: #2f6fb8;
+  --curve-neutral: #2c2c2c;
+  --curve-endpoint: #6b6b6b;
+  --curve-selected-ring: #2c2c2c;
+  --curve-grid: #00000014;
+  --curve-identity: #0000002e;
+  --curve-axis-label: #333333ad;
+  --curve-reference-line: #1f7c8c9e;
+  --equalizer-grid: #00000014;
+  --equalizer-grid-strong: #00000042;
+  --equalizer-axis: #4d6570;
+  --equalizer-curve: #2c2c2c;
+  --equalizer-node: #2c2c2c;
+  --equalizer-disabled: #9aa0a4;
+  --graph-home-cue-color: #2c2c2c;
+  --depth-channel: inset 0 2px 3px rgba(0, 0, 0, 0.1), inset 0 -1px 0 rgba(255, 255, 255, 0.6);
+  --depth-raised: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 4px 10px -4px rgba(0, 0, 0, 0.18);
+  --instrument-slider-channel-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.16), inset 0 -1px 0 rgba(0, 0, 0, 0.08), 0 1px 0 rgba(0, 0, 0, 0.04);
+  --instrument-slider-thumb-shadow: 0 2px 4px rgba(0, 0, 0, 0.28), inset 0 -1px 1px rgba(0, 0, 0, 0.1);
+  --segment-selected-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 3px rgba(0, 0, 0, 0.15);
+  --panel-collapse-button-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8), 0 1px 3px rgba(0, 0, 0, 0.12);
+  --plate-lift: inset 0 1px 0 #ffffff, 0 1px 2px rgba(0, 0, 0, 0.14);
+  --plate-press: inset 0 1px 3px rgba(0, 0, 0, 0.18), 0 1px 0 #ffffff;
+  --switch-track-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 0 #ffffff;
+  --thumb-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+[data-theme="studio-gray"] {
+  --viewer: #383838;
+  --app: #2e2e2e;
+  --panel: #333333;
+  --raised: #3a3a3a;
+  --input: #353535;
+  --deep: #303030;
+  --hairline: rgba(255, 255, 255, 0.09);
+  --border: #4d4d4d;
+  --tooltip: #3a3a3a;
+  --text: #f2f2f2;
+  --body: #cfcfcf;
+  --muted: #a3a3a3;
+  --quiet: #7a7a7a;
+  --accent: #e0763d;
+  --accent-strong: #f09a6a;
+  --accent-low: #b85a28;
+  --accent-bed: #3d2a20;
+  --on-accent: #140904;
+  --clip: var(--blocking);
+  --star: #f2f2f2;
+  --hf-chassis: var(--viewer);
+  --hf-panel: var(--panel);
+  --hf-raised: var(--raised);
+  --hf-channel: var(--deep);
+  --hf-ink-1: var(--text);
+  --hf-ink-2: var(--muted);
+  --hf-accent: var(--accent);
+  --panel-border-external: var(--border);
+  --panel-border-internal: var(--hairline);
+  --group-divider: var(--panel-border-internal);
+  --bypass-icon-visible: var(--accent);
+  --bypass-icon-hidden: var(--quiet);
+  --frame-color: var(--viewer);
+  --depth-channel: inset 0 2.5px 3px rgba(0, 0, 0, 0.55), inset 0 -1.5px 0 rgba(255, 255, 255, 0.08);
+  --depth-raised: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 6px 16px -6px rgba(0, 0, 0, 0.7);
+  --instrument-slider-channel-shadow: inset 0 2.5px 3px rgba(0, 0, 0, 0.55), inset 0 -1.5px 0 rgba(255, 255, 255, 0.1), 0 1px 0 rgba(255, 255, 255, 0.04);
+  --segment-selected-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 5px rgba(0, 0, 0, 0.4);
+  --panel-collapse-button-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 5px rgba(0, 0, 0, 0.35);
+  --plate-lift: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 3px rgba(0, 0, 0, 0.4);
+  --plate-press: inset 0 1px 3px rgba(0, 0, 0, 0.55), 0 1px 0 rgba(255, 255, 255, 0.05);
+  --switch-track-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+:root {
+  --rail-w: 232px;
+  --grade-w: 320px;
+  --dock-h: 252px;
+  --splitter-size: 7px;
+  --top-h: 44px;
+  --window-chrome-h: 30px;
+  --panel-header-h: 40px;
+  --status-bar-h: 28px;
+  --tab-row-h: 34px;
+  --library-row-h: 24px;
+  --disclosure-h: 34px;
+  --control-row-h: 34px;
+  --control-group-header-h: 34px;
+  --instrument-control-row-min-h: 53px;
+  --instrument-scale-h: 11px;
+  --instrument-control-heading-min-h: 16px;
+  --instrument-control-heading-gap: 8px;
+  --instrument-control-stack-gap: 2px;
+  --instrument-slider-hit-h: 22px;
+  --instrument-slider-track-top: 5px;
+  --instrument-slider-track-h: 12px;
+  --instrument-slider-thumb-w: 9px;
+  --instrument-slider-thumb-h: 20px;
+  --instrument-compact-slider-track-h: 7px;
+  --instrument-compact-slider-thumb-w: 7px;
+  --instrument-compact-slider-thumb-h: 15px;
+  --local-control-inset: 12px;
+  --workspace-leading: 12px;
+  --chevron-size: 14px;
+  --group-disclosure-gap: 8px;
+  --panel-collapse-button-size: 24px;
+  --bypass-icon-size: 17px;
+  --panel-border-external-width: 3px;
+  --panel-border-internal-width: 1px;
+  --radius-1: 3px;
+  --radius-plate: 5px;
+  --radius-2: 6px;
+  --radius-pill: 999px;
+  --disabled-opacity: 0.42;
+  --curve-band-opacity: 0.1;
+  --graph-home-cue-opacity: 0.62;
+  --rejected-photo-opacity: 0.34;
+  --font-body: Afacad, "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
+}
+.panel-title { font-family: var(--font-body); font-size: 12px; font-weight: 600; letter-spacing: 0.11em; }
+.section-label { font-family: var(--font-body); font-size: 11px; font-weight: 600; letter-spacing: 0.11em; }
+.spec-label { font-family: var(--font-body); font-size: 11px; font-weight: 600; letter-spacing: 0.11em; }
+.tag { font-family: var(--font-body); font-size: 10px; font-weight: 600; letter-spacing: 0.12em; }
+.scale-label { font-family: var(--font-body); font-size: 9px; font-weight: 500; }
+.body { font-family: var(--font-body); font-size: 14.5px; font-weight: 400; }
+.group-name { font-family: var(--font-body); font-size: 14.5px; font-weight: 500; }
+.workflow-tab { font-family: var(--font-body); font-size: 14.5px; font-weight: 500; }
+.tab { font-family: var(--font-body); font-size: 14px; font-weight: 500; }
+.button { font-family: var(--font-body); font-size: 14.5px; font-weight: 600; }
+.control-label { font-family: var(--font-body); font-size: 13.5px; font-weight: 400; }
+.segment { font-family: var(--font-body); font-size: 13.5px; font-weight: 500; }
+.caption { font-family: var(--font-body); font-size: 13px; font-weight: 400; line-height: 1.45; }
+.toolbar { font-family: var(--font-body); font-size: 13px; font-weight: 400; }
+.value { font-family: var(--font-body); font-size: 13px; font-weight: 500; }
+.spec-value { font-family: var(--font-body); font-size: 13px; font-weight: 500; }
+.step-index { font-family: var(--font-body); font-size: 11.5px; font-weight: 500; }
+.filename { font-family: var(--font-mono); font-size: 10.5px; font-weight: 400; line-height: 16px; }
+.status-mono { font-family: var(--font-mono); font-size: 10.5px; font-weight: 400; }
