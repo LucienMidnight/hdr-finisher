@@ -46,6 +46,14 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+November 4 focus/title/Export polish (parent 98ac764; 2560×1440, default
+90-second mixed-grid check): maximum frame gap 1,594 ms against the 250 ms
+limit, maximum timer block 142 ms. No picture errors or memory violation.
+The existing frame-pause limitation remains; no repeat or investigation was
+run for this visual change. Evidence:
+`codebase/output/quick-library-check/focus-titles-export/report.json`.
+
+
 November 4 Control Panel follow-up (parent bf22072; same 2560×1440 default
 90-second mixed-grid check): maximum frame gap 1,491 ms against the 250 ms
 limit; timer block 132 ms. Picture and memory checks pass. This repeats the

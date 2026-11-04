@@ -714,3 +714,13 @@ are unchanged. A disposable-data concurrency regression covers the overlap.
 
 Ultra HDR retains its two-stripe scratch allowance and three independent gain-map channels, bounded by available logical CPUs. No arithmetic, writer order, encoder settings, Proof processing or output pixels changed. Full limits, scratch timings and validation are recorded in
 [Photo Library Part A](photo-library.md#part-a--use-the-whole-machine-october-25-2026).
+
+### November 4 — Export preview presentation
+
+Export preview no longer exposes the duplicate batch header under the viewer
+toolbar. Its Grid action moves into the preview toolbar and returns to the
+batch header in grid view; grid/preview switching remains available. The preview
+status dock now shows the Ctrl/Shift/reset/type legend, with neutral keyboard
+focus and adjacent message actions. This changes presentation only; export
+settings, delivery and Proof pixels are unchanged. Verified with the focused
+real-Electron Control Panel review in all three themes.

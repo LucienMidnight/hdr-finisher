@@ -116,7 +116,7 @@ Soft plates use `plate-up`, `plate-down`, `plate-edge`, `plate-lift` and `plate-
 
 ### Panel title component tokens
 
-All-caps panel titles: Afacad 12px, weight 600, tracking 0.11em. Group names: sentence-case Afacad 14.5px, weight 500, no tracking. Group headers are 34px. The runtime aliases in `visual-tokens.css` preserve the existing semantic component hooks. Title tooltips retain their existing two-second delay and keyboard access.
+All-caps panel titles: Afacad 12px, weight 600, tracking 0.11em. Group names: sentence-case Afacad 14.5px, weight 500, no tracking. Use Raw development, Highlight reconstruction, Exposure bands, Highlight compression, Crop & rotate, Black & white and Film look; preserve HDR, SDR, HSL and proper product names. Nested module and dialog headings also use sentence case. Group headers are 34px. The runtime aliases in `visual-tokens.css` preserve the existing semantic component hooks. Title tooltips retain their existing two-second delay and keyboard access.
 
 ## Typography and copy
 
@@ -342,7 +342,7 @@ Resizable regions may change during the current session, but return to these def
 - Disclosure, bypass, pressed, selected, and disabled states must be exposed semantically.
 - Never rely on color alone for modified, warning, success, or failure state.
 - Keep keyboard behavior equivalent to pointer behavior.
-- Preserve visible focus indicators against every panel background.
+- Focus uses a neutral 2 px text-ink outline for keyboard/assistive navigation. Pointer clicks and slider drags do not show a focus frame (Steve, November 4, 2026).
 - Use the specified ink roles for readable text. Steve accepted that every theme/preset need not meet WCAG in this round (November 4); keep the literal accent formulas rather than introducing adaptive behaviour.
 - Canvas editors require equivalent keyboard commands and descriptive `aria-label` text.
 

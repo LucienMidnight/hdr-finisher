@@ -271,7 +271,7 @@ def test_annotation_refinements_keep_metadata_and_scopes_useful() -> None:
     assert "Import cancelled. Current image kept." in javascript
     assert 'id="override-warning"' not in html
     assert 'id="apply-interpretation" class="button-primary"' in html
-    assert "Source Interpretation" in html
+    # Displayed heading case and computed style are covered by v1-control-panel-review.cjs.
     assert "<span>Details</span>" not in html
     assert "Auto detection found an ambiguous source interpretation." in javascript
     assert "Manual override is recommended before trusting export decisions." not in javascript

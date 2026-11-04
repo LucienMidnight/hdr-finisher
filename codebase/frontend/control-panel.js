@@ -97,7 +97,8 @@ function initializeControlPanel() {
     if (!text) return;
     const label = document.createElement("span");
     label.className = "control-group-name";
-    label.textContent = text.textContent.trim();
+    const names = { "Highlight Reconstruction": "Highlight reconstruction", "Crop & Rotate": "Crop & rotate", "Exposure Bands": "Exposure bands", "Highlight Compression": "Highlight compression", "Black & White": "Black & white", "Film Look": "Film look" };
+    label.textContent = names[text.textContent.trim()] || text.textContent.trim();
     text.replaceWith(label);
   });
 }

@@ -71,7 +71,7 @@ Values per theme; `↑` means the theme inherits Default Dark. Full usage notes 
 
 | Token | Dark | Light | Studio Gray | Use |
 |---|---|---|---|---|
-| `accent` | `#d0612a` | `#a9471a` | `#e0763d` | Burnt orange, the default accent: focus ring, modified slider fill, selected tab underline, visible bypass eye, primary and Export buttons, ON switch marking. Keep it spatially small. 4.8:1 on dark panel; on Studio Gray it is 4.1:1, so small text there uses accent-strong. People can change it in Settings (see accent-preset-*). |
+| `accent` | `#d0612a` | `#a9471a` | `#e0763d` | Burnt orange, the default accent: modified slider fill, selected tab underline, visible bypass eye, primary and Export buttons, ON switch marking. Keep it spatially small. 4.8:1 on dark panel; on Studio Gray it is 4.1:1, so small text there uses accent-strong. People can change it in Settings (see accent-preset-*). |
 | `accent-strong` | `#e8834f` | `#8a3a14` | `#f09a6a` | Lighter accent for text and icons that must read: selected segment and tool ink, Mod tags, the FINE tag, rendition section labels (6.9:1 dark; darker #8a3a14 on light, 6.9:1; 5.7:1 gray). |
 | `accent-low` | `#a8481a` | `#c25a26` | `#b85a28` | Lower edge of accent gradients (fills, primary button). |
 | `accent-bed` | `#2a170e` | `#f0ddd2` | `#3d2a20` | Tinted seat beneath a selected Library row or tile and behind Mod tags. |
@@ -354,7 +354,7 @@ Section heads 30px (`FOLDERS`, `ALBUMS`, `SMART ALBUMS`, marking style, `+` at r
 A 300px popover from **Settings** in the top bar.
 
 - Label `ACCENT COLOUR`, then four swatches: **Burnt orange** (default, `#d0612a`), **Blue-gray** (`#566481`), **Coating blue** (`#38a3dc`), **Custom** (a hue-wheel chip over a native colour input). The selected swatch has a `text` ring with a `panel` gap.
-- Note: "Used for focus, selection and changed values. Warnings, marks and scope colours stay the same."
+- Note: "Used for selection and changed values. Warnings, marks and scope colours stay the same."
 - From one chosen colour `A`: `accent` = A; `accent-strong` = A mixed 28% toward white; `accent-low` = A mixed 18% toward black; `accent-bed` = A mixed 84% toward the panel colour; `on-accent` = near-black (`#120c08`) when A's relative luminance is above 0.18, otherwise white.
 - Text in accent always uses `accent-strong`, because a muted accent (Blue-gray is 3.2:1 on the dark panel) can fall below 4.5:1.
 - The accent never changes `attention`, `blocking`, marks, scope, curve or exposure-band colours.
@@ -371,7 +371,7 @@ A 300px popover from **Settings** in the top bar.
 
 ## Accessibility
 
-- Focus: 2px solid `accent` outline, offset 2px, on every control.
+- Focus (Steve, November 4 follow-up): 2px neutral `text` outline, offset 2px, for keyboard/assistive navigation. Pointer clicks/drags do not draw a focus frame.
 - Ink pairs meet 4.5:1 on their surfaces in every theme, with two exceptions: `quiet` (about 3.5:1, nonessential marks only) and `muted` on the Default Light `app` ground (4.4:1, borderline; prefer `panel` behind muted text there). The light theme uses darker accent (`#a9471a`, strong `#8a3a14`) and warning (`#735600`) shades for this.
 - State never relies on colour alone: `Mod` is a word, switches carry `ON` / `OFF`, warnings name their fix, colour labels pair with names.
 - Every icon-only button has an accessible name; segments use `role="tab"` + `aria-selected` or `aria-pressed`; disclosures carry `aria-expanded`.

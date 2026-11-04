@@ -457,4 +457,4 @@ after / restart via `HDR_BATCH5A_PHASE`, with a disposable `test-` profile for
 isolated cache storage. `HDR_BATCH5A_PHOTO` restricts it to one filename. It
 restores temporary RAW sidecars in finally; registered as a Library diagnostic.
 
-`tools/v1-control-panel-review.cjs` checks real-Electron menu hover, icon containment, Control Panel mode ordering and SDR-only Match in all three themes; captures go to `output/v1-control-panel-fixes/`.
+`tools/v1-control-panel-review.cjs` checks real-Electron menu hover, icon containment, Control Panel ordering, SDR-only Match, neutral Tab focus versus pointer focus, sentence-case headings, zoom geometry, adjacent status actions and Export preview/grid transitions in all three themes; captures go to `output/v1-control-panel-fixes/`.

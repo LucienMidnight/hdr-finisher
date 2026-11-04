@@ -1830,3 +1830,27 @@ Library check reports no picture errors or memory violation, with an existing
 frame-pause limitation recorded in the performance table. Python: 3,051 passed, 3 skipped; the pre-existing
 `test_remembered_failure_does_not_hide_current_grade_cached_scene` still expects
 422 but gets 200. It was left unchanged. Output remains 29.2 GB, below 100 GB.
+
+### November 4 — Focus, headings and status polish
+
+Pointer clicks/drags no longer draw a focus rectangle. Keyboard/assistive
+focus uses neutral theme text ink. Module names consistently use sentence case,
+including Raw development, Highlight reconstruction, Exposure bands, Highlight
+compression, Crop & rotate, Black & white and Film look. Raw and source
+headings inherit the correct title font; nested Film and color-wheel headings follow sentence
+case. Panel titles and small marking labels keep their specified uppercase.
+Zoom now reads minus, slider, plus, percentage, with a compact centered track
+and no stretched enclosing shadow. Status entries have no top rule or raised
+shadow, and Dismiss follows its message instead of sitting at the far edge.
+The real-Electron review covers pointer/Tab focus, titles, zoom layout, status
+action spacing and Export preview/grid transitions in all three themes.
+
+Validation: 800 JavaScript tests pass. Full Python run: 3,049 passed and
+3 skipped, with two old capitalization pins and the known Library cached-scene
+failure. The two wording pins were replaced by real displayed-heading/style
+checks; all 28 affected Python checks pass. The existing Library failure
+(expected 422, received 200) was left alone. Real-Electron checks pass in all
+three themes; captures and `review.json` are in
+`codebase/output/v1-control-panel-fixes/`. Logs are
+`codebase/output/focus-titles-{node,python,focused,library}.log` and
+`codebase/output/control-panel-review.log`. Output remains 29.2 GB.

@@ -1,7 +1,7 @@
 /* v1 control skins on the existing application structure. */
 body { font-family: var(--font-body); font-size: 14.5px; font-variant-numeric: tabular-nums; }
 button, input, select, textarea, output { font-family: var(--font-body); font-variant-numeric: tabular-nums; }
-:root :is(button, input, select, textarea, [tabindex], summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:root :is(button, input, select, textarea, [tabindex], summary):focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 :root :is(button, input, select, textarea):disabled { opacity: var(--disabled-opacity); }
 :root .panel-title { font: 600 12px var(--font-body); letter-spacing: .11em; text-transform: uppercase; }
 :root .section-label { font: 600 11px var(--font-body); letter-spacing: .11em; text-transform: uppercase; }
@@ -140,7 +140,7 @@ body.slider-hover .slider-key-legend { opacity: 1; }
 :root .viewer-status-dock :is(.application-status-entries, .status-entry) { height: var(--status-bar-h); min-height: 0; }
 :root .viewer-status-dock .status-entry { padding: 2px 0; border-bottom: 0; font: 400 13px var(--font-body); }
 :root .viewer-status-dock .status-entry-actions button { min-height: 24px; }
-:root .hsl-wheel [data-hsl-handle]:focus { filter: none; outline: 2px solid var(--accent); outline-offset: 2px; }
+:root .hsl-wheel [data-hsl-handle]:focus { filter: none; outline: 2px solid var(--text); outline-offset: 2px; }
 
 /* Keep every shell action visible alongside the existing workflow tabs. */
 :root .top-bar { grid-template-columns: minmax(120px,1fr) auto minmax(max-content,1fr); gap: 12px; }
@@ -169,3 +169,36 @@ body.slider-hover .slider-key-legend { opacity: 1; }
 :root .control-group:not(.modified) .group-reset { display: none; }
 :root :is(.section-bypass, .local-adjustment-bypass) { font-size: 0; line-height: 0; color: var(--bypass-icon-visible); width: 26px; min-width: 26px; height: 26px; min-height: 26px; padding: 0; --bypass-icon-shape: url("./assets/icons/tabler/eye.svg"); }
 :root :is(.section-bypass, .local-adjustment-bypass).bypassed { color: var(--bypass-icon-hidden); }
+
+/* Pointer editing has no focus frame; keyboard/assistive focus keeps neutral ink. */
+:root[data-input-modality="pointer"] :is(button, input, select, textarea, [tabindex], summary):focus { outline: none; }
+:root .raw-development-group .disclosure-trigger { height: var(--control-group-header-h); min-height: var(--control-group-header-h); font: 500 14.5px var(--font-body); letter-spacing: 0; text-transform: none; }
+/* Zoom is a compact slider with its editable readout after the +/- controls. */
+:root .zoom-control { gap: 4px; border: 0; background: transparent; box-shadow: none; }
+:root .zoom-control > .zoom-step { height: 26px; min-height: 26px; border: 1px solid var(--plate-edge); border-radius: var(--radius-plate); box-shadow: var(--plate-lift); }
+:root .zoom-control > .zoom-step:first-child { order: 1; border-radius: var(--radius-plate); }
+:root .zoom-control > .zoom-step:last-child { order: 3; border-radius: var(--radius-plate); }
+:root .zoom-control > .range-shell { order: 2; height: 26px; background: transparent; --instrument-slider-hit-h: 26px; --instrument-slider-track-h: 8px; --instrument-slider-track-top: 9px; }
+:root .zoom-control > .zoom-value { order: 4; height: 26px; margin-left: 2px; border-radius: var(--radius-1); box-shadow: var(--rail-shadow); text-align: center; font-size: 13px; }
+
+/* The preview already has a toolbar; batch controls must not bleed below it. */
+:root body[data-workflow="export"] .batch-preview .batch-header { display: none; }
+:root body[data-workflow="export"] .batch-preview { top: calc(var(--window-chrome-h, 0px) + var(--top-h) + var(--panel-header-h)); bottom: var(--status-bar-h); border: 0; box-shadow: none; }
+:root .batch-preview-grid-toggle { width: 30px; min-width: 30px; padding: 0; }
+:root .batch-preview-grid-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+:root body:not([data-workflow="export"]) .batch-preview-grid-toggle { display: none; }
+:root body[data-workflow="export"] #viewer-status-dock { display: flex; }
+:root .viewer-status-dock { border-top: 0; box-shadow: none; }
+:root .viewer-status-dock .status-entry { border: 0; box-shadow: none; }
+:root .viewer-status-dock .status-entry-copy { flex: 0 1 auto; }
+:root .source-rail .disclosure-trigger { font: 500 14.5px var(--font-body); letter-spacing: 0; text-transform: none; }
+
+:root :is(.raw-development-group, .source-rail) .disclosure-trigger > span:first-child { flex: 1; max-width: none; color: var(--text); font: inherit; text-align: left; }
+
+:root .disclosure-trigger > span:first-child { text-transform: none; letter-spacing: 0; }
+:root :is(.film-stage-name, .film-module-header) { font: 500 13.5px var(--font-body); letter-spacing: 0; text-transform: none; }
+:root .film-stock-card > .select-control > span { font: 400 13.5px var(--font-body); letter-spacing: 0; text-transform: none; }
+
+:root .grading-wheel legend { font: 500 13.5px var(--font-body); letter-spacing: 0; text-transform: none; }
+:root .batch-unit-field:focus-within { outline-color: var(--text); }
+:root[data-input-modality="pointer"] .batch-unit-field:focus-within { outline: none; }

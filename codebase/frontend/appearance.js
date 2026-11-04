@@ -30,6 +30,16 @@
   if (typeof module !== "undefined") module.exports = api;
   else {
     root.HDRAppearance = api;
+    // Native range inputs can retain :focus-visible after a pointer drag.
+    // Track input intent so that only keyboard/assistive focus draws a ring.
+    root.document.addEventListener("pointerdown", () => {
+      root.document.documentElement.dataset.inputModality = "pointer";
+    }, true);
+    root.document.addEventListener("keydown", event => {
+      if (!["Shift", "Control", "Alt", "Meta"].includes(event.key)) {
+        root.document.documentElement.dataset.inputModality = "keyboard";
+      }
+    }, true);
     root.document.addEventListener("DOMContentLoaded", () => selectChevron());
     if (root.MutationObserver) new MutationObserver(() => {
       selectChevron();

@@ -24,7 +24,7 @@ def test_raw_development_is_first_grade_control_group() -> None:
     local_start = markup.index('id="local-adjustments-group"')
     assert grade_start < raw_start < local_start
     assert "RAW &amp; Lens Development" not in markup
-    assert "<span>RAW DEVELOPMENT</span>" in markup
+    # Displayed heading case and computed style are covered by v1-control-panel-review.cjs.
     assert 'class="disclosure-panel raw-development-group module-unavailable"' in markup
     assert 'id="raw-settings-toggle"' in markup and 'aria-controls="raw-settings-panel" disabled' in markup
     assert ".raw-development-group" in css
