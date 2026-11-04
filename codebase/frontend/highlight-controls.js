@@ -145,8 +145,8 @@ function renderHighlightCompressionControls() {
   const xFor = (value) => pad.left + (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (width - pad.left - pad.right);
   const yFor = (value) => height - pad.bottom - (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (height - pad.top - pad.bottom);
   context.clearRect(0, 0, width, height);
-  context.strokeStyle = "#343d41";
-  context.fillStyle = "#93a0a4";
+  context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--border").trim();
+  context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
   context.font = "9px monospace";
   for (const tick of [10, 100, 1000, 10000, 100000]) {
     if (tick > maximum) continue;
@@ -159,7 +159,7 @@ function renderHighlightCompressionControls() {
     context.fillText(tick >= 1000 ? `${tick / 1000}k` : String(tick), xFor(tick) - 6, height - 8);
   }
   context.setLineDash([4, 3]);
-  context.strokeStyle = "#6d777b";
+  context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--quiet").trim();
   context.beginPath(); context.moveTo(xFor(minimum), yFor(minimum)); context.lineTo(xFor(maximum), yFor(maximum)); context.stroke();
   context.setLineDash([]);
   context.strokeStyle = "#68d7ed";
@@ -260,8 +260,8 @@ function renderSdrHighlightCompressionControls() {
   const xFor = (value) => pad.left + (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (width - pad.left - pad.right);
   const yFor = (value) => height - pad.bottom - (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (height - pad.top - pad.bottom);
   context.clearRect(0, 0, width, height);
-  context.strokeStyle = "#343d41";
-  context.fillStyle = "#93a0a4";
+  context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--border").trim();
+  context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
   context.font = "9px monospace";
   for (const tick of [1, 10, 100, 1000, 10000, 100000]) {
     if (tick > maximum) continue;
@@ -271,7 +271,7 @@ function renderSdrHighlightCompressionControls() {
     context.fillText(tick >= 1000 ? `${tick / 1000}k%` : `${tick}%`, xFor(tick) - 7, height - 8);
   }
   context.setLineDash([4, 3]);
-  context.strokeStyle = "#6d777b";
+  context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--quiet").trim();
   context.beginPath(); context.moveTo(xFor(minimum), yFor(minimum)); context.lineTo(xFor(maximum), yFor(maximum)); context.stroke();
   context.setLineDash([]);
   context.strokeStyle = "#68d7ed";

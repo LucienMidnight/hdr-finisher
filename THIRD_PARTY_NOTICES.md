@@ -113,12 +113,7 @@ UI mapping, and complete license text are retained in
 `codebase/frontend/assets/icons/tabler/` and must remain present in source and packaged distributions
 that include those icons.
 
-HDR Finisher bundles Source Sans 3, Gabarito, and Space Mono font software. Source Sans 3 is
-Copyright 2010–2020 Adobe, Gabarito is Copyright 2023 The Gabarito Project Authors, and Space Mono
-is Copyright 2016 The Space Mono Project Authors. Each family is distributed under the SIL Open
-Font License, Version 1.1. The complete family-specific license text is retained beside each bundled
-family under `codebase/frontend/assets/fonts/` and must remain present in source and packaged
-distributions.
+HDR Finisher uses the full Afacad family from [Dicotype/Afacad](https://github.com/Dicotype/Afacad), Copyright 2023 The Afacad Project Authors, and IBM Plex Mono, Copyright 2017 IBM Corp. with Reserved Font Name "Plex". Both are under SIL Open Font License 1.1. The complete unmodified licences remain in `codebase/frontend/assets/fonts/afacad/OFL.txt` and `ibm-plex-mono/OFL.txt`, and must accompany source and packaged distributions. Afacad normal/italic static and variable faces are bundled; the variable faces are used at runtime. IBM Plex Mono is reserved for filenames and character-aligned readouts. Retired Source Sans 3, Gabarito and Space Mono assets retain their original family-specific OFL notices while present in the repository; the interface no longer loads them.
 
 HDR Finisher's Film stock data is derived from Andrea Volpato's
 [`spektrafilm`](https://github.com/andreavolpato/spektrafilm). The film and print-paper profiles

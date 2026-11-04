@@ -24,6 +24,7 @@
     roiPreview: "fit",
     navigationWindow: "auto",
     theme: "default-dark",
+    accent: { preset: "burnt-orange", color: "#d0612a" },
     viewerFrame: { preset: "theme", customColor: "#000000" },
     folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
     shortcuts: {},
@@ -178,6 +179,7 @@
     roiPreview: ROI_PREVIEW_MODES.has(value.roiPreview) ? value.roiPreview : "fit",
     navigationWindow: ["auto", "always", "off"].includes(value.navigationWindow) ? value.navigationWindow : "auto",
     theme: THEME_IDS.includes(value.theme) ? value.theme : "default-dark",
+    accent: window.HDRAppearance.normalize(value.accent),
     viewerFrame: {
       preset: FRAME_PRESET_IDS.includes(value.viewerFrame?.preset) ? value.viewerFrame.preset : "theme",
       customColor: HEX_COLOR_PATTERN.test(value.viewerFrame?.customColor) ? value.viewerFrame.customColor.toLowerCase() : "#000000",
@@ -394,6 +396,27 @@
     document.documentElement.dataset.theme = THEME_IDS.includes(themeId) ? themeId : "default-dark";
   }
 
+  function renderAccentOptions() {
+    const list = byId("accent-option-list");
+    if (!list) return;
+    const selected = window.HDRAppearance.normalize(shell.preferences.accent);
+    list.querySelectorAll("[data-accent-preset]").forEach(button => {
+      button.setAttribute("aria-pressed", String(button.dataset.accentPreset === selected.preset));
+      button.onclick = () => {
+        const preset = button.dataset.accentPreset;
+        if (preset === "custom") { byId("accent-custom-color").click(); return; }
+        shell.preferences.accent = window.HDRAppearance.apply({preset});
+        persistPreferences(); renderAccentOptions();
+      };
+    });
+    const custom = byId("accent-custom-color");
+    custom.value = selected.color;
+    custom.oninput = () => {
+      shell.preferences.accent = window.HDRAppearance.apply({preset:"custom", color:custom.value});
+      persistPreferences(); renderAccentOptions();
+    };
+  }
+
   function renderThemeOptions() {
     const list = byId("theme-option-list");
     if (!list) return;
@@ -425,6 +448,7 @@
         applyTheme(theme.id);
         persistPreferences();
         renderThemeOptions();
+    renderAccentOptions();
       });
       list.append(option);
     }
@@ -675,6 +699,7 @@
       : "fit";
     byId("settings-auto-updates").checked = shell.preferences.updates.checkAutomatically;
     renderThemeOptions();
+    renderAccentOptions();
     renderFolderSettings();
     renderPresetOptions();
     renderShortcutList();
@@ -1094,6 +1119,7 @@
     shell.preferences = await loadPreferences();
     shell.libraryTestPatternsSync = syncLibraryTestPatterns();
     applyTheme(shell.preferences.theme);
+    window.HDRAppearance.apply(shell.preferences.accent);
     applyFrameColor();
     renderFramePresets();
     if (shell.desktop?.getDefaultPresetDirectory) {

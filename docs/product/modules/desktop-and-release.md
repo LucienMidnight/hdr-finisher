@@ -134,3 +134,12 @@ Task scratch was cleaned; project output remained 0.7 GB.
 The read-only `desktop:video-memory` query accepts registered Library windows
 through the existing window-level handler. Photo commands remain main-only.
 The follow-up real-app popped-out query completed without error.
+
+
+### November 4 — v1 visual refinement, round 1
+
+Built in the accompanying commit: all three neutral themes, Afacad reading type, IBM Plex Mono filenames, soft plate controls, recessed ON/OFF switches, satin slider thumbs, fine/snap markings, and Settings > Appearance accent presets/custom colour. The new accent preference persists through the same desktop/browser preference paths as the theme; unknown values fall back to burnt orange without migration. Existing application settings keep their persistence. No image processing, export, Proof delivery, project or keyboard contracts changed.
+
+The literal accent-ramp formulas apply to every theme/preset, as Steve confirmed; WCAG compliance across all choices is not a round-1 gate. The existing Settings dialog, Control Panel layout and source rail structure remain. Detailed approximations and retained data colours are recorded in the [v1 visual spec](../../design/v1-visual-refinement/HDR_Finisher_v1_Visual_Refinement.md#round-1-implementation-and-tidy-up).
+
+Validation: 800 Node checks pass. Python: 3,043 passed and three skipped in the full run; eight obsolete visual-source checks were updated for the intended change and all 42 tests in the affected files pass. One unrelated Library cached-scene test fails (`test_remembered_failure_does_not_hide_current_grade_cached_scene`, expected 422, got 200). The default Library check completed without picture errors or a memory-limit violation, but reported a 1.682-second frame pause; focused real-Electron captures cover all requested screens and slider modes in three themes. No processing GPU suite or release sweep was appropriate to this appearance-only change.

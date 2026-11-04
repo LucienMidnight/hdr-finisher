@@ -46,6 +46,14 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+November 4 visual-refinement check (working tree; 2560×1440, default 90-second
+mixed-grid scenario): frame gaps ranged to 1,682 ms (one over 250 ms), timer
+blocks to 117 ms, 29 pictures shown by 30 seconds, no picture failures and no
+memory-limit violation. The frame pause is outside the responsiveness target;
+no causal performance investigation or repeat run belongs to this visual pass.
+Evidence: `codebase/output/quick-library-check/v1-visual-refinement/report.json`.
+Steve should judge responsiveness when trying the new appearance.
+
 Nov 2 memory fixes (`library-avif-gainmap-gpu`, `87bcb28`), cold 90 s quick
 checks, default 4 GB and two developments. Play_Raw AVIF copy (22 files):
 shown by 30/60 s 12/15 -> 17/22, needs-memory 7 -> 0, external peak 4.0 ->

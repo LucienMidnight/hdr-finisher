@@ -580,7 +580,7 @@ function registerIpc() {
     if (!windows.has("library")) libraryWindowState = checkedLibraryState(snapshot);
     const window = await createWindow("library"); window.show(); window.focus(); return true;
   });
-  handleWindow("desktop:get-library-window", () => ({ detached: windows.has("library"), state: libraryWindowState, theme: applicationPreferences.theme }));
+  handleWindow("desktop:get-library-window", () => ({ detached: windows.has("library"), state: libraryWindowState, theme: applicationPreferences.theme, accent: applicationPreferences.accent }));
   handleWindow("desktop:dock-library", (record, snapshot) => {
     if (record.role !== "library") throw new Error("Only Library can dock itself.");
     libraryWindowState = checkedLibraryState(snapshot);
@@ -670,7 +670,7 @@ function registerIpc() {
     }
     applicationPreferences = next;
     const library = windows.get("library")?.window;
-    if (library && !library.isDestroyed()) library.webContents.send("desktop:library-window", { action: "theme", theme: applicationPreferences.theme });
+    if (library && !library.isDestroyed()) library.webContents.send("desktop:library-window", { action: "theme", theme: applicationPreferences.theme, accent: applicationPreferences.accent });
     renderingMode = applicationPreferences.renderingMode;
     persistApplicationPreferences();
     buildMenu();
@@ -1081,11 +1081,11 @@ async function createWindow(role = "main") {
     ...windowChromeOptions(),
     // Library uses native chrome, including Windows snap.
     ...(isMain ? {} : { frame: true }),
-    backgroundColor: ({ "default-light": "#eaeaea", "studio-gray": "#2e2e2e" })[applicationPreferences.theme] || "#101415",
+    backgroundColor: ({ "default-light": "#ededed", "studio-gray": "#2e2e2e" })[applicationPreferences.theme] || "#0c0c0c",
     title: isMain ? "HDR Finisher" : "HDR Finisher — Library",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
-      additionalArguments: [`--hdr-finisher-theme=${applicationPreferences.theme}`],
+      additionalArguments: [`--hdr-finisher-theme=${applicationPreferences.theme}`, `--hdr-finisher-accent=${JSON.stringify(applicationPreferences.accent)}`],
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,

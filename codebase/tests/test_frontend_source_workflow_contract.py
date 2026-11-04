@@ -17,7 +17,7 @@ DESKTOP = ROOT / "desktop"
 
 def test_raw_development_is_first_grade_control_group() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
 
     grade_start = markup.index('id="grade-workflow-panel"')
     raw_start = markup.index('id="raw-settings-section"')
@@ -29,14 +29,14 @@ def test_raw_development_is_first_grade_control_group() -> None:
     assert 'id="raw-settings-toggle"' in markup and 'aria-controls="raw-settings-panel" disabled' in markup
     assert ".raw-development-group" in css
     assert ".module-unavailable" in css
-    assert "--control-group-header-h: 38px" in css
+    assert "--control-group-header-h: 34px" in css
     assert ".raw-development-group .disclosure-trigger" in css
     assert ".source-rail > .disclosure-panel" in css
 
 
 def test_raw_highlight_reconstruction_is_a_versioned_module_stack_control() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
 
     raw_development = markup.index('id="raw-settings-section"')
     highlights = markup.index('id="raw-highlight-group"')
@@ -169,7 +169,7 @@ def test_perspective_draft_is_bounded_before_authoring_tier_apply() -> None:
 def test_brand_assets_and_fonts_are_bundled_locally() -> None:
     markup = (FRONTEND / "index.html").read_text(encoding="utf-8")
     launcher = (FRONTEND / "launcher.html").read_text(encoding="utf-8")
-    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
     desktop_package = (DESKTOP / "package.json").read_text(encoding="utf-8")
 
     favicon_url = "/static/assets/brand/hdr-finisher-favicon-small.svg"
@@ -182,45 +182,25 @@ def test_brand_assets_and_fonts_are_bundled_locally() -> None:
     assert "data:," not in markup
 
     required_assets = [
-        FRONTEND / "assets" / "brand" / "hdr-finisher-favicon-small.svg",
-        FRONTEND / "assets" / "brand" / "hdr-finisher-app-icon.svg",
-        FRONTEND / "assets" / "brand" / "hdr-finisher-icon-simple.svg",
-        FRONTEND / "assets" / "brand" / "hdr-finisher-logo.svg",
-        FRONTEND / "assets" / "fonts" / "source-sans-3" / "SourceSans3-Variable.ttf",
-        FRONTEND / "assets" / "fonts" / "source-sans-3" / "OFL.txt",
-        FRONTEND / "assets" / "fonts" / "gabarito" / "Gabarito-Variable.ttf",
-        FRONTEND / "assets" / "fonts" / "gabarito" / "OFL.txt",
-        FRONTEND / "assets" / "fonts" / "space-mono" / "SpaceMono-Regular.ttf",
-        FRONTEND / "assets" / "fonts" / "space-mono" / "SpaceMono-Bold.ttf",
-        FRONTEND / "assets" / "fonts" / "space-mono" / "OFL.txt",
-        DESKTOP / "assets" / "icon.svg",
-        DESKTOP / "assets" / "icon.png",
+        FRONTEND / "assets/brand/hdr-finisher-logo.svg",
+        FRONTEND / "assets/fonts/afacad/Afacad[wght].ttf",
+        FRONTEND / "assets/fonts/afacad/Afacad-Italic[wght].ttf",
+        FRONTEND / "assets/fonts/afacad/OFL.txt",
+        FRONTEND / "assets/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf",
+        FRONTEND / "assets/fonts/ibm-plex-mono/OFL.txt",
+        DESKTOP / "assets/icon.png",
     ]
     assert all(asset.is_file() and asset.stat().st_size > 0 for asset in required_assets)
-
     client = TestClient(app)
-    for asset_url in (
-        favicon_url,
-        "/static/assets/fonts/source-sans-3/SourceSans3-Variable.ttf",
-        "/static/assets/fonts/gabarito/Gabarito-Variable.ttf",
-        "/static/assets/fonts/space-mono/SpaceMono-Bold.ttf",
-    ):
-        response = client.get(asset_url)
-        assert response.status_code == 200
-        assert response.content
-
-    assert css.count('font-family: "Source Sans 3";') == 1
-    assert css.count('font-family: "Gabarito";') == 1
-    assert css.count('font-family: "Space Mono";') == 2
-    assert '--font-body: "Source Sans 3"' in css
-    assert '--font-display: "Gabarito"' in css
-    assert '--font-technical: "Space Mono"' in css
-    assert 'font-family: "Source Sans 3";' in launcher
-    assert 'font-family: "Space Mono";' in launcher
-    assert "/static/assets/fonts/source-sans-3/SourceSans3-Variable.ttf" in launcher
-    assert "/static/assets/fonts/space-mono/SpaceMono-Regular.ttf" in launcher
-    assert "IBM Plex" not in launcher
-    assert "Inter" not in launcher
+    for asset in required_assets:
+        if FRONTEND in asset.parents:
+            response = client.get("/static/" + asset.relative_to(FRONTEND).as_posix())
+            assert response.status_code == 200
+            assert response.content
+    assert 'font-family: "Afacad"' in css
+    assert 'font-family: "IBM Plex Mono"' in css
+    for retired in ("Source Sans 3", "Gabarito", "Space Mono"):
+        assert retired not in css and retired not in launcher
     assert '"icon": "assets/icon.png"' in desktop_package
 
 

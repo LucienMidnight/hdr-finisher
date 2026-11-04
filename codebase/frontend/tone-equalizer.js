@@ -279,7 +279,7 @@ function drawToneEqualizerEditor(lane = state.currentView) {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = uiToken("--app");
   ctx.fillRect(0, 0, width, height);
-  ctx.font = '9px "Space Mono", "Cascadia Mono", monospace';
+  ctx.font = '9px "Afacad", sans-serif';
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   for (let adjustment = -2; adjustment <= 2; adjustment += 1) {

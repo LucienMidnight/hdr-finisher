@@ -1,6 +1,7 @@
 const DEFAULT_APPLICATION_PREFERENCES = Object.freeze({
   schemaVersion: 3,
   theme: "default-dark",
+  accent: { preset: "burnt-orange", color: "#d0612a" },
   defaultReferenceWhiteNits: 203,
   renderingMode: "auto",
   previewResolution: "auto",
@@ -37,6 +38,13 @@ function sanitizeApplicationPreferences(value = {}) {
     )).slice(0, 50).map(([name, shortcuts]) => [name, cleanShortcutMap(shortcuts)]))
     : {};
   return {
+    accent: (() => {
+      const presets = {"burnt-orange":"#d0612a", "blue-gray":"#566481", "coating-blue":"#38a3dc"};
+      const choice = value.accent;
+      if (Object.hasOwn(presets, choice?.preset)) return {preset:choice.preset, color:presets[choice.preset]};
+      if (choice?.preset === "custom" && /^#[0-9a-f]{6}$/i.test(choice.color)) return {preset:"custom", color:choice.color.toLowerCase()};
+      return {preset:"burnt-orange", color:presets["burnt-orange"]};
+    })(),
     schemaVersion: 3,
     theme: ["default-dark", "default-light", "studio-gray"].includes(value.theme) ? value.theme : "default-dark",
     defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,

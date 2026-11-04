@@ -5,26 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Open HDR Finisher</title>
   <link rel="icon" type="image/svg+xml" href="/static/assets/brand/hdr-finisher-favicon-small.svg">
+  <link rel="stylesheet" href="/static/visual-tokens.css">
   <style>
     @font-face {
-      font-family: "Source Sans 3";
-      src: url("/static/assets/fonts/source-sans-3/SourceSans3-Variable.ttf") format("truetype-variations");
+      font-family: "Afacad";
+      src: url("/static/assets/fonts/afacad/Afacad[wght].ttf") format("truetype-variations");
       font-style: normal;
       font-weight: 400 700;
       font-display: swap;
     }
     @font-face {
-      font-family: "Space Mono";
-      src: url("/static/assets/fonts/space-mono/SpaceMono-Regular.ttf") format("truetype");
+      font-family: "IBM Plex Mono";
+      src: url("/static/assets/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf") format("truetype");
       font-style: normal;
       font-weight: 400;
       font-display: swap;
     }
     :root {
       color-scheme: dark;
-      font-family: "Source Sans 3", "Segoe UI", sans-serif;
-      background: #0b0d0f;
-      color: #f2f4f3;
+      font-family: "Afacad", "Segoe UI", sans-serif;
+      background: var(--app);
+      color: var(--text);
     }
     * { box-sizing: border-box; }
     body {
@@ -33,72 +34,71 @@
       display: grid;
       place-items: center;
       padding: 24px;
-      background:
-        radial-gradient(circle at 20% 10%, rgba(155, 123, 255, .11), transparent 34rem),
-        #07080a;
+      background: var(--viewer);
     }
     main {
       width: min(650px, 100%);
       padding: clamp(26px, 5vw, 46px);
-      border: 1px solid #252a2e;
+      border: 1px solid var(--border);
       border-radius: 18px;
-      background: rgba(16, 19, 21, .96);
-      box-shadow: 0 24px 80px rgba(0, 0, 0, .42);
+      background: var(--panel);
+      box-shadow: var(--popover-shadow);
     }
     .eyebrow {
       margin: 0 0 8px;
-      color: #8cbf9a;
+      color: var(--success);
       font-size: 12px;
       font-weight: 750;
       letter-spacing: .12em;
       text-transform: uppercase;
     }
     h1 { margin: 0; font-size: clamp(30px, 6vw, 46px); letter-spacing: -.04em; }
-    .intro { margin: 12px 0 28px; color: #8d9299; line-height: 1.55; }
-    label { display: block; margin-bottom: 8px; color: #c3c8cb; font-size: 14px; font-weight: 650; }
+    .intro { margin: 12px 0 28px; color: var(--muted); line-height: 1.55; }
+    label { display: block; margin-bottom: 8px; color: var(--body); font-size: 14px; font-weight: 650; }
     .address-row { display: flex; gap: 10px; }
     input {
       min-width: 0;
       flex: 1;
       padding: 12px 14px;
-      border: 1px solid #252a2e;
+      border: 1px solid var(--border);
       border-radius: 9px;
-      background: #06080a;
-      color: #c3c8cb;
-      font: 14px "Space Mono", Consolas, monospace;
+      background: var(--deep);
+      color: var(--body);
+      font: 14px var(--font-body);
     }
     button, .primary {
       min-height: 44px;
       padding: 0 18px;
-      border: 1px solid #252a2e;
+      border: 1px solid var(--border);
       border-radius: 9px;
       font: inherit;
       font-weight: 700;
       cursor: pointer;
     }
-    button { background: #171b1e; color: #f2f4f3; }
+    button { background: var(--raised); color: var(--text); }
     .actions { display: flex; gap: 10px; margin: 18px 0 28px; }
     .primary {
       display: inline-grid;
       place-items: center;
-      border-color: #9b7bff;
-      background: #9b7bff;
-      color: #0b0815;
+      border-color: var(--accent);
+      background: var(--accent);
+      color: var(--on-accent);
       text-decoration: none;
     }
     button:hover, button:focus-visible, .primary:hover, .primary:focus-visible { filter: brightness(1.12); }
     .compatibility {
       padding-top: 22px;
-      border-top: 1px solid rgba(255, 255, 255, .07);
-      color: #8d9299;
+      border-top: 1px solid var(--hairline);
+      color: var(--muted);
       font-size: 14px;
       line-height: 1.55;
     }
-    .compatibility strong { color: #f2f4f3; }
-    #copy-status { min-height: 22px; margin: 8px 0 0; color: #8cbf9a; font-size: 13px; }
+    .compatibility strong { color: var(--text); }
+    #copy-status { min-height: 22px; margin: 8px 0 0; color: var(--success); font-size: 13px; }
     @media (max-width: 520px) {
       .address-row, .actions { align-items: stretch; flex-direction: column; }
     }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   </style>
 </head>
 <body>

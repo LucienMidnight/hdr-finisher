@@ -1,8 +1,8 @@
 # HDR Finisher v1 Visual Refinement
 
-Status: approved direction for v1, from the November 2 refinement mockup. Not yet implemented.
+Status: round 1 implemented November 4, 2026: three-theme palette, typography, materials, control skins, slider modifier markings and persistent accent picker. Control Panel layout and source rail structure remain deferred, as the round-1 brief directs.
 
-Last updated: 2026-11-02
+Last updated: 2026-11-04
 
 This spec records the v1 visual decisions: palette, type, materials, and every control's anatomy and states. Where it conflicts with [HDR_Finisher_Design_Guidelines.md](../HDR_Finisher_Design_Guidelines.md), this spec wins for v1, and the guideline sections listed under [Guideline changes](#guideline-changes) should be updated as the work lands.
 
@@ -389,3 +389,47 @@ When this lands, update these sections of `HDR_Finisher_Design_Guidelines.md`:
 - **Control Panel chassis**: folder tabs are replaced by the section layout and the pinned `HDR grade | SDR grade` switch below the shared controls; Match SDR moves into the SDR grade.
 - **Startup and persistence**: the accent colour is the one persistent preference.
 - **Spacing and geometry**: source rail 232px, Control Panel 320px, top bar 44px, panel headers 40px, group headers 34px, Library rows 24px.
+
+
+## Round 1 implementation and tidy-up
+
+The app uses the approved palette/material tokens through `frontend/visual-tokens.css`, with control skins in `visual-controls.css`. All Afacad static and variable normal/italic files and the original OFL are bundled. Theme previews were regenerated from real Electron Grade captures. The accent is a new application preference, not a grade or project property; presets and custom colour survive reload and synchronize to Library. Missing/invalid values fall back to orange, with no old-preference migration.
+
+Steve's November 4 clarification accepts that every theme need not meet WCAG. The literal selected-colour ramp formulas therefore apply in Light as well as Dark/Gray, instead of substituting the spec's separately darker Light accent ramp. Required copy uses muted/body/text. This is a recorded product choice, not a completed contrast certification.
+
+### Tidy-up list for later rounds
+
+| Location | Round-1 result | What the reference leaves unclear / deferred work |
+|---|---|---|
+| Settings > Appearance | Existing Settings dialog, three theme previews and a 300px four-swatch accent block; Custom opens the native colour chooser | The reference's standalone 300px Settings popover cannot replace the existing multi-page settings flow within an appearance-only pass. |
+| Settings other pages; Help/About, Updates and Diagnostics | Neutral theme surfaces, Afacad, shared control materials and ink | No page-specific compositions or spacing examples were supplied. Existing layouts remain. |
+| Recent projects and common confirmation/name dialogs | Token colours, shared soft plate actions, existing geometry | No reference for these dialogs or destructive-action hierarchy. |
+| Adjustment Presets dialog | Token surfaces and type; group-header Preset becomes a small icon with the same accessible name | Library/search/save/rename rows have no v1 composition. Existing layout retained. |
+| Open/save directory browser and standalone media browser | Tokenized frame, checkerboard, text, inputs and actions | Columns, preview sizing, file facts and native dialog integration are outside the mockup. |
+| Browser launcher; custom and native window menus | Neutral web launcher and Afacad; web menu styling follows theme | Native Windows title/menu chrome and native colour/file choosers remain OS-controlled. Launcher retains its page layout. |
+| Metadata/source rail | 232px starting width and updated typography/materials | Identity block and spec-plate restructure explicitly deferred. Existing source list, interpretation and metadata disclosures retained. |
+| Grade Control Panel, HDR/SDR folders and Match SDR | Current section/folder structure restyled; 34px group headers, sentence-case names, Mod, contextual reset/preset, bypass eye and accent open rule | Section layout, pinned rendition switch and Match SDR relocation explicitly deferred. No processing coupling changed. |
+| Local tools and mask stack | Shared soft plates and updated ink; existing five tool choices, list and settings | Mockup shows four tools; the current Hue mask is retained. Tool/list/More layouts are unchanged. |
+| Retouch | Existing repair tools, sliders and list restyled | Native-image stroke/donor overlays retain semantic colours; no detailed v1 repair-list/solver reference. Heal/Clone remain disabled. |
+| Parent/child targeting, Film Look, HSL, color wheels and luma ranges | Shared token skins on their current dense/grouped structures; colour diagrams retain semantic colour | Mockup does not define each specialized editor, nested row or dual-handle range. Existing layout and interactions remain. Spectrum rails retain colour without an opaque neutral face covering it; recessed shadow supplies depth. |
+| Viewer overlays, Frame and Background popovers; technical/scopes readouts | Token surfaces/type, joined toolbar plates and existing content | No detailed framing/overlay/readout layout provided. Explicit image surround/frame choices remain separate from application theme. |
+| Status bar | 28px lower viewer dock with existing message/actions and hover key legend | Several simultaneous warnings/actions can compete for space; existing message queue/overflow is retained. |
+| Library navigation, albums/smart albums, filters, compare/single/fullscreen and details | Token palette, 24px folder rows, 30px headings, neutral stars, existing layouts | Screenshot reference covers the sidebar only. Other Library workflows use nearest existing surfaces and keep their structure. |
+| Export batch queue and format/metadata options | Existing queue/sidebar restyled; Export follows selected accent, never warning yellow | Reference supplies the button treatment, not the batch screen. Review captures show the empty queue; no export or delivered Proof was generated. |
+| Compact workspace | Existing responsive/collapse rules retained, shared token sizes applied | This pass reviewed the requested 2560×1440 desktop captures; compact arrangements need a later visual pass alongside the structural work. |
+
+### Fixed colours retained deliberately
+
+- Scope RGB/composite traces, curve channels, exposure-band/equalizer colours and neutral curve reference colours retain their tokenized data meanings.
+- The cyan highlight-compression transfer trace (`#68d7ed`) is unchanged data; graph ground/grid/label chrome now reads theme ink and surfaces.
+- CSS RGB hue/purity rails, Kelvin and magenta/green tint spectra, grading-wheel hue sectors and neutral desaturation centres stay fixed to communicate colour coordinates. They are independent of application accent.
+- HSL band colours and luma visualizations, false-colour/zebra overlays, mask/path/retouch stroke, donor, cursor and erase colours retain their semantic image-overlay roles. User-selected mask overlay, viewer surround and photo frame/border colours are content choices, not theme chrome.
+- Label colours are the spec's independent mark tokens. Stars are neutral. Warnings and readiness use their own theme status tokens.
+
+### Conflicts and review limits
+
+The existing Settings dialog and current Control Panel/source structures were preserved under the brief's explicit exclusions. Session layout defaults are now 232px source / 320px Grade; Grade's minimum and accessible resize metadata agree at 320px. The preset icon keeps its original accessible name. The old PNG switch knob and old font assets remain in the repository but are no longer loaded by the interface. Select chevron URL generation is asset plumbing, not a new semantic colour token.
+
+Real Electron review at 2560×1440: Library; Global/Local/Retouch; Proof; Export; all three accent presets in Settings; Ctrl FINE (41 ticks) and Shift SNAP (legal labelled ticks), in every theme. Custom accent persistence was checked after reload in main and embedded Library. Captures and `review.json` are in `codebase/output/v1-visual-refinement/`; small generated Library sources are reused from `codebase/output/test-photos/v1-visual-sources/`. Theme previews are derived from these Grade captures. These are visual checks, not processing/output certification.
+
+Checks: 800 Node tests pass; the full Python run had 3,043 passed / 3 skipped, eight obsolete appearance-source failures (updated as intended; all 42 tests in those files subsequently pass), and one unrelated Library cached-scene failure (expected 422, got 200). The default 90-second Library check completed without picture errors or a memory-limit violation, but reported one 1.682-second frame pause (outside its responsiveness target). This unrelated timing warning was recorded without a performance investigation or repeat run. No long numerical GPU drivers or release sweep were run; rendering/encoding code is untouched.

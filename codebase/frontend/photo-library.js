@@ -24,7 +24,7 @@
   const applyTheme = theme => { document.documentElement.dataset.theme = ["default-dark", "default-light", "studio-gray"].includes(theme) ? theme : "default-dark"; };
   try { applyTheme(libraryDesktop?.startupTheme || JSON.parse(localStorage.getItem("hdr-finisher:application-preferences:v1") || "{}").theme); } catch {}
   if (!standalone) applyTheme(parent.document.documentElement.dataset.theme);
-  window.addEventListener("storage", event => { if (event.key === "hdr-finisher:application-preferences:v1") { try { applyTheme(JSON.parse(event.newValue || "{}").theme); void window.HDRLibrary?.refreshPins?.(); } catch {} } });
+  window.addEventListener("storage", event => { if (event.key === "hdr-finisher:application-preferences:v1") { try { applyTheme(JSON.parse(event.newValue || "{}").theme); window.HDRAppearance.apply(JSON.parse(event.newValue || "{}").accent); void window.HDRLibrary?.refreshPins?.(); } catch {} } });
   const postParent = (action, detail = {}) => {
     if (!standalone) parent.postMessage({ type: "hdr-library", action, ...detail }, location.origin);
     else if (libraryDesktop) {
@@ -2093,7 +2093,7 @@
   new ResizeObserver(() => { paintGrid(); paintFilm(); }).observe(grid);
   window.addEventListener("message", (event) => {
     if (event.origin !== location.origin || event.source !== parent || event.data?.type !== "hdr-library-host") return;
-    if (event.data.action === "theme") applyTheme(event.data.theme);
+    if (event.data.action === "theme") { applyTheme(event.data.theme); window.HDRAppearance.apply(event.data.accent); }
     if (event.data.action === "active") setActive(event.data.enabled);
     if (event.data.action === "add-export-selection") postParent("add-export-selection", {paths:[...state.selection]});
     if (event.data.action === "command") libraryCommand(event.data.command);
@@ -2223,7 +2223,7 @@
     $("popout-library").classList.add("dock"); $("popout-library").setAttribute("aria-label", "Dock Library");
     $("popout-library").title = "Return Library to the main window";
     libraryDesktop?.onLibraryWindowChanged(message => {
-      if (message.action === "theme") applyTheme(message.theme);
+      if (message.action === "theme") { applyTheme(message.theme); window.HDRAppearance.apply(message.accent); }
       if (message.action === "close") void libraryDesktop.dockLibrary(portableState()).catch(error => status(error.message));
     });
     const displayIdentity=environment=>HDRLibraryReadyWindow.displayIdentity(environment,window.matchMedia?.('(dynamic-range: high)').matches);
@@ -2272,7 +2272,7 @@
       state.labelNames = (await api("/api/library/preferences")).label_names;
       void albums.refresh().catch(error => status(error.message)); void pollIndexing();
       const windowState = libraryDesktop ? await libraryDesktop.getLibraryWindow() : null;
-      if (windowState) applyTheme(windowState.theme);
+      if (windowState) { applyTheme(windowState.theme); window.HDRAppearance.apply(windowState.accent); }
       const saved = windowState?.state;
       if (!state.scan) {
         if (saved) await restoreState(saved);

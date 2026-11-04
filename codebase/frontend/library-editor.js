@@ -74,14 +74,14 @@
     away.hidden = !detached || state.activeWorkflow !== "import";
     if (detached && state.activeWorkflow === "import") desktop?.focusLibrary();
     for (const element of document.querySelectorAll(".app-shell > .source-rail, .app-shell > .source-splitter, .app-shell > .workspace-main, .app-shell > .grade-rail, .app-shell > .grade-splitter")) element.inert = active || Boolean(state.gradeOpen && element.matches(".source-rail, .grade-rail"));
-    send("theme", { theme: document.documentElement.dataset.theme });
+    send("theme", { theme: document.documentElement.dataset.theme, accent: JSON.parse(document.documentElement.dataset.accent || "null") });
     send("active", { enabled: active });
     if (active) frame.contentWindow?.focus();
     // Leaving the Library must take keyboard focus back, or editor shortcuts
     // keep going to the hidden Library page.
     else if (document.activeElement === frame) frame.blur();
   }
-  new MutationObserver(() => send("theme", { theme: document.documentElement.dataset.theme })).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  new MutationObserver(() => send("theme", { theme: document.documentElement.dataset.theme, accent: JSON.parse(document.documentElement.dataset.accent || "null") })).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "data-accent"] });
   function review(enabled) {
     document.body.classList.toggle("library-review", enabled);
     reviewQueue = reviewQueue.catch(() => {}).then(async () => {

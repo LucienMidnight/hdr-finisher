@@ -44,6 +44,7 @@ function enhanceRangeControl(control) {
     control.dataset.instrumentStep = String(declaredStep);
     control.step = String(fineRangeStep(declaredStep));
   }
+  installSliderMarkings(control, shell);
   updateRangeVisual(control);
   control.addEventListener("input", () => updateRangeVisual(control));
   bindInstrumentRangePointer(control, shell);
@@ -266,12 +267,20 @@ function updateRangeVisual(control) {
   const shell = control.closest(".range-shell");
   if (!shell) return;
   const bipolar = minimum < 0 && maximum > 0;
-  const fillOriginValue = bipolar ? rangeControlHome(control, minimum, maximum) : minimum;
+  const fillOriginValue = rangeControlHome(control, minimum, maximum);
   const fillOrigin = maximum > minimum ? clamp((fillOriginValue - minimum) / (maximum - minimum), 0, 1) * 100 : 0;
   shell.style.setProperty("--pos", `${percent}%`);
   shell.style.setProperty("--fill-start", `${Math.min(percent, fillOrigin)}%`);
   shell.style.setProperty("--fill-w", `${Math.abs(percent - fillOrigin)}%`);
   shell.dataset.bipolar = String(bipolar);
+  const home = rangeControlHome(control, minimum, maximum);
+  const homePercent = maximum > minimum ? clamp((home-minimum)/(maximum-minimum),0,1)*100 : 0;
+  shell.style.setProperty("--home", `${homePercent}%`);
+  shell.dataset.homeMid = String(homePercent > 0 && homePercent < 100);
+  shell.dataset.modified = String(Math.abs(value-home) > 1e-8);
+  shell.dataset.fillDirection = value < home ? "left" : "right";
+  shell.dataset.spectrum = String(Boolean(control.closest('[class*="primary-"]') || /white_balance_kelvin|\.tint$/.test(control.dataset.path || "") || ["white_balance_kelvin","tint"].includes(control.dataset.localGrade)));
+  if (shell.dataset.spectrum === "true") shell.querySelector(".slider-origin")?.setAttribute("hidden", "");
 }
 
 function syncRangeVisuals(root = document) {
@@ -527,3 +536,73 @@ function formatControlValue(path, value) {
 
 // Only the fields Crop & Rotate itself owns -- Perspective has its own
 // independent Reset and shouldn't be swept up by this one.
+
+// Modifier markings describe the existing interaction; they never change a value.
+let hoveredInstrumentSlider = null;
+let sliderModifierKeys = {ctrlKey:false, shiftKey:false};
+let sliderModifierListenersInstalled = false;
+const sliderOrdinaryReadouts = new WeakMap();
+function installSliderMarkings(control, shell) {
+  const origin = document.createElement("span"); origin.className = "slider-origin";
+  const scale = document.createElement("span"); scale.className = "slider-scale";
+  const index = document.createElement("span"); index.className = "slider-home-index";
+  scale.append(index); shell.append(origin, scale);
+  origin.setAttribute("aria-hidden","true"); scale.setAttribute("aria-hidden","true");
+  shell.addEventListener("pointerenter", event => {
+    hoveredInstrumentSlider = control; sliderModifierKeys = event;
+    document.body.classList.add("slider-hover"); renderSliderModifierMarkings(control);
+  });
+  shell.addEventListener("pointerleave", () => {
+    renderSliderModifierMarkings(control, ""); hoveredInstrumentSlider = null;
+    document.body.classList.remove("slider-hover");
+  });
+  control.addEventListener("input", () => {
+    if (hoveredInstrumentSlider === control) requestAnimationFrame(() => {
+      sliderOrdinaryReadouts.delete(control); renderSliderModifierMarkings(control);
+    });
+  });
+  if (!sliderModifierListenersInstalled) {
+    sliderModifierListenersInstalled = true;
+    const keys = event => { sliderModifierKeys = event; if (hoveredInstrumentSlider) renderSliderModifierMarkings(hoveredInstrumentSlider); };
+    window.addEventListener("keydown",keys); window.addEventListener("keyup",keys);
+    window.addEventListener("blur",() => { if (hoveredInstrumentSlider) renderSliderModifierMarkings(hoveredInstrumentSlider, ""); sliderModifierKeys = {}; });
+  }
+}
+function renderSliderModifierMarkings(control, requestedMode) {
+  const shell = control.closest(".range-shell"); if (!shell) return;
+  const mode = requestedMode ?? (sliderModifierKeys.shiftKey ? "snap" : sliderModifierKeys.ctrlKey ? "fine" : "");
+  shell.dataset.modifier = mode;
+  const row = control.closest(".control-row, .instrument-slider-control");
+  const output = row?.querySelector("output");
+  let tag = row?.querySelector(".slider-mod-tag");
+  if (!tag && output) { tag = document.createElement("span"); tag.className = "slider-mod-tag"; tag.setAttribute("aria-hidden","true"); output.before(tag); }
+  if (tag) tag.textContent = mode.toUpperCase();
+  if (output && output.dataset.editing !== "true") {
+    if (!sliderOrdinaryReadouts.has(control)) sliderOrdinaryReadouts.set(control, output.textContent);
+    const normal = sliderOrdinaryReadouts.get(control);
+    if (mode === "fine") {
+      const number = normal.match(/[+−-]?\d+(?:\.\d+)?/);
+      if (number) {
+        let value = Number(control.value);
+        if (normal.includes("%") && Number(control.max) <= 1) value *= 100;
+        if (control.dataset.path && typeof filmStockUiContext === "function" && filmStockUiContext(control.dataset.path)) value = filmStockUiValue(control.dataset.path, Number(control.value), true);
+        const decimals = (number[0].split(".")[1]?.length || 0)+1;
+        output.textContent = normal.replace(number[0], `${number[0].startsWith("+") && value >= 0 ? "+" : ""}${value.toFixed(decimals)}`);
+      }
+    } else { output.textContent = normal; sliderOrdinaryReadouts.delete(control); }
+  }
+  const scale = shell.querySelector(".slider-scale"); if (!scale) return;
+  scale.querySelectorAll(".slider-tick, .slider-tick-label").forEach(el => el.remove());
+  if (!mode) return;
+  const min = Number(control.min), max = Number(control.max), home = rangeControlHome(control,min,max);
+  const positions = mode === "fine" ? Array.from({length:41},(_,i)=>min+(max-min)*i/40) : rangeSnapProfile(control);
+  positions.forEach((value,i) => {
+    const pos = (value-min)/(max-min)*100;
+    const tick = document.createElement("span"); tick.className = `slider-tick ${mode === "snap" ? "snap" : i%4 === 0 ? "major" : ""}${Math.abs(value-home)<1e-8 ? " home" : ""}`;
+    tick.style.left = `${pos}%`; scale.append(tick);
+    if (mode === "snap") {
+      const label = document.createElement("span"); label.className = "slider-tick-label"; label.style.left = `${pos}%`;
+      label.textContent = Number(value.toFixed(2)); scale.append(label);
+    }
+  });
+}

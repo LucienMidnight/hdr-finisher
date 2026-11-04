@@ -242,10 +242,10 @@ const PREVIEW_WATCHDOG_MAX_REARMS = 20;
 const TOOLTIP_MAX_WIDTH = 260;
 const TOOLTIP_SIDE_RAILS = ".grade-rail, .workflow-side-panel";
 const ZOOM_STEPS = [1, 2, 3, 4, 5, 6.25, 8.33, 12.5, 16.67, 25, 33.33, 50, 66.67, 100, 200, 300, 400, 500, 600, 800, 1200, 1600, 2400, 3200];
-const LAYOUT_DEFAULTS = { railW: 268, gradeW: 340, dockH: 252, dockOpen: true, dockTab: "histogram" };
+const LAYOUT_DEFAULTS = { railW: 232, gradeW: 320, dockH: 252, dockOpen: true, dockTab: "histogram" };
 const LAYOUT_LIMITS = {
   railW: [200, 380],
-  gradeW: [340, 420],
+  gradeW: [320, 420],
   dockH: [240, 340],
 };
 const LAYOUT_SETTLE_DELAY = 120;

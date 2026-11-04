@@ -46,7 +46,7 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'id="tone-equalizer-remove"' in html
     assert 'id="tone-equalizer-radius"' in html
     assert html.count("data-section-path=") == 16
-    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
     assert "--bypass-icon-shape:" in css
     assert "--bypass-icon-visible: var(--accent)" in css
     assert "--bypass-icon-hidden: var(--quiet)" in css
@@ -102,7 +102,7 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
 
 def test_panel_titles_and_scope_description_follow_shared_design_contract() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
     scope_ui = frontend_scripts()
 
     assert '<h1 class="panel-title">Metadata</h1>' in html
@@ -123,9 +123,9 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert "RW means active HDR reference white" in scope_ui
     assert "--panel-title-font-family:" in css
     assert "--panel-title-font-size:" in css
-    assert "--group-title-font-family: var(--display)" in css
-    assert "--group-title-font-size: 12px" in css
-    assert "--group-title-font-weight: 600" in css
+    assert "--group-title-font-family: var(--font-body)" in css
+    assert "--group-title-font-size: 14.5px" in css
+    assert "--group-title-font-weight: 500" in css
     assert ".disclosure-trigger > span:first-child" in css
     assert "transition-delay: 2s" in css
     assert "justify-content: flex-start" in css
@@ -179,7 +179,7 @@ def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences
 
 def test_rendition_descriptions_are_delayed_title_tooltips() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
 
     assert 'id="lane-note"' not in html
     assert 'aria-describedby="hdr-controls-tooltip"' in html
@@ -192,7 +192,7 @@ def test_rendition_descriptions_are_delayed_title_tooltips() -> None:
 
 def test_help_tooltips_are_portaled_and_clamped_to_the_visible_app_bounds() -> None:
     javascript = frontend_scripts()
-    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
 
     assert "initializeBoundedTooltips();" in javascript
     assert 'const selector = ".help-tip[data-tooltip], .help-tip[data-tip], .tooltip-trigger[data-tooltip], .group-toggle[data-tooltip], .disclosure-trigger[data-tooltip]"' in javascript
@@ -230,7 +230,7 @@ def test_explanatory_copy_uses_title_hover_without_persistent_helper_rows() -> N
 def test_grade_readouts_support_bounded_direct_numeric_entry() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     javascript = frontend_scripts()
-    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
 
     assert html.count("data-value-path=") >= 50
     assert '"hdr.highlight_compression_start_nits": { min: 1, max: 9999' in javascript
@@ -257,7 +257,7 @@ def test_highlight_compression_softness_uses_half_percent_slider_steps() -> None
 
 
 def test_tint_controls_follow_darktable_hue_mapping() -> None:
-    css = (FRONTEND / "styles.css").read_text(encoding="utf-8")
+    css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
     javascript = frontend_scripts()
 
     assert ".primary-tint-hue .slider-track { background: linear-gradient(90deg, #53a7b1, #5368b5, #b84f9a, #e05273, #d3ad5b, #54a579, #53a7b1); }" in css

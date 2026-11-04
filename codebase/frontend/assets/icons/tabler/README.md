@@ -11,6 +11,7 @@ These SVGs are a vendored subset of [Tabler Icons](https://github.com/tabler/tab
 
 | UI action | Asset |
 |---|---|
+| Group presets | `adjustments-horizontal.svg` |
 | Disclosure | `chevron-right.svg` |
 | Media-browser folder | `folder.svg` |
 | Brush mask | `brush.svg` |

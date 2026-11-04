@@ -7,7 +7,7 @@
 /* Keep a visible, fixed-width rail in every Control Panel mode. */
 .grade-rail { overflow-y: scroll; scrollbar-color: auto; }
 .grade-rail::-webkit-scrollbar { width: 12px; background: var(--deep); }
-.grade-rail::-webkit-scrollbar-track { background: var(--deep); box-shadow: inset 1px 0 var(--hairline); }
+.grade-rail::-webkit-scrollbar-track { background: var(--deep); box-shadow: var(--rail-shadow); }
 .grade-rail::-webkit-scrollbar-thumb { background: var(--border); border: 3px solid var(--deep); border-radius: 8px; }
 .control-mode-switch { flex: 0 0 100%; width: 100%; margin: 8px 0 10px; }
 .control-mode-switch button { flex: 1; }
@@ -27,7 +27,7 @@
 .lane-folder-shell, .local-lane-folder { margin: 0 6px 12px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .grade-folder-tabs > .lane-switch { display: flex; flex: 1; min-width: 0; gap: 3px; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
 .grade-folder-tabs > .lane-switch button { position: relative; flex: 1; min-width: 0; margin: 0 0 -2px; padding: 10px 6px; border: 1px solid var(--border); border-bottom: 2px solid var(--border); border-radius: 6px 6px 0 0; background: var(--app); color: var(--muted); font: 600 11px var(--display); text-transform: uppercase; box-shadow: none; }
-.grade-folder-tabs > .lane-switch button.active { z-index: 1; border: 2px solid var(--border); border-bottom: 2px solid var(--raised); background: var(--raised); color: var(--text); box-shadow: inset 0 2px 0 var(--accent); }
+.grade-folder-tabs > .lane-switch button.active { z-index: 1; border: 2px solid var(--border); border-bottom: 2px solid var(--raised); background: var(--raised); color: var(--text); box-shadow: var(--plate-press); }
 .grade-folder-tabs > .sdr-match-entire-actions { flex: 0 0 auto; display: flex; padding: 0 0 6px; margin: 0; border: 0; }
 #sdr-match-entire { padding: 5px 7px; min-height: 28px; white-space: nowrap; font-size: 11px; }
 #sdr-match-entire.rematch-required { color: var(--attention); border-color: var(--attention); }
@@ -111,7 +111,7 @@
   font: 600 11px var(--display); letter-spacing: .06em;
 }
 .control-mode-switch.proof-preview-switch button.active {
-  background: var(--panel); color: var(--text); border-bottom-color: var(--accent); box-shadow: none;
+  background: var(--panel); color: var(--text); border-bottom-color: var(--accent-strong); box-shadow: none;
 }
 .retouch-mode-switch.proof-preview-switch {
   display: flex; width: 100%; min-height: 0; padding: 3px; margin-top: 12px;
@@ -143,7 +143,7 @@
   box-sizing: border-box; width: 100%; min-width: 0; padding: 5px 7px;
   border: 1px solid var(--border); border-radius: var(--radius-1);
   background: var(--segment-channel-background); color: var(--text);
-  box-shadow: var(--depth-channel); font: 12px var(--mono); text-align: right;
+  box-shadow: var(--plate-lift); font: 12px var(--mono); text-align: right;
 }
 /* Saturated hue band, with eight radial divisions in the grading surface. */
 .color-wheel-pad {
@@ -156,7 +156,7 @@
     repeating-conic-gradient(from 300deg, #15171b99 0deg 1deg, transparent 1deg 45deg),
     radial-gradient(circle, #95999f 0%, #95999faa 24%, #95999f00 100%),
     conic-gradient(from 300deg, #ff2929 0deg 45deg, #ffb923 45deg 90deg, #a5f02b 90deg 135deg, #28ed88 135deg 180deg, #19e6ff 180deg 225deg, #3545ff 225deg 270deg, #932bff 270deg 315deg, #eb26aa 315deg 360deg);
-  box-shadow: 0 0 0 3px var(--panel), inset 0 0 0 1px #ffffff28;
+  box-shadow: var(--plate-lift);
 }
 
 body[data-grade-mode="retouch"] .local-mask-overlay.editing { pointer-events: auto; cursor: crosshair; }
@@ -190,7 +190,7 @@ body[data-grade-mode="retouch"] .local-mask-overlay.editing { pointer-events: au
 #control-mode-local .local-stack-surface::-webkit-scrollbar,
 #control-mode-retouch .repair-stack-surface::-webkit-scrollbar { width: 12px; background: var(--local-stack-scrollbar-track); }
 #control-mode-local .local-stack-surface::-webkit-scrollbar-track,
-#control-mode-retouch .repair-stack-surface::-webkit-scrollbar-track { background: var(--local-stack-scrollbar-track); box-shadow: inset 1px 0 var(--border); }
+#control-mode-retouch .repair-stack-surface::-webkit-scrollbar-track { background: var(--local-stack-scrollbar-track); box-shadow: var(--rail-shadow); }
 #control-mode-local .local-stack-surface::-webkit-scrollbar-thumb,
 #control-mode-retouch .repair-stack-surface::-webkit-scrollbar-thumb { background: var(--local-stack-scrollbar-thumb); border: 3px solid var(--local-stack-scrollbar-track); border-radius: 8px; }
 #control-mode-local .local-adjustment-item,

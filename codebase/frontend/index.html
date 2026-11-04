@@ -5,9 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HDR Finisher</title>
   <link rel="icon" type="image/svg+xml" href="/static/assets/brand/hdr-finisher-favicon-small.svg">
-  <script src="/static/theme-startup.js?v=__HDR_FINISHER_ASSET_VERSION__"></script><link rel="stylesheet" href="/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__"><link rel="stylesheet" href="/static/hsl.css?v=__HDR_FINISHER_ASSET_VERSION__">
+  <script src="/static/appearance.js?v=__HDR_FINISHER_ASSET_VERSION__"></script><script src="/static/theme-startup.js?v=__HDR_FINISHER_ASSET_VERSION__"></script><link rel="stylesheet" href="/static/styles.css?v=__HDR_FINISHER_ASSET_VERSION__"><link rel="stylesheet" href="/static/hsl.css?v=__HDR_FINISHER_ASSET_VERSION__">
   <link rel="stylesheet" href="/static/control-panel.css?v=__HDR_FINISHER_ASSET_VERSION__">
-</head>
+<link rel="stylesheet" href="/static/visual-tokens.css?v=__HDR_FINISHER_ASSET_VERSION__"><link rel="stylesheet" href="/static/visual-controls.css?v=__HDR_FINISHER_ASSET_VERSION__"></head>
 <body>
   <header class="window-chrome" aria-label="Application menu">
     <nav class="window-menu-bar" aria-label="Application menus">
@@ -275,10 +275,10 @@
               <button id="zoom-actual" class="tool-button" type="button" title="Show one image pixel per screen pixel (A)">100%</button>
             </div>
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
-            <button id="overlay-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="overlay-popover" aria-haspopup="dialog" aria-pressed="false">Overlays</button>
+            <div class="viewer-view-group" role="group" aria-label="Preview view options"><button id="overlay-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="overlay-popover" aria-haspopup="dialog" aria-pressed="false">Overlays</button>
             <span class="viewer-tool-divider" aria-hidden="true">|</span>
             <button id="photo-frame-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="photo-frame-popover" aria-haspopup="dialog" disabled>Frame</button>
-            <button id="frame-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="frame-popover" aria-haspopup="dialog" title="Set the neutral surround behind the image, kept separate from the application theme.">Background</button>
+            <button id="frame-toggle" class="tool-button viewer-menu-toggle" type="button" aria-expanded="false" aria-controls="frame-popover" aria-haspopup="dialog" title="Set the neutral surround behind the image, kept separate from the application theme.">Background</button></div>
           </div>
           <div id="overlay-popover" class="overlay-popover hidden">
             <div class="popover-heading">
@@ -420,7 +420,7 @@
 
         <div id="noise-view-badge" class="noise-view-badge hidden" role="status">Noise only · Denoise</div>
         <div id="viewer-status-dock" class="viewer-status-dock">
-          <div id="application-status-entries" class="application-status-entries"></div>
+          <div id="application-status-entries" class="application-status-entries"></div><span class="slider-key-legend"><b>CTRL</b> fine · <b>SHIFT</b> snap · <b>DOUBLE-CLICK</b> reset · <b>CLICK VALUE</b> to type</span>
         </div>
         <div class="viewport-frame" id="dropzone">
           <div id="preview-stage" class="preview-stage" data-compare-layout="single" data-primary-lane="hdr">
@@ -587,9 +587,9 @@
       tabindex="0"
       aria-label="Resize grade rail"
       aria-orientation="vertical"
-      aria-valuemin="340"
+      aria-valuemin="320"
       aria-valuemax="420"
-      aria-valuenow="340"
+      aria-valuenow="320"
     ></div>
 
     <aside class="grade-rail panel" aria-label="Workflow settings">
@@ -1806,6 +1806,17 @@
           <h3>Appearance</h3>
           <p class="helper">Themes restyle the workspace surround, panels, and text. The image viewer and color-critical instruments (scopes, curves, exposure bands) stay neutral in every theme so they never bias color judgment.</p>
           <div id="theme-option-list" class="theme-option-list" role="radiogroup" aria-label="Application theme"></div>
+          <div class="accent-picker">
+            <h4 class="section-label">Accent colour</h4>
+            <div id="accent-option-list" class="accent-options" role="group" aria-label="Accent colour">
+              <button type="button" class="accent-option" data-accent-preset="burnt-orange" aria-pressed="true"><span class="accent-chip burnt-orange" aria-hidden="true"></span>Burnt orange</button>
+              <button type="button" class="accent-option" data-accent-preset="blue-gray" aria-pressed="false"><span class="accent-chip blue-gray" aria-hidden="true"></span>Blue-gray</button>
+              <button type="button" class="accent-option" data-accent-preset="coating-blue" aria-pressed="false"><span class="accent-chip coating-blue" aria-hidden="true"></span>Coating blue</button>
+              <button type="button" class="accent-option" data-accent-preset="custom" aria-pressed="false"><span class="accent-chip custom" aria-hidden="true"></span>Custom</button>
+            </div>
+            <input id="accent-custom-color" class="visually-hidden" type="color" value="#d0612a" aria-label="Custom accent colour">
+            <p class="helper">Used for focus, selection and changed values. Warnings, marks and scope colours stay the same.</p>
+          </div>
         </section>
         <section data-settings-panel="locations" hidden>
           <h3>Default locations</h3>

@@ -10,6 +10,7 @@ function subscribe(channel, callback) {
 
 contextBridge.exposeInMainWorld("hdrFinisherDesktop", Object.freeze({
   apiVersion: 2,
+  startupAccent: (() => { try { return JSON.parse(process.argv.find(value => value.startsWith("--hdr-finisher-accent="))?.slice("--hdr-finisher-accent=".length) || "null"); } catch { return null; } })(),
   startupTheme: process.argv.find(value => value.startsWith("--hdr-finisher-theme="))?.split("=")[1] || "default-dark",
   platform: process.platform,
   environment: () => ipcRenderer.invoke("desktop:environment"),

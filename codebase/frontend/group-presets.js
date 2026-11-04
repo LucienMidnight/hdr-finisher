@@ -40,6 +40,7 @@ function initializeGroupPresetControls() {
     button.type = "button";
     button.className = "group-preset text-button";
     button.textContent = "Preset";
+    button.setAttribute("aria-label", "Preset");
     button.setAttribute("aria-haspopup", "dialog");
     button.addEventListener("click", () => openGroupPresetDialog(groupElement));
     const header = groupElement.querySelector(":scope > .control-group-header");
