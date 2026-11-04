@@ -8,7 +8,7 @@ import numpy as np
 from .models import GeometryAdjustments, OutputFinishingSettings, PerspectiveGuideLine, PreviewKind
 
 
-def apply_geometry(image: np.ndarray, geometry: GeometryAdjustments) -> np.ndarray:
+def apply_geometry(image: np.ndarray, geometry: GeometryAdjustments, *, screen: bool = False) -> np.ndarray:
     """Apply the one shared, destructive geometry stage without inventing pixels."""
     crop = geometry.crop
     neutral_crop = crop.x == 0.0 and crop.y == 0.0 and crop.width == 1.0 and crop.height == 1.0
@@ -43,6 +43,7 @@ def apply_geometry(image: np.ndarray, geometry: GeometryAdjustments) -> np.ndarr
             total_roll,
             geometry.perspective_horizontal,
             geometry.perspective_vertical,
+            screen=screen,
         )
     elif total_roll:
         result = _rotate_to_valid_pixels(result, total_roll)
@@ -607,6 +608,7 @@ def _warp_perspective_to_valid_pixels(
     straighten_angle: float,
     horizontal: float,
     vertical: float,
+    *, screen: bool = False,
 ) -> np.ndarray:
     """Apply one float32 projective resample and discard every padded edge."""
     try:
@@ -630,7 +632,28 @@ def _warp_perspective_to_valid_pixels(
         channel = np.asarray(transformed, dtype=np.float32)
         return np.clip(channel, float(np.min(source)), float(np.max(source)))
 
-    result = np.stack(_each_channel(image, warp), axis=-1)
+    if screen and width * height <= 6_000_000:
+        # Screen images and their masks use disjoint output bands on all cores.
+        # Export retains the original serial/channel path and memory behavior.
+        from .cpu_budget import CpuExecutor, logical_cpus
+        bands = max(1, min(height, (logical_cpus() + image.shape[2] - 1) // image.shape[2]))
+        result = np.empty(image.shape, dtype=np.float32)
+        sources = [image[..., index].astype(np.float32, copy=False) for index in range(image.shape[2])]
+        pictures = [Image.fromarray(source) for source in sources]
+        ranges = [(float(np.min(source)), float(np.max(source))) for source in sources]
+        def band(item):
+            index, top, bottom = item
+            shifted = inverse.copy()
+            shifted[:, 2] += inverse[:, 1] * top
+            shifted /= shifted[2, 2]
+            transformed = pictures[index].transform((width, bottom-top), Image.Transform.PERSPECTIVE,
+                tuple(float(value) for value in shifted.ravel()[:8]), resample=Image.Resampling.BICUBIC, fillcolor=0.0)
+            result[top:bottom, :, index] = np.clip(np.asarray(transformed, dtype=np.float32), *ranges[index])
+        with CpuExecutor() as pool:
+            list(pool.map(band, [(index, height*i//bands, height*(i+1)//bands)
+                for index in range(image.shape[2]) for i in range(bands)]))
+    else:
+        result = np.stack(_each_channel(image, warp), axis=-1)
     left, top, right, bottom = _perspective_safe_rectangle(
         width,
         height,

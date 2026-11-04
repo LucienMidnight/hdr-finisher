@@ -178,6 +178,7 @@ def compile_geometry_fixed_mask(
     geometry: GeometryAdjustments,
     *,
     spatial_only: bool = False,
+    screen: bool = False,
 ) -> np.ndarray:
     """Compile a source-anchored mask through the exact image geometry stage.
 
@@ -192,7 +193,7 @@ def compile_geometry_fixed_mask(
     mask_expression = spatial_mask_expression(expression) if spatial_only else expression
     source_mask = compile_preview_mask(source, mask_expression, GeometryAdjustments())
     mask_checkpoint()
-    fixed = apply_geometry(source_mask[..., None], geometry)[..., 0]
+    fixed = apply_geometry(source_mask[..., None], geometry, screen=screen)[..., 0]
     if fixed.dtype == np.uint8:
         return np.ascontiguousarray(fixed)
     return np.rint(np.clip(fixed, 0.0, 255.0)).astype(np.uint8)

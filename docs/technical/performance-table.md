@@ -827,3 +827,77 @@ identical to the before build; NEF within the denoise GPU/CPU tolerance
 HDR 758 nits (1000-nit ceiling). Peaks: 1.95–2.45 GB (four-photo runs) against
 1.72–2.16 GB before; mixed quick check 3.28 GB (33 photos now shown) against
 2.86 GB (31).
+
+## November 4, 2026 — batch 5b partial checkpoint
+
+Plain Electron, 2560×1440, test-photo copies only. Before = local `66bb77b`;
+after = batch 5b working tree. Navigation is input to matching sharp canvas plus
+next animation frame, not physical display scanout. Existing ±15% timing spread
+and mean <1 / p99.9 ≤3 perceptual limits are unchanged. Cold busy opens intentionally
+enter fullscreen before the grid's first picture; idle opens wait for grid work
+to finish and therefore have already paid initial renderer startup. The difference
+is real for that user action, but does not isolate contention from startup cost.
+
+| Case | Before → after | Result / remaining cost |
+| --- | --- | --- |
+| Film-scan TIFF first open, four edited photos, SDR | 32.646 → 2.056 s | Abandoned atomic-reservation/source-claim wait removed |
+| Forced missing GPU grant on same TIFF | Intermediate broken retry 27.458 → 2.796 s | One retry logged; retained transfer resumes about 0.137 s after retry, no 202 source-claim wait |
+| Heavy ARW first sharp, SDR | Paired 2.988 → 2.551 s; brief 5a 2.3–2.5 s | Still above about 2 s; HDR 2.482 s |
+| Denoised NEF first sharp, SDR | 1.858 → 1.909 s | Within timing spread; HDR 2.753 s, above the earlier 1.82–2.20 s range |
+| DxO 16-bit TIFF first sharp, SDR | 2.112 → 2.273 s | Within timing spread; HDR 2.424 s |
+| Film-scan TIFF first sharp, HDR | Warm 5a baseline used for pixels, not cold timing → 2.172 s | Fresh changed-profile run |
+| Busy fullscreen 48 MP float TIFF | Brief 19.8 → 7.195 s; idle 2.225 s | Target +about 1 s NOT met. Source-claim polling 0; draw queue 0.6 ms; first sharp render 3.889 s vs idle 0.120 s |
+| Busy fullscreen heavy ARW | 7.011 s; idle 1.978 s | Target +about 1 s NOT met. Source-claim polling 0; draw queue 0.4 ms; first sharp render 4.983 s vs idle 0.379 s; source admission about 0.36 s |
+| Float TIFF read/prepare | Brief 4.2 s under contention → 1.291 s busy / 0.993 s idle | HTTP source readiness about 1.618 / 1.204 s. Contains TIFF decode, shrink and preparation; individual file-read/decode/shrink subdivisions are not instrumented. No further TIFF algorithm change in 5b |
+| Same-session back, SDR/HDR | 5a 0.14–0.26 → 0.007–0.240 s | Preserved |
+| Restart reopen, HDR | 5a 0.15–0.26 → first 0.343 s; next 0.202 / 0.149 s | First over 0.3 s; remaining back opens 0.002–0.220 s; no development for measured sharp stored pictures |
+| Screen perspective diagnostic | Serial/channels 214 → row bands 105 ms | Synthetic 1708×2560 RGB, same perspective, CPU-only; not a whole-open claim. ARW brush mask request still about 277–308 ms |
+| Standard quick, same 31 photos | Saved batch4a median 0.415 → 0.485 s | +17%, slightly outside ±15%; versus brief's approximate 0.55 s, −12%. The 1.7 s/33-photo comparison was not like-for-like |
+
+Same-set steps (seconds, saved batch4a → final): DJI DNGs 11.409→8.482 and
+11.278→11.325; DSC00264 1.899→1.931; DSC01204 .176→.297; DSC01212 .092→.084;
+DSC01226 1.768→1.690; DxO DNG .415→.485; DSC01244 .078→.077;
+DSC01286 .099→.092; DSC01287 .114→.089. Median is selected by the DxO DNG step;
+DSC01204 and DxO DNG are slower beyond ±15%. Their Single cache lookups rose 83→155 ms and 77→123 ms respectively; the cause
+of that extra lookup/display latency was not isolated, and no source-decode
+regression was established. Total Single
+sequence 35.496→32.596 s. One DSC00264 trace starts 1.664 s after input, so the
+1.931 s whole wait above is used rather than its misleading .267 s inner timer.
+DNG thumbnail speed remains out of scope. A separate initial 31-photo diagnostic
+exposed a 40.916 s DNG step from a completed thumbnail retaining its claim until
+the 30-second deferred save; publishing it for late sharp demand removes that wait.
+
+Pixels: all eight stored screen pictures (four photos × SDR/HDR) have perceptual
+mean and p99.9 = 0 against 5a, with no pixel exclusion. Decode uses the same
+redisplay clamp as the app. HDR peaks: ARW 758.21, NEF 227.70, film TIFF 148.33,
+DxO TIFF 195.39 nits; compression-enabled samples stay below 1000 nits. Native
+and export resampling paths are unchanged; this is screen-picture verification.
+
+Memory: do not mix the app-log estimate with the independent whole-process census.
+Paired four-photo SDR log peak 2.098→2.073 GB, census 2.670→2.763 GB; final
+forced-recovery census 2.522 GB; fresh HDR census 2.597 GB. Restart census 1.471 GB.
+5a's latest reduced frame is held for five seconds with float32 pixels/proxies/masks;
+page direct-scene buffers and temporary decoder allocations also overlap. That
+ownership explains expected transient growth, but the historic 1.72–2.16→1.95–2.45 GB
+rise was not isolated allocation by allocation. Final 31-photo census 4.074 GB,
+204 ms above 4 GB, settled 1.608 GB, no existing memory-check violation. No budget
+or retention allowance was changed. Memory reduction remains open where it would
+preserve speed.
+
+Some fresh profiles show a 3.565–4.122 s window drawing gap despite main-thread
+blocks under 0.14 s. Cold busy first sharp rendering takes 3.9–5.0 s. Startup or
+shader compilation is a hypothesis, not a proved cause; these checks fail the
+frame-gap acceptance. Steve should try the busy-folder action in his real library
+before spending another slow run. Compare priority is covered behaviorally; no
+new real-app Compare run was made.
+
+Evidence (ignored local output): `output/quick-library-check/batch5b-*` report,
+scenario and backend logs; `output/batch5b/comparison.json` and `output/batch5b-cpu.log`.
+Total real-app checks 524.85 s (8 min 45 s), below the requested about ten minutes.
+Fast checks: JavaScript 786 passed; Python 3049 passed, 3 skipped, 1 failed
+(`test_library_live.py::test_remembered_failure_does_not_hide_current_grade_cached_scene`,
+expected 422, got 200). That same focused test fails on unmodified committed 5a
+backend code; it is pre-existing and was left unchanged. Logs: `output/batch5b-node.log`,
+`output/batch5b-pytest.log`, `output/batch5b-baseline-python.log`. Output
+remains 29.1 GB, below 100 GB; temporary profiles removed and fixture TIFF names
+restored. No release sweep, installer or push.

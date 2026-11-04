@@ -269,3 +269,14 @@ def test_roll_windows_match_the_rotated_frame_at_many_angles(angle: float) -> No
         left, top = out_width // 3, out_height // 4
         tile = apply_geometry_region(image, geometry, (left, top, out_width, out_height))
         assert_tile_matches(tile, reference[top:, left:], geometry, f"{angle} degrees at {width}x{height}")
+
+
+@pytest.mark.parametrize("channels", [1, 3])
+def test_library_screen_parallel_perspective_matches_original(channels):
+    from hdr_finisher.models import GeometryAdjustments
+    image = np.random.default_rng(42).random((317, 509, channels), dtype=np.float32)
+    geometry = GeometryAdjustments(perspective_horizontal=0.17, perspective_vertical=-0.12,
+        straighten_angle=2.0)
+    expected = apply_geometry(image, geometry)
+    actual = apply_geometry(image, geometry, screen=True)
+    np.testing.assert_allclose(actual, expected, rtol=0, atol=1e-6)

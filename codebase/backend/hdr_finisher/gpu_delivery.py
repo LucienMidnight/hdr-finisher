@@ -302,7 +302,7 @@ def create_gpu_delivery_router():
             if payload.get("grant"):
                 amount = max(0, int(payload["bytes"]))
                 job = scheduler.jobs.get(str(payload["grant"]))
-                if job is not None and not job.gpu_bytes:
+                if job is None or job.granted is None or not job.gpu_bytes:
                     return {"granted": False, "preempt": True, "retry": True}
                 if job is None or not scheduler.gpu_refine(job.id, amount):
                     return {"granted": False, "preempt": True,

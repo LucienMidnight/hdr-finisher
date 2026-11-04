@@ -830,7 +830,7 @@
       for (;;) {
         const value = await lease(false);
         if(grant && value.fallback)throw Object.assign(Error(value.fallback),{gpuUnavailable:true});
-        if(grant && value.preempt)throw Object.assign(Error('Grade or export needs the GPU.'),{libraryRequeue:true});
+        if(grant && value.preempt)throw Object.assign(Error(value.retry ? 'Library GPU reservation lost; requesting a fresh turn.' : 'Grade or export needs the GPU.'),{libraryRequeue:true});
         if (value.waiting === "memory" || value.fallback) {
           if (background && !reclaimed) {
             reclaimed = true;
@@ -916,8 +916,8 @@
         await lease(true); await wait(50, signal);
       }
     } catch (error) {
-      root.HDRLibraryStopwatch?.("picture_development_outcome", {path:meta.path,reason:error.message,
-        work_stage:error.gpuInvalidPixels ? "CPU fallback" : error.name === "AbortError" ? "cancelled" : "failed"});
+      root.HDRLibraryStopwatch?.(error.libraryRequeue ? "picture_development_requeued" : "picture_development_outcome", {path:meta.path,reason:error.message,
+        work_stage:error.libraryRequeue ? "waiting" : error.gpuInvalidPixels ? "CPU fallback" : error.name === "AbortError" ? "cancelled" : "failed"});
       throw error;
     } finally { activeGpuWorks.delete(key);await fetch(url, {method:"DELETE"}).catch(() => {}); }
   }
@@ -941,7 +941,12 @@
   }
   async function develop(path, edge, signal, savedGradeOnly, nativeMode = false, liveScene = false, importance = () => 30, sceneIdentity = "", grant = null, gpuDone = () => {}, sharedJob = null) {
     const begun = performance.now();
-    const decodedKey=path+'|'+edge+'|'+sceneIdentity.split(':')[0];
+    // A completed thumbnail can still own the source until its deferred save.
+    // Publish that existing tier before a late screen request claims the source;
+    // otherwise the new request polls its predecessor's 30-second idle lease.
+    const previous = liveScene && directScenes.get(path+"|"+sceneIdentity);
+    if(previous && !previous.variants[edge])await previous.store();
+    const decodedKey=path+'|'+(liveScene && !nativeMode ? 'scene' : edge)+'|'+sceneIdentity.split(':')[0];
     // Take over a retained decoded source when one exists: renew its claim,
     // clear its renewal, and release it if the backend no longer honours it.
     const adoptKept=async()=>{
@@ -1118,6 +1123,11 @@
     selectedResult.scene_stored=!liveScene || nativeMode;
     return selectedResult;
     } catch(error){
+      // CPU fallback must never wait on this attempt's own source claim.
+      if(error.gpuUnavailable && sourceJob){
+        if(sharedJob)sharedJob.source=null;
+        await fetch("/api/library/live-source/"+sourceJob,{method:"DELETE"}).catch(()=>{});
+      }
       if(error.libraryRequeue && !error.gpuRetry && body && sourceJob && root.HDRLibraryRAM?.admit('sharp',body.byteLength)){
         decodedSources.set(decodedKey,{body,token:sourceJob,renewal:sourceRenewal});retainedSource=true;
         root.HDRLibraryRAM.enforce();

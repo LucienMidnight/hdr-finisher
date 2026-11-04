@@ -413,3 +413,29 @@ test('a transient post-presentation save failure retries without replacing the s
  assert.equal(events.filter(event=>event.name==='picture_store_failed').length,1);
  assert.equal(shown.key,'drawn');
 });
+
+
+test('selected source keeps its rank through viewport refresh and Compare ranks both panes first',async()=>{
+ const block=gate();const {context,scenes}=setup({photo:{bytes:96e6,revision:'1'},other:{bytes:96e6,revision:'2'}},async()=>{await block.promise;return {edge:640,key:'result'};});
+ const promoted=[];context.window.HDRLibraryGrants={promote:(path,priority)=>promoted.push([path,priority])};
+ scenes.viewport(['photo','other'],[]);
+ const a=scenes.load('photo',640,undefined,10,null,{viewportDemand:true}),b=scenes.load('other',640,undefined,10,null,{viewportDemand:true});await tick();
+ scenes.review('photo');scenes.viewport(['photo'],[]);
+ assert.equal(scenes.snapshot().sources.jobs.find(j=>j.path==='photo').priority,0);
+ assert.equal(scenes.snapshot().sources.jobs.find(j=>j.path==='other').priority,80);
+ assert.deepEqual(promoted.filter(([p])=>p==='photo').at(-1),['photo',0]);
+ scenes.review(['photo','other']);scenes.viewport(['photo'],[]);
+ assert.ok(scenes.snapshot().sources.jobs.every(j=>j.priority===0));
+ scenes.review('photo');
+ assert.equal(scenes.snapshot().sources.jobs.find(j=>j.path==='other').priority,80);
+ block.resolve();await Promise.all([a,b]);
+});
+
+test('a delayed thumbnail demand cannot demote the photo selected while it waited',async()=>{
+ const block=gate(),promoted=[];
+ const {context,scenes}=setup({photo:{bytes:96e6,revision:'1'}},async()=>({edge:640,key:'result'}));
+ context.window.HDRLibraryGrants={promote:(path,priority)=>promoted.push([path,priority])};
+ const pending=scenes.load('photo',640,undefined,10,null,{viewportDemand:true,beforeSource:()=>block.promise});
+ await tick();scenes.review('photo');block.resolve();await pending;
+ assert.deepEqual(promoted.filter(([p])=>p==='photo').at(-1),['photo',0]);
+});

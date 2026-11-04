@@ -405,13 +405,15 @@ class LivePictures:
             pixels = stored["pixels"].astype(np.float32)
             reference = stored["reference"].astype(np.float32) if "reference" in stored else None
         context = RenderColorContext(metadata["white"])
+        render_cache = SessionRenderCache(pixels, reference, color_context=context)
+        render_cache.library_screen = metadata["edge"] != 100000
         return _NativeFrame(session_id=metadata["key"], image=pixels, sdr_reference_image=reference,
             source=SimpleNamespace(width=pixels.shape[1], height=pixels.shape[0]),
             adjustments=validate_saved(AdjustmentState, metadata["adjustments"]),
             local_adjustments=[validate_saved(LocalAdjustment, item) for item in metadata["locals"]],
             denoise=validate_saved(DenoiseDocumentSettings, metadata["denoise"]),
             hdr_reference_white_nits=metadata["white"], color_context=context, edit_revision=0,
-            render_cache=SessionRenderCache(pixels, reference, color_context=context))
+            render_cache=render_cache)
 
 
 def metadata(identity):

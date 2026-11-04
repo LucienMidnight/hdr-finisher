@@ -1,6 +1,6 @@
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** Batch 5a mostly built November 4, 2026; selected-photo priority open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in
+**Status:** Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
@@ -99,6 +99,52 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Not started |
 | 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Open: selected-photo priority over grid developments (48 MP float TIFF 19.8 s), brush-mask and warp CPU time |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Not started |
+| 5b | The on-screen photo takes priority; recover lost reservations and hand over completed thumbnails; parallel screen perspective and mask warps. | Partial November 4, 2026: 32.65 s abandoned TIFF wait removed (2.06 s ordinary open; forced lost reservation 2.80 s). Four-photo SDR/HDR stored pixels identical to 5a. Busy cold fullscreen still 7.0–7.2 s versus idle 1.98–2.23 s; ARW ordinary first open 2.48–2.55 s. See checkpoint below. |
+
+### Batch 5b checkpoint — November 4, 2026 (partial)
+
+The selected photo's source priority now survives grid/filmstrip viewport refreshes;
+Compare ranks both visible photos first. Missing/revoked atomic GPU grants return
+a retry instead of an unavailable-GPU fallback. Decoded samples survive a retry
+across thumbnail/sharp sizes; a late sharp request publishes its already-completed
+thumbnail to release the source claim immediately. GPU fallback releases its own
+source claim before asking the CPU to take over. Demand-only development remains.
+
+Screen perspective resampling splits channels into output row bands on the shared
+CPU pool, including the spatial brush mask. Native/detail and export keep their
+existing path. A screen-size CPU diagnostic reduced perspective 214 → 105 ms;
+whole ARW opens remain 2.48–2.55 s and masks about 0.28–0.31 s, so the ordinary
+first-open two-second target is still open (idle fullscreen was 1.98 s).
+
+Real-app results and limitations are in the performance table's batch 5b section.
+The 48 MP float TIFF no longer waits 15.4 s behind other development: its source
+read/prepare was 1.29 s busy, 0.99 s idle. Cold fullscreen still takes 7.20 s
+versus 2.23 s idle, with 3.89 s in first sharp drawing. Heavy ARW: 7.01 versus
+1.98 s, with 4.98 s in first sharp drawing. Those are unresolved felt waits;
+shader/startup cost is suspected, not isolated. No claim that the +1 s target passed.
+Forced grant loss logged one retry; retained-sample transfer resumed in 0.14 s
+with no source-claim polling. Four edited photos in SDR/HDR match the 5a stored
+screen pictures exactly; maximum decoded HDR sample 758.21 nits. Same-session
+reopens 0.007–0.240 s; restart 0.149–0.343 s (first open slightly over 0.3 s).
+
+The identical pre-5a 31-photo set now has a 0.485 s median (saved batch4a 0.415 s;
+brief's approximate reference 0.55 s), rather than 1.7 s on the changed 33-photo
+set. The set change therefore invalidates that earlier comparison; it does not
+explain every difference. Slow DNG steps remain 8.48/11.33 s (before 11.41/11.28 s).
+Other changes are detailed in the performance table. A completed-thumbnail claim
+also caused a 40.9 s DNG step in the first diagnostic run; final handoff fixed it.
+
+Memory acceptance remains qualified: four-photo logged peaks 2.07–2.10 GB versus
+2.10 GB on the paired 5a SDR baseline; whole-process charged peaks 2.52–2.76 GB
+versus 2.67 GB. The five-second reduced-frame hold introduced in 5a retains
+float32 source/proxy/masks; half-float transport does not remove that ownership.
+This explains why extra transient residency is expected, but is not a measured
+attribution of all the historical rise. No allowances changed and no speed cache
+was removed. The final mixed run briefly reached 4.074 GB charged (0.204 s above
+4 GB), then settled to 1.608 GB; the existing checker reported no memory violation.
+Cold drawing and mixed-folder peak residency need Steve's real-library assessment
+before more slow checks. Total batch 5b real-app checks: 524.85 seconds; fast suite
+results are recorded in the performance table. No writes to D:\Photos; local commit only.
 
 ### Batch 5a follow-up — November 4, 2026 (heavy grades)
 

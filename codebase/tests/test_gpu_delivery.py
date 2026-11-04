@@ -380,3 +380,12 @@ def test_cached_draw_passes_older_development_waiting_for_memory(tmp_path, monke
         client.delete('/api/delivery/gpu/raw-budget/cached-thumbnail')
         client.post('/api/delivery/gpu/activity', json={"bytes":0,"budget":2000})
         assert post('development', 1200)['granted']
+
+
+def test_lost_atomic_reservation_requeues_instead_of_entering_cpu_fallback(tmp_path, monkeypatch):
+    app = _broker(tmp_path, monkeypatch)
+    with TestClient(app) as client:
+        value = client.post('/api/delivery/gpu/raw-budget/lost',
+            json={"bytes":400, "background":True, "grant":"gone"}).json()
+        assert value["retry"] and value["preempt"] and not value["granted"]
+        assert "fallback" not in value

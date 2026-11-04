@@ -31,10 +31,10 @@ window.HDRLibraryScenes = (() => {
     keepRunning:job=>job.retainDetached||(job.edge<=640&&visible.has(job.path))});
   const versions = new Map();
   const history = new Map(), generations = new Map();
-  let visible = new Set(), nearby = new Set(), reviewPath = null;
+  let visible = new Set(), nearby = new Set(), reviewPath = null, reviewPaths = new Set();
   // Priority belongs to the photo, not to the picture size: a 2560 neighbour
   // and its 640 thumbnail must move together when the view changes.
-  const rank = path => {const priority=visible.has(path)?10:nearby.has(path)?50:80;window.HDRLibraryGrants?.promote(path,priority);return priority;};
+  const rank = path => {const priority=reviewPaths.size ? (reviewPaths.has(path)?0:80) : visible.has(path)?10:nearby.has(path)?50:80;window.HDRLibraryGrants?.promote(path,priority);return priority;};
   const largeBytes = 32 * 1024 * 1024;
   function failure(result) {
     const error = result.changed || result.offline ? new DOMException(result.detail,"AbortError") : Error(result.detail || "The photo could not be prepared.");
@@ -80,6 +80,7 @@ window.HDRLibraryScenes = (() => {
     }
     if (options.cachedOnly) return null;
     await options.beforeSource?.();
+    window.HDRLibraryGrants?.promote(path,reviewPaths.size ? rank(path) : urgency);
     if (signal?.aborted) throw new DOMException("Cancelled","AbortError");
     const previous = history.get(path);
     const elapsed = previous && previous.revision === plan.revision ? previous.ms : 0;
@@ -254,10 +255,10 @@ window.HDRLibraryScenes = (() => {
       }
     }).catch(error=>{window.HDRLibraryTrace?.mark(meta.trace,"picture_store",started,{key:meta.key,success:false,reason:error.message});});
   }
-  return Object.freeze({load,lease,save,review:path=>{reviewPath=path;},
+  return Object.freeze({load,lease,save,review:path=>{reviewPath=Array.isArray(path)?path[0]:path;reviewPaths=new Set((Array.isArray(path)?path:[path]).filter(Boolean));sources.reprioritize(rank);probes.reprioritize(rank);},
     onReclaim:handler=>{reclaim=handler;},
     reclaim:(bytes,required=false)=>reclaim(bytes,required),
-    promote:(path,priority)=>{probes.promote(path,priority);sources.promote(path,priority);draws.promote(path,priority);quickDraws.promote(path,priority);},
+    promote:(path,priority)=>{window.HDRLibraryGrants?.promote(path,priority);probes.promote(path,priority);sources.promote(path,priority);draws.promote(path,priority);quickDraws.promote(path,priority);},
     viewport:(shown,around)=>{visible=new Set(shown);nearby=new Set(around);window.HDRLibraryGrants?.viewport?.([...shown,...around]);sources.reprioritize(rank);probes.reprioritize(rank);},
     invalidate:(paths,{finishingOnly=false}={})=>{const targets=new Set(paths);for(const path of targets){generations.set(path,(generations.get(path)||0)+1);HDRLibraryGpuRaw.forgetDirect?.(path);}if(!finishingOnly)sources.invalidate(path=>targets.has(path));probes.invalidate(path=>targets.has(path));},
     stage:(path,stage,waiting=false)=>sources.stage(path,stage,waiting),

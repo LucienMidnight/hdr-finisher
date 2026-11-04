@@ -324,6 +324,29 @@ for(const cancelAll of [false,true])test(`shared samples release after ${cancelA
 });
 
 
+test('shared samples release before CPU fallback',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+ let enter,release,releases=0;
+ const entered=new Promise(r=>enter=r),gate=new Promise(r=>release=r);
+ const meta={source_job:'owner',path:'photo',identity:[],mosaic_bytes:0,width:1280,height:640};
+ const header=Buffer.from(JSON.stringify(meta)),bytes=Buffer.alloc(4+header.length);bytes.writeUInt32LE(header.length);header.copy(bytes,4);
+ const context={performance,crypto:require('node:crypto').webcrypto,DOMException,AbortController,
+  Uint8Array,Float32Array,DataView,TextDecoder,setInterval,clearInterval,
+  decodedSources:new Map(),directScenes:new Map(),cachedDirect:()=>null,sourceStorageLimit:async()=>Infinity,quantile:()=>1,
+  handoffBody:globalThis.HDRLibraryGpuRaw.handoffBody,
+  fetch:async(_url,options)=>{if(options.method==='DELETE')releases++;return {ok:true};},
+  scheduledDevelopment:async()=>{throw Object.assign(Error('handoff failed'),{gpuUnavailable:true});},
+  root:{HDRLibraryUpload:{fetchSource:async()=>{enter();await gate;return {ok:true,status:200,headers:{get:()=>''},arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length)};},send:async()=>{throw Error('handoff failed');}}}};
+ vm.runInNewContext(source.slice(source.indexOf('  async function develop(path,'),source.indexOf('  const warmup ='))+';this.request=thumbnail;this.jobs=inflight;',context);
+ const controller=new AbortController(),request=context.request('photo',640,controller.signal,{liveScene:true});
+ const rejected=assert.rejects(request,/handoff failed/);
+ await entered;const job=context.jobs.values().next().value;
+ release();await rejected;
+ await assert.rejects(job.promise,/handoff failed/);
+ assert.equal(job.source,null);assert.equal(releases,1);
+});
+
+
 test('invalid-pixel rejection keeps its CPU fallback identity through the GPU scheduler',async()=>{
  const source=fsRead();
  function fsRead(){return require('node:fs').readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');}
@@ -340,4 +363,24 @@ test('invalid-pixel rejection keeps its CPU fallback identity through the GPU sc
  assert.equal(events.filter(e=>e.stage==='picture_development_gpu_rejected').length,1);
  assert.equal(attempts,2);
  assert.equal(events.filter(e=>e.stage==='picture_development_gpu_retry').length,1);
+});
+
+
+test('late sharp request publishes its thumbnail and adopts the retained source across sizes',async()=>{
+ const fs=require('node:fs'),vm=require('node:vm'),source=fs.readFileSync(require.resolve('../frontend/library-gpu-raw'),'utf8');
+ const events=[],meta={source_job:'owner',path:'photo',mosaic_bytes:0};
+ const header=Buffer.from(JSON.stringify(meta)),bytes=Buffer.alloc(4+header.length);bytes.writeUInt32LE(header.length);header.copy(bytes,4);
+ const decodedSources=new Map([['photo|scene|revision',{body:bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.length),token:'owner'}]]);
+ const context={performance,crypto:require('node:crypto').webcrypto,DOMException,AbortController,
+  Uint8Array,Float32Array,DataView,TextDecoder,setInterval,clearInterval,decodedSources,
+  directScenes:new Map([['photo|revision:sdr',{variants:{640:{}},store:async()=>events.push('publish thumbnail')}]]),
+  sourceStorageLimit:async()=>Infinity,
+  fetch:async(_url,options)=>{events.push(options.method);return {ok:true};},
+  scheduledDevelopment:async()=>{events.push('develop retained samples');throw Object.assign(Error('stop after adoption'),{gpuUnavailable:true});},
+  root:{HDRLibraryUpload:{fetchSource:async()=>{throw Error('must reuse existing samples');}}}};
+ vm.runInNewContext(source.slice(source.indexOf('  async function develop(path,'),source.indexOf('  const warmup ='))+';this.run=develop;',context);
+ const shared={edges:new Set([2560]),results:new Map()};
+ await assert.rejects(context.run('photo',2560,null,false,false,true,()=>0,'revision:sdr',null,()=>{},shared),/stop after adoption/);
+ assert.deepEqual(events,['publish thumbnail','POST','develop retained samples','DELETE']);
+ assert.equal(decodedSources.size,0);assert.equal(shared.source,null);
 });

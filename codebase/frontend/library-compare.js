@@ -38,7 +38,9 @@
         const result=await o.api('/api/library/compare',{action,step,paths:o.photos().map(p=>p.path),selected:o.selected().path,left:left?.path||null});
         left=o.allPhotos().find(p=>p.path===result.left)||left;enabled=result.enabled;
         syncSwitches();button.classList.toggle('active',enabled);
-        o.choose(result.right);if(enabled)o.setView('single');else{o.setView('single');cancel();root.hidden=true;$('single-stage').hidden=false;$('single-caption').hidden=false;}
+        o.choose(result.right);
+        if(!enabled)window.HDRLibraryScenes?.review(o.selected()?.path || null);
+        if(enabled)o.setView('single');else{o.setView('single');cancel();root.hidden=true;$('single-stage').hidden=false;$('single-caption').hidden=false;}
       });queue=task.catch(e=>o.status(e.message));return task;
     }
     function position(){
@@ -73,6 +75,7 @@
     async function show(){
       if(!enabled)return;cancel();root.hidden=false;$('single-stage').hidden=true;$('single-caption').hidden=true;layout();
       const gen=generation,photos=[o.photos().find(p=>p.path===left?.path)||o.photos().find(p=>p.path!==o.selected()?.path)||o.selected(),o.selected()];
+      window.HDRLibraryScenes?.review(photos.filter(Boolean).map(photo=>photo.path));
       await Promise.all(sides.map(async(s,i)=>{
         const fresh=s.fit.cloneNode(false);s.fit.replaceWith(fresh);s.fit=fresh;
         s.photo=photos[i];s.meta=null;s.nativeMeta=null;s.native.hidden=true;s.note.textContent='';s.fit.style.cssText='';

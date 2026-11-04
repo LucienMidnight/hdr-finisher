@@ -50,11 +50,22 @@ async function scenario(config) {
     const size=document.getElementById('thumbnail-size');if(size){size.value=300;size.dispatchEvent(new Event('input'));}
     // Opening a folder restores its own sort; selecting before browse is overwritten.
     localStorage.setItem('hdr-finisher:library-source-sorts',JSON.stringify({['folder:'+config.folder.replaceAll('\\','/').replace(/\/$/,'').toLowerCase()]:{sort:'name',descending:false}}));
+    if(config.loseReservation){
+      const originalFetch=window.fetch.bind(window);let injected=false;
+      window.fetch=async(url,options)=>{
+        if(!injected && String(url).startsWith('/api/delivery/gpu/raw-budget/') && options?.method==='POST'){
+          const payload=JSON.parse(options.body);
+          if(payload.grant){injected=true;HDRLibraryGrants.release(payload.grant);await sleep(50);}
+        }
+        return originalFetch(url,options);
+      };
+    }
     mark('browse');openedAt=performance.now();gridAt=openedAt;
     void HDRLibrary.browse(config.folder).catch(e=>errors.push(String(e)));
     if(config.singleMode){
-      await wait(()=>document.querySelector('#grid-space .library-cell canvas[data-picture-key]'),60000);
+      await wait(()=>config.busy ? HDRLibraryScenes.snapshot().sources.jobs.some(j=>j.state==='running') && document.querySelector('#grid-space .library-cell') : document.querySelector('#grid-space .library-cell canvas[data-picture-key]'),60000);
       if(HDRLibrary.getSnapshot().sort!=='name')throw Error('Folder did not use name sort');
+      if(config.idle)await wait(()=>HDRLibraryScenes.snapshot().sources.jobs.length===0,60000);
       async function measure(index,action){
         mark(index===0?'single open':'single step '+index);
         const at=performance.now();action();
@@ -79,7 +90,7 @@ async function scenario(config) {
       }
       if(config.hdr&&!HDRLibrary.getSnapshot().hdr)document.getElementById('hdr-button').click();
       const singleAt=performance.now();
-      const open=await measure(0,()=>{(config.diagnosticPhoto?[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path.endsWith(config.diagnosticPhoto)):document.querySelector('#grid-space .library-cell')).click();document.getElementById('single-view').click();});
+      const open=await measure(0,()=>{(config.diagnosticPhoto?[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path.endsWith(config.diagnosticPhoto)):document.querySelector('#grid-space .library-cell')).click();document.getElementById('single-view').click();if(config.fullscreen)document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true}));});
       const steps=[];let lastAt=open.started_ms;
       for(let i=1;i<=config.steps;i++){
         await sleep(Math.max(0,config.pace-(performance.now()-lastAt)));

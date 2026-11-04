@@ -85,12 +85,13 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
   const logPath=path.join(profile,'logs/backend.log');
   let app,observer,stage='fixture',done=false;
   // Grade close writes a sidecar through its normal save gate. Restore copies too.
-  const sidecars=new Map();
+  const sidecars=new Map(), hiddenFiles=[];
   const kill=()=>{
     observer?.kill();
     if(app?.pid){try{execFileSync('taskkill',['/pid',String(app.pid),'/T','/F'],{stdio:'ignore',timeout:5000});}catch{try{app.kill('SIGKILL');}catch{}}}
   };
   const cleanup=()=>{
+    for(const [file,hidden] of hiddenFiles)if(fs.existsSync(hidden))fs.renameSync(hidden,file);
     for(const [file,original] of sidecars){if(original)fs.writeFileSync(file,original);else if(fs.existsSync(file))fs.unlinkSync(file);}
     if(keepProfile!==null&&!dropProfile)return;
     // Native PowerShell avoids Windows' extended-path removal failures.
@@ -112,7 +113,16 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     }
   }
     if(folderName===null)execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-mixed-fixture.py'),'run-copy'],{stdio:'inherit',timeout:30000});
-    const config={pixelReviewOut:out,gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,back:process.argv.includes('--back'),hdr:process.argv.includes('--hdr'),redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
+    // Reproduce the pre-5a default set without undoing the TIFF listing fix.
+    if(process.argv.includes('--pre5a-set')){
+      if(path.basename(folder)!=='library-mixed-v1-run')throw Error('Pre-5a set requires the standard fixture');
+      for(const name of ['DJI_0071-2.tif','DSC04375_DxO_clipped_target.tif']){
+        const file=path.join(folder,name),hidden=file+'.quick-hidden';
+        if(fs.existsSync(hidden))throw Error('Fixture already hidden: '+hidden);
+        fs.renameSync(file,hidden);hiddenFiles.push([file,hidden]);
+      }
+    }
+    const config={idle:process.argv.includes('--idle'),loseReservation:process.argv.includes('--lose-reservation'),fullscreen:process.argv.includes('--fullscreen'),busy:process.argv.includes('--busy'),pixelReviewOut:out,gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,back:process.argv.includes('--back'),hdr:process.argv.includes('--hdr'),redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE||'2560x1440').split('x').map(Number);
     fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width,height}));

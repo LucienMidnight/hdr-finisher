@@ -888,7 +888,7 @@ class SessionRenderCache:
         )
         proxy = sdr_reference if use_authored_sdr else source
         working_space = "linear-srgb" if use_authored_sdr else "acescg"
-        fixed = apply_geometry(proxy, geometry)
+        fixed = apply_geometry(proxy, geometry, screen=getattr(self, "library_screen", False))
         native = self.sdr_reference_image if use_authored_sdr else self.image
         if edge < max(native.shape[:2]):
             fixed = limit_geometry_overshoot(proxy, geometry, fixed)
@@ -1713,7 +1713,7 @@ class SessionRenderCache:
                     mask_checkpoint()
                     with mask_shared_work(lambda: self._flight_waiters.get(flight_key, 0) > 0):
                         with mask_phase("compute"):
-                            mask = compile_geometry_fixed_mask(source, local.mask, geometry, spatial_only=True)
+                            mask = compile_geometry_fixed_mask(source, local.mask, geometry, spatial_only=True, screen=getattr(self, "library_screen", False))
                     # An obsolete mask is never cached. A finished, still-valid
                     # one is, even when its own requester left meanwhile: the
                     # key names the mask, not the request, and the next request
