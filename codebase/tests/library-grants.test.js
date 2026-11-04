@@ -208,3 +208,12 @@ test('Grade cancels rejected-GPU CPU work and releases its grant',async()=>{
  assert.equal(sockets[0].sent.at(-1).type,'cancel');
  grants.close();
 });
+
+
+test('quick admission uses the requested camera-picture edge',async()=>{
+ const {grants,sockets}=setup();
+ const work=grants.run('dxo.dng','quick',null,async()=>true,10,null,{edge:640});
+ sockets[0].open();const ask=sockets[0].sent[0];
+ assert.equal(ask.edge,640);assert.equal(ask.kind,'quick');
+ sockets[0].receive({type:'granted',id:ask.id});assert.equal(await work,true);grants.close();
+});

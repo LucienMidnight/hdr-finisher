@@ -38,6 +38,7 @@
       "main.js",
       "starting.html",
       "preload.js",
+      "delivery-memory-preload.cjs",
       "lib/**/*.js",
       { "from": "../frontend", "to": "shared", "filter": ["photo-transition.js"] },
       "package.json"

@@ -1,6 +1,7 @@
 // Plain Electron quick check: no Playwright, DevTools or remote debugging port.
 // node tools/quick-library-check.cjs [--seconds=90] [--label=name] [--single] [--redisplay]
 // --grade-handoff --folder=library-live-grid --seconds=6: one saved exposure hand-off and blank-tile check.
+// --thumbnail-memory --folder=library-live-grid: Grade GPU buffers and read-only DxO grid after return.
 // --grade-return --folder=library-live-grid: Grade slider + typed value, Library tab + keyboard, F, Compare, settle.
 // --retention --folder=hdr-test: focused memory acceptance across cancel/Grade/100% views; cadence is diagnostic.
 const fs=require('node:fs'),path=require('node:path'),os=require('node:os');
@@ -121,7 +122,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
   },retentionMode?420000:130000);
   const signal=()=>{kill();try{cleanup();}catch{}process.exit(130);};process.once('SIGINT',signal);process.once('SIGTERM',signal);
   try{
-  if(retentionMode||gradeHandoffMode||process.argv.includes('--grade-handoff-pixels'))for(const directory of [folder,path.join(root,'output/test-photos/library-live-grid')]){
+  if(retentionMode||gradeHandoffMode||process.argv.includes('--grade-handoff-pixels')||process.argv.includes('--thumbnail-memory'))for(const directory of [folder,path.join(root,'output/test-photos/library-live-grid')]){
     for(const name of fs.readdirSync(directory).filter(n=>/\.ARW$/i.test(n))){
       const file=path.join(directory,name+'.hdrf');sidecars.set(file,fs.existsSync(file)?fs.readFileSync(file):null);
     }
@@ -136,7 +137,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
         fs.renameSync(file,hidden);hiddenFiles.push([file,hidden]);
       }
     }
-    const config={timingOnly:process.argv.includes("--timing-only"),appStartedAt:Date.now(),warmupFolder:path.join(root,'output/test-photos/library-live-grid').replaceAll('\\','/'),startupWarm:process.argv.includes("--startup-warm"),noStartupWarm:process.argv.includes("--no-startup-warm"),coldPipelines:process.argv.includes("--cold-pipelines"),batch5c:process.argv.includes("--batch5c"),popout:process.argv.includes("--popout"),idle:process.argv.includes('--idle'),loseReservation:process.argv.includes('--lose-reservation'),fullscreen:process.argv.includes('--fullscreen'),busy:process.argv.includes('--busy'),pixelReviewOut:out,gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,back:process.argv.includes('--back'),hdr:process.argv.includes('--hdr'),redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
+    const config={thumbnailMemory:process.argv.includes("--thumbnail-memory"),timingOnly:process.argv.includes("--timing-only"),appStartedAt:Date.now(),warmupFolder:path.join(root,'output/test-photos/library-live-grid').replaceAll('\\','/'),startupWarm:process.argv.includes("--startup-warm"),noStartupWarm:process.argv.includes("--no-startup-warm"),coldPipelines:process.argv.includes("--cold-pipelines"),batch5c:process.argv.includes("--batch5c"),popout:process.argv.includes("--popout"),idle:process.argv.includes('--idle'),loseReservation:process.argv.includes('--lose-reservation'),fullscreen:process.argv.includes('--fullscreen'),busy:process.argv.includes('--busy'),pixelReviewOut:out,gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,back:process.argv.includes('--back'),hdr:process.argv.includes('--hdr'),redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE||'2560x1440').split('x').map(Number);
     fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width,height}));
@@ -229,6 +230,13 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
         if(!settled)errors.push('Retention did not settle after '+check.stage);
         return {...check,settled,unfinished,settledBytes:tail.length?Math.max(...tail.map(s=>s.totalBytes)):null,samples:tail.length};
       });
+    }
+    if(config.thumbnailMemory){
+      report.acceptance_scope='Grade / DxO thumbnail memory diagnostic';
+      report.thumbnail_memory={collections:result.collections,handoffs:result.handoffs,dxo:result.dxo};
+      // This scenario has its own presentation checks, rather than the
+      // standard 90-second stopwatch observer.
+      for(const key of ['shown_by','time_to','longest_picture_gap_s','camera_previews','not_shown'])delete report[key];
     }
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,1));
     console.log(JSON.stringify(report,null,1));

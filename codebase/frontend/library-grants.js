@@ -46,10 +46,10 @@
     }
     // requeueLane: the caller's own queue slot must not be held while waiting
     // for another turn (November 1 Library stall). Throw instead of re-asking.
-    async function run(path,kind,signal,task,priority=10,initial=null,{requeueLane=false}={}){
+    async function run(path,kind,signal,task,priority=10,initial=null,{requeueLane=false,edge=2560}={}){
       let grant=initial,front=false;
       for(;;){
-        grant ||= await acquire(path,kind,signal,typeof priority==="function"?priority():priority,initial?.edge??2560,initial?.gpu_bytes??0,initial?.gpu_unified??false,front);
+        grant ||= await acquire(path,kind,signal,typeof priority==="function"?priority():priority,initial?.edge??edge,initial?.gpu_bytes??0,initial?.gpu_unified??false,front);
         const combined=new AbortController(),stop=()=>combined.abort();
         signal?.addEventListener("abort",stop,{once:true});grant.connection.signal.addEventListener("abort",stop,{once:true});
         if(signal?.aborted||grant.connection.signal.aborted)stop();
@@ -86,7 +86,7 @@
     root.HDRLibraryGrants.preview=(body,signal,headers={},priority=10)=>!previewSupported(body.path)?Promise.resolve(new Response(null,{status:204})):root.HDRLibraryGrants.run(body.path,"quick",signal,async(grant,shared)=>{
       const response=await fetch("/api/library/preview",{method:"POST",priority:"high",signal:shared,headers:{"Content-Type":"application/json",...headers},body:JSON.stringify({...body,grant})});
       return new Response(response.status===204?null:await response.arrayBuffer(),{status:response.status,headers:response.headers});
-    },priority);
+    },priority,null,{edge:body.edge??640});
     let nativeVisible=true;
     const visibility=()=>root.HDRLibraryGrants.visibility(nativeVisible&&root.document.visibilityState!=="hidden");
     const desktop=root.hdrFinisherDesktop||root.parent?.hdrFinisherDesktop;

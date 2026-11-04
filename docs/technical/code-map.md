@@ -458,3 +458,12 @@ isolated cache storage. `HDR_BATCH5A_PHOTO` restricts it to one filename. It
 restores temporary RAW sidecars in finally; registered as a Library diagnostic.
 
 `tools/v1-control-panel-review.cjs` checks real-Electron menu hover, icon containment, Control Panel ordering, SDR-only Match, neutral Tab focus versus pointer focus, sentence-case headings, zoom geometry, adjacent status actions and Export preview/grid transitions in all three themes; captures go to `output/v1-control-panel-fixes/`.
+
+November 4 thumbnail stall: `library_estimates.embedded_jpeg_header` inspects
+rendered TIFF RAW/SubIFD JPEG headers and DCT sizing; preview grants forward
+the actual edge. Desktop's existing collect/reclaim and pressure paths include
+delivery, whose narrow `delivery-memory-preload.cjs` reports job idle/busy.
+`desktop/library-thumbnail-memory-check.cjs` is an opt-in helper through
+`quick-library-check.cjs --thumbnail-memory`, exercising Grade on test copies
+and browsing original DxO DNGs read-only. It measures private bytes/retainers;
+it does not fix the completed-job references found in `gpu-delivery.js`.

@@ -480,7 +480,7 @@ def create_library_router(worker, browser, store=None):
         if preview is camera_preview:
             cached = await run_in_threadpool(cached_camera_preview, path, edge)
             if cached is not None: return cached
-        async with backend_grant(path,"quick",token=grant,cancelled=request.is_disconnected):
+        async with backend_grant(path,"quick",token=grant,cancelled=request.is_disconnected,edge=edge):
             return await run_in_threadpool(preview,path,edge)
 
     @router.post("/preview")

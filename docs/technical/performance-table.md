@@ -1040,3 +1040,18 @@ first-sharp times are not used in the busy table above. Pixel PNG crops and
 total. Node 797 passed; Python 3051 passed, 3 skipped, the same known library-live
 422/200 failure as 5b/5c. Fast logs: `codebase/output/batch5d-{node,pytest}.log`.
 Output 29.1 -> 29.2 GB; temporary profiles and rejected-run scratch removed, test photos retained.
+
+
+November 4 thumbnail-stall fix (parent `e34dfea`, this change; 2560 x 1440,
+isolated plain Electron): after Grade handoff, the ten visible DxO optical
+DNG camera pictures in original `HDR Test Images/DXO_PL_exported` appear
+0.464-0.829 s after browse, no measured-memory waits; JPEG extraction alone
+89-171 ms. Grade fallback handoff remains 1.973 s from availability / 3.408 s
+from release (not the clean-picture <=500 ms route). This run is a memory
+diagnostic, not a clean-handoff speed acceptance. Forced delivery collection
+after that handoff took 105 ms including a 100 ms measurement delay, but
+left 1.187 GB of live buffers. Standard 90-second grid: 29 pictures, no
+acceptance errors, external peak 3.202 GB. Evidence:
+`codebase/output/quick-library-check/thumbnail-memory/{scenario,report}.json`
+and `thumbnail-memory-standard/report.json`. Prompt delivery-buffer release
+and Grade peak memory remain open; see the thumbnail-stall brief.

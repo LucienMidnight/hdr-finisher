@@ -27,6 +27,7 @@ async function run({app, window, backend, configPath = process.env.HDR_FINISHER_
     await window.webContents.executeJavaScript(`(async()=>{while(document.body?.dataset.ready!=='true'||!document.getElementById('library-frame')?.contentWindow?.HDRLibrary)await new Promise(r=>setTimeout(r,20));activateWorkflowTab('import');})()`);
     const frame = window.webContents.mainFrame.framesInSubtree.find(frame => /\/library(?:\?|$)/.test(frame.url));
     if (!frame) throw Error('Library frame missing');
+    if(config.thumbnailMemory){const result=await require('./library-thumbnail-memory-check.cjs').run({app,window,frame,config,stage,backend});fs.writeFileSync(resultPath,JSON.stringify(result));stage('done');return;}
     if(config.batch4d){const result=await require('./library-memory-4d.cjs').run({app,window,frame,config,stage,backend});fs.writeFileSync(resultPath,JSON.stringify(result));stage('done');return;}
     if(config.pixelCapture){await require('./library-pixel-test.cjs').run({frame,config,stage});stage('done');return;}
     if(config.batch5c){const result=await require('./library-wait-check.cjs').run({window,frame,config,stage});result.appStartToScenarioDoneMs=Date.now()-config.appStartedAt;fs.writeFileSync(resultPath,JSON.stringify(result));stage('done');return;}

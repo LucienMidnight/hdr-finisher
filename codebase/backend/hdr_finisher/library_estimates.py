@@ -109,6 +109,40 @@ def estimate_pixels(suffix, width, height, kind="source", *, gain_map=False):
     return max(MINIMUM, rate*int(width)*int(height))
 
 
+def embedded_jpeg_header(path):
+    """Find a rendered JPEG in TIFF RAW headers, including DNG SubIFDs.
+
+    LinearRaw and CFA source pages may themselves be JPEG-compressed; they
+    are not camera pictures. A larger bitmap preview keeps the old estimate.
+    No strip, JPEG body or source pixels are read here.
+    """
+    import tifffile
+    try:
+        with tifffile.TiffFile(path) as source:
+            rendered = []
+            jpeg_pages = []
+            def visit(pages):
+                for page in pages:
+                    if int(page.photometric) in {1, 2, 6}:
+                        jpeg = int(page.compression) in {6, 7}
+                        rendered.append((page.imagewidth * page.imagelength, jpeg))
+                        if jpeg:
+                            jpeg_pages.append(page)
+                    if page.pages is not None:
+                        visit(page.pages)
+            visit(source.pages)
+            if rendered:
+                largest = max(area for area, _ in rendered)
+                if all(jpeg for area, jpeg in rendered if area == largest):
+                    # Match Pillow JPEG draft's power-of-two reduction before
+                    # transpose/convert, using the existing quick pixel rate.
+                    page = max(jpeg_pages, key=lambda page: page.imagewidth * page.imagelength)
+                    return page.imagewidth, page.imagelength
+            return None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
 def estimate_details(path, kind="source", ceiling=None, edge=2560):
     if kind == "edge-cpu": kind = "cpu"
     ceiling = app_memory.CEILING if ceiling is None else ceiling
@@ -133,10 +167,19 @@ def estimate_details(path, kind="source", ceiling=None, edge=2560):
         # Embedded JPEGs use the approved DCT-scaled quick route. Other
         # embedded formats keep a conservative full-source preview estimate.
         if kind == "quick" and (Path(path).suffix.lower() not in RATES or Path(path).suffix.lower()==".dng"):
+            preview = embedded_jpeg_header(path)
+            if preview:
+                factor = 1
+                while factor < 8 and min(preview) // (factor * 2) >= edge:
+                    factor *= 2
+                samples = tuple((size + factor - 1) // factor for size in preview)
+                return max(MINIMUM, 23 * samples[0] * samples[1]), ""
             import exifread
             with Path(path).open("rb") as handle:
-                tags = exifread.process_file(handle, details=False, extract_thumbnail=True)
-            if tags.get("JPEGThumbnail"):
+                tags = exifread.process_file(handle, details=False, extract_thumbnail=False)
+            # IFD1 JPEG location/length are sufficient; do not read its body
+            # merely to decide whether the decoder may run.
+            if tags.get("Thumbnail JPEGInterchangeFormat") and tags.get("Thumbnail JPEGInterchangeFormatLength"):
                 return MINIMUM, ""
         if kind != "cpu" and kind != "quick" and Path(path).suffix.lower()==".dng":
             import tifffile

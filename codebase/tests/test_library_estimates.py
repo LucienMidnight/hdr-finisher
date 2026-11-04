@@ -242,3 +242,37 @@ def test_two_measured_avifs_fit_default_budget_without_blocking_camera_preview()
     second=scheduler.ask("avif-b","library","b.avif","source",estimate_pixels(".avif",18_000_000,1,gain_map=True),cls="eventually")
     camera=scheduler.ask("camera","library","camera.arw","quick",64_000_000)
     assert first.granted is not None and second.granted is not None and camera.granted is not None
+
+
+@pytest.mark.parametrize("preview,expected", [(True,64_000_000),(False,978_375_840)])
+def test_dxo_subifd_quick_estimate_is_header_only(tmp_path, monkeypatch, preview, expected):
+    import struct
+    import tifffile
+    import rawpy
+    from hdr_finisher.library_estimates import estimate_details
+    # Tiny TIFF headers only: IFD0 RGB thumbnail, LinearRaw SubIFD and optional
+    # full-size YCbCr/JPEG SubIFD. No IFD1, JPEG body or RAW raster is present.
+    path = tmp_path / "dxo.dng"
+    def ifd(entries):
+        return struct.pack("<H",len(entries)) + b"".join(
+            struct.pack("<HHII",tag,kind,count,value) for tag,kind,count,value in entries
+        ) + struct.pack("<I",0)
+    def page(width,height,photo,compression,extra=()):
+        return [(256,4,1,width),(257,4,1,height),(258,3,1,8),
+                (259,3,1,compression),(262,3,1,photo),*extra]
+    root_size = 2+6*12+4
+    raw_offset = 8+root_size
+    jpeg_offset = raw_offset+2+5*12+4
+    offsets_offset = jpeg_offset+2+5*12+4
+    sub = (330,13,2,offsets_offset) if preview else (330,13,1,raw_offset)
+    body = b"II"+struct.pack("<HI",42,8)+ifd(page(250,165,2,1,[sub]))
+    body += ifd(page(8020,5304,34892,7))
+    if preview:
+        body += ifd(page(8020,5304,6,7))+struct.pack("<II",raw_offset,jpeg_offset)
+    path.write_bytes(body)
+    monkeypatch.setattr(tifffile.TiffPage,"asarray",lambda *a,**k:pytest.fail("decoded TIFF pixels"))
+    monkeypatch.setattr(rawpy,"RawPy",lambda *a,**k:pytest.fail("opened RAW during admission"))
+    monkeypatch.setattr(Image.Image,"load",lambda *a,**k:pytest.fail("decoded JPEG pixels"))
+    assert estimate_details(path,"quick",edge=640) == (expected, "")
+    assert estimate_details(path,"quick",edge=2560) == ((244_593_960 if preview else expected), "")
+    assert estimate_details(path,"cpu") == (25*8020*5304, "")

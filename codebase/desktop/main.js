@@ -61,6 +61,11 @@ app.commandLine.appendSwitch("js-flags", [app.commandLine.getSwitchValue("js-fla
 const recentProjects = createRecentProjects(path.join(app.getPath("userData"), "recent-projects.json"));
 
 let deliveryWindow = null;
+let deliveryIdleTimer = null;
+async function collectDeliveryMemory(level = 'moderate') {
+  if (deliveryWindow && !deliveryWindow.isDestroyed())
+    await require('./memory-pressure.cjs').notifyChromiumPressure(deliveryWindow.webContents, level);
+}
 let backend = null;
 let mainWindow = null;
 let forceClose = false;
@@ -511,10 +516,21 @@ function registerIpc() {
     const record = validateSender(event);
     return callback(record, ...args);
   });
+  ipcMain.on('desktop:delivery-memory-idle', (event, idle) => {
+    if (!deliveryWindow || deliveryWindow.isDestroyed() || event.sender !== deliveryWindow.webContents) return;
+    clearTimeout(deliveryIdleTimer);
+    if (idle === true) {
+      deliveryIdleTimer = setTimeout(() => {
+        void collectDeliveryMemory().catch(error => libraryStage('chromium_pressure_error', {reason:error.message}));
+      }, 250);
+      deliveryIdleTimer.unref();
+    }
+  });
   handleWindow("desktop:reclaim-library-storage", async record => {
     // Decision 20: references have been evicted for an actual waiting job.
     // Reuse the existing dead-upload release, without inventing OS pressure.
-    await require('./memory-pressure.cjs').notifyChromiumPressure(record.window.webContents, 'moderate');
+    await Promise.all([require('./memory-pressure.cjs').notifyChromiumPressure(record.window.webContents, 'moderate'),
+      collectDeliveryMemory('moderate')]);
     return true;
   });
   handleWindow("desktop:set-library-command-state", (record, next = {}) => {
@@ -1255,6 +1271,7 @@ async function beginShutdown() {
     await fetch(`${backend.url}/api/batch-export/shutdown`, {method:"POST",
       headers:{"X-HDR-Finisher-Token":backend.authoringSecret},signal:AbortSignal.timeout(7000)}).catch(()=>{});
   }
+  clearTimeout(deliveryIdleTimer);
   deliveryWindow?.destroy();deliveryWindow=null;
   await stopBackend();
   app.quit();
@@ -1360,7 +1377,11 @@ if (!gotLock) {
             // storage in renderer, browser and GPU host processes.
             const pressureStarted = Date.now();
             try {
-              await memoryPressureRelay.notifyChromiumPressure(mainWindow.webContents, trimLevel);
+              await Promise.all([
+                ...[...windows.values()].filter(record => !record.window.isDestroyed())
+                  .map(record => memoryPressureRelay.notifyChromiumPressure(record.window.webContents, trimLevel)),
+                collectDeliveryMemory(trimLevel),
+              ]);
             } catch (error) {
               libraryStage("chromium_pressure_error", {reason:error.message});
             }
@@ -1392,6 +1413,7 @@ if (!gotLock) {
       setTimeout(async () => {
       if (shuttingDown) return;
       deliveryWindow = new BrowserWindow({show:false, webPreferences:{
+        preload:path.join(__dirname, 'delivery-memory-preload.cjs'),
         contextIsolation:true, nodeIntegration:false, sandbox:true, backgroundThrottling:false,
       }});
       await deliveryWindow.loadURL(`${backend.url}/static/gpu-delivery.html`).catch(error => console.error("GPU delivery startup",error));

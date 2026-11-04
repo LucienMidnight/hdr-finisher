@@ -1330,3 +1330,24 @@ pass; the forced double rejection still fails later CPU preparation as expected
 (6.138 GB logged peak), deferred to the bounded-memory CPU work. No budget,
 limit, level, pixel tolerance or saved format changes. Output started and ended
 at 28.6 GB (100 GB limit); owned profiles and temporary scratch were removed.
+
+### November 4: camera-picture admission and delivery collection
+
+SubIFD JPEG previews in TIFF-based RAWs are sized from their header-only
+DCT sample dimensions using the existing quick rate/minimum and actual
+requested edge. No-preview files retain their previous estimate. The DxO
+8020 x 5304 fixture asks for 64 MB at grid size, 244.6 MB at screen size,
+instead of 978.4 MB. No budget, priority or Grade-retention decision changed.
+
+Waiting-photo collection/reclaim and pressure cleanup now reach the hidden
+GPU delivery window; completed jobs schedule one debounced idle GC. **Open:**
+GC cannot release 1,186,913,280 bytes still referenced by the paused delivery
+async loop (one input and three output ArrayBuffers). After a real Grade
+handoff, private commit only changes 1,230,790,656 -> 1,230,544,896 bytes.
+Do not mark prompt hidden-memory release complete. The focused Grade run
+still exceeds memory acceptance; the standard 90-second grid passes.
+Details and evidence: `../../technical/briefs/library-thumbnail-memory-stall-2026-11-04.md`.
+
+Validation note: 801 JS passed; Python 3,053 passed / three skipped / one
+unrelated failed PNG remembered-error route test (expected 422, received
+200). Left unchanged. Output and numeric evidence remain in the open brief.

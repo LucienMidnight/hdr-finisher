@@ -6927,3 +6927,19 @@ a thumbnail stand-in existed (batch5c-visible-sdr-pop); this remains open.
 Docked HDR visibility passed (batch5c-visible-hdr-dock). Python: 3051 passed,
 3 skipped, one previously known library-live failure (expected 422, got 200).
 The 15-minute follow-up ended without further app checks.
+
+### November 4: DxO thumbnail admission after Grade
+
+Header-only quick admission now recognizes embedded JPEGs in DNG SubIFDs,
+excludes JPEG-compressed RAW source pages, and uses the requested picture
+size. All ten visible DxO optical-correction DNGs in the real DXO_PL_exported
+folder show camera pictures in 0.464-0.829 s after Grade return/browse, with
+64 MB grants and no measured-memory waits. No-preview estimates and pixels
+are unchanged. The normal 90-second grid check passes.
+
+Hidden delivery collection is connected, but its async loop still strongly
+holds 1.187 GB of completed-job input/output buffers after forced GC. Prompt
+release and broader Grade memory acceptance remain open. Old binary
+`.hdrfinisher` files being mistaken for settings conflicts also remain batch
+4c work; periodic folder-check log naming is separate. Review and evidence:
+`../../technical/briefs/library-thumbnail-memory-stall-2026-11-04.md`.
