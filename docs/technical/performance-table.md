@@ -46,6 +46,15 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+November 4 Control Panel follow-up (parent bf22072; same 2560×1440 default
+90-second mixed-grid check): maximum frame gap 1,491 ms against the 250 ms
+limit; timer block 132 ms. Picture and memory checks pass. This repeats the
+existing responsiveness limitation from the preceding visual pass; no repeat
+or performance investigation was run. Steve should judge responsiveness when
+trying the app. Evidence:
+`codebase/output/quick-library-check/control-panel-fixes/report.json`.
+
+
 November 4 visual-refinement check (working tree; 2560×1440, default 90-second
 mixed-grid scenario): frame gaps ranged to 1,682 ms (one over 250 ms), timer
 blocks to 117 ms, 29 pictures shown by 30 seconds, no picture failures and no

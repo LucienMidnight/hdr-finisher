@@ -143,3 +143,10 @@ Built in the accompanying commit: all three neutral themes, Afacad reading type,
 The literal accent-ramp formulas apply to every theme/preset, as Steve confirmed; WCAG compliance across all choices is not a round-1 gate. The existing Settings dialog, Control Panel layout and source rail structure remain. Detailed approximations and retained data colours are recorded in the [v1 visual spec](../../design/v1-visual-refinement/HDR_Finisher_v1_Visual_Refinement.md#round-1-implementation-and-tidy-up).
 
 Validation: 800 Node checks pass. Python: 3,043 passed and three skipped in the full run; eight obsolete visual-source checks were updated for the intended change and all 42 tests in the affected files pass. One unrelated Library cached-scene test fails (`test_remembered_failure_does_not_hide_current_grade_cached_scene`, expected 422, got 200). The default Library check completed without picture errors or a memory-limit violation, but reported a 1.682-second frame pause; focused real-Electron captures cover all requested screens and slider modes in three themes. No processing GPU suite or release sweep was appropriate to this appearance-only change.
+
+### November 4 — Menu hover switching
+
+After a menu is opened, hovering another top-level menu switches the open
+popover. Hovering a closed menu bar leaves it closed; click and Escape retain
+their behavior. Verified across File, Edit, View, Window and Help in the real
+Electron app with `tools/v1-control-panel-review.cjs`.

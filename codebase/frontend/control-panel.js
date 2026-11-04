@@ -18,7 +18,19 @@ function initializeControlPanel() {
   for (const selector of ["#raw-settings-section", '[data-group="raw-highlights"]', '[data-group="geometry"]', '[data-group="perspective"]', ".lane-folder-shell"]) {
     global.append(document.querySelector(selector));
   }
+  const label = text => {
+    const node = document.createElement("div");
+    node.className = "control-shared-label";
+    node.textContent = text;
+    return node;
+  };
+  global.prepend(label("Both renditions"));
   retouch.append(document.querySelector(".retouch-panel"));
+  const repairContent = retouch.querySelector(".retouch-content");
+  const repairNote = document.createElement("p");
+  repairNote.className = "helper retouch-shared-note";
+  repairNote.textContent = "Repairs apply to both renditions, before crop.";
+  repairContent.prepend(repairNote, label("Repair tool"), retouch.querySelector(".retouch-mode-switch"));
   local.append(els.localAdjustmentGroup);
   els.localPanel.classList.remove("control-group-body");
   els.localEraser.remove();
@@ -30,10 +42,15 @@ function initializeControlPanel() {
   actions.append(els.localMaskFooterActions, els.localShowMask, local.querySelector(".local-overlay-color-control"));
   local.querySelector(".local-overlay-actions").remove();
   const stack = local.querySelector(".local-stack-surface");
-  stack.after(strip, actions);
+  stack.after(actions);
   const newLabel = local.querySelector(".control-shared-label");
-  newLabel?.remove();
+  strip.before(newLabel);
   const heading = local.querySelector(".local-stack-heading");
+  const maskScope = document.createElement("small");
+  maskScope.className = "local-mask-scope";
+  maskScope.textContent = "HDR + SDR";
+  heading.querySelector("span").textContent = "Masks";
+  heading.querySelector("span").after(maskScope);
   heading.append(local.querySelector(".local-stack-primary-actions"), document.getElementById("local-adjustments-bypass"));
   for (const section of local.querySelectorAll(".local-grade-section")) {
     const name = section.dataset.localGradeSection;
@@ -54,7 +71,12 @@ function initializeControlPanel() {
   new ResizeObserver(sizeTabs).observe(header);
   requestAnimationFrame(sizeTabs);
   tabs.before(row);
-  row.append(tabs, els.sdrMatchEntireActions);
+  row.append(label("Per rendition"), tabs);
+  const matchCopy = document.createElement("span");
+  matchCopy.className = "sdr-match-copy";
+  matchCopy.textContent = "Start the SDR grade from your HDR grade.";
+  els.sdrMatchEntireActions.prepend(matchCopy);
+  row.after(els.sdrMatchEntireActions);
   els.sdrMatchEntire.classList.replace("button-primary", "button-secondary");
   document.querySelectorAll("[data-control-mode]").forEach(button => {
     button.addEventListener("click", () => setGradeMode(button.dataset.controlMode));
@@ -84,6 +106,7 @@ function placeGradeFolderTabs(mode) {
   const row = document.querySelector(".grade-folder-tabs");
   const folder = document.querySelector(mode === "local" ? ".local-lane-folder" : ".lane-folder-shell");
   if (row.parentElement !== folder) folder.prepend(row);
+  if (mode !== "local") row.after(els.sdrMatchEntireActions);
 }
 
 function createControlFoldout(key, title, hint, open = false) {

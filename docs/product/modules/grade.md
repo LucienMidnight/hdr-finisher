@@ -1811,3 +1811,22 @@ fallback. Saving rules, rendering controls, Export and Proof are unchanged.
 The Library PRD records confirmed second-photo installation and incomplete timing acceptance. The
 auxiliary scope canvas serializes scope and publication rendering; publication
 can reuse its completed picture before histogram analysis finishes.
+
+### November 4 — Control Panel visual follow-up
+
+Steve authorized the v1 Control Panel layout: Both renditions above shared
+controls, Per rendition with a pinned joined HDR/SDR switch below them, and
+an SDR-only recessed Match row with a stale-match attention rule. Folder
+borders are removed. Local puts New adjustment/tools before Masks · HDR + SDR;
+Retouch puts its shared-before-crop note and repair tools before the list.
+Toolbar icon buttons keep fixed padding-free targets; comparison icons and
+zoom controls have sufficient width. Header actions occupy one row with compact
+preset/reset columns, and bypass eyes suppress the old text glyph.
+
+Validation: all 800 JavaScript checks pass; the real Electron review passes
+menu hover, button containment, panel modes and SDR-only Match in all three
+themes. Review captures: `codebase/output/v1-control-panel-fixes/`. The default
+Library check reports no picture errors or memory violation, with an existing
+frame-pause limitation recorded in the performance table. Python: 3,051 passed, 3 skipped; the pre-existing
+`test_remembered_failure_does_not_hide_current_grade_cached_scene` still expects
+422 but gets 200. It was left unchanged. Output remains 29.2 GB, below 100 GB.

@@ -153,3 +153,19 @@ body.slider-hover .slider-key-legend { opacity: 1; }
 :root .status-entry.status-attention { color: var(--attention); }
 /* The same chevron shape uses theme ink in selects, which cannot host a mask. */
 :root select { background-image: var(--select-chevron); }
+
+/* Fixed icon targets must not inherit the padding of text buttons. */
+:root :is(.library-icon-button, .top-icon-button, .scope-region-toggle) { width: 30px; min-width: 30px; flex: 0 0 30px; padding: 0; display: grid; place-items: center; }
+:root .comparison-modes > button { width: 30px; min-width: 30px; flex: 0 0 30px; padding: 0; display: grid; place-items: center; }
+:root .comparison-modes > button svg { width: 18px; height: 18px; }
+:root .zoom-control { flex: 0 0 auto; }
+:root .zoom-control > .zoom-step { width: 26px; min-width: 26px; flex: 0 0 26px; padding: 0; }
+:root .zoom-control > .zoom-value { --zoom-value-width: 64px; padding: 0 6px; }
+:root .zoom-control .range-shell { width: 90px; min-width: 70px; flex: 0 1 90px; }
+:root :is(.zoom-control, .library-size) :is(.slider-scale, .slider-origin) { display: none; }
+:root .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 0 26px; column-gap: 3px; padding-inline: 12px 8px; }
+:root .control-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 38px 26px; }
+:root .control-group-header > :is(.group-toggle, .group-preset, .group-reset, .section-bypass) { grid-row: 1; }
+:root .control-group:not(.modified) .group-reset { display: none; }
+:root :is(.section-bypass, .local-adjustment-bypass) { font-size: 0; line-height: 0; color: var(--bypass-icon-visible); width: 26px; min-width: 26px; height: 26px; min-height: 26px; padding: 0; --bypass-icon-shape: url("./assets/icons/tabler/eye.svg"); }
+:root :is(.section-bypass, .local-adjustment-bypass).bypassed { color: var(--bypass-icon-hidden); }

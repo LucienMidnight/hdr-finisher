@@ -67,6 +67,11 @@
   for (const menu of menus) {
     const trigger = menu.querySelector(".window-menu-trigger");
     trigger.addEventListener("click", () => openMenu(menu));
+    trigger.addEventListener("pointerenter", () => {
+      const isOpen = !menu.querySelector(".window-menu-popover").hidden;
+      const menuBarOpen = menus.some(item => !item.querySelector(".window-menu-popover").hidden);
+      if (menuBarOpen && !isOpen) openMenu(menu);
+    });
     trigger.addEventListener("keydown", (event) => {
       if (!["ArrowDown", "Enter", " "].includes(event.key)) return;
       event.preventDefault();

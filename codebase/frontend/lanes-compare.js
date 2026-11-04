@@ -248,7 +248,7 @@ function renderLaneChrome() {
   els.detailSdrActions?.classList.toggle("hidden", lane !== "sdr");
   els.blackAndWhiteSdrActions?.classList.toggle("hidden", lane !== "sdr");
   const match = state.editDocument?.sdr_match;
-  els.sdrMatchEntireActions?.classList.remove("hidden");
+  els.sdrMatchEntireActions?.classList.toggle("hidden", lane !== "sdr");
   if (els.sdrMatchEntire) {
     els.sdrMatchEntire.textContent = match?.rematch_required ? "↻ Rematch SDR" : "Match SDR";
     els.sdrMatchEntire.classList.toggle("rematch-required", Boolean(match?.rematch_required));
