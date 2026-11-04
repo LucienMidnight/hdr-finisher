@@ -599,7 +599,7 @@ function registerIpc() {
   // The active card's dedicated video memory, read once: the preview's Auto
   // memory budget is half of it (Preview Responsiveness Tuning Sprint P2).
   let videoMemory = null;
-  handle("desktop:video-memory", () => {
+  handleWindow("desktop:video-memory", () => {
     videoMemory = videoMemory || detectVideoMemory({ app });
     return videoMemory;
   });

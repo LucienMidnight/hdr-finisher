@@ -1,6 +1,6 @@
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** Batch 4a built November 3, 2026; Batch 4b built November 4, 2026; Batches 4c-4d remain open. Build order is in
+**Status:** Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
@@ -95,11 +95,48 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | Batch | Contents | Status |
 | --- | --- | --- |
 | 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Built November 3, 2026 |
-| 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Built November 4, 2026 |
+| 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Follow-up incomplete November 4, 2026 |
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Not started |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Not started |
 
-### Batch 4b implementation and checks — November 4, 2026
+### Batch 4b follow-up checkpoint — November 4, 2026
+
+The original sign-off did not compare visible pixels and is withdrawn. Tiled
+Fit was explicitly excluded from Grade capture. The publisher now waits for
+its current presented frame and reuses Grade's clean bounded scope picture,
+or asks Grade for that same full-frame picture after presentation. It does
+not resize the viewer. Tile replacement now looks up retained cells by their
+own saved identity/path, rather than assuming the refreshed photo record still
+has the old identity. Logging distinguishes actual tile installation from
+completion of the other rendition. These fixes do not yet establish the exact
+cause of every missing update in Steve's original session.
+
+Plain Electron, two reusable Sony 42 MP copies, Fit forced tiled: actual tile
+screenshots changed after +1 EV for the first docked photo, the second photo
+in the same page session, and the popped-out Library. Changed crop pixels were
+98%, 96%, and 59%. This checked the HDR Library rendition after HDR exposure;
+it does not establish SDR-rendition behavior. The first and detached installs
+logged `Grade picture`; the second logged `Grade picture + finishing redraw`
+with no confirmed install time. Therefore the every-photo hand-off requirement
+remains open. Stored screen-preview pixels and filmstrip pixels were not
+separately compared. The 500 ms target also fails; see the performance table.
+
+The memory-needed tile button uses the existing `library-picture-error` style
+and opens memory settings. No tokens or allowances changed. Registered Library
+windows may query video memory through the existing window-level handler;
+photo commands stay main-only. The popped-out query completed without error.
+
+779 JavaScript checks passed. Python: 3,032 passed, three skipped, one known
+baseline failure, `test_remembered_failure_does_not_hide_current_grade_cached_scene`.
+The app check also exceeded the unchanged memory ceiling plus 10%; the baseline
+diagnostic exceeded it too. Slow checks stopped at Steve's approximate limit;
+the separate default 90-second browsing check was not run. No release sign-off.
+Evidence: `codebase/output/quick-library-check/batch4b-followup/` contains
+before/after PNGs, `pixels.json`, `scenario.json`, `report.json`, and backend log.
+Fast-check logs: `codebase/output/batch4b-followup-{node,pytest}.log`.
+No writes to `D:\Photos`; no push or installer build. Batch 4c stays separate.
+
+### Batch 4b implementation and earlier checks — November 4, 2026
 
 Saving policy and the autosave delay are unchanged. The 500 ms hand-off target
 starts when the saved/pending grade becomes available to the Library, after
@@ -111,13 +148,13 @@ Grade captures its clean, whole-frame output texture after presentation,
 validates the saved identity, stores thumbnails and screen previews in the
 existing allowances, then releases capture resources. Completed grid and
 filmstrip surfaces survive Grade navigation. The docked or detached Library
-atomically replaces the edited thumbnail. Missing lanes, zoom/tiled pictures
+atomically replaces the edited thumbnail. Missing lanes, zoom-region pictures
 and capture failures use Grade's already developed source for finishing only;
 the Sony CPU band decoder is bypassed for this source. Older tickets cannot
 replace newer grades. Resetting to the default grade clears the edited flag;
 its developed picture follows decision 5. Export/Proof processing is unchanged.
 
-Final plain-Electron acceptance on three reusable RAW copies: autosave picture
+Earlier event-based check on three reusable RAW copies (superseded by the pixel check below): autosave picture
 ready in 435 ms after availability (1.575 s after release); manual Save 422 ms
 (1.945 s after release, including a deliberate 1.5 s unsaved wait); detached
 Library 249 ms (1.498 s after release). Autosave off preserved the saved grade.

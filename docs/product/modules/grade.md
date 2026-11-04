@@ -1800,3 +1800,12 @@ Finished SDR differences inside the DSC04375 repair footprints, information only
 The rounded 8-bit crop pairs are identical; Steve's visual judgement remains the
 acceptance criterion inside repairs. The viewer labels native and Fit GPU/CPU
 pictures and states its source recipe and single-spot scope.
+
+
+### November 4 — Library picture follow-up checkpoint
+
+Saved-picture publication waits for the current presented frame. Tiled Fit can
+reuse Grade's bounded scope picture or produce that picture after presentation,
+without changing the viewer canvas. Zoom/overlay exceptions retain finishing
+fallback. Saving rules, rendering controls, Export and Proof are unchanged.
+The Library PRD records incomplete timing and second-photo acceptance.

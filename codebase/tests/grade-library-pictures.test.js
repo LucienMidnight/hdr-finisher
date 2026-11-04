@@ -68,3 +68,22 @@ test('changing photos before capture clears the pending hand-off',async()=>{
   const s=setup();s.api.available({revision:1,grade_identity:'saved'});s.setFrame({sessionId:'other'});
   await s.tasks.shift()();assert.equal(s.sent.at(-1).stage,'failed');assert.deepEqual(s.finished,[]);
 });
+
+test('a second photo in the same page publishes under its own session and saved identity',async()=>{
+  const s=setup();
+  s.api.available({path:'first',revision:1,grade_identity:'first-grade'});await s.tasks.shift()();
+  s.setFrame({sessionId:'second-session',revision:7});
+  s.api.available({path:'second',revision:7,grade_identity:'second-grade'});await s.tasks.shift()();
+  const packets=s.sent.filter(p=>p.stage==='picture');
+  assert.deepEqual(packets.map(p=>[p.path,p.sessionId,p.grade_identity]),[
+    ['first','session','first-grade'],['second','second-session','second-grade']]);
+});
+
+test('a save waits for its presented Grade frame instead of prematurely taking the fallback',async()=>{
+  const s=setup();s.setFrame({waiting:true,clean:false});
+  s.api.available({path:'photo',revision:1,grade_identity:'saved'});
+  const work=s.tasks.shift()();await tick();
+  assert.deepEqual(s.finished,[]);
+  s.setFrame({waiting:false,clean:true});await work;
+  assert.deepEqual(s.stored,['saved']);assert.equal(s.sent.find(p=>p.stage==='picture').source,'Grade picture');
+});

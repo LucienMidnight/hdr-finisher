@@ -76,7 +76,7 @@ window.HDRLibraryPictureErrors = Object.freeze({
     }
     function paint(cell) {
       const record = records.get(cell.photo.path);
-      let tag = cell.element.querySelector(".library-picture-error");
+      let tag = cell.element.querySelector(".library-picture-error:not(.library-memory-needed)");
       const hasPicture = !!cell.hasCameraPreview || !!cell.meta || !!cell.scene;
       const previewOnly = !!record && !record.grade_warning && !!cell.hasCameraPreview && !cell.meta && !cell.scene;
       cell.element.classList.toggle("picture-failed", !!record && !record.grade_warning && !hasPicture);

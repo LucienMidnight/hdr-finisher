@@ -127,3 +127,10 @@ selection is the earlier 54 unfinished drivers plus retouch-library-gpu;
 history. Allow roughly 75–120 minutes as a scheduling estimate, not a complete
 measurement. Continuation approval is pending; no merge or push performed.
 Task scratch was cleaned; project output remained 0.7 GB.
+
+
+### November 4 — Library video-memory query
+
+The read-only `desktop:video-memory` query accepts registered Library windows
+through the existing window-level handler. Photo commands remain main-only.
+The follow-up real-app popped-out query completed without error.

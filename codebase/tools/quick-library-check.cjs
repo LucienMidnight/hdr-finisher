@@ -98,13 +98,13 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
   },retentionMode?420000:130000);
   const signal=()=>{kill();try{cleanup();}catch{}process.exit(130);};process.once('SIGINT',signal);process.once('SIGTERM',signal);
   try{
-  if(retentionMode||gradeHandoffMode)for(const directory of [folder,path.join(root,'output/test-photos/library-live-grid')]){
+  if(retentionMode||gradeHandoffMode||process.argv.includes('--grade-handoff-pixels'))for(const directory of [folder,path.join(root,'output/test-photos/library-live-grid')]){
     for(const name of fs.readdirSync(directory).filter(n=>/\.ARW$/i.test(n))){
       const file=path.join(directory,name+'.hdrf');sidecars.set(file,fs.existsSync(file)?fs.readFileSync(file):null);
     }
   }
     if(folderName===null)execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-mixed-fixture.py'),'run-copy'],{stdio:'inherit',timeout:30000});
-    const config={gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
+    const config={pixelReviewOut:out,gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE||'2560x1440').split('x').map(Number);
     fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width,height}));
@@ -146,6 +146,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     fs.writeFileSync(path.join(out,'scenario.json'),JSON.stringify(result,null,1));
     if(config.trace)fs.copyFileSync(path.join(profile,'diagnostic-trace.json'),path.join(out,'diagnostic-trace.json'));
     if(result.error)throw Error(result.error);
+    if(result.pixelReview&&result.pixelReview!==out)for(const name of fs.readdirSync(result.pixelReview))fs.copyFileSync(path.join(result.pixelReview,name),path.join(out,name));
     const text=fs.existsSync(logPath)?fs.readFileSync(logPath,'utf8'):'';fs.writeFileSync(path.join(out,'backend.log'),text);
     const freezes=freezeSummary(result.probe),failures=[];
     if(gradeReturnMode){
@@ -180,8 +181,8 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     try{channels=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-channel-audit.py'),path.join(profile,'Cache')],{timeout:60000}).toString());}
     catch(error){channels={error:String(error.message||error)};}
     if(channels.one_channel_zero?.length||channels.all_channels_zero?.length)errors.push(`Zeroed colour channels in ${channels.one_channel_zero.length+channels.all_channels_zero.length} stored pictures`);
-    const report={label,acceptance_scope:retentionMode?'whole-app retention (cadence recorded separately)':'Library quick check',folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
-      ...analyse(text,result.opened_epoch_ms,result.events,result.opened_ms,result.visible_files),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,memory_diagnostic:result.memory_diagnostic,grade_handoff:result.grade_handoff,grade_return:result.grade_return,grade_return_saves:result.grade_return_saves,
+    const report={label,acceptance_scope:config.gradeHandoffPixels?'42 MP visible-pixel hand-off':retentionMode?'whole-app retention (cadence recorded separately)':'Library quick check',folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
+      ...(config.gradeHandoffPixels?{}:analyse(text,result.opened_epoch_ms,result.events,result.opened_ms,result.visible_files)),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,memory_diagnostic:result.memory_diagnostic,grade_handoff:result.grade_handoff,grade_return:result.grade_return,grade_return_saves:result.grade_return_saves,
       independent_memory:{...memory.report(),samples:sampleCount,lastBytes:memory.last?.totalBytes,sampleIntervalMs:{requested:250,median:sampleIntervals[Math.floor(sampleIntervals.length/2)],maximum:sampleIntervals.at(-1)},grants_note:'External process census; no DevTools WebSocket instrumentation.'},observerError,
       picture_timing_clock:'Library performance.now()',stage:result.stage,scenario_ms:result.scenario_ms,harness_total_ms:Date.now()-harnessAt,harness_outside_scenario_ms:Date.now()-harnessAt-result.scenario_ms,cdp_attached:false};
     if(failures.length&&!retentionMode){console.error(`FREEZE: ${failures.join('; ')} (limit 250 ms)`);process.exitCode=1;}

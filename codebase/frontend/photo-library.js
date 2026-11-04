@@ -1874,10 +1874,20 @@
     const row={...photo,edited:packet.edited,grade_identity:packet.grade_identity};
     const targets=[];
     for(const map of [state.cells,state.filmCells]) {
-      const key=tileKey(map,pictureIdentity(photo));
+      const key=tileKey(map,entry.previousIdentity||pictureIdentity(photo));
       const cell=map.get(photo.path);
       // Pool keys are view-specific; take/return below keeps one bounded owner.
-      const pooled=cell?null:tilePool.take(key);
+      let pooled=cell?null:tilePool.take(key);
+      // Index/facts refresh can advance the photo record while its completed
+      // cell is retained under the previous grade. Find that owner by path,
+      // then take it using the cell's own identity and this view's pool key.
+      if(!cell&&!pooled)for(const candidate of tilePool.values()){
+        if(candidate.photo.path===photo.path){pooled=tilePool.take(tileKey(map,candidate.identity));if(pooled)break;}
+      }
+      if(!cell&&!pooled&&!state.active&&map.shown?.has(photo.path)){
+        pooled=makeCell(photo,map===state.cells?space:film,state.photos.findIndex(p=>p.path===photo.path),true);
+        pooled.started=true;pooled.element.remove();
+      }
       const target=cell||pooled;
       if(target)targets.push({map,key,cell:target,pooled:!!pooled});
     }
@@ -1900,7 +1910,7 @@
         cell.element.querySelector(".picture-frame").append(canvas);
         cell.canvas.hidden=true;canvas.hidden=false;cell.hasCameraPreview=false;
         cell.meta=cell.scene=meta;cell.displayEpoch=state.displayEpoch;
-        cell.identity=pictureIdentity({...photo,...row});cell.element.classList.remove("loading");
+        cell.photo=photo;cell.identity=pictureIdentity({...photo,...row});cell.element.classList.remove("loading");
         if(target.pooled){cell.poolKey=tileKey(target.map,cell.identity);tilePool.put(cell.poolKey,cell,canvas.width*canvas.height*16);}
         canvas.dataset.gradeHandoff=packet.id;
       }
@@ -1909,6 +1919,14 @@
       HDRLibraryScenes.invalidate([photo.path],{finishingOnly:true});
       for(const [key] of recentPictures)if(key.startsWith(photo.path+"|"))recentPictures.delete(key);
       if(targets.length)entry.shown_at=Date.now();
+      if(targets.length&&!entry.reported){
+        entry.reported=true;
+        HDRLibraryStopwatch("grade_picture_handoff",{path:packet.path,request:packet.id,grade_identity:packet.grade_identity,
+          route:packet.stage==="picture"?"Grade picture":"finishing redraw",reason:packet.reason,
+          available_to_picture_ms:entry.shown_at-packet.available_at,release_to_picture_ms:entry.shown_at-packet.settled_at,
+          source_ms:packet.stage==="picture"?{capture:packet.captured_at-packet.capture_started_at,store:packet.stored_at-packet.captured_at}:undefined,
+          active:state.active,view:logView()});
+      }
       if(state.active){paintGrid();paintFilm();if(state.view==="single"&&selected()?.path===photo.path){state.singleIdentity="";void showSingle();}}
       return true;
     } finally {
@@ -1924,7 +1942,7 @@
     if(packet.stage==="pending") {
       gradeHandoffs.get(packet.path)?.controller.abort();
       gradeHandoffs.delete(packet.path);
-      gradeHandoffs.set(packet.path,{...packet,controller:new AbortController(),queue:Promise.resolve()});
+      gradeHandoffs.set(packet.path,{...packet,previousIdentity:pictureIdentity(state.allPhotos.find(p=>p.path===packet.path)||{path:packet.path}),controller:new AbortController(),queue:Promise.resolve()});
       while(gradeHandoffs.size>64){const key=gradeHandoffs.keys().next().value;gradeHandoffs.get(key).controller.abort();gradeHandoffs.delete(key);}
       return;
     }
@@ -1952,7 +1970,7 @@
           }
         }
         if(!current())return;
-        HDRLibraryStopwatch("grade_picture_handoff",{path:packet.path,request:packet.id,grade_identity:packet.grade_identity,
+        if(!entry.reported)HDRLibraryStopwatch("grade_picture_handoff",{path:packet.path,request:packet.id,grade_identity:packet.grade_identity,
           lanes:["hdr","sdr"],route:packet.captured_lane?"Grade picture + finishing redraw":"finishing redraw",reason:packet.reason,
           available_to_picture_ms:entry.shown_at?entry.shown_at-packet.available_at:null,
           release_to_picture_ms:entry.shown_at?entry.shown_at-packet.settled_at:null,active:state.active,view:logView()});
@@ -2203,11 +2221,12 @@
       const job=jobs.filter(j=>j.path===cell.dataset.path && j.kind!=="quick" && j.reason==="needs more memory").sort((a,b)=>b.estimate-a.estimate)[0];
       let notice=cell.querySelector(".library-memory-needed");
       if(!job){notice?.remove();continue;}
-      if(!notice){notice=document.createElement("div");notice.className="library-memory-needed";notice.style.cssText="position:absolute;inset:auto 4px 24px;padding:6px;background:var(--panel,#222);color:var(--text,#eee);font-size:12px;z-index:4;white-space:normal";cell.append(notice);}
+      if(!notice){notice=document.createElement("button");notice.type="button";notice.className="library-memory-needed library-picture-error";cell.querySelector(".picture-frame").append(notice);}
       notice.textContent=job.stage;notice.title=job.stage;
-      notice.style.cursor="pointer";notice.setAttribute("role","button");notice.tabIndex=0;
+      notice.setAttribute("aria-label",job.stage+" Open memory settings");
       const settings=()=>window.parent.HDRApplicationShell?.openSettings("performance");
       notice.onclick=event=>{event.stopPropagation();settings();};
+      notice.ondblclick=event=>event.stopPropagation();
       notice.onkeydown=event=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();settings();}};
     }
   }

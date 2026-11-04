@@ -548,6 +548,8 @@
      * refused.
      */
     executionOverrideFor(sourceOptions = null) {
+      // The bounded saved-picture canvas has its own normal memory admission.
+      if (sourceOptions?.gradeLibraryPicture) return null;
       if (this.executionOverride) return this.executionOverride;
       // A magnified view is drawn for the visible region only, whatever the
       // image's size: the tiled route. That includes a drag frame, which is a

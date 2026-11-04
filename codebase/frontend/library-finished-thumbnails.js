@@ -77,7 +77,7 @@ window.HDRLibraryFinishedThumbnails = (() => {
     const {info,body}=result;
     if(body.byteLength!==info.stride*info.height)return null;
     if(signal.aborted||!current())throw new DOMException('Invalidated','AbortError');
-    if(info.identity.bytes!==photo.bytes||String(info.identity.mtime_ns)!==String(photo.mtime_ns)||info.identity.grade!==photo.grade_identity)return null;
+    if(info.identity.bytes!==photo.bytes||String(info.identity.mtime_ns)!==String(photo.mtime_ns)||info.identity.grade!==photo.grade_identity){HDRLibraryStopwatch("grade_thumbnail_mismatch",{path:photo.path,reason:JSON.stringify({stored:info.identity,expected:{bytes:photo.bytes,mtime_ns:photo.mtime_ns,grade:photo.grade_identity}})});return null;}
     canvas.width=info.width;canvas.height=info.height;
     const context=canvas.getContext('webgpu');
     if(gpu.configureSurface(canvas,context,hdr).format!==info.identity.format)return null;

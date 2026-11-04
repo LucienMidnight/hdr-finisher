@@ -756,3 +756,22 @@ scanout. Detached check uses visible windows side by side.
 Evidence: `codebase/output/quick-library-check/batch4b/{report,scenario}.json`
 and `backend.log`. Final acceptance has no scenario errors. No broad speed or
 responsiveness claim; Batch 4c/4d work remains separate.
+
+
+## November 4 — Batch 4b follow-up (incomplete checkpoint, parent 5bd7331)
+
+Plain Electron, 2560x1440, reusable DSC03819/DSC00264 42 MP copies, HDR
+Library rendition, +1 EV, Fit forced tiled. Separate full Python suite finished
+before the final app run. These results supersede the earlier event-only
+sign-off; the target remains unchanged.
+
+| Action | Target | Observed | Conditions/result |
+| --- | --- | --- | --- |
+| Saved grade available → installed Library picture | 500 ms | First docked 1,039 ms; popped-out 645 ms; second docked unconfirmed | First/popped-out route `Grade picture`; second route `Grade picture + finishing redraw`, null install time; all three target checks fail |
+| Grade capture / storage | Diagnostic | First 628 / 365 ms; popped-out 25 / 566 ms | Reused or bounded Grade full-frame picture; storage remains a substantial wait |
+| Slider release → installed picture | Log separately | First 2.096 s; popped-out 1.800 s; second unconfirmed | Existing save rules unchanged |
+| Visible tile pixels after exposure | Must differ | 98%, 96%, 59% of interior crop changed | First/second docked and popped-out; real Electron screenshots, not publication events; screen/filmstrip pixels not separately verified |
+
+Evidence: `codebase/output/quick-library-check/batch4b-followup/{pixels,report,scenario}.json`
+and six before/after PNGs. The memory ceiling-plus-10% check also fails; no
+allowances changed. This is an incomplete checkpoint, not release acceptance.

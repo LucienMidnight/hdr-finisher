@@ -18,17 +18,22 @@
         let lane=null,reason="No clean full-frame Grade picture";
         try {
           if(!current())return;
-          const frame=snapshot();
+          let frame=snapshot();
+          const until=Date.now()+2000;
+          while(current()&&frame.waiting&&frame.revision===ticket.revision&&Date.now()<until){await new Promise(r=>setTimeout(r,16));frame=snapshot();}
+          if(!current())return;
           if(frame.sessionId!==packet.sessionId)throw Error("Grade photo changed before hand-off");
           reason=frame.reason||reason;
           if(frame.revision===ticket.revision&&frame.clean) {
             try {
-              const pixels=await capture(frame);
+              packet.capture_started_at=now();
+              const pixels=await capture(frame,controller.signal);
+              packet.captured_at=now();
               if(!current())return;
               if(pixels) {
                 const saved=await store(packet,frame.lane,pixels,controller.signal);
                 if(!current())return;
-                if(saved){lane=frame.lane;send({...packet,stage:"picture",lane,source:"Grade picture"});}
+                if(saved){packet.stored_at=now();lane=frame.lane;send({...packet,stage:"picture",lane,source:"Grade picture"});}
                 else reason="Capture could not be stored for the saved grade";
               }
             } catch(error) { if(!current())return;reason="Grade picture capture failed: "+error.message; }
@@ -52,31 +57,51 @@
   let presented=null;
   window.addEventListener("hdrfinisher:preview-presented",event=>{presented=event.detail;});
   const snapshot=()=>{
-    const gpu=state.gpuPreview, source=gpu?.scopeSources?.get(els.previewCanvas), frame=gpu?.lastPresentedFrame;
-    let reason="No retained whole-frame Grade picture";
-    const clean=!!source&&presented?.sessionId===state.session?.session_id
-      &&presented.generation===source.applicationGeneration
-      &&!presented.coarse&&presented.wholeFrame!==false&&frame?.execution==="direct"&&source.serial===gpu.renderSerials.get(els.previewCanvas)
-      &&source.sessionId===state.session?.session_id&&source.lane===state.currentView
-      &&source.applicationGeneration===state.previewGeneration[source.lane]
-      &&Math.max(source.width,source.height)<=2560
+    const gpu=state.gpuPreview, frame=gpu?.lastPresentedFrame;
+    const lane=state.currentView;
+    const source=gpu?.scopeSources?.get(els.previewCanvas);
+    const clean=!!frame&&presented?.sessionId===state.session?.session_id
+      &&presented.generation===state.previewGeneration[lane]
+      &&!presented.coarse&&presented.wholeFrame!==false
+      &&frame.sessionId===state.session?.session_id&&frame.lane===lane
+      &&frame.applicationGeneration===state.previewGeneration[lane];
+    const eligible=presented?.wholeFrame!==false
       &&!state.previewScheduler?.interacting&&!state.comparePeekActive
-      &&!state.denoiseRuntime?.[source.lane]?.showOriginal&&!denoiseNoiseViewActive(source.lane)
+      &&!state.denoiseRuntime?.[lane]?.showOriginal&&!denoiseNoiseViewActive(lane)
       &&!localsBypassed()&&!geometryDraftActive()
-      &&(source.lane!=="hdr"||state.adjustments.hdr.highlight_section_enabled===false||state.adjustments.hdr.highlight_compression_target_nits===1000);
-    if(source&&Math.max(source.width,source.height)>2560)reason="Whole-frame Grade picture exceeds the screen-preview tier";
-    else if(frame?.execution!=="direct")reason="Grade has a tiled or zoom-region picture";
-    else if(source?.lane==="hdr"&&state.adjustments.hdr.highlight_compression_target_nits!==1000)reason="Library uses its fixed 1000-nit finishing target";
-    return {sessionId:state.session?.session_id,revision:state.editRevision,lane:source?.lane,
-      detached:!!root.HDRLibraryHost?.isDetached(),clean,reason,width:source?.width,height:source?.height,
-      sourceSerial:source?.serial,generation:source?.applicationGeneration};
+      &&(!state.adjustments.shared.overlay_mode||state.adjustments.shared.overlay_mode==="off")
+      &&(lane!=="hdr"||state.adjustments.hdr.highlight_section_enabled===false||state.adjustments.hdr.highlight_compression_target_nits===1000);
+    return {sessionId:state.session?.session_id,revision:state.editRevision,lane,
+      detached:!!root.HDRLibraryHost?.isDetached(),clean:clean&&eligible,waiting:eligible&&!clean,
+      reason:presented?.wholeFrame===false?"Grade is showing a zoom region":"No clean current Grade picture",
+      width:source?.width,height:source?.height,execution:frame?.execution,
+      sourceSerial:source?.serial,generation:frame?.applicationGeneration};
   };
   root.HDRGradeLibraryPictures=create({snapshot,
     defer:work=>requestAnimationFrame(()=>setTimeout(()=>void work(),0)),
-    capture:async frame=>{
-      const gpu=state.gpuPreview,source=gpu?.scopeSources.get(els.previewCanvas);
-      if(source?.serial!==frame.sourceSerial||state.editRevision!==frame.revision)return null;
-      return gpu.analyzeScope(els.previewCanvas,{width:frame.width,height:frame.height,tier:"picture",raw:"rgba",snapshot:true,transient:true});
+    capture:async (frame,signal)=>{
+      const gpu=state.gpuPreview;
+      const current=()=>!signal.aborted&&state.session?.session_id===frame.sessionId&&state.editRevision===frame.revision
+        &&state.previewGeneration[frame.lane]===frame.generation;
+      // Reuse the settled whole-frame Grade scope picture for tiled Fit.
+      // If it is not ready, Grade produces that same bounded clean picture
+      // after its visible frame. Never change or resize the viewer canvas.
+      while(current()&&(state.gpuDraftInFlight||gpu.activeRenderCount>0))await new Promise(r=>setTimeout(r,16));
+      if(!current())return null;
+      let canvas=els.previewCanvas,source=gpu.scopeSources.get(canvas);
+      if(frame.execution!=="direct"||!source||Math.max(source.width,source.height)>2560){
+        canvas=gpu.scopeAnalysisCanvas;source=canvas&&gpu.scopeSources.get(canvas);
+        if(!source||source.sessionId!==frame.sessionId||source.lane!==frame.lane||source.applicationGeneration!==frame.generation){
+          const rendered=await gpu.renderScopeProxy(frame.sessionId,frame.lane,state.adjustments,sampleCurvePoints,
+            1600,localAdjustments(),frame.revision,projectReferenceWhiteNits(),
+            {width:state.session.source.width,height:state.session.source.height},
+            {applicationGeneration:frame.generation,isCurrent:current,gradeLibraryPicture:true});
+          if(!rendered||!current())return null;
+          canvas=rendered.canvas;source=gpu.scopeSources.get(canvas);
+        }
+      }
+      if(!current()||!source||source.sessionId!==frame.sessionId||source.lane!==frame.lane||source.applicationGeneration!==frame.generation)return null;
+      return gpu.analyzeScope(canvas,{width:source.width,height:source.height,tier:"picture",raw:"rgba",snapshot:true,transient:true});
     },
     store:async(packet,lane,pixels,signal)=>{
       const query=new URLSearchParams({grade:packet.grade_identity,revision:packet.revision,lane,
