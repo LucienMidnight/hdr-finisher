@@ -129,3 +129,22 @@ test('a retained failed detail request becomes eligible for an explicit user ret
  vm.runInNewContext(fn+';this.run=showNative;',context);await context.run();
  assert.equal(state.detailRefused,true);assert.equal(state.nativeLoading,false);assert.match(messages.at(-1),/unavailable/);
 });
+
+
+test('Library compiles only demanded passes and uses the unchanged Grade descriptors',async()=>{
+ const grade=fs.readFileSync(require.resolve('../frontend/webgpu-preview'),'utf8');
+ const library=fs.readFileSync(require.resolve('../frontend/library-gpu'),'utf8');
+ const base=grade.slice(grade.indexOf('    pipelineFor(format, factory = null)'),grade.indexOf('    async warmPipelines'));
+ const methods=library.slice(library.indexOf('  pipelineFor(format, factory = null)'),library.indexOf('  async loadProxy'));
+ const context={HDRLibraryStopwatch(){},window:{},performance,CLARITY_MAP_FORMAT:'rgba16float'};
+ vm.runInNewContext('class Grade {'+base+'};class Library extends Grade {'+methods+'};this.Grade=Grade;this.Library=Library;',context);
+ const created=[],gpu=new context.Library();gpu.pipelines=new Map();gpu.module={shader:'unchanged'};gpu.pipelineLayout={layout:'unchanged'};
+ gpu.device={createRenderPipeline:d=>{created.push(d);return {descriptor:d};},createRenderPipelineAsync:async d=>{created.push(d);return {descriptor:d};}};
+ const staged=gpu.pipelineFor('bgra8unorm');assert.equal(created.length,0,'Unused passes never compile');
+ const gradeGpu=new context.Grade();gradeGpu.pipelines=new Map();gradeGpu.module=gpu.module;gradeGpu.pipelineLayout=gpu.pipelineLayout;
+ const expected=gradeGpu.pipelineFor('bgra8unorm',d=>d);
+ const first=staged.finish;assert.deepEqual(first.descriptor,expected.finish);assert.equal(created.length,1);assert.equal(staged.finish,first);
+ await gpu.prepareLibraryPipelines('bgra8unorm',['base','finish']);assert.equal(created.length,2);assert.deepEqual(staged.base.descriptor,expected.base);
+ for(const [name,descriptor] of Object.entries(expected))assert.deepEqual(staged[name].descriptor,descriptor,name);
+ assert.equal(created.length,Object.keys(expected).length);
+});

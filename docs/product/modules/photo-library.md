@@ -4356,6 +4356,10 @@ previews, codecs and Prepare/Build previews remain separate work. Stop at Step 3
       with no photo (Reconnect), unreadable or newer settings file, not
       enough room on the drive, interrupted move buttons.
     - One Library settings page.
+    - Zoomed arrow-key flash (Steve, November 4): when zoomed in, the
+      left/right arrow correctly opens the next photo at the same zoom and
+      position, but it briefly flashes (apparently the Fit view) before
+      zooming. Go straight to the zoomed view.
 6. Installer and a methodical bug hunt.
 
 ### 5.1 Non-RAW Library source speed: batch plan (October 20, 2026)
@@ -6808,3 +6812,25 @@ original sensor samples, after destroying the first attempt buffers. The same
 unchanged invalid-pixel scan accepts the retry; a second rejection takes the
 existing edge-CPU allowance. Retry start, clean retry and second rejection are
 logged. Grade still takes its existing CPU fallback immediately; unchanged.
+
+
+### November 4, 2026 - Batch 5c timed follow-up
+
+Busy-grid cold opening is improved but remains open against the approximately
+2-second idle result. First-use pipeline compilation accounted for 4.14 seconds
+in the isolated probe (finish 1.43 seconds, HSL fields 0.45 seconds). Prior GPU
+queue work took only 0.4 ms. Library now creates pipelines on demand and prepares
+core pipelines sequentially while the requested source loads. Descriptors and
+processing math are unchanged. TIFF first draw improved from 6.49 to 3.54 seconds;
+heavy ARW from 6.67 to 4.65 seconds. TIFF encoding/completion: 82/109 ms;
+ARW: 1047/819 ms, including 281 ms mask preparation. These stages overlap source
+preparation and are not an additive decomposition of the whole wait. Parallel
+compilation was rejected after RAW regressed to 9.37 seconds.
+
+Evidence: codebase/output/quick-library-check/batch5c-cold-probe,
+batch5c-compile-probe, batch5c-overlap-tiff and batch5c-overlap-arw.
+Popped-out SDR visibility coverage reproduced one black frame on reopen while
+a thumbnail stand-in existed (batch5c-visible-sdr-pop); this remains open.
+Docked HDR visibility passed (batch5c-visible-hdr-dock). Python: 3051 passed,
+3 skipped, one previously known library-live failure (expected 422, got 200).
+The 15-minute follow-up ended without further app checks.

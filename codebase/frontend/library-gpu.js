@@ -103,9 +103,39 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
   }
   pipelineFor(format, factory = null) {
     const started = performance.now();
-    const result = super.pipelineFor(format, factory);
+    let result;
+    if (factory || this.pipelines.has(format)) result = super.pipelineFor(format,factory);
+    else {
+      const staged = super.pipelineFor(format,descriptor=>({descriptor}));
+      this.libraryPipelineTokens ||= new Map();
+      this.libraryPipelineTokens.set(format,staged);
+      result = {};
+      for (const [name,token] of Object.entries(staged)) Object.defineProperty(result,name,{
+        enumerable:true,get:()=>{
+          if(!token.pipeline){token.pipeline=this.device.createRenderPipeline(token.descriptor);HDRLibraryStopwatch("picture_pipeline_demand",{name,format,path:this.libraryMeta?.path});}
+          return token.pipeline;
+        }
+      });
+      this.pipelines.set(format,result);
+    }
     HDRLibraryStopwatch("picture_pipeline", { ...window.HDRLibraryPictureLog?.(this.libraryMeta), duration_ms: performance.now() - started });
     return result;
+  }
+  async prepareLibraryPipelines(format, names, beforeNext = async()=>{}) {
+    const pipelines=this.pipelineFor(format);
+    const tokens = this.libraryPipelineTokens?.get(format);
+    if (!tokens) return;
+    for (const name of names || Object.keys(tokens)) {
+      await beforeNext();
+      if(this.pipelines.get(format)!==pipelines)return;
+      const token=tokens[name];
+      if (!token || token.pipeline) continue;
+      token.pending ||= this.device.createRenderPipelineAsync(token.descriptor).then(pipeline=>token.pipeline ||= pipeline);
+      await token.pending;
+    }
+  }
+  async warmPipelines(format, beforeNext) {
+    return this.prepareLibraryPipelines(format,null,beforeNext);
   }
   async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", revision = 0, sourceIdentity = "source", options = {}) {
     if (this.libraryMeta?.edge === 100000 && this.liveMode)
@@ -217,6 +247,15 @@ const HDRLibraryPictureFactory = (quick = false) => {
     })();
     try { return await ready; } catch (error) { ready = null; throw error; }
   }
+  let preparingScreen;
+  function prepareScreen(hdr = false) {
+    const format=hdr && window.matchMedia?.('(dynamic-range: high)').matches ? 'rgba16float' : navigator.gpu.getPreferredCanvasFormat();
+    if (preparingScreen?.format === format) return preparingScreen.promise;
+    const promise=initialize().then(gpu=>gpu.prepareLibraryPipelines(format,['base','finish','response','scan','local','localCandidate','hslFields','hslMask']));
+    preparingScreen={format,promise};
+    promise.catch(()=>{if(preparingScreen?.promise===promise)preparingScreen=null;});
+    return promise;
+  }
   function show(meta, canvas, signal, isCurrent, hdr = false) {
     if (meta.bitmap) return (async()=>{
       const image = new Image(); image.src = meta.url; await image.decode();
@@ -263,6 +302,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
       window.HDRLibraryTrace?.mark(meta.trace,"picture_lease_wait",leasing,{...window.HDRLibraryPictureLog?.(meta),key:meta.key});
       if (lease) { clearInterval(gpu.deliveryActivityTimer); gpu.deliveryActivityTimer = null; }
       let result, refusal, thumbnailSave;
+      if (!quick && meta.edge === 2560) await prepareScreen(hdr);
       const rendering = performance.now();
       gpu.libraryFetchMs = 0; gpu.libraryUploadMs = 0;
       const previousBudget = gpu.deliveryBudgetBytes;
@@ -301,6 +341,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
           {texture:context.getCurrentTexture()},[r.width,r.height]);
         gpu.device.queue.submit([encoder.finish()]);
       }
+      HDRLibraryStopwatch("picture_gpu_encoding",{...window.HDRLibraryPictureLog?.(meta),path:meta.path,duration_ms:performance.now()-rendering});
       await gpu.waitForSubmittedWork();
       if(meta.handoff)await thumbnailSave;
       if (result?.rendered || result?.execution === "direct")
@@ -423,7 +464,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
     renderer.libraryMeta = null;
     return Math.max(0,before-renderer.resourceMemorySnapshot().resident.totalBytes);
   }
-  return Object.freeze({ show, initialize, prepare, prepareDenoise, readyMemory, reclaimHost,
+  return Object.freeze({ show, initialize, prepare, prepareScreen, prepareDenoise, readyMemory, reclaimHost,
     configure: async limits => { configuredLimits = limits; if (renderer) renderer.libraryLimits = limits; },
     lost: () => !!renderer?.deviceLost,
     usable: () => !!renderer?.available && !renderer.deviceLost && !renderer.adapterInfo?.fallback,

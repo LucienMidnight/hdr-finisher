@@ -3,6 +3,7 @@ async function run({window,frame,config,stage}) {
  const sleep=ms=>new Promise(r=>setTimeout(r,ms)),out=config.pixelReviewOut;
  let target=window,lib=code=>frame.executeJavaScript(code);
  const wait=async(code,timeout=45000)=>{const end=Date.now()+timeout;while(!await lib(code)){if(Date.now()>end)throw Error('Timed out: '+code);await sleep(30);}};
+ if(config.coldPipelines)await lib(`(()=>{const render=HDRLibraryGPU.prototype.renderTo;HDRLibraryGPU.prototype.renderTo=async function(...args){for(const format of [navigator.gpu.getPreferredCanvasFormat(),'rgba16float']){if(this.pipelines.has(format))continue;const staged=HDRWebGPUPreview.prototype.pipelineFor.call(this,format,descriptor=>descriptor),compiled={};for(const [name,descriptor] of Object.entries(staged)){const start=performance.now();compiled[name]=await this.device.createRenderPipelineAsync(descriptor);HDRLibraryStopwatch('picture_pipeline_compile',{format,name,path:this.libraryMeta?.path,duration_ms:performance.now()-start});}this.pipelines.set(format,compiled);}return render.apply(this,args);};})()`);
  await lib(`window.waitEvents=[];const old=HDRLibraryStopwatch;window.HDRLibraryStopwatch=(stage,fields={})=>{waitEvents.push({stage,at:performance.now(),...fields});old(stage,fields)};void HDRLibrary.browse(${JSON.stringify(config.folder)});true`);
  await wait(`HDRLibrary.getSnapshot().paths.length>=2 && document.querySelector('#grid-space .library-cell')`);
  if(config.popout){

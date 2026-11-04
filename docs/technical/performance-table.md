@@ -942,3 +942,25 @@ Fast checks: JavaScript 794 passed. Python 3051 passed, 3 skipped, 1 pre-existin
 expected 422, got 200; same failure recorded in 5b). Full fast-suite logs:
 `output/batch5c-node.log`, `output/batch5c-pytest.log`. Output remains
 29.1 GB (start/end), below 100 GB; rejected-experiment scratch removed. No push, installer or release sweep.
+
+
+### November 4, 2026 - Batch 5c timed follow-up
+
+Busy-grid cold opening is improved but remains open against the approximately
+2-second idle result. First-use pipeline compilation accounted for 4.14 seconds
+in the isolated probe (finish 1.43 seconds, HSL fields 0.45 seconds). Prior GPU
+queue work took only 0.4 ms. Library now creates pipelines on demand and prepares
+core pipelines sequentially while the requested source loads. Descriptors and
+processing math are unchanged. TIFF first draw improved from 6.49 to 3.54 seconds;
+heavy ARW from 6.67 to 4.65 seconds. TIFF encoding/completion: 82/109 ms;
+ARW: 1047/819 ms, including 281 ms mask preparation. These stages overlap source
+preparation and are not an additive decomposition of the whole wait. Parallel
+compilation was rejected after RAW regressed to 9.37 seconds.
+
+Evidence: codebase/output/quick-library-check/batch5c-cold-probe,
+batch5c-compile-probe, batch5c-overlap-tiff and batch5c-overlap-arw.
+Popped-out SDR visibility coverage reproduced one black frame on reopen while
+a thumbnail stand-in existed (batch5c-visible-sdr-pop); this remains open.
+Docked HDR visibility passed (batch5c-visible-hdr-dock). Python: 3051 passed,
+3 skipped, one previously known library-live failure (expected 422, got 200).
+The 15-minute follow-up ended without further app checks.

@@ -272,6 +272,7 @@
             return value;
           }
         }
+        if (edge === 2560) void HDRLibraryPictures.prepareScreen(hdr).catch(()=>{});
         // Probe stored developments immediately; only a source miss waits for navigation.
         const meta = await HDRLibraryScenes.load(photo.path,edge,signal,importance(),trace,
           {viewportDemand:true,cachedOnly:edge===640 && !options.allowSource,beforeSource:()=>beforeSource(photo,signal,importance),
