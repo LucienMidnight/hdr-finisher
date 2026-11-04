@@ -1,5 +1,224 @@
 # Module PRD: Memory and caches
 
+### November 4: Library + Grade measurement (4d step 1)
+
+**Measurement only, on local main `3849ef8`, November 4, 2026.** No app
+behaviour, cache share, size, budget, estimate, ceiling or allowance changed.
+The new opt-in harness uses the existing guarded test-profile startup; normal
+startup does not load it. Run from `codebase` with
+`node tools/measure-library-grade-4d.cjs`; summarize with
+`.venv/Scripts/python.exe tools/summarize-library-grade-4d.py`.
+
+**Finding:** the second-photo **peak remains**: 5.005 GB counted RAM
+(5.673 GB working set), with the backend reaching 3.799 GB. This small
+four-photo sequence did **not** reproduce the older minutes-long 5–6 GB hold
+or the 1.99 GB hidden delivery renderer. Grade B settled to 2.537 GB at
+about ten seconds and 1.881 GB after the idle minute. Closing Grade released
+its reported 0.509 GB source; Library settled to 1.366 GB after its idle minute.
+The existing default peak allowance is 4.4 GB: A and B both exceed it.
+Five one-second samples exceeded 4.4 GB; subsecond peaks can be missed.
+
+**Sequence and limits.** A = copied `DSC03819.ARW`; B = copied
+`DSC00264.ARW` (both 42 MP). The same folder also contained the real edited
+`20250412_0039.ARW` and its 59 KB grade, and the DxO
+`DSC04375_DxO_clipped_-1.5EV.tif` (7952 × 5304, three-channel uint16).
+Sources came only from existing `output/test-photos` copies; no original
+under `D:\Photos` was opened or written by the harness. Temporary subset copies,
+new sidecars and fresh profile were removed afterwards. Existing copies remain.
+The fresh profile reported the unchanged 4,000,000,000-byte default setting.
+All four grid pictures were present, source jobs were empty at the first
+checkpoint, and `page_startup_pipelines_ready` was logged before browsing.
+The main window was explicitly shown at 2560 × 1440; the delivery window stayed
+hidden. Browse/Single/fullscreen lasted 30 seconds, A received three exposure
+edits, B replaced it, Library was popped out/browsed/docked, then each required
+60-second idle was observed. Step 9 reopened B and built the **default reduced
+801 × 1200 JPEG Ultra HDR Proof**, not a full-size export/Proof.
+
+The accepted visible run lasted 339 seconds including startup. An earlier
+roughly two-minute run was stopped because its main window reported hidden;
+its numbers are excluded and retained separately. Combined real-app work was
+under ten minutes; no additional GPU sweep was run. Fast tests ran concurrently
+outside the app process tree; system pressure was `none` throughout. These are
+memory observations, not isolated speed benchmarks. Extra app queries occur
+every two seconds; process and Windows GPU recording run outside the app.
+No noticeable extra wait was identified, but recorder overhead was not measured
+against an uninstrumented control, so timings must not be used for speed claims.
+
+**Evidence:** local raw files in
+[`codebase/output/library-grade-4d`](../../../codebase/output/library-grade-4d/):
+`memory.jsonl` (independent census), `points.jsonl` (cache shares, Grade bytes,
+window PID/visibility, Electron metrics and Grade allocator), `gpu.jsonl`
+(Windows GPU Process Memory counters), `steps.json`, `backend.log`, `grid.json`,
+`report.json`, `summary.json`, and
+[`process-table.csv`](../../../codebase/output/library-grade-4d/process-table.csv).
+The CSV is the full **per-PID** table: counted RAM and working-set peak/settled,
+plus dedicated/shared GPU peak/settled, including every Python/helper process.
+Raw evidence is ignored local output, not embedded in Git.
+
+The optional Proof displayed successfully in repeated page-status samples, but
+the driver mistakenly waited on `HDRProofing.settled()` (a notification hook
+returning undefined), then reported a timeout. Step 9 therefore contains about
+60 seconds of post-command observation and a usable settled tail, with its
+error preserved in `report.json`. The committed driver now waits on decoded
+Proof/image readiness; that predicate correction was syntax/fast checked but
+not rerun in the real app. Steps 1–8 completed normally. No forced GC, pressure,
+working-set trim or budget override was injected.
+
+**Tables: decimal GB, peak / settled.** Settled is the median of the last
+2.5 seconds of each observation: about ten seconds after completion for
+steps 3–5/7, and the end of each minute for steps 6/8. RAM samples are about
+1.001 seconds apart; app/cache samples about two seconds. Independent maxima
+in a row can occur at different times and must not be summed. Per-process
+figures below are proportional resident (shared host pages divided by OS
+share count); working set counts full resident mappings and includes overlap.
+The CSV supplies the working-set breakdown as well as these counted figures.
+Python helpers are grouped here for readability, individually listed in CSV.
+
+| Step | Total RAM | Working set | GPU | Library popout | Python helpers | backend | delivery | main | main renderer | other helpers | utility |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 grid and preparation | 1.738 / 1.706 | 2.282 / 2.250 | 1.133 / 1.108 | 0.000 / 0.000 | 0.256 / 0.256 | 0.216 / 0.112 | 0.044 / 0.044 | 0.055 / 0.049 | 0.413 / 0.108 | 0.013 / 0.011 | 0.018 / 0.018 |
+| 2 browse and fullscreen | 1.968 / 1.566 | 2.532 / 2.140 | 1.108 / 0.913 | 0.000 / 0.000 | 0.337 / 0.260 | 0.370 / 0.172 | 0.048 / 0.042 | 0.129 / 0.050 | 0.345 / 0.101 | 0.011 / 0.011 | 0.044 / 0.017 |
+| 3 Grade A and edits | 4.890 / 2.072 | 5.397 / 2.702 | 0.921 / 0.718 | 0.000 / 0.000 | 0.259 / 0.259 | 3.493 / 0.776 | 0.047 / 0.047 | 0.102 / 0.087 | 0.208 / 0.158 | 0.011 / 0.011 | 0.030 / 0.017 |
+| 4 Grade B | 5.005 / 2.537 | 5.673 / 3.167 | 0.745 / 0.726 | 0.000 / 0.000 | 0.259 / 0.259 | 3.799 / 1.286 | 0.047 / 0.046 | 0.051 / 0.051 | 0.159 / 0.142 | 0.011 / 0.011 | 0.018 / 0.017 |
+| 5 popout and dock | 2.601 / 1.894 | 3.317 / 2.526 | 0.848 / 0.658 | 0.106 / 0.000 | 0.470 / 0.261 | 1.286 / 0.721 | 0.047 / 0.047 | 0.086 / 0.051 | 0.159 / 0.128 | 0.036 / 0.011 | 0.019 / 0.018 |
+| 6 Grade idle 60s | 1.884 / 1.881 | 2.517 / 2.513 | 0.661 / 0.658 | 0.000 / 0.000 | 0.261 / 0.261 | 0.723 / 0.721 | 0.047 / 0.047 | 0.058 / 0.058 | 0.113 / 0.109 | 0.011 / 0.011 | 0.019 / 0.018 |
+| 7 close Grade | 1.411 / 1.358 | 2.044 / 1.988 | 0.682 / 0.665 | 0.000 / 0.000 | 0.261 / 0.261 | 0.201 / 0.200 | 0.047 / 0.047 | 0.065 / 0.051 | 0.130 / 0.105 | 0.011 / 0.011 | 0.018 / 0.018 |
+| 8 Library idle 60s | 1.368 / 1.366 | 1.999 / 1.997 | 0.664 / 0.662 | 0.000 / 0.000 | 0.261 / 0.261 | 0.201 / 0.199 | 0.047 / 0.046 | 0.059 / 0.059 | 0.112 / 0.110 | 0.011 / 0.011 | 0.018 / 0.018 |
+| 9 B reduced Proof | 4.293 / 1.737 | 4.932 / 2.400 | 0.699 / 0.418 | 0.000 / 0.000 | 0.261 / 0.261 | 3.127 / 0.777 | 0.081 / 0.048 | 0.091 / 0.091 | 0.159 / 0.113 | 0.056 / 0.011 | 0.019 / 0.018 |
+
+| Step | Thumbnails | Sharp | Camera | RAW | Handoff | Working | Grade retained | GPU dedicated | GPU shared |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 grid and preparation | 0.017 / 0.017 | 0.008 / 0.008 | 0.000 / 0.000 | 0.000 / 0.000 | 0.002 / 0.000 | 0.000 / 0.000 | 0.000 / 0.000 | 0.860 / 0.253 | 0.936 / 0.936 |
+| 2 browse and fullscreen | 0.017 / 0.017 | 0.102 / 0.095 | 0.000 / 0.000 | 0.000 / 0.000 | 0.026 / 0.000 | 0.004 / 0.004 | 0.000 / 0.000 | 0.624 / 0.624 | 0.721 / 0.721 |
+| 3 Grade A and edits | 0.017 / 0.013 | 0.095 / 0.000 | 0.000 / 0.000 | 0.000 / 0.000 | 0.000 / 0.000 | 0.033 / 0.026 | 0.509 / 0.509 | 0.732 / 0.589 | 0.721 / 0.495 |
+| 4 Grade B | 0.013 / 0.004 | 0.000 / 0.000 | 0.000 / 0.000 | 0.000 / 0.000 | 0.000 / 0.000 | 0.026 / 0.023 | 0.509 / 0.509 | 0.590 / 0.495 | 0.494 / 0.488 |
+| 5 popout and dock | 0.017 / 0.017 | 0.038 / 0.038 | 0.000 / 0.000 | 0.000 / 0.000 | 0.000 / 0.000 | 0.027 / 0.027 | 0.509 / 0.509 | 0.909 / 0.331 | 0.545 / 0.452 |
+| 6 Grade idle 60s | 0.017 / 0.017 | 0.000 / 0.000 | 0.000 / 0.000 | 0.000 / 0.000 | 0.000 / 0.000 | 0.027 / 0.027 | 0.509 / 0.509 | 0.416 / 0.352 | 0.456 / 0.453 |
+| 7 close Grade | 0.017 / 0.017 | 0.032 / 0.032 | 0.000 / 0.000 | 0.000 / 0.000 | 0.000 / 0.000 | 0.020 / 0.020 | 0.000 / 0.000 | 0.357 / 0.335 | 0.460 / 0.457 |
+| 8 Library idle 60s | 0.017 / 0.017 | 0.032 / 0.032 | 0.000 / 0.000 | 0.000 / 0.000 | 0.000 / 0.000 | 0.020 / 0.020 | 0.000 / 0.000 | 0.335 / 0.324 | 0.458 / 0.457 |
+| 9 B reduced Proof | 0.017 / 0.004 | 0.000 / 0.000 | 0.000 / 0.000 | 0.000 / 0.000 | 0.000 / 0.000 | 0.027 / 0.027 | 0.509 / 0.509 | 0.537 / 0.445 | 0.459 / 0.197 |
+
+**GPU accounting.** Windows attributed all nonzero dedicated/shared GPU
+counters in this run to GPU-process PID 33060. Main PID 24544, main renderer
+1504, delivery renderer 46328, popped-out Library renderer 22256, backend and
+helpers had no nonzero GPU-counter rows (zero in the CSV). A counter query took
+a median 1.115 seconds in the external recorder, yielding about one sample
+every 2.1 seconds. This limits GPU peak precision. The recorder logged one invalid-counter
+error; every step still has GPU samples, including a final sample 777 ms
+before the last checkpoint. The error log is retained. GPU counters measure driver
+allocations, not ownership by JavaScript object or by window.
+
+The host total already includes the GPU process's host pages. **Do not add
+working set to counted RAM, or blindly add shared GPU bytes.** Dedicated VRAM
+is separate on this Windows machine; on a unified-memory machine it competes
+for system RAM. The shared GPU counters cannot be separated into overlap with
+Chromium host RAM versus additional backing with this recording. Thus an
+exact non-double-counted unified total cannot be produced here. The prior
+5d-only 18–23 MB dedicated / 557–845 MB shared increments are background
+context, not independently remeasured or added to these totals.
+
+**Largest holders and their owners.** Classification is based on source
+ownership plus observed lifetime, not an allocation-by-allocation heap proof.
+
+- **Backend import peak, up to 3.799 GB counted:** `SessionStore.prepare_session`
+  in `sessions.py`, `loader.py`/`raw_import.py`, colour conversion and source-mip
+  preparation in `render_cache.py`. Transient working memory in the current
+  pipeline; the record does not prove every temporary is necessary. A remains
+  current while B is prepared, then `activate_session` replaces `_current`.
+  By Grade idle the backend is 0.721 GB. Release: finish preparation and drop
+  the decoder/conversion/intermediate references.
+- **Open Grade source, 0.509 GB:** `SessionStore._current` and
+  `_publish_retained_session_bytes` in `sessions.py`; counts unique source,
+  retouch-original and SDR-reference NumPy roots. Needed while open under
+  Library decision 8. A and B each report one 0.509 GB source, not two; close
+  reports zero and backend drops to 0.200 GB. No evidence here of A's Grade
+  session surviving B's activation; allocator retention is not a second live
+  session. Release: `SessionStore.clear` through the normal Close photo gate.
+- **GPU-process host memory:** 1.133 GB grid peak, 0.658 GB Grade-idle,
+  0.662 GB Library-idle; driver allocations are additional/overlapping as
+  explained above. Owners include Chromium/Dawn and live Library surfaces
+  (`library-scenes.js`, `library-gpu.js`, `library-raw-gpu.js`), Grade
+  `HDRWebGPUPreview`, and prepared pipelines (`idle-warmup.js`,
+  `gpu-delivery.js`). Grade's allocator reports only 11.874 MB late in Grade
+  (10.957 MB source proxies and 0.918 MB tile graph), then zero after close;
+  this is not a census of all driver/native allocations. Remaining native
+  host/GPU storage cannot be divided reliably into Library scenes, pipelines,
+  delivery and driver pools from these counters. It looks like cache/engine
+  residency, not proof of a leaked Grade tile. Release: scene/session teardown
+  destroys owned resources; releasing the engine/device is needed for its pools.
+- **Hidden delivery renderer:** 0.044–0.048 GB settled and 0.081 GB peak
+  during reduced Proof, returning to 0.048 GB. `gpu-delivery.js` keeps one
+  initialized `HDRWebGPUPreview`/device and pipelines, but resets sessions and
+  destroys finishing resources in success/error/finally. This run shows a
+  small warm engine, not the earlier 1.99 GB leftover. The exact contents of
+  that old hold remain unmeasured; reduced Proof does not exercise full-size
+  delivery transfers. Release: job finally clears owned images; closing the
+  delivery renderer releases its engine residency.
+- **Python helpers:** about 0.261 GB idle in aggregate, briefly 0.470 GB
+  with the popout. Spawned Library decode workers in `library_worker.py`;
+  mostly interpreter/module working footprint, not a reported image cache.
+  Main renderer/main process are around 0.11/0.06 GB Library-idle. Popout
+  renderer peaks at 0.106 GB and exits on docking. Release: worker/window
+  shutdown releases their process footprint.
+- **Named caches:** small relative to the peak (tables above), owned by
+  `app_memory.py` registrations, `library-ram.js`, picture/RAW providers and
+  `SourceMipCache` in `render_cache.py`. Rebuildable caches, not the multi-GB
+  backend peak; retained Grade bytes are separate and not added again to RAM.
+  Release: registered cache trim callbacks evict their entries.
+
+**Moderate trim:** three events, during A, B and B's reopen for Proof, at
+4.320/4.646/4.065 GB. No ten-second repeating trim loop during the idle minutes.
+`desktop/main.js` sends registered main/Library windows the pressure record,
+`preload.js` relays it to Library, and `library-ram.js` halves managed shares;
+backend `app_memory.reclaim_all` halves registered caches including source mips.
+Only the main renderer receives the explicit major-GC request in
+`memory-pressure.cjs`; the hidden delivery window is not in that relay and
+moderate does not clear native caches. Grade's current source and shader/device
+pipelines are not managed cache trim targets. Grade GPU session resources are
+reset on photo replacement/close, not by that moderate-cache path. Memory fell
+following import completion/trim, but this observation cannot assign the fall
+to trim rather than normal completion or collection.
+
+**8 GB unified-memory Mac estimates, not measurements or new allowances.**
+The unchanged default ceiling is 2.5 GB, elastic peak 2.75 GB and settled
+planning target 1.9 GB. The following rough Windows-derived scenarios start
+with counted RAM + dedicated GPU; the high scenario also adds all shared GPU
+bytes. The high scenario may double-count host backing. These are illustrative
+accounting envelopes, not certified bounds or a prediction of Metal's footprint;
+peaks combine independently sampled maxima. Smaller Mac cache shares, different
+viewport, driver, compression and physical-footprint accounting can change them.
+
+| Step | Estimated peak GB | Estimated settled GB |
+|---|---|---|
+| 1 grid and preparation | 2.60–3.53 | 1.96–2.90 |
+| 2 browse and fullscreen | 2.59–3.31 | 2.19–2.91 |
+| 3 Grade A and edits | 5.62–6.34 | 2.66–3.16 |
+| 4 Grade B | 5.60–6.09 | 3.03–3.52 |
+| 5 popout and dock | 3.51–4.05 | 2.22–2.68 |
+| 6 Grade idle 60s | 2.30–2.76 | 2.23–2.69 |
+| 7 close Grade | 1.77–2.23 | 1.69–2.15 |
+| 8 Library idle 60s | 1.70–2.16 | 1.69–2.15 |
+| 9 B reduced Proof | 4.83–5.29 | 2.18–2.38 |
+
+Both Grade import peaks clearly miss the 2.5 GB target even before any GPU
+addition. Idle Grade is near/over the ceiling depending on overlap, and over
+the 1.9 GB settled target in both scenarios. Library idle is near that settled
+target. Full-size delivery, larger folders and the old persistent hidden-window
+hold remain unqualified. No budget, estimate or release-policy change is
+proposed in this measurement step.
+
+**Validation:** 797 JavaScript checks passed. Python: 3,051 passed, 3 skipped,
+one unrelated failure:
+`test_library_live.py::test_remembered_failure_does_not_hide_current_grade_cached_scene`
+(expected native live-plan refusal 422, got 200). No backend/Library behaviour
+was edited; the failure was left alone and not rerun. Real-app observation is
+the focused GPU exercise for this diagnostic work; no export/output/shader
+implementation changed. Output started and finished at 29.2 GB (below the 100 GB limit);
+raw fast-check logs are retained with the run. Temporary profiles/photos were
+removed; no broad cleanup of Steve's existing output was performed.
+
+
+
 ### November 3: completed shared-source ownership
 
 Library shared preparations now clear their downloaded source reference when the
