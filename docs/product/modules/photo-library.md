@@ -28,7 +28,7 @@ Built November 5, 2026; reviewed by Claude and committed with Steve's go-ahead.
 
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** Batch 5d built November 4, 2026: startup drawing-pipeline preparation and four-way fullscreen visibility accepted; busy-grid first sharp drawing now meets the +about 1 s target. Batch 5c fixes retained: explicit detail admission and visible-stand-in safeguards; its busy cold drawing and black-screen follow-ups are completed by 5d. Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in
+**Status:** Batch 5d built November 4, 2026: startup drawing-pipeline preparation and four-way fullscreen visibility accepted; busy-grid first sharp drawing now meets the +about 1 s target. Batch 5c fixes retained: explicit detail admission and visible-stand-in safeguards; its busy cold drawing and black-screen follow-ups are completed by 5d. Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 5, 2026; Batch 4c built November 5; Batch 4d partial (native gate built, Windows peak/real-app contention and Mac acceptance open). Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
@@ -123,7 +123,7 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | Batch | Contents | Status |
 | --- | --- | --- |
 | 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Built November 3, 2026 |
-| 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Follow-up incomplete November 4, 2026 |
+| 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Partial November 5: docked HDR/SDR grid, filmstrip and stored-screen pixels update; 500 ms and peak-memory acceptance still fail. |
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Built November 5, 2026; focused fault checks below |
 | 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Open: selected-photo priority over grid developments (48 MP float TIFF 19.8 s), brush-mask and warp CPU time |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Partial November 5: backend native owners yield to Grade; regression passes. Windows peak and retained-owner app timing remain open; 8 GB Mac acceptance belongs to Steve. |
@@ -160,6 +160,36 @@ it accepted any filename containing `.hdrf`. It now accepts `.hdrf` boundaries
 (including sync-conflict names), while ignoring project files. A binary-project
 regression reproduces the UTF-8 warning before the fix and passes afterward;
 all 17 conflict/sidecar checks pass. Existing projects are unaffected.
+
+### November 5: Grade hand-off follow-up (4b, partial)
+
+Visible thumbnail publication now replies before the same Grade picture's
+screen compression finishes. The screen task retains the original admitted
+upload slot until success, rejection or error, so this adds no queue/cache
+allowance and changes no picture calculations. Unit checks confirm thumbnail
+availability before screen encoding, subsequent stored-picture availability,
+and slot release on all three screen outcomes. They do not redevelop a source.
+
+The plain-Electron check now measures HDR and SDR explicitly, compares grid,
+filmstrip and stored-screen screenshot crops after an exposure edit, and
+separates the two docked photos from the popped-out check to stay within the
+existing deadline. Its two real fixture rows are filtered from the API stream;
+no duplicate RAW files are created. Both photos use tiled Fit.
+
+Docked HDR and SDR both update all three picture locations. SDR meets the
+500 ms target for both photos (380-387 ms). HDR first photo takes 442 ms,
+but the second takes 6.585 s (6.239 s capture; 263 ms storage), so 4b remains
+incomplete. Popped-out HDR/SDR grid and filmstrip pixels change and the stored
+picture loads, but their 3.376/0.992 s hand-offs fail 500 ms; separate stored
+screen crop comparisons were added after those two runs, so that popped-out
+coverage is still open. Whole-app peaks 4.779-5.177 GB also fail the unchanged
+4.4 GB acceptance. No timing, memory or image tolerance was relaxed.
+
+Evidence: `codebase/output/quick-library-check/batches45-handoff-{dock,pop}-{hdr,sdr}/`
+contains reports, scenarios and screenshot crops. The obsolete mixed-folder
+attempt is not a qualified timing. Shared thumbnails and stored pictures are
+functionally demonstrated for docked HDR/SDR; capture latency, popped-out
+stored-picture crop coverage and large-photo peak memory remain open.
 
 ### November 5: Grade yields backend native detail (4d, partial)
 

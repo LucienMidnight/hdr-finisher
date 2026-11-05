@@ -165,3 +165,55 @@ def test_surface_validation_reuse_cannot_authorize_a_new_grade(setup):
     edit(store, session, 2)
     grades.save(str(session.session_id))
     assert not cache.thumbnails.write(path, "hdr", "rgba8unorm", meta, body, 32, 16, 256, validation=validation)
+
+
+def test_thumbnail_publication_precedes_screen_encoding_without_redevelopment(setup):
+    photo, store, session, marks, grades = setup
+    cache = service(setup)
+    edit(store, session)
+    ticket = grades.save(str(session.session_id))["picture"]
+    image = pixels()
+    deferred = []
+    cache.write(str(session.session_id), ticket["grade_identity"], ticket["revision"],
+        "sdr", image.tobytes(), 32, 16, 256, deferred.append)
+    assert cache.thumbnails.read(str(photo), "sdr", "rgba8unorm") is not None
+    current = cache.screens.identity(str(photo), 2560, 2560, "sdr")
+    assert cache.screens.read(current) is None
+    assert deferred.pop()()
+    assert cache.screens.read(current) is not None
+
+
+@pytest.mark.parametrize("outcome", [True, False, "error"])
+def test_deferred_screen_retains_upload_slot_and_releases_on_every_outcome(setup, monkeypatch, outcome):
+    import asyncio
+    from fastapi import APIRouter, BackgroundTasks
+    from threading import BoundedSemaphore
+    from hdr_finisher.library_grade_pictures import add_grade_picture_routes
+    cache = service(setup)
+    slots = BoundedSemaphore(1)
+    calls = []
+    def screen():
+        calls.append("screen")
+        if outcome == "error": raise OSError("disk unavailable")
+        return outcome
+    def write(self, *args):
+        args[-1](screen)
+        return {"source": "Grade picture"}
+    monkeypatch.setattr(GradePictures, "write", write)
+    router = APIRouter()
+    add_grade_picture_routes(router, cache.live, cache.store, slots)
+    endpoint = next(r.endpoint for r in router.routes if r.path == "/grade-picture/{session_id}")
+    class Request:
+        headers = {"content-length": "4096"}
+        async def body(self): return bytes(4096)
+    async def run():
+        background = BackgroundTasks()
+        result = await endpoint("session", Request(), background, "grade", 1, "sdr", 32, 16, 256)
+        assert result["source"] == "Grade picture"
+        assert not calls
+        assert not slots.acquire(blocking=False), "body still owns its original admission"
+        await background()
+        assert calls == ["screen"]
+        assert slots.acquire(blocking=False)
+        slots.release()
+    asyncio.run(run())

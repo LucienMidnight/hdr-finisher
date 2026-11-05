@@ -1102,3 +1102,15 @@ November 5, parent f37514b plus native gate changes; reusable hdr-test copies,
 plain Electron, 2560x1440, no overlapping GPU run. Evidence:
 `codebase/output/quick-library-check/batches45-grade-native-sampled/` and
 `codebase/output/batches45-grade-native-{owner,smaller}.log`.
+
+### November 5: Grade picture publication follow-up
+
+Saved-grade availability to Library picture, plain Electron 2560x1440,
+reusable two Sony RAW copies, tiled Fit, separate docked/popped-out launches:
+SDR docked 380-387 ms (met 500 ms); HDR docked 442 ms/6.585 s (second misses;
+6.239 s capture, 263 ms store). Popped-out SDR/HDR 0.992/3.376 s (not met).
+Whole-app peaks 4.779-5.177 GB fail the unchanged 4.4 GB allowance. November 5,
+parent 3ceb233 plus deferred screen encoding; no overlapping GPU runs.
+Grid/filmstrip crops change in all four modes; separate stored-screen crops
+change for docked HDR/SDR only. Evidence:
+`codebase/output/quick-library-check/batches45-handoff-{dock,pop}-{hdr,sdr}/`.

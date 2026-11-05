@@ -33,7 +33,7 @@ async function run({app, window, backend, configPath = process.env.HDR_FINISHER_
     if(config.batch5c){const result=await require('./library-wait-check.cjs').run({window,frame,config,stage});result.appStartToScenarioDoneMs=Date.now()-config.appStartedAt;fs.writeFileSync(resultPath,JSON.stringify(result));stage('done');return;}
     const source = fs.readFileSync(path.join(__dirname, '../tools/quick-library-scenario.js'), 'utf8');
     const result = config.gradeHandoffPixels ? await require('./library-grade-picture-check.cjs').run({window,frame,config,stage}) : await frame.executeJavaScript(`(${source})(${JSON.stringify(config)})`);
-    if(config.gradeHandoffPopout&&result.grade_handoff&&result.stage==='done'){
+    if(config.gradeHandoffPopout&&!config.gradeHandoffPixels&&result.grade_handoff&&result.stage==='done'){
       stage('handoff: pop out Library');
       await frame.executeJavaScript(`document.getElementById('popout-library').click()`);
       const sleep=ms=>new Promise(r=>setTimeout(r,ms));

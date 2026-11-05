@@ -1,6 +1,6 @@
 """Grade-owned pixels and developed-source loans; never opens/develops a photo."""
 import numpy as np
-from fastapi import HTTPException, Request
+from fastapi import BackgroundTasks, HTTPException, Request
 from fastapi.responses import Response
 from starlette.concurrency import run_in_threadpool
 
@@ -47,7 +47,7 @@ class GradePictures:
             source_width=session.source.width, source_height=session.source.height,
             adjustments=document["global_adjustments"]), document=document)
 
-    def write(self, session_id, grade, revision, lane, body, width, height, stride):
+    def write(self, session_id, grade, revision, lane, body, width, height, stride, defer_screen=None):
         path, document, session = self.owner(session_id, grade, revision)
         if identity(session.edit_document().model_dump(mode="json")) != grade:
             raise HTTPException(409, "Captured picture does not match the saved grade.")
@@ -64,15 +64,22 @@ class GradePictures:
         from .models import GeometryAdjustments
         geometry = GeometryAdjustments.model_validate(document["global_adjustments"]["shared"]["geometry"])
         source_width, source_height = geometry_output_dimensions(session.source.width, session.source.height, geometry)
-        # Both publications borrow this request's immutable body. Finish both
-        # before replying, then release it; no extra retained pixel cache.
-        with ThreadPoolExecutor(max_workers=1) as encoding:
-            screen = encoding.submit(self.screens.write, current, body, width, height, stride,
+        def save_screen():
+            return self.screens.write(current, body, width, height, stride,
                 lambda: not valid(), source_width=source_width,
                 source_height=source_height, grade_picture=True)
+        # Visible thumbnails do not wait for the compressed screen encoding.
+        # The response task keeps the existing upload slot until it finishes,
+        # bounding body ownership without a new queue or cache allowance.
+        if defer_screen is not None:
             self.write_thumbnails(path, document, session, lane, pixels[..., :3])
-            if not screen.result():
-                raise HTTPException(409, "Grade picture could not be stored.")
+            defer_screen(save_screen)
+        else:
+            with ThreadPoolExecutor(max_workers=1) as encoding:
+                screen = encoding.submit(save_screen)
+                self.write_thumbnails(path, document, session, lane, pixels[..., :3])
+                if not screen.result():
+                    raise HTTPException(409, "Grade picture could not be stored.")
         if not valid(): raise HTTPException(409, "The Library has a newer grade.")
         return dict(path=path, grade_identity=grade, lane=lane, source="Grade picture")
 
@@ -133,19 +140,32 @@ def add_grade_picture_routes(router, live, store, slots):
     pictures = GradePictures(live, store)
 
     @router.post("/grade-picture/{session_id}")
-    async def write(session_id: str, request: Request, grade: str, revision: int,
+    async def write(session_id: str, request: Request, background_tasks: BackgroundTasks, grade: str, revision: int,
                     lane: str, width: int, height: int, stride: int):
         if lane not in ("hdr", "sdr") or not 1 <= width <= 2560 or not 1 <= height <= 2560 or stride != ((width*8+255)//256)*256:
             raise HTTPException(400, "Invalid Grade picture dimensions.")
         if not slots.acquire(blocking=False): return Response(status_code=503)
+        transferred = False
+        def finish(screen):
+            from .library_diagnostics import log
+            try:
+                if not screen(): log("grade_screen_picture_skipped", reason="saved grade changed or cache disabled")
+            except Exception as error:
+                log("grade_screen_picture_failed", reason=str(error))
+            finally:
+                slots.release()
         try:
             if int(request.headers.get("content-length", 0)) != stride*height:
                 raise HTTPException(400, "Invalid Grade picture byte count.")
             body = await request.body()
             if len(body) != stride*height: raise HTTPException(400, "Invalid Grade picture byte count.")
-            return await run_in_threadpool(pictures.write, session_id, grade, revision, lane, body, width, height, stride)
+            screens = []
+            result = await run_in_threadpool(pictures.write, session_id, grade, revision, lane, body, width, height, stride, screens.append)
+            background_tasks.add_task(finish, screens[0])
+            transferred = True
+            return result
         finally:
-            slots.release()
+            if not transferred: slots.release()
 
     @router.post("/grade-picture-source/{session_id}")
     async def sources(session_id: str, grade: str, request: Request):
