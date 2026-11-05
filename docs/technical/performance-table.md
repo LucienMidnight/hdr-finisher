@@ -294,6 +294,8 @@ these were corrected to exercise the intended tiered behavior.
 
 | Action | Target | Measured | Conditions | Status |
 | --- | --- | --- | --- | --- |
+| 42 MP fullscreen zoom input to full-size detail drawn | No timing target; must admit with room | 12.23 s (one functional check) | Nov 5, zoom admission fix on bdde83e; existing DSC00264.ARW fixture copy, 7952 x 5304, 4 GB, 2560 x 1440; --single --steps=0 --fullscreen --detail --seconds=6; output/quick-library-check/zoom-detail-focused | Detail delivered; zero refusal, no speed claim |
+| Same check: Single open / window responsiveness | No frame/timer interval >250 ms | Open 4.442 s; maximum frame gap 165 ms, timer block 174 ms | Same Nov 5 functional check; cold selected-photo preparation, Python fast suite running outside app tree | Responsiveness passed; timing is diagnostic only |
 | Unedited RAW camera picture, Single input to presentation | — | 78–599 ms (seven RAWs, includes first open) | Nov 3, Batch 4a implementation `75f1de9` (run before commit, final small fixes covered by fast tests); mixed fixture copy, 90 s `--single`, default RAW/mezzanine filter; `codebase/output/quick-library-check/batch4a/report.json` | Baseline; no development for those camera-picture files |
 | Required development, Single input to presentation | — | Edited ARWs 1.768–1.899 s; two DNGs without usable camera pictures 11.278–11.409 s | Same run; no ahead development | Baseline; required cold development still takes seconds |
 | Batch 4a window responsiveness | No frame/timer interval >250 ms | Frame gap 4438 ms; timer block 62 ms; external peak 3.773 GB, settled 1.526 GB | Same run, 31 eligible files, ten Single steps; memory ceiling/target unchanged | Not met for frame gap; retained for Batch 4c |

@@ -1,5 +1,17 @@
 # Module PRD: Memory and caches
 
+### November 5: zoom admission correction (built)
+
+Selected full-size detail is admitted against remaining whole-app TARGET,
+not the 600 MB working cache share. Its unchanged estimate is width x height
+x 24 bytes plus 65,536 bytes of framing. The native upload/selected detail
+owner is active work, reported under working and reclaimed on release; upload
+publication counts its existing bytes once. Optional CPU-native retention
+continues to use the cache share. Source and GPU scheduling still perform
+their existing admission checks. CEILING, WORKING, SHARES, defaults and the
+user setting are unchanged. See the November 5 photo-library entry for checks.
+
+
 ### November 4: Library + Grade measurement (4d step 1)
 
 **Measurement only, on local main `3849ef8`, November 4, 2026.** No app

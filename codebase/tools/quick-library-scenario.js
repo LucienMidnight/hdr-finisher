@@ -102,6 +102,19 @@ async function scenario(config) {
         const step=await measure(config.steps+i,()=>document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowLeft',bubbles:true})));
         step.back=true;steps.push(step);lastAt=step.started_ms;
       }
+      if(config.detail){
+        mark('zoom detail');
+        const selected=HDRLibrary.getSnapshot().selected;
+        document.getElementById('zoom-button').click();
+        await wait(()=>{
+          if(events.some(e=>e.stage==='picture_detail_refused'&&e.path===selected))throw Error('Detail refused');
+          const canvas=document.getElementById('native-picture');
+          return visible(canvas)&&canvas.dataset.picturePath===selected;
+        },60000);
+        await frame();
+        const delivered=events.find(e=>e.stage==='picture_drawn'&&e.picture_size==='detail preview');
+        if(!delivered)throw Error('No full-size detail delivery event');
+      }
       const times=steps.map(s=>s.ms).sort((a,b)=>a-b);
       single={first_photo:open.name,open_ms:open.ms,open_wall_ms:open.ms,open_first_ms:open.first_ms,open,steps,
         step_mean_ms:times.length?Math.round(times.reduce((a,b)=>a+b,0)/times.length):null,

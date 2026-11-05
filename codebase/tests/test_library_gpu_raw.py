@@ -245,7 +245,7 @@ def test_native_retention_refusal_never_reports_ready(tmp_path, monkeypatch):
     from hdr_finisher import app_memory
     cache = LibraryPictureCache(tmp_path/'cache')
     photo = tmp_path/'photo.ARW'; photo.write_bytes(b'original')
-    monkeypatch.setattr(app_memory, 'claim', lambda *args, **kwargs: False)
+    monkeypatch.setattr(app_memory, 'snapshot', lambda **_: {'totalBytes': app_memory.TARGET})
     with pytest.raises(ValueError, match="memory"):
         cache.retain_gpu_native(photo, np.ones((4,6,3), dtype=np.float32), {}, {})
     assert not cache.gpu_native_ready(photo)
@@ -261,7 +261,7 @@ def test_native_chunk_owner_admits_before_allocation_and_survives_trim(tmp_path,
     header.update(native_mode=True,edge=100000,source_width=12,source_height=8)
     framed = gpu_raw.frame(header, _payload(8,12,(.1,.2,.3)))
     with monkeypatch.context() as pressure:
-        pressure.setattr(app_memory, 'claim', lambda *a, **k: False)
+        pressure.setattr(app_memory, 'snapshot', lambda **_: {'totalBytes': app_memory.TARGET})
         assert not cache.upload_native('one',0,len(framed),framed[:7])
         assert cache._native_upload is None
     assert cache.upload_native('one',0,len(framed),framed[:7])
@@ -350,3 +350,42 @@ def test_half_float_handoff_stores_the_same_scene_as_float32(tmp_path):
     with pytest.raises(ValueError):
         gpu_raw.developed(LibraryPictureCache(tmp_path / "bad"), str(photo), {**_header(photo), "sample_bytes": 2},
                           np.full((3, 8, 12), np.nan, dtype="<f2").tobytes())
+
+
+@pytest.mark.parametrize("width,height", [(7952,5304),(9504,6336)])
+def test_native_detail_uses_whole_app_room_before_allocating(tmp_path, monkeypatch, width, height):
+    from types import SimpleNamespace
+    from hdr_finisher import app_memory, library_pictures
+    monkeypatch.setattr(app_memory, '_caches', {})
+    monkeypatch.setattr(app_memory, 'TARGET', 3_400_000_000)
+    used = [1_090_000_000]
+    monkeypatch.setattr(app_memory, 'snapshot', lambda **_: {'totalBytes': used[0]})
+    allocations = []
+    class SparseBuffer:
+        def __init__(self, size): self.size=size; allocations.append(size)
+        def __len__(self): return self.size
+        def __setitem__(self, key, value): pass
+    monkeypatch.setattr(library_pictures, 'bytearray', SparseBuffer, raising=False)
+    cache = LibraryPictureCache(tmp_path/'cache')
+    photo = tmp_path/'photo.ARW'; photo.write_bytes(b'original')
+    needed = width*height*24+65536
+    try:
+        assert cache.upload_native('detail',0,needed,b'header')
+        assert allocations == [needed]
+        assert app_memory.cache_snapshot()['working']['bytes'] == needed
+        # Publication reuses the admitted upload; do not charge it twice.
+        used[0] += needed
+        cache.retain_gpu_native(photo,SimpleNamespace(nbytes=width*height*12),{'renderer':'gpu'}, {})
+        cache.finish_native_upload('detail')
+        assert cache.gpu_native_ready(photo)
+        cache.trim_native(0)
+        used[0] = 3_000_000_000
+        assert not cache.upload_native('short',0,needed,b'header')
+        assert cache._native_upload is None
+        assert allocations == [needed]
+        with pytest.raises(ValueError, match='memory'):
+            cache.retain_gpu_native(photo,SimpleNamespace(nbytes=width*height*12),{}, {})
+        assert not cache.gpu_native_ready(photo)
+    finally:
+        cache.finish_native_upload('detail')
+        cache.trim_native(0)

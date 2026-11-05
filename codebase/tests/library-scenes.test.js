@@ -453,3 +453,14 @@ test('a late detail memory refusal never repeats GPU development',async()=>{
  await assert.rejects(scenes.load('large',100000),e=>e.needsMemory);
  assert.equal(reads,1);assert.equal(events.filter(e=>e.stage==='picture_preparation_retry').length,0);
 });
+
+
+test('admitted 42 MP detail develops and delivers the full-size scene',async()=>{
+ const starts=[];
+ const {scenes}=setup({raw:{bytes:506e6,detail_memory:{available:true,bytes:7952*5304*24+65536}}},async(path,edge)=>{
+  starts.push([path,edge]);return {key:'detail',width:7952,height:5304,edge};
+ });
+ const detail=await scenes.load('raw',100000);
+ assert.deepEqual(starts,[['raw',100000]]);
+ assert.equal(detail.width,7952);assert.equal(detail.height,5304);assert.equal(detail.edge,100000);
+});

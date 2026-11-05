@@ -559,12 +559,11 @@ def create_library_router(worker, browser, store=None):
         width, height = dimensions(path)
         # Same six float32 output planes and bounded JSON framing as native upload.
         needed = width * height * 24 + 65536
-        limit = app_memory.limit("working")
-        snapshot = app_memory.cache_snapshot()
-        used = snapshot["working"]["bytes"]
+        # WORKING is headroom left by caches, not a per-photo maximum.
+        # Source/GPU work still goes through the scheduler's own admission.
         total = app_memory.snapshot(cached_only=True)["totalBytes"]
-        return dict(bytes=needed, limit=limit,
-                    available=needed <= limit-used and total+needed <= app_memory.TARGET)
+        return dict(bytes=needed, limit=app_memory.TARGET,
+                    available=total+needed <= app_memory.TARGET)
 
     @router.post("/live-plan")
     @picture_errors.guard_cached

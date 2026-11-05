@@ -427,16 +427,27 @@ class LibraryPictureCache:
                 self._native_source[0] == picture_key(path, 100000, "native") and
                 self._native_source[3].get("renderer") == "gpu")
 
+    def _admit_native(self, size):
+        # Selected detail/upload is active work, not a retained working cache.
+        # Count its existing owner once when an upload becomes native planes.
+        owned = (len(self._native_upload[1]) if self._native_upload is not None else
+                 self._native_source[1].nbytes if self._native_source else 0)
+        total = app_memory.snapshot(cached_only=True)["totalBytes"]
+        if total + max(0, size-owned) > app_memory.TARGET:
+            return False
+        app_memory.report(self.native_key, 'working', size)
+        return True
+
     def upload_native(self, token, offset, total, chunk):
         """Receive bounded pieces into the same admitted owner used by detail."""
         with self._native_lock:
             if offset == 0:
-                if total <= 0 or total > app_memory.limit('working'):
+                if total <= 0 or total > app_memory.TARGET:
                     raise ValueError("Not enough memory for full-size detail. Wait for memory and try again.")
                 if self._native_upload is not None:
                     return False
                 self.trim_native(0)
-                if not app_memory.claim(self.native_key,'working',total):
+                if not self._admit_native(total):
                     return False
                 try:
                     self._native_upload = (token, bytearray(total), 0)
@@ -475,7 +486,7 @@ class LibraryPictureCache:
         with self._native_lock:
             # Chunk reception admitted this same owner before allocating it.
             # Retaining its planes does not reserve the same bytes again.
-            if not app_memory.claim(self.native_key,'working',pixels.nbytes):
+            if not self._admit_native(pixels.nbytes):
                 raise ValueError("Not enough memory for full-size detail. Wait for memory and try again.")
             self._native_source = (picture_key(path, 100000, "native"), pixels, None, metadata, grade)
 

@@ -1,3 +1,31 @@
+## November 5: full-size zoom admission fix (built)
+
+The detail preflight now compares the existing six-plane estimate with room
+under the whole-app target (ceiling minus the unchanged 600 MB headroom).
+The working cache share is not a per-photo maximum: applying it that way
+incorrectly refused ordinary 42 MP RAWs even at low app usage. Both live-plan
+and live-scene use this check; their frontend refusal handling stays intact.
+Native chunk upload and selected GPU-native ownership use the same whole-app
+room, counting an already admitted upload once during publication. They remain
+reported and reclaimable; optional CPU-native cache retention still obeys its
+cache share. No memory setting, budget, shader or pixel calculation changed.
+Real shortage still refuses before source work, with the existing message.
+Focused full-screen zoom on the existing copied 7952 x 5304 DSC00264.ARW
+passed at 2560 x 1440 with the default 4 GB setting: the backend log records
+picture_live_developed and page_picture_drawn for detail preview, no
+page_picture_detail_refused, and no memory or responsiveness failures.
+Evidence: codebase/output/quick-library-check/zoom-detail-focused (report,
+scenario and backend.log). The earlier standard 90-second observation timed
+out at its 130-second harness deadline after detail had displayed; the focused
+six-second observation above completed normally. No broad sweep was run.
+Fast checks: 803 JavaScript passed; Python 3,057 passed, three skipped and
+one pre-existing unrelated failure:
+test_remembered_failure_does_not_hide_current_grade_cached_scene (expected
+422, received 200). Left unchanged. Scratch output started and ended at 29.2 GB;
+the harness removed its temporary profiles and reused existing photo copies. Logs are in
+codebase/output/zoom-detail-js-tests.log and zoom-detail-python-tests.log.
+Built November 5, 2026; reviewed by Claude and committed with Steve's go-ahead.
+
 ## November 3: development on demand (decided; replaces develop-everything)
 
 **Status:** Batch 5d built November 4, 2026: startup drawing-pipeline preparation and four-way fullscreen visibility accepted; busy-grid first sharp drawing now meets the +about 1 s target. Batch 5c fixes retained: explicit detail admission and visible-stand-in safeguards; its busy cold drawing and black-screen follow-ups are completed by 5d. Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 4, 2026; Batches 4c-4d remain open. Build order is in

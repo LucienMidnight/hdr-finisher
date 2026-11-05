@@ -595,17 +595,18 @@ def test_remembered_failure_does_not_hide_current_grade_cached_scene(tmp_path):
 
 
 @pytest.mark.parametrize("edge", [640, 100000])
-def test_detail_handoff_admission_precedes_source_work(tmp_path, monkeypatch, edge):
+@pytest.mark.parametrize("used", [1_090_000_000, 3_000_000_000])
+def test_detail_handoff_admission_precedes_source_work(tmp_path, monkeypatch, edge, used):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from hdr_finisher import library_api, library_estimates, app_memory
     from hdr_finisher.media_browser import MediaBrowserStore
     path = photo(tmp_path)
-    monkeypatch.setattr(library_estimates, "dimensions", lambda _: (6000, 7000))
-    monkeypatch.setattr(app_memory, "cache_snapshot", lambda: {"working": {"bytes": 0}})
-    monkeypatch.setattr(app_memory, "snapshot", lambda **_: {"totalBytes": 0})
+    monkeypatch.setattr(library_estimates, "dimensions", lambda _: (7952, 5304))
+    monkeypatch.setattr(app_memory, "TARGET", 3_400_000_000)
+    monkeypatch.setattr(app_memory, "snapshot", lambda **_: {"totalBytes": used})
     class NoSource:
-        def status(self): return {"paused": False}
+        def status(self): return {"paused": True}
         def submit_library(self, *a, **k): pytest.fail("Refused detail decoded source")
     app=FastAPI();app.include_router(library_api.create_library_router(NoSource(),MediaBrowserStore(tmp_path/'profile')))
     with TestClient(app) as api:
@@ -615,7 +616,11 @@ def test_detail_handoff_admission_precedes_source_work(tmp_path, monkeypatch, ed
             assert plan.json()['detail_memory'] is None
         else:
             memory=plan.json()['detail_memory']
-            assert memory['bytes'] == 6000*7000*24+65536
-            assert not memory['available']
+            assert memory['bytes'] == 7952*5304*24+65536
+            assert memory['available'] is (used == 1_090_000_000)
             result=api.post('/api/library/live-scene',json={'path':str(path),'edge':edge,'gpu':True})
-            assert result.status_code == 409 and result.json()['needs_memory']
+            if memory['available']:
+                # Admission passed; the paused worker is the next gate.
+                assert result.status_code == 202, result.text
+            else:
+                assert result.status_code == 409 and result.json()['needs_memory']
