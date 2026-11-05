@@ -17,7 +17,7 @@ test('streamed detail bands transfer once, upload bounded pieces and release own
  }
  const page={ArrayBuffer,URL,Worker,DOMException,setTimeout,clearTimeout,crypto:require('node:crypto').webcrypto,document:{currentScript:{src:'http://app/static/library-upload.js'}},window:{}};
  vm.runInNewContext(fs.readFileSync(require.resolve('../frontend/library-upload.js'),'utf8'),page);
- const parts=[new Uint8Array([1,2,3,4]).buffer,new Uint8Array(9*1024*1024).fill(7).buffer];
+ const parts=[new Uint8Array([1,2,3,4]).buffer,new Uint8Array(40*1024*1024).fill(7).buffer];
  const expected=Buffer.concat(parts.map(p=>Buffer.from(p)));
  const upload=page.window.HDRLibraryUpload.stream('/api/library/raw-developed',{total:expected.length});
  assert.equal((await upload.open()).ok,true);
@@ -25,7 +25,7 @@ test('streamed detail bands transfer once, upload bounded pieces and release own
  const result=await upload.end();
  assert.equal(result.ok,true);assert.deepEqual(JSON.parse(result.text),{native_ready:true});
  assert.ok(parts.every(p=>p.byteLength===0),'window relinquishes each band');
- assert.ok(chunks.every(c=>c.length<=4*1024*1024));assert.deepEqual(Buffer.concat(chunks),expected);
+ assert.ok(chunks.length>2&&chunks.every(c=>c.length<=32*1024*1024));assert.deepEqual(Buffer.concat(chunks),expected);
  assert.equal(calls.at(-1)[1].method,'DELETE');
  assert.ok(calls.at(-2)[1].headers['X-Library-Native-Upload']);
 });

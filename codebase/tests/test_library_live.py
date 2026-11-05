@@ -542,7 +542,7 @@ def test_non_xtrans_gpu_refusal_never_submits_cpu_helper(tmp_path, monkeypatch):
     assert response.headers["X-Library-Fallback"] == "unsupported source recipe"
 
 
-def test_overlapping_native_requests_share_source_only_while_owned(tmp_path, monkeypatch):
+def test_native_requests_share_one_source_and_release_it_after_the_hold(tmp_path, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
     import gc, weakref
@@ -566,6 +566,14 @@ def test_overlapping_native_requests_share_source_only_while_owned(tmp_path, mon
     assert first is second and calls == ['native-one']
     reference = weakref.ref(first)
     del first,second,a,b
+    gc.collect()
+    # A zoom's next request (Fit proxy, then tile batches) follows within a
+    # second; it reuses the held frame instead of reading the scene again.
+    assert service.frame(meta) is reference() and calls == ['native-one']
+    timer = service._held_timer
+    timer.cancel()
+    timer.function()  # the hold ends
+    del timer
     gc.collect()
     assert reference() is None and not service._native_frames
     replacement = service.frame(meta)

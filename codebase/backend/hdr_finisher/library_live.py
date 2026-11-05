@@ -278,6 +278,7 @@ class LivePictures:
         self._native_frames_lock = RLock()
         self._held = None
         self._held_timer = None
+        self._held_token = None
 
     def document(self, path):
         raw = self.documents.request(path)["grade"] if self.documents else None
@@ -364,10 +365,12 @@ class LivePictures:
         return body, pixels.shape[1], pixels.shape[0], stride, space
 
     def frame(self, metadata):
-        # Overlapping requests share one source read, with no resident pool:
-        # the last request dropping a native frame frees its pixels. A reduced
-        # sharp draw asks again within a second (pixels, then masks or denoise),
-        # so the latest reduced frame alone is also held for a few seconds.
+        # Overlapping requests share one source read, with no resident pool.
+        # A sharp draw asks again within a second (pixels, then masks or
+        # denoise; a native zoom asks for its Fit proxy, then tile batches), so
+        # the latest frame alone is held for a few seconds. Without the hold a
+        # 42 MP zoom rebuilt its native frame from disk four times, 0.55 s
+        # each (November 5); holding adds no peak, only those few seconds.
         native = metadata["edge"] == 100000
         with self._native_frames_lock:
             frame = self._native_frames.get(metadata["key"])
@@ -382,7 +385,7 @@ class LivePictures:
             from .library_diagnostics import log
             log("library_scene_frame", path=metadata.get("path"), edge=metadata["edge"],
                 duration_ms=round((perf_counter()-started)*1000, 1))
-        if not native and metadata["edge"] >= 1280:
+        if native or metadata["edge"] >= 1280:
             with self._native_frames_lock:
                 self._hold(frame)
         return frame
@@ -392,10 +395,13 @@ class LivePictures:
         if self._held_timer is not None:
             self._held_timer.cancel()
         self._held = frame
+        # The timer must not keep the frame alive itself: a fired Timer stays
+        # referenced until the next hold, and a native frame is ~1 GB.
+        token = self._held_token = object()
         def release():
             with self._native_frames_lock:
-                if self._held is frame:
-                    self._held = None
+                if self._held_token is token:
+                    self._held = self._held_timer = None
         self._held_timer = Timer(seconds, release)
         self._held_timer.daemon = True
         self._held_timer.start()

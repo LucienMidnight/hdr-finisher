@@ -164,11 +164,18 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 Full-size detail (100%) now leaves the GPU in 64 MB bands straight to the
 backend instead of as whole planes; the TIFF/RGB route no longer copies
 them again. Memory and checks: see the November 5 entry in
-[memory-and-caches](memory-and-caches.md). Open: zoom is slow on large
-photos (42 MP RAW 9.2 s, 48 MP TIFF 16.3 s from click to detail drawn).
-The upload runs at about 150 MB/s in 4 MB requests and the detail draw
-then fetches the full scene again; measure the whole wait before choosing
-a fix.
+[memory-and-caches](memory-and-caches.md).
+
+Zoom speed, same day (click to detail drawn, idle, 4 GB): 42 MP RAW 9.24 to
+6.54 s, 48 MP TIFF 16.33 to 11.81 s. Two cheap changes: the backend rebuilt
+the native frame from disk for every draw request (four times, 0.55 s each
+at 42 MP), so the latest native frame is now held for 5 s like reduced
+frames (the hold no longer keeps a frame alive after it ends); and upload
+pieces are 32 MB instead of 4 MB. Remaining 42 MP wait: develop 0.9 s,
+upload about 2.6 s, backend store 1.3 s, frame reload 0.6 s, Fit proxy
+0.5 s, tiles and draw 0.4 s. The rest is the full-size round trip GPU to
+backend to disk and back to GPU; drawing from the developed GPU picture
+first would remove most of it (decision for Steve, open).
 
 ### November 5: fullscreen keeps a multi-photo selection
 

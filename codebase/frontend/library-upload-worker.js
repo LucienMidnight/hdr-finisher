@@ -1,13 +1,14 @@
 /* Uploads a large Library request body off the frame's main thread. */
 const uploads=new Map(),streams=new Map();
-const CHUNK=4*1024*1024,COLLECT_BYTES=64*1024*1024;
-// Each 4 MB request leaves a copy of its body here until the next garbage
+const CHUNK=32*1024*1024,COLLECT_BYTES=64*1024*1024;
+// Each request leaves a copy of its body here until the next garbage
 // collection. Without one, a full-size scene was held here a second time
 // until its upload ended (about +1 GB for 48 MP, November 5). The desktop app
 // starts with --expose-gc; elsewhere this does nothing.
 const collect=async()=>{if(typeof gc==='function')try{await gc({type:'major',execution:'async'});}catch{}};
 // Full-size detail arrives in bounded bands (open, write..., end or cancel)
-// and goes to the backend's admitted receiving buffer in 4 MB requests.
+// and goes to the backend's admitted receiving buffer in 32 MB requests
+// (4 MB requests ran at about 115 MB/s; November 5).
 async function streamMessage({id,stream:{kind,key,url,total,headers},buffer}){
   const reply=value=>self.postMessage({id,...value});
   if(kind==='open'){
