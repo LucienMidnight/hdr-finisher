@@ -161,6 +161,43 @@ it accepted any filename containing `.hdrf`. It now accepts `.hdrf` boundaries
 regression reproduces the UTF-8 warning before the fix and passes afterward;
 all 17 conflict/sidecar checks pass. Existing projects are unaffected.
 
+### November 5: implementation checkpoint and final checks
+
+This is partial implementation, not an all-Built sign-off. Local commits:
+9b3ca14 (binary conflict scanner), f37514b (fullscreen selection/F/scroll),
+3ceb233 (native memory gate), f17239c (thumbnail-first publication), f4af657
+(rapid Fit probe and checkpoint reconciliation). No push or installer build.
+
+Final fast checks: 803 JavaScript tests pass; 3,063 Python tests pass, three
+skip, and only the already-known
+`test_remembered_failure_does_not_hide_current_grade_cached_scene` fails.
+It was left unchanged. Logs:
+`codebase/output/batches45-{node,pytest}-final.log`.
+Focused app outcomes, acceptance failures and remaining scope are recorded
+below and in the performance table; no failing allowance was relaxed.
+
+Start/end scratch output: **29.2 GB**, below 100 GB (26.4 GB reusable photos,
+1.1 GB release checks). The quick harness removed its own new app profiles.
+Automatic approval review rejected cleanup of the disposable run folders,
+including a retry using verified literal paths, with only "blocked by policy"
+as its reason. Approximately 11 MB remains safe to delete under
+`codebase/output/quick-library-check/`: `batches45-input-before`,
+`batches45-handoff-hdr`, `batches45-grade-native`,
+`batches45-grade-native-owner`, `batches45-grade-native-smaller`; also the
+empty `codebase/output/test-photos/grade-42mp/`. The two refused-attempt logs
+remain evidence; their intermediate crops are unnecessary. This task's
+pytest scratch folders `pytest-1351` through `pytest-1354` under
+`%TEMP%/pytest-of-Steve/` can also be deleted now the tests have finished.
+The older November 4 app profiles and October pytest folders were left alone.
+The untracked Grade notice wireframes were not touched.
+
+Steve should try his edited fullscreen/held-F and live-import scrolling cases,
+then test the 8 GB unified-memory Mac target on a MacBook. Windows large-photo
+peak memory, retained-owner whole-wait qualification, capture latency, brush
+CPU work, immediate unprepared first entry and zoomed-arrow coverage remain
+open. Shared-mask changes would require the output checks estimated above
+35 minutes; no long validation was started.
+
 ### November 5: remaining 5a-5d checkpoint reconciliation
 
 The 5a table previously continued to list selected-photo priority and screen
