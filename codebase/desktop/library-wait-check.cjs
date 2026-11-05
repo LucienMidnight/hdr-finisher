@@ -29,7 +29,7 @@ async function run({window,frame,config,stage}) {
  const photo=config.diagnosticPhoto||'DSC04375_DxO_clipped_target.tif';
  const choose=`(()=>{const cells=[...document.querySelectorAll('.library-cell')];const c=cells.find(c=>c.dataset.path.endsWith(${JSON.stringify(photo)}));if(!c)throw Error('Missing '+${JSON.stringify(photo)});c.click();document.getElementById('single-view').click();if(!document.querySelector('.library.review'))document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true}));})()`;
  if(config.idle)await wait(`[...document.querySelectorAll('#grid-space .library-cell')].some(c=>c.dataset.path.endsWith(${JSON.stringify(photo)})&&c.querySelector('canvas[data-picture-key]:not([hidden])'))`);
- const measures=[];
+ const measures=[], interactionErrors=[];
  for(let n=0;n<(config.timingOnly?1:3);n++){
   if(n===2){await lib(`window.waitBackKey=HDRLibrary.getSnapshot().paths.at(-1)===HDRLibrary.getSnapshot().selected?'ArrowLeft':'ArrowRight';document.body.dispatchEvent(new KeyboardEvent('keydown',{key:waitBackKey,bubbles:true}));document.body.dispatchEvent(new KeyboardEvent('keyup',{key:waitBackKey,bubbles:true}));true`);await sleep(150);await lib(`const back=waitBackKey==='ArrowLeft'?'ArrowRight':'ArrowLeft';document.body.dispatchEvent(new KeyboardEvent('keydown',{key:back,bubbles:true}));document.body.dispatchEvent(new KeyboardEvent('keyup',{key:back,bubbles:true}));true`);}
 
@@ -73,8 +73,31 @@ async function run({window,frame,config,stage}) {
  stage('detail refusal');
  await lib(`document.getElementById('zoom-button').click();true`);await sleep(5000);
  const events=await lib('waitEvents'),snapshot=await lib('HDRLibrary.getSnapshot()'),notice=await lib(`document.getElementById('library-status')?.textContent || document.querySelector('[role=status]')?.textContent || ''`);
- const errors=[];if(events.some(e=>e.stage==='picture_development_start'&&e.reason==='zoom detail'&&e.at<deliberateAt))errors.push('Detail started before explicit zoom');if(events.filter(e=>e.stage==='picture_development_start'&&e.reason==='zoom detail'&&e.at>=deliberateAt).length>1)errors.push('Repeated detail development');if(measures.slice(0,2).some(m=>{const first=m.samples.findIndex(s=>s.standin&&s.lit_fraction>=.01);return first>=0&&m.samples.slice(first).some(s=>s.lit_fraction<.01);})||compareSamples.some(s=>s.standin&&s.lit_fraction<.01))errors.push('Black pixels while stand-in exists');if(events.some(e=>e.stage==='picture_surface_fault'))errors.push('Hidden presentation');
- const result={stage:'done',appStartedAt:config.appStartedAt,pipelineMemory,startup,errors,probe:{},events,wait_check:{photo,hdr:config.hdr,popout:config.popout,idle:config.idle,measures,compareSamples,snapshot,notice,deliberateAt},scenario_ms:events.length?events.at(-1).at-events[0].at:0};
+ // Exercise a deselected lead photo and a held F key using real page inputs.
+ await lib(`(()=>{const cells=[...document.querySelectorAll('#grid-space .library-cell')];const c=cells.find(c=>c.dataset.path.endsWith(${JSON.stringify(photo)}));c.click();c.dispatchEvent(new MouseEvent('click',{bubbles:true,ctrlKey:true}));document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true,cancelable:true}));document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'f',repeat:true,bubbles:true,cancelable:true}));})()`);
+ const interaction=await lib(`({review:!!document.querySelector('.library.review'),zoom:HDRLibrary.getSnapshot().zoom,selected:HDRLibrary.getSnapshot().selected,selection:HDRLibraryCommands.selection()})`);
+ if(!interaction.review||interaction.zoom)interactionErrors.push('Held F failed to stay in fullscreen Fit');
+ if(!interaction.selection.includes(interaction.selected))interactionErrors.push('Fullscreen lead photo is not selected');
+ await lib(`document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));document.getElementById('grid-view').click();true`);
+ const errors=[...interactionErrors];if(measures.some(m=>m.samples.some(s=>s.zoom)))errors.push('Sharp arrival changed Fit to zoom');if(events.some(e=>e.stage==='picture_development_start'&&e.reason==='zoom detail'&&e.at<deliberateAt))errors.push('Detail started before explicit zoom');if(events.filter(e=>e.stage==='picture_development_start'&&e.reason==='zoom detail'&&e.at>=deliberateAt).length>1)errors.push('Repeated detail development');if(measures.slice(0,2).some(m=>{const first=m.samples.findIndex(s=>s.standin&&s.lit_fraction>=.01);return first>=0&&m.samples.slice(first).some(s=>s.lit_fraction<.01);})||compareSamples.some(s=>s.standin&&s.lit_fraction<.01))errors.push('Black pixels while stand-in exists');if(events.some(e=>e.stage==='picture_surface_fault'))errors.push('Hidden presentation');
+ stage('stream scroll anchor');
+ const scroll=await lib(`(async()=>{
+   document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));document.getElementById('grid-view').click();
+   const original=window.fetch;let stream;
+   window.fetch=(url,options)=>String(url).endsWith('/api/library/folder-stream')?Promise.resolve(new Response(new ReadableStream({start(c){stream=c;}}))):original(url,options);
+   const emit=photos=>stream.enqueue(new TextEncoder().encode(JSON.stringify({kind:'rows',photos,request:'scroll-regression'})+'\\n'));
+   try{
+     const opened=HDRLibrary.browse('test-stream-scroll');while(!stream)await new Promise(r=>setTimeout(r,10));
+     const rows=Array.from({length:1000},(_,i)=>({path:'pending:photo-'+String(i).padStart(4,'0'),name:'photo-'+String(i).padStart(4,'0'),type:'ARW',_pending:true,indexed:true}));
+     emit(rows);await opened;
+     const grid=document.getElementById('library-grid');grid.scrollTop=6000;grid.dispatchEvent(new Event('scroll'));await new Promise(r=>setTimeout(r,150));
+     const anchor=()=>{const paths=HDRLibrary.getSnapshot().paths,l=HDRLibraryLayout.gridLayout(paths.length,grid.clientWidth,grid.clientHeight,grid.scrollTop,Number(document.getElementById('thumbnail-size').value));return {path:paths[l.first],top:l.top(l.first)-grid.scrollTop};};
+     const before=anchor();emit(Array.from({length:100},(_,i)=>({...rows[i],path:'pending:added-'+i,name:'added-'+i})));
+     await new Promise(r=>setTimeout(r,800));const after=anchor();return {before,after};
+   }finally{stream.close();window.fetch=original;}
+ })()`);
+ if(!scroll.before?.path||!scroll.after?.path||scroll.before.path!==scroll.after.path||Math.abs(scroll.before.top-scroll.after.top)>1)errors.push('New files moved the visible grid anchor');
+ const result={stage:'done',appStartedAt:config.appStartedAt,pipelineMemory,startup,errors,probe:{},events,wait_check:{photo,hdr:config.hdr,popout:config.popout,idle:config.idle,interaction,scroll,measures,compareSamples,snapshot,notice,deliberateAt},scenario_ms:events.length?events.at(-1).at-events[0].at:0};
  fs.writeFileSync(path.join(out,'wait-check.json'),JSON.stringify(result.wait_check,null,2));
  return result;
 }

@@ -1313,6 +1313,9 @@
     if (review && !selected()) return;
     if (review) {
       state.beforeReview = state.view;
+      // Fullscreen commands act on the picture being shown, even when a
+      // Ctrl-click had removed the lead picture from the grid selection.
+      state.selection = new Set([selected().path]); state.anchor = state.index;
       state.zoom = false; state.detailRequested = null;
       state.native?.abort(); state.nativeMeta = null;
       $("zoom-button").setAttribute("aria-pressed", "false");
@@ -1384,9 +1387,18 @@
       clearTimeout(folderPaintTimer); folderPaintTimer = null;
       if (controller.signal.aborted || state.scan !== controller) return;
       const top=grid.scrollTop,left=film.scrollLeft;
+      const anchor=state.photos[state.layout?.first]?.path;
+      const offset=state.layout ? top-state.layout.scrollFor(state.layout.first) : 0;
       state.allPhotos = [...rows.values()];
       if(opening.extent) state.photos=opening.extent;
-      applyQuery(false); grid.scrollTop=top;film.scrollLeft=left;paintGrid();paintFilm();
+      applyQuery(false);
+      // Grow the scroll extent before restoring: Chromium otherwise clamps
+      // against the previous height. Anchor by photo when sorted rows arrive.
+      const layout=HDRLibraryLayout.gridLayout(state.photos.length,grid.clientWidth,grid.clientHeight,top,state.size);
+      const index=state.photos.findIndex(photo=>photo.path===anchor);
+      space.style.height=`${layout.totalHeight}px`;
+      grid.scrollTop=index>=0 ? layout.scrollFor(index)+offset : top;
+      film.scrollLeft=left;paintGrid();paintFilm();
     };
     opening.paint=paint;
     const pump=async()=>{try {
@@ -2144,7 +2156,7 @@
       }
     }
     else if (key === "g") setView("grid");
-    else if (key === "f") setReview(!state.review);
+    else if (key === "f") { event.preventDefault(); if (!event.repeat) setReview(!state.review); }
     else if (key === "escape") { if (state.review) setReview(false); else setView("grid"); }
     else if (key === "tab") { event.preventDefault(); const closed = !(library.classList.contains("library-left-closed") && library.classList.contains("library-right-closed")); collapse("left", closed); collapse("right", closed); }
     else if (key === "i") collapse("right", !library.classList.contains("library-right-closed"));

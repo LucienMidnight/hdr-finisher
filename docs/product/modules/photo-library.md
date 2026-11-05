@@ -124,13 +124,34 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | --- | --- | --- |
 | 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Built November 3, 2026 |
 | 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Follow-up incomplete November 4, 2026 |
-| 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Not started |
+| 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Built November 5, 2026; focused fault checks below |
 | 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Open: selected-photo priority over grid developments (48 MP float TIFF 19.8 s), brush-mask and warp CPU time |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Measured November 4, 2026 (`3b24d92`); the rest is tabled for polish until Steve tests on a MacBook Neo (polish pass) |
 | 5b | The on-screen photo takes priority; recover lost reservations and hand over completed thumbnails; parallel screen perspective and mask warps. | Partial November 4, 2026: 32.65 s abandoned TIFF wait removed (2.06 s ordinary open; forced lost reservation 2.80 s). Four-photo SDR/HDR stored pixels identical to 5a. Busy cold fullscreen still 7.0–7.2 s versus idle 1.98–2.23 s; ARW ordinary first open 2.48–2.55 s. See checkpoint below. |
 | 5c | Visible TIFF/RAW stand-ins, explicit detail demand, memory admission before decoding and same-photo reopen investigation. | Partial November 4, 2026: Fit/native visibility and refusal retry fixes built. Same-name cache misses were different source paths. At the 5c checkpoint busy first drawing still missed the +about 1 s target; completed by 5d below. |
 | 5d | Prepare drawing pipelines after the first grid picture; preserve popped-out SDR stand-ins on reopen. | Built November 4, 2026: prepared busy TIFF 2.12 s and heavy ARW 3.02 s; four docked/popped-out SDR/HDR pixel checks pass. See checkpoint below. |
 
+
+### November 5: Batch 4c fullscreen and streamed-grid correction
+
+Before fixing, the real Electron page reproduced held-F leaving fullscreen,
+a Ctrl-deselected lead photo missing from the command selection, and streamed
+sorted arrivals replacing visible photo 0310 with 0210. Fullscreen now selects
+its displayed photo, consumes F without auto-repeat toggles, and keeps Fit.
+Streamed rows restore the visible photo anchor after updating the scroll extent.
+
+The extended `--batch5c` check passes all three regressions after fixing:
+photo 0310 stays at the same -138 px offset. Edited TIFF entry, reopen,
+arrow return and Compare show nonblack pixels; sharp arrival stays at Fit,
+and detail starts only after explicit zoom. Black-frame and sharp-arrival
+zoom faults did not recur before fixing either; the earlier 5c/5d repairs
+remain effective. Evidence: `codebase/output/quick-library-check/` runs
+`batches45-fault-baseline`, `batches45-scroll-before`, `batches45-fixed`.
+Final external peak 3.685 GB, settled 2.504 GB; no scenario errors. The stream
+regression supplies metadata rows in the real page, without fake photo decode.
+Node: 803 pass; focused backend tests: 33 pass. Full Python pending at commit.
+The check runs its input regression after timing captures so it cannot prime
+the measured cold entry. No shader, output or allowance changed.
 
 ### November 5: Batch 4c settings-conflict correction
 

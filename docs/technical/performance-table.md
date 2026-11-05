@@ -1077,3 +1077,16 @@ Grade peak work remains. Evidence and exact conditions: archived
 `library-thumbnail-memory-stall-2026-11-04.md`,
 `codebase/output/delivery-lifetime/export-proof.json` and
 `codebase/output/quick-library-check/delivery-lifetime-{before,after,standard}/`.
+
+
+## November 5 - Batch 4c fault recheck (parent 9b3ca14)
+
+Plain Electron 2560x1440, edited TIFF, SDR docked, default allowances.
+Baseline entry/reopen/arrow return: 1.701 / 0.225 / 0 s; extended input runs
+1.840-1.887 / 0.215-0.223 / 0 s. These are diagnostic observations, not
+cold-speed qualification: the extended input probe had already entered the
+photo. The committed harness moves that probe after timing. No speed claim.
+Before/after errors: held F, deselected fullscreen lead and stream anchor
+all reproduce before and pass after. No black frame or automatic zoom in
+either. Fixed run external memory peaks at 3.685 GB and settles at 2.504 GB.
+Evidence: `codebase/output/quick-library-check/batches45-{fault-baseline,scroll-before,fixed}`.
