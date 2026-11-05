@@ -132,6 +132,25 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 5d | Prepare drawing pipelines after the first grid picture; preserve popped-out SDR stand-ins on reopen. | Built November 4, 2026: prepared busy TIFF 2.12 s and heavy ARW 3.02 s; four docked/popped-out SDR/HDR pixel checks pass. See checkpoint below. |
 
 
+### November 5: Batch 4c settings-conflict correction
+
+The scanner treated binary `.hdrfinisher` projects as settings sidecars because
+it accepted any filename containing `.hdrf`. It now accepts `.hdrf` boundaries
+(including sync-conflict names), while ignoring project files. A binary-project
+regression reproduces the UTF-8 warning before the fix and passes afterward;
+all 17 conflict/sidecar checks pass. Existing projects are unaffected.
+
+### November 5: remaining-batch acceptance plan
+
+Keep the existing 500 ms saved-grade hand-off, idle + about 1 s busy
+fullscreen target, perceptual image tolerances and all memory allowances.
+For paired Grade-open/edit measurements propose a 5% whole-wait tolerance
+(the existing timing noise allowance); measure with and without a retained
+Library detail owner, in the same app and source. Native owner give-back must
+report zero retained bytes before Grade work starts; no approximate allowance.
+Windows checks cannot qualify the 8 GB unified-memory Mac target: Steve must
+check that on a MacBook. Do not mark that acceptance as measured here.
+
 ### Batch 5d checkpoint - November 4, 2026
 
 Startup now prepares the existing drawing pipelines once per renderer, after

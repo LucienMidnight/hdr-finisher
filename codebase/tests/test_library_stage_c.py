@@ -225,3 +225,12 @@ def test_helper_restart_limit_fails_waiters_and_leaves_grade_gate_available(tmp_
         assert "helper_restart_exhausted" in capsys.readouterr().err
     finally:
         worker.close()
+
+
+def test_conflict_scan_ignores_binary_project_files(tmp_path, capsys):
+    marks, folder, photo = setup(tmp_path)
+    project = folder / "photo.hdrfinisher"
+    project.write_bytes(b"PK\x03\x04\xff\xfeproject pixels")
+    marks.read([photo])
+    assert marks.conflicts.status() == []
+    assert "settings_conflict_read_failed" not in capsys.readouterr().err

@@ -2,6 +2,7 @@
 from collections import defaultdict
 import json
 import os
+import re
 from pathlib import Path
 from threading import RLock
 
@@ -41,7 +42,7 @@ class LibraryConflicts:
             canonical_names = {os.path.normcase(name + ".hdrf") for name in sources}
             entry_names = {os.path.normcase(entry.name) for entry in entries}
             for entry in entries:
-                if ".hdrf" not in entry.name.casefold() or entry.name.endswith(".tmp"):
+                if not re.search(r"\.hdrf(?![a-z0-9_])", entry.name, re.IGNORECASE) or entry.name.endswith(".tmp"):
                     continue
                 # Ordinary canonical files are not extra documents. Still include
                 # them in a conflict's pair even if they themselves are invalid.
