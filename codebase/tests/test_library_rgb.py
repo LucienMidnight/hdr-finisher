@@ -524,7 +524,8 @@ def test_source_changed_during_encoding_cannot_publish_old_pixels(tmp_path, monk
 
 
 @pytest.mark.parametrize("changed", [None, "source", "recipe"])
-def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, monkeypatch, changed):
+@pytest.mark.parametrize("edge", [640, 100000])
+def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, monkeypatch, changed, edge):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from hdr_finisher.library_api import create_library_router
@@ -540,7 +541,7 @@ def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, 
     monkeypatch.setattr(LivePictures, "document", lambda self, path: grade[0])
     app = FastAPI(); app.include_router(create_library_router(Helper(), MediaBrowserStore(profile)))
     with TestClient(app) as client:
-        header, _ = unframe(client.post("/api/library/live-scene", json={"path":str(photo), "edge":640, "gpu":True}).content)
+        header, _ = unframe(client.post("/api/library/live-scene", json={"path":str(photo), "edge":edge, "gpu":True}).content)
         header.update(height=4, width=8, source_width=8, source_height=4, memory_peak_bytes=1024,
             peaks={"peak":.18,"peak_luma":.18,"peak_bt2020":.18,"sdr":.5},
             robust={"channel":.18,"luma":.18,"bt2020":.18}, draw_first=True)
@@ -560,9 +561,9 @@ def test_rgb_description_precedes_pixels_and_keeps_publication_guards(tmp_path, 
         assert accepted.status_code == 200
         assert accepted.json()["key"] == described["key"]
         assert accepted.json()["adjustments"] == described["adjustments"]
-        assert accepted.json()["direct_supported"]
-        plan = client.post("/api/library/live-plan", json={"path":str(photo),"edge":640}).json()
-        assert accepted.json()["render_identity"] == plan["render_identity"]
+        if edge == 640: assert accepted.json()["direct_supported"]
+        plan = client.post("/api/library/live-plan", json={"path":str(photo),"edge":edge}).json()
+        assert described["render_identity"] == plan["render_identity"]
         assert client.post("/api/library/live-store/"+described["key"]).status_code == 200
         assert list(profile.rglob("*.npz"))
         old = client.post("/api/library/live-plan",json={"path":str(photo),"edge":640}).json()

@@ -268,11 +268,11 @@ for (const liveScene of [false,true]) test(`native requests develop and hand off
   const meta={path:'photo',identity:[],mosaic_bytes:0,width:6000,height:4000};
   const header=Buffer.from(JSON.stringify(meta)),body=Buffer.alloc(4+header.length);
   body.writeUInt32LE(header.length);header.copy(body,4);
-  const requests=[],reductions=[],handoffs=[],streamed=[];
+  const requests=[],reductions=[],handoffs=[],streamed=[],health=[];
   const context={performance,crypto:require('node:crypto').webcrypto,DOMException,AbortController,
     Uint8Array,Float32Array,DataView,TextDecoder,setInterval,clearInterval,
     decodedSources:new Map(),directScenes:new Map(),cachedDirect:()=>null,
-    sourceStorageLimit:async()=>Infinity,quantile:()=>1,
+    sourceStorageLimit:async()=>Infinity,quantile:()=>1,checkNativePlanes:async picture=>health.push(picture.width),
     handoffBody:globalThis.HDRLibraryGpuRaw.handoffBody,
     fetch:async()=>({ok:true}),
     scheduledDevelopment:async({edges,consume})=>{
@@ -297,6 +297,7 @@ for (const liveScene of [false,true]) test(`native requests develop and hand off
   assert.equal((await scene).width,2560);
   const result=await native;
   assert.equal(result.width,6000);assert.equal(result.height,4000);
+  assert.deepEqual(health,liveScene?[6000]:[],'Native direct candidates validate RAW channels before presentation');
   assert.deepEqual(reductions.flat().sort((a,b)=>a-b),[2560,100000]);
   assert.deepEqual(requests.map(r=>r.edge).sort((a,b)=>a-b),liveScene?[2560,100000]:[2560,2560]);
   if (!liveScene) assert.equal(requests.find(r=>r.native_mode)?.edge,2560,'Sensor API keeps its bounded edge; native_mode selects the full sensor');

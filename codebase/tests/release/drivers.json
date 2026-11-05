@@ -3958,6 +3958,8 @@
     },
     {"path":"tests/library-stored-screen-preview.js","areas":["library"],"tier":"diagnostic",
       "protects":"Disposable prepared screen preview restart timing and decoded HDR compression ceiling.","launch":{"method":"electron"}},
+    {"path":"tests/library-native-direct.js","areas":["library","preview"],"tier":"area",
+      "protects":"Native GPU-first finished pixels, source reuse, CPU fallback and prompt Grade hand-over.","launch":{"method":"electron"}},
     {
       "path": "tests/library-live-native.js",
       "areas": ["library"],

@@ -1,5 +1,26 @@
 # Module PRD: Memory and caches
 
+### November 5: selected Library full-size GPU scene
+
+Steve approved retaining the single selected full-size scene on the drawing
+GPU, outside the 512 MB sharp-picture cap. This moves October 19 ownership;
+it is not a second retained GPU scene. The existing shared GPU budget and
+whole-app measured admission still apply. No allowance, estimate, cache size
+or headroom changes.
+
+The broker transfers bytes from the admitted development grant to a renewable
+selected-scene owner, counting it once. The reservation also covers the existing
+bounded readback band while background publication runs. Native viewport draws
+reserve only the remaining shared GPU room. GPU process host pages remain in
+the proportional-resident app census; owner counters are not added to those
+process totals a second time.
+
+Grade activity, queued export/Proof work and insufficient GPU room preempt
+the owner. Library memory reclamation, selection change and device loss also
+drop it. Dropping cancels pending publication and destroys the retained planes;
+CPU/backend fallback can then reload or develop the selected photo. Reduced
+scenes continue to count against the existing sharp cache.
+
 ### November 5: Grade peak reduction
 
 No allowance changes. The old docked-HDR peak sample is 5.177 GB counted

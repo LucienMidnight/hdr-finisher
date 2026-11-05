@@ -1165,3 +1165,32 @@ Evidence: `codebase/output/quick-library-check/memory-peak-handoff-{dock,pop}-{h
 census in `codebase/output/memory-peak-{diagnostic,after-final}.log`. The memory
 PRD owns the peak breakdown. Two real decoded RAW arrays are byte-identical
 before/after. No broad driver sweep was run.
+
+## November 5: Library GPU-first native zoom
+
+Parent `0860be2` plus this implementation; plain Electron, 2560 x 1440,
+default 4 GB, idle, existing mixed-folder copies on D:. Single observed runs,
+not a distribution. The harness now measures zoom-button click to native canvas
+drawn. The supplied before figures were measured on `08ef96e`.
+
+| Action | Target | Before -> after | Peak whole-app memory | Result |
+| --- | --- | --- | --- | --- |
+| 42 MP DSC00264.ARW click to detail | 2.5 s +10% | 6.54 -> 1.788 s | 2.092 GB | Met for the eligible grade; saved HDR Denoise temporarily disabled and exact sidecar restored |
+| 48 MP DSC04375_DxO_clipped_target.tif click to detail | 3.5 s +10% | 11.81 -> 3.037 s | 2.264 GB | Met |
+| Busy batch5c memory acceptance | <=4.4 GB | Existing busy scenario | 3.276 GB | Passed, no app errors |
+
+Evidence: `codebase/output/quick-library-check/zoom-gpu-{raw-neutral,tiff-final,busy}/`.
+The first-round RAW check with its saved Denoise enabled correctly kept the
+backend route (2.628 GB peak). A preliminary TIFF run exposed a shader compile
+error, fixed before acceptance; a subsequent draw revealed a full-size source
+texture retry, replaced with reuse of the already packed regional proxy.
+No timing target, numerical allowance or pinned finishing shader changed.
+
+The final RAW run includes the pre-presentation empty-channel GPU guard; the
+existing 99% exact-zero rejection rule is unchanged. The earlier eligible RAW
+run before that guard measured 2.051 s / 1.863 GB. Both meet the agreed target.
+Grade's unchanged source/viewport transport diagnostic completed its regional
+source in 55.7 ms (first tile 44.3 ms), Fit source in 168.9 ms, with exact visible
+ROI agreement. These are transport diagnostics, not end-to-end Grade timings.
+Its app census peaked at 1.229 GB; the focused native GPU driver census peaked
+at 1.916 GB (neither is the independent sampler used for the zoom rows).

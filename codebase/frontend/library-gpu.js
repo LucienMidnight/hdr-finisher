@@ -33,6 +33,39 @@ async function libraryDenoiseModel(url, meta = {}, measure) {
   while (libraryDenoiseModels.size > 16) libraryDenoiseModels.delete(libraryDenoiseModels.keys().next().value);
   return model;
 }
+// Transport only: reproduce the stored half-float scene and Pillow's bilinear
+// source reduction, then pack the requested rectangle. Finishing stays in Grade.
+const libraryNativePack = /* wgsl */ `
+struct P { raw:vec4<u32>, output:vec4<u32>, region:vec4<u32>, crop:vec4<u32> };
+@group(0) @binding(0) var<uniform> p:P;
+@group(0) @binding(1) var<storage,read> red:array<f32>;
+@group(0) @binding(2) var<storage,read> green:array<f32>;
+@group(0) @binding(3) var<storage,read> blue:array<f32>;
+@group(0) @binding(4) var packedOutput:texture_storage_2d<rgba16float,write>;
+fn sampleAt(x:u32,y:u32)->vec3<f32>{
+  var sx=x;var sy=y;
+  if(p.raw.z==6u){sx=y;sy=p.raw.y-1u-x;}
+  if(p.raw.z==5u){sx=p.raw.x-1u-y;sy=x;}
+  if(p.raw.z==3u){sx=p.raw.x-1u-x;sy=p.raw.y-1u-y;}
+  let i=sy*p.raw.x+sx;
+  let v=clamp(vec3<f32>(red[i],green[i],blue[i]),vec3<f32>(0),vec3<f32>(65504));
+  return vec3<f32>(unpack2x16float(pack2x16float(v.xy)),unpack2x16float(pack2x16float(vec2<f32>(v.z,0))).x);
+}
+@compute @workgroup_size(16,16)
+fn main(@builtin(global_invocation_id) g:vec3<u32>){
+  if(g.x>=p.region.z || g.y>=p.region.w){return;}
+  let scale=vec2<f32>(p.output.xy)/vec2<f32>(p.output.zw);
+  let center=(vec2<f32>(g.xy+p.region.xy+p.crop.xy)+vec2<f32>(.5))*scale;
+  let support=max(vec2<f32>(1),scale);
+  let lo=max(vec2<i32>(0),vec2<i32>(floor(center-support+vec2<f32>(.5))));
+  let hi=min(vec2<i32>(p.output.xy),vec2<i32>(floor(center+support+vec2<f32>(.5))));
+  var sum=vec3<f32>(0);var total=0.;
+  for(var y=lo.y;y<hi.y;y++){for(var x=lo.x;x<hi.x;x++){
+    let weight=max(vec2<f32>(0),vec2<f32>(1)-abs((vec2<f32>(f32(x)+.5,f32(y)+.5)-center)/support));
+    let w=weight.x*weight.y;sum+=sampleAt(u32(x),u32(y))*w;total+=w;
+  }}
+  textureStore(packedOutput,vec2<i32>(g.xy),vec4<f32>(sum/max(total,1e-20),1));
+}`;
 class HDRLibraryGPU extends HDRWebGPUPreview {
   async requestPreviewDevice() {
     try { return (await HDRLibraryGpuRaw.shared.gpu()).device; }
@@ -139,9 +172,69 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
   async warmPipelines(format, beforeNext) {
     return this.prepareLibraryPipelines(format,null,beforeNext);
   }
+  async nativeDirectProxy(sessionId,lane,longEdge,geometrySignature,sourceIdentity,key,region=null) {
+    const meta=this.libraryMeta,direct=meta?.directScene;
+    if(!direct?.native)return null;
+    const planes=direct.planes?.();
+    if(!planes?.length || direct.device!==this.device)throw Object.assign(Error('Selected GPU scene released before drawing.'),{libraryYield:true});
+    const scale=Math.min(1,Math.max(256,longEdge)/Math.max(meta.scene_width,meta.scene_height));
+    const crop=meta.adjustments.shared.geometry.crop || {x:0,y:0,width:1,height:1};
+    const round=v=>{const f=Math.floor(v);return v-f>.5||(v-f===.5&&f%2)?f+1:f;};
+    const sw=Math.max(1,round(meta.scene_width*scale)),sh=Math.max(1,round(meta.scene_height*scale));
+    const left=Math.min(sw-1,Math.max(0,round(crop.x*sw))),top=Math.min(sh-1,Math.max(0,round(crop.y*sh)));
+    const width=Math.min(sw,Math.max(left+1,round((crop.x+crop.width)*sw)))-left;
+    const height=Math.min(sh,Math.max(top+1,round((crop.y+crop.height)*sh)))-top;
+    const r=region ? {x:Math.max(0,region.x),y:Math.max(0,region.y),width:Math.min(width-region.x,region.width),height:Math.min(height-region.y,region.height)} : {x:0,y:0,width,height};
+    if(r.width<=0||r.height<=0)return null;
+    if(!this.nativePackPipeline){
+      const module=this.device.createShaderModule({code:libraryNativePack});
+      const info=await module.getCompilationInfo();
+      const errors=info.messages.filter(m=>m.type==='error');
+      if(errors.length)throw Error(errors.map(m=>m.lineNum+': '+m.message).join('; '));
+      this.nativePackPipeline=await this.device.createComputePipelineAsync({layout:'auto',compute:{module,entryPoint:'main'}});
+    }
+    // Re-check after asynchronous compilation: hand-over can have dropped planes.
+    if(!direct.planes?.()?.length)throw Object.assign(Error('Selected GPU scene released before drawing.'),{libraryYield:true});
+    const texture=this.device.createTexture({size:[r.width,r.height],format:'rgba16float',usage:GPUTextureUsage.STORAGE_BINDING|GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_SRC});
+    const params=this.device.createBuffer({size:64,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+    const authored=lane==='sdr' && meta.adjustments.sdr.use_authored_base && meta.has_reference;
+    try{
+      this.device.queue.writeBuffer(params,0,new Uint32Array([direct.rawWidth,direct.rawHeight,direct.flip,0,meta.scene_width,meta.scene_height,sw,sh,r.x,r.y,r.width,r.height,left,top,width,height]));
+      const bindings=[{buffer:params},...planes.slice(authored?3:0,authored?6:3).map(p=>({buffer:p.gpuBuffer})),texture.createView()];
+      const encoder=this.device.createCommandEncoder(),pass=encoder.beginComputePass();
+      pass.setPipeline(this.nativePackPipeline);pass.setBindGroup(0,this.device.createBindGroup({layout:this.nativePackPipeline.getBindGroupLayout(0),entries:bindings.map((resource,binding)=>({binding,resource}))}));
+      pass.dispatchWorkgroups(Math.ceil(r.width/16),Math.ceil(r.height/16));pass.end();this.device.queue.submit([encoder.finish()]);
+    }catch(error){texture.destroy();throw error;}finally{params.destroy();}
+    const proxy={texture,width,height,...(region?{region:r,textureWidth:r.width,textureHeight:r.height,regionTransport:true,streamed:true}:{}),
+      sessionId,lane,longEdge,workingSpace:authored?'linear-srgb':'acescg',pixelFormat:'rgba16float',geometrySignature,sourceIdentity,identity:key,byteSize:r.width*r.height*8,bindGroups:new Map()};
+    this.proxies.set(key,proxy);
+    this.recordAllocation('source-proxy',proxy.byteSize,{width:r.width,height:r.height,lane,longEdge,pixelFormat:'rgba16float',region:!!region});
+    HDRLibraryStopwatch('picture_direct_native',{path:meta.path,region:!!region,bytes:proxy.byteSize});
+    return proxy;
+  }
+  async loadProxyRegion(sessionId,lane,longEdge,geometrySignature,revision,sourceIdentity,key,region,options={}) {
+    return await this.nativeDirectProxy(sessionId,lane,longEdge,geometrySignature,sourceIdentity,key,region)
+      || super.loadProxyRegion(sessionId,lane,longEdge,geometrySignature,revision,sourceIdentity,key,region,options);
+  }
+  async holdSourceForPanning(...args) {
+    if(this.libraryMeta?.directScene?.native && this.libraryMeta.directScene.planes?.()?.length)return true;
+    return super.holdSourceForPanning(...args);
+  }
   async loadProxy(sessionId, lane, longEdge, geometrySignature = "{}", revision = 0, sourceIdentity = "source", options = {}) {
-    if (this.libraryMeta?.edge === 100000 && this.liveMode)
-      return super.loadProxy(sessionId,lane,longEdge,geometrySignature,revision,sourceIdentity,options);
+    if (this.libraryMeta?.edge === 100000 && this.liveMode) {
+      const base=`${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}`;
+      const region=options.region;
+      // The first viewport pass has only a Fit presentation. Its requested
+      // frame size is authoritative for our planes; the shared transport's
+      // whole-frame retry must not allocate another full-size source texture.
+      if(!region && this.libraryMeta.directScene?.native && longEdge>=Math.max(this.libraryMeta.scene_width,this.libraryMeta.scene_height)) {
+        const regional=[...this.proxies.values()].find(p=>p.identity.startsWith(base+':region:'));
+        if(regional)return regional;
+      }
+      const key=base+(region?`:region:${region.x},${region.y},${region.width},${region.height}`:'');
+      return this.proxies.get(key) || await this.nativeDirectProxy(sessionId,lane,longEdge,geometrySignature,sourceIdentity,key,region)
+        || super.loadProxy(sessionId,lane,longEdge,geometrySignature,revision,sourceIdentity,options);
+    }
     const key = this.libraryMeta?.route === "library-live" ? `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}` : `${sessionId}:${lane}`;
     if (this.proxies.has(key)) return this.proxies.get(key);
     if (["camera-raw-gpu", "gpu-raw-thumbnail"].includes(this.libraryMeta?.route)) {

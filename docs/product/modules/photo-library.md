@@ -1,3 +1,40 @@
+## November 5: selected full-size zoom draws on the GPU (built)
+
+Steve approved moving the October 19 single selected full-size scene to the
+GPU where it is drawn. This scene is outside the 512 MB sharp-picture cache;
+it remains inside the existing shared GPU budget and measured whole-app
+admission. No budget, allowance or development estimate increases. It is one
+selected scene, with no full-size development of neighbours.
+
+Eligible native development now publishes only its description before drawing.
+The Library packs the requested visible rectangle directly from the retained
+GPU planes, using Grade's unchanged finishing renderer. Pans and later zooms
+reuse those planes. After presentation, the existing bounded upload and disk
+publication run in the background. Disk publication is retained for Compare,
+reopening after release, and the existing backend source transport.
+
+Ownership transfers atomically from the development's existing GPU grant.
+The reservation includes its existing bounded readback band. Selection change,
+Grade activity, waiting export/Proof delivery, device loss and memory reclamation
+release this owner; release cancels an unfinished background upload. A later
+zoom reloads or develops again. Reduced direct scenes still use the sharp cap.
+
+First-round exclusions approved by Steve: local adjustments, rotation and
+Denoise retain today's backend-pixel route. Bringing them across requires GPU
+mask/model inputs and geometry handling that no longer request backend scene
+pixels, followed by focused pixel and hand-over checks. Crops, global grades,
+HDR/SDR and authored SDR references use the new route.
+RAW channel health is checked on the GPU before first presentation, retaining
+the existing 99% exact-zero rejection rule without a full-plane download.
+
+Acceptance uses the brief's idle click-to-detail targets: 42 MP RAW 2.5 s,
+48 MP TIFF 3.5 s, each with 10% timing noise; whole-app peak at most 4.4 GB.
+Finished-pixel agreement uses the existing mean <1 / p99.9 <=3 perceptual
+limits, with the existing exact HDR highlight ceiling allowing encoding rounding.
+Timing conditions and evidence are in performance-table.md, November 5 GPU-first
+zoom. Denoise on the reusable RAW sidecar was temporarily disabled for the
+eligible-route check and its exact sidecar bytes restored afterwards.
+
 ## November 5: Grade transient memory peak reduction
 
 RAW lens correction now reuses its exclusively owned colour buffer and
@@ -7204,3 +7241,23 @@ at two seconds; its 1.187 GB of former live photo backing stores are absent
 from the heap. The existing idle collector stays. This closes prompt hidden
 memory release; broader Grade peak memory remains separate. See the archived
 thumbnail-stall brief linked above.
+
+### November 5 GPU-first zoom validation note
+
+Fast checks: 808 JavaScript passed; Python 3,070 passed, three skipped and only
+the known unrelated remembered-failure test failed. `library-native-direct.js`
+passes finished-pixel comparisons on synthetic authored/cropped global grades
+in HDR and SDR, empty-channel rejection, retained pan/rezoom, Grade/memory
+release and CPU development fallback. The broker test covers atomic accounting
+and pending Proof/export preemption, including low-priority waiting delivery.
+The real-photo plain-Electron RAW/TIFF/busy checks pass within their memory and
+speed allowances. Grade's `roi-source-transport.js` passes source loading and
+viewport agreement. `full-tier-preview.js` and `roi-parity.js` stop at their
+existing missing `importTestPattern` helper; no repair or repeat was made.
+
+Validation limit: a supplementary real-photo pixel A/B under DevTools could
+not complete because its message exceeded DevTools' 256 MB cap. The finished-
+pixel qualification above uses small synthetic crops; the large-photo timing
+and memory checks use plain Electron without DevTools. Logs are retained as
+`codebase/output/native-direct-check.log`, `zoom-fast-{node,python}.log` and
+`zoom-grade-{source,viewport,parity}.log`; timings link the normal-app reports.

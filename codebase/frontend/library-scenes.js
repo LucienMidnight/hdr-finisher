@@ -220,7 +220,7 @@ window.HDRLibraryScenes = (() => {
       const response = await fetch(url,{method:"POST",signal,headers:{"Content-Type":"application/json"},
         body:JSON.stringify({bytes:0,background:true})});
       if (!response.ok) throw Error("Library GPU scheduling unavailable.");
-      bytes = (await response.json()).budget;
+      bytes = (await response.json()).available;
       if (!(bytes > 0)) throw Error("Library GPU budget is unavailable.");
     }
     const check = async (acquiring = false) => {
@@ -249,6 +249,7 @@ window.HDRLibraryScenes = (() => {
       for(let attempt=1;;attempt++){
         try {
           await meta.directScene?.store();
+          if(meta.directScene?.native)return;
           const response=await fetch("/api/library/live-store/"+meta.key,{method:"POST"});
           if(!response.ok)throw Object.assign(Error("Preview save failed: "+response.status),{retryStore:response.status>=500});
           window.HDRLibraryTrace?.mark(meta.trace,"picture_store",started,{picture_size:"thumbnail,screen preview",scope:"shared",key:meta.key,success:true});
@@ -261,7 +262,7 @@ window.HDRLibraryScenes = (() => {
       }
     }).catch(error=>{window.HDRLibraryTrace?.mark(meta.trace,"picture_store",started,{key:meta.key,success:false,reason:error.message});});
   }
-  return Object.freeze({load,lease,save,review:path=>{reviewPath=Array.isArray(path)?path[0]:path;reviewPaths=new Set((Array.isArray(path)?path:[path]).filter(Boolean));sources.reprioritize(rank);probes.reprioritize(rank);},
+  return Object.freeze({load,lease,save,review:path=>{HDRLibraryGpuRaw.selectDirect?.(Array.isArray(path)?path[0]:path);reviewPath=Array.isArray(path)?path[0]:path;reviewPaths=new Set((Array.isArray(path)?path:[path]).filter(Boolean));sources.reprioritize(rank);probes.reprioritize(rank);},
     onReclaim:handler=>{reclaim=handler;},
     reclaim:(bytes,required=false)=>reclaim(bytes,required),
     promote:(path,priority)=>{window.HDRLibraryGrants?.promote(path,priority);probes.promote(path,priority);sources.promote(path,priority);draws.promote(path,priority);quickDraws.promote(path,priority);},

@@ -470,3 +470,14 @@ private bytes and takes a post-job heap snapshot. November 5: `gpu-delivery.js`
 runs every job in a separate async frame before signaling idle; the polling
 frame no longer retains photo buffers. `tests/gpu-delivery-lifetime.test.js`
 checks reachability across all five routes on success, failure and cancellation.
+
+### Selected native Library GPU owner (November 5)
+
+`library-gpu-raw.js` transfers the selected development's GPU grant and owns
+its native planes/background publication. `gpu_delivery.py` counts and
+preempts that retained owner. `library-gpu.js` packs visible rectangles with
+a transport-only compute shader and reuses Grade finishing; `library-scenes.js`
+reserves the remaining GPU room and saves after presentation. `photo-library.js`
+reloads released owners and starts background publication after canvas swap.
+`tests/library-native-direct.js` covers pixels, crop, reuse, CPU fallback and
+Grade/memory hand-over; the broker unit check covers waiting delivery preemption.

@@ -42,7 +42,7 @@ async function scenario(config) {
   };
   const visible = e => e && !e.hidden && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden' && e.getBoundingClientRect().width > 0;
   const nameOf = p => String(p).replaceAll('\\','/').split('/').pop();
-  let openedAt, single=null, redisplay=null, retention=null;
+  let openedAt, single=null, redisplay=null, retention=null, detail=null;
   try {
     mark('memory setting');
     const set=await fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:4e9})});
@@ -104,6 +104,7 @@ async function scenario(config) {
       }
       if(config.detail){
         mark('zoom detail');
+        const detailAt=performance.now();
         const selected=HDRLibrary.getSnapshot().selected;
         document.getElementById('zoom-button').click();
         await wait(()=>{
@@ -114,9 +115,10 @@ async function scenario(config) {
         await frame();
         const delivered=events.find(e=>e.stage==='picture_drawn'&&e.picture_size==='detail preview');
         if(!delivered)throw Error('No full-size detail delivery event');
+        detail={click_to_draw_ms:performance.now()-detailAt,gpu_scene_bytes:HDRLibraryGpuRaw.nativeBytes?.() || 0};
       }
       const times=steps.map(s=>s.ms).sort((a,b)=>a-b);
-      single={first_photo:open.name,open_ms:open.ms,open_wall_ms:open.ms,open_first_ms:open.first_ms,open,steps,
+      single={detail,first_photo:open.name,open_ms:open.ms,open_wall_ms:open.ms,open_first_ms:open.first_ms,open,steps,
         step_mean_ms:times.length?Math.round(times.reduce((a,b)=>a+b,0)/times.length):null,
         step_median_ms:times.length?times[Math.floor(times.length/2)]:null,step_max_ms:times.at(-1)??null,elapsed_ms:Math.round(performance.now()-singleAt),
         timing_note:'Library performance.now(): input dispatch to matching 2560 canvas update plus the next animation frame. No CDP. This measures compositor opportunity, not physical display scanout.'};

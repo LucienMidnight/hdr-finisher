@@ -122,3 +122,14 @@ PRD does not cover without asking.
 - What changed, the commits, and anything left open.
 - Any decision Steve needs to make, one at a time, each with its trade-off.
 - The output folder size at the end.
+
+## Implementation outcome, November 5
+
+Completed the first round under Steve's November 5 approval: one selected GPU
+scene outside the sharp cache, counted in the existing shared GPU/whole-app
+accounting, with prompt hand-over. Local adjustments, rotation and Denoise
+keep the backend route. No allowance or development estimate increased.
+Current results, tolerances and validation limits are recorded in the Library
+and memory module PRDs and performance-table.md. Large-photo pixel A/B through
+DevTools remains unqualified; synthetic finished-pixel comparisons and the
+plain-Electron real-photo speed/memory checks passed.

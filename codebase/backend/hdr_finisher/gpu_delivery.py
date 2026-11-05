@@ -304,6 +304,18 @@ def create_gpu_delivery_router():
                 job = scheduler.jobs.get(str(payload["grant"]))
                 if job is None or job.granted is None or not job.gpu_bytes:
                     return {"granted": False, "preempt": True, "retry": True}
+                if payload.get("retain"):
+                    # Transfer ownership of the one selected scene, without a
+                    # second reservation or any change to the approved estimate.
+                    if amount > job.gpu_bytes:
+                        return {"granted": False, "preempt": True}
+                    raw_jobs[identity] = {"priority": 15, "created": now,
+                        "granted": True, "bytes": amount, "background": True,
+                        "library_priority": 0, "concurrent": True, "draw": True, "retained": True,
+                        "expires": time.monotonic() + 30}
+                    job.gpu_bytes = 0
+                    accounting()
+                    return {"granted": True, "budget": scheduler.gpu_budget}
                 if job is None or not scheduler.gpu_refine(job.id, amount):
                     return {"granted": False, "preempt": True,
                             "fallback": "GPU descriptor exceeded or lost its atomic reservation"}
@@ -338,11 +350,14 @@ def create_gpu_delivery_router():
                 can_share = value['draw'] or (value['concurrent'] and (other['concurrent'] or other.get('draw')))
                 if not can_share or (not other['granted'] and (not value['granted'] or reserved + other['bytes'] > available)):
                     higher = True
-            preempt = time.monotonic() < _activity["until"] or higher
+            preempt = (time.monotonic() < _activity["until"] or higher
+                       or (value.get("retained") and (list(waiting_deliveries())
+                           or reserved > available)))
             sharing = value['draw'] or (value['concurrent'] and all(v['concurrent'] or v.get('draw') for v in raw_jobs.values() if v['granted']))
             if not value["granted"] and not payload.get("release") and not preempt and not active and value['bytes'] + reserved <= available and (not reserved or sharing):
                 value["granted"] = True
-            return {"granted": value["granted"], "preempt": preempt, "budget": available}
+            return {"granted": value["granted"], "preempt": preempt or bool(active), "budget": available,
+                    "available": max(0, available - reserved + (value["bytes"] if value["granted"] else 0))}
 
     @router.delete("/raw-budget/{identity}")
     @budget_locked

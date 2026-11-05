@@ -562,6 +562,7 @@
     hostReclaim = true;
     try {
       recentPictures.clear();
+      HDRLibraryGpuRaw.releaseNative?.();
       await HDRLibraryPictures.reclaimHost();
       await HDRLibraryQuickPictures.reclaimHost();
     } finally { hostReclaim = false; }
@@ -1197,7 +1198,7 @@
       }
       let full = await state.fullDetail;
       if (!current()) return;
-      if (full.grade_identity !== state.fitMeta.grade_identity) {
+      if (full.grade_identity !== state.fitMeta.grade_identity || full.directScene?.usable?.()===false) {
         // Finishing changes describe the same stored source with the new grade.
         state.fullDetail = HDRLibraryScenes.load(photo.path,100000,state.nativeSource.signal,0);
         full = await state.fullDetail;
@@ -1216,6 +1217,7 @@
       shown.id = "native-picture-next"; shown.hidden = true; shown.removeAttribute("aria-label"); shown.setAttribute("aria-hidden", "true");
       next.id = "native-picture"; next.removeAttribute("aria-hidden"); next.setAttribute("aria-label", "Detail preview");
       state.nativeMeta = {...meta,width,height,crop_x:x,crop_y:y}; next.dataset.picturePath = photo.path; positionZoom();
+      if(full.directScene?.native)HDRLibraryScenes.save(full,true);
       status(`${percent} · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`);
     } catch (error) {
       if (error.needsMemory) state.detailRefused = true;

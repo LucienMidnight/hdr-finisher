@@ -818,8 +818,8 @@ def create_library_router(worker, browser, store=None):
                     return result
             from . import library_rgb
             adapter = library_rgb if header.get("rgb") else library_gpu_raw
-            if header.get("describe_only") and (header["edge"] == 100000 or body):
-                raise ValueError("Only reduced scene metadata can be described without pixels.")
+            if header.get("describe_only") and body:
+                raise ValueError("Scene descriptions must not contain pixels.")
             developed_at = time.perf_counter()
             result = await run_in_threadpool(adapter.developed, SceneCache(), path, header, None if header.get("describe_only") else body)
             describe_at = time.perf_counter()
@@ -830,7 +830,7 @@ def create_library_router(worker, browser, store=None):
                 accept_ms=(describe_at-developed_at)*1000,
                 describe_ms=(time.perf_counter()-describe_at)*1000,
                 describe_only=bool(header.get("describe_only")))
-            if header["edge"] != 100000:
+            if header.get("describe_only") or header["edge"] != 100000:
                 from .models import AdjustmentState
                 from .projects import validate_saved
                 adjustments = validate_saved(AdjustmentState, described["adjustments"])

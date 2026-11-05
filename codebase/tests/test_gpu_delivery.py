@@ -389,3 +389,40 @@ def test_lost_atomic_reservation_requeues_instead_of_entering_cpu_fallback(tmp_p
             json={"bytes":400, "background":True, "grant":"gone"}).json()
         assert value["retry"] and value["preempt"] and not value["granted"]
         assert "fallback" not in value
+
+
+def test_selected_scene_transfers_atomic_gpu_ownership_and_yields(tmp_path, monkeypatch):
+    import json, os
+    from pathlib import Path
+    from hdr_finisher.library_scheduler import scheduler, Job
+    app = _broker(tmp_path, monkeypatch)
+    job = Job(id="selected-transfer", owner="test", path="photo", kind="source",
+        estimate=0, cls="now", sequence=1, asked=0, granted=1, gpu_bytes=600)
+    monkeypatch.setitem(scheduler.jobs, job.id, job)
+    # Other jobs and machine memory cannot influence this broker-only example.
+    monkeypatch.setattr(scheduler, "gpu_reserved", lambda: job.gpu_bytes)
+    with TestClient(app) as client:
+        client.post('/api/delivery/gpu/activity', json={"bytes":100,"budget":1000})
+        url='/api/delivery/gpu/raw-budget/selected-scene'
+        refused=client.post(url,json={"grant":job.id,"bytes":601,"retain":True}).json()
+        assert not refused["granted"] and job.gpu_bytes == 600
+        accepted=client.post(url,json={"grant":job.id,"bytes":300,"retain":True}).json()
+        assert accepted["granted"] and job.gpu_bytes == 0
+        activity=client.post('/api/delivery/gpu/activity',json={"bytes":100,"budget":1000}).json()
+        assert activity["reserved"] == 300
+        room=client.post('/api/delivery/gpu/raw-budget/view',json={"bytes":0,"background":True}).json()
+        assert room["available"] == 600
+        client.post('/api/delivery/gpu/activity',json={"id":"grade","bytes":100,"budget":1000,"active":True})
+        assert client.post(url,json={"bytes":300,"background":True,"concurrent":True,"draw":True}).json()["preempt"]
+        # Pending Proof/export work yields even before it can claim the GPU.
+        client.post('/api/delivery/gpu/activity',json={"id":"grade","bytes":100,"budget":1000,"active":False})
+        pending=Path(os.environ[gpu_delivery.ROOT_ENV]) / "delivery-retained-test"
+        pending.mkdir()
+        try:
+            (pending / "request.json").write_text(json.dumps({"priority":99,"created":time.time()}))
+            assert client.post(url,json={"bytes":300,"background":True,"concurrent":True,"draw":True}).json()["preempt"]
+        finally:
+            (pending / "request.json").unlink();pending.rmdir()
+        client.delete(url)
+        activity=client.post('/api/delivery/gpu/activity',json={"bytes":100,"budget":1000}).json()
+        assert activity["reserved"] == 0
