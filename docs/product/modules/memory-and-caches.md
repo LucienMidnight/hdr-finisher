@@ -107,6 +107,20 @@ Evidence: `codebase/output/quick-library-check/batches45-grade-native-sampled/`
 `codebase/output/batches45-grade-native-{owner,smaller}.log`.
 
 
+### November 5: full-size zoom estimate misses graphics-process memory (open)
+
+Found by Claude on `3eea538`/`915d38f` with `quick-library-check --batch5c`
+(output `quick-library-check/fullscreen-selection-claude`). Zooming the
+48 MP `DSC04375_DxO_clipped_target.tif` while the grid was still busy was
+admitted at 2.2 GB (estimate 1.15 GB, six planes x 24 bytes per pixel).
+Whole-app memory then reached 5.13 GB against 4.4 GB: backend +1.0 GB,
+Electron graphics process +1.5 GB, renderer +0.4 GB, about 60 bytes per
+pixel in total. Before the November 5 admission fix this zoom was refused,
+so the overshoot is new. It returns to 1.46 GB once the check ends. The
+admission estimate covers only the backend copy. Decision for Steve:
+count the whole cost (safe, but large zooms are then refused at the 4 GB
+setting) or make full-size detail cheaper on the graphics side.
+
 ### November 5: zoom admission correction (built)
 
 Selected full-size detail is admitted against remaining whole-app TARGET,
