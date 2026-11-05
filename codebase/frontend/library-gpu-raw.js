@@ -581,7 +581,64 @@
     return body.buffer;
   }
 
-  async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity, signal = null, context = null }) {
+  // Full-size detail planes stay on the GPU until the upload, then leave in
+  // bounded bands. Reading whole planes first held a second full-size copy
+  // in this window while the backend admitted its own (November 5: a 48 MP
+  // zoom reached 5.1 GB against the 4.4 GB limit). Bytes are unchanged.
+  const READBACK_BAND = 64 * 1024 * 1024;
+  // A plane kept on the GPU: the caller owns and destroys its buffer.
+  const keptPlane = (gpuBuffer, device, byteLength) => ({ gpuBuffer, device, byteLength });
+  const destroyKept = reduced => { for (const picture of Object.values(reduced || {})) for (const plane of picture.planes || []) plane?.gpuBuffer?.destroy(); };
+  async function writePlane(plane, write) {
+    if (!plane.gpuBuffer) {
+      for (let at = 0; at < plane.byteLength; at += READBACK_BAND) await write(plane.slice(at, Math.min(plane.byteLength, at + READBACK_BAND)));
+      return;
+    }
+    const { device, gpuBuffer, byteLength } = plane, band = Math.min(byteLength, READBACK_BAND);
+    const staging = device.createBuffer({ size: band, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+    try {
+      for (let at = 0; at < byteLength; at += band) {
+        const size = Math.min(band, byteLength - at);
+        const encoder = device.createCommandEncoder(); encoder.copyBufferToBuffer(gpuBuffer, at, staging, 0, size); device.queue.submit([encoder.finish()]);
+        await staging.mapAsync(GPUMapMode.READ, 0, size);
+        const bytes = staging.getMappedRange(0, size).slice(0); staging.unmap();
+        await write(bytes);
+      }
+    } finally { staging.destroy(); }
+  }
+  // Streams the framed scene (header part first) to the backend's admitted
+  // receiving buffer. Answers like HDRLibraryUpload.send.
+  async function sendStreamed(url, parts, signal, checkEmpty, path) {
+    const total = parts.reduce((n, part) => n + part.byteLength, 0);
+    const stream = root.HDRLibraryUpload.stream(url, { total, headers: { "Content-Type": "application/octet-stream" }, signal });
+    const write = async bytes => {
+      const answer = await stream.write(bytes);
+      if (!answer.ok) throw Object.assign(Error(answer.text || "Library request failed."), { answer });
+    };
+    try {
+      await stream.open();
+      for (const [index, part] of parts.entries()) {
+        let zero = 0, count = 0;
+        await writePlane(part, async bytes => {
+          if (checkEmpty && index > 0) { const bits = new Uint32Array(bytes); count += bits.length; for (let k = 0; k < bits.length; k++) if (bits[k] === 0) zero++; }
+          await write(bytes);
+        });
+        // The same empty-channel guard as reduced RAW pictures (see developRaw).
+        if (checkEmpty && index > 0 && count && zero >= count * 0.99) {
+          const channel = ["red", "green", "blue"][(index - 1) % 3];
+          root.HDRLibraryStopwatch?.("picture_development_empty_channel", { path, edge: 100000, channel });
+          throw Object.assign(Error(`GPU development returned an empty ${channel} channel at 100000.`), { gpuMemory: true, emptyChannel: true });
+        }
+      }
+      return await stream.end();
+    } catch (error) {
+      stream.cancel();
+      if (error.answer) return error.answer;
+      throw error;
+    }
+  }
+
+  async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity, signal = null, context = null, keepNative = false }) {
     const sharedContext = context || await gpu();
     await preparePipelines(sharedContext);
     const { device, pipelines, errors } = sharedContext;
@@ -592,7 +649,7 @@
     const outW = turned ? h : w, outH = turned ? w : h;
     const st = meta.sample_stride, sw = Math.ceil(outW / st), sh = Math.ceil(outH / st);
     const usage = GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST;
-    const owned = new Set(); let liveBytes = 0, peakBytes = 0;
+    const owned = new Set(), kept = []; let liveBytes = 0, peakBytes = 0, done = false;
     const own = buffer => { owned.add(buffer); liveBytes += buffer.size; peakBytes = Math.max(peakBytes, liveBytes); return buffer; };
     const release = buffer => { if (owned.delete(buffer)) { liveBytes -= buffer.size; buffer.destroy(); } };
     const make = bytes => {
@@ -757,7 +814,9 @@
       for (const buffer of planes) release(buffer);
       for (const edge of Object.keys(reduced)) {
         const r = reduced[edge];
-        r.planes = await Promise.all(r.planes.map(buffer => read(buffer, r.height * r.width * 4)));
+        r.planes = keepNative && Number(edge) === 100000
+          ? r.planes.map(buffer => { owned.delete(buffer); liveBytes -= buffer.size; kept.push(buffer); return keptPlane(buffer, sharedContext.baseDevice || device, r.height * r.width * 4); })
+          : await Promise.all(r.planes.map(buffer => read(buffer, r.height * r.width * 4)));
       }
       // A real photo never has a colour channel that is (almost) all exact zero.
       // One that does means a GPU step silently wrote nothing (November 1: teal
@@ -765,6 +824,7 @@
       // few stray values into the empty channel. Real photos peak near 29% zero
       // (crushed blacks). Treat it like a GPU memory failure: retry, then CPU.
       for (const [edge, r] of Object.entries(reduced)) r.planes.forEach((plane, c) => {
+        if (plane.gpuBuffer) return; // checked while streaming (sendStreamed)
         const bits = new Uint32Array(plane); let zero = 0;
         for (let k = 0; k < bits.length; k++) if (bits[k] === 0) zero++;
         if (zero < bits.length * 0.99) return;
@@ -776,12 +836,14 @@
       const sampleData = new Float32Array(await read(samples, sw * sh * 3 * 4));
       await stage("readback");
       if (errors.length > errorStart) throw new Error(errors.slice(errorStart).join("\n"));
+      done = true;
       return { timings, memory_peak_bytes: peakBytes, edge_diagnostics:edgeDiagnostics, errors: errors.slice(errorStart), clipped: [...clipped], chroma,
         peaks: { peak: peakValues[0], peak_luma: peakValues[1], peak_bt2020: peakValues[2] },
         samples: sampleData, sampleShape: [sh, sw], reduced };
     } finally {
       await device.queue.onSubmittedWorkDone().catch(() => {});
       for (const buffer of [...owned]) release(buffer);
+      if (!done) for (const buffer of kept) buffer.destroy();
     }
   }
 
@@ -816,7 +878,9 @@
       if(failures.length)throw Object.assign(Error('GPU out of memory: '+failures.join('; ')),{gpuUnavailable:true,gpuMemory:true});
     }};
   }
-  async function scheduledDevelopment({mosaic, meta, lensData, edges, background = false, syncStages = false, importance = () => 30, grant = null}, signal) {
+  // `consume` runs inside this development's GPU lease with full-size planes
+  // still on the GPU, so their memory stays reserved until they are uploaded.
+  async function scheduledDevelopment({mosaic, meta, lensData, edges, background = false, syncStages = false, importance = () => 30, grant = null, consume = null}, signal) {
     const context = await gpu();
     // Keep the approved reservation; requesting fewer products must not remove
     // headroom used by full-source RGB preparation. Only development is tiered.
@@ -884,12 +948,13 @@
         };
         root.HDRLibraryScenes?.stage(meta.path,"Developing photo");
         try {
-          const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, signal, context:allocations.context, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy});
+          const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, signal, context:allocations.context, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy,keepNative:!!consume});
           try{await allocations.check();}
-          catch(error){for(const picture of Object.values(result.reduced || {}))for(const texture of picture.textures || [])texture.destroy();throw error;}
+          catch(error){for(const picture of Object.values(result.reduced || {}))for(const texture of picture.textures || [])texture.destroy();destroyKept(result.reduced);throw error;}
           if (invalidAttempts) root.HDRLibraryStopwatch?.("picture_development_gpu_retry_passed", {path:meta.path,attempt:2});
           gpuFailures.delete(key);
           root.HDRLibraryStopwatch?.('picture_development_gpu_done',{path:meta.path,gpu_estimate_bytes:bytes,gpu_peak_bytes:result.memory_peak_bytes,peak_scope:'job-allocated'});
+          if(consume){try{result.consumed=await consume(result);}finally{destroyKept(result.reduced);}}
           return result;
         }
         catch (error) {
@@ -904,6 +969,8 @@
           }
           // Cancellation is not a failure: pass it through unchanged.
           if (signal?.aborted || error?.name === "AbortError") throw error;
+          // Neither is a refused detail upload: it asks for memory, then retries.
+          if (error.needsMemory) throw error;
           // Yielding to more urgent work is not a failure either: release the
           // lease and wait for the next turn without spending an attempt.
           if (error.gpuInvalidPixels && ++invalidAttempts === 1) {
@@ -1029,8 +1096,9 @@
     const started = performance.now();
     root.HDRLibraryScenes?.stage(path,"Waiting to develop photo",true);
     const edges = nativeMode ? [100000] : sharedJob ? [...sharedJob.edges].filter(size=>!sharedJob.results.has(size)) : [edge];
-    const developed = gpuResult = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, grant, edges}, signal);
-    const gpuMs = performance.now() - started;
+    let gpuMs = 0, quantileMs = 0, handoffStarted = 0, selectedResult;
+    const finish = async developed => {
+    gpuMs = performance.now() - started;
     // `meta` lives on with the cell (renewal timer, redraw helpers). Drop its
     // views into the downloaded source, or every cell keeps its whole source.
     if(meta.sdr_reference)meta.sdr_reference.samples=null;
@@ -1040,10 +1108,9 @@
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     const measured = performance.now();
     const robust = { luma: quantile(developed.samples, 0, 0.9999), channel: quantile(developed.samples, 1, 0.9999), bt2020: quantile(developed.samples, 2, 0.9999) };
-    const quantileMs = performance.now() - measured;
+    quantileMs = performance.now() - measured;
     root.HDRLibraryScenes?.stage(path,"Saving preview data");
-    let selectedResult;
-    const handoffStarted = performance.now();
+    handoffStarted = performance.now();
     const entries = [];
     for (const storedEdge of edges) {
       const picture = developed.reduced[storedEdge];
@@ -1078,8 +1145,9 @@
       // The worker owns transferred buffers. Native uploads use small pieces
       // so Chromium cannot retain another contiguous full-size request body.
       const payload=framed, bytes=parts ? parts.reduce((n,p)=>n+p.byteLength,0) : framed.byteLength, sentAt=performance.now();
-      const stored=await root.HDRLibraryUpload.send(liveScene ? "/api/library/live-developed" : "/api/library/raw-developed",
-        {body:payload,parts,signal:background ? undefined : signal,headers:{"Content-Type":"application/octet-stream"}});
+      const target=liveScene ? "/api/library/live-developed" : "/api/library/raw-developed";
+      const stored=parts ? await sendStreamed(target,parts,background ? undefined : signal,!meta.rgb,path)
+        : await root.HDRLibraryUpload.send(target,{body:payload,signal:background ? undefined : signal,headers:{"Content-Type":"application/octet-stream"}});
       root.HDRLibraryStopwatch?.(describeOnly ? "picture_scene_description" : "picture_scene_handoff",{
         path,edge:header.edge,pack_ms:sentAt-packedAt,request_ms:performance.now()-sentAt,bytes});
       const result=JSON.parse(stored.text || "{}");
@@ -1129,7 +1197,10 @@
       try {for(const entry of entries){const result=await send(entry);if(entry.header.edge===edge || nativeMode)selectedResult=result;}}
       finally {for(const {picture} of entries)for(const texture of picture.textures || [])texture.destroy();}
     }
-    root.HDRLibraryStopwatch?.("picture_development", {path, duration_ms:performance.now()-begun, gpu_ms:gpuMs, sensor_ms:sensorMs, source_ms:meta.source_timings_ms, gpu_stages_ms:developed.timings, quantiles_ms:quantileMs, handoff_ms:performance.now()-handoffStarted});
+    };
+    gpuResult = await scheduledDevelopment({mosaic, meta, lensData, syncStages:!!root.HDRLibraryProfile, background:liveScene, importance, grant, edges, consume:nativeMode ? finish : null}, signal);
+    if (!nativeMode) await finish(gpuResult);
+    root.HDRLibraryStopwatch?.("picture_development", {path, duration_ms:performance.now()-begun, gpu_ms:gpuMs, sensor_ms:sensorMs, source_ms:meta.source_timings_ms, gpu_stages_ms:gpuResult.timings, quantiles_ms:quantileMs, handoff_ms:performance.now()-handoffStarted});
     selectedResult.scene_stored=!liveScene || nativeMode;
     return selectedResult;
     } catch(error){

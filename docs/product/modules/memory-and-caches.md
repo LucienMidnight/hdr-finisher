@@ -107,19 +107,35 @@ Evidence: `codebase/output/quick-library-check/batches45-grade-native-sampled/`
 `codebase/output/batches45-grade-native-{owner,smaller}.log`.
 
 
-### November 5: full-size zoom estimate misses graphics-process memory (open)
+### November 5: full-size zoom hand-off holds one copy (built)
 
-Found by Claude on `3eea538`/`915d38f` with `quick-library-check --batch5c`
-(output `quick-library-check/fullscreen-selection-claude`). Zooming the
-48 MP `DSC04375_DxO_clipped_target.tif` while the grid was still busy was
-admitted at 2.2 GB (estimate 1.15 GB, six planes x 24 bytes per pixel).
-Whole-app memory then reached 5.13 GB against 4.4 GB: backend +1.0 GB,
-Electron graphics process +1.5 GB, renderer +0.4 GB, about 60 bytes per
-pixel in total. Before the November 5 admission fix this zoom was refused,
-so the overshoot is new. It returns to 1.46 GB once the check ends. The
-admission estimate covers only the backend copy. Decision for Steve:
-count the whole cost (safe, but large zooms are then refused at the 4 GB
-setting) or make full-size detail cheaper on the graphics side.
+Built by Claude at Steve's request ("make full-size zoom cheaper; research
+first"). Research found the October 19 design right: keep one full-size
+scene for the selected photo in the backend, draw only the visible part.
+Developing only the on-screen region was rejected: it would undo that
+decision and make every pan wait for development. The overshoot came
+from the hand-off, not the retained scene. With a busy grid, zooming the
+48 MP `DSC04375_DxO_clipped_target.tif` reached 5.13 GB against 4.4 GB.
+Three extra full-size copies existed during the hand-off:
+
+- the window read every plane back before uploading, while the backend
+  admitted its own copy (at 4 GB this refused a 48 MP TIFF even when idle);
+- the upload worker kept each sent 4 MB request body until the upload
+  ended (+1 GB, growing at the upload rate);
+- the TIFF/RGB route made interleaved float copies and a full-size finite
+  mask before the scene store (+1.5 GB).
+
+Now full-size planes stay on the GPU inside the development's GPU lease
+and stream to the admitted backend buffer in 64 MB bands; the worker
+collects after every 64 MB; the RGB route checks and passes the received
+planes in place (the store still makes its banded half-float copy).
+Bytes and stored values are unchanged. Checks on the 4 GB setting: 42 MP
+RAW zoom peak 2.75 GB (was 3.37 GB); 48 MP TIFF zoom admitted when idle,
+peak 3.70 GB (was refused); busy-grid `--batch5c` peak 3.50 GB (was
+5.13 GB). The busy check still reports "did not settle": it stops
+measuring 4.6 s after the zoom while the admitted 48 MP upload is still
+running (3.43 GB against 3.40 GB). No allowance or estimate changed.
+Evidence: `output/quick-library-check/zoom-stream-*`.
 
 ### November 5: zoom admission correction (built)
 

@@ -191,7 +191,7 @@ window.HDRLibraryRGB = (() => {
       reference_only:true,direct_srgb:ref.direct_srgb,quantize_half:ref.quantize_half};
     let reference;
     try { reference=await developFrame({...options,meta,mosaic:ref.samples}); }
-    catch(error){for(const picture of Object.values(result.reduced))for(const texture of picture.textures || [])texture.destroy();throw error;}
+    catch(error){for(const picture of Object.values(result.reduced)){for(const texture of picture.textures || [])texture.destroy();for(const plane of picture.planes)plane?.gpuBuffer?.destroy();}throw error;}
     for(const [edge,picture] of Object.entries(reference.reduced)){ result.reduced[edge].planes.push(...picture.planes); result.reduced[edge].textures?.push(...(picture.textures || [])); }
     result.peaks.sdr=reference.peaks.sdr;
     result.memory_peak_bytes=Math.max(result.memory_peak_bytes,reference.memory_peak_bytes);
@@ -229,7 +229,7 @@ window.HDRLibraryRGB = (() => {
     }
     return Object.fromEntries(await Promise.all(Object.entries(cache).map(async([name,value])=>[name,await value])));
   }
-  async function developFrame({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity, direct = false, signal = null, context = null }) {
+  async function developFrame({ mosaic, meta, edges = [640,2560], beforeSubmit = null, memoryBudget = Infinity, direct = false, signal = null, context = null, keepNative = false }) {
     const shared = context || await gpu(), {device,errors} = shared;
     const pipelines=await warmup(undefined,shared);
     if(meta.dng_warp)return developDNGTiles({mosaic,meta,edges,beforeSubmit,memoryBudget,device,errors,pipelines,signal});
@@ -255,7 +255,7 @@ window.HDRLibraryRGB = (() => {
       }
       return new Float16Array(values).buffer;
     };
-    const owned = new Set(); let liveBytes = 0, peakBytes = 0;
+    const owned = new Set(), kept = []; let liveBytes = 0, peakBytes = 0;
     const own = buffer => { if(liveBytes+buffer.size>memoryBudget){buffer.destroy();throw Error("RGB preparation exceeds the reserved memory budget.");} owned.add(buffer); liveBytes += buffer.size; peakBytes = Math.max(peakBytes, liveBytes); return buffer; };
     const release = buffer => { if (owned.delete(buffer)) { liveBytes -= buffer.size; buffer.destroy(); } };
     const make = bytes => {
@@ -359,6 +359,12 @@ window.HDRLibraryRGB = (() => {
         const retained = [];
         for (const plane of planes) {
           if(rh===h && rw===w){
+            // Full-size detail stays on the GPU; the Library streams it to
+            // the backend in bounded bands (library-gpu-raw.js sendStreamed).
+            if(keepNative && edge===100000){
+              owned.delete(plane);liveBytes-=plane.size;kept.push(plane);
+              reduced[edge].planes.push({gpuBuffer:plane,device:shared.baseDevice||device,byteLength:n*4});continue;
+            }
             const start=performance.now();
             if(direct)retained.push(plane);
             reduced[edge].planes.push(handoffPlane(await read(plane,n*4)));
@@ -414,7 +420,7 @@ window.HDRLibraryRGB = (() => {
     } finally {
       await device.queue.onSubmittedWorkDone().catch(() => {});
       for (const buffer of [...owned]) release(buffer);
-      if(!completed)for(const texture of textures)texture.destroy();
+      if(!completed){for(const texture of textures)texture.destroy();for(const buffer of kept)buffer.destroy();}
     }
   }
 

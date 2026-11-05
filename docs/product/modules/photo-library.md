@@ -159,6 +159,17 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 5d | Prepare drawing pipelines after the first grid picture; preserve popped-out SDR stand-ins on reopen. | Built November 4, 2026: prepared busy TIFF 2.12 s and heavy ARW 3.02 s; four docked/popped-out SDR/HDR pixel checks pass. See checkpoint below. |
 
 
+### November 5: full-size zoom streams its hand-off
+
+Full-size detail (100%) now leaves the GPU in 64 MB bands straight to the
+backend instead of as whole planes; the TIFF/RGB route no longer copies
+them again. Memory and checks: see the November 5 entry in
+[memory-and-caches](memory-and-caches.md). Open: zoom is slow on large
+photos (42 MP RAW 9.2 s, 48 MP TIFF 16.3 s from click to detail drawn).
+The upload runs at about 150 MB/s in 4 MB requests and the detail draw
+then fetches the full scene again; measure the whole wait before choosing
+a fix.
+
 ### November 5: fullscreen keeps a multi-photo selection
 
 Decided by Claude (Steve delegated the choice, November 5, 2026). Entering

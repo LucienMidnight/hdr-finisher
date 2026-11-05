@@ -268,20 +268,24 @@ for (const liveScene of [false,true]) test(`native requests develop and hand off
   const meta={path:'photo',identity:[],mosaic_bytes:0,width:6000,height:4000};
   const header=Buffer.from(JSON.stringify(meta)),body=Buffer.alloc(4+header.length);
   body.writeUInt32LE(header.length);header.copy(body,4);
-  const requests=[],reductions=[],handoffs=[];
+  const requests=[],reductions=[],handoffs=[],streamed=[];
   const context={performance,crypto:require('node:crypto').webcrypto,DOMException,AbortController,
     Uint8Array,Float32Array,DataView,TextDecoder,setInterval,clearInterval,
     decodedSources:new Map(),directScenes:new Map(),cachedDirect:()=>null,
     sourceStorageLimit:async()=>Infinity,quantile:()=>1,
     handoffBody:globalThis.HDRLibraryGpuRaw.handoffBody,
     fetch:async()=>({ok:true}),
-    scheduledDevelopment:async({edges})=>{
+    scheduledDevelopment:async({edges,consume})=>{
       reductions.push([...edges]);
-      return {samples:[],peaks:{},timings:{},reduced:Object.fromEntries(edges.map(edge=>{
+      const result={samples:[],peaks:{},timings:{},reduced:Object.fromEntries(edges.map(edge=>{
         const [height,width]=reducedSize(meta,edge);
         return [edge,{width,height,planes:[new ArrayBuffer(4)]}];
       }))};
+      // Full-size detail is handed off inside the development's GPU lease.
+      if(consume)result.consumed=await consume(result);
+      return result;
     },
+    sendStreamed:async(_url,parts)=>{const body=parts[0],n=new DataView(body).getUint32(0,true);const h=JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,n)));handoffs.push(h);streamed.push(h.edge);return {ok:true,text:JSON.stringify({edge:h.edge,width:h.width,height:h.height})};},
     root:{HDRLibraryUpload:{
       fetchSource:async(_url,{body:request})=>{requests.push(JSON.parse(request));return {ok:true,status:200,headers:{get:()=>''},arrayBuffer:async()=>body.buffer.slice(body.byteOffset,body.byteOffset+body.length)};},
       send:async(_url,{body,parts})=>{body=parts?.[0] || body;const n=new DataView(body).getUint32(0,true);const h=JSON.parse(new TextDecoder().decode(new Uint8Array(body,4,n)));handoffs.push(h);return {ok:true,text:JSON.stringify({edge:h.edge,width:h.width,height:h.height})};}
@@ -299,6 +303,7 @@ for (const liveScene of [false,true]) test(`native requests develop and hand off
   const full=handoffs.find(h=>h.edge===100000);
   assert.equal(full.native_mode,!liveScene);
   assert.equal(full.width,full.source_width);assert.equal(full.height,full.source_height);
+  assert.deepEqual(streamed,[100000],'Only full-size detail is streamed in bands');
 });
 
 for(const cancelAll of [false,true])test(`shared samples release after ${cancelAll?'last requester cancels':'handoff fails'}`,async()=>{

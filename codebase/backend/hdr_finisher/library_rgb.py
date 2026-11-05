@@ -317,10 +317,15 @@ def developed(cache, path, header, payload):
         if len(payload) != h * w * plane_count * sample_bytes:
             raise ValueError("Incomplete RGB preview data.")
         planes = np.frombuffer(payload, dtype="<f2" if sample_bytes == 2 else "<f4").reshape(plane_count, h, w)
-        if not np.all(np.isfinite(planes)):
-            raise ValueError("RGB GPU preparation produced invalid samples.")
-        pixels = np.ascontiguousarray(planes[:3].transpose(1, 2, 0))
-        reference = np.ascontiguousarray(planes[3:].transpose(1, 2, 0)) if reference_present else None
+        # Check and pass on the received planes in place. The scene store makes
+        # its half-float copy in row bands, so full-size interleaved float
+        # copies here only added memory (+1.5 GB for a 48 MP TIFF at 100%,
+        # November 5). The stored values are unchanged.
+        for row in range(0, h, 128):
+            if not np.all(np.isfinite(planes[:, row:row + 128])):
+                raise ValueError("RGB GPU preparation produced invalid samples.")
+        pixels = planes[:3].transpose(1, 2, 0)
+        reference = planes[3:].transpose(1, 2, 0) if reference_present else None
     peak, robust = header["peaks"], header["robust"]
     # SDR JPEG/PNG cannot gain HDR headroom through a colour matrix.
     analysis = HDRAnalysis(classification="SDR_ONLY", badge_message="Authored SDR file rendition.",
