@@ -1090,3 +1090,15 @@ Before/after errors: held F, deselected fullscreen lead and stream anchor
 all reproduce before and pass after. No black frame or automatic zoom in
 either. Fixed run external memory peaks at 3.685 GB and settles at 2.504 GB.
 Evidence: `codebase/output/quick-library-check/batches45-{fault-baseline,scroll-before,fixed}`.
+
+### November 5: Library/Grade native-owner follow-up
+
+Paired Grade opening in the same Windows app/source: 5.674/5.706 s, within
+5%, after warm-up (6.787 s). This is a live-scene diagnostic, not retained
+backend-native qualification: native retained counters stayed zero. Peak
+4.834 GB fails the unchanged 4.4 GB allowance; 60-second idle 1.986 GB.
+Explicit retained-native attempts were refused before pairing. Conditions:
+November 5, parent f37514b plus native gate changes; reusable hdr-test copies,
+plain Electron, 2560x1440, no overlapping GPU run. Evidence:
+`codebase/output/quick-library-check/batches45-grade-native-sampled/` and
+`codebase/output/batches45-grade-native-{owner,smaller}.log`.

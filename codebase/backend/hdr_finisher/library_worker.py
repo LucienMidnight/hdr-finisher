@@ -10,6 +10,7 @@ from pathlib import Path
 from threading import Condition, Event, RLock, Thread
 import time
 from uuid import uuid4
+from weakref import WeakSet
 from .library_diagnostics import log, problem
 
 
@@ -39,6 +40,7 @@ class LibraryWorker:
         self._paused: set[str] = set()
         self._grade_holds: set[str] = set()
         self._grade_active = True
+        self._native_caches = WeakSet()
         self._source_foreground = set()
         self._closed = False
         self._failure: str | None = None
@@ -247,6 +249,12 @@ class LibraryWorker:
             self._send({"command": "cancel", "id": job_id})
             return True
 
+    def watch_native(self, cache):
+        """Backend native owners yield at the same gate as helper owners."""
+        with self._lock:
+            self._native_caches.add(cache)
+            cache.pause_native(bool(self._paused))
+
     def pause(self, reason: str, paused: bool, *, action: str = "hold changed") -> None:
         with self._lock:
             was_paused = bool(self._paused)
@@ -261,6 +269,8 @@ class LibraryWorker:
                 for key, request in list(self._requests.items()):
                     if request.get("gpu_invalid_pixels"):
                         self.cancel(key)
+            for cache in self._native_caches:
+                cache.pause_native(bool(self._paused))
             self._send({"command": "pause", "paused": bool(self._paused)})
 
     def foreground_source(self, key, active):

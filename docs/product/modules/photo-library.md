@@ -126,7 +126,7 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Follow-up incomplete November 4, 2026 |
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Built November 5, 2026; focused fault checks below |
 | 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Open: selected-photo priority over grid developments (48 MP float TIFF 19.8 s), brush-mask and warp CPU time |
-| 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Measured November 4, 2026 (`3b24d92`); the rest is tabled for polish until Steve tests on a MacBook Neo (polish pass) |
+| 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Partial November 5: backend native owners yield to Grade; regression passes. Windows peak and retained-owner app timing remain open; 8 GB Mac acceptance belongs to Steve. |
 | 5b | The on-screen photo takes priority; recover lost reservations and hand over completed thumbnails; parallel screen perspective and mask warps. | Partial November 4, 2026: 32.65 s abandoned TIFF wait removed (2.06 s ordinary open; forced lost reservation 2.80 s). Four-photo SDR/HDR stored pixels identical to 5a. Busy cold fullscreen still 7.0–7.2 s versus idle 1.98–2.23 s; ARW ordinary first open 2.48–2.55 s. See checkpoint below. |
 | 5c | Visible TIFF/RAW stand-ins, explicit detail demand, memory admission before decoding and same-photo reopen investigation. | Partial November 4, 2026: Fit/native visibility and refusal retry fixes built. Same-name cache misses were different source paths. At the 5c checkpoint busy first drawing still missed the +about 1 s target; completed by 5d below. |
 | 5d | Prepare drawing pipelines after the first grid picture; preserve popped-out SDR stand-ins on reopen. | Built November 4, 2026: prepared busy TIFF 2.12 s and heavy ARW 3.02 s; four docked/popped-out SDR/HDR pixel checks pass. See checkpoint below. |
@@ -160,6 +160,35 @@ it accepted any filename containing `.hdrf`. It now accepts `.hdrf` boundaries
 (including sync-conflict names), while ignoring project files. A binary-project
 regression reproduces the UTF-8 warning before the fix and passes afterward;
 all 17 conflict/sidecar checks pass. Existing projects are unaffected.
+
+### November 5: Grade yields backend native detail (4d, partial)
+
+The worker's Grade/import/export work gate now also pauses both backend
+native caches; previously only the helper's owner was paused. Retained native
+planes are released at that gate, and a late GPU publication cannot reclaim
+them until the gate reopens. The existing 600 MB working share and all other
+allowances are unchanged. The memory endpoint reports retained/upload bytes
+and pause state separately so an upload or a live scene cannot masquerade as
+a retained native owner.
+
+The regression runs the router, worker, native cache and Grade source-mip
+cache together with small real arrays. Before the fix the native owner refuses
+Grade's insertion; after it, Grade receives its source mips and retained native
+bytes are exactly zero. The focused native tests pass (4).
+
+Windows acceptance remains incomplete. A live-scene diagnostic opened Grade
+in 5.674/5.706 s (within the proposed paired 5%), settled to 1.986 GB after
+60 seconds, but peaked at 4.834 GB against the unchanged 4.4 GB allowance.
+It established no retained backend native owner and therefore does NOT
+qualify the contention interaction. Explicit 42 MP and second-photo native
+attempts were refused by existing memory admission, before the paired
+measurement; no allowance was raised to force a pass. Further memory tuning
+and real-app retained-owner timing remain open. The 8 GB Mac acceptance must
+be performed by Steve on a MacBook; Windows cannot establish it.
+
+Evidence: `codebase/output/quick-library-check/batches45-grade-native-sampled/`
+(report, scenario and independent samples); refused attempts are recorded in
+`codebase/output/batches45-grade-native-{owner,smaller}.log`.
 
 ### November 5: remaining-batch acceptance plan
 

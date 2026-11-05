@@ -395,6 +395,9 @@ def create_library_router(worker, browser, store=None):
 
     from .library_live import LivePictures, quality as live_quality, recipe as live_recipe
     live = LivePictures(browser.root, marks, documents if store is not None else None)
+    if getattr(worker, "watch_native", None):
+        worker.watch_native(cache)
+        worker.watch_native(live.cache)
     from .library_screen_previews import add_screen_preview_routes
     add_screen_preview_routes(router, live, worker, store)
     from .library_build_previews import add_build_preview_routes
@@ -903,7 +906,7 @@ def create_library_router(worker, browser, store=None):
             def sample():
                 started = time.perf_counter()
                 try:
-                    return snapshot(cached_only=True)
+                    return {**snapshot(cached_only=True), "nativeDetail": [cache.native_memory(), live.cache.native_memory()]}
                 finally:
                     ended = time.perf_counter()
                     if ended-queued > .25:

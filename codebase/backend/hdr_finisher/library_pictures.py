@@ -428,6 +428,8 @@ class LibraryPictureCache:
                 self._native_source[3].get("renderer") == "gpu")
 
     def _admit_native(self, size):
+        if self._native_paused:
+            return False
         # Selected detail/upload is active work, not a retained working cache.
         # Count its existing owner once when an upload becomes native planes.
         owned = (len(self._native_upload[1]) if self._native_upload is not None else
@@ -499,6 +501,11 @@ class LibraryPictureCache:
             self._native_upload=None
             self._native_source=None
             app_memory.claim(self.native_key,'working',0)
+
+    def native_memory(self):
+        with self._native_lock:
+            return dict(retainedBytes=self._native_source[1].nbytes if self._native_source else 0,
+                uploadBytes=len(self._native_upload[1]) if self._native_upload else 0, paused=self._native_paused)
 
     def pause_native(self, paused):
         self._native_paused = bool(paused)

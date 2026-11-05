@@ -52,3 +52,44 @@ def test_native_source_is_released_while_grade_is_busy(tmp_path):
     assert cache._native_source is None
     cache.build_native(path, .2, .2, 100, 100)
     assert cache._native_source is None
+
+
+def test_grade_pause_yields_backend_detail_to_source_mips(tmp_path, monkeypatch):
+    from hdr_finisher import app_memory
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.library_worker import LibraryWorker
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.render_cache import SourceMipStore
+    monkeypatch.setattr(app_memory, '_caches', {})
+    monkeypatch.setattr(app_memory, '_sample', (0, None))
+    # Small real arrays reproduce competition for the same share without a
+    # hundreds-of-MB fixture. No production allowance changes.
+    monkeypatch.setattr(app_memory, 'LIMITS', {**app_memory.LIMITS, 'working': 800})
+    caches = []
+    original = LibraryPictureCache.__init__
+    def record(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        caches.append(self)
+    monkeypatch.setattr(LibraryPictureCache, '__init__', record)
+    worker = LibraryWorker(tmp_path / 'app')
+    router = create_library_router(worker, MediaBrowserStore(tmp_path / 'app'))
+    backend = caches[0]
+    path = tmp_path / 'photo.png'
+    Image.new('RGB', (4, 4)).save(path)
+    native = np.ones((4, 4, 3), np.float32)
+    backend.retain_gpu_native(path, native, {'renderer': 'gpu'}, {})
+    mips = SourceMipStore(tmp_path / 'mips')
+    mip = np.ones((8, 8, 3), np.float32)
+    mips._insert_memory_locked(('photo', 8), mip)
+    assert mips._memory_bytes == 0  # Native owner occupies the same share.
+    with worker.busy('Grade render'):
+        assert backend._native_source is None
+        assert app_memory._caches[backend.native_key]['bytes'] == 0
+        mips._insert_memory_locked(('photo', 8), mip)
+        assert mips._memory_bytes == mip.nbytes
+        assert mips._memory[('photo', 8)] is mip
+        with pytest.raises(ValueError):
+            backend.retain_gpu_native(path, native, {'renderer': 'gpu'}, {})
+    assert backend._native_source is None
+    assert not backend._native_paused
+    assert router is not None

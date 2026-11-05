@@ -49,6 +49,21 @@ async function run({window,frame,config,stage}) {
   measures.push({ms:samples.at(-1).at_ms,samples});await sleep(800);
  }
  fs.writeFileSync(path.join(out,'wait-check.json'),JSON.stringify({photo,measures},null,2));
+ if(config.gradeNativeMemory){
+  const main=code=>window.webContents.executeJavaScript(code);
+  const memory=async()=>{await lib(`fetch('/api/library/memory').then(r=>r.json())`);await sleep(150);return lib(`fetch('/api/library/memory').then(r=>r.json())`);};
+  const selected=await lib('HDRLibrary.getSnapshot().selected'),opens=[];
+  async function open(label){stage(label);const at=Date.now();await main(`(async()=>openDesktopSelection({kind:'source',...await hdrFinisherDesktop.grantSourcePath(${JSON.stringify(selected)}),fromLibrary:true}))()`);const end=Date.now()+60000;while(!await main(`HDRGradeSaving.ready()&&state.session?.source.filename===${JSON.stringify(path.basename(selected))}&&!state.gpuDraftInFlight&&state.gpuPreview?.lastPresentedFrame?.applicationGeneration===state.previewGeneration[state.currentView]`)){if(Date.now()>end)throw Error('Grade preview timeout');await sleep(40);}opens.push({label,ms:Date.now()-at,memory:await memory()});}
+  async function close(){await main(`closePhotoInGrade();activateWorkflowTab('import')`);await sleep(2500);}
+  await open('Grade warm-up');await close();await open('Grade paired baseline');await close();
+  await lib(`document.getElementById('single-view').click();true`);await wait(`HDRLibrary.getSnapshot().selected===${JSON.stringify(selected)}&&document.getElementById('single-picture').dataset.picturePath===HDRLibrary.getSnapshot().selected`);
+  stage('retained backend native detail');await lib(`HDRLibraryGpuRaw.thumbnail(${JSON.stringify(selected)},2560,new AbortController().signal,{nativeMode:true})`);await sleep(500);
+  const retained=await memory();
+  await open('Grade after native detail');await sleep(1500);const yielded=await memory();
+  stage('Grade idle give-back');await sleep(60000);const idle=await memory();
+  const errors=[];if(!retained.nativeDetail?.some(x=>x.retainedBytes>0))errors.push('No retained native owner established');if(yielded.nativeDetail?.some(x=>x.retainedBytes>0))errors.push('Library retained native owner during Grade');if(opens[2].ms>opens[1].ms*1.05)errors.push('Grade open exceeds paired 5% tolerance');
+  return {stage:'done',errors,probe:{},events:[],grade_native_memory:{opens,retained,yielded,idle},scenario_ms:Date.now()-config.appStartedAt};
+ }
  if(config.timingOnly)return {stage:'done',appStartedAt:config.appStartedAt,pipelineMemory,startup,errors:[],probe:{},events:await lib('waitEvents'),wait_check:{photo,hdr:config.hdr,popout:config.popout,idle:config.idle,measures},scenario_ms:measures[0].ms};
  stage('compare pixels');
  await lib(`document.getElementById('compare-enabled').click();true`);

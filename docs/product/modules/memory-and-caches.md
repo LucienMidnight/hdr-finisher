@@ -1,5 +1,35 @@
 # Module PRD: Memory and caches
 
+### November 5: Grade yields backend native detail (4d, partial)
+
+The worker's Grade/import/export work gate now also pauses both backend
+native caches; previously only the helper's owner was paused. Retained native
+planes are released at that gate, and a late GPU publication cannot reclaim
+them until the gate reopens. The existing 600 MB working share and all other
+allowances are unchanged. The memory endpoint reports retained/upload bytes
+and pause state separately so an upload or a live scene cannot masquerade as
+a retained native owner.
+
+The regression runs the router, worker, native cache and Grade source-mip
+cache together with small real arrays. Before the fix the native owner refuses
+Grade's insertion; after it, Grade receives its source mips and retained native
+bytes are exactly zero. The focused native tests pass (4).
+
+Windows acceptance remains incomplete. A live-scene diagnostic opened Grade
+in 5.674/5.706 s (within the proposed paired 5%), settled to 1.986 GB after
+60 seconds, but peaked at 4.834 GB against the unchanged 4.4 GB allowance.
+It established no retained backend native owner and therefore does NOT
+qualify the contention interaction. Explicit 42 MP and second-photo native
+attempts were refused by existing memory admission, before the paired
+measurement; no allowance was raised to force a pass. Further memory tuning
+and real-app retained-owner timing remain open. The 8 GB Mac acceptance must
+be performed by Steve on a MacBook; Windows cannot establish it.
+
+Evidence: `codebase/output/quick-library-check/batches45-grade-native-sampled/`
+(report, scenario and independent samples); refused attempts are recorded in
+`codebase/output/batches45-grade-native-{owner,smaller}.log`.
+
+
 ### November 5: zoom admission correction (built)
 
 Selected full-size detail is admitted against remaining whole-app TARGET,
