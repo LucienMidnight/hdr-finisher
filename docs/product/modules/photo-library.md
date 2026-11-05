@@ -132,6 +132,19 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 5d | Prepare drawing pipelines after the first grid picture; preserve popped-out SDR stand-ins on reopen. | Built November 4, 2026: prepared busy TIFF 2.12 s and heavy ARW 3.02 s; four docked/popped-out SDR/HDR pixel checks pass. See checkpoint below. |
 
 
+### November 5: fullscreen keeps a multi-photo selection
+
+Decided by Claude (Steve delegated the choice, November 5, 2026). Entering
+fullscreen no longer replaces a multi-photo grid selection; it adds the
+shown photo if a Ctrl-click had deselected it. While fullscreen is open,
+ratings, flags, labels and Delete act on the shown photo only; leaving
+fullscreen without moving to another photo returns the same selection. An
+arrow key in fullscreen still selects just the new photo, as before. Paste,
+Quick Export and Export still use the selection. Checks: 805 JavaScript
+tests pass, including `library-fullscreen-selection.test.js`. Python and
+real-app checks were not run: no Python changed, and the real-app check
+would have overlapped Codex's memory timing runs. Steve to try by hand.
+
 ### November 5: Batch 4c fullscreen and streamed-grid correction
 
 Before fixing, the real Electron page reproduced held-F leaving fullscreen,

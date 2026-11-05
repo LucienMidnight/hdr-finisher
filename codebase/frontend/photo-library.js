@@ -91,7 +91,7 @@
   const { showMenu, closeMenu: closeFolderMenu, make } = HDRLibraryDialogs;
   const sameName = (a, b) => a.toLocaleLowerCase() === b.toLocaleLowerCase();
   const belongs = (photo, place) => (place.kind === "album" ? photo.albums || [] : photo.marks?.tags || []).some(name => sameName(name, place.name));
-  const culling = HDRLibraryCulling.create({ confirm: confirmChange, photos: () => state.allPhotos, selection: () => state.view === "single" && compare.enabled() ? new Set([selected()?.path]) : state.selection, api, status,
+  const culling = HDRLibraryCulling.create({ confirm: confirmChange, photos: () => state.allPhotos, selection: () => state.view === "single" && (compare.enabled() || state.review) ? new Set([selected()?.path]) : state.selection, api, status,
     labelName: label => state.labelNames[label] || "",
     optimistic: () => { updateSingleCaption(); updateDetails(); paintGrid(); paintFilm(); },
     updated: result => {
@@ -1313,9 +1313,9 @@
     if (review && !selected()) return;
     if (review) {
       state.beforeReview = state.view;
-      // Fullscreen commands act on the picture being shown, even when a
-      // Ctrl-click had removed the lead picture from the grid selection.
-      state.selection = new Set([selected().path]); state.anchor = state.index;
+      // Keep the grid selection for when fullscreen closes. Ratings, labels
+      // and Delete act on the shown picture only while fullscreen is open.
+      state.selection.add(selected().path);
       state.zoom = false; state.detailRequested = null;
       state.native?.abort(); state.nativeMeta = null;
       $("zoom-button").setAttribute("aria-pressed", "false");
@@ -2142,7 +2142,7 @@
       event.preventDefault(); select(state.index + steps[key], true, event.shiftKey ? "range" : "single");
     }
     else if (key === "enter") { event.preventDefault(); openGrade(); }
-    else if (key === "delete") { event.preventDefault(); fileCommands.remove(state.photos.filter(photo => state.selection.has(photo.path))).catch(error => status(error.message)); }
+    else if (key === "delete") { event.preventDefault(); fileCommands.remove(state.review ? [selected()].filter(Boolean) : state.photos.filter(photo => state.selection.has(photo.path))).catch(error => status(error.message)); }
     else if (key === " ") { event.preventDefault(); setView(state.view === "grid" ? "single" : "grid"); }
     else if (key === "z") { event.preventDefault(); toggleZoom(); }
     else if (key === "h") {
