@@ -1,5 +1,82 @@
 # Module PRD: Memory and caches
 
+### November 5: Grade peak reduction
+
+No allowance changes. The old docked-HDR peak sample is 5.177 GB counted
+RAM: backend 3.760 GB, GPU process host pages 0.873 GB, other processes
+0.544 GB. The nearest app census (283 ms later, using its previous completed
+process walk) reports Grade's previous source 0.509 GB, named caches only
+84.5 MB, zero handoff bytes, zero native upload/retention and no active grants.
+These owner counters overlap process RAM; they must not be added to it.
+Hidden delivery is only 38.7 MB counted in that independent peak sample.
+GPU-process host memory includes Chromium staging/driver storage; these
+records cannot divide that storage exactly, and dedicated VRAM is separate.
+
+A 50 ms stack/array census of the same real 42 MP RAW decode identifies the
+large transient at lens correction: original colour image 508.7 MB, vignetted
+copy 508.7 MB, remap output 508.7 MB, full Lensfun coordinates 1,017.4 MB,
+and 12 active workers' indices/weights/gathers. Unique arrays visible in
+stacks total 2.854 GB at a 3.558 GB backend working-set peak; the remainder
+includes interpreter/native allocator residency and temporaries between
+stack observations. This is a separate instrumented decode, not a claim that
+all its allocations were measured simultaneously with the old app peak.
+No encoder is on that decode stack. Existing full-app telemetry and this
+allocation census identify overlapping lens work, rather than named caches,
+as the main peak owner.
+
+RAW correction now consumes its exclusively owned float32 colour buffer for
+vignetting. Other callers retain the default non-mutating behavior. Remap
+workers run in waves whose scratch fits the existing WORKING allowance,
+using a conservative 128 bytes per band pixel for indices, float64 weights
+and expression temporaries. No CPU cap, cache share or memory limit changed;
+the number working simultaneously follows the existing allowance and band
+width. Remap bands are now 32 rows rather than 128, keeping all CPUs busy
+with smaller live gathers. Original full Lensfun coordinates and bilinear
+arithmetic stay intact.
+Both real RAW decoded-image SHA-256 hashes are identical before/after;
+isolated backend working-set peak falls to 2.316 GB (diagnostic, not app
+acceptance). Small tests cover both coordinate layouts, multiple waves,
+input ownership and exact output equality.
+
+For the four hand-off timings, propose 5% against the previous whole waits
+(ordinary shared-machine variation); the existing 500 ms goal remains. Paired
+Grade opening already uses 5%. Memory must still peak at or below 4.4 GB and
+settle below 3.4 GB at the default setting.
+
+Final plain-Electron hand-off checks, 2560x1440, default 4 GB, reusable
+hdr-test RAW copies: docked HDR 4.199 GB, docked SDR 4.185 GB, popped-out HDR
+4.327 GB and popped-out SDR 4.286 GB. All four pass the unchanged 4.4 GB
+allowance and settle at 2.281-2.650 GB. The intermediate 128-row version
+still peaked at 4.561 GB in popped-out HDR; smaller bands removed that last
+overshoot. The final popped-out HDR peak consists of backend 2.210 GB,
+GPU-process host pages 1.497 GB and other processes 0.619 GB counted RAM.
+Visible grid/filmstrip crops change in all four modes; separate stored-screen
+crops also change in docked HDR/SDR. Existing speed misses remain, recorded
+in the performance table; no delivery code or tolerance changed.
+
+The retained-native contention check now establishes a real 508.7 MB owner
+before Grade, then observes zero retained/upload bytes after Grade takes
+priority. Paired Grade opens in 5.488/5.549 s (within the existing 5%);
+warm-up 6.673 s. Whole-app peak 4.005 GB, idle 1.701 GB; all checks pass.
+This closes the Windows retained-native/memory gap from 4d; the separate
+8 GB Mac acceptance still belongs to Steve. Visible full-screen native detail
+also develops and draws without refusal: peak 3.373 GB, final 1.551 GB,
+six-second observation on the reused DSC00264.ARW. Fast checks: 805 JavaScript
+passed; Python 3,066 passed, three skipped, with only the known unrelated
+test_remembered_failure_does_not_hide_current_grade_cached_scene failure.
+No allowance, output tolerance, saved-file format or processing arithmetic
+changed. Two real 42 MP RAWs retain exact full decoded-image hashes.
+
+Evidence: `codebase/output/memory-peak-{diagnostic,after-final}.log`,
+`codebase/output/quick-library-check/memory-peak-handoff-{dock,pop}-{hdr,sdr}/`
+and `memory-peak-native-selected/`, `memory-peak-zoom/`, and the old
+`quick-library-check/batches45-handoff-dock-hdr/` process census. Final fast
+logs: `codebase/output/memory-peak-{node,pytest}-final.log`.
+Output started/ended at 29.2 GB (under 100 GB). App profiles were removed by
+the harness. Automatic approval review blocked removal of this task's
+pytest-1290/1291 TEMP folders and failed `memory-peak-native/` review folder;
+these and the small allocation-probe scripts/intermediate logs are disposable.
+
 ### November 5: Grade yields backend native detail (4d, partial)
 
 The worker's Grade/import/export work gate now also pauses both backend

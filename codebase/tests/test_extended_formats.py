@@ -848,3 +848,38 @@ def test_replace_document_rejects_interpretation_without_reloading_pixels(tmp_pa
 
     with pytest.raises(ValueError, match="interpretation endpoint"):
         sessions.replace_edit_document(payload.session_id, document, expected_revision=0)
+
+
+@pytest.mark.parametrize("chromatic", [False, True])
+def test_remap_waves_keep_original_bilinear_pixels(chromatic, monkeypatch):
+    from hdr_finisher import app_memory
+    rng = np.random.default_rng(31)
+    image = rng.random((19, 23, 3), dtype=np.float32)
+    shape = (19, 23, 3, 2) if chromatic else (19, 23, 2)
+    coordinates = rng.uniform(-2, 25, shape).astype(np.float32)
+    original = _remap_bilinear_strips(image, coordinates, chromatic=chromatic, rows=3)
+    monkeypatch.setattr(app_memory, "WORKING", 23 * 3 * 128)
+    bounded = _remap_bilinear_strips(image, coordinates, chromatic=chromatic, rows=3)
+    np.testing.assert_array_equal(bounded, original)
+
+
+def test_owned_lens_input_avoids_copy_and_preserves_result(monkeypatch):
+    from hdr_finisher import raw_import
+    profile = next(item for item in list_lens_profiles(limit=2000) if item.distortion)
+    image = np.linspace(0.0, 2.0, 48 * 64 * 3, dtype=np.float32).reshape(48, 64, 3)
+    saved = image.copy()
+    settings = LensCorrectionSettings(mode="manual", profile_id=profile.id,
+        focal_length_mm=5.0, aperture=4.0, distortion=True,
+        chromatic_aberration=profile.chromatic_aberration, vignetting=True)
+    remap = raw_import._remap_bilinear_strips
+    shared = []
+    def observe(source, *args, **kwargs):
+        shared.append(np.shares_memory(source, image))
+        return remap(source, *args, **kwargs)
+    monkeypatch.setattr(raw_import, "_remap_bilinear_strips", observe)
+    expected, metadata = apply_lens_correction(image, settings)
+    np.testing.assert_array_equal(image, saved)
+    actual, owned_metadata = apply_lens_correction(image, settings, consume_input=True)
+    assert shared == [False, True]
+    np.testing.assert_array_equal(actual, expected)
+    assert owned_metadata == metadata

@@ -421,6 +421,7 @@ def _apply_raw_corrections(
             lens_maker=decoded.exif.get("lens_maker"),
             lens_name=decoded.exif.get("lens_model") or decoded.exif.get("lens_name"),
             cancelled=cancelled,
+            consume_input=True,
         )
         if not plan.opcode_plan and decoded.bridge_metadata is None:
             aces2065 = lens_output
@@ -1237,6 +1238,7 @@ def apply_lens_correction(
     lens_maker: str | None = None,
     lens_name: str | None = None,
     cancelled: Callable[[], bool] | None = None,
+    consume_input: bool = False,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     _raise_if_cancelled(cancelled)
     try:
@@ -1312,7 +1314,11 @@ def apply_lens_correction(
         modifier.initialize(
             float(focal), float(aperture), float(distance), scale=0.0, pixel_format=np.float32, flags=flags
         )
-        corrected = np.ascontiguousarray(image, dtype=np.float32).copy()
+        # RAW development owns this buffer exclusively; vignette it before
+        # remapping instead of retaining an untouched third full-size plane.
+        corrected = np.ascontiguousarray(image, dtype=np.float32)
+        if not consume_input or not corrected.flags.writeable:
+            corrected = corrected.copy()
         if settings.vignetting and aperture > 0:
             modifier.apply_color_modification(corrected)
         _raise_if_cancelled(cancelled)
@@ -1408,7 +1414,7 @@ def _remap_bilinear_strips(
     coordinates: np.ndarray,
     *,
     chromatic: bool,
-    rows: int = 128,
+    rows: int = 32,
     cancelled: Callable[[], bool] | None = None,
 ) -> np.ndarray:
     height, width, channels = image.shape
@@ -1436,11 +1442,19 @@ def _remap_bilinear_strips(
 
     # Strips write separate rows and NumPy releases the interpreter lock for
     # this work, so a 42 MP frame remaps about three times faster on a pool.
-    # More workers than this gain nothing: the gathers are memory-bound.
+    # Small bands keep all CPUs busy without large simultaneous gathers.
+    from .app_memory import WORKING
+    from .cpu_budget import logical_cpus
+    # The gathers promote weights to float64. Include the live indices,
+    # weights and expression temporaries (128 bytes/pixel conservatively)
+    # within the existing working allowance rather than multiplying them
+    # by every CPU. Keep the original coordinates and arithmetic unchanged.
+    concurrent = min(logical_cpus(), max(1, WORKING // (width * rows * 128)))
     starts = range(0, height, rows)
     with CpuExecutor() as pool:
-        for _ in pool.map(remap_strip, starts):
-            pass
+        for offset in range(0, len(starts), concurrent):
+            for _ in pool.map(remap_strip, starts[offset:offset + concurrent]):
+                pass
     return output
 
 

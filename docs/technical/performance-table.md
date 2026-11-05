@@ -1124,3 +1124,42 @@ latency acceptance. Eight rapid arrow samples stay at Fit with visible
 finished/stand-in pixels; scenario and independent memory checks pass
 (peak 3.418 GB). Evidence:
 `codebase/output/quick-library-check/batches45-rapid/`.
+
+### November 5: Grade transient memory reduction (parent 3eea538)
+
+Plain Electron, 2560x1440, default 4 GB, existing Sony 42 MP test-photo
+copies, one app check at a time. Earlier checks in this task used parent
+2a75f50; final checks include the separate fullscreen-selection commit
+3eea538. No allowance, output arithmetic or delivery code changed. Proposed
+hand-off timing tolerance recorded before measuring: 5% against previous
+whole waits; existing 500 ms goal and paired-Grade 5% remain unchanged.
+
+| Action | Final measurement | Acceptance |
+| --- | --- | --- |
+| Docked HDR saved-grade availability to picture | 474 ms / 6.061 s | First within 500 ms, second misses. First versus earlier 442 ms exceeds proposed 5%; Steve should try responsiveness before more timing investigation. Second improved from 6.585 s; no speed follow-up in this task. |
+| Docked SDR availability to picture | 388-390 ms | Meets 500 ms and within 5% of earlier 380-387 ms |
+| Popped-out HDR / SDR availability to picture | 3.259 / 0.914 s | Still miss 500 ms; earlier 3.376 / 0.992 s |
+| Grade opening before / after retained native detail | 5.488 / 5.549 s (warm-up 6.673 s) | Paired result within existing 5% |
+| Whole-app peaks, docked HDR / SDR; popped-out HDR / SDR | 4.199 / 4.185; 4.327 / 4.286 GB | All pass unchanged 4.4 GB; final samples 2.281-2.650 GB |
+| Retained-native contention / full-screen native zoom peak | 4.005 / 3.373 GB | Pass; final samples 1.701 / 1.551 GB |
+
+Full-screen native-detail development-to-draw log span is 3.803 s (draw
+3763.5 ms); six-second observation, not a new speed acceptance. Native
+contention establishes 508.7 MB retained bytes and observes zero retained/
+upload bytes after Grade. Grid/filmstrip pixel changes pass all four hand-off
+modes; stored-screen crops pass both docked modes. No other app errors.
+
+Intermediate 128-row bands already reduced docked HDR/SDR peaks to
+4.254/4.308 GB and retained-native peak to 3.784 GB, but popped-out HDR still
+peaked at 4.561 GB (SDR 4.289 GB). That led to final 32-row bands. Intermediate
+hand-offs: docked HDR 481 ms/6.193 s, SDR 365-414 ms; popped-out HDR/SDR
+3.169/0.949 s. Intermediate paired Grade 6.426/6.747 s passes existing 5%
+(warm-up 7.356 s). The first native attempt stopped on its folder-idle
+precondition before Grade measurement; the selected-photo scenario then
+passed. Do not treat these diagnostics as another speed baseline.
+
+Evidence: `codebase/output/quick-library-check/memory-peak-handoff-{dock,pop}-{hdr,sdr}/`,
+`memory-peak-native-selected/`, `memory-peak-zoom/`; isolated allocation/hash
+census in `codebase/output/memory-peak-{diagnostic,after-final}.log`. The memory
+PRD owns the peak breakdown. Two real decoded RAW arrays are byte-identical
+before/after. No broad driver sweep was run.

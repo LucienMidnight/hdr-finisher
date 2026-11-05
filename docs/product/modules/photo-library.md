@@ -1,3 +1,30 @@
+## November 5: Grade transient memory peak reduction
+
+RAW lens correction now reuses its exclusively owned colour buffer and
+remaps in smaller work bands within the existing WORKING allowance. Full
+Lensfun coordinates and pixel arithmetic stay unchanged; full decoded-image
+hashes match exactly for both reused 42 MP Sony RAWs. No memory allowance,
+cache share, default or output tolerance changed. The ownership breakdown
+and acceptance evidence are in memory-and-caches.md, November 5 Grade peak
+reduction.
+
+Final Windows plain-Electron checks at 2560x1440/default 4 GB: native-detail
+contention peaks at 4.005 GB; four 4b hand-off modes peak at 4.185-4.327 GB,
+all inside 4.4 GB. A real 508.7 MB retained native owner yields completely
+to Grade, with paired opening 5.488/5.549 s inside the existing 5% tolerance.
+Windows 4d memory/retained-native acceptance is cleared; 8 GB Mac acceptance
+remains Steve's check. Full-screen DSC00264.ARW native detail also develops
+and draws without refusal (3.373 GB peak, 1.551 GB final). Evidence:
+`codebase/output/quick-library-check/memory-peak-{native-selected,zoom}/`.
+4b stays incomplete: docked SDR meets 500 ms, but
+second docked HDR and both popped-out modes still miss it. First docked HDR
+474 ms versus the earlier 442 ms is outside the proposed 5% timing tolerance;
+Steve should try responsiveness before further timing investigation.
+Visible edited grid/filmstrip crops pass in every mode, with stored-screen
+crops passing in both docked modes. Fast checks: 805 JavaScript passed;
+Python 3,066 passed, three skipped, only the known unrelated remembered-
+failure test failed and was left alone. No export/Proof code changed.
+
 ## November 5: full-size zoom admission fix (built)
 
 The detail preflight now compares the existing six-plane estimate with room
@@ -28,7 +55,7 @@ Built November 5, 2026; reviewed by Claude and committed with Steve's go-ahead.
 
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** Batch 5d built November 4, 2026: startup drawing-pipeline preparation and four-way fullscreen visibility accepted; busy-grid first sharp drawing now meets the +about 1 s target. Batch 5c fixes retained: explicit detail admission and visible-stand-in safeguards; its busy cold drawing and black-screen follow-ups are completed by 5d. Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 5, 2026; Batch 4c built November 5; Batch 4d partial (native gate built, Windows peak/real-app contention and Mac acceptance open). Build order is in
+**Status:** Batch 5d built November 4, 2026: startup drawing-pipeline preparation and four-way fullscreen visibility accepted; busy-grid first sharp drawing now meets the +about 1 s target. Batch 5c fixes retained: explicit detail admission and visible-stand-in safeguards; its busy cold drawing and black-screen follow-ups are completed by 5d. Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 5, 2026; Batch 4c built November 5; Batch 4d partial (native gate and Windows memory/retained-native acceptance built; Mac acceptance open). Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
