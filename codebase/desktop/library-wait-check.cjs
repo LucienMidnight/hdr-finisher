@@ -88,11 +88,31 @@ async function run({window,frame,config,stage}) {
  stage('detail refusal');
  await lib(`document.getElementById('zoom-button').click();true`);await sleep(5000);
  const events=await lib('waitEvents'),snapshot=await lib('HDRLibrary.getSnapshot()'),notice=await lib(`document.getElementById('library-status')?.textContent || document.querySelector('[role=status]')?.textContent || ''`);
+ // Virtualized grid cells may have left the viewport during arrow navigation.
+ await lib(`(()=>{document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));document.getElementById('grid-view').click();const grid=document.getElementById('library-grid'),paths=HDRLibrary.getSnapshot().paths,index=paths.findIndex(p=>p.endsWith(${JSON.stringify(photo)}));const layout=HDRLibraryLayout.gridLayout(paths.length,grid.clientWidth,grid.clientHeight,grid.scrollTop,Number(document.getElementById('thumbnail-size').value));grid.scrollTop=layout.scrollFor(index);grid.dispatchEvent(new Event('scroll'));})()`);
+ await wait(`[...document.querySelectorAll('#grid-space .library-cell')].some(c=>c.dataset.path.endsWith(${JSON.stringify(photo)}))`);
  // Exercise a deselected lead photo and a held F key using real page inputs.
  await lib(`(()=>{const cells=[...document.querySelectorAll('#grid-space .library-cell')];const c=cells.find(c=>c.dataset.path.endsWith(${JSON.stringify(photo)}));c.click();c.dispatchEvent(new MouseEvent('click',{bubbles:true,ctrlKey:true}));document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true,cancelable:true}));document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'f',repeat:true,bubbles:true,cancelable:true}));})()`);
  const interaction=await lib(`({review:!!document.querySelector('.library.review'),zoom:HDRLibrary.getSnapshot().zoom,selected:HDRLibrary.getSnapshot().selected,selection:HDRLibraryCommands.selection()})`);
  if(!interaction.review||interaction.zoom)interactionErrors.push('Held F failed to stay in fullscreen Fit');
  if(!interaction.selection.includes(interaction.selected))interactionErrors.push('Fullscreen lead photo is not selected');
+ stage('rapid fullscreen navigation');
+ const rapid=[];
+ const mainOffset=()=>window.webContents.executeJavaScript(`(()=>{const r=document.getElementById('library-frame').getBoundingClientRect();return {x:r.x,y:r.y}})()`);
+ await lib(`window.rapidArrow=HDRLibrary.getSnapshot().paths.at(-1)===HDRLibrary.getSnapshot().selected?'ArrowLeft':'ArrowRight';true`);
+ for(let n=0;n<8;n++){
+  await lib(`document.body.dispatchEvent(new KeyboardEvent('keydown',{key:rapidArrow,bubbles:true}));document.body.dispatchEvent(new KeyboardEvent('keyup',{key:rapidArrow,bubbles:true}));rapidArrow=rapidArrow==='ArrowLeft'?'ArrowRight':'ArrowLeft';true`);
+  await sleep(80);
+  const sample=await lib(`(()=>{const r=document.getElementById('single-stage').getBoundingClientRect();return {selected:HDRLibrary.getSnapshot().selected,zoom:HDRLibrary.getSnapshot().zoom,standin:!!document.querySelector('#single-stage [data-stand-in]'),box:{x:r.x+r.width*.3,y:r.y+r.height*.3,width:r.width*.4,height:r.height*.4},surfaces:[...document.querySelectorAll('#single-stage canvas')].filter(c=>!c.hidden).map(c=>({path:c.dataset.picturePath,width:c.width,height:c.height}))};})()`);
+  if(target===window){const offset=await mainOffset();sample.box.x+=offset.x;sample.box.y+=offset.y;}
+  for(const key of Object.keys(sample.box))sample.box[key]=Math.round(sample.box[key]);
+  const image=await target.webContents.capturePage(sample.box),pixels=image.toBitmap();let lit=0;for(let i=0;i<pixels.length;i+=4)if(Math.max(pixels[i],pixels[i+1],pixels[i+2])>50)lit++;
+  sample.lit_fraction=lit/(pixels.length/4);delete sample.box;rapid.push(sample);
+  fs.writeFileSync(path.join(out,`rapid-${n}.png`),image.toPNG());
+ }
+ await wait(`document.getElementById('single-picture').dataset.picturePath===HDRLibrary.getSnapshot().selected && !document.getElementById('single-picture').hidden`);
+ if(rapid.some(s=>s.zoom))interactionErrors.push('Rapid fullscreen navigation left Fit');
+ if(rapid.some(s=>s.standin&&s.lit_fraction<.01))interactionErrors.push('Black fullscreen during rapid navigation with stand-in');
  await lib(`document.body.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));document.getElementById('grid-view').click();true`);
  const errors=[...interactionErrors];if(measures.some(m=>m.samples.some(s=>s.zoom)))errors.push('Sharp arrival changed Fit to zoom');if(events.some(e=>e.stage==='picture_development_start'&&e.reason==='zoom detail'&&e.at<deliberateAt))errors.push('Detail started before explicit zoom');if(events.filter(e=>e.stage==='picture_development_start'&&e.reason==='zoom detail'&&e.at>=deliberateAt).length>1)errors.push('Repeated detail development');if(measures.slice(0,2).some(m=>{const first=m.samples.findIndex(s=>s.standin&&s.lit_fraction>=.01);return first>=0&&m.samples.slice(first).some(s=>s.lit_fraction<.01);})||compareSamples.some(s=>s.standin&&s.lit_fraction<.01))errors.push('Black pixels while stand-in exists');if(events.some(e=>e.stage==='picture_surface_fault'))errors.push('Hidden presentation');
  stage('stream scroll anchor');
@@ -112,7 +132,7 @@ async function run({window,frame,config,stage}) {
    }finally{stream.close();window.fetch=original;}
  })()`);
  if(!scroll.before?.path||!scroll.after?.path||scroll.before.path!==scroll.after.path||Math.abs(scroll.before.top-scroll.after.top)>1)errors.push('New files moved the visible grid anchor');
- const result={stage:'done',appStartedAt:config.appStartedAt,pipelineMemory,startup,errors,probe:{},events,wait_check:{photo,hdr:config.hdr,popout:config.popout,idle:config.idle,interaction,scroll,measures,compareSamples,snapshot,notice,deliberateAt},scenario_ms:events.length?events.at(-1).at-events[0].at:0};
+ const result={stage:'done',appStartedAt:config.appStartedAt,pipelineMemory,startup,errors,probe:{},events,wait_check:{photo,hdr:config.hdr,popout:config.popout,idle:config.idle,interaction,rapid,scroll,measures,compareSamples,snapshot,notice,deliberateAt},scenario_ms:events.length?events.at(-1).at-events[0].at:0};
  fs.writeFileSync(path.join(out,'wait-check.json'),JSON.stringify(result.wait_check,null,2));
  return result;
 }

@@ -1114,3 +1114,13 @@ parent 3ceb233 plus deferred screen encoding; no overlapping GPU runs.
 Grid/filmstrip crops change in all four modes; separate stored-screen crops
 change for docked HDR/SDR only. Evidence:
 `codebase/output/quick-library-check/batches45-handoff-{dock,pop}-{hdr,sdr}/`.
+
+### November 5: rapid fullscreen functional probe
+
+Plain Electron, 2560x1440, reusable library-mixed-v1-run, default cold app,
+parent f17239c plus rapid-navigation harness: first/reopen/back sharp waits
+3.346/0.273/0 s. These are diagnostic conditions, not the prepared-pipeline
+latency acceptance. Eight rapid arrow samples stay at Fit with visible
+finished/stand-in pixels; scenario and independent memory checks pass
+(peak 3.418 GB). Evidence:
+`codebase/output/quick-library-check/batches45-rapid/`.

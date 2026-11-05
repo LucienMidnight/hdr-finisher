@@ -125,10 +125,10 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Built November 3, 2026 |
 | 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Partial November 5: docked HDR/SDR grid, filmstrip and stored-screen pixels update; 500 ms and peak-memory acceptance still fail. |
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Built November 5, 2026; focused fault checks below |
-| 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Open: selected-photo priority over grid developments (48 MP float TIFF 19.8 s), brush-mask and warp CPU time |
+| 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Selected priority and screen warp completed by 5b. Open: brush-mask CPU time and heavy-grade ordinary first open |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Partial November 5: backend native owners yield to Grade; regression passes. Windows peak and retained-owner app timing remain open; 8 GB Mac acceptance belongs to Steve. |
 | 5b | The on-screen photo takes priority; recover lost reservations and hand over completed thumbnails; parallel screen perspective and mask warps. | Partial November 4, 2026: 32.65 s abandoned TIFF wait removed (2.06 s ordinary open; forced lost reservation 2.80 s). Four-photo SDR/HDR stored pixels identical to 5a. Busy cold fullscreen still 7.0–7.2 s versus idle 1.98–2.23 s; ARW ordinary first open 2.48–2.55 s. See checkpoint below. |
-| 5c | Visible TIFF/RAW stand-ins, explicit detail demand, memory admission before decoding and same-photo reopen investigation. | Partial November 4, 2026: Fit/native visibility and refusal retry fixes built. Same-name cache misses were different source paths. At the 5c checkpoint busy first drawing still missed the +about 1 s target; completed by 5d below. |
+| 5c | Visible TIFF/RAW stand-ins, explicit detail demand, memory admission before decoding and same-photo reopen investigation. | Partial November 4, 2026: Fit/native visibility and refusal retry fixes built. Same-name cache misses were different source paths. Busy prepared drawing and ordinary four-mode visibility completed by 5d. November 5 rapid Fit navigation passes docked SDR; zoomed-arrow and remaining rapid-mode qualification stay open. |
 | 5d | Prepare drawing pipelines after the first grid picture; preserve popped-out SDR stand-ins on reopen. | Built November 4, 2026: prepared busy TIFF 2.12 s and heavy ARW 3.02 s; four docked/popped-out SDR/HDR pixel checks pass. See checkpoint below. |
 
 
@@ -160,6 +160,37 @@ it accepted any filename containing `.hdrf`. It now accepts `.hdrf` boundaries
 (including sync-conflict names), while ignoring project files. A binary-project
 regression reproduces the UTF-8 warning before the fix and passes afterward;
 all 17 conflict/sidecar checks pass. Existing projects are unaffected.
+
+### November 5: remaining 5a-5d checkpoint reconciliation
+
+The 5a table previously continued to list selected-photo priority and screen
+warp CPU time although 5b had built them. Those items are complete in 5b;
+brush-mask preparation remains open (the existing 280-310 ms stage result).
+No new mask algorithm was attempted: masks are shared with delivered output,
+and the output-area qualification plan alone estimates 35 minutes, before
+Library/mask-specific checks. That exceeds this task's roughly 30-minute
+per-item validation allowance. Read-only plans, not runs:
+`codebase/output/batches45-{mask,output}-plan.log`.
+
+The old 5b 7.0-7.2 s busy wait is superseded by 5d's prepared-pipeline result:
+TIFF 2.123 s versus 2.050 s idle, heavy ARW 3.023 s versus 2.421 s idle.
+Both meet idle + about 1 s. This does not erase 5d's immediate, unprepared
+first-entry waits (3.234/4.499 s) or the ordinary ARW 2.48-2.55 s follow-up.
+No new speed claim is made for them. These remain open rather than redefining
+cold to mean prepared.
+
+The extended plain-Electron 5c probe adds eight rapid fullscreen arrow
+switches. Docked SDR samples remain nonblack (lit fractions 0.872-0.883),
+stay at Fit, and produce no surface faults. Held-F, selected-photo ownership,
+sharp arrival and streamed-grid anchoring also pass. The harness now brings
+its test grid cell into the viewport explicitly; a virtualized-away test cell
+is not an app selection failure. Existing 5d four-mode checks cover ordinary
+fullscreen/reopen visibility. The earlier zoomed-arrow flash case and the
+remaining rapid-navigation modes have not been qualified here, so the 5c
+follow-up stays partial. Evidence:
+`codebase/output/quick-library-check/batches45-rapid/` (crops, scenario, report).
+5d remains built; no pinned shader, pixel tolerance, HDR ceiling, export or
+Proof calculation changed in this task.
 
 ### November 5: Grade hand-off follow-up (4b, partial)
 
