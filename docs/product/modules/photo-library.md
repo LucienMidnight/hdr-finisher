@@ -7496,3 +7496,9 @@ Final grouped fast checks, plain Library check and review captures follow.
 Filename review follow-up: the retained suffix is bounded to twelve characters
 so a very long filename cannot push its ending beyond a small thumbnail.
 
+
+UI polish validation: the final JavaScript suite passes 816; Python has only
+the already-known remembered-failure test failure. Plain Library picture and
+memory checks pass, but the existing drawing-gap check fails at 843 ms.
+Hover/focus-only Developed badges remain Steve's choice from the review page.
+

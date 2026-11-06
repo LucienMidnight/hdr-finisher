@@ -237,3 +237,21 @@ ask before implementing. Don't invent new patterns or tokens without
 checking first. Steve decides the final text size and the "Developed" badge
 option from the screenshots, and signs off the new colour wheel from a
 screenshot.
+
+## Implementation outcome - November 6, 2026
+
+All nine sections are implemented locally. The separate Library window keeps
+native chrome for Windows snap; the main custom maximize button has no native
+snap flyout. macOS handling is implemented but untested on a Mac. Physical
+mixed-DPI behavior and OS drag/maximize gestures need manual review.
+
+Review defaults: larger labels (14.5 px), small captions/statistics (12 px),
+scope badges (11 px), hover/focus-only Developed badges, and one neutral-centre
+range-selectable wheel. Steve's visual sign-offs remain open. Review screenshots
+and graph corner crops live in `codebase/output/review/ui-polish/index.html`.
+
+816 JavaScript checks pass. Python: 3,077 pass, three skip, one known unrelated
+remembered-failure test fails. Plain Library picture/memory checks pass; its
+existing drawing-gap limit fails at 843 ms versus 250 ms. No GPU/release sweep,
+push or installer build. Final results and platform limits belong to the
+Desktop and release module PRD; timings belong to the performance table.

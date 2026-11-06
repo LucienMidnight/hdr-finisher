@@ -185,3 +185,43 @@ The November 6 minimum-window review also found viewer tools clipping in the
 existing compact layout. They now wrap within the viewer width. Development
 windows explicitly use the regenerated icon, as packaged windows already do.
 
+
+## November 6: UI polish validation and review
+
+Implemented all nine sections of the archived unified-title-bar brief, with
+small follow-up fixes found during review. Runtime image processing, export,
+Proof and saved grade structures are unchanged. Main-window Windows 11 snap
+flyouts remain unavailable on the custom maximize button. The popped-out
+Library deliberately retains native chrome and snap support. macOS hiddenInset
+traffic lights, native menu and full-screen spacing are implemented but need
+checking on a Mac; native dragging and OS maximize gestures need manual review.
+
+Fast checks: 816 JavaScript passed; Python 3,077 passed, three skipped, with
+only the previously documented unrelated remembered-failure Library test
+failing. The plain 90-second Library check has no picture errors or memory
+breach, but fails the existing 250 ms drawing-gap limit at 843 ms. No repeat,
+GPU sweep, release check, push or installer build. Timings are in the
+performance table. Final UI interaction checks cover Alt/F10/Escape, File
+Recent projects, one visible wheel, range retention/reset and singular Export
+copy. Three-theme captures include 2560x1440 and 1100x720; scope high-DPI
+capture uses a 2x emulated display. Mac and physical mixed-DPI checks remain.
+
+Review: `codebase/output/review/ui-polish/index.html`, with small before/after
+Library/Grade/Export screenshots, graphs/corner crops, wheel and 16/24/32/48 px
+icons. Steve's decisions remain: the larger type sizes, hover/focus-only
+Developed badges, and wheel appearance. Baseline Library captures are empty;
+after captures use the already-existing small generated review photos. This
+review folder can be deleted after sign-off. Logs: `codebase/output/ui-polish-{node,python,library}.log`, plus the quick-check report above. No original
+photos or read-only projects were overwritten.
+
+
+Output size starts and ends at 29.4 GB, below 100 GB; the review is about
+3.2 MB. Automatic approval review rejected cleanup with "blocked by policy".
+Owned disposable leftovers in Windows TEMP: `pytest-of-Steve/pytest-1290`,
+`ui-polish-edit.py`, `ui-polish-section.py`, and `hdr-finisher-electron-test-`
+profiles with suffixes MfrIOG, qulncj, USTiDO, jccsA0, 9VpeMY, 9wqnwx, 8Z2Gn6,
+IBUDLr, UFjdPZ, Lw7Vjs, YnZL8F, ABMs21 and BYxnMa. Intermediate
+`codebase/output/review-ui-polish-{before,checks,after,wheel}.log` files and
+`review/ui-polish/after-minimum-{import,grade,export}.png` are also disposable.
+Keep the review page's linked images/checks, the three fast/Library logs and
+quick-library-check/ui-polish report. No large photographic copies were made.

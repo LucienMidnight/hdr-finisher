@@ -46,6 +46,13 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+November 6 unified-toolbar UI smoke check (`c05e6f0f`, 2560x1440,
+90-second mixed grid, no concurrent fast suites): drawing gap 843 ms exceeds
+the unchanged 250 ms limit; timer block 86 ms. No picture errors or memory
+breach (peak 2.911 GB). The existing drawing-pause issue was not investigated
+or rerun for this visual task; Steve should try browsing before more timing
+work. Evidence: `codebase/output/quick-library-check/ui-polish/report.json`.
+
 November 6 header-alignment check (parent `220e99b`, CSS working tree;
 2560x1440, default 90-second mixed grid): frame gaps up to 61 ms and timer
 blocks up to 53 ms, within the existing 250 ms limit; no picture errors or

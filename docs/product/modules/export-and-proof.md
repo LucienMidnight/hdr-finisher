@@ -747,3 +747,8 @@ and HDR-skip notices. Destination paths are available on hover. This is UI
 copy only: no export settings, rendering or output files changed. Grouped
 fast checks and review captures cover this work.
 
+
+UI polish validation: singular Export summary behavior passes in the app;
+all 816 JavaScript checks pass. No output/Proof route was changed or GPU
+qualification required. Three-theme screenshots are in the shared UI review.
+
