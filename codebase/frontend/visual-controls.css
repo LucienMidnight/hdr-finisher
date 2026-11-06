@@ -273,3 +273,18 @@ html.native-application-menu :is(.window-controls, .unified-menu-button) { displ
 :root .group-reset { font-size: 13px; white-space: nowrap; }
 :root .library-cell .name { font-size: 11.5px; }
 
+
+/* Library: quiet badges and handles; retain both ends of file names. */
+:root .library-cell .name { display: flex; min-width: 0; }
+.library-cell .name-start { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.library-cell .name-end { flex-shrink: 0; white-space: nowrap; }
+.library-file-name { overflow-wrap: normal; word-break: normal; }
+.file-name-part { white-space: nowrap; }
+.library-cell .is-developed { opacity: 0; }
+.library-cell:is(:hover, :focus-within) .is-developed { opacity: 1; }
+.library-drag-handle { opacity: 0; }
+:is(.library-folder-row, .library-heading):is(:hover, :focus-within) .library-drag-handle { opacity: 1; }
+:root #zoom-button:disabled { opacity: .6; color: var(--muted); cursor: default; }
+.library-tools { column-gap: 4px; }
+.library-tools :is(#zoom-button, #hdr-button, #focus-button) { margin-left: 6px; }
+

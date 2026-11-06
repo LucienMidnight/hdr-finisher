@@ -598,7 +598,9 @@
     element.className = "library-cell loading"; element.setAttribute("role", "option"); element.dataset.path = photo.path;
     const frame = document.createElement("div"); frame.className = "picture-frame";
     const canvas = document.createElement("img"); canvas.alt = ""; canvas.style.visibility="hidden"; frame.append(canvas);
-    const name = document.createElement("span"); name.className = "name"; name.textContent = photo.name;
+    const name = document.createElement("span"); name.className = "name"; name.title = photo.name;
+    const split = Math.max(1, Math.ceil(photo.name.length * .6));
+    name.append(make("span", "name-start", photo.name.slice(0, split)), make("span", "name-end", photo.name.slice(split)));
     element.append(frame, name); container.append(element);
     const cell = { element, canvas, controller: new AbortController(), photo, index, edge:thumbnailEdge(), identity:pictureIdentity(photo) };
     // Both views develop only cells on screen, behind the opened photo.
@@ -644,7 +646,7 @@
         if(finished){
           cell.meta=cell.scene=finished;cell.displayEpoch=state.displayEpoch;cell.elapsed=performance.now()-started;
           fallback.hidden=false;canvas.hidden=true;element.classList.remove("loading");
-          const badge=document.createElement("span");badge.className="library-colour-note";badge.style.color="var(--muted)";badge.style.borderColor="var(--border)";badge.textContent="Developed";frame.append(badge);
+          const badge=document.createElement("span");badge.className="library-colour-note";badge.style.color="var(--muted)";badge.style.borderColor="var(--border)";badge.textContent="Developed";badge.classList.add("is-developed");frame.append(badge);
           pictureErrors.paint(cell);
           HDRLibraryStopwatch("picture_shown",{reason:"HDR Finisher stored",path:photo.path,key:finished.key,route:finished.route,view:container===space?"grid":"filmstrip",duration_ms:cell.elapsed});
           window.HDRLibraryFolderPresented?.({view:container===space?"grid":"filmstrip",path:photo.path});
@@ -685,7 +687,7 @@
             // Missing metadata means this viewport request yielded.
             if (!meta) return;
             colourNote(photo, meta, frame);
-            if(!meta.bitmap){const badge=document.createElement("span");badge.className="library-colour-note";badge.style.color="var(--muted)";badge.style.borderColor="var(--border)";badge.textContent="Developed";frame.append(badge);}
+            if(!meta.bitmap){const badge=document.createElement("span");badge.className="library-colour-note";badge.style.color="var(--muted)";badge.style.borderColor="var(--border)";badge.textContent="Developed";badge.classList.add("is-developed");frame.append(badge);}
             await drawPicture(meta, fallback, cell.controller, current);
             if (!current()) return;
             cell.hasCameraPreview=!!meta.bitmap;
@@ -835,6 +837,12 @@
       more.addEventListener("click", () => { state.allFacts = !state.allFacts; updateDetails(); $("facts-toggle")?.focus(); });
       facts.append(more); root.append(facts); wantFacts(photo);
     }
+    root.querySelectorAll(".library-file-name").forEach(element => {
+      const name = element.textContent; element.title = name; element.replaceChildren();
+      for (const part of name.split(/(?<=[_-])/)) {
+        const segment = make("span", "file-name-part", part); element.append(segment, document.createElement("wbr"));
+      }
+    });
     if (tagFocused) $("library-tag-input")?.focus();
   }
   let factsTimer, factsPath;
@@ -1031,7 +1039,7 @@
     if (compare.enabled()) compare.captions();
     if (!selected()) return;
     $("single-caption").replaceChildren(document.createTextNode(selected().name), culling.strip(selected()));
-    if(state.fitMeta && !state.fitMeta.bitmap){const badge=document.createElement("span");badge.className="library-colour-note";badge.style.position="static";badge.style.color="var(--muted)";badge.style.borderColor="var(--border)";badge.textContent="Developed";$("single-caption").append(badge);}
+    if(state.fitMeta && !state.fitMeta.bitmap){const badge=document.createElement("span");badge.className="library-colour-note";badge.style.position="static";badge.style.color="var(--muted)";badge.style.borderColor="var(--border)";badge.textContent="Developed";badge.classList.add("is-developed");$("single-caption").append(badge);}
     const warning = pictureErrors.get(selected().path);
     if (warning?.grade_warning && !warning.ignored) {
       const button = document.createElement("button"); button.type = "button"; button.className = "button-secondary";

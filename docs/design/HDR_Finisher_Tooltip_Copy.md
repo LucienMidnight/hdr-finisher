@@ -61,3 +61,13 @@ Trigger delay: 2 seconds on the PREVIEW WINDOW title hover. The same tooltip app
 | `retouch.heal_soon` | Heal · Soon | Not built yet |
 | `retouch.clone_soon` | Clone · Soon | Not built yet |
 | `retouch.retry` | Selected repair Retry | Retry with next seed |
+
+
+## November 6: Library toolbar explanations
+
+| ID | Trigger | Copy-ready tooltip text |
+|---|---|---|
+| `library.exposure` | Exposure | Show clipped highlights and near-black shadows from the source photo · E |
+| `library.hdr` | HDR | Show HDR pictures on an HDR display; switch off for SDR previews · H |
+| `library.detail` | 100% | 100% detail is available in Single photo view · Z |
+

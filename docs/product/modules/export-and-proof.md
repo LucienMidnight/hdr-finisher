@@ -738,3 +738,12 @@ status dock now shows the Ctrl/Shift/reset/type legend, with neutral keyboard
 focus and adjacent message actions. This changes presentation only; export
 settings, delivery and Proof pixels are unchanged. Verified with the focused
 real-Electron Control Panel review in all three themes.
+
+## November 6: Export interface polish
+
+Photo, version and file counts agree with singular/plural quantities. The
+repeated footer count is hidden; the footer explanation retains saved-grade
+and HDR-skip notices. Destination paths are available on hover. This is UI
+copy only: no export settings, rendering or output files changed. Grouped
+fast checks and review captures cover this work.
+

@@ -7482,3 +7482,13 @@ rejected cleanup with "blocked by policy". Disposable leftovers: the abandoned
 codebase/output/v1-loose-pytest-temp folder and this task's remaining Windows
 TEMP/pytest-of-Steve/pytest-1311, pytest-1312 and pytest-1313 folders. Keep the
 small referenced quick-library-check reports/crops and reusable synthetic TIFFs.
+
+## November 6: Library visual polish
+
+Developed thumbnail badges appear on hover/focus (Steve's final choice is
+pending review). Filenames retain both ends, and Details wraps at underscores
+or hyphens without breaking extensions. Handles appear on hover/focus. Rating
+clear uses × instead of a leading zero; keyboard 0 remains. Toolbar display
+controls have explanatory tooltips and disabled 100% remains visibly neutral.
+Final grouped fast checks, plain Library check and review captures follow.
+

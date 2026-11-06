@@ -12,7 +12,7 @@
       for(const label of document.querySelectorAll('[data-switch-for]')) label.textContent=$(label.dataset.switchFor).checked?'Enabled':'Disabled';
     }
     function options(kind,title,key,content){
-      const button=document.createElement('button');button.id=`${kind}-button`;button.className='tool-button';button.textContent=title;button.title=`${title} options · ${key}`;button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-expanded','false');$('zoom-button').before(button);
+      const button=document.createElement('button');button.id=`${kind}-button`;button.className='tool-button';button.textContent=title;button.title=kind === "exposure" ? "Show clipped highlights and near-black shadows from the source photo · E" : `${title} options · ${key}`;button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-expanded','false');$('zoom-button').before(button);
       const panel=document.createElement('div');panel.id=`${kind}-options`;panel.className='library-popover library-options';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label',`${title} options`);
       panel.innerHTML=`${switchControl(`${kind}-enabled`,title)}${content}`;document.body.append(panel);controls[kind]={button,panel};
       button.addEventListener('click',()=>{for(const c of Object.values(controls))if(c!==controls[kind]){c.panel.hidden=true;c.button.setAttribute('aria-expanded','false');}panel.hidden=!panel.hidden;button.setAttribute('aria-expanded',String(!panel.hidden));const r=button.getBoundingClientRect();panel.style.left=`${Math.min(r.left,innerWidth-280)}px`;panel.style.top=`${r.bottom+4}px`;});
