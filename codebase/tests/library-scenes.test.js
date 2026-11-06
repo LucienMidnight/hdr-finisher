@@ -338,14 +338,14 @@ test('a save timeout or lost grant retries fresh work and never writes a failure
  }
 });
 
-test('temporary retries stop after three attempts with a local retryable warning',async()=>{
+test('a temporary failure gets one retry, then a local retryable warning',async()=>{
  let calls=0;
  const {scenes,requests}=setup({photo:{source_identity:'a'.repeat(64)}},async()=>{calls++;throw Error('Library upload timed out.');});
  await assert.rejects(scenes.load('photo',640,undefined,0),error=>{
   assert.equal(error.libraryError.timeout,true);
   assert.equal(error.libraryError.reason,"Couldn't finish preparing this photo. Try again.");return true;
  });
- assert.equal(calls,3);assert.ok(requests.every(r=>!r.reason));
+ assert.equal(calls,2);assert.ok(requests.every(r=>!r.reason));
 });
 
 test('leaving during transient backoff cancels the retry',async()=>{

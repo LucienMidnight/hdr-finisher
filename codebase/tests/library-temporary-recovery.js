@@ -57,11 +57,10 @@ fs.writeFileSync(recipe.path,JSON.stringify(recipe.document));
     const value=await w.HDRLibraryScenes.load(photos[1],640,undefined,0);
     if(!injected)throw Error('Output scan injection was not reached');
     const cpu=events.some(e=>e.stage==='picture_source_cpu_completed'&&e.path===photos[1]);
-    if(both){if(injected!==2||!cpu)throw Error('Both rejected attempts must take the CPU route');}
-    else {
-     if(cpu||events.some(e=>e.stage==='picture_source_gpu_fallback'&&e.path===photos[1]))throw Error('Clean retry took the CPU route');
-     if(!events.some(e=>e.stage==='picture_development_gpu_retry_passed'&&e.path===photos[1]))throw Error('No clean GPU retry');
-    }
+    // GPU failure rule (master PRD, November 6): a rejected GPU result takes
+    // the CPU route at once, with no second GPU attempt.
+    if(!cpu)throw Error('A rejected GPU result must take the CPU route');
+    if(injected!==1||events.some(e=>e.stage==='picture_development_gpu_retry'&&e.path===photos[1]))throw Error('Rejected GPU result was retried on the GPU');
     return {key:value.key,shown:await show(value),scans};
    });
    w.HDREdgeColour=edge;

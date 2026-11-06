@@ -146,7 +146,10 @@ window.HDRLibraryScenes = (() => {
         if (/not enough memory|waiting for memory to save detail/i.test(error.message)) { error.needsMemory=true; throw error; }
         const retryable=temporary(error);
         if(!retryable && !error.developmentFailure)throw error;
-        if(attempt<3){
+        // GPU failure rule (master PRD, November 6): one retry, only for a
+        // temporary cause. A development failure repeats with the same input,
+        // so it is recorded at once; GPU development errors already went to the CPU.
+        if(retryable && attempt<2){
           window.HDRLibraryStopwatch?.("picture_preparation_retry",{path,attempt,reason:error.message});
           await wait(attempt===1?500:1500,signal);continue;
         }

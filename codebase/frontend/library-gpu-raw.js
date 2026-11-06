@@ -470,7 +470,7 @@
 
   // One device and one set of pipelines. Developments are exclusive: fitting
   // in memory does not mean two photos can share GPU bandwidth at full speed.
-  const gpuFailures=new Map(),activeGpuWorks=new Map(),decodedSources=new Map();
+  const gpuFailures=new Map(),gpuRejectedWork=new Set(),activeGpuWorks=new Map(),decodedSources=new Map();
   const decodedBytes=()=>[...decodedSources.values()].reduce((n,v)=>n+v.body.byteLength,0);
   function dropDecoded(key){const value=decodedSources.get(key);if(!value)return;decodedSources.delete(key);clearInterval(value.renewal);return fetch('/api/library/live-source/'+value.token,{method:'DELETE'}).catch(()=>{});}
   root.HDRLibraryRAM?.register('decoded-source','sharp',decodedBytes,target=>{for(const key of decodedSources.keys()){if(decodedBytes()<=target)break;dropDecoded(key);}});
@@ -929,6 +929,9 @@
     let retained = false;
     const id = crypto.randomUUID(), bytes = rawBudget(meta, edges.includes(100000) ? [100000] : [640,2560,...edges]);
     const key=meta.path+'|'+edges.join(',');
+    // GPU failure rule (master PRD, November 6): work that already failed on the
+    // GPU this session goes straight to the CPU; other work keeps the GPU.
+    if(gpuRejectedWork.has(key))throw Object.assign(Error('GPU result was rejected earlier this session; using the CPU.'),{gpuUnavailable:true,gpuInvalidPixels:true});
     if((gpuFailures.get(key)||0)>=2)throw Object.assign(Error('GPU failed twice; using visible CPU fallback.'),{gpuUnavailable:true});
     const allocations=allocationScope(context);
     activeGpuWorks.set(key,{state:context.state,grant});
@@ -943,7 +946,7 @@
     try {
       // Finished Library surfaces are disposable, not a reason to abandon GPU development.
       if (background) await root.HDRLibraryScenes?.reclaim(bytes,true);
-      let reclaimed = false, attempts = 0, invalidAttempts = 0;
+      let reclaimed = false, attempts = 0;
       for (;;) {
         const value = await lease(false);
         if(grant && value.fallback)throw Object.assign(Error(value.fallback),{gpuUnavailable:true});
@@ -994,7 +997,6 @@
           const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, signal, context:allocations.context, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy,keepNative:!!consume});
           try{await allocations.check();}
           catch(error){for(const picture of Object.values(result.reduced || {}))for(const texture of picture.textures || [])texture.destroy();destroyKept(result.reduced);throw error;}
-          if (invalidAttempts) root.HDRLibraryStopwatch?.("picture_development_gpu_retry_passed", {path:meta.path,attempt:2});
           gpuFailures.delete(key);
           root.HDRLibraryStopwatch?.('picture_development_gpu_done',{path:meta.path,gpu_estimate_bytes:bytes,gpu_peak_bytes:result.memory_peak_bytes,peak_scope:'job-allocated'});
           if(consume){try{
@@ -1016,9 +1018,21 @@
             throw Object.assign(Error('GPU device lost.'),{libraryRequeue:!!grant,gpuUnavailable:!grant});
           }
           await allocations.check().catch(oom=>{error=oom;});
-          if(error.gpuMemory){
+          // A rejected result (invalid pixels, or an empty channel that means a
+          // GPU step wrote nothing) cannot be trusted: CPU now, no GPU retry, and
+          // the same work skips the GPU for the rest of the session.
+          const rejected=!!(error.gpuInvalidPixels || error.emptyChannel);
+          if(error.gpuMemory && !rejected){
+            // One retry only when other GPU work could have held the memory.
             const failures=(gpuFailures.get(key)||0)+1;gpuFailures.set(key,failures);
-            if(failures===1&&grant)throw Object.assign(error,{libraryRequeue:true,gpuRetry:true});
+            const scenes=root.HDRLibraryScenes?.snapshot?.();
+            const contended=[...activeGpuWorks.keys()].some(other=>other!==key) || !!(scenes?.draws?.active || scenes?.quickDraws?.active);
+            if(failures===1&&grant&&contended){
+              root.HDRLibraryStopwatch?.("picture_development_gpu_retry", {path:meta.path,attempt:2,reason:"memory held by other GPU work: "+error.message});
+              throw Object.assign(error,{libraryRequeue:true,gpuRetry:true});
+            }
+            gpuFailures.set(key,2);
+            root.HDRLibraryStopwatch?.("picture_development_gpu_fallback", {path:meta.path,attempt:attempts,reason:error.message});
             throw Object.assign(error,{gpuUnavailable:true});
           }
           // Cancellation is not a failure: pass it through unchanged.
@@ -1027,20 +1041,17 @@
           if (error.needsMemory) throw error;
           // Yielding to more urgent work is not a failure either: release the
           // lease and wait for the next turn without spending an attempt.
-          if (error.gpuInvalidPixels && ++invalidAttempts === 1) {
-            // developRaw has fenced and destroyed all attempt-owned buffers.
-            // Rebuild from the original sensor samples with fresh allocations.
-            root.HDRLibraryStopwatch?.("picture_development_gpu_retry", {path:meta.path,attempt:2,reason:error.message});
-          } else if (error.yieldRaw) {
+          if (error.yieldRaw && !rejected) {
             if(grant)throw Object.assign(error,{libraryRequeue:true});
             attempts--;
             root.HDRLibraryStopwatch?.("picture_development_restart", {path:meta.path,attempt:attempts+1,reason:error.message});
           } else {
-            root.HDRLibraryStopwatch?.(error.gpuInvalidPixels ? "picture_development_gpu_rejected" : "picture_development_failed", {path:meta.path,attempt:attempts,reason:error.message});
-            // Repeating the same allocation cannot fix an underestimated footprint.
-            // DOMException messages are read-only, so wrap rather than rewrite.
+            if(rejected)gpuRejectedWork.add(key);else gpuFailures.set(key,2);
+            root.HDRLibraryStopwatch?.(rejected ? "picture_development_gpu_rejected" : "picture_development_failed", {path:meta.path,attempt:attempts,reason:error.message});
+            // A GPU development error repeats with the same input: the CPU takes
+            // the work. DOMException messages are read-only, so wrap rather than rewrite.
             throw Object.assign(Error(`Development stopped after ${attempts} attempt${attempts === 1 ? "" : "s"}: ${error?.message ?? error}`, {cause:error}),
-              {gpuUnavailable:error?.gpuUnavailable, gpuInvalidPixels:error?.gpuInvalidPixels, yieldRaw:false});
+              {gpuUnavailable:true, gpuInvalidPixels:rejected, yieldRaw:false});
           }
         }
         // developRaw's finally has freed every buffer before Grade sees zero.

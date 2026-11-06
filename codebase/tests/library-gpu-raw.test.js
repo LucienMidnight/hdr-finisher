@@ -5,7 +5,7 @@ const { quantile, reducedSize } = globalThis.HDRLibraryGpuRaw;
 function compileScheduled(context,fn){
  const original=context.gpu;
  context.gpu=async()=>({...await original(),device:{pushErrorScope(){},popErrorScope:async()=>null}});
- context.gpuFailures=new Map();context.activeGpuWorks=new Map();context.decodedSources=new Map();
+ context.gpuFailures=new Map();context.gpuRejectedWork=new Set();context.activeGpuWorks=new Map();context.decodedSources=new Map();
  require('node:vm').runInNewContext(fn+';this.run=scheduledDevelopment;',context);
 }
 
@@ -367,8 +367,9 @@ test('invalid-pixel rejection keeps its CPU fallback identity through the GPU sc
  await assert.rejects(context.run({meta:{path:'photo.arw'},edges:[640]},new AbortController().signal),error=>error.gpuUnavailable&&error.gpuInvalidPixels);
  assert.equal(events.filter(e=>e.stage==='picture_development_failed').length,0);
  assert.equal(events.filter(e=>e.stage==='picture_development_gpu_rejected').length,1);
- assert.equal(attempts,2);
- assert.equal(events.filter(e=>e.stage==='picture_development_gpu_retry').length,1);
+ // GPU failure rule (November 6): one attempt, no GPU retry after a rejection.
+ assert.equal(attempts,1);
+ assert.equal(events.filter(e=>e.stage==='picture_development_gpu_retry').length,0);
 });
 
 
