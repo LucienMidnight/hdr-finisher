@@ -172,3 +172,11 @@ November 6 panel polish: panel edges and open-section boundaries use the same
 neutral hairline; full-height splitters own shared vertical edges. Final
 three-theme/minimum-size visual checks cover the grouped UI changes.
 
+
+November 6 icon polish: the three runtime icon SVGs now use a subtle panel-to-
+app near-black gradient. The shared 1024 px desktop PNG is regenerated from
+the SVG; Windows/macOS/Linux packaging derives platform icons from that PNG,
+and Flatpak installs the SVG directly. No tracked ICO/ICNS exists. Glyph
+geometry and design-history sources are unchanged. Review includes 16/24/32/
+48 px icons; no installer or package build was needed.
+
