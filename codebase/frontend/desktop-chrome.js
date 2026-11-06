@@ -11,10 +11,10 @@
     if (!control) return;
     control.className = "";
     control.setAttribute("role", "menuitem");
-    if (control.id === "project-open") control.textContent = "Open Project…";
-    if (control.id === "project-save") control.textContent = "Save Project";
+    if (control.id === "project-open") control.textContent = "Open project…";
+    if (control.id === "project-save") control.textContent = "Save project";
     if (control.id === "settings-open") control.textContent = "Settings…";
-    if (control.id === "help-open") control.textContent = "HDR Finisher Help";
+    if (control.id === "help-open") control.textContent = "HDR Finisher help";
     slot.replaceWith(control);
   });
   const menuBar = document.querySelector(".window-menu-bar");
