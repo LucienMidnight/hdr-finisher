@@ -262,3 +262,6 @@ and tab behaviour stay intact. Validation is grouped at the end of round 3.
 
 Workflow numbers are 21 px and page names 16 px, within the existing toolbar
 height. Final size awaits Steve's screenshot review.
+
+Panel titles now display title case without caps tracking, including dynamic
+Export headings and embedded/detached Library. Field labels are unchanged.

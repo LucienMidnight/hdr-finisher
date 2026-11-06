@@ -393,3 +393,6 @@ Only the outer colour ring is filled. The puck is an outlined ring in every
 theme, with panel-colour separation from the grid. Drawing does not change
 the relationship between pointer position and grade values. The module Reset
 clears all three ranges, Blending and Balance; double-click clears one range.
+
+Panel titles use title case with no extra letter spacing, retaining their
+existing font and weight. Small field labels retain their current casing.

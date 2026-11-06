@@ -228,10 +228,10 @@
     });
     collapse.id="batch-presets-collapse";collapse.className="source-rail-expand panel-collapse-button";
     collapse.setAttribute("aria-expanded","true");collapse.setAttribute("aria-label","Collapse export presets");collapse.setAttribute("aria-controls","batch-preset-list");collapse.title="Collapse export presets";
-    railHead.append(node("h2","Export presets","panel-title"),menuButton("Export preset actions",presetActions),collapse);
+    railHead.append(node("h2","Export Presets","panel-title"),menuButton("Export preset actions",presetActions),collapse);
     const list=node("div");list.id="batch-preset-list";const name=node("input");name.id="batch-preset-name";name.hidden=true;
     const modified=node("p","","helper");modified.id="batch-modified";modified.setAttribute("aria-live","polite");rail.append(railHead,list,name,modified);document.body.append(rail);
-    const sheet=$("export-sheet"),scroll=node("div","","batch-settings-scroll");sheet.querySelector(".panel-title").textContent="Export settings";
+    const sheet=$("export-sheet"),scroll=node("div","","batch-settings-scroll");sheet.querySelector(".panel-title").textContent="Export Settings";
     sheet.append(scroll);
     const section=(title,id)=>{const e=node("section","","batch-settings-section");if(id)e.id=id;e.append(node("h2",title,"export-section-title"));scroll.append(e);return e;};
     const field=(label,control)=>{const l=node("label","","batch-setting-row");l.append(node("span",label),control);return l;};
@@ -275,7 +275,7 @@
     const runButton=button("Export files",()=>run());runButton.id="batch-run";runButton.className="button-primary";footer.append(destRow,footerCount,summary,runButton);sheet.append(footer);
     sheet.querySelector(".export-settings").remove();sheet.querySelector(".sheet-actions").remove();
     const panel=node("section","","batch-grid-panel panel");panel.id="batch-grid-panel";
-    const header=node("div","","batch-header"),title=node("div","","batch-heading"),count=node("span","","helper");count.id="batch-count";title.append(node("h2","Export batch","panel-title"),count);
+    const header=node("div","","batch-header"),title=node("div","","batch-heading"),count=node("span","","helper");count.id="batch-count";title.append(node("h2","Export Batch","panel-title"),count);
     const tools=node("div","","batch-tools");
     for(const [kind,icon] of [["grid","M4 4h6v6h-6z M14 4h6v6h-6z M4 14h6v6h-6z M14 14h6v6h-6z"],["preview","M4 4h16v11h-16z M4 19h3 M10.5 19h3 M17 19h3"]]){const b=button("",()=>view(kind==="grid"));b.id="batch-view-"+kind;b.className="tool-button";b.setAttribute("aria-label",kind==="grid"?"Grid":"Preview");b.title=kind==="grid"?"Grid":"Preview";const svg=document.createElementNS("http://www.w3.org/2000/svg","svg"),path=document.createElementNS(svg.namespaceURI,"path");svg.setAttribute("viewBox","0 0 24 24");svg.setAttribute("aria-hidden","true");path.setAttribute("d",icon);svg.append(path);b.append(svg);tools.append(b);}
     for(const [label,fn] of [["Add Library selection",()=>window.dispatchEvent(new CustomEvent("batch-export-add-selection"))],["Select all",()=>{model.selected=new Set(model.photos.map(p=>p.path));renderGrid();}],["Remove",()=>setPhotos(model.paths.filter(p=>!model.selected.has(p)))],["Clear",()=>setPhotos([])]]){const b=button(label,fn);b.className="tool-button";tools.append(b);}

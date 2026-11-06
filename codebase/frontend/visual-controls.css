@@ -3,7 +3,7 @@ body { font-family: var(--font-body); font-size: 14.5px; font-variant-numeric: t
 button, input, select, textarea, output { font-family: var(--font-body); font-variant-numeric: tabular-nums; }
 :root :is(button, input, select, textarea, [tabindex], summary):focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 :root :is(button, input, select, textarea):disabled { opacity: var(--disabled-opacity); }
-:root .panel-title { font: 600 12px var(--font-body); letter-spacing: .11em; text-transform: uppercase; }
+:root .panel-title { font: 600 12px var(--font-body); letter-spacing: 0; text-transform: none; }
 :root .section-label { font: 600 11px var(--font-body); letter-spacing: .11em; text-transform: uppercase; }
 :root :is(.helper, .caption) { font: 400 13px/1.45 var(--font-body); color: var(--muted); }
 :root :is(output, .value, .editable-value) { font: 500 13px var(--font-body); font-variant-numeric: tabular-nums; }
