@@ -1214,3 +1214,10 @@ pixel; rest of RAW development 7.8 s; retouch reapply 6.4 s.
 | CPU Edge colour, 42 MP synthetic clip, standalone | 26.8–27.2 → 8.6–9.0 s | 12 logical CPUs; strips on the shared CPU pool; output bit-identical; standalone peak 6.2 → 5.07 GB |
 | DSC00264.ARW Grade first frame, CPU forced (edge colour) | 37.953 s (Nov 2) → 16.6–16.8 s (edge colour 9.0 s) | `edge-colour-raw.js`, Electron 2560x1440, two runs |
 | DSC00264.ARW Grade first frame, GPU route | 13.571 s (Nov 2, GPU accepted) → 26.0–26.3 s | Both GPU attempts rejected on this machine's faulty graphics memory in both runs, then CPU (edge colour 19.5–19.8 s); driver's GPU assertion fails for that reason |
+
+### November 6: CPU Edge colour memory
+
+| Action | Before → after | Conditions / result |
+| --- | --- | --- |
+| CPU Edge colour working memory, 42 MP | 28.3–29.2 → 10.5 full-size planes (about 4.8 → 1.8 GB) | tracemalloc above inputs, synthetic clip; output bit-identical; 9.6–10.5 s |
+| Library CPU route after rejected GPU result, DSC00264, whole-app peak | 5.11 / 4.60 GB over ceiling → no over-ceiling event; largest sample 3.46 GB | `library-temporary-recovery.js`, Electron 2560x1440, isolated cache; CPU reconstruction 9.3–10.0 s |

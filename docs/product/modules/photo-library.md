@@ -9,9 +9,12 @@ Library GPU work or a draw is running. GPU development errors that would
 repeat go to the CPU instead of returning as preparation failures. Device loss
 keeps its two-loss ceiling. Preparation retries a temporary error once (was
 twice) and records development failures at once. The CPU fallback allowance,
-memory and VRAM budgets are unchanged. Open: the `library-temporary-recovery.js`
-driver cannot currently reach its forced faults because its photo copies are
-served from stored pictures; it needs fresh copies or a cache reset.
+memory and VRAM budgets are unchanged. The `library-temporary-recovery.js`
+driver now runs with an isolated cache (`70dc563`). Open: in 3 of its first 5
+runs the Library helper stopped repeatedly on the CPU route after a rejected
+result; after the CPU Edge colour memory reduction the same day (memory PRD),
+the CPU route stayed inside the memory ceiling and later runs passed. Not
+confirmed fixed; Steve will report it if it shows up in use.
 
 ## November 5: selected full-size zoom draws on the GPU (built)
 

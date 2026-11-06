@@ -1,5 +1,18 @@
 # Module PRD: Memory and caches
 
+### November 6: CPU Edge colour working memory
+
+The CPU Edge colour reconstruction (Grade import fallback and the Library CPU
+route after a rejected GPU result) kept every blur at full size. For a 42 MP
+photo it held about 29 full-size float planes (about 4.9 GB), and the Library
+CPU route took the whole app to 5.11 GB, over the 4.4 GB peak allowance.
+Blurs now stay on their reduced grid and are enlarged one short strip at a
+time; products that only feed a blur are formed per strip. 42 MP working
+memory is about 10.5 planes (about 1.8 GB), output bit-identical, time
+unchanged (about 10 s). Focused Library check, DSC00264 forced rejection:
+no over-ceiling event, largest sampled app total 3.46 GB. No ceiling,
+allowance, share, estimate or the 66-second CPU fallback allowance changed.
+
 ### November 5: selected Library full-size GPU scene
 
 Steve approved retaining the single selected full-size scene on the drawing
