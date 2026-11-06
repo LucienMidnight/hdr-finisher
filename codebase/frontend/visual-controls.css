@@ -446,3 +446,11 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
  :root .compact-workspace .viewer-bar { flex-wrap: nowrap; height: var(--panel-header-h); }
  :root .compact-workspace .viewer-tools { flex: none; flex-wrap: nowrap; padding-block: 0; }
 }
+
+/* One fixed-size grip for pinned folders and every sidebar section. */
+:root .library-drag-handle { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 28px; min-height: 28px; padding: 0; font: 18px/1 var(--font-body); color: var(--muted); }
+:root .library-drag-handle:hover { color: var(--text); }
+:root .library-nav .library-heading { gap: 4px; padding-right: 4px; }
+:root .library-nav .library-heading .panel-title { font-size: 17px; font-weight: 700; white-space: nowrap; }
+:root .library-nav .library-heading > .text-button { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; min-height: 28px; padding: 0; font: 500 24px/1 var(--font-body); opacity: 0; }
+:root .library-nav:is(:hover, :focus-within) .library-heading > .text-button { opacity: 1; }

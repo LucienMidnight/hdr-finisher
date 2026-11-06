@@ -7517,3 +7517,7 @@ sort/filter, compare/focus and display tools, without divider lines. At narrow
 window widths the tools occupy a second row so the groups remain usable.
 Only toolbar presentation changes; viewing commands are unchanged.
 Validation is grouped in the Desktop module's round 4 record.
+
+## November 6: UI polish round 6
+
+Section 5: larger bold sidebar headings, larger add targets visible on hover or keyboard focus, and identical fixed-size muted grips for section and pinned-folder reordering. The smart-album diamond was a decorative span, with no handler, and is removed; rule editing stays in the context menu. Grade and Export have no reorder handles to restyle. Validation grouped at the end of round 6.

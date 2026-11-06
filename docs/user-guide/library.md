@@ -317,3 +317,5 @@ the unfinished bounded route can still wait; that work is not complete.
 In Settings > Appearance, **Developed badge** chooses **On hover** (the default,
 also shown on keyboard focus) or **Always** for grid thumbnails. This application
 preference is separate from projects and presets.
+
+Move the pointer over the collections sidebar to reveal the larger + buttons beside Folders, Albums and Smart Albums. Keyboard focus also reveals them. Drag the matching grip beside a section or pinned folder to reorder it. Right-click a smart album and choose **Edit rules and name?** to change its saved filter.
