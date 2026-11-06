@@ -1869,8 +1869,9 @@ eyes are neutral when enabled, stronger when bypassed, and enabled switch
 tracks are filled. Autosave uses ready green. Grouped final checks follow.
 
 
-November 6 text-size trial: small control labels, scope statistics, badges and
-the modifier hint line use 12 px; thumbnail names use 11.5 px. Fonts are
+November 6 text-size trial: panel labels use 14.5 px (from 13.5), scope statistics and
+the modifier hint line use 12 px, scope badges 11 px, Reset 14 px, and
+thumbnail names 11.5 px. Fonts are
 unchanged. Steve chooses the final sizes from before/after review captures.
 
 

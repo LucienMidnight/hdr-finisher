@@ -319,3 +319,9 @@ html.desktop-shell .window-controls { margin-left: 0; }
 
 
 :root .scope-readings { width: auto; min-width: 0; }
+
+/* Raise the existing 13.5 px panel labels rather than replacing them with the smaller caption size. */
+:root .control-heading label, :root .instrument-control-label { font-size: 14.5px; }
+:root .scope-reading-status .scope-readout { font-size: 11px; }
+:root .group-reset { font-size: 14px; }
+
