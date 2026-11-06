@@ -759,3 +759,7 @@ Export with frame and Prevent enlargement are plain settings rows. On
 switches have a light knob in every theme; track materials remain unchanged.
 This changes controls only, with no output or saved-setting changes.
 Validation is grouped at the end of round 4 in the Desktop module PRD.
+
+Round 4, section 3: the empty batch message is centred in the available
+batch area below the header, in both Grid and Preview. The empty grid no
+longer takes the space above it. Validation is grouped with round 4.

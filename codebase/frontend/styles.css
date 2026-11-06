@@ -9152,3 +9152,7 @@ body[data-workflow="export"].batch-presets-collapsed .batch-grid-panel { left:44
 
 .group-preset-name label { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .group-preset-name input[type="checkbox"] { flex: none; }
+
+/* The empty batch message owns the free space below the batch header. */
+.batch-grid-panel:has(> .batch-empty:not([hidden])) > #batch-grid { display: none; }
+.batch-grid-panel > .batch-empty { flex: 1; display: grid; place-items: center; margin: 0; }
