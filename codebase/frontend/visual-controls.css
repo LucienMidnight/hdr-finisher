@@ -288,3 +288,15 @@ html.native-application-menu :is(.window-controls, .unified-menu-button) { displ
 .library-tools { column-gap: 4px; }
 .library-tools :is(#zoom-button, #hdr-button, #focus-button) { margin-left: 6px; }
 
+
+/* One visible range, retaining the existing independent grade values. */
+:root .grading-wheel[hidden] { display: none !important; }
+:root .grading-wheel { border: 0; padding: 8px 0 0; }
+:root .grading-wheel legend { display: none; }
+:root .color-wheel-pad { width: 160px; max-width: 100%; }
+:root .color-wheel-pad::before { inset: 6%; background: repeating-conic-gradient(from 300deg, var(--hairline) 0deg 1deg, transparent 1deg 45deg), var(--panel); box-shadow: none; }
+:root .wheel-range-tabs button.modified::after { content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); margin-left: 4px; vertical-align: middle; }
+:root .wheel-fields label { position: relative; }
+:root .wheel-fields label::after { content: attr(data-unit); position: absolute; right: 7px; bottom: 6px; color: var(--muted); pointer-events: none; }
+:root .wheel-fields input { padding-right: 24px; }
+

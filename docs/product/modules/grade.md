@@ -1873,3 +1873,13 @@ November 6 text-size trial: small control labels, scope statistics, badges and
 the modifier hint line use 12 px; thumbnail names use 11.5 px. Fonts are
 unchanged. Steve chooses the final sizes from before/after review captures.
 
+
+## November 6: one range-selectable Color wheel
+
+Shadows/Midtones/Highlights tabs expose one wheel at a time, keeping the
+existing independent per-range values and saved format. The wheel has a
+neutral centre, narrow hue ring, neutral spokes and visible puck. Modified
+range dots, numeric °/% units, arrow-key tabs and selected-range double-click
+reset are present. Steve's visual sign-off is pending in the UI polish review.
+No grade processing changed; grouped checks include range retention/reset.
+

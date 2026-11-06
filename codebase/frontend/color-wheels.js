@@ -1,4 +1,36 @@
+let selectedWheelRange = "shadows";
 function bindColorWheels() {
+  const host = document.querySelector(".grading-wheels");
+  const tabs = document.createElement("div"); tabs.className = "wheel-range-tabs";
+  tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "Color wheel range");
+  const select = (range) => {
+    selectedWheelRange = range;
+    for (const button of tabs.children) {
+      const active = button.dataset.wheelRange === range;
+      button.setAttribute("aria-selected", String(active)); button.tabIndex = active ? 0 : -1;
+    }
+    document.querySelectorAll(".grading-wheel").forEach(panel => { panel.hidden = panel.dataset.wheel !== range; });
+  };
+  for (const range of ["shadows", "midtones", "highlights"]) {
+    const button = document.createElement("button"); button.type = "button"; button.dataset.wheelRange = range;
+    button.id = `wheel-tab-${range}`; button.textContent = range[0].toUpperCase() + range.slice(1);
+    button.setAttribute("role", "tab"); button.setAttribute("aria-controls", `wheel-panel-${range}`);
+    button.addEventListener("click", () => select(range));
+    tabs.append(button);
+    const panel = host.querySelector(`[data-wheel="${range}"]`); panel.id = `wheel-panel-${range}`;
+    panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-labelledby", button.id);
+    panel.querySelectorAll(".wheel-fields label").forEach((label, index) => {
+      label.dataset.unit = index === 0 ? "°" : "%";
+    });
+  }
+  tabs.addEventListener("keydown", event => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault(); const buttons = [...tabs.children];
+    let index = buttons.indexOf(document.activeElement);
+    index = event.key === "Home" ? 0 : event.key === "End" ? 2 : (index + (event.key === "ArrowRight" ? 1 : 2)) % 3;
+    buttons[index].click(); buttons[index].focus();
+  });
+  host.prepend(tabs); select(selectedWheelRange);
   document.querySelectorAll(".color-wheel-pad").forEach((pad) => {
     const update = (event) => {
       const rect = pad.getBoundingClientRect();
@@ -48,6 +80,10 @@ function bindColorWheels() {
 function renderColorWheels() {
   document.querySelectorAll(".grading-wheel").forEach((container) => {
     const wheel = state.adjustments[state.currentView]?.color_grading?.[container.dataset.wheel];
+    const tab = document.querySelector(`[data-wheel-range="${container.dataset.wheel}"]`);
+    const modified = wheel && (wheel.hue !== 0 || wheel.saturation !== 0 || wheel.luminance_ev !== 0);
+    tab?.classList.toggle("modified", Boolean(modified));
+    if (tab) tab.setAttribute("aria-label", `${container.dataset.wheel}${modified ? ", modified" : ""}`);
     const puck = container.querySelector(".color-wheel-puck");
     if (!wheel || !puck) return;
     const radius = Math.min(100, Math.max(0, wheel.saturation)) * 0.45;
