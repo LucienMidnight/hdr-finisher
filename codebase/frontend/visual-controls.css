@@ -265,3 +265,11 @@ html.native-application-menu :is(.window-controls, .unified-menu-button) { displ
 :root :is(.checkbox-row, .film-module-toggle, .proof-enable-row, .gradient-luma-toggle) > input[type="checkbox"]:checked::after { color: var(--on-accent); }
 :root :is(.control-row.modified .control-heading output, .film-stage-heading[aria-expanded="true"]) { color: var(--text); }
 
+
+/* Readability trial: retain all existing font families. */
+:root :is(.control-heading label, .wheel-fields label, .local-mask-scope, .foldout-summary) { font-size: 12px; }
+:root :is(.scope-stats, .scope-stats dt, .scope-stats dd, #scope-stats, #scope-stats dt, #scope-stats dd) { font-size: 12px; }
+:root :is(.badge, .preview-badge, .slider-key-legend) { font-size: 12px; }
+:root .group-reset { font-size: 13px; white-space: nowrap; }
+:root .library-cell .name { font-size: 11.5px; }
+
