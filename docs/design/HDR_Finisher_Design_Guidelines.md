@@ -381,3 +381,13 @@ Panel resize edges occupy one CSS pixel and draw one continuous neutral
 hairline, with no resting band. The invisible grab target overlaps four pixels
 on each side. Hover/focus/drag may brighten the line; resizing, keyboard and
 double-click actions remain unchanged. Neighbouring dividers meet the line.
+
+## November 6: Color wheel grid (round 2)
+
+The wheel centre is transparent: the panel shows through, with eight even
+spokes and two inner circles at one third and two thirds of the inner radius.
+Spokes and circles share a 1.25 CSS pixel non-scaling stroke and muted ink.
+Only the outer colour ring is filled. The puck is an outlined ring in every
+theme, with panel-colour separation from the grid. Drawing does not change
+the relationship between pointer position and grade values. The module Reset
+clears all three ranges, Blending and Balance; double-click clears one range.

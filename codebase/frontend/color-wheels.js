@@ -32,6 +32,23 @@ function bindColorWheels() {
   });
   host.prepend(tabs); select(selectedWheelRange);
   document.querySelectorAll(".color-wheel-pad").forEach((pad) => {
+    // Presentation only: leave pointer-to-grade coordinates unchanged.
+    const grid = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    grid.classList.add("color-wheel-grid"); grid.setAttribute("viewBox", "0 0 100 100");
+    grid.setAttribute("aria-hidden", "true");
+    for (const radius of [44 / 3, 88 / 3]) {
+      const circle = document.createElementNS(grid.namespaceURI, "circle");
+      circle.setAttribute("cx", "50"); circle.setAttribute("cy", "50"); circle.setAttribute("r", radius);
+      grid.append(circle);
+    }
+    for (let angle = 30; angle < 390; angle += 45) {
+      const line = document.createElementNS(grid.namespaceURI, "line");
+      const radians = angle * Math.PI / 180;
+      line.setAttribute("x1", "50"); line.setAttribute("y1", "50");
+      line.setAttribute("x2", 50 + 44 * Math.cos(radians)); line.setAttribute("y2", 50 + 44 * Math.sin(radians));
+      grid.append(line);
+    }
+    pad.prepend(grid);
     const update = (event) => {
       const rect = pad.getBoundingClientRect();
       const dx = event.clientX - rect.left - rect.width / 2;

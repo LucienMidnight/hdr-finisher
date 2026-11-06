@@ -294,7 +294,6 @@ html.native-application-menu :is(.window-controls, .unified-menu-button) { displ
 :root .grading-wheel { border: 0; padding: 8px 0 0; }
 :root .grading-wheel legend { display: none; }
 :root .color-wheel-pad { width: 160px; max-width: 100%; }
-:root .color-wheel-pad::before { inset: 6%; background: repeating-conic-gradient(from 300deg, var(--hairline) 0deg 1deg, transparent 1deg 45deg), var(--panel); box-shadow: none; }
 :root .wheel-range-tabs button.modified::after { content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); margin-left: 4px; vertical-align: middle; }
 :root .wheel-fields label { position: relative; }
 :root .wheel-fields label::after { content: attr(data-unit); position: absolute; right: 7px; bottom: 6px; color: var(--muted); pointer-events: none; }
@@ -326,9 +325,6 @@ html.desktop-shell .window-controls { margin-left: 0; }
 :root .group-reset { font-size: 14px; }
 
 
-/* The technical wheel keeps a dark neutral centre in all three themes. */
-:root .color-wheel-pad::before { background: repeating-conic-gradient(from 300deg, color-mix(in srgb, var(--muted) 25%, transparent) 0deg 1deg, transparent 1deg 45deg), color-mix(in srgb, var(--panel) 10%, black); }
-:root .color-wheel-puck { border-color: color-mix(in srgb, var(--text) 15%, white); }
 
 
 :root[data-developed-badge="always"] .library-cell .is-developed { opacity: 1; }
@@ -348,3 +344,15 @@ html.desktop-shell .window-controls { margin-left: 0; }
 
 /* Reserve enough room for Reset plus its changed dot in Color wheels. */
 :root .color-grading-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 68px 26px; }
+
+/* The colour ring alone is filled. The polar grid has a transparent centre. */
+:root .color-wheel-pad { background: transparent; box-shadow: none; }
+:root .color-wheel-pad::before { display: none; }
+:root .color-wheel-pad::after {
+ content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+ background: conic-gradient(from 90deg, #ee6f72, #e9c968, #80d582, #68d1c8, #748fe4, #cf7bd7, #ee6f72);
+ mask: radial-gradient(circle closest-side, transparent calc(88% - .5px), black 88%);
+}
+.color-wheel-grid { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--muted); stroke-opacity: .55; pointer-events: none; }
+.color-wheel-grid :is(line, circle) { stroke-width: 1.25px; vector-effect: non-scaling-stroke; }
+:root .color-wheel-puck { border: 2px solid var(--text); background: transparent; box-shadow: 0 0 0 1px var(--panel); }

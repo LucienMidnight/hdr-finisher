@@ -1914,3 +1914,9 @@ Existing pointer, keyboard and double-click handlers remain in place.
 The existing whole-module Reset is given sufficient header space for its
 label and changed dot. It restores Shadows, Midtones, Highlights, Blending
 and Balance together; wheel double-click still resets only the selected range.
+
+## November 6: Color wheel drawing (built)
+
+The panel shows through the wheel centre. Eight uniform SVG spokes and two
+inner circles form a polar grid, and every theme uses an outlined puck.
+The colour ring and pointer/value mapping are unchanged. Tabs are unchanged.
