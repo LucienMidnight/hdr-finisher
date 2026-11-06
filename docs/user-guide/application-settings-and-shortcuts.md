@@ -94,3 +94,9 @@ HDRF (or Alt/F10). Recent projects is in File. On macOS, use the system menu
 bar and File → Open Recent. Drag empty space in the top toolbar to move the
 window; double-click it to maximize or restore.
 
+
+## Developed badges
+
+In Appearance, choose **On hover** (default, also shown on keyboard focus) or
+**Always** for Developed badges on Library thumbnails. This setting applies
+to both Library windows and stays separate from projects and presets.
