@@ -18,6 +18,7 @@
     previewResolution: "auto",
     fasterDragging: false,
     libraryTestPatterns: false,
+    developedBadge: "hover",
     maximumGpuMemoryGiB: "auto",
     appMemoryBytes: null,
     executionOverride: "auto",
@@ -172,6 +173,7 @@
     previewResolution: PREVIEW_RESOLUTIONS.has(String(value.previewResolution)) ? String(value.previewResolution) : "auto",
     fasterDragging: value.fasterDragging === true,
     libraryTestPatterns: value.libraryTestPatterns === true,
+    developedBadge: value.developedBadge === "always" ? "always" : "hover",
     gradeAutosave: value.gradeAutosave !== false,
     maximumGpuMemoryGiB: normalizeGpuMemoryGiB(value.maximumGpuMemoryGiB),
     appMemoryBytes: Number.isSafeInteger(value.appMemoryBytes) && value.appMemoryBytes >= 2_500_000_000 ? value.appMemoryBytes : null,
@@ -223,6 +225,7 @@
 
   function persistPreferences() {
     const snapshot = clone(shell.preferences);
+    document.documentElement.dataset.developedBadge = snapshot.developedBadge;
     shell.persistChain = shell.persistChain.then(async () => {
       if (shell.desktop?.setPreferences) await shell.desktop.setPreferences(snapshot);
       else localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
@@ -684,6 +687,7 @@
     void renderAppMemory();
     byId("settings-rendering-mode").value = shell.preferences.renderingMode;
     byId("settings-faster-dragging").checked = shell.preferences.fasterDragging === true;
+    byId("settings-developed-badge").value = shell.preferences.developedBadge;
     byId("settings-library-test-patterns").checked = shell.preferences.libraryTestPatterns === true;
     byId("settings-preview-resolution").value = shell.preferences.previewResolution;
     const memoryBudget = shell.preferences.maximumGpuMemoryGiB;
@@ -1117,8 +1121,13 @@
     shell.onPreferencesChanged = options.onPreferencesChanged || (() => {});
     shell.adjustControl = options.adjustControl || (() => false);
     shell.preferences = await loadPreferences();
+    byId("settings-developed-badge").addEventListener("change", event => {
+      shell.preferences.developedBadge = event.target.value === "always" ? "always" : "hover";
+      persistPreferences();
+    });
     shell.libraryTestPatternsSync = syncLibraryTestPatterns();
     applyTheme(shell.preferences.theme);
+    document.documentElement.dataset.developedBadge = shell.preferences.developedBadge;
     window.HDRAppearance.apply(shell.preferences.accent);
     applyFrameColor();
     renderFramePresets();

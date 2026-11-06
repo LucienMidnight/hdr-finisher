@@ -7502,3 +7502,9 @@ the already-known remembered-failure test failure. Plain Library picture and
 memory checks pass, but the existing drawing-gap check fails at 843 ms.
 Hover/focus-only Developed badges remain Steve's choice from the review page.
 
+
+## November 6: Developed badge preference (built)
+
+Settings > Appearance offers On hover (default, including keyboard focus) or
+Always for grid Developed badges, shared by embedded and detached Library views.
+This application preference is never stored in projects or presets.

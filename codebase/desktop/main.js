@@ -596,7 +596,7 @@ function registerIpc() {
     if (!windows.has("library")) libraryWindowState = checkedLibraryState(snapshot);
     const window = await createWindow("library"); window.show(); window.focus(); return true;
   });
-  handleWindow("desktop:get-library-window", () => ({ detached: windows.has("library"), state: libraryWindowState, theme: applicationPreferences.theme, accent: applicationPreferences.accent }));
+  handleWindow("desktop:get-library-window", () => ({ detached: windows.has("library"), state: libraryWindowState, theme: applicationPreferences.theme, accent: applicationPreferences.accent, developedBadge: applicationPreferences.developedBadge }));
   handleWindow("desktop:dock-library", (record, snapshot) => {
     if (record.role !== "library") throw new Error("Only Library can dock itself.");
     libraryWindowState = checkedLibraryState(snapshot);
@@ -686,7 +686,7 @@ function registerIpc() {
     }
     applicationPreferences = next;
     const library = windows.get("library")?.window;
-    if (library && !library.isDestroyed()) library.webContents.send("desktop:library-window", { action: "theme", theme: applicationPreferences.theme, accent: applicationPreferences.accent });
+    if (library && !library.isDestroyed()) library.webContents.send("desktop:library-window", { action: "theme", theme: applicationPreferences.theme, accent: applicationPreferences.accent, developedBadge: applicationPreferences.developedBadge });
     renderingMode = applicationPreferences.renderingMode;
     persistApplicationPreferences();
     buildMenu();

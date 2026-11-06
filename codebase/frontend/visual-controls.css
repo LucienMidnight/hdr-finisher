@@ -330,3 +330,5 @@ html.desktop-shell .window-controls { margin-left: 0; }
 :root .color-wheel-pad::before { background: repeating-conic-gradient(from 300deg, color-mix(in srgb, var(--muted) 25%, transparent) 0deg 1deg, transparent 1deg 45deg), color-mix(in srgb, var(--panel) 10%, black); }
 :root .color-wheel-puck { border-color: color-mix(in srgb, var(--text) 15%, white); }
 
+
+:root[data-developed-badge="always"] .library-cell .is-developed { opacity: 1; }

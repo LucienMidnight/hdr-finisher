@@ -313,3 +313,7 @@ After reconnecting the drive, return to the Library window or reopen the folder
 to retry. Hidden/minimised windows give foreground Library work priority; showing
 the window restores its previous work classes. Very large pictures that require
 the unfinished bounded route can still wait; that work is not complete.
+
+In Settings > Appearance, **Developed badge** chooses **On hover** (the default,
+also shown on keyboard focus) or **Always** for grid thumbnails. This application
+preference is separate from projects and presets.

@@ -7,6 +7,7 @@ const DEFAULT_APPLICATION_PREFERENCES = Object.freeze({
   previewResolution: "auto",
   fasterDragging: false,
   libraryTestPatterns: false,
+  developedBadge: "hover",
   navigationWindow: "auto",
   maximumGpuMemoryGiB: "auto",
   appMemoryBytes: null,
@@ -52,6 +53,7 @@ function sanitizeApplicationPreferences(value = {}) {
     previewResolution: tiers.includes(String(value.previewResolution)) ? String(value.previewResolution) : "auto",
     fasterDragging: value.fasterDragging === true,
     libraryTestPatterns: value.libraryTestPatterns === true,
+    developedBadge: value.developedBadge === "always" ? "always" : "hover",
     gradeAutosave: value.gradeAutosave !== false,
     navigationWindow: ["auto", "always", "off"].includes(value.navigationWindow) ? value.navigationWindow : "auto",
     appMemoryBytes: Number.isSafeInteger(value.appMemoryBytes) && value.appMemoryBytes >= 2_500_000_000
