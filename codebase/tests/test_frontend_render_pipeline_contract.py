@@ -277,8 +277,8 @@ def test_electron_preview_correctness_contract() -> None:
     assert "Windows shell integrations and catalog applications" in javascript
     assert 'const nativeOverwriteApproved = ["win32", "darwin", "linux"].includes(process.platform)' in main
     assert 'id="rotate-apply"' in html and 'id="rotate-cancel"' in html
-    assert 'label: "Rendering Mode"' in main
-    assert all(label in main for label in ("Auto (Recommended)", "GPU Preferred", "CPU Compatibility"))
+    assert 'label: "Rendering mode"' in main
+    assert all(label in main for label in ("Auto (recommended)", "GPU preferred", "CPU compatibility"))
     assert "const activeBackend = backend;" in main
     assert 'activeBackend.authoringSecret' in main
     assert 'details.requestHeaders["X-HDR-Finisher-Token"] = backend.authoringSecret' not in main
