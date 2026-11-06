@@ -195,7 +195,13 @@
       // magnitude; fromBT adds under 5%. 32x leaves ample room for rounding,
       // so anything beyond it, or non-finite, is corrupted memory. Throwing
       // sends Grade and Library to their existing CPU fallback.
-      const limit=f(32*Math.max(input.largest,1e-6));
+      // Corrupted input near the f32 maximum makes 32x overflow to Infinity,
+      // which no range check can use (and WGSL cannot compile). Reject it as
+      // invalid pixels, like corrupted output, rather than widen the check.
+      const bound=32*Math.max(input.largest,1e-6);
+      if(!(Math.fround(bound)<Infinity))
+        throw Object.assign(Error(`GPU edge colour read invalid pixels (input magnitude ${input.largest}); using the CPU.`),{gpuUnavailable:true,gpuInvalidPixels:true});
+      const limit=f(bound);
       const output=await scan(result,`if(bad(v)||any(abs(v)>vec3<f32>(${limit}))){atomicAdd(&n,1u);}`);
       if(input.rejected===0&&output.rejected>0)
         throw Object.assign(Error(`GPU edge colour produced ${output.rejected} invalid pixels; using the CPU.`),{gpuUnavailable:true,gpuInvalidPixels:true});

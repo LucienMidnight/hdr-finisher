@@ -1202,3 +1202,15 @@ source in 55.7 ms (first tile 44.3 ms), Fit source in 168.9 ms, with exact visib
 ROI agreement. These are transport diagnostics, not end-to-end Grade timings.
 Its app census peaked at 1.229 GB; the focused native GPU driver census peaked
 at 1.916 GB (neither is the independent sampler used for the zoom rows).
+
+## November 6: edited DSC00264.ARW opening in Grade (edge colour)
+
+Steve's app log (one opening, Library running): click to first frame 48.7 s,
+of which Edge colour 33.7 s on the CPU after the GPU result had one invalid
+pixel; rest of RAW development 7.8 s; retouch reapply 6.4 s.
+
+| Action | Before → after | Conditions / result |
+| --- | --- | --- |
+| CPU Edge colour, 42 MP synthetic clip, standalone | 26.8–27.2 → 8.6–9.0 s | 12 logical CPUs; strips on the shared CPU pool; output bit-identical; standalone peak 6.2 → 5.07 GB |
+| DSC00264.ARW Grade first frame, CPU forced (edge colour) | 37.953 s (Nov 2) → 16.6–16.8 s (edge colour 9.0 s) | `edge-colour-raw.js`, Electron 2560x1440, two runs |
+| DSC00264.ARW Grade first frame, GPU route | 13.571 s (Nov 2, GPU accepted) → 26.0–26.3 s | Both GPU attempts rejected on this machine's faulty graphics memory in both runs, then CPU (edge colour 19.5–19.8 s); driver's GPU assertion fails for that reason |

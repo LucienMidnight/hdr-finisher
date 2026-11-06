@@ -65,3 +65,26 @@ def test_cpu_source_does_not_reenter_delivery_after_gpu_rejection(monkeypatch):
     assert highlight_edge_gpu._work.get() == (0, None)
     assert not highlight_edge_gpu._cpu_only.get()
     np.testing.assert_array_equal(image, np.ones_like(image))
+
+
+def test_rejected_gpu_pixels_get_one_more_gpu_try_before_the_cpu(monkeypatch):
+    image = np.ones((2, 3, 3), np.float32)
+    rejected = {"renderer": "cpu", "fallback_reason": "GPU edge colour produced 1 invalid pixels; using the CPU."}
+    clean = np.full_like(image, .25)
+    replies = [(None, rejected), (clean, {"renderer": "gpu", "fallback_reason": None})]
+    monkeypatch.setattr(highlight_edge_gpu, "_attempt", lambda *args: replies.pop(0))
+    result, diagnostics = highlight_edge_gpu.reconstruct(image, image[..., 0], .5)
+    assert result is clean and diagnostics["renderer"] == "gpu"
+    assert diagnostics["rejected_gpu_attempts"] == [rejected["fallback_reason"]]
+
+    calls = []
+    monkeypatch.setattr(highlight_edge_gpu, "_attempt", lambda *args: calls.append(1) or (None, rejected))
+    result, diagnostics = highlight_edge_gpu.reconstruct(image, image[..., 0], .5)
+    assert result is None and diagnostics["renderer"] == "cpu" and len(calls) == 2
+    assert len(diagnostics["rejected_gpu_attempts"]) == 2
+
+    calls.clear()
+    unavailable = {"renderer": "cpu", "fallback_reason": "The GPU delivery renderer is unavailable."}
+    monkeypatch.setattr(highlight_edge_gpu, "_attempt", lambda *args: calls.append(1) or (None, unavailable))
+    result, diagnostics = highlight_edge_gpu.reconstruct(image, image[..., 0], .5)
+    assert result is None and len(calls) == 1 and "rejected_gpu_attempts" not in diagnostics

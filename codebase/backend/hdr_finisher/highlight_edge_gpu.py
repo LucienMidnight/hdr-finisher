@@ -20,6 +20,10 @@ from .delivery_memory import DeliveryMemory
 
 _work = ContextVar("edge_colour_source_work", default=(0, None))
 _cpu_only = ContextVar("edge_colour_cpu_only", default=False)
+# Steve, November 6, 2026: try the GPU twice before the much slower CPU.
+# Faulty graphics memory gives different results each run, so a rejected
+# result is usually followed by a clean one. Other failures are not retried.
+GPU_ATTEMPTS = 2
 
 
 @contextmanager
@@ -33,12 +37,29 @@ def source_work(*, priority, cancelled=None, cpu_only=False):
         _cpu_only.reset(cpu_token)
 
 
+def _rejected_pixels(diagnostics):
+    return "invalid pixels" in str(diagnostics.get("fallback_reason") or "")
+
+
 def reconstruct(image, ratio, expand, cancelled=None):
+    """GPU edge colour, or (None, diagnostics) when the caller must use the CPU."""
+    started = time.perf_counter()
+    rejected = []
+    for _ in range(GPU_ATTEMPTS):
+        result, diagnostics = _attempt(image, ratio, expand, cancelled, started)
+        if result is not None or not _rejected_pixels(diagnostics):
+            break
+        rejected.append(diagnostics["fallback_reason"])
+    if rejected:
+        diagnostics = dict(diagnostics, rejected_gpu_attempts=rejected)
+    return result, diagnostics
+
+
+def _attempt(image, ratio, expand, cancelled, started):
     from . import gpu_delivery as delivery
     from .delivery import preferences
     directory = None
     memory = DeliveryMemory()
-    started = time.perf_counter()
     priority, source_cancelled = _work.get()
     cancelled = cancelled or source_cancelled
     try:

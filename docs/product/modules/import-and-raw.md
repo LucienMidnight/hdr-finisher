@@ -1,3 +1,14 @@
+### November 6: Edge colour retry and faster CPU fallback
+
+Grade import and source reloads now try the shared GPU Edge colour twice
+before the CPU when the range check rejects the result (Steve, November 6).
+Other GPU failures are not retried. Input corrupted so far that the 32x range
+limit overflows is now rejected as invalid pixels; before, it produced a range
+check that could not compile. The range check, threshold and acceptance rules
+are unchanged. The CPU reconstruction runs in strips on the shared CPU pool:
+bit-identical output, about 3x faster (42 MP: 27 s to 9 s) and a lower peak.
+The Library GPU route and its CPU fallback allowance are unchanged.
+
 ### November 3: Batch 3f — Library edge-colour fallback
 
 The shared invalid-output range check now marks rejected GPU pixels explicitly.
