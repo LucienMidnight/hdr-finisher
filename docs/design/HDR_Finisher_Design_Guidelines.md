@@ -399,3 +399,7 @@ locally bundled Sofia Sans Semi Condensed at weight 500. Tab names and
 workflow numbers use the same title face at their existing sizes and weights.
 Group names, body text, values, labels and other buttons retain Afacad. Small
 field labels retain their current casing.
+
+On switches use a light soft-plate knob against the recessed accent-filled
+track. Off switches retain their theme's neutral soft-plate knob. Export
+Settings switches are plain rows, aligned with their neighbouring fields.

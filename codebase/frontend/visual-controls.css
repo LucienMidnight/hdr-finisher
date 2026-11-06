@@ -368,3 +368,11 @@ html.desktop-shell .window-controls { margin-left: 0; }
  .lane-switch > button, .local-lane-switch > button, .control-mode-switch > button,
  .proof-preview-switch > button, .channel-tabs > button, .dock-tabs > button,
  .wheel-range-tabs > button) { font-family: var(--font-title); }
+
+/* On switches retain the recessed accent track and use a light soft knob. */
+:root :is(.checkbox-row, .film-module-toggle, .proof-enable-row, .gradient-luma-toggle) > input[type="checkbox"]:checked::before {
+ background: linear-gradient(180deg, white, color-mix(in srgb, white 85%, var(--muted)));
+}
+:root .batch-settings-section .batch-setting-row.checkbox-row {
+ padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+}

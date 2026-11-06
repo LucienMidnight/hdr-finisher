@@ -752,3 +752,10 @@ UI polish validation: singular Export summary behavior passes in the app;
 all 816 JavaScript checks pass. No output/Proof route was changed or GPU
 qualification required. Three-theme screenshots are in the shared UI review.
 
+
+## November 6: UI polish round 4 ? switches
+
+Export with frame and Prevent enlargement are plain settings rows. On
+switches have a light knob in every theme; track materials remain unchanged.
+This changes controls only, with no output or saved-setting changes.
+Validation is grouped at the end of round 4 in the Desktop module PRD.
