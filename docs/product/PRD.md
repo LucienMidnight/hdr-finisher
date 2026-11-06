@@ -234,8 +234,9 @@ each module's open work:
 - Library leftovers: indexing settings, dimmed offline drives, drag a
   folder in to pin it.
 - **V2 (Steve, November 6, 2026):** the HDR grid comfort cap. It is not
-  needed in v1, because unedited photos show in SDR and only edited photos
-  show in HDR. If built, it is an optional advanced setting, not a default.
+  needed in v1, because unedited RAWs show in SDR until graded (files with
+  HDR data still show in HDR when the Library is set to HDR). If built, it
+  is an optional advanced setting, not a default.
 - Export speed: full-size single export under 15 s, RAW development on the
   GPU inside export, tiled finishing for large sharpened originals.
 - Grade reviews: pipeline order (PIPE-01), Texture against Microcontrast

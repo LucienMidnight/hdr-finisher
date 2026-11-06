@@ -3648,7 +3648,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | **Cold non-RAW sharp-draw target: within 1 s.** About 0.85-0.9 s for never-prepared JPEGs (8b64302) is accepted for now; faster is wanted later. | Steve, 2026-10-26 |
 | **Manual built previews work per photo** (any selection, also offered on folders), protected until discarded. Native 100% previews wait until everything else is fast. Design open; see Prepared-folder fullscreen culling. | Steve, 2026-10-25 |
 | **Development on demand (supersedes develop-everything browsing).** Unedited RAWs show the camera picture everywhere; HDR Finisher develops only edited photos, right-click Develop, photos without a usable camera picture, true-detail zoom and on-screen HDR non-RAW files. No background or ahead development. RAW and mezzanine files only by default; Show all files in the right-click menu replaces the RAW button. Grade hands its picture to the Library. See "November 3: development on demand". | Steve, 2026-11-03 |
-| **Unedited photos show in SDR; edited photos show in HDR.** As in other photo apps, an unedited photo is presented in SDR by default; a photo with an HDR Finisher grade is shown in HDR. The HDR grid comfort cap is therefore not needed for v1 and moves to v2, as an optional advanced setting if built. | Steve, 2026-11-06 |
+| **Unedited RAWs show in SDR; HDR files and edited photos show in HDR.** With the Library set to HDR, a file that carries HDR data or metadata (gain-map JPEG, HDR AVIF/HEIF, PQ/HLG files, EXR and similar) is shown in HDR, as in other photo apps. A RAW file is assumed SDR until the user edits it in HDR Finisher. This includes a RAW with no usable camera preview, whose developed picture is shown in SDR until it has a grade. A photo with an HDR Finisher grade is shown in HDR. The HDR grid comfort cap is therefore not needed for v1 and moves to v2, as an optional advanced setting if built. Clarified the same day: the first wording ("unedited photos show in SDR") was too broad. | Steve, 2026-11-06 |
 | **Large TIFFs and other mezzanine files (November 4).** Nothing builds or saves their previews in the background: a folder of exported TIFFs behaves like RAWs, and the user develops them on demand (right-click Develop or Build previews), which adds them to the same cache as developed RAWs. Required: a TIFF decode stops promptly once its photo is no longer wanted; compressed strip TIFFs read and reduce strip by strip on all cores; the photo on screen keeps priority over any photo it replaced, with at most one heavy mezzanine decode at a time; and a TIFF's small embedded preview, enlarged, stands in instead of a black screen while its picture is prepared. Prompted by a CR2 waiting about 14 s behind two skipped 48 MP float TIFFs that kept decoding. Built November 4: stopping (within about 0.1 s, on the plain, compressed-strip and libvips routes, from the cancelled window grant) and compressed strip reading (48 MP float TIFF 1.53 to 0.72-0.86 s). Built November 6: shared one-heavy-mezzanine admission with on-screen class priority and embedded-only TIFF stand-ins (real-app synthetic preview acceptance recorded above). | Steve, 2026-11-04 |
 
 **V2 scope decision (Steve, October 21, 2026):** Library Looks (slice 7),
@@ -4838,8 +4838,8 @@ previews, codecs and Prepare/Build previews remain separate work. Stop at Step 3
 4. **Leftovers:**
    - Comfort cap for the HDR grid (1000 nits default, adjustable). Not built.
      **V2 (Steve, November 6, 2026):** not needed in v1, since unedited
-     photos show in SDR and only edited photos show in HDR. If built, it
-     is an optional advanced setting.
+     RAWs show in SDR (see the November 6 decision). If built, it is an
+     optional advanced setting.
    - Full-size pictures on disk: now part of the speed plan (item 1).
    - Indexing settings (processor use, pause on battery, pins to leave
      out). Not built.
@@ -6115,7 +6115,8 @@ synthetic saved Film Look fixture always runs in `library-live-picture.js`.
 - **V2, deferred:** Library Looks: one menu or two.
 - Image-dependent settings when pasting: re-run or copy the numbers.
 - Nested tags. One focus overlay or two. How often folders are checked.
-  (What "HDR" means for an unedited photo: decided November 6, SDR.)
+  (What "HDR" means for an unedited photo: decided November 6. HDR files
+  show in HDR; RAWs show in SDR until graded.)
 
 ## 7. V2 work and other deferred ideas
 
