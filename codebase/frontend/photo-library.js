@@ -25,7 +25,6 @@
   const applyTheme = theme => { document.documentElement.dataset.theme = ["default-dark", "default-light", "studio-gray"].includes(theme) ? theme : "default-dark"; };
   try { applyTheme(libraryDesktop?.startupTheme || JSON.parse(localStorage.getItem("hdr-finisher:application-preferences:v1") || "{}").theme); } catch {}
   if (!standalone) { applyTheme(parent.document.documentElement.dataset.theme); applyDevelopedBadge(parent.document.documentElement.dataset.developedBadge); }
-  else void libraryDesktop?.getPreferences?.().then(value => applyDevelopedBadge(value.developedBadge));
   try { if (!libraryDesktop && standalone) applyDevelopedBadge(JSON.parse(localStorage.getItem("hdr-finisher:application-preferences:v1") || "{}").developedBadge); } catch {}
   window.addEventListener("storage", event => { if (event.key === "hdr-finisher:application-preferences:v1") { try { applyTheme(JSON.parse(event.newValue || "{}").theme); applyDevelopedBadge(JSON.parse(event.newValue || "{}").developedBadge); window.HDRAppearance.apply(JSON.parse(event.newValue || "{}").accent); void window.HDRLibrary?.refreshPins?.(); } catch {} } });
   const postParent = (action, detail = {}) => {

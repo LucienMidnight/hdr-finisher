@@ -96,3 +96,29 @@ edge at rest and on hover, and the wheel in all three themes. Run
 If anything here conflicts with the existing code or the design guidelines,
 ask before implementing. Steve's decisions in this brief replace older
 guideline text where they conflict.
+
+## Implementation outcome - November 6, 2026
+
+All five sections are built. The whole-module reset already existed; its
+header now reserves enough room for Reset and its changed dot. No tabs,
+rendering, export, Proof, project or preset formats changed.
+
+816 JavaScript checks and three desktop-preference checks pass. Python:
+3,077 pass, three skip, one known unrelated failure in
+`test_remembered_failure_does_not_hide_current_grade_cached_scene` (the same
+failure recorded for round 1). No GPU or release checks, push or installer.
+
+Focused interaction review passes module/selected reset, badge switching
+and reload persistence, eye/strike centre agreement, one-pixel rails,
+invisible grab areas, pointer and keyboard resizing and double-click reset.
+84 small crops cover all three themes at 1x and 2x in
+`codebase/output/review/ui-polish/round-2/index.html` (0.38 MB total).
+Application preference transport includes detached Library, but captures
+used embedded Library in Chrome. Steve's visual sign-off, native detached
+Library trial and physical mixed-DPI monitor review remain manual.
+
+Scratch output is 29.4 GB at both start and finish, below the 100 GB limit.
+Review crops are retained for Steve; the run's server and fast-test scratch
+logs were removed. Automatic approval review blocked removal of the run's
+TEMP folder `C:/Users/Steve/AppData/Local/Temp/pytest-of-Steve/pytest-1291`
+with the reason "blocked by policy"; it remains available for manual cleanup.

@@ -1893,9 +1893,9 @@ both rows naturally; the updated captures verify the correction.
 Final November 6 UI validation is recorded in [Desktop and release](desktop-and-release.md#november-6-ui-polish-validation-and-review). Text size and wheel appearance remain Steve's screenshot sign-off; no saved grade values or rendering changed.
 
 
-The wheel centre stays dark neutral in every theme by mixing the existing
-panel colour toward black; the puck keeps a light neutral edge for contrast.
-No colour tokens were added.
+Round 1 used a dark neutral wheel centre; round 2 below replaces it with
+a transparent centre and an outlined puck in every theme. No colour tokens
+were added.
 
 
 ## November 6: bypass-eye alignment (built)

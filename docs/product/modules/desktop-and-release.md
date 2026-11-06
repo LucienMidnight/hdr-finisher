@@ -225,3 +225,30 @@ IBUDLr, UFjdPZ, Lw7Vjs, YnZL8F, ABMs21 and BYxnMa. Intermediate
 `review/ui-polish/after-minimum-{import,grade,export}.png` are also disposable.
 Keep the review page's linked images/checks, the three fast/Library logs and
 quick-library-check/ui-polish report. No large photographic copies were made.
+
+## November 6: UI polish round 2 validation and review
+
+The Developed badge setting (Appearance: On hover / Always), centred bypass
+eye strike, one-pixel resize edges with wide invisible grab targets, visible
+whole-module wheel Reset and transparent polar-grid wheel are built. Tabs
+and saved/rendered photo data are unchanged. Grade and Library PRDs hold
+the behavior; the design guidelines and user guide are updated.
+
+816 JavaScript checks and three desktop-preference checks pass. Python:
+3,077 pass, three skip; the existing unrelated
+`tests/test_library_live.py::test_remembered_failure_does_not_hide_current_grade_cached_scene`
+fails (200 instead of expected 422), as in round 1. It was not changed or
+re-run. Focused Chrome review passes reset, badge switching/reload, eye
+alignment, rail width, invisible grab area, keyboard/pointer resize and
+double-click defaults in all three themes at 1x/2x. No GPU/release checks.
+
+Review: `codebase/output/review/ui-polish/round-2/index.html`, 84 small crops
+(0.38 MB). Steve's visual sign-off, physical monitor/DPI checks and native
+detached-Library trial remain manual. The completed brief is archived at
+`docs/technical/archive/briefs/codex-brief-ui-polish-round-2-2026-11-06.md`.
+
+Scratch output is 29.4 GB at both start and finish, below the 100 GB limit.
+Review crops are retained for Steve; the run's server and fast-test scratch
+logs were removed. Automatic approval review blocked removal of the run's
+TEMP folder `C:/Users/Steve/AppData/Local/Temp/pytest-of-Steve/pytest-1291`
+with the reason "blocked by policy"; it remains available for manual cleanup.

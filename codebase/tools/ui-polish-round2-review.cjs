@@ -34,9 +34,10 @@ try{for(const dpr of [1,2]){
   const group=page.locator('.color-grading-group');await group.scrollIntoViewIfNeeded();
   await crop(`${theme}-wheel`,group,0);
   const eye=group.locator('.section-bypass');await eye.click();
-  await crop(`${theme}-eye`,eye,12);await eye.click();
+  await crop(`${theme}-eye`,eye,12);
   const geometry=await eye.evaluate(e=>{const a=getComputedStyle(e,'::before'),b=getComputedStyle(e,'::after');return {eyeTop:a.top,eyeLeft:a.left,strikeTop:b.top,strikeLeft:b.left};});
-  results.push({theme,dpr,geometry});
+  assert.equal(geometry.eyeTop,geometry.strikeTop);assert.equal(geometry.eyeLeft,geometry.strikeLeft);
+  results.push({theme,dpr,geometry});await eye.click();
   await page.evaluate(()=>revealSourceRail());
   for(const id of ['source-splitter','grade-splitter','dock-splitter']){
    const rail=page.locator('#'+id);if(!await rail.isVisible())continue;
@@ -67,8 +68,13 @@ try{for(const dpr of [1,2]){
   await page.mouse.move(100,70);await crop(`${theme}-media-preview-rest`,media,8);await media.hover();await crop(`${theme}-media-preview-hover`,media,8);
   assert.equal((await media.boundingBox()).width,1);await page.evaluate(()=>closeExportDirectoryBrowser());
  }
+ await page.evaluate(()=>HDRApplicationShell.openSettings('appearance'));
+ await page.locator('#settings-developed-badge').selectOption('always');
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('hdr-finisher:application-preferences:v1')).developedBadge==='always');
+ await page.reload({waitUntil:'domcontentloaded'});
+ await page.waitForFunction(()=>document.querySelector('#library-frame').contentDocument.documentElement.dataset.developedBadge==='always');
  assert.deepEqual(errors,[]);await context.close();
-}fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:'module reset, selected reset, badge switching, keyboard rails, invisible grab area, 1px tracks, no page errors',results},null,2));
+}fs.writeFileSync(path.join(out,'checks.json'),JSON.stringify({passed:'module reset, selected reset, badge switching, keyboard and pointer rails, double-click defaults, invisible grab area, 1px tracks, centred eye strike, preference reload, no page errors',results},null,2));
 const images=fs.readdirSync(out).filter(f=>f.endsWith('.png'));fs.writeFileSync(path.join(out,'index.html'),'<!doctype html><meta charset="utf-8"><title>UI polish round 2</title><style>body{background:#292929;color:#eee;font:16px system-ui}figure{display:inline-block;vertical-align:top;margin:12px}img{max-width:700px;max-height:800px}figcaption{max-width:600px}</style><h1>UI polish round 2</h1>'+images.map(f=>`<figure><figcaption>${f}</figcaption><img src="${f}"></figure>`).join(''));
 console.log('Round 2 interaction checks and review crops passed:',out);
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
