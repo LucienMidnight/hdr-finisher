@@ -1,6 +1,7 @@
 // Plain Electron quick check: no Playwright, DevTools or remote debugging port.
 // node tools/quick-library-check.cjs [--seconds=90] [--label=name] [--single] [--redisplay]
 // --single --steps=0 --fullscreen --detail: request and verify full-size zoom.
+// --virtual-copy --folder=library-live-grid: time creation to a selected, pictured RAW copy; restore sidecars.
 // --grade-handoff --folder=library-live-grid --seconds=6: one saved exposure hand-off and blank-tile check.
 // --thumbnail-memory --folder=library-live-grid: Grade GPU buffers and read-only DxO grid after return.
 // --grade-return --folder=library-live-grid: Grade slider + typed value, Library tab + keyboard, F, Compare, settle.

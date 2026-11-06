@@ -212,7 +212,7 @@ bug hunt:
 - Steve's by-eye reviews (RAW exposure sheet, film grain/Looks/lens filter,
   HSL, exposure-warning wording, Black & White sliders) and the Match fault
   (waiting on Steve's recorded photo and message).
-- Library loose ends (November 6): virtual-copy visibility and the remaining
+- Library loose ends (November 6): virtual-copy creation/indexing and the remaining
   mezzanine decode/stand-in work are fixed. Windows 4d memory/retained-owner
   acceptance was already completed November 5. Batch 5b true cold/heavy-grade
   acceptance and 4b hand-off speed remain partial; the long idle scope wait

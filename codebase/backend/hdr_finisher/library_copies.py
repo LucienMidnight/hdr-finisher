@@ -53,6 +53,10 @@ class LibraryCopies:
     def items(self, path, document=None, state=None, known=False):
         state = self.state(path) if state is None else state
         if state.get("pending"): return deepcopy(state["desired"])
+        # An already observed document may predate a writer acknowledgement.
+        # Its current indexed baseline wins; external changes were observed
+        # by marks.read before expand() reuses the document.
+        if known and "baseline" in state: return deepcopy(state["baseline"])
         if not Path(source(path)).parent.exists(): return deepcopy(state.get("baseline",[]))
         if document is None and not known: document = self.marks._document(Path(source(path)))
         return self.validate(document)
@@ -144,7 +148,15 @@ class LibraryCopies:
                     if item["photo_id"] not in keys:
                         for table in ("photos", "photo_tags", "album_photos"):
                             db.execute(f"DELETE FROM {table} WHERE path=?", (path+SEPARATOR+item["photo_id"],))
-                for item in items: self.marks._index(db, self.row(path, item))
+                old_ids = {item["photo_id"] for item in before[path]}
+                for item in items:
+                    self.marks._index(db, self.row(path, item))
+                    if item["photo_id"] not in old_ids:
+                        # Publish the new grade with its copy row, before the
+                        # asynchronous sidecar writer or first folder read.
+                        initial = dict(baseline=item.get("grade"), indexed_grade=item.get("grade"), default=item.get("grade_default"))
+                        db.execute("INSERT OR IGNORE INTO photo_grades VALUES (?, ?)",
+                            (path+SEPARATOR+item["photo_id"], json.dumps(initial)))
             if finalize: finalize(db)
         if rows: self.marks._save(rows, documents, update)
 

@@ -1274,3 +1274,28 @@ header-query experiment stayed within that variation and was removed; no speed
 gain is claimed. The old 5d prepared-busy result remains accepted, but does not
 qualify true immediate entry. Evidence: `quick-library-check/v1-heavy-cold-final/`
 and `v1-heavy-header-after/`.
+
+### November 6: heavy-grade virtual-copy indexing
+
+Parent 1d92c83 plus the mezzanine/copy-index fixes (mezzanine committed as
+618beb0), fresh plain Electron 2560x1440/default 4 GB, preserved batch5-edited
+20250412_0039.ARW with perspective/crop/brush. Existing proposed 5% timing
+variation unchanged. Confirmation to selected copy with picture: before,
+16.17-16.34 s; after, 1.797 s. The original create request was 136 ms; an old
+observed-document expansion removed the new copy until the next folder check.
+The copy grade is now indexed in its creation transaction and observed-document
+expansion honors a newer acknowledged baseline. No source redevelopment or
+pixel change is needed for this fix. Evidence:
+`quick-library-check/v1-copy-heavy/`, `v1-copy-heavy-trace/`, `v1-copy-heavy-after/`.
+
+The heavy-copy benchmark exits nonzero on its existing 250 ms frame-gap check:
+startup gap 1.734 s before / 1.934 s after, with a later 352 ms gap in the final
+run. The copy picture wait improved, but cold-folder responsiveness remains
+open under 5b. No frame-gap limit or timing target was relaxed.
+
+Final normal-TEMP fast validation: 813 Node; Python 3,077 passed/three skipped,
+with only the known remembered-failure check failing. The final 90-second
+standard Library run (v1-copy-index-final) has no picture/memory error but fails
+its unchanged 250 ms frame-gap limit at 1.855 s. Earlier v1-loose-final passed.
+No repeat was used to seek a lower number; cold responsiveness stays open in 5b.
+Output ended at 29.5 GB (started 29.3 GB).

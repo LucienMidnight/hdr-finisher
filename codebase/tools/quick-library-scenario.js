@@ -66,7 +66,12 @@ async function scenario(config) {
       mark('virtual copy');
       await wait(()=>document.querySelector('#grid-space .library-cell canvas[data-picture-key]'),60000);
       const requests=[], originalFetch=window.fetch.bind(window);
-      window.fetch=async(url,options)=>{const at=performance.now();const response=await originalFetch(url,options);requests.push({url:String(url),ms:performance.now()-at});return response;};
+      window.fetch=async(url,options)=>{const at=performance.now();const response=await originalFetch(url,options);requests.push({url:String(url),ms:performance.now()-at});
+        if(String(url)==='/api/library/folder-stream'){
+          const reader=response.clone().body.getReader();
+          void (async()=>{let pending='';const decoder=new TextDecoder();try{for(;;){const {value,done}=await reader.read();if(done)return;pending+=decoder.decode(value,{stream:true});let end;while((end=pending.indexOf('\n'))>=0){const e=JSON.parse(pending.slice(0,end));pending=pending.slice(end+1);const photos=e.photos?.length?e.photos:(e.values||[]).map(v=>Object.fromEntries(e.columns.map((k,i)=>[k,v[i]])));requests.push({stream_event:{kind:e.kind,photos:photos.map(p=>({path:p.path,source_path:p.source_path,type:p.type,edited:p.edited,grade_identity:p.grade_identity})),removed:e.removed}});if(e.kind==='checked'){void reader.cancel().catch(()=>{});return;}}}}catch{}})();
+        }
+        return response;};
       const cell=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>/\.ARW$/i.test(c.dataset.path));cell.click();
       cell.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:200,clientY:200}));
       mark('virtual copy menu');

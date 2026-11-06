@@ -110,7 +110,7 @@ Built November 5, 2026; reviewed by Claude and committed with Steve's go-ahead.
 
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** November 6: virtual-copy visibility fixed; heavy mezzanine decoding is serialized across windows and embedded TIFF stand-ins are built. Batch 5d built November 4, 2026: startup drawing-pipeline preparation and four-way fullscreen visibility accepted; busy-grid first sharp drawing now meets the +about 1 s target. Batch 5c fixes retained: explicit detail admission and visible-stand-in safeguards; its busy cold drawing and black-screen follow-ups are completed by 5d. Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 5, 2026; Batch 4c built November 5; Batch 4d partial (native gate and Windows memory/retained-native acceptance built; Mac acceptance open). Build order is in
+**Status:** November 6: virtual-copy creation and indexing fixed; heavy mezzanine decoding is serialized across windows and embedded TIFF stand-ins are built. Batch 5d built November 4, 2026: startup drawing-pipeline preparation and four-way fullscreen visibility accepted; busy-grid first sharp drawing now meets the +about 1 s target. Batch 5c fixes retained: explicit detail admission and visible-stand-in safeguards; its busy cold drawing and black-screen follow-ups are completed by 5d. Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 5, 2026; Batch 4c built November 5; Batch 4d partial (native gate and Windows memory/retained-native acceptance built; Mac acceptance open). Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
@@ -341,6 +341,32 @@ follow-up stays partial. Evidence:
 `codebase/output/quick-library-check/batches45-rapid/` (crops, scenario, report).
 5d remains built; no pinned shader, pixel tolerance, HDR ceiling, export or
 Proof calculation changed in this task.
+
+### November 6: heavy-grade virtual-copy indexing fixed
+
+The first visibility fixes exposed another cause on an edited RAW. Creation
+saved and selected the copy promptly, but its first indexed row had no grade
+state. The final folder update could then use an older observed document and
+remove the copy until the next check about 15 seconds later.
+
+New copy rows now publish their baseline/default/indexed grade in the same
+SQLite transaction. Expansion of an already observed document uses the current
+copy baseline, preserving a newer writer acknowledgement. Fresh external reads
+still observe copy removal normally. No sidecar format, photo pixels, source
+file, cache size, export or Proof calculation changed.
+
+Plain Electron, preserved heavy 20250412_0039.ARW (perspective/crop/brush):
+confirmation to selected copy with a picture improves from 16.17-16.34 s to
+1.797 s. The create request itself was 136 ms before; waiting for the next
+folder refresh caused most of the delay. The unchanged timing variation
+proposal is 5%. The neutral RAW check remains 214 ms. Eighteen copy checks
+pass, including immediate edited state before writer completion, reuse of an
+older observed document after acknowledgement, and genuine external removal.
+Evidence: `codebase/output/quick-library-check/v1-copy-heavy{,-trace,-after}/`.
+The copy benchmark still fails the unchanged 250 ms frame-gap check: cold
+startup pauses were 1.7-1.9 s before/after, and the final run includes a
+352 ms later gap. Those responsiveness gaps remain with 5b; the faster copy
+picture is not a full responsiveness pass. Final grouped validation follows below.
 
 ### November 6: cold/heavy follow-up (5b remains partial)
 
@@ -4060,9 +4086,11 @@ variation. No existing speed target, memory allowance or image tolerance changes
   Copy commands now request a fresh listing and read the source's extension.
   Before: still absent/unselected after 60 s; after: selected with a visible
   picture in 214 ms (save request 55 ms), plain Electron, reusable unedited ARW.
+  Heavy-grade copy indexing and stale observed-document expansion were also
+  fixed: 16.17-16.34 s becomes 1.797 s on the preserved edited ARW (see above).
   No image calculations, source files or cache sizes changed. Evidence:
   `codebase/output/quick-library-check/v1-copy-{before,after}/`.
-  Checks: 813 Node passed; 16 copy Python checks passed; full Python running separately.
+  Checks: 813 Node passed; 16 copy Python checks passed; full Python results are recorded in the final validation checkpoint.
 
 **V1 scope (Steve, October 26, 2026):** the "Leftovers" item below (comfort
 cap, indexing settings, dimmed offline drives, drag a folder in to pin it)
@@ -7397,3 +7425,34 @@ reports idle (the idle warm-up reads the same flag). The earlier checks
 stopped as soon as the detail appeared, before the loop began. Check: the
 48 MP TIFF zoom held 40 s with one detail draw and no redraws (2.79 s click
 to detail, peak 2.97 GB); the same run without the fix hung and timed out.
+
+### November 6: final loose-end validation
+
+Local fixes: copy visibility/type reconstruction, heavy-copy grade indexing and
+acknowledgement-safe expansion; idle scope wait removal; shared heavy-mezzanine
+admission with backend cancellation ownership; embedded-only TIFF stand-ins.
+Windows 4d acceptance was already complete and was reconciled without rebuilding
+or rerunning it. The 8 GB Mac acceptance remains Steve's.
+
+Final checks: 813 Node passed; Python 3,077 passed, three skipped, only the known
+unrelated test_remembered_failure_does_not_hide_current_grade_cached_scene failed.
+The focused copy checks passed 18; scheduler/grant/hand-off checks passed 65
+before the additional backend-lifetime integration check (included in the final
+suite). A workspace-local pytest TEMP attempt produced file-operation failures
+and was abandoned; normal Windows TEMP reruns had only the known failure.
+
+The earlier standard 90-second check v1-loose-final passed and recorded four
+mezzanine preparations without overlap. The last standard run after the copy
+index fix, v1-copy-index-final, has no picture or memory errors but fails the
+unchanged 250 ms frame-gap check (1.855 s). Heavy-copy and hand-off probes also
+retain the speed/frame-gap misses recorded above. 5b cold/heavy acceptance and
+4b's remaining 500 ms cases are still open: this is not a complete Library v1
+acceptance. Steve should try cold browsing/copy responsiveness in the app before
+more timing work. No budget or tolerance was relaxed; no push or installer build.
+
+Output started at 29.3 GB and ended at 29.5 GB, below 100 GB. Harness profiles
+were removed and existing real-photo copies reused. Automatic approval review
+rejected cleanup with "blocked by policy". Disposable leftovers: the abandoned
+codebase/output/v1-loose-pytest-temp folder and this task's remaining Windows
+TEMP/pytest-of-Steve/pytest-1311, pytest-1312 and pytest-1313 folders. Keep the
+small referenced quick-library-check reports/crops and reusable synthetic TIFFs.

@@ -220,3 +220,31 @@ def test_one_unreadable_copy_list_does_not_blank_the_folder(setup,tmp_path):
     rows=c.expand([{"path":str(photo),"name":photo.name}])
     assert [r["path"] for r in rows]==[str(photo)] and rows[0]["copy_count"]==0
     assert settings(photo)==doc
+
+def test_created_copy_grade_is_indexed_before_sidecar_completion(setup):
+    photo, store, session, marks, grades = setup
+    c = copies(setup)
+    saved(setup)
+    # Keep the writer queued so only the creation transaction can supply state.
+    marks.writer.close()
+    made = c.create(photo)
+    state = grades.describe([made["path"]])[made["path"]]
+    assert state["edited"]
+    assert state["grade_identity"] != grades.describe(["missing"])["missing"]["grade_identity"]
+
+
+def test_copy_expansion_uses_acknowledged_baseline_over_an_older_observed_document(setup):
+    photo, store, session, marks, grades = setup
+    c = copies(setup)
+    saved(setup)
+    earlier = deepcopy(settings(photo))
+    made = c.create(photo)
+    marks.writer.drain()
+    row = {"path":str(photo), "name":photo.name, "type":"PNG"}
+    expanded = c.expand([row.copy()], {str(photo):earlier})
+    assert [item["path"] for item in expanded] == [str(photo), made["path"]]
+    # A genuinely new external read still removes a deleted copy normally.
+    outside(photo, earlier)
+    observed = {}
+    marks.read([photo], canonical=True, observed=observed)
+    assert [item["path"] for item in c.expand([row.copy()], observed)] == [str(photo)]
