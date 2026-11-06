@@ -291,9 +291,9 @@ html.native-application-menu :is(.window-controls, .unified-menu-button) { displ
 .library-cell:is(:hover, :focus-within) .is-developed { opacity: 1; }
 .library-drag-handle { opacity: 0; }
 :is(.library-folder-row, .library-heading):is(:hover, :focus-within) .library-drag-handle { opacity: 1; }
-:root #zoom-button:disabled { opacity: .6; color: var(--muted); cursor: default; }
+:root #zoom-button:disabled { display: none; }
 .library-tools { column-gap: 4px; }
-.library-tools :is(#zoom-button, #hdr-button, #focus-button) { margin-left: 6px; }
+.library-tools #hdr-button { margin-left: 16px; }
 
 
 /* One visible range, retaining the existing independent grade values. */

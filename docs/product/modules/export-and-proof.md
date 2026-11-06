@@ -767,3 +767,6 @@ longer takes the space above it. Validation is grouped with round 4.
 Round 4, section 4: unavailable Export actions use a neutral grey plate and
 muted label; enabled primary actions retain the accent. Availability logic and
 export delivery are unchanged. Validation is grouped with round 4.
+
+Round 4, section 6: the original-size choice reads ?Original (cropped)? so
+its full meaning fits the Resize field. Only its label changes.

@@ -348,3 +348,12 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .grade-paste-dialog details > .library-ask-body { padding: 8px 18px; }
 
 img:not([src]), img[src=""] { visibility:hidden; }
+
+/* Space separates view, sort/filter, compare/focus and display groups. */
+.library-tools .library-divider { flex: 0 0 16px; width: 16px; margin: 0; background: transparent; }
+.library-tools #compare-button { margin-left: 0; }
+@media (max-width: 1200px) {
+ .library-toolbar { grid-template-columns: minmax(0, 1fr) auto; padding: 0 12px; }
+ .library-tools { grid-column: 1 / -1; grid-row: 2; padding-block: 6px; }
+ .library-bar-right { grid-column: 2; grid-row: 1; }
+}
