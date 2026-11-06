@@ -239,3 +239,16 @@ html.native-application-menu :is(.window-controls, .unified-menu-button) { displ
 :root .splitter-vertical::after { top: 0; bottom: 0; background: var(--hairline); }
 :root .splitter-horizontal::after { background: var(--hairline); }
 
+
+/* Shared underline tabs: workflow, modes, rendition, channels and ranges. */
+:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs) {
+ display: flex; gap: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+}
+:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs) > button {
+ flex: 1; min-height: 32px; height: auto; padding: 6px 8px; margin: 0; border: 0; border-bottom: 2px solid var(--hairline); border-radius: 0; background: transparent; color: var(--muted); box-shadow: none; text-transform: none;
+}
+:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs) > button:is(.active, [aria-selected="true"], [aria-pressed="true"]) {
+ border-bottom-color: var(--accent); background: transparent; box-shadow: none; color: var(--text); font-weight: 600;
+}
+:root :is(.lane-switch, .local-lane-switch) > button { min-height: 36px; font-size: 14.5px; }
+

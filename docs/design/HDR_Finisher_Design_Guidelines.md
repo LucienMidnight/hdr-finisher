@@ -183,9 +183,9 @@ November 4 follow-up: the v1 Control Panel section layout is implemented. The so
 
 - The Control Panel opens in Global and offers Global / Local / Retouch as a keyboard-operable tab list. Only the chosen mode is visible. Mode, rendition and fold-out state last for the session and are never saved in projects or presets.
 - Global shows shared Raw development, Highlight reconstruction, Crop & rotate and Perspective beneath **Both renditions**, followed by **Per rendition** and the joined rendition switch. Local holds masks and local grades; Retouch holds source repairs beneath **HDR + SDR · before crop**.
-- Global and Local share one joined HDR grade / SDR grade switch, including the preview's rendition choice. It stays pinned beneath the mode header once reached, without folder borders. Global SDR shows a recessed Match SDR row below it; stale matches add a 3 px attention rule and Rematch SDR.
+- Global and Local share one underline HDR grade / SDR grade switch, including the preview's rendition choice. It stays pinned beneath the mode header once reached, without folder borders. Global SDR shows a recessed Match SDR row below it; stale matches add a 3 px attention rule and Rematch SDR.
 - Multiple top-level disclosures may remain open. Sections have no numbers. An open section keeps the hairline and full-width raised content surface. Long names truncate before the independent Preset, Reset, bypass and Mod controls. Display names are Color sliders and Color wheels; internal keys are unchanged.
-- Local shows New adjustment and four mask tools, overlay and More; Masks · HDR + SDR and stack actions; the selected mask's folded settings; then the pinned local rendition switch with Light open and Color, HSL and Detail folded. Paint / Erase belongs inside Brush settings. Invert, gizmo visibility, overlay colour and brush clearing/undo live in More. Mask and repair lists reserve scrollbar space and show about four rows.
+- Local shows New adjustment and four mask tools, overlay and More; Masks · HDR + SDR and stack actions; the selected mask's folded settings; then the pinned local underline rendition switch with Light open and Color, HSL and Detail folded. Paint / Erase belongs inside Brush settings. Invert, gizmo visibility, overlay colour and brush clearing/undo live in More. Mask and repair lists reserve scrollbar space and show about four rows.
 - Clicking a mask tool starts an adjustment immediately, including clicking the lit tool. Clicking a row selects it without creating one. An unused row stays muted until its first brush stroke, gradient placement, completed path, or luma range edit/photo sample. Another tool converts it; clicking the lit tool starts a new draft. Selecting another row, leaving Local, or loading a photo discards an unused draft without a history edit. Creation and first content form one undo step (Luma rule approved by Steve, October 23).
 - Retouch has Inpaint, disabled Heal/Clone marked Soon, Size (up to 1,024 native pixels) and Hardness instrument sliders, automatic search/patch/iterations/seed settings and newest-first repairs. New settings apply to the next stroke; the selected repair offers Retry and Remove. Solving and errors use the status row, with Cancel only while solving. Heal and Clone remain unbuilt.
 - Leaving a mode ends its viewer tools, including mask/retouch gestures, HSL picking and crop/perspective drafts. Hidden mode controls cannot receive keyboard focus.
@@ -361,3 +361,15 @@ Before merging a UI change, confirm:
 - Preview-only behavior is not presented as export behavior.
 - Automated frontend contracts and the relevant browser interaction checks pass.
 - Any new pattern or exception is added to this document.
+
+## November 6: toolbar and tab decisions (supersede earlier skin rules)
+
+The main toolbar combines the logo, HDRF, menu button, workflow tabs, Autosave
+and custom Windows/Linux controls. macOS uses native inset traffic lights and
+system menus, with no custom controls or menu button. Recent projects belongs
+in File. Empty toolbar space drags; double-click maximizes/restores.
+
+Tab lists use neutral text and a hairline baseline with a 2 px accent underline
+and stronger selected text. Apply this to workflow, mode, rendition, Proof,
+curve-channel, scope and wheel-range tabs. Keep their existing locations.
+

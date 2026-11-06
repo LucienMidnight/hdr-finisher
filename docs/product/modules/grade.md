@@ -1854,3 +1854,12 @@ three themes; captures and `review.json` are in
 `codebase/output/v1-control-panel-fixes/`. Logs are
 `codebase/output/focus-titles-{node,python,focused,library}.log` and
 `codebase/output/control-panel-review.log`. Output remains 29.2 GB.
+
+## November 6: shared underline tabs
+
+Global/Local/Retouch, HDR/SDR, Proof preview, curve channels, scope dock and
+wheel ranges use the same underline selection rule as workflow tabs. The
+HDR/SDR switch retains its position and gets a larger readable label. This
+changes only presentation; keyboard and saved grade behavior stay in place.
+Validation is grouped in the final UI polish review.
+
