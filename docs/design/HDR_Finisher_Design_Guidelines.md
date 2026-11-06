@@ -403,3 +403,6 @@ field labels retain their current casing.
 On switches use a light soft-plate knob against the recessed accent-filled
 track. Off switches retain their theme's neutral soft-plate knob. Export
 Settings switches are plain rows, aligned with their neighbouring fields.
+
+Disabled primary buttons use the neutral raised plate, neutral edge and muted
+text at full opacity. The accent returns when the action becomes available.

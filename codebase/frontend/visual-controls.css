@@ -376,3 +376,8 @@ html.desktop-shell .window-controls { margin-left: 0; }
 :root .batch-settings-section .batch-setting-row.checkbox-row {
  padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
 }
+
+:root .button-primary:disabled, :root .export-sheet .sheet-actions .button-primary:disabled {
+ background: var(--plate-up); border-color: var(--plate-edge); color: var(--muted);
+ box-shadow: var(--plate-lift); opacity: 1; cursor: default;
+}

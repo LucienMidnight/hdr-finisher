@@ -763,3 +763,7 @@ Validation is grouped at the end of round 4 in the Desktop module PRD.
 Round 4, section 3: the empty batch message is centred in the available
 batch area below the header, in both Grid and Preview. The empty grid no
 longer takes the space above it. Validation is grouped with round 4.
+
+Round 4, section 4: unavailable Export actions use a neutral grey plate and
+muted label; enabled primary actions retain the accent. Availability logic and
+export delivery are unchanged. Validation is grouped with round 4.
