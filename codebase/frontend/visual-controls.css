@@ -383,3 +383,8 @@ html.desktop-shell .window-controls { margin-left: 0; }
 }
 
 :root #export-resize-mode { padding-right: 24px; background-position: right 6px center; }
+
+@media (max-width: 1200px) {
+ :root .library-toolbar { height: auto; max-height: none; grid-template-rows: var(--panel-header-h) auto; }
+ :root .library-toolbar .library-tools { flex-wrap: wrap; }
+}
