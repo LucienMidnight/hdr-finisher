@@ -46,6 +46,14 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+November 6 header-alignment check (parent `220e99b`, CSS working tree;
+2560x1440, default 90-second mixed grid): frame gaps up to 61 ms and timer
+blocks up to 53 ms, within the existing 250 ms limit; no picture errors or
+memory violation. First picture 32.9 s, 25 shown by 90 s. The Python fast
+suite was running concurrently, so this is a UI smoke check rather than a
+comparable throughput baseline. Evidence:
+`codebase/output/quick-library-check/header-alignment/report.json`.
+
 November 4 focus/title/Export polish (parent 98ac764; 2560×1440, default
 90-second mixed-grid check): maximum frame gap 1,594 ms against the 250 ms
 limit, maximum timer block 142 ms. No picture errors or memory violation.

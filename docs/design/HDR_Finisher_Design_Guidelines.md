@@ -325,6 +325,8 @@ Use the runtime tokens and existing component rhythm as the baseline:
 - Hairlines separate dense regions. Expanded top-level panels use the documented 3 px external top and bottom boundaries with open side edges; internal panel boundaries and collapsed-group separators remain 1 px. Avoid nested heavy borders.
 - Keep hit targets comfortably larger than their visible glyphs.
 
+Panel header geometry is shared in `visual-controls.css` through `--panel-header-h` (40px), including Library, Grade, Proof and Export side and centre bars. The height includes the bottom divider; headers have no vertical padding and do not grow around toolbar contents. Header tool buttons are 30px high, with text and icons centred; panel title margins must not shift the shared label baseline.
+
 Resizable regions may change during the current session, but return to these defaults on reload.
 
 ### Compact workspace

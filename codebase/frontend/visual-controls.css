@@ -202,3 +202,15 @@ body.slider-hover .slider-key-legend { opacity: 1; }
 :root .grading-wheel legend { font: 500 13.5px var(--font-body); letter-spacing: 0; text-transform: none; }
 :root .batch-unit-field:focus-within { outline-color: var(--text); }
 :root[data-input-modality="pointer"] .batch-unit-field:focus-within { outline: none; }
+
+/* One header geometry for the main window and the embedded Library. */
+:root :is(.viewer-bar, .rail-title-row, .grade-header, .workflow-rail-header, .sheet-header, .control-title-row, .library-heading, .library-toolbar, .batch-header) {
+ height: var(--panel-header-h); min-height: var(--panel-header-h); max-height: var(--panel-header-h);
+ box-sizing: border-box; flex-shrink: 0; padding-block: 0; align-items: center;
+}
+:root .workflow-rail-header .panel-title { margin-block: 0; }
+:root :is(.batch-header, .batch-heading, .batch-header .batch-tools, .library-toolbar .library-tools) { flex-wrap: nowrap; }
+:root :is(.viewer-bar, .rail-title-row, .workflow-rail-header, .sheet-header, .control-title-row, .library-heading, .library-toolbar, .batch-header) :is(.tool-button, .zoom-step) {
+ display: inline-flex; align-items: center; justify-content: center; height: 30px; min-height: 30px; box-sizing: border-box;
+}
+:root :is(.viewer-bar, .library-toolbar, .batch-header) .tool-button svg { display: block; flex-shrink: 0; }

@@ -150,3 +150,9 @@ After a menu is opened, hovering another top-level menu switches the open
 popover. Hovering a closed menu bar leaves it closed; click and Escape retain
 their behavior. Verified across File, Edit, View, Window and Help in the real
 Electron app with `tools/v1-control-panel-review.cjs`.
+
+### November 6: Shared panel header alignment
+
+Library, Grade, Proof and Export use the existing 40px panel-header token for both side and centre bars, including their bottom divider. Export previously kept a separate 54px centre header. Shared appearance rules now fix header geometry and title alignment, and centre icons and text in 30px header buttons. Button materials, type, colours and image processing are unchanged.
+
+Validation: real Electron at 2560x1440 confirms all three top headers on each of the four pages are exactly 40px, with matching label positions and bottom edges; header toolbar buttons are 30px with centred icons. Small captures and DOM measurements: `codebase/output/header-alignment-review/` (`library.png`, `grade.png`, `proof.png`, `export.png`, `alignment.json`). Node: 808 passed. Python: 3,070 passed, three skipped, one existing unrelated failure (`test_remembered_failure_does_not_hide_current_grade_cached_scene`, expected 422, received 200). The standard Library check passed with no picture errors, frame-limit or memory violations. No processing GPU sweep was relevant. Output remains 29.3 GB. Automatic approval review blocked removal of the disposable Electron profile (`%TEMP%/hdr-finisher-header-alignment-review`); other review scratch was removed.
