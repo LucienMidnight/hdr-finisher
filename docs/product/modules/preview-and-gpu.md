@@ -124,3 +124,8 @@ The same November 6 frame/clip rule also covers both highlight-compression
 charts, whose canvases now redraw at display resolution on resize. Their
 transfer functions and values are unchanged.
 
+
+Review follow-up: canvas outer borders are removed so each plotted graph has
+one frame. The scope visual uses an explicit shrinking grid column to avoid
+its intrinsic canvas size widening the narrow dock.
+

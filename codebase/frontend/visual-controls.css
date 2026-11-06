@@ -312,3 +312,8 @@ html.desktop-shell .window-controls { margin-left: 0; }
 :root .compact-workspace .viewer-bar { height: auto; max-height: none; flex-wrap: wrap; }
 :root .compact-workspace .viewer-tools { flex: 1 1 100%; min-width: 0; flex-wrap: wrap; justify-content: flex-start; padding-block: 4px; }
 
+
+/* The plot owns its frame; the canvas must not add a second outer box. */
+:root :is(#histogram, #curve-editor, #tone-equalizer-editor, #sdr-tone-equalizer-editor, #highlight-compression-graph, #sdr-highlight-compression-graph) { border: 0; }
+:root .scope-visual { grid-template-columns: minmax(0, 1fr); }
+
