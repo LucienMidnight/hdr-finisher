@@ -7509,7 +7509,7 @@ Settings > Appearance offers On hover (default, including keyboard focus) or
 Always for grid Developed badges, shared by embedded and detached Library views.
 This application preference is never stored in projects or presets.
 
-## November 6: UI polish round 4 ? toolbar
+## November 6: UI polish round 4: toolbar
 
 The 100% button is hidden while unavailable (Grid); Single photo view shows
 it with its existing detail tooltip. Wider blank spaces separate view,

@@ -753,7 +753,7 @@ all 816 JavaScript checks pass. No output/Proof route was changed or GPU
 qualification required. Three-theme screenshots are in the shared UI review.
 
 
-## November 6: UI polish round 4 ? switches
+## November 6: UI polish round 4: switches
 
 Export with frame and Prevent enlargement are plain settings rows. On
 switches have a light knob in every theme; track materials remain unchanged.
@@ -768,7 +768,7 @@ Round 4, section 4: unavailable Export actions use a neutral grey plate and
 muted label; enabled primary actions retain the accent. Availability logic and
 export delivery are unchanged. Validation is grouped with round 4.
 
-Round 4, section 6: the original-size choice reads ?Original (cropped)? so
+Round 4, section 6: the original-size choice reads `Original (cropped)` so
 its full meaning fits the Resize field. Only its label changes.
 
 The Resize choice omits the decorative Web Default suffix to keep the full

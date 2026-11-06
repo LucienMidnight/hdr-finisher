@@ -95,3 +95,15 @@ Library toolbar, in all three themes where it matters. Run
 
 Ask before implementing anything that conflicts with the code or the
 guidelines. Steve's decisions here replace older guideline text.
+
+## Outcome, November 6
+
+All six sections implemented; nothing skipped. Workflow tabs changed font
+only, retaining their existing 16 px numbers and styling. The 100% Library
+button is hidden in Grid and shown in Single. Narrow toolbars wrap below the
+heading. Resize reads Original (cropped), without its decorative Web Default
+suffix. Local Sofia font and OFL are bundled with normal frontend packaging.
+
+Validation, remaining unrelated failures and review crops are recorded in
+`docs/product/modules/desktop-and-release.md` under round 4. Steve's visual
+sign-off remains open. No installer or push.

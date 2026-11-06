@@ -290,7 +290,7 @@ the five sections was skipped. Round 2 was already archived and recorded.
 Scratch output is 29.4 GB at start and finish, below the 100 GB limit.
 Review crops remain for Steve and can be deleted after sign-off.
 
-## November 6: UI polish round 4 ? title font
+## November 6: UI polish round 4: title font
 
 Titles and tab names use locally bundled Sofia Sans Semi Condensed; panel
 headings use calm weight 500. Afacad remains for group names and other text.
@@ -303,3 +303,32 @@ including submenu headings. Proper names and HDR/SDR/GPU/CPU retain their
 capitals. Command IDs, native roles and shortcut handling are unchanged.
 Manual quotes of Open recent and Save as now match the menus.
 Validation is grouped at the end of round 4.
+
+Round 4 validation and outcome: all six sections are built. Three themes
+were checked at 1100 x 720 and 2560 x 1440 in Electron. Title/tab faces,
+unchanged 16 px workflow numbers, title containment, Resize label fit, centred
+empty state, neutral disabled plate, switch knob/row materials, menu casing
+and Grid-hidden/Single-visible 100% control pass. Crops were also inspected;
+this caught and corrected the batch-button specificity, desktop menu-slot
+casing and narrow toolbar height. No page errors were reported.
+
+Final JavaScript suite: 816 pass. Full Python run: 3,075 pass, three skip,
+three fail. The intended sentence-case change required updating the older
+native-menu wording assertions; the whole affected contract file then passes
+all 15 tests. Two unrelated failures remain, without investigation or rerun:
+`test_a_queued_job_waits_past_the_render_deadline_and_still_uses_the_gpu`
+(Windows shared-memory mapping missing) and the already recorded
+`test_remembered_failure_does_not_hide_current_grade_cached_scene`
+(expected 422, received 200). No processing, output, Proof, saved-project or
+preset-format changes; no GPU pixel/release sweep, installer or push.
+
+Review: `codebase/output/review/ui-polish/round-4/index.html` and its 72 small
+PNG crops, for all themes and both sizes. Steve's visual sign-off and physical
+macOS/native menu trial remain manual. No section was skipped. The brief is
+archived at `docs/technical/archive/briefs/codex-brief-ui-polish-round-4-2026-11-06.md`.
+Scratch output remains 29.4 GB (100 GB limit). Automatic approval review
+blocked the cleanup command with "blocked by policy". The owned TEMP folder
+`C:/Users/Steve/AppData/Local/Temp/pytest-of-Steve/pytest-1292` and
+`round4-*.log` scratch logs in `codebase/output/` (plus the initial failed-launch
+log `output/round4-review.log`) remain safe for manual deletion. Keep round-4
+crops until Steve has reviewed them; they can then be deleted.

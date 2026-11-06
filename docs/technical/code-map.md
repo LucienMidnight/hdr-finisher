@@ -491,3 +491,9 @@ in grid/filmstrip and Single quick pictures; no full TIFF decode is requested.
 bar, Library and Export title crops and checks rendered tab sizes, menu
 open/Escape and stable title hover geometry at 2560 and 1440 px widths. Run
 through `tests/run-in-electron.js`; output is `output/review/ui-polish/round-3/`.
+
+`tools/ui-polish-round4-review.cjs` checks title/tab fonts, unchanged workflow
+number size, Export empty-state geometry, switch/disabled-button materials,
+menu casing, Resize fit and Library toolbar containment at 2560 x 1440 and
+1100 x 720 in all three themes. Run through `tests/run-in-electron.js`;
+registered as a UI diagnostic. Crops: `output/review/ui-polish/round-4/`.
