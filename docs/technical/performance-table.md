@@ -1225,7 +1225,7 @@ pixel; rest of RAW development 7.8 s; retouch reapply 6.4 s.
 ### November 6: virtual-copy refresh
 
 Parent a5f9db6 plus the virtual-copy refresh fix; plain Electron at 2560x1440,
-4 GB setting, existing library-live-grid edited RAW, disposable profile restored
+4 GB setting, existing library-live-grid unedited RAW, disposable profile restored
 by the harness. Proposed timing variation allowance: 5%; no existing target changed.
 Confirmation to selected copy with a visible picture: before, not reached within
 60 s; after, 214 ms (54.5 ms create request). The listing was being reused and

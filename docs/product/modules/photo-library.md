@@ -208,7 +208,7 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Partial November 5: docked HDR/SDR grid, filmstrip and stored-screen pixels update; 500 ms and peak-memory acceptance still fail. |
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Built November 5, 2026; focused fault checks below |
 | 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Selected priority and screen warp completed by 5b. Open: brush-mask CPU time and heavy-grade ordinary first open |
-| 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Partial November 5: backend native owners yield to Grade; regression passes. Windows peak and retained-owner app timing remain open; 8 GB Mac acceptance belongs to Steve. |
+| 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Partial November 5: backend native owners yield to Grade; regression passes. Windows peak and retained-owner app timing passed November 5 (4.005 GB; real 508.7 MB owner released, paired Grade 5.488/5.549 s). Only 8 GB Mac acceptance remains with Steve. |
 | 5b | The on-screen photo takes priority; recover lost reservations and hand over completed thumbnails; parallel screen perspective and mask warps. | Partial November 4, 2026: 32.65 s abandoned TIFF wait removed (2.06 s ordinary open; forced lost reservation 2.80 s). Four-photo SDR/HDR stored pixels identical to 5a. Busy cold fullscreen still 7.0–7.2 s versus idle 1.98–2.23 s; ARW ordinary first open 2.48–2.55 s. See checkpoint below. |
 | 5c | Visible TIFF/RAW stand-ins, explicit detail demand, memory admission before decoding and same-photo reopen investigation. | Partial November 4, 2026: Fit/native visibility and refusal retry fixes built. Same-name cache misses were different source paths. Busy prepared drawing and ordinary four-mode visibility completed by 5d. November 5 rapid Fit navigation passes docked SDR; zoomed-arrow and remaining rapid-mode qualification stay open. |
 | 5d | Prepare drawing pipelines after the first grid picture; preserve popped-out SDR stand-ins on reopen. | Built November 4, 2026: prepared busy TIFF 2.12 s and heavy ARW 3.02 s; four docked/popped-out SDR/HDR pixel checks pass. See checkpoint below. |
@@ -371,6 +371,15 @@ contains reports, scenarios and screenshot crops. The obsolete mixed-folder
 attempt is not a qualified timing. Shared thumbnails and stored pictures are
 functionally demonstrated for docked HDR/SDR; capture latency, popped-out
 stored-picture crop coverage and large-photo peak memory remain open.
+
+### November 6: Batch 4d record reconciled
+
+The Windows acceptance requested here was already completed by the November 5
+Grade peak-reduction work, recorded above and in memory-and-caches.md. Its
+real-app reports establish the retained owner, complete give-back, paired
+Grade timing and peak below 4.4 GB. The Batches table now reflects that
+evidence. No repeat run or implementation change is needed. Only Steve
+can qualify the remaining 8 GB Mac acceptance.
 
 ### November 5: Grade yields backend native detail (4d, partial)
 
@@ -3974,10 +3983,10 @@ variation. No existing speed target, memory allowance or image tolerance changes
   a copy's file type from its virtual ID, hiding it under the default filter.
   Copy commands now request a fresh listing and read the source's extension.
   Before: still absent/unselected after 60 s; after: selected with a visible
-  picture in 214 ms (save request 55 ms), plain Electron, reusable edited ARW.
+  picture in 214 ms (save request 55 ms), plain Electron, reusable unedited ARW.
   No image calculations, source files or cache sizes changed. Evidence:
   `codebase/output/quick-library-check/v1-copy-{before,after}/`.
-  Checks: 813 Node passed; 16 copy Python checks passed; full Python pending.
+  Checks: 813 Node passed; 16 copy Python checks passed; full Python running separately.
 
 **V1 scope (Steve, October 26, 2026):** the "Leftovers" item below (comfort
 cap, indexing settings, dimmed offline drives, drag a folder in to pin it)
