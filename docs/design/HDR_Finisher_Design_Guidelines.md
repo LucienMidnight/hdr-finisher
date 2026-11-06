@@ -322,7 +322,7 @@ Use the runtime tokens and existing component rhythm as the baseline:
 - Control rows keep their existing content layout with the shared slider scale strip.
 - Control-group and RAW DEVELOPMENT disclosure header: 34 px via `--control-group-header-h`.
 - Corner radius: 3 px.
-- Hairlines separate dense regions. Expanded top-level panels use the documented 3 px external top and bottom boundaries with open side edges; internal panel boundaries and collapsed-group separators remain 1 px. Avoid nested heavy borders.
+- Hairlines separate dense regions. All panel edges and section dividers use one 1 px neutral hairline. Shared edges have one owner; full-height splitters keep the preview, status and scopes edges continuous. Buttons, inputs and pop-ups keep their own outlines.
 - Keep hit targets comfortably larger than their visible glyphs.
 
 Panel header geometry is shared in `visual-controls.css` through `--panel-header-h` (40px), including Library, Grade, Proof and Export side and centre bars. The height includes the bottom divider; headers have no vertical padding and do not grow around toolbar contents. Header tool buttons are 30px high, with text and icons centred; panel title margins must not shift the shared label baseline.

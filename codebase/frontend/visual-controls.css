@@ -230,3 +230,12 @@ html.native-application-menu .top-bar { padding-right: 16px; }
 html.native-application-menu:not(.window-fullscreen) .product-lockup { padding-left: 74px; }
 html.native-application-menu :is(.window-controls, .unified-menu-button) { display: none; }
 
+
+/* One neutral panel divider; splitters own the full-height shared edges. */
+:root { --panel-border-external-width: 1px; --panel-border-external: var(--hairline); }
+:root :is(.source-rail, .grade-rail, .viewer-panel, .analysis-dock, .viewport-frame) { border-left: 0; border-right: 0; }
+:root .control-group:not(.collapsed) { border-top-color: var(--hairline); border-bottom-color: var(--hairline); }
+:root :is(.viewer-bar, .viewer-status-dock, .dock-bar, .scope-panel) { border-color: var(--hairline); }
+:root .splitter-vertical::after { top: 0; bottom: 0; background: var(--hairline); }
+:root .splitter-horizontal::after { background: var(--hairline); }
+

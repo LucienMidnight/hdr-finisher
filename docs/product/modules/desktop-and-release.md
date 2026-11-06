@@ -167,3 +167,8 @@ The separate Library retains native chrome for Windows snap support. Main
 window custom maximize still has no native Windows 11 snap flyout.
 Validation is grouped with the final UI polish checks; no installer or push.
 
+
+November 6 panel polish: panel edges and open-section boundaries use the same
+neutral hairline; full-height splitters own shared vertical edges. Final
+three-theme/minimum-size visual checks cover the grouped UI changes.
+
