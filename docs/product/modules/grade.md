@@ -1908,3 +1908,9 @@ independent of anonymous text/grid rows, in every theme.
 Grade, source, Library side panels, scopes dock and media-browser preview use
 one-pixel divider tracks with overlapping nine-pixel invisible grab targets.
 Existing pointer, keyboard and double-click handlers remain in place.
+
+## November 6: Color wheels module reset (built)
+
+The existing whole-module Reset is given sufficient header space for its
+label and changed dot. It restores Shadows, Midtones, Highlights, Blending
+and Balance together; wheel double-click still resets only the selected range.

@@ -345,3 +345,6 @@ html.desktop-shell .window-controls { margin-left: 0; }
 :root .media-browser-preview-resizer::before { content: ""; position: absolute; inset: 0 -4px; }
 :root .media-browser-preview-resizer::after { right: 0; }
 @media (max-width: 800px) { :root .media-browser-layout { grid-template-columns: 140px 1fr; } }
+
+/* Reserve enough room for Reset plus its changed dot in Color wheels. */
+:root .color-grading-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 68px 26px; }
