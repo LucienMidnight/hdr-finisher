@@ -365,9 +365,11 @@ and custom Windows/Linux controls. macOS uses native inset traffic lights and
 system menus, with no custom controls or menu button. Recent projects belongs
 in File. Empty toolbar space drags; double-click maximizes/restores.
 
-Tab lists use neutral text and a hairline baseline with a 2 px accent underline
-and stronger selected text. Apply this to workflow, mode, rendition, Proof,
-curve-channel, scope and wheel-range tabs. Keep their existing locations.
+In-panel tab sets use joined plates: raised unselected segments, pressed
+selected segments with accent-strong text, and the existing plate edge, lift
+and press tokens. Mode tabs are tallest, rendition/subsets smaller, and wheel
+ranges smallest and inset. Workflow tabs keep their 2 px accent underline.
+Keep existing tab locations, changed dots, keyboard and ARIA behaviour.
 
 
 Accent is reserved for selected tabs/items, the primary action and enabled

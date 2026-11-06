@@ -252,3 +252,10 @@ Review crops are retained for Steve; the run's server and fast-test scratch
 logs were removed. Automatic approval review blocked removal of the run's
 TEMP folder `C:/Users/Steve/AppData/Local/Temp/pytest-of-Steve/pytest-1291`
 with the reason "blocked by policy"; it remains available for manual cleanup.
+
+## November 6: UI polish round 3
+
+In-panel mode, HDR/SDR (including Local), Proof, curve-channel, scope and
+wheel-range tabs use joined plates with existing theme tokens. Workflow tabs
+keep their underline. Three tab heights distinguish the levels; changed dots
+and tab behaviour stay intact. Validation is grouped at the end of round 3.

@@ -240,17 +240,23 @@ html.native-application-menu :is(.window-controls, .unified-menu-button) { displ
 :root .splitter-horizontal::after { background: var(--hairline); }
 
 
-/* Shared underline tabs: workflow, modes, rendition, channels and ranges. */
+/* Joined plates for in-panel tabs; workflow tabs retain their underline. */
 :root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs) {
- display: flex; gap: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+ display: flex; gap: 1px; padding: 0; border: 1px solid var(--plate-edge); border-radius: var(--radius-plate); background: var(--plate-edge); box-shadow: var(--plate-lift);
 }
 :root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs) > button {
- flex: 1; min-height: 32px; height: auto; padding: 6px 8px; margin: 0; border: 0; border-bottom: 2px solid var(--hairline); border-radius: 0; background: transparent; color: var(--muted); box-shadow: none; text-transform: none;
+ flex: 1; min-width: 0; min-height: 25px; height: 25px; padding: 0 8px; margin: 0; border: 0; border-radius: 0; background: var(--plate-up); color: var(--body); box-shadow: none; font: 500 12.5px var(--font-body); text-transform: none;
 }
+:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs) > button:first-child { border-radius: var(--radius-plate) 0 0 var(--radius-plate); }
+:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs) > button:last-child { border-radius: 0 var(--radius-plate) var(--radius-plate) 0; }
+:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs) > button:hover { background: var(--plate-up-hover); color: var(--text); }
 :root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs) > button:is(.active, [aria-selected="true"], [aria-pressed="true"]) {
- border-bottom-color: var(--accent); background: transparent; box-shadow: none; color: var(--text); font-weight: 600;
+ background: var(--plate-down); box-shadow: var(--plate-press); color: var(--accent-strong); font-weight: 600;
 }
-:root :is(.lane-switch, .local-lane-switch) > button { min-height: 36px; font-size: 14.5px; }
+:root .control-mode-switch { width: 100%; }
+:root .control-mode-switch > button { min-height: 30px; height: 30px; font-size: 13.5px; }
+:root .wheel-range-tabs { margin-inline: 6px; }
+:root .wheel-range-tabs > button { min-height: 21px; height: 21px; font-size: 11.5px; }
 
 
 /* Accent means selection, the primary action or an enabled control. */
