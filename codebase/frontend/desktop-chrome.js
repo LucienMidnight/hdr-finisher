@@ -46,7 +46,7 @@
     menuBar.hidden = !show;
     menuButton.setAttribute("aria-expanded", String(show));
   };
-  menuButton.addEventListener("click", () => showMenus(menuBar.hidden));
+  menuButton.addEventListener("click", () => { closeMenus(); showMenus(menuBar.hidden); });
   bar.addEventListener("dblclick", event => {
     if (!event.target.closest("button, nav, input")) void desktop.performWindowAction?.("toggle-maximize");
   });
@@ -94,11 +94,16 @@
     trigger.addEventListener("click", () => openMenu(menu));
     trigger.addEventListener("pointerenter", () => {
       const isOpen = !menu.querySelector(".window-menu-popover").hidden;
-      const menuBarOpen = menus.some(item => !item.querySelector(".window-menu-popover").hidden);
-      if (menuBarOpen && !isOpen) openMenu(menu);
+      if (!isOpen) openMenu(menu);
     });
     trigger.addEventListener("keydown", (event) => {
-      if (!["ArrowDown", "Enter", " "].includes(event.key)) return;
+      if (["ArrowDown", "ArrowUp"].includes(event.key)) {
+        event.preventDefault(); closeMenus();
+        const delta = event.key === "ArrowDown" ? 1 : -1;
+        menus[(menus.indexOf(menu) + delta + menus.length) % menus.length].querySelector(".window-menu-trigger").focus();
+        return;
+      }
+      if (!["ArrowRight", "Enter", " "].includes(event.key)) return;
       event.preventDefault();
       openMenu(menu, { focusFirst: true });
     });
@@ -119,6 +124,8 @@
         event.stopPropagation();
         setSubmenuOpen(submenu, false);
         submenu.querySelector(".window-submenu-trigger").focus();
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault(); closeMenus({ restoreFocus: true });
       } else if (event.key === "Escape") {
         event.preventDefault();
         closeMenus({ restoreFocus: true });
@@ -134,7 +141,7 @@
     if (!event.target.closest(".window-menu, .unified-menu-button, .window-menu-bar")) { closeMenus(); showMenus(false); }
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") { closeMenus(); showMenus(false); menuButton.focus(); }
+    if (!usesNativeApplicationMenu && event.key === "Escape" && !menuBar.hidden) { closeMenus(); showMenus(false); menuButton.focus(); }
     if (!usesNativeApplicationMenu && (event.key === "F10" || (event.key === "Alt" && !event.ctrlKey && !event.shiftKey))) {
       event.preventDefault(); showMenus(true); menus[0]?.querySelector("button").focus();
     }

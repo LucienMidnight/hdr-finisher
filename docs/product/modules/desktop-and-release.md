@@ -363,3 +363,7 @@ Automatic approval review rejected cleanup with "blocked by policy".
 `C:/Users/Steve/AppData/Local/Temp/pytest-of-Steve/pytest-1294`,
 `codebase/output/round5-*.log` and `output/round5-review.log` remain safe
 for manual deletion. Keep the review crops until Steve's visual sign-off.
+
+## November 6: UI polish round 6
+
+Section 1: vertical application menu with side submenus and Control Panel module-name typography. Alt/F10, arrows and Escape retained; native macOS menu unchanged. Validation grouped after the five sections.

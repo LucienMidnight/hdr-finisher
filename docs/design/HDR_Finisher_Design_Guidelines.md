@@ -411,3 +411,5 @@ Settings switches are plain rows, aligned with their neighbouring fields.
 
 Disabled primary buttons use the neutral raised plate, neutral edge and muted
 text at full opacity. The accent returns when the action becomes available.
+
+Application menus (November 6, round 6): the ? button opens a vertical list, with side submenus. Both levels use the Control Panel module-name face and size. Up/Down walk the list, Right enters a submenu, Left returns; Alt/F10 open and Escape closes. macOS keeps its system menu.
