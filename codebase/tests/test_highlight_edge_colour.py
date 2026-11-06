@@ -51,3 +51,18 @@ def test_dark_objects_beside_the_light_stay_untouched() -> None:
     image, clip_ratio, _, bar = scene()
     out, _ = reconstruct_edge_colour(image, clip_ratio, 1.5)
     np.testing.assert_allclose(out[bar], image[bar], rtol=1e-4, atol=1e-6)
+
+
+def test_result_does_not_depend_on_how_many_cpu_strips_run_it(monkeypatch) -> None:
+    from hdr_finisher import highlight_edge_colour as edge
+    image, clip_ratio, _, _ = scene()
+    # Odd sizes put strip edges and the reduced grid's padded last block apart.
+    image, clip_ratio = image[:397, :389], clip_ratio[:397, :389]
+    results = []
+    for strips in (1, 5, 13):
+        monkeypatch.setattr(edge, "_strips", strips)
+        out, diagnostics = reconstruct_edge_colour(image, clip_ratio, 6.0)
+        assert diagnostics["applied"]
+        results.append(out)
+    for out in results[1:]:
+        assert out.dtype == np.float32 and out.tobytes() == results[0].tobytes()
