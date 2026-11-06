@@ -382,7 +382,8 @@ test('small or missing camera pictures, edits, Develop and zoom request only the
   const starts=[],events=[],plan={unedited_raw:mode!=='edited',edited:mode==='edited',bytes:1,revision:'1'};
   const s=setup({raw:plan},async(path,edge)=>{starts.push(path);return {edge};});
   let previews=0;s.context.HDRLibraryGrants.preview=async()=>{previews++;return {status:mode==='missing'?204:200,json:async()=>({camera_long_edge:640})};};
-  await s.scenes.load('raw',mode==='zoom'?100000:2560,undefined,0,null,{develop:mode==='develop'});
+  const result=await s.scenes.load('raw',mode==='zoom'?100000:2560,undefined,0,null,{develop:mode==='develop'});
+  assert.equal(result.unedited_raw,mode!=='edited');
   assert.deepEqual(starts,['raw']);assert.equal(previews,['edited','develop','zoom'].includes(mode)?0:1);
   assert.equal(s.events.filter(e=>e.stage==='picture_development_start')[0].reason,{small:'no usable camera picture',missing:'no usable camera picture',edited:'edited',develop:'Develop command',zoom:'zoom detail'}[mode]);
  }
@@ -391,7 +392,7 @@ test('stored development takes precedence, and an evicted unedited RAW returns t
  const plans={raw:{unedited_raw:true,bytes:1,revision:'1',cached:{key:'stored',edge:2560,cache_hit:true}}};
  const s=setup(plans,()=>assert.fail('Unexpected development'));
  s.context.HDRLibraryGrants.preview=async()=>({status:200,json:async()=>({url:'camera',camera_long_edge:1600})});
- assert.equal((await s.scenes.load('raw',2560)).key,'stored');delete plans.raw.cached;
+ const stored=await s.scenes.load('raw',2560);assert.equal(stored.key,'stored');assert.equal(stored.unedited_raw,true);delete plans.raw.cached;
  assert.equal((await s.scenes.load('raw',2560)).picture_source,'camera picture');
 });
 test('plain SDR files use their file picture without development',async()=>{

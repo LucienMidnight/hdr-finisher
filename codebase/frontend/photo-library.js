@@ -259,7 +259,7 @@
     return HDRLibraryReadyWindow.create({key:readyKey, dispose:releaseReady,manageBytes:false,memoryKey:"ready-"+edge,
       promote:(photo,priority)=>HDRLibraryScenes.promote(photo.path,priority),
       load:async (photo, signal, current, priority, trace, importance, options, getTrace = () => trace) => {
-        const epoch = state.displayEpoch, hdr = state.hdr;
+        const epoch = state.displayEpoch, hdr = HDRLibraryQuery.displayHDR(photo,state.hdr);
         if (edge === 2560) {
           const canvas = document.createElement('canvas'); canvas.className = $('single-picture').className;
           let value;
@@ -477,7 +477,7 @@
             fallback.src = meta.url; await fallback.decode();
             if (!isCurrent()) return;
             canvas.after(fallback); canvas.style.visibility = "hidden";
-            pictureMode(fallback,state.hdr);
+            pictureMode(fallback,HDRLibraryQuery.displayHDR(photo,state.hdr));
           }
           await sleep(2000,controller.signal);
         }
@@ -499,7 +499,7 @@
       view:state.view,visible_thumbnails:[...state.cells.values()].filter(cell=>cell.element.isConnected).length});
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr));
     for (const cell of [...state.cells.values(), ...state.filmCells.values()]) {
-      pictureMode(cell.canvas, !cell.scene?.bitmap && state.hdr);
+      pictureMode(cell.canvas, !cell.scene?.bitmap && HDRLibraryQuery.displayHDR(cell.photo,state.hdr));
       if(cell.scene?.route==="finished-thumbnail"){cell.controller.abort();cell.element.remove();state.cells.delete(cell.photo.path);state.filmCells.delete(cell.photo.path);continue;}
       if (cell.fallback && cell.scene) void drawPicture(cell.scene, cell.fallback, cell.controller,
         () => cell.element.isConnected && !cell.controller.signal.aborted).then(() => {
@@ -708,7 +708,7 @@
               if (!current()) return;
               canvas.hidden=false; canvas.style.visibility=""; fallback.hidden=true;
               canvas.dataset.preview="false"; canvas.dataset.cpuFallback="true";
-              pictureMode(canvas,state.hdr); element.classList.remove("loading");
+              pictureMode(canvas,HDRLibraryQuery.displayHDR(photo,state.hdr)); element.classList.remove("loading");
               window.HDRLibraryFolderPresented?.({view:container === space ? "grid" : "filmstrip",path:photo.path});
             cpuShown=true;
             }

@@ -27,7 +27,7 @@ window.HDRLibraryBuildPreviews=(()=>{
               const meta=await HDRLibraryScenes.load(path,2560,controller.signal,99,null,{develop:true});
               meta.buildPreview=true;meta.draw_priority=99;meta.log_view='build previews';
               const canvas=document.createElement('canvas');
-              for(const hdr of [true,false])await HDRLibraryPictures.show(meta,canvas,controller.signal,()=>!controller.signal.aborted,hdr);
+              for(const hdr of (meta.unedited_raw ? [false] : [true,false]))await HDRLibraryPictures.show(meta,canvas,controller.signal,()=>!controller.signal.aborted,hdr);
             }
             break;
           }catch(error){if(error.libraryYield&&!controller.signal.aborted){await wait(100);continue;}throw error;}

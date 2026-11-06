@@ -7,7 +7,7 @@ for(const route of ['camera-raw-gpu','cached-picture']) test(`Library ${route} k
   constructor(){this.surfaceKeys=new Map();}
   setDetectedVideoMemory(){}
   async initialize(){this.deliveryActivityTimer=1;return true;}
-  async renderTo(target){renderStarted.resolve();await pixels.promise;target.width=400;target.height=600;return {rendered:true};}
+  async renderTo(target,key,lane){assert.equal(lane,'sdr');renderStarted.resolve();await pixels.promise;target.width=400;target.height=600;return {rendered:true};}
   async waitForSubmittedWork(){}
  }
  const context=vm.createContext({window:{},document:{createElement:()=>({})},HDRWebGPUPreview:Base,
@@ -15,7 +15,7 @@ for(const route of ['camera-raw-gpu','cached-picture']) test(`Library ${route} k
   HDRLibraryRawGPU:{create:()=>({get:()=>false,configure(){},convert:()=>{rawStarted.resolve();return raw.promise;}})}});
  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../frontend/library-gpu.js'),'utf8'),context);
  const pictures=context.window.HDRLibraryPictures;
- const pending=pictures.show({key:'portrait',width:400,height:600,route,adjustments:{hdr:{}}},canvas,controller.signal,()=>true);
+ const pending=pictures.show({key:'portrait',width:400,height:600,route,unedited_raw:true,adjustments:{hdr:{}}},canvas,controller.signal,()=>true,true);
  if(route==='camera-raw-gpu'){
   await rawStarted.promise;assert.deepEqual([canvas.width,canvas.height],[600,400],'RAW conversion retains accepted shape');raw.resolve();
  }

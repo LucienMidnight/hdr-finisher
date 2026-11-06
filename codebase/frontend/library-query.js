@@ -1,6 +1,10 @@
 /* Pure sort/filter rules shared by the Library and its fast checks. */
 (() => {
   const rawTypes = new Set(["3FR", "ARW", "CR2", "CR3", "DNG", "ERF", "FFF", "IIQ", "KDC", "MEF", "MOS", "MRW", "NEF", "NRW", "ORF", "ORI", "PEF", "RAF", "RAW", "RW2", "RWL", "SRW", "X3F"]);
+  // RAW development does not make a photo edited. Keep the Library SDR
+  // until its existing grade index marks it edited; HDR non-RAWs are unchanged.
+  const displayHDR = (photo, hdr) => Boolean(hdr && !(photo.unedited_raw ??
+    (rawTypes.has(String(photo.type).toUpperCase()) && !photo.edited)));
   const defaultVisible = photo => rawTypes.has(String(photo.type).toUpperCase()) || ["EXR","PFM","HDR"].includes(String(photo.type).toUpperCase()) || (["TIF","TIFF"].includes(String(photo.type).toUpperCase()) && photo.mezzanine === true);
   const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
   const compareText = (a, b) => collator.compare(String(a), String(b));
@@ -127,7 +131,7 @@
       return (descending ? -1 : 1) * (order || compareText(a.name, b.name) || compareText(a.path, b.path));
     });
   }
-  const api = Object.freeze({ apply, count, matches, values, describe, format, FIELDS, rawTypes, defaultVisible });
+  const api = Object.freeze({ apply, count, matches, values, describe, format, FIELDS, rawTypes, defaultVisible, displayHDR });
   if (typeof module !== "undefined") module.exports = api;
   else globalThis.HDRLibraryQuery = api;
 })();

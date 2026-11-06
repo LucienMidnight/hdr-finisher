@@ -63,6 +63,7 @@ window.HDRLibraryFinishedThumbnails = (() => {
     return new Promise((resolve,reject)=>batch.push({path,signal,resolve,reject}));
   }
   async function load(photo,canvas,signal,current,hdr) {
+    hdr = HDRLibraryQuery.displayHDR(photo,hdr);
     const started=performance.now();
     // Do not allocate/configure an empty swap chain before the cache read.
     // Verify the actual format when the finished dimensions are available.

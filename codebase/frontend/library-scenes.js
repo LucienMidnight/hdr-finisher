@@ -61,6 +61,7 @@ window.HDRLibraryScenes = (() => {
     if (plan.cloud_only && !plan.cached && urgency !== 0) {
       throw Object.assign(Error("Not downloaded: this photo is online-only. Open it to download it."), {cloudOnly:true});
     }
+    const display = meta => meta ? {...meta, unedited_raw:!!plan.unedited_raw} : meta;
     const version=plan.render_identity || plan.source_identity || plan.revision;
     const sourceVersion=plan.source_identity || version;
     if(versions.has(path)&&versions.get(path)!==sourceVersion)sources.invalidate(candidate=>candidate===path);
@@ -69,8 +70,8 @@ window.HDRLibraryScenes = (() => {
     const direct = HDRLibraryGpuRaw.cachedDirect?.(path,edge,version);
     // A retained direct scene reuses the stored development without reading
     // the disk cache; it is the fastest reuse and reports as a cache hit.
-    if (direct) { options.onSourceDemand?.(); return direct.cache_hit ? direct : {...direct, cache_hit:true}; }
-    if (plan.cached) { options.onSourceDemand?.(); return plan.cached; }
+    if (direct) { options.onSourceDemand?.(); return display(direct.cache_hit ? direct : {...direct, cache_hit:true}); }
+    if (plan.cached) { options.onSourceDemand?.(); return display(plan.cached); }
     if ((plan.unedited_raw || plan.original_file) && edge !== 100000 && !options.develop) {
       const response = await HDRLibraryGrants.preview({path,edge:edge <= 640 ? 640 : 2560,quick_draw:true},signal);
       if (response.status === 200) {
@@ -126,9 +127,9 @@ window.HDRLibraryScenes = (() => {
     if(result && result.path && result.path!==path){
       const response=await fetch('/api/library/live-plan',{method:'POST',signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({path,edge})});
       const own=await response.json();if(!response.ok)throw failure(own);
-      if(own.cached)return own.cached;
+      if(own.cached)return {...own.cached,unedited_raw:!!own.unedited_raw};
     }
-    return result;
+    return display(result);
   }
   // Selected work follows at most the single sharp draw already in flight.
   // Quick draws use thumbnails and their own renderer and priority queue.

@@ -352,6 +352,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
     return promise;
   }
   function show(meta, canvas, signal, isCurrent, hdr = false) {
+    hdr = Boolean(hdr && !meta.unedited_raw);
     if (meta.bitmap) return (async()=>{
       const image = new Image(); image.src = meta.url; await image.decode();
       if (signal.aborted || !isCurrent()) throw new DOMException("Cancelled","AbortError");
@@ -534,6 +535,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
     readyReports = report; return report;
   }
   async function prepareDenoise(meta, hdr, trace) {
+    hdr = Boolean(hdr && !meta.unedited_raw);
     const lane = hdr ? "hdr" : "sdr";
     if (!meta.denoise?.[lane]?.enabled) return;
     const started = performance.now();

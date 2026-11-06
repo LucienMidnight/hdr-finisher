@@ -2,7 +2,7 @@ const test=require('node:test'),assert=require('node:assert/strict'),vm=require(
 function setup({stale=false}={}){
   const writes=[],requests=[];
   const gpu={configureSurface:()=>({format:'bgra8unorm'}),device:{queue:{writeTexture:(_dst,body)=>writes.push([...body]),onSubmittedWorkDone:async()=>{}}}};
-  const context={navigator:{gpu:{getPreferredCanvasFormat:()=>"bgra8unorm"}},console,performance,URLSearchParams,TextDecoder,TextEncoder,DataView,Uint8Array,DOMException,queueMicrotask,
+  const context={HDRLibraryQuery:require('../frontend/library-query.js'),navigator:{gpu:{getPreferredCanvasFormat:()=>"bgra8unorm"}},console,performance,URLSearchParams,TextDecoder,TextEncoder,DataView,Uint8Array,DOMException,queueMicrotask,
     HDRLibraryPictures:{initialize:async()=>gpu},HDRLibraryStopwatch:()=>{},
     fetch:async(url,options)=>{
       requests.push(url);const paths=JSON.parse(options.body).paths;assert.ok(paths.length<=32);const parts=paths.map((_,i)=>Uint8Array.from([i+1,2,3,4]));
@@ -14,7 +14,7 @@ function setup({stale=false}={}){
     }};
   context.window=context;vm.createContext(context);vm.runInContext(fs.readFileSync('frontend/library-finished-thumbnails.js','utf8'),context);
   const canvas=()=>({dataset:{},getContext:()=>({getCurrentTexture:()=>({})})});
-  const load=(path,options={})=>{const target=canvas();return {target,promise:context.HDRLibraryFinishedThumbnails.load({path,bytes:12,mtime_ns:100,grade_identity:'grade'},target,options.signal||new AbortController().signal,options.current||(()=>true),false)}};
+  const load=(path,options={})=>{const target=canvas();return {target,promise:context.HDRLibraryFinishedThumbnails.load({path,type:options.type,edited:options.edited,bytes:12,mtime_ns:100,grade_identity:'grade'},target,options.signal||new AbortController().signal,options.current||(()=>true),options.hdr||false)}};
   return {load,writes,requests};
 }
 test('visible stored surfaces share one request and upload the original exact bytes',async()=>{
@@ -37,4 +37,22 @@ test('72 visible finished thumbnails are fetched within the 32-path limit and al
  const results=await Promise.all(items.map(item=>item.promise));
  assert.equal(s.requests.length,3);assert.equal(s.writes.length,72);
  assert.ok(results.every(value=>value.route==='finished-thumbnail'));
+});
+
+test("stored RAW thumbnails select SDR until edited while HDR files keep HDR",async()=>{
+ for(const [type,edited,lane] of [["ARW",false,"sdr"],["ARW",true,"hdr"],["EXR",false,"hdr"]]){
+  const s=setup(),item=s.load("photo",{type,edited,hdr:true});await item.promise;
+  assert.equal(new URL(s.requests[0],"http://test").searchParams.get("lane"),lane);
+  assert.equal(item.target.dataset.rendition,lane);
+ }
+});
+
+test("stored screen reads use SDR for an unedited RAW, including virtual copies",async()=>{
+ const requests=[];const context={window:{},HDRLibraryQuery:require("../frontend/library-query.js"),URLSearchParams,performance,screen:{width:1920,height:1080},devicePixelRatio:1,
+  fetch:async url=>{requests.push(url);return {status:204};}};
+ vm.runInNewContext(fs.readFileSync("frontend/library-screen-previews.js","utf8"),context);
+ for(const [type,edited,lane] of [["DNG",false,"sdr"],["ARW",true,"hdr"],["AVIF",false,"hdr"]]){
+  await context.window.HDRLibraryScreenPreviews.load({path:"photo|copy|one",type,edited},{},null,()=>true,true);
+  assert.equal(new URL(requests.at(-1),"http://test").searchParams.get("lane"),lane);
+ }
 });

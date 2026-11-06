@@ -64,3 +64,18 @@ test('default file visibility uses the full RAW list and only mezzanine TIFFs',(
  assert.equal(q.defaultVisible({type:'TIFF',mezzanine:true}),true);
  assert.equal(q.defaultVisible({type:'TIFF',mezzanine:false}),false);
 });
+
+test("Library HDR leaves every unedited RAW in SDR and preserves non-RAW policy", () => {
+ const { displayHDR, rawTypes } = require("../frontend/library-query.js");
+ for (const type of rawTypes) {
+  assert.equal(displayHDR({type,edited:false},true),false,type);
+  assert.equal(displayHDR({type,edited:true},true),true,type);
+  assert.equal(displayHDR({type,edited:true},false),false,type);
+ }
+ for (const type of ["JPG","AVIF","HEIF","JXL","EXR","PFM","HDR","TIFF","PNG"]) {
+  assert.equal(displayHDR({type,edited:false},true),true,type);
+  assert.equal(displayHDR({type,edited:false},false),false,type);
+ }
+ assert.equal(displayHDR({unedited_raw:true},true),false);
+ assert.equal(displayHDR({unedited_raw:false},true),true);
+});

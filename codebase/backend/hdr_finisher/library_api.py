@@ -597,6 +597,7 @@ def create_library_router(worker, browser, store=None):
                 return dict(cached=live.describe(command.path, cached, document=document, source_identity=scene_identity),
                     bytes=stamp[0], revision=f"{stamp[1]}:{stamp[0]}", source_identity=identity,
                     render_identity=identity+":"+sha256(json.dumps(document or {}, sort_keys=True).encode()).hexdigest(),
+                    unedited_raw=not is_edited(command.path) and Path(path).suffix.lower() in library_raw_types,
                     cloud_only=False, cpu_route=None, gpu_meta=None)
         # Cache discovery and stat only: never decode or claim a source slot.
         document = picture_document(command.path)

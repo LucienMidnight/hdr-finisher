@@ -68,7 +68,7 @@
         window.HDRLibraryStopwatch?.("picture_development_start",{path:s.photo.path,reason:"zoom detail",view:"compare"});
         await o.prepareNative?.(s.photo,c.signal);
         const m=await o.api('/api/library/native',{path:s.photo.path,center_x:z.x,center_y:z.y,width:Math.max(64,Math.min(4096,Math.ceil(s.stage.clientWidth*dpr/z.scale))),height:Math.max(64,Math.min(4096,Math.ceil(s.stage.clientHeight*dpr/z.scale)))},c.signal);
-        if(!current())return;m.adjustments=s.meta.adjustments;await o.draw(m,s.native,c,current);if(!current())return;
+        if(!current())return;m.unedited_raw=HDRLibraryQuery.rawTypes.has(s.photo.type) && !s.photo.edited;m.adjustments=s.meta.adjustments;await o.draw(m,s.native,c,current);if(!current())return;
         s.nativeMeta=m;s.native.dataset.picturePath=s.photo.path;s.note.textContent='';position();o.drawOverlay?.(s.photo,s.fit,s.meta,s.controller,current);
       }catch(e){if(e.name!=='AbortError'&&current())s.note.textContent=`Detail preview unavailable · ${percent} · ${e.message}`;}
     }

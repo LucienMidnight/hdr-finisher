@@ -48,6 +48,7 @@ window.HDRLibraryScreenPreviews = (() => {
     @fragment fn hdrSdr(@builtin(position) p:vec4f)->@location(0) vec4f {let rgb=max(srgb(aces(pq(vec3f(textureLoad(picture,vec2i(p.xy),0).rgb)/65535.0)*(.18/white))),vec3f(0));return vec4f(encode(rgb/(vec3f(1)+rgb)),1);}
   `;
   async function load(photo,canvas,signal,current,hdr,admit=async()=>{}) {
+    hdr = HDRLibraryQuery.displayHDR(photo,hdr);
     const started=performance.now();
     const stage=(name,at)=>HDRLibraryStopwatch('picture_stored_screen_preview_'+name,{path:photo.path,rendition:hdr?'hdr':'sdr',picture_size:'screen preview',duration_ms:performance.now()-at});
     const response=await fetch('/api/library/stored-screen-preview?'+query(photo.path,hdr),{signal});

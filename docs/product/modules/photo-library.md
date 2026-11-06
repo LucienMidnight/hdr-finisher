@@ -4064,15 +4064,40 @@ Native timing and the Fit/100% perceptual comparison with scale-dependent
 effects remain open. Compare's detail view still uses the legacy native
 crop route; its move to live native scenes remains open with that cleanup.
 
-### November 6: SDR/HDR source audit (no display change)
+### November 6: unedited RAWs stay SDR after development
 
-Unedited RAW camera pictures and ordinary SDR files use SDR bitmap surfaces.
-Unedited RAWs without usable camera pictures, gain-map JPEGs, HDR AVIF/HEIF,
-HDR JPEG XL, high-precision TIFF and EXR/PFM/Radiance sources do not consistently follow the
-November 6 SDR rule: original_preview refuses those HDR sources, development
-continues and finishing uses the Library HDR switch rather than edited state.
-The mismatch is reported for Steve's approval; no display policy was changed.
-The HDR comfort cap stays v2.
+With the Library set to HDR, unedited RAWs now use SDR finishing in grid,
+filmstrip, Single, fullscreen and full-size zoom (including Compare detail).
+This covers missing or too-small camera pictures, right-click Develop,
+Build previews, stored scene reuse and retained GPU scenes. The existing
+Library edited/grade status controls the choice, including virtual copies;
+development alone does not mark a photo edited. Stored thumbnails and screen
+previews are read from their SDR lane, so old HDR stored pictures cannot
+bypass the rule. GPU Build previews stores only SDR for an unedited RAW;
+the CPU builder's existing two lanes remain, with only SDR used for that RAW.
+After a grade is applied, the normal HDR Library display resumes.
+
+HDR non-RAW routes are unchanged: gain-map JPEG, HDR AVIF/HEIF, PQ/HLG,
+EXR and similar keep their existing HDR handling. High-precision TIFF and
+JPEG XL still rely on existing source classification; this change does not
+claim every such file is HDR. Export, Proof, Grade display, image tolerances,
+cache sizes and budgets are unchanged. The HDR comfort cap stays v2.
+
+Validation: 816 Node checks passed. Python: 3,077 passed, three skipped;
+only the known unrelated
+`test_remembered_failure_does_not_hide_current_grade_cached_scene` failed.
+The 90-second plain-Electron HDR check completed ten Single steps, with no
+view errors or damaged stored channels, no memory violation and no drawing
+pause over the existing 250 ms limit. Tests exercise missing/small camera
+pictures, Develop, zoom, stored scene reuse, RAW versus graded/non-RAW lane
+selection and stored thumbnail/screen reads. This is not a new photographic
+pixel-agreement qualification. Evidence: `codebase/output/raw-sdr-{node,python}.log`
+and `codebase/output/quick-library-check/raw-sdr/report.json`.
+Output started and finished at 29.4 GB, below 100 GB. The app profile was
+removed. Automatic approval review rejected pytest scratch deletion with
+"blocked by policy"; remaining owned scratch:
+`C:/Users/Steve/AppData/Local/Temp/pytest-of-Steve/pytest-1290`.
+No push or installer build.
 
 ## 5. V1 open work, in order
 
