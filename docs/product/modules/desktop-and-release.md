@@ -265,3 +265,6 @@ height. Final size awaits Steve's screenshot review.
 
 Panel titles now display title case without caps tracking, including dynamic
 Export headings and embedded/detached Library. Field labels are unchanged.
+
+The menu uses three centred strokes in a fixed 30 px target, avoiding the
+font glyph's off-centre baseline. Menu handlers and drag regions are unchanged.
