@@ -374,3 +374,10 @@ Accent is reserved for selected tabs/items, the primary action and enabled
 sliders/toggles. Enabled toggle tracks are accent-filled. Autosave uses the
 ready status colour; bypassed modules stand out through the struck eye.
 
+
+## November 6: resize dividers (round 2)
+
+Panel resize edges occupy one CSS pixel and draw one continuous neutral
+hairline, with no resting band. The invisible grab target overlaps four pixels
+on each side. Hover/focus/drag may brighten the line; resizing, keyboard and
+double-click actions remain unchanged. Neighbouring dividers meet the line.

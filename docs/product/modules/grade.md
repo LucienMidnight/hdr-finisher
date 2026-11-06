@@ -1902,3 +1902,9 @@ No colour tokens were added.
 
 The eye mask and diagonal strike are positioned from the same button centre,
 independent of anonymous text/grid rows, in every theme.
+
+## November 6: resize rails (built)
+
+Grade, source, Library side panels, scopes dock and media-browser preview use
+one-pixel divider tracks with overlapping nine-pixel invisible grab targets.
+Existing pointer, keyboard and double-click handlers remain in place.

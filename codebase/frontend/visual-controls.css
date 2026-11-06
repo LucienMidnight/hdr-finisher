@@ -332,3 +332,16 @@ html.desktop-shell .window-controls { margin-left: 0; }
 
 
 :root[data-developed-badge="always"] .library-cell .is-developed { opacity: 1; }
+
+/* A one-pixel layout track, with an overlapping invisible grab target. */
+:root { --splitter-size: 1px; }
+:root .splitter::before { content: ""; position: absolute; inset: 0; }
+:root .splitter-vertical::before { left: -4px; right: -4px; }
+:root .splitter-horizontal::before { top: -4px; bottom: -4px; }
+:root .splitter-vertical::after { left: 0; }
+:root .splitter-horizontal::after { top: 0; }
+:root .splitter:is(:hover, :focus-visible, .dragging)::after { background: var(--muted); }
+:root .media-browser-layout { grid-template-columns: 180px minmax(300px, 1fr) 1px var(--media-browser-preview-width, 260px); }
+:root .media-browser-preview-resizer::before { content: ""; position: absolute; inset: 0 -4px; }
+:root .media-browser-preview-resizer::after { right: 0; }
+@media (max-width: 800px) { :root .media-browser-layout { grid-template-columns: 140px 1fr; } }
