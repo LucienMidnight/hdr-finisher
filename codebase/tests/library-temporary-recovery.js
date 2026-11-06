@@ -17,8 +17,17 @@ d.source.raw_import_settings.highlight_reconstruction.method='edge_colour_v1'
 print(json.dumps(dict(path=str(LibraryMarks._sidecar(p)),document=dict(format='HDR Finisher Photo',schema_version=1,photo_id='batch3f-test',grade=d.model_dump(mode='json')))))`,photos[1]],{cwd:root,env:{...process.env,PYTHONPATH:path.join(root,'backend')},encoding:'utf8'}));
 const originalRecipe=fs.existsSync(recipe.path)?fs.readFileSync(recipe.path):null;
 fs.writeFileSync(recipe.path,JSON.stringify(recipe.document));
-(async()=>{let browser;try{browser=await chromium.launch();
+let cacheSettingsPath,originalCacheSettings;
+const temporaryCache=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'hdr-recovery-cache-'));
+(async()=>{let browser,request,cacheSettings;try{browser=await chromium.launch();
  const page=await browser.newPage();await page.goto(process.env.HDR_FINISHER_URL);
+ request=page.request;
+ const settingsResponse=await request.get(new URL('/api/library/cache-settings',page.url()).href);assert.ok(settingsResponse.ok());cacheSettings=await settingsResponse.json();
+ // The Electron runner uses a fresh profile whose default cache is its Cache child.
+ assert.equal(path.basename(cacheSettings.location),'Cache','Use a disposable default-cache profile');
+ cacheSettingsPath=path.join(path.dirname(cacheSettings.location),'library-cache-settings.json');
+ originalCacheSettings=fs.existsSync(cacheSettingsPath)?fs.readFileSync(cacheSettingsPath):null;
+ const switched=await request.post(new URL('/api/library/cache-settings',page.url()).href,{data:{location:temporaryCache}});assert.ok(switched.ok(),'Temporary cache must be selected');
  await page.evaluate(()=>activateWorkflowTab('import'));
  const result=await page.locator('#library-frame').evaluate(async(el,{photos,both})=>{
   const w=el.contentWindow,events=[],results=[],originalLog=w.HDRLibraryStopwatch,upload=w.HDRLibraryUpload,edge=w.HDREdgeColour;
@@ -41,7 +50,7 @@ fs.writeFileSync(recipe.path,JSON.stringify(recipe.document));
     return upload.send(url,options);
    }};
    await check('save-timeout',async()=>{
-    const value=await w.HDRLibraryScenes.load(photos[0],640,undefined,0);
+    const value=await w.HDRLibraryScenes.load(photos[0],640,undefined,0,null,{develop:true});
     if(!timedOut)throw Error('Timeout injection was not reached');
     if(!events.some(e=>e.stage==='picture_preparation_retry'&&e.path===photos[0]))throw Error('No fresh preparation after timeout');
     return {key:value.key,shown:await show(value)};
@@ -54,7 +63,7 @@ fs.writeFileSync(recipe.path,JSON.stringify(recipe.document));
     return actual;
    }})};
    await check('invalid-gpu-pixels',async()=>{
-    const value=await w.HDRLibraryScenes.load(photos[1],640,undefined,0);
+    const value=await w.HDRLibraryScenes.load(photos[1],640,undefined,0,null,{develop:true});
     if(!injected)throw Error('Output scan injection was not reached');
     const cpu=events.some(e=>e.stage==='picture_source_cpu_completed'&&e.path===photos[1]);
     // GPU failure rule (master PRD, November 6): a rejected GPU result takes
@@ -74,4 +83,5 @@ fs.writeFileSync(recipe.path,JSON.stringify(recipe.document));
  assert.ok(result.results.every(r=>r.passed),'Every forced-fault scenario must recover');
  assert.equal(result.errors.filter(e=>!e.grade_warning).length,0,'No durable failure');
  assert.equal(result.grants.jobs.length,0,'No stranded grant');
-}finally{if(browser)await browser.close();if(originalRecipe)fs.writeFileSync(recipe.path,originalRecipe);else fs.rmSync(recipe.path,{force:true});}})().catch(error=>{console.error(error);process.exitCode=1;});
+}finally{try{if(cacheSettingsPath){if(originalCacheSettings)fs.writeFileSync(cacheSettingsPath,originalCacheSettings);else fs.rmSync(cacheSettingsPath,{force:true});}}finally{if(browser)await browser.close();// The backend holds its SQLite ledger until the Electron runner shuts down.
+ process.once('exit',()=>fs.rmSync(temporaryCache,{recursive:true,force:true,maxRetries:10,retryDelay:100}));}if(originalRecipe)fs.writeFileSync(recipe.path,originalRecipe);else fs.rmSync(recipe.path,{force:true});}})().catch(error=>{console.error(error);process.exitCode=1;});
