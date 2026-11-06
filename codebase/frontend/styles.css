@@ -2908,13 +2908,6 @@ input[type="range"] {
     visibility: visible;
   }
 
-  .source-rail:hover .rail-title-row,
-  .source-rail:focus-within .rail-title-row,
-  .source-rail.pinned-open .rail-title-row {
-    justify-content: space-between;
-    padding-left: 46px;
-  }
-
   .source-rail:hover .section-kicker,
   .source-rail:focus-within .section-kicker,
   .source-rail.pinned-open .section-kicker {
@@ -2927,11 +2920,6 @@ input[type="range"] {
     min-height: 0;
     padding: 5px 7px;
     writing-mode: initial;
-  }
-
-  .source-rail.pinned-open .rail-title-row {
-    padding-left: 0;
-    padding-right: 52px;
   }
 
   .pipeline-chip {
@@ -5607,14 +5595,6 @@ input[type="range"]::-webkit-slider-thumb {
     visibility: visible;
   }
 
-  .source-rail .rail-title-row,
-  .source-rail:hover .rail-title-row,
-  .source-rail:focus-within .rail-title-row,
-  .source-rail.pinned-open .rail-title-row {
-    justify-content: space-between;
-    padding: 0;
-  }
-
   .source-rail-expand {
     display: none;
   }
@@ -7534,14 +7514,6 @@ input[type="range"]::-webkit-slider-thumb {
 
 .compact-workspace #dock-summary {
   display: none;
-}
-
-/* Retired hover-to-expand rules must not move the Metadata title when an
-   unfocused Windows app receives pointer hover. */
-.source-rail:hover .rail-title-row,
-.source-rail:focus-within .rail-title-row,
-.source-rail.pinned-open .rail-title-row {
-  padding-left: 16px;
 }
 
 .compact-workspace .dock-bar {

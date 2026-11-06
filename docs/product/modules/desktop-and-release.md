@@ -268,3 +268,7 @@ Export headings and embedded/detached Library. Field labels are unchanged.
 
 The menu uses three centred strokes in a fixed 30 px target, avoiding the
 font glyph's off-centre baseline. Menu handlers and drag regions are unchanged.
+
+Removed obsolete narrow-screen hover/focus padding overrides on Metadata
+headers. Normal header padding now applies in every pointer/focus state;
+other titles have no matching hover geometry rule.
