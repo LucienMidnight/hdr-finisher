@@ -111,6 +111,7 @@ async def backend_grant(path, kind="source", priority=10, token=None, cancelled=
             raise
     elif not scheduler.valid(token, str(path), kind):
         raise HTTPException(409, "Library grant expired; request it again.")
+    held = scheduler.hold_decode(token)
     outcome = "finished"
     try:
         yield token
@@ -120,6 +121,8 @@ async def backend_grant(path, kind="source", priority=10, token=None, cancelled=
     finally:
         if own:
             scheduler.finish(token, outcome=outcome)
+        if held:
+            scheduler.release_decode(token)
 
 
 def add_routes(router, marks):

@@ -297,6 +297,8 @@ failed photo; work resumes when enough memory is available.
 Unedited RAWs show their embedded camera picture in the grid, filmstrip, Single, fullscreen and Compare when its long edge is at least 1024 pixels. They develop only for detail beyond that picture, or when you choose **Develop** from the right-click menu. Develop applies to the selection and never changes grades or sidecars. A quiet **Developed** label identifies HDR Finisher pictures, which remain while cached; after eviction, an unedited RAW returns to its camera picture.
 
 Edited photos, photos without usable camera pictures, and mezzanine or HDR files develop only when shown. Plain SDR files are drawn directly. No neighbours or idle photos develop in the background.
+
+Large mezzanine files decode one at a time, with the photo on screen taking priority. If a TIFF contains a small embedded preview, the Library enlarges it while preparing the sharp picture. A TIFF without an embedded preview cannot provide that stand-in.
 The Library now explains these cases:
 
 - “Not supported: JPEG XL source colour is unresolved. Open it in Grade to choose its source interpretation.”

@@ -665,3 +665,40 @@ def test_running_job_keeps_its_unused_reservation_after_first_sample():
     s.finish("first")
     s.update(total=2*GB, available=60*GB, ram=68*GB)
     assert second.granted is not None
+
+def test_heavy_mezzanine_is_serial_across_windows_and_selected_preempts():
+    s = fresh()
+    notices = []
+    first = s.ask("tiff", "window-a", "first.tif", "source", 100_000_000, "eventually", notices.append)
+    assert first.granted is not None
+    selected = s.ask("exr", "window-b", "selected.exr|copy|one", "source", 100_000_000, "now")
+    assert selected.granted is None
+    assert notices[-1]["type"] == "gpu-preempt"
+    # Cancellation does not free the decode place before the safe point.
+    s.change("tiff", "window-a", "eventually")
+    assert selected.granted is None
+    s.finish("tiff", "window-a")
+    assert selected.granted is not None
+    later = s.ask("later", "window-a", "later.tiff", "cpu", 100_000_000, "now")
+    assert later.granted is None
+    # A RAW may use the other development place; saving no longer decodes.
+    raw = s.ask("raw", "window-a", "photo.arw", "source", 100_000_000, "now")
+    assert raw.granted is not None
+    s.gpu_done("exr", "window-b")
+    assert later.granted is not None
+
+def test_cancelled_mezzanine_keeps_its_place_until_backend_stops():
+    for disconnected in (False, True):
+        s = fresh()
+        first = s.ask("old", "window-a", "old.tif", "source", 100_000_000)
+        assert s.hold_decode(first.id)
+        if disconnected:
+            s.disconnect("window-a")
+        else:
+            s.finish(first.id, "window-a", "cancelled")
+        assert not s.valid(first.id, first.path)  # decoder sees cancellation
+        following = s.ask("new", "window-b", "new.tif", "cpu", 100_000_000)
+        assert following.granted is None
+        s.release_decode(first.id)
+        assert following.granted is not None
+        assert first.id not in s.jobs

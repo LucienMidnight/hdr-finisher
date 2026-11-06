@@ -54,12 +54,23 @@ class Job:
     reclaimed: bool = False
     collected: bool = False
     retry_at: float = float("-inf")
+    decode_holds: int = 0
+    finish_pending: str = ""
     outcome: str = ""
     ready: Event = field(default_factory=Event)
 
     @property
     def development(self):
         return self.kind in {"source", "cpu"} and self.cls != "Grade" and not self.saving
+
+    @property
+    def heavy_mezzanine(self):
+        # One decoded mezzanine at a time across all Library windows. The
+        # existing fast-work threshold distinguishes small pictures.
+        return (self.kind in {"source", "cpu", "edge-cpu"} and self.cls != "Grade"
+                and not self.saving and self.estimate > FAST_BYTES
+                and Path(self.path.split("|copy|", 1)[0]).suffix.lower()
+                in {".tif", ".tiff", ".exr", ".pfm", ".hdr"})
 
     @property
     def fast(self):
@@ -182,7 +193,7 @@ class Scheduler:
                         job.gpu_bytes = 0
                         if job.notify: job.notify(dict(type='gpu-preempt',id=job.id))
 
-    def _preempt_development_place(self, cls):
+    def _preempt_development_place(self, cls, mezzanine=False):
         """Give a development place to a photo of a higher priority class.
 
         Decision 18's safe point: the window stops the job and requeues it
@@ -191,7 +202,8 @@ class Scheduler:
         """
         limit = CLASSES[cls]
         candidates = [j for j in self.jobs.values()
-                      if j.granted is not None and ((j.development and CLASSES[j.cls] > limit) or j.kind == "edge-cpu")]
+                      if j.granted is not None and (not mezzanine or j.heavy_mezzanine)
+                      and ((j.development and CLASSES[j.cls] > limit) or j.kind == "edge-cpu")]
         if not candidates:
             return
         job = max(candidates, key=lambda j: (CLASSES[j.cls], j.sequence))
@@ -300,8 +312,24 @@ class Scheduler:
     def valid(self, id, path, kind=None):
         with self.lock:
             job = self.jobs.get(id)
-            return bool(job and job.path == str(path) and job.granted is not None
+            return bool(job and not job.finish_pending and job.path == str(path) and job.granted is not None
                         and (kind is None or job.kind == kind))
+
+    def hold_decode(self, id):
+        with self.lock:
+            job = self.jobs.get(id)
+            if job and not job.finish_pending and job.heavy_mezzanine:
+                job.decode_holds += 1
+                return True
+            return False
+
+    def release_decode(self, id):
+        with self.lock:
+            job = self.jobs.get(id)
+            if job:
+                job.decode_holds = max(0, job.decode_holds - 1)
+                if not job.decode_holds and job.finish_pending:
+                    self.finish(id, outcome=job.finish_pending)
 
     def gpu_done(self, id, owner):
         """Free the development place; keep the memory grant through saving."""
@@ -328,6 +356,9 @@ class Scheduler:
         with self.lock:
             job = self.jobs.get(id)
             if job is None or (owner is not None and job.owner != owner):
+                return
+            if job.decode_holds:
+                job.finish_pending = outcome
                 return
             self.jobs.pop(id)
             if job.granted is not None and not job.fast:
@@ -370,7 +401,11 @@ class Scheduler:
                 self.reclamation["pending"] = [o for o in self.reclamation["pending"] if o != owner]
                 self.reclaimed(self.reclamation["epoch"], owner)
             for id in [j.id for j in self.jobs.values() if j.owner == owner]:
-                job = self.jobs.pop(id)
+                job = self.jobs[id]
+                if job.decode_holds:
+                    job.finish_pending = "cancelled"
+                    continue
+                self.jobs.pop(id)
                 if job.granted is not None and not job.fast:
                     self.drained_at = self.clock()
                 self._log(job, "cancelled")
@@ -524,6 +559,10 @@ class Scheduler:
                     reason = "quick previews first"
                 elif job.development and sum(bool(j.saving) for j in running) >= SAVES:
                     reason = "saving places full"
+                elif job.heavy_mezzanine and any(j.heavy_mezzanine for j in running):
+                    reason = "another mezzanine decode is running"
+                    if any(j.heavy_mezzanine and CLASSES[j.cls] > CLASSES[job.cls] for j in running):
+                        self._preempt_development_place(job.cls, mezzanine=True)
                 elif job.development and sum(j.development for j in running) >= DEVELOPMENTS:
                     reason = "development places full"
                     if CLASSES[job.cls] <= CLASSES["soon"]:

@@ -110,7 +110,7 @@ Built November 5, 2026; reviewed by Claude and committed with Steve's go-ahead.
 
 ## November 3: development on demand (decided; replaces develop-everything)
 
-**Status:** Batch 5d built November 4, 2026: startup drawing-pipeline preparation and four-way fullscreen visibility accepted; busy-grid first sharp drawing now meets the +about 1 s target. Batch 5c fixes retained: explicit detail admission and visible-stand-in safeguards; its busy cold drawing and black-screen follow-ups are completed by 5d. Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 5, 2026; Batch 4c built November 5; Batch 4d partial (native gate and Windows memory/retained-native acceptance built; Mac acceptance open). Build order is in
+**Status:** November 6: virtual-copy visibility fixed; heavy mezzanine decoding is serialized across windows and embedded TIFF stand-ins are built. Batch 5d built November 4, 2026: startup drawing-pipeline preparation and four-way fullscreen visibility accepted; busy-grid first sharp drawing now meets the +about 1 s target. Batch 5c fixes retained: explicit detail admission and visible-stand-in safeguards; its busy cold drawing and black-screen follow-ups are completed by 5d. Batch 5b partially built November 4, 2026: selected-source priority and abandoned-source recovery fixed; cold first drawing and heavy-grade acceptance remain open (see below). Batch 4a built November 3, 2026; Batch 4b follow-up incomplete November 5, 2026; Batch 4c built November 5; Batch 4d partial (native gate and Windows memory/retained-native acceptance built; Mac acceptance open). Build order is in
 "Batches" below. This changes the Library's development architecture; tuning
 of memory and speed waits until it is built.
 
@@ -209,7 +209,7 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Built November 5, 2026; focused fault checks below |
 | 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Selected priority and screen warp completed by 5b. Open: brush-mask CPU time and heavy-grade ordinary first open |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Partial November 5: backend native owners yield to Grade; regression passes. Windows peak and retained-owner app timing passed November 5 (4.005 GB; real 508.7 MB owner released, paired Grade 5.488/5.549 s). Only 8 GB Mac acceptance remains with Steve. |
-| 5b | The on-screen photo takes priority; recover lost reservations and hand over completed thumbnails; parallel screen perspective and mask warps. | Partial November 4, 2026: 32.65 s abandoned TIFF wait removed (2.06 s ordinary open; forced lost reservation 2.80 s). Four-photo SDR/HDR stored pixels identical to 5a. Busy cold fullscreen still 7.0–7.2 s versus idle 1.98–2.23 s; ARW ordinary first open 2.48–2.55 s. See checkpoint below. |
+| 5b | The on-screen photo takes priority; recover lost reservations and hand over completed thumbnails; parallel screen perspective and mask warps. | Partial November 4, 2026: 32.65 s abandoned TIFF wait removed (2.06 s ordinary open; forced lost reservation 2.80 s). Four-photo SDR/HDR stored pixels identical to 5a. November 6 true heavy cold entry 4.18 s remains open; prepared busy drawing already passed in 5d. Historical busy cold fullscreen 7.0–7.2 s versus idle 1.98–2.23 s; ARW ordinary first open 2.48–2.55 s. See checkpoint below. |
 | 5c | Visible TIFF/RAW stand-ins, explicit detail demand, memory admission before decoding and same-photo reopen investigation. | Partial November 4, 2026: Fit/native visibility and refusal retry fixes built. Same-name cache misses were different source paths. Busy prepared drawing and ordinary four-mode visibility completed by 5d. November 5 rapid Fit navigation passes docked SDR; zoomed-arrow and remaining rapid-mode qualification stay open. |
 | 5d | Prepare drawing pipelines after the first grid picture; preserve popped-out SDR stand-ins on reopen. | Built November 4, 2026: prepared busy TIFF 2.12 s and heavy ARW 3.02 s; four docked/popped-out SDR/HDR pixel checks pass. See checkpoint below. |
 
@@ -341,6 +341,52 @@ follow-up stays partial. Evidence:
 `codebase/output/quick-library-check/batches45-rapid/` (crops, scenario, report).
 5d remains built; no pinned shader, pixel tolerance, HDR ceiling, export or
 Proof calculation changed in this task.
+
+### November 6: cold/heavy follow-up (5b remains partial)
+
+True immediate-entry on the preserved heavy-grade 20250412_0039.ARW fixture
+(perspective/crop and a brush mask), fresh plain-Electron profile, default 4 GB,
+2560x1440, no competing test suite: 4.18 s to sharp display. It remains outside
+the existing ordinary-first-open goal; no target was relaxed. The earlier
+5.44 s diagnostic overlapped the fast Python suite and is not acceptance.
+The neutral library-live-grid fixture cannot qualify a heavy grade.
+
+Removing a redundant RAW header query did not materially change the whole
+wait within the proposed 5% variation tolerance, so that exploratory code was
+removed. The existing mask/warp work is shared with the image pipeline and
+was not rewritten. Cold/heavy acceptance stays Open work. The prepared busy
++about-1-second result already accepted in 5d remains accepted; no rebuild or
+repeat of its pixel checks was needed. Evidence:
+`codebase/output/quick-library-check/v1-heavy-{cold-final,header-after}/`.
+
+### November 6: remaining mezzanine work built
+
+The shared backend scheduler now admits one heavy TIFF/EXR/PFM/HDR decode
+at a time across Library windows, using the existing fast-work boundary to
+identify small work. A higher-priority on-screen mezzanine preempts lower-class
+work at its existing safe point; cancellation holds the place until the old
+decode has really stopped. RAW work can still use the other existing place.
+No development count, memory allowance or cache size changed.
+
+TIFF grid/filmstrip and Single quick pictures now request only the small embedded
+JPEG through the existing embedded-only thumbnail helper. It cannot decode the
+TIFF source as a fallback. A late preview cannot cover finished pixels; selection
+cancels the request and bitmap resources are released. TIFFs without an embedded
+preview retain their existing path (the reused real TIFF fixtures have none).
+
+49 scheduler checks pass, including cross-window serialization, safe-point
+cancellation/disconnection, priority and continued RAW work. Backend requests
+hold cancelled decode places until their actual work finishes. The grouped
+scheduler, grant and hand-off checks total 65 passes. Plain-Electron synthetic 3000x2000
+float TIFF with a 64x32 embedded JPEG: stand-in visible at the 122 ms sample,
+nonblack until sharp replacement at 2.768 s. Evidence:
+`codebase/output/quick-library-check/v1-mezzanine-standin/`. The reusable synthetic
+files live once in `codebase/output/test-photos/mezzanine-standin/`.
+The standard 90-second Library check also exercised four mezzanine preparations
+with no overlap or unfinished work. Final grouped fast checks are recorded below.
+This completes the November 4
+mezzanine decision's two remaining implementation items; real TIFFs without an
+embedded preview cannot show an embedded stand-in.
 
 ### November 6: Grade hand-off wait reduced (4b, still partial)
 
@@ -3577,7 +3623,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | **Manual built previews work per photo** (any selection, also offered on folders), protected until discarded. Native 100% previews wait until everything else is fast. Design open; see Prepared-folder fullscreen culling. | Steve, 2026-10-25 |
 | **Development on demand (supersedes develop-everything browsing).** Unedited RAWs show the camera picture everywhere; HDR Finisher develops only edited photos, right-click Develop, photos without a usable camera picture, true-detail zoom and on-screen HDR non-RAW files. No background or ahead development. RAW and mezzanine files only by default; Show all files in the right-click menu replaces the RAW button. Grade hands its picture to the Library. See "November 3: development on demand". | Steve, 2026-11-03 |
 | **Unedited photos show in SDR; edited photos show in HDR.** As in other photo apps, an unedited photo is presented in SDR by default; a photo with an HDR Finisher grade is shown in HDR. The HDR grid comfort cap is therefore not needed for v1 and moves to v2, as an optional advanced setting if built. | Steve, 2026-11-06 |
-| **Large TIFFs and other mezzanine files (November 4).** Nothing builds or saves their previews in the background: a folder of exported TIFFs behaves like RAWs, and the user develops them on demand (right-click Develop or Build previews), which adds them to the same cache as developed RAWs. Required: a TIFF decode stops promptly once its photo is no longer wanted; compressed strip TIFFs read and reduce strip by strip on all cores; the photo on screen keeps priority over any photo it replaced, with at most one heavy mezzanine decode at a time; and a TIFF's small embedded preview, enlarged, stands in instead of a black screen while its picture is prepared. Prompted by a CR2 waiting about 14 s behind two skipped 48 MP float TIFFs that kept decoding. Built November 4: stopping (within about 0.1 s, on the plain, compressed-strip and libvips routes, from the cancelled window grant) and compressed strip reading (48 MP float TIFF 1.53 to 0.72-0.86 s). Open: one heavy mezzanine decode at a time with on-screen priority, and the embedded-preview stand-in. | Steve, 2026-11-04 |
+| **Large TIFFs and other mezzanine files (November 4).** Nothing builds or saves their previews in the background: a folder of exported TIFFs behaves like RAWs, and the user develops them on demand (right-click Develop or Build previews), which adds them to the same cache as developed RAWs. Required: a TIFF decode stops promptly once its photo is no longer wanted; compressed strip TIFFs read and reduce strip by strip on all cores; the photo on screen keeps priority over any photo it replaced, with at most one heavy mezzanine decode at a time; and a TIFF's small embedded preview, enlarged, stands in instead of a black screen while its picture is prepared. Prompted by a CR2 waiting about 14 s behind two skipped 48 MP float TIFFs that kept decoding. Built November 4: stopping (within about 0.1 s, on the plain, compressed-strip and libvips routes, from the cancelled window grant) and compressed strip reading (48 MP float TIFF 1.53 to 0.72-0.86 s). Built November 6: shared one-heavy-mezzanine admission with on-screen class priority and embedded-only TIFF stand-ins (real-app synthetic preview acceptance recorded above). | Steve, 2026-11-04 |
 
 **V2 scope decision (Steve, October 21, 2026):** Library Looks (slice 7),
 linked photos (slice 7b) and portable projects (slice 10) are deferred to
@@ -3991,6 +4037,16 @@ working resources. Compare Fit also uses stored scenes. The existing
 Native timing and the Fit/100% perceptual comparison with scale-dependent
 effects remain open. Compare's detail view still uses the legacy native
 crop route; its move to live native scenes remains open with that cleanup.
+
+### November 6: SDR/HDR source audit (no display change)
+
+Unedited RAW camera pictures and ordinary SDR files use SDR bitmap surfaces.
+Unedited RAWs without usable camera pictures, gain-map JPEGs, HDR AVIF/HEIF,
+HDR JPEG XL, high-precision TIFF and EXR/PFM/Radiance sources do not consistently follow the
+November 6 SDR rule: original_preview refuses those HDR sources, development
+continues and finishing uses the Library HDR switch rather than edited state.
+The mismatch is reported for Steve's approval; no display policy was changed.
+The HDR comfort cap stays v2.
 
 ## 5. V1 open work, in order
 

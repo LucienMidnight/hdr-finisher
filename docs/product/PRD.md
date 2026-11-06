@@ -212,10 +212,13 @@ bug hunt:
 - Steve's by-eye reviews (RAW exposure sheet, film grain/Looks/lens filter,
   HSL, exposure-warning wording, Black & White sliders) and the Match fault
   (waiting on Steve's recorded photo and message).
-- Library loose ends (November 6): very slow virtual-copy creation (Steve,
-  November 2), and the partly finished Library batches 4b, 4d and 5b (cold
-  first drawing, heavy-grade acceptance, Windows peak memory and
-  retained-owner timing). The 8 GB Mac acceptance is Steve's to run.
+- Library loose ends (November 6): virtual-copy visibility and the remaining
+  mezzanine decode/stand-in work are fixed. Windows 4d memory/retained-owner
+  acceptance was already completed November 5. Batch 5b true cold/heavy-grade
+  acceptance and 4b hand-off speed remain partial; the long idle scope wait
+  is removed but some modes still miss 500 ms. The 8 GB Mac acceptance is
+  Steve's to run. Unedited HDR-source SDR behavior needs Steve's decision;
+  the source audit found a mismatch and did not change what is shown.
 
 **Status, November 6, 2026.** Every v1 feature except Retouch is built.
 What remains: Retouch, the Match fault, the Library loose ends above and

@@ -1250,3 +1250,27 @@ camera preview; it does not qualify heavy grades or GPU cold drawing.
 Evidence: `codebase/output/quick-library-check/v1-handoff-{diagnostic,wait,after}/`
 and `v1-heavy-{cold,real}/`. One intermediate app run failed because of an
 editing error; the file was restored and syntax checked before the final run.
+
+### November 6: embedded TIFF stand-in and four-mode hand-off follow-up
+
+Parent 1d92c83 plus shared mezzanine admission/embedded-preview work. Plain
+Electron 2560x1440, default 4 GB, isolated profiles. Reusable synthetic float TIFF
+3000x2000 with 64x32 embedded JPEG: first captured stand-in sample 122 ms,
+nonblack through sharp replacement at 2.768 s. This is preview visibility, not a
+new sharp speed target. Evidence: `quick-library-check/v1-mezzanine-standin/`.
+
+Final hand-off modes using hdr-test copies: docked SDR 347-385 ms (passes 500 ms),
+popped-out HDR 716 ms and SDR 827 ms (still fail). Grid, filmstrip and separate
+stored-screen crop-change checks pass in all modes. No output tolerance changed.
+Evidence: `quick-library-check/v1-handoff-{dock-sdr,pop-hdr,pop-sdr}/`.
+
+### November 6: true heavy-grade immediate entry
+
+Parent 1d92c83 plus mezzanine fixes, fresh plain Electron at 2560x1440/default
+4 GB, preserved batch5-edited/20250412_0039.ARW with perspective/crop/brush,
+no competing suite: 4.18-4.21 s selection to sharp. The 5% timing-variation
+proposal is unchanged; the ordinary-first-open goal is still unmet. A redundant
+header-query experiment stayed within that variation and was removed; no speed
+gain is claimed. The old 5d prepared-busy result remains accepted, but does not
+qualify true immediate entry. Evidence: `quick-library-check/v1-heavy-cold-final/`
+and `v1-heavy-header-after/`.

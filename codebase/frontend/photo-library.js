@@ -247,6 +247,14 @@
     if (signal.aborted || (importance() === 0 && selected()?.path !== photo.path))
       throw new DOMException("Passed during navigation","AbortError");
   }
+  async function embeddedStandIn(photo, signal) {
+    const path=photo.source_path || photo.path.split("|copy|",1)[0];
+    if(!/\.tiff?$/i.test(path))return null;
+    // This endpoint extracts embedded JPEGs only; it never decodes TIFF pixels.
+    const response=await fetch("/api/media-browser/thumbnail?"+new URLSearchParams({path,size:512,embedded_only:true}),{signal});
+    if(response.status!==200)return null;
+    return response.blob();
+  }
   function pictureWindow(edge) {
     return HDRLibraryReadyWindow.create({key:readyKey, dispose:releaseReady,manageBytes:false,memoryKey:"ready-"+edge,
       promote:(photo,priority)=>HDRLibraryScenes.promote(photo.path,priority),
@@ -277,6 +285,24 @@
         const meta = await HDRLibraryScenes.load(photo.path,edge,signal,importance(),trace,
           {viewportDemand:true,cachedOnly:edge===640 && !options.allowSource,beforeSource:()=>beforeSource(photo,signal,importance),
             onSourceDemand:()=>{}});
+        if (!meta && edge===640) {
+          let blob;
+          try {blob=await embeddedStandIn(photo,signal);} catch(error){if(aborted(error))throw error;}
+          if(blob){
+            const image=await createImageBitmap(blob);
+            try {
+              if(!current())throw new DOMException("Cancelled","AbortError");
+              const canvas=document.createElement("canvas");canvas.className=$("single-picture").className;
+              canvas.width=image.width;canvas.height=image.height;canvas.getContext("2d").drawImage(image,0,0);
+              canvas.style.dynamicRangeLimit="standard";
+              const preview={path:photo.path,edge,bitmap:true,route:"embedded-preview-stand-in",key:"embedded:"+pictureIdentity(photo),width:image.width,height:image.height};
+              canvas.dataset.picturePath=photo.path;canvas.dataset.pictureKey=preview.key;
+              const value={canvas,meta:preview,bytes:image.width*image.height*4};
+              readySurfaces.set(canvas,value);readyBytes+=value.bytes;
+              return value;
+            } finally {image.close();}
+          }
+        }
         if (!meta) return null;
         if (meta.bitmap) {
           const canvas=document.createElement("canvas");canvas.className=$("single-picture").className;
@@ -634,6 +660,17 @@
           if(current()&&!aborted(error))status(error.message);
         });
         if (!pictureErrors.canPrepare(photo.path) && photo.edited) return;
+        // An embedded TIFF picture covers the source wait without another
+        // decoded-photo allocation. A late answer cannot cover finished pixels.
+        void embeddedStandIn(photo,cell.controller.signal).then(async blob=>{
+          if(!blob||!current()||cell.meta)return;
+          const url=URL.createObjectURL(blob);
+          try {
+            canvas.src=url;await canvas.decode();
+            if(!current()||cell.meta)return;
+            canvas.hidden=false;canvas.style.dynamicRangeLimit="standard";
+          } finally {URL.revokeObjectURL(url);}
+        }).catch(()=>{});
         let cpuShown = false;
         while (current()) {
           try {
@@ -1960,7 +1997,7 @@
         HDRLibraryStopwatch("grade_picture_handoff",{path:packet.path,request:packet.id,grade_identity:packet.grade_identity,
           route:packet.stage==="picture"?"Grade picture":"finishing redraw",reason:packet.reason,
           available_to_picture_ms:entry.shown_at-packet.available_at,release_to_picture_ms:entry.shown_at-packet.settled_at,
-          source_ms:packet.stage==="picture"?{capture:packet.captured_at-packet.capture_started_at,store:packet.stored_at-packet.captured_at}:undefined,
+          source_ms:packet.stage==="picture"?{...packet.capture_timings,capture:packet.captured_at-packet.capture_started_at,store:packet.stored_at-packet.captured_at}:undefined,
           active:state.active,view:logView()});
       }
       if(state.active){paintGrid();paintFilm();if(state.view==="single"&&selected()?.path===photo.path){state.singleIdentity="";void showSingle();}}

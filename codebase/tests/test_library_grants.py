@@ -74,3 +74,24 @@ def test_changed_source_response_is_not_logged_as_a_request_failure(monkeypatch)
         response=client.post("/changed")
     assert response.status_code==409 and response.json()["changed"]
     assert events==["request_changed"]
+
+def test_backend_request_holds_cancelled_mezzanine_until_exit(monkeypatch):
+    import asyncio
+    import pytest
+    s = Scheduler()
+    s.update(available=20_000_000_000, ram=32_000_000_000)
+    monkeypatch.setattr(library_grants, "scheduler", s)
+
+    async def run():
+        first = s.ask("first", "window", "first.tif", "source", 100_000_000)
+        with pytest.raises(ValueError, match="decode stopped"):
+            async with library_grants.backend_grant("first.tif", token=first.id):
+                following = s.ask("following", "other-window", "following.tif", "cpu", 100_000_000)
+                s.finish(first.id, "window", "cancelled")
+                assert not s.valid(first.id, first.path)
+                assert following.granted is None
+                raise ValueError("decode stopped")
+        assert following.granted is not None
+        assert first.id not in s.jobs
+
+    asyncio.run(run())

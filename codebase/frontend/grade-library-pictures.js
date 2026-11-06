@@ -87,10 +87,6 @@
       // Reuse the settled whole-frame Grade scope picture for tiled Fit.
       // If it is not ready, Grade produces that same bounded clean picture
       // after its visible frame. Never change or resize the viewer canvas.
-      const scopeReady=()=>{
-        const source=gpu.scopeAnalysisCanvas&&gpu.scopeSources.get(gpu.scopeAnalysisCanvas);
-        return source?.sessionId===frame.sessionId&&source.lane===frame.lane&&source.applicationGeneration===frame.generation;
-      };
       // A pending scope request can be waiting for backend analysis, not drawing.
       // Actual proxy renders are serialized by renderScopeProxy.
       while(current()&&(state.gpuDraftInFlight||gpu.activeRenderCount>0||gpu.scopeProxyFlight))await new Promise(r=>setTimeout(r,16));
