@@ -350,12 +350,13 @@ html.desktop-shell .window-controls { margin-left: 0; }
 /* Reserve enough room for Reset plus its changed dot in Color wheels. */
 :root .color-grading-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 68px 26px; }
 
-/* The colour ring alone is filled. The polar grid has a transparent centre. */
+/* The colour ring alone is filled. The polar grid has a transparent centre.
+   The ring starts at 300deg so each colour sits where color-wheels.js puts that hue. */
 :root .color-wheel-pad { background: transparent; box-shadow: none; }
 :root .color-wheel-pad::before { display: none; }
 :root .color-wheel-pad::after {
  content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
- background: conic-gradient(from 90deg, #ee6f72, #e9c968, #80d582, #68d1c8, #748fe4, #cf7bd7, #ee6f72);
+ background: conic-gradient(from 300deg, #ee6f72, #e9c968, #80d582, #68d1c8, #748fe4, #cf7bd7, #ee6f72);
  mask: radial-gradient(circle closest-side, transparent calc(88% - .5px), black 88%);
 }
 .color-wheel-grid { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--muted); stroke-opacity: .55; pointer-events: none; }
