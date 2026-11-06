@@ -503,3 +503,9 @@ three themes at 2560 and 1100 px, checks badge geometry, title font, containment
 click/keyboard/ARIA navigation and simulated macOS inset spacing. Registered
 as a UI diagnostic through `tests/run-in-electron.js`; crops are in
 `output/review/ui-polish/round-5/`.
+
+`tools/ui-polish-round6b-review.cjs` captures toolbar fit in three themes at
+1100/1200/1201/1300/1500 px with supported panels open/closed. It checks
+control containment and overlap, includes an icon tooltip crop, and cleans up
+its disposable Electron profile (reporting OS/policy blocks). Registered as a UI diagnostic; run through
+`tests/run-in-electron.js`. Output overwrites `output/review/ui-polish/round-6/`.

@@ -417,3 +417,20 @@ Application menus (November 6, round 6): the menu button opens a vertical list, 
 View sliders (zoom and thumbnail size) retain neutral fill at every value; the enabled-control accent rule applies to grading controls.
 
 Library sidebar: section titles use bold 17 px title text. Add buttons have 28 px targets and a 24 px plus, shown on panel hover or keyboard focus. All reorder handles share a 24 x 28 px target and 18 px muted grip. Smart-album rows need no repeated decorative marker; editing remains in their context menu.
+
+## November 6: toolbars fit their available space (round 6b)
+
+The minimum window width remains 1100 px. Library, viewer and Export batch
+headers stay on one row. Named inline-size containers use the actual centre
+panel width, so opening a sidebar changes compaction without resizing the
+window. Compact whole secondary groups first: Library Compare/Focus/Exposure,
+viewer Overlays/Frame/Background, and Export Add Library selection. Tighter
+spacing and a shorter Preview title follow only in smaller containers.
+Keep Fit, 100%, HDR, Sort and Filter readable; keep every action available.
+Workflow connectors retain their existing minimum visible length.
+
+Icon-only actions use distinct Tabler outline assets (24 x 24, 2 px stroke,
+currentColor), with upstream commits recorded in the bundled icon README.
+Do not reuse visibility/bypass, mask or other established symbols for a
+different action. Full-label tooltips appear on hover and keyboard focus;
+existing authored explanatory strings retain their registry wording.

@@ -375,3 +375,44 @@ Section 3: preview zoom and Library thumbnail-size fills stay neutral at all val
 Section 4: compact spacing and view controls retain one row at the existing 1100 px minimum. Workflow connectors retain an 8 px line at narrow widths. Validation grouped at the end of round 6.
 
 Section 6 (added by Steve): Export batch view/actions centre in the header space after the left-hand title and summary, using compact spacing at minimum width. Validation grouped at the end of round 6.
+
+## November 6: UI polish round 6b toolbar fit
+
+Built: toolbar compaction now follows available centre-panel space through
+CSS container queries. Secondary labels switch as groups; narrower viewers
+also tighten spacing and shorten the title to Preview. The minimum remains
+1100 px and workflow connectors retain their minimum visible line. Library
+Grid/Single, Grade, Proof and Export Grid/Single keep every control on one
+row. Seven distinct pinned Tabler outline icons replace the draft's reused
+symbols; full-label hover/focus tooltips preserve existing authored copy.
+
+Round 6's menu, neutral view sliders, sidebar changes and centred Export
+header remain. The smart-album diamond was decorative and is removed;
+rule editing remains in the context menu. No image processing, delivery or
+saved-format behavior changes. Steve's visual sign-off remains open.
+
+Review: `codebase/output/review/ui-polish/round-6/index.html` includes small
+three-theme crops at 1100, 1200, 1201, 1300 and 1500 px, with Library panels
+open/closed and the main workspace's supported source/scopes states, plus a
+hovered icon tooltip. Compact metadata retains its existing temporary overlay;
+the Control Panel remains docked. Review folders can be deleted after sign-off.
+Validation: 816 JavaScript checks pass. Python: 3,077 pass, three skip,
+one previously recorded unrelated failure in
+`test_remembered_failure_does_not_hide_current_grade_cached_scene`
+(expected 422, received 200). Not investigated or rerun. Electron's final
+matrix passes containment and non-overlap for all tested widths, themes and
+panel states, with no page errors. Narrow Library/Grade, light Export and
+wide Library crops plus the hovered icon tooltip were visually inspected.
+No GPU pixel check covers this stylesheet-only fit change; the brief asks
+for fast checks and UI review only. No release check, installer or push.
+
+Scratch output starts and ends at 29.4 GB, below 100 GB. Keep the review page
+and its linked crops/check record, plus `codebase/output/round6b-node.log`,
+`round6b-python.log` and `round6b-review.log` for the results above.
+Automatic approval review rejected deletion with "blocked by policy".
+Owned disposable leftovers: `codebase/output/round6b-*.py`,
+`codebase/output/round6b-tooltip.log`, Windows TEMP `pytest-of-Steve/pytest-1297`,
+and `hdr-finisher-electron-test-` profiles UdyXEU, lbyl9h, gYG3RR, bGgCNl,
+LZXqy0, sUc0Fn and YEOB4l. A tooltip-only cleanup trial hit EPERM after the
+capture passed; the driver now reports cleanup blocks without changing the
+UI check result. These leftovers are safe for manual deletion.

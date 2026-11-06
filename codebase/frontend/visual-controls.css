@@ -409,11 +409,6 @@ html.desktop-shell .window-controls { margin-left: 0; }
 
 :root #export-resize-mode { padding-right: 24px; background-position: right 6px center; }
 
-@media (max-width: 1200px) {
- :root .library-toolbar { height: auto; max-height: none; grid-template-rows: var(--panel-header-h) auto; }
- :root .library-toolbar .library-tools { flex-wrap: wrap; }
-}
-
 /* Round 6: vertical application menu, matching Control Panel module names. */
 html.desktop-shell .window-menu-bar { flex-direction: column; min-width: 150px; }
 html.desktop-shell .window-menu-trigger { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
@@ -429,22 +424,10 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 /* Zoom and thumbnail size are neutral view controls, even away from home. */
 :root :is(.zoom-control, .library-size) .range-shell .slider-fill { background: var(--fill-neutral); box-shadow: none; }
 
-/* Round 6: compact single-row toolbars at the existing 1100 px minimum. */
+/* Workflow connectors keep their minimum visible length. */
 @media (max-width: 1200px) {
  :root .workflow-tabs { gap: 12px; }
  :root .workflow-tab:not(:last-child)::after { width: 8px; }
- :root .library-toolbar { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-rows: var(--panel-header-h); gap: 4px; padding-inline: 6px; height: var(--panel-header-h); }
- :root .library-toolbar .library-tools { grid-column: 2; grid-row: 1; flex-wrap: nowrap; padding: 0; gap: 2px; }
- :root .library-toolbar .library-bar-right { grid-column: 3; grid-row: 1; gap: 2px; }
- :root .library-tools .library-divider { flex-basis: 4px; width: 4px; }
- :root .library-tools #hdr-button { margin-left: 2px; }
- :root .library-size { gap: 2px; }
- :root .library-size .range-shell { width: 48px; }
- :root .library-toolbar .tool-button { padding-inline: 4px; font-size: 12px; }
- :root .library-toolbar .library-icon-button { width: 24px; min-width: 24px; padding: 0; }
- :root .library-size svg { width: 12px; }
- :root .compact-workspace .viewer-bar { flex-wrap: nowrap; height: var(--panel-header-h); }
- :root .compact-workspace .viewer-tools { flex: none; flex-wrap: nowrap; padding-block: 0; }
 }
 
 /* One fixed-size grip for pinned folders and every sidebar section. */
@@ -458,8 +441,74 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 /* Centre Export's controls in the space after its left-hand title. */
 :root .batch-header { display: grid; grid-template-columns: max-content minmax(0, 1fr); flex-wrap: nowrap; }
 :root .batch-header > .batch-tools { justify-self: center; flex-wrap: nowrap; }
-@media (max-width: 1200px) {
+/* Round 6b: each toolbar responds to its own available width. */
+:root .library-centre { container: library-toolbar / inline-size; }
+:root .viewer-panel { container: viewer-toolbar / inline-size; }
+:root #batch-grid-panel { container: batch-toolbar / inline-size; }
+:root .library-toolbar { grid-template-columns: minmax(60px, 1fr) auto auto; grid-template-rows: var(--panel-header-h); height: var(--panel-header-h); }
+:root .library-toolbar .library-tools { grid-column: 2; grid-row: 1; flex-wrap: nowrap; padding-block: 0; }
+:root .library-toolbar .library-bar-right { grid-column: 3; grid-row: 1; }
+:root .viewer-bar, :root .compact-workspace .viewer-bar { display: grid; flex-wrap: nowrap; height: var(--panel-header-h); max-height: var(--panel-header-h); }
+:root .viewer-tools, :root .compact-workspace .viewer-tools { flex: none; flex-wrap: nowrap; padding-block: 0; }
+:root .batch-header .tool-button, :root .batch-heading { white-space: nowrap; }
+:root .batch-heading { flex-wrap: nowrap; }
+:root #compare-button { --view-control-icon: url('assets/icons/tabler/layout-columns.svg'); }
+:root #focus-button { --view-control-icon: url('assets/icons/tabler/focus-2.svg'); }
+:root #exposure-button { --view-control-icon: url('assets/icons/tabler/exposure.svg'); }
+:root #overlay-toggle { --view-control-icon: url('assets/icons/tabler/stack-2.svg'); }
+:root #photo-frame-toggle { --view-control-icon: url('assets/icons/tabler/frame.svg'); }
+:root #frame-toggle { --view-control-icon: url('assets/icons/tabler/background.svg'); }
+:root .batch-add-selection { --view-control-icon: url('assets/icons/tabler/photo-plus.svg'); }
+@container library-toolbar (max-width: 1050px) {
+ :root .library-tools :is(#compare-button, #focus-button, #exposure-button) { display: grid; place-items: center; width: 28px; min-width: 28px; padding: 0; font-size: 0; }
+ :root .library-tools :is(#compare-button, #focus-button, #exposure-button)::before { content: ""; width: 18px; height: 18px; background: currentColor; mask: var(--view-control-icon) center/contain no-repeat; }
+}
+@container library-toolbar (max-width: 850px) {
+ :root .library-toolbar { gap: 4px; padding-inline: 6px; }
+ :root .library-toolbar .library-tools, :root .library-bar-right { gap: 2px; }
+ :root .library-tools .library-divider { flex-basis: 4px; width: 4px; }
+ :root .library-tools #hdr-button { margin-left: 2px; }
+ :root .library-size { gap: 2px; }
+ :root .library-size .range-shell { width: 48px; }
+ :root .library-toolbar .tool-button { padding-inline: 4px; }
+ :root .library-toolbar .library-icon-button { width: 26px; min-width: 26px; padding: 0; }
+ :root .library-size svg { width: 12px; }
+}
+@container viewer-toolbar (max-width: 1050px) {
+ :root .viewer-view-group > .viewer-menu-toggle { display: grid; place-items: center; width: 28px; min-width: 28px; padding: 0; font-size: 0; }
+ :root .viewer-view-group > .viewer-menu-toggle::before { content: ""; width: 18px; height: 18px; background: currentColor; mask: var(--view-control-icon) center/contain no-repeat; }
+}
+@container viewer-toolbar (max-width: 750px) {
+ :root .viewer-bar { gap: 4px; padding-inline: 6px; }
+ :root .viewer-tools { gap: 2px; }
+ :root .viewer-tools .tool-button { padding-inline: 4px; }
+ :root .comparison-modes > button, :root .viewer-tools .scope-region-toggle { width: 24px; min-width: 24px; flex-basis: 24px; padding: 0; }
+ :root .zoom-control .range-shell { width: 40px; min-width: 40px; flex: 0 0 40px; }
+ :root .zoom-control > .zoom-step { width: 22px; min-width: 22px; flex-basis: 22px; }
+ :root .zoom-control > .zoom-value { --zoom-value-width: 44px; padding-inline: 2px; }
+ :root .viewer-tool-divider { padding-inline: 0; font-size: 0; width: 4px; }
+ :root #preview-window-title { font-size: 0; }
+ :root #preview-window-title::after { content: "Preview"; font: 500 14px var(--font-title); }
+}
+@container batch-toolbar (max-width: 900px) {
  :root .batch-header { gap: 6px; padding-inline: 8px; }
  :root .batch-header > .batch-tools { gap: 2px; }
- :root .batch-header .tool-button { padding-inline: 4px; font-size: 12px; }
+ :root .batch-header .tool-button { padding-inline: 6px; }
+ :root .batch-header .batch-add-selection { display: grid; place-items: center; width: 30px; min-width: 30px; padding: 0; font-size: 0; }
+ :root .batch-header .batch-add-selection::before { content: ""; width: 18px; height: 18px; background: currentColor; mask: var(--view-control-icon) center/contain no-repeat; }
 }
+
+@container viewer-toolbar (max-width: 600px) {
+ :root .comparison-modes > button { width: 22px; min-width: 22px; flex-basis: 22px; }
+ :root .viewer-tools { gap: 1px; }
+}
+/* Authored title text is also visible in captures and on keyboard focus. */
+:root :is(.library-tools, .viewer-view-group, .batch-header) button[title] { position: relative; }
+:root :is(.library-tools, .viewer-view-group, .batch-header) button[title]:is(:hover, :focus-visible)::after {
+ content: attr(title); position: absolute; z-index: 1000; top: calc(100% + 7px); right: 0;
+ width: max-content; max-width: 280px; white-space: normal; pointer-events: none;
+ padding: 6px 9px; border: 1px solid var(--plate-edge); border-radius: var(--radius-plate);
+ background: var(--panel); color: var(--text); font: 400 13px/1.3 var(--font-body); box-shadow: var(--plate-lift);
+}
+
+:root .library-tools #exposure-button[title]:is(:hover, :focus-visible)::after { content: "Exposure: " attr(title); }
