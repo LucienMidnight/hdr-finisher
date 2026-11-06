@@ -12,6 +12,7 @@ const child = path.join(folder, 'folder-080');
 const fixture = path.join(root, 'tests', 'fixtures', 'sdr_gradient.png');
 for (let i = 0; i < 120; i++) fs.copyFileSync(fixture, path.join(folder, `photo-${String(i).padStart(3, '0')}.png`));
 const profile = fs.mkdtempSync(path.join(output, 'profile-'));
+let gone = '';
 const env = { ...process.env, HDR_FINISHER_USER_DATA_DIR: profile };
 delete env.ELECTRON_RUN_AS_NODE;
 async function eventually(check) {
@@ -119,6 +120,31 @@ async function eventually(check) {
     await library.locator('dialog.library-ask[open] button.button-primary').click();
     await library.waitForFunction(() => !document.querySelector('#folders .library-folder-row'));
     console.log('PASS: confirmed Unpin leaves the folder tree empty.');
+    // A pinned folder that is open and then deleted on disk unpins quickly
+    // and is not read again.
+    gone = fs.mkdtempSync(path.join(output, 'gone-'));
+    // Padded past the Library's 1 KB minimum photo size.
+    for (let i = 0; i < 3; i++) fs.writeFileSync(path.join(gone, `gone-${i}.png`), Buffer.concat([fs.readFileSync(fixture), Buffer.alloc(2048)]));
+    // Older than the Library's two-second settle wait for files being copied.
+    for (let i = 0; i < 3; i++) fs.utimesSync(path.join(gone, `gone-${i}.png`), new Date(Date.now() - 60000), new Date(Date.now() - 60000));
+    await library.evaluate(async folder => {
+      await fetch('/api/library/pins', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paths: [folder] }) });
+      await HDRLibrary.browse(folder);
+    }, gone);
+    await library.waitForFunction(() => /of 3 photos/.test(document.querySelector('#library-status').textContent), null, { timeout: 60000 });
+    fs.rmSync(gone, { recursive: true, force: true });
+    await library.locator('#folders .folder-name').filter({ hasText: path.basename(gone) }).click({ button: 'right' });
+    await library.getByRole('menuitem', { name: 'Unpin folder', exact: true }).click();
+    await library.locator('dialog.library-ask[open] button.button-primary').click();
+    const unpinned = Date.now();
+    await library.waitForFunction(() => !document.querySelector('#folders .library-folder-row'), null, { timeout: 2000 });
+    await library.waitForFunction(() => /unpinned/i.test(document.querySelector('#library-status').textContent), null, { timeout: 10000 });
+    const cleared = await library.evaluate(() => ({ title: document.querySelector('#place-title').textContent, status: document.querySelector('#library-status').textContent, path: HDRLibrary.getSnapshot().path }));
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    const later = await library.evaluate(() => document.querySelector('#library-status').textContent);
+    assert.equal(cleared.title, 'Library'); assert.equal(cleared.path, '');
+    assert.doesNotMatch(later, /could not|cannot/i);
+    console.log(`PASS: deleted open folder unpinned in ${Date.now() - unpinned} ms with no read error.`);
     assert.ok(fs.existsSync(child));
     await library.evaluate(async folder => {
       await fetch('/api/library/pins', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paths: [folder] }) });
@@ -160,5 +186,8 @@ async function eventually(check) {
     assert.equal(fs.readdirSync(folder).some(name => name.endsWith('.hdrf')), false);
     assert.deepEqual(errors, []);
     console.log('PASS: picker scroll restored; modal pin, nav unpin, Escape; separate window preserves state, pauses docked page, docks via button/native close, persists bounds; source files untouched.');
-  } finally { await app.close(); }
+  } finally {
+    await app.close();
+    for (const made of [folder, profile, gone]) if (made) try { fs.rmSync(made, { recursive: true, force: true, maxRetries: 5 }); } catch (error) { console.warn('Could not remove', made, error.message); }
+  }
 })().catch(error => { console.error(error); process.exitCode = 1; });

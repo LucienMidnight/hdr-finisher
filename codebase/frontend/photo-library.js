@@ -1738,10 +1738,23 @@
         const message = `${impact.leaving.toLocaleString()} photos leave the library. ${impact.kept ? `${impact.kept.toLocaleString()} stay because they are in albums. ` : ""}Nothing is deleted from disk.`;
         if (!await HDRLibraryDialogs.ask({ title: `Stop showing ${pinned.name}?`, message, confirm: "Unpin folder" })) return;
       }
-      await api(pinned ? "/api/library/pins/remove" : "/api/library/pins", pinned ? { path: pinned.path } : { paths: [path] });
-      await refreshPins();
+      // An unpinned folder is never read again: drop its row and leave its
+      // view now, before the server forgets it (it may be gone from disk).
+      const plain = value => key(value).replaceAll("\\", "/").replace(/\/$/, "");
+      const inside = value => !!value && (plain(value) + "/").startsWith(plain(pinned.path) + "/");
+      const leaving = pinned && !state.collection && inside(state.path);
+      if (pinned) {
+        state.pins = state.pins.filter(pin => pin !== pinned); state.folderSelection.delete(pinned.path);
+        if (inside(state.lastFolder)) state.lastFolder = "";
+        $("folders").replaceChildren(...state.pins.map(pin => folderRow(pin)));
+        if (leaving) { state.scan?.abort(); state.single?.abort(); state.native?.abort(); clearPrefetch(); clearCells(state.cells); clearCells(state.filmCells); state.folderOpen = null; state.path = ""; state.photos = []; state.allPhotos = []; state.index = -1; state.selection.clear(); state.reading = false; state.scanError = ""; $("place-title").textContent = "Library"; $("place-title").title = ""; paintGrid(); }
+      }
+      try {
+        await api(pinned ? "/api/library/pins/remove" : "/api/library/pins", pinned ? { path: pinned.path } : { paths: [path] });
+      } finally { await refreshPins(); }
       updateDetails(); void albums.refresh().catch(error => status(error.message)); void tagWindow.refresh().catch(error => status(error.message));
-      if (state.collection || state.path) void reopen();
+      const back = leaving && state.pins.find(pin => pin.available)?.path;
+      if (back) void browse(back); else if (state.collection || state.path) void reopen();
       status(pinned ? "Folder unpinned. Photos stay where they are." : "Folder pinned.");
     }}] : [{ label: "Add folder…", run: openPicker }];
     if (path && !state.picker) {

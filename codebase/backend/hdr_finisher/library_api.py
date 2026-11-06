@@ -1264,10 +1264,15 @@ def create_library_router(worker, browser, store=None):
     def remove_pin(command: FolderRequest):
         # Missing/offline folders must still be removable from preferences.
         try:
+            membership = index.membership
             with marks._lock:
-                impact = index.membership.impact(folder=command.path)
+                impact = membership.impact(folder=command.path)
+                # Only this folder's photos can leave; a whole-library pass
+                # made unpinning wait on every other folder.
+                leaving = {p for table in ("files", "photos")
+                    for (p,) in marks._query(f"SELECT path FROM {table}") if membership.under(p, command.path)}
                 pinned = browser.remove_pin(command.path)
-            index.membership.reconcile()
+            membership.reconcile(sorted(leaving))
             index.kick()
             return {"pinned": pinned, **impact}
         except (OSError, ValueError) as exc:

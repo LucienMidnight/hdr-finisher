@@ -329,7 +329,7 @@ No unresolved failure matches the 0.9.0 known list with the same message. No app
 - `webgpu-shader-compilation.js`: **New:** Sharpen Amount continuous/monotonic response assertion fails; likely Detail baseline/response area.
 - `photo-library-stage-a.js`: **Driver out of date, unresolved:** folder/grid checks progress, but single-view pixel readback still requests a 2D context from the current GPU canvas. This failure does not establish a rendering bug.
 - `photo-library-stage-b.js`: **New check failure:** after fixing asynchronous sidecar reads, tag suggestions time out or show Family (0) rather than Family (2). Tag counts/refresh remain unresolved.
-- `photo-library-navigation.js`: **New check failure:** Unpin folder does not satisfy the empty-folder-tree assertion; folder removal/tree expectation needs follow-up.
+- `photo-library-navigation.js`: **Driver out of date:** both Unpin steps pass (November 6, 2026), but the later re-browse waits for thumbnails of 111-byte sample PNGs, which the Library has skipped since its 1 KB minimum photo size (October 30). Needs sample photos of at least 1 KB.
 - `photo-library-slice-2.js`: **New check failure:** after fixing the Details container, confirmed tag merge still reads Holiday instead of Sea from disk; background persistence/test synchronization needs follow-up.
 - `library-background-activity.js`: **New check failure:** conflict check observes an undone rating changing on disk; writer completion/test synchronization needs follow-up.
 
