@@ -62,6 +62,26 @@ async function scenario(config) {
     }
     mark('browse');openedAt=performance.now();gridAt=openedAt;
     void HDRLibrary.browse(config.folder).catch(e=>errors.push(String(e)));
+    if(config.virtualCopy){
+      mark('virtual copy');
+      await wait(()=>document.querySelector('#grid-space .library-cell canvas[data-picture-key]'),60000);
+      const requests=[], originalFetch=window.fetch.bind(window);
+      window.fetch=async(url,options)=>{const at=performance.now();const response=await originalFetch(url,options);requests.push({url:String(url),ms:performance.now()-at});return response;};
+      const cell=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>/\.ARW$/i.test(c.dataset.path));cell.click();
+      cell.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:200,clientY:200}));
+      mark('virtual copy menu');
+      await wait(()=>[...document.querySelectorAll('[role=menuitem]')].some(e=>e.textContent.startsWith('Create virtual copy')));
+      [...document.querySelectorAll('[role=menuitem]')].find(e=>e.textContent.startsWith('Create virtual copy')).click();
+      mark('virtual copy dialog');await wait(()=>document.querySelector('dialog.library-ask[open]'));
+      const at=performance.now();document.querySelector('dialog.library-ask button[type=submit]').click();
+      mark('virtual copy selection');await wait(()=>HDRLibrary.getSnapshot().selected?.includes('|copy|'),60000);
+      const key=HDRLibrary.getSnapshot().selected;
+      mark('virtual copy picture');await wait(()=>[...document.querySelectorAll('#grid-space canvas[data-picture-key]')].some(c=>!c.hidden&&c.dataset.picturePath===key),60000);
+      await frame();await frame();
+      config.virtualCopyResult={ms:performance.now()-at,key,requests};
+      console.log('QUICK_VIRTUAL_COPY:'+JSON.stringify(config.virtualCopyResult));
+      window.fetch=originalFetch;
+    }
     if(config.singleMode){
       await wait(()=>config.busy ? HDRLibraryScenes.snapshot().sources.jobs.some(j=>j.state==='running') && document.querySelector('#grid-space .library-cell') : document.querySelector('#grid-space .library-cell canvas[data-picture-key]'),60000);
       if(HDRLibrary.getSnapshot().sort!=='name')throw Error('Folder did not use name sort');
@@ -288,7 +308,7 @@ async function scenario(config) {
       await HDRLibrary.browse(config.retentionFolder);
       await wait(()=>document.querySelector('#grid-space canvas[data-picture-key]'),60000);
       await settle('scroll away');
-      const cell=document.querySelector('#grid-space .library-cell');cell.click();
+      const cell=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>/\.ARW$/i.test(c.dataset.path));cell.click();
       const photo=HDRLibrary.getSnapshot().selected;
       document.getElementById('single-view').click();
       await wait(()=>document.getElementById('single-picture').dataset.picturePath===photo,60000);
@@ -334,9 +354,9 @@ async function scenario(config) {
       record.app_trace_starts_after_input_ms=app?Math.round(app.at-app.duration_ms-record.started_ms):null;
       record.app_event_after_presentation_ms=app?Math.round(app.at-record.presented_ms):null;
     }
-    return {visible_files:HDRLibrary.getSnapshot().paths,opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_return:config.gradeReturnResult,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
+    return {visible_files:HDRLibrary.getSnapshot().paths,opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,virtual_copy:config.virtualCopyResult,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_return:config.gradeReturnResult,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
   } catch(error) {
-    return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_frame:config.gradeHandoff?parent.HDRGradeLibraryPictures?.getSnapshot():null,handoff_state:config.gradeHandoff?window.HDRLibraryGradeHandoffSnapshot?.():null,grade_return:config.gradeReturnResult,events,errors:[...errors,String(error.stack||error)],stage};
+    return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,virtual_copy:config.virtualCopyResult,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_frame:config.gradeHandoff?parent.HDRGradeLibraryPictures?.getSnapshot():null,handoff_state:config.gradeHandoff?window.HDRLibraryGradeHandoffSnapshot?.():null,grade_return:config.gradeReturnResult,events,errors:[...errors,String(error.stack||error)],stage};
   } finally {
     stopped=true;clearInterval(timer);clearInterval(gridTimer);observer?.disconnect();window.HDRLibraryStopwatch=inherited;
     window.removeEventListener('error',onError);window.removeEventListener('unhandledrejection',onError);

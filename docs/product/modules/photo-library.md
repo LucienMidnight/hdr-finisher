@@ -3965,11 +3965,19 @@ crop route; its move to live native scenes remains open with that cleanup.
 
 ## 5. V1 open work, in order
 
-- **Virtual-copy creation is very slow (Steve, November 2, 2026).**
-  Reported during manual use after Batch 2. Steve has not tried this in a while,
-  so it may be an older bug; cause and connection to recent changes are unknown.
-  Investigate the whole wait from Create virtual copy to the copy appearing
-  and becoming usable before choosing a fix. No timing has been measured yet.
+November 6 investigation: propose 5% run-to-run timing tolerance for virtual-copy
+creation (whole confirmation-to-visible-and-usable wait), for ordinary machine
+variation. No existing speed target, memory allowance or image tolerance changes.
+
+- **Virtual-copy creation fixed November 6.** Creation saved the copy but
+  same-folder refresh joined the old listing; compact indexed rows also derived
+  a copy's file type from its virtual ID, hiding it under the default filter.
+  Copy commands now request a fresh listing and read the source's extension.
+  Before: still absent/unselected after 60 s; after: selected with a visible
+  picture in 214 ms (save request 55 ms), plain Electron, reusable edited ARW.
+  No image calculations, source files or cache sizes changed. Evidence:
+  `codebase/output/quick-library-check/v1-copy-{before,after}/`.
+  Checks: 813 Node passed; 16 copy Python checks passed; full Python pending.
 
 **V1 scope (Steve, October 26, 2026):** the "Leftovers" item below (comfort
 cap, indexing settings, dimmed offline drives, drag a folder in to pin it)

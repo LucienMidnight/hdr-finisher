@@ -820,7 +820,7 @@
   }
   async function refreshCopies() {
     if(state.collection) await browseCollection(state.collection.kind,state.collection.name);
-    else if(state.path) await browse(state.path);
+    else if(state.path) await openPlace({path:state.path,refresh:true});
   }
   const plural = (count, one, many = one + "s") => `${count.toLocaleString()} ${count === 1 ? one : many}`;
   const fileName = photo => photo.copy_id ? (photo.source_path || photo.path).split(/[/\\]/).pop() : photo.name;
@@ -1339,7 +1339,7 @@
   async function openPlace(place) {
     const path = place.path || "";
     HDRLibraryStopwatch("folder_clicked", {path, kind:place.kind || "folder"});
-    if (!place.kind && !state.collection && state.folderOpen?.path === path
+    if (!place.refresh && !place.kind && !state.collection && state.folderOpen?.path === path
       && !state.folderOpen.controller.signal.aborted && !state.scanError) {
       HDRLibraryStopwatch("folder_open_joined", {path,request:state.folderOpen.request});
       return state.folderOpen.ready;
@@ -1425,7 +1425,7 @@
           if(event.columns) event.photos=event.values.map(values=>{
             const photo={};
             for(let i=0;i<event.columns.length;i++)if(values[i]!==null)photo[event.columns[i]]=values[i];
-            photo.name=photo.path.split(/[\\/]/).at(-1);
+            photo.name=(photo.source_path || photo.path).split(/[\\/]/).at(-1);
             photo.type=photo.name.split(".").at(-1).toUpperCase();
             if(photo.copy_id)photo.name += " · " + photo.copy_name;
             return photo;

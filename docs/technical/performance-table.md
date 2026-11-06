@@ -1221,3 +1221,16 @@ pixel; rest of RAW development 7.8 s; retouch reapply 6.4 s.
 | --- | --- | --- |
 | CPU Edge colour working memory, 42 MP | 28.3–29.2 → 10.5 full-size planes (about 4.8 → 1.8 GB) | tracemalloc above inputs, synthetic clip; output bit-identical; 9.6–10.5 s |
 | Library CPU route after rejected GPU result, DSC00264, whole-app peak | 5.11 / 4.60 GB over ceiling → no over-ceiling event; largest sample 3.46 GB | `library-temporary-recovery.js`, Electron 2560x1440, isolated cache; CPU reconstruction 9.3–10.0 s |
+
+### November 6: virtual-copy refresh
+
+Parent a5f9db6 plus the virtual-copy refresh fix; plain Electron at 2560x1440,
+4 GB setting, existing library-live-grid edited RAW, disposable profile restored
+by the harness. Proposed timing variation allowance: 5%; no existing target changed.
+Confirmation to selected copy with a visible picture: before, not reached within
+60 s; after, 214 ms (54.5 ms create request). The listing was being reused and
+compact rows misread virtual IDs as extensions. Evidence:
+`codebase/output/quick-library-check/v1-copy-{before,after}/`.
+The ordinary camera-preview probe (hdr-test unedited _DSC0956.ARW) reached its
+first visible picture at 199 ms and 2560 surface at 250 ms; it does not qualify
+heavy-grade cold drawing. Evidence: `quick-library-check/v1-cold-heavy/`.
