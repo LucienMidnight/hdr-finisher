@@ -3,7 +3,7 @@
 
 **Date:** November 6, 2026
 **Follows:** round 1 (archived) and round 2
-(`docs/technical/briefs/codex-brief-ui-polish-round-2-2026-11-06.md`).
+(`docs/technical/archive/briefs/codex-brief-ui-polish-round-2-2026-11-06.md`).
 Start only after round 2 is committed.
 
 ## Goal
@@ -99,3 +99,20 @@ few panel titles. Run `tools/output_size.py` at start and end.
 
 Ask before implementing anything here that conflicts with the code or the
 guidelines. Steve's decisions here replace older guideline text.
+
+Validation: 816 JavaScript tests pass. Python: 3,077 pass, three skip,
+one known unrelated failure in
+`test_remembered_failure_does_not_hide_current_grade_cached_scene`, already
+recorded in rounds 1 and 2; not investigated or rerun. No GPU/release checks,
+installer or push. No changes to processing or saved formats.
+
+The focused Electron review passes three-theme tab heights/material borders,
+21 px workflow numbers, title casing and stable hover geometry, menu open /
+Escape and narrow (1440 px) Metadata hover. Review: 22 small crops (about
+0.17 MB) in `codebase/output/review/ui-polish/round-3/index.html`, including
+all three tab levels, toolbar and Library/Export titles. Steve's final visual
+sign-off and physical mixed-DPI/native macOS trial remain manual. Nothing in
+the five sections was skipped. Round 2 was already archived and recorded.
+
+Scratch output is 29.4 GB at start and finish, below the 100 GB limit.
+Review crops remain for Steve and can be deleted after sign-off.

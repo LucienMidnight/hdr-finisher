@@ -486,3 +486,8 @@ November 6: `library_scheduler.py` serializes heavy TIFF/EXR/PFM/HDR decodes
 across Library windows using existing grants and safe points. `photo-library.js`
 uses the existing embedded-only media-browser thumbnail route for TIFF stand-ins
 in grid/filmstrip and Single quick pictures; no full TIFF decode is requested.
+
+`tools/ui-polish-round3-review.cjs` captures small three-theme tab, workflow
+bar, Library and Export title crops and checks rendered tab sizes, menu
+open/Escape and stable title hover geometry at 2560 and 1440 px widths. Run
+through `tests/run-in-electron.js`; output is `output/review/ui-polish/round-3/`.

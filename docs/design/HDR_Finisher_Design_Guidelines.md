@@ -112,7 +112,7 @@ Soft plates use `plate-up`, `plate-down`, `plate-edge`, `plate-lift` and `plate-
 
 ### Panel title component tokens
 
-All-caps panel titles: Afacad 12px, weight 600, tracking 0.11em. Group names: sentence-case Afacad 14.5px, weight 500, no tracking. Use Raw development, Highlight reconstruction, Exposure bands, Highlight compression, Crop & rotate, Black & white and Film look; preserve HDR, SDR, HSL and proper product names. Nested module and dialog headings also use sentence case. Group headers are 34px. The runtime aliases in `visual-tokens.css` preserve the existing semantic component hooks. Title tooltips retain their existing two-second delay and keyboard access.
+Title-case panel titles: Afacad 12px, weight 600, no tracking. Group names: sentence-case Afacad 14.5px, weight 500, no tracking. Use Raw development, Highlight reconstruction, Exposure bands, Highlight compression, Crop & rotate, Black & white and Film look; preserve HDR, SDR, HSL and proper product names. Nested module and dialog headings also use sentence case. Group headers are 34px. The runtime aliases in `visual-tokens.css` preserve the existing semantic component hooks. Title tooltips retain their existing two-second delay and keyboard access.
 
 ## Typography and copy
 
