@@ -412,8 +412,8 @@ Settings switches are plain rows, aligned with their neighbouring fields.
 Disabled primary buttons use the neutral raised plate, neutral edge and muted
 text at full opacity. The accent returns when the action becomes available.
 
-Application menus (November 6, round 6): the ? button opens a vertical list, with side submenus. Both levels use the Control Panel module-name face and size. Up/Down walk the list, Right enters a submenu, Left returns; Alt/F10 open and Escape closes. macOS keeps its system menu.
+Application menus (November 6, round 6): the menu button opens a vertical list, with side submenus. Both levels use the Control Panel module-name face and size. Up/Down walk the list, Right enters a submenu, Left returns; Alt/F10 open and Escape closes. macOS keeps its system menu.
 
 View sliders (zoom and thumbnail size) retain neutral fill at every value; the enabled-control accent rule applies to grading controls.
 
-Library sidebar: section titles use bold 17 px title text. Add buttons have 28 px targets and a 24 px plus, shown on panel hover or keyboard focus. All reorder handles share a 24 ? 28 px target and 18 px muted grip. Smart-album rows need no repeated decorative marker; editing remains in their context menu.
+Library sidebar: section titles use bold 17 px title text. Add buttons have 28 px targets and a 24 px plus, shown on panel hover or keyboard focus. All reorder handles share a 24 x 28 px target and 18 px muted grip. Smart-album rows need no repeated decorative marker; editing remains in their context menu.

@@ -101,4 +101,4 @@ In Appearance, choose **On hover** (default, also shown on keyboard focus) or
 **Always** for Developed badges on Library thumbnails. This setting applies
 to both Library windows and stays separate from projects and presets.
 
-On Windows and Linux, click ? for the vertical File, Edit, View, Window and Help list. Hover a name to open its items to the side. Alt or F10 opens the list; Up/Down moves, Right enters a submenu, Left returns, and Escape closes it. macOS uses the system menu bar.
+On Windows and Linux, click the menu button for the vertical File, Edit, View, Window and Help list. Hover a name to open its items to the side. Alt or F10 opens the list; Up/Down moves, Right enters a submenu, Left returns, and Escape closes it. macOS uses the system menu bar.

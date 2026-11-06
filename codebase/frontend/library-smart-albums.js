@@ -29,7 +29,7 @@
     const menu=event=>showMenu(event,[{label:"Edit rules and name…",run:()=>editor(item)},{label:"Save as manual album…",run:()=>copy(item,true)},{label:"Duplicate",run:()=>copy(item,false)},{label:"Delete smart album…",run:()=>remove(item)}],{label:"Smart album actions",onError:e=>options.status(e.message)});
     row.addEventListener("contextmenu",menu);row.addEventListener("keydown",e=>{if(e.key==="ContextMenu" || e.shiftKey && e.key==="F10")menu(e);});
     // No drop handler: membership is determined only by the saved rules.
-    row.append(name,make("span","library-count","◇"));return row;
+    row.append(name);return row;
    }));
   }
   async function refresh() {albums=(await options.api("/api/library/smart-albums")).albums;render();return albums;}

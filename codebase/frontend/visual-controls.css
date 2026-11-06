@@ -417,7 +417,7 @@ html.desktop-shell .window-controls { margin-left: 0; }
 /* Round 6: vertical application menu, matching Control Panel module names. */
 html.desktop-shell .window-menu-bar { flex-direction: column; min-width: 150px; }
 html.desktop-shell .window-menu-trigger { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-html.desktop-shell .window-menu-trigger::after { content: "?"; }
+html.desktop-shell .window-menu-trigger::after { content: "\203a"; }
 html.desktop-shell .window-menu > .window-menu-popover { left: 100%; top: 0; }
 html.desktop-shell :is(.window-menu-trigger, .window-menu-popover button) { font: 500 14.5px var(--font-body); }
 
