@@ -180,8 +180,11 @@ in v1; the deferred Looks feature is the Library browser and workflow.
 broken release checks are repaired, the polish pass, the installer and the
 bug hunt:
 
-- Retouch brush (Inpaint, Heal, Clone), October 21 requirement. Hue-selection
-  local mask **built October 27**, awaiting Steve’s by-eye review.
+- Retouch brush (Inpaint, Heal, Clone), October 21 requirement. **On the GPU
+  since October 28**, but Steve's November 2 review found the tool still needs
+  work; the specific problems are still to be captured with Steve. This is the
+  only unfinished v1 feature. Hue-selection local mask **built October 27**,
+  awaiting Steve’s by-eye review.
 - Highlight and Shadow Desaturation in Color (COLOR-DESAT-01): **built
   October 27**, awaiting Steve’s by-eye review.
 - Presets window: rename, edit, import, export (PRESETS-01). Moved up to v1
@@ -200,13 +203,24 @@ bug hunt:
 - Tone sliders (Steve, October 27, 2026): Blacks, Shadows, Midtones and
   Highlights with Center and Width replace Lift/Gamma/Gain and Shadow / Black
   in both lanes, under one app-wide naming rule ("Exposure" is an equal
-  change in stops; tone names are curves). See the Grade PRD.
+  change in stops; tone names are curves). See the Grade PRD. **Built
+  October 27**, awaiting Steve's by-eye review.
 - Graceful old, damaged and newer grades (Steve, October 28, 2026): no
   blank pictures, keep the readable sections, let the user choose, protect
   grades written by newer versions, and say when an update changes a look.
-  See the Grade PRD.
+  See the Grade PRD. **Built October 28.**
 - Steve's by-eye reviews (RAW exposure sheet, film grain/Looks/lens filter,
-  HSL, exposure-warning wording, Black & White sliders) and the Match fault.
+  HSL, exposure-warning wording, Black & White sliders) and the Match fault
+  (waiting on Steve's recorded photo and message).
+- Library loose ends (November 6): very slow virtual-copy creation (Steve,
+  November 2), and the partly finished Library batches 4b, 4d and 5b (cold
+  first drawing, heavy-grade acceptance, Windows peak memory and
+  retained-owner timing). The 8 GB Mac acceptance is Steve's to run.
+
+**Status, November 6, 2026.** Every v1 feature except Retouch is built.
+What remains: Retouch, the Match fault, the Library loose ends above and
+Steve's by-eye reviews; then the release-check repair, polish pass,
+installer and bug hunt.
 
 **After v1 (Steve, October 26, 2026).** Not v1 launch requirements; kept in
 each module's open work:
@@ -214,8 +228,11 @@ each module's open work:
 - Detail (100%) stored previews; GPU AVIF gain-map reconstruction.
 - Library speed polish: faster HDR/SDR switching, stored previews at
   0.1 s, graded Denoise sharp draws at 0.5 s.
-- Library leftovers: HDR grid comfort cap, indexing settings, dimmed
-  offline drives, drag a folder in to pin it.
+- Library leftovers: indexing settings, dimmed offline drives, drag a
+  folder in to pin it.
+- **V2 (Steve, November 6, 2026):** the HDR grid comfort cap. It is not
+  needed in v1, because unedited photos show in SDR and only edited photos
+  show in HDR. If built, it is an optional advanced setting, not a default.
 - Export speed: full-size single export under 15 s, RAW development on the
   GPU inside export, tiled finishing for large sharpened originals.
 - Grade reviews: pipeline order (PIPE-01), Texture against Microcontrast
@@ -302,9 +319,9 @@ section 3; the October 18 list below is kept as history.
 | --- | --- | --- |
 | V2 linked photos: whole grade or chosen groups; where the link is stored | Deferred decision | Photo Library |
 | V2 portable projects: one-file packing; project index file ending | Deferred decision | Photo Library |
-| Comfort cap: roll-off or clip; grid only or everywhere | Decision | Photo Library |
 | V2 Library Looks: one menu or two | Deferred decision | Photo Library |
-| Nested tags; what "HDR" means for an unedited photo | Decision | Photo Library |
+| Nested tags | Decision | Photo Library |
+| Retouch: what still needs to change after the November 2 review | Report | Grade |
 | Film grain values, Looks and lens filter by eye | Test | Film Look |
 | Black & White slider strength, fade points and presets | Test | Grade |
 | Exposure-warning wording, shadow warning threshold | Test | Photo Library |

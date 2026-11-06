@@ -2633,8 +2633,8 @@ previews (item 5) and batch-export metadata were built on October 27; Steve
 accepted large-folder speed, and Build previews and metadata await his try. After v1: Denoise sharp draws at 0.5 s (item 2's remaining
 target), GPU AVIF reconstruction (item 4), detail previews (item 6), faster
 HDR/SDR switching, stored previews at 0.1 s, and the leftovers listed under
-"V1 open work" (comfort cap, indexing settings, dimmed offline drives,
-drag-in pinning).
+"V1 open work" (indexing settings, dimmed offline drives, drag-in
+pinning). The comfort cap is v2 (Steve, November 6, 2026).
 
 1. Done: stored JPEG XL screen previews (a8540f8; SDR tried by Steve,
    sharp draw from a stored preview about 95-265 ms, mostly reading the
@@ -3547,6 +3547,7 @@ Library PRD, section 4. These later decisions replace older ones:
 | **Cold non-RAW sharp-draw target: within 1 s.** About 0.85-0.9 s for never-prepared JPEGs (8b64302) is accepted for now; faster is wanted later. | Steve, 2026-10-26 |
 | **Manual built previews work per photo** (any selection, also offered on folders), protected until discarded. Native 100% previews wait until everything else is fast. Design open; see Prepared-folder fullscreen culling. | Steve, 2026-10-25 |
 | **Development on demand (supersedes develop-everything browsing).** Unedited RAWs show the camera picture everywhere; HDR Finisher develops only edited photos, right-click Develop, photos without a usable camera picture, true-detail zoom and on-screen HDR non-RAW files. No background or ahead development. RAW and mezzanine files only by default; Show all files in the right-click menu replaces the RAW button. Grade hands its picture to the Library. See "November 3: development on demand". | Steve, 2026-11-03 |
+| **Unedited photos show in SDR; edited photos show in HDR.** As in other photo apps, an unedited photo is presented in SDR by default; a photo with an HDR Finisher grade is shown in HDR. The HDR grid comfort cap is therefore not needed for v1 and moves to v2, as an optional advanced setting if built. | Steve, 2026-11-06 |
 | **Large TIFFs and other mezzanine files (November 4).** Nothing builds or saves their previews in the background: a folder of exported TIFFs behaves like RAWs, and the user develops them on demand (right-click Develop or Build previews), which adds them to the same cache as developed RAWs. Required: a TIFF decode stops promptly once its photo is no longer wanted; compressed strip TIFFs read and reduce strip by strip on all cores; the photo on screen keeps priority over any photo it replaced, with at most one heavy mezzanine decode at a time; and a TIFF's small embedded preview, enlarged, stands in instead of a black screen while its picture is prepared. Prompted by a CR2 waiting about 14 s behind two skipped 48 MP float TIFFs that kept decoding. Built November 4: stopping (within about 0.1 s, on the plain, compressed-strip and libvips routes, from the cancelled window grant) and compressed strip reading (48 MP float TIFF 1.53 to 0.72-0.86 s). Open: one heavy mezzanine decode at a time with on-screen priority, and the embedded-preview stand-in. | Steve, 2026-11-04 |
 
 **V2 scope decision (Steve, October 21, 2026):** Library Looks (slice 7),
@@ -4715,6 +4716,9 @@ previews, codecs and Prepare/Build previews remain separate work. Stop at Step 3
    options, "Set name" for an unknown lens. Not built.
 4. **Leftovers:**
    - Comfort cap for the HDR grid (1000 nits default, adjustable). Not built.
+     **V2 (Steve, November 6, 2026):** not needed in v1, since unedited
+     photos show in SDR and only edited photos show in HDR. If built, it
+     is an optional advanced setting.
    - Full-size pictures on disk: now part of the speed plan (item 1).
    - Indexing settings (processor use, pause on battery, pins to leave
      out). Not built.
@@ -5986,12 +5990,11 @@ synthetic saved Film Look fixture always runs in `library-live-picture.js`.
 
 - **V2, deferred:** linked photos: whole grade or chosen groups; where the link is stored.
 - **V2, deferred:** portable projects: one-file packing; the project index file ending.
-- Comfort cap: roll-off or clip; grid only or everywhere.
+- **V2, deferred:** comfort cap (see the November 6 decision).
 - **V2, deferred:** Library Looks: one menu or two.
 - Image-dependent settings when pasting: re-run or copy the numbers.
-- Nested tags. What "HDR" means for an unedited photo (proposed: HDR
-  Finisher's default rendering). One focus overlay or two. How often
-  folders are checked.
+- Nested tags. One focus overlay or two. How often folders are checked.
+  (What "HDR" means for an unedited photo: decided November 6, SDR.)
 
 ## 7. V2 work and other deferred ideas
 
