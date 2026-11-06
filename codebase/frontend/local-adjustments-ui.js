@@ -1089,6 +1089,6 @@ function updateLocalGradeFoldoutSummaries() {
     let count = fields.filter(path => Math.abs(Number(getValueByPath(grade, path)) - Number(getValueByPath(baseline, path))) > 1e-8).length;
     if (section.dataset.localGradeSection === "hsl") count = Number(JSON.stringify(grade.hsl) !== JSON.stringify(baseline.hsl) || grade.hsl_section_enabled === false);
     const summary = section.querySelector(".foldout-summary");
-    if (summary) { summary.textContent = count ? `${count} Mod` : "Default"; summary.title = summary.textContent; }
+    if (summary) { summary.textContent = count ? "\u2022" : ""; summary.title = count ? `${count} modified controls` : "Default"; summary.setAttribute("aria-label", summary.title); }
   }
 }

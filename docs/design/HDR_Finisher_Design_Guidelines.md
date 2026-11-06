@@ -157,7 +157,7 @@ Runtime geometry is in `visual-tokens.css`: 9×20px ordinary satin thumb, 7×15p
 
 ### Toggle and segmented controls
 
-- Switches have a 50×22px recessed neutral track and a 22px soft plate knob moving 28px. ON/OFF marks supplement position; the PNG knob is unused. Preserve native checkbox semantics and clickable labels.
+- Switches have a 50×22px recessed track, accent-filled when on, and a 22px soft plate knob moving 28px. ON/OFF marks supplement position; the PNG knob is unused. Preserve native checkbox semantics and clickable labels.
 - Segments and viewer toolbar groups are joined soft plates, separated by a 1px edge, with pressed-in selection and accent-strong ink.
 - Primary actions, including Export, use the selected accent plate; warnings never supply an action's fill.
 - Collapse buttons use the shared chevron, rotated for direction, in a 26×24px plate.
@@ -178,7 +178,7 @@ Runtime geometry is in `visual-tokens.css`: 9×20px ordinary satin thumb, 7×15p
 November 4 follow-up: the v1 Control Panel section layout is implemented. The source identity/spec-plate rebuild remains deferred.
 
 - The Control Panel opens in Global and offers Global / Local / Retouch as a keyboard-operable tab list. Only the chosen mode is visible. Mode, rendition and fold-out state last for the session and are never saved in projects or presets.
-- Global shows shared Raw development, Highlight reconstruction, Crop & rotate and Perspective beneath **Both renditions**, followed by **Per rendition** and the joined rendition switch. Local holds masks and local grades; Retouch holds source repairs beneath **HDR + SDR · before crop**.
+- Global shows shared Raw development, Highlight reconstruction, Crop & rotate and Perspective beneath **Both renditions**, followed by **Per rendition** and the underline rendition switch. Local holds masks and local grades; Retouch holds source repairs beneath **HDR + SDR · before crop**.
 - Global and Local share one underline HDR grade / SDR grade switch, including the preview's rendition choice. It stays pinned beneath the mode header once reached, without folder borders. Global SDR shows a recessed Match SDR row below it; stale matches add a 3 px attention rule and Rematch SDR.
 - Multiple top-level disclosures may remain open. Sections have no numbers. An open section keeps the hairline and full-width raised content surface. Long names truncate before the independent Preset, Reset, bypass and modified-dot controls. Display names are Color sliders and Color wheels; internal keys are unchanged.
 - Local shows New adjustment and four mask tools, overlay and More; Masks · HDR + SDR and stack actions; the selected mask's folded settings; then the pinned local underline rendition switch with Light open and Color, HSL and Detail folded. Paint / Erase belongs inside Brush settings. Invert, gizmo visibility, overlay colour and brush clearing/undo live in More. Mask and repair lists reserve scrollbar space and show about four rows.

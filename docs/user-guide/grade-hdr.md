@@ -175,3 +175,8 @@ Order matters. A curve sees the result of every preceding enabled section.
 - Forgetting that the gain-map result adapts to lower-headroom displays.
 
 Finish by checking [the SDR rendition](grade-sdr.md) and [Chrome Proof](proof.md).
+
+Color wheels shows one range at a time. Choose Shadows, Midtones or Highlights
+above the wheel; each keeps its own Hue, Saturation and Luminance. A dot marks
+a changed range. Double-click the wheel to reset only the selected range.
+

@@ -81,7 +81,7 @@ or cinema film, grain, halation and matching paper; estimate labels distinguish
 calibrated descriptions from manufacturer measurements. Slide films are
 scanned directly without print.
 
-The five folding stages have triangles, summaries and a count of Mod controls:
+The five folding stages have triangles, summaries and a small modified-state dot:
 
 - Camera: Format shortcuts, Film Format, Capture and physical dimensions for
   Custom format; Film Exposure; Lens shortcuts, Lens Filter, Strength and Size.
@@ -96,7 +96,7 @@ The five folding stages have triangles, summaries and a count of Mod controls:
 
 Shortcut buttons affect only their named scope. STOCK means a stock-owned
 value is inherited. A deliberate edit, including setting the same value,
-shows a reset dot before its name and counts as Mod. Click that dot or
+shows a reset dot before its name and marks the stage as modified. Click that dot or
 double-click a slider to restore its stock value or shared baseline. Switching
 stock updates only inherited controls. Undo/redo, saved projects and sparse
 Looks preserve this distinction. Folding lasts for the current session only.

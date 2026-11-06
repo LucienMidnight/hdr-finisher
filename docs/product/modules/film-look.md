@@ -729,3 +729,11 @@ UI helper and these records, using the same passing runs; no production code
 changes after them. No broad release sweep, push or installer. Two unrelated
 untracked Library briefs remain untouched. No Steve lens/grain feedback arrived.
 Phase 6 starts with Claude's panel mock-up, then implementation.
+
+## November 6: modified-state UI polish
+
+Film stage headers use neutral dots instead of Mod counts; the parent module
+shows its dot beside Reset. Hover retains the modified-control count. Local
+subsection summaries follow the same dot rule. No film values, defaults or
+processing changed. Grouped fast checks and the UI review cover this polish.
+

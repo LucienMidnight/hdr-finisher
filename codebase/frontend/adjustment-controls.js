@@ -532,7 +532,8 @@ function renderFilmPanel() {
     if (!stage) continue;
     const summary = stage.querySelector(".film-stage-summary"); summary.textContent = summaries[name]; summary.title = summaries[name];
     const count = keys.filter(key => (film.stock_overrides || []).includes(key)).length;
-    stage.querySelector(".film-stage-mod").textContent = count ? `${count} Mod` : "";
+    const modified = stage.querySelector(".film-stage-mod");
+    modified.textContent = count ? "\u2022" : ""; modified.title = count ? `${count} modified controls` : "";
   }
   document.querySelectorAll("[data-film-push]").forEach(button => {
     button.disabled = !state.session;
