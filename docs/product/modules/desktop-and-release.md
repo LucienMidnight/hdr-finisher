@@ -332,3 +332,34 @@ blocked the cleanup command with "blocked by policy". The owned TEMP folder
 `round4-*.log` scratch logs in `codebase/output/` (plus the initial failed-launch
 log `output/round4-review.log`) remain safe for manual deletion. Keep round-4
 crops until Steve has reviewed them; they can then be deleted.
+
+## November 6: UI polish round 5: numbered workflow steps
+
+Workflow tabs now show 1 Library, 2 Grade, 3 Proof and 4 Export with 20 px
+round raised-plate badges and thin neutral connectors. The current badge uses
+the primary-button accent material and on-accent number; its page name uses
+text colour. Other names stay muted and brighten on hover. The underline is
+removed. Round 4's title font, toolbar height, navigation handlers, ARIA,
+menu, window controls and drag regions remain unchanged.
+
+The Electron review passes all four selected pages in all three themes at
+2560 and 1100 px, including containment, badge geometry, font, click/keyboard
+navigation, ARIA and menu/Escape. The simulated macOS inset layout passes;
+a physical native macOS trial and Steve's visual sign-off remain manual.
+No implementation item was skipped. No processing, Proof/export output or
+saved-format changes; no GPU pixel/release sweep, installer or push.
+
+Review: `codebase/output/review/ui-polish/round-5/index.html`, with 25 small
+PNG crops (about 0.21 MB including the check record and review page).
+The crops can be deleted after Steve's review. The brief is archived at
+`docs/technical/archive/briefs/codex-brief-ui-polish-round-5-2026-11-06.md`.
+
+Validation: 816 JavaScript tests pass; Python has 3,077 pass, three skip and
+one previously recorded unrelated failure in
+`test_remembered_failure_does_not_hide_current_grade_cached_scene`
+(expected 422, received 200). It was not investigated or rerun.
+Scratch output is 29.4 GB at start and finish, below the 100 GB limit.
+Automatic approval review rejected cleanup with "blocked by policy".
+`C:/Users/Steve/AppData/Local/Temp/pytest-of-Steve/pytest-1294`,
+`codebase/output/round5-*.log` and `output/round5-review.log` remain safe
+for manual deletion. Keep the review crops until Steve's visual sign-off.

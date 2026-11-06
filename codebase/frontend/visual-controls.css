@@ -39,7 +39,32 @@ button, input, select, textarea, output { font-family: var(--font-body); font-va
 :root .viewer-bar { padding-block: 0; min-height: var(--panel-header-h); }
 :root .workflow-tab { font: 500 16px var(--font-body); }
 :root .workflow-tab > span:first-child { font: inherit; font-variant-numeric: tabular-nums; letter-spacing: 0; }
-:root .workflow-tab.active { border-bottom: 2px solid var(--accent); }
+/* Workflow steps keep the existing button targets and toolbar height. */
+:root .workflow-tabs { gap: clamp(4px, 1.5vw, 24px); }
+:root .workflow-tab {
+ position: relative; min-width: 0; padding-inline: 8px; gap: 8px;
+ border-bottom: 0; letter-spacing: 0; white-space: nowrap;
+}
+:root .workflow-tab:not(:last-child)::after {
+ content: ""; position: absolute; left: calc(100% + 2px); top: 50%;
+ width: calc(clamp(4px, 1.5vw, 24px) - 4px); height: 1px;
+ background: var(--hairline); pointer-events: none;
+}
+:root .workflow-tab > .workflow-step-number {
+ display: inline-flex; align-items: center; justify-content: center;
+ flex: 0 0 20px; width: 20px; height: 20px; box-sizing: border-box;
+ border: 1px solid var(--plate-edge); border-radius: 50%;
+ background: var(--plate-up); box-shadow: var(--plate-lift); color: var(--body);
+ font-size: 14px; line-height: 1; font-weight: 500;
+}
+:root .workflow-tab.active > .workflow-step-number {
+ background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, white), color-mix(in srgb, var(--accent) 90%, black));
+ border-color: color-mix(in srgb, var(--accent) 45%, black); color: var(--on-accent);
+}
+@media (max-width: 1200px) {
+ :root .workflow-tabs { gap: 8px; }
+ :root .workflow-tab:not(:last-child)::after { width: 4px; }
+}
 :root .viewer-panel { grid-template-rows: var(--panel-header-h) minmax(0, 1fr) var(--status-bar-h); }
 :root .viewer-panel > .viewer-bar { grid-row: 1; }
 :root .viewer-panel > .viewport-frame { grid-row: 2; }

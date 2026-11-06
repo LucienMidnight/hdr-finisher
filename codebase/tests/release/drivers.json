@@ -267,6 +267,7 @@
     }
   ],
   "drivers": [
+    {"path":"tools/ui-polish-round5-review.cjs","areas":["ui"],"tier":"diagnostic","protects":"Numbered workflow badge geometry, navigation, ARIA and three-theme toolbar captures at full and narrow widths.","launch":{"method":"electron"}},
     {"path":"tools/ui-polish-round4-review.cjs","areas":["ui"],"tier":"diagnostic","protects":"Three-theme title fonts, Export empty-state and switch/button materials, menu captures and Library toolbar at full and minimum sizes.","launch":{"method":"electron"}},
     {"path":"tools/ui-polish-review.cjs","areas":["ui"],"tier":"diagnostic","protects":"Three-theme UI review, menu access, Recent projects, wheel range retention/reset and small screenshots.","launch":{"method":"electron","args":["--after"]}},
     {"path":"desktop/library-thumbnail-memory-check.cjs","areas":["library"],"tier":"diagnostic","protects":"DxO SubIFD preview admission after Grade and hidden delivery private-memory collection.","launch":{"method":"helper","via":["tools/quick-library-check.cjs"]}},

@@ -368,7 +368,12 @@ in File. Empty toolbar space drags; double-click maximizes/restores.
 In-panel tab sets use joined plates: raised unselected segments, pressed
 selected segments with accent-strong text, and the existing plate edge, lift
 and press tokens. Mode tabs are tallest, rendition/subsets smaller, and wheel
-ranges smallest and inset. Workflow tabs keep their 2 px accent underline.
+ranges smallest and inset. Workflow tabs use 20 px round raised-plate badges numbered 1 to 4, followed by
+the page names and joined by thin neutral connectors. Only the current badge
+is accent-filled with on-accent numbers; its name uses text colour and the
+other names stay muted until hover. There is no underline. The toolbar height,
+Sofia Sans Semi Condensed names and navigation behaviour stay unchanged.
+Connectors shorten at narrow widths; the menu and Autosave remain clear.
 Keep existing tab locations, changed dots, keyboard and ARIA behaviour.
 
 

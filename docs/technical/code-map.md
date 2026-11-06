@@ -497,3 +497,9 @@ number size, Export empty-state geometry, switch/disabled-button materials,
 menu casing, Resize fit and Library toolbar containment at 2560 x 1440 and
 1100 x 720 in all three themes. Run through `tests/run-in-electron.js`;
 registered as a UI diagnostic. Crops: `output/review/ui-polish/round-4/`.
+
+`tools/ui-polish-round5-review.cjs` captures each selected workflow page in
+three themes at 2560 and 1100 px, checks badge geometry, title font, containment,
+click/keyboard/ARIA navigation and simulated macOS inset spacing. Registered
+as a UI diagnostic through `tests/run-in-electron.js`; crops are in
+`output/review/ui-polish/round-5/`.
