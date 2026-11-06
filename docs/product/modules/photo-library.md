@@ -4719,6 +4719,16 @@ previews, codecs and Prepare/Build previews remain separate work. Stop at Step 3
       left/right arrow correctly opens the next photo at the same zoom and
       position, but it briefly flashes (apparently the Fit view) before
       zooming. Go straight to the zoomed view.
+    - Zoomed panning seams and colour change (Steve, November 6: working as
+      intended, revisit to improve). An unedited RAW shows the camera picture
+      in fullscreen and the developed picture when zoomed (decision 1, rule
+      3), so colours change on zoom. While panning, the sharp crop covers
+      only the screen and each move cancels its redraw (redrawn 0.12 s after
+      the drag pauses), so the edges show the stretched camera picture in
+      its colours (DSC04375). Ideas: put the developed screen-size picture
+      under the crop once zoomed (one colour change for the whole view),
+      draw a margin past the screen edges, and keep redrawing at a steady
+      pace during the drag from the retained GPU scene.
     - Grade-opening memory peak and the 8 GB Mac (Steve, November 4:
       tabled for polish). Opening a 42 MP photo in Grade briefly reaches
       about 5 GB (backend import work); rest is 1.4 GB Library, 1.9 GB
