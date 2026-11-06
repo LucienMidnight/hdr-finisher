@@ -259,3 +259,6 @@ In-panel mode, HDR/SDR (including Local), Proof, curve-channel, scope and
 wheel-range tabs use joined plates with existing theme tokens. Workflow tabs
 keep their underline. Three tab heights distinguish the levels; changed dots
 and tab behaviour stay intact. Validation is grouped at the end of round 3.
+
+Workflow numbers are 21 px and page names 16 px, within the existing toolbar
+height. Final size awaits Steve's screenshot review.

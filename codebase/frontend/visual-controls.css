@@ -37,8 +37,8 @@ button, input, select, textarea, output { font-family: var(--font-body); font-va
 :root .zoom-control .range-shell { background: var(--panel); padding: 0; width: 58px; }
 :root .viewer-view-group .viewer-tool-divider { display: none; }
 :root .viewer-bar { padding-block: 0; min-height: var(--panel-header-h); }
-:root .workflow-tab { font: 500 14.5px var(--font-body); }
-:root .workflow-tab .workflow-step { font: 500 11.5px var(--font-body); }
+:root .workflow-tab { font: 500 16px var(--font-body); }
+:root .workflow-tab .workflow-step { font: 500 21px var(--font-body); }
 :root .workflow-tab.active { border-bottom: 2px solid var(--accent); }
 :root .viewer-panel { grid-template-rows: var(--panel-header-h) minmax(0, 1fr) var(--status-bar-h); }
 :root .viewer-panel > .viewer-bar { grid-row: 1; }
