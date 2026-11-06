@@ -38,7 +38,7 @@ button, input, select, textarea, output { font-family: var(--font-body); font-va
 :root .viewer-view-group .viewer-tool-divider { display: none; }
 :root .viewer-bar { padding-block: 0; min-height: var(--panel-header-h); }
 :root .workflow-tab { font: 500 16px var(--font-body); }
-:root .workflow-tab > span:first-child { font: 500 21px var(--font-body); }
+:root .workflow-tab > span:first-child { font: inherit; font-variant-numeric: tabular-nums; letter-spacing: 0; }
 :root .workflow-tab.active { border-bottom: 2px solid var(--accent); }
 :root .viewer-panel { grid-template-rows: var(--panel-header-h) minmax(0, 1fr) var(--status-bar-h); }
 :root .viewer-panel > .viewer-bar { grid-row: 1; }
@@ -221,8 +221,8 @@ html.desktop-shell .window-chrome { display: none; }
 html.desktop-shell .top-bar { -webkit-app-region: drag; user-select: none; padding-right: 0; }
 html.desktop-shell .top-bar :is(button, nav) { -webkit-app-region: no-drag; }
 html.desktop-shell .product-lockup { position: relative; overflow: visible; }
-html.desktop-shell .unified-menu-button { display: grid; place-items: center; width: 30px; min-width: 30px; height: 30px; min-height: 30px; padding: 0; line-height: 1; font-size: 0; }
-html.desktop-shell .unified-menu-button::before { content: ""; width: 18px; height: 12px; background: linear-gradient(var(--body), var(--body)) top/100% 2px no-repeat, linear-gradient(var(--body), var(--body)) center/100% 2px no-repeat, linear-gradient(var(--body), var(--body)) bottom/100% 2px no-repeat; }
+html.desktop-shell .unified-menu-button { position: relative; display: block; width: 30px; min-width: 30px; height: 30px; min-height: 30px; padding: 0; line-height: 1; font-size: 0; }
+html.desktop-shell .unified-menu-button::before { content: ""; position: absolute; inset: 0; margin: auto; width: 18px; height: 12px; background: linear-gradient(var(--body), var(--body)) top/100% 2px no-repeat, linear-gradient(var(--body), var(--body)) center/100% 2px no-repeat, linear-gradient(var(--body), var(--body)) bottom/100% 2px no-repeat; }
 html.desktop-shell .window-menu-bar { position: absolute; top: 100%; left: 0; z-index: 120; background: var(--panel); border: 1px solid var(--border); padding: 4px; }
 html.desktop-shell .window-menu-trigger { min-height: 30px; }
 html.desktop-shell .window-control { height: var(--top-h); min-height: var(--top-h); }
