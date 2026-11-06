@@ -36,6 +36,7 @@ the delivery renderer for export, Proof and Library pictures (see
 | Stage tolerances (for example a painted-mask feather may differ by 2 of 255 levels) stay in force. Whole-image perceptual limits (ΔE 2000 / ΔE ITP, mean < 1.0, p99.9 ≤ 3.0) apply on top for delivery. | 2026-10-01, 2026-10-18 |
 | GPU first for everything, including export. Superseded November 2 (next row). | Steve, 2026-10-18 |
 | Speed where it is felt; the GPU where it pays: measure the whole wait first; a new GPU route needs about 50% or more off a noticeable wait, or a job the CPU can't do acceptably. Existing GPU routes (this preview, Library, delivery) stay. Master PRD philosophy 3. | Steve, 2026-11-02 |
+| GPU failure rule: each GPU route makes one attempt, then uses its CPU fallback. A second GPU try only for a temporary failure outside the work (preemption, memory held by other work, device lost or renderer restarting, contention timeout). A result that fails a validity or range check, a compile or validation error, a job too large for the card, or no GPU goes straight to the CPU. Master PRD philosophy 3, "When a GPU attempt fails". | Steve, 2026-11-06 |
 | Responsiveness is judged first by Steve using the app. A timing outside its tolerance that can't be explained is reported, and Steve tries the app before a test run is spent on it. | Steve, 2026-10 |
 
 ## 4. Current state (October 18, 2026)

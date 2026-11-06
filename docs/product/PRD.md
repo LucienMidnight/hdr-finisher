@@ -77,6 +77,42 @@ may not contradict these.
      gain.
    - Example (November 2): GPU RAW development in Grade cut one step but
      moved the whole import only from 6.1 s to 5.9 s, so it was stopped.
+   **When a GPU attempt fails: one try, then the CPU** (Steve, November 6,
+   2026). Every GPU route makes one attempt. If it fails, the work goes to
+   its CPU fallback; it is not run again on the GPU. A second GPU attempt is
+   allowed only for a failure that is temporary, caused by something outside
+   the work itself, and leaves no doubt about the result. When the CPU
+   fallback is too slow to accept, make the CPU faster rather than add GPU
+   retries (example below).
+   - *Worth a second GPU try (at most one):*
+     - preempted or paused for higher-priority work (Grade, export, another
+       photo): this is not a failure; the work is resumed or requeued and does
+       not count as an attempt;
+     - graphics memory or the shared reservation briefly held by other work:
+       wait for it to be released, then try once;
+     - the GPU device was lost or reset (driver reset, renderer restarted):
+       recreate the device, then try once;
+     - the renderer is still starting or briefly not responding (for example
+       a stale heartbeat while it restarts);
+     - a timeout caused by contention, not by the job itself hanging.
+   - *Go straight to the CPU (the default):*
+     - the result fails a validity or range check (invalid, non-finite or
+       out-of-range pixels). The run cannot be trusted, and the check cannot
+       rule out subtler damage from the same run, which could reach export;
+     - a shader compile or validation error, or any other error that will
+       repeat with the same input;
+     - the job is larger than the card or its budget allows, or the adapter
+       lacks a needed feature or limit;
+     - out of graphics memory when nothing else is holding it;
+     - no GPU, GPU unavailable, or the user chose CPU rendering;
+     - the same work has already failed on the GPU in this session.
+   - Every retry and every fallback is logged with its reason. A retry never
+     changes the output; GPU and CPU still agree within their tolerance.
+   - Example (November 6): on a machine with faulty graphics memory, Edge
+     colour highlight reconstruction failed the range check on every GPU
+     attempt for one photo (five out of five), so a second try only added
+     about 10 s. Running the CPU fallback on all cores instead cut it from
+     34 s to 9 s with identical output.
    **Use the whole machine** (Steve, October 25, 2026). CPU work that cannot
    run on the GPU (decoding, encoding, indexing, preparation) should scale
    across the available cores rather than be limited to one thread or a fixed
