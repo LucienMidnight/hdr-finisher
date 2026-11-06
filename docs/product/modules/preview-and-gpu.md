@@ -73,6 +73,19 @@ compares GPU preview with CPU fallback preview. Its limits are unchanged.
   Black & White Direct/Tiled mismatch, uncompressed extreme HDR on
   Neutral, and the CF-SPEED, CF-DRIFT, CF-ROUTE and P3 rows marked "Later".
 
+**GPU failure rule in preview (November 6, 2026, built).** The preview
+failure policy (`render-failure.js`, `preview-pipeline.js`) makes at most one
+GPU retry, only for a temporary cause: a timeout or network failure, out of
+memory (other work may hold it) or a lost device. The frame stays on screen
+during that retry. Card limits (too large for the adapter), validation,
+unsupported graphs and unknown errors are not retried: that render uses the
+CPU picture. Repeated validation failure (three in a row) now stops the GPU
+only for that photo's Grade session instead of for the whole app. This is the
+one place the rule's "already failed this session, go to the CPU" is not
+applied at the first failure: the CPU preview is slow and refuses some graphs
+(local adjustments, spatial film), so one failure does not switch a whole
+photo to it. Initialization failure still disables the GPU everywhere.
+
 ## 5. Open work, in order
 
 1. Serve GPU delivery: give export, Proof and Library pictures a hidden

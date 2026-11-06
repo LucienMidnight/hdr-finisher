@@ -82,6 +82,8 @@ function transientGpuRefusal() {
     // The coordinator's name for the same thing: a queued render replaced by
     // a newer one before it was dispatched.
     || reason === "coalesced-by-newer-render"
+    // One GPU retry is already scheduled: keep the frame, no CPU picture yet.
+    || reason.startsWith("gpu-retry-scheduled:")
     || reason.startsWith("peak:newer-render-started")
     || reason.startsWith("peak:application-not-current")
     || (reason.startsWith("tiled-encode-failed:") && reason.includes("superseded"));
@@ -703,7 +705,7 @@ async function renderGpuDraftInner(
     if (!result) return refuse(state.gpuPreview.lastRenderRefusal?.reason || "renderer-returned-nothing");
     if (!sourceOptions.isCurrent()) return refuse("superseded-during-render");
     state.gpuRenderRetries = 0;
-    state.gpuFailurePolicy?.noteSuccess();
+    state.gpuFailurePolicy?.noteSuccess(state.session?.session_id ?? null);
     // The coordinator arms the whole-frame catch-up once this pass presents,
     // so the refinement boundary stops being visible as a seam. It owns the
     // deferred follow-up and cancels it on a newer edit or a mode change.
@@ -784,7 +786,7 @@ async function renderGpuDraftInner(
       return true;
   } catch (error) {
     const verdict = state.gpuFailurePolicy
-      ? state.gpuFailurePolicy.record(error, { superseded: Boolean(error?.recoverable) })
+      ? state.gpuFailurePolicy.record(error, { superseded: Boolean(error?.recoverable), work: state.session?.session_id ?? null })
       : {
         kind: error?.recoverable ? "superseded" : "transport",
         recoverable: true,
@@ -800,20 +802,25 @@ async function renderGpuDraftInner(
       return refuse("superseded-during-render");
     }
     if (verdict.recoverable && !verdict.disabled) {
-      // Section 5.8: keep the device and the accepted frame. A retryable
-      // transport or allocation failure is re-dispatched within a bounded
-      // budget; a validation failure only counts toward the sticky threshold.
-      console.warn(`WebGPU authoring render failed (${verdict.kind}); keeping the accepted frame.`, error);
+      // Section 5.8 and the GPU failure rule (master PRD, November 6): keep
+      // the device and the accepted frame. Only a temporary cause (timeout,
+      // memory other work may hold, a lost device) gets one more GPU try,
+      // keeping the frame meanwhile. Anything else, or a second failure, uses
+      // the CPU picture for this render; repeated validation failure stops
+      // the GPU for this photo only.
       state.gpuPreview.detail = `${verdict.kind} failure: ${verdict.detail}`;
       state.displayInfo.gpu = state.gpuPreview.detail;
       renderReadouts();
-      if (verdict.retryable && state.gpuRenderRetries < 2) {
+      if (verdict.retryable && state.gpuRenderRetries < 1) {
         state.gpuRenderRetries += 1;
+        console.warn(`WebGPU authoring render failed (${verdict.kind}); retrying once on the GPU.`, error);
         window.setTimeout(() => {
           if (state.session) settlePreview(lane).catch(() => null);
         }, 250);
+        return refuse(`gpu-retry-scheduled:${verdict.kind}`);
       }
-      return false;
+      console.warn(`WebGPU authoring render failed (${verdict.kind}); using the CPU picture for this render${verdict.workDisabled ? " and for the rest of this photo" : ""}.`, error);
+      return refuse(`gpu-failed:${verdict.kind}`);
     }
     console.warn("WebGPU authoring render failed permanently; using raw CPU preview.", error);
     state.gpuPreview.available = false;

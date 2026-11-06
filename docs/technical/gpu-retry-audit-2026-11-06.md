@@ -2,6 +2,21 @@
 
 Report only. No code changes, commits, tests, GPU work or Electron runs. Read AGENTS.md, master PRD philosophy 3 and the code map. Locations below are relative to `codebase/`. This is a static audit: confirmed control-flow findings are separated from safety questions requiring fault injection. It does not certify every GPU route or prove pixel safety.
 
+## Status (November 6, after Steve's decision)
+
+Steve chose to fix the two routes that retry what the rule sends to the CPU,
+and to leave the routes that only miss an optional retry:
+
+- **Library RAW and preparation: fixed** in `2bca4e9` (see the Library module PRD).
+- **Grade preview: fixed** (see the Preview and GPU module PRD). Repeated
+  validation failure now stops the GPU per photo; it still waits for three in
+  a row because the CPU preview is slow and refuses some graphs.
+- **Export/Proof, DNG, Edge colour, retouch, Denoise: left as they are.** They
+  already go to the CPU on a rejected or repeating failure; they only lack the
+  optional single retry for a reset or restarting device, which is rare and
+  would touch Still-strict export code. Revisit only if those fallbacks show
+  up in Steve's use.
+
 ## Findings
 
 ### Library RAW development: retries rejected pixels

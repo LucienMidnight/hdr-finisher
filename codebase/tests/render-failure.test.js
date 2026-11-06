@@ -11,6 +11,10 @@ test("every Section 5.8 class is recognized from the error it produces", () => {
     [new Error("device lost"), {}, "device-lost"],
     [new Error("validation: Scissor rect is not contained in the render area"), {}, "validation"],
     [new Error("Failed to allocate a 512 MiB buffer"), {}, "allocation"],
+    [new Error("Buffer size exceeds maxBufferSize"), {}, "limits"],
+    [new Error("Texture too large for max texture dimension"), {}, "limits"],
+    [new Error("GPU request timed out"), {}, "transport"],
+    [new Error("Something nobody anticipated"), {}, "unknown"],
     [new Error("unsupported graph for this lane"), {}, "unsupported"],
     [new Error("No WebGPU adapter was returned"), { init: true }, "init"],
   ];
@@ -35,22 +39,26 @@ test("recoverable classes never disable WebGPU", () => {
   assert.equal(policy.snapshot().disabled, false);
 });
 
-test("only repeated validation failure is sticky, and success resets the count", () => {
+test("repeated validation failure stops the GPU for that photo only, and success resets the count", () => {
   const policy = new HDRRenderFailurePolicy({ validationThreshold: 3 });
-  const validation = () => policy.record(new Error("validation error: invalid value"));
+  const validation = (work = "photo-a") => policy.record(new Error("validation error: invalid value"), { work });
 
-  assert.equal(validation().disabled, false);
-  policy.noteSuccess();
-  assert.equal(validation().disabled, false);
-  assert.equal(validation().disabled, false);
-  assert.equal(validation().disabled, true, "the third consecutive failure after a success disables");
-  assert.equal(policy.snapshot().disabled, true);
+  assert.equal(validation().workDisabled, false);
+  policy.noteSuccess("photo-a");
+  assert.equal(validation().workDisabled, false);
+  assert.equal(validation().workDisabled, false);
+  const third = validation();
+  assert.equal(third.workDisabled, true, "the third consecutive failure after a success stops this photo");
+  assert.equal(third.disabled, false, "the GPU stays on for other photos");
+  assert.equal(policy.disabledFor("photo-a"), true);
+  assert.equal(policy.disabledFor("photo-b"), false);
+  assert.equal(validation("photo-b").workDisabled, false, "another photo counts from zero");
 
   const fresh = new HDRRenderFailurePolicy({ validationThreshold: 3 });
   fresh.record(new Error("validation error"));
   fresh.record(new Error("validation error"));
   fresh.noteSuccess();
-  assert.equal(fresh.record(new Error("validation error")).disabled, false);
+  assert.equal(fresh.record(new Error("validation error")).workDisabled, false);
   assert.equal(fresh.snapshot().consecutiveValidation, 1);
 });
 
@@ -59,7 +67,7 @@ test("a superseded failure neither counts toward nor resets the validation chain
   policy.record(new Error("validation error"));
   policy.record(Object.assign(new Error("aborted"), { name: "AbortError" }));
   const verdict = policy.record(new Error("validation error"));
-  assert.equal(verdict.disabled, true);
+  assert.equal(verdict.workDisabled, true);
   assert.equal(policy.snapshot().consecutiveValidation, 2);
 });
 
@@ -78,4 +86,14 @@ test("retryable failures carry a retry flag that a disabled policy withholds", (
   assert.equal(policy.record(new Error("unsupported graph")).retryable, false);
   policy.record(new Error("no adapter"), { init: true });
   assert.equal(policy.record(new Error("Failed to fetch")).retryable, false);
+});
+
+test("GPU failure rule: only temporary causes are retried", () => {
+  const policy = new HDRRenderFailurePolicy();
+  for (const message of ["Failed to fetch", "GPU request timed out", "Failed to allocate a buffer", "device lost"]) {
+    assert.equal(policy.record(new Error(message)).retryable, true, message);
+  }
+  for (const message of ["Buffer size exceeds maxBufferSize", "validation error", "unsupported graph", "Something nobody anticipated"]) {
+    assert.equal(policy.record(new Error(message)).retryable, false, message);
+  }
 });

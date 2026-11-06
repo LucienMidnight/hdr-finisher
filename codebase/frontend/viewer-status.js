@@ -1,6 +1,9 @@
 function gpuPreviewEligible(lane = state.currentView) {
   return state.renderingMode !== "cpu"
     && Boolean(state.gpuPreview?.available)
+    // GPU failure rule: a photo whose preview repeatedly failed validation
+    // stays on the CPU for this session; other photos keep the GPU.
+    && !state.gpuFailurePolicy?.disabledFor?.(state.session?.session_id ?? null)
     && state.gpuPreview.supportsLocalAdjustments(lane, localsBypassed() ? [] : localAdjustments());
 }
 

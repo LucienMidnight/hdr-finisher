@@ -1,3 +1,18 @@
+## November 6: one GPU try, then the CPU (built, `2bca4e9`)
+
+Library RAW development now follows the master PRD GPU failure rule
+(philosophy 3). A rejected GPU result (invalid pixels, or an empty colour
+channel meaning a GPU step wrote nothing) goes straight to the CPU with no
+second GPU attempt, and that photo's work skips the GPU for the rest of the
+session; other photos keep it. Out of memory gets one retry only while other
+Library GPU work or a draw is running. GPU development errors that would
+repeat go to the CPU instead of returning as preparation failures. Device loss
+keeps its two-loss ceiling. Preparation retries a temporary error once (was
+twice) and records development failures at once. The CPU fallback allowance,
+memory and VRAM budgets are unchanged. Open: the `library-temporary-recovery.js`
+driver cannot currently reach its forced faults because its photo copies are
+served from stored pictures; it needs fresh copies or a cache reset.
+
 ## November 5: selected full-size zoom draws on the GPU (built)
 
 Steve approved moving the October 19 single selected full-size scene to the
