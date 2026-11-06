@@ -306,3 +306,9 @@ html.native-application-menu :is(.window-controls, .unified-menu-button) { displ
 :root .grade-autosave { margin-left: auto; }
 html.desktop-shell .window-controls { margin-left: 0; }
 
+
+/* Narrow layouts keep every viewer control reachable without clipping. */
+:root .compact-workspace .viewer-panel { grid-template-rows: auto minmax(0, 1fr) var(--status-bar-h); }
+:root .compact-workspace .viewer-bar { height: auto; max-height: none; flex-wrap: wrap; }
+:root .compact-workspace .viewer-tools { flex: 1 1 100%; min-width: 0; flex-wrap: wrap; justify-content: flex-start; padding-block: 4px; }
+

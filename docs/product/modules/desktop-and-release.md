@@ -180,3 +180,8 @@ and Flatpak installs the SVG directly. No tracked ICO/ICNS exists. Glyph
 geometry and design-history sources are unchanged. Review includes 16/24/32/
 48 px icons; no installer or package build was needed.
 
+
+The November 6 minimum-window review also found viewer tools clipping in the
+existing compact layout. They now wrap within the viewer width. Development
+windows explicitly use the regenerated icon, as packaged windows already do.
+

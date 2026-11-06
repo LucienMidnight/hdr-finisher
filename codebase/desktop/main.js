@@ -1099,6 +1099,7 @@ async function createWindow(role = "main") {
     // Library uses native chrome, including Windows snap.
     ...(isMain ? {} : { frame: true }),
     backgroundColor: ({ "default-light": "#ededed", "studio-gray": "#2e2e2e" })[applicationPreferences.theme] || "#0c0c0c",
+    icon: path.join(__dirname, "assets", "icon.png"),
     title: isMain ? "HDR Finisher" : "HDR Finisher — Library",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
