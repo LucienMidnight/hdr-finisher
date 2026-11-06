@@ -9,3 +9,7 @@ This pre-release change intentionally rejects prototype schema v1 and v2 project
 Both 203- and 100-nit presets save and reopen without changing meaning. Changing only the project reference white invalidates rendered/proof results while retaining the decoded source proxy; changing source interpretation requires a source re-decode.
 
 See [HDR Reference White](hdr-reference-white.md), [Import and metadata](import.md), and [Export and delivery](export.md).
+
+Open saved projects from File in the ≡ menu on Windows/Linux, or the system
+menu bar on macOS. Recent projects is in File (Open Recent on macOS).
+

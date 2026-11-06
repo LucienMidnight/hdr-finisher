@@ -1883,3 +1883,8 @@ range dots, numeric °/% units, arrow-key tabs and selected-range double-click
 reset are present. Steve's visual sign-off is pending in the UI polish review.
 No grade processing changed; grouped checks include range retention/reset.
 
+
+The November 6 screenshot review found the existing one-row Grade header
+height clipped its mode tabs into the next label. The header now contains
+both rows naturally; the updated captures verify the correction.
+

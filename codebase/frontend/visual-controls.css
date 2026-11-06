@@ -300,3 +300,9 @@ html.native-application-menu :is(.window-controls, .unified-menu-button) { displ
 :root .wheel-fields label::after { content: attr(data-unit); position: absolute; right: 7px; bottom: 6px; color: var(--muted); pointer-events: none; }
 :root .wheel-fields input { padding-right: 24px; }
 
+
+/* The Grade title and mode tabs form two rows, not one clipped header. */
+:root #grade-workflow-panel > .grade-header { height: auto; min-height: 0; max-height: none; }
+:root .grade-autosave { margin-left: auto; }
+html.desktop-shell .window-controls { margin-left: 0; }
+
