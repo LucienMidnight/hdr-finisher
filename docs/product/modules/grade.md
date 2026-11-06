@@ -1889,3 +1889,11 @@ The November 6 screenshot review found the existing one-row Grade header
 height clipped its mode tabs into the next label. The header now contains
 both rows naturally; the updated captures verify the correction.
 
+
+Final November 6 UI validation is recorded in [Desktop and release](desktop-and-release.md#november-6-ui-polish-validation-and-review). Text size and wheel appearance remain Steve's screenshot sign-off; no saved grade values or rendering changed.
+
+
+The wheel centre stays dark neutral in every theme by mixing the existing
+panel colour toward black; the puck keeps a light neutral edge for contrast.
+No colour tokens were added.
+
