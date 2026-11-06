@@ -64,6 +64,13 @@ or hide them below a width where they can't keep it.
   the matching bundled Tabler icon, shown on hover, with a tooltip. Report
   which it was.
 
+### 6. Export page toolbar centred
+
+Steve added this during implementation: centre the Export batch header view
+buttons and actions (Add Library selection, Select all, Remove, Clear), with
+the title and summary at the left. Keep one row at the minimum width and
+include a review crop. Implement in its own commit.
+
 ## Constraints
 
 - No change to rendering, export, Proof, project or preset files.

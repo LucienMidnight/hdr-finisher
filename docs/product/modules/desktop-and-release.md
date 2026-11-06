@@ -373,3 +373,5 @@ Section 2: enlarged centred menu glyph, muted at rest and text ink on hover/focu
 Section 3: preview zoom and Library thumbnail-size fills stay neutral at all values. Grading sliders retain their accent behaviour. Validation grouped at the end of round 6.
 
 Section 4: compact spacing and view controls retain one row at the existing 1100 px minimum. Workflow connectors retain an 8 px line at narrow widths. Validation grouped at the end of round 6.
+
+Section 6 (added by Steve): Export batch view/actions centre in the header space after the left-hand title and summary, using compact spacing at minimum width. Validation grouped at the end of round 6.

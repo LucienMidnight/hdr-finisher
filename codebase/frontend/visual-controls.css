@@ -454,3 +454,12 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 :root .library-nav .library-heading .panel-title { font-size: 17px; font-weight: 700; white-space: nowrap; }
 :root .library-nav .library-heading > .text-button { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; min-height: 28px; padding: 0; font: 500 24px/1 var(--font-body); opacity: 0; }
 :root .library-nav:is(:hover, :focus-within) .library-heading > .text-button { opacity: 1; }
+
+/* Centre Export's controls in the space after its left-hand title. */
+:root .batch-header { display: grid; grid-template-columns: max-content minmax(0, 1fr); flex-wrap: nowrap; }
+:root .batch-header > .batch-tools { justify-self: center; flex-wrap: nowrap; }
+@media (max-width: 1200px) {
+ :root .batch-header { gap: 6px; padding-inline: 8px; }
+ :root .batch-header > .batch-tools { gap: 2px; }
+ :root .batch-header .tool-button { padding-inline: 4px; font-size: 12px; }
+}
