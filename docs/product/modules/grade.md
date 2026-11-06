@@ -1897,3 +1897,8 @@ The wheel centre stays dark neutral in every theme by mixing the existing
 panel colour toward black; the puck keeps a light neutral edge for contrast.
 No colour tokens were added.
 
+
+## November 6: bypass-eye alignment (built)
+
+The eye mask and diagonal strike are positioned from the same button centre,
+independent of anonymous text/grid rows, in every theme.

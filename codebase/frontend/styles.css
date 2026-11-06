@@ -3406,6 +3406,10 @@ input[type="text"] {
 
 .section-bypass::before,
 .local-adjustment-bypass::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   width: var(--bypass-icon-size);
   height: var(--bypass-icon-size);
   background: currentColor;
