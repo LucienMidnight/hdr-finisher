@@ -214,3 +214,19 @@ body.slider-hover .slider-key-legend { opacity: 1; }
  display: inline-flex; align-items: center; justify-content: center; height: 30px; min-height: 30px; box-sizing: border-box;
 }
 :root :is(.viewer-bar, .library-toolbar, .batch-header) .tool-button svg { display: block; flex-shrink: 0; }
+
+/* November 6: one application toolbar. */
+html.desktop-shell { --window-chrome-h: 0px; }
+html.desktop-shell .window-chrome { display: none; }
+html.desktop-shell .top-bar { -webkit-app-region: drag; user-select: none; padding-right: 0; }
+html.desktop-shell .top-bar :is(button, nav) { -webkit-app-region: no-drag; }
+html.desktop-shell .product-lockup { position: relative; overflow: visible; }
+html.desktop-shell .unified-menu-button { min-width: 30px; font-size: 24px; padding: 0 4px; }
+html.desktop-shell .window-menu-bar { position: absolute; top: 100%; left: 0; z-index: 120; background: var(--panel); border: 1px solid var(--border); padding: 4px; }
+html.desktop-shell .window-menu-trigger { min-height: 30px; }
+html.desktop-shell .window-control { height: var(--top-h); min-height: var(--top-h); }
+html.desktop-shell .top-actions { gap: 8px; }
+html.native-application-menu .top-bar { padding-right: 16px; }
+html.native-application-menu:not(.window-fullscreen) .product-lockup { padding-left: 74px; }
+html.native-application-menu :is(.window-controls, .unified-menu-button) { display: none; }
+

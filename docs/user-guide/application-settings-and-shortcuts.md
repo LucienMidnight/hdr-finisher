@@ -88,3 +88,9 @@ Home/End, direct numeric entry, and double-click reset keep their existing behav
 ## Updates
 
 The desktop app can check the public GitHub Releases feed at startup or on demand. It compares the installed version with the latest release tag and shows a dismissible notice when a newer release exists. It does not download or install updates automatically, and an offline or failed check does not interrupt editing.
+
+On Windows and Linux, open the application menus with the ≡ button beside
+HDRF (or Alt/F10). Recent projects is in File. On macOS, use the system menu
+bar and File → Open Recent. Drag empty space in the top toolbar to move the
+window; double-click it to maximize or restore.
+

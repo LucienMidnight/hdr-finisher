@@ -2,7 +2,8 @@ function windowChromeOptions(platform = process.platform) {
   return {
     frame: platform === "darwin",
     autoHideMenuBar: true,
-    // macOS uses its native title bar, traffic lights, and full-screen behavior.
+    // Native traffic lights share the content toolbar on macOS.
+    ...(platform === "darwin" ? { titleBarStyle: "hiddenInset" } : {}),
     roundedCorners: platform === "darwin",
   };
 }

@@ -963,6 +963,7 @@ function buildMenu() {
       submenu: [
         { label: "Import Source…", click: () => sendCommand("open-source") },
         { label: "Open Project…", click: () => sendCommand("open-project") },
+        { label: "Open Recent…", click: () => sendCommand("recent-projects") },
         { type: "separator" },
         { label: "Save", enabled: hasDocument, click: () => sendCommand("save") },
         { label: "Save As…", enabled: hasDocument, click: () => sendCommand("save-as") },

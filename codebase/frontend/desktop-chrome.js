@@ -25,6 +25,31 @@
     if (chrome) chrome.hidden = true;
   }
 
+  const bar = document.querySelector(".top-bar");
+  const lockup = bar.querySelector(".product-lockup");
+  const menuButton = document.createElement("button");
+  menuButton.type = "button";
+  menuButton.className = "unified-menu-button text-button";
+  menuButton.textContent = "≡";
+  menuButton.setAttribute("aria-label", "Application menus");
+  menuButton.setAttribute("aria-expanded", "false");
+  menuButton.setAttribute("aria-controls", "unified-menus");
+  menuButton.hidden = usesNativeApplicationMenu;
+  lockup.append(menuButton);
+  menuBar.id = "unified-menus";
+  lockup.append(menuBar);
+  menuBar.hidden = true;
+  bar.querySelector(".top-actions").append(document.querySelector(".window-controls"));
+  document.getElementById("project-recents").hidden = true;
+  document.querySelector(".window-chrome").hidden = true;
+  const showMenus = (show) => {
+    menuBar.hidden = !show;
+    menuButton.setAttribute("aria-expanded", String(show));
+  };
+  menuButton.addEventListener("click", () => showMenus(menuBar.hidden));
+  bar.addEventListener("dblclick", event => {
+    if (!event.target.closest("button, nav, input")) void desktop.performWindowAction?.("toggle-maximize");
+  });
   const menus = [...document.querySelectorAll(".window-menu")];
   const submenus = [...document.querySelectorAll(".window-submenu")];
   const setSubmenuOpen = (submenu, open, { focusFirst = false } = {}) => {
@@ -106,10 +131,13 @@
   }
 
   document.addEventListener("pointerdown", (event) => {
-    if (!event.target.closest(".window-menu")) closeMenus();
+    if (!event.target.closest(".window-menu, .unified-menu-button, .window-menu-bar")) { closeMenus(); showMenus(false); }
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeMenus({ restoreFocus: true });
+    if (event.key === "Escape") { closeMenus(); showMenus(false); menuButton.focus(); }
+    if (!usesNativeApplicationMenu && (event.key === "F10" || (event.key === "Alt" && !event.ctrlKey && !event.shiftKey))) {
+      event.preventDefault(); showMenus(true); menus[0]?.querySelector("button").focus();
+    }
   });
 
   menuBar?.addEventListener("click", (event) => {
@@ -132,10 +160,11 @@
     } else if (item.dataset.shellAction === "about") {
       void desktop.performShellAction?.("about");
     }
-    closeMenus();
+    closeMenus(); showMenus(false);
   });
 
   const setWindowState = (state = {}) => {
+    document.documentElement.classList.toggle("window-fullscreen", Boolean(state.fullscreen));
     const maximize = document.querySelector('.window-control[data-window-action="toggle-maximize"]');
     if (!maximize) return;
     const maximized = Boolean(state.maximized);
