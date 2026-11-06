@@ -133,9 +133,9 @@ function renderHighlightCompressionControls() {
   document.querySelector('[data-control-path="hdr.highlight_compression_manual_peak_nits"]')?.toggleAttribute("hidden", hdr.highlight_compression_peak_measurement !== "manual");
 
   const canvas = els.highlightCompressionGraph;
-  const context = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
+  const surface = resizeCanvasSurface(canvas);
+  if (!surface) return;
+  const {ctx: context, width, height} = surface;
   const pad = { left: 35, right: 9, top: 9, bottom: 24 };
   const sourcePeak = Math.max(1000, mode === "peak_fit"
     ? toneAdjustedHighlightPeakNits(hdr)
@@ -145,19 +145,20 @@ function renderHighlightCompressionControls() {
   const xFor = (value) => pad.left + (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (width - pad.left - pad.right);
   const yFor = (value) => height - pad.bottom - (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (height - pad.top - pad.bottom);
   context.clearRect(0, 0, width, height);
-  context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--border").trim();
+  context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--hairline").trim();
   context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
   context.font = "9px monospace";
   for (const tick of [10, 100, 1000, 10000, 100000]) {
     if (tick > maximum) continue;
     context.beginPath();
-    context.moveTo(xFor(tick), pad.top);
-    context.lineTo(xFor(tick), height - pad.bottom);
-    context.moveTo(pad.left, yFor(tick));
-    context.lineTo(width - pad.right, yFor(tick));
+    context.moveTo(graphLinePosition(xFor(tick)), pad.top);
+    context.lineTo(graphLinePosition(xFor(tick)), height - pad.bottom);
+    context.moveTo(pad.left, graphLinePosition(yFor(tick)));
+    context.lineTo(width - pad.right, graphLinePosition(yFor(tick)));
     context.stroke();
     context.fillText(tick >= 1000 ? `${tick / 1000}k` : String(tick), xFor(tick) - 6, height - 8);
   }
+  context.save(); context.beginPath(); context.rect(pad.left, pad.top, width - pad.left - pad.right, height - pad.top - pad.bottom); context.clip();
   context.setLineDash([4, 3]);
   context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--quiet").trim();
   context.beginPath(); context.moveTo(xFor(minimum), yFor(minimum)); context.lineTo(xFor(maximum), yFor(maximum)); context.stroke();
@@ -172,6 +173,7 @@ function renderHighlightCompressionControls() {
     if (index === 0) context.moveTo(x, y); else context.lineTo(x, y);
   }
   context.stroke();
+  context.restore(); drawGraphFrame(context, pad.left, pad.top, width - pad.left - pad.right, height - pad.top - pad.bottom);
   context.lineWidth = 1;
   if (mode === "off") {
     els.highlightCompressionSummary.dataset.tooltip = "Compression is off. The ultraviolet identity line leaves highlights unchanged.";
@@ -250,9 +252,9 @@ function renderSdrHighlightCompressionControls() {
   document.querySelector('[data-control-path="sdr.highlight_compression_manual_peak_percent"]')?.toggleAttribute("hidden", sdr.highlight_compression_peak_measurement !== "manual");
 
   const curve = sdrHighlightCurveAdapter(sdr);
-  const context = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
+  const surface = resizeCanvasSurface(canvas);
+  if (!surface) return;
+  const {ctx: context, width, height} = surface;
   const pad = { left: 35, right: 9, top: 9, bottom: 24 };
   const sourcePeak = Math.max(100, Number(curve.highlight_compression_source_peak_nits) || 100);
   const maximum = Math.max(1000, sourcePeak * 1.25);
@@ -260,16 +262,17 @@ function renderSdrHighlightCompressionControls() {
   const xFor = (value) => pad.left + (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (width - pad.left - pad.right);
   const yFor = (value) => height - pad.bottom - (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (height - pad.top - pad.bottom);
   context.clearRect(0, 0, width, height);
-  context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--border").trim();
+  context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--hairline").trim();
   context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
   context.font = "9px monospace";
   for (const tick of [1, 10, 100, 1000, 10000, 100000]) {
     if (tick > maximum) continue;
     context.beginPath();
-    context.moveTo(xFor(tick), pad.top); context.lineTo(xFor(tick), height - pad.bottom);
-    context.moveTo(pad.left, yFor(tick)); context.lineTo(width - pad.right, yFor(tick)); context.stroke();
+    context.moveTo(graphLinePosition(xFor(tick)), pad.top); context.lineTo(graphLinePosition(xFor(tick)), height - pad.bottom);
+    context.moveTo(pad.left, graphLinePosition(yFor(tick))); context.lineTo(width - pad.right, graphLinePosition(yFor(tick))); context.stroke();
     context.fillText(tick >= 1000 ? `${tick / 1000}k%` : `${tick}%`, xFor(tick) - 7, height - 8);
   }
+  context.save(); context.beginPath(); context.rect(pad.left, pad.top, width - pad.left - pad.right, height - pad.top - pad.bottom); context.clip();
   context.setLineDash([4, 3]);
   context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--quiet").trim();
   context.beginPath(); context.moveTo(xFor(minimum), yFor(minimum)); context.lineTo(xFor(maximum), yFor(maximum)); context.stroke();
@@ -283,7 +286,7 @@ function renderSdrHighlightCompressionControls() {
     const y = yFor(mapHighlightNits(input, curve));
     if (index === 0) context.moveTo(x, y); else context.lineTo(x, y);
   }
-  context.stroke(); context.lineWidth = 1;
+  context.stroke(); context.restore(); drawGraphFrame(context, pad.left, pad.top, width - pad.left - pad.right, height - pad.top - pad.bottom); context.lineWidth = 1;
   if (els.sdrHighlightCompressionSummary) {
     const colorNote = sdr.highlight_compression_color_handling === "agx_attenuate"
       ? ` Bright colours fade gradually toward white (Attenuation ${Math.round(sdr.highlight_compression_attenuation ?? 20)}%).`

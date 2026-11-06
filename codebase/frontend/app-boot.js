@@ -1136,12 +1136,16 @@ function bindEvents() {
 function observeGraphEditorSizes() {
   const redraw = (canvas) => {
     if (canvas.clientWidth < 2 || canvas.clientHeight < 2) return;
+    if (canvas === els.highlightCompressionGraph) renderHighlightCompressionControls();
+    if (canvas === els.sdrHighlightCompressionGraph) renderSdrHighlightCompressionControls();
     if (canvas === els.curveEditor) drawCurveEditor();
     if (canvas === els.toneEqualizerEditor) drawToneEqualizerEditor("hdr");
     if (canvas === els.sdrToneEqualizerEditor) drawToneEqualizerEditor("sdr");
   };
   if (!window.ResizeObserver) {
     window.addEventListener("resize", () => {
+      redraw(els.highlightCompressionGraph);
+      redraw(els.sdrHighlightCompressionGraph);
       redraw(els.curveEditor);
       redraw(els.toneEqualizerEditor);
       redraw(els.sdrToneEqualizerEditor);
@@ -1151,6 +1155,8 @@ function observeGraphEditorSizes() {
   graphEditorResizeObserver = new ResizeObserver((entries) => {
     entries.forEach(({ target }) => redraw(target));
   });
+  graphEditorResizeObserver.observe(els.highlightCompressionGraph);
+  graphEditorResizeObserver.observe(els.sdrHighlightCompressionGraph);
   graphEditorResizeObserver.observe(els.curveEditor);
   graphEditorResizeObserver.observe(els.toneEqualizerEditor);
   graphEditorResizeObserver.observe(els.sdrToneEqualizerEditor);

@@ -119,3 +119,8 @@ neutral device-pixel-aligned frame. Grid coordinates align to device pixels;
 scales, samples, readings and label positions are unchanged. No image-render
 or GPU changes. Grouped fast checks and graph review captures cover this UI.
 
+
+The same November 6 frame/clip rule also covers both highlight-compression
+charts, whose canvases now redraw at display resolution on resize. Their
+transfer functions and values are unchanged.
+
