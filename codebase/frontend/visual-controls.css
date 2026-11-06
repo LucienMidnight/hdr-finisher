@@ -425,3 +425,6 @@ html.desktop-shell :is(.window-menu-trigger, .window-menu-popover button) { font
 html.desktop-shell .unified-menu-button { width: 34px; min-width: 34px; color: var(--muted); }
 html.desktop-shell .unified-menu-button::before { width: 22px; height: 18px; background: linear-gradient(currentColor, currentColor) top/100% 2px no-repeat, linear-gradient(currentColor, currentColor) center/100% 2px no-repeat, linear-gradient(currentColor, currentColor) bottom/100% 2px no-repeat; }
 html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expanded="true"]) { color: var(--text); }
+
+/* Zoom and thumbnail size are neutral view controls, even away from home. */
+:root :is(.zoom-control, .library-size) .range-shell .slider-fill { background: var(--fill-neutral); box-shadow: none; }

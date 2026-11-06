@@ -369,3 +369,5 @@ for manual deletion. Keep the review crops until Steve's visual sign-off.
 Section 1: vertical application menu with side submenus and Control Panel module-name typography. Alt/F10, arrows and Escape retained; native macOS menu unchanged. Validation grouped after the five sections.
 
 Section 2: enlarged centred menu glyph, muted at rest and text ink on hover/focus/open. Validation grouped at the end of round 6.
+
+Section 3: preview zoom and Library thumbnail-size fills stay neutral at all values. Grading sliders retain their accent behaviour. Validation grouped at the end of round 6.
