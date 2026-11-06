@@ -424,7 +424,7 @@ function annotateWebDefaultOptions(format) {
   const controls = { quality: els.exportQuality, ...els };
   Object.entries(webDefault).forEach(([key, value]) => {
     const control = controls[key];
-    if (!(control instanceof HTMLSelectElement)) return;
+    if (!(control instanceof HTMLSelectElement) || control === els.exportResizeMode) return;
     const option = [...control.options].find((candidate) => candidate.value === String(value));
     if (option) option.textContent = `${option.dataset.baseLabel || option.textContent} · Web Default`;
   });

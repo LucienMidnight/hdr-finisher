@@ -770,3 +770,6 @@ export delivery are unchanged. Validation is grouped with round 4.
 
 Round 4, section 6: the original-size choice reads ?Original (cropped)? so
 its full meaning fits the Resize field. Only its label changes.
+
+The Resize choice omits the decorative Web Default suffix to keep the full
+size label visible; advanced-format default annotations remain in place.

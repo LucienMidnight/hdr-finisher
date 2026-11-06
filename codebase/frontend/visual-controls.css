@@ -381,3 +381,5 @@ html.desktop-shell .window-controls { margin-left: 0; }
  background: var(--plate-up); border-color: var(--plate-edge); color: var(--muted);
  box-shadow: var(--plate-lift); opacity: 1; cursor: default;
 }
+
+:root #export-resize-mode { padding-right: 24px; background-position: right 6px center; }
