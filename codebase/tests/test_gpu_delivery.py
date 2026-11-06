@@ -410,8 +410,12 @@ def test_selected_scene_transfers_atomic_gpu_ownership_and_yields(tmp_path, monk
         assert accepted["granted"] and job.gpu_bytes == 0
         activity=client.post('/api/delivery/gpu/activity',json={"bytes":100,"budget":1000}).json()
         assert activity["reserved"] == 300
+        # The retained scene is the Library's own picture: the GPU still reads as
+        # idle, so the Library keeps its shown picture instead of redrawing it.
+        assert client.get('/api/delivery/gpu/permit').json()["idle"]
         room=client.post('/api/delivery/gpu/raw-budget/view',json={"bytes":0,"background":True}).json()
         assert room["available"] == 600
+        assert not client.get('/api/delivery/gpu/permit').json()["idle"]
         client.post('/api/delivery/gpu/activity',json={"id":"grade","bytes":100,"budget":1000,"active":True})
         assert client.post(url,json={"bytes":300,"background":True,"concurrent":True,"draw":True}).json()["preempt"]
         # Pending Proof/export work yields even before it can claim the GPU.

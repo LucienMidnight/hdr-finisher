@@ -392,7 +392,11 @@ def create_gpu_delivery_router():
         return {"cancelled": bool(identity and identity not in active),
             "reason": priority_reason if higher else "GPU delivery released the shared memory budget for Grade.",
             "preempt": preempt, "ready": not preempt,
-            "idle": not active and not raw_jobs and not any(root.glob("delivery-*/request.json")),
+            # The selected photo's retained scene is the Library's own picture,
+            # not other GPU work. Counting it kept the Library dropping and
+            # redrawing its picture in a loop while zoomed.
+            "idle": not active and not any(not job.get("retained") for job in raw_jobs.values())
+                and not any(root.glob("delivery-*/request.json")),
             "budget": max(0, _activity["budget"] - _activity["bytes"])}
 
     @router.get("/next")

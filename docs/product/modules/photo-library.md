@@ -7261,3 +7261,14 @@ pixel qualification above uses small synthetic crops; the large-photo timing
 and memory checks use plain Electron without DevTools. Logs are retained as
 `codebase/output/native-direct-check.log`, `zoom-fast-{node,python}.log` and
 `zoom-grade-{source,viewport,parity}.log`; timings link the normal-app reports.
+
+### November 6: zoomed picture flashed in a loop (fixed)
+
+Steve saw a zoomed TIFF flash in and out repeatedly. The retained GPU scene
+counted as other GPU work, so the GPU permit never read idle; the page then
+discarded its own selected screen picture, redrew it and zoomed again, about
+every 0.4 s. The permit now ignores the retained selected scene when it
+reports idle (the idle warm-up reads the same flag). The earlier checks
+stopped as soon as the detail appeared, before the loop began. Check: the
+48 MP TIFF zoom held 40 s with one detail draw and no redraws (2.79 s click
+to detail, peak 2.97 GB); the same run without the fix hung and timed out.
