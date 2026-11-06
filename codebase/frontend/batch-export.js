@@ -98,6 +98,7 @@
       const name=HDRExportPatterns.render(version.pattern,photo,1,version.name,model.draft.name);
       $("batch-example").textContent=`Example: ${version.subfolder?`${version.subfolder}/`:""}${name}${exportExtensionForFormat(version.settings.format)} · Invalid filename characters become _.`;
     }catch(error){$("batch-example").textContent=error.message;}
+    els.exportResizeMode.title=els.exportResizeMode.selectedOptions[0]?.textContent || "";
     const patternHelp=$("batch-pattern-help");patternHelp.dataset.tooltip=$("batch-example").textContent;patternHelp.setAttribute("aria-description",patternHelp.dataset.tooltip);
     $("batch-summary").textContent=`Each uses its last saved grade.${model.photos.some(p=>p.unsaved)?" Unsaved changes in Grade are not exported.":""}${model.photos.some(p=>hdrSkipped(p))?" HDR versions are skipped for SDR-only photos.":""}${model.photos.some(p=>p.hdr_compatibility==="unknown")?" HDR compatibility will be checked during export.":""}`;
     $("batch-footer-count").hidden=true;
@@ -243,6 +244,7 @@
     const format=section("Format & quality");format.append(field("Format",els.exportFormat),field("Quality profile",els.exportPreset),els.exportQualityRow,els.exportFormatNote);formatSection.remove();profileSection.remove();
     els.exportFormat.setAttribute("aria-label","Format");els.exportFormat.removeAttribute("aria-labelledby");els.exportPreset.setAttribute("aria-label","Quality profile");els.exportPreset.removeAttribute("aria-labelledby");
     const finishing=section("Size & sharpening");
+    els.exportResizeMode.addEventListener("change",()=>{els.exportResizeMode.title=els.exportResizeMode.selectedOptions[0]?.textContent || "";});
     finishing.append(field("Resize",els.exportResizeMode));
     const dimensionInputs=new Map(["export-long-edge","export-width","export-height"].map(id=>[id,$(id)]));
     for(const [id,label] of [["export-long-edge","Long edge"],["export-width","Width"],["export-height","Height"]]){

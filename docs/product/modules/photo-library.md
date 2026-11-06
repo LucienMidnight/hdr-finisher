@@ -7492,3 +7492,7 @@ clear uses × instead of a leading zero; keyboard 0 remains. Toolbar display
 controls have explanatory tooltips and disabled 100% remains visibly neutral.
 Final grouped fast checks, plain Library check and review captures follow.
 
+
+Filename review follow-up: the retained suffix is bounded to twelve characters
+so a very long filename cannot push its ending beyond a small thumbnail.
+

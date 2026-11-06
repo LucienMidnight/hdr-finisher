@@ -599,7 +599,7 @@
     const frame = document.createElement("div"); frame.className = "picture-frame";
     const canvas = document.createElement("img"); canvas.alt = ""; canvas.style.visibility="hidden"; frame.append(canvas);
     const name = document.createElement("span"); name.className = "name"; name.title = photo.name;
-    const split = Math.max(1, Math.ceil(photo.name.length * .6));
+    const split = Math.max(1, photo.name.length - 12);
     name.append(make("span", "name-start", photo.name.slice(0, split)), make("span", "name-end", photo.name.slice(split)));
     element.append(frame, name); container.append(element);
     const cell = { element, canvas, controller: new AbortController(), photo, index, edge:thumbnailEdge(), identity:pictureIdentity(photo) };
