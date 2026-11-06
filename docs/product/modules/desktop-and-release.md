@@ -371,3 +371,5 @@ Section 1: vertical application menu with side submenus and Control Panel module
 Section 2: enlarged centred menu glyph, muted at rest and text ink on hover/focus/open. Validation grouped at the end of round 6.
 
 Section 3: preview zoom and Library thumbnail-size fills stay neutral at all values. Grading sliders retain their accent behaviour. Validation grouped at the end of round 6.
+
+Section 4: compact spacing and view controls retain one row at the existing 1100 px minimum. Workflow connectors retain an 8 px line at narrow widths. Validation grouped at the end of round 6.
