@@ -395,4 +395,7 @@ the relationship between pointer position and grade values. The module Reset
 clears all three ranges, Blending and Balance; double-click clears one range.
 
 Panel titles use title case with no extra letter spacing, retaining their
-existing font and weight. Small field labels retain their current casing.
+locally bundled Sofia Sans Semi Condensed at weight 500. Tab names and
+workflow numbers use the same title face at their existing sizes and weights.
+Group names, body text, values, labels and other buttons retain Afacad. Small
+field labels retain their current casing.

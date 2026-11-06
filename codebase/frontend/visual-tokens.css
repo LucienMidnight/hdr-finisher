@@ -1,3 +1,4 @@
+@font-face { font-family: "Sofia Sans Semi Condensed"; src: url("./assets/fonts/sofia-sans-semi-condensed/SofiaSansSemiCondensed[wght].ttf"); font-weight: 1 1000; font-style: normal; font-display: swap; }
 @font-face { font-family: "Afacad"; src: url("./assets/fonts/afacad/Afacad[wght].ttf"); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: "Afacad"; src: url("./assets/fonts/afacad/Afacad-Italic[wght].ttf"); font-weight: 100 900; font-style: italic; font-display: swap; }
 /* Approved v1 palette, geometry and materials. */
@@ -261,6 +262,7 @@
   --curve-band-opacity: 0.1;
   --graph-home-cue-opacity: 0.62;
   --rejected-photo-opacity: 0.34;
+  --font-title: "Sofia Sans Semi Condensed", "Segoe UI", sans-serif;
   --font-body: Afacad, "Segoe UI Variable Text", "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
 }
@@ -316,8 +318,8 @@
   --font-display: var(--font-body); --font-technical: var(--font-mono);
   --sans: var(--font-body); --display: var(--font-body); --mono: var(--font-body);
   --font-sans: var(--font-body);
-  --panel-title-font-family: var(--font-body); --panel-title-font-size: 12px;
-  --panel-title-font-weight: 600; --panel-title-letter-spacing: .11em;
+  --panel-title-font-family: var(--font-title); --panel-title-font-size: 12px;
+  --panel-title-font-weight: 500; --panel-title-letter-spacing: .11em;
   --group-title-font-family: var(--font-body); --group-title-font-size: 14.5px;
   --group-title-font-weight: 500; --group-title-letter-spacing: 0;
   --group-title-text-transform: none;

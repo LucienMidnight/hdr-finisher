@@ -203,3 +203,5 @@ https://github.com/kleisauke/libvips-packaging/tree/v8.18.7,
 https://github.com/libvips/libvips.
 The native DLL remains replaceable; no libvips source is vendored or modified.
 Existing Grade, Proof and export decoders do not use this route.
+
+Sofia Sans Semi Condensed is bundled from the official [Google Fonts repository](https://github.com/google/fonts/tree/main/ofl/sofiasanssemicondensed), Copyright 2022 The Sofia Sans Project Authors. The normal variable face is used for titles and tab names. Its SIL Open Font License 1.1 is included at `codebase/frontend/assets/fonts/sofia-sans-semi-condensed/OFL.txt` and must accompany source and packaged distributions.

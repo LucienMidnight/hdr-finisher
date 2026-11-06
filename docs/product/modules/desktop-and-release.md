@@ -289,3 +289,11 @@ the five sections was skipped. Round 2 was already archived and recorded.
 
 Scratch output is 29.4 GB at start and finish, below the 100 GB limit.
 Review crops remain for Steve and can be deleted after sign-off.
+
+## November 6: UI polish round 4 ? title font
+
+Titles and tab names use locally bundled Sofia Sans Semi Condensed; panel
+headings use calm weight 500. Afacad remains for group names and other text.
+Workflow tab styling, layout and sizes are unchanged. The font and OFL travel
+with the frontend asset directory in existing backend packaging; there is no
+separate packaging font list. Validation is grouped at the end of round 4.
