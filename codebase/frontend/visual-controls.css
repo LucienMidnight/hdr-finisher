@@ -252,3 +252,16 @@ html.native-application-menu :is(.window-controls, .unified-menu-button) { displ
 }
 :root :is(.lane-switch, .local-lane-switch) > button { min-height: 36px; font-size: 14.5px; }
 
+
+/* Accent means selection, the primary action or an enabled control. */
+:root { --bypass-icon-visible: var(--muted); --bypass-icon-hidden: var(--text); }
+:root .control-group.modified > .control-group-header > .group-toggle::after { content: none; }
+:root .control-group.modified .group-reset::after { content: ""; display: inline-block; vertical-align: middle; margin-left: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
+:root .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 0 26px; }
+:root .control-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 48px 26px; }
+:root .grade-autosave i { background: var(--ready); }
+:root .grade-autosave[aria-pressed="false"] i { background: transparent; }
+:root :is(.checkbox-row, .film-module-toggle, .proof-enable-row, .gradient-luma-toggle) > input[type="checkbox"]:checked { background: var(--accent); }
+:root :is(.checkbox-row, .film-module-toggle, .proof-enable-row, .gradient-luma-toggle) > input[type="checkbox"]:checked::after { color: var(--on-accent); }
+:root :is(.control-row.modified .control-heading output, .film-stage-heading[aria-expanded="true"]) { color: var(--text); }
+

@@ -47,7 +47,7 @@ Keep source facts separate from grade decisions, grade decisions separate from v
 ## Disclosure groups
 
 - Use a single 12px chevron pointing right when collapsed and rotated down when expanded, including top-level groups and sub-sections. Keep the existing header target; section numbers are removed.
-- Expanded top-level bodies run full bleed across the Control Panel. Use the shared 1 px hairline/accent open-section cue and internal separators; do not wrap expanded bodies in rounded tiles or heavy neutral bands. Reserve the raised bordered tile for honest parent/sub-control groups.
+- Expanded top-level bodies run full bleed across the Control Panel. Use the shared 1 px neutral hairline open-section cue and internal separators; do not wrap expanded bodies in rounded tiles or heavy neutral bands. Reserve the raised bordered tile for honest parent/sub-control groups.
 - The whole labeled header is the disclosure target; Reset and bypass remain separate targets.
 - New grade groups start collapsed unless a documented workflow requirement says otherwise.
 - A group body opens directly below its header and must not shift unrelated controls horizontally.
@@ -58,7 +58,7 @@ Keep source facts separate from grade decisions, grade decisions separate from v
 
 Film Look uses five subordinate disclosures: Camera, Negative, Development,
 Print and Scan. Use a small right-pointing chevron which rotates down when
-open, no number, a short current-setting summary, and `<n> Mod` for deliberately
+open, no number, a short current-setting summary, and a Reset dot for deliberately
 set controls. Keep the whole heading keyboard-operable with `aria-expanded`
 and `aria-controls`; hidden content cannot receive focus. A long summary may
 truncate visually but retains its full accessible text and hover title.
@@ -81,18 +81,14 @@ grain trims sit beneath the relationship label Tone response. Stock-owned,
 inherited controls carry a muted STOCK tag; deliberate settings carry the
 existing reset dot before the name, stronger value ink and accent slider fill.
 This applies to selects, switches and segmented controls as well as sliders.
-Equal-value deliberate edits still count as Mod. Dots restore the stock value
+Equal-value deliberate edits still count as modified. Dots restore the stock value
 or common baseline. Slide films retain Print settings but lock every Print
 action, including its reset dots and shortcuts, until a negative is selected.
 
 ## Modified state
 
-Use the sentence-case abbreviation `Mod` everywhere. Do not introduce synonyms such as `changed`, `edited`, or `custom` for the same state.
-
-- Countable groups display `<number> Mod`, for example `1 Mod` or `4 Mod`.
-- Aggregate groups such as Curves and Film Look display `Mod` when a useful item count is unavailable.
-- Uppercase presentation may come from CSS, but source copy remains normal case.
-- A small ultraviolet dot may reinforce modified state, but color or the dot alone must not carry the meaning.
+Show a small neutral dot beside Reset for a modified module. Do not show Mod chips.
+The visible Reset action and accessible state supply meaning alongside the dot.
 - Untouched group headers omit status copy. Reset is shown only for a modified group.
 - Reset returns only the named scope to canonical defaults and immediately clears its modified state.
 - Bypassed and modified are independent states: bypass keeps the authored values.
@@ -132,7 +128,7 @@ All-caps panel titles: Afacad 12px, weight 600, tracking 0.11em. Group names: se
 - Neutral values use neutral styling; modified values use the accent fill and stronger readout color.
 - Sliders retain native keyboard semantics and expose a directly editable numeric readout.
 - Double-clicking a value enables exact entry; Reset restores the documented default.
-- Bypass controls use the shared tokenized eye component and preserve their settings. The unstruck accent eye means visible/enabled; a neutral gray eye with a diagonal strike means bypassed. Local-adjustment eyes live in each adjustment row immediately before its overflow menu.
+- Bypass controls use the shared tokenized eye component and preserve their settings. The neutral grey eye means visible/enabled; a stronger neutral eye with a diagonal strike means bypassed. Local-adjustment eyes live in each adjustment row immediately before its overflow menu.
 - Disabled controls remain legible enough to explain the pipeline but cannot appear active.
 - Interactive preview feedback should begin promptly; settled scopes and refinements may follow.
 - Preview-only controls must say when they do not affect export quality.
@@ -184,7 +180,7 @@ November 4 follow-up: the v1 Control Panel section layout is implemented. The so
 - The Control Panel opens in Global and offers Global / Local / Retouch as a keyboard-operable tab list. Only the chosen mode is visible. Mode, rendition and fold-out state last for the session and are never saved in projects or presets.
 - Global shows shared Raw development, Highlight reconstruction, Crop & rotate and Perspective beneath **Both renditions**, followed by **Per rendition** and the joined rendition switch. Local holds masks and local grades; Retouch holds source repairs beneath **HDR + SDR · before crop**.
 - Global and Local share one underline HDR grade / SDR grade switch, including the preview's rendition choice. It stays pinned beneath the mode header once reached, without folder borders. Global SDR shows a recessed Match SDR row below it; stale matches add a 3 px attention rule and Rematch SDR.
-- Multiple top-level disclosures may remain open. Sections have no numbers. An open section keeps the hairline and full-width raised content surface. Long names truncate before the independent Preset, Reset, bypass and Mod controls. Display names are Color sliders and Color wheels; internal keys are unchanged.
+- Multiple top-level disclosures may remain open. Sections have no numbers. An open section keeps the hairline and full-width raised content surface. Long names truncate before the independent Preset, Reset, bypass and modified-dot controls. Display names are Color sliders and Color wheels; internal keys are unchanged.
 - Local shows New adjustment and four mask tools, overlay and More; Masks · HDR + SDR and stack actions; the selected mask's folded settings; then the pinned local underline rendition switch with Light open and Color, HSL and Detail folded. Paint / Erase belongs inside Brush settings. Invert, gizmo visibility, overlay colour and brush clearing/undo live in More. Mask and repair lists reserve scrollbar space and show about four rows.
 - Clicking a mask tool starts an adjustment immediately, including clicking the lit tool. Clicking a row selects it without creating one. An unused row stays muted until its first brush stroke, gradient placement, completed path, or luma range edit/photo sample. Another tool converts it; clicking the lit tool starts a new draft. Selecting another row, leaving Local, or loading a photo discards an unused draft without a history edit. Creation and first content form one undo step (Luma rule approved by Steve, October 23).
 - Retouch has Inpaint, disabled Heal/Clone marked Soon, Size (up to 1,024 native pixels) and Hardness instrument sliders, automatic search/patch/iterations/seed settings and newest-first repairs. New settings apply to the next stroke; the selected repair offers Retry and Remove. Solving and errors use the status row, with Cancel only while solving. Heal and Clone remain unbuilt.
@@ -354,7 +350,7 @@ Before merging a UI change, confirm:
 
 - A fresh load has no restored interface preferences or adjustments.
 - Every grade group and source disclosure starts collapsed.
-- `Mod` wording follows this guideline and Reset clears it correctly.
+- The dot beside Reset clears when Reset restores defaults.
 - HDR and SDR lanes remain visually and behaviorally consistent.
 - Keyboard, focus, and ARIA states match pointer behavior.
 - The interface remains usable at the supported minimum width.
@@ -372,4 +368,9 @@ in File. Empty toolbar space drags; double-click maximizes/restores.
 Tab lists use neutral text and a hairline baseline with a 2 px accent underline
 and stronger selected text. Apply this to workflow, mode, rendition, Proof,
 curve-channel, scope and wheel-range tabs. Keep their existing locations.
+
+
+Accent is reserved for selected tabs/items, the primary action and enabled
+sliders/toggles. Enabled toggle tracks are accent-filled. Autosave uses the
+ready status colour; bypassed modules stand out through the struck eye.
 

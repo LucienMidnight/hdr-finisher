@@ -1863,3 +1863,8 @@ HDR/SDR switch retains its position and gets a larger readable label. This
 changes only presentation; keyboard and saved grade behavior stay in place.
 Validation is grouped in the final UI polish review.
 
+
+November 6 accent polish: modified modules have a neutral dot beside Reset;
+eyes are neutral when enabled, stronger when bypassed, and enabled switch
+tracks are filled. Autosave uses ready green. Grouped final checks follow.
+
