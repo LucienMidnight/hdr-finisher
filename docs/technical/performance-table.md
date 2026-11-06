@@ -1234,3 +1234,19 @@ compact rows misread virtual IDs as extensions. Evidence:
 The ordinary camera-preview probe (hdr-test unedited _DSC0956.ARW) reached its
 first visible picture at 199 ms and 2560 surface at 250 ms; it does not qualify
 heavy-grade cold drawing. Evidence: `quick-library-check/v1-cold-heavy/`.
+
+### November 6: Grade-to-Library idle scope wait
+
+Parent 2ea6408, publication wait fix, plain Electron 2560x1440/default 4 GB,
+hdr-test reusable copies, two tiled-Fit photos. Existing 500 ms target and 5%
+variation allowance unchanged. Docked HDR first/second 429/974 ms after,
+438 ms/6.796 s before. Second capture waiting: 5.917 s to below 1 ms;
+post-fix capture 215 ms, storage 585 ms. Pixel-change checks pass for grid,
+filmstrip and stored screen; second photo still misses 500 ms.
+The first diagnostic and the 5.438 s heavy-ARW cold probe overlapped the fast
+Python suite, so that heavy-probe timing is diagnostic under CPU contention,
+not acceptance. The 1.394 s library-live-grid probe used a neutral grade and
+camera preview; it does not qualify heavy grades or GPU cold drawing.
+Evidence: `codebase/output/quick-library-check/v1-handoff-{diagnostic,wait,after}/`
+and `v1-heavy-{cold,real}/`. One intermediate app run failed because of an
+editing error; the file was restored and syntax checked before the final run.

@@ -205,7 +205,7 @@ Measured peaks on the same steps (RAM / graphics memory): darktable
 | Batch | Contents | Status |
 | --- | --- | --- |
 | 4a | Development on demand (decisions 1-5) and the default file filter (decision 6). Grid finished-thumbnail reads split to the 32-path request limit. | Built November 3, 2026 |
-| 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Partial November 5: docked HDR/SDR grid, filmstrip and stored-screen pixels update; 500 ms and peak-memory acceptance still fail. |
+| 4b | Grade hands its picture to the Library; shared thumbnails (decision 7). | Partial November 5: docked HDR/SDR grid, filmstrip and stored-screen pixels update; Peak memory passed November 5; November 6 removes the idle scope wait, but second HDR publication still misses 500 ms. |
 | 4c | Remaining Library faults on the new architecture: fullscreen black frame for edited photos, fullscreen not treated as the selected photo, `F` sometimes zooming, fullscreen jumping to zoom when the sharp picture arrives (Steve, November 3: should stay at Fit unless clicked), grid scroll position snapping back while new files are added (Steve, November 3, badminton import), settings-conflict UTF-8 errors. Recheck which still happen first. | Built November 5, 2026; focused fault checks below |
 | 5a | Edited sharp pictures: direct reduced scenes, post-presentation storage, indexed screen identity and pipelined TIFF reduction; heavy-grade follow-up. | Mostly built November 4, 2026: edited ARW/NEF/TIFF first sharp 1.8–2.5 s, reopen 0.14–0.26 s in session and after restart, pixels identical or within tolerance. Selected priority and screen warp completed by 5b. Open: brush-mask CPU time and heavy-grade ordinary first open |
 | 4d | Memory sharing between Library and Grade, idle give-back, 8 GB Mac target (decision 8); then speed tuning. | Partial November 5: backend native owners yield to Grade; regression passes. Windows peak and retained-owner app timing passed November 5 (4.005 GB; real 508.7 MB owner released, paired Grade 5.488/5.549 s). Only 8 GB Mac acceptance remains with Steve. |
@@ -341,6 +341,26 @@ follow-up stays partial. Evidence:
 `codebase/output/quick-library-check/batches45-rapid/` (crops, scenario, report).
 5d remains built; no pinned shader, pixel tolerance, HDR ceiling, export or
 Proof calculation changed in this task.
+
+### November 6: Grade hand-off wait reduced (4b, still partial)
+
+The slow second HDR hand-off waited about six seconds for a pending scope
+request even though no GPU render or proxy render was active. Publication now
+waits for actual renders only; the existing serialized bounded scope-proxy route
+prepares the current picture itself. It keeps the same picture calculations,
+source ownership and cancellation checks. Capture now reports wait, proxy and
+readback stages separately.
+
+Plain Electron, default 4 GB, 2560x1440, reusable hdr-test copies: docked HDR
+first/second publication 429/974 ms, versus 438 ms/6.796 s before. The second
+capture wait fell from 5.917 s to below 1 ms; storage is now the largest part
+(585 ms). Grid, filmstrip and stored-screen exposure-change checks pass for
+both photos. The unchanged 500 ms goal still fails for the second photo;
+4b remains partial. No allowance, shader, export or Proof code changed.
+Evidence: `codebase/output/quick-library-check/v1-handoff-{diagnostic,wait,after}/`.
+813 Node and 3,072 Python checks passed (three skipped); the known unrelated
+remembered-failure Python check failed and was left alone. Final grouped checks
+and popped-out acceptance are recorded by the subsequent checkpoint.
 
 ### November 5: Grade hand-off follow-up (4b, partial)
 

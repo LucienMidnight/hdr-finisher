@@ -29,6 +29,7 @@
               packet.capture_started_at=now();
               const pixels=await capture(frame,controller.signal);
               packet.captured_at=now();
+              if(pixels?.capture_timings)packet.capture_timings=pixels.capture_timings;
               if(!current())return;
               if(pixels) {
                 const saved=await store(packet,frame.lane,pixels,controller.signal);
@@ -80,7 +81,7 @@
   root.HDRGradeLibraryPictures=create({snapshot,
     defer:work=>setTimeout(()=>void work(),0),
     capture:async (frame,signal)=>{
-      const gpu=state.gpuPreview;
+      const gpu=state.gpuPreview, timings={}, started=performance.now();
       const current=()=>!signal.aborted&&state.session?.session_id===frame.sessionId&&state.editRevision===frame.revision
         &&state.previewGeneration[frame.lane]===frame.generation;
       // Reuse the settled whole-frame Grade scope picture for tiled Fit.
@@ -90,7 +91,10 @@
         const source=gpu.scopeAnalysisCanvas&&gpu.scopeSources.get(gpu.scopeAnalysisCanvas);
         return source?.sessionId===frame.sessionId&&source.lane===frame.lane&&source.applicationGeneration===frame.generation;
       };
-      while(current()&&(state.gpuDraftInFlight||gpu.activeRenderCount>0||gpu.scopeProxyFlight||(state.gpuScopeRequestInFlight&&!scopeReady())))await new Promise(r=>setTimeout(r,16));
+      // A pending scope request can be waiting for backend analysis, not drawing.
+      // Actual proxy renders are serialized by renderScopeProxy.
+      while(current()&&(state.gpuDraftInFlight||gpu.activeRenderCount>0||gpu.scopeProxyFlight))await new Promise(r=>setTimeout(r,16));
+      timings.wait_ms=performance.now()-started;
       if(!current())return null;
       let canvas=els.previewCanvas,source=gpu.scopeSources.get(canvas);
       if(frame.execution!=="direct"||!source||Math.max(source.width,source.height)>2560){
@@ -105,7 +109,11 @@
         }
       }
       if(!current()||!source||source.sessionId!==frame.sessionId||source.lane!==frame.lane||source.applicationGeneration!==frame.generation)return null;
-      return gpu.analyzeScope(canvas,{width:source.width,height:source.height,tier:"picture",raw:"rgba",snapshot:true,transient:true});
+      timings.scope_ms=performance.now()-started-timings.wait_ms;
+      const pixels=await gpu.analyzeScope(canvas,{width:source.width,height:source.height,tier:"picture",raw:"rgba",snapshot:true,transient:true});
+      timings.readback_ms=performance.now()-started-timings.wait_ms-timings.scope_ms;
+      if(pixels)pixels.capture_timings=timings;
+      return pixels;
     },
     store:async(packet,lane,pixels,signal)=>{
       const query=new URLSearchParams({grade:packet.grade_identity,revision:packet.revision,lane,
