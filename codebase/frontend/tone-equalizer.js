@@ -283,7 +283,7 @@ function drawToneEqualizerEditor(lane = state.currentView) {
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   for (let adjustment = -2; adjustment <= 2; adjustment += 1) {
-    const y = yForAdjustment(adjustment);
+    const y = graphLinePosition(yForAdjustment(adjustment));
     ctx.strokeStyle = adjustment === 0 ? uiToken("--equalizer-grid-strong") : uiToken("--equalizer-grid");
     ctx.beginPath();
     ctx.moveTo(left, y);
@@ -296,7 +296,7 @@ function drawToneEqualizerEditor(lane = state.currentView) {
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   for (let inputEv = TONE_EQUALIZER_MIN_EV; inputEv <= TONE_EQUALIZER_MAX_EV; inputEv += 1) {
-    const x = xForEv(inputEv);
+    const x = graphLinePosition(xForEv(inputEv));
     ctx.strokeStyle = inputEv === 0 ? uiToken("--equalizer-zero") : uiToken("--equalizer-grid");
     ctx.beginPath();
     ctx.moveTo(x, top);
@@ -320,6 +320,7 @@ function drawToneEqualizerEditor(lane = state.currentView) {
   ctx.textAlign = "right";
   ctx.fillText(lane === "hdr" ? "10K" : "100%", pqX, 3);
 
+  ctx.save(); ctx.beginPath(); ctx.rect(left, top, graphWidth, graphHeight); ctx.clip();
   ctx.strokeStyle = enabled ? uiToken("--equalizer-curve") : uiToken("--equalizer-disabled");
   ctx.lineWidth = uiNumberToken("--equalizer-line-width", 2.25);
   ctx.beginPath();
@@ -341,6 +342,7 @@ function drawToneEqualizerEditor(lane = state.currentView) {
     ctx.fillStyle = uiToken("--equalizer-influence-wash");
     ctx.fillRect(start, top, end - start, graphHeight);
   }
+  ctx.restore(); drawGraphFrame(ctx, left, top, graphWidth, graphHeight);
   nodes.forEach((node, index) => {
     const inputEv = node.input_ev;
     const selected = index === state.selectedToneEqualizerBand;

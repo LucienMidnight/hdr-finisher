@@ -179,8 +179,8 @@ function drawCurveEditor() {
   ctx.strokeStyle = uiToken("--curve-grid");
   ctx.lineWidth = 1;
   for (let step = 0; step <= 4; step += 1) {
-    const x = plotLeft + (plotWidth * step) / 4;
-    const y = plotTop + (plotHeight * step) / 4;
+    const x = graphLinePosition(plotLeft + (plotWidth * step) / 4);
+    const y = graphLinePosition(plotTop + (plotHeight * step) / 4);
     if (currentCurveLane() !== "hdr") {
       ctx.beginPath();
       ctx.moveTo(x, plotTop);
@@ -193,6 +193,7 @@ function drawCurveEditor() {
     ctx.stroke();
   }
 
+  ctx.save(); ctx.beginPath(); ctx.rect(plotLeft, plotTop, plotWidth, plotHeight); ctx.clip();
   ctx.strokeStyle = uiToken("--curve-identity");
   ctx.beginPath();
   ctx.moveTo(plotLeft, plotBottom);
@@ -212,6 +213,7 @@ function drawCurveEditor() {
   });
   ctx.stroke();
 
+  ctx.restore(); drawGraphFrame(ctx, plotLeft, plotTop, plotWidth, plotHeight);
   curve.forEach(([xValue, yValue], index) => {
     const x = plotLeft + xValue * plotWidth;
     const y = plotBottom - yValue * plotHeight;

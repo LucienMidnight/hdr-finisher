@@ -110,3 +110,12 @@ photo to it. Initialization failure still disables the GPU everywhere.
 - Full-tier deferred work (PERF-03 to PERF-07): [HDR_Finisher_PRD_v1.2 section 11b](../archive/HDR_Finisher_PRD_v1.2.md)
 - Technical: [architecture, preview scheduling](../../technical/architecture.md),
   [highlight compression](../../technical/highlight-compression.md)
+
+## November 6: graph frame polish
+
+Histogram/waveform traces clip to their plotting frame; vectorscope density
+clips to its circle. Curves and Exposure Bands clip their traces and share a
+neutral device-pixel-aligned frame. Grid coordinates align to device pixels;
+scales, samples, readings and label positions are unchanged. No image-render
+or GPU changes. Grouped fast checks and graph review captures cover this UI.
+

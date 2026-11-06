@@ -52,10 +52,12 @@ function drawHistogram(scope) {
   ctx.font = '11px "Afacad", sans-serif';
   ctx.textBaseline = "middle";
   drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight, height);
+  ctx.save(); ctx.beginPath(); ctx.rect(plotLeft, plotTop, plotWidth, plotHeight); ctx.clip();
   drawZoneScopeOverlay(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight);
 
   if (scope.scope_type.includes("waveform")) drawWaveform(ctx, scope, channels, palette, plotLeft, plotTop, plotWidth, plotHeight);
   else drawResolveHistogram(ctx, channels, palette, plotLeft, plotTop, plotWidth, plotHeight);
+  ctx.restore(); drawGraphFrame(ctx, plotLeft, plotTop, plotWidth, plotHeight);
 }
 
 function resizeCanvasSurface(canvas) {
@@ -72,7 +74,7 @@ function resizeCanvasSurface(canvas) {
   const ctx = canvas.getContext("2d");
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.lineJoin = "round";
-  ctx.lineCap = "round";
+  ctx.lineCap = "butt";
   return { ctx, width, height };
 }
 
@@ -91,6 +93,7 @@ function drawVectorscope(ctx, scope, width, height) {
   ctx.moveTo(left + size / 2, top); ctx.lineTo(left + size / 2, top + size);
   ctx.moveTo(left, top + size / 2); ctx.lineTo(left + size, top + size / 2);
   ctx.stroke();
+  ctx.beginPath(); ctx.arc(left + size / 2, top + size / 2, size / 2, 0, Math.PI * 2); ctx.clip();
   const peak = Math.max(1, scope.normalization_peak || 1);
   const cell = size / bins;
   for (let row = 0; row < bins; row += 1) {
@@ -111,7 +114,7 @@ function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plo
   ctx.lineWidth = 1;
   ctx.strokeStyle = uiToken("--scope-grid-line");
   [0, 0.25, 0.5, 0.75, 1].forEach((position) => {
-    const y = plotTop + plotHeight - position * plotHeight;
+    const y = graphLinePosition(plotTop + plotHeight - position * plotHeight);
     ctx.beginPath();
     ctx.moveTo(plotLeft, y);
     ctx.lineTo(plotLeft + plotWidth, y);
@@ -125,7 +128,7 @@ function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plo
     ctx.strokeStyle = showLabel ? uiToken("--scope-guide-line-labeled") : uiToken("--scope-guide-line");
     ctx.fillStyle = uiToken("--scope-guide-label");
     if (isWaveform) {
-      const y = plotTop + plotHeight - normalized * plotHeight;
+      const y = graphLinePosition(plotTop + plotHeight - normalized * plotHeight);
       ctx.beginPath();
       ctx.moveTo(plotLeft, y);
       ctx.lineTo(plotLeft + plotWidth, y);
@@ -135,7 +138,7 @@ function drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plo
         ctx.fillText(compactScopeGuideLabel(scope, guide), plotLeft - 7, clamp(y, plotTop + 6, plotTop + plotHeight - 6));
       }
     } else {
-      const x = plotLeft + normalized * plotWidth;
+      const x = graphLinePosition(plotLeft + normalized * plotWidth);
       ctx.beginPath();
       ctx.moveTo(x, plotTop);
       ctx.lineTo(x, plotTop + plotHeight);
@@ -571,5 +574,21 @@ function handleScopeRegionKeydown(event) {
     toggleScopeRegion(false);
     els.scopeRegionToggle?.focus();
   }
+}
+
+
+// Align neutral instrument lines to device pixels without changing data scales.
+function graphLinePosition(value) {
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const half = Math.max(1, Math.round(dpr)) / 2;
+  return (Math.round(value * dpr - half) + half) / dpr;
+}
+function drawGraphFrame(ctx, left, top, width, height) {
+  ctx.save(); ctx.lineCap = "butt"; ctx.lineJoin = "miter";
+  ctx.lineWidth = Math.max(1, Math.round(window.devicePixelRatio || 1)) / Math.max(1, window.devicePixelRatio || 1);
+  ctx.strokeStyle = uiToken("--hairline");
+  const x = graphLinePosition(left), y = graphLinePosition(top);
+  ctx.strokeRect(x, y, graphLinePosition(left + width) - x, graphLinePosition(top + height) - y);
+  ctx.restore();
 }
 
