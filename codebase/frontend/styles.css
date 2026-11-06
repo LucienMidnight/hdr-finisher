@@ -2462,7 +2462,7 @@ input[type="range"] {
 
 .media-browser-layout {
   display: grid;
-  grid-template-columns: 180px minmax(300px, 1fr) 8px var(--media-browser-preview-width, 260px);
+  grid-template-columns: 180px minmax(300px, 1fr) 1px var(--media-browser-preview-width, 260px);
   height: clamp(300px, 58vh, 520px);
   margin: 0 18px;
   border: 1px solid var(--hairline);

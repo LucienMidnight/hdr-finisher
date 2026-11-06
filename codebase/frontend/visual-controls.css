@@ -337,10 +337,8 @@ html.desktop-shell .window-controls { margin-left: 0; }
 :root .splitter-vertical::after { left: 0; }
 :root .splitter-horizontal::after { top: 0; }
 :root .splitter:is(:hover, :focus-visible, .dragging)::after { background: var(--muted); }
-:root .media-browser-layout { grid-template-columns: 180px minmax(300px, 1fr) 1px var(--media-browser-preview-width, 260px); }
 :root .media-browser-preview-resizer::before { content: ""; position: absolute; inset: 0 -4px; }
 :root .media-browser-preview-resizer::after { right: 0; }
-@media (max-width: 800px) { :root .media-browser-layout { grid-template-columns: 140px 1fr; } }
 
 /* Reserve enough room for Reset plus its changed dot in Color wheels. */
 :root .color-grading-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 68px 26px; }
