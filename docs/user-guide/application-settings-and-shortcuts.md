@@ -60,7 +60,7 @@ The Shortcuts section lists application commands and continuous grading controls
 
 If a key combination is already assigned, HDR Finisher offers to move it to the new command. Each row can be reset independently, and **Reset all** restores the complete default mapping.
 
-The defaults are intentionally conservative. They cover conventional application commands such as Settings, Help, Open/Import, Save, Save As, Export, Undo, and Redo. Viewer controls, grading adjustments, crop tools, compare actions, and other quick actions start unassigned. On macOS, HDR Finisher uses the standard **Command-Shift-Z** convention for Redo and avoids assigning system combinations used for screenshots, Spotlight, application switching, window management, and other operating-system features. If you deliberately record a known macOS system combination, the app warns that macOS may consume it before HDR Finisher receives it.
+The defaults are intentionally conservative. They cover conventional application commands such as Settings, Help, Open/Import, Save, Save as, Export, Undo, and Redo. Viewer controls, grading adjustments, crop tools, compare actions, and other quick actions start unassigned. On macOS, HDR Finisher uses the standard **Command-Shift-Z** convention for Redo and avoids assigning system combinations used for screenshots, Spotlight, application switching, window management, and other operating-system features. If you deliberately record a known macOS system combination, the app warns that macOS may consume it before HDR Finisher receives it.
 
 Named presets capture the currently resolved shortcut map. Use **Save preset** to store a map and **Load** to activate one. This is useful for switching between a laptop layout and a dedicated editing-controller layout.
 
@@ -91,7 +91,7 @@ The desktop app can check the public GitHub Releases feed at startup or on deman
 
 On Windows and Linux, open the application menus with the ≡ button beside
 HDRF (or Alt/F10). Recent projects is in File. On macOS, use the system menu
-bar and File → Open Recent. Drag empty space in the top toolbar to move the
+bar and File → Open recent. Drag empty space in the top toolbar to move the
 window; double-click it to maximize or restore.
 
 

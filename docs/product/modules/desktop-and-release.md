@@ -297,3 +297,9 @@ headings use calm weight 500. Afacad remains for group names and other text.
 Workflow tab styling, layout and sizes are unchanged. The font and OFL travel
 with the frontend asset directory in existing backend packaging; there is no
 separate packaging font list. Validation is grouped at the end of round 4.
+
+Round 4, section 5: application and native menu labels use sentence case,
+including submenu headings. Proper names and HDR/SDR/GPU/CPU retain their
+capitals. Command IDs, native roles and shortcut handling are unchanged.
+Manual quotes of Open recent and Save as now match the menus.
+Validation is grouped at the end of round 4.
