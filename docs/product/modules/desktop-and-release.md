@@ -367,3 +367,5 @@ for manual deletion. Keep the review crops until Steve's visual sign-off.
 ## November 6: UI polish round 6
 
 Section 1: vertical application menu with side submenus and Control Panel module-name typography. Alt/F10, arrows and Escape retained; native macOS menu unchanged. Validation grouped after the five sections.
+
+Section 2: enlarged centred menu glyph, muted at rest and text ink on hover/focus/open. Validation grouped at the end of round 6.
