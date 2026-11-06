@@ -129,3 +129,7 @@ Review follow-up: canvas outer borders are removed so each plotted graph has
 one frame. The scope visual uses an explicit shrinking grid column to avoid
 its intrinsic canvas size widening the narrow dock.
 
+
+The narrow-window check also found a fixed 200 px readings width extending
+past the compact grid track. Readings now follow their allocated width.
+
