@@ -324,7 +324,12 @@ function bindLocalAdjustmentEvents() {
     renderLocalAdjustments();
   });
   document.addEventListener("pointerdown", (event) => {
-    if (state.localPathDraft && (selectedMaskLeaf()?.nodes?.length || 0) >= 3 && !event.target.closest("#local-mask-overlay, .local-tool-strip, #local-editor")) void finishLocalPathDraft();
+    // A click elsewhere closes a path with three or more points and cancels
+    // an unfinished one; the overlay, tool strip and editor keep the draft.
+    if (state.localPathDraft && !event.target.closest("#local-mask-overlay, .local-tool-strip, #local-editor")) {
+      if ((selectedMaskLeaf()?.nodes?.length || 0) >= 3) void finishLocalPathDraft();
+      else cancelLocalPathDraft();
+    }
     if (!state.localAdjustmentMenuId || event.target.closest(".local-adjustment-menu, .local-adjustment-menu-button")) return;
     state.localAdjustmentMenuId = null;
     renderLocalAdjustments();
