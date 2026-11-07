@@ -2806,7 +2806,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), max(filmOutput, vec3f(0.0)), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
     }
     fn scopePeakSignal(rgb: vec3f) -> f32 {
-      return max(select(lumaSrgb(rgb), lumaAces(rgb), p[${GPU_PARAMS.HDR_LANE}] > 0.5), 0.0);
+      // SDR scopes report display signal, matching scopes.py and the histogram.
+      let signal = vec3f(srgbEncode(rgb.r), srgbEncode(rgb.g), srgbEncode(rgb.b));
+      return max(select(lumaSrgb(signal), lumaAces(rgb), p[${GPU_PARAMS.HDR_LANE}] > 0.5), 0.0);
     }
     fn highlightAnchorSignal(rgb: vec3f) -> f32 {
       if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 1.5) {

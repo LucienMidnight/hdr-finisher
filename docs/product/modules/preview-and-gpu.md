@@ -133,3 +133,12 @@ its intrinsic canvas size widening the narrow dock.
 The narrow-window check also found a fixed 200 px readings width extending
 past the compact grid track. Readings now follow their allocated width.
 
+
+## November 8: SDR scope peak agreement
+
+The GPU settled peak now measures sRGB display signal in SDR, matching the
+CPU scope and the histogram bins. The September scope upgrade (`17ae1dfd`)
+changed the CPU/binning domain but left the GPU peak reduction in linear light;
+automatic settled measurement exposed that mismatch. HDR measurement and
+rendered/exported pixels are unchanged. `gpu-scope-parity` passes all modes,
+including SDR Exposure Bands, against the unchanged 3% peak limit.
