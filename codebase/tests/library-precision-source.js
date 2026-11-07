@@ -35,7 +35,7 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
   const location=(await(await w.fetch('/api/library/cache-settings')).json()).location;
   for(const photo of photos){
    const begun=performance.now();
-   const [meta,large]=await Promise.all([w.HDRLibraryScenes.load(photo,640),w.HDRLibraryScenes.load(photo,2560)]),lanes={};
+   const [meta,large]=await Promise.all([w.HDRLibraryScenes.load(photo,640,undefined,10,null,{develop:true}),w.HDRLibraryScenes.load(photo,2560,undefined,10,null,{develop:true})]),lanes={};
    if(meta.renderer!=='gpu'||!meta.rgb_adapter||large.has_reference) throw Error('RGB GPU source/rendition not used: '+JSON.stringify(meta));
    const prepareMs=performance.now()-begun;
    const native=await w.HDRLibraryScenes.load(photo,100000);
@@ -59,10 +59,10 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
   for(const item of cases){
    if(item.mode==='cpu')w.localStorage.setItem('library-gpu-raw','off');else w.localStorage.removeItem('library-gpu-raw');
    const started=performance.now();
-   const [small,large]=await Promise.all([w.HDRLibraryScenes.load(item.file,640),w.HDRLibraryScenes.load(item.file,2560)]);
+   const [small,large]=await Promise.all([w.HDRLibraryScenes.load(item.file,640,undefined,10,null,{develop:true}),w.HDRLibraryScenes.load(item.file,2560,undefined,10,null,{develop:true})]);
    const elapsed=performance.now()-started;
    if(small.renderer!==item.mode||large.renderer!==item.mode)throw Error('Wrong measured route');
-   const again=await w.HDRLibraryScenes.load(item.file,640);
+   const again=await w.HDRLibraryScenes.load(item.file,640,undefined,10,null,{develop:true});
    if(!again.cache_hit||again.source_key!==small.source_key)throw Error('Cached reopen redeveloped');
    rows.push({...item,ms:elapsed,stages:small.source_timings_ms});
   }
