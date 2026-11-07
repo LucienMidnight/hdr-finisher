@@ -25,7 +25,7 @@ p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo'
 `,edited],{cwd:root});
 }
 (async()=>{const browser=await chromium.launch();try{
- const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'||m.type()==='warning')console.log('PAGE',m.text());});
+ const page=await browser.newPage(),errors=[];await page.addInitScript(()=>localStorage.setItem('hdr-finisher:library-show-all-files','true'));page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error'||m.type()==='warning')console.log('PAGE',m.text());});
  await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
  const frame=page.locator('#library-frame');
  page.on('response',async r=>{if(r.status()>=400)console.error('HTTP',r.status(),r.url(),(await r.text().catch(()=>'' )).slice(0,300));});
@@ -96,7 +96,7 @@ p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo'
  await page.waitForFunction(()=>{const w=document.querySelector('#library-frame').contentWindow;return w.HDRLibrary.getSnapshot().view==='grid'&&[...w.document.querySelectorAll('#grid-space canvas[data-picture-key]')].filter(c=>!c.hidden).length===2;},null,{timeout:90000});
  // Both ordinary formats draw real grid cells and retain their authored SDR.
  for(const photo of [raw,edited]){
-  const meta=await frame.evaluate((el,p)=>el.contentWindow.HDRLibraryScenes.load(p,640),photo);
+  const meta=await frame.evaluate((el,p)=>el.contentWindow.HDRLibraryScenes.load(p,640,undefined,10,null,{develop:true}),photo);
   assert.equal(meta.renderer,'gpu');assert.ok(meta.rgb_adapter);assert.equal(meta.has_reference,meta.rgb_contract.colour.authored_sdr);
  }
  await frame.evaluate(async el=>{
