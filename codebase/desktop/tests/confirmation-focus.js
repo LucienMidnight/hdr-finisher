@@ -94,7 +94,8 @@ async function main() {
         item.click(undefined, BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")));
       });
     } else {
-      await window.getByRole("button", { name: "File", exact: true }).click();
+      await window.getByRole("button", { name: "Application menus", exact: true }).click();
+      await window.locator(".window-menu-trigger").filter({ hasText: /^File$/ }).hover();
       await window.locator("#settings-open").click();
     }
     await window.waitForSelector("#settings-dialog", { state: "visible", timeout: 10000 });

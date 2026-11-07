@@ -16,12 +16,14 @@ const fs = require("node:fs"), path = require("node:path");
   await page.waitForFunction(()=>state.session&&!state.importInProgress&&document.body.dataset.workflow==="grade",null,{timeout:120000});
   await page.waitForFunction(()=>activePreviewElement()?.getBoundingClientRect().width>0,null,{timeout:10000});
   const chrome = await page.evaluate(() => {
-   const rail = document.querySelector('.grade-rail');
-   const header = document.querySelector('#grade-workflow-panel > .grade-header');
+   const header = document.querySelector('#grade-workflow-panel .control-title-row');
    const title = header.querySelector('.panel-title');
-   return { gap: title.getBoundingClientRect().top - header.getBoundingClientRect().top };
+   const row = header.getBoundingClientRect(), text = title.getBoundingClientRect();
+   return { contained: text.top >= row.top && text.bottom <= row.bottom, centreError: Math.abs((text.top + text.bottom - row.top - row.bottom) / 2), height: row.height };
   });
-  assert(chrome.gap >= 12, 'Control Panel title touches the top edge');
+  assert.equal(chrome.height, 40);
+  assert(chrome.contained, 'Control Panel title escapes its title row');
+  assert(chrome.centreError <= 1, 'Control Panel title is not vertically centred');
   const initial=await page.evaluate(()=>{
    const group=document.querySelector('[data-group="film-look"]');
    const title=group.querySelector('.control-group-name'),raw=document.querySelector('#raw-settings-toggle > span');

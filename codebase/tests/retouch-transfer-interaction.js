@@ -33,9 +33,9 @@ const hash=p=>crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex
   await page.locator("#grade-mode-retouch").click();
   const repairLayout = await page.evaluate(() => {
     const surface=document.querySelector(".repair-stack-surface"), tools=document.querySelector(".retouch-mode-switch");
-    return {height:surface.clientHeight,overflow:getComputedStyle(surface).overflowY,above:surface.getBoundingClientRect().bottom<=tools.getBoundingClientRect().top};
+    return {height:surface.clientHeight,overflow:getComputedStyle(surface).overflowY,toolsBeforeList:tools.getBoundingClientRect().bottom<=surface.getBoundingClientRect().top};
   });
-  assert.equal(repairLayout.height,localLayout.height);assert.equal(repairLayout.overflow,"scroll");assert(repairLayout.above);
+  assert.equal(repairLayout.height,localLayout.height);assert.equal(repairLayout.overflow,"scroll");assert(repairLayout.toolsBeforeList, "Repair tools must precede the repair list");
   await page.locator("#retouch-brush").click();
   const screen=point=>page.evaluate(p=>{const r=activePreviewElement().getBoundingClientRect(),q=sourcePointToDisplay(p);return{x:r.left+q.x*r.width,y:r.top+q.y*r.height};},point);
   const altClick=async p=>{await page.keyboard.down("Alt");try{await page.mouse.click(p.x,p.y);}finally{await page.keyboard.up("Alt");}};

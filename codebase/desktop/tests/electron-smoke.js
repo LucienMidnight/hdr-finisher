@@ -114,7 +114,8 @@ async function main() {
           item.click(undefined, BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")));
         }, { menuLabel, itemLabel });
       } else {
-        await window.getByRole("button", { name: customMenuLabel, exact: true }).click();
+        await window.getByRole("button", { name: "Application menus", exact: true }).click();
+        await window.locator(".window-menu-trigger").filter({ hasText: customMenuLabel }).hover();
         await window.locator(selector).click();
       }
     };
@@ -147,14 +148,13 @@ async function main() {
       const source = document.querySelector(".source-rail")?.getBoundingClientRect();
       const viewer = document.querySelector(".viewer-panel")?.getBoundingClientRect();
       const grade = document.querySelector(".grade-rail")?.getBoundingClientRect();
-      const chrome = document.querySelector(".window-chrome")?.getBoundingClientRect();
       const toolbar = document.querySelector(".top-bar")?.getBoundingClientRect();
       return {
         sourceTop: source?.top,
         sourceBottom: source?.bottom,
         viewerTop: viewer?.top,
         gradeTop: grade?.top,
-        expectedTop: (chrome?.height || 0) + (toolbar?.height || 0),
+        expectedTop: toolbar?.bottom,
         viewportBottom: window.innerHeight,
       };
     });
@@ -180,18 +180,27 @@ async function main() {
       return title;
     });
     assert.equal(initialNativeTitle, "HDR Finisher");
-    assert.equal(await window.locator(".window-chrome").isVisible(), !nativeMacChrome);
+    assert.equal(await window.locator(".window-chrome").isVisible(), false);
+    assert.equal(await window.locator(".top-bar").isVisible(), true);
+    if (!nativeMacChrome) {
+      assert.equal(await window.getByRole("button", { name: "Application menus", exact: true }).isVisible(), true);
+      for (const action of ["minimize", "toggle-maximize", "close"]) {
+        const control = window.locator(`.top-bar .window-controls [data-window-action="${action}"]`);
+        assert.equal(await control.isVisible(), true);
+        const button = await control.boundingBox(), bar = await window.locator(".top-bar").boundingBox();
+        assert.ok(button.x >= bar.x && button.y >= bar.y && button.x + button.width <= bar.x + bar.width && button.y + button.height <= bar.y + bar.height);
+      }
+    }
     const headerGeometry = await window.evaluate(() => ({
       // Each workflow panel has its own header; measure the one on screen.
-      heights: [".rail-title-row", ".viewer-bar", ".grade-header"].map((selector) => [...document.querySelectorAll(selector)]
+      heights: [".rail-title-row", ".viewer-bar", ".control-title-row"].map((selector) => [...document.querySelectorAll(selector)]
         .find((element) => element.getClientRects().length)?.getBoundingClientRect().height),
       sourceCollapsed: document.querySelector(".source-rail")?.classList.contains("collapsed"),
-      productNameHeight: document.querySelector(".product-name")?.getBoundingClientRect().height,
-      productMarkHeight: document.querySelector(".product-mark")?.getBoundingClientRect().height,
+      logoHeight: document.querySelector(".product-logo")?.getBoundingClientRect().height,
     }));
-    assert.deepEqual(headerGeometry.heights.slice(1), [54, 54]);
-    if (!headerGeometry.sourceCollapsed) assert.equal(headerGeometry.heights[0], 54);
-    assert.equal(headerGeometry.productNameHeight, headerGeometry.productMarkHeight);
+    assert.deepEqual(headerGeometry.heights.slice(1), [40, 40]);
+    if (!headerGeometry.sourceCollapsed) assert.equal(headerGeometry.heights[0], 40);
+    assert.ok(headerGeometry.logoHeight > 0);
     for (const [toggle, popover, screenshotName] of [
       ["#overlay-toggle", "#overlay-popover", "viewer-overlays-anchored.png"],
       ["#frame-toggle", "#frame-popover", "viewer-frame-anchored.png"],
@@ -239,7 +248,7 @@ async function main() {
             && viewerTools.right <= viewerBar.right
             && document.querySelector(".viewer-tools").scrollWidth <= document.querySelector(".viewer-tools").clientWidth),
           viewerToolbarSingleRow: Boolean(viewerBar && viewerLane && viewerTools
-            && Math.abs(viewerBar.height - 54) <= 0.5
+            && Math.abs(viewerBar.height - 40) <= 0.5
             && viewerLane.width > 0
             && Math.abs((viewerTools.top + viewerTools.height / 2) - (viewerLane.top + viewerLane.height / 2)) <= 0.5),
           viewerToolbarCentered: Boolean(viewerBar && viewerLane && viewerTools
@@ -253,21 +262,21 @@ async function main() {
             && (source?.classList.contains("collapsed")
               ? Math.abs((sourceCollapse.left + sourceCollapse.width / 2) - (sourceHeader.left + sourceHeader.width / 2)) <= 0.5
               : Math.abs(sourceHeader.right - sourceCollapse.right - 12) <= 0.5)),
-          rightHeaderHeight: rect(".grade-header")?.height,
+          rightHeaderHeight: rect(".control-title-row")?.height,
           leftHeaderHeight: source?.classList.contains("collapsed") ? null : rect(".rail-title-row")?.height,
           gradeBottom: rect(".grade-rail")?.bottom,
         };
       });
       assert.ok(layout.overflow <= 0, `Electron shell overflowed at ${width}x${height}: ${JSON.stringify(layout)}`);
-      assert.equal(layout.chromeHeight, nativeMacChrome ? 0 : 30, `Custom chrome height changed at ${width}x${height}`);
+      assert.equal(layout.chromeHeight, 0, `Custom chrome height changed at ${width}x${height}`);
       assert.equal(layout.viewerToolbarFits, true, `Viewer toolbar escaped beneath the Control Panel at ${width}x${height}: ${JSON.stringify(layout)}`);
       assert.equal(layout.viewerToolbarSingleRow, true, `Viewer toolbar changed rows at ${width}x${height}: ${JSON.stringify(layout)}`);
       assert.equal(layout.viewerToolbarCentered, true, `Viewer toolbar was not centered in the available header space at ${width}x${height}: ${JSON.stringify(layout)}`);
       assert.equal(layout.persistentViewerMenus, true, `Overlays or Preview disappeared at ${width}x${height}: ${JSON.stringify(layout)}`);
       assert.equal(layout.metadataCollapseCentered, true, `Metadata collapse control was not centered at ${width}x${height}: ${JSON.stringify(layout)}`);
-      assert.equal(layout.centerHeaderHeight, 54, `Center header height changed at ${width}x${height}`);
-      assert.equal(layout.rightHeaderHeight, 54, `Right header height changed at ${width}x${height}`);
-      if (layout.leftHeaderHeight !== null) assert.equal(layout.leftHeaderHeight, 54, `Left header height changed at ${width}x${height}`);
+      assert.equal(layout.centerHeaderHeight, 40, `Center header height changed at ${width}x${height}`);
+      assert.equal(layout.rightHeaderHeight, 40, `Right header height changed at ${width}x${height}`);
+      if (layout.leftHeaderHeight !== null) assert.equal(layout.leftHeaderHeight, 40, `Left header height changed at ${width}x${height}`);
       assert.ok(Math.abs(layout.gradeBottom - layout.viewport[1]) <= 1, `Right rail left a bottom shape/gap at ${width}x${height}: ${JSON.stringify(layout)}`);
     }
     await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).setSize(1800, 900));
@@ -275,7 +284,8 @@ async function main() {
     await window.screenshot({ path: path.join(outputDirectory, "custom-shell-full.png") });
     await window.screenshot({ path: path.join(outputDirectory, "custom-shell-top.png"), clip: { x: 0, y: 0, width: 1800, height: 138 } });
     if (!nativeMacChrome) {
-      await window.getByRole("button", { name: "File", exact: true }).click();
+      await window.getByRole("button", { name: "Application menus", exact: true }).click();
+      await window.locator(".window-menu-trigger").filter({ hasText: /^File$/ }).hover();
       await window.screenshot({ path: path.join(outputDirectory, "custom-shell-file-menu.png"), clip: { x: 0, y: 0, width: 520, height: 360 } });
       await window.keyboard.press("Escape");
     }
