@@ -4,6 +4,7 @@ const out=path.resolve('output/hsl-smooth');fs.mkdirSync(out,{recursive:true});
 const tag=process.argv.includes('--before')?'before':'after';
 (async()=>{const browser=await chromium.launch(),page=await browser.newPage();
 try{
+await page.addInitScript(() => localStorage.setItem('hdr-finisher:library-show-all-files','true'));
 await page.goto(process.env.HDR_FINISHER_URL||'http://127.0.0.1:8765');
 await page.waitForFunction(()=>state.gpuPreview?.available,null,{timeout:30000});
 const photo=path.join(out,'IMG_0114.CR2');if(!fs.existsSync(photo))fs.copyFileSync('D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2',photo);
@@ -65,9 +66,9 @@ if(tag==='after'){
 }
 await page.evaluate(()=>activateWorkflowTab('import'));await page.waitForTimeout(1200);
 const library=page.frames().find(f=>/\/library(?:\?|$)/.test(f.url()));
-const grid=path.join(out,'grid');fs.mkdirSync(grid,{recursive:true});for(let i=0;i<30;i++)fs.copyFileSync(path.resolve('tests/fixtures/sdr_gradient.png'),path.join(grid,`picture-${i}.png`));
+const grid=path.join(out,'grid');fs.mkdirSync(grid,{recursive:true});for(let i=0;i<30;i++)fs.copyFileSync(path.resolve('tests/fixtures/library_photo.png'),path.join(grid,`picture-${i}.png`));
 await library.evaluate(folder=>HDRLibrary.browse(folder),grid);
-await library.waitForFunction(()=>document.querySelectorAll('#grid-space canvas[data-picture-key],#grid-space img[data-preview="true"]').length>=25,null,{timeout:90000});
+await library.waitForFunction(()=>document.querySelectorAll('#grid-space canvas[data-picture-key],#grid-space canvas[data-stand-in="true"],#grid-space img[data-cpu-fallback="true"]').length>=25,null,{timeout:90000});
 await page.waitForTimeout(500);
 await page.screenshot({path:path.join(out,`${tag}-library.png`)});
 if(tag==='after'){
@@ -78,4 +79,4 @@ if(tag==='after'){
  console.log('PASS: photo alignment, panel/scope pixels, collapse, section, mode and Library cleanup');
 }
 console.log('LIBRARY overlay count',await page.locator('#hsl-selection-overlay').count());
-}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1});
+}catch(error){console.error(error);throw error;}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1});
