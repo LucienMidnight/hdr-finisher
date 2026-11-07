@@ -1,11 +1,11 @@
+const reusePhoto=require('./helpers/reuse-test-photo.cjs');
 // Paste preflight reuses the development a RAW thumbnail already performed.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require('playwright');
-const original=process.env.HDR_PASTE_RAW||'D:/test-photos-delete-later/DSC07072.ARW';
+const original=process.env.HDR_PASTE_RAW||reusePhoto.source('DSC07072.ARW');
 const folder=path.resolve(__dirname,'../output/library-gpu-raw-paste',String(Date.now()));
 fs.mkdirSync(folder,{recursive:true});
-const before=path.join(folder,'before.ARW'),after=path.join(folder,'after.ARW');
-for(const file of [before,after])fs.copyFileSync(original,file);
+const before=reusePhoto(original,path.join(folder,'before.ARW')),after=reusePhoto(original,path.join(folder,'after.ARW'));
 (async()=>{
   const browser=await chromium.launch();
   try{
@@ -37,5 +37,5 @@ for(const file of [before,after])fs.copyFileSync(original,file);
     for(const file of [before,after])assert.ok(!fs.existsSync(file+'.hdrf'),'Unchanged paste writes no sidecar');
     const result={cpuSeconds,reusedSeconds,simultaneousRequests:3,checked,pasted};
     console.log(JSON.stringify(result));fs.writeFileSync(path.join(folder,'result.json'),JSON.stringify(result,null,2));
-  }finally{await browser.close();}
-})().catch(error=>{console.error(error);process.exitCode=1;});
+  }finally{await browser.close();reusePhoto.cleanup();}
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());

@@ -1,8 +1,9 @@
+const reusePhoto=require('./helpers/reuse-test-photo.cjs');
 /* Same three photos, same GPU export settings, Export page open versus closed. */
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-export-live-tiles',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
-const photos=['DSC07060','DSC07061','DSC07072'].map(n=>{const p=path.join(folder,n+'.ARW');fs.copyFileSync('D:/test-photos-delete-later/'+n+'.ARW',p);return p;});
+const photos=['DSC07060','DSC07061','DSC07072'].map(n=>{const p=path.join(folder,n+'.ARW');return reusePhoto(reusePhoto.source(n+'.ARW'),p);});
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
@@ -43,4 +44,4 @@ const photos=['DSC07060','DSC07061','DSC07072'].map(n=>{const p=path.join(folder
  const report={measurements,closedSecondsPerPhoto:closed,openSecondsPerPhoto:open,changePercent,withinAllowance:open<=closed*1.05};
  fs.writeFileSync(path.join(folder,'result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
  assert.ok(report.withinAllowance,'Open Export page exceeds the agreed 5% timing allowance');
-}finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});
+}finally{await browser.close();reusePhoto.cleanup();}})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());

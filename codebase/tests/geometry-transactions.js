@@ -1,3 +1,4 @@
+const { importTestPattern } = require("./helpers/import-test-pattern");
 const assert = require("node:assert/strict");
 const { chromium } = require("playwright");
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";

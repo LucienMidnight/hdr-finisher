@@ -25,6 +25,12 @@ async function drop(surface, filename, target='body') {
     document.querySelector('#drop-fixture').remove();
   },target);
 }
+async function editor(app) {
+  const isEditor = page => {try {return new URL(page.url()).pathname === '/';} catch {return false;}};
+  const page = app.windows().find(isEditor) || await app.waitForEvent('window', {predicate:isEditor, timeout:60000});
+  await page.waitForFunction(()=>document.body?.dataset.ready==='true',null,{timeout:60000});
+  return page;
+}
 async function library(app,page) {
   await page.waitForFunction(()=>document.body?.dataset.ready==='true',null,{timeout:60000});
   await page.evaluate(()=>activateWorkflowTab('import'));
@@ -38,7 +44,7 @@ async function library(app,page) {
 (async()=>{
  let app=await launch();
  try {
-  const page=app.windows()[0] || await app.waitForEvent('window');
+  const page=await editor(app);
   await page.waitForLoadState('domcontentloaded'); page.setDefaultTimeout(30000); page.on('pageerror',e=>console.error('Renderer:',e.message)); console.log('Main loaded',page.url());
   console.log(await page.evaluate(()=>({ready:document.body.dataset.ready,scheduler:!!state.previewScheduler,shell:!!window.HDRApplicationShell})));
   await page.waitForFunction(()=>document.body.dataset.ready === 'true');
@@ -172,7 +178,7 @@ async function library(app,page) {
  } finally {await close(app);}
  app=await launch();
  try {
-   const page=app.windows()[0] || await app.waitForEvent('window');const lib=await library(app,page);
+   const page=await editor(app);const lib=await library(app,page);
    for(const surface of [page,lib]) {
      assert.equal(await surface.evaluate(()=>document.documentElement.dataset.theme),'default-light');
      await surface.addInitScript(()=>{requestAnimationFrame(()=>{window.themeAtFirstFrame=document.documentElement.dataset.theme;});});
@@ -181,4 +187,4 @@ async function library(app,page) {
    }
    console.log('PASS: Editor and Library restore saved theme before their first painted frame after restart.');
  } finally {await close(app);}
-})().catch(error=>{console.error(error);process.exitCode=1;});
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{fs.rmSync(profile,{recursive:true,force:true});fs.rmSync(photos,{recursive:true,force:true});});

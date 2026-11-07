@@ -1,10 +1,11 @@
+const reusePhoto=require('./helpers/reuse-test-photo.cjs');
 /* Compare live finished pixels with Grade's numerical renderer before any file codec. */
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-live-picture',String(Date.now()));
 fs.mkdirSync(folder,{recursive:true});
-const sources=['D:/test-photos-delete-later/DSC07072.ARW',path.join(root,'tests/fixtures/sdr_gradient.png')];
-const photos=sources.map(source=>{const p=path.join(folder,path.basename(source));fs.copyFileSync(source,p);return p;});
+const sources=[reusePhoto.source('DSC07072.ARW'),path.join(root,'tests/fixtures/sdr_gradient.png')];
+const photos=sources.map(source=>{const p=path.join(folder,path.basename(source));return reusePhoto(source,p);});
 const edited=path.join(folder,'edited.png');fs.copyFileSync(sources[1],edited);photos.push(edited);
 execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
 import sys,json
@@ -51,4 +52,4 @@ p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo'
  for(const row of report)for(const check of row.checks)assert.ok(check.passed,JSON.stringify({photo:row.photo,...check}));
  // Optional real-photo extension; the saved synthetic Film Look fixture above always runs.
  if(process.env.HDR_FINISHER_FILM_PHOTOS)await require('./helpers/library-film-look')({page,folder});
-}finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});
+}finally{await browser.close();reusePhoto.cleanup();}})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());

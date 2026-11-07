@@ -44,50 +44,6 @@
         "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__export-file-browser-interaction.js.1.1793196397577.log",
         "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__export-file-browser-interaction.js.2.1793196440184.log"
       ]
-    },
-    {
-      "driver": "tests/geometry-transactions.js",
-      "messages": [
-        "ReferenceError: importTestPattern is not defined"
-      ],
-      "source": "docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md: H1 / U1; reproduced October 28, 2026",
-      "evidence": [
-        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__geometry-transactions.js.1.1793197637818.log",
-        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__geometry-transactions.js.2.1793197645075.log"
-      ]
-    },
-    {
-      "driver": "tests/gpu-highlight-compression-parity.js",
-      "messages": [
-        "ReferenceError: importTestPattern is not defined"
-      ],
-      "source": "docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md: H1 / U1; reproduced October 28, 2026",
-      "evidence": [
-        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__gpu-highlight-compression-parity.js.1.1793197652474.log",
-        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__gpu-highlight-compression-parity.js.2.1793197659891.log"
-      ]
-    },
-    {
-      "driver": "tests/gpu-scope-parity.js",
-      "messages": [
-        "ReferenceError: importTestPattern is not defined"
-      ],
-      "source": "docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md: H1 / U1; reproduced October 28, 2026",
-      "evidence": [
-        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__gpu-scope-parity.js.1.1793197705272.log",
-        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__gpu-scope-parity.js.2.1793197713141.log"
-      ]
-    },
-    {
-      "driver": "tests/grading-value-entry.js",
-      "messages": [
-        "ReferenceError: importTestPattern is not defined"
-      ],
-      "source": "docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md: H1 / U1; reproduced October 28, 2026",
-      "evidence": [
-        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__grading-value-entry.js.1.1793197720882.log",
-        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__grading-value-entry.js.2.1793197728638.log"
-      ]
     }
   ]
 }

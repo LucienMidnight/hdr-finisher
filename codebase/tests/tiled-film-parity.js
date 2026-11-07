@@ -1,3 +1,4 @@
+const { importTestPattern } = require("./helpers/import-test-pattern");
 /**
  * Phase 7 — vignette and grain on the tiled path.
  *

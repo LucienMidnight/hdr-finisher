@@ -1,3 +1,4 @@
+const reusePhoto=require('./helpers/reuse-test-photo.cjs');
 // Existing Denoise corpus: GPU noise measurement versus current CPU, finished pixels.
 const fs=require("node:fs"),path=require("node:path"),{execFileSync}=require("node:child_process");
 const {chromium}=require("playwright");
@@ -41,8 +42,8 @@ const env={...process.env,PYTHONPATH:[path.resolve(__dirname,"../backend"),path.
     if(rows.length)execFileSync(python,[helper,"compare",root],{env,stdio:"inherit"});
     console.log("Results",path.join(root,"result.json"));
     if(!process.argv.includes("--case")&&!process.argv.includes("--library-only")){
-      const original=process.env.HDR_DENOISE_RAW||"D:/test-photos-delete-later/DSC07060.ARW";
-      const copy=path.join(root,path.basename(original));fs.copyFileSync(original,copy);
+      const original=process.env.HDR_DENOISE_RAW||reusePhoto.source("DSC07060.ARW");
+      const copy=reusePhoto(original,path.join(root,path.basename(original)));
       const grant=await page.evaluate(file=>window.hdrFinisherDesktop.grantSourcePath(file),copy);
       const opened=await page.request.post(api("/api/desktop/session"),{data:{grant:grant.grant},timeout:240000});
       if(!opened.ok())throw Error(await opened.text());
@@ -61,8 +62,8 @@ const env={...process.env,PYTHONPATH:[path.resolve(__dirname,"../backend"),path.
       fs.writeFileSync(path.join(root,"grade-42mp.json"),JSON.stringify(timing,null,2));console.log("Grade 42 MP",JSON.stringify(timing));
     }
     if(process.argv.includes("--library-only")){
-      const original=process.env.HDR_DENOISE_RAW||"D:/test-photos-delete-later/DSC07060.ARW";
-      const copy=path.join(root,path.basename(original));fs.copyFileSync(original,copy);
+      const original=process.env.HDR_DENOISE_RAW||reusePhoto.source("DSC07060.ARW");
+      const copy=reusePhoto(original,path.join(root,path.basename(original)));
       execFileSync(python,["-c",`import sys,json
 from pathlib import Path
 from hdr_finisher.projects import validate_saved_document
@@ -71,7 +72,7 @@ grade=validate_saved_document(original['grade']).model_dump(mode='json')
 grade['source']['durable_path']=str(p)
 data={'format':'HDR Finisher Photo','schema_version':1,'photo_id':'denoise-timing','marks':{},'albums':[],'grade':grade}
 for lane in ('hdr','sdr'): data['grade']['denoise'][lane]['enabled']=True
-p.with_name(p.name+'.hdrf').write_text(json.dumps(data))`,original,copy],{env});
+p.with_name(p.name+'.hdrf').write_text(json.dumps(data))`,reusePhoto.source(original+".hdrf").slice(0,-5),copy],{env});
       const result=await page.locator('#library-frame').evaluate(async(element,photo)=>{
         const w=element.contentWindow,gpu=await w.HDRLibraryPictures.initialize(),rows=[];
         const original=w.HDRDenoiseMeasurement.measure;let calls=0;
@@ -92,5 +93,5 @@ p.with_name(p.name+'.hdrf').write_text(json.dumps(data))`,original,copy],{env});
       },copy);
       fs.writeFileSync(path.join(root,'library.json'),JSON.stringify(result,null,2));console.log('Library',JSON.stringify(result));
     }
-  }finally{await browser.close();}
-})().catch(error=>{console.error(error);process.exitCode=1;});
+  }finally{await browser.close();reusePhoto.cleanup();}
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());

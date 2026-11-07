@@ -10,11 +10,11 @@ const sources=[
  'D:/Photos/Play_Raw/Lakeland landscape in dry Summer/darktable_exported/A7R00619.exr',
  path.join(root,'local-test-media/inputs/linear-dng/lightroom-hdr/DJI_0072-Lightroom-reference.tif')
 ];
-const photos=sources.map((source,i)=>{const file=path.join(folder,'photo'+i+path.extname(source));reusePhoto(source,file);return file;});
+const photos=sources.map((source,i)=>{const file=path.join(folder,'photo'+i+path.extname(source));return reusePhoto(source,file);});
 const comparisons=[];
 for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of (repeat%2?['gpu','cpu']:['cpu','gpu'])){
  const format=path.extname(source).slice(1),file=path.join(folder,`${mode}-${repeat}.${format}`);
- reusePhoto(source,file);comparisons.push({file,mode,repeat,format});
+ comparisons.push({file:reusePhoto(source,file),mode,repeat,format});
 }
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage();page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log(m.text());});await page.goto(process.env.HDR_FINISHER_URL);
@@ -79,4 +79,4 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
  const output=execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_rgb_compare.py'),file],{cwd:root,encoding:'utf8',maxBuffer:1<<24});
  const report=JSON.parse(output.trim().split('\n').at(-1));console.log(JSON.stringify(report));
  for(const row of report)for(const check of row.checks)assert.ok(check.passed,JSON.stringify({photo:row.photo,...check}));
-}finally{await browser.close();fs.rmSync(folder,{recursive:true,force:true});}})().catch(error=>{console.error(error);process.exitCode=1;});
+}finally{await browser.close();reusePhoto.cleanup();fs.rmSync(folder,{recursive:true,force:true});}})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());

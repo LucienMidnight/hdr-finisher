@@ -1,3 +1,4 @@
+const { importTestPattern } = require("./helpers/import-test-pattern");
 // Phase 4 exit gate 1: Direct and Tiled pointwise results meet parity
 // thresholds, and a tiled frame is never presented as a mixed generation.
 //

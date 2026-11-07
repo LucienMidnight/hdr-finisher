@@ -4,8 +4,8 @@ const {execFileSync}=require('node:child_process'),{chromium}=require('playwrigh
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-live-native',String(Date.now()));
 fs.mkdirSync(folder,{recursive:true});
 const reusePhoto=require('./helpers/reuse-test-photo.cjs');
-const raw=path.join(folder,'DSC07072.ARW'),edited=path.join(folder,'edited.png');
-reusePhoto('D:/test-photos-delete-later/DSC07072.ARW',raw);
+const edited=path.join(folder,'edited.png');
+const raw=reusePhoto(reusePhoto.source('DSC07072.ARW'),path.join(folder,'DSC07072.ARW'));
 execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
 import sys,json
 from pathlib import Path
@@ -86,4 +86,4 @@ p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo'
   return [...d.querySelectorAll('.compare-fit')].every(c=>c.dataset.picturePath&&Number(c.dataset.pictureEdge)===2560);
  },null,{timeout:90000});
  assert.deepEqual(errors,[]);fs.writeFileSync(path.join(folder,'result.json'),JSON.stringify(rows,null,2));console.log(JSON.stringify(rows));
-}finally{await browser.close();fs.rmSync(folder,{recursive:true,force:true});}})().catch(error=>{console.error(error);process.exitCode=1;});
+}finally{await browser.close();reusePhoto.cleanup();fs.rmSync(folder,{recursive:true,force:true});}})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());

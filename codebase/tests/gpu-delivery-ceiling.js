@@ -1,3 +1,4 @@
+const reusePhoto=require('./helpers/reuse-test-photo.cjs');
 // Real saved RAW: opting in corrects DSC07060 for export and Proof.
 const {chromium}=require("playwright");
 const fs=require("node:fs"),path=require("node:path"),assert=require("node:assert/strict");
@@ -5,15 +6,13 @@ const {execFileSync,execFile}=require("node:child_process");
 const execute=require("node:util").promisify(execFile);
 const output=path.resolve(__dirname,"../output/gpu-delivery-ceiling",String(Date.now()));
 fs.mkdirSync(output,{recursive:true});
-const original=process.env.HDR_CEILING_RAW||"D:/test-photos-delete-later/DSC07060.ARW";
-const photos=path.resolve('output/test-photos');fs.mkdirSync(photos,{recursive:true});
-const source=path.join(photos,path.basename(original));
-if(!fs.existsSync(source))fs.copyFileSync(original,source);
+const original=process.env.HDR_CEILING_RAW||reusePhoto.source("DSC07060.ARW");
+const source=reusePhoto(original,path.join(output,path.basename(original)));
 const python=path.resolve(__dirname,"../.venv/Scripts/python.exe");
 const pythonEnv={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
 const document=JSON.parse(execFileSync(python,["-c",
   "import sys,json;from pathlib import Path;from hdr_finisher.projects import validate_saved_document;print(validate_saved_document(json.loads(Path(sys.argv[1]).read_text())['grade']).model_dump_json())",
-  original+".hdrf"],{env:pythonEnv,encoding:"utf8"}));
+  reusePhoto.source(original+".hdrf")],{env:pythonEnv,encoding:"utf8"}));
 document.source.durable_path=source;
 assert.equal(document.global_adjustments.hdr.highlight_section_enabled,true);
 const target=document.global_adjustments.hdr.highlight_compression_target_nits;
@@ -62,6 +61,6 @@ const harness=global.HDRFinisherElectronTestHarness;
     fs.writeFileSync(path.join(output,"result.json"),JSON.stringify(results,null,2));
   }finally{
     await api("/api/delivery/preferences",{force_cpu:false}).catch(()=>{});
-    await browser.close();
+    await browser.close();reusePhoto.cleanup();
   }
-})().catch(error=>{console.error(error);process.exitCode=1;});
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());

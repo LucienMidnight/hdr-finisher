@@ -32,6 +32,21 @@ check, and a release process that is quick to run and safe.
 | Run the trial release build (`desktop-release.yml`) on the branch before tagging. | Steve, 2026-10 |
 | A backup push of a work-in-progress branch needs only the fast checks; still ask before pushing. | Steve, 2026-10-11 |
 
+## November 7: shared release-driver repairs
+
+The eight pattern-import drivers named in the shared-root repair task now
+import their byte-import helper explicitly (the omission came from `dc898d85`).
+Their four obsolete missing-helper known-failure entries are removed. The
+overlay-feedback native driver selects the ready editor by URL, rather than
+the first Electron window, which may be hidden GPU delivery (`f61997dc`).
+
+The shared test-photo helper makes persistent per-check copies once under
+`output/test-photos/<check>/`, reuses them on later runs, and resets/restores
+disposable sidecars. Steve approved this on November 7 because D is exFAT
+and cannot hard-link; Windows also refuses file symlinks. Shared source
+photos and their saved grades are read-only. The affected RAW and precision
+drivers use the helper; no per-run RAW copy or hard-link is required.
+
 ## 4. Current state (October 18, 2026)
 
 **Built:** Windows, macOS and Linux packages; windows tracked by role
