@@ -27,14 +27,14 @@ for lane in ('hdr','sdr'):
 p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo','schema_version':1,'photo_id':'live-test','marks':{},'albums':[],'grade':b,'grade_default':a}),encoding='utf8')
 `,edited],{cwd:root});
 (async()=>{const browser=await chromium.launch();try{
- const page=await browser.newPage();await page.goto(process.env.HDR_FINISHER_URL);
+ const page=await browser.newPage();await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
  const result=await page.locator('#library-frame').evaluate(async(element,photos)=>{
   const w=element.contentWindow,gpu=await w.HDRLibraryPictures.initialize(),original=gpu.renderTo,rows=[];
   let captured;
   gpu.renderTo=async function(canvas,...args){const result=await original.call(this,canvas,...args);captured=await this.analyzeScope(canvas,{width:args[9].width,height:args[9].height,tier:'picture',raw:true});return result;};
   const location=(await(await w.fetch('/api/library/cache-settings')).json()).location;
   for(const photo of photos){
-   const meta=await w.HDRLibraryScenes.load(photo,640),lanes={};
+   const meta=await w.HDRLibraryScenes.load(photo,640,undefined,10,null,{develop:true}),lanes={};
    for(const lane of ['hdr','sdr']){
     const canvas=w.document.createElement('canvas');w.document.body.append(canvas);
     await w.HDRLibraryPictures.show(meta,canvas,new w.AbortController().signal,()=>true,lane==='hdr');
@@ -52,4 +52,4 @@ p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo'
  for(const row of report)for(const check of row.checks)assert.ok(check.passed,JSON.stringify({photo:row.photo,...check}));
  // Optional real-photo extension; the saved synthetic Film Look fixture above always runs.
  if(process.env.HDR_FINISHER_FILM_PHOTOS)await require('./helpers/library-film-look')({page,folder});
-}finally{await browser.close();reusePhoto.cleanup();}})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());
+}finally{await browser.close();reusePhoto.cleanup();fs.rmSync(folder,{recursive:true,force:true});}})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());

@@ -17,7 +17,7 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
  comparisons.push({file:reusePhoto(source,file),mode,repeat,format});
 }
 (async()=>{const browser=await chromium.launch();try{
- const page=await browser.newPage();page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log(m.text());});await page.goto(process.env.HDR_FINISHER_URL);
+ const page=await browser.newPage();page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log(m.text());});await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
  const result=await page.locator('#library-frame').evaluate(async(element,photos)=>{
   const w=element.contentWindow,gpu=await w.HDRLibraryPictures.initialize(),original=gpu.renderTo,rows=[];
   let captured;
@@ -38,9 +38,24 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
    const [meta,large]=await Promise.all([w.HDRLibraryScenes.load(photo,640,undefined,10,null,{develop:true}),w.HDRLibraryScenes.load(photo,2560,undefined,10,null,{develop:true})]),lanes={};
    if(meta.renderer!=='gpu'||!meta.rgb_adapter||large.has_reference) throw Error('RGB GPU source/rendition not used: '+JSON.stringify(meta));
    const prepareMs=performance.now()-begun;
-   const native=await w.HDRLibraryScenes.load(photo,100000);
-   const again=await w.HDRLibraryScenes.load(photo,100000);
-   if(native.source_key!==again.source_key||!again.cache_hit)throw Error('Native scene did not reuse');
+   // This numerical check reads stored native planes, rather than owning a viewer.
+   // Use the existing diagnostic stored-scene route; selected native GPU retention
+   // and hand-over are covered by library-live-native.
+   w.HDRLibraryProfileLegacy=true;
+   let native;
+   // af8aab4c: native inspection may refuse within the agreed memory budget.
+   let nativeMemoryRefusal=false;
+   try{native=await w.HDRLibraryScenes.load(photo,100000);}
+   catch(error){if(!error.needsMemory)throw error;native=null;nativeMemoryRefusal=true;}
+   finally{w.HDRLibraryProfileLegacy=false;}
+   if(native){
+    const again=await w.HDRLibraryScenes.load(photo,100000);
+    if(native.source_key!==again.source_key||!again.cache_hit)throw Error('Native scene did not reuse');
+   }
+   // The real viewer publishes and releases native scenes when it leaves them.
+   // These direct API calls must do the same before starting a CPU reference.
+   await native?.directScene?.store();
+   w.HDRLibraryGpuRaw.releaseNative();
    if(meta.gpu_memory_peak_bytes>meta.source_width*meta.source_height*44+64*1024*1024)throw Error('Memory reservation exceeded');
    for(const lane of ['hdr','sdr']){
     const canvas=w.document.createElement('canvas');w.document.body.append(canvas);
@@ -49,7 +64,8 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
     const bytes=new Uint8Array(captured.halves.buffer);let binary='';for(let i=0;i<bytes.length;i+=16384)binary+=String.fromCharCode(...bytes.subarray(i,i+16384));
     lanes[lane]=w.btoa(binary);canvas.remove();
    }
-   rows.push({photo,meta,large,native,prepareMs,lanes});
+   await meta.directScene?.store();
+   rows.push({photo,meta,large,native,nativeMemoryRefusal,prepareMs,lanes});
   }
   gpu.renderTo=original;w.fetch=originalFetch;if(!yielded)throw Error("Preemption was not exercised");return {location,rows,yielded};
  },photos);
@@ -59,11 +75,17 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
   for(const item of cases){
    if(item.mode==='cpu')w.localStorage.setItem('library-gpu-raw','off');else w.localStorage.removeItem('library-gpu-raw');
    const started=performance.now();
-   const [small,large]=await Promise.all([w.HDRLibraryScenes.load(item.file,640,undefined,10,null,{develop:true}),w.HDRLibraryScenes.load(item.file,2560,undefined,10,null,{develop:true})]);
+   const controller=new w.AbortController();
+   const timeout=setTimeout(()=>controller.abort(),180000);
+   let small,large;
+   try { [small,large]=await Promise.all([w.HDRLibraryScenes.load(item.file,640,controller.signal,10,null,{develop:true}),w.HDRLibraryScenes.load(item.file,2560,controller.signal,10,null,{develop:true})]); }
+   catch(error){throw Error(item.mode+' scene failed: '+error.message+' '+JSON.stringify({scenes:w.HDRLibraryScenes.snapshot(),grants:w.HDRLibraryGrants.snapshot()}));}
+   finally{clearTimeout(timeout);}
    const elapsed=performance.now()-started;
    if(small.renderer!==item.mode||large.renderer!==item.mode)throw Error('Wrong measured route');
    const again=await w.HDRLibraryScenes.load(item.file,640,undefined,10,null,{develop:true});
    if(!again.cache_hit||again.source_key!==small.source_key)throw Error('Cached reopen redeveloped');
+   await small.directScene?.store();await large.directScene?.store();
    rows.push({...item,ms:elapsed,stages:small.source_timings_ms});
   }
   w.localStorage.removeItem('library-gpu-raw');return rows;

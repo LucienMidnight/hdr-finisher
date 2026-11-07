@@ -30,6 +30,9 @@ for row in data["rows"]:
         expected=getattr(getattr(session.starting_adjustments(),lane),field)
         assert abs(actual-expected)<=max(.001,abs(expected)*.0001),(field,actual,expected)
     for product in (row["large"],row["native"]):
+        if product is None:
+            assert row.get('nativeMemoryRefusal') is True
+            continue
         file=next(root.glob("library-*/"+product["source_key"]+".npz"))
         with np.load(file) as stored:
             for field,original in (("pixels",session.image),("reference",session.sdr_reference_image)):

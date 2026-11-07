@@ -35,6 +35,15 @@ p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo'
   assert.ok(await frame.evaluate(el=>!!el.contentWindow.HDRLibrary.getSnapshot().native),
    await frame.evaluate(el=>el.contentWindow.document.body.innerText.slice(-1200)));
  };
+ // PNG fixtures require the approved Show all files option.
+ await frame.evaluate(el=>el.contentWindow.localStorage.setItem('hdr-finisher:library-show-all-files','true'));
+ const libraryFrame=page.frames().find(f=>new URL(f.url()).pathname==='/library');
+ await libraryFrame.goto(libraryFrame.url());
+ await libraryFrame.waitForFunction(()=>Boolean(window.HDRLibraryScenes&&window.HDRLibrary));
+ await frame.evaluate(async(el,photos)=>{
+  const w=el.contentWindow;
+  for(const photo of photos){const meta=await w.HDRLibraryScenes.load(photo,640,undefined,10,null,{develop:true});await meta.directScene?.store();}
+ },[raw,edited]);
  await frame.evaluate((el,folder)=>el.contentWindow.HDRLibrary.browse(folder),path.dirname(raw));
  await page.waitForFunction(()=>document.querySelector('#library-frame').contentWindow.document.querySelectorAll('#grid-space canvas[data-picture-key]').length===2,null,{timeout:120000});
  await frame.evaluate(el=>{const w=el.contentWindow,fetch=w.fetch.bind(w);w.__nativeRequests=[];w.fetch=(url,options)=>{

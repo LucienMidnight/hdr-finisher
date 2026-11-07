@@ -11,6 +11,9 @@ const photo = path.join(photos, 'gradient.png');
 const reviewPhotos=path.join(photos,'review');fs.mkdirSync(reviewPhotos);
 fs.mkdirSync(path.join(reviewPhotos,'moved'));
 fs.copyFileSync(path.join(codebase, 'tests/fixtures/sdr_gradient.png'),path.join(reviewPhotos,'gradient.png'));
+// The Library ignores files below 1 KiB; trailing PNG padding preserves pixels.
+const reviewGradient=path.join(reviewPhotos,'gradient.png');
+fs.appendFileSync(reviewGradient,Buffer.alloc(Math.max(0,1024-fs.statSync(reviewGradient).size)));
 fs.copyFileSync(path.join(codebase, 'tests/fixtures/sdr_gradient.png'), photo);
 fs.copyFileSync(path.join(codebase, 'tests/fixtures/linear_unconfirmed.exr'), path.join(reviewPhotos, 'linear.exr'));
 fs.writeFileSync(path.join(profile, 'application-preferences.json'), JSON.stringify({theme:'default-dark',updates:{checkAutomatically:false}}));
@@ -43,7 +46,9 @@ async function library(app,page) {
   let window;
   for(let i=0;i<100;i++) {window=app.windows().find(p=>new URL(p.url()).pathname==='/library');if(window)break;await page.waitForTimeout(100);}
   assert(window,'Separate Library did not open');
-  await window.waitForFunction(()=>Boolean(window.HDRLibrary));return window;
+  await window.waitForFunction(()=>document.body?.dataset.libraryReady==='true');
+  await window.evaluate(()=>localStorage.setItem('hdr-finisher:library-show-all-files','true'));
+  await window.reload();await window.waitForFunction(()=>document.body?.dataset.libraryReady==='true');return window;
 }
 (async()=>{
  let app=await launch();
@@ -128,7 +133,12 @@ async function library(app,page) {
   console.log('Editor controls checked'); const lib=await library(app,page);
   assert.equal(await lib.evaluate(()=>document.documentElement.dataset.theme),'default-light');
   await lib.evaluate(async folder=>{await fetch('/api/library/pins',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[folder]})});await HDRLibrary.browse(folder);},reviewPhotos);
-  await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count===2);
+  try{await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count===2);}
+  catch(error){throw Error('Review folder did not list two files: '+JSON.stringify(await lib.evaluate(()=>({snapshot:HDRLibrary.getSnapshot(),showAll:localStorage.getItem('hdr-finisher:library-show-all-files')}))));}
+  await lib.evaluate(async photo=>{
+    const meta=await HDRLibraryScenes.load(photo,2560,undefined,10,null,{develop:true});
+    await meta.directScene?.store();
+  },path.join(reviewPhotos,'gradient.png'));
   await lib.locator('#sort-button').click();await lib.locator('[data-sort="name"]').click();
   await lib.locator('.library-cell').filter({hasText:'gradient'}).first().click();
   await lib.locator('#single-view').click();

@@ -1325,3 +1325,22 @@ within 1.5× a developed photo of the same file. Driver
 | Camera-preview registration added to each RAW map | Report | about 0.1 to 0.4 s | ECC at 640 px; DSC07060 0.40 s, IMG_3129 0.12 s (script) | Baseline |
 
 | Library Stage A cold-folder diagnostic | No speed qualification | 41.579 s (one observation, not a range) | November 7, 2026; 4b8a549a + driver repair; 2560x1440, D:/Photos/HDR Test Images, concurrent CPU suite; first metadata 40.503 s, first pixel request 40.396 s; peak three probes | Diagnostic only |
+
+### November 8, 2026 ? focused release-check repair
+
+Measured on main `50822a19` plus this grouped repair, serial shared-lock Electron,
+2560 x 1440; warm processes and uncontrolled OS disk cache. Driver setup now
+explicitly develops ungraded fixtures and publishes retained scenes before a
+route switch. These are diagnostic preparations, not a new whole-folder target.
+
+| Action | Observed | Conditions / result |
+| --- | --- | --- |
+| RGB scene preparation, paired 640/2560 requests | JPEG median CPU 3.27 s / GPU 0.38 s; PNG 1.28 s / 0.49 s | Three fresh paths per route, alternating order; HDR/SDR pixel limits unchanged. Native disk planes use the stored diagnostic route; viewer retention is checked separately. |
+| RAW paste preparation | Cold CPU 6.60 s; reused GPU-prepared source 0.039 s | DSC07072.ARW, three concurrent reuse requests; unchanged paste wrote no sidecar. |
+| Denoise 42 MP measurement | CPU 0.795 s / GPU 0.181 s, compute 0.111 s | Single Grade measurement; corpus finished-pixel comparisons passed. |
+| Export with live tiles, Export closed / open | 26.010 / 25.941 s per photo; warm-up 28.931 s | Same three reusable ARWs, GPU Ultra HDR JPEG, maximum fidelity; within the existing 5% allowance, no progress-driven tile redraws. |
+
+Additional codec-source three-repeat medians in the same repair: CPU/GPU JXL
+0.868/0.337 s, direct AVIF 1.435/1.061 s, HEIC 0.574/0.290 s. These are source
+preparations, not displayed-picture timings. The large precision-source timing
+run remains incomplete at measured-memory admission; no speed claim follows.

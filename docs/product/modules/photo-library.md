@@ -7759,3 +7759,31 @@ November 7 Stage A driver: passes with explicit reusable-scene publication
 and original/camera surface checks. The cold-folder monitor follows live-plan
 and preview transport; metadata probes are no longer mistaken for completed
 decodes. The existing four-probe ceiling is retained.
+
+## November 8: focused release-check repair
+
+- Gain-map AVIF checks now follow the October 24 decision (`ca9740fb`): CPU
+  reconstruction followed by GPU working-colour preparation. HDR/SDR comparisons
+  pass for SDR-base, HDR-base and edited real AVIFs; reconstruction was not moved.
+- Library SDR Peak Fit now measures its bounded source before finishing. The
+  Grade scheduler does not handle canonical-anchor events in a Library window;
+  leaving the source estimate in place caused the photographic HEIC mismatch.
+  RGB and codec-source checks pass the unchanged finished-pixel tolerances.
+- Numerical drivers explicitly develop ungraded fixtures, publish their direct
+  scenes before CPU reference work, and use the stored diagnostic route for
+  native disk-plane checks. Retained viewer-native behavior remains covered by
+  library-live-native. The large precision driver accepts only the approved
+  explicit native-memory refusal; smaller fixtures still require native reuse.
+- Native reuse, live-picture (including the November 6 unedited-RAW SDR rule),
+  RAW paste, Denoise measurement, export live tiles and native overlay feedback
+  passed. The overlay fixture now clears the existing 1 KiB listing minimum,
+  enables Show all files, and waits for completed Library window restoration.
+- Still open: library-precision-source reaches the later gpu-2.exr timing case,
+  then waits for measured-memory admission until its diagnostic timeout. It
+  must not be recorded as passed; no budget or numerical limit was relaxed.
+
+Grouped final fast checks: Node 829 passed; Python 3,083 passed, 3 skipped,
+with the already documented remembered-failure cached-scene fixture failure
+(`NoPreparation.status` missing). No unrelated repair or broad rerun. Automatic
+approval review blocked deletion of both the broad and explicitly named task
+scratch folders; those generated runs and temporary profiles were left intact.

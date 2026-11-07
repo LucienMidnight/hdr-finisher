@@ -7,9 +7,18 @@ const photos=['DSC07060','DSC07061','DSC07072'].map(n=>{const p=path.join(folder
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
+ await page.evaluate(()=>activateWorkflowTab('import'));
+ // The check measures finished live tiles; unedited RAWs now start as camera pictures.
+ await page.locator('#library-frame').evaluate(async(element,photos)=>{
+  const w=element.contentWindow;
+  for(const photo of photos){const meta=await w.HDRLibraryScenes.load(photo,640,undefined,10,null,{develop:true});await meta.directScene?.store();}
+ },photos);
  await page.evaluate(paths=>batchExport.open(paths,{fromLibrary:true}),photos);
  await page.waitForFunction(()=>document.querySelectorAll('.batch-photo canvas[data-live-tile]').length===3,null,{timeout:120000});
- await page.locator('#batch-preset-rail').getByRole('button',{name:'New preset',exact:true}).click();
+ await page.getByRole('button',{name:'Export preset actions',exact:true}).click();
+ await page.getByRole('menuitem',{name:'New preset\u2026',exact:true}).click();
+ await page.locator('#app-dialog-input').fill('Live tile check');
+ await page.locator('#app-dialog').getByRole('button',{name:'Create',exact:true}).click();
  await page.locator('#export-format').selectOption('jpeg_ultrahdr');
  await page.locator('#export-preset').selectOption('maximum_fidelity');
  // Count actual live draws, not progress badges or layout updates.
@@ -44,4 +53,4 @@ const photos=['DSC07060','DSC07061','DSC07072'].map(n=>{const p=path.join(folder
  const report={measurements,closedSecondsPerPhoto:closed,openSecondsPerPhoto:open,changePercent,withinAllowance:open<=closed*1.05};
  fs.writeFileSync(path.join(folder,'result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
  assert.ok(report.withinAllowance,'Open Export page exceeds the agreed 5% timing allowance');
-}finally{await browser.close();reusePhoto.cleanup();}})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());
+}finally{await browser.close();reusePhoto.cleanup();fs.rmSync(folder,{recursive:true,force:true});}})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());

@@ -18,14 +18,16 @@ for row in data["rows"]:
         reference=source["reference"].astype(np.float32) if "reference" in source else None
     grade=AdjustmentState.model_validate(meta["adjustments"]);grade.hdr.highlight_compression_target_nits=1000
     context=RenderColorContext(meta["white"]);checks=[]
-    for lane in ("hdr","sdr"):
+    for requested_lane in ("hdr","sdr"):
+        # fab7a178 / Library PRD Nov 6: developed unedited RAW stays SDR.
+        lane = "sdr" if meta.get("unedited_raw") else requested_lane
         frame=SimpleNamespace(image=image,denoise=DenoiseDocumentSettings.model_validate(meta.get("denoise",{})))
         expected=apply_adjustments(_denoised_export_source(frame,PreviewKind(lane)),grade,PreviewKind(lane),sdr_reference_image=reference,
             include_grain=True,include_output_highlight_compression=False,color_context=context,
             local_adjustments=grade.enabled_locals([LocalAdjustment.model_validate(item) for item in meta.get("locals",[])]))
         expected=apply_hdr_output_highlight_compression(expected,grade,color_context=context) if lane=="hdr" else apply_sdr_output_highlight_compression(expected,grade)
-        actual=np.frombuffer(base64.b64decode(row["lanes"][lane]),dtype="<f2").reshape(meta["height"],meta["width"],3).astype(np.float32)
+        actual=np.frombuffer(base64.b64decode(row["lanes"][requested_lane]),dtype="<f2").reshape(meta["height"],meta["width"],3).astype(np.float32)
         metric=compare_finished_pixels(expected,actual,lane)
-        checks.append(dict(lane=lane,mean=metric.mean,p999=metric.p999,passed=metric.passed))
+        checks.append(dict(requested_lane=requested_lane,lane=lane,mean=metric.mean,p999=metric.p999,passed=metric.passed))
     results.append(dict(photo=Path(row["photo"]).name,checks=checks))
 print(json.dumps(results))

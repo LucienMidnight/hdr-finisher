@@ -1,28 +1,28 @@
 /* Compare live finished pixels with Grade's numerical renderer before any file codec. */
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
-const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-rgb-source',String(Date.now()));
+const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/test-photos',path.basename(process.argv[1],'.js'));
 fs.mkdirSync(folder,{recursive:true});
 const photographic='D:/Photos/Play_Raw/Zebras Crossing - thekman/darktable_exported/DSC_3931_01.jpg';
 const jpeg=path.join(folder,'photo.jpg'),png=path.join(folder,'photo.png');
-fs.copyFileSync(photographic,jpeg);
+if(!fs.existsSync(jpeg))fs.copyFileSync(photographic,jpeg);
 execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',"from PIL import Image;import sys;Image.open(sys.argv[1]).save(sys.argv[2])",jpeg,png]);
 let sources=[jpeg,png];const photos=[...sources];
 if(process.argv.includes('--ultrahdr')){
  const hdr=path.join(folder,'ultrahdr.jpg');
- fs.copyFileSync("D:/Photos/Play_Raw/Hawai'ian Fire Dancers - Challenge the Darkside - LaurentFromSF/IMG_0790_finished.jpg",hdr);
+ if(!fs.existsSync(hdr))fs.copyFileSync("D:/Photos/Play_Raw/Hawai'ian Fire Dancers - Challenge the Darkside - LaurentFromSF/IMG_0790_finished.jpg",hdr);
  sources=process.argv.includes('--measure')?[hdr]:[];photos.splice(0,photos.length,hdr);
 }
 if(process.argv.includes('--codecs')){
  const cases=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_codec_samples.py'),folder],{cwd:root,encoding:'utf8'}));
  sources=cases.sources;photos.push(...cases.photos);
 }
-const isoRoute=process.argv.includes('--iso-blocked');
+const isoRoute=process.argv.includes('--iso-avif');
 if(isoRoute){
  photos.length=0;sources=[];
  for(const [name,original] of [['reference.avif',path.join(root,'samples/hdr_reference.avif')],
    ['urbanscape.avif','D:/Photos/Play_Raw/HDR exercise on urbanscape/5M071612_finished.avif']]){
-  const target=path.join(folder,name);fs.copyFileSync(original,target);photos.push(target);
+  const target=path.join(folder,name);if(!fs.existsSync(target))fs.copyFileSync(original,target);photos.push(target);
  }
  const reversed=path.join(folder,'hdr-base.avif');
  execFileSync(path.join(root,'bin/avifgainmaputil.exe'),['swapbase',photos[0],reversed,'-q','100','--qgain-map','100','-s','10']);
@@ -74,10 +74,10 @@ if(only){photos.splice(0,photos.length,...photos.filter(photo=>path.basename(pho
 const comparisons=[];
 for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of (repeat%2?['gpu','cpu']:['cpu','gpu'])){
  const format=path.extname(source).slice(1),file=path.join(folder,`${mode}-${repeat}.${format}`);
- fs.copyFileSync(source,file);comparisons.push({file,mode,repeat,format});
+ if(!fs.existsSync(file))fs.copyFileSync(source,file);comparisons.push({file,mode,repeat,format});
 }
 (async()=>{const browser=await chromium.launch();try{
- const page=await browser.newPage();page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log(m.text());});await page.goto(process.env.HDR_FINISHER_URL);
+ const page=await browser.newPage();page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log(m.text());});await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
  const result=await page.locator('#library-frame').evaluate(async(element,{photos,cpuScene,isoRoute})=>{
   const w=element.contentWindow,gpu=await w.HDRLibraryPictures.initialize(),original=gpu.renderTo,rows=[];
   if(cpuScene)w.localStorage.setItem("library-gpu-raw","off");
@@ -100,11 +100,21 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
    // Ungraded SDR originals show their file until development is asked for (75f1de90).
    const develop=[undefined,10,null,{develop:true}];
    const [meta,large]=await Promise.all([w.HDRLibraryScenes.load(photo,640,...develop),w.HDRLibraryScenes.load(photo,2560,...develop)]),lanes={};
-   if(cpuScene||isoRoute ? meta.renderer!=='cpu' : (meta.renderer!=='gpu'||!meta.rgb_adapter||large.has_reference!==meta.has_reference)) throw Error('RGB GPU source/rendition not used: '+JSON.stringify(meta));
+   if(cpuScene ? meta.renderer!=='cpu' : (meta.renderer!=='gpu'||!meta.rgb_adapter||large.has_reference!==meta.has_reference)) throw Error('RGB GPU source/rendition not used: '+JSON.stringify(meta));
    const prepareMs=performance.now()-begun;
-   const native=await w.HDRLibraryScenes.load(photo,100000);
+   // This numerical check reads stored native planes, rather than owning a viewer.
+   // Use the existing diagnostic stored-scene route; selected native GPU retention
+   // and hand-over are covered by library-live-native.
+   w.HDRLibraryProfileLegacy=true;
+   let native;
+   try{native=await w.HDRLibraryScenes.load(photo,100000);}
+   finally{w.HDRLibraryProfileLegacy=false;}
    const again=await w.HDRLibraryScenes.load(photo,100000);
    if(native.source_key!==again.source_key||!again.cache_hit)throw Error('Native scene did not reuse');
+   // The real viewer publishes and releases native scenes when it leaves them.
+   // These direct API calls must do the same before starting a CPU reference.
+   await native.directScene?.store();
+   w.HDRLibraryGpuRaw.releaseNative();
    if(meta.gpu_memory_peak_bytes>meta.source_width*meta.source_height*44+64*1024*1024)throw Error('Memory reservation exceeded');
    for(const lane of ['hdr','sdr']){
     const canvas=w.document.createElement('canvas');w.document.body.append(canvas);
@@ -113,24 +123,31 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
     const bytes=new Uint8Array(captured.halves.buffer);let binary='';for(let i=0;i<bytes.length;i+=16384)binary+=String.fromCharCode(...bytes.subarray(i,i+16384));
     lanes[lane]=w.btoa(binary);canvas.remove();
    }
+   await meta.directScene?.store();
    rows.push({photo,meta,large,native,prepareMs,lanes});
   }
   gpu.renderTo=original;w.fetch=originalFetch;if(!yielded&&!cpuScene&&!isoRoute)throw Error("Preemption was not exercised");
-  if(isoRoute&&(!fallbackReasons.length||fallbackReasons.some(reason=>!reason?.includes("Gain-map AVIF"))))throw Error("ISO fallback reason missing: "+JSON.stringify(fallbackReasons));
+  // ca9740fb / Library PRD October 24: CPU reconstruction, GPU colour preparation.
   return {location,rows,yielded,fallbackReasons};
  },{photos,cpuScene,isoRoute});
- if(isoRoute)console.log("ISO preparation retained explicit CPU fallback; GPU finished drawing is not GPU reconstruction.");
+ if(isoRoute)console.log("ISO gain maps reconstruct on CPU, then use GPU colour preparation and finished drawing.");
  if(!cpuScene&&!isoRoute)console.log("RGB source preemption yielded and resumed without CPU fallback.");
  const timing=await page.locator('#library-frame').evaluate(async(element,cases)=>{
   const w=element.contentWindow,rows=[];
   for(const item of cases){
    if(item.mode==='cpu')w.localStorage.setItem('library-gpu-raw','off');else w.localStorage.removeItem('library-gpu-raw');
    const started=performance.now();
-   const [small,large]=await Promise.all([w.HDRLibraryScenes.load(item.file,640,undefined,10,null,{develop:true}),w.HDRLibraryScenes.load(item.file,2560,undefined,10,null,{develop:true})]);
+   const controller=new w.AbortController();
+   const timeout=setTimeout(()=>controller.abort(),180000);
+   let small,large;
+   try { [small,large]=await Promise.all([w.HDRLibraryScenes.load(item.file,640,controller.signal,10,null,{develop:true}),w.HDRLibraryScenes.load(item.file,2560,controller.signal,10,null,{develop:true})]); }
+   catch(error){throw Error(item.mode+' scene failed: '+error.message+' '+JSON.stringify({scenes:w.HDRLibraryScenes.snapshot(),grants:w.HDRLibraryGrants.snapshot()}));}
+   finally{clearTimeout(timeout);}
    const elapsed=performance.now()-started;
    if(small.renderer!==item.mode||large.renderer!==item.mode)throw Error('Wrong measured route');
    const again=await w.HDRLibraryScenes.load(item.file,640,undefined,10,null,{develop:true});
    if(!again.cache_hit||again.source_key!==small.source_key)throw Error('Cached reopen redeveloped');
+   await small.directScene?.store();await large.directScene?.store();
    rows.push({...item,ms:elapsed,stages:small.source_timings_ms});
   }
   w.localStorage.removeItem('library-gpu-raw');return rows;
@@ -146,4 +163,4 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
  const output=execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_rgb_compare.py'),file],{cwd:root,encoding:'utf8',maxBuffer:1<<24});
  const report=JSON.parse(output.trim().split('\n').at(-1));console.log(JSON.stringify(report));
  for(const row of report)for(const check of row.checks)assert.ok(check.passed,JSON.stringify({photo:row.photo,...check}));
-}finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});
+}finally{await browser.close();for(const name of ['pixels.json','timing.json'])fs.rmSync(path.join(folder,name),{force:true});}})().catch(error=>{console.error(error);process.exitCode=1;});
