@@ -124,7 +124,7 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert "--panel-title-font-family:" in css
     assert "--panel-title-font-size:" in css
     assert "--group-title-font-family: var(--font-body)" in css
-    assert "--group-title-font-size: var(--font-size-md)" in css
+    assert "--group-title-font-size: var(--font-size-lg)" in css
     assert "--font-size-md: 14.5px" in css
     assert "--group-title-font-weight: var(--font-weight-medium)" in css
     assert ".disclosure-trigger > span:first-child" in css
@@ -240,7 +240,7 @@ def test_grade_readouts_support_bounded_direct_numeric_entry() -> None:
     assert '"sdr.highlight_compression_start_percent": { min: 1, max: 99' in javascript
     assert '"sdr.highlight_compression_manual_peak_percent": { min: 1, max: 1000000' in javascript
     assert 'entryScale: 100' in javascript
-    assert "Double-click any value to type it." in html
+    assert "<b>Click value</b> to type" in html
     assert ".editable-value[data-editing=\"true\"]" in css
     assert ".range-shell.manual-overflow" in css
 

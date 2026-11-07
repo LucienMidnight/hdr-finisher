@@ -40,4 +40,4 @@ Toolbar additions (November 6, 2026), all from upstream commit `183e715d5a81ba19
 | Viewer Background | `background.svg` |
 | Add Library selection | `photo-plus.svg` |
 
-Title bar addition (November 7, 2026): `menu-2.svg` for the application menu button, drawn in the same 24×24, 1.8-stroke form as the other vendored icons.
+Title bar and filter bar additions (November 7, 2026): `menu-2.svg` (application menu), `star-filled.svg` (rating filter), `flag-filled.svg` (Picked), `flag.svg` (Unmarked) and `circle-off.svg` (No label). Their Tabler paths were entered by hand rather than copied from the pinned commit, in the same 24×24 form (outline icons at 1.8 stroke).

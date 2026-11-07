@@ -246,7 +246,7 @@ body { margin: 0; color: var(--body); background: var(--app); }
 
 /* Library-only source-data warnings. */
 .picture-frame {position:relative;}
-.library-map-status {position:absolute;bottom:5px;right:5px;z-index:5;background:var(--shadow);color:var(--muted);font-size:var(--font-size-min);padding:2px 5px;pointer-events:auto;border-radius:3px;}
+.library-map-status {position:absolute;bottom:5px;right:5px;z-index:5;max-width:calc(100% - 10px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;box-sizing:border-box;background:var(--shadow);color:var(--muted);font-size:var(--font-size-min);padding:2px 5px;pointer-events:auto;border-radius:3px;}
 .library-source-overlay {image-rendering:pixelated;}
 .library-colour-note {position:absolute;top:5px;left:5px;z-index:5;max-width:calc(100% - 10px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:color-mix(in srgb, var(--panel) 88%, transparent);color:var(--attention);border:1px solid var(--attention);font-size:var(--font-size-min);padding:1px 5px;border-radius:3px;pointer-events:auto;}
 
@@ -272,8 +272,6 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-nav-section #folders, .library-nav-section #albums, .library-nav-section #smart-albums { max-height: none; overflow: visible; min-height: 0; }
 .library-nav-section + .library-nav-section { border-top: 1px solid var(--hairline); }
 .library-left-closed .library-nav-section { display: none; }
-.library-left-closed .library-nav-section[data-section="folders"] { display: block; }
-.library-left-closed .library-nav .section-handle, .library-left-closed .library-nav .section-toggle { display: none; }
 .library-drag-handle { flex: 0 0 22px; width: 22px; padding: 0; border: 0; background: transparent; color: var(--muted); cursor: grab; font: inherit; }
 .library-drag-handle:hover { color: var(--text); }
 .library-nav .drag-target { box-shadow: var(--plate-lift); }

@@ -24,7 +24,6 @@ function initializeControlPanel() {
     node.textContent = text;
     return node;
   };
-  global.prepend(label("Both renditions"));
   retouch.append(document.querySelector(".retouch-panel"));
   const repairContent = retouch.querySelector(".retouch-content");
   const repairNote = document.createElement("p");
@@ -71,7 +70,7 @@ function initializeControlPanel() {
   new ResizeObserver(sizeTabs).observe(header);
   requestAnimationFrame(sizeTabs);
   tabs.before(row);
-  row.append(label("Per rendition"), tabs);
+  row.append(tabs);
   const matchCopy = document.createElement("span");
   matchCopy.className = "sdr-match-copy";
   matchCopy.textContent = "Start the SDR grade from your HDR grade.";

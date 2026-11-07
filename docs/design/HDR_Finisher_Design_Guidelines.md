@@ -119,7 +119,8 @@ Title-case panel titles: Afacad 12px, weight 600, no tracking. Group names: sent
 - Afacad is the reading, marking and number family throughout the interface, with tabular figures. The full normal/italic family is bundled under the OFL; variable faces provide runtime weights.
 - IBM Plex Mono is reserved for filenames and genuinely character-aligned readouts.
 - Every font size, weight, family, line height and letter spacing comes from the type tokens in `visual-tokens.css`; write no literal values elsewhere (`tests/font-tokens.test.js` enforces this). Canvas text uses `HDRAppearance.font()`.
-- Type scale: `--font-size-min` 11px (badges, scale labels, counts; nothing is drawn smaller), `xs` 12px (captions, file names, status bars), `sm` 13px (labels, helper text, values, Details panel), `md` 14.5px (body, buttons, menus, group titles), `lg` 16px (panel titles and in-panel tabs), then `xl` 18, `2xl` 20, `3xl` 24 (workflow tabs) and `4xl` 28px for headings and glyphs.
+- Type scale: `--font-size-min` 11px (badges, scale labels, counts; nothing is drawn smaller), `xs` 12px (captions, file names, status bars), `sm` 13px (labels, helper text, values, Details panel), `md` 14.5px (body, buttons, menus), `lg` 16px, then `xl` 18, `2xl` 20, `3xl` 24 and `4xl` 28px for headings and glyphs.
+- Title hierarchy (November 7), each a role token: page titles (workflow tabs) `--page-title-font-size` 24px, largest; panel and window titles `--panel-title-font-size` 18px; section and module titles (Library sidebar sections, Control Panel modules) `--group-title-font-size` 16px. In-panel tabs use `--tab-font-size` 16px. Smaller text inside modules keeps the scale above.
 - Families are three roles: `--font-title`, `--font-body` and `--font-mono`. A theme or a future user font choice overrides these and the scale in one place.
 - Place names and counts sit in the bottom status bar (Library folder or album, Export batch counts); toolbars above the photos are centred.
 - Keep labels concrete, use sentence case, and include appropriate units (EV, nit, %, K).
@@ -437,3 +438,17 @@ currentColor), with upstream commits recorded in the bundled icon README.
 Do not reuse visibility/bypass, mask or other established symbols for a
 different action. Full-label tooltips appear on hover and keyboard focus;
 existing authored explanatory strings retain their registry wording.
+
+## November 7: Library sidebar, filter bar and Control Panel plates
+
+The Library sidebar is the "Pinned" panel. Its panel heading holds the
+collapse button, which is all that remains when the sidebar is collapsed.
+Folders, Albums and Smart Albums are section titles inside it, in the module
+title style. The filter bar's rating, pick and "no label" buttons draw Tabler
+icons centred in 30px plates instead of font symbols. The slider key legend
+is sentence case ("Ctrl fine · Shift snap · …"). The Control Panel has no
+"Both renditions" or "Per rendition" labels. Its two tab plates
+(Global/Local/Retouch and HDR grade/SDR grade) share one design: 30px buttons,
+the full panel width less a fixed 10px inset (`--tab-plate-inset`) from the
+dividers around them. HDR grade and SDR grade carry one-line tooltips after
+600ms.

@@ -43,8 +43,8 @@ button, input, select, textarea, output { font-family: var(--font-body); font-va
 :root .viewer-status-dock { grid-row: 3; display: flex; align-items: center; gap: 12px; height: var(--status-bar-h); min-height: var(--status-bar-h); padding: 0 12px; background: var(--panel); border-top: 1px solid var(--hairline); pointer-events: auto; }
 :root .application-status-entries { flex: 1; min-width: 0; max-height: var(--status-bar-h); overflow: auto; }
 :root .application-status-entry { background: var(--panel); box-shadow: none; font-size: var(--font-size-sm); }
-.slider-key-legend { flex-shrink: 0; opacity: .45; font: var(--font-weight-semibold) var(--font-size-min) var(--font-body); letter-spacing: var(--tracking-caps); text-transform: uppercase; color: var(--muted); transition: opacity 120ms ease; }
-.slider-key-legend b { color: var(--body); }
+.slider-key-legend { flex-shrink: 0; opacity: .45; font: var(--font-weight-regular) var(--font-size-min) var(--font-body); letter-spacing: var(--tracking-none); text-transform: none; color: var(--muted); transition: opacity 120ms ease; }
+.slider-key-legend b { color: var(--body); font-weight: var(--font-weight-semibold); }
 body.slider-hover .slider-key-legend { opacity: 1; }
 :root :is(.control-mode-switch.proof-preview-switch, .control-mode-switch) { min-height: var(--tab-row-h); margin-top: 0; }
 :root .control-mode-switch button { min-height: var(--tab-row-h); font: var(--font-weight-medium) var(--font-size-md) var(--font-body); text-transform: none; }
@@ -365,7 +365,7 @@ html.desktop-shell .window-controls { margin-left: 0; }
 /* Titles and tab names share the locally bundled title face. */
 :root :is(.lane-switch > button, .local-lane-switch > button, .control-mode-switch > button,
  .proof-preview-switch > button, .channel-tabs > button, .dock-tabs > button,
- .wheel-range-tabs > button) { font-family: var(--font-title); font-size: var(--panel-title-font-size); letter-spacing: var(--tracking-slight); text-transform: uppercase; }
+ .wheel-range-tabs > button) { font-family: var(--font-title); font-size: var(--tab-font-size); letter-spacing: var(--tracking-slight); text-transform: uppercase; }
 
 /* On switches retain the recessed accent track and use a light soft knob. */
 :root :is(.checkbox-row, .film-module-toggle, .proof-enable-row, .gradient-luma-toggle) > input[type="checkbox"]:checked::before {
@@ -408,7 +408,7 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 :root .workflow-tab {
  position: relative; min-width: 0; height: 34px; min-height: 34px; padding-inline: 16px; gap: 6px;
  border: 0; border-radius: 0; background: var(--plate-up); box-shadow: none; color: var(--body);
- font: var(--font-weight-regular) var(--font-size-3xl)/var(--line-height-none) var(--font-title);
+ font: var(--font-weight-regular) var(--page-title-font-size)/var(--line-height-none) var(--font-title);
  letter-spacing: var(--tracking-slight); text-transform: uppercase; white-space: nowrap;
  text-box: trim-both cap alphabetic;
 }
@@ -514,3 +514,23 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 :root .batch-statusbar .batch-heading { gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; }
 :root .batch-statusbar .helper { font-size: var(--font-size-xs); line-height: var(--line-height-none); }
 :root .batch-preview .batch-statusbar { display: none; }
+
+/* November 7: Library sidebar is the "Pinned" panel; Folders, Albums and Smart Albums are its sections. */
+:root .library-nav > .library-panel-heading { padding-left: 12px; }
+:root .library-section-title { flex: 1; min-width: 0; color: var(--text); white-space: nowrap; font: var(--group-title-font-weight) var(--group-title-font-size) var(--group-title-font-family); letter-spacing: var(--group-title-letter-spacing); }
+
+/* Filter bar symbols are Tabler icons, centred like the toolbar icons. */
+:root .library-filterbar .tool-button { display: inline-grid; place-items: center; text-box: trim-both cap alphabetic; }
+:root .library-filterbar :is(.library-rating-controls, .library-pick-controls, .library-label-controls) .tool-button { width: 30px; min-width: 30px; min-height: 30px; padding: 0; font-size: var(--font-size-md); }
+:root .library-filterbar .tool-button[data-icon]::before { content: ""; width: 16px; height: 16px; background: currentColor; -webkit-mask: var(--filter-icon) center/contain no-repeat; mask: var(--filter-icon) center/contain no-repeat; }
+:root .library-filterbar [data-icon="star-filled"] { --filter-icon: url('assets/icons/tabler/star-filled.svg'); }
+:root .library-filterbar [data-icon="flag-filled"] { --filter-icon: url('assets/icons/tabler/flag-filled.svg'); }
+:root .library-filterbar [data-icon="flag"] { --filter-icon: url('assets/icons/tabler/flag.svg'); }
+:root .library-filterbar [data-icon="x"] { --filter-icon: url('assets/icons/tabler/x.svg'); }
+:root .library-filterbar [data-icon="circle-off"] { --filter-icon: url('assets/icons/tabler/circle-off.svg'); }
+
+/* Control Panel tab plates: one design, full width, a fixed inset from the dividers around them. */
+:root #grade-workflow-panel .grade-header > .control-mode-switch { flex: none; width: auto; min-height: 0; margin: var(--tab-plate-inset); }
+:root .grade-folder-tabs { padding: var(--tab-plate-inset); gap: 0; }
+:root :is(#grade-workflow-panel .grade-header > .control-mode-switch, .grade-folder-tabs > .lane-switch) > button { height: 30px; min-height: 30px; }
+:root .lane-switch button:is(:hover, :focus-visible) .lane-title-tooltip { transition-delay: 600ms; }

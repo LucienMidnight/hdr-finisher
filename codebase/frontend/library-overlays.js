@@ -40,7 +40,7 @@
       const large=r.canvas.id==='single-picture'||r.canvas.classList.contains('compare-fit');
       try{for(const quality of item.kind==='focus'&&large?['half','full']:['half']){
         const m=await o.api('/api/library/overlay-map',{path:r.photo.path,kind:item.kind,quality,priority:large?82:85},controller.signal);if(!current())return;
-        if(m.unavailable){item.badge.textContent=`${item.kind==='focus'?'Focus':'Exposure'} unavailable · ${r.photo.path.split('.').pop().toUpperCase()}`;item.badge.title=m.unavailable;item.badge.hidden=false;return;}
+        if(m.unavailable){const type=(r.photo.source_path||r.photo.path.split('|copy|',1)[0]).split(/[/\\]/).pop().split('.').pop().toUpperCase();item.badge.textContent=`${item.kind==='focus'?'Focus':'Exposure'} unavailable · ${m.reason==='graded'?'graded':type}`;item.badge.title=m.unavailable;item.badge.hidden=false;return;}
         const response=await fetch(`/api/library/overlay-pixels/${m.key}`,{signal:controller.signal});if(!response.ok)throw new Error('Overlay map unavailable; switch the overlay off and on to remake it.');
         const bitmap=await createImageBitmap(await response.blob());if(!current()){bitmap.close();return;}
         const temp=document.createElement('canvas');temp.width=bitmap.width;temp.height=bitmap.height;const ctx=temp.getContext('2d');ctx.drawImage(bitmap,0,0);bitmap.close();item.values=ctx.getImageData(0,0,temp.width,temp.height);item.map=m;draw(r,item);

@@ -398,6 +398,9 @@ controls (16px). Library sidebar chevrons moved 4px right to line up with the
 logo. Sofia Sans Semi Condensed stays in the repository but is no longer used.
 Review: `codebase/output/review/ui-polish/titlebar/`.
 
+Also November 7: title sizes follow one hierarchy: page titles 24px, panel and
+window titles 18px (was 16), section and module titles 16px (was 14.5).
+
 ## November 6: UI polish round 6b toolbar fit
 
 Built: toolbar compaction now follows available centre-panel space through

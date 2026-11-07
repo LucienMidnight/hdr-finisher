@@ -20,8 +20,8 @@ These strings predate the title-tooltip policy. They are recorded here for centr
 
 | ID | Trigger | Copy-ready tooltip text |
 |---|---|---|
-| `controls.hdr_rendition` | HDR grade | Graded HDR rendition. Exported as the PQ HDR image. Double-click any value to type it. |
-| `controls.sdr_rendition` | SDR grade | Independent fallback baked into the gain map. This is what viewers without HDR gain-map support will see. Double-click any value to type it. |
+| `controls.hdr_rendition` | HDR grade | Edit the HDR version, shown on HDR screens. |
+| `controls.sdr_rendition` | SDR grade | Edit the SDR version, shown on screens without HDR. |
 | `preview.high_resolution` | High-res Preview | Uses more GPU memory for a larger preview. Export quality is unchanged. |
 | `sdr.highlight_compression.mode` | Mode help | Peak Fit anchors the measured source peak at display white while preserving a smooth highlight gradient. |
 | `sdr.highlight_compression.color` | Highlight Color help | Smooth color rolloff gently compresses each sRGB channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white. |

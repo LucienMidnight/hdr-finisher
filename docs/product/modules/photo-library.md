@@ -7521,3 +7521,25 @@ Validation is grouped in the Desktop module's round 4 record.
 ## November 6: UI polish round 6
 
 Section 5: larger bold sidebar headings, larger add targets visible on hover or keyboard focus, and identical fixed-size muted grips for section and pinned-folder reordering. The smart-album diamond was a decorative span, with no handler, and is removed; rule editing stays in the context menu. Grade and Export have no reorder handles to restyle. Validation grouped at the end of round 6.
+
+## November 7: Pinned panel, filter icons and overlay messages
+
+Built: the left sidebar has a "Pinned" panel title that holds the collapse
+button. Before, the button sat in the Folders heading and disappeared when the
+sidebar was collapsed, so the sidebar could not be reopened by mouse. Folders,
+Albums and Smart Albums are now section titles beneath it. The filter bar uses
+Tabler icons (star, flags, x, no-label) instead of font symbols, so every
+button lines up. Focus and Exposure badges now name the real file type for
+virtual copies (they printed the copy id) and say "graded" for graded photos.
+Long badges end with an ellipsis instead of running off the picture.
+
+Open work (Steve, November 7: maybe v2): Focus and Exposure overlays are
+unavailable on graded photos, because they are measured from the original
+file. Showing them for graded photos would need a measurement of the
+developed picture.
+
+The `library-filter-bar.js`, `library-focus.js` and
+`library-appearance-navigation.js` drivers time out waiting for their
+photos. They predate this work: since November 3 (`75f1de90`) the Library
+hides non-camera files unless "show all files" is on, and these drivers use
+PNG files without turning it on.

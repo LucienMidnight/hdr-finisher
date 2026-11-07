@@ -27,7 +27,7 @@ test('font sizes, weights and families are written with tokens',()=>{
     if(prop==='font-weight'&&/^var\(--(font-weight-|panel-title-|group-title-)[\w-]+\)\s*$/.test(value.trim()))continue;
     if(prop==='font-family'&&/^var\(--(font-(title|body|mono)|panel-title-font-family|group-title-font-family)\)\s*$/.test(value.trim()))continue;
     if(prop==='font'&&!/\d(px|em|rem|pt)|\b[1-9]00\b|sans-serif|monospace|system-ui|Afacad|Segoe/.test(value))continue;
-    if(prop==='font-size'&&/var\(--(panel|group)-title-font-size\)/.test(value))continue;
+    if(prop==='font-size'&&/var\(--((page|panel|group)-title|tab)-font-size\)/.test(value))continue;
     bad.push(`${file}:${i+1} ${m[0].trim()}`);
    }
    if(/\.font\s*=\s*["'`]/.test(line)||/['"]font-size['"]\s*:/.test(line))bad.push(`${file}:${i+1} ${line.trim().slice(0,120)}`);

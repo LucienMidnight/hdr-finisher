@@ -11,16 +11,16 @@
     const close = (focus = false) => { panel.hidden = true; panel.replaceChildren(); if (focus) origin?.focus(); };
     function changed() { render(); options.changed(); }
     function set(id, rule) { const list = rules(), at = list.findIndex(item => item.field === id); if (at >= 0) list.splice(at, 1); if (rule) list.push(rule); options.filters().any = false; changed(); }
-    const button = (text, label, run) => { const b = make("button", "tool-button", text); b.type = "button"; b.setAttribute("aria-label", label); b.title = label; b.addEventListener("click", run); return b; };
+    const button = (text, label, run, icon = "") => { const b = make("button", "tool-button", icon ? "" : text); if (icon) b.dataset.icon = icon; b.type = "button"; b.setAttribute("aria-label", label); b.title = label; b.addEventListener("click", run); return b; };
     const search = document.getElementById("filter-search"), comparison = document.getElementById("filter-rating-op");
     search.addEventListener("input", () => set("search", search.value.trim() ? {field:"search",op:"contains",value:search.value.trim()} : null));
     comparison.addEventListener("change", () => { const rule = find("rating"); if (rule) set("rating", {...rule,op:comparison.value}); });
     for (let value = 0; value <= 5; value++) {
-      const b = button(value ? "★" : "0", value ? `${value} stars` : "Unrated", () => { const active = find("rating"); set("rating", active && Number(active.value) === value ? null : {field:"rating",op:value ? comparison.value : "is",value}); }); b.dataset.rating = value; document.getElementById("filter-rating").append(b);
+      const b = button("0", value ? `${value} stars` : "Unrated", () => { const active = find("rating"); set("rating", active && Number(active.value) === value ? null : {field:"rating",op:value ? comparison.value : "is",value}); }, value ? "star-filled" : ""); b.dataset.rating = value; document.getElementById("filter-rating").append(b);
     }
-    for (const [id, choices] of [["pick", [["pick","Picked","⚑"],["unmarked","Unmarked","⚐"],["reject","Rejected","×"]]], ["label", [["red","Red"],["orange","Orange"],["green","Green"],["blue","Blue"],["","No label","∅"]]]]) {
+    for (const [id, choices] of [["pick", [["pick","Picked","flag-filled"],["unmarked","Unmarked","flag"],["reject","Rejected","x"]]], ["label", [["red","Red"],["orange","Orange"],["green","Green"],["blue","Blue"],["","No label","circle-off"]]]]) {
       for (const [value, label, text] of choices) {
-        const b = button(text || "", label, () => { const selected = new Set(find(id)?.values || []); selected.has(value) ? selected.delete(value) : selected.add(value); set(id, selected.size ? {field:id,op:"in",values:[...selected],labels:[...selected].map(value => choices.find(([v]) => v === value)[1])} : null); });
+        const b = button("", label, () => { const selected = new Set(find(id)?.values || []); selected.has(value) ? selected.delete(value) : selected.add(value); set(id, selected.size ? {field:id,op:"in",values:[...selected],labels:[...selected].map(value => choices.find(([v]) => v === value)[1])} : null); }, text || "");
         b.dataset.value = value;
         if (id === "label" && value) { const dot = make("span", "library-label-dot"); dot.style.background = `var(--label-${value})`; b.append(dot); }
         document.getElementById(`filter-${id}`).append(b);

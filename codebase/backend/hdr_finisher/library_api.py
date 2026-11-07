@@ -1571,7 +1571,7 @@ def create_library_router(worker, browser, store=None):
     @router.post("/overlay-map")
     async def overlay_map(command: OverlayRequest, request: Request):
         if store is not None and documents.request(command.path)["edited"]:
-            return {"unavailable":"Overlay is measured from the original; this photo is shown with its saved grade."}
+            return {"unavailable":"Overlay is measured from the original; this photo is shown with its saved grade.","reason":"graded"}
         path = str(marks.source_path(command.path))
         # A format with no source clipping limit must not imply a clean exposure map.
         if command.kind=="exposure" and Path(path).suffix.lower() not in {".png",".jpg",".jpeg",".tif",".tiff"} | RAW_EXTENSIONS:

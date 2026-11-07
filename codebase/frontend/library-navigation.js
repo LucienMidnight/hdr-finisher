@@ -27,7 +27,7 @@
     }
     for (const section of sections) {
       const id = section.dataset.section, button = section.querySelector(".section-toggle"), body = document.getElementById(id);
-      const toggle = () => { body.hidden = !!saved.closed?.[id]; button.setAttribute("aria-expanded", String(!body.hidden)); button.setAttribute("aria-label", `${body.hidden ? "Expand" : "Collapse"} ${section.querySelector(".panel-title").textContent}`); };
+      const toggle = () => { body.hidden = !!saved.closed?.[id]; button.setAttribute("aria-expanded", String(!body.hidden)); button.setAttribute("aria-label", `${body.hidden ? "Expand" : "Collapse"} ${section.querySelector(".library-section-title").textContent}`); };
       toggle();
       button.addEventListener("click", () => { saved.closed ||= {}; saved.closed[id] = !body.hidden; toggle(); persist(); });
       draggable(section.querySelector(".section-handle"), section.querySelector(".library-heading"), "section", id, (source, after) => {
