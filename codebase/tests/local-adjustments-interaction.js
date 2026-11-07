@@ -71,6 +71,8 @@ async function canvasVariationCount(locator) {
       }
     }
     if (failure === "net::ERR_ABORTED" && /\/local-mask\/[^/]+\/preview$/.test(new URL(request.url()).pathname)) return;
+    // The best-effort Denoise warm-up (no edit revision) may be dropped; it never feeds a frame.
+    if (failure === "net::ERR_ABORTED" && request.method() === "GET" && /\/denoise-measurement\/(hdr|sdr)$/.test(new URL(request.url()).pathname) && !new URL(request.url()).searchParams.has("edit_revision")) return;
     if (failure === "net::ERR_ABORTED" && request.method() === "GET" && /\/local-mask\/[^/]+$/.test(new URL(request.url()).pathname)) return;
     requestFailures.push(`${request.method()} ${request.url()}: ${failure}`);
   });
@@ -78,7 +80,8 @@ async function canvasVariationCount(locator) {
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     assert(await page.locator(".local-stack-surface").count() === 1, "The persistent local-adjustment list surface is missing.");
-    assert(await page.locator("[data-local-tool]:disabled").count() === 4, "Local creation tools should require a loaded source.");
+    const creationTools = await page.locator("[data-local-tool]").count();
+    assert(creationTools >= 5 && await page.locator("[data-local-tool]:disabled").count() === creationTools, "Local creation tools should require a loaded source.");
     await importTestPattern(page);
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#preview-status").waitFor({ state: "hidden", timeout: 60000 }).catch(() => null);
