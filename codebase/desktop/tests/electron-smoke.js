@@ -648,6 +648,8 @@ async function main() {
     // path should otherwise produce the same source and interpretation data.
     if (droppedExrMetadata.metadata?.extra) delete droppedExrMetadata.metadata.extra.import_timings_ms;
     if (importedExrMetadata.metadata?.extra) delete importedExrMetadata.metadata.extra.import_timings_ms;
+    if (droppedExrMetadata.metadata?.extra) delete droppedExrMetadata.metadata.extra.analysis_timings_ms;
+    if (importedExrMetadata.metadata?.extra) delete importedExrMetadata.metadata.extra.analysis_timings_ms;
     assert.deepEqual(importedExrMetadata, droppedExrMetadata);
     checkpoint("staged desktop metadata verified");
     const exposureBeforeShortcut = await window.locator("#hdr-exposure").inputValue();
@@ -684,6 +686,12 @@ async function main() {
     });
     await window.locator('[data-group="hdr-tone"] .group-preset').click();
     await window.locator(".group-preset-row").filter({ hasText: "Smoke Tone Match" }).getByRole("button", { name: "Apply" }).click();
+    // Apply reads the preset through the backend before it sets values.
+    await window.waitForFunction(
+      (expected) => Math.abs(Number(document.querySelector("#hdr-exposure")?.value) - expected) < 1e-8,
+      exposureAfterShortcuts,
+      { timeout: 10000 },
+    ).catch(() => {});
     assert.equal(Number(await window.locator("#hdr-exposure").inputValue()), exposureAfterShortcuts);
     assert.equal(Number(await window.locator("#hdr-saturation").inputValue()), 0.4, "a Tone preset must not alter Color controls");
     assert.equal(await window.locator("#film-reference-model").count(), 0);
@@ -693,6 +701,7 @@ async function main() {
     const cleanCinemaRow = window.locator(".group-preset-row.built-in").filter({ hasText: "Clean Cinema" });
     assert.match(await cleanCinemaRow.textContent(), /Fine, clean cinema print/);
     await cleanCinemaRow.getByRole("button", { name: "Apply" }).click();
+    await window.waitForFunction(() => state.adjustments.hdr.film_look?.film_stock === "kodak_vision3_250d", null, { timeout: 10000 }).catch(() => {});
     const appliedFilmModel = await window.evaluate(() => state.adjustments.hdr.film_look);
     assert.equal(appliedFilmModel.film_stock, "kodak_vision3_250d");
     assert.equal(appliedFilmModel.print_paper, "kodak_2383");
