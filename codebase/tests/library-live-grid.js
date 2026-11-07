@@ -11,12 +11,20 @@ for(const source of [...sources,path.join(root,'tests/fixtures/sdr_gradient.png'
 // the disposable copy a listed photo.
 const gradient=path.join(folder,'sdr_gradient.png'),gradientBytes=fs.statSync(gradient).size;
 if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes));
+const temporaryCache=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'hdr-live-grid-cache-'));
+let cacheSettingsPath,originalCacheSettings;
 (async()=>{
  const browser=await chromium.launch();
  try{
   const page=await browser.newPage(),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
+  await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
   await page.goto(process.env.HDR_FINISHER_URL);
+  const settings=await (await page.request.get(new URL('/api/library/cache-settings',page.url()).href)).json();
+  assert.equal(path.basename(settings.location),'Cache','Use a disposable default-cache profile');
+  cacheSettingsPath=path.join(path.dirname(settings.location),'library-cache-settings.json');
+  originalCacheSettings=fs.existsSync(cacheSettingsPath)?fs.readFileSync(cacheSettingsPath):null;
+  assert.ok((await page.request.post(new URL('/api/library/cache-settings',page.url()).href,{data:{location:temporaryCache}})).ok());
   await page.evaluate(()=>activateWorkflowTab('import'));
   const library=page.locator('#library-frame');
   await library.evaluate(element=>{
@@ -29,26 +37,31 @@ if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes
    w.HDRLibraryGpuRaw={...original,liveScene:(...args)=>{starts++;entered();return original.liveScene(...args);}};
    try{
     const controller=new w.AbortController();
-    const first=w.HDRLibraryScenes.load(source,640,controller.signal).catch(error=>error.name);
-    await begun;controller.abort();
+    const first=w.HDRLibraryScenes.load(source,640,controller.signal,10,null,{develop:true}).catch(error=>error.name);
+    await Promise.race([begun,first.then(()=>{throw Error('Development hook was not reached');}),new Promise((_,reject)=>setTimeout(()=>reject(Error('Development hook timed out')),60000))]);controller.abort();
     const detachedResult=await first;
     const active=w.HDRLibraryScenes.snapshot().sources.active;
-    await w.HDRLibraryScenes.load(source,640);
-    const small=await w.HDRLibraryScenes.load(source,640);
-    const returned=await w.HDRLibraryScenes.load(source,2560,undefined,0);
-    const large=await w.HDRLibraryScenes.load(source,2560);
+    await w.HDRLibraryScenes.load(source,640,undefined,10,null,{develop:true});
+    const small=await w.HDRLibraryScenes.load(source,640,undefined,10,null,{develop:true});
+    const returned=await w.HDRLibraryScenes.load(source,2560,undefined,0,null,{develop:true});
+    const large=await w.HDRLibraryScenes.load(source,2560,undefined,10,null,{develop:true});
     return {starts,detachedResult,active,returnedEdge:returned.edge,smallCached:small.cache_hit,largeCached:large.cache_hit};
    }finally{w.HDRLibraryGpuRaw=original;}
   },path.join(folder,'DSC07060.ARW'));
   assert.equal(detached.detachedResult,'AbortError');assert.equal(detached.active,1);
   assert.equal(detached.starts,2,'Different resolutions develop independently; matching demand reuses preparation');
   assert.equal(detached.returnedEdge,2560);assert.ok(detached.smallCached&&detached.largeCached,'Each requested resolution is stored and reused');
+  // Original files/camera pictures stay undeveloped until the explicit command.
+  await library.evaluate(async(element,folder)=>{
+    const w=element.contentWindow;
+    for(const name of ['DSC07061.ARW','DSC07072.ARW','sdr_gradient.png'])await w.HDRLibraryScenes.load(folder+'/'+name,640,undefined,10,null,{develop:true});
+  },folder);
   const start=Date.now();
   await library.evaluate((element,folder)=>element.contentWindow.HDRLibrary.browse(folder),folder);
   const settled=()=>page.waitForFunction(()=>{
    const d=document.querySelector('#library-frame').contentWindow.document;
    return [...d.querySelectorAll('#grid-space .library-cell canvas[data-picture-key]')].filter(c=>!c.hidden).length===4;
-  },null,{timeout:120000});
+  },null,{timeout:120000}).catch(async error=>{throw Error(error.message+' '+JSON.stringify(await library.evaluate(element=>[...element.contentWindow.document.querySelectorAll('#grid-space .library-cell')].map(cell=>({path:cell.dataset.path.split(/[\/]/).at(-1),pictures:[...cell.querySelectorAll('canvas,img')].map(p=>({tag:p.tagName,hidden:p.hidden,key:p.dataset.pictureKey||'',fallback:p.dataset.cpuFallback||'',src:!!p.src}))})))));});
   await settled();
   const coldMs=Date.now()-start;
   const report=await library.evaluate(async element=>{
@@ -68,16 +81,18 @@ if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes
    w.__requestAdapter=w.navigator.gpu.requestAdapter.bind(w.navigator.gpu);
    w.navigator.gpu.requestAdapter=async()=>null;gpu.device.destroy();
   });
+  // Camera and original pictures are drawn without the GPU (November 3) and
+  // stay; only cells showing a developed scene need CPU files, visible ones only.
   await page.waitForFunction(()=>{
-   const d=document.querySelector('#library-frame').contentWindow.document;
-   return [...d.querySelectorAll('#grid-space img[data-cpu-fallback="true"]')].filter(c=>!c.hidden).length===4;
+   const d=document.querySelector('#library-frame').contentWindow.document,cells=[...d.querySelectorAll('#grid-space .library-cell')];
+   return cells.length===4&&cells.every(c=>[...c.querySelectorAll('canvas[data-picture-key],img[data-cpu-fallback="true"]')].some(p=>!p.hidden))&&d.querySelectorAll('#grid-space img[data-cpu-fallback="true"]:not([hidden])').length>0;
   },null,{timeout:120000});
   const fallback=await library.evaluate(element=>{
    const w=element.contentWindow,requests=w.__liveRequests.filter(r=>r.url==='/api/library/fallback-picture');
-   const paths=[...w.document.querySelectorAll('#grid-space .library-cell')].map(c=>c.dataset.path);
-   return {paths,requested:requests.map(r=>JSON.parse(r.body).path)};
+   const shown=[...w.document.querySelectorAll('#grid-space .library-cell')].filter(c=>c.querySelector('img[data-cpu-fallback="true"]:not([hidden])')).map(c=>c.dataset.path);
+   return {shown,requested:requests.map(r=>JSON.parse(r.body).path)};
   });
-  assert.deepEqual([...new Set(fallback.requested)].sort(),fallback.paths.sort(),'CPU files are only requested for visible cells');
+  assert.deepEqual([...new Set(fallback.requested)].sort(),fallback.shown.sort(),'CPU files are requested only for visible cells that need them');
   await library.evaluate(element=>{const w=element.contentWindow;w.navigator.gpu.requestAdapter=w.__requestAdapter;});
   await settled();
   const gridOnly=await library.evaluate(element=>element.contentWindow.__developments.slice(2));
@@ -100,9 +115,7 @@ if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes
    return c.dataset.picturePath?.endsWith('DSC07061.ARW')&&Number(c.dataset.pictureEdge)===2560;
   },null,{timeout:60000});
   report.singleMs=Date.now()-singleStarted;
-  await page.waitForFunction(()=>document.querySelector('#library-frame').contentWindow.__developments.some(row=>row.edge===2560&&row.priority===50),null,{timeout:30000});
-  report.neighboursSoon=true;
-  await page.waitForFunction(()=>document.querySelector('#library-frame').contentWindow.__developments.some(row=>row.path.endsWith('DSC07072.ARW')&&row.edge===2560&&row.settled&&!row.cancelled),null,{timeout:60000});
+  // Single develops only the selected photo; neighbour read-ahead was removed.
   const stepStarted=Date.now();
   await library.evaluate(element=>[...element.contentWindow.document.querySelectorAll('#film-space .library-cell')].find(c=>c.dataset.path.endsWith('DSC07072.ARW')).click());
   await page.waitForFunction(()=>{const c=document.querySelector('#library-frame').contentWindow.document.getElementById('single-picture');return c.dataset.picturePath?.endsWith('DSC07072.ARW')&&Number(c.dataset.pictureEdge)===2560;},null,{timeout:60000});
@@ -115,5 +128,9 @@ if(gradientBytes<1024)fs.appendFileSync(gradient,Buffer.alloc(1024-gradientBytes
   assert.deepEqual(errors,[],'No page errors');
   fs.writeFileSync(path.join(resultFolder,'result.json'),JSON.stringify({coldMs,...report},null,2));
   console.log(JSON.stringify({coldMs,reuse:report.rows.map(r=>({name:r.name,ms:r.reuseMs})),residentBytes:report.memory.resident.totalBytes,gpuRecovery:true}));
- }finally{await browser.close();}
+ }finally{
+  if(cacheSettingsPath){if(originalCacheSettings)fs.writeFileSync(cacheSettingsPath,originalCacheSettings);else fs.rmSync(cacheSettingsPath,{force:true});}
+  await browser.close();
+  process.once('exit',()=>fs.rmSync(temporaryCache,{recursive:true,force:true,maxRetries:10,retryDelay:100}));
+ }
 })().catch(error=>{console.error(error);process.exitCode=1;});
