@@ -7699,3 +7699,9 @@ November 7 check-result repair: an open folder stream still owns incoming rows,
 but no longer suppresses completed folder-check messages in the status bar.
 The manual no-new-photos / still-arriving messages are retained. Focused
 library-folder-checks validation is queued through the shared GPU lock.
+
+November 7 driver repair: library-picture-startup now checks pipeline warm-up
+overlapping the selected Single scene request, rather than the retired grid
+picture hook; passes. library-folder-controls now checks all three generated
+patterns (including Hue and exposure sweep), and passes Unicode folder, pin
+label, safe empty-folder Undo and Explorer controls. No app output changed.

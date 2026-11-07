@@ -14,9 +14,9 @@ const folder=fs.mkdtempSync(path.join(out,"shoot-")),newName="เที่ยว
  await page.locator("#settings-close").click();
  await lib.getByRole("button",{name:"Test Patterns",exact:true}).waitFor();
  await lib.getByRole("button",{name:"Test Patterns",exact:true}).click();
- await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count===2);
- assert.equal(await lib.locator(".library-cell").count(),2,"the folder contains the two generated pattern images");
- await lib.waitForFunction(()=>document.querySelectorAll("#grid-space canvas[data-picture-key]").length===2, null, {timeout:60000});
+ await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count===3);
+ assert.deepEqual((await lib.locator(".library-cell .name").allTextContents()).sort(),['Delivery proof test pattern.exr','HDR test pattern.exr','Hue and exposure sweep.exr']);
+ await lib.waitForFunction(()=>document.querySelectorAll("#grid-space canvas[data-picture-key]").length===3, null, {timeout:60000});
  await page.screenshot({path:path.join(out,"test-patterns-folder.png")});
  await page.reload({waitUntil:"networkidle"});
  if (!await page.locator("#settings-open").isVisible()) { await page.locator(".unified-menu-button").click(); await page.locator(".window-menu-trigger").filter({hasText:/^File$/}).hover(); }
