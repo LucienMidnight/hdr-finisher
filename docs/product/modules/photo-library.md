@@ -7561,6 +7561,57 @@ because of earlier changes:
 They now switch on "Show all files" for their PNG photos, develop them before
 using overlays, and remove their temporary folders. The removed read-ahead
 assertions went with the feature. New fixture: `tests/fixtures/library_photo.png`
-(1.5 KB). About 35 other drivers still copy the 111-byte `sdr_gradient.png`
-as a Library photo; that file is below the 1 KiB minimum, so the Library
-does not list it.
+(1.5 KB).
+
+November 7 fixture follow-up: 23 more drivers now use that accepted photo,
+enable PNG listing before startup, and remove their disposable photo folders
+in finally. The original 111-byte fixture remains unchanged for Grade imports,
+loaders and other paths that do not need a Library listing. No app code,
+image tolerance, shader, output or budget was changed by this follow-up.
+
+Passing in Electron at 2560x1440: library-album-commands,
+library-filmstrip-wheel, library-grade-saving, library-grade-reverts,
+library-grade-paste, library-folder-file-commands, library-membership,
+library-background-writer, photo-library-slice-2 and library-slice4-a.
+Membership checks album retention rather than the deliberately removed Details
+message; Slice 2 checks the Activity control is usable rather than pinning its
+old label; background writing waits for the streamed listing. Virtual-copy
+picture waits use the current picture key instead of the removed kept marker.
+
+Still failing after the fixture repair (no assertions or limits weakened):
+- library-photo-file-commands: Unicode rename succeeds on disk but the renamed
+  tile does not appear. This is an app-bug candidate; investigation stopped
+  because the cause was not a small, clear fix. No app fix was made.
+- library-virtual-copies: rename Undo does not restore the expected copy tile.
+- library-delete-file-commands: photo count does not reach two after deletion.
+- library-folder-controls: the current application menu opens, but Test Patterns
+  does not reach the expected two-photo count.
+- library-folder-checks: the expected no-new-photos status message never arrives.
+- library-background-activity: the expected +1 Activity summary never arrives.
+- library-picture-startup: its initialization hook is never called by the current
+  picture route.
+- photo-library-stage-a: the first tile does not provide the expected picture edge.
+- photo-library-stage-b: existing-tag suggestions do not appear.
+- library-smart-albums: ordinary workflow reaches the separate 155,000-row stress
+  helper, which times out waiting for 15,500 matches.
+- library-export-menu: Guarantee HDR peak control is not visible when expected.
+- batch-export-ui: Grade-to-Export summary does not show the expected one photo.
+- library-gpu-recovery: the old GPU injection hook records zero attempts, expected two.
+
+Open: finish those failures, then photo-library-navigation, the indexing fixture
+in helpers/library-part0e (its parent needs the missing local corpus JSON),
+hsl-overlay-review, library-live-picture (missing DSC07072.ARW at its old private
+path), and library-dng-warp. Their patches were not retained without validation.
+Resized fixtures in library-compare/library-live-native and the already padded
+library-live-grid photo are above the gate; direct Grade/decoder fixtures were
+left alone. Work stopped at the rename blocker rather than expanding app scope.
+
+Fast suites: 819 JavaScript passed; Python 3,077 passed, three skipped, only the
+known unrelated remembered-failure cached-scene test failed. About 25 minutes
+elapsed test work including reruns; Python took 10m05s, overlapping the Electron
+checks. One early membership rerun inadvertently overlapped the stalled smart
+check; membership was subsequently rerun alone and passed. No push or installer.
+Logs: codebase/output/fixture-*.log. Scratch cleanup for the interrupted smart
+runs was blocked by automatic approval policy; safe leftovers are
+smart-155000-{h_pvm587,jm805j9w,bz2sbp0x}, library-membership/shoot-UypvS7 and
+library-smart-albums/shoot-{NmCTdz,X3T8ZC}, all beneath codebase/output.

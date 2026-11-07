@@ -5,13 +5,14 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..'), output = path.join(root, 'output/library-picture-startup');
 fs.mkdirSync(output, { recursive: true });
 const folder = fs.mkdtempSync(path.join(output, 'photos-'));
-fs.copyFileSync(path.join(root, 'tests/fixtures/sdr_gradient.png'), path.join(folder, 'first.png'));
+fs.copyFileSync(path.join(root, 'tests/fixtures/library_photo.png'), path.join(folder, 'first.png'));
 (async () => {
   const browser = await chromium.launch({ headless: true });
   let release;
   try {
     const page = await browser.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
+    page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: 'networkidle' });
     await page.evaluate(() => activateWorkflowTab('import'));
     const library = page.frame({ url: /\/library(?:\?|$)/ });
@@ -40,5 +41,5 @@ fs.copyFileSync(path.join(root, 'tests/fixtures/sdr_gradient.png'), path.join(fo
     assert.equal(await library.locator('#grid-space canvas').first().getAttribute('data-rendition'), 'sdr');
     assert.deepEqual(errors, []);
     console.log('PASS: GPU initialization overlaps visible photo preparation; normal SDR picture arrives after the request.');
-  } finally { release?.(); await browser.close(); }
+  } finally { release?.(); try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); } }
 })().catch(error => { console.error(error); process.exitCode = 1; });

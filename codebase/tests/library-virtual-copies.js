@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, ".."), output = path.join(root, "output", "
 fs.mkdirSync(output, { recursive: true });
 const folder = fs.mkdtempSync(path.join(output, "photos-"));
 const photos = ["first.png", "next.png"].map(name => path.join(folder, name));
-for (const photo of photos) fs.copyFileSync(path.join(root, "tests", "fixtures", "sdr_gradient.png"), photo);
+for (const photo of photos) fs.copyFileSync(path.join(root, "tests", "fixtures", "library_photo.png"), photo);
 const original = fs.readFileSync(photos[0]);
 const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
 (async () => {
@@ -17,6 +17,7 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     page.setDefaultTimeout(30000);
     page.on("pageerror", error => {errors.push(error.message);console.log("pageerror",error.message);});
     page.on("console",message=>{if(message.text().includes("Library"))console.log("console",message.text());});
+    await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: "networkidle" });
     const written = async photo => {
       const deadline=Date.now()+30000;
@@ -63,7 +64,7 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     const first=cell('first.png · Copy 1'),clean=cell('first.png · Clean');
     assert.equal(await first.locator('.library-copy').getAttribute('title'),'Virtual copy: Copy 1');
     assert.equal(await frame.locator('.library-cell').filter({has:frame.locator('.name').filter({hasText:/^first[.]png$/})}).locator('.library-copy').innerText(),'+2');
-    await first.locator('canvas[data-kept="true"]').waitFor({timeout:60000});
+    await first.locator('canvas[data-picture-key]').waitFor({timeout:60000});
     await first.dblclick();
     await page.waitForFunction(key=>HDRGradeSaving.ready() && HDRGradeSaving.item()===key && state.adjustments.hdr.exposure===.75,key(copies[0].photo_id),{timeout:30000});
     await page.evaluate(()=>activateWorkflowTab('import'));
@@ -137,7 +138,7 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     await page.waitForFunction(()=>{
       const doc=document.querySelector('#library-frame').contentWindow.document;
       const cell=[...doc.querySelectorAll('.library-cell')].find(el=>el.querySelector('.name')?.textContent==='first.png');
-      return cell && !cell.querySelector('.library-edited') && cell.querySelector('canvas')?.dataset.kept!=='true';
+      return cell && !cell.querySelector('.library-edited') && cell.querySelector('canvas[data-picture-key]');
     });
     await physical('first.png').dblclick();await page.waitForFunction(photo=>HDRGradeSaving.ready() && HDRGradeSaving.item()===photo && state.adjustments.hdr.exposure===0 && !state.documentDirty,photos[0]);
     await page.evaluate(()=>activateWorkflowTab('import'));await frame.locator('#library-grid').press('Control+z');
@@ -148,5 +149,5 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     const page=await browser.newPage();
     console.log('Failure state',await page.evaluate(()=>({workflow:state.activeWorkflow,importing:state.importInProgress,dialog:document.querySelector('#app-dialog')?.open,body:document.body.className,library:document.querySelector('#library-frame').contentWindow.document.body.innerText.slice(-4000)})));
     await page.screenshot({path:path.join(output,'failure.png')});throw error;
-  } finally { await browser.close(); }
+  } finally { try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); } }
 })().catch(error=>{console.error(error);process.exitCode=1;});

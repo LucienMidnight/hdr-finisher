@@ -4,12 +4,13 @@ const { chromium } = require("playwright");
 const root = path.resolve(__dirname, ".."), output = path.join(root, "output", "library-background-activity");
 fs.mkdirSync(output, { recursive: true });
 const folder = fs.mkdtempSync(path.join(output, "photos-"));
-for (let i = 0; i < 3; i++) fs.copyFileSync(path.join(root, "tests", "fixtures", "sdr_gradient.png"), path.join(folder, `photo-${i}.png`));
+for (let i = 0; i < 3; i++) fs.copyFileSync(path.join(root, "tests", "fixtures", "library_photo.png"), path.join(folder, `photo-${i}.png`));
 (async () => {
  const browser = await chromium.launch({ headless: true, channel: "msedge" });
  try {
   const page = await browser.newPage(), errors = []; page.on("pageerror", error => errors.push(error.message));
-  await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: "networkidle" });
+  page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: "networkidle" });
   const library = page.frame({ url: /\/library(?:\?|$)/ });
   await library.waitForFunction(() => window.HDRLibrary);
   await library.evaluate(folder => HDRLibrary.browse(folder), folder);

@@ -2,10 +2,11 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'output','library-photo-file-commands');fs.mkdirSync(out,{recursive:true});
 const folder=fs.mkdtempSync(path.join(out,'shoot-')),target=fs.mkdtempSync(path.join(out,'target-'));
-for(const name of ['photo.png','taken.png'])fs.copyFileSync(path.join(root,'tests','fixtures','sdr_gradient.png'),path.join(folder,name));
+for(const name of ['photo.png','taken.png'])fs.copyFileSync(path.join(root,'tests','fixtures','library_photo.png'),path.join(folder,name));
 fs.copyFileSync(path.join(folder,'photo.png'),path.join(target,'photo.png'));
 (async()=>{const browser=await chromium.launch({headless:true});try{
- const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
+ const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
  const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
  await lib.evaluate(async paths=>{await fetch('/api/library/pins',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths})});},[folder,target]);
  await lib.goto(new URL('/library',process.env.HDR_FINISHER_URL).href);await lib.waitForFunction(()=>window.HDRLibrary);await lib.evaluate(folder=>HDRLibrary.browse(folder),folder);
@@ -21,4 +22,4 @@ fs.copyFileSync(path.join(folder,'photo.png'),path.join(target,'photo.png'));
  await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count===1);assert.ok(!fs.existsSync(path.join(folder,'photo.png'))&&fs.existsSync(path.join(target,'photo (2).png')));
  await lib.locator('#library-undo').click();await cell('photo.png').waitFor();assert.ok(fs.existsSync(path.join(target,'photo.png')));assert.deepEqual(errors,[]);
  console.log('PASS: rename fixed extension/clash/Unicode/Undo; move chooser, all clash answers, count/destination confirmation and Undo on disposable photos.');
-}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+}catch(error){console.error("Rename/move diagnostic",JSON.stringify({files:fs.readdirSync(folder)}));throw error;}finally{try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true});fs.rmSync(target,{recursive:true,force:true}); }}})().catch(e=>{console.error(e);process.exitCode=1;});

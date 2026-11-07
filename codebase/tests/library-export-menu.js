@@ -7,12 +7,14 @@ const root = path.resolve(__dirname, '..'), output = path.join(root, 'output', '
 fs.mkdirSync(output, {recursive:true});
 const folder = fs.mkdtempSync(path.join(output, 'photos-'));
 const photos = ['one.png','two.png','three.png'].map(name => path.join(folder,name));
-for (const photo of photos) fs.copyFileSync(path.join(root,'tests','fixtures','sdr_gradient.png'),photo);
+for (const photo of photos) fs.copyFileSync(path.join(root,'tests','fixtures','library_photo.png'),photo);
+let other;
 (async () => {
   const browser = await chromium.launch({headless:true,channel:'msedge'});
   try {
     const page = await browser.newPage(), errors=[];
     page.on('pageerror', error=>errors.push(error.message)); page.setDefaultTimeout(30000);
+    await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
     await page.evaluate(()=>activateWorkflowTab('import'));
     // A Grade picture that finishes loading behind the Library must stay hidden (it floated over the grid, October 18).
@@ -21,7 +23,7 @@ for (const photo of photos) fs.copyFileSync(path.join(root,'tests','fixtures','s
     await iframe.evaluate((el,folder)=>el.contentWindow.HDRLibrary.browse(folder),folder);
     const cells=frame.locator('.library-cell');
     await page.waitForFunction(()=>document.getElementById('library-frame').contentDocument.querySelectorAll('.library-cell').length===3);
-    const other=fs.mkdtempSync(path.join(output,'other-'));
+    other=fs.mkdtempSync(path.join(output,'other-'));
     fs.copyFileSync(photos[0],path.join(other,'other.png'));
     const library=page.frame({url:/\/library(?:\?|$)/});
     const post=(route,body)=>library.evaluate(async({route,body})=>{const r=await fetch('/api/library/'+route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json();},{route,body});
@@ -95,5 +97,5 @@ for (const photo of photos) fs.copyFileSync(path.join(root,'tests','fixtures','s
     await page.screenshot({path:path.join(output,'export-from-library.png')});
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({menuEnabled:true,openInExport:3,selectAll:3}));
-  } finally { await browser.close(); }
+  } finally { try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true});if(other)fs.rmSync(other,{recursive:true,force:true}); } }
 })().catch(error=>{console.error(error);process.exitCode=1;});

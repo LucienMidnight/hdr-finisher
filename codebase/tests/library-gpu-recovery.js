@@ -4,12 +4,13 @@ const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-gpu-recovery',String(Date.now()));
 fs.mkdirSync(folder,{recursive:true});
 const oomPhoto=path.join(folder,'oom.png'),lostPhoto=path.join(folder,'lost.png');
-fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),oomPhoto);
-fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),lostPhoto);
+fs.copyFileSync(path.join(root,'tests/fixtures/library_photo.png'),oomPhoto);
+fs.copyFileSync(path.join(root,'tests/fixtures/library_photo.png'),lostPhoto);
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage(),pageErrors=[];
  page.on('pageerror',e=>pageErrors.push(e.message));
- await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
+ page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
  const result=await page.locator('#library-frame').evaluate(async(element,{oomPhoto,lostPhoto})=>{
   const w=element.contentWindow,original=w.HDRLibraryRGB,requests=[],events=[];
   const originalFetch=w.fetch.bind(w);
@@ -61,4 +62,4 @@ fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),lostPhoto);
  assert.equal(Object.keys(result.errors).length,0,'Neither photo is listed as damaged');
  assert.equal(pageErrors.length,0,'No page errors');
  console.log(JSON.stringify({oomAttempts:result.oomAttempts,lostAttempts:result.lostAttempts,cpuFallback:true,passed:true}));
-}finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});
+}finally{try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); }}})().catch(error=>{console.error(error);process.exitCode=1;});

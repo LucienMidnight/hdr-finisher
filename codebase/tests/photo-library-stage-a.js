@@ -7,8 +7,9 @@ const { installPictureRequestMonitor } = require("./support/picture-request-moni
 const root = path.resolve(__dirname, "..");
 const output = path.join(root, "output", "library-stage-a");
 fs.mkdirSync(output, { recursive: true });
+let rawFolder;
 const folder = fs.mkdtempSync(path.join(output, "photos-"));
-const fixture = path.join(root, "tests", "fixtures", "sdr_gradient.png");
+const fixture = path.join(root, "tests", "fixtures", "library_photo.png");
 for (let index = 0; index < 3000; index++) fs.copyFileSync(fixture, path.join(folder, `photo-${String(index).padStart(4,"0")}.png`));
 fs.mkdirSync(path.join(folder, "nested"));
 fs.mkdirSync(path.join(folder, "empty-folder"));
@@ -21,6 +22,7 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     const page = await browser.newPage();
     const errors = [];
     page.on("pageerror", error => { errors.push(error.message); console.log("[pageerror]", error.message); });
+    page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: "networkidle" });
     await page.waitForFunction(() => typeof state !== "undefined" && state.activeWorkflow === "import");
     const library = page.frame({ url: /\/library(?:\?|$)/ }); assert.ok(library);
@@ -152,7 +154,7 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
       "D:/Photos/HDR Test Images/Test Suite Images/iphone_16_pro_IMG_3324.HEIC",
     ];
     if (rawSources.every(source => fs.existsSync(source))) {
-      const rawFolder = fs.mkdtempSync(path.join(output, "formats-"));
+      rawFolder = fs.mkdtempSync(path.join(output, "formats-"));
       for (const source of rawSources) fs.copyFileSync(source, path.join(rawFolder, path.basename(source)));
       await page.evaluate(() => activateWorkflowTab("import"));
       await library.waitForFunction(() => HDRLibrary.getSnapshot().active);
@@ -198,5 +200,5 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     }
     assert.deepEqual(errors, []);
     console.log("Stage A passed: folder picker, recursive folders, read-only browse, virtual grid/cache, single/filmstrip, arrows, review, Grade and Cancel/Discard gate.");
-  } finally { await browser.close(); }
+  } finally { try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true});if(rawFolder)fs.rmSync(rawFolder,{recursive:true,force:true}); } }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,11 +1,12 @@
 const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("node:path");
 const {chromium}=require("playwright");
 const root=path.resolve(__dirname,".."),out=path.join(root,"output","library-folder-controls");fs.mkdirSync(out,{recursive:true});
-const folder=fs.mkdtempSync(path.join(out,"shoot-")),newName="เที่ยว";fs.copyFileSync(path.join(root,"tests","fixtures","sdr_gradient.png"),path.join(folder,"photo.png"));
+const folder=fs.mkdtempSync(path.join(out,"shoot-")),newName="เที่ยว";fs.copyFileSync(path.join(root,"tests","fixtures","library_photo.png"),path.join(folder,"photo.png"));
 (async()=>{const browser=await chromium.launch({headless:true});try{
  const page=await browser.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
- await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:"networkidle"});let lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
- if (!await page.locator("#settings-open").isVisible()) await page.locator(".window-menu-trigger").filter({hasText:/^File$/}).click();
+ page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:"networkidle"});let lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
+ if (!await page.locator("#settings-open").isVisible()) { await page.locator(".unified-menu-button").click(); await page.locator(".window-menu-trigger").filter({hasText:/^File$/}).hover(); }
  await page.locator("#settings-open").click();
  assert.equal(await page.locator("#settings-library-test-patterns").isChecked(),false,"Test Patterns is opt-in by default");
  await page.locator("#settings-library-test-patterns").check();
@@ -18,7 +19,7 @@ const folder=fs.mkdtempSync(path.join(out,"shoot-")),newName="เที่ยว
  await lib.waitForFunction(()=>document.querySelectorAll("#grid-space canvas[data-picture-key]").length===2, null, {timeout:60000});
  await page.screenshot({path:path.join(out,"test-patterns-folder.png")});
  await page.reload({waitUntil:"networkidle"});
- if (!await page.locator("#settings-open").isVisible()) await page.locator(".window-menu-trigger").filter({hasText:/^File$/}).click();
+ if (!await page.locator("#settings-open").isVisible()) { await page.locator(".unified-menu-button").click(); await page.locator(".window-menu-trigger").filter({hasText:/^File$/}).hover(); }
  await page.locator("#settings-open").click();
  assert.equal(await page.locator("#settings-library-test-patterns").isChecked(),true,"the Settings choice survives an app reload");
  lib=page.frame({url:/\/library(?:\?|$)/});
@@ -38,4 +39,4 @@ const folder=fs.mkdtempSync(path.join(out,"shoot-")),newName="เที่ยว
  await lib.getByRole("button",{name:"Disposable shoot",exact:true}).waitFor();assert.ok(fs.existsSync(folder));await lib.locator("#library-undo").click();await lib.getByRole("button",{name:path.basename(folder),exact:true}).waitFor();
  await row().click({button:"right"});assert.equal(await lib.getByRole("menuitem",{name:"Show in Explorer",exact:true}).count(),1);await page.keyboard.press("Escape");
  assert.deepEqual(errors,[]);console.log("PASS: Unicode folder, safe empty-folder Undo, pin label and Undo, Explorer entry on disposable shoot.");
-}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+}finally{try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); }}})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -4,13 +4,14 @@ const { chromium } = require("playwright");
 const root = path.resolve(__dirname, ".."), output = path.join(root, "output", "library-folder-checks");
 fs.mkdirSync(output, { recursive: true });
 const folder = fs.mkdtempSync(path.join(output, "intake-"));
-const fixture = path.join(root, "tests", "fixtures", "sdr_gradient.png");
+const fixture = path.join(root, "tests", "fixtures", "library_photo.png");
 for (let i = 0; i < 120; i++) fs.copyFileSync(fixture, path.join(folder, `photo-${String(i).padStart(3, "0")}.png`));
 (async () => {
  const browser = await chromium.launch({headless: true, channel: "msedge"});
  try {
   const page = await browser.newPage(), errors = []; page.on("pageerror", error => errors.push(error.message));
-  await page.goto(process.env.HDR_FINISHER_URL, {waitUntil: "networkidle"});
+  page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    await page.goto(process.env.HDR_FINISHER_URL, {waitUntil: "networkidle"});
   const library = page.frame({url: /\/library(?:\?|$)/});
   await library.waitForFunction(() => window.HDRLibrary);
   await library.evaluate(folder => HDRLibrary.browse(folder), folder);
@@ -59,5 +60,5 @@ for (let i = 0; i < 120; i++) fs.copyFileSync(fixture, path.join(folder, `photo-
   await page.screenshot({path: path.join(output, "folder-checks.png")});
   assert.deepEqual(errors, []);
   console.log("PASS: timed intake arrival, stable grid selection/scroll, toolbar and folder menu checks, stable single/filmstrip, and quiet selected-photo removal.");
- } finally { await browser.close(); }
+ } finally { try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); } }
 })().catch(error => { console.error(error); process.exitCode = 1; });

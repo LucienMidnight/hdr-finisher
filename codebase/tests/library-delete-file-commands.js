@@ -2,9 +2,10 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'output','library-delete-file-commands');fs.mkdirSync(out,{recursive:true});
 const folder=fs.mkdtempSync(path.join(out,'shoot-')),a=path.join(folder,'delete.png'),b=path.join(folder,'keep.png'),c=path.join(folder,'rejected.png');
-for(const p of [a,b,c])fs.copyFileSync(path.join(root,'tests','fixtures','sdr_gradient.png'),p);
+for(const p of [a,b,c])fs.copyFileSync(path.join(root,'tests','fixtures','library_photo.png'),p);
 (async()=>{const browser=await chromium.launch({headless:true});try{
- const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
+ const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
  const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
  await lib.evaluate(async ({folder,a,b,c})=>{
   const post=async(route,data)=>{const r=await fetch('/api/library/'+route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});if(!r.ok)throw new Error(await r.text());return r.json();};
@@ -28,4 +29,4 @@ for(const p of [a,b,c])fs.copyFileSync(path.join(root,'tests','fixtures','sdr_gr
  await lib.getByRole('button',{name:'More',exact:true}).click();await lib.getByRole('menuitem',{name:'Delete all rejected…',exact:true}).click();dialog=lib.getByRole('dialog',{name:'Delete all rejected',exact:true});text=await dialog.innerText();assert.ok(text.includes('1 photos')&&text.includes('even when hidden by the current filters'));await dialog.getByRole('button',{name:'Cancel',exact:true}).click();assert.ok(fs.existsSync(c));
  await lib.getByRole('button',{name:'More',exact:true}).click();await lib.getByRole('menuitem',{name:'Delete all rejected…',exact:true}).click();await lib.getByRole('dialog',{name:'Delete all rejected',exact:true}).getByRole('button',{name:'Move to Recycle Bin',exact:true}).click();await lib.waitForFunction(()=>document.querySelector('#library-status').textContent.includes('1 photos deleted'));assert.ok(!fs.existsSync(c)&&!fs.existsSync(c+'.hdrf')&&fs.existsSync(b));assert.deepEqual(errors,[]);
  console.log('PASS: mixed selection counts/settings/grades/copies, no-Bin permanent warning and Cancel, actual Bin deletion via Delete key, and Delete all rejected including filtered-out originals. Disposable PNGs only.');
-}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+}finally{try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); }}})().catch(e=>{console.error(e);process.exitCode=1;});

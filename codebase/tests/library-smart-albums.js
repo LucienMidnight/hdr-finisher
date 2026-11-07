@@ -2,10 +2,11 @@ const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("n
 const {chromium}=require("playwright");
 const root=path.resolve(__dirname,".."),output=path.join(root,"output","library-smart-albums");fs.mkdirSync(output,{recursive:true});
 const folder=fs.mkdtempSync(path.join(output,"shoot-")),photo=path.join(folder,"one.png"),second=path.join(folder,"two.png");
-for(const p of [photo,second])fs.copyFileSync(path.join(root,"tests","fixtures","sdr_gradient.png"),p);
+for(const p of [photo,second])fs.copyFileSync(path.join(root,"tests","fixtures","library_photo.png"),p);
 (async()=>{const browser=await chromium.launch({headless:true});try{
  const page=await browser.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
- await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:"networkidle"});const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
+ page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:"networkidle"});const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
  const api=(route,body)=>lib.evaluate(async({route,body})=>{const r=await fetch(route,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});if(!r.ok)throw new Error(await r.text());return r.json();},{route,body});
  await api("/api/library/pins",{paths:[folder]});await lib.goto(new URL("/library",process.env.HDR_FINISHER_URL).href);await lib.waitForFunction(()=>window.HDRLibrary&&HDRLibrary.getSnapshot().count===2);
  await api("/api/library/marks",{paths:[photo],change:{rating:5,pick:"pick",add_tag:"Kids"}});
@@ -27,4 +28,4 @@ for(const p of [photo,second])fs.copyFileSync(path.join(root,"tests","fixtures",
  await lib.locator("#filter-clear").click();await lib.locator('#smart-albums .folder-name').filter({hasText:"Five stars"}).click();await lib.locator('.library-cell').first().click({button:"right"});assert.equal(await lib.getByRole("menuitem",{name:/Remove from Five stars/}).count(),0);await page.keyboard.press("Escape");
  await require("./performance/library-smart-editor").check(page);
  assert.ok(fs.existsSync(photo)&&fs.existsSync(second));assert.deepEqual(errors,[]);console.log("PASS: smart editor/live count, membership joins and leaves after marks, edit/delete Undo, Save as scope and ordinary rating rule, no manual membership removal; originals untouched.");
-}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+}finally{try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); }}})().catch(e=>{console.error(e);process.exitCode=1;});

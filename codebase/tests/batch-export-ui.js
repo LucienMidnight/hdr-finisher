@@ -6,12 +6,13 @@ const root=path.resolve(__dirname,'..'), output=path.join(root,'output','batch-e
 fs.mkdirSync(output,{recursive:true});
 const folder=fs.mkdtempSync(path.join(output,'photos-'));
 const photos=['first.png','second.png','third.png'].map(name=>path.join(folder,name));
-for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','sdr_gradient.png'),photo);
+for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','library_photo.png'),photo);
 (async()=>{
   const browser=await chromium.launch({headless:true,channel:'msedge'});
   try{
     const page=await browser.newPage(),errors=[];page.setDefaultTimeout(30000);
     page.on('pageerror',error=>errors.push(error.message));
+    await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL||'http://127.0.0.1:8000',{waitUntil:'networkidle'});
     for(const workflow of ['grade','proof','export','import']){
       await page.locator(`[data-workflow-tab="${workflow}"]`).click();
@@ -184,5 +185,5 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','sdr
     for(const photo of photos)assert(fs.existsSync(photo));
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({photos:3,versions:2,presetRoundTrip:true,liveNames:true,gridPreview:true,quickDialog:true,removeLeavesOriginals:true}));
-  }finally{await browser.close();}
+  }finally{try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); }}
 })().catch(error=>{console.error(error);process.exitCode=1;});
