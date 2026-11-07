@@ -1,3 +1,4 @@
+@font-face { font-family: "Bebas Neue"; src: url("./assets/fonts/bebas-neue/BebasNeue-Regular.ttf"); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: "Sofia Sans Semi Condensed"; src: url("./assets/fonts/sofia-sans-semi-condensed/SofiaSansSemiCondensed[wght].ttf"); font-weight: 1 1000; font-style: normal; font-display: swap; }
 @font-face { font-family: "Afacad"; src: url("./assets/fonts/afacad/Afacad[wght].ttf"); font-weight: 100 900; font-style: normal; font-display: swap; }
 @font-face { font-family: "Afacad"; src: url("./assets/fonts/afacad/Afacad-Italic[wght].ttf"); font-weight: 100 900; font-style: italic; font-display: swap; }
@@ -262,7 +263,7 @@
   --curve-band-opacity: 0.1;
   --graph-home-cue-opacity: 0.62;
   --rejected-photo-opacity: 0.34;
-  --font-title: "Sofia Sans Semi Condensed", "Segoe UI", sans-serif;
+  --font-title: "Bebas Neue", "Segoe UI", sans-serif;
   --font-body: Afacad, "Segoe UI Variable Text", "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
 }
@@ -342,7 +343,7 @@
   --tracking-slight: .02em;
   --tracking-label: .06em;
   --tracking-caps: .1em;
-  --panel-title-font-family: var(--font-title); --panel-title-font-size: var(--font-size-xs);
+  --panel-title-font-family: var(--font-title); --panel-title-font-size: var(--font-size-lg);
   --panel-title-font-weight: var(--font-weight-medium); --panel-title-letter-spacing: var(--tracking-caps);
   --group-title-font-family: var(--font-body); --group-title-font-size: var(--font-size-md);
   --group-title-font-weight: var(--font-weight-medium); --group-title-letter-spacing: var(--tracking-none);

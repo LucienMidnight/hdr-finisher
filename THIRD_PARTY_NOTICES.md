@@ -204,4 +204,6 @@ https://github.com/libvips/libvips.
 The native DLL remains replaceable; no libvips source is vendored or modified.
 Existing Grade, Proof and export decoders do not use this route.
 
-Sofia Sans Semi Condensed is bundled from the official [Google Fonts repository](https://github.com/google/fonts/tree/main/ofl/sofiasanssemicondensed), Copyright 2019 The Sofia Sans Project Authors. The normal variable face is used for titles and tab names. Its SIL Open Font License 1.1 is included at `codebase/frontend/assets/fonts/sofia-sans-semi-condensed/OFL.txt` and must accompany source and packaged distributions.
+Bebas Neue, Copyright © 2010 by Dharma Type, is bundled under the SIL Open Font License 1.1. The regular face is used for titles and tab names. Its licence is included at `codebase/frontend/assets/fonts/bebas-neue/OFL.txt` and must accompany source and packaged distributions.
+
+Sofia Sans Semi Condensed is bundled from the official [Google Fonts repository](https://github.com/google/fonts/tree/main/ofl/sofiasanssemicondensed), Copyright 2019 The Sofia Sans Project Authors. It was the title face until November 7, 2026 and is no longer loaded. Its SIL Open Font License 1.1 is included at `codebase/frontend/assets/fonts/sofia-sans-semi-condensed/OFL.txt` and must accompany source and packaged distributions.

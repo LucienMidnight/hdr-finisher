@@ -119,11 +119,12 @@ Title-case panel titles: Afacad 12px, weight 600, no tracking. Group names: sent
 - Afacad is the reading, marking and number family throughout the interface, with tabular figures. The full normal/italic family is bundled under the OFL; variable faces provide runtime weights.
 - IBM Plex Mono is reserved for filenames and genuinely character-aligned readouts.
 - Every font size, weight, family, line height and letter spacing comes from the type tokens in `visual-tokens.css`; write no literal values elsewhere (`tests/font-tokens.test.js` enforces this). Canvas text uses `HDRAppearance.font()`.
-- Type scale: `--font-size-min` 11px (badges, scale labels, counts; nothing is drawn smaller), `xs` 12px (captions, file names, status bars), `sm` 13px (labels, helper text, values, Details panel), `md` 14.5px (body, buttons, menus, group titles), `lg` 16px (workflow tabs), then `xl` 18, `2xl` 20, `3xl` 24 and `4xl` 28px for headings and glyphs.
+- Type scale: `--font-size-min` 11px (badges, scale labels, counts; nothing is drawn smaller), `xs` 12px (captions, file names, status bars), `sm` 13px (labels, helper text, values, Details panel), `md` 14.5px (body, buttons, menus, group titles), `lg` 16px (panel titles and in-panel tabs), then `xl` 18, `2xl` 20, `3xl` 24 (workflow tabs) and `4xl` 28px for headings and glyphs.
 - Families are three roles: `--font-title`, `--font-body` and `--font-mono`. A theme or a future user font choice overrides these and the scale in one place.
 - Place names and counts sit in the bottom status bar (Library folder or album, Export batch counts); toolbars above the photos are centred.
 - Keep labels concrete, use sentence case, and include appropriate units (EV, nit, %, K).
-- The existing product logo is retained at 22px high.
+- The toolbar logo is the square mark from the app icon (`assets/brand/hdr-finisher-mark.svg`, the simple icon trimmed to its drawing), 26px high. The Library sidebar chevrons line up with its left edge.
+- The menu button and window controls use Tabler icons: the menu glyph is drawn at 28px, the window controls at 16px, so the primary menu outweighs the quiet system controls.
 - Tooltips explain consequences and tradeoffs. Keep internal implementation details out of product copy.
 
 ## Controls and feedback
@@ -371,12 +372,10 @@ in File. Empty toolbar space drags; double-click maximizes/restores.
 In-panel tab sets use joined plates: raised unselected segments, pressed
 selected segments with accent-strong text, and the existing plate edge, lift
 and press tokens. Mode tabs are tallest, rendition/subsets smaller, and wheel
-ranges smallest and inset. Workflow tabs use 20 px round raised-plate badges numbered 1 to 4, followed by
-the page names and joined by thin neutral connectors. Only the current badge
-is accent-filled with on-accent numbers; its name uses text colour and the
-other names stay muted until hover. There is no underline. The toolbar height,
-Sofia Sans Semi Condensed names and navigation behaviour stay unchanged.
-Connectors shorten at narrow widths; the menu and Autosave remain clear.
+ranges smallest and inset. Workflow tabs (November 7) are one joined plate of
+the same kind, 36px high, with the page names in Bebas Neue capitals at 24px;
+there are no step numbers or connectors. The selected page is pressed with
+accent-strong text. The toolbar height and navigation behaviour stay unchanged.
 Keep existing tab locations, changed dots, keyboard and ARIA behaviour.
 
 
@@ -402,9 +401,10 @@ theme, with panel-colour separation from the grid. Drawing does not change
 the relationship between pointer position and grade values. The module Reset
 clears all three ranges, Blending and Balance; double-click clears one range.
 
-Panel titles use title case with no extra letter spacing, retaining their
-locally bundled Sofia Sans Semi Condensed at weight 500. Tab names and
-workflow numbers use the same title face at their existing sizes and weights.
+Panel titles and in-panel tab names use the title face, Bebas Neue (November 7;
+it replaced Sofia Sans Semi Condensed to match the logo), at 16px. Bebas Neue
+has capitals only and a single weight, declared across the whole weight range
+so no fake bold is drawn.
 Group names, body text, values, labels and other buttons retain Afacad. Small
 field labels retain their current casing.
 

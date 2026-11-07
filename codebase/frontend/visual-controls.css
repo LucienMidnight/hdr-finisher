@@ -3,7 +3,7 @@ body { font-family: var(--font-body); font-size: var(--font-size-md); font-varia
 button, input, select, textarea, output { font-family: var(--font-body); font-variant-numeric: tabular-nums; }
 :root :is(button, input, select, textarea, [tabindex], summary):focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
 :root :is(button, input, select, textarea):disabled { opacity: var(--disabled-opacity); }
-:root .panel-title { font: var(--font-weight-medium) var(--font-size-xs) var(--font-title); letter-spacing: var(--tracking-none); text-transform: none; }
+:root .panel-title { font: var(--panel-title-font-weight) var(--panel-title-font-size) var(--panel-title-font-family); letter-spacing: var(--tracking-none); text-transform: none; }
 :root .section-label { font: var(--font-weight-semibold) var(--font-size-min) var(--font-body); letter-spacing: var(--tracking-caps); text-transform: uppercase; }
 :root :is(.helper, .caption) { font: var(--font-weight-regular) var(--font-size-sm)/var(--line-height-normal) var(--font-body); color: var(--muted); }
 :root :is(output, .value, .editable-value) { font: var(--font-weight-medium) var(--font-size-sm) var(--font-body); font-variant-numeric: tabular-nums; }
@@ -37,34 +37,6 @@ button, input, select, textarea, output { font-family: var(--font-body); font-va
 :root .zoom-control .range-shell { background: var(--panel); padding: 0; width: 58px; }
 :root .viewer-view-group .viewer-tool-divider { display: none; }
 :root .viewer-bar { padding-block: 0; min-height: var(--panel-header-h); }
-:root .workflow-tab { font: var(--font-weight-medium) var(--font-size-lg) var(--font-body); }
-:root .workflow-tab > span:first-child { font: inherit; font-variant-numeric: tabular-nums; letter-spacing: var(--tracking-none); }
-/* Workflow steps keep the existing button targets and toolbar height. */
-:root .workflow-tabs { gap: clamp(4px, 1.5vw, 24px); }
-:root .workflow-tab {
- position: relative; min-width: 0; padding-inline: 8px; gap: 8px;
- border-bottom: 0; letter-spacing: var(--tracking-none); white-space: nowrap;
-}
-:root .workflow-tab:not(:last-child)::after {
- content: ""; position: absolute; left: calc(100% + 2px); top: 50%;
- width: calc(clamp(4px, 1.5vw, 24px) - 4px); height: 1px;
- background: var(--hairline); pointer-events: none;
-}
-:root .workflow-tab > .workflow-step-number {
- display: inline-flex; align-items: center; justify-content: center;
- flex: 0 0 20px; width: 20px; height: 20px; box-sizing: border-box;
- border: 1px solid var(--plate-edge); border-radius: 50%;
- background: var(--plate-up); box-shadow: var(--plate-lift); color: var(--body);
- font-size: var(--font-size-md); line-height: var(--line-height-none); font-weight: var(--font-weight-medium);
-}
-:root .workflow-tab.active > .workflow-step-number {
- background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, white), color-mix(in srgb, var(--accent) 90%, black));
- border-color: color-mix(in srgb, var(--accent) 45%, black); color: var(--on-accent);
-}
-@media (max-width: 1200px) {
- :root .workflow-tabs { gap: 8px; }
- :root .workflow-tab:not(:last-child)::after { width: 4px; }
-}
 :root .viewer-panel { grid-template-rows: var(--panel-header-h) minmax(0, 1fr) var(--status-bar-h); }
 :root .viewer-panel > .viewer-bar { grid-row: 1; }
 :root .viewer-panel > .viewport-frame { grid-row: 2; }
@@ -169,7 +141,7 @@ body.slider-hover .slider-key-legend { opacity: 1; }
 
 /* Keep every shell action visible alongside the existing workflow tabs. */
 :root .top-bar { grid-template-columns: minmax(120px,1fr) auto minmax(max-content,1fr); gap: 12px; }
-:root .product-logo { height: 22px; width: auto; max-width: 131px; }
+:root .product-logo { height: 26px; width: auto; max-width: 131px; }
 :root .top-actions { gap: 8px; }
 :root .top-actions .text-button { padding-inline: 5px; white-space: nowrap; }
 :root #batch-run { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, white), color-mix(in srgb, var(--accent) 90%, black)); border-color: var(--accent-low); color: var(--on-accent); }
@@ -391,10 +363,9 @@ html.desktop-shell .window-controls { margin-left: 0; }
 :root .color-wheel-puck { border: 2px solid var(--text); background: transparent; box-shadow: 0 0 0 1px var(--panel); }
 
 /* Titles and tab names share the locally bundled title face. */
-:root :is(.workflow-tab, .workflow-tab > span:first-child,
- .lane-switch > button, .local-lane-switch > button, .control-mode-switch > button,
+:root :is(.lane-switch > button, .local-lane-switch > button, .control-mode-switch > button,
  .proof-preview-switch > button, .channel-tabs > button, .dock-tabs > button,
- .wheel-range-tabs > button) { font-family: var(--font-title); }
+ .wheel-range-tabs > button) { font-family: var(--font-title); font-size: var(--panel-title-font-size); letter-spacing: var(--tracking-slight); text-transform: uppercase; }
 
 /* On switches retain the recessed accent track and use a light soft knob. */
 :root :is(.checkbox-row, .film-module-toggle, .proof-enable-row, .gradient-luma-toggle) > input[type="checkbox"]:checked::before {
@@ -419,24 +390,41 @@ html.desktop-shell .window-menu > .window-menu-popover { left: 100%; top: 0; }
 html.desktop-shell :is(.window-menu-trigger, .window-menu-popover button) { font: var(--font-weight-medium) var(--font-size-md) var(--font-body); }
 
 /* Larger centred menu glyph; page-name ink on rest/hover. */
-html.desktop-shell .unified-menu-button { width: 34px; min-width: 34px; color: var(--muted); }
-html.desktop-shell .unified-menu-button::before { width: 22px; height: 18px; background: linear-gradient(currentColor, currentColor) top/100% 2px no-repeat, linear-gradient(currentColor, currentColor) center/100% 2px no-repeat, linear-gradient(currentColor, currentColor) bottom/100% 2px no-repeat; }
+/* Tabler menu glyph, drawn larger than the window controls it balances. */
+html.desktop-shell .unified-menu-button { width: 36px; min-width: 36px; height: 36px; min-height: 36px; color: var(--muted); }
+html.desktop-shell .unified-menu-button::before { width: 28px; height: 28px; background: currentColor; -webkit-mask: url('assets/icons/tabler/menu-2.svg') center/contain no-repeat; mask: url('assets/icons/tabler/menu-2.svg') center/contain no-repeat; }
+html.desktop-shell .window-control img { width: 16px; height: 16px; }
 html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expanded="true"]) { color: var(--text); }
 
 /* Zoom and thumbnail size are neutral view controls, even away from home. */
 :root :is(.zoom-control, .library-size) .range-shell .slider-fill { background: var(--fill-neutral); box-shadow: none; }
 
-/* Workflow connectors keep their minimum visible length. */
-@media (max-width: 1200px) {
- :root .workflow-tabs { gap: 12px; }
- :root .workflow-tab:not(:last-child)::after { width: 8px; }
+/* Workflow pages share one joined plate, like the in-panel tabs. */
+:root .workflow-tabs {
+ align-self: center; gap: 1px; height: 36px; padding: 0;
+ border: 1px solid var(--plate-edge); border-radius: var(--radius-plate);
+ background: var(--plate-edge); box-shadow: var(--plate-lift);
 }
+:root .workflow-tab {
+ position: relative; min-width: 0; height: 34px; min-height: 34px; padding-inline: 16px; gap: 6px;
+ border: 0; border-radius: 0; background: var(--plate-up); box-shadow: none; color: var(--body);
+ font: var(--font-weight-regular) var(--font-size-3xl)/var(--line-height-none) var(--font-title);
+ letter-spacing: var(--tracking-slight); text-transform: uppercase; white-space: nowrap;
+ text-box: trim-both cap alphabetic;
+}
+:root .workflow-tab:first-child { border-radius: calc(var(--radius-plate) - 1px) 0 0 calc(var(--radius-plate) - 1px); }
+:root .workflow-tab:last-child { border-radius: 0 calc(var(--radius-plate) - 1px) calc(var(--radius-plate) - 1px) 0; }
+:root .workflow-tab:hover:not(.active) { background: var(--plate-up-hover); color: var(--text); }
+:root .workflow-tab.active { background: var(--plate-down); box-shadow: var(--plate-press); color: var(--accent-strong); }
 
 /* One fixed-size grip for pinned folders and every sidebar section. */
 :root .library-drag-handle { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 28px; min-height: 28px; padding: 0; font: var(--font-size-xl)/var(--line-height-none) var(--font-body); color: var(--muted); }
 :root .library-drag-handle:hover { color: var(--text); }
 :root .library-nav .library-heading { gap: 4px; padding-right: 4px; }
-:root .library-nav .library-heading .panel-title { font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); white-space: nowrap; }
+:root .library-nav .library-heading .panel-title { white-space: nowrap; }
+/* Sidebar chevrons line up with the logo's left edge above them. */
+:root .library-nav :is(.library-heading .section-toggle, .library-folder-row .expand-folder) { margin-left: 4px; }
+:root .library-nav .library-folder-row.library-album-row .folder-name { padding-left: calc(var(--panel-collapse-button-size) + 10px); }
 :root .library-nav .library-heading > .text-button { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; min-height: 28px; padding: 0; font: var(--font-weight-medium) var(--font-size-3xl)/var(--line-height-none) var(--font-body); opacity: 0; }
 :root .library-nav:is(:hover, :focus-within) .library-heading > .text-button { opacity: 1; }
 

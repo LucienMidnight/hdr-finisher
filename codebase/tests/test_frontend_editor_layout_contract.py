@@ -15,7 +15,7 @@ def test_refined_slider_surfaces_full_bleed_sections_and_product_lockup() -> Non
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
 
-    assert '<img class="product-logo" src="/static/assets/brand/hdr-finisher-logo.svg" alt="HDR Finisher">' in html
+    assert '<img class="product-logo" src="/static/assets/brand/hdr-finisher-mark.svg" alt="HDR Finisher">' in html
     assert "Cinema Print" not in html
     assert "Exposure dependent" not in html
     product_block = css[css.index("\n.product-logo {"): ]

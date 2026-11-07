@@ -176,13 +176,15 @@ def test_brand_assets_and_fonts_are_bundled_locally() -> None:
     assert f'href="{favicon_url}"' in markup
     assert f'href="{favicon_url}"' in launcher
     assert 'class="product-logo"' in markup
-    assert 'src="/static/assets/brand/hdr-finisher-logo.svg"' in markup
+    assert 'src="/static/assets/brand/hdr-finisher-mark.svg"' in markup
     assert 'url("assets/brand/hdr-finisher-icon-simple.svg")' in css
     assert 'alt=""' in markup
     assert "data:," not in markup
 
     required_assets = [
-        FRONTEND / "assets/brand/hdr-finisher-logo.svg",
+        FRONTEND / "assets/brand/hdr-finisher-mark.svg",
+        FRONTEND / "assets/fonts/bebas-neue/BebasNeue-Regular.ttf",
+        FRONTEND / "assets/fonts/bebas-neue/OFL.txt",
         FRONTEND / "assets/fonts/afacad/Afacad[wght].ttf",
         FRONTEND / "assets/fonts/afacad/Afacad-Italic[wght].ttf",
         FRONTEND / "assets/fonts/afacad/OFL.txt",

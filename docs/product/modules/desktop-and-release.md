@@ -389,6 +389,15 @@ to a new bottom bar the same way. Families are three role tokens so a theme
 or a user font choice can replace them later (not built). Steve's visual
 sign-off is open. Review: `codebase/output/review/ui-polish/fonts/`.
 
+Later on November 7: the title face is now Bebas Neue, bundled with its OFL
+licence, to match the logo (panel titles and in-panel tabs 16px, workflow tabs
+24px). The workflow tabs became one joined plate without step numbers or
+connectors. The toolbar logo is the square mark from the app icon. The menu
+button uses the Tabler menu icon (28px) beside the existing Tabler window
+controls (16px). Library sidebar chevrons moved 4px right to line up with the
+logo. Sofia Sans Semi Condensed stays in the repository but is no longer used.
+Review: `codebase/output/review/ui-polish/titlebar/`.
+
 ## November 6: UI polish round 6b toolbar fit
 
 Built: toolbar compaction now follows available centre-panel space through

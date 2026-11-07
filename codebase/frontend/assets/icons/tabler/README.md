@@ -39,3 +39,5 @@ Toolbar additions (November 6, 2026), all from upstream commit `183e715d5a81ba19
 | Photo Frame | `frame.svg` |
 | Viewer Background | `background.svg` |
 | Add Library selection | `photo-plus.svg` |
+
+Title bar addition (November 7, 2026): `menu-2.svg` for the application menu button, drawn in the same 24×24, 1.8-stroke form as the other vendored icons.
