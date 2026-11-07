@@ -7694,3 +7694,8 @@ instead of joining its old listing. Unicode physical rename, move and Undo pass
 in library-photo-file-commands. Virtual-copy follow-up reaches the renamed
 copy but still fails waiting for the settings writer after Undo; open.
 No resize, shader, output or budget changes.
+
+November 7 check-result repair: an open folder stream still owns incoming rows,
+but no longer suppresses completed folder-check messages in the status bar.
+The manual no-new-photos / still-arriving messages are retained. Focused
+library-folder-checks validation is queued through the shared GPU lock.

@@ -1919,9 +1919,16 @@
   let checkEvent = 0, refreshingCheck = false;
   const checkClient = crypto.randomUUID();
   async function refreshCheckedFolders(checks) {
-    if (!checks || refreshingCheck || state.reading || (!state.collection && state.folderOpen?.controller === state.scan)) return;
+    if (!checks || refreshingCheck || state.reading) return;
     const events = checks.events.filter(event => event.id > checkEvent);
     if (!events.length) return;
+    // The live stream owns row updates, but manual check results still belong
+    // in the status bar. Do not discard them just because a stream is open.
+    if (!state.collection && state.folderOpen?.controller === state.scan) {
+      checkEvent = events.at(-1).id;
+      status(events.map(event => event.message).join(" \u00b7 "));
+      return;
+    }
     refreshingCheck = true;
     const controller = state.scan, place = state.path, collection = state.collection;
     try {
