@@ -27,7 +27,11 @@ async function drop(surface, filename, target='body') {
 }
 async function editor(app) {
   const isEditor = page => {try {return new URL(page.url()).pathname === '/';} catch {return false;}};
-  const page = app.windows().find(isEditor) || await app.waitForEvent('window', {predicate:isEditor, timeout:60000});
+  // The window opens on the Starting screen and navigates to the editor, so
+  // look for an open window at the editor address rather than a new window.
+  let page;
+  for (let i = 0; i < 600 && !page; i++) { page = app.windows().find(isEditor); if (!page) await new Promise(r => setTimeout(r, 100)); }
+  if (!page) throw Error('Editor window did not open: ' + JSON.stringify(app.windows().map(p => p.url())));
   await page.waitForFunction(()=>document.body?.dataset.ready==='true',null,{timeout:60000});
   return page;
 }
