@@ -45,9 +45,10 @@ const fs = require("node:fs"), path = require("node:path");
   await page.locator('[data-local-tool="brush"]').click();
   const local=await page.evaluate(()=>{
    const r=s=>document.querySelector(s).getBoundingClientRect();const list=r('#local-adjustment-list'),tools=r('#control-mode-local .local-tool-strip'),actions=r('#local-mask-actions'),icon=r('[data-local-tool="brush"] .local-tool-icon');
-   return {list:list.bottom,tools:tools.top,toolBottom:tools.bottom,actions:actions.top,icon:[icon.width,icon.height],more:!!document.querySelector('.local-more-menu'),visible:getComputedStyle(document.querySelector('#local-mask-actions')).display};
+   return {listTop:list.top,list:list.bottom,toolBottom:tools.bottom,actions:actions.top,icon:[icon.width,icon.height],more:!!document.querySelector('.local-more-menu'),visible:getComputedStyle(document.querySelector('#local-mask-actions')).display};
   });
-  assert(local.tools>=local.list&&local.actions>=local.toolBottom);assert.equal(local.icon[0],local.icon[1]);assert.equal(local.more,false);assert.notEqual(local.visible,'none');
+  // November 4 layout: New adjustment tools above the Masks list, mask actions below it.
+  assert(local.listTop>=local.toolBottom&&local.actions>=local.list,`Local order: ${JSON.stringify(local)}`);assert.equal(local.icon[0],local.icon[1]);assert.equal(local.more,false);assert.notEqual(local.visible,'none');
   const compact=await page.evaluate(()=>{
    const surface=document.querySelector('#local-adjustments-panel > .local-stack-surface');
    const list=document.getElementById('local-adjustment-list'),style=getComputedStyle(surface);
@@ -93,10 +94,11 @@ const fs = require("node:fs"), path = require("node:path");
   assert.equal(await page.locator('.batch-photo').getAttribute('aria-selected'),'true');
   const outline=await page.locator('.batch-photo').evaluate(e=>{const c=getComputedStyle(e,'::after');return {above:[...e.querySelectorAll('img,canvas')].every(child=>Number(c.zIndex)>(Number(getComputedStyle(child).zIndex)||0)),border:parseFloat(c.borderTopWidth),pointer:c.pointerEvents};});
   assert(outline.above&&outline.border>0);assert.equal(outline.pointer,'none');
-  await page.waitForSelector('#batch-preset-name');
+  // The preset name is edited in Save as / Rename dialogs (afffa1f4); measure the visible destination field.
+  await page.waitForSelector('#batch-directory',{state:'visible'});
   await page.screenshot({path:path.join(output,'export.png')});
   assert.equal(await page.locator('.batch-preset-help').count(),0);
-  const field=await page.locator('#batch-preset-name').evaluate(e=>({height:e.getBoundingClientRect().height,box:getComputedStyle(e).boxSizing}));assert(field.height>=34);assert.equal(field.box,'border-box');
+  const field=await page.locator('#batch-directory').evaluate(e=>({height:e.getBoundingClientRect().height,box:getComputedStyle(e).boxSizing}));assert(field.height>=34,`Export field: ${JSON.stringify(field)}`);assert.equal(field.box,'border-box');
   assert.deepEqual(errors,[]);console.log('PASS: default state, title spacing, persistent scrollbar rail, title tokens, EV readout, stable SDR scroll, local actions, round icons, retouch brush stroke and export fields');
  } catch(error) {
   console.error('Panel diagnostics',await page.evaluate(()=>({errors:typeof state==='undefined'?null:state.gpuPreview?.detail,workflow:document.body.dataset.workflow,retouch:typeof retouchUI==='undefined'?null:{active:retouchUI.active,busy:retouchUI.busy},status:document.querySelector('#retouch-status')?.textContent})).catch(()=>null),errors);
