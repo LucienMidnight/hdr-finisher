@@ -3,10 +3,11 @@ const {chromium}=require("playwright");
 const root=path.resolve(__dirname,".."),out=path.join(root,"output","library-album-commands");fs.mkdirSync(out,{recursive:true});
 const folder=fs.mkdtempSync(path.join(out,"shoot-")),offline=fs.mkdtempSync(path.join(out,"offline-"));
 const photos=[path.join(folder,"one.png"),path.join(folder,"two.png")],disconnected=path.join(offline,"offline.png");
-for(const p of [...photos,disconnected])fs.copyFileSync(path.join(root,"tests","fixtures","sdr_gradient.png"),p);
+for(const p of [...photos,disconnected])fs.copyFileSync(path.join(root,"tests","fixtures","library_photo.png"),p);
 (async()=>{const browser=await chromium.launch({headless:true});try{
  const page=await browser.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
- await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:"networkidle"});const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
+ await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:"networkidle"});const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
  const api=(route,body)=>lib.evaluate(async({route,body})=>{const r=await fetch("/api/library/"+route,{method:body?"POST":"GET",headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});if(!r.ok)throw new Error(await r.text());return r.json();},{route,body});
  await api("pins",{paths:[folder,offline]});await api("scan",{path:folder});await api("scan",{path:offline});
  await api("marks",{paths:[photos[0],disconnected],change:{rating:5}});await api("albums/create",{name:"Manual",paths:photos});await api("albums/create",{name:"Offline",paths:[disconnected]});
@@ -26,4 +27,4 @@ for(const p of [...photos,disconnected])fs.copyFileSync(path.join(root,"tests","
  await api("marks",{paths:[photos[1]],change:{rating:5}});await dialog.getByRole("button",{name:"Create manual album",exact:true}).click();await manual("Copy of Five stars").waitFor();assert.equal((await api("albums")).albums.find(a=>a.name==="Copy of Five stars").count,3);assert.deepEqual((await api("smart-albums")).albums,[original]);
  await undo();await manual("Copy of Five stars").waitFor({state:"detached"});assert.equal((await api("albums")).albums.find(a=>a.name==="Manual").count,2);assert.equal((await api("smart-albums")).albums.length,1);
  assert.deepEqual(errors,[]);assert.ok(photos.every(p=>fs.existsSync(p)));console.log("PASS: keyboard Edit, editable manual/smart Duplicate, collision naming, live smart snapshot including offline match, independent source albums, one-step Undo.");
-}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+}finally{try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true});fs.rmSync(offline,{recursive:true,force:true});fs.rmSync(offline+"-unplugged",{recursive:true,force:true}); }}})().catch(e=>{console.error(e);process.exitCode=1;});

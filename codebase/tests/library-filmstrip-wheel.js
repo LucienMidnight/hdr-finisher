@@ -6,12 +6,13 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..'), output = path.join(root, 'output', 'library-filmstrip-wheel');
 fs.mkdirSync(output, {recursive:true});
 const folder = fs.mkdtempSync(path.join(output, 'photos-'));
-for (let n = 1; n <= 30; n++) fs.copyFileSync(path.join(root,'tests','fixtures','sdr_gradient.png'), path.join(folder,`photo-${String(n).padStart(2,'0')}.png`));
+for (let n = 1; n <= 30; n++) fs.copyFileSync(path.join(root,'tests','fixtures','library_photo.png'), path.join(folder,`photo-${String(n).padStart(2,'0')}.png`));
 (async () => {
   const browser = await chromium.launch({headless:true,channel:'msedge'});
   try {
     const page = await browser.newPage(), errors=[];
     page.on('pageerror', error=>errors.push(error.message)); page.setDefaultTimeout(30000);
+    await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
     await page.evaluate(()=>activateWorkflowTab('import'));
     const iframe=page.locator('#library-frame'), frame=page.frameLocator('#library-frame');
@@ -30,5 +31,5 @@ for (let n = 1; n <= 30; n++) fs.copyFileSync(path.join(root,'tests','fixtures',
     assert.equal(await iframe.evaluate(el=>el.contentWindow.HDRLibrary.getSnapshot().view),'single','the wheel did not leave Single view');
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({filmstripScrolled:after}));
-  } finally { await browser.close(); }
+  } finally { try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); } }
 })().catch(error=>{console.error(error);process.exitCode=1;});

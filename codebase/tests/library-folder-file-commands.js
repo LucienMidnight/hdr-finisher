@@ -2,10 +2,11 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'output','library-folder-file-commands');fs.mkdirSync(out,{recursive:true});
 const parent=fs.mkdtempSync(path.join(out,'parent-')),folder=path.join(parent,'shoot'),nested=path.join(folder,'inside'),target=fs.mkdtempSync(path.join(out,'target-'));
-fs.mkdirSync(nested,{recursive:true});fs.writeFileSync(path.join(nested,'notes.txt'),'unknown contents');fs.copyFileSync(path.join(root,'tests','fixtures','sdr_gradient.png'),path.join(folder,'photo.png'));
+fs.mkdirSync(nested,{recursive:true});fs.writeFileSync(path.join(nested,'notes.txt'),'unknown contents');fs.copyFileSync(path.join(root,'tests','fixtures','library_photo.png'),path.join(folder,'photo.png'));
 fs.mkdirSync(path.join(parent,'taken'));
 (async()=>{const browser=await chromium.launch({headless:true});try{
- const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
+ const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
  const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
  await lib.evaluate(async paths=>{await fetch('/api/library/pins',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths})});},[folder,nested,target]);
  await lib.goto(new URL('/library',process.env.HDR_FINISHER_URL).href);await lib.waitForFunction(()=>window.HDRLibrary);await lib.evaluate(folder=>HDRLibrary.browse(folder),folder);
@@ -22,4 +23,4 @@ fs.mkdirSync(path.join(parent,'taken'));
  await lib.waitForFunction(target=>HDRLibrary.getSnapshot().path===target,path.join(target,'shoot'));assert.ok(fs.existsSync(path.join(target,'shoot','inside','notes.txt')));
  await lib.locator('#library-undo').click();await lib.waitForFunction(folder=>HDRLibrary.getSnapshot().path===folder,folder);await row(folder).waitFor();assert.ok(fs.existsSync(path.join(folder,'photo.png')));assert.deepEqual(errors,[]);
  console.log('PASS: folder menu, rename clash, unknown contents, nested pins, move count/destination confirmation, Cancel and Undo on disposable folders.');
-}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+}finally{try { await browser.close(); } finally { fs.rmSync(parent,{recursive:true,force:true});fs.rmSync(target,{recursive:true,force:true}); }}})().catch(e=>{console.error(e);process.exitCode=1;});

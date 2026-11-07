@@ -7,13 +7,14 @@ const root = path.resolve(__dirname, '..'), output = path.join(root, 'output', '
 fs.mkdirSync(output, {recursive:true});
 const folder = fs.mkdtempSync(path.join(output, 'photos-'));
 const photos = ['copied.png','target.png','other.png'].map(name => path.join(folder,name));
-for (const photo of photos) fs.copyFileSync(path.join(root,'tests','fixtures','sdr_gradient.png'),photo);
+for (const photo of photos) fs.copyFileSync(path.join(root,'tests','fixtures','library_photo.png'),photo);
 const originals = photos.map(photo => fs.readFileSync(photo));
 (async () => {
   const browser = await chromium.launch({headless:true,channel:'msedge'});
   try {
     const page = await browser.newPage(), errors=[];
     page.on('pageerror', error=>errors.push(error.message)); page.setDefaultTimeout(30000);
+    page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
     const api = (route, body) => page.evaluate(async ({route,body}) => {
       const response=await fetch('/api/library/'+route,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -115,5 +116,5 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     for(let i=0;i<photos.length;i++)assert.deepEqual(fs.readFileSync(photos[i]),originals[i]);
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({checks:'native text clipboard, single confirmation, expandable picker, remembered HDR exposure only, three targets including virtual copy, live redraw reuses stored scenes, single Undo restores saved grades and drawings',screenshots:output}));
-  }finally{await browser.close();}
+  }finally{try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); }}
 })().catch(error=>{console.error(error);process.exitCode=1;});

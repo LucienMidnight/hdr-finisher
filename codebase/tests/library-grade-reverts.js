@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, ".."), output = path.join(root, "output", "
 fs.mkdirSync(output, { recursive: true });
 const folder = fs.mkdtempSync(path.join(output, "photos-"));
 const photos = ["first.png", "next.png"].map(name => path.join(folder, name));
-for (const photo of photos) fs.copyFileSync(path.join(root, "tests", "fixtures", "sdr_gradient.png"), photo);
+for (const photo of photos) fs.copyFileSync(path.join(root, "tests", "fixtures", "library_photo.png"), photo);
 const original = fs.readFileSync(photos[0]);
 const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
 (async () => {
@@ -16,6 +16,7 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     const page = await browser.newPage(), errors = [];
     page.setDefaultTimeout(30000);
     page.on("pageerror", error => errors.push(error.message));
+    page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: "networkidle" });
     const written = async photo => {
       const deadline=Date.now()+30000;
@@ -90,5 +91,5 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     assert.deepEqual(fs.readFileSync(photos[0]),original);
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({checks:'four Grade reverts, unsaved open result, saved file unchanged, counted Library confirmation, one Undo, marks kept'}));
-  } finally { await browser.close(); }
+  } finally { try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); } }
 })().catch(error=>{console.error(error);process.exitCode=1;});
