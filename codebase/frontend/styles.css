@@ -8869,7 +8869,10 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
 .bw-purples .slider-track { background: linear-gradient(90deg, var(--raised), var(--muted), var(--text)); }
 .bw-magentas .slider-track { background: linear-gradient(90deg, var(--raised), var(--muted), var(--text)); }
 
-.control-group:not(.modified) .group-reset.perspective-reset-retry {
+/* A failed Perspective Reset stays retryable after its sliders show zero;
+ * outranks the unmodified-section hiding in visual-controls.css. */
+:root .control-group:not(.modified) .group-reset.perspective-reset-retry {
+  display: revert;
   visibility: visible;
 }
 
