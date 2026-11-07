@@ -5,13 +5,14 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const folder = fs.mkdtempSync(path.join(root, 'output', 'slice4-a-'));
 const photo = path.join(folder, 'overlay.png');
-fs.copyFileSync(path.join(root, 'tests', 'fixtures', 'sdr_gradient.png'), photo);
+fs.copyFileSync(path.join(root, 'tests', 'fixtures', 'library_photo.png'), photo);
 const original = fs.readFileSync(photo);
 (async () => {
   const browser = await chromium.launch({headless:true});
   try {
     const page = await browser.newPage(), errors = [];
     page.on('pageerror', error => errors.push(error.message));
+    page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL, {waitUntil:'networkidle'});
     await page.evaluate(async photo => openDesktopSelection({kind:'source', ...await desktop.grantSourcePath(photo)}), photo);
     await page.waitForFunction(() => HDRGradeSaving.active() && state.acceptedPresentation?.exact, null, {timeout:60000});
@@ -58,5 +59,5 @@ const original = fs.readFileSync(photo);
     assert.deepEqual(fs.readFileSync(photo), original);
     assert.deepEqual(errors, []);
     console.log('PASS: overlay-only save stays Not edited in Library; a real edit is Edited; SDR Highlights presets save and list through the desktop panel.');
-  } finally { await browser.close(); }
+  } finally { try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); } }
 })().catch(error => {console.error(error); process.exitCode=1;});

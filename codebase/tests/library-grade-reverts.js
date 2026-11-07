@@ -16,7 +16,7 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     const page = await browser.newPage(), errors = [];
     page.setDefaultTimeout(30000);
     page.on("pageerror", error => errors.push(error.message));
-    page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: "networkidle" });
     const written = async photo => {
       const deadline=Date.now()+30000;

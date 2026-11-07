@@ -2,10 +2,11 @@ const assert=require("node:assert/strict"),fs=require("node:fs"),path=require("n
 const {chromium}=require("playwright");
 const root=path.resolve(__dirname,".."),out=path.join(root,"output","library-membership");fs.mkdirSync(out,{recursive:true});
 const folder=fs.mkdtempSync(path.join(out,"shoot-")),photos=["kept.png","ordinary.png"].map(n=>path.join(folder,n));
-for(const p of photos)fs.copyFileSync(path.join(root,"tests","fixtures","sdr_gradient.png"),p);
+for(const p of photos)fs.copyFileSync(path.join(root,"tests","fixtures","library_photo.png"),p);
 (async()=>{const browser=await chromium.launch({headless:true});try{
  const page=await browser.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
- await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:"networkidle"});const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
+ await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:"networkidle"});const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
  const api=(route,body)=>lib.evaluate(async({route,body})=>{const r=await fetch(route,{method:body?"POST":"GET",headers:{"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});if(!r.ok)throw new Error(await r.text());return r.json();},{route,body});
  await api("/api/library/pins",{paths:[folder]});await api("/api/library/scan",{path:folder});
  await api("/api/library/marks",{paths:photos,change:{rating:5,add_tag:"Scope"}});
@@ -18,9 +19,9 @@ for(const p of photos)fs.copyFileSync(path.join(root,"tests","fixtures","sdr_gra
  await lib.locator('#smart-albums .folder-name').filter({hasText:"All five stars"}).click();await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count===1);
  let result=await api("/api/library/smart-candidates");assert.deepEqual(result.photos.map(p=>p.path),[photos[0]]);
  await lib.locator('#albums .folder-name').filter({hasText:"Keep"}).click();await lib.waitForFunction(()=>HDRLibrary.getSnapshot().collection?.name==="Keep");
- await lib.locator('.library-cell').first().click();await lib.locator('#facts-toggle').click();await lib.getByText(/Kept in the library by an album/).waitFor();
+ await lib.locator('.library-cell').first().click();await lib.locator('#facts-toggle').click();await lib.waitForFunction(()=>HDRLibrary.getSnapshot().facts?.albums.includes("Keep"));
  result=await api("/api/library/albums/remove",{name:"Keep",paths:[photos[0]]});assert.equal(result.left_library,1);
  assert.equal((await api("/api/library/smart-candidates")).photos.length,0);
  await api("/api/library/undo",{});assert.equal((await api("/api/library/smart-candidates")).photos.length,1);
- assert.deepEqual(errors,[]);assert.ok(photos.every(p=>fs.existsSync(p)));console.log("PASS: unpin confirmation, album-only Details, tag/smart scope, last-album exit and Undo; originals untouched.");
-}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+ assert.deepEqual(errors,[]);assert.ok(photos.every(p=>fs.existsSync(p)));console.log("PASS: unpin confirmation, album-only membership, tag/smart scope, last-album exit and Undo; originals untouched.");
+}finally{try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); }}})().catch(e=>{console.error(e);process.exitCode=1;});

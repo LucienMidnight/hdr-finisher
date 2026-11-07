@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, ".."), output = path.join(root, "output", "
 fs.mkdirSync(output, { recursive: true });
 const folder = fs.mkdtempSync(path.join(output, "photos-"));
 const other = fs.mkdtempSync(path.join(output, "other-"));
-const fixture = path.join(root, "tests", "fixtures", "sdr_gradient.png");
+const fixture = path.join(root, "tests", "fixtures", "library_photo.png");
 for (let i = 0; i < 3; i++) fs.copyFileSync(fixture, path.join(folder, `photo-${i}.png`));
 fs.copyFileSync(fixture, path.join(other, "other.png"));
 (async () => {
@@ -14,6 +14,7 @@ fs.copyFileSync(fixture, path.join(other, "other.png"));
   try {
     const page = await browser.newPage(), errors = [];
     page.on("pageerror", error => errors.push(error.message));
+    page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: "networkidle" });
     const library = page.frame({ url: /\/library(?:\?|$)/ });
     await library.waitForFunction(() => window.HDRLibrary);
@@ -55,9 +56,9 @@ fs.copyFileSync(fixture, path.join(other, "other.png"));
     assert.ok(written, "the undone marks must finish writing");
     assert.equal(JSON.parse(fs.readFileSync(first + ".hdrf", "utf8")).marks.rating, 0);
     await library.evaluate(folder => HDRLibrary.browse(folder), other);
-    assert.equal(await library.evaluate(() => HDRLibrary.getSnapshot().count), 1);
+    await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 1);
     assert.equal(errors.length, 0, errors.join("\n"));
     await page.screenshot({ path: path.join(output, "stage-a.png") });
     console.log("PASS: marks and Ctrl+Z return while writer waits; no empty first file; Details updates to written; written Undo restores files; browsing stays usable.");
-  } finally { await browser.close(); }
+  } finally { try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true});fs.rmSync(other,{recursive:true,force:true}); } }
 })().catch(error => { console.error(error); process.exitCode = 1; });

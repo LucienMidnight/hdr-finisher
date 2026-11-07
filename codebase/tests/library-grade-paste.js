@@ -14,7 +14,7 @@ const originals = photos.map(photo => fs.readFileSync(photo));
   try {
     const page = await browser.newPage(), errors=[];
     page.on('pageerror', error=>errors.push(error.message)); page.setDefaultTimeout(30000);
-    page.setDefaultTimeout(30000); await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
     const api = (route, body) => page.evaluate(async ({route,body}) => {
       const response=await fetch('/api/library/'+route,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
