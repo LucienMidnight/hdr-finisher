@@ -408,8 +408,12 @@ measurement. `library_worker.py` makes half/full maps on the existing kept lane;
 with no Grade transition or settings-file action. `photo-library.js` attaches
 only visible grid/film/single/compare surfaces and cancels work on exit.
 `test_library_overlays.py` checks source regions, focus/noise, freshness,
-cancellation and eviction; `library-exposure.js` and `library-focus.js` are the
-focused disposable Electron checks. `performance/library-focus-trial.py` is a
+cancellation, eviction and camera-preview registration; `library-exposure.js`
+and `library-focus.js` are the focused disposable Electron checks, and
+`library-raw-overlays.js` checks overlays on undeveloped RAW camera previews.
+RAW maps carry `camera_frame` (where the embedded preview sits, found by ECC
+registration in `register_preview`) and every map carries `frame`; the
+frontend crops the map to the picture shown. `performance/library-focus-trial.py` is a
 bounded read-only half/full/controlled-softness trial, not a folder sweep.
 
 Library slices 5/6 commands:

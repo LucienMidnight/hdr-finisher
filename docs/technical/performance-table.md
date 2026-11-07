@@ -1307,3 +1307,19 @@ standard Library run (v1-copy-index-final) has no picture/memory error but fails
 its unchanged 250 ms frame-gap limit at 1.855 s. Earlier v1-loose-final passed.
 No repeat was used to seek a lower number; cold responsiveness stays open in 5b.
 Output ended at 29.5 GB (started 29.3 GB).
+
+### November 7: Focus and Exposure on undeveloped RAW photos
+
+Tolerance (brief, November 7): the first grid overlay on a camera preview
+within 1.5× a developed photo of the same file. Driver
+`tests/library-raw-overlays.js`, 2560×1440, fresh profile, cold maps
+(hard-linked copies under new names), parent 3874f17, commits fd9298d and
+40048320, two runs.
+
+| Action | Target | Latest measured | Conditions | Status |
+|---|---|---|---|---|
+| Grid, E key to first Exposure overlay, undeveloped RAW (camera preview) | ≤ 1.5× developed | 1.331 to 2.372 s | 3 RAWs (DSC07060.ARW, IMG_0114.CR2, IMG_3129.CR2) | Met (about 1.0×) |
+| Grid, S key to first Focus overlay, undeveloped RAW | Report | 1.853 to 2.876 s | Same folder, Exposure already on | Baseline |
+| Grid, E key to first Exposure overlay, developed RAW | Reference | 1.341 to 2.359 s | 2 RAWs (DSC07060, IMG_3129 under new names), after Develop | Baseline |
+| Single, S key to first Focus overlay (half / full), undeveloped RAW | Report | 3.40 s / 10.85 to 11.89 s | DSC07060.ARW; full map is the native RAW decode | Baseline |
+| Camera-preview registration added to each RAW map | Report | about 0.1 to 0.4 s | ECC at 640 px; DSC07060 0.40 s, IMG_3129 0.12 s (script) | Baseline |

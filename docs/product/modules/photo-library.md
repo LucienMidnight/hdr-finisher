@@ -7543,9 +7543,9 @@ photos. Switching an overlay on attached it to the tile's hidden first
 picture, so it drew at 0×0, and a developed tile handed over from Grade was
 never given one. Overlays now sit on the picture that is shown.
 
-Overlays still appear only on developed photos that have no saved grade.
-Camera previews and direct pictures get none (since November 3,
-`75f1de90`).
+Overlays then still appeared only on developed photos with no saved grade;
+camera previews and direct pictures got none (since November 3,
+`75f1de90`). Fixed the same day; see the next section.
 
 The `library-filter-bar.js`, `library-focus.js`, `library-exposure.js` and
 `library-appearance-navigation.js` drivers were repaired. They had broken
@@ -7615,3 +7615,74 @@ Logs: codebase/output/fixture-*.log. Scratch cleanup for the interrupted smart
 runs was blocked by automatic approval policy; safe leftovers are
 smart-155000-{h_pvm587,jm805j9w,bz2sbp0x}, library-membership/shoot-UypvS7 and
 library-smart-albums/shoot-{NmCTdz,X3T8ZC}, all beneath codebase/output.
+
+## November 7: Focus and Exposure on undeveloped RAW photos
+
+Decision (Steve, November 7, 2026: "I need focus and exposure to work on
+undeveloped RAW files"): Focus (S) and Exposure (E) show on undeveloped RAW
+photos, over the camera preview, in every overlay view. Showing an overlay
+never develops the photo. Brief:
+`docs/technical/archive/briefs/codex-brief-library-overlays-undeveloped-raw-2026-11-07.md`.
+
+Why the camera preview had no overlay: the `meta.bitmap` skip came in with
+development on demand (`75f1de90`) without a stated reason. The real risk was
+alignment. The maps are measured from the RAW sensor area, and the camera's
+embedded JPEG is not exactly that area. In the test photos, Sony ARW
+previews are a crop about 0.2% inside the sensor area. Canon CR2 previews are
+the camera's 5184 × 3456, inside LibRaw's 5202 × 3464, 5 to 12 sensor pixels
+in from the edge. Assuming the full frame would put the overlay up to 0.5%
+off.
+
+Built:
+
+- Each RAW overlay map records where the camera preview sits in it
+  (`camera_frame`). This is found by image registration (OpenCV ECC, scale
+  and offset) of the preview against a small brightness picture of the same
+  sensor data. The result is checked before use: score, shear, bounds and
+  shape. Each map also records its measured area inside the padded pooling
+  cells (`frame`). Map version is now v3, so older maps are remade.
+- The Library draws only the part of the map under the shown picture. On a
+  camera preview that is `camera_frame`; on a developed or direct picture it
+  is `frame`. The layer takes the picture's shape at screen resolution, so
+  both fit the same box within half a CSS pixel.
+- If the preview cannot be lined up, the badge reads "Focus unavailable ·
+  camera preview" (or Exposure), with the reason in its tooltip. It never
+  shows a misplaced overlay. None of the test photos needed it.
+- After Develop the overlay stays on, from the same map (same key, no new
+  measurement). Maps just taken off a picture are kept by reference, 24 at
+  most, so the next picture of the same photo shows them at once.
+- Direct pictures (JPEG, PNG, TIFF shown as-is) use the same route,
+  framed whole, since the map is measured from the same oriented file. The
+  frame is covered by a fast test. No Electron driver checks it yet.
+- Graded photos are unchanged ("unavailable · graded"). A graded photo's
+  hand-off from Grade now records its grade before overlays attach, so a map
+  of the ungraded original is never reused on it.
+
+Checks: `tests/library-raw-overlays.js` (release area tier) uses hard links
+to DSC07060.ARW (Sony, landscape), IMG_0114.CR2 (Canon, portrait) and
+IMG_3129.CR2 (Canon, landscape). It checks grid, filmstrip, Single and
+Compare, overlay pixels present, each overlay box within 1 CSS px of its
+picture, and nothing developed. It then develops the portrait and checks that
+the same maps stay aligned. `library-focus.js` and `library-exposure.js` pass.
+Registration is covered in `test_library_overlays.py`. Review page:
+`codebase/output/review/library-raw-overlays/index.html`, awaiting
+Steve's sign-off on the look.
+
+Speed (tolerance from the brief: first grid overlay within 1.5× a developed
+photo of the same file). Grid, key press to first overlay: 1.33 to 2.37 s on
+camera previews, against 1.34 to 2.36 s on developed photos (about 1.0×).
+Registration adds about 0.1 to 0.4 s to each RAW map, developed or not.
+Single view, Focus: half 3.4 s and full 10.8 to 11.9 s. The full map uses the
+existing native RAW decode, as for developed photos. Rows are in the
+performance table.
+
+Open work:
+
+- Overlays on graded photos (v2 candidate; unchanged).
+- An Electron check of overlays on direct pictures (JPEG/PNG/TIFF shown
+  as-is).
+- No embedded preview with a different shape from the sensor (for example an
+  in-camera 16:9 crop) was among the test photos. Registration starts from a
+  centred crop of that shape and refuses with the badge if it cannot line up.
+- Full-quality Focus in Single on an undeveloped RAW takes about 11 s (a
+  native RAW decode). It is not slower than for developed photos.

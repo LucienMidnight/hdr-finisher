@@ -77,6 +77,8 @@ Two overlays paint warnings on top of your pictures. They work in the grid, Sing
 
 Each button has an **Enabled** / **Disabled** switch. The overlays are based on the source photo, not on your grade.
 
+They also work on RAW photos you have not developed: the warnings are measured from the RAW file and placed over the camera's preview. If a camera preview cannot be lined up with the RAW data, the photo shows **Focus unavailable · camera preview** (or Exposure); develop it to see the overlay. Photos with a saved grade show **unavailable · graded**.
+
 ## Rate and label photos
 
 Select one photo or many. Everything below applies to all selected photos. Use the **Details** panel on the right, or the keyboard.
