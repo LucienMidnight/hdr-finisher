@@ -80,7 +80,7 @@ async function main() {
       if (await page.evaluate(() => Boolean(desktop))) {
         if (!global.HDRFinisherElectronTestHarness?.selectExportDirectory) throw new Error("Desktop folder selection needs the Electron test harness.");
         await global.HDRFinisherElectronTestHarness.selectExportDirectory(directory);
-        await page.locator("#batch-directory").locator("xpath=ancestor::section").getByRole("button", { name: "Choose folder…", exact: true }).click();
+        await page.locator("#batch-directory").locator("xpath=ancestor::section").getByRole("button", { name: "Browse…", exact: true }).click();
       } else await page.locator("#batch-directory").fill(directory);
       await page.waitForFunction(directory => document.getElementById("batch-directory")?.value === directory, directory);
     };
@@ -100,6 +100,8 @@ async function main() {
       await page.locator("#export-format").selectOption(testCase.format);
       if (testCase.format === "sdr_jpeg") {
         if (!await page.locator("#jpeg-advanced-settings").evaluate(details => details.open)) await page.locator("#jpeg-advanced-settings > summary").click();
+        const codec = page.locator("#jpeg-chroma-subsampling").locator("xpath=ancestor::details[contains(@class, 'batch-advanced-group')]");
+        if (!await codec.evaluate(details => details.open)) await codec.locator(":scope > summary").click();
         await page.locator("#jpeg-chroma-subsampling").selectOption("422");
       }
       await page.locator("#batch-pattern").fill(filename);
@@ -143,6 +145,9 @@ async function main() {
       throw new Error(`Export/file-browser regression failed: ${JSON.stringify(result)}`);
     }
     console.log(JSON.stringify(result));
+  } catch (error) {
+    console.error(error);
+    throw error;
   } finally {
     await context.close();
     await browser.close();
