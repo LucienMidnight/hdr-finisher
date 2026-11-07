@@ -29,9 +29,10 @@ for (let i = 0; i < 3; i++) fs.copyFileSync(path.join(root, "tests", "fixtures",
   assert.equal(await library.locator("#library-activity").isVisible(), true);
   assert.equal(await library.locator("#library-activity").getByRole("button", {name: "Cancel", exact: true}).count(), 0);
   await api("/api/library-worker/pause", {reason: "manual", paused: true});
+  // Three rows can finish indexing before the next health poll. Hold the
+  // index itself, rather than assuming thumbnail work keeps it active.
+  await api("/api/library/index", {action:"pause"});
   await api("/api/library/pins", {paths: [folder]});
-  await library.waitForFunction(() => document.querySelector("#index-status").textContent.includes("+1"));
-  await library.locator("#library-activity").getByRole("button", {name: "Pause indexing", exact: true}).click();
   await library.waitForFunction(() => document.querySelector("#library-activity").textContent.includes("Indexing paused"));
   await library.locator("#library-activity").getByRole("button", {name: "Resume indexing", exact: true}).click();
   await library.locator("#library-activity").getByRole("button", {name: "Re-scan pinned folders now", exact: true}).click();

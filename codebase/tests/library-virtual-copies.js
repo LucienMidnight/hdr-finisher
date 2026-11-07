@@ -26,7 +26,8 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
         if(saved.photos[0]?.storage==='sidecar') return;
         await page.waitForTimeout(100);
       }
-      throw new Error('Settings writer did not finish within 30 seconds.');
+      const diagnostic=await page.evaluate(async photo=>({writer:await (await fetch('/api/library/settings-status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[photo]})})).json(),health:await(await fetch('/api/library/health')).json(),dirty:state.documentDirty}),photo);
+      throw new Error('Settings writer did not finish within 30 seconds: '+JSON.stringify(diagnostic));
     };
     const open = photo => page.evaluate(async photo => {
       await openDesktopSelection({ kind: "source", ...await desktop.grantSourcePath(photo) });

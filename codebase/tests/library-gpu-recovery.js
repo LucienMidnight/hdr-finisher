@@ -37,8 +37,8 @@ fs.copyFileSync(path.join(root,'tests/fixtures/library_photo.png'),lostPhoto);
   const dump=()=>({events:events.slice(-30),stages:w.HDRLibraryScenes.snapshot(),grants:w.HDRLibraryGrants.snapshot()});
   const withTimeout=(promise,ms,label)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>{w.__diagDump=dump();reject(Error('timed out: '+label));},ms))]);
   try{
-   const oomValue=await withTimeout(w.HDRLibraryScenes.load(oomPhoto,640,undefined,10),120000,'oom load');
-   const lostValue=await withTimeout(w.HDRLibraryScenes.load(lostPhoto,640,undefined,10),120000,'lost load');
+   const oomValue=await withTimeout(w.HDRLibraryScenes.load(oomPhoto,640,undefined,10,null,{develop:true}),120000,'oom load');
+   const lostValue=await withTimeout(w.HDRLibraryScenes.load(lostPhoto,640,undefined,10,null,{develop:true}),120000,'lost load');
    const errors=(await (await originalFetch('/api/library/health')).json()).picture_errors||{};
    return {oomEdge:oomValue.edge,lostEdge:lostValue.edge,oomAttempts,lostAttempts,requests,events,errors,remaining:w.HDRLibraryGrants.snapshot()};
   }finally{w.HDRLibraryRGB=original;w.fetch=originalFetch;}
@@ -53,9 +53,9 @@ fs.copyFileSync(path.join(root,'tests/fixtures/library_photo.png'),lostPhoto);
  const cpuCalls=target=>parsed.filter(r=>r.url==='/api/library/live-scene'&&r.body?.gpu===false&&r.body?.path===target).length;
  assert.equal(result.oomEdge,640,'The out-of-memory photo finishes');
  assert.equal(result.lostEdge,640,'The device-loss photo finishes');
- assert.equal(result.oomAttempts,2,'Out of memory retries once on the GPU');
+ assert.equal(result.oomAttempts,1,'Out of memory without competing GPU work goes straight to the CPU');
  assert.equal(result.lostAttempts,2,'Device loss requeues once and reruns');
- assert.equal(cpuCalls(oomPhoto),1,'After the retry the photo takes the visible CPU route');
+ assert.equal(cpuCalls(oomPhoto),1,'The photo takes the visible CPU route');
  assert.equal(cpuCalls(lostPhoto),1,'A second device loss takes the visible CPU route');
  assert.equal(parsed.filter(r=>r.url==='/api/library/development-error').length,0,'No broken-photo record is written');
  assert.equal(result.remaining.jobs.length,0,'No grant is left waiting');

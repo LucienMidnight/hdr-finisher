@@ -25,6 +25,8 @@ Path(str(p)+".hdrf").write_text(json.dumps(doc),encoding="utf-8")
   browser=await chromium.launch();
   const page=await browser.newPage(),errors=[];
   page.on("pageerror",error=>errors.push(error.message));
+  // JPEG originals are listed only with Show all files (November 3).
+  await page.addInitScript(()=>localStorage.setItem("hdr-finisher:library-show-all-files","true"));
   await page.goto(process.env.HDR_FINISHER_URL);
   await page.evaluate(()=>activateWorkflowTab("import"));
   const frame=page.locator("#library-frame"),doc=page.frameLocator("#library-frame");

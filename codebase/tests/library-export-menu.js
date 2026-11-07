@@ -85,7 +85,7 @@ let other;
     assert.ok(await page.locator('#export-format option').count()>0,'format choices without a Grade photo');
     // Guarantee HDR peak: off by default, offered only for HDR formats, carried in the export settings.
     await page.locator('#export-format').selectOption('jpeg_ultrahdr');
-    await page.locator('#export-guarantee-peak-field').evaluate(el=>el.closest('details').open=true);
+    await page.locator('#export-guarantee-peak-field').evaluate(el=>{for(let parent=el.parentElement;parent;parent=parent.parentElement)if(parent.tagName==='DETAILS')parent.open=true;});
     assert.equal(await page.locator('#export-guarantee-peak-field').isVisible(),true);
     assert.equal(await page.locator('#export-guarantee-peak').isChecked(),false);
     await page.locator('#export-guarantee-peak-field label').click();

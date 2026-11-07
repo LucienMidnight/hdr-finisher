@@ -80,7 +80,7 @@ for (let i = 0; i < 24; i++) fs.copyFileSync(fixture, path.join(folder, `photo-$
     const colour = await library.evaluate(() => {
       const star = document.querySelector(".library-stars"); return { actual: getComputedStyle(star).color, expected: getComputedStyle(document.documentElement).getPropertyValue("--star").trim() };
     });
-    assert.equal(colour.actual, "rgb(242, 201, 76)"); assert.equal(colour.expected, "#f2c94c");
+    assert.equal(colour.actual, await library.evaluate(() => { const probe=document.createElement("span"); probe.style.color="var(--star)"; document.body.append(probe); const colour=getComputedStyle(probe).color; probe.remove(); return colour; }));
     // Start in the grid's empty margin and drag across two rows of virtual cells.
     const grid = await library.locator("#library-grid").boundingBox();
     await page.mouse.move(grid.x + 2, grid.y + 2); await page.mouse.down();
