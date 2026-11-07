@@ -118,7 +118,10 @@ Title-case panel titles: Afacad 12px, weight 600, no tracking. Group names: sent
 
 - Afacad is the reading, marking and number family throughout the interface, with tabular figures. The full normal/italic family is bundled under the OFL; variable faces provide runtime weights.
 - IBM Plex Mono is reserved for filenames and genuinely character-aligned readouts.
-- Body and buttons: 14.5px; control labels: 13.5px; values and helper text: 13px; select values: 14px; small scale labels: 9px.
+- Every font size, weight, family, line height and letter spacing comes from the type tokens in `visual-tokens.css`; write no literal values elsewhere (`tests/font-tokens.test.js` enforces this). Canvas text uses `HDRAppearance.font()`.
+- Type scale: `--font-size-min` 11px (badges, scale labels, counts; nothing is drawn smaller), `xs` 12px (captions, file names, status bars), `sm` 13px (labels, helper text, values, Details panel), `md` 14.5px (body, buttons, menus, group titles), `lg` 16px (workflow tabs), then `xl` 18, `2xl` 20, `3xl` 24 and `4xl` 28px for headings and glyphs.
+- Families are three roles: `--font-title`, `--font-body` and `--font-mono`. A theme or a future user font choice overrides these and the scale in one place.
+- Place names and counts sit in the bottom status bar (Library folder or album, Export batch counts); toolbars above the photos are centred.
 - Keep labels concrete, use sentence case, and include appropriate units (EV, nit, %, K).
 - The existing product logo is retained at 22px high.
 - Tooltips explain consequences and tradeoffs. Keep internal implementation details out of product copy.

@@ -376,6 +376,19 @@ Section 4: compact spacing and view controls retain one row at the existing 1100
 
 Section 6 (added by Steve): Export batch view/actions centre in the header space after the left-hand title and summary, using compact spacing at minimum width. Validation grouped at the end of round 6.
 
+## November 7: type tokens, minimum size and title placement
+
+Built: every font size, weight, family, line height and letter spacing in the
+frontend now uses the type tokens in `visual-tokens.css` (about 30 sizes
+became a nine-step scale; old `--sans`, `--mono` and `--display` aliases were
+removed). The minimum is 11px; nothing is drawn smaller, including graph
+labels. The Library Details panel moved from 12px to 13px and status bars to
+12px. The Library folder or album name now sits in the bottom bar and the
+toolbar buttons are centred; Export's "Export Batch" title and counts moved
+to a new bottom bar the same way. Families are three role tokens so a theme
+or a user font choice can replace them later (not built). Steve's visual
+sign-off is open. Review: `codebase/output/review/ui-polish/fonts/`.
+
 ## November 6: UI polish round 6b toolbar fit
 
 Built: toolbar compaction now follows available centre-panel space through

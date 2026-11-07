@@ -512,3 +512,15 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 }
 
 :root .library-tools #exposure-button[title]:is(:hover, :focus-visible)::after { content: "Exposure: " attr(title); }
+
+/* The place name and counts sit in the bottom bar; toolbars centre their tools. */
+:root .library-toolbar { grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr); }
+:root .library-footer .library-bar-title { flex: 0 1 auto; max-width: 45%; align-items: center; gap: 8px; }
+:root .library-footer .place, :root .batch-statusbar .panel-title { margin: 0; color: var(--body); font: var(--font-weight-medium) var(--font-size-xs) var(--font-body); letter-spacing: var(--tracking-none); text-transform: none; }
+/* The status text already gives the photo count. */
+:root .library-footer .library-bar-count { display: none; }
+:root .batch-header { display: flex; justify-content: center; }
+:root .batch-statusbar { display: flex; align-items: center; flex-shrink: 0; min-width: 0; height: var(--status-bar-h); padding: 0 12px; border-top: 1px solid var(--hairline); background: var(--panel); color: var(--muted); }
+:root .batch-statusbar .batch-heading { gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; }
+:root .batch-statusbar .helper { font-size: var(--font-size-xs); line-height: var(--line-height-none); }
+:root .batch-preview .batch-statusbar { display: none; }
