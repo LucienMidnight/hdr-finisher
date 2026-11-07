@@ -4,11 +4,13 @@ const root = path.resolve(__dirname, '..'), out = path.join(root, 'output/librar
 fs.mkdirSync(out, {recursive:true});
 const folder = fs.mkdtempSync(path.join(out, 'photos-')), folders = [folder,path.join(folder,'Second'),path.join(folder,'Third')];
 folders.slice(1).forEach(dir=>fs.mkdirSync(dir));
-for(let i=0;i<6;i++) fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient.png'),path.join(folder,`photo-${i}.png`));
+for(let i=0;i<6;i++) fs.copyFileSync(path.join(root,'tests/fixtures/library_photo.png'),path.join(folder,`photo-${i}.png`));
 (async()=>{
  const browser=await chromium.launch({headless:true});
  try {
   const page=await browser.newPage(), errors=[]; page.on('pageerror',e=>errors.push(e.message));
+  // PNG test photos are listed only with "Show all files" on.
+  await page.addInitScript(()=>localStorage.setItem('hdr-finisher:library-show-all-files','true'));
   await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
   const lib=page.frame({url:/\/library(?:\?|$)/}); await lib.waitForFunction(()=>!!window.HDRLibrary);
   await lib.evaluate(async paths=>{await fetch('/api/library/pins',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths})});},folders);
@@ -16,31 +18,20 @@ for(let i=0;i<6;i++) fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient
   await lib.evaluate(folder=>HDRLibrary.browse(folder),folder); await lib.waitForSelector('#grid-space canvas[data-picture-key]');
   await lib.locator('.library-cell').filter({hasText:'photo-4.png'}).click();
   const selected=await lib.evaluate(()=>HDRLibrary.getSnapshot().selected), requests=[];
-  let releaseAhead, aheadRequested=false;
-  const aheadGate=new Promise(resolve=>{releaseAhead=resolve;});
-  await page.route('**/api/library/picture', async route=>{
-   const body=route.request().postDataJSON();
-   if(body.path.endsWith('photo-5.png')&&body.priority===50&&body.edge>=1280){aheadRequested=true;await aheadGate;}
-   await route.continue();
-  });
+  // Neighbour read-ahead was removed on November 3 (75f1de90); review shows the selected photo, then the next one.
   page.on('request',r=>{if(r.url().endsWith('/api/library/picture')){const b=r.postDataJSON();if(b.priority===0)requests.push(b);}});
   await page.keyboard.press('f');
   await lib.waitForFunction(p=>HDRLibrary.getSnapshot().review&&document.querySelector('#single-picture').dataset.picturePath===p&&Number(document.querySelector('#single-picture').dataset.pictureEdge)>=1280,selected);
   await page.waitForTimeout(800); assert.ok(requests.length<=2,`Foreground loads: ${requests.length}`);
-  assert.ok(aheadRequested,'Neighbour read-ahead began while selected photo loaded');
   await page.keyboard.press('ArrowRight');
   await lib.waitForFunction(p=>document.querySelector('#single-picture').dataset.picturePath!==p&&document.querySelector('#single-picture').dataset.picturePath===HDRLibrary.getSnapshot().selected,selected);
-  assert.ok(Number(await lib.locator('#single-picture').getAttribute('data-picture-edge'))<1280,'Cached grid picture appears while full preview is held');
-  assert.equal(requests.filter(b=>b.path.endsWith('photo-5.png')).length,0,'Selecting the neighbour reuses its unfinished request');
-  releaseAhead();
   await lib.waitForFunction(()=>Number(document.querySelector('#single-picture').dataset.pictureEdge)>=1280);
-  await page.unroute('**/api/library/picture');
   await page.keyboard.press('Escape'); await lib.waitForFunction(()=>!HDRLibrary.getSnapshot().review);
-  console.log('PASS: fullscreen arrow shows cached photo before delayed full preview, preserves neighbour request and avoids duplicate foreground loads.');
-  await lib.locator('#filter-button').click(); await lib.locator('#filter-grade').selectOption('ungraded');
-  await lib.locator('#filter-button').click(); assert.equal(await lib.locator('#filter-button').getAttribute('aria-pressed'),'true');
-  assert.equal(await lib.evaluate(()=>HDRLibrary.getSnapshot().count),6);
-  await lib.locator('#filter-button').click(); await lib.locator('#filter-grade').selectOption('graded'); await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count===0);
+  console.log('PASS: fullscreen shows the selected photo at full preview, then the next one, without duplicate foreground loads.');
+  // Grade filtering is the State rule since 5fb2ed69; all six photos are not edited.
+  await lib.locator('#filter-button').click(); await lib.locator('#filter-add').click(); await lib.getByRole('menuitem',{name:'State',exact:true}).click();
+  await lib.locator('#library-filter-panel').getByRole('checkbox',{name:'Not edited',exact:true}).check(); await lib.locator('#library-filter-panel').getByRole('button',{name:'Apply',exact:true}).click();
+  await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count===6); assert.equal(await lib.locator('#filter-button').getAttribute('aria-pressed'),'true');
   await lib.locator('#filter-clear').click(); assert.equal(await lib.locator('#filter-button').getAttribute('aria-pressed'),'false');
   await lib.locator('#filter-add').click(); assert.ok(await lib.locator('#library-folder-menu').isVisible());
   await lib.locator('#filter-add').click(); assert.ok(await lib.locator('#library-folder-menu').isHidden());
@@ -65,5 +56,5 @@ for(let i=0;i<6;i++) fs.copyFileSync(path.join(root,'tests/fixtures/sdr_gradient
   }
   assert.ok(await page.locator('.product-logo').evaluate(img=>img.complete&&img.naturalWidth>0)); assert.deepEqual(errors,[]);
   console.log('PASS: File then Marks, all three token themes, SVG wordmark, no renderer errors.');
- } finally {await browser.close();}
+ } finally {await browser.close();fs.rmSync(folder,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

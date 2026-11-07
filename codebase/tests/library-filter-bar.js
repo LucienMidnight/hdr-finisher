@@ -13,8 +13,14 @@ for(const p of photos)fs.copyFileSync(path.join(root,"tests/fixtures/sdr_gradien
 (async()=>{const browser=await chromium.launch({headless:true});try{
  const page=await browser.newPage(),errors=[];page.on("pageerror",e=>errors.push(e.message));
  await page.context().route("**/api/library/scan*",route=>route.fulfill({json:{photos,undo_available:false,unreadable_folders:[]}}));
+ // Folders open from the streamed listing (one JSON event per line).
+ await page.context().route("**/api/library/folder-stream",route=>route.fulfill({contentType:"application/x-ndjson",body:[{kind:"rows",photos},{kind:"indexed"},{kind:"checked",unreadable_folders:[]}].map(e=>JSON.stringify(e)).join("\n")+"\n"}));
+ // Visible cells fetch their details; answer from the same synthetic metadata.
+ await page.context().route("**/api/library/folder-details",route=>{const {paths}=route.request().postDataJSON();route.fulfill({json:{photos:photos.filter(p=>paths.includes(p.path))}});});
  await page.context().route("**/api/library/settings-status",route=>route.fulfill({json:{photos:[],events:[]}}));
  await page.context().route("**/api/library/smart-candidates*",route=>route.fulfill({json:{photos,version:"filters",indexing:false}}));
+ // Test photos are PNG files, which the Library lists only with "Show all files" on.
+ await page.addInitScript(()=>localStorage.setItem("hdr-finisher:library-show-all-files","true"));
  await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:"networkidle"});const lib=page.frame({url:/\/library(?:\?|$)/});await lib.waitForFunction(()=>window.HDRLibrary);
  await lib.evaluate(folder=>HDRLibrary.browse(folder),folder);await lib.waitForFunction(()=>HDRLibrary.getSnapshot().count===4);
  await lib.locator("#filter-button").click();
@@ -23,12 +29,15 @@ for(const p of photos)fs.copyFileSync(path.join(root,"tests/fixtures/sdr_gradien
  const apply=async()=>lib.locator("#library-filter-panel").getByRole("button",{name:"Apply",exact:true}).click();
  const clear=async()=>{await lib.locator("#filter-clear").click();await count(4);};
  assert.equal(await lib.locator("#filter-match,#filter-type,#filter-grade").count(),0);
- await lib.locator('#raw-only').click();await count(2);
+ // "Show all files" off leaves the camera pictures (ARW, DNG); rules apply on top, and Clear keeps it off.
+ const showAll=async()=>{await lib.locator('.library-cell[data-path]').first().click({button:'right'});await lib.getByRole('menuitemcheckbox',{name:/Show all files/}).click();};
+ const showingAll=()=>lib.evaluate(()=>localStorage.getItem('hdr-finisher:library-show-all-files'));
+ await showAll();await count(2);assert.equal(await showingAll(),'false');
  await lib.getByRole('button',{name:'3 stars',exact:true}).click();await count(2);
  await lib.getByLabel('Rating comparison',{exact:true}).selectOption('is');await count(1);
  await lib.locator('#filter-clear').click();await count(2);
- assert.equal(await lib.locator('#raw-only').getAttribute('aria-pressed'),'true');
- await lib.locator('#raw-only').click();await count(4);
+ assert.equal(await showingAll(),'false');
+ await showAll();await count(4);
  await lib.getByRole("button",{name:"3 stars",exact:true}).click();await count(2);
  await lib.getByLabel("Rating comparison",{exact:true}).selectOption("is");await count(1);
  await lib.getByLabel("Rating comparison",{exact:true}).selectOption("at-most");await count(3);
@@ -51,15 +60,16 @@ for(const p of photos)fs.copyFileSync(path.join(root,"tests/fixtures/sdr_gradien
  for(const [name,from,to,n] of [["Focal length","24","35",2],["Aperture","2.8","4",2],["Shutter speed",String(1/30),"",2]]){
   await open(name);await lib.getByLabel(`From ${name}`,{exact:true}).selectOption(from);if(to)await lib.getByLabel(`To ${name}`,{exact:true}).selectOption(to);await apply();await count(n);await clear();
  }
- for(const name of ["Edited","Virtual copy"]){await open(name);await lib.getByLabel(name,{exact:true}).selectOption(name==="Edited"?"edited":"virtual copy");await apply();await count(1);await clear();}
+ await open("State");await lib.locator(".library-filter-panel").getByRole("checkbox",{name:"Edited",exact:true}).check();await apply();await count(1);await clear();
+ await open("Virtual copy");await lib.getByLabel("Virtual copy",{exact:true}).selectOption("virtual copy");await apply();await count(1);await clear();
  await open("Capture date");await lib.getByRole("button",{name:"Last 7 days",exact:true}).click();assert.ok(await lib.getByLabel("From Capture date",{exact:true}).inputValue());await page.keyboard.press("Escape");
  await open("Capture date");await lib.getByLabel("From Capture date",{exact:true}).fill("2026-10-13");await lib.getByLabel("To Capture date",{exact:true}).fill("2026-10-13");await apply();await count(4);await clear();
  await open("Tag");await lib.getByLabel("No tags",{exact:true}).check();await apply();await count(2);await clear();
  await open("Camera");await lib.getByLabel("Alpha",{exact:true}).check();await lib.getByLabel("Beta",{exact:true}).check();await apply();await count(3);
- await lib.locator("#raw-only").click();await count(2);
+ await showAll();await count(2);
  await lib.locator("#filter-save-smart").click();const editor=lib.getByRole("dialog",{name:"New smart album",exact:true});
  assert.equal(await editor.getByLabel("Comparison",{exact:true}).inputValue(),"in");assert.equal(await editor.getByLabel("Alpha",{exact:true}).isChecked(),true);assert.equal(await editor.getByLabel("Beta",{exact:true}).isChecked(),true);
  assert.equal(await editor.getByText(/Required:/).count(),0);await editor.getByText("3 matching photos",{exact:true}).waitFor();await editor.getByLabel("Beta",{exact:true}).uncheck();await editor.getByText("1 matching photos",{exact:true}).waitFor();await editor.getByRole("button",{name:"Cancel",exact:true}).click();
  await page.screenshot({path:path.join(output,"filter-bar.png")});
- assert.deepEqual(errors,[]);console.log("PASS: fixed controls, grouped lists, RAW shortcut, ranges, dates, yes/no, chip editing/removal, Escape focus, smart multi-tick transfer and live counting.");
-}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
+ assert.deepEqual(errors,[]);console.log("PASS: fixed controls, grouped lists, Show all files, ranges, dates, yes/no, chip editing/removal, Escape focus, smart multi-tick transfer and live counting.");
+}finally{await browser.close();fs.rmSync(folder,{recursive:true,force:true});}})().catch(e=>{console.error(e);process.exitCode=1;});

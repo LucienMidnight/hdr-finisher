@@ -1032,7 +1032,8 @@
   });
   void compare.init();
   overlays = HDRLibraryOverlays.create({api,status,active:()=>state.active, surfaces:()=>[
-    ...[...shownCells(state.cells),...shownCells(state.filmCells)].filter(s=>s.meta).map(s=>({...s,current:()=>state.active&&s.element.isConnected&&!s.controller.signal.aborted})),
+    // Overlay the picture on show: a developed tile draws on its fallback canvas and hides the first one.
+    ...[...shownCells(state.cells),...shownCells(state.filmCells)].filter(s=>s.meta).map(s=>({...s,canvas:s.fallback&&!s.fallback.hidden?s.fallback:s.canvas,current:()=>state.active&&s.element.isConnected&&!s.controller.signal.aborted})),
     ...(state.view==="single"&&!compare.enabled()&&state.fitMeta?[{photo:selected(),canvas:$("single-picture"),meta:state.fitMeta,controller:state.single,current:()=>state.active&&state.view==="single"&&!compare.enabled()}]:[]),
     ...(compare.enabled()&&state.view==="single"?compare.surfaces().filter(s=>s.meta).map(s=>({...s,canvas:s.fit,current:()=>state.active&&compare.enabled()&&s.fit.isConnected&&!s.controller.signal.aborted})):[])
   ]});
@@ -2009,6 +2010,7 @@
         cell.photo=photo;cell.identity=pictureIdentity({...photo,...row});cell.element.classList.remove("loading");
         if(target.pooled){cell.poolKey=tileKey(target.map,cell.identity);tilePool.put(cell.poolKey,cell,canvas.width*canvas.height*16);}
         canvas.dataset.gradeHandoff=packet.id;
+        overlays?.attach(photo,canvas,meta,cell.controller,()=>state.active&&cell.element.isConnected&&!cell.controller.signal.aborted);
       }
       Object.assign(photo,{edited:row.edited,grade_identity:row.grade_identity});
       readyWindow.invalidate(p=>p.path===photo.path);quickWindow.invalidate(p=>p.path===photo.path);

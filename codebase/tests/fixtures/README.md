@@ -5,6 +5,7 @@ Fixtures in this directory must be deterministic, small enough to commit, and di
 Current checked-in fixtures:
 
 - `sdr_gradient.png`: small SDR bitmap for the Pillow loader path
+- `library_photo.png`: 300×200 SDR gradient, above the Library's 1 KiB minimum photo size (smaller files are treated as placeholders and not listed)
 - `hdr_headroom.tiff`: deterministic rw203-v1 float chart with exact black, near-black, 100/203/406/1000/over-range nit patches, saturated colors, and a log gradient
 - `hdr_match_scene.tiff`: calibrated HDR-to-SDR match scene with neutral ramp, skin-like and saturated patches, textured midtones, a broad window, lamp, emissive strip, and isolated speculars
 - `linear_unconfirmed.exr`: scene-linear EXR with no values above 1.0 for the unconfirmed HDR path

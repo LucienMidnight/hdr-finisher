@@ -7538,8 +7538,29 @@ unavailable on graded photos, because they are measured from the original
 file. Showing them for graded photos would need a measurement of the
 developed picture.
 
-The `library-filter-bar.js`, `library-focus.js` and
-`library-appearance-navigation.js` drivers time out waiting for their
-photos. They predate this work: since November 3 (`75f1de90`) the Library
-hides non-camera files unless "show all files" is on, and these drivers use
-PNG files without turning it on.
+Fixed the same day: Focus and Exposure were invisible on developed grid
+photos. Switching an overlay on attached it to the tile's hidden first
+picture, so it drew at 0×0, and a developed tile handed over from Grade was
+never given one. Overlays now sit on the picture that is shown.
+
+Overlays still appear only on developed photos that have no saved grade.
+Camera previews and direct pictures get none (since November 3,
+`75f1de90`).
+
+The `library-filter-bar.js`, `library-focus.js`, `library-exposure.js` and
+`library-appearance-navigation.js` drivers were repaired. They had broken
+because of earlier changes:
+
+- the streamed folder listing (October 26);
+- "Show all files" (November 3);
+- the 1 KiB minimum photo size (October 30);
+- the State filter that replaced `#filter-grade`;
+- the removed overlay legend;
+- GPU zoom.
+
+They now switch on "Show all files" for their PNG photos, develop them before
+using overlays, and remove their temporary folders. The removed read-ahead
+assertions went with the feature. New fixture: `tests/fixtures/library_photo.png`
+(1.5 KB). About 35 other drivers still copy the 111-byte `sdr_gradient.png`
+as a Library photo; that file is below the 1 KiB minimum, so the Library
+does not list it.
