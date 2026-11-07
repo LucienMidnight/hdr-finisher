@@ -49,7 +49,7 @@ function drawHistogram(scope) {
   const plotWidth = Math.max(1, width - plotLeft - plotRight);
   const plotHeight = Math.max(1, height - plotTop - plotBottom);
 
-  ctx.font = '11px "Afacad", sans-serif';
+  ctx.font = HDRAppearance.font("min");
   ctx.textBaseline = "middle";
   drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight, height);
   ctx.save(); ctx.beginPath(); ctx.rect(plotLeft, plotTop, plotWidth, plotHeight); ctx.clip();

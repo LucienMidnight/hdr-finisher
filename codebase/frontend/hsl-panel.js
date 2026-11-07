@@ -189,7 +189,7 @@ function hslWheel(ui){
     node('path',{d:arc(h,h+3.6,88),stroke:css(result),'stroke-width':16,fill:'none'});
   }
   node('text',{x:160,y:155,'text-anchor':'middle',fill:'currentColor'}).textContent=c.name;
-  node('text',{x:160,y:178,'text-anchor':'middle',fill:'currentColor','font-size':10}).textContent='outer: source · inner: result';
+  node('text',{x:160,y:178,'text-anchor':'middle',fill:'currentColor',class:'hsl-polar-caption'}).textContent='outer: source · inner: result';
   if(c.kind==='all')return;
   const handle=(kind,h,r,i,label)=>{const group=node('g',{'data-hsl-handle':kind,'data-range':i,tabindex:0,role:'slider','aria-label':label,'aria-valuemin':0,'aria-valuemax':360,'aria-valuenow':e.wrap(h)}),p=pt(h,r);
     if(kind.startsWith('edge')){const a=pt(h,r-9),b=pt(h,r+9);node('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:'transparent','stroke-width':16},group);node('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:'currentColor','stroke-width':4},group);}

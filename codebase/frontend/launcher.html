@@ -23,7 +23,7 @@
     }
     :root {
       color-scheme: dark;
-      font-family: "Afacad", "Segoe UI", sans-serif;
+      font-family: var(--font-body);
       background: var(--app);
       color: var(--text);
     }
@@ -47,14 +47,14 @@
     .eyebrow {
       margin: 0 0 8px;
       color: var(--success);
-      font-size: 12px;
-      font-weight: 750;
-      letter-spacing: .12em;
+      font-size: var(--font-size-xs);
+      font-weight: var(--font-weight-bold);
+      letter-spacing: var(--tracking-caps);
       text-transform: uppercase;
     }
-    h1 { margin: 0; font-size: clamp(30px, 6vw, 46px); letter-spacing: -.04em; }
-    .intro { margin: 12px 0 28px; color: var(--muted); line-height: 1.55; }
-    label { display: block; margin-bottom: 8px; color: var(--body); font-size: 14px; font-weight: 650; }
+    h1 { margin: 0; font-size: var(--font-size-launcher-title); letter-spacing: var(--tracking-tight); }
+    .intro { margin: 12px 0 28px; color: var(--muted); line-height: var(--line-height-relaxed); }
+    label { display: block; margin-bottom: 8px; color: var(--body); font-size: var(--font-size-md); font-weight: var(--font-weight-semibold); }
     .address-row { display: flex; gap: 10px; }
     input {
       min-width: 0;
@@ -64,7 +64,7 @@
       border-radius: 9px;
       background: var(--deep);
       color: var(--body);
-      font: 14px var(--font-body);
+      font: var(--font-size-md) var(--font-body);
     }
     button, .primary {
       min-height: 44px;
@@ -72,7 +72,7 @@
       border: 1px solid var(--border);
       border-radius: 9px;
       font: inherit;
-      font-weight: 700;
+      font-weight: var(--font-weight-bold);
       cursor: pointer;
     }
     button { background: var(--raised); color: var(--text); }
@@ -90,11 +90,11 @@
       padding-top: 22px;
       border-top: 1px solid var(--hairline);
       color: var(--muted);
-      font-size: 14px;
-      line-height: 1.55;
+      font-size: var(--font-size-md);
+      line-height: var(--line-height-relaxed);
     }
     .compatibility strong { color: var(--text); }
-    #copy-status { min-height: 22px; margin: 8px 0 0; color: var(--success); font-size: 13px; }
+    #copy-status { min-height: 22px; margin: 8px 0 0; color: var(--success); font-size: var(--font-size-sm); }
     @media (max-width: 520px) {
       .address-row, .actions { align-items: stretch; flex-direction: column; }
     }

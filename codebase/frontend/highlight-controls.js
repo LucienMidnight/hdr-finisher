@@ -147,7 +147,7 @@ function renderHighlightCompressionControls() {
   context.clearRect(0, 0, width, height);
   context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--hairline").trim();
   context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
-  context.font = "9px monospace";
+  context.font = HDRAppearance.font("min");
   for (const tick of [10, 100, 1000, 10000, 100000]) {
     if (tick > maximum) continue;
     context.beginPath();
@@ -264,7 +264,7 @@ function renderSdrHighlightCompressionControls() {
   context.clearRect(0, 0, width, height);
   context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--hairline").trim();
   context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
-  context.font = "9px monospace";
+  context.font = HDRAppearance.font("min");
   for (const tick of [1, 10, 100, 1000, 10000, 100000]) {
     if (tick > maximum) continue;
     context.beginPath();

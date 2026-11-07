@@ -290,7 +290,7 @@ function drawCurveExposureBands(ctx, layout, width, height) {
   ].filter((value) => value !== null && value >= 0 && value <= 10000))].sort((a, b) => a - b);
 
   ctx.save();
-  ctx.font = '9px "Afacad", sans-serif';
+  ctx.font = HDRAppearance.font("min");
   ctx.textBaseline = "top";
   const lastLabelRight = [-Infinity, -Infinity];
   labelValues.forEach((nits) => {

@@ -11,7 +11,7 @@
 .grade-rail::-webkit-scrollbar-thumb { background: var(--border); border: 3px solid var(--deep); border-radius: 8px; }
 .control-mode-switch { flex: 0 0 100%; width: 100%; margin: 8px 0 10px; }
 .control-mode-switch button { flex: 1; }
-.control-shared-label { padding: 12px 16px; color: var(--muted); font: 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.control-shared-label { padding: 12px 16px; color: var(--muted); font: var(--font-size-min) var(--font-body); letter-spacing: var(--tracking-caps); text-transform: uppercase; }
 #local-adjustments-group { border: 0; background: var(--panel); }
 #local-adjustments-panel { padding: 0; }
 .control-group-header::before, .raw-development-group .disclosure-trigger::after { display: none; }
@@ -28,14 +28,14 @@
 .lane-folder-shell, .local-lane-folder { margin: 0 0 12px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .grade-folder-tabs > .lane-switch { width: 100%; min-width: 0; margin: 0; }
 .sdr-match-entire-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 12px; padding: 10px; border: 1px solid var(--hairline); border-radius: var(--radius-1); background: var(--input); box-shadow: var(--rail-shadow); }
-.sdr-match-copy { flex: 1 1 140px; color: var(--muted); font: 400 13px/1.35 var(--font-body); }
+.sdr-match-copy { flex: 1 1 140px; color: var(--muted); font: var(--font-weight-regular) var(--font-size-sm)/var(--line-height-normal) var(--font-body); }
 .sdr-match-entire-actions:has(.rematch-required) { border-left: 3px solid var(--attention); }
-#sdr-match-entire { min-height: 28px; white-space: nowrap; font-size: 13px; }
+#sdr-match-entire { min-height: 28px; white-space: nowrap; font-size: var(--font-size-sm); }
 #sdr-match-entire.rematch-required { color: var(--attention); }
 #sdr-match-entire-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 body[data-grade-mode="local"] .sdr-match-entire-actions { display: none; }
 .lane-folder-shell > .lane-panel, .local-lane-folder > .local-grade-folder-body { border: 0; border-radius: 0; background: var(--panel); overflow: visible; }
-.local-mask-scope { color: var(--muted); font: 500 10px var(--font-body); white-space: nowrap; }
+.local-mask-scope { color: var(--muted); font: var(--font-weight-medium) var(--font-size-min) var(--font-body); white-space: nowrap; }
 .retouch-shared-note { margin: 12px 0 0; }
 .retouch-content > .control-shared-label { padding-left: 0; }
 .retouch-content > .retouch-mode-switch { padding-left: 0; }
@@ -51,17 +51,17 @@ body[data-grade-mode="local"] .sdr-match-entire-actions { display: none; }
 .retouch-content { padding: 0 12px 16px; }
 .retouch-mode-switch { margin-bottom: 12px; }
 .retouch-mode-switch button { flex: 1; }
-.retouch-mode-switch small { font: 10px var(--mono); color: var(--muted); }
+.retouch-mode-switch small { font: var(--font-size-min) var(--font-body); color: var(--muted); }
 .retouch-seed { display: flex; align-items: center; justify-content: space-between; }
 .retouch-seed input { max-width: 150px; }
 .retouch-status-row { display: flex; align-items: center; gap: 8px; }
 .retouch-status-row > p { flex: 1; }
 .control-foldout { border-top: 1px solid var(--hairline); }
-.control-foldout > summary { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px 0; cursor: pointer; list-style: none; color: var(--body); font: 600 13px var(--sans); }
+.control-foldout > summary { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 8px 0; cursor: pointer; list-style: none; color: var(--body); font: var(--font-weight-semibold) var(--font-size-sm) var(--font-body); }
 .control-foldout > summary::-webkit-details-marker { display: none; }
 .control-foldout > summary::before { content: ""; width: 7px; height: 9px; flex: 0 0 7px; background: var(--muted); clip-path: polygon(0 0,100% 50%,0 100%); }
 .control-foldout[open] > summary::before { transform: rotate(90deg); }
-.foldout-summary { margin-left: auto; color: var(--muted); font: 10px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.foldout-summary { margin-left: auto; color: var(--muted); font: var(--font-size-min) var(--font-body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .control-foldout-body { padding: 0 0 12px; }
 
 .local-tool-strip { display: flex; align-items: center; gap: 5px; padding: 0 12px 10px; }
@@ -114,7 +114,7 @@ body[data-grade-mode="local"] .sdr-match-entire-actions { display: none; }
 .control-mode-switch.proof-preview-switch button {
   min-height: 38px; margin: 0; border: 0; border-radius: 0;
   border-bottom: 2px solid var(--hairline); text-transform: uppercase;
-  font: 600 11px var(--display); letter-spacing: .06em;
+  font: var(--font-weight-semibold) var(--font-size-min) var(--font-body); letter-spacing: var(--tracking-label);
 }
 .control-mode-switch.proof-preview-switch button.active {
   background: var(--panel); color: var(--text); border-bottom-color: var(--accent-strong); box-shadow: none;
@@ -137,19 +137,19 @@ body[data-grade-mode="local"] .sdr-match-entire-actions { display: none; }
 #local-mask-actions .local-mask-footer-actions,
 #local-mask-actions .local-brush-actions { display: contents; }
 #local-mask-actions .local-mask-footer-actions.hidden { display: none; }
-#local-mask-actions button { min-height: 28px; padding: 4px 7px; font-size: 11px; }
+#local-mask-actions button { min-height: 28px; padding: 4px 7px; font-size: var(--font-size-min); }
 #local-mask-actions .local-overlay-color-control { margin: 0; }
 #local-mask-actions .local-overlay-toggle { display: inline-flex; align-items: center; gap: 4px; }
 #local-mask-actions .local-overlay-icon { flex: 0 0 16px; width: 16px; height: 16px; }
 #local-mask-actions .local-overlay-icon::before { width: 16px; height: 16px; }
 /* Reuse the instrument value entry surface for wheel numeric controls. */
 .wheel-fields { gap: 8px; margin-bottom: 10px; }
-.wheel-fields label { display: flex; flex-direction: column; gap: 5px; min-width: 0; font: 11px var(--sans); color: var(--muted); }
+.wheel-fields label { display: flex; flex-direction: column; gap: 5px; min-width: 0; font: var(--font-size-min) var(--font-body); color: var(--muted); }
 .wheel-fields input {
   box-sizing: border-box; width: 100%; min-width: 0; padding: 5px 7px;
   border: 1px solid var(--border); border-radius: var(--radius-1);
   background: var(--segment-channel-background); color: var(--text);
-  box-shadow: var(--plate-lift); font: 12px var(--mono); text-align: right;
+  box-shadow: var(--plate-lift); font: var(--font-size-xs) var(--font-body); text-align: right;
 }
 /* Saturated hue band, with eight radial divisions in the grading surface. */
 .color-wheel-pad {
@@ -171,7 +171,7 @@ body[data-grade-mode="retouch"] .local-mask-overlay.editing { pointer-events: au
 
 .retouch-brush-tools.local-tool-strip button {
   flex-direction: row; width: auto; min-width: 0; height: 34px;
-  padding: 5px 8px; font: 12px var(--sans);
+  padding: 5px 8px; font: var(--font-size-xs) var(--font-body);
 }
 #retouch-list .local-adjustment-bypass { position: static; align-self: center; }
 
@@ -202,7 +202,7 @@ body[data-grade-mode="retouch"] .local-mask-overlay.editing { pointer-events: au
 #control-mode-local .local-adjustment-item,
 #control-mode-retouch #retouch-list .local-adjustment-item { box-sizing: border-box; height: 32px; min-height: 0; margin-top: 0; }
 #control-mode-local .local-adjustment-select,
-#control-mode-retouch #retouch-list .local-adjustment-select { box-sizing: border-box; height: 31px; min-height: 0; padding-block: 3px; font-size: 11px; }
+#control-mode-retouch #retouch-list .local-adjustment-select { box-sizing: border-box; height: 31px; min-height: 0; padding-block: 3px; font-size: var(--font-size-min); }
 #control-mode-local .local-adjustment-menu-button,
 #control-mode-local .local-adjustment-bypass { top: 2px; height: 27px; min-height: 0; }
 #control-mode-retouch #retouch-list .local-adjustment-select { padding-inline: 8px; }
@@ -212,6 +212,6 @@ body[data-grade-mode="retouch"] .local-mask-overlay.editing { pointer-events: au
 #control-mode-retouch .retouch-mode-switch > button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 34px; min-height: 34px; padding: 5px; }
 .retouch-mode-switch svg { width: 22px; height: 22px; }
 #control-mode-retouch .local-adjustment-copy > small { max-width: 65%; overflow: hidden; text-overflow: ellipsis; }
-#control-mode-retouch .local-empty { padding: 11px 12px; font-size: 11px; color: var(--muted); }
+#control-mode-retouch .local-empty { padding: 11px 12px; font-size: var(--font-size-min); color: var(--muted); }
 
 #control-mode-retouch #retouch-brush { margin-left: auto; }

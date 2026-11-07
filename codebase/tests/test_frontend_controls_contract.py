@@ -124,8 +124,9 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert "--panel-title-font-family:" in css
     assert "--panel-title-font-size:" in css
     assert "--group-title-font-family: var(--font-body)" in css
-    assert "--group-title-font-size: 14.5px" in css
-    assert "--group-title-font-weight: 500" in css
+    assert "--group-title-font-size: var(--font-size-md)" in css
+    assert "--font-size-md: 14.5px" in css
+    assert "--group-title-font-weight: var(--font-weight-medium)" in css
     assert ".disclosure-trigger > span:first-child" in css
     assert "transition-delay: 2s" in css
     assert "justify-content: flex-start" in css

@@ -315,13 +315,37 @@
 
 
 :root {
-  --font-display: var(--font-body); --font-technical: var(--font-mono);
-  --sans: var(--font-body); --display: var(--font-body); --mono: var(--font-body);
-  --font-sans: var(--font-body);
-  --panel-title-font-family: var(--font-title); --panel-title-font-size: 12px;
-  --panel-title-font-weight: 500; --panel-title-letter-spacing: .11em;
-  --group-title-font-family: var(--font-body); --group-title-font-size: 14.5px;
-  --group-title-font-weight: 500; --group-title-letter-spacing: 0;
+  /* Type scale. Every font size in the app uses one of these. Nothing is
+     drawn below --font-size-min. A theme or a user preference can override
+     the three families and the scale here, in one place. */
+  --font-size-min: 11px;   /* badges, tick labels, counts: the smallest text */
+  --font-size-xs: 12px;    /* captions, file names, status bars */
+  --font-size-sm: 13px;    /* labels, helper text, values, Details panel */
+  --font-size-md: 14.5px;  /* body text, buttons, menus, group titles */
+  --font-size-lg: 16px;    /* workflow tabs, dialog titles */
+  --font-size-xl: 18px;    /* section headings, large glyphs */
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
+  --font-size-4xl: 28px;   /* help page title */
+  --font-size-display: clamp(30px, 4.5vw, 68px);
+  --font-size-launcher-title: clamp(30px, 6vw, 46px);
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --line-height-none: 1;
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.4;
+  --line-height-relaxed: 1.5;
+  --tracking-tight: -.04em;
+  --tracking-none: 0;
+  --tracking-slight: .02em;
+  --tracking-label: .06em;
+  --tracking-caps: .1em;
+  --panel-title-font-family: var(--font-title); --panel-title-font-size: var(--font-size-xs);
+  --panel-title-font-weight: var(--font-weight-medium); --panel-title-letter-spacing: var(--tracking-caps);
+  --group-title-font-family: var(--font-body); --group-title-font-size: var(--font-size-md);
+  --group-title-font-weight: var(--font-weight-medium); --group-title-letter-spacing: var(--tracking-none);
   --group-title-text-transform: none;
   --instrument-slider-channel-background: var(--rail-face);
   --instrument-slider-channel-shadow: var(--rail-shadow);
