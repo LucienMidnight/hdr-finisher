@@ -7686,3 +7686,11 @@ Open work:
   centred crop of that shape and refuses with the badge if it cannot line up.
 - Full-quality Focus in Single on an undeveloped RAW takes about 11 s (a
   native RAW decode). It is not slower than for developed photos.
+
+## November 7: refresh after file commands
+
+Reopening after a Library mutation now explicitly refreshes the folder stream,
+instead of joining its old listing. Unicode physical rename, move and Undo pass
+in library-photo-file-commands. Virtual-copy follow-up reaches the renamed
+copy but still fails waiting for the settings writer after Undo; open.
+No resize, shader, output or budget changes.

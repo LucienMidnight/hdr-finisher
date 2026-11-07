@@ -135,7 +135,7 @@
     await refreshPins(); await reopen();
   }
   const fileCommands = HDRLibraryFileCommands.create({api,status,pins:()=>state.pins,changed:filesChanged,removeCopies:removeCopy});
-  const reopen = () => state.collection ? browseCollection(state.collection.kind, state.collection.name) : browse(state.path);
+  const reopen = () => state.collection ? browseCollection(state.collection.kind, state.collection.name) : openPlace({ path: state.path, refresh: true });
   function selected() { return state.photos[state.index]; }
   function clearCells(map) {
     for (const cell of map.values()) { cell.controller.abort(); cell.element.remove(); }
@@ -1810,7 +1810,8 @@
   // Match the workspace splitters: drag, arrow keys, Home/End and reset.
   for (const [side, maximum, direction] of [["left", 380, 1], ["right", 420, -1]]) {
     const splitter = $(`library-${side}-splitter`);
-    let width = 250;
+    const displayedWidth = () => library.querySelector(side === "left" ? ".library-nav" : ".library-details").getBoundingClientRect().width;
+    let width = displayedWidth();
     const setWidth = value => {
       width = Math.max(200, Math.min(maximum, value));
       library.style.setProperty(`--library-${side}-w`, `${width}px`);
@@ -1819,7 +1820,7 @@
     splitter.addEventListener("pointerdown", event => {
       if (event.button !== 0) return;
       event.preventDefault();
-      const start = event.clientX, initial = width, pointer = event.pointerId;
+      const start = event.clientX, initial = displayedWidth(), pointer = event.pointerId;
       splitter.setPointerCapture(pointer);
       splitter.classList.add("dragging");
       document.documentElement.dataset.resizing = "true";
