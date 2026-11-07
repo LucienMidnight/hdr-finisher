@@ -1,3 +1,35 @@
+## November 8: Library release-driver repair (status)
+
+Drivers updated for intended behaviour (on-demand development, Show all files,
+removed read-ahead and RAW-only toggle, UI polish) now pass in Electron at
+2560x1440: library-background-activity, photo-library-stage-b,
+library-export-menu, library-scroll-cache, library-picture-errors,
+library-gpu-recovery, library-virtual-copies (rename Undo included),
+library-temporary-recovery, library-folder-controls, library-folder-checks,
+library-delete-file-commands, batch-export-ui and library-live-grid (its hang
+was an unbounded wait for development that no longer starts on its own).
+Earlier the same day: photo-library-stage-a, library-picture-startup and the
+Unicode rename driver.
+
+Open:
+- photo-library-stage-c: the arrow key while zoomed to 100% never loads the
+  next photo at full size (open zoomed-arrow work, 5c).
+- photo-library-navigation: after docking the popped-out Library back, the main
+  window's Library does not return to an active Single view within 30 s.
+- library-dng-warp: DSC06885 on the CPU route develops and stores its pictures,
+  but the grid does not show both pictures within 240 s.
+- library-smart-albums: the ordinary workflow passes; the synthetic
+  155,000-photo stress step stays at "Counting..." under Electron. Its
+  candidates query holds the marks lock 3.4-7 s.
+- library-temporary-recovery's release failure (helper stopped after a rejected
+  GPU result) did not reproduce; the November 6 open note stands.
+- Delete, rename and move scan every stored picture in library-pictures while
+  holding the marks lock (library_file_state.pictures): about 10 s with
+  Steve's 993-file cache, during which marks and settings writes wait.
+- Drivers whose own profile folder lacks "test-" use the real Library cache
+  (library-cache isolation test). photo-library-navigation is fixed; others
+  that set HDR_FINISHER_USER_DATA_DIR are unchecked.
+
 ## November 8: manual check result on an open folder (built)
 
 "Check for new photos" on the folder that is open in the grid is answered by

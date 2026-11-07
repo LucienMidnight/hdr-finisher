@@ -9,9 +9,11 @@ fs.mkdirSync(output, { recursive: true });
 const folder = fs.mkdtempSync(path.join(output, 'photos-'));
 for (let i = 0; i < 100; i++) fs.mkdirSync(path.join(folder, `folder-${String(i).padStart(3, '0')}`));
 const child = path.join(folder, 'folder-080');
-const fixture = path.join(root, 'tests', 'fixtures', 'sdr_gradient.png');
+// Files under 1 KB are not listed as photos; library_photo.png is above that gate.
+const fixture = path.join(root, 'tests', 'fixtures', 'library_photo.png');
 for (let i = 0; i < 120; i++) fs.copyFileSync(fixture, path.join(folder, `photo-${String(i).padStart(3, '0')}.png`));
-const profile = fs.mkdtempSync(path.join(output, 'profile-'));
+// 'test-' marks the profile disposable, so the app uses its own cache, not Steve's.
+const profile = fs.mkdtempSync(path.join(output, 'test-profile-'));
 let gone = '';
 const env = { ...process.env, HDR_FINISHER_USER_DATA_DIR: profile };
 delete env.ELECTRON_RUN_AS_NODE;
@@ -39,6 +41,9 @@ async function eventually(check) {
     await main.waitForFunction(() => !!document.querySelector('#library-frame').contentWindow.HDRLibrary);
     const library = main.frame({ url: /\/library(?:\?|$)/ });
     await library.waitForFunction(() => !!window.HDRLibrary);
+    // PNG originals are listed only with Show all files (November 3). The frame
+    // applies the remembered choice through its storage listener.
+    await library.evaluate(() => { localStorage.setItem('hdr-finisher:library-show-all-files', 'true'); window.dispatchEvent(new StorageEvent('storage', { key: 'hdr-finisher:library-show-all-files', newValue: 'true' })); });
     main.on('console', message => { if (message.type() === 'error') console.log('[renderer]', message.text()); });
     await library.locator('#add-folder').click();
     await library.locator('#picker-view-list').click();
@@ -157,8 +162,11 @@ async function eventually(check) {
     const before = await library.evaluate(() => ({ ...HDRLibrary.getSnapshot(), scroll: document.querySelector('#library-grid').scrollTop }));
     await library.locator('#popout-library').click();
     console.log('Opening separate Library window…');
-    await eventually(() => app.windows().length === 2);
-    const popped = app.windows().find(page => new URL(page.url()).pathname === '/library');
+    // The new window exists before its Library page has loaded, and the hidden
+    // GPU delivery window also counts as a window.
+    const isLibrary = page => { try { return new URL(page.url()).pathname === '/library'; } catch { return false; } };
+    await eventually(() => app.windows().some(isLibrary));
+    const popped = app.windows().find(isLibrary);
     assert.ok(popped);
     popped.on('pageerror', error => errors.push(error.message));
     await popped.waitForSelector('#grid-space canvas[data-picture-key]', { timeout: 60000 });
@@ -171,15 +179,15 @@ async function eventually(check) {
     await popped.locator('#single-view').click();
     await popped.waitForSelector('#single-picture[data-picture-key]', { timeout: 60000 });
     await popped.locator('#popout-library').click().catch(() => {});
-    await eventually(() => app.windows().length === 1);
+    await eventually(() => !app.windows().some(isLibrary));
     await library.waitForFunction(() => HDRLibrary.getSnapshot().view === 'single' && HDRLibrary.getSnapshot().active);
     await library.waitForSelector('#single-picture[data-picture-key]', { timeout: 60000 });
     await library.locator('#popout-library').click();
-    await eventually(() => app.windows().length === 2);
-    const second = app.windows().find(page => new URL(page.url()).pathname === '/library');
+    await eventually(() => app.windows().some(isLibrary));
+    const second = app.windows().find(isLibrary);
     await second.waitForSelector('#single-picture[data-picture-key]', { timeout: 60000 });
     await second.evaluate(() => hdrFinisherDesktop.performWindowAction('close')).catch(() => {});
-    await eventually(() => app.windows().length === 1);
+    await eventually(() => !app.windows().some(isLibrary));
     await library.waitForFunction(() => HDRLibrary.getSnapshot().active);
     assert.ok(fs.existsSync(path.join(profile, 'window-state-library.json')));
     assert.deepEqual(fs.readFileSync(path.join(folder, 'photo-000.png')), fs.readFileSync(fixture));
