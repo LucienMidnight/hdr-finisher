@@ -19,31 +19,6 @@
       ],
       "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
       "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__performance__tier-film-consistency.js.attempt-2.log"
-    },
-    {
-      "driver": "tests/control-panel-polish.js",
-      "messages": [
-        "page.waitForSelector: Timeout 30000ms exceeded.",
-        "  - waiting for locator('#batch-preset-name') to be visible"
-      ],
-      "source": "docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md: H1 / U1; reproduced October 28, 2026",
-      "evidence": [
-        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__control-panel-polish.js.1.1793195605852.log",
-        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__control-panel-polish.js.2.1793195647835.log"
-      ]
-    },
-    {
-      "driver": "tests/export-file-browser-interaction.js",
-      "messages": [
-        "locator.selectOption: Timeout 30000ms exceeded.",
-        "  - waiting for locator('#jpeg-chroma-subsampling')",
-        "      - element is not visible"
-      ],
-      "source": "docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md: H1 / U1; reproduced October 28, 2026",
-      "evidence": [
-        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__export-file-browser-interaction.js.1.1793196397577.log",
-        "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__export-file-browser-interaction.js.2.1793196440184.log"
-      ]
     }
   ]
 }
