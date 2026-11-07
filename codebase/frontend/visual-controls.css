@@ -237,6 +237,8 @@ body.slider-hover .slider-key-legend { opacity: 1; }
 :root :is(.batch-header, .batch-heading, .batch-header .batch-tools, .library-toolbar .library-tools) { flex-wrap: nowrap; }
 :root :is(.viewer-bar, .rail-title-row, .workflow-rail-header, .sheet-header, .control-title-row, .library-heading, .library-toolbar, .batch-header) :is(.tool-button, .zoom-step) {
  display: inline-flex; align-items: center; justify-content: center; height: 30px; min-height: 30px; box-sizing: border-box;
+ /* Centre labels on their capitals; Afacad carries more space below than above. */
+ text-box: trim-both cap alphabetic;
 }
 :root :is(.viewer-bar, .library-toolbar, .batch-header) .tool-button svg { display: block; flex-shrink: 0; }
 
@@ -460,8 +462,8 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 :root #frame-toggle { --view-control-icon: url('assets/icons/tabler/background.svg'); }
 :root .batch-add-selection { --view-control-icon: url('assets/icons/tabler/photo-plus.svg'); }
 @container library-toolbar (max-width: 1050px) {
- :root .library-tools :is(#compare-button, #focus-button, #exposure-button) { display: grid; place-items: center; width: 28px; min-width: 28px; padding: 0; font-size: 0; }
- :root .library-tools :is(#compare-button, #focus-button, #exposure-button)::before { content: ""; width: 18px; height: 18px; background: currentColor; mask: var(--view-control-icon) center/contain no-repeat; }
+ :root .library-tools :is(#compare-button, #focus-button, #exposure-button) { display: grid; place-items: center; width: 28px; min-width: 28px; padding: 0; font-size: 0; position: relative; }
+ :root .library-tools :is(#compare-button, #focus-button, #exposure-button)::before { content: ""; position: absolute; inset: 0; width: 18px; height: 18px; margin: auto; background: currentColor; mask: var(--view-control-icon) center/contain no-repeat; }
 }
 @container library-toolbar (max-width: 850px) {
  :root .library-toolbar { gap: 4px; padding-inline: 6px; }
@@ -475,8 +477,8 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
  :root .library-size svg { width: 12px; }
 }
 @container viewer-toolbar (max-width: 1050px) {
- :root .viewer-view-group > .viewer-menu-toggle { display: grid; place-items: center; width: 28px; min-width: 28px; padding: 0; font-size: 0; }
- :root .viewer-view-group > .viewer-menu-toggle::before { content: ""; width: 18px; height: 18px; background: currentColor; mask: var(--view-control-icon) center/contain no-repeat; }
+ :root .viewer-view-group > .viewer-menu-toggle { display: grid; place-items: center; width: 28px; min-width: 28px; padding: 0; font-size: 0; position: relative; }
+ :root .viewer-view-group > .viewer-menu-toggle::before { content: ""; position: absolute; inset: 0; width: 18px; height: 18px; margin: auto; background: currentColor; mask: var(--view-control-icon) center/contain no-repeat; }
 }
 @container viewer-toolbar (max-width: 750px) {
  :root .viewer-bar { gap: 4px; padding-inline: 6px; }
@@ -494,8 +496,8 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
  :root .batch-header { gap: 6px; padding-inline: 8px; }
  :root .batch-header > .batch-tools { gap: 2px; }
  :root .batch-header .tool-button { padding-inline: 6px; }
- :root .batch-header .batch-add-selection { display: grid; place-items: center; width: 30px; min-width: 30px; padding: 0; font-size: 0; }
- :root .batch-header .batch-add-selection::before { content: ""; width: 18px; height: 18px; background: currentColor; mask: var(--view-control-icon) center/contain no-repeat; }
+ :root .batch-header .batch-add-selection { display: grid; place-items: center; width: 30px; min-width: 30px; padding: 0; font-size: 0; position: relative; }
+ :root .batch-header .batch-add-selection::before { content: ""; position: absolute; inset: 0; width: 18px; height: 18px; margin: auto; background: currentColor; mask: var(--view-control-icon) center/contain no-repeat; }
 }
 
 @container viewer-toolbar (max-width: 600px) {
