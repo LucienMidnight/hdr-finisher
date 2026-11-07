@@ -15,19 +15,21 @@ const breakdown=process.argv.includes('--breakdown'),plain=process.argv.includes
   const result=await page.locator('#library-frame').evaluate(async(el,{copy,folder,breakdown})=>{
    const w=el.contentWindow,events=[],original=w.HDRLibraryStopwatch;
    if(breakdown)w.HDRLibraryStopwatch=(stage,fields={})=>{events.push({stage,at:w.performance.now(),...fields});original(stage,fields);};
-   // DevTools copies ArrayBuffer POST bodies into request events, escaping a
-   // full RAW scene past its 256 MB message ceiling. Blob uploads carry the
-   // identical bytes without embedding the picture in that protocol event.
-   const fetch=w.fetch;
-   w.__retouchUpload={count:0,bytes:0,restore:()=>{w.fetch=fetch;delete w.__retouchUpload;}};
-   w.fetch=function(input,init){
-    const body=init?.body,url=new URL(typeof input==='string'?input:input.url,w.location.href);
-    if(url.pathname==='/api/library/live-developed' && (body instanceof w.ArrayBuffer || w.ArrayBuffer.isView(body))){
-     w.__retouchUpload.count++;w.__retouchUpload.bytes+=body.byteLength;
-     init={...init,body:new w.Blob([body],{type:'application/octet-stream'})};
-    }
-    return fetch.call(this,input,init);
-   };
+   // Scene hand-offs leave the window through the Library upload worker
+   // (HDRLibraryUpload, 91a2cee8). Count the bytes handed to it before they
+   // are transferred, and the backend's answer for each live-scene upload.
+   const upload=w.HDRLibraryUpload,isScene=url=>new URL(url,w.location.href).pathname==='/api/library/live-developed';
+   const sizeOf=body=>body instanceof w.ArrayBuffer||w.ArrayBuffer.isView(body)?body.byteLength:0;
+   w.__retouchUpload={count:0,bytes:0,accepted:0,restore:()=>{w.HDRLibraryUpload=upload;delete w.__retouchUpload;}};
+   w.HDRLibraryUpload=Object.freeze({...upload,
+    send:async(url,options={})=>{
+     if(!isScene(url))return upload.send(url,options);
+     const bytes=sizeOf(options.body),answer=await upload.send(url,options);
+     w.__retouchUpload.count++;w.__retouchUpload.bytes+=bytes;
+     let parsed=null;try{parsed=JSON.parse(answer.text||'null');}catch{}
+     if(answer.ok&&parsed&&typeof parsed==='object')w.__retouchUpload.accepted++;
+     return answer;
+    }});
    // Profile this source alone: browsing also starts unrelated grid work.
    if(!breakdown)await w.HDRLibrary.browse(folder);
    const setupAt=w.performance.now(),gpu=await w.HDRLibraryPictures.initialize(),rendererSetupMs=w.performance.now()-setupAt;
@@ -58,8 +60,9 @@ const breakdown=process.argv.includes('--breakdown'),plain=process.argv.includes
     return {ms:performance.now()-started,meta:plain};
    },copy);
   }finally{fs.writeFileSync(copy+'.hdrf',saved);}
-  const uploads=await page.locator('#library-frame').evaluate(el=>({count:el.contentWindow.__retouchUpload.count,bytes:el.contentWindow.__retouchUpload.bytes}));
-  assert.ok(uploads.count>0 && uploads.bytes>0,'Full scene upload did not exercise the Blob transport');
+  const uploads=await page.locator('#library-frame').evaluate(el=>{const u=el.contentWindow.__retouchUpload;return {count:u.count,bytes:u.bytes,accepted:u.accepted};});
+  assert.ok(uploads.count>0 && uploads.bytes>0,'Full scene upload did not go through the Library upload worker: '+JSON.stringify(uploads));
+  assert.equal(uploads.accepted,uploads.count,'Backend did not accept every scene upload: '+JSON.stringify(uploads));
   console.log(JSON.stringify({uploads,coldMs:result.coldMs,warmMs:result.warmMs,withoutRepairsMs:result.withoutRepairs.ms}));
   const output=path.resolve('output/retouch-library');fs.mkdirSync(output,{recursive:true});
   fs.writeFileSync(path.join(output,'result.json'),JSON.stringify(result,null,2));
