@@ -178,7 +178,18 @@ function stopTree(child, { group = process.platform !== 'win32' } = {}) {
   }
   const until = Date.now() + 5000;
   while (alive() && Date.now() < until) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
-  if (alive()) throw Error(`STOP: cannot verify process tree ${pid} exited; no further GPU work is safe.`);
+  if (alive()) {
+    // Windows can retain Node's child-process handle until the event loop runs.
+    // This synchronous shutdown cannot drain it; verify OS processes instead.
+    if (process.platform === 'win32') {
+      const snapshot = execFileSync('powershell.exe', ['-NoProfile', '-Command',
+        'Get-CimInstance Win32_Process | Select-Object ProcessId | ConvertTo-Json -Compress'],
+        {encoding:'utf8', windowsHide:true, timeout:10000});
+      const running = [].concat(JSON.parse(snapshot)).filter(Boolean).map(row => row.ProcessId);
+      if (!pids.some(item => running.includes(item))) return;
+    }
+    throw Error(`STOP: cannot verify process tree ${pid} exited; no further GPU work is safe.`);
+  }
 }
 async function runInvocations(invocation, variants, fd, hooks, deadline, attemptDeadline, kill = stopTree) {
   const results = [];

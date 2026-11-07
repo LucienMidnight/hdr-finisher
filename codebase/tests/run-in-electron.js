@@ -71,7 +71,7 @@ let startupTimer;
   // Native RAW uploads are hundreds of MB. DevTools' default request metadata
   // copies that binary body into JSON and can kill the renderer before Python
   // receives it. This driver checks pixels from disk, not debug request bodies.
-  if (["library-gpu-raw-single.js", "library-temporary-recovery.js"].some(name=>testPath.replaceAll("\\", "/").endsWith(name)))
+  if (["library-gpu-raw-single.js", "library-temporary-recovery.js", "library-precision-source.js", "library-precision-rendition.js", "library-rgb-source.js", "library-codec-source.js", "library-iso-source.js"].some(name=>testPath.replaceAll("\\", "/").endsWith(name)))
     require("../tools/profile_cold_picture_network.cjs");
   const packaged = rest.includes("--packaged");
   const testArguments = rest.filter((argument) => argument !== "--packaged");
