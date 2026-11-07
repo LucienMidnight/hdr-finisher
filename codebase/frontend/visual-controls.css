@@ -170,7 +170,7 @@ body.slider-hover .slider-key-legend { opacity: 1; }
 
 /* Pointer editing has no focus frame; keyboard/assistive focus keeps neutral ink. */
 :root[data-input-modality="pointer"] :is(button, input, select, textarea, [tabindex], summary):focus { outline: none; }
-:root .raw-development-group .disclosure-trigger { height: var(--control-group-header-h); min-height: var(--control-group-header-h); font: var(--font-weight-medium) var(--font-size-md) var(--font-body); letter-spacing: var(--tracking-none); text-transform: none; }
+:root .raw-development-group .disclosure-trigger { height: var(--control-group-header-h); min-height: var(--control-group-header-h); font: var(--group-title-font-weight) var(--group-title-font-size) var(--group-title-font-family); letter-spacing: var(--group-title-letter-spacing); text-transform: none; }
 /* Zoom is a compact slider with its editable readout after the +/- controls. */
 :root .zoom-control { gap: 4px; border: 0; background: transparent; box-shadow: none; }
 :root .zoom-control > .zoom-step { height: 26px; min-height: 26px; border: 1px solid var(--plate-edge); border-radius: var(--radius-plate); box-shadow: var(--plate-lift); }
