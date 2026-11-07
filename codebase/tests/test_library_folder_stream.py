@@ -182,3 +182,26 @@ def test_large_extent_pages_are_ordered_and_reserve_full_count(setup):
         offset,second=extent.page(256)
         assert offset==256 and second[0]['name']=='photo256.jpg'
     finally: extent.close()
+
+def test_manual_check_of_open_folder_reports_its_result(setup):
+    folder,index=setup
+    (folder/"first.jpg").write_bytes(b"first")
+    class Request:
+        async def is_disconnected(self): return False
+    async def read():
+        stream=stream_folder(index,None,Request(),str(folder),lambda result: result)
+        checked=[]
+        try:
+            async for text in stream:
+                value=json.loads(text)
+                if value["kind"]!="checked": continue
+                checked.append(value)
+                if len(checked)==1:
+                    (folder/"arrived.jpg").write_bytes(b"arrived")
+                    index.checks.request([str(folder)])
+                else: break
+        finally: await stream.aclose()
+        return checked
+    first,manual=asyncio.run(asyncio.wait_for(read(),10))
+    assert first["manual"] is False
+    assert manual["manual"] is True and manual["added"]==1

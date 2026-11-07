@@ -1,3 +1,14 @@
+## November 8: manual check result on an open folder (built)
+
+"Check for new photos" on the folder that is open in the grid is answered by
+its live listing (October 26), which never reported a result: the status bar
+stayed silent. The listing now marks the pass a manual check started, and the
+status bar shows "N new photos in <folder>" or "Checked <folder>: no new
+photos / library updated", as the timed checker does. An open folder reads a
+newly arrived file at once, so its "photos still arriving" hold applies only to
+folders that are not open; library-folder-checks now expects that. No limits,
+pixels or saved files changed.
+
 ## November 6: one GPU try, then the CPU (built, `2bca4e9`)
 
 Library RAW development now follows the master PRD GPU failure rule

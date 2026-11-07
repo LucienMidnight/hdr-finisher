@@ -35,7 +35,7 @@ for (let i = 0; i < 120; i++) fs.copyFileSync(fixture, path.join(folder, `photo-
   const after = await library.evaluate(() => ({selected: HDRLibrary.getSnapshot().selected, selection: HDRLibrary.getSnapshot().selection, top: document.querySelector("#library-grid").scrollTop}));
   assert.deepEqual(after, before, "timed arrival keeps selection and scroll");
   await library.locator("#more-button").click(); await library.locator("#check-photos").click();
-  await library.waitForFunction(() => document.querySelector("#library-status").textContent.includes("no new photos"));
+  await library.waitForFunction(() => document.querySelector("#library-status").textContent.includes("no new photos")).catch(async error => { throw new Error(error.message + " " + JSON.stringify(await library.evaluate(async () => ({status: document.querySelector("#library-status").textContent, checks: (await (await fetch("/api/library/health")).json()).index?.checks, reading: HDRLibrary.getSnapshot().reading, count: HDRLibrary.getSnapshot().count})))); });
   fs.copyFileSync(fixture, path.join(folder, "z-menu.png"));
   const row = library.locator(".library-folder-row").filter({hasText: path.basename(folder)}).first();
   for (let i = 0; i < 2; i++) {
@@ -48,10 +48,10 @@ for (let i = 0; i < 120; i++) fs.copyFileSync(fixture, path.join(folder, `photo-
   await library.locator("#single-view").click();
   const single = await library.evaluate(() => ({selected: HDRLibrary.getSnapshot().selected, left: document.querySelector("#filmstrip").scrollLeft}));
   fs.copyFileSync(fixture, path.join(folder, "z-single.png"));
-  await api("/api/library/checks", {paths: [folder]});
-  await library.waitForFunction(() => document.querySelector("#library-status").textContent.includes("photos still arriving"));
+  // The open folder's live listing reads a new file at once (October 26), so
+  // there is no "still arriving" hold here; the check reports its result.
   await library.locator("#more-button").click(); await library.locator("#check-photos").click();
-  await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 123);
+  await library.waitForFunction(() => HDRLibrary.getSnapshot().count === 123 && /new photo|Checked /.test(document.querySelector("#library-status").textContent));
   assert.deepEqual(await library.evaluate(() => ({selected: HDRLibrary.getSnapshot().selected, left: document.querySelector("#filmstrip").scrollLeft})), single);
   fs.unlinkSync(single.selected);
   await library.locator("#more-button").click(); await library.locator("#check-photos").click();

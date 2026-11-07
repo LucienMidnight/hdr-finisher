@@ -1515,6 +1515,11 @@
             state.reading=false;paint();
             HDRLibraryStopwatch("folder_complete",{path,request:event.request,duration_ms:performance.now()-started});
             if(event.unreadable_folders?.length)status("Some sub-folders could not be read; existing entries kept");
+            else if(event.manual){
+              // The open listing answers "Check for new photos" for this folder.
+              const name=path.split(/[\\/]/).filter(Boolean).at(-1)||path,added=event.added||0;
+              status(added?`${added} new ${added===1?"photo":"photos"} in ${name}`:`Checked ${name}: ${event.removed||event.changed||event.settings?"library updated":"no new photos"}`);
+            }
           }
         }
         if(offset<chunk.length)pending.push(chunk.slice(offset));

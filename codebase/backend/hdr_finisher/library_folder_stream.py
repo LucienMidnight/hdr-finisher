@@ -259,6 +259,8 @@ async def stream_folder(index, store, request, root, enrich, sort="time", descen
         finally:
             if extent: await run_in_threadpool(extent.close)
         generation = 0
+        # A pass started by "Check for new photos" reports its result to the page.
+        manual = False
         while True:
             generation += 1; check_started = time.perf_counter()
             epoch = getattr(getattr(index.marks,"file_commands",None),"epoch",None)
@@ -335,14 +337,17 @@ async def stream_folder(index, store, request, root, enrich, sort="time", descen
                 log("folder_open_all_rows",folder=root,request=token,rows=discovered,duration_ms=(time.perf_counter()-started)*1000,route="disk")
             duration=time.perf_counter()-check_started
             log("folder_open_disk_finished",folder=root,request=token,duration_ms=(time.perf_counter()-started)*1000,check_ms=duration*1000,**counts,unreadable=len(unreadable))
-            yield event("checked",**counts,unreadable_folders=unreadable)
+            yield event("checked",**counts,unreadable_folders=unreadable,manual=manual)
+            manual = False
             # Only the seen set persists, on disk. No settings or picture work
             # is scheduled merely because a row exists in the index.
             for _ in range(int(max(15,10*duration)*4)):
                 with index.checks.lock:
                     requested=root in index.checks.stream_requested
                     index.checks.stream_requested.discard(root)
-                if requested: break
+                if requested:
+                    manual = True
+                    break
                 await asyncio.sleep(.25)
     except asyncio.CancelledError:
         raise
