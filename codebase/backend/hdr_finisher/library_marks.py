@@ -1,6 +1,7 @@
 """Culling, tag and album commands: one database writer, atomic settings-only sidecars."""
 from __future__ import annotations
 
+from contextlib import nullcontext
 from collections import deque
 from copy import deepcopy
 import json
@@ -462,7 +463,10 @@ class LibraryMarks:
                 if entry in self._undo: self._undo.remove(entry)
                 result["undo_available"] = bool(self._undo)
             return result
-        with self._lock:
+        # Copy/history commands take the session lock before the marks lock,
+        # as the settings writer does. Reversing them deadlocks rename Undo.
+        grades = getattr(self, "grades", None)
+        with (grades.store._lock if grades else nullcontext()), self._lock:
             if not self._undo:
                 return self._result([], [])
             entry = self._undo[-1]

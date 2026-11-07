@@ -248,3 +248,38 @@ def test_copy_expansion_uses_acknowledged_baseline_over_an_older_observed_docume
     observed = {}
     marks.read([photo], canonical=True, observed=observed)
     assert [item["path"] for item in c.expand([row.copy()], observed)] == [str(photo)]
+
+
+def test_rename_undo_does_not_block_session_owner(setup):
+    from threading import Event, Thread
+    from time import sleep
+    photo, store, session, marks, grades = setup
+    c = copies(setup)
+    saved(setup)
+    key = c.create(photo, name="Before")["path"]
+    marks.writer.drain()
+    c.rename(key, "After")
+    marks.writer.drain()
+    held, proceed, owner_finished, undone = Event(), Event(), Event(), Event()
+    def session_owner():
+        with store._lock:
+            held.set()
+            proceed.wait(2)
+            with marks._lock:
+                owner_finished.set()
+    def undo():
+        marks.undo()
+        undone.set()
+    owner = Thread(target=session_owner, daemon=True)
+    owner.start()
+    assert held.wait(2)
+    worker = Thread(target=undo, daemon=True)
+    worker.start()
+    sleep(.05)
+    proceed.set()
+    assert owner_finished.wait(2), "Undo must not hold marks while waiting for the session"
+    assert undone.wait(2)
+    owner.join(2)
+    worker.join(2)
+    marks.writer.drain()
+    assert settings(photo)["virtual_copies"][0]["name"] == "Before"

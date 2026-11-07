@@ -7705,3 +7705,14 @@ overlapping the selected Single scene request, rather than the retired grid
 picture hook; passes. library-folder-controls now checks all three generated
 patterns (including Hue and exposure sweep), and passes Unicode folder, pin
 label, safe empty-folder Undo and Explorer controls. No app output changed.
+
+November 7 virtual-copy Undo repair: ordinary Undo now acquires the session
+lock before the marks lock, matching copy commands and the settings writer.
+The reversed order could deadlock a writer against rename Undo. All 19 copy
+backend checks pass, including concurrent session ownership during rename Undo.
+Real-app follow-up is pending; no name, grade or stored-file contract changed.
+
+November 7 Stage A driver: passes with explicit reusable-scene publication
+and original/camera surface checks. The cold-folder monitor follows live-plan
+and preview transport; metadata probes are no longer mistaken for completed
+decodes. The existing four-probe ceiling is retained.
