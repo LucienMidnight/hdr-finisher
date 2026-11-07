@@ -10,6 +10,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
 
   await page.addInitScript(() => {
     localStorage.setItem("hdr-finisher:high-quality-preview:v1", "true");
+    localStorage.setItem("hdr-finisher:library-show-all-files", "true");
     localStorage.setItem("hdr-finisher:scope-zoom:v1", "10000");
     localStorage.setItem("hdr-finisher:compare-layout:v1", "side-vertical");
     localStorage.setItem("hdr-finisher-source-collapsed", "true");
@@ -17,6 +18,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
     localStorage.setItem("hdr-finisher-chrome-proof-v1", JSON.stringify({ format: "avif_gain_map", target: "4000", showWatermark: false }));
   });
 
+  let warmFolder = null;
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
 
@@ -56,7 +58,17 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
     }
 
     const library = page.frame({url:/\/library(?:\?|$)/});
-    await library.waitForFunction(() => HDRIdleWarmup.results.library === "ready", null, {timeout:120000});
+    // Since Library batch 5d (3849ef8a) drawing pipelines are prepared after the
+    // first grid picture, so show one small generated photo in a temporary folder.
+    warmFolder = (require("node:fs").mkdirSync(require("node:path").resolve(__dirname,"../output/startup-state"),{recursive:true}), require("node:fs").mkdtempSync(require("node:path").resolve(__dirname,"../output/startup-state/photos-")));
+    {
+      require("node:fs").copyFileSync(require("node:path").resolve(__dirname,"fixtures/library_photo.png"), require("node:path").join(warmFolder,"first.png"));
+      await page.evaluate(() => activateWorkflowTab("import"));
+      await library.waitForFunction(() => window.HDRLibrary);
+      await library.evaluate(folder => HDRLibrary.browse(folder), warmFolder);
+      await library.locator("#grid-space canvas[data-picture-key]").first().waitFor({timeout:60000});
+      await library.waitForFunction(() => HDRIdleWarmup.results.library === "ready", null, {timeout:120000});
+    }
     const fixture = require("node:path").resolve(__dirname,"fixtures/sdr_gradient.png");
     const timing = await library.evaluate(async photo => {
       const meta = await fetch("/api/library/picture", {method:"POST", headers:{"Content-Type":"application/json"},
@@ -79,6 +91,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
     console.log("Ephemeral startup-state browser test passed.");
   } finally {
     await browser.close();
+    if (warmFolder) require("node:fs").rmSync(warmFolder, {recursive:true, force:true});
   }
 })().catch((error) => {
   console.error(error);
