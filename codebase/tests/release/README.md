@@ -359,3 +359,31 @@ failures; exact messages and both logs are in known-failures.json. Film's
 Neutral maximum paper gain retains its full numeric signature. Desktop smoke
 (header now 101 px) and Film's `hdr clean-cinema replacement film_stock`
 preset-await finding remain open, and the combined Film result is new.
+
+## Hang and shutdown protection (November 7, 2026)
+
+Each attempt has one deadline shared by its primary invocation and all
+follow-ups: the greater of five minutes or three times the latest successful
+complete attempt, or fifteen minutes without usable successful history.
+Interrupted, timed-out, partial, errored, non-successful and sub-second records
+cannot calibrate that deadline. Existing selection, one-retry policy, known
+failure signatures and overall time caps are unchanged. A timeout is recorded
+as `TIMEOUT` and follows the usual retry/classification rules; it cannot be
+classified as a known failure just because an earlier error matched.
+
+Each shared log labels the primary invocation and numbered follow-ups.
+Before retrying after a timeout the runner kills the child tree and verifies
+exit. A failed kill or unverified close stops the run and preserves its lock
+for inspection; do not resume until the old processes are gone. Exit
+3221225794 (`STATUS_DLL_INIT_FAILED`, including its signed representation)
+stops immediately: restore the parent console/session before resuming, rather
+than attempting every remaining driver. Electron shutdown verification failure
+uses exit 86 and also stops the release run.
+
+Both Electron launchers print launch, window-ready, driver-start and driver-end
+markers. Startup (launch through readiness/setup) is bounded to three minutes;
+shutdown has bounded tree-kill and exit verification. The native launcher gives
+graceful close five seconds before forcing shutdown. The retouch cancellation
+handshake and evaluate waits also fail with a named bounded error. Unit tests
+exercise timeout calibration, sleeping/exiting fake processes, follow-up logs
+and shutdown failure without launching Electron or using the GPU.

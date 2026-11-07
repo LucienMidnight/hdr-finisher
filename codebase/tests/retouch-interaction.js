@@ -3,6 +3,14 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
+async function bounded(promise, label, timeout = 30000) {
+  let timer;
+  try {
+    return await Promise.race([promise, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Retouch ${label} timed out after ${timeout} ms`)), timeout);
+    })]);
+  } finally { clearTimeout(timer); }
+}
 async function centerPixel(page) {
   const png = await page.locator("#preview-canvas").screenshot();
   return page.evaluate(async base64 => {
@@ -17,6 +25,8 @@ async function centerPixel(page) {
   fs.mkdirSync(output, { recursive: true });
   const browser = await chromium.launch({ headless: true, channel: "msedge" });
   const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+  const evaluate = page.evaluate.bind(page);
+  page.evaluate = (...args) => bounded(evaluate(...args), "renderer evaluate", 60000);
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   try {
@@ -170,12 +180,24 @@ async function centerPixel(page) {
     let release, entered;
     const hold = new Promise(resolve => { release=resolve; });
     const intercepted = new Promise(resolve => { entered=resolve; });
-    await page.route("**/edit-commands", async route => { entered(); await hold; await route.continue(); });
-    await page.mouse.click(rect.x, rect.y);
-    await intercepted;
-    const cancelled = page.waitForResponse(response => response.url().endsWith("/retouch/cancel"));
-    await page.locator("#retouch-cancel").click();
-    assert((await cancelled).ok()); release();
+    const intercept = async route => {
+      entered();
+      await bounded(hold, "interception release");
+      await bounded(route.continue(), "intercepted request continuation");
+    };
+    await bounded(page.route("**/edit-commands", intercept), "interception installation");
+    try {
+      await page.mouse.click(rect.x, rect.y);
+      await bounded(intercepted, "edit-command interception handshake");
+      const cancelled = page.waitForResponse(response => response.url().endsWith("/retouch/cancel"), {timeout: 30000});
+      // Observe rejection immediately if the click itself fails or stalls.
+      cancelled.catch(() => {});
+      await page.locator("#retouch-cancel").click();
+      assert((await cancelled).ok());
+    } finally {
+      release();
+      await bounded(page.unroute("**/edit-commands", intercept), "interception cleanup");
+    }
     await page.waitForFunction(() => !retouchUI.busy);
     assert.equal(await page.evaluate(() => state.editDocument.repairs.length), 0);
     assert.deepEqual(errors, []);

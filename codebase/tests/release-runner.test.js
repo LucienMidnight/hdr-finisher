@@ -196,3 +196,88 @@ test('explicit release approval raises only its cap and preserves stricter limit
   assert.equal(fixture.states().length,1);
   assert.equal(fixture.states()[0].results['tests/pass.js'].attempts.length,1);
 });
+
+
+test('attempt deadlines use the latest complete success and reject polluted history', () => {
+  const records = [{driver:'a',exitCode:0,durationSeconds:200},
+    {driver:'a',exitCode:0,durationSeconds:0.01},
+    {driver:'a',exitCode:3221225794,durationSeconds:900},
+    {driver:'a',exitCode:0,durationSeconds:999,timedOut:true},
+    {driver:'a',exitCode:0,durationSeconds:999,interrupted:true},
+    {driver:'a',exitCode:0,durationSeconds:999,partial:true}];
+  assert.equal(runner.attemptTimeout('a',records),600000);
+  assert.equal(runner.attemptTimeout('missing',records),900000);
+  assert.equal(runner.attemptTimeout('a',[...records,{driver:'a',exitCode:0,durationSeconds:2}]),300000);
+  assert.equal(runner.launchFailed(3221225794),true);
+  assert.equal(runner.launchFailed(-1073741502),true);
+  assert.equal(runner.launchFailed(null),false);
+});
+async function fakeInvocations(t, variants, timeout, kill) {
+  const dir = scratch(t), log = path.join(dir,'attempt.log'), fd = fs.openSync(log,'w');
+  let active, capped = false;
+  try {
+    const results = await runner.runInvocations({executable:process.execPath,env:{}},
+      variants.map(code=>['-e',code]), fd,
+      {stopped:()=>false,child:child=>{active=child;},cap:()=>{capped=true;}},
+      Infinity, Date.now()+timeout, kill);
+    return {results,log:fs.readFileSync(log,'utf8'),capped};
+  } finally {
+    if (active) runner.stopTree(active);
+    fs.closeSync(fd);
+  }
+}
+test('sleeping fake driver times out and exits before another invocation', async t => {
+  const r = await fakeInvocations(t,['setInterval(()=>{},1000)','console.log("must not run")'],200);
+  assert.equal(r.results.length,1);
+  assert.equal(r.results[0].timedOut,true);
+  assert.equal(r.capped,false);
+  assert.match(r.log,/TIMEOUT/);
+  assert.doesNotMatch(r.log,/follow-up invocation/);
+});
+test('follow-up logs are labelled and share the primary deadline', async t => {
+  const r = await fakeInvocations(t,['console.log("primary");','setInterval(()=>{},1000)'],1000);
+  assert.equal(r.results[0].exitCode,0);
+  assert.equal(r.results[1].timedOut,true);
+  assert.match(r.log,/primary invocation/);
+  assert.match(r.log,/follow-up invocation 1/);
+});
+test('tree-kill failure rejects instead of continuing to another driver', async t => {
+  await assert.rejects(fakeInvocations(t,['setInterval(()=>{},1000)'],200,
+    ()=>{throw Error('STOP: simulated tree-kill failure');}), /simulated tree-kill failure/);
+});
+test('timed-out known-message attempt is a new failure', t => {
+  const log=path.join(scratch(t),'attempt.log'); fs.writeFileSync(log,'Error: old failure');
+  assert.equal(runner.classify([{exitCode:1,timedOut:true,log}],
+    {failures:[{driver:'a',messages:['Error: old failure']}]},'a'),'new');
+});
+test('failed-start status stops the run without a retry or later drivers', {skip:process.platform!=='win32'}, t => {
+  const fixture=isolatedRunner(t);
+  fs.writeFileSync(path.join(fixture.root,'tests/pass.js'),'process.exit(3221225794);');
+  fixture.git('add','tests/pass.js'); fixture.git('commit','-qm','simulate failed launch');
+  const r=fixture.run('--tier','core');
+  assert.equal(r.status,1,r.stdout+r.stderr);
+  assert.match(r.stdout,/STATUS_DLL_INIT_FAILED/);
+  const state=fixture.states()[0];
+  assert.equal(state.results['tests/pass.js'].attempts.length,1);
+  assert.equal(Object.keys(state.results).length,1);
+});
+test('unverified Electron shutdown stops and blocks unsafe resume', t => {
+  const fixture=isolatedRunner(t);
+  fs.writeFileSync(path.join(fixture.root,'tests/pass.js'),'process.exit(86);');
+  fixture.git('add','tests/pass.js'); fixture.git('commit','-qm','simulate failed shutdown');
+  const r=fixture.run('--tier','core');
+  assert.equal(r.status,1,r.stdout+r.stderr);
+  assert.match(r.stdout,/shutdown could not be verified/);
+  assert.equal(Object.keys(fixture.states()[0].results).length,1);
+  const next=fixture.run('--tier','core');
+  assert.match(next.stderr,/Previous shutdown was not verified/);
+});
+
+
+test('timeout kills a sleeping fake driver and its descendant', async t => {
+  const code = `const child=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});console.log('DESCENDANT='+child.pid);setInterval(()=>{},1000);`;
+  const r=await fakeInvocations(t,[code],1000);
+  const pid=Number(r.log.match(/DESCENDANT=(\d+)/)[1]);
+  assert.equal(r.results[0].timedOut,true);
+  assert.throws(()=>process.kill(pid,0),{code:'ESRCH'});
+});

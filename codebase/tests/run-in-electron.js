@@ -34,7 +34,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { execFileSync } = require("child_process");
+const { stopTree } = require("./release/runner.cjs");
 const playwright = require("playwright");
 
 const DESKTOP_DIRECTORY = path.resolve(__dirname, "..", "desktop");
@@ -60,6 +60,8 @@ function packagedExecutable() {
   return requested;
 }
 
+let cleanup = () => {};
+let startupTimer;
 (async () => {
   const [testPath, ...rest] = process.argv.slice(2);
   if (!testPath) {
@@ -117,7 +119,17 @@ function packagedExecutable() {
     ? ["--disable-gpu-sandbox"]
     : [];
   const launchStarted = Date.now();
-  const app = await playwright._electron.launch({
+  console.log("[runner] launch");
+  let app;
+  startupTimer = setTimeout(() => {
+    console.error("[runner] STARTUP TIMEOUT: launch/window/driver setup exceeded 180000 ms");
+    if (!app) {
+      console.error("[runner] shutdown failed: launch returned no process handle; cannot verify Electron exited");
+      process.exit(86);
+    }
+    try { cleanup(); } finally { process.exit(process.exitCode || 1); }
+  }, 180000);
+  app = await playwright._electron.launch({
     // An absolute app path. `.` is not enough: Electron falls back to its own
     // `resources/app` when the app argument is not resolved, and this
     // checkout's Electron distribution carries a leftover review launcher
@@ -128,6 +140,36 @@ function packagedExecutable() {
     env: launchEnvironment,
     timeout: 180000,
   });
+  const evaluate = app.evaluate.bind(app);
+  app.evaluate = async (...args) => {
+    let timer;
+    try {
+      return await Promise.race([evaluate(...args), new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Error('[runner] main-process evaluate timed out after 30000 ms')), 30000);
+      })]);
+    } finally { clearTimeout(timer); }
+  };
+  let runnerStopping = false;
+  let stopped = false;
+  let electronMainProcessId;
+  const stop = () => {
+    if (stopped) return;
+    runnerStopping = true;
+    try {
+      stopTree({pid: electronMainProcessId || app.process()?.pid}, {group: false});
+      if (app.process()?.pid !== electronMainProcessId) stopTree(app.process(), {group: false});
+      stopped = true;
+    } catch (error) {
+      console.error(`[runner] shutdown failed: ${error.message}`);
+      process.exitCode = 86;
+      throw error;
+    }
+  };
+  cleanup = stop;
+  process.on("exit", () => { try { stop(); } catch { /* reported above */ } });
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process.on(signal, () => { try { stop(); } finally { process.exit(process.exitCode || 130); } });
+  }
   app.on("window", page => { page.on("console", msg => { if(msg.type()==="error")console.error("[renderer]",msg.text()); }); page.on("pageerror", error=>console.error("[renderer]",error)); });
   let window = await app.firstWindow({ timeout: 180000 });
   const visible = app.windows().find(page => !page.url().includes("gpu-delivery.html"));
@@ -152,13 +194,13 @@ function packagedExecutable() {
   // The launcher pid Playwright tracks is the shell on Windows; the main
   // process pid is what owns the window and the backend sidecar, so shutdown
   // is anchored to it.
-  const electronMainProcessId = await app.evaluate(() => process.pid);
+  electronMainProcessId = await app.evaluate(() => process.pid);
+  console.log("[runner] window ready");
 
   // When the window goes away mid-driver, Playwright only says "Target page,
   // context or browser has been closed". These lines tell the causes apart: a
   // renderer or GPU crash, the app closing its window or quitting, the main
   // process dying, or the debugging connection dropping while the app runs on.
-  let runnerStopping = false;
   const mainEventsPath = path.join(userDataDirectory, "logs", "runner-main-events.log");
   await app.evaluate(({ app: electronApp, BrowserWindow, webContents }, logPath) => {
     const fs = process.getBuiltinModule("node:fs");
@@ -337,21 +379,6 @@ function packagedExecutable() {
   // same reason: a graceful quit runs the app's close path. Electron leaves
   // its renderer and GPU children behind on a bare signal under Windows, so
   // the tree goes with it.
-  let stopped = false;
-  const stop = () => {
-    if (stopped) return;
-    stopped = true;
-    runnerStopping = true;
-    const child = app.process();
-    // The launcher command is a shell on Windows; killing it can orphan the
-    // Electron tree. The main process pid is the tree root that matters.
-    const pid = electronMainProcessId || (child && child.pid);
-    if (process.platform === "win32" && pid) {
-      try { execFileSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" }); return; } catch { /* fall through */ }
-    }
-    try { child.kill("SIGKILL"); } catch { /* already gone */ }
-  };
-
   // The tests all end with `finally { await browser.close() }`, so closing the
   // stub is what releases Electron's handles and lets the process exit. The
   // exit code is then the test's own: its explicit `process.exitCode`, or the
@@ -402,7 +429,12 @@ function packagedExecutable() {
       process.env.HDR_FINISHER_REVIEW_DISPLAY_CONTEXT = JSON.stringify(displayContext);
       return window;
     },
-    close: async () => { stop(); },
+    close: async () => {
+      console.log("[runner] driver end (browser.close)");
+      stop();
+      // Playwright can retain protocol handles after a forced tree shutdown.
+      setTimeout(() => process.exit(process.exitCode || 0), 5000).unref();
+    },
     // Playwright reports the browser build here and several drivers put it in
     // their report. Electron's Chromium version is the honest answer.
     version: async () => {
@@ -420,11 +452,6 @@ function packagedExecutable() {
   // Desktop tests resolve a separate Playwright installation. Share the same
   // supported browser branch so a release never needs a temporary adapter.
   require(require.resolve("playwright", { paths: [DESKTOP_DIRECTORY] })).chromium.launch = playwright.chromium.launch;
-  process.on("exit", stop);
-  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
-    process.on(signal, () => { stop(); process.exit(130); });
-  }
-
   // API-only drivers use Node fetch rather than the page's authenticated
   // fetch. Expose a same-origin test capability without exposing its token.
   const nodeFetch = global.fetch.bind(global);
@@ -462,12 +489,21 @@ function packagedExecutable() {
         dialog.showSaveDialog = async () => ({ canceled: false, filePath });
       }, path.resolve(selectedPath));
     },
-    close: async () => stop(),
+    close: async () => {
+      console.log("[runner] driver end (harness.close)");
+      stop();
+      setTimeout(() => process.exit(process.exitCode || 0), 5000).unref();
+    },
   };
 
-  if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") console.error("[runner] start driver");
+  clearTimeout(startupTimer);
+  console.log("[runner] driver start");
   process.argv = [process.argv[0], path.resolve(testPath), ...testArguments];
   // Set require.main as a direct Node invocation would, including drivers
   // whose standalone entry point is guarded by require.main === module.
   require("node:module")._load(path.resolve(testPath), null, true);
-})().catch((error) => { console.error(error); process.exit(1); });
+})().catch((error) => {
+  clearTimeout(startupTimer);
+  console.error(error);
+  try { cleanup(); } finally { process.exit(process.exitCode || 1); }
+});

@@ -118,6 +118,7 @@ function estimate(rows, records, known = {failures:[]}) {
 function classify(attempts, known, driver) {
   if (attempts[0]?.exitCode === 0) return 'passed';
   if (attempts.at(-1)?.exitCode === 0) return 'flaky';
+  if (attempts.some(a => a.timedOut)) return 'new';
   const logs = attempts.map(attempt => cleanLog(fs.readFileSync(attempt.log, 'utf8')));
   return logs.every(log => knownMessage(log, known, driver)) ? 'known' : 'new';
 }
@@ -131,11 +132,92 @@ function write(file, value) {
   fs.writeFileSync(`${file}.tmp`, JSON.stringify(value, null, 2) + '\n');
   fs.renameSync(`${file}.tmp`, file);
 }
-function stopTree(child) {
+const DLL_INIT_FAILED = 3221225794;
+function launchFailed(code) { return Number.isInteger(code) && (code >>> 0) === DLL_INIT_FAILED; }
+function attemptTimeout(driver, records) {
+  const prior = records.filter(r => r.driver === driver && r.exitCode === 0
+    && !r.interrupted && !r.timedOut && !r.partial && !r.error
+    && Number.isFinite(r.durationSeconds) && r.durationSeconds >= 1).at(-1);
+  return prior ? Math.max(300000, prior.durationSeconds * 3000) : 900000;
+}
+function processAlive(pid) {
+  try { process.kill(pid, 0); return true; }
+  catch (error) { if (error.code === 'ESRCH') return false; throw error; }
+}
+// Synchronous so exit/signal handlers can also enforce the shutdown boundary.
+function stopTree(child, { group = process.platform !== 'win32' } = {}) {
   if (!child?.pid) return;
+  const pid = child.pid;
+  let pids = [pid];
+  if (!processAlive(group ? -pid : pid)) return;
+  // Snapshot descendants before killing the root: once orphaned they cannot
+  // be recovered from the old parent PID. Verify every captured PID below.
+  let rows;
   if (process.platform === 'win32') {
-    try { execFileSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true }); } catch { /* already exited */ }
-  } else { try { process.kill(-child.pid, 'SIGTERM'); } catch { /* already exited */ } }
+    const snapshot = execFileSync('powershell.exe', ['-NoProfile', '-Command',
+      'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress'],
+      {encoding:'utf8', windowsHide:true, timeout:10000});
+    rows = [].concat(JSON.parse(snapshot)).map(row => [row.ProcessId, row.ParentProcessId]);
+  } else if (!group) {
+    rows = execFileSync('ps', ['-eo', 'pid=,ppid='], {encoding:'utf8', timeout:5000})
+      .trim().split('\n').map(line => line.trim().split(/\s+/).map(Number));
+  }
+  if (rows) for (let index = 0; index < pids.length; index++) {
+    pids.push(...rows.filter(([child, parent]) => parent === pids[index] && !pids.includes(child)).map(([child]) => child));
+  }
+  const alive = () => group ? processAlive(-pid) : pids.some(processAlive);
+  if (!alive()) return;
+  try {
+    if (process.platform === 'win32') execFileSync('taskkill', ['/pid', String(pid), '/T', '/F'], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
+    else if (group) process.kill(-pid, 'SIGKILL');
+    else for (const item of pids.reverse()) {
+      try { process.kill(item, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+    }
+  } catch (error) {
+    throw Error(`STOP: tree-kill failed for PID ${pid}: ${error.message}`);
+  }
+  const until = Date.now() + 5000;
+  while (alive() && Date.now() < until) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+  if (alive()) throw Error(`STOP: cannot verify process tree ${pid} exited; no further GPU work is safe.`);
+}
+async function runInvocations(invocation, variants, fd, hooks, deadline, attemptDeadline, kill = stopTree) {
+  const results = [];
+  for (const [index, variant] of variants.entries()) {
+    if (hooks.stopped()) break;
+    fs.writeSync(fd, `\n[runner] ${index ? `follow-up invocation ${index}` : 'primary invocation'}: ${JSON.stringify(variant)}\n`);
+    if (Date.now() >= attemptDeadline) {
+      fs.writeSync(fd, 'TIMEOUT: attempt deadline exhausted before invocation\n');
+      console.log('TIMEOUT: attempt deadline exhausted before invocation');
+      results.push({ exitCode: null, timedOut: true }); break;
+    }
+    const result = await new Promise((resolve, reject) => {
+      const child = spawn(invocation.executable, variant, { cwd: ROOT, env: { ...process.env, ...invocation.env, HDR_FINISHER_ELECTRON_WINDOW_SIZE: '2560x1440' }, stdio: ['ignore', fd, fd], windowsHide: true, detached: process.platform !== 'win32' });
+      hooks.child(child);
+      let launchError, timedOut = false, cleanupError;
+      const expires = Math.min(deadline, attemptDeadline);
+      const timer = setTimeout(() => {
+        if (deadline <= attemptDeadline) hooks.cap();
+        else {
+          timedOut = true;
+          const message = `TIMEOUT: attempt deadline reached (PID ${child.pid})`;
+          console.log(message); fs.writeSync(fd, message + '\n');
+        }
+        try { kill(child); } catch (error) { cleanupError = error; reject(error); }
+        // close can itself be held open by a descendant's inherited handles.
+        closeTimer = setTimeout(() => reject(Error('STOP: child close was not verified after tree-kill')), 5000);
+      }, Math.max(1, expires - Date.now()));
+      let closeTimer;
+      child.on('error', error => { launchError = error.message; });
+      child.on('close', (code, signal) => {
+        clearTimeout(timer); clearTimeout(closeTimer);
+        if (cleanupError) return;
+        resolve({ exitCode: timedOut ? null : code, signal, ...(timedOut ? {timedOut: true} : {}), ...(launchError ? { error: launchError } : {}) });
+      });
+    });
+    hooks.child(null); results.push(result);
+    if (result.timedOut || result.exitCode === 86 || launchFailed(result.exitCode)) break;
+  }
+  return results;
 }
 async function execute(row, state, out, list, hooks, deadline, known) {
   const attempts = state.results[row.path]?.attempts || [];
@@ -147,21 +229,12 @@ async function execute(row, state, out, list, hooks, deadline, known) {
     state.activeAttempt = {driver: row.path, log, startedAt: started};
     write(path.join(out, 'state.json'), state);
     console.log(`Running ${row.path}${attempts.length ? ' (one retry)' : ''}`);
-    const results = [];
-    for (const variant of [invocation.args, ...(row.launch.followupArgs || []).map(args => command({ ...row, launch: { ...row.launch, args } }, out, list).args)]) {
-    if (hooks.stopped()) break;
-    const result = await new Promise(resolve => {
-      const child = spawn(invocation.executable, variant, { cwd: ROOT, env: { ...process.env, ...invocation.env, HDR_FINISHER_ELECTRON_WINDOW_SIZE: '2560x1440' }, stdio: ['ignore', fd, fd], windowsHide: true, detached: process.platform !== 'win32' });
-      hooks.child(child);
-      const timer = Number.isFinite(deadline) ? setTimeout(() => { hooks.cap(); stopTree(child); }, Math.max(1, deadline - Date.now())) : null;
-      let launchError;
-      child.on('error', error => { launchError = error.message; });
-      child.on('close', (code, signal) => { clearTimeout(timer); resolve({ exitCode: code, signal, ...(launchError ? { error: launchError } : {}) }); });
-    });
-    hooks.child(null); results.push(result);
-    }
-    fs.closeSync(fd);
-    const result = results.find(result => result.exitCode !== 0) || results.at(-1) || { exitCode: null };
+    let results;
+    try {
+      const variants = [invocation.args, ...(row.launch.followupArgs || []).map(args => command({ ...row, launch: { ...row.launch, args } }, out, list).args)];
+      results = await runInvocations(invocation, variants, fd, hooks, deadline, started + attemptTimeout(row.path, history()));
+    } finally { fs.closeSync(fd); }
+    const result = results.find(result => result.timedOut) || results.find(result => result.exitCode !== 0) || results.at(-1) || { exitCode: null };
     checkProjects(state.fixtures);
     if (git('rev-parse', 'HEAD') !== state.revision) throw Error('STOP: HEAD moved during the run; results cover different revisions.');
     const record = { ...result, log, durationSeconds: (Date.now() - started) / 1000, interrupted: hooks.stopped(), command: invocation.args };
@@ -170,7 +243,9 @@ async function execute(row, state, out, list, hooks, deadline, known) {
     if (hooks.stopped()) { state.interruptedAttempt = { driver: row.path, ...record }; return false; }
     attempts.push(record);
     write(path.join(out, 'state.json'), state);
-    if (record.exitCode !== 0 && knownMessage(cleanLog(fs.readFileSync(log, 'utf8')), known, row.path)) break;
+    if (results.some(r => r.exitCode === 86) || fs.readFileSync(log, 'utf8').includes('[runner] shutdown failed:')) throw Error('STOP: Electron shutdown could not be verified; no further GPU work is safe.');
+    if (results.some(r => launchFailed(r.exitCode))) throw Error('STOP: driver launch failed with STATUS_DLL_INIT_FAILED (3221225794); the parent console/session may have ended. Restore the session before resuming.');
+    if (!record.timedOut && record.exitCode !== 0 && knownMessage(cleanLog(fs.readFileSync(log, 'utf8')), known, row.path)) break;
   }
   return true;
 }
@@ -253,6 +328,7 @@ async function main(args = process.argv.slice(2)) {
   try { fs.writeFileSync(lock, String(process.pid), { flag: 'wx' }); }
   catch {
     const owner = JSON.parse(fs.readFileSync(lock, 'utf8'));
+    if (owner.unsafe) throw Error('Previous shutdown was not verified; inspect and remove the active.lock only after all old driver processes are gone.');
     const pid = typeof owner === 'number' ? owner : owner.pid;
     let alive = true;
     try { process.kill(pid, 0); } catch (error) { if (error.code === 'ESRCH') alive = false; }
@@ -269,7 +345,7 @@ async function main(args = process.argv.slice(2)) {
   const deadline = started + capMs - previousElapsed;
   let active = null, stopped = false, capReached = false, fatal;
   const checkpoint = setInterval(() => { state.elapsedMs = previousElapsed + Date.now() - started; write(path.join(out, 'state.json'), state); }, 1000);
-  const onSignal = () => { stopped = true; stopTree(active); };
+  const onSignal = () => { stopped = true; try { stopTree(active); } catch (error) { fatal = error.message; console.error(fatal); } };
   process.on('SIGINT', onSignal); process.on('SIGTERM', onSignal);
   let ran = 0;
   try {
@@ -288,10 +364,15 @@ async function main(args = process.argv.slice(2)) {
   } catch (error) { fatal = error.message; }
   finally {
     clearInterval(checkpoint);
-    stopTree(active); process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal);
+    let unsafe = false;
+    try { stopTree(active); } catch (error) { fatal = `STOP: shutdown verification failed: ${error.message}`; unsafe = true; }
+    process.off('SIGINT', onSignal); process.off('SIGTERM', onSignal);
     state.elapsedMs = previousElapsed + Date.now() - started;
     state.completed = !fatal && state.drivers.every(file => state.results[file]?.classification);
-    state.fatal = fatal || null; write(path.join(out, 'state.json'), state); fs.unlinkSync(lock);
+    state.fatal = fatal || null; write(path.join(out, 'state.json'), state);
+    // Preserve ownership evidence if shutdown could not be confirmed.
+    if (unsafe || fatal && /tree-kill|verif|shutdown|close was not/.test(fatal)) fs.writeFileSync(lock, JSON.stringify({pid:process.pid, childPid:active?.pid || null, unsafe:true}));
+    else fs.unlinkSync(lock);
   }
   const counts = { passed: 0, flaky: 0, known: 0, new: 0, unfinished: 0 };
   for (const file of state.drivers) counts[state.results[file]?.classification || 'unfinished']++;
@@ -311,5 +392,5 @@ async function main(args = process.argv.slice(2)) {
   process.exitCode = fatal || counts.new || counts.known ? 1 : counts.unfinished ? 130 : 0;
   return { out, state, counts };
 }
-module.exports = { inventory, validate, changedAreas, select, command, history, estimate, classify, knownMessage, unfinishedSelection, hashProjects, checkProjects, parse, main };
+module.exports = { attemptTimeout, launchFailed, stopTree, runInvocations, inventory, validate, changedAreas, select, command, history, estimate, classify, knownMessage, unfinishedSelection, hashProjects, checkProjects, parse, main };
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });
