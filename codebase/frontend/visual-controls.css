@@ -343,6 +343,8 @@ html.desktop-shell .window-controls { margin-left: 0; }
 :root .splitter-vertical::after { left: 0; }
 :root .splitter-horizontal::after { top: 0; }
 :root .splitter:is(:hover, :focus-visible, .dragging)::after { background: var(--muted); }
+/* Proof and Export rails are fixed overlays (z-index 20-41); keep the grab target above them. */
+body:is([data-workflow="proof"], [data-workflow="export"]) .app-shell > .splitter-vertical { z-index: 42; }
 :root .media-browser-preview-resizer::before { content: ""; position: absolute; inset: 0 -4px; }
 :root .media-browser-preview-resizer::after { right: 0; }
 
