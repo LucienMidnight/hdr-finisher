@@ -12,11 +12,11 @@ const modes=process.argv.includes('--baseline')?['baseline']:process.argv.includ
 const samples=process.argv.includes('--geometry-only')?[]:selected?[selected]:['DJI_0071.DNG','DSC06885_DxO-neutral.dng','DJI_0071-2-HDR.dng'];
 for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const mode of (modes||(repeat%2?['gpu','cpu']:['cpu','gpu']))){
  const dir=path.join(folder,`${sample}-${repeat}-${mode}`);fs.mkdirSync(dir);
- for(const [name,src] of [[sample,source||locate(path.join(root,'local-test-media/inputs/linear-dng'),sample)],['small.png',path.join(root,'tests/fixtures/sdr_gradient.png')]])fs.copyFileSync(src,path.join(dir,name));
+ for(const [name,src] of [[sample,source||locate(path.join(root,'local-test-media/inputs/linear-dng'),sample)],['small.png',path.join(root,'tests/fixtures/library_photo.png')]])fs.copyFileSync(src,path.join(dir,name));
  runs.push({dir,mode,repeat,sample});
 }
 (async()=>{const browser=await chromium.launch({channel:'msedge',headless:true,args:['--enable-unsafe-webgpu']});let page;try{
- page=await browser.newPage({viewport:{width:2560,height:1440}});await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
+ page=await browser.newPage({viewport:{width:2560,height:1440}});await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
  const frame=page.frameLocator('#library-frame'),button=frame.locator('#hdr-button');
  await button.click();const clicked=await button.getAttribute('aria-pressed');await page.keyboard.press('h');
  assert.notEqual(await button.getAttribute('aria-pressed'),clicked);
@@ -79,7 +79,8 @@ for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const m
     }
    }finally{clearInterval(interval);w.fetch=fetch;}
    if(finished===null)throw Error('Mixed folder did not finish: '+seen.join(';'));
-   const photo=run.dir+'/'+run.sample;const meta=await w.HDRLibraryScenes.load(photo,640);const large=await w.HDRLibraryScenes.load(photo,2560);
+   const photo=run.dir+'/'+run.sample;// Unedited photos develop only on the explicit command (November 3).
+   const meta=await w.HDRLibraryScenes.load(photo,640,undefined,10,null,{develop:true});const large=await w.HDRLibraryScenes.load(photo,2560,undefined,10,null,{develop:true});
    if(meta.renderer!==(run.mode==='baseline'?'cpu':run.mode))throw Error('Wrong DNG route: '+JSON.stringify({renderer:meta.renderer,seen}));
    if(!activity||!panelNamed||ticks<3)throw Error('No responsive named Activity while source ran');
    const gpu=await w.HDRLibraryPictures.initialize(),render=gpu.renderTo,lanes={};let captured;
@@ -94,4 +95,4 @@ for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const m
  console.log('Evidence:',file);
  if(!rows.length||modes)return;
  const report=execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_dng_compare.py'),file],{cwd:root,encoding:'utf8',timeout:300000,maxBuffer:1<<26});console.log(report);
-}finally{if(page)await page.request.post(new URL('/api/delivery/preferences',process.env.HDR_FINISHER_URL).href,{data:{force_cpu:false}}).catch(()=>{});await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});
+}finally{if(page)await page.request.post(new URL('/api/delivery/preferences',process.env.HDR_FINISHER_URL).href,{data:{force_cpu:false}}).catch(()=>{});await browser.close();fs.rmSync(folder,{recursive:true,force:true,maxRetries:10,retryDelay:100});}})().catch(error=>{console.error(error);process.exitCode=1;});

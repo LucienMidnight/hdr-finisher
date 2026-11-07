@@ -36,7 +36,10 @@ if "--serve" in sys.argv:
     from fastapi.staticfiles import StaticFiles
     from hdr_finisher.library_smart_albums import add_smart_album_routes
     index.status=lambda: {"state":"idle"}
-    app=FastAPI(); router=APIRouter(prefix="/api/library")
+    from fastapi.middleware.cors import CORSMiddleware
+    app=FastAPI()
+    app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["GET"])
+    router=APIRouter(prefix="/api/library")
     add_smart_album_routes(router,marks,index)
     app.include_router(router)
     @app.get("/smart-editor-test")

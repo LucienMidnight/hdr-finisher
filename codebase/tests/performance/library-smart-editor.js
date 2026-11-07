@@ -1,5 +1,5 @@
 /* Real 155,000-row SQLite index and HTTP endpoint, isolated from Steve's library. */
-const assert=require("node:assert/strict"),path=require("node:path"),{spawn}=require("node:child_process");
+const fs=require("node:fs"),assert=require("node:assert/strict"),path=require("node:path"),{spawn}=require("node:child_process");
 async function check(page) {
  const root=path.resolve(__dirname,"../.."),child=spawn(path.join(root,".venv/Scripts/python.exe"),[path.join(__dirname,"library-smart-index.py"),"--serve"],{cwd:root,windowsHide:true});
  let output="",failure="";
@@ -17,7 +17,6 @@ async function check(page) {
   const base=new URL(url).origin;
   const deadline=Date.now()+10000;
   while(true){try{if((await fetch(url)).ok)break;}catch(error){if(Date.now()>deadline)throw error;}await new Promise(resolve=>setTimeout(resolve,25));}
-  // Keep the fixture on the app origin, where its normal security policy allows workers.
   await context.route("**/smart-editor-test",async route=>{
    const response=await route.fetch({url});
    await route.fulfill({response,body:(await response.text()).replaceAll('src="/','src="/static/')});
@@ -26,6 +25,19 @@ async function check(page) {
    const target=new URL(route.request().url());
    await route.fulfill({response:await route.fetch({url:base+target.pathname+target.search})});
   });
+  // Electron's page-route adapter cannot intercept fetches inside workers.
+  // Keep the worker on the app origin and point only its synthetic API at the fixture.
+  await page.addInitScript(base=>{
+   const OriginalWorker=window.Worker;
+   window.Worker=class extends OriginalWorker {
+    constructor(url,options){
+     if(String(url).includes('library-smart-worker.js')){
+      const source=`const originalImport=self.importScripts.bind(self);self.importScripts=(...urls)=>originalImport(...urls.map(u=>new URL(u,${JSON.stringify(String(url))}).href));const originalFetch=self.fetch.bind(self);self.fetch=(url,options)=>originalFetch(new URL(String(url),${JSON.stringify(base)}).href,options);importScripts(${JSON.stringify(String(url))});`;
+      super(URL.createObjectURL(new Blob([source],{type:'text/javascript'})),options);
+     }else super(url,options);
+    }
+   };
+  },base);
   await page.goto(new URL("/smart-editor-test",page.url()).href);
   const lib=page;
   await lib.waitForFunction(()=>window.HDRLibrarySmartAlbums);
@@ -39,7 +51,7 @@ async function check(page) {
   assert.ok(timing.open_ms<250,JSON.stringify(timing));assert.equal(timing.loading,"Counting…");assert.equal(timing.enabled,true);
   const dialog=lib.getByRole("dialog",{name:"New smart album",exact:true});
   await dialog.getByLabel("Smart album name",{exact:true}).fill("Large library");
-  await dialog.getByText("15,500 matching photos",{exact:true}).waitFor({timeout:60000});
+  await dialog.getByText("15,500 matching photos",{exact:true}).waitFor({timeout:60000}).catch(async error=>{throw new Error(error.message+" count="+await lib.evaluate(()=>document.querySelector(".library-smart-count")?.textContent)+" server="+failure.slice(-2000));});
   const edits=await lib.evaluate(async()=>{
    let last=performance.now(),gap=0;const ticker=setInterval(()=>{const now=performance.now();gap=Math.max(gap,now-last);last=now;},10);
    const input=document.querySelector('[aria-label="Rule value"]'),s=performance.now();input.value="0";input.dispatchEvent(new Event("input"));
@@ -60,6 +72,13 @@ async function check(page) {
   });
   assert.deepEqual(cache,{size:155000,unchanged:true,membership:15500});
   console.log("PASS: real 155,000-row smart editor",JSON.stringify({...timing,warm_open_ms:warm,...edits}));
- }finally {child.kill();await context.unroute("**/smart-editor-test");await context.unroute(pattern);}
+ }finally {
+  await context.unroute("**/smart-editor-test");await context.unroute(pattern);
+  child.kill();
+  await new Promise(resolve=>{if(child.exitCode!==null||child.signalCode)resolve();else child.once("exit",resolve);});
+  const row=output.split(/\r?\n/).find(line=>line.startsWith('{"photos"'));
+  if(row){const folder=path.dirname(JSON.parse(row).candidates),parent=path.join(root,"output");
+   if(path.dirname(folder)===parent&&path.basename(folder).startsWith("smart-155000-"))fs.rmSync(folder,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
+ }
 }
 module.exports={check};
