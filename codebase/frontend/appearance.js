@@ -48,7 +48,8 @@
     root.document.addEventListener("DOMContentLoaded", () => selectChevron());
     if (root.MutationObserver) new MutationObserver(() => {
       selectChevron();
-      if (!root.state?.session && typeof state !== "undefined" && !state.session) return;
+      // Editor scripts load after the startup theme; Library has no editor state.
+      if (typeof state === "undefined" || typeof els === "undefined") return;
       for (const name of ["drawCurveEditor", "drawToneEqualizerEditor", "renderHighlightCompressionControls"]) {
         try { if (typeof root[name] === "function") root[name](); } catch (error) { console.warn("Appearance redraw:",name,error); }
       }

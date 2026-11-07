@@ -21,3 +21,20 @@ test("accent foreground uses linearized sRGB luminance",()=>{
  assert.ok(appearance.luminance("#d0612a")>.18);
  assert.ok(appearance.luminance("#566481")<.18);
 });
+
+test("theme redraw waits for editor state and elements, then redraws loaded graphs",()=>{
+ const vm=require('node:vm'),fs=require('node:fs');
+ let changed,draws=0;
+ const context=vm.createContext({window:{document:{documentElement:{},addEventListener(){}},MutationObserver:true},
+   getComputedStyle:()=>({getPropertyValue:()=>"#aaa"}),
+   MutationObserver:class {constructor(callback){changed=callback;}observe(){}},
+   console:{warn:()=>assert.fail("Theme redraw threw")}});
+ context.window.document.documentElement.style={setProperty(){}};
+ vm.runInContext(fs.readFileSync(require.resolve('../frontend/appearance.js'),'utf8'),context);
+ context.window.drawCurveEditor=()=>{draws++;};
+ changed();assert.equal(draws,0);
+ vm.runInContext('const state={session:null};',context);
+ changed();assert.equal(draws,0);
+ vm.runInContext('const els={};',context);
+ changed();assert.equal(draws,1);
+});

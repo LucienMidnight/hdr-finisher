@@ -1,5 +1,11 @@
 # Module PRD: Grade
 
+## November 7: startup theme redraw
+
+Theme changes redraw editor graphs only after editor state and elements have
+loaded. This fixes startup warnings introduced by `bf220721`; empty Grade
+graphs still redraw after initialization. No grading or output changes.
+
 ## November 3: Grade pause follow-up diagnostics (Batch 3d2)
 
 Pause transitions now identify their request/control owner and action. Helper
