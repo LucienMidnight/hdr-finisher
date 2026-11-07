@@ -69,6 +69,9 @@ function assert(condition, message) {
       };
     });
 
+    // Crop lives on the Global tab of the Control Panel; the painted local
+    // stays selected while the crop is applied there.
+    await page.locator("#grade-mode-global").click();
     const geometryGroup = page.locator('[data-group="geometry"]');
     if (await geometryGroup.evaluate((element) => element.classList.contains("collapsed"))) {
       await geometryGroup.locator(".group-toggle").click();
@@ -95,6 +98,7 @@ function assert(condition, message) {
         && handoff.cachedGeometry === handoff.previousGeometry,
       `The crop handoff did not retain a clearly stale pre-crop mask for the regression check: ${JSON.stringify(handoff)}`,
     );
+    await page.locator("#grade-mode-local").click();
 
     await page.waitForFunction(() => (
       !state.globalEditDirty
