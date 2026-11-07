@@ -29,6 +29,7 @@
 // That provisional judgement is evidence for the sign-off, not the sign-off.
 
 const fs = require("fs");
+const { importTestPattern } = require("../helpers/import-test-pattern");
 const path = require("path");
 const { chromium } = require("playwright");
 const { ensureLargeNoisySource } = require("../large-noisy-tiff.js");

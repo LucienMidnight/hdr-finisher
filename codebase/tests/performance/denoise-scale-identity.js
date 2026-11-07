@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const { importTestPattern } = require("../helpers/import-test-pattern");
 const { chromium } = require("playwright");
 
 const urlIndex = process.argv.indexOf("--url");

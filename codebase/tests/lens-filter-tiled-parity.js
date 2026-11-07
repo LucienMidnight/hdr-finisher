@@ -1,5 +1,6 @@
 // Physical lens filters: exact Direct/Tiled bytes at Fit and native.
 const fs = require("fs");
+const { importTestPattern } = require("./helpers/import-test-pattern");
 const path = require("path");
 const os = require("os");
 const { execFileSync } = require("child_process");

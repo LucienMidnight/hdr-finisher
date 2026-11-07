@@ -1,4 +1,5 @@
 const { chromium } = require("playwright");
+const { importTestPattern } = require("./helpers/import-test-pattern");
 const fs = require("fs");
 const path = require("path");
 const { createLocalAdjustment } = require("./helpers/local-adjustments.js");

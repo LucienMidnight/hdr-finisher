@@ -23,6 +23,7 @@
 //     [--input local-test-media/inputs/<file>] [--tile-sizes 256,512]
 
 const fs = require("fs");
+const { importTestPattern } = require("./helpers/import-test-pattern");
 const path = require("path");
 const { chromium } = require("playwright");
 

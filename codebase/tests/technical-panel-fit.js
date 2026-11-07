@@ -17,6 +17,7 @@
  * route and the generation counters).
  */
 const { chromium } = require("playwright");
+const { importTestPattern } = require("./helpers/import-test-pattern");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
 const EXPECTED = [

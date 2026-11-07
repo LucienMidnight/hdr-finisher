@@ -25,6 +25,7 @@
  * Usage: node tests/performance/phase5-inactive-lane.js --url http://127.0.0.1:8799
  */
 const { chromium } = require("playwright");
+const { importTestPattern } = require("../helpers/import-test-pattern");
 
 function argument(name, fallback = null) {
   const index = process.argv.indexOf(name);

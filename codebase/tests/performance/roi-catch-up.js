@@ -22,6 +22,7 @@
 //   - the catch-up must not carry a viewport or skip a tile
 
 const fs = require("fs");
+const { importTestPattern } = require("../helpers/import-test-pattern");
 const path = require("path");
 const { chromium } = require("playwright");
 
