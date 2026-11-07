@@ -1558,3 +1558,17 @@ unrelated remembered-PNG 422/200 failure. Fifteen delivery lifetime cases pass.
 Real 42 MP export/Proof match the unchanged-code baseline exactly; per-job
 GPU timing changes +2.42% / -2.58% meet 5%. Standard Library check passes;
 focused Grade processing peak remains separate. Output 29.2 GB; no push.
+
+### November 8: completed CPU preparation ownership
+
+Completed CPU preparations now drop their decoded source and packed results
+when the last requester leaves, even if a cancellation callback retains the
+preparation object. Idle helper threads also release their delivered reply.
+A weak-reference behavior check covers release with a retained callback.
+No cache share, admission estimate, ceiling or tolerance changed.
+
+This is not full precision-source acceptance: its repeated large CPU/GPU loop
+still waits at later GPU admission after cache reclamation. The observed app
+resident total plus the requested development reservation cannot fit the
+existing budget. Further memory diagnosis remains open; do not increase the
+budget to make the driver pass.

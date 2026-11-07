@@ -264,6 +264,10 @@ def develop_cpu(root, path, document, edge, cancelled=None, progress=None, draw_
             flight["users"].remove(demand)
             if not flight["users"] and _cpu_flights.get(key) is flight:
                 del _cpu_flights[key]
+                # Finished cancellation callbacks may still close over this flight.
+                # They must not retain its full decoded source or packed results.
+                flight["prepared"].clear()
+                flight["results"].clear()
 
 
 class _NativeFrame(SimpleNamespace):

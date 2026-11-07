@@ -699,3 +699,26 @@ def test_active_source_still_rejects_invalidation_and_changed_file(tmp_path, mon
         jobs.invalidate()
         with pytest.raises(ValueError): jobs.check(token,0)
     with pytest.raises(ValueError): jobs.check(token,0)
+
+
+def test_finished_cpu_source_released_even_when_cancellation_callback_is_retained(tmp_path, monkeypatch):
+    import weakref
+    from hdr_finisher import library_live
+    path = tmp_path / 'photo.png'
+    Image.new('RGB', (16, 16)).save(path)
+    held_callbacks, sources = [], []
+
+    class Source:
+        pass
+
+    def develop(root, path, document, edge, cancelled, cache, progress, draw_first, prepared):
+        source = Source()
+        sources.append(weakref.ref(source))
+        prepared['source'] = source
+        held_callbacks.append(cancelled)
+        return {'edge': edge}
+
+    monkeypatch.setattr(library_live, '_develop_cpu', develop)
+    assert develop_cpu(tmp_path / 'cache', path, None, 640) == {'edge': 640}
+    assert held_callbacks
+    assert sources[0]() is None

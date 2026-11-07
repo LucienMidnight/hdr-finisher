@@ -736,6 +736,10 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
                     library_diagnostics._sink = None
                     log("picture_helper_reply_failed" if kind == "picture" else "helper_reply_failed", operation=job["command"], edge=job.get("edge"), path=job.get("path"), reason=str(error), action="lane exits; parent detects closed helper")
                     return
+            # Idle decoder threads must not retain their last portable scene.
+            # Its base64 handoffs have already crossed the pipe; cache ownership
+            # is separate and is reclaimed through app_memory above.
+            output = result = job = candidates = None
 
     for index in range(lanes):
         Thread(target=decode, name=f"hdr-library-decode-{index}", daemon=True).start()
