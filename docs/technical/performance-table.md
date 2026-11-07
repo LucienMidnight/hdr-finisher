@@ -1323,3 +1323,5 @@ within 1.5× a developed photo of the same file. Driver
 | Grid, E key to first Exposure overlay, developed RAW | Reference | 1.341 to 2.359 s | 2 RAWs (DSC07060, IMG_3129 under new names), after Develop | Baseline |
 | Single, S key to first Focus overlay (half / full), undeveloped RAW | Report | 3.40 s / 10.85 to 11.89 s | DSC07060.ARW; full map is the native RAW decode | Baseline |
 | Camera-preview registration added to each RAW map | Report | about 0.1 to 0.4 s | ECC at 640 px; DSC07060 0.40 s, IMG_3129 0.12 s (script) | Baseline |
+
+| Library Stage A cold-folder diagnostic | No speed qualification | 41.579 s (one observation, not a range) | November 7, 2026; 4b8a549a + driver repair; 2560x1440, D:/Photos/HDR Test Images, concurrent CPU suite; first metadata 40.503 s, first pixel request 40.396 s; peak three probes | Diagnostic only |

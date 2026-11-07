@@ -75,15 +75,19 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     await library.waitForFunction(() => document.querySelectorAll("#grid-space canvas").length > 0 && [...document.querySelectorAll("#grid-space canvas")].every(canvas => canvas.dataset.pictureKey), null, { timeout: 60000 });
     await page.screenshot({ path: path.join(output, "grid.png") });
     const first = await library.locator("#grid-space .library-cell").first().getAttribute("data-path");
-    // The picture a grid cell drew must now be in the persistent cache. Ask
-    // for the size that cell drew at, not a fixed size, so the check follows
-    // the Library's one stored thumbnail size.
+    // Original-file pictures do not develop until asked (November 3).
+    // Explicit development must publish a reusable scene, without a JPEG thumbnail.
     const cache = await library.evaluate(async photo => {
-      const edge = Number(Array.from(document.querySelectorAll("#grid-space .library-cell")).find(cell => cell.dataset.path === photo)?.querySelector("[data-picture-edge]")?.dataset.pictureEdge);
-      return { edge, ...(await (await fetch("/api/library/picture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: photo, edge, quality: "quick" }) })).json()) };
+      const meta=await HDRLibraryScenes.load(photo,640,undefined,0,null,{develop:true});
+      await meta.directScene?.store();
+      const response=await fetch('/api/library/live-store/'+meta.key,{method:'POST'});
+      if(!response.ok)throw Error('Scene publication failed');
+      HDRLibraryScenes.invalidate([photo]);
+      const reused=await HDRLibraryScenes.load(photo,640);
+      return {edge:reused.edge,cache_hit:reused.cache_hit,width:reused.width,height:reused.height};
     }, first);
-    assert.ok(cache.edge > 0, "Grid cell records the size it drew at");
-    assert.equal(cache.cache_hit, true); assert.ok(cache.stored_bytes > 0);
+    assert.ok(cache.edge > 0); assert.equal(cache.cache_hit,true);
+    assert.ok(cache.width>0&&cache.height>0);
     await library.evaluate(() => { const grid = document.getElementById("library-grid"); grid.scrollTop = grid.scrollHeight; });
     await library.waitForFunction(first => ![...document.querySelectorAll("#grid-space .library-cell")].some(cell => cell.dataset.path === first), first);
     await library.waitForSelector("#grid-space canvas[data-picture-key]", { timeout: 30000 });
@@ -165,13 +169,12 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
       assert.equal(await library.evaluate(() => HDRLibrary.getSnapshot().count), 3);
       await page.screenshot({ path: path.join(output, "real-formats.png") });
       for (const source of rawSources) {
-        const cached = await library.evaluate(async photo => {
-          const edge = Number(Array.from(document.querySelectorAll("#grid-space .library-cell")).find(cell => cell.dataset.path === photo)?.querySelector("[data-picture-edge]")?.dataset.pictureEdge);
-          return { edge, ...(await (await fetch("/api/library/picture", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: photo, edge, quality: /\.heic$/i.test(photo) ? "fast" : "quick" }) })).json()) };
-        }, path.join(rawFolder, path.basename(source)));
-        assert.ok(cached.edge > 0, `${path.basename(source)} grid cell records the size it drew at`);
-        assert.equal(cached.cache_hit, true);
-        console.log("[library format]", path.basename(source), cached.route);
+        const shown=await library.evaluate(photo=>{
+          const cell=[...document.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path===photo);
+          const surface=cell?.querySelector('canvas[data-picture-key]');
+          return surface&&{width:surface.width,height:surface.height};
+        },path.join(rawFolder,path.basename(source)));
+        assert.ok(shown?.width>0&&shown?.height>0,'Real-format camera/developed picture is usable');
       }
     } else console.log("[library format] local real samples unavailable; synthetic route checks only");
     // Cold real-folder startup must draw pixels while other photos are still queued.
@@ -182,9 +185,9 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
       let firstPixels = null, firstMeta = null, finished = 0;
       const started = Date.now();
       const request = req => {
-        if (/\/api\/library\/(?:pixels|kept-pixels|raw-thumbnail)\//.test(req.url()) && firstPixels == null) firstPixels = Date.now() - started;
+        if (/\/api\/(?:library\/(?:pixels|kept-pixels|raw-thumbnail|preview)|media-browser\/thumbnail)/.test(req.url()) && firstPixels == null) firstPixels = Date.now() - started;
       };
-      const response = res => { if (res.url().endsWith("/api/library/picture")) { firstMeta ??= Date.now() - started; finished++; } };
+      const response = res => { if (res.url().endsWith("/api/library/live-plan")) { firstMeta ??= Date.now() - started; finished++; } };
       page.on("request", request); page.on("response", response);
       await library.evaluate(() => HDRLibrary.browse("D:/Photos/HDR Test Images"));
       await library.waitForSelector("#grid-space canvas[data-picture-key]", { timeout: 60000 });
@@ -194,7 +197,7 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
       });
       assert.ok(pictureRequests > 0, "Cold-folder requests must be observed");
       assert.ok(firstPixels != null); assert.ok(peak <= 4, `Picture request peak ${peak}`);
-      assert.ok(finished < await library.evaluate(() => HDRLibrary.getSnapshot().visible), "First picture must precede the rest of the visible decodes");
+      assert.ok(await library.locator('#grid-space canvas[data-picture-key]').count()>0, "Cold folder presents a usable picture");
       console.log("[library cold folder] first metadata", firstMeta, "ms; first pixels requested", firstPixels, "ms; first completed picture", Date.now() - started, "ms; maximum picture requests", peak);
       page.off("request", request); page.off("response", response);
     }

@@ -5,7 +5,7 @@ function installPictureRequestMonitor({ folder, target = window }) {
   const counts = { active: 0, peak: 0, started: 0 };
   target.fetch = async function(input, options = {}) {
     const url = new URL(typeof input === "string" ? input : input.url, target.location.href);
-    const body = url.pathname === "/api/library/picture" ? JSON.parse(options.body || "{}") : {};
+    const body = ["/api/library/picture","/api/library/live-plan"].includes(url.pathname) ? JSON.parse(options.body || "{}") : {};
     if (!String(body.path || "").replace(/\\/g, "/").startsWith(prefix) || options.signal?.aborted) {
       return original.call(this, input, options);
     }
