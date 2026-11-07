@@ -65,6 +65,7 @@ body.slider-hover .slider-key-legend { opacity: 1; }
 }
 :root .control-foldout[open] > summary::before { transform: rotate(90deg); }
 :root .panel-collapse-button { width: 26px; height: 24px; min-height: 24px; padding: 0; }
+:root .source-rail:not(.collapsed) .rail-title-row { grid-template-columns: minmax(0, 1fr) auto; } /* fit the 26 px button, not the 24 px token */
 :root .section-bypass { min-width: 26px; padding: 0; }
 :root .local-tool-strip { display: flex; gap: 6px; flex-wrap: wrap; }
 :root .local-tool-strip > button { width: 40px; height: 34px; min-height: 34px; min-width: 40px; flex: 0 0 40px; padding: 0; background: var(--plate-up); border: 1px solid var(--plate-edge); border-radius: var(--radius-plate); box-shadow: var(--plate-lift); color: var(--body); }
