@@ -1840,7 +1840,12 @@
       splitter.addEventListener("pointercancel", stop);
       splitter.addEventListener("lostpointercapture", stop);
     });
-    splitter.addEventListener("dblclick", () => setWidth(250));
+    splitter.addEventListener("dblclick", () => {
+      // Reset to the stylesheet's default width for this side.
+      library.style.removeProperty(`--library-${side}-w`);
+      width = displayedWidth();
+      splitter.setAttribute("aria-valuenow", String(Math.round(width)));
+    });
     splitter.addEventListener("keydown", event => {
       const value = event.key === "Home" ? 200 : event.key === "End" ? maximum
         : event.key === "ArrowLeft" ? width - 8 * direction
