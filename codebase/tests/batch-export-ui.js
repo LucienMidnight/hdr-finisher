@@ -23,7 +23,7 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
     await page.waitForFunction(()=>HDRGradeSaving.ready());
     await page.locator('[data-workflow-tab="export"]').click();
     await page.locator('#batch-preset-editor').waitFor();
-    await page.waitForFunction(()=>document.getElementById('batch-summary').textContent.includes('1 photos'));
+    await page.waitForFunction(()=>document.getElementById('batch-count').textContent.startsWith('1 photo ·'));
     assert.equal(await page.locator('#batch-grid').isVisible(),false,'Grade opens Preview');
     await page.evaluate(paths=>window.batchExport.open(paths,{fromLibrary:true}),photos);
     await page.locator('#batch-grid-panel').waitFor();
@@ -161,11 +161,13 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
     assert.ok(bounds.grid.bottom<=bounds.strip.top+1,'grid ends above fixed progress strip');
     // The preset has no HDR version, so an SDR-only photo loses nothing and is not flagged.
     assert.equal(await page.locator('.batch-flag').count(),0);
-    // Preset rail, batch and control panel headers share one baseline.
-    const headers=await page.evaluate(()=>['#batch-preset-rail .panel-title','.batch-header .panel-title','#export-sheet .panel-title'].map(s=>Math.round(document.querySelector(s).getBoundingClientRect().top)));
+    // Preset rail and control panel headers share one baseline; the batch title
+    // sits in the bottom bar under the grid (November 7).
+    const headers=await page.evaluate(()=>['#batch-preset-rail .panel-title','#export-sheet .panel-title'].map(s=>Math.round(document.querySelector(s).getBoundingClientRect().top)));
     assert.ok(Math.max(...headers)-Math.min(...headers)<=2,`column headers line up: ${headers}`);
     assert.ok(bounds.rail.top>=bounds.top.bottom-1,'control panel clears the top bar');
-    assert.equal(await page.locator('#viewer-status-dock').isVisible(),false);
+    // Export shows the shared status bar under the batch (UI polish, November 4).
+    assert.equal(await page.locator('#viewer-status-dock').isVisible(),true);
     assert.ok(await page.locator('.batch-photo').first().evaluate(el=>el.lastChild.getBoundingClientRect().bottom<=el.getBoundingClientRect().bottom+1),'tile must retain the full caption');
     if(process.env.HDR_POLISH_SMALL)assert.ok(await page.locator('#batch-grid').evaluate(el=>el.scrollHeight>el.clientHeight),'large batch must scroll');
     await page.locator('#export-sheet').evaluate(el=>el.scrollTop=0);
