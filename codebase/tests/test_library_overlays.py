@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 from PIL import Image
 from hdr_finisher.library_overlays import exposure_regions, OverlayMaps
@@ -115,3 +116,42 @@ def test_mosaiced_raw_shadow_needs_all_colours_not_one_dark_channel():
     blown,blocked=exposure_regions(values,64,4095,np.asarray([[0,1],[3,2]]))
     assert not blown.any() and blocked.sum()==16 and blocked[6:10,8:12].all()
     assert not blocked[:6].any()
+
+
+def _scene(height=900,width=1350):
+    # Linear sensor-like brightness with structure at several scales.
+    rng=np.random.default_rng(7);y,x=np.indices((height,width))
+    values=.2+.15*np.sin(x/37.)*np.cos(y/53.)+.1*((x//90+y//70)%2)
+    values+=np.kron(rng.random((height//30+1,width//30+1)),np.ones((30,30)))[:height,:width]*.2
+    return values.astype(np.float32)
+
+
+def _preview(scene,frame,size):
+    h,w=scene.shape;x,y,fw,fh=frame
+    crop=scene[round(y*h):round((y+fh)*h),round(x*w):round((x+fw)*w)]
+    signal=np.where(crop<=.0031308,crop*12.92,1.055*np.power(np.clip(crop,0,1),1/2.4)-.055)
+    return Image.fromarray((np.clip(signal,0,1)*255).astype(np.uint8)).resize(size,Image.BILINEAR)
+
+
+def test_camera_preview_is_placed_on_the_measured_frame():
+    from hdr_finisher.library_overlays import register_preview
+    scene=_scene();truth=(.004,.003,.9933,.9931)  # A Canon-like inset crop.
+    found=register_preview(scene,_preview(scene,truth,(1200,800)))
+    assert np.allclose(found,truth,atol=.0015)
+    portrait=np.ascontiguousarray(np.rot90(scene));truth=(.002,.006,.995,.99)
+    found=register_preview(portrait,_preview(portrait,truth,(540,808)))
+    assert np.allclose(found,truth,atol=.0015)
+
+
+def test_unrelated_camera_preview_is_refused():
+    from hdr_finisher.library_overlays import register_preview,PreviewNotAligned,camera_frame
+    scene=_scene();other=np.ascontiguousarray(np.flipud(np.fliplr(_scene())))**2
+    with pytest.raises(PreviewNotAligned):register_preview(scene,_preview(other,(0,0,1,1),(1200,800)))
+    assert 'camera_frame_error' in camera_frame('unused',scene,_preview(other,(0,0,1,1),(1200,800)))
+
+
+def test_map_reports_the_measured_frame_inside_pooled_cells(tmp_path):
+    p=tmp_path/'a.png';Image.fromarray(np.zeros((1001,1500,3),dtype=np.uint8)).save(p)
+    meta=OverlayMaps(tmp_path/'app').build(p)
+    assert (meta['width'],meta['height'])==(500,334) and meta['frame']==pytest.approx([0,0,500,1001/3])
+    assert 'camera_frame' not in meta  # Direct pictures are shown whole.

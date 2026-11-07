@@ -11,7 +11,8 @@ from .library_pictures import LibraryPictureCache, check_cancelled
 from .library_diagnostics import log
 from .raw_import import RAW_EXTENSIONS
 
-VERSION="library-overlay-v2"
+VERSION="library-overlay-v3"
+REGISTER_EDGE=640
 
 
 def map_key(path,kind,quality="half"):
@@ -19,9 +20,13 @@ def map_key(path,kind,quality="half"):
     return sha256(f"{VERSION}:{path}:{s.st_size}:{s.st_mtime_ns}:{kind}:{quality}".encode()).hexdigest()
 
 
+def pool_cell(h,w,edge=512):
+    return max(1,int(np.ceil(max(h,w)/edge)))
+
+
 def pool_max(values,edge=512):
     """Retain isolated warnings/detail within every small map cell."""
-    h,w=values.shape[:2];sy=sx=max(1,int(np.ceil(max(h,w)/edge)))
+    h,w=values.shape[:2];sy=sx=pool_cell(h,w,edge)
     shape=(int(np.ceil(h/sy))*sy,int(np.ceil(w/sx))*sx)
     padded=np.pad(values,((0,shape[0]-h),(0,shape[1]-w)),mode="constant")
     return padded.reshape(shape[0]//sy,sy,shape[1]//sx,sx).max(axis=(1,3))
@@ -53,7 +58,84 @@ def orient_samples(values,orientation):
     return values
 
 
-def exposure_source(path,cancelled=None):
+def small_luminance(values,edge=REGISTER_EDGE):
+    """A small linear brightness picture of a measured frame, for lining up the camera preview."""
+    import cv2
+    values=np.asarray(values)
+    h,w=values.shape[:2];scale=min(1.,edge/max(h,w))
+    size=(max(1,round(w*scale)),max(1,round(h*scale)))
+    if values.ndim==3:values=values[...,:3]
+    small=cv2.resize(np.ascontiguousarray(values,dtype=np.float32),size,interpolation=cv2.INTER_AREA)
+    return (small.mean(axis=2) if small.ndim==3 else small).astype(np.float32)
+
+
+def camera_preview_image(path):
+    """The camera's embedded preview, oriented exactly as the Library shows it."""
+    import rawpy
+    with rawpy.RawPy() as raw:
+        raw.open_file(str(path))
+        thumb=raw.extract_thumb()
+        if thumb.format==rawpy.ThumbFormat.JPEG:
+            image=Image.open(BytesIO(thumb.data));image.draft("RGB",(1024,1024))
+        else:image=Image.fromarray(thumb.data)
+        return ImageOps.exif_transpose(image).convert("L")
+
+
+class PreviewNotAligned(ValueError):
+    pass
+
+
+def register_preview(luminance,preview):
+    """Where the camera preview sits in the measured frame, as fractions [x, y, width, height].
+
+    The embedded JPEG is usually a slightly inset crop of the sensor area
+    (Canon: the camera's 5184 x 3456 inside LibRaw's 5202 x 3464), so the map is
+    lined up by image registration (scale and offset), checked before use."""
+    import cv2
+    def prepared(values):
+        values=np.maximum(np.asarray(values,dtype=np.float32),0)
+        top=float(np.percentile(values,99))
+        if top<=0:raise PreviewNotAligned("The camera preview could not be lined up with the sensor data: the picture is blank.")
+        return np.log(values/top+1e-3).astype(np.float32)
+    signal=np.asarray(preview,dtype=np.float32)/255
+    signal=np.where(signal<=.04045,signal/12.92,((signal+.055)/1.055)**2.4)
+    width=REGISTER_EDGE;ph=max(8,round(width*signal.shape[0]/signal.shape[1]))
+    template=prepared(cv2.resize(signal.astype(np.float32),(width,ph),interpolation=cv2.INTER_AREA))
+    sh=max(8,round(width*luminance.shape[0]/luminance.shape[1]))
+    measured=prepared(cv2.resize(np.asarray(luminance,dtype=np.float32),(width,sh),interpolation=cv2.INTER_AREA))
+    preview_aspect=signal.shape[1]/signal.shape[0];sensor_aspect=luminance.shape[1]/luminance.shape[0]
+    if abs(np.log(preview_aspect/sensor_aspect))>np.log(1.02):
+        # A different picture shape (for example an in-camera 16:9 crop): start from a centred crop.
+        fw,fh=(min(1.,preview_aspect/sensor_aspect),min(1.,sensor_aspect/preview_aspect))
+    else:fw=fh=1.
+    warp=np.asarray([[fw,0,(1-fw)/2*width],[0,fh*sh/ph,(1-fh)/2*sh]],dtype=np.float32)
+    try:
+        score,warp=cv2.findTransformECC(template,measured,warp,cv2.MOTION_AFFINE,
+            (cv2.TERM_CRITERIA_EPS|cv2.TERM_CRITERIA_COUNT,200,1e-6),None,5)
+    except cv2.error as error:
+        raise PreviewNotAligned("The camera preview could not be lined up with the sensor data.") from error
+    (a,b,tx),(c,d,ty)=warp
+    frame=[float(tx/width),float(ty/sh),float(a),float(d*ph/sh)]
+    x,y,w,h=frame
+    shape_error=abs(np.log((w*luminance.shape[1])/(h*luminance.shape[0])/preview_aspect))
+    if (score<.8 or abs(b)>.005 or abs(c)>.005 or w<.3 or h<.3 or x<-.02 or y<-.02
+            or x+w>1.02 or y+h>1.02 or shape_error>.015):
+        raise PreviewNotAligned("The camera preview could not be lined up with the sensor data.")
+    return frame
+
+
+def camera_frame(path,luminance,preview=None):
+    """Return metadata placing the map under the camera preview, or the reason it cannot."""
+    try:
+        preview=camera_preview_image(path) if preview is None else preview
+        return {"camera_frame":register_preview(luminance,preview)}
+    except PreviewNotAligned as error:return {"camera_frame_error":str(error)}
+    except Exception as error:return {"camera_frame_error":f"The camera preview could not be read: {error}"}
+
+
+def exposure_source(path,cancelled=None,probe=None):
+    """Return blown and blocked masks. `probe`, when given, receives a small
+    luminance picture of the same frame for camera-preview registration."""
     path=Path(path);check_cancelled(cancelled)
     if path.suffix.lower() in RAW_EXTENSIONS:
         if path.suffix.lower()==".dng":
@@ -67,6 +149,7 @@ def exposure_source(path,cancelled=None):
                     series=tif.series[inspection.primary_series_index]
                     samples=_normalize_layout(series.asarray(),getattr(series,"axes",None))
                 samples=crop_and_orient(normalize_camera_samples(samples,color_metadata_from_mapping(inspection.metadata)),inspection.metadata)
+                if probe is not None:probe["luminance"]=small_luminance(samples)
                 return exposure_regions(samples,0.,1.)
         import rawpy
         with rawpy.imread(str(path)) as raw:
@@ -85,6 +168,7 @@ def exposure_source(path,cancelled=None):
             # LibRaw flip values correspond to its default output orientation.
             rotations={3:2,5:1,6:3};turns=rotations.get(raw.sizes.flip,0)
             if turns: blown=np.rot90(blown,turns);blocked=np.rot90(blocked,turns)
+            if probe is not None:probe["luminance"]=np.rot90(small_luminance(samples)-float(np.mean(raw.black_level_per_channel)),turns)
             return blown.copy(),blocked.copy()
     if path.suffix.lower() in {".png",".jpg",".jpeg"}:
         from .loader import is_ultrahdr_jpeg
@@ -141,10 +225,12 @@ class OverlayMaps:
         existing=self.cached(path,kind,quality)
         if existing:return existing
         start=perf_counter();key=map_key(path,kind,quality);check_cancelled(cancelled)
+        raw=Path(path).suffix.lower() in RAW_EXTENSIONS;probe={} if raw else None
         if kind=="exposure":
-            try: blown,blocked=exposure_source(path,cancelled)
+            try: blown,blocked=exposure_source(path,cancelled,probe)
             except ValueError as error: return {"unavailable":str(error)}
             check_cancelled(cancelled)
+            source=blown.shape[:2]
             data=np.stack([pool_max(blown),pool_max(blocked)],axis=2).astype(np.uint8)*255
         elif kind=="focus":
             from .library_focus import focus_map
@@ -152,11 +238,21 @@ class OverlayMaps:
             pixels,_,info=decode_picture(Path(path),100000,"native" if quality=="full" else "quick")
             check_cancelled(cancelled)
             if quality=="half" and info["route"]!="quick-half-raw":pixels=pixels[::2,::2]
+            source=pixels.shape[:2]
+            if raw:probe["luminance"]=small_luminance(pixels)
             values,_noise=focus_map(pixels,cancelled)
             data=values[:,:,None]
             del pixels
         else:raise ValueError("Unknown Library overlay.")
-        meta={"kind":kind,"quality":quality,"path":str(path),"width":data.shape[1],"height":data.shape[0],"make_ms":round((perf_counter()-start)*1000,2)}
+        # `frame` is the measured picture inside the map (pooling pads the last
+        # cells); `camera_frame` is the camera preview's area, both in map pixels.
+        cell=pool_cell(*source);frame=[0.,0.,source[1]/cell,source[0]/cell]
+        placed={}
+        if raw and probe.get("luminance") is not None:
+            check_cancelled(cancelled);placed=camera_frame(path,probe.pop("luminance"))
+            if "camera_frame" in placed:
+                x,y,w,h=placed["camera_frame"];placed["camera_frame"]=[x*frame[2],y*frame[3],w*frame[2],h*frame[3]]
+        meta={"kind":kind,"quality":quality,"path":str(path),"width":data.shape[1],"height":data.shape[0],"frame":frame,**placed,"make_ms":round((perf_counter()-start)*1000,2)}
         if not self.cache.managed.preferences()['enabled']:
             return self.cache.transient_result(key, {'values':data,'metadata':np.asarray(json.dumps(meta))},meta)
         self.cache.managed.prepare()
