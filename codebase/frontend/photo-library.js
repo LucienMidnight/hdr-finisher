@@ -1996,6 +1996,8 @@
         target.canvas=canvas;target.meta=meta;
       }
       if(!current())return false;
+      // The photo is graded before its overlays attach, so no ungraded map is reused.
+      Object.assign(photo,{edited:row.edited,grade_identity:row.grade_identity});
       for(const target of targets) {
         const {cell,canvas,meta}=target;
         // Abort the previous owner and install its replacement in the same
@@ -2012,7 +2014,6 @@
         canvas.dataset.gradeHandoff=packet.id;
         overlays?.attach(photo,canvas,meta,cell.controller,()=>state.active&&cell.element.isConnected&&!cell.controller.signal.aborted);
       }
-      Object.assign(photo,{edited:row.edited,grade_identity:row.grade_identity});
       readyWindow.invalidate(p=>p.path===photo.path);quickWindow.invalidate(p=>p.path===photo.path);
       HDRLibraryScenes.invalidate([photo.path],{finishingOnly:true});
       for(const [key] of recentPictures)if(key.startsWith(photo.path+"|"))recentPictures.delete(key);
