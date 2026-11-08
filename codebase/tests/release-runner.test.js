@@ -89,6 +89,7 @@ function isolatedRunner(t) {
   const root=scratch(t);
   for (const dir of ['tests/release','tests/performance','desktop/tests','output']) fs.mkdirSync(path.join(root,dir),{recursive:true});
   fs.copyFileSync(path.join(__dirname,'release/runner.cjs'),path.join(root,'tests/release/runner.cjs'));
+  fs.copyFileSync(path.join(__dirname,'release/process-tree.cjs'),path.join(root,'tests/release/process-tree.cjs'));
   const projects=[0,1,2].map(i=>{const file=path.join(root,`fixture-${i}.hdrfinisher`);fs.writeFileSync(file,'protected');return file;});
   const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',windowsHide:true});
   git('init','--quiet');git('config','user.name','Release runner test');git('config','user.email','runner@example.invalid');
@@ -271,6 +272,19 @@ test('unverified Electron shutdown stops and blocks unsafe resume', t => {
   assert.equal(Object.keys(fixture.states()[0].results).length,1);
   const next=fixture.run('--tier','core');
   assert.match(next.stderr,/Previous shutdown was not verified/);
+});
+test('a passing driver stays passed and a process it left behind is stopped before the next driver', t => {
+  const fixture=isolatedRunner(t);
+  // Stands in for an Electron tree a launcher reported but left running.
+  fs.writeFileSync(path.join(fixture.root,'tests/pass.js'),`const c=require('child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'});c.unref();
+console.log('[runner] electron-main '+JSON.stringify({pid:c.pid}));console.log('LEFT='+c.pid);console.log('PASS');`);
+  fixture.git('add','tests/pass.js'); fixture.git('commit','-qm','leave a process behind');
+  const r=fixture.run('--tier','core','--stop-after','1');
+  const state=fixture.states()[0];
+  assert.equal(state.results['tests/pass.js'].classification,'passed',r.stdout+r.stderr);
+  assert.doesNotMatch(r.stdout,/STOP/);
+  const pid=Number(fs.readFileSync(state.results['tests/pass.js'].attempts[0].log,'utf8').match(/LEFT=(\d+)/)[1]);
+  assert.throws(()=>process.kill(pid,0),{code:'ESRCH'});
 });
 
 

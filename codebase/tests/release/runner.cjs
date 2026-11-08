@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
+const { stopProcessTree, describe } = require('./process-tree.cjs');
 const ROOT = path.resolve(__dirname, '../..');
 const OUTPUT = path.join(ROOT, 'output/release-checks');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -140,56 +141,37 @@ function attemptTimeout(driver, records) {
     && Number.isFinite(r.durationSeconds) && r.durationSeconds >= 1).at(-1);
   return prior ? Math.max(300000, prior.durationSeconds * 3000) : 900000;
 }
-function processAlive(pid) {
-  try { process.kill(pid, 0); return true; }
-  catch (error) { if (error.code === 'ESRCH') return false; throw error; }
-}
 // Synchronous so exit/signal handlers can also enforce the shutdown boundary.
-function stopTree(child, { group = process.platform !== 'win32' } = {}) {
-  if (!child?.pid) return;
-  const pid = child.pid;
-  let pids = [pid];
-  if (!processAlive(group ? -pid : pid)) return;
-  // Snapshot descendants before killing the root: once orphaned they cannot
-  // be recovered from the old parent PID. Verify every captured PID below.
-  let rows;
-  if (process.platform === 'win32') {
-    const snapshot = execFileSync('powershell.exe', ['-NoProfile', '-Command',
-      'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress'],
-      {encoding:'utf8', windowsHide:true, timeout:10000});
-    rows = [].concat(JSON.parse(snapshot)).map(row => [row.ProcessId, row.ParentProcessId]);
-  } else if (!group) {
-    rows = execFileSync('ps', ['-eo', 'pid=,ppid='], {encoding:'utf8', timeout:5000})
-      .trim().split('\n').map(line => line.trim().split(/\s+/).map(Number));
+// Throws only when an Electron process is still alive, because only then is
+// the next GPU driver unsafe. Other survivors are reported, not fatal.
+function stopTree(child, { group = process.platform !== 'win32', waitMs = 20000, deps } = {}) {
+  if (!child?.pid) return null;
+  if (group) { try { process.kill(-child.pid, 'SIGKILL'); } catch { /* already gone */ } }
+  const report = stopProcessTree([{ pid: child.pid }], { waitMs, deps });
+  return enforceShutdown(report, `process tree ${child.pid}`);
+}
+function enforceShutdown(report, what) {
+  for (const note of report.notes) console.error(`[runner] shutdown note: ${note}`);
+  if (report.blocking.length) throw Error(`STOP: shutdown verification failed: Electron still running after ${what} was stopped: ${describe(report.blocking)}; no further GPU work is safe.`);
+  const others = report.survivors.filter(item => !report.blocking.includes(item));
+  if (others.length) console.error(`[runner] SHUTDOWN WARNING: non-Electron processes outlived ${what}: ${describe(others)}`);
+  return report;
+}
+// Launchers print one line per Electron main process they started. After the
+// driver exits, the runner checks those trees itself, independent of the
+// driver's own result.
+const ELECTRON_MARKER = /^\[runner\] electron-main (\{.*\})\s*$/gm;
+function electronRoots(logText) {
+  const roots = [];
+  for (const match of cleanLog(logText).matchAll(ELECTRON_MARKER)) {
+    try { const root = JSON.parse(match[1]); if (Number.isInteger(root.pid)) roots.push(root); } catch { /* partial line */ }
   }
-  if (rows) for (let index = 0; index < pids.length; index++) {
-    pids.push(...rows.filter(([child, parent]) => parent === pids[index] && !pids.includes(child)).map(([child]) => child));
-  }
-  const alive = () => group ? processAlive(-pid) : pids.some(processAlive);
-  if (!alive()) return;
-  try {
-    if (process.platform === 'win32') execFileSync('taskkill', ['/pid', String(pid), '/T', '/F'], { encoding: 'utf8', windowsHide: true, timeout: 10000 });
-    else if (group) process.kill(-pid, 'SIGKILL');
-    else for (const item of pids.reverse()) {
-      try { process.kill(item, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
-    }
-  } catch (error) {
-    throw Error(`STOP: tree-kill failed for PID ${pid}: ${error.message}`);
-  }
-  const until = Date.now() + 5000;
-  while (alive() && Date.now() < until) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
-  if (alive()) {
-    // Windows can retain Node's child-process handle until the event loop runs.
-    // This synchronous shutdown cannot drain it; verify OS processes instead.
-    if (process.platform === 'win32') {
-      const snapshot = execFileSync('powershell.exe', ['-NoProfile', '-Command',
-        'Get-CimInstance Win32_Process | Select-Object ProcessId | ConvertTo-Json -Compress'],
-        {encoding:'utf8', windowsHide:true, timeout:10000});
-      const running = [].concat(JSON.parse(snapshot)).filter(Boolean).map(row => row.ProcessId);
-      if (!pids.some(item => running.includes(item))) return;
-    }
-    throw Error(`STOP: cannot verify process tree ${pid} exited; no further GPU work is safe.`);
-  }
+  return roots;
+}
+function verifyElectronGone(logText, { waitMs = 60000, deps } = {}) {
+  const roots = electronRoots(logText);
+  if (!roots.length) return null;
+  return stopProcessTree(roots, { waitMs, deps });
 }
 async function runInvocations(invocation, variants, fd, hooks, deadline, attemptDeadline, kill = stopTree) {
   const results = [];
@@ -254,7 +236,20 @@ async function execute(row, state, out, list, hooks, deadline, known) {
     if (hooks.stopped()) { state.interruptedAttempt = { driver: row.path, ...record }; return false; }
     attempts.push(record);
     write(path.join(out, 'state.json'), state);
-    if (results.some(r => r.exitCode === 86) || fs.readFileSync(log, 'utf8').includes('[runner] shutdown failed:')) throw Error('STOP: Electron shutdown could not be verified; no further GPU work is safe.');
+    // The driver's own result is recorded above; shutdown is checked separately.
+    const report = verifyElectronGone(fs.readFileSync(log, 'utf8'));
+    if (report) {
+      const lines = [...report.notes.map(note => `[runner] shutdown note: ${note}`),
+        ...(report.survivors.length ? [`[runner] SHUTDOWN CHECK: still running after the driver exited: ${describe(report.survivors)}`] : [])];
+      if (lines.length) { fs.appendFileSync(log, lines.join('\n') + '\n'); console.log(lines.join('\n')); }
+    }
+    if (results.some(r => r.exitCode === 86) || report?.blocking.length) {
+      state.results[row.path].classification = classify(attempts, known, row.path);
+      write(path.join(out, 'state.json'), state);
+      throw Error(report?.blocking.length
+        ? `STOP: shutdown verification failed: Electron still running after ${row.path}: ${describe(report.blocking)}; no further GPU work is safe.`
+        : 'STOP: Electron shutdown could not be verified (the launch returned no process handle); no further GPU work is safe.');
+    }
     if (results.some(r => launchFailed(r.exitCode))) throw Error('STOP: driver launch failed with STATUS_DLL_INIT_FAILED (3221225794); the parent console/session may have ended. Restore the session before resuming.');
     if (!record.timedOut && record.exitCode !== 0 && knownMessage(cleanLog(fs.readFileSync(log, 'utf8')), known, row.path)) break;
   }
@@ -403,5 +398,5 @@ async function main(args = process.argv.slice(2)) {
   process.exitCode = fatal || counts.new || counts.known ? 1 : counts.unfinished ? 130 : 0;
   return { out, state, counts };
 }
-module.exports = { attemptTimeout, launchFailed, stopTree, runInvocations, inventory, validate, changedAreas, select, command, history, estimate, classify, knownMessage, unfinishedSelection, hashProjects, checkProjects, parse, main };
+module.exports = { attemptTimeout, launchFailed, stopTree, enforceShutdown, electronRoots, verifyElectronGone, runInvocations, inventory, validate, changedAreas, select, command, history, estimate, classify, knownMessage, unfinishedSelection, hashProjects, checkProjects, parse, main };
 if (require.main === module) main().catch(error => { console.error(error.message); process.exitCode = 1; });

@@ -4,15 +4,22 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
-const { stopTree } = require('./release/runner.cjs');
+const { stopProcessTree } = require('./release/process-tree.cjs');
+const { assertDisposableProfile } = require('./test-profile.cjs');
+const { reportShutdown } = require('./launcher-shutdown.cjs');
 const [driver, ...args] = process.argv.slice(2);
 if (!driver) throw Error('usage: node tests/run-native-electron.js <driver.js> [arguments]');
 const desktop = path.resolve(__dirname, '../desktop');
-const trees = new Set();
+// pid -> start time (when known). Shutdown never throws or changes the exit
+// code; problems are reported after the driver's result at exit, and the
+// release runner re-checks the Electron tree before the next driver.
+const trees = new Map();
+const shutdown = { captured: [], survivors: [], blocking: [], notes: [] };
 function stop(pid) {
   if (!trees.has(pid)) return;
-  try { stopTree({pid}, {group: false}); trees.delete(pid); }
-  catch (error) { console.error(`[runner] shutdown failed: ${error.message}`); process.exitCode = 86; throw error; }
+  const report = stopProcessTree([{ pid, created: trees.get(pid) }]);
+  trees.delete(pid);
+  for (const key of Object.keys(shutdown)) shutdown[key].push(...report[key]);
 }
 function install(_electron) {
  const launch = _electron.launch.bind(_electron);
@@ -21,6 +28,7 @@ function install(_electron) {
   const env = { ...process.env, ...options.env };
   delete env.ELECTRON_RUN_AS_NODE;
   if (!env.HDR_FINISHER_USER_DATA_DIR) throw Error('Native driver must provide a disposable profile');
+  assertDisposableProfile(env.HDR_FINISHER_USER_DATA_DIR, 'HDR_FINISHER_USER_DATA_DIR');
   const size = env.HDR_FINISHER_ELECTRON_WINDOW_SIZE;
   if (size) {
     const [width, height] = size.split('x').map(Number);
@@ -45,7 +53,7 @@ function install(_electron) {
       console.error('[runner] shutdown failed: launch returned no process handle; cannot verify Electron exited');
       process.exit(86);
     }
-    try { for (const pid of [...trees]) stop(pid); } finally { process.exit(process.exitCode || 1); }
+    try { for (const pid of [...trees.keys()]) stop(pid); } finally { process.exit(process.exitCode || 1); }
   }, 180000);
   try { app = await launch({ ...options, args: launchArgs, env, timeout: 180000 }); }
   catch (error) { clearTimeout(timer); throw error; }
@@ -59,9 +67,10 @@ function install(_electron) {
     } finally { clearTimeout(timer); }
   };
   const launcherPid = app.process()?.pid;
-  if (launcherPid) trees.add(launcherPid);
-  const pid = await app.evaluate(() => process.pid);
-  trees.add(pid);
+  if (launcherPid) trees.set(launcherPid, undefined);
+  const { pid, started } = await app.evaluate(() => ({ pid: process.pid, started: Math.round(Date.now() - process.uptime() * 1000) }));
+  trees.set(pid, started);
+  console.log(`[runner] electron-main ${JSON.stringify({ pid, created: started })}`);
   // Keep the PID until OS shutdown is verified, even if DevTools disconnects.
   const close = app.close.bind(app);
   app.close = async () => {
@@ -114,7 +123,10 @@ const implementations = new Set([
   require(require.resolve('playwright', { paths: [desktop] }))._electron,
 ]);
 for (const implementation of implementations) install(implementation);
-process.on('exit', () => { for (const pid of [...trees]) { try { stop(pid); } catch { /* reported */ } } });
+process.on('exit', code => {
+  for (const pid of [...trees.keys()]) stop(pid);
+  reportShutdown(code, shutdown.captured.length || shutdown.notes.length ? shutdown : null);
+});
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => { process.exit(130); });
 process.argv = [process.argv[0], path.resolve(driver), ...args];
 require(path.resolve(driver));

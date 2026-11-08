@@ -84,6 +84,8 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
   const harnessAt=Date.now();
   // Always create our own empty profile; inherited real-app profile settings are ignored.
   const profile=keepProfile===null?fs.mkdtempSync(path.join(os.tmpdir(),'hdr-finisher-test-quick-')):path.join(os.tmpdir(),'hdr-finisher-test-quick-kept-'+keepProfile);
+  // A kept name must stay a plain folder name inside TEMP.
+  if(keepProfile!==null&&!/^[A-Za-z0-9._-]+$/.test(keepProfile))throw Error('--keep-profile must be a plain name (letters, digits, . _ -)');
   if(keepProfile!==null){fs.mkdirSync(profile,{recursive:true});for(const name of ['quick-result.json','quick-stage.json','quick-quit'])fs.rmSync(path.join(profile,name),{force:true});}
   const cacheInventory=()=>Object.fromEntries(['DawnWebGPUCache','GPUCache','DawnGraphiteCache'].map(name=>{
     const directory=path.join(profile,name),files=fs.existsSync(directory)?fs.readdirSync(directory).filter(n=>fs.statSync(path.join(directory,n)).isFile()).map(n=>{const body=fs.readFileSync(path.join(directory,n));return {name:n,bytes:body.length,sha256:require('node:crypto').createHash('sha256').update(body).digest('hex')};}):[];
@@ -140,6 +142,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
       }
     }
     const config={virtualCopy:process.argv.includes("--virtual-copy"),detail:process.argv.includes("--detail"),thumbnailMemory:process.argv.includes("--thumbnail-memory"),timingOnly:process.argv.includes("--timing-only"),appStartedAt:Date.now(),warmupFolder:path.join(root,'output/test-photos/library-live-grid').replaceAll('\\','/'),startupWarm:process.argv.includes("--startup-warm"),noStartupWarm:process.argv.includes("--no-startup-warm"),coldPipelines:process.argv.includes("--cold-pipelines"),gradeNativeMemory:process.argv.includes("--grade-native-memory"),batch5c:process.argv.includes("--batch5c"),popout:process.argv.includes("--popout"),idle:process.argv.includes('--idle'),loseReservation:process.argv.includes('--lose-reservation'),fullscreen:process.argv.includes('--fullscreen'),busy:process.argv.includes('--busy'),pixelReviewOut:out,gradeHandoffSdr:process.argv.includes("--grade-handoff-sdr"),gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,back:process.argv.includes('--back'),hdr:process.argv.includes('--hdr'),redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
+    require('../tests/test-profile.cjs').assertDisposableProfile(profile,'quick-library-check');
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE||'2560x1440').split('x').map(Number);
     fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width,height}));

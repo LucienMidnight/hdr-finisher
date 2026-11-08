@@ -34,7 +34,9 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { stopTree } = require("./release/runner.cjs");
+const { stopProcessTree } = require("./release/process-tree.cjs");
+const { assertDisposableProfile } = require("./test-profile.cjs");
+const { reportShutdown } = require("./launcher-shutdown.cjs");
 const playwright = require("playwright");
 
 const DESKTOP_DIRECTORY = path.resolve(__dirname, "..", "desktop");
@@ -82,6 +84,9 @@ let startupTimer;
   // disposable profile so the runner never writes to the owner's app state.
   const userDataDirectory = process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA
     || fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finisher-electron-test-"));
+  // The app gives a profile its own Library cache only when its path holds
+  // "test-"; any other profile shares the owner's real cache.
+  assertDisposableProfile(userDataDirectory, "HDR_FINISHER_ELECTRON_TEST_USER_DATA");
 
   // The §8 reference setup names a 2560x1440 viewport. The app restores its
   // window bounds from `window-state.json` in userData and a runtime resize
@@ -150,23 +155,22 @@ let startupTimer;
     } finally { clearTimeout(timer); }
   };
   let runnerStopping = false;
-  let stopped = false;
+  let shutdownReport = null;
   let electronMainProcessId;
+  let electronMainStarted;
+  // Never throws and never changes the exit code: the driver's own result
+  // decides that. A shutdown problem is printed separately at exit, and the
+  // release runner re-checks the Electron tree itself before the next driver.
   const stop = () => {
-    if (stopped) return;
+    if (shutdownReport) return;
     runnerStopping = true;
-    try {
-      stopTree({pid: electronMainProcessId || app.process()?.pid}, {group: false});
-      if (app.process()?.pid !== electronMainProcessId) stopTree(app.process(), {group: false});
-      stopped = true;
-    } catch (error) {
-      console.error(`[runner] shutdown failed: ${error.message}`);
-      process.exitCode = 86;
-      throw error;
-    }
+    shutdownReport = stopProcessTree([
+      { pid: electronMainProcessId, created: electronMainStarted },
+      { pid: app.process()?.pid },
+    ]);
   };
   cleanup = stop;
-  process.on("exit", () => { try { stop(); } catch { /* reported above */ } });
+  process.on("exit", code => { stop(); reportShutdown(code, shutdownReport); });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => { try { stop(); } finally { process.exit(process.exitCode || 130); } });
   }
@@ -194,7 +198,10 @@ let startupTimer;
   // The launcher pid Playwright tracks is the shell on Windows; the main
   // process pid is what owns the window and the backend sidecar, so shutdown
   // is anchored to it.
-  electronMainProcessId = await app.evaluate(() => process.pid);
+  ({ pid: electronMainProcessId, started: electronMainStarted } = await app.evaluate(() => ({
+    pid: process.pid, started: Math.round(Date.now() - process.uptime() * 1000),
+  })));
+  console.log(`[runner] electron-main ${JSON.stringify({ pid: electronMainProcessId, created: electronMainStarted })}`);
   console.log("[runner] window ready");
 
   // When the window goes away mid-driver, Playwright only says "Target page,

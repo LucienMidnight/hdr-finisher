@@ -3049,6 +3049,34 @@
       }
     },
     {
+      "path": "tests/launcher-shutdown.cjs",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "Launcher exit report: the driver result first, a shutdown problem on its own line.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/startup-state.js"
+        ]
+      }
+    },
+    {
+      "path": "tests/test-profile.cjs",
+      "areas": [
+        "preview"
+      ],
+      "tier": "core",
+      "protects": "Launchers refuse a profile without test- in its path or inside the real profile.",
+      "launch": {
+        "method": "helper",
+        "via": [
+          "tests/startup-state.js"
+        ]
+      }
+    },
+    {
       "path": "tests/scope-exact-peak.js",
       "areas": [
         "preview"

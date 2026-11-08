@@ -377,8 +377,41 @@ exit. A failed kill or unverified close stops the run and preserves its lock
 for inspection; do not resume until the old processes are gone. Exit
 3221225794 (`STATUS_DLL_INIT_FAILED`, including its signed representation)
 stops immediately: restore the parent console/session before resuming, rather
-than attempting every remaining driver. Electron shutdown verification failure
-uses exit 86 and also stops the release run.
+than attempting every remaining driver. Exit 86 now means only that a launch
+timed out without a process handle; it also stops the release run.
+
+### Shutdown never replaces the driver's result (November 8, 2026)
+
+The launchers' shutdown check no longer throws or changes the exit code. At
+exit they print `[runner] driver result: passed|failed (exit code N)` first;
+any shutdown problem follows as a separate `SHUTDOWN WARNING (separate from the
+driver result)` line. Each launcher also prints
+`[runner] electron-main {"pid":…,"created":…}`. After every attempt the runner
+re-checks those trees itself (`tests/release/process-tree.cjs`), kills
+anything left, and waits up to 60 s. It stops the run (lock kept, as before)
+only if an Electron process, including its GPU process, is still alive. A
+leftover non-Electron helper is a logged warning. The driver's own
+classification is recorded before that stop.
+
+Why verification used to fail on Windows: the tree was found by parent ID
+alone. Windows never updates a process's parent ID, and IDs are reused, so
+an older unrelated process whose dead parent had Electron's ID was swept in.
+It was never killed and looked like a survivor. Teardown also had only 5 s. The tree now
+admits a child only if it started after its parent, and a survivor counts only
+if its ID and start time still match. The Electron main process is killed
+first so it cannot replace its GPU process. Exit waits are 20 s in the
+launchers and 60 s in the runner.
+
+### Disposable profiles
+
+The app gives a profile its own Library cache only when the profile path
+contains `test-` (`backend/hdr_finisher/library_cache.py`); otherwise it
+writes into the owner's real cache. `run-in-electron.js`,
+`run-native-electron.js` and `tools/quick-library-check.cjs` refuse to launch
+with a profile that lacks `test-`, sits inside the real profile, or stores a
+Library cache location outside a test folder (`tests/test-profile.cjs`).
+Python drivers that import the backend directly must set
+`HDR_FINISHER_APP_DATA_DIR` to a `test-` folder.
 
 Both Electron launchers print launch, window-ready, driver-start and driver-end
 markers. Startup (launch through readiness/setup) is bounded to three minutes;
