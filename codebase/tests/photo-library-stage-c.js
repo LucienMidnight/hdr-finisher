@@ -96,7 +96,12 @@ fs.mkdirSync(path.join(folder, "z-subfolder"));
   await page.screenshot({ path: path.join(output, "native-zoom.png") });
   await page.keyboard.press("f"); await page.keyboard.press("h");
   await library.waitForFunction(() => HDRLibrary.getSnapshot().hdr);
-  await page.keyboard.press("Escape"); await page.keyboard.press("z"); await library.locator("#grid-view").click();
+  // Fullscreen entry resets to Fit (Library PRD 5c, November 4), so Z after
+  // Escape is needed only if the view is still zoomed.
+  await page.keyboard.press("Escape");
+  if (await library.evaluate(() => HDRLibrary.getSnapshot().zoom)) await page.keyboard.press("z");
+  assert.equal(await library.evaluate(() => HDRLibrary.getSnapshot().zoom), false);
+  await library.locator("#grid-view").click();
   await library.waitForFunction(() => document.querySelectorAll("#grid-space canvas[data-picture-key]").length === 12);
   await page.screenshot({ path: path.join(output, "find-and-hdr.png") });
   await library.locator("#add-folder").click();
@@ -107,13 +112,16 @@ fs.mkdirSync(path.join(folder, "z-subfolder"));
   if (samples.every(source => fs.existsSync(source))) {
    const copied = fs.mkdtempSync(path.join(output, "native-formats-"));
    samples.forEach(source => fs.copyFileSync(source, path.join(copied, path.basename(source))));
+   // Library stage events, printed only if a native format never arrives.
+   await library.evaluate(() => { const inherited = window.HDRLibraryStopwatch; window.stageCLog = []; window.HDRLibraryStopwatch = (stage, fields = {}) => { window.stageCLog.push([stage, (fields.path || "").split(/[\/]/).pop(), fields.route || fields.reason || fields.picture_source || ""].join(" ")); return inherited(stage, fields); }; });
    await library.evaluate(folder => HDRLibrary.browse(folder), copied);
    await library.waitForFunction(() => document.querySelectorAll("#grid-space canvas[data-picture-key]").length === 3);
    await library.locator("#grid-space .library-cell").first().click(); await library.locator("#single-view").click();
    await library.waitForFunction(() => document.getElementById("single-picture").dataset.picturePath === HDRLibrary.getSnapshot().selected);
    if (!await library.evaluate(() => HDRLibrary.getSnapshot().zoom)) await page.keyboard.press("z");
    for (let i = 0; i < 3; i++) {
-    await library.waitForFunction(() => HDRLibrary.getSnapshot().native && !HDRLibrary.getSnapshot().nativeLoading && document.getElementById("native-picture").dataset.picturePath === HDRLibrary.getSnapshot().selected, null, { timeout: 90000 });
+    await library.waitForFunction(() => HDRLibrary.getSnapshot().native && !HDRLibrary.getSnapshot().nativeLoading && document.getElementById("native-picture").dataset.picturePath === HDRLibrary.getSnapshot().selected, null, { timeout: 90000 })
+     .catch(async error => { throw new Error(error.message + " " + JSON.stringify(await library.evaluate(() => { const s = HDRLibrary.getSnapshot(); return { selected: s.selected, zoom: s.zoom, native: !!s.native, nativeLoading: s.nativeLoading, status: document.querySelector("#library-status")?.textContent, shown: document.getElementById("native-picture").dataset.picturePath, stages: window.stageCLog.filter(line => !/^picture_(window|trace)/.test(line)).slice(-40) }; }))); });
     const snap = await library.evaluate(() => HDRLibrary.getSnapshot());
     assert.ok(snap.native.width > 2560 || snap.native.height > 2560, "Native source retains original dimensions");
     console.log("Native format passed:", path.extname(snap.selected), snap.native.width, snap.native.height);

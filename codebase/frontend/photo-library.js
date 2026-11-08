@@ -2226,6 +2226,9 @@
       const target = state.photos[Math.max(0,Math.min(state.photos.length-1,state.index+steps[key]))];
       if (state.view === "single" && target)
         navigationTrace = HDRLibraryTrace.begin(state.review ? "fullscreen" : "single",target.path);
+      // Arrowing while zoomed opens the next photo at the same zoom and place
+      // (Steve, November 4), so it asks for that photo's detail too.
+      if (state.view === "single" && state.zoom && target) state.detailRequested = target.path;
       event.preventDefault(); select(state.index + steps[key], true, event.shiftKey ? "range" : "single");
     }
     else if (key === "enter") { event.preventDefault(); openGrade(); }
