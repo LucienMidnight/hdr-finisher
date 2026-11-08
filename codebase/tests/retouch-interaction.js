@@ -180,10 +180,19 @@ async function centerPixel(page) {
     let release, entered;
     const hold = new Promise(resolve => { release=resolve; });
     const intercepted = new Promise(resolve => { entered=resolve; });
-    const intercept = async route => {
+    // Each held request is continued by its own handler exactly once. Unroute
+    // only after those handlers finish: Playwright continues any request still
+    // in flight when its route is removed, and a later continue then throws.
+    const handlers = [];
+    const handlerErrors = [];
+    const intercept = route => {
       entered();
-      await bounded(hold, "interception release");
-      await bounded(route.continue(), "intercepted request continuation");
+      const handled = (async () => {
+        await bounded(hold, "interception release");
+        await bounded(route.continue(), "intercepted request continuation");
+      })().catch(error => { handlerErrors.push(error.message); });
+      handlers.push(handled);
+      return handled;
     };
     await bounded(page.route("**/edit-commands", intercept), "interception installation");
     try {
@@ -196,8 +205,10 @@ async function centerPixel(page) {
       assert((await cancelled).ok());
     } finally {
       release();
+      await bounded(Promise.all(handlers), "intercepted request completion");
       await bounded(page.unroute("**/edit-commands", intercept), "interception cleanup");
     }
+    assert.deepEqual(handlerErrors, []);
     await page.waitForFunction(() => !retouchUI.busy);
     assert.equal(await page.evaluate(() => state.editDocument.repairs.length), 0);
     assert.deepEqual(errors, []);
