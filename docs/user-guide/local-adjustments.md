@@ -36,7 +36,7 @@ Curves and the colour wheels are global only. They are not in the local grade.
 
 ## Paint with the brush
 
-Choose **Brush**, then drag over the photo to paint the mask.
+Choose **Brush**, then drag over the photo to paint the mask. Press `[` to shrink the brush or `]` to enlarge it by about 10%, within the Size slider limits. These keys leave focused inputs alone.
 
 Under **Brush Controls**, set how new strokes behave:
 

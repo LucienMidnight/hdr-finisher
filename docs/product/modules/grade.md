@@ -1,5 +1,20 @@
 # Module PRD: Grade
 
+## November 8: Retouch selection visibility and Local brush size keys
+
+Selecting a repair in the list restarts its Retouch tool so its labelled
+circles and move controls appear even after the tool was turned off. Local
+Brush now uses `[` and `]` to shrink and enlarge the brush by about 10%,
+within the existing Size slider limits, for painting and erasing. Its status
+bar hints include these keys. Shortcuts leave focused inputs and other mask
+tools alone; existing strokes are unchanged.
+
+Checks: 847 JavaScript tests passed; 3,085 Python tests passed, three skipped,
+with the existing unrelated Library cached-scene failure. Both focused app
+checks passed (`retouch-transfer-interaction.js`, `brush-mask-interaction.js`).
+The default Library check repeated its existing drawing-gap failure; details
+are in the performance table.
+
 ## November 8: Retouch two-click repairs, labelled circles and tool key hints (Steve's decisions)
 
 Steve reshaped how Retouch is used

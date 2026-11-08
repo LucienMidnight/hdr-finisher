@@ -70,6 +70,25 @@ const hash=p=>crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex
   await page.locator("#retouch-size").fill("40");await paint(target,true);
   assert.equal(await page.evaluate(()=>state.editDocument.repairs[0].recipe.mode),"clone");
   assert(await page.evaluate(()=>state.editDocument.repairs[0].recipe.points.length>1));
+  // A repair selected from the list must show both rings even after the tool was turned off.
+  const assertSelectedRings = async () => {
+   const rings = await page.evaluate(() => {
+    const canvas=els.localMaskOverlay,ctx=canvas.getContext("2d"),frame=retouchFrame(canvas);
+    const recipe=selectedRetouchRecord().recipe,ratio=window.devicePixelRatio||1;
+    return [recipe.source_point,recipe.points[0]].map(point=>{
+     const p=retouchScreen(point,frame),r=recipe.radius_px*frame.scale;
+     const x=Math.round((p.x-r)*ratio),y=Math.round(p.y*ratio);
+     const pixels=ctx.getImageData(x-3,y-3,7,7).data;
+     return Array.from(pixels).some((v,i)=>i%4===3&&v>0);
+    });
+   });
+   assert.deepEqual(rings,[true,true],"selected repair must draw Source and Destination rings");
+  };
+  await page.mouse.move(10,10);
+  await page.locator("#retouch-mode-clone").click();
+  assert.equal(await page.evaluate(()=>retouchUI.active),false);
+  await page.locator("#retouch-list .local-adjustment-select").first().click();
+  await assertSelectedRings();
   const cloned=await meanAt(target);assert(cloned<baseline-20,`clone did not copy source ${baseline} -> ${cloned}`);
   assert.equal(await page.getByRole("button",{name:"Retry Spot 1",exact:true}).count(),0);
   // Full reload and bounded source refresh must agree on the same source copy.

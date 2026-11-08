@@ -4,7 +4,7 @@ function localKeyHints() {
   const local = selectedLocal();
   if (!localGizmoVisible(local)) return null;
   const type = selectedMaskLeaf(local)?.type;
-  if (type === "brush") return [["Drag", "paint"], ["Alt-drag", "erase"]];
+  if (type === "brush") return [["Drag", "paint"], ["Alt-drag", "erase"], ["[ ]", "size"]];
   if (type === "linear_gradient") return [["Drag", "draw"], ["Drag handle", "move"]];
   if (type === "luminance_range" || type === "hue_range") return [["Click", "sample"], ["Alt-click", "remove"]];
   if (type === "path") {
@@ -222,6 +222,23 @@ function bindLocalMaskCanvas() {
       queueLocalMaskOverlayRender();
       commitSelectedLocal();
     }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || !["[", "]"].includes(event.key)
+        || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (event.target?.closest("input, select, textarea, [contenteditable]")) return;
+    if (state.activeWorkflow !== "grade" || state.gradeMode !== "local" || state.localPointerGesture) return;
+    const local = selectedLocal(), leaf = selectedMaskLeaf(local, "brush");
+    if (!leaf || !localGizmoVisible(local) || state.localTool !== "brush") return;
+    const input = document.querySelector('[data-local-mask-param="brush_radius"]');
+    if (!input || input.disabled) return;
+    event.preventDefault();
+    const size = brushSettings(leaf).radius, step = Number(input.dataset.instrumentStep || input.step);
+    const next = event.key === "]" ? Math.max(size + step, size * 1.1) : Math.min(size - step, size / 1.1);
+    leaf.brush_radius = Math.max(Number(input.min), Math.min(Number(input.max), Math.round(next / step) / (1 / step)));
+    renderMaskTreeEditor(local);
+    queueLocalMaskOverlayRender();
+    commitSelectedLocal({ refreshPreview: false });
   });
   canvas.addEventListener("keydown", (event) => handlePathCanvasKeydown(event));
   canvas.addEventListener("pointerleave", () => {

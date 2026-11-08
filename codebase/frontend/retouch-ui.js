@@ -232,6 +232,8 @@ function renderRetouchControls() {
 function selectRetouchRepair(id) {
   const record = (state.editDocument?.repairs || []).find(r => r.id === id);
   if (!record || retouchUI.busy) return;
+  // Selecting a saved repair also restores its overlay and move controls.
+  retouchUI.active = Boolean(state.session);
   retouchUI.selected = id;
   retouchUI.draft = null;
   retouchUI.loadedRecipe = null;

@@ -46,6 +46,13 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+November 8 Retouch selection / Local brush keys smoke check (working tree on
+`6c6ceb34`, default 90-second mixed grid, concurrent Python suite): drawing
+gap 1,922 ms exceeds the unchanged 250 ms limit; timer block 114 ms, no
+picture errors or memory breach (peak 3.252 GB). This repeats the existing
+Library drawing-pause failure; no repeat or investigation for this UI fix.
+Evidence: `codebase/output/quick-library-check/retouch-local-brackets/report.json`.
+
 November 6 unified-toolbar UI smoke check (`c05e6f0f`, 2560x1440,
 90-second mixed grid, no concurrent fast suites): drawing gap 843 ms exceeds
 the unchanged 250 ms limit; timer block 86 ms. No picture errors or memory
@@ -332,6 +339,7 @@ these were corrected to exercise the intended tiered behavior.
 | Local range change, 24 MP, Fit / 100% | about 0.3 s | 0.042–0.054 / 0.129–0.141 s | grade.md | Met |
 | Local Exposure drag | — | about 31 frames/s | grade.md | Baseline |
 | Retouch, warm small spot | 1 s | 0.70–1.04 s | grade.md, Oct 23 | Met (borderline) |
+| Local brush erase release to settled mask (synthetic) | No agreed timing target | 206 ms (one observation) | Nov 8, working tree on 6c6ceb34; brush-mask-interaction.js during bracket-key check, Electron with concurrent Python suite; not a throughput comparison | Unknown |
 | Open the 297 MP line-scan DNG in Grade → first frame | — | import 19–30 s; first frame 34 s | Oct 30, Steve's app and disposable copies; backend holds 3.7 GB, spikes to 9.7 GB | Baseline |
 | Open a 50 MP ARW (DSC00636) in Grade → import | — | 7.8–9.6 s | Oct 30, disposable copy, headless Edge | Baseline |
 | Rating save (background) | — | about 110 ms | photo-library.md | Baseline |

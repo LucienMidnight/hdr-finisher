@@ -142,6 +142,25 @@ async function overlayMaskAlphaAt(page, x, y) {
     assert(await page.locator("#local-show-mask").getAttribute("aria-pressed") === "true", "A new brush should show its overlay by default.");
     assert(await page.locator(".local-mask-expression-row").count() === 0, "The redundant mask-expression strip is still visible.");
 
+    // Brackets resize the active brush without painting or stealing typed input.
+    const sizeInput = page.locator('[data-local-mask-param="brush_radius"]');
+    await page.locator("#local-mask-overlay").focus();
+    const originalSize = Number(await sizeInput.inputValue());
+    await page.keyboard.press("]");
+    assert(Number(await sizeInput.inputValue()) > originalSize, "Right bracket must grow the brush");
+    assert(await page.evaluate(() => brushSettings(selectedMaskLeaf(selectedLocal(), "brush")).radius) === Number(await sizeInput.inputValue()), `Shortcut must update the brush setting: ${await page.evaluate(() => JSON.stringify(selectedMaskLeaf(selectedLocal(), "brush")))} / slider ${await sizeInput.inputValue()}`);
+    await page.keyboard.press("[");
+    assert(Number(await sizeInput.inputValue()) === originalSize, "Left bracket must shrink the brush");
+    await page.evaluate(() => {
+      const input = document.createElement("input"); input.id = "brush-shortcut-typing";
+      document.body.append(input); input.focus();
+    });
+    await page.keyboard.press("]");
+    assert(await page.locator("#brush-shortcut-typing").inputValue() === "]", "Brackets must still type into text fields");
+    await page.locator("#brush-shortcut-typing").evaluate(input => input.remove());
+    assert(Number(await sizeInput.inputValue()) === originalSize, "Brackets must leave focused inputs alone");
+    assert(await page.evaluate(() => selectedMaskLeaf(selectedLocal(), "brush").strokes.length) === 0, "Resizing must not paint a stroke");
+
     // A source-anchored brush must be converted into the output square-pixel
     // metric before it is rasterized. A 3:2 landscape source rotated into a
     // portrait output used to squeeze the fallback and cursor by 2.25:1.
