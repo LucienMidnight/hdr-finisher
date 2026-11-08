@@ -1,5 +1,19 @@
 # Module PRD: Grade
 
+## November 8: Path points outside the photo stay grabbable (Steve's decision)
+
+Steve decided that Path points and their Bezier handles placed outside the
+photo must stay visible and grabbable. The October 27 containment repair had
+bounded the shared Local/Retouch canvas to the photo, which also clipped
+those points and stopped them receiving the pointer. While a Path (or a Path
+draft) is selected in Local with its gizmo shown, the canvas now covers the
+visible viewer again; the mask tint, exact mask, brush paint, sub-mask
+comparison and the Path's own draft fill are still clipped to the photo, so
+only the outline, points and handles reach past its edge. Retouch, Brush,
+Gradient, Luma and hue masks keep the photo-bounded canvas from October 27.
+No grade, mask arithmetic or export changed. Checks: `path-mask-interaction.js`
+(out-of-image handle hit, drag and hover) and `hsl-overlay-review.js`.
+
 ## November 7: startup theme redraw
 
 Theme changes redraw editor graphs only after editor state and elements have

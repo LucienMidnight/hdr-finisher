@@ -14,6 +14,30 @@ function appendLocalMaskComparisonLegend() {
   els.localMaskTreeSummary.append(legend);
 }
 
+// Photo rectangle in canvas CSS pixels while the canvas extends past the photo
+// for Path editing; null when the canvas is already bounded by the photo.
+let localMaskPhotoClip = null;
+
+function localPathGizmoReachesBeyondPhoto() {
+  if (state.activeWorkflow !== "grade" || state.gradeMode !== "local") return false;
+  const local = selectedLocal();
+  if (!local || local.enabled === false || state.adjustments?.shared?.local_adjustments_enabled === false) return false;
+  if (!localGizmoVisible(local)) return false;
+  return Boolean(state.localPathDraft?.localId === local.id || selectedMaskLeaf(local, "path"));
+}
+
+// Restrict later drawing to the photo, whatever transform is current.
+function clipToLocalMaskPhoto(context) {
+  const clip = localMaskPhotoClip;
+  if (!clip) return;
+  const current = context.getTransform();
+  context.setTransform(clip.ratio, 0, 0, clip.ratio, 0, 0);
+  context.beginPath();
+  context.rect(clip.left, clip.top, clip.width, clip.height);
+  context.clip();
+  context.setTransform(current);
+}
+
 function syncLocalMaskOverlayViewport() {
   const canvas = els.localMaskOverlay;
   const pane = els.previewPrimaryPane;
@@ -28,7 +52,14 @@ function syncLocalMaskOverlayViewport() {
   }
   const paneRect = pane.getBoundingClientRect();
   const viewportRect = viewport.getBoundingClientRect();
-  const photoRect = activePreviewElement().getBoundingClientRect();
+  // The canvas normally stops at the photo so mask tints and Retouch marks
+  // never spill onto the surrounding viewer. A Path's points and handles may
+  // sit outside the photo (Steve, November 8, 2026), so while one is being
+  // edited the canvas covers the visible viewer and renderLocalMaskOverlay
+  // clips everything except the Path outline, points and handles to the photo.
+  const photoRect = localPathGizmoReachesBeyondPhoto()
+    ? viewportRect
+    : activePreviewElement().getBoundingClientRect();
   const left = Math.max(0, viewportRect.left - paneRect.left, photoRect.left - paneRect.left);
   const top = Math.max(0, viewportRect.top - paneRect.top, photoRect.top - paneRect.top);
   const right = Math.min(paneRect.width, viewportRect.right - paneRect.left, photoRect.right - paneRect.left);
@@ -135,12 +166,16 @@ function renderLocalMaskOverlay() {
   const context = canvas.getContext("2d");
   context.setTransform(ratio, 0, 0, ratio, 0, 0);
   context.clearRect(0, 0, rect.width, rect.height);
+  localMaskPhotoClip = null;
   if (!active) return;
   const preview = activePreviewElement();
   const imageRect = preview?.getBoundingClientRect();
   if (!imageRect) return;
   const offsetX = imageRect.left - rect.left;
   const offsetY = imageRect.top - rect.top;
+  if (localPathGizmoReachesBeyondPhoto()) {
+    localMaskPhotoClip = { left: offsetX, top: offsetY, width: imageRect.width, height: imageRect.height, ratio };
+  }
   const gradeEdge = els.gradeSplitter?.getBoundingClientRect().left;
   state.localBrushVisibleBounds = {
     left: 0,
@@ -190,11 +225,14 @@ function renderLocalMaskOverlay() {
     gpuLumaOverlay: gpuLumaMaskPreviewActive(local),
     pathCursor: state.localPathCursor,
   };
+  context.save();
+  clipToLocalMaskPhoto(context);
   if (local.mask?.operator !== "leaf" && authoritativeCurrent && state.localShowMask) {
     drawAuthoritativeMaskOverlay(context, authoritative.canvas, x, y, 1);
   } else {
     drawMaskExpression(context, local.mask, x, y, { ...drawOptions, renderPhase: "mask" });
   }
+  context.restore();
   const coordinateMap = currentGeometryCoordinateMap();
   if (coordinateMap) {
     if (gizmoVisible && projectiveMatrixIsAffine(coordinateMap.sourceToOutput)) {
@@ -221,6 +259,8 @@ function renderLocalMaskOverlay() {
         },
       );
     }
+    context.save();
+    clipToLocalMaskPhoto(context);
     drawBrushExpressionOutputSpace(
       context,
       editorExpression,
@@ -229,6 +269,7 @@ function renderLocalMaskOverlay() {
       { ...drawOptions, suppressGizmo: !gizmoVisible },
       brushOutputSpaceMapper(imageRect, coordinateMap.sourceToOutput),
     );
+    context.restore();
   } else if (!coordinateMap) {
     void ensureGeometryCoordinateMap();
   }
@@ -239,7 +280,10 @@ function renderChildMaskComparisonOverlay(context, local, parts, x, y, imageRect
   const parentEntry = localComparisonMaskEntry(local, parts.id, "parent");
   const childEntry = parts.child ? localComparisonMaskEntry(local, parts.id, "child") : null;
   if (state.localShowMask && parentEntry) {
+    context.save();
+    clipToLocalMaskPhoto(context);
     drawLocalMaskComparison(context, parentEntry, childEntry, x, y);
+    context.restore();
   }
   void queueLocalComparisonMask(local, parts.id, "parent", parts.parent);
   if (parts.child) void queueLocalComparisonMask(local, parts.id, "child", parts.child);
@@ -282,6 +326,8 @@ function renderChildMaskComparisonOverlay(context, local, parts, x, y, imageRect
         },
       );
     }
+    context.save();
+    clipToLocalMaskPhoto(context);
     drawBrushExpressionOutputSpace(
       context,
       parts.child,
@@ -290,6 +336,7 @@ function renderChildMaskComparisonOverlay(context, local, parts, x, y, imageRect
       { ...drawOptions, suppressGizmo: !gizmoVisible },
       brushOutputSpaceMapper(imageRect, coordinateMap.sourceToOutput),
     );
+    context.restore();
   } else {
     void ensureGeometryCoordinateMap();
   }
@@ -1269,6 +1316,10 @@ function drawPathMaskGizmo(context, leaf, x, y, { drawFill = true, pathCursor = 
     : [];
   const innerPath = () => tracePathBoundary(context, inner, x, y, closed);
   if (drawFill && closed && state.localShowMask) {
+    // The draft fill is mask tint: keep it on the photo even though the
+    // outline and handles below may extend past it.
+    context.save();
+    clipToLocalMaskPhoto(context);
     drawPathFeatherDraftFill(
       context,
       inner,
@@ -1280,6 +1331,7 @@ function drawPathMaskGizmo(context, leaf, x, y, { drawFill = true, pathCursor = 
     innerPath();
     context.fillStyle = overlayColorWithAlpha(0.22 * clamp(Number(leaf.mask_opacity ?? 1), 0, 1));
     context.fill();
+    context.restore();
   }
   if (inner.length) {
     context.save();
