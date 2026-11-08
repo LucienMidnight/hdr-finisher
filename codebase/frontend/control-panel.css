@@ -173,7 +173,7 @@ body[data-grade-mode="retouch"] .local-mask-overlay.editing { pointer-events: au
   flex-direction: row; width: auto; min-width: 0; height: 34px;
   padding: 5px 8px; font: var(--font-size-xs) var(--font-body);
 }
-#retouch-list .local-adjustment-bypass { position: static; align-self: center; }
+#retouch-list .local-adjustment-bypass { position: relative; inset: auto; order: 1; align-self: center; }
 
 .retouch-content [hidden] { display: none !important; }
 #retouch-method { width: 100%; min-width: 0; }
