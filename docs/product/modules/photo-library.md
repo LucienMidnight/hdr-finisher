@@ -1,3 +1,17 @@
+## November 8: Grade-to-Library thumbnail shown on return
+
+Steve saw an empty tile for DSCF4011.RAF after returning from Grade. His log
+showed the hand-off completed while the Library was hidden: it drew the new
+picture into a kept (hidden) tile, and that tile came back empty when reused.
+Hand-offs that arrive while the Library is hidden now leave the old tile in
+place and are installed on return (old picture first, then an atomic swap
+once the saved picture loads; no empty frame). If that swap fails, the next
+settings check redraws the tile as ordinary Library work. The settings check
+also runs immediately on return instead of within a second, and a finished or
+unanswered (30 s) hand-off no longer prevents that redraw. Checked with
+`quick-library-check.cjs --grade-handoff --grade-handoff-sdr` (two passes:
+0 blank frames, saved picture ready 255-358 ms, shown 41 ms after return).
+
 ## November 8: Library release-driver repair (status)
 
 Drivers updated for intended behaviour (on-demand development, Show all files,

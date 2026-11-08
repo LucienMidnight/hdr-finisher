@@ -1385,3 +1385,10 @@ Log: `codebase/output/precision-peak-source.log`. The TIFF peak changes before
 GPU processing, from full-source 1180.0155 nits to reduced-source 1188.2466 nits.
 Historical October 31 reduction reproduces it. See the Library module PRD's
 November 8 peak diagnosis; no assertion or numerical tolerance was relaxed.
+
+## November 8 — Grade picture installed on return to the Library (uncommitted on ae64cbb2)
+
+| Action | Target | Observed | Conditions/result |
+| --- | --- | --- | --- |
+| Saved grade available → Library picture ready (Library hidden) | 500 ms | Autosave 358 ms; manual Save 255 ms | `quick-library-check.cjs --grade-handoff --grade-handoff-sdr`, plain Electron 2560x1440, library-live-grid copies; picture now installed on return, so this is ready time |
+| Return to Library → edited tile replaced | Log separately | 41 ms | Old tile shown until then; 0 blank frames over 30 frames |

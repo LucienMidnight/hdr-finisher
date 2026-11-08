@@ -416,6 +416,8 @@
   let restoring = 0;
   function setActive(active) {
     state.active = active;
+    // Runs after this paint (queued work), on every return path.
+    if (active) replaceDeferredGradeThumbnails();
     // Docking sends the saved place and then activates; the restore opens and
     // draws that place itself, so activation must not reopen over it.
     if (active && restoring) return;
@@ -439,7 +441,12 @@
       clearPrefetch(); state.single?.abort();
       state.native?.abort(); state.nativeSource?.abort();
     } else if ((state.path || state.collection) && !state.photos.length) void reopen();
-    else { paintGrid(); paintFilm(); if (state.view === "single") showSingle(); }
+    else {
+      paintGrid(); paintFilm(); if (state.view === "single") showSingle();
+      // Coming back from Grade: check saved grades now so any outdated tile
+      // without a pending hand-off is redrawn at once.
+      checkSettingsNow();
+    }
   }
   function diagnostics(photo, meta, elapsed) {
     if (!state.timing) return;
@@ -1391,7 +1398,6 @@
   function openGrade() {
     if (!selected() || selected()._pending) return;
     if (state.review) setReview(false);
-    for(const map of [state.cells,state.filmCells])map.handoffShown=new Set(map.shown||[]);
     const clickedAt = performance.timeOrigin + performance.now();
     HDRLibraryStopwatch("grade_open_click", { path: selected().path });
     postParent("open-source", { path: selected().source_path || selected().path, itemKey: selected().path, clickedAt });
@@ -1997,6 +2003,12 @@
     const current=()=>gradeHandoffs.get(packet.path)===entry&&!entry.controller.signal.aborted;
     const photo=state.allPhotos.find(photo=>photo.path===packet.path);
     if(!photo||!current())return false;
+    if(!state.active) {
+      // A tile drawn while the Library is hidden comes back empty. Keep the
+      // old tile; replaceDeferredGradeThumbnails swaps it on return.
+      entry.deferred=packet;entry.ready_at=Date.now();
+      return true;
+    }
     // The saved ticket supplies the intended grade. The finished-thumbnail
     // batch validates the current indexed grade again before returning pixels,
     // and load() rejects any response for a different ticket/source identity.
@@ -2012,10 +2024,6 @@
       // then take it using the cell's own identity and this view's pool key.
       if(!cell&&!pooled)for(const candidate of tilePool.values()){
         if(candidate.photo.path===photo.path){pooled=tilePool.take(tileKey(map,candidate.identity));if(pooled)break;}
-      }
-      if(!cell&&!pooled&&!state.active&&(map.shown?.has(photo.path)||map.handoffShown?.has(photo.path))){
-        pooled=makeCell(photo,map===state.cells?space:film,state.photos.findIndex(p=>p.path===photo.path),true);
-        pooled.started=true;pooled.element.remove();
       }
       const target=cell||pooled;
       if(target)targets.push({map,key,cell:target,pooled:!!pooled});
@@ -2067,13 +2075,35 @@
       }
     }
   }
+  // Returning from Grade: the old tiles are on screen; replace each edited
+  // one once its saved picture is loaded. A failure falls back to an
+  // ordinary Library redraw at the next settings check.
+  function replaceDeferredGradeThumbnails() {
+    for(const entry of gradeHandoffs.values()) {
+      const packet=entry.deferred;
+      if(!packet)continue;
+      entry.queue=entry.queue.catch(()=>{}).then(async()=>{
+        if(entry.deferred!==packet||!state.active)return;
+        const started=performance.now();let replaced=false;
+        try{replaced=state.active&&await replaceGradeThumbnail(packet);}
+        finally{
+          // Cleared only now, so the settings check leaves the old tile on
+          // screen while the saved picture loads.
+          // Leaving the Library again keeps the update for the next return.
+          if(entry.deferred===packet&&state.active){entry.deferred=null;if(!replaced){entry.finished=true;checkSettingsNow();}}
+        }
+        if(replaced)HDRLibraryStopwatch("grade_picture_shown_on_return",{path:packet.path,request:packet.id,
+          grade_identity:packet.grade_identity,duration_ms:performance.now()-started,view:logView()});
+      });
+    }
+  }
   gradePictureChannel.onmessage=event=>{
     const packet=event.data;
     if(packet.audience!==(standalone?"standalone":"docked"))return;
     if(packet.stage==="pending") {
       gradeHandoffs.get(packet.path)?.controller.abort();
       gradeHandoffs.delete(packet.path);
-      gradeHandoffs.set(packet.path,{...packet,previousIdentity:pictureIdentity(state.allPhotos.find(p=>p.path===packet.path)||{path:packet.path}),controller:new AbortController(),queue:Promise.resolve()});
+      gradeHandoffs.set(packet.path,{...packet,received:Date.now(),previousIdentity:pictureIdentity(state.allPhotos.find(p=>p.path===packet.path)||{path:packet.path}),controller:new AbortController(),queue:Promise.resolve()});
       while(gradeHandoffs.size>64){const key=gradeHandoffs.keys().next().value;gradeHandoffs.get(key).controller.abort();gradeHandoffs.delete(key);}
       return;
     }
@@ -2101,10 +2131,11 @@
           }
         }
         if(!current())return;
-        if(!entry.reported)HDRLibraryStopwatch("grade_picture_handoff",{path:packet.path,request:packet.id,grade_identity:packet.grade_identity,
+        entry.finished=true;
+        if(!entry.reported&&(entry.reported=true))HDRLibraryStopwatch("grade_picture_handoff",{path:packet.path,request:packet.id,grade_identity:packet.grade_identity,
           lanes:["hdr","sdr"],route:packet.captured_lane?"Grade picture + finishing redraw":"finishing redraw",reason:packet.reason,
-          available_to_picture_ms:entry.shown_at?entry.shown_at-packet.available_at:null,
-          release_to_picture_ms:entry.shown_at?entry.shown_at-packet.settled_at:null,active:state.active,view:logView()});
+          available_to_picture_ms:(entry.shown_at||entry.ready_at)?(entry.shown_at||entry.ready_at)-packet.available_at:null,
+          release_to_picture_ms:(entry.shown_at||entry.ready_at)?(entry.shown_at||entry.ready_at)-packet.settled_at:null,shown:entry.shown_at?"now":entry.ready_at?"on return to Library":undefined,active:state.active,view:logView()});
       } else if(packet.stage==="failed") {
         gradeHandoffs.delete(packet.path);
         HDRLibraryStopwatch("grade_picture_handoff",{path:packet.path,request:packet.id,grade_identity:packet.grade_identity,
@@ -2115,8 +2146,8 @@
       gradeHandoffs.delete(packet.path);
       HDRLibraryStopwatch("grade_picture_handoff",{path:packet.path,request:packet.id,grade_identity:packet.grade_identity,
         route:entry.captured_lane?"Grade picture + finishing redraw":"finishing redraw",reason:error.message,active:state.active,
-        available_to_picture_ms:entry.shown_at?entry.shown_at-packet.available_at:null,
-        release_to_picture_ms:entry.shown_at?entry.shown_at-packet.settled_at:null});
+        available_to_picture_ms:(entry.shown_at||entry.ready_at)?(entry.shown_at||entry.ready_at)-packet.available_at:null,
+        release_to_picture_ms:(entry.shown_at||entry.ready_at)?(entry.shown_at||entry.ready_at)-packet.settled_at:null,shown:entry.shown_at?"now":entry.ready_at?"on return to Library":undefined});
     });
   };
   let writerEvent = 0;
@@ -2143,7 +2174,10 @@
           if (row && (row.grade_identity || "") !== (photo.grade_identity || "")) {
             // Saved-grade hand-offs replace surfaces atomically. Polling must
             // not remove their old tiles while capture/storage is in flight.
-            if (gradeHandoffs.get(photo.path)?.grade_identity===row.grade_identity) continue;
+            // A hand-off that finished without replacing the tile, or stopped
+            // answering, no longer holds it: the tile is redrawn as Library work.
+            const handoff = gradeHandoffs.get(photo.path);
+            if (handoff?.grade_identity===row.grade_identity && (handoff.deferred || (!handoff.finished && Date.now()-handoff.received<30000))) continue;
             tilePool.discard(cell => cell.photo.path === photo.path);
             Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity });
             for (const map of [state.cells, state.filmCells]) { const cell = map.get(photo.path); if (cell) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); } }
@@ -2164,9 +2198,20 @@
         }
       } catch (error) { console.debug("Library settings:", error.message); }
     }
-    setTimeout(pollSettings, 1000);
   }
-  void pollSettings();
+  // One poll at a time. checkSettingsNow runs it at once (returning from
+  // Grade) instead of after the next one-second wait.
+  let settingsFlight = null, settingsTimer = 0, settingsAgain = false;
+  function checkSettingsNow() {
+    clearTimeout(settingsTimer);
+    if (settingsFlight) { settingsAgain = true; return; }
+    settingsFlight = pollSettings().finally(() => {
+      settingsFlight = null;
+      settingsTimer = setTimeout(checkSettingsNow, settingsAgain ? 0 : 1000);
+      settingsAgain = false;
+    });
+  }
+  checkSettingsNow();
   async function pollIndexing() {
     if (state.active && !document.hidden) { try { await api("/api/library/checks", { client: checkClient, visible: state.folderOpen?.controller === state.scan ? "" : state.path }); await activity.refresh(); } catch (error) { console.debug("Library index:", error.message); } }
     setTimeout(pollIndexing, 1000);
