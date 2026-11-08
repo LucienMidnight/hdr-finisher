@@ -1,6 +1,23 @@
+// Status bar keys for the Local mask tool under the pointer.
+function localKeyHints() {
+  if (state.activeWorkflow !== "grade" || state.gradeMode !== "local") return null;
+  const local = selectedLocal();
+  if (!localGizmoVisible(local)) return null;
+  const type = selectedMaskLeaf(local)?.type;
+  if (type === "brush") return [["Drag", "paint"], ["Alt-drag", "erase"]];
+  if (type === "linear_gradient") return [["Drag", "draw"], ["Drag handle", "move"]];
+  if (type === "luminance_range" || type === "hue_range") return [["Click", "sample"], ["Alt-click", "remove"]];
+  if (type === "path") {
+    if (state.localPathDraft) return [["Click", "add point"], ["Enter", "finish"], ["Esc", "cancel"]];
+    return [["[ ]", "select point"], ["S / M", "sharp / smooth"], ["Enter", "add point"], ["Del", "remove point"]];
+  }
+  return null;
+}
+
 function bindLocalMaskCanvas() {
   const canvas = els.localMaskOverlay;
   if (!canvas) return;
+  if (typeof keyHints !== "undefined") keyHints.register(localKeyHints);
   canvas.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
     const local = selectedLocal();

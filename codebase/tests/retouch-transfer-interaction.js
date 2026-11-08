@@ -36,7 +36,7 @@ const hash=p=>crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex
     return {height:surface.clientHeight,overflow:getComputedStyle(surface).overflowY,toolsBeforeList:tools.getBoundingClientRect().bottom<=surface.getBoundingClientRect().top};
   });
   assert.equal(repairLayout.height,localLayout.height);assert.equal(repairLayout.overflow,"scroll");assert(repairLayout.toolsBeforeList, "Repair tools must precede the repair list");
-  await page.locator("#retouch-brush").click();
+  assert.equal(await page.evaluate(()=>retouchUI.active),true,"entering Retouch did not start the tool");
   const screen=point=>page.evaluate(p=>{const r=activePreviewElement().getBoundingClientRect(),q=sourcePointToDisplay(p);return{x:r.left+q.x*r.width,y:r.top+q.y*r.height};},point);
   const altClick=async p=>{await page.keyboard.down("Alt");try{await page.mouse.click(p.x,p.y);}finally{await page.keyboard.up("Alt");}};
   const paint=async(point,drag=false,count=1)=>{
@@ -59,10 +59,11 @@ const hash=p=>crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex
   await page.locator("#retouch-mode-clone").click();
   assert(await page.locator("#retouch-source-controls").isVisible());
   assert(!(await page.locator("#retouch-method").isVisible()));
-  // Painting without a source must not create a repair or history entry.
+  // The first click sets the source; it must not create a repair or history entry.
   const initial=await page.evaluate(()=>state.editRevision),p=await screen(target);
   await page.mouse.click(p.x,p.y);
   assert.equal(await page.evaluate(()=>state.editRevision),initial);
+  assert(Math.abs(await page.evaluate(()=>retouchUI.source.x)-target.x)<.002,"first click did not set the source");
   await page.locator("#retouch-source-pick").click();
   const d=await screen(donor);await page.mouse.click(d.x,d.y);
   assert.equal(await page.evaluate(()=>state.editRevision),initial,"source pick created history");
@@ -86,20 +87,37 @@ const hash=p=>crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex
   await altClick(d);
   assert.equal(await page.evaluate(()=>state.editDocument.repairs.length),0,"source pick painted a repair");
   await page.locator("#retouch-opacity").fill("100");await paint(target);
+  assert.equal(await page.evaluate(()=>retouchUI.source),null,"a plain repair click must ask for a new source");
   const healed=await meanAt(target);assert(Math.abs(healed-baseline)<=2,`heal did not match boundary tone ${baseline} -> ${healed}`);
   await page.evaluate(()=>queueEditCommand("undo"));assert.equal(await page.evaluate(()=>state.editDocument.repairs.length),0);
   await page.evaluate(()=>queueEditCommand("redo"));assert.equal(await page.evaluate(()=>state.editDocument.repairs[0].recipe.mode),"heal");
-  // Edit the source of an already placed repair and save the new location.
+  // Alt-click moves the selected repair's source at once; its destination stays.
+  const placed=await page.evaluate(()=>state.editDocument.repairs[0].recipe.points);
   const changed=await screen({x:.3,y:.5});await altClick(changed);
-  await page.locator("#retouch-apply").click();await page.waitForFunction(()=>!retouchUI.busy);
-  assert(Math.abs(await page.evaluate(()=>state.editDocument.repairs[0].recipe.source_point.x)-.3)<.002);
+  await page.waitForFunction(()=>!retouchUI.busy&&Math.abs(state.editDocument.repairs[0].recipe.source_point.x-.3)<.002);
+  assert.deepEqual(await page.evaluate(()=>state.editDocument.repairs[0].recipe.points),placed,"Alt-click moved the destination");
+  // Dragging the destination circle moves the repair and keeps its source; undo puts it back.
+  const dest=await screen(placed[0]);await page.mouse.move(dest.x,dest.y);await page.mouse.down();
+  await page.mouse.move(dest.x,dest.y+40,{steps:5});await page.mouse.up();
+  await page.waitForFunction(y=>!retouchUI.busy&&state.editDocument.repairs[0].recipe.points[0].y>y+.01,placed[0].y);
+  assert(Math.abs(await page.evaluate(()=>state.editDocument.repairs[0].recipe.source_point.x)-.3)<.002,"destination drag moved the source");
+  assert.equal(await page.evaluate(()=>state.editDocument.repairs.length),1,"destination drag made a new repair");
+  await page.evaluate(()=>queueEditCommand("undo"));
+  assert.deepEqual(await page.evaluate(()=>state.editDocument.repairs[0].recipe.points),placed,"undo did not restore the destination");
+  // A plain click on the selected source circle picks it as the next source.
+  await page.mouse.click(changed.x,changed.y);
+  assert(Math.abs(await page.evaluate(()=>retouchUI.source.x)-.3)<.002,"click on a circle did not set the next source");
+  assert.equal(await page.evaluate(()=>state.editDocument.repairs.length),1);
   // Switching tools starts a new stroke, retaining each brush's source/settings.
   const savedHeal=await page.evaluate(()=>JSON.stringify(state.editDocument.repairs[0]));
   await page.locator("#retouch-mode-clone").click();
   assert.equal(await page.evaluate(()=>retouchUI.selected),null);
   assert.equal(await page.locator("#retouch-size").inputValue(),"40");
   assert.equal(await page.evaluate(()=>retouchUI.active),true);
-  await paint({x:.7,y:.6},false,2);
+  // Shift-click repairs and keeps the same source for the next repair.
+  await page.mouse.click(d.x,d.y);await page.keyboard.down("Shift");
+  try{await paint({x:.7,y:.6},false,2);}finally{await page.keyboard.up("Shift");}
+  assert(Math.abs(await page.evaluate(()=>retouchUI.source.x)-donor.x)<.002,"Shift-click did not keep the source");
   assert.equal(await page.evaluate(()=>JSON.stringify(state.editDocument.repairs[0])),savedHeal,"new Clone altered saved Heal");
   await page.locator("#retouch-mode-inpaint").click();
   await page.locator("#retouch-size").fill("12");await paint({x:.75,y:.7},false,3);
@@ -137,7 +155,7 @@ const hash=p=>crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex
     if(adjustments&&!await queueEditCommand("set_global_adjustments",{adjustments}))throw Error("Saved grade was not applied");
    },{photo:copy,rawSettings:saved?.source.raw_import_settings,adjustments:saved?.global_adjustments});
    await page.waitForFunction(()=>state.gpuPreview?.lastPresentedFrame&&!state.importInProgress,null,{timeout:120000});
-   await page.locator("#grade-mode-retouch").click();await page.locator("#retouch-brush").click();
+   await page.locator("#grade-mode-retouch").click();
    const spot={x:.81,y:.424},clean={x:.77,y:.43};
    await page.evaluate(async spot=>{
     setCustomZoom(100);await new Promise(requestAnimationFrame);

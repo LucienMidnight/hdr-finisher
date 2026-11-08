@@ -43,12 +43,14 @@ async function centerPixel(page) {
     await page.waitForFunction(() => state.session && !state.importInProgress && document.body.dataset.workflow === "grade", null, { timeout: 120000 });
     await page.waitForFunction(() => state.gpuPreview?.available && state.gpuPreview?.lastPresentedFrame, null, { timeout: 60000 });
     await page.locator("#grade-mode-retouch").click();
-    assert.equal(await page.locator("#retouch-method").inputValue(), "original-detail");
+    // Every photo starts with Standard inpaint; the prototype checks below choose Original texture.
+    assert.equal(await page.locator("#retouch-method").inputValue(), "standard");
     assert.equal(await page.locator("#retouch-feather").inputValue(), "71");
     assert.equal(await page.locator("#retouch-texture").inputValue(), "100");
     assert.equal(await page.locator("#retouch-hardness").inputValue(), "10");
-    // Cursor changes size without another pointermove.
-    await page.locator("#retouch-brush").click();
+    await page.locator("#retouch-method").selectOption("original-detail");
+    // Entering Retouch starts the tool; the cursor changes size without another pointermove.
+    assert.equal(await page.evaluate(() => retouchUI.active), true);
     const cursorPoint = await page.evaluate(() => { const r=activePreviewElement().getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}; });
     await page.mouse.move(cursorPoint.x,cursorPoint.y);
     const cursorWidth = () => page.evaluate(() => {
@@ -65,7 +67,11 @@ async function centerPixel(page) {
     assert(await cursorWidth()>smallCursor*3,"brush cursor did not resize on input");
     // A brush larger than the old cap must remain usable.
     await page.locator("#retouch-size").fill("100");
-    await page.locator("#retouch-brush").click();
+    // Clicking the lit tool turns it off; clicking again turns it back on.
+    await page.locator("#retouch-mode-inpaint").click();
+    assert.equal(await page.evaluate(() => retouchUI.active), false);
+    await page.locator("#retouch-mode-inpaint").click();
+    assert.equal(await page.evaluate(() => retouchUI.active), true);
     assert.equal(await page.locator("#retouch-size").inputValue(), "100", "larger brush size was not retained");
     await page.screenshot({ path: path.join(output, "before.png") });
     const beforePixel = await centerPixel(page);

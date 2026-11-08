@@ -21,7 +21,7 @@ const baseUrl=process.env.HDR_FINISHER_URL||'http://127.0.0.1:8765';
     });
     await page.locator('#file-input').setInputFiles({name:'retouch-latency.png',mimeType:'image/png',buffer:Buffer.from(data,'base64')});
     await page.waitForFunction(()=>state.session&&!state.importInProgress&&state.gpuPreview?.lastPresentedFrame,null,{timeout:120000});
-    await page.locator('#grade-mode-retouch').click();await page.locator('#retouch-brush').click();
+    await page.locator('#grade-mode-retouch').click();
     await page.evaluate(()=>setCustomZoom(100));
     async function idle(){
       await page.waitForFunction(()=>[...state.gpuPreview.proxies.values()].some(p=>p.longEdge>=6000&&!p.region),null,{timeout:60000});

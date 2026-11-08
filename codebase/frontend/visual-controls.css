@@ -43,9 +43,9 @@ button, input, select, textarea, output { font-family: var(--font-body); font-va
 :root .viewer-status-dock { grid-row: 3; display: flex; align-items: center; gap: 12px; height: var(--status-bar-h); min-height: var(--status-bar-h); padding: 0 12px; background: var(--panel); border-top: 1px solid var(--hairline); pointer-events: auto; }
 :root .application-status-entries { flex: 1; min-width: 0; max-height: var(--status-bar-h); overflow: auto; }
 :root .application-status-entry { background: var(--panel); box-shadow: none; font-size: var(--font-size-sm); }
-.slider-key-legend { flex-shrink: 0; opacity: .45; font: var(--font-weight-regular) var(--font-size-min) var(--font-body); letter-spacing: var(--tracking-none); text-transform: none; color: var(--muted); transition: opacity 120ms ease; }
+.slider-key-legend { flex-shrink: 0; max-width: 62%; overflow: hidden; white-space: nowrap; opacity: .45; font: var(--font-weight-regular) var(--font-size-min) var(--font-body); letter-spacing: var(--tracking-none); text-transform: none; color: var(--muted); transition: opacity 120ms ease; }
 .slider-key-legend b { color: var(--body); font-weight: var(--font-weight-semibold); }
-body.slider-hover .slider-key-legend { opacity: 1; }
+body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root :is(.control-mode-switch.proof-preview-switch, .control-mode-switch) { min-height: var(--tab-row-h); margin-top: 0; }
 :root .control-mode-switch button { min-height: var(--tab-row-h); font: var(--font-weight-medium) var(--font-size-md) var(--font-body); text-transform: none; }
 :root .control-group-header { height: var(--control-group-header-h); min-height: var(--control-group-header-h); padding-block: 0; }

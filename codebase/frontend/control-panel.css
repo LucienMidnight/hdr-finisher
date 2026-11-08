@@ -165,7 +165,9 @@ body[data-grade-mode="local"] .sdr-match-entire-actions { display: none; }
   box-shadow: var(--plate-lift);
 }
 
-body[data-grade-mode="retouch"] .local-mask-overlay.editing { pointer-events: auto; cursor: crosshair; }
+body[data-grade-mode="retouch"] .local-mask-overlay.editing { pointer-events: auto; cursor: none; }
+body[data-grade-mode="retouch"] .local-mask-overlay.editing[data-retouch-cursor="grab"] { cursor: grab; }
+body[data-grade-mode="retouch"] .local-mask-overlay.editing[data-retouch-cursor="grabbing"] { cursor: grabbing; }
 #local-mask-actions button { width: auto; flex: 0 0 auto; }
 .retouch-brush-tools.local-tool-strip button { min-height: 34px; }
 
@@ -214,4 +216,3 @@ body[data-grade-mode="retouch"] .local-mask-overlay.editing { pointer-events: au
 #control-mode-retouch .local-adjustment-copy > small { max-width: 65%; overflow: hidden; text-overflow: ellipsis; }
 #control-mode-retouch .local-empty { padding: 11px 12px; font-size: var(--font-size-min); color: var(--muted); }
 
-#control-mode-retouch #retouch-brush { margin-left: auto; }

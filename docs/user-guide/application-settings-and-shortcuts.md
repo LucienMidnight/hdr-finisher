@@ -85,6 +85,18 @@ The shortcut acts on the named HDR, SDR, or shared control. Actions labeled **Ac
 
 Home/End, direct numeric entry, and double-click reset keep their existing behavior. Alt/Option is not a precision modifier.
 
+## Retouch keys
+
+- **Heal and Clone:** click the source, then click the area to repair, or drag to paint a stroke. The next click picks a new source. **Shift-click** repairs and keeps the same source for the next repair.
+- **Moving a repair:** drag the **Source** or **Destination** circle of the selected repair. Or hold **Alt** and click to move its source, or **Ctrl** (**Command** on macOS) and click to move its destination. Releasing the key without clicking leaves it where it was.
+- **Up/Down** selects the previous or next repair, **Delete** removes the selected repair, and **[** and **]** make the brush smaller or larger.
+- **Escape** steps back: it discards a stroke, then an unused source, then the selection, and then turns the tool off.
+- Click the lit tool button to turn the tool off; click a tool to turn it on.
+
+## Status bar key hints
+
+The right end of the status bar lists useful keys. Over a panel it shows the slider keys. Over the photo, while a Retouch tool or a Local mask tool is in use, it shows that tool's keys for what you are doing now.
+
 ## Updates
 
 The desktop app can check the public GitHub Releases feed at startup or on demand. It compares the installed version with the latest release tag and shows a dismissible notice when a newer release exists. It does not download or install updates automatically, and an offline or failed check does not interrupt editing.

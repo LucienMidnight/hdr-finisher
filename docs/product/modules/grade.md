@@ -1,5 +1,52 @@
 # Module PRD: Grade
 
+## November 8: Retouch two-click repairs, labelled circles and tool key hints (Steve's decisions)
+
+Steve reshaped how Retouch is used
+([brief](../../technical/archive/briefs/codex-brief-retouch-gizmo-and-tool-shortcuts-2026-11-08.md)).
+Built the same day:
+
+- **Heal and Clone take two clicks.** The first click sets the source and the
+  second makes a round repair the size of the brush; a drag paints a stroke.
+  The tool is then ready for a new source. Shift-click (or Shift-drag) keeps
+  the source for the next repair. There is no "Keep source" switch.
+- **Labelled circles.** The selected repair, and the live brush while placing
+  one, show a cyan **Source** and an amber **Destination** circle, each with a
+  label outside it. Labels grow with zoom through the type tokens (11–16 px).
+  The joining line runs only between the circle edges.
+- **Moving a repair.** Hovering a circle of the selected repair highlights it;
+  dragging it (after 4 screen pixels) moves it, and a plain click always picks
+  a new source, even on a circle. Holding Alt makes the source follow the
+  pointer and Ctrl (Cmd on macOS) the destination; a click places it and
+  releasing the key without clicking puts it back. A move keeps the repair's
+  settings and seed and is one undo step. Moving the destination moves the
+  whole stroke; the source stays where it is.
+- **Keys.** Up and Down select repairs one at a time (in the list or over the
+  photo), Delete removes the selected repair, `[` and `]` change the brush
+  size by about 10%, and Escape steps back: discard the stroke, clear the
+  unused source, clear the selection, then turn the tool off.
+- **No crosshair, no centre dot** over the photo; the brush ring is the
+  cursor.
+- **Play and Pause are removed.** Choosing a tool starts it, clicking the lit
+  tool button turns it off, and entering the Retouch tab starts the current
+  tool.
+- **Standard inpaint is the default** whenever a photo is opened, replacing the
+  October 23 "Preserve original texture" default. Saved repairs keep their
+  method.
+- **Status bar key hints.** Over the photo, the right of the status bar lists
+  the keys of the tool in use (Retouch by step; Local Brush, Gradient, range
+  and Path masks). Over a panel it lists the slider keys. At most four items;
+  the least important drop off when the bar is narrow. Other tools can add
+  their own list (`frontend/key-hints.js`).
+
+No saved fields, repair pixels or export/Proof output changed. Checks: fast
+suites (845 JavaScript; 3,085 Python, one unrelated Library failure in
+`test_library_live.py`), `retouch-interaction.js`,
+`retouch-transfer-interaction.js` (now also covering Alt-click, destination
+drag with undo, click-on-circle and Shift-click) and `control-panel-polish.js`.
+Review crops: `codebase/output/review/retouch-gizmo/`. Look and feel is
+Steve's to judge.
+
 ## November 8: Path points outside the photo stay grabbable (Steve's decision)
 
 Steve decided that Path points and their Bezier handles placed outside the
@@ -876,7 +923,7 @@ order and numeric roundoff below 1e-12 are not edits (UI comparison only). HDR/S
 preserve scrolling. Local tools sit below the adjustment list, followed by
 visible mask actions, then Brush settings and Mask settings; there is no More
 menu for these actions. Retouch has an explicit Inpaint Brush and Stop painting
-control, and its preview overlay accepts painting in Retouch mode. Shared
+control (removed November 8: the tool buttons now turn painting on and off), and its preview overlay accepts painting in Retouch mode. Shared
 HDR/SDR metadata captions above these controls are removed. The panel title is centered in the shared preview-header height; the scrollbar track stays visible at a fixed width
 with or without overflow in all three modes.
 
@@ -1214,6 +1261,8 @@ groups U1 to U3), not here.
   open separately from the Batch 2 Library loading/lease fix; passing loading
   checks does not establish that the Retouch tool is satisfactory. Specific
   problems and desired improvements still need to be captured with Steve.
+  November 8: the interaction round above (two clicks, labelled circles,
+  moving repairs, keys) is built and awaits Steve's review.
 
 - **HSL performance follow-up, October 28:** the non-default 24 frames/s
   target at 100% remains unmet (Global 18-19, Local 9-12 on true 24 MP).

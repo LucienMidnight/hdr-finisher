@@ -88,7 +88,7 @@ These already have one job each and can be read whole.
 | Geometry | `geometry-math.js`, `geometry-resample.js` |
 | Scopes | `scope-analysis.js`, `scope-readback.js`, `scope-ui.js` |
 | Shader source text | `webgpu-shaders.js` (mostly WGSL) |
-| Application frame | `application-shell.js`, `desktop-chrome.js`, `app-dialog.js`, `status-manager.js`, `render-failure.js` |
+| Application frame | `application-shell.js`, `desktop-chrome.js`, `app-dialog.js`, `status-manager.js`, `key-hints.js` (status bar tool key hints), `render-failure.js` |
 | Projects and proofing | `project-io.js`, `proofing-ui.js` |
 
 ### Feature files
