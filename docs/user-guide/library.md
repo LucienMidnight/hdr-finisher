@@ -296,7 +296,11 @@ failed photo; work resumes when enough memory is available.
 
 ### Unsupported photos, interrupted decoders and offline folders
 
-Unedited RAWs show their embedded camera picture in the grid, filmstrip, Single, fullscreen and Compare when its long edge is at least 1024 pixels. They develop only for detail beyond that picture, or when you choose **Develop** from the right-click menu. Develop applies to the selection and never changes grades or sidecars. A quiet **Developed** label identifies HDR Finisher pictures, which remain while cached; after eviction, an unedited RAW returns to its camera picture.
+Unedited RAWs show their embedded camera picture in the grid, filmstrip, Single, fullscreen and Compare when its long edge is at least 1024 pixels. They develop only for detail beyond that picture, or when you choose **Develop** from the right-click menu. Develop applies to the selection and never changes grades or sidecars.
+
+When GPU development does not support a photo, the Library uses its CPU decoder. Development runs in the background helper and the finished picture is cached; if that decoder also cannot read the file, the photo shows an error while other pictures continue.
+
+A quiet **Developed** label identifies HDR Finisher pictures, which remain while cached; after eviction, an unedited RAW returns to its camera picture.
 
 Edited photos, photos without usable camera pictures, and mezzanine or HDR files develop only when shown. Plain SDR files are drawn directly. No neighbours or idle photos develop in the background.
 

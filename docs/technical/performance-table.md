@@ -46,6 +46,25 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+November 8 unsupported-DNG incident (pre-fix live app log, working tree
+on `3b1fd4ff`): the 2021-folder log showed repeated GPU-memory
+waits of roughly 30-41 s for iPhone DNGs, with 5,032,650,480 bytes requested
+per job. Header-only route selection now sends known unsupported DNGs to CPU
+before GPU admission. These Apple samples still reject LinearizationTable
+metadata; this is a routing repair, not a faster Apple decoder.
+
+Final-code Samsung DNG smoke (November 8, working tree on `3b1fd4ff`,
+2560x1440, disposable cold profile, concurrent Python suite): CPU preparation
+1.24-1.41 s across thumbnail/screen/native requests. User waits: Single input
+to matching canvas 1.663 s; 100% click to detail drawn 2.307 s. These are
+descriptive observations, not a new budget or a measured speedup. The check
+flags a 1,265 ms drawing gap against the unchanged 250 ms limit; no timer
+block or picture error, peak app 1.082 GB. The default mixed 90-second check
+also timed out in observe at its 130-second deadline; not rerun.
+Evidence: `codebase/output/quick-library-check/dng-cpu-detail/report.json`
+and `codebase/output/quick-library-check/dng-cpu-fallback/report.json`;
+CPU stage events: `codebase/output/quick-library-check/dng-cpu-detail/scenario.json`.
+
 November 8 movable Navigate window smoke check (working tree on `034d07c0`,
 default 90-second mixed grid, concurrent Python suite): drawing gap 1,576 ms
 exceeds the unchanged 250 ms limit; no picture errors or memory breach

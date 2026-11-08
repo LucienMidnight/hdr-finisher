@@ -671,3 +671,44 @@ def test_next_photo_detail_releases_previous_frame_without_breaking_active_draw(
     old_timer.function()  # A cancelled old callback cannot clear the new hold.
     assert service._held is next_frame
     service.release_other_frame('third.arw')
+
+
+def test_known_unsupported_gpu_plan_selects_cpu_without_gpu_budget(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher import library_api, library_estimates
+    from hdr_finisher.media_browser import MediaBrowserStore
+    path = photo(tmp_path)
+    monkeypatch.setattr(library_estimates, "gpu_metadata", lambda *a: {"cpu_route": "unsupported-gpu"})
+    class Helper:
+        def status(self): return {"paused": False}
+    app = FastAPI()
+    app.include_router(library_api.create_library_router(Helper(), MediaBrowserStore(tmp_path / "profile")))
+    with TestClient(app) as client:
+        result = client.post("/api/library/live-plan", json={"path": str(path), "edge": 640})
+        assert result.status_code == 200, result.text
+        assert result.json()["cpu_route"] == "unsupported-gpu"
+        assert result.json()["gpu_meta"] is None
+
+
+def test_cpu_library_fallback_uses_multiple_pixel_workers(tmp_path, monkeypatch):
+    from threading import Barrier, get_ident
+    from hdr_finisher import analysis
+    from hdr_finisher.cpu_budget import logical_cpus
+    if logical_cpus() < 2:
+        pytest.skip("One logical CPU")
+    original = analysis.run_bands
+    threads = set()
+    def traced(function, starts):
+        starts = list(starts)
+        barrier = Barrier(2)
+        def work(start):
+            threads.add(get_ident())
+            if len(starts) >= 2 and start in starts[:2]:
+                barrier.wait(5)
+            return function(start)
+        yield from original(work, starts)
+    monkeypatch.setattr(analysis, "run_bands", traced)
+    result = develop_cpu(tmp_path / "profile", photo(tmp_path), None, 640)
+    assert result["edge"] == 640
+    assert len(threads) >= 2

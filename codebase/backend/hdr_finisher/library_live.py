@@ -122,7 +122,7 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
         try:
             from .library_edge_fallback import _active as rejected_gpu_pixels
             with source_work(priority=15, cancelled=cancelled, cpu_only=True):
-                source = SessionStore().prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
+                source = SessionStore(grade_import_parallel=True).prepare_session(Path(path), owns_source_path=False, cancelled=cancelled, progress=progress,
                     raw_import_settings=RawImportSettings.model_validate(inputs["raw_import_settings"]),
                     interpretation_override=SourceInterpretationOverride.model_validate(interpretation),
                     hdr_reference_white_nits=inputs["hdr_reference_white_nits"],

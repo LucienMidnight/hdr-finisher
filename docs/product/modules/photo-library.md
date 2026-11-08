@@ -1,3 +1,40 @@
+## November 8: CPU fallback for unsupported GPU development
+
+Steve approved the existing CPU decoder whenever Library has no supported GPU
+source route. Thumbnail, screen and full-size development fall back without
+another GPU attempt; known unsupported DNG routes select CPU from header
+inspection before GPU memory admission. Explicit Develop and Build previews
+can use CPU offscreen. Speculative background-only work still cannot start
+CPU development. Camera pictures, saved grades, cache sizes and memory grants
+keep their existing behaviour. This supersedes the older unsupported-source
+no-CPU restriction below.
+
+CPU development runs in the existing lower-priority Library helper, with
+native decoder threads and the shared pixel worker pool (now enabled for this
+fallback). Admission and foreground yielding remain in force. Completed
+pictures reuse the ordinary cache. The reader identity changes so remembered
+failures from the old route are reconsidered without changing sidecars.
+
+The Samsung S8+ `20191110_151336.dng` reproduces the original rejection and
+now develops and reopens from cache in Electron. The 2021-folder logs instead
+show iPhone DNGs repeatedly waiting on a roughly 5 GB GPU reservation; header
+routing now avoids that wait. Those Apple samples (`IMG_3526.DNG`,
+`IMG_1475.DNG`) also contain an unsupported LinearizationTable: CPU reports
+that existing format limitation rather than waiting for a GPU route. Supporting
+that metadata remains open work; no original or grade was changed.
+
+Validation: focused Electron recovery passes with the real Samsung copy
+(including cache reopen); pixel-worker concurrency and focused Python
+regressions pass (152 focused Python checks, plus the saved-grade recovery
+check). JavaScript: 853 passed. Full Python: 3,091 passed, 3 skipped;
+the existing `test_remembered_failure_does_not_hide_current_grade_cached_scene`
+still fails, as recorded earlier on November 8. Samsung Single/detail smoke
+develops all three sizes without photo errors or memory breach, but flags
+a 1,265 ms drawing gap (limit 250 ms). The default 90-second mixed Library
+check timed out in observe. Neither check was relaxed or rerun. Timings
+and evidence are in the performance table; responsiveness needs Steve
+to try the app before further timing runs.
+
 ## November 8: keep the grid rail visible; remove horizontal scrolling
 
 Steve asked to fill the reserved right-hand gap with the scrollbar rail even

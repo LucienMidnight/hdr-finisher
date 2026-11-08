@@ -297,7 +297,7 @@ test('confirmed X-Trans uses its CPU grant directly even with a usable GPU',asyn
  assert.ok(requests.every(r=>r.gpu===false&&r.grant==='bounded-fuji'));
 });
 
-test('unsupported source refusals never reopen the general CPU path',async()=>{
+test('unclassified development errors do not silently select the CPU path',async()=>{
  for(const reason of ['unresolved EXR interpretation','JPEG XL interpretation required','unsupported DNG opcode']){
   const {scenes,requests}=setup({photo:{bytes:96e6}},async()=>{throw Error(reason);});
   await assert.rejects(scenes.load('photo',640),new RegExp(reason));
@@ -464,4 +464,74 @@ test('admitted 42 MP detail develops and delivers the full-size scene',async()=>
  const detail=await scenes.load('raw',100000);
  assert.deepEqual(starts,[['raw',100000]]);
  assert.equal(detail.width,7952);assert.equal(detail.height,5304);assert.equal(detail.edge,100000);
+});
+
+for(const edge of [640,2560,100000])test(`unsupported GPU source at ${edge} falls back once with fresh CPU admission`,async()=>{
+ let attempts=0;
+ const {scenes,context,events}=setup({photo:{source_identity:'a'.repeat(64)}},async()=>{
+  attempts++;throw Object.assign(Error('DNG GPU warp requires a mosaiced DNG with mandatory corrections'),{unsupportedSource:true});
+ });
+ const calls=[],order=[];
+ context.HDRLibraryGpuRaw.releaseSource=path=>order.push('source:'+path);
+ context.HDRLibraryGrants.release=grant=>order.push('release:'+grant);
+ context.HDRLibraryGrants.run=async(path,kind,signal,task,priority,initial)=>{
+  if(kind==='cpu'){
+   assert.deepEqual(order,['source:photo','release:test']);
+   assert.equal(initial,null);order.push('cpu admission');
+  }
+  return task(kind==='cpu'?'cpu-grant':'test',signal);
+ };
+ const original=context.fetch;
+ context.fetch=async(url,options)=>{
+  if(url!=='/api/library/live-scene')return original(url,options);
+  calls.push(JSON.parse(options.body));return {ok:true,json:async()=>({edge,key:'cpu-result',route:'cpu'})};
+ };
+ assert.equal((await scenes.load('photo',edge)).key,'cpu-result');
+ assert.equal(attempts,1);assert.equal(calls.length,1);
+ assert.equal(calls[0].gpu,false);assert.equal(calls[0].gpu_invalid_pixels,false);
+ assert.equal(calls[0].grant,'cpu-grant');assert.equal(calls[0].edge,edge);
+ assert.equal(events.filter(e=>e.stage==='picture_source_gpu_fallback').length,1);
+ assert.equal(events.filter(e=>e.stage==='picture_preparation_retry').length,0);
+});
+
+test('explicit Build previews supports offscreen CPU fallback; speculative demand does not',async()=>{
+ for(const explicit of [false,true]){
+  let attempts=0,cpu=0;
+  const {scenes,context}=setup({photo:{source_identity:'a'.repeat(64)}},async()=>{
+   attempts++;throw Object.assign(Error('Unsupported GPU source'),{unsupportedSource:true});
+  });
+  const original=context.fetch;
+  context.fetch=async(url,options)=>{
+   if(url!=='/api/library/live-scene')return original(url,options);
+   cpu++;assert.ok(JSON.parse(options.body).priority>=50);
+   return {ok:true,json:async()=>({edge:2560,key:'built'})};
+  };
+  const result=await scenes.load('photo',2560,null,99,null,explicit?{develop:true}:{gpuOnly:true});
+  assert.equal(result?.key,explicit?'built':undefined);assert.equal(attempts,1);assert.equal(cpu,explicit?1:0);
+ }
+});
+
+test('failed CPU fallback reports its error without repeating the GPU attempt',async()=>{
+ let attempts=0;
+ const {scenes,requests,events}=setup({photo:{source_identity:'a'.repeat(64)}},async()=>{
+  attempts++;throw Object.assign(Error('Unsupported GPU source'),{unsupportedSource:true});
+ });
+ await assert.rejects(scenes.load('photo',640),/decoder failed/);
+ assert.equal(attempts,1);assert.equal(requests.filter(r=>r.gpu===false).length,1);
+ assert.equal(events.filter(e=>e.stage==='picture_preparation_retry').length,0);
+});
+
+test('known unsupported GPU route skips preflight and respects background-only CPU gate',async()=>{
+ for(const explicit of [false,true]){
+  let cpu=0;
+  const {scenes,context}=setup({photo:{cpu_route:'unsupported-gpu',source_identity:'a'.repeat(64)}},()=>assert.fail('Known unsupported route must skip GPU'));
+  context.HDRLibraryGpuRaw.preflight=()=>assert.fail('Unsupported route must not wait for GPU memory');
+  const original=context.fetch;
+  context.fetch=async(url,options)=>{
+   if(url!=='/api/library/live-scene')return original(url,options);
+   cpu++;return {ok:true,json:async()=>({edge:640,key:'cpu-result'})};
+  };
+  const result=await scenes.load('photo',640,null,80,null,{develop:explicit,gpuOnly:!explicit});
+  assert.equal(cpu,explicit?1:0);assert.equal(result?.key,explicit?'cpu-result':undefined);
+ }
 });

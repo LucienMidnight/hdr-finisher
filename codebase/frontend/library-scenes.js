@@ -99,7 +99,8 @@ window.HDRLibraryScenes = (() => {
       try {
         const result = await HDRLibraryGrants.run(path,!plan.cpu_route&&HDRLibraryGpuRaw.enabled()?"source":"cpu",shared,
           async (grant,owned)=>{
-            const run=size=>develop(path,size,owned,importance,version,options.gpuOnly || (priority >= 80 && !visible.has(path)),grant,plan.cpu_route,shareTiers ? job.edges : null);
+            if(plan.cpu_route)window.HDRLibraryStopwatch?.("picture_source_cpu_selected",{path,reason:plan.cpu_route});
+            const run=size=>develop(path,size,owned,importance,version,options.gpuOnly || (priority >= 80 && !visible.has(path)),grant,plan.cpu_route,shareTiers ? job.edges : null,!!options.develop);
             if(!shareTiers || (!plan.cpu_route && HDRLibraryGpuRaw.enabled()))return run(edge);
             const tasks=new Map();
             const add=size=>{if(!tasks.has(size)){const task=run(size);task.catch(()=>{});tasks.set(size,task);}};
@@ -176,7 +177,7 @@ window.HDRLibraryScenes = (() => {
     if (generation!==(generations.get(path)||0) || signal?.aborted) throw new DOMException("Invalidated", "AbortError");
     return {...meta, draw_priority:priority, trace, log_view:trace?.view || (edge <= 640 ? "grid,filmstrip" : "single,fullscreen,compare")};
   }
-  async function develop(path, edge, signal, importance, version, gpuOnly = false, grant = null, cpuRoute = null, edges = null) {
+  async function develop(path, edge, signal, importance, version, gpuOnly = false, grant = null, cpuRoute = null, edges = null, explicitDevelop = false) {
     let rejectedPixels=false;
     if (!cpuRoute && HDRLibraryGpuRaw.enabled()) {
       try {
@@ -184,9 +185,9 @@ window.HDRLibraryScenes = (() => {
         if (meta) return meta;
       } catch (error) {
         if (error.name === "AbortError" || error.libraryError || error.libraryRequeue) throw error;
-        // Explicit 100% detail is memory-admitted, so a source without a GPU
-        // detail route develops on the CPU instead of failing (philosophy 3).
-        if (!error.gpuUnavailable && !(error.unsupportedSource && edge === 100000)) {
+        // An unsupported GPU source uses the existing CPU decoder at every
+        // picture size. CPU admission below keeps the same memory limits.
+        if (!error.gpuUnavailable && !error.unsupportedSource) {
           if(!version)throw error;
           error.developmentFailure=version.split(":")[0];
           throw error;
@@ -198,7 +199,7 @@ window.HDRLibraryScenes = (() => {
         HDRLibraryGpuRaw.releaseSource?.(path);
       }
     }
-    if (!cpuRoute && !rejectedPixels && (importance() >= 50 || (gpuOnly && importance() > 0))) return null;
+    if (cpuRoute !== "xtrans" && !rejectedPixels && !explicitDevelop && (importance() >= 50 || (gpuOnly && importance() > 0))) return null;
     const cpu=async (token,owned)=>{for (;;) {
       const response = await fetch("/api/library/live-scene", {method:"POST",priority:"low",signal:owned,
         headers:{"Content-Type":"application/json"},body:JSON.stringify({path,edge,gpu:false,gpu_invalid_pixels:rejectedPixels,priority:importance(),grant:token})});

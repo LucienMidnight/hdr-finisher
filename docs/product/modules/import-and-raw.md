@@ -1,3 +1,12 @@
+### November 8: Library unsupported-source CPU fallback
+
+Library now selects the existing CPU decoder when no GPU source adapter
+supports the file. Known unsupported DNG headers bypass GPU memory admission.
+The Samsung S8+ `20191110_151336.dng` succeeds through the normal camera RAW
+decoder. Inspected iPhone 12 Pro files from 2021 (`IMG_3526.DNG`,
+`IMG_1475.DNG`) remain rejected for LinearizationTable metadata. Supporting
+that metadata is still open; this routing fix does not change decoding maths.
+
 ### November 6: Edge colour faster CPU fallback, one GPU try
 
 Grade import and source reloads make one GPU Edge colour attempt; a result

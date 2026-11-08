@@ -621,11 +621,15 @@ def create_library_router(worker, browser, store=None):
         from .library_estimates import gpu_metadata
         from .library_gpu_raw import xtrans_cpu
         cpu_route = "xtrans" if not cached and not is_cloud_placeholder(stat) and xtrans_cpu(path) else None
+        gpu_meta = gpu_metadata(path,document,command.edge) if not cached and not is_cloud_placeholder(stat) and not cpu_route else None
+        if gpu_meta and gpu_meta.get("cpu_route"):
+            cpu_route = gpu_meta["cpu_route"]
+            gpu_meta = None
         return {"unedited_raw": not is_edited(command.path) and Path(path).suffix.lower() in library_raw_types,
                 "original_file": not is_edited(command.path) and Path(path).suffix.lower() not in library_raw_types | {".exr", ".pfm", ".hdr"},
                 "edited": is_edited(command.path),
                 "cpu_route": cpu_route,
-                "gpu_meta": gpu_metadata(path,document,command.edge) if not cached and not is_cloud_placeholder(stat) and not cpu_route else None,
+                "gpu_meta": gpu_meta,
                 "detail_memory": detail_memory(path) if command.edge == 100000 and not cached else None,
                 "cached": live.describe(command.path, cached) if cached else None,
                 "bytes": stat.st_size, "revision": f"{stat.st_mtime_ns}:{stat.st_size}",

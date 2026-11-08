@@ -276,3 +276,28 @@ def test_dxo_subifd_quick_estimate_is_header_only(tmp_path, monkeypatch, preview
     assert estimate_details(path,"quick",edge=640) == (expected, "")
     assert estimate_details(path,"quick",edge=2560) == ((244_593_960 if preview else expected), "")
     assert estimate_details(path,"cpu") == (25*8020*5304, "")
+
+
+@pytest.mark.parametrize("route", ["mosaic", "unsupported", "linear_operations", "linear_native_reference"])
+def test_known_unsupported_dng_selects_cpu_before_gpu_admission(tmp_path, monkeypatch, route):
+    from test_linear_dng import _write_linear
+    from hdr_finisher import linear_dng
+    from hdr_finisher.library_estimates import gpu_metadata
+    from hdr_finisher.linear_dng import DngRoute
+    from dataclasses import replace
+    import numpy as np
+    path = tmp_path / "photo.dng"
+    _write_linear(path, np.full((24, 32, 3), 32768, np.uint16))
+    inspection = linear_dng.inspect_dng(path)
+    edge = 640
+    if route == "mosaic":
+        inspection = replace(inspection, route=DngRoute.MOSAICED_RAW_DNG)
+    elif route == "unsupported":
+        inspection = replace(inspection, route=DngRoute.UNSUPPORTED_DNG)
+    elif route == "linear_operations":
+        inspection = replace(inspection, optional_opcodes=(object(),))
+    else:
+        edge = 100000
+        inspection.metadata["sdr_preview_series_index"] = 1
+    monkeypatch.setattr(linear_dng, "inspect_dng", lambda _: inspection)
+    assert gpu_metadata(path, edge=edge) == {"cpu_route": "unsupported-gpu"}

@@ -3992,7 +3992,7 @@
       "path": "tests/library-gpu-recovery.js",
       "areas": ["library"],
       "tier": "area",
-      "protects": "A forced Library GPU out-of-memory and a forced device loss: one retry at the front, a visible CPU fallback after the retry, no broken-photo records and no stuck grants.",
+      "protects": "Library GPU out-of-memory, device loss and unsupported source adapters: bounded CPU fallback, cached reopen, no broken-photo records and no stuck grants.",
       "launch": {"method": "electron"}
     },
     {

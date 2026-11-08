@@ -395,3 +395,27 @@ def test_single_attempt_wording_does_not_claim_repeated_attempts():
     from hdr_finisher.library_picture_errors import plain_development_reason
     reason="Development stopped after 1 attempt: Invalid source data."
     assert plain_development_reason(reason)==reason
+
+
+def test_new_source_route_reconsiders_old_failure_without_changing_photo(tmp_path, monkeypatch):
+    from hdr_finisher import library_picture_errors as module
+    path = tmp_path / "photo.png"
+    Image.new("RGB", (32, 24), (100, 120, 80)).save(path)
+    marks = LibraryMarks(tmp_path / "app")
+    marks.change([path], MarkChange(rating=4, add_tag="keep"))
+    marks.writer.drain()
+    sidecar = Path(str(path) + ".hdrf")
+    document = json.loads(sidecar.read_text())
+    grade = SessionStore().prepare_session(path, owns_source_path=False).edit_document().model_dump(mode="json")
+    grade["global_adjustments"]["hdr"]["exposure"] = 1.25
+    document["grade"] = grade
+    sidecar.write_text(json.dumps(document))
+    original = sidecar.read_bytes()
+    errors = PictureErrors(marks)
+    current = module._READER
+    monkeypatch.setattr(module, "_READER", "old-unsupported-gpu-route")
+    errors.remember(path, ValueError("DNG GPU warp requires a mosaiced DNG with mandatory corrections"), errors.revision(path))
+    assert errors.get(path) is not None
+    monkeypatch.setattr(module, "_READER", current)
+    assert errors.get(path) is None
+    assert sidecar.read_bytes() == original

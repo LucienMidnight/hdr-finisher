@@ -239,8 +239,9 @@ def estimate(path, kind="source", ceiling=None):
 def gpu_metadata(path, document=None, edge=2560):
     """Conservative header descriptor for the existing frontend rawBudget formula.
 
-    No decode or replacement GPU rate. The decoded descriptor can only shrink
-    this reservation. Unknown headers request the whole available GPU budget.
+    No decode or replacement GPU rate. Known unsupported DNG adapters select
+    CPU before GPU admission. The decoded descriptor can only shrink this
+    reservation. Unknown headers request the whole available GPU budget.
     """
     try:
         from .file_gate import decode_suffix
@@ -260,7 +261,13 @@ def gpu_metadata(path, document=None, edge=2560):
         if suffix == '.dng':
             from .linear_dng import inspect_dng, DngRoute
             from .library_dng import geometry, plan
+            from .library_gpu_raw import NotEligible
             inspection = inspect_dng(Path(path))
+            if inspection.route is DngRoute.UNSUPPORTED_DNG:
+                return {'cpu_route':'unsupported-gpu'}
+            if inspection.route is DngRoute.LINEAR_DNG and (inspection.required_opcodes or inspection.optional_opcodes
+                    or (edge == 100000 and inspection.metadata.get('sdr_preview_series_index') is not None)):
+                return {'cpu_route':'unsupported-gpu'}
             width, height, *_ = geometry(inspection.metadata, inspection.width, inspection.height)
             if inspection.route is DngRoute.LINEAR_DNG:
                 meta['dng_linear'] = True
@@ -270,7 +277,10 @@ def gpu_metadata(path, document=None, edge=2560):
                     from .library_reduced import sample_size
                     width, height = sample_size(width, height, 10240)
             else:
-                plan(inspection)
+                try:
+                    plan(inspection)
+                except NotEligible:
+                    return {'cpu_route':'unsupported-gpu'}
                 meta['dng_warp'] = True
             meta.update(width=width, height=height, rgb=True, colour={'authored_sdr':True})
         elif suffix in RATES:

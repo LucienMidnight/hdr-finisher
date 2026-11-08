@@ -31,7 +31,7 @@ def _reader_identity():
     after an update instead of staying stuck until the photo changes."""
     from .models import EditDocument
     # A newly supported source route must retry failures saved by the old app.
-    identity = {"grade_schema": EditDocument.model_json_schema(), "library_source_routes": "recoverable-development-v2"}
+    identity = {"grade_schema": EditDocument.model_json_schema(), "library_source_routes": "unsupported-gpu-cpu-fallback-v3"}
     return sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 
