@@ -82,6 +82,7 @@ let startupTimer;
   // a Playwright-launched Chromium gets one; the app's real profile would make
   // the result depend on whoever ran the app last. Each run also gets its own
   // disposable profile so the runner never writes to the owner's app state.
+  const ownProfile = !process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA;
   const userDataDirectory = process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA
     || fs.mkdtempSync(path.join(os.tmpdir(), "hdr-finisher-electron-test-"));
   // The app gives a profile its own Library cache only when its path holds
@@ -170,7 +171,15 @@ let startupTimer;
     ]);
   };
   cleanup = stop;
-  process.on("exit", code => { stop(); reportShutdown(code, shutdownReport); });
+  process.on("exit", code => {
+    stop();
+    reportShutdown(code, shutdownReport);
+    // Remove the temporary profile this launcher made after a pass; keep it
+    // after a failure, since its logs explain what went wrong.
+    if (ownProfile && code === 0 && !shutdownReport?.survivors.length) {
+      try { fs.rmSync(userDataDirectory, { recursive: true, force: true, maxRetries: 3 }); } catch { /* best effort */ }
+    }
+  });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     process.on(signal, () => { try { stop(); } finally { process.exit(process.exitCode || 130); } });
   }
