@@ -19,8 +19,8 @@ const root=path.resolve(__dirname,'..');
    const space=document.createElement('div');space.id='grid-space';grid.append(space);document.body.append(grid);
    // Force a conventional 15px scrollbar so this check also works on overlay-scrollbar hosts.
    const style=document.createElement('style');style.textContent='#library-grid::-webkit-scrollbar{width:15px}';document.head.append(style);
-   const measure=async(gutter)=>{
-    grid.style.scrollbarGutter=gutter;space.style.height='0px';
+   const measure=async(control=false)=>{
+    grid.style.overflowY=control?'auto':'';space.style.height='0px';
     const wide=HDRLibraryLayout.gridLayout(37,1360,1000,0,190).totalHeight;
     const narrow=HDRLibraryLayout.gridLayout(37,1345,1000,0,190).totalHeight;
     grid.style.height=Math.floor((wide+narrow)/2)+'px';
@@ -32,8 +32,17 @@ const root=path.resolve(__dirname,'..');
     }
     return [...new Set(widths)];
    };
-   const fixed=await measure('');const broken=await measure('auto');return {fixed,broken};
+   const fixed=await measure();const broken=await measure(true);
+   grid.style.overflowY='';grid.style.height='400px';space.style.height='10px';space.style.width='1600px';
+   const railWithoutOverflow=grid.offsetWidth-grid.clientWidth;
+   const horizontalRail=grid.offsetHeight-grid.clientHeight;
+   space.style.height='1000px';
+   const railWithOverflow=grid.offsetWidth-grid.clientWidth;
+   return {fixed,broken,railWithoutOverflow,railWithOverflow,horizontalRail};
   });
+  assert.ok(result.railWithoutOverflow>0,'vertical rail remains when all photos fit');
+  assert.equal(result.railWithOverflow,result.railWithoutOverflow,'vertical rail width stays constant');
+  assert.equal(result.horizontalRail,0,'wide content creates no bottom scrollbar or gap');
   assert.equal(result.fixed.length,1,'reserved scrollbar space keeps thumbnail width stable');
   assert.ok(result.broken.length>1,'control reproduces the repeated scrollbar/thumbnail resize');
   console.log('PASS: scrollbar feedback reproduced without the fix; fixed grid width stays stable.',result);

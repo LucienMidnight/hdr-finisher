@@ -1,3 +1,14 @@
+## November 8: keep the grid rail visible; remove horizontal scrolling
+
+Steve asked to fill the reserved right-hand gap with the scrollbar rail even
+when all photos fit. The grid now always shows its vertical scrollbar and
+hides horizontal overflow, so no horizontal scrollbar takes space below the
+photos. The scrollbar feedback check also covers short folders and confirms
+that wide content creates no bottom scrollbar or reserved bottom space.
+Validation: isolated Electron scrollbar check and the 90-second mixed Library
+check pass; 847 JavaScript checks pass. Python: 3,085 pass, 3 skipped, with
+the same unrelated remembered-failure test recorded below still failing.
+
 ## November 8: folder thumbnail flashing / scrollbar feedback
 
 Liou portrait and SynTrend could repeatedly resize their thumbnails on entry.

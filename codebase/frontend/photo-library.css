@@ -63,7 +63,7 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-popover button:disabled { color: var(--muted); cursor: default; }
 .library-popover [aria-checked="true"] { color: var(--text); }
 .library-popover [aria-checked="true"]::after { content: "✓"; color: var(--accent-strong); }
-#library-grid { position: relative; overflow-y: auto; scrollbar-gutter: stable; min-height: 0; outline: 0; }
+#library-grid { position: relative; overflow-x: hidden; overflow-y: scroll; min-height: 0; outline: 0; }
 #grid-space { position: relative; width: 100%; }
 /* Each photo sits on its own tile, a step lighter than the surround. No lines: the gap between tiles is the grid. */
 .library-cell { position: absolute; display: flex; flex-direction: column; padding: 7px 7px 0; cursor: default; border-radius: var(--radius); overflow: hidden; background: var(--panel); }
