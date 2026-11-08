@@ -23,6 +23,22 @@ function reusePhoto(original,target) {
   }
   return file;
 }
+// Original saved grades restored for the checks (read-only; never write them).
+const savedGrades=path.join(cache,'saved-grades');
+// Fresh working copy of an original saved grade in the check's own photo
+// folder, replaced on every run so the check always starts from the original.
+// The copy is not named as the RAW's sidecar, so the app never loads it alone.
+function savedGrade(name,check) {
+  const original=path.join(savedGrades,name);
+  if(!fs.existsSync(original))throw Error('Missing saved grade: '+original);
+  const folder=path.join(cache,check);
+  fs.mkdirSync(folder,{recursive:true});
+  const copy=path.join(folder,path.basename(name,'.hdrf')+'.saved-grade.hdrf');
+  if(fs.existsSync(copy)){fs.chmodSync(copy,0o666);fs.rmSync(copy);}
+  fs.copyFileSync(original,copy);
+  fs.chmodSync(copy,0o666);
+  return copy;
+}
 function cleanup() {
   for(const [file,bytes] of sidecars) {
     if(bytes===null)fs.rmSync(file,{force:true});else fs.writeFileSync(file,bytes);
@@ -30,4 +46,4 @@ function cleanup() {
   sidecars.clear();
 }
 process.once('exit',cleanup);
-module.exports=Object.assign(reusePhoto,{source,cleanup});
+module.exports=Object.assign(reusePhoto,{source,savedGrade,cleanup});

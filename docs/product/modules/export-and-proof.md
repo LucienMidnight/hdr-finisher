@@ -125,6 +125,16 @@ failures remain recorded and numerical tolerances stay unchanged. No Sharpen
 or export pixel change is required for this decision. The separately unisolated
 full-size RAW Proof mismatch remains its own open diagnosis.
 
+**November 8: ceiling check grade restored.** Its DSC07060 saved grade lived
+in the deleted `D:	est-photos-delete-later`, so the check had been picking up
+an unrelated Library working sidecar. The original grades are now kept
+read-only in `codebase/output/test-photos/saved-grades/`; the check copies the
+RAW once into `output/test-photos/gpu-delivery-ceiling/` and refreshes a copy
+of the grade there on every run (`reuse-test-photo.cjs` `savedGrade`). Rerun
+on November 8 with the original grade (800-nit target): it still stops at the
+full-size Proof/export byte-identity assertion above, before the CPU route.
+Both GPU files decode to a 798.18-nit peak, under the target. No limit changed.
+
 Decision-record validation: documentation and diff checks only; no executable
 code, pixels or test expectations changed. Existing test results below stand.
 

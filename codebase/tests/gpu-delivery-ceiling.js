@@ -12,7 +12,8 @@ const python=path.resolve(__dirname,"../.venv/Scripts/python.exe");
 const pythonEnv={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
 const document=JSON.parse(execFileSync(python,["-c",
   "import sys,json;from pathlib import Path;from hdr_finisher.projects import validate_saved_document;print(validate_saved_document(json.loads(Path(sys.argv[1]).read_text())['grade']).model_dump_json())",
-  reusePhoto.source(original+".hdrf")],{env:pythonEnv,encoding:"utf8"}));
+  process.env.HDR_CEILING_RAW?reusePhoto.source(original+".hdrf")
+    :reusePhoto.savedGrade("DSC07060.ARW.hdrf","gpu-delivery-ceiling")],{env:pythonEnv,encoding:"utf8"}));
 document.source.durable_path=source;
 assert.equal(document.global_adjustments.hdr.highlight_section_enabled,true);
 const target=document.global_adjustments.hdr.highlight_compression_target_nits;
