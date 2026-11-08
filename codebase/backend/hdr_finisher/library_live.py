@@ -394,6 +394,24 @@ class LivePictures:
                 self._hold(frame)
         return frame
 
+    def held_frame_memory(self):
+        with self._native_frames_lock:
+            frame = self._held
+            return dict(key=frame.session_id, path=frame.source.path,
+                bytes=frame.image.nbytes + (frame.sdr_reference_image.nbytes
+                    if frame.sdr_reference_image is not None else 0)) if frame else None
+
+    def release_other_frame(self, path):
+        """A previous photo's short drawing hold must not block selected detail."""
+        with self._native_frames_lock:
+            held = self.held_frame_memory()
+            if held is None or held["path"] == str(path):
+                return None
+            if self._held_timer is not None:
+                self._held_timer.cancel()
+            self._held = self._held_timer = self._held_token = None
+            return held
+
     def _hold(self, frame, seconds=5.0):
         from threading import Timer
         if self._held_timer is not None:
@@ -418,7 +436,7 @@ class LivePictures:
         render_cache = SessionRenderCache(pixels, reference, color_context=context)
         render_cache.library_screen = metadata["edge"] != 100000
         return _NativeFrame(session_id=metadata["key"], image=pixels, sdr_reference_image=reference,
-            source=SimpleNamespace(width=pixels.shape[1], height=pixels.shape[0]),
+            source=SimpleNamespace(width=pixels.shape[1], height=pixels.shape[0], path=metadata["path"]),
             adjustments=validate_saved(AdjustmentState, metadata["adjustments"]),
             local_adjustments=[validate_saved(LocalAdjustment, item) for item in metadata["locals"]],
             denoise=validate_saved(DenoiseDocumentSettings, metadata["denoise"]),

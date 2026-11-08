@@ -15,6 +15,15 @@ fs.mkdirSync(path.join(folder, "z-subfolder"));
   const page = await browser.newPage(), errors = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+  page.on("response", async response => {
+   if (response.url().endsWith("/api/library/live-plan")) {
+    const plan = await response.json().catch(() => null);
+    if (plan?.detail_memory && !plan.detail_memory.available) {
+     const memory = await page.request.get(new URL("/api/library/memory", response.url()).href).then(r=>r.json());
+     console.log("Detail refusal accounting:", JSON.stringify({plan:plan.detail_memory,memory}));
+    }
+   }
+  });
   await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: "networkidle" });
   const library = page.frame({ url: /\/library(?:\?|$)/ });
   await library.waitForFunction(() => window.HDRLibrary);
@@ -110,8 +119,13 @@ fs.mkdirSync(path.join(folder, "z-subfolder"));
   await library.locator("#picker-cancel").click();
   const samples = ["D:/Photos/HDR Test Images/DSC00264.ARW", "D:/Photos/HDR Test Images/DJI Samples/DSC00264_DxO-optical-corr-only.dng", "D:/Photos/HDR Test Images/Test Suite Images/iphone_16_pro_IMG_3324.HEIC"];
   if (samples.every(source => fs.existsSync(source))) {
-   const copied = fs.mkdtempSync(path.join(output, "native-formats-"));
-   samples.forEach(source => fs.copyFileSync(source, path.join(copied, path.basename(source))));
+   const copied = path.join(root,"output","test-photos","stage-c");
+   const reusable = copied;
+   fs.mkdirSync(reusable,{recursive:true});
+   samples.forEach(source => {
+    const photo = path.join(reusable,path.basename(source));
+    if(!fs.existsSync(photo))fs.copyFileSync(source,photo);
+   });
    // Library stage events, printed only if a native format never arrives.
    await library.evaluate(() => { const inherited = window.HDRLibraryStopwatch; window.stageCLog = []; window.HDRLibraryStopwatch = (stage, fields = {}) => { window.stageCLog.push([stage, (fields.path || "").split(/[\/]/).pop(), fields.route || fields.reason || fields.picture_source || ""].join(" ")); return inherited(stage, fields); }; });
    await library.evaluate(folder => HDRLibrary.browse(folder), copied);
@@ -131,5 +145,5 @@ fs.mkdirSync(path.join(folder, "z-subfolder"));
   for (let i = 0; i < 12; i++) assert.deepEqual(fs.readFileSync(path.join(folder, `photo-${String(i).padStart(2, "0")}.png`)), fs.readFileSync(fixture));
   assert.deepEqual(errors, []);
   console.log("Stage C sort/filter/HDR/native zoom and pan passed; reading-folder message and folder-first picker passed; originals unchanged.");
- } catch (error) { console.error("Stage C failed:", error); throw error; } finally { await browser.close(); }
+ } catch (error) { console.error("Stage C failed:", error); throw error; } finally { await browser.close(); fs.rmSync(folder,{recursive:true,force:true}); fs.rmSync(fixture,{force:true}); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

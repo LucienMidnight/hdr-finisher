@@ -34,13 +34,17 @@ pictures keep the no-CPU rule for unsupported sources.
 library-dng-warp passes all three DNGs on both routes (DSC06885 CPU grid in
 0.27 s); none of these changes touch DNG, so the earlier failure most likely
 went with 757e2f62 (released CPU preparation data).
+Zoomed arrow on to the 61 MP ARW at 100% (November 8): the refusal "Not enough
+memory for full-size detail" came from the previous photo's short drawing hold
+(the frame kept a few seconds so one draw's follow-up requests do not re-read
+it). With the hold kept, the app measured 2.85 GB in use, including the DNG's
+held 1.01 GB frame; adding the ARW's 1.01 GB of detail made 3.86 GB, over the
+3.40 GB target. Asking for full-size detail of another photo now drops that
+hold first (draws already running keep their own copy; going back re-reads the
+frame from the stored scene, about half a second). In use fell to 1.77 GB and
+the ARW fits (2.78 GB). No budget changed. photo-library-stage-c passes.
 
 Open:
-- photo-library-stage-c: zoom, pan, zoomed arrow and the DxO DNG at 100%
-  (5304x7954) pass. Arrowing on to DSC00264.ARW (about 61 MP, about 1.5 GB of
-  detail planes) at 100% gets the memory refusal "Not enough memory for
-  full-size detail". Not investigated: whether the DNG's detail data is still
-  counted, or the ARW alone exceeds the target. Memory budgets are Steve's.
 - library-temporary-recovery's release failure (helper stopped after a rejected
   GPU result) did not reproduce; the November 6 open note stands.
 - Delete, rename and move scan every stored picture in library-pictures while

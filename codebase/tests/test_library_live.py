@@ -646,3 +646,28 @@ def test_detail_handoff_admission_precedes_source_work(tmp_path, monkeypatch, ed
                 assert result.status_code == 202, result.text
             else:
                 assert result.status_code == 409 and result.json()['needs_memory']
+
+
+def test_next_photo_detail_releases_previous_frame_without_breaking_active_draw(tmp_path, monkeypatch):
+    import gc, weakref
+    from hdr_finisher import library_live
+    service = LivePictures(tmp_path/'cache', None)
+    def read(meta):
+        return library_live._NativeFrame(session_id=meta['key'], image=np.ones((8,12,3),np.float32),
+            sdr_reference_image=None, source=SimpleNamespace(path=meta['path']))
+    monkeypatch.setattr(service, '_frame', read)
+    first = service.frame(dict(edge=100000, key='first', path='first.arw'))
+    reference = weakref.ref(first)
+    assert service.release_other_frame('first.arw') is None
+    old_timer = service._held_timer
+    released = service.release_other_frame('next.arw')
+    assert released == dict(key='first', path='first.arw', bytes=first.image.nbytes)
+    # An already-running draw owns its reference until completion.
+    assert reference() is first
+    del first
+    gc.collect()
+    assert reference() is None and not service._native_frames
+    next_frame = service.frame(dict(edge=100000, key='next', path='next.arw'))
+    old_timer.function()  # A cancelled old callback cannot clear the new hold.
+    assert service._held is next_frame
+    service.release_other_frame('third.arw')

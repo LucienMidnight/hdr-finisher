@@ -564,9 +564,21 @@ def create_library_router(worker, browser, store=None):
         needed = width * height * 24 + 65536
         # WORKING is headroom left by caches, not a per-photo maximum.
         # Source/GPU work still goes through the scheduler's own admission.
-        total = app_memory.snapshot(cached_only=True)["totalBytes"]
-        return dict(bytes=needed, limit=app_memory.TARGET,
-                    available=total+needed <= app_memory.TARGET)
+        released = live.release_other_frame(path)
+        memory = app_memory.snapshot(refresh=bool(released), cached_only=True)
+        total = memory["totalBytes"]
+        if released:
+            log("library_detail_frame_released", path=str(path), previous=released,
+                residentBytes=total, reservedBytes=memory["reservedBytes"])
+        result = dict(bytes=needed, limit=app_memory.TARGET,
+                      residentBytes=total, available=total+needed <= app_memory.TARGET)
+        if not result["available"]:
+            log("library_detail_memory_refused", path=str(path), **result,
+                memory=memory,
+                native=[cache.native_memory(), live.cache.native_memory()],
+                heldFrame=live.held_frame_memory(),
+                grants=scheduler.snapshot(), preparation=source_jobs.snapshot())
+        return result
 
     @router.post("/live-plan")
     @picture_errors.guard_cached
