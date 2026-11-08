@@ -7838,7 +7838,7 @@ snapshot was removed. Automatic approval review blocked deletion of this
 task's disposable Windows TEMP/pytest-of-Steve/pytest-1328, pytest-1329 and
 pytest-1330 folders ("blocked by policy"); these are safe to delete.
 
-## November 8: precision-source peak diagnosis (decision pending)
+## November 8: precision-source peak diagnosis (decided)
 
 The unchanged `library-precision-source` assertion measures the starting
 pre-compression source peak copied into Highlight Compression controls, not a
@@ -7866,6 +7866,12 @@ the later RGB precision qualification `405d39dd` (November 3, smaller fixtures).
 The local release-check `history.jsonl` contains eight attempts, all failing or
 unable to launch, at `1709a5b4`, `41a18049` and `7f92e15f`; it provides no passing
 revision for this driver. Do not describe a historical release pass as verified.
+
+**Decision (Steve, November 8, 2026):** accept reduced-source starting peaks.
+Keep the faster reduced read. Where the Library reduces the source before
+developing, its starting pre-compression peak may differ from Grade's full-size
+peak by up to 1% (`tests/helpers/library_rgb_compare.py`); unreduced sources
+stay at the existing 0.01% agreement. The history below is kept for context.
 
 This is an output/control-value difference caused by an intended reduced-source
 route. Steve must decide whether Library should retain exact full-source starting

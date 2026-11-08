@@ -28,7 +28,11 @@ for row in data["rows"]:
         field="highlight_compression_source_peak_nits" if lane=="hdr" else "highlight_compression_source_peak_percent"
         actual=meta["adjustments"][lane][field]
         expected=getattr(getattr(session.starting_adjustments(),lane),field)
-        assert abs(actual-expected)<=max(.001,abs(expected)*.0001),dict(
+        # Steve, November 8, 2026: on photos the Library reduces before developing
+        # (b2c02e8c), its starting peak may differ from Grade's full-size peak by up to 1%.
+        # Metadata reports the original size, so use the reduction rule itself: long edge over 5120.
+        reduced=max(session.image.shape[0],session.image.shape[1])>5120
+        assert abs(actual-expected)<=max(.001,abs(expected)*(.01 if reduced else .0001)),dict(
             photo=str(photo), measurement="starting pre-compression source peak",
             field=field, library=actual, grade=expected, renderer=meta.get("renderer"),
             source_size=[session.image.shape[1], session.image.shape[0]],
