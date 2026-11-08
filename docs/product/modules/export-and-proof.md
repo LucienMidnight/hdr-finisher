@@ -809,3 +809,12 @@ its full meaning fits the Resize field. Only its label changes.
 
 The Resize choice omits the decorative Web Default suffix to keep the full
 size label visible; advanced-format default annotations remain in place.
+
+## November 8: export log placement
+
+The export log (progress, Pause/Cancel, results, Show in Explorer) sits at
+the bottom of Export Settings, under Advanced settings, so it no longer
+covers the batch or the histogram (Steve). The shared status bar shows
+"Exporting N of M" while a batch runs, from any page, then "Export
+finished". The Library footer's Activity button says "Exporting N of M".
+UI only: no output or settings changed.

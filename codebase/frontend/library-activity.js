@@ -74,6 +74,12 @@
     const extra = problems ? ` · Needs attention: ${count(problems)}` : index.state === "failed" || index.state === "retrying" || health.helper.failure || health.helper.recovering ? " · Needs attention" : "";
     return (jobs[0] || "Activity") + (jobs.length > 1 ? ` +${jobs.length - 1}` : "") + extra;
   }
+  // "Exporting 3 of 12 · " while a batch export runs.
+  function exportText(exports) {
+    const job = (exports?.jobs || (exports?.id ? [exports] : [])).find(item => ["running", "paused", "queued"].includes(item.state));
+    if (!job) return "";
+    return `${job.state === "paused" ? "Export paused" : "Exporting"} ${count(Math.min(job.completed + 1, job.total))} of ${count(job.total)} · `;
+  }
   function create({ button, panel, api, status, onHealth, onPictureError, acceptsPhoto = () => true }) {
     let health = null, exports = null, timer = null, due = Infinity;
     const pending = new Set(), buttonHold = createHold(), lineHold = createHold();
@@ -202,7 +208,7 @@
       const complete = next;
       next = {...next,picture_errors:(next.picture_errors || []).filter(item=>acceptsPhoto(item.path))};
       health = next; button.hidden = false;
-      const text = (window.HDRLibraryBuildPreviews?.snapshot().job && ["running","paused"].includes(window.HDRLibraryBuildPreviews.snapshot().job.state) ? "Build previews · " : "") + (exports?.jobs?.some(job => ["running", "paused", "queued"].includes(job.state)) ? "Export · " : "") + summary(next, acceptsPhoto);
+      const text = (window.HDRLibraryBuildPreviews?.snapshot().job && ["running","paused"].includes(window.HDRLibraryBuildPreviews.snapshot().job.state) ? "Build previews · " : "") + exportText(exports) + summary(next, acceptsPhoto);
       const held = buttonHold.apply(new Map([["button", text]]));
       button.textContent = held.lines[0][1]; later(held.wait);
       if (fetched) onHealth?.(complete); render();

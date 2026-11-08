@@ -158,7 +158,11 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
       const rect=id=>document.getElementById(id).getBoundingClientRect().toJSON();
       return {grid:rect('batch-grid'),strip:rect('batch-run-strip'),rail:rect('export-sheet'),top:document.querySelector('.top-bar').getBoundingClientRect().toJSON()};
     });
-    assert.ok(bounds.grid.bottom<=bounds.strip.top+1,'grid ends above fixed progress strip');
+    // The export log sits in Export Settings under Advanced settings, and the
+    // shared status bar says the app is exporting (November 8).
+    assert.ok(await page.locator('#export-sheet #batch-run-strip').count()===1,'export log lives in the settings panel');
+    assert.ok(await page.evaluate(()=>{const a=document.querySelector('#export-sheet details.batch-settings-section');return !!(a.compareDocumentPosition(document.getElementById('batch-run-strip'))&Node.DOCUMENT_POSITION_FOLLOWING);}),'export log follows Advanced settings');
+    assert.match(await page.locator('#application-status-entries [data-status-id="batch-export"]').innerText(),/Export(ing| paused) \d+ of \d+/);
     // The preset has no HDR version, so an SDR-only photo loses nothing and is not flagged.
     assert.equal(await page.locator('.batch-flag').count(),0);
     // Preset rail and control panel headers share one baseline; the batch title
@@ -172,10 +176,6 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
     if(process.env.HDR_POLISH_SMALL)assert.ok(await page.locator('#batch-grid').evaluate(el=>el.scrollHeight>el.clientHeight),'large batch must scroll');
     await page.locator('#export-sheet').evaluate(el=>el.scrollTop=0);
     await page.screenshot({path:path.join(output,`running-${size}.png`)});
-    const stripTop=await page.locator('#batch-run-strip').evaluate(el=>el.getBoundingClientRect().top);
-    await page.locator('#batch-grid').evaluate(el=>el.scrollTop=el.scrollHeight);
-    assert.equal(await page.locator('#batch-run-strip').evaluate(el=>el.getBoundingClientRect().top),stripTop,'scrolling cannot move the status strip');
-    await page.locator('#batch-grid').evaluate(el=>el.scrollTop=0);
     job={...job,state:'finished',completed:48,active_photo:null,photo_completed:2,results:visualPhotos.flatMap(photo=>['SDR','PNG'].map(version=>({photo,version,outcome:'exported',output_path:`D:/Exports/${version}/${path.parse(photo).name}_${version}.${version==='SDR'?'jpg':'png'}`})))};
     await page.waitForFunction(()=>!document.getElementById('batch-results').hidden);
     assert.equal(await page.locator('.batch-result').count(),48);

@@ -157,7 +157,16 @@
     $("batch-pause").hidden=$("batch-cancel").hidden=done;$("batch-pause").textContent=j.state==="paused"?"Resume":"Pause";
     $("batch-reveal").hidden=$("batch-close").hidden=!done;
     $("batch-results").hidden=!done;
+    appStatus(j,done,counts);
     $("batch-results").replaceChildren(...j.results.map(r=>{const item=node("li","","batch-result");item.append(node("span",writtenName(r.output_path,j.directory)),node("span",`${model.photos.find(p=>p.path===r.photo)?.name||r.photo} · ${r.version}`),node("span",(OUTCOMES[r.outcome]||r.outcome)+(r.renderer?` · ${r.renderer.toUpperCase()}`:"")+(r.fallback_reason?` · ${r.fallback_reason}`:"")+(r.grade_warning?` · Grade needs attention: ${r.grade_warning}`:"")+(r.reason?` · ${r.reason}`:""),`batch-outcome batch-outcome-${r.outcome}`));return item;}));
+  }
+  // The shared status bar shows export progress from any page.
+  function appStatus(j,done,counts){
+    const bar=window.HDRStatus;if(!bar)return;
+    if(!done){bar.post({id:"batch-export",severity:"progress",message:`${j.state==="paused"?"Export paused":"Exporting"} ${Math.min(j.completed+1,j.total)} of ${j.total}`,progress:100*j.completed/Math.max(1,j.total),progressLabel:"Overall export progress"});return;}
+    if(bar.get("batch-export")?.severity!=="progress")return;
+    const written=counts.exported+counts.renamed;
+    bar.post({id:"batch-export",severity:counts.failed||j.state==="failed"?"attention":"success",message:`${j.state==="cancelled"?"Export cancelled":"Export finished"} · ${written} ${written===1?"file":"files"}${counts.failed?` · ${counts.failed} failed`:""}`,dismissible:!!counts.failed});
   }
   // Observation changes demand, while progress polls only update badges.
   const tileJobs=new Map();
@@ -286,7 +295,7 @@
     const strip=node("section","","batch-run-strip");strip.id="batch-run-strip";strip.hidden=true;
     const line=node("div","","batch-run-line"),progress=node("strong"),eta=node("span","","helper"),actions=node("div","","batch-tools");progress.id="batch-progress";progress.setAttribute("aria-live","polite");eta.id="batch-eta";
     for(const [id,label,fn] of [["pause","Pause",()=>control(model.job?.state==="paused"?"resume":"pause")],["cancel","Cancel",()=>control("cancel")],["reveal","Show in Explorer",()=>desktop?.revealPath?.(model.job?.results.find(r=>r.output_path)?.output_path)],["close","Close",()=>{model.closedJob=model.job?.id;renderJob();}]]){const b=button(label,fn);b.id="batch-"+id;actions.append(b);}
-    line.append(progress,eta,actions);const meter=node("progress","","status-entry-progress");meter.id="batch-meter";meter.setAttribute("aria-label","Overall export progress");const results=node("ul");results.id="batch-results";strip.append(line,meter,results);panel.append(header,notice,grid,empty,strip,statusbar);document.body.append(panel);view(true);
+    line.append(progress,eta,actions);const meter=node("progress","","status-entry-progress");meter.id="batch-meter";meter.setAttribute("aria-label","Overall export progress");const results=node("ul");results.id="batch-results";strip.append(line,meter,results);scroll.append(strip);panel.append(header,notice,grid,empty,statusbar);document.body.append(panel);view(true);
     $("export-sheet").addEventListener("change",()=>capture());$("export-sheet").addEventListener("input",()=>capture());await loadPresets();}
   new MutationObserver(()=>{
     for(const [row,job] of tileJobs){
