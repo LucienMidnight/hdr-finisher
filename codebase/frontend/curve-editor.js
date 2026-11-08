@@ -293,6 +293,8 @@ function drawCurveExposureBands(ctx, layout, width, height) {
   ctx.font = HDRAppearance.font("min");
   ctx.textBaseline = "top";
   const lastLabelRight = [-Infinity, -Infinity];
+  const labelMetrics = ctx.measureText("0");
+  const labelRowPitch = Math.ceil(labelMetrics.fontBoundingBoxAscent + labelMetrics.fontBoundingBoxDescent) + 1;
   labelValues.forEach((nits) => {
     const normalized = curveDomainPositionForNits(nits);
     const x = plotLeft + normalized * plotWidth;
@@ -307,13 +309,13 @@ function drawCurveExposureBands(ctx, layout, width, height) {
 
     const label = compactCurveNitLabel(nits);
     const labelWidth = ctx.measureText(label).width;
-    const labelX = clamp(x, plotLeft + labelWidth / 2, plotRight - labelWidth / 2);
+    const labelX = clamp(x, labelWidth / 2 + 1, width - labelWidth / 2 - 1);
     const leftEdge = labelX - labelWidth / 2;
     const row = lastLabelRight.findIndex((rightEdge) => leftEdge >= rightEdge + 5);
     if (row < 0) return;
     ctx.fillStyle = nits === levels.referenceWhite ? uiToken("--equalizer-axis") : uiToken("--curve-axis-label");
     ctx.textAlign = "center";
-    ctx.fillText(label, labelX, plotBottom + 5 + row * 10);
+    ctx.fillText(label, labelX, plotBottom + 4 + row * labelRowPitch);
     lastLabelRight[row] = labelX + labelWidth / 2;
   });
   ctx.restore();
