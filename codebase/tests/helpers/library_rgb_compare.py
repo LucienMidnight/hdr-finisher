@@ -37,13 +37,22 @@ for row in data["rows"]:
             field=field, library=actual, grade=expected, renderer=meta.get("renderer"),
             source_size=[session.image.shape[1], session.image.shape[0]],
             library_source_size=[meta.get("source_width"), meta.get("source_height")])
+    sampled=None
     for product in (row["large"],row["native"]):
         if product is None:
             assert row.get('nativeMemoryRefusal') is True
             continue
+        source=session
+        # The Library reads large TIFFs for its 640/2560 tiers through its 5120-edge
+        # Lanczos reader, then reduces to the tier (library_rgb.py). Follow that route.
+        if photo.suffix.lower() in {".tif",".tiff"} and product["edge"]<=2560 and reduced:
+            sampled=sampled or SessionStore().prepare_session(photo, owns_source_path=False,
+                interpretation_override=SourceInterpretationOverride.model_validate(document.get("interpretation_override",{})),
+                hdr_reference_white_nits=document.get("hdr_reference_white_nits",203),library_edge=5120)
+            source=sampled
         file=next(root.glob("library-*/"+product["source_key"]+".npz"))
         with np.load(file) as stored:
-            for field,original in (("pixels",session.image),("reference",session.sdr_reference_image)):
+            for field,original in (("pixels",source.image),("reference",source.sdr_reference_image)):
                 if original is None:
                     assert field not in stored.files
                     continue
@@ -51,7 +60,10 @@ for row in data["rows"]:
                 actual=stored[field].astype(np.float32)
                 assert expected.shape==actual.shape
                 # Existing scene-half transport precision, checked before finishing below.
-                assert np.allclose(actual,expected,atol=.001,rtol=.001)
+                assert np.allclose(actual,expected,atol=.001,rtol=.001),dict(
+                    photo=str(photo),field=field,edge=product["edge"],route="5120 then edge" if source is sampled else "one step",
+                    max_abs=float(np.abs(actual-expected).max()),
+                    outside=float((~np.isclose(actual,expected,atol=.001,rtol=.001)).mean()))
     grade=AdjustmentState.model_validate(meta["adjustments"]);grade.hdr.highlight_compression_target_nits=1000
     context=RenderColorContext(meta["white"]);checks=[]
     for lane in ("hdr","sdr"):
