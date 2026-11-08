@@ -819,7 +819,12 @@
   }
   function updateDetails() {
     if (window.HDRLibraryCommands) commandState();
-    const photo = selected(); const root = $("details"), tagFocused = document.activeElement?.id === "library-tag-input"; root.replaceChildren();
+    const photo = selected(); const root = $("details"), tagFocused = document.activeElement?.id === "library-tag-input";
+    // Background updates rebuild this panel; a tag field being typed in keeps
+    // its element, so its text selection, caret and undo history survive.
+    const keptTag = tagFocused ? { input: $("library-tag-input"), suggestions: $("library-tag-suggestions") } : null;
+    const tagSelection = keptTag ? [keptTag.input.selectionStart, keptTag.input.selectionEnd, keptTag.input.selectionDirection] : null;
+    root.replaceChildren();
     if (!photo || !state.selection.size) { root.textContent = "Select a photo."; return; }
     const one = state.selection.size === 1 && state.selection.has(photo.path);
     const list = rows => { const dl = document.createElement("dl"); for (const [label, value] of rows) dl.append(make("dt", "", label), make("dd", label === "Name" ? "library-file-name" : "", value)); return dl; };
@@ -849,7 +854,12 @@
         const segment = make("span", "file-name-part", part); element.append(segment, document.createElement("wbr"));
       }
     });
-    if (tagFocused) $("library-tag-input")?.focus();
+    const freshTag = $("library-tag-input");
+    if (keptTag && freshTag) {
+      freshTag.replaceWith(keptTag.input);
+      if (keptTag.suggestions) $("library-tag-suggestions")?.replaceWith(keptTag.suggestions);
+      keptTag.input.focus(); keptTag.input.setSelectionRange(...tagSelection);
+    } else if (tagFocused) freshTag?.focus();
   }
   let factsTimer, factsPath;
   function wantFacts(photo) {
