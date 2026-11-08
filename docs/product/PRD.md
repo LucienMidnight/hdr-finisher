@@ -317,6 +317,22 @@ section 3; the October 18 list below is kept as history.
    and a hue-selection mask. Hue selection is built October 27; complete Retouch remains open. See
    [grade](modules/grade.md).
 
+### To do: briefs to write (November 8, 2026)
+
+Found during the November 8 release check. Each needs a brief before work starts.
+
+1. **GPU exports may not repeat exactly.** Two GPU renders of the same grade
+   came out noticeably different (possibly tiling that depends on free
+   graphics memory). Affects export; Proof reuses the export's render, so
+   it no longer shows the difference. See
+   [export-and-proof](modules/export-and-proof.md).
+2. **Library delete, rename and move are slow.** About 10 seconds each with
+   Steve's cache, and saving marks or settings waits during that time. See
+   [photo-library](modules/photo-library.md).
+3. **Film export mismatch.** The GPU preview's half-precision shader limit
+   (the known film-stock-parity failure). Waiting on Steve: do the shader
+   work, or leave it as a known limit. See [film-look](modules/film-look.md).
+
 ## 7. Waiting on Steve
 
 | Item | Kind | Module |
