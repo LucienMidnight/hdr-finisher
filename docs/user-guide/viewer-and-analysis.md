@@ -47,6 +47,10 @@ At **100%** and above, Ready means the visible region was processed at native so
 
 Proxy resampling preserves float values and uses a high-quality filter, but downsampling can still hide single-pixel clipping or artifacts.
 
+Drag the **Navigate** window by its title bar (beside the two grip lines) to
+move it out of your way. Drag inside its thumbnail to pan the photo. Its
+position stays while the app is open and resets on the next launch.
+
 ## Crop editor
 
 Choose **Crop**, then open the crop editor to keep composition controls beside the image. Aspect presets include freeform, original, common photo/video ratios, square, portrait ratios, and a custom width/height ratio. Selecting a ratio fits a centered crop inside the current bounds; dragging an edge or corner then preserves that ratio.

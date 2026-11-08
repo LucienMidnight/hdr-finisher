@@ -992,21 +992,45 @@ function bindEvents() {
     );
   };
   let navigationDragPointer = null;
+  let navigationWindowDrag = null;
   els.navigationThumb.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0 || !state.session || state.zoomMode !== "custom") return;
+    if (event.button !== 0 || !state.session || navigationWindowDrag || navigationDragPointer !== null) return;
+    if (event.target.closest(".navigation-thumb-title")) {
+      const box = els.navigationThumb.getBoundingClientRect();
+      const frame = els.dropzone.getBoundingClientRect();
+      navigationWindowDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+        right: frame.left + els.dropzone.clientLeft + els.dropzone.clientWidth - box.right,
+        bottom: frame.top + els.dropzone.clientTop + els.dropzone.clientHeight - box.bottom };
+      els.navigationThumb.setPointerCapture(event.pointerId);
+      els.navigationThumb.classList.add("dragging-window");
+      event.preventDefault();
+      return;
+    }
+    if (state.zoomMode !== "custom") return;
     navigationDragPointer = event.pointerId;
     els.navigationThumb.setPointerCapture(event.pointerId);
     event.preventDefault();
     panFromNavigationPointer(event);
   });
   els.navigationThumb.addEventListener("pointermove", (event) => {
-    if (event.pointerId === navigationDragPointer) panFromNavigationPointer(event);
+    if (event.pointerId === navigationWindowDrag?.pointerId) {
+      navigationWindowPosition = {
+        right: navigationWindowDrag.right - (event.clientX - navigationWindowDrag.x),
+        bottom: navigationWindowDrag.bottom - (event.clientY - navigationWindowDrag.y),
+      };
+      updateNavigationViewport();
+    } else if (event.pointerId === navigationDragPointer) panFromNavigationPointer(event);
   });
   const endNavigationDrag = (event) => {
     if (event.pointerId === navigationDragPointer) navigationDragPointer = null;
+    if (event.pointerId === navigationWindowDrag?.pointerId) {
+      navigationWindowDrag = null;
+      els.navigationThumb.classList.remove("dragging-window");
+    }
   };
   els.navigationThumb.addEventListener("pointerup", endNavigationDrag);
   els.navigationThumb.addEventListener("pointercancel", endNavigationDrag);
+  els.navigationThumb.addEventListener("lostpointercapture", endNavigationDrag);
   els.navigationThumb.addEventListener("click", (event) => {
     if (event.detail !== 0 || !state.session || state.zoomMode !== "custom") return;
     panFromNavigation(0.5, 0.5);

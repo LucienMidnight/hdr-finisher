@@ -8,6 +8,22 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 8: movable Navigate window
+
+The Navigate window can be moved by dragging its labelled title bar, marked
+with two grip lines. Dragging the picture still pans the photo. Placement
+lasts for the app session across photos, zoom and visibility changes; resizing
+the viewer keeps the window inside its bounds. It starts at bottom-right on
+app launch. No saved project or rendered output changes.
+
+Validation: 847 JavaScript checks passed; Python had 3,084 passes and three
+skips, with unrelated memory-poll timeout and existing Library cached-scene
+failures. `view-tools-interaction.js` passed the new title drag, no-photo-pan,
+hide/show, moved-thumbnail pan and viewer-boundary assertions before its
+unrelated hidden Local Adjustments bypass button timeout. Local report:
+`codebase/output/navigator-view-check.log`. The default Library check repeated
+its existing drawing-gap failure (recorded in the performance table).
+
 ## 1. Purpose
 
 Show the graded photo in true HDR, instantly, at any zoom, on the graphics

@@ -14,9 +14,14 @@ const { encodeTiff } = require("./large-noisy-tiff.js");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
 
+const temporarySources = new Set();
+
 function flatSource(width, height) {
   const target = path.join(os.tmpdir(), `hdr-finisher-flat-${width}x${height}.tiff`);
-  if (!fs.existsSync(target)) fs.writeFileSync(target, encodeTiff(Buffer.alloc(width * height * 3, 128), width, height));
+  if (!fs.existsSync(target)) {
+    fs.writeFileSync(target, encodeTiff(Buffer.alloc(width * height * 3, 128), width, height));
+    temporarySources.add(target);
+  }
   return target;
 }
 
@@ -134,6 +139,47 @@ async function setSlider(page, dataPath, value) {
     assert(zoomed.imageWidth <= 261 && zoomed.imageHeight <= 221, "Navigate window exceeded its size bounds.");
     await command(page, "navigation-window", { mode: "off" });
     await waitForNavigator(page, false);
+    await command(page, "navigation-window", { mode: "auto" });
+
+    // Moving the title bar must not move the photo. Placement survives hide/show.
+    await command(page, "navigation-window", { mode: "always" });
+    await waitForNavigator(page, true);
+    const scrollBefore = await page.evaluate(() => [els.dropzone.scrollLeft, els.dropzone.scrollTop]);
+    const title = await page.locator(".navigation-thumb-title").boundingBox();
+    const beforeMove = await navigatorBox(page);
+    await page.mouse.move(title.x + title.width / 2, title.y + title.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(title.x + title.width / 2 - 100, title.y + title.height / 2 - 70, { steps: 8 });
+    await page.mouse.up();
+    const moved = await navigatorBox(page);
+    assert(Math.abs(moved.rightGap - beforeMove.rightGap - 100) <= 1
+      && Math.abs(moved.bottomGap - beforeMove.bottomGap - 70) <= 1, "Title drag did not move Navigate.");
+    const scrollAfter = await page.evaluate(() => [els.dropzone.scrollLeft, els.dropzone.scrollTop]);
+    assert(JSON.stringify(scrollBefore) === JSON.stringify(scrollAfter), "Title drag panned the photo.");
+    await command(page, "navigation-window", { mode: "off" });
+    await waitForNavigator(page, false);
+    await command(page, "navigation-window", { mode: "always" });
+    await waitForNavigator(page, true);
+    const restoredPosition = await navigatorBox(page);
+    assert(Math.abs(restoredPosition.rightGap - moved.rightGap) <= 1 && Math.abs(restoredPosition.bottomGap - moved.bottomGap) <= 1,
+      "Navigate forgot its position when shown again.");
+    // Thumbnail dragging still pans after repositioning the window.
+    const overview = await page.locator("#navigation-thumb-image").boundingBox();
+    await page.mouse.move(overview.x + overview.width * 0.3, overview.y + overview.height * 0.3);
+    await page.mouse.down();
+    await page.mouse.move(overview.x + overview.width * 0.7, overview.y + overview.height * 0.7, { steps: 5 });
+    await page.mouse.up();
+    const panned = await page.evaluate(() => [els.dropzone.scrollLeft, els.dropzone.scrollTop]);
+    assert(JSON.stringify(panned) !== JSON.stringify(scrollAfter), "Moved thumbnail no longer pans the photo.");
+    // Drag well past the viewer edge; both the window and its title remain reachable.
+    const movedTitle = await page.locator(".navigation-thumb-title").boundingBox();
+    await page.mouse.move(movedTitle.x + 8, movedTitle.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(0, 0, { steps: 8 });
+    await page.mouse.up();
+    const bounded = await navigatorBox(page);
+    assert(bounded.leftGap >= 11 && bounded.topGap >= 11, "Navigate escaped the viewer.");
+    report.navigatorDrag = { moved, bounded };
     await command(page, "navigation-window", { mode: "auto" });
 
     // --- Perspective guides stay on the picture through a zoom -------------
@@ -308,5 +354,6 @@ async function setSlider(page, dataPath, value) {
     process.exitCode = 1;
   } finally {
     await browser.close();
+    for (const source of temporarySources) fs.rmSync(source, { force: true });
   }
 })();

@@ -32,6 +32,8 @@ function clearNavigationThumbnail() {
 
 const NAVIGATION_WINDOW_MODES = ["auto", "always", "off"];
 const NAVIGATION_WINDOW_MARGIN_PX = 12;
+// Viewer-relative placement lasts until the app closes, across photos and zooms.
+let navigationWindowPosition = null;
 
 /**
  * Whether the Navigate window belongs on screen. Auto shows it for any view
@@ -79,15 +81,21 @@ function updateNavigationViewport() {
   const frameWidth = preview instanceof HTMLCanvasElement ? preview.width : preview.naturalWidth;
   const frameHeight = preview instanceof HTMLCanvasElement ? preview.height : preview.naturalHeight;
   if (!(frameWidth > 0 && frameHeight > 0)) return;
-  // Anchor the bottom-right corner just inside the picture area, clear of its
-  // scroll bars; the top-left corner moves with the picture's shape.
+  // Start at bottom-right; a dragged window stays inside the picture area,
+  // clear of scroll bars, as the viewer or overview changes size.
   const panel = els.navigationThumb.parentElement.getBoundingClientRect();
   const frame = els.dropzone.getBoundingClientRect();
   const size = navigationWindowSize(frameWidth / frameHeight, els.dropzone.clientWidth, els.dropzone.clientHeight);
-  els.navigationThumb.style.right = `${panel.right - (frame.left + els.dropzone.clientLeft + els.dropzone.clientWidth) + NAVIGATION_WINDOW_MARGIN_PX}px`;
-  els.navigationThumb.style.bottom = `${panel.bottom - (frame.top + els.dropzone.clientTop + els.dropzone.clientHeight) + NAVIGATION_WINDOW_MARGIN_PX}px`;
   els.navigationThumbImage.parentElement.style.width = `${size.width}px`;
   els.navigationThumbImage.parentElement.style.height = `${size.height}px`;
+  const windowBox = els.navigationThumb.getBoundingClientRect();
+  const right = clamp(navigationWindowPosition?.right ?? NAVIGATION_WINDOW_MARGIN_PX,
+    NAVIGATION_WINDOW_MARGIN_PX, Math.max(NAVIGATION_WINDOW_MARGIN_PX, els.dropzone.clientWidth - windowBox.width - NAVIGATION_WINDOW_MARGIN_PX));
+  const bottom = clamp(navigationWindowPosition?.bottom ?? NAVIGATION_WINDOW_MARGIN_PX,
+    NAVIGATION_WINDOW_MARGIN_PX, Math.max(NAVIGATION_WINDOW_MARGIN_PX, els.dropzone.clientHeight - windowBox.height - NAVIGATION_WINDOW_MARGIN_PX));
+  if (navigationWindowPosition) navigationWindowPosition = { right, bottom };
+  els.navigationThumb.style.right = `${panel.right - (frame.left + els.dropzone.clientLeft + els.dropzone.clientWidth) + right}px`;
+  els.navigationThumb.style.bottom = `${panel.bottom - (frame.top + els.dropzone.clientTop + els.dropzone.clientHeight) + bottom}px`;
   const rect = visibleOutputRect(frameWidth, frameHeight)
     || { x: 0, y: 0, width: frameWidth, height: frameHeight };
   const outline = els.navigationThumbViewport.style;

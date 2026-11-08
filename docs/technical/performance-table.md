@@ -46,6 +46,13 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+November 8 movable Navigate window smoke check (working tree on `034d07c0`,
+default 90-second mixed grid, concurrent Python suite): drawing gap 1,576 ms
+exceeds the unchanged 250 ms limit; no picture errors or memory breach
+(peak 2.822 GB). This repeats the existing Library drawing-pause failure;
+not investigated or rerun for this viewer interaction change.
+Evidence: `codebase/output/quick-library-check/navigator-drag/report.json`.
+
 November 8 Retouch selection / Local brush keys smoke check (working tree on
 `6c6ceb34`, default 90-second mixed grid, concurrent Python suite): drawing
 gap 1,922 ms exceeds the unchanged 250 ms limit; timer block 114 ms, no
