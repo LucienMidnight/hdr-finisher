@@ -135,6 +135,30 @@ on November 8 with the original grade (800-nit target): it still stops at the
 full-size Proof/export byte-identity assertion above, before the CPU route.
 Both GPU files decode to a 798.18-nit peak, under the target. No limit changed.
 
+**November 8: full-size Proof/export mismatch: cause and fix.** The GPU
+delivery cache key (`gpu_delivery._render_pair`) included
+`framing_source_size`. Full-size Proof sets it to the native size, but export
+leaves it unset and derives the same size, so the keys never matched. Proof
+therefore rendered the picture a second time on the GPU instead of reusing the
+export's finished pair, and could also reach its own CPU fallback decision.
+The local-adjustment field had the same kind of mismatch: Proof passes only
+the enabled locals, export the session's full list, so the keys also differed
+whenever the Local module was off. The key now uses the derived native size
+and the enabled locals, which are what is actually rendered. A different
+source array, native size, output limit, grade or finishing still makes a
+separate render (fast test `test_full_size_proof_and_export_share_one_delivery_decision`).
+Measured on DSC07060 (800-nit target): before, GPU Proof and export decoded to
+identical SDR, but HDR differed (ΔITP mean 0.853 / p99.9 26.50; peaks
+798.184 / 798.088). After, both GPU and CPU Proofs are byte-identical to their
+exports (GPU 798.184, CPU 798.493 nits), the CPU route is reached and the
+check passes. No export pixels changed.
+
+**Still open (found by this fix):** the two separate GPU renders received
+identical requests and still differed well beyond tolerance. Two GPU exports
+of one grade made at different moments may therefore not match. Likely cause
+(unproven): the renderer's tiled route is chosen inside a memory budget that
+depends on what else holds the graphics card. Needs its own diagnosis.
+
 Decision-record validation: documentation and diff checks only; no executable
 code, pixels or test expectations changed. Existing test results below stand.
 
@@ -539,8 +563,10 @@ after v1; batch export already meets its pace target.
 **October 27 JPEG agreement: accepted for v1, deferred to v2 by Steve.**
 Both renderers pass before encoding and miss finished JPEG limits; Steve
 accepts the slight visual differences for v1. Preserve measurements and
-unchanged tolerances for v2 encoding-quality work. The separate full-size RAW
-Proof HDR mismatch still needs diagnosis. No pixel change.
+unchanged tolerances for v2 encoding-quality work. The full-size RAW Proof
+HDR mismatch was fixed November 8 (Proof now shares the export's render); the
+underlying GPU run-to-run HDR difference it exposed still needs diagnosis.
+No pixel change.
 
 0. **GPU export speed, end to end** (Steve, October 20: before the live
    recorded test session). Brief:

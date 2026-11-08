@@ -50,16 +50,17 @@ const harness=global.HDRFinisherElectronTestHarness;
       const response=await harness.fetch(`/api/proof/artifact/${proof.artifact_id}.jpg`);
       assert.ok(response.ok);const proofFile=path.join(output,renderer+"-proof.jpg");
       fs.writeFileSync(proofFile,Buffer.from(await response.arrayBuffer()));
-      assert.ok(fs.readFileSync(file).equals(fs.readFileSync(proofFile)),"Full-size Proof is the delivered file");
+      const byteIdentical=fs.readFileSync(file).equals(fs.readFileSync(proofFile));
       const decoded=await execute(python,["-c",
         "import sys,json;from pathlib import Path;from hdr_finisher.hdr_delivery import decoded_hdr_peak_nits;print(json.dumps([decoded_hdr_peak_nits(Path(p),'jpeg_ultrahdr') for p in sys.argv[1:]]))",
         file,proofFile],{env:pythonEnv,encoding:"utf8"});
       const peaks=JSON.parse(decoded.stdout);
       assert.ok(peaks.every(peak=>peak<=target),JSON.stringify({renderer,target,peaks}));
-      results.push({renderer,target,peaks,seconds:(Date.now()-start)/1000,exported,proof});
+      results.push({renderer,target,peaks,byteIdentical,seconds:(Date.now()-start)/1000,exported,proof});
       console.log(JSON.stringify(results.at(-1)));
     }
     fs.writeFileSync(path.join(output,"result.json"),JSON.stringify(results,null,2));
+    assert.ok(results.every(result=>result.byteIdentical),"Full-size Proof is the delivered file");
   }finally{
     await api("/api/delivery/preferences",{force_cpu:false}).catch(()=>{});
     await browser.close();reusePhoto.cleanup();

@@ -112,12 +112,18 @@ def _render_pair(frame, owner, settings, adjustments):
     except (OSError, ValueError, AttributeError):
         frame._delivery_record = renderer_record()
         return None
+    from .finishing import geometry_output_dimensions
+    native_size = getattr(frame, "framing_source_size", None) or geometry_output_dimensions(
+        frame.image.shape[1], frame.image.shape[0], adjustments.shared.geometry)
+    # Full-size Proof states this size and passes only enabled locals; export
+    # derives the same size and passes all locals. Key on what is rendered so
+    # both share one finished pair and one CPU fallback decision.
     signature = (id(frame.image), id(getattr(frame, "sdr_reference_image", None)),
-        adjustments.model_dump_json(), repr(getattr(frame, "local_adjustments", None)),
+        adjustments.model_dump_json(), repr(adjustments.enabled_locals(getattr(frame, "local_adjustments", None))),
         repr(getattr(frame, "denoise", None)), getattr(frame, "hdr_reference_white_nits", 203),
         settings.output_finishing.model_dump_json(), policy["effective_force_cpu"],
         settings.export_with_frame, repr(getattr(frame, "framing", None)),
-        getattr(frame, "framing_source_size", None), getattr(frame, "framing_output_limit", None))
+        native_size, getattr(frame, "framing_output_limit", None))
     cached = getattr(owner, "_delivery_cache", None)
     if cached and cached[0] == signature:
         frame._delivery_record = cached[2]

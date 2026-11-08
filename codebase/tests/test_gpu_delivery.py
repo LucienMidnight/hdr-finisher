@@ -35,10 +35,41 @@ def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, mon
         np.testing.assert_allclose(pair["hdr"], .18)
         np.testing.assert_allclose(pair["sdr"], .3)
         proof=SimpleNamespace(**vars(frame)); proof.delivery_owner=frame
+        # Full-size Proof supplies native framing dimensions even without a frame.
+        proof.framing_source_size=(6,4); proof.framing_output_limit=None
         compatible=ExportSettings(format="sdr_png")
         assert gpu_delivery.render_pair(proof, compatible, frame.adjustments) is pair
         assert proof._delivery_record=={"renderer":"gpu", "fallback_reason":None}
         assert client.get("/api/delivery/gpu/next").json() is None
+
+
+def test_full_size_proof_and_export_share_one_delivery_decision(tmp_path, monkeypatch):
+    # Proof states the native size and passes only enabled locals; export
+    # leaves both to be derived. The same render must be decided once.
+    monkeypatch.setattr(delivery, "PREFERENCES_PATH", tmp_path / "policy.json")
+    monkeypatch.setenv(delivery.FORCE_CPU_ENV, "1")
+    decisions=[]
+    original=delivery.renderer_record
+    monkeypatch.setattr(delivery, "renderer_record", lambda: decisions.append(1) or original())
+    adjustments=AdjustmentState()
+    adjustments.shared.local_adjustments_enabled=False
+    export=SimpleNamespace(image=np.zeros((4,6,3), dtype=np.float32), local_adjustments=["disabled local"],
+        denoise=DenoiseDocumentSettings())
+    settings=ExportSettings()
+    assert gpu_delivery.render_pair(export, settings, adjustments) is None
+    proof=SimpleNamespace(**vars(export)); proof.delivery_owner=export
+    proof.local_adjustments=adjustments.enabled_locals(export.local_adjustments)
+    proof.framing_source_size=(6,4); proof.framing_output_limit=None
+    assert gpu_delivery.render_pair(proof, settings, adjustments) is None
+    assert len(decisions)==1
+    # A reduced Proof of the same source is a different render.
+    reduced=SimpleNamespace(**vars(proof)); reduced.image=np.zeros((2,3,3), dtype=np.float32)
+    gpu_delivery.render_pair(reduced, settings, adjustments)
+    assert len(decisions)==2
+    # So is a different native size for the same pixels.
+    proof.framing_source_size=(12,8)
+    gpu_delivery.render_pair(proof, settings, adjustments)
+    assert len(decisions)==3
 
 
 def test_foreground_residency_is_shared_and_pause_is_priority(tmp_path, monkeypatch):
