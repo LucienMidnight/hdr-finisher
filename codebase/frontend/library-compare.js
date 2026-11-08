@@ -60,7 +60,7 @@
       if(!o.zoom().enabled||!s.meta)return;
       if(s.photo.edited){s.note.textContent='Screen preview enlarged. Check detail in Grade.';return;}
       const z=o.zoom(),dpr=devicePixelRatio||1,percent=`${Math.round(z.scale*100)}%`;
-      if(s.meta.source_width&&(s.meta.camera_long_edge ? s.meta.camera_long_edge/Math.max(s.meta.source_width,s.meta.source_height) : s.meta.width/s.meta.source_width)>=z.scale){s.note.textContent='';return;}
+      if(HDRLibraryZoom.fitCovers(s.meta,z.scale)){s.note.textContent='';return;}
       const c=new AbortController();s.nativeController=c;
       const current=()=>enabled&&o.active()&&!c.signal.aborted&&s.photo?.path===s.fit.dataset.picturePath;
       s.note.textContent=`Preparing detail preview · ${percent}…`;

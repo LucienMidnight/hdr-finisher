@@ -1,5 +1,14 @@
 const test = require("node:test"), assert = require("node:assert/strict");
-const { center, click, fitScale, wheel, anchor } = require("../frontend/library-zoom.js");
+const { center, click, fitScale, wheel, anchor, fitCovers } = require("../frontend/library-zoom.js");
+test("100% needs detail unless the Fit picture on screen is full size", () => {
+ // A full-size embedded preview delivered at 2560 px no longer covers 100%.
+ assert.equal(fitCovers({ camera_long_edge: 6000, width: 2560, height: 1707, source_width: 6000, source_height: 4000 }, 1), false);
+ assert.equal(fitCovers({ camera_long_edge: 6000, width: 2560, height: 1707, source_width: 6000, source_height: 4000 }, .4), true);
+ assert.equal(fitCovers({ camera_long_edge: 2000, width: 2000, height: 1333, source_width: 2000, source_height: 1333 }, 1), true);
+ assert.equal(fitCovers({ width: 1280, source_width: 6000 }, 1), false);
+ assert.equal(fitCovers({ width: 3000, source_width: 3000 }, 1), true);
+ assert.equal(fitCovers({ width: 3000 }, 1), false);
+});
 test("Fit clicks account for letterboxing and stay on the photo", () => {
  assert.deepEqual(click(500, 500, 1000, 1000, 2000, 1000), { x: .5, y: .5 });
  assert.deepEqual(click(750, 375, 1000, 1000, 2000, 1000), { x: .75, y: .25 });

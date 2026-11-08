@@ -1233,7 +1233,7 @@
     const photo = selected(); if (!photo || !state.fitMeta || !state.zoom || state.detailRequested !== photo.path || !state.active || state.view !== "single") return;
     const stage = $("single-stage"), dpr = window.devicePixelRatio || 1, scale = state.zoomScale, percent = `${Math.round(scale * 100)}%`;
     const fit = state.fitMeta;
-    if (fit.route !== 'stored-screen-preview' && fit.source_width && (fit.camera_long_edge ? fit.camera_long_edge / Math.max(fit.source_width,fit.source_height) : fit.width / fit.source_width) >= scale) {
+    if (fit.route !== 'stored-screen-preview' && HDRLibraryZoom.fitCovers(fit, scale)) {
       state.native?.abort(); state.nativeMeta = null; state.nativeLoading = false; $("native-picture").hidden = true; positionZoom();
       status(`${percent} · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`); return;
     }

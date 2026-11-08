@@ -26,6 +26,17 @@
   const sourceX = x + offsetX / (sourceWidth * from), sourceY = y + offsetY / (sourceHeight * from);
   return center(sourceX - offsetX / (sourceWidth * to), sourceY - offsetY / (sourceHeight * to), sourceWidth * to, sourceHeight * to, width, height, inset * to);
  }
- const api = Object.freeze({ center, click, fitScale, wheel, anchor });
+ // Whether the Fit picture on screen already shows `scale` (1 is 100%) without
+ // detail. A camera picture counts at the size actually delivered, which can be
+ // smaller than the camera's embedded preview; developed Fit pictures are
+ // measured against the source width as before.
+ function fitCovers(meta, scale) {
+  if (!meta?.source_width) return false;
+  const shown = meta.camera_long_edge
+   ? Math.min(meta.camera_long_edge, Math.max(meta.width || 0, meta.height || 0)) / Math.max(meta.source_width, meta.source_height || 0)
+   : meta.width / meta.source_width;
+  return shown >= scale;
+ }
+ const api = Object.freeze({ center, click, fitScale, wheel, anchor, fitCovers });
  if (typeof module !== "undefined") module.exports = api; else window.HDRLibraryZoom = api;
 })();
