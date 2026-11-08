@@ -17,7 +17,8 @@ root=Path(__file__).resolve().parents[1]
 output=root/'output/library-grade-open'
 serial='--serial' in sys.argv
 mode='serial' if serial else 'overlap'
-os.environ['HDR_FINISHER_USER_DATA_DIR']=str(output/('memory-'+mode+'-profile'))
+# The backend reads HDR_FINISHER_APP_DATA_DIR; without it this used the real profile.
+os.environ['HDR_FINISHER_USER_DATA_DIR']=os.environ['HDR_FINISHER_APP_DATA_DIR']=str(output/('test-memory-'+mode+'-profile'))
 sys.path.insert(0,str(root/'backend'))
 if serial:
     # Preserve the actual starting revision, even after this task is committed.

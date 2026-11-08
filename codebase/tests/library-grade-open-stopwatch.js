@@ -7,7 +7,7 @@ const packaged = process.argv.includes('--packaged');
 const label = process.argv.includes('--after') ? 'after' : 'before';
 const mode = (process.argv.includes('--bands') ? 'bands-' : '') + `${label}-${packaged ? 'packaged' : 'development'}`;
 fs.mkdirSync(output, { recursive: true });
-const profile = fs.mkdtempSync(path.join(output, mode + '-profile-'));
+const profile = fs.mkdtempSync(path.join(output, 'test-' + mode + '-profile-'));
 const folder = fs.mkdtempSync(path.join(output, mode + '-photos-'));
 const original = path.join(root, 'output/library-slow-spots/development-final-photos-ZHfVZM/DSC07060.ARW');
 const names = ['saved.ARW', 'new-1.ARW', 'new-2.ARW', 'new-3.ARW'];

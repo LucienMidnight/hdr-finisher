@@ -7,7 +7,7 @@ const { _electron: electron } = require("playwright");
   const root = path.resolve(__dirname, "../..");
   const output = path.join(root, "output", "preview-menu");
   fs.mkdirSync(output, { recursive: true });
-  const userData = fs.mkdtempSync(path.join(output, "restore-"));
+  const userData = fs.mkdtempSync(path.join(output, "test-restore-"));
   const app = await electron.launch({
     executablePath: process.env.HDR_FINISHER_PACKAGED_EXECUTABLE,
     args: [process.env.HDR_FINISHER_MENU_PROJECT],

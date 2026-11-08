@@ -8,7 +8,7 @@ for name in ('OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'output/library-quick-open-trial'
-os.environ['HDR_FINISHER_APP_DATA_DIR'] = str(OUT / 'app-data')
+os.environ['HDR_FINISHER_APP_DATA_DIR'] = str(OUT / 'test-app-data')
 os.environ['HDR_FINISHER_SOURCE_CACHE_DISABLE'] = '1'
 import sys, json, time, threading, importlib.util
 from io import BytesIO

@@ -38,7 +38,7 @@ async function main() {
   assert.ok(fs.existsSync(sourcePath), `Missing input: ${sourcePath}`);
   const userDataRoot = path.resolve(__dirname, "..", "..", "output", "performance");
   fs.mkdirSync(userDataRoot, { recursive: true });
-  const userDataPath = fs.mkdtempSync(path.join(userDataRoot, "film-look-user-data-"));
+  const userDataPath = fs.mkdtempSync(path.join(userDataRoot, "test-film-look-user-data-"));
   fs.writeFileSync(path.join(userDataPath, "application-preferences.json"), JSON.stringify({
     schemaVersion: 1,
     defaultReferenceWhiteNits: 203,

@@ -7,7 +7,7 @@ THREADS=int(os.environ.get('M9_THREADS','12'))
 for k in ('OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS'):os.environ[k]=str(THREADS)
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2];OUT=ROOT/'output/library-raw-deep-dive'
-os.environ['HDR_FINISHER_APP_DATA_DIR']=str(OUT/'app-data');os.environ['HDR_FINISHER_SOURCE_CACHE_DISABLE']='1'
+os.environ['HDR_FINISHER_APP_DATA_DIR']=str(OUT/'test-app-data');os.environ['HDR_FINISHER_SOURCE_CACHE_DISABLE']='1'
 sys.path.insert(0,str(ROOT/'backend'))
 import ctypes as C,json,time,io,shutil,statistics,threading
 from concurrent.futures import ThreadPoolExecutor,ProcessPoolExecutor

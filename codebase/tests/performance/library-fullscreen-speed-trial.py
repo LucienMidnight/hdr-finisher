@@ -19,7 +19,7 @@ for n in ('OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NU
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 OUT=ROOT/'output/library-fullscreen-speed-trial'
-os.environ['HDR_FINISHER_APP_DATA_DIR']=str(OUT/'app-data')
+os.environ['HDR_FINISHER_APP_DATA_DIR']=str(OUT/'test-app-data')
 os.environ['HDR_FINISHER_SOURCE_CACHE_DISABLE']='1'
 import sys,json,time,threading,shutil,statistics,inspect,zlib,lzma,ctypes,gc
 from concurrent.futures import ThreadPoolExecutor,ProcessPoolExecutor,Future

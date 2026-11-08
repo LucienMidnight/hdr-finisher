@@ -182,7 +182,7 @@ async function main() {
 
   const userDataRoot = path.join(codebase, "output", "performance");
   fs.mkdirSync(userDataRoot, { recursive: true });
-  const userDataPath = fs.mkdtempSync(path.join(userDataRoot, "denoise-selector-user-data-"));
+  const userDataPath = fs.mkdtempSync(path.join(userDataRoot, "test-denoise-selector-user-data-"));
   fs.writeFileSync(path.join(userDataPath, "application-preferences.json"), JSON.stringify({
     schemaVersion: 1,
     defaultReferenceWhiteNits: 203,

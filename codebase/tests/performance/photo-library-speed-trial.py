@@ -34,7 +34,7 @@ ARGS = parser.parse_args()
 if ARGS.threads == "one":
     for key in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"]:
         os.environ[key] = "1"
-os.environ["HDR_FINISHER_APP_DATA_DIR"] = str(OUT / "app-data")
+os.environ["HDR_FINISHER_APP_DATA_DIR"] = str(OUT / "test-app-data")
 os.environ["HDR_FINISHER_SOURCE_CACHE_DISABLE"] = "1"
 import numpy as np
 from PIL import Image

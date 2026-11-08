@@ -7,7 +7,7 @@ const { _electron: electron } = require("playwright");
   const codebase = path.resolve(__dirname, "../..");
   const output = path.join(codebase, "output", "preview-menu");
   fs.mkdirSync(output, { recursive: true });
-  const userData = fs.mkdtempSync(path.join(output, "profile-"));
+  const userData = fs.mkdtempSync(path.join(output, "test-profile-"));
   fs.writeFileSync(path.join(userData, "application-preferences.json"), JSON.stringify({
     schemaVersion: 1, renderingMode: "auto", updates: { checkAutomatically: false },
   }));

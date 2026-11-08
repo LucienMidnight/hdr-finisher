@@ -34,7 +34,7 @@ async function main() {
   const codebase = path.resolve(desktopDirectory, "..");
   const outputDirectory = path.join(codebase, "output", "confirmation-focus");
   fs.mkdirSync(outputDirectory, { recursive: true });
-  const userDataPath = fs.mkdtempSync(path.join(outputDirectory, "user-data-"));
+  const userDataPath = fs.mkdtempSync(path.join(outputDirectory, "test-user-data-"));
   fs.writeFileSync(path.join(userDataPath, "application-preferences.json"), JSON.stringify({
     schemaVersion: 1,
     defaultReferenceWhiteNits: 203,

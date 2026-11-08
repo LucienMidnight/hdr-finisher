@@ -7,7 +7,7 @@ const {_electron}=require('playwright');
  const root=path.resolve(__dirname,'..'),out=path.join(root,'output/hsl-selection-engine');
  require('node:child_process').execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tools/hsl_selection_fixture.py')],{stdio:'inherit'});
  const fixture=JSON.parse(fs.readFileSync(path.join(out,'fixture.json')));
- const profile=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-selection-'));
+ const profile=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-test-selection-'));
  const app=await _electron.launch({executablePath:require('../desktop/node_modules/electron'),args:[path.join(root,'tools/hsl-prototype/electron-main.cjs')],env:{...process.env,HDR_FINISHER_USER_DATA_DIR:profile,HSL_PROTOTYPE_TEST:'1'}});
  try{
   const page=await app.firstWindow();await page.waitForFunction(()=>window.hslPrototype?.ready);

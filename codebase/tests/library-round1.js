@@ -10,7 +10,7 @@ const packaged = process.argv.includes('--packaged');
 const baseline = process.argv.includes('--baseline');
 const mode = (packaged ? 'packaged' : 'development') + (baseline ? '-save-baseline' : '-approved');
 fs.mkdirSync(output, { recursive: true });
-const profile = fs.mkdtempSync(path.join(output, mode + '-profile-'));
+const profile = fs.mkdtempSync(path.join(output, 'test-' + mode + '-profile-'));
 const folder = fs.mkdtempSync(path.join(output, mode + '-photos-'));
 const originals = path.join(root, 'output/library-slow-spots/development-final-photos-ZHfVZM');
 const names = fs.readdirSync(originals).filter(n => /^DSC.*\.ARW$/i.test(n)).sort().slice(0, 6);

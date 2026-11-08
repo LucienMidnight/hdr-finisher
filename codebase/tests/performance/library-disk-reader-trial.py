@@ -13,7 +13,7 @@ OUT = m9.ROOT/'output/library-disk-reader-trial'; OUT.mkdir(parents=True, exist_
 MANIFEST = json.loads((m9.OUT/'manifest.json').read_text())
 PATHS = [Path(p) for p in MANIFEST['paths']]
 m9.paths = lambda: PATHS
-os.environ['HDR_FINISHER_APP_DATA_DIR'] = str(OUT/'app-data')
+os.environ['HDR_FINISHER_APP_DATA_DIR'] = str(OUT/'test-app-data')
 def write(n, v): (OUT/n).write_text(json.dumps(v, indent=2), encoding='utf-8')
 def now(): return time.perf_counter()*1000
 

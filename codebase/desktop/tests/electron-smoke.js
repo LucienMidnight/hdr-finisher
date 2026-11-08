@@ -62,7 +62,7 @@ async function main() {
   fs.copyFileSync(pathlessDropFixturePath, pathlessDropPath);
   const projectPath = path.join(outputDirectory, "electron-smoke.hdrfinisher");
   const exportPath = path.join(outputDirectory, "electron-smoke.png");
-  const userDataPath = fs.mkdtempSync(path.join(outputDirectory, "user-data-"));
+  const userDataPath = fs.mkdtempSync(path.join(outputDirectory, "test-user-data-"));
   fs.writeFileSync(path.join(userDataPath, "application-preferences.json"), JSON.stringify({
     schemaVersion: 1,
     defaultReferenceWhiteNits: 203,

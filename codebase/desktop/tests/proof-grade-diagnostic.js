@@ -8,7 +8,7 @@ const project = process.env.HDR_FINISHER_TEST_PROJECT || "C:\\Users\\Steve\\Desk
 (async () => {
   const output = path.resolve(__dirname, "../output/proof-grade-diagnostic");
   fs.mkdirSync(output, { recursive: true });
-  const userData = fs.mkdtempSync(path.join(output, "profile-"));
+  const userData = fs.mkdtempSync(path.join(output, "test-profile-"));
   fs.writeFileSync(path.join(userData, "application-preferences.json"), JSON.stringify({
     schemaVersion: 1, renderingMode: "auto", updates: { checkAutomatically: false },
   }));

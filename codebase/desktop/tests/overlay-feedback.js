@@ -5,7 +5,7 @@ const { _electron: electron } = require('playwright');
 const codebase = path.resolve(__dirname, '../..');
 const output = path.join(codebase, 'output/overlay-feedback');
 fs.mkdirSync(output, {recursive:true});
-const profile = fs.mkdtempSync(path.join(output, 'profile-'));
+const profile = fs.mkdtempSync(path.join(output, 'test-profile-'));
 const photos = fs.mkdtempSync(path.join(output, 'photos-'));
 const photo = path.join(photos, 'gradient.png');
 const reviewPhotos=path.join(photos,'review');fs.mkdirSync(reviewPhotos);

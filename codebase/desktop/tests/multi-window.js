@@ -7,7 +7,7 @@ const { _electron: electron } = require("playwright");
   const desktop = path.resolve(__dirname, "..");
   const output = path.resolve(desktop, "../output/multi-window");
   fs.mkdirSync(output, { recursive: true });
-  const profile = fs.mkdtempSync(path.join(output, "profile-"));
+  const profile = fs.mkdtempSync(path.join(output, "test-profile-"));
   const env = { ...process.env, HDR_FINISHER_USER_DATA_DIR: profile };
   delete env.ELECTRON_RUN_AS_NODE;
   const launch = async (secondary) => electron.launch({

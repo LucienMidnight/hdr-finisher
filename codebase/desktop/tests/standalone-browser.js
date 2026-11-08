@@ -7,7 +7,7 @@ const { _electron: electron } = require("playwright");
   const desktop = path.resolve(__dirname, "..");
   const output = path.resolve(desktop, "../output/standalone-browser");
   fs.mkdirSync(output, { recursive: true });
-  const profile = fs.mkdtempSync(path.join(output, "profile-"));
+  const profile = fs.mkdtempSync(path.join(output, "test-profile-"));
   const env = { ...process.env, HDR_FINISHER_USER_DATA_DIR: profile, HDR_FINISHER_DEV_LIBRARY_BROWSER: "1" };
   delete env.ELECTRON_RUN_AS_NODE;
   const app = await electron.launch({ executablePath: require("electron"), args: [desktop], cwd: desktop, env, timeout: 90000 });

@@ -7,7 +7,7 @@ const { _electron: electron } = require("playwright");
 (async () => {
   const output = path.resolve(__dirname, "../../output/preview-diagnostic");
   fs.mkdirSync(output, { recursive: true });
-  const userData = fs.mkdtempSync(path.join(output, "profile-"));
+  const userData = fs.mkdtempSync(path.join(output, "test-profile-"));
   const log = path.join(userData, "preview-trace.jsonl");
   const record = (entry) => fs.appendFileSync(log, JSON.stringify({ at: new Date().toISOString(), ...entry }) + "\n");
   fs.writeFileSync(path.join(userData, "application-preferences.json"), JSON.stringify({

@@ -8,7 +8,7 @@ async function main() {
   const desktopDirectory = path.resolve(__dirname, "..");
   const root = path.resolve(desktopDirectory, "../output/renderer-crash-test");
   fs.mkdirSync(root, { recursive: true });
-  const userData = fs.mkdtempSync(path.join(root, "user-data-"));
+  const userData = fs.mkdtempSync(path.join(root, "test-user-data-"));
   fs.writeFileSync(path.join(userData, "application-preferences.json"), JSON.stringify({
     schemaVersion: 1, updates: { checkAutomatically: false }, renderingMode: "cpu",
   }));

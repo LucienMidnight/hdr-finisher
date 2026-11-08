@@ -15,7 +15,7 @@ process.once('exit',stopBackend);
   const net=require('node:net'),server=net.createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;await new Promise(r=>server.close(r));
   process.env.HDR_FINISHER_URL='http://127.0.0.1:'+port;
   const log=fs.openSync(path.join(folder,'backend.log'),'w');
-  backend=spawn(path.join(root,'.venv/Scripts/python.exe'),['-m','uvicorn','hdr_finisher.main:app','--host','127.0.0.1','--port',String(port)],{cwd:root,windowsHide:true,env:{...process.env,PYTHONPATH:path.join(root,'backend'),HDR_FINISHER_APP_DATA_DIR:path.join(folder,'appdata'),HDR_FINISHER_SOURCE_CACHE_DISABLE:'1'},stdio:['ignore',log,log]});
+  backend=spawn(path.join(root,'.venv/Scripts/python.exe'),['-m','uvicorn','hdr_finisher.main:app','--host','127.0.0.1','--port',String(port)],{cwd:root,windowsHide:true,env:{...process.env,PYTHONPATH:path.join(root,'backend'),HDR_FINISHER_APP_DATA_DIR:path.join(folder,'test-appdata'),HDR_FINISHER_SOURCE_CACHE_DISABLE:'1'},stdio:['ignore',log,log]});
   const deadline=Date.now()+30000;while(true){try{if((await fetch(process.env.HDR_FINISHER_URL+'/health')).ok)break;}catch{}if(Date.now()>deadline)throw Error('Backend startup timed out');await new Promise(r=>setTimeout(r,200));}
  }
  const startupDeadline=Date.now()+30000;while(true){try{if((await fetch(process.env.HDR_FINISHER_URL+'/health')).ok)break;}catch{}if(Date.now()>startupDeadline)throw Error('Backend startup timed out');await new Promise(r=>setTimeout(r,200));}

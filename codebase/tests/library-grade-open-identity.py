@@ -5,7 +5,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'output/library-grade-open/identity'
 OUT.mkdir(parents=True, exist_ok=True)
-os.environ['HDR_FINISHER_USER_DATA_DIR'] = str(OUT / 'profile')
+# The backend reads HDR_FINISHER_APP_DATA_DIR; without it this used the real profile.
+os.environ['HDR_FINISHER_USER_DATA_DIR'] = os.environ['HDR_FINISHER_APP_DATA_DIR'] = str(OUT / 'test-profile')
 sys.path.insert(0, str(ROOT / 'backend'))
 from hdr_finisher.sessions import SessionStore
 from hdr_finisher.projects import open_document
