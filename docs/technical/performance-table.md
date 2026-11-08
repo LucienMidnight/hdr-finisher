@@ -1325,6 +1325,8 @@ within 1.5× a developed photo of the same file. Driver
 | Single, S key to first Focus overlay (half / full), undeveloped RAW | Report | 3.40 s / 10.85 to 11.89 s | DSC07060.ARW; full map is the native RAW decode | Baseline |
 | Camera-preview registration added to each RAW map | Report | about 0.1 to 0.4 s | ECC at 640 px; DSC07060 0.40 s, IMG_3129 0.12 s (script) | Baseline |
 
+| Saved grade available ? Library picture ready (Nov 8 fullscreen/thumbnail check) | 500 ms | 288?358 ms | Uncommitted on 2a65d14b; 90 s quick check, library-live-grid disposable copies, autosave + manual save, SDR Library, concurrent Python suite; zero blank tiles, two untouched thumbnails reused; output/quick-library-check/fullscreen-return/report.json |
+| Return from Grade ? edited thumbnail (Steve's 8807 log review) | No blank tiles | 48.5 ms (one observation) | Nov 8, running app; saved Portra 400 on PA168807.ORF; thumbnail loaded and shown on return, PA168806.ORF stayed ungraded. Diagnostic, no performance comparison |
 | Library Stage A cold-folder diagnostic | No speed qualification | 41.579 s (one observation, not a range) | November 7, 2026; 4b8a549a + driver repair; 2560x1440, D:/Photos/HDR Test Images, concurrent CPU suite; first metadata 40.503 s, first pixel request 40.396 s; peak three probes | Diagnostic only |
 
 ### November 8, 2026 ? focused release-check repair

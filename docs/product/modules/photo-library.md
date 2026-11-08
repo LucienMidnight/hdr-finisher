@@ -1,3 +1,40 @@
+## November 8: folder thumbnail flashing / scrollbar feedback
+
+Liou portrait and SynTrend could repeatedly resize their thumbnails on entry.
+When the grid height was near the scrollbar threshold, the scrollbar narrowed
+the grid just enough to remove overflow; its disappearance widened the tiles
+and restored overflow. The grid now reserves scrollbar space even without
+overflow. An isolated Electron check reproduces the old two-width loop with
+37 photos and verifies that the fixed grid keeps one width. It uses the real
+grid CSS and layout function without reading Steve's photos.
+
+## November 8: fullscreen return keeps the current photo visible
+
+Leaving fullscreen review returns to the previous Grid or Single view with
+its current photo. Grid return now reveals that photo instead of retaining
+the scroll position from before fullscreen navigation. When the native window
+resize changes the number of columns, a visible current photo stays visible;
+ordinary scrolling can still move away from it. Multi-photo selection is
+preserved. Regression checks cover grid reveal, resize and free scrolling,
+and the Electron navigation driver covers docked and separate Libraries.
+
+Steve's 8806/8807 thumbnail report was checked against the November 8 app log,
+both saved settings files and both RAW camera previews: Portra 400 was saved
+on PA168807.ORF, its thumbnail hand-off named that photo, and PA168806.ORF
+had no saved grade. Its screenshot matches its camera preview. No wrong-photo
+save or thumbnail swap was established; neither settings file was changed.
+
+Validation for these grid fixes: 847 JavaScript checks passed; Python had
+3,085 passes and the already recorded unrelated failure
+`test_remembered_failure_does_not_hide_current_grade_cached_scene`.
+The 90-second Library/SDR grade hand-off check passed with zero blank tiles
+and two untouched thumbnails reused. The scrollbar reproduction passes.
+Fullscreen return passes in both docked and separate Library windows;
+`photo-library-navigation.js` later timed out restoring Single view on docking
+(`codebase/output/fullscreen-navigation.log`), outside these fixes. No further
+docking investigation or broad rerun was made. Python details remain in
+`codebase/output/fullscreen-pytest.log`.
+
 ## November 8: Grade-to-Library thumbnail shown on return
 
 Steve saw an empty tile for DSCF4011.RAF after returning from Grade. His log

@@ -27,3 +27,32 @@ test('fullscreen adds the shown photo when Ctrl-click had deselected it',()=>{
  assert.ok(state.selection.has('b'));
  assert.deepEqual([...state.selection].sort(),['a','b','c']);
 });
+
+// Exercise the actual grid drawing with layout math, rather than pinning source wording.
+function gridHarness(count, index, width=900, height=400) {
+ const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
+ const fn=source.slice(source.indexOf('  let gridRequests ='),source.indexOf('  let lastFilmLeft ='));
+ const state={active:true,view:'grid',photos:Array.from({length:count},()=>({})),pins:[],index,size:190,cells:new Map()};
+ const grid={clientWidth:width,clientHeight:height,scrollTop:0}, space={style:{}};
+ const context={state,grid,space,HDRLibraryLayout:require('../frontend/library-layout'),$:()=>({}),reconcile:()=>0,paintMemoryNeeds(){}};
+ vm.runInNewContext(fn+';this.paint=paintGrid;',context);
+ return {state,grid,paint:context.paint};
+}
+
+test('returning from fullscreen reveals the current photo beyond the old viewport',()=>{
+ const {state,grid,paint}=gridHarness(120,119);
+ paint(); assert.ok(state.layout.last<state.index);
+ paint(true);
+ assert.ok(grid.scrollTop>0);
+ assert.ok(state.index>=state.layout.first && state.index<state.layout.last);
+ assert.ok(state.layout.scrollFor(state.index+state.layout.columns)<=grid.scrollTop+grid.clientHeight);
+ // Native fullscreen exit can change column count after the grid has returned.
+ grid.clientWidth=600;grid.clientHeight=300;paint();
+ assert.ok(state.index>=state.layout.first && state.index<state.layout.last);
+ assert.ok(state.layout.scrollFor(state.index+state.layout.columns)<=grid.scrollTop+grid.clientHeight);
+});
+
+test('ordinary grid scrolling stays free to move away from the selection',()=>{
+ const {grid,paint}=gridHarness(120,0);
+ paint();grid.scrollTop=2000;paint();assert.equal(grid.scrollTop,2000);
+});

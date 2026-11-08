@@ -159,6 +159,32 @@ async function eventually(check) {
     await library.locator("#sort-button").click(); await library.locator('#sort-menu [data-sort="name"]').click();
     await library.locator('#sort-dir').click();
     await library.locator('#library-grid').evaluate(element => element.scrollTop = 800);
+    // Return to the photo reached in fullscreen, beyond the old grid viewport.
+    async function checkFullscreenReturn(frame, keyboard) {
+      const current = await frame.evaluate(() => HDRLibrary.getSnapshot().selected);
+      await frame.locator('#review-view').click();
+      await frame.waitForFunction(() => HDRLibrary.getSnapshot().review);
+      await frame.evaluate(() => {
+        const s = HDRLibrary.getSnapshot(), key = s.paths.indexOf(s.selected) > s.count / 2 ? 'ArrowLeft' : 'ArrowRight';
+        for (let i = 0; i < 119; i++) document.body.dispatchEvent(new KeyboardEvent('keydown', {key,bubbles:true}));
+      });
+      const shown = await frame.evaluate(() => HDRLibrary.getSnapshot().selected);
+      assert.notEqual(shown, current, 'fullscreen navigation reaches another photo');
+      await keyboard.press('Escape');
+      const photoVisible = () => {
+        const s = HDRLibrary.getSnapshot(), grid = document.querySelector('#library-grid');
+        const cell = [...grid.querySelectorAll('.library-cell')].find(c => c.dataset.path === s.selected);
+        if (s.review || s.view !== 'grid' || !cell) return false;
+        const g = grid.getBoundingClientRect(), r = cell.getBoundingClientRect();
+        return r.top >= g.top && r.bottom <= g.bottom;
+      };
+      await frame.waitForFunction(photoVisible);
+      await eventually(() => app.evaluate(({BrowserWindow}) => !BrowserWindow.getAllWindows().some(w => w.isFullScreen())));
+      await frame.waitForFunction(photoVisible);
+      assert.equal(await frame.evaluate(() => HDRLibrary.getSnapshot().selected), shown);
+      console.log('PASS: fullscreen returns to the current photo in the grid.');
+    }
+    await checkFullscreenReturn(library, main.keyboard);
     const before = await library.evaluate(() => ({ ...HDRLibrary.getSnapshot(), scroll: document.querySelector('#library-grid').scrollTop }));
     await library.locator('#popout-library').click();
     console.log('Opening separate Library window…');
@@ -176,6 +202,9 @@ async function eventually(check) {
     assert.equal(await library.evaluate(() => HDRLibrary.getSnapshot().active), false);
     assert.equal(await main.locator('#library-frame').isVisible(), false);
     assert.equal(await popped.evaluate(() => hdrFinisherDesktop.getPreferences().then(() => false, () => true)), true);
+    await popped.locator('#library-grid').evaluate(element => element.scrollTop = 0);
+    await popped.locator('#grid-space .library-cell').first().click();
+    await checkFullscreenReturn(popped, popped.keyboard);
     await popped.locator('#single-view').click();
     await popped.waitForSelector('#single-picture[data-picture-key]', { timeout: 60000 });
     await popped.locator('#popout-library').click().catch(() => {});

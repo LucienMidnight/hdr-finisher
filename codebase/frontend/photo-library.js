@@ -794,12 +794,24 @@
     return requested;
   }
   let gridRequests = 0, gridSettleTimer;
-  let lastGridTop = 0;
-  function paintGrid() {
+  let lastGridTop = 0, gridWidth = 0, gridHeight = 0;
+  function paintGrid(reveal = false) {
     const count = state.photos.length ? String(state.photos.length) : ""; if ($("place-count").textContent !== count) $("place-count").textContent = count;
     if (!state.active || state.view !== "grid") return;
-    const layout = HDRLibraryLayout.gridLayout(state.photos.length, grid.clientWidth, grid.clientHeight, grid.scrollTop, state.size);
-    state.layout = layout; space.style.height = `${layout.totalHeight}px`;
+    // Keep the current photo in view through the fullscreen window resize too.
+    const resized = gridWidth !== grid.clientWidth || gridHeight !== grid.clientHeight;
+    reveal ||= resized && state.layout && state.index >= state.layout.first && state.index < state.layout.last;
+    gridWidth = grid.clientWidth; gridHeight = grid.clientHeight;
+    let layout = HDRLibraryLayout.gridLayout(state.photos.length, gridWidth, gridHeight, grid.scrollTop, state.size);
+    space.style.height = `${layout.totalHeight}px`;
+    if (reveal && state.index >= 0) {
+      const top = layout.scrollFor(state.index);
+      const bottom = layout.scrollFor(state.index + layout.columns);
+      if (top < grid.scrollTop) grid.scrollTop = top;
+      else if (bottom > grid.scrollTop + gridHeight) grid.scrollTop = bottom - gridHeight;
+      layout = HDRLibraryLayout.gridLayout(state.photos.length, gridWidth, gridHeight, grid.scrollTop, state.size);
+    }
+    state.layout = layout;
     $("library-empty").hidden = state.photos.length > 0;
     $("empty-add").hidden = state.pins.length > 0 || state.reading;
     if (!state.photos.length) $("empty-message").textContent = state.reading ? "Reading folder…" : state.scanError || (state.allPhotos.length ? "No photos match these filters."
@@ -1361,7 +1373,7 @@
     $("zoom-button").setAttribute("aria-pressed", "true");
     positionZoom(); nativeTimer = setTimeout(showNative, 150);
   }, { passive: false });
-  function setView(view) {
+  function setView(view, reveal = false) {
     if (view === "single" && !selected()) return;
     if (view !== "single") { compare.hide(); HDRLibraryScenes.review?.(null); }
     state.view = view; $("library-single").hidden = view !== "single"; grid.hidden = view !== "grid";
@@ -1378,7 +1390,7 @@
       }
       state.cells.clear(); select(state.index, true, "preserve");
     }
-    else { state.single?.abort(); state.native?.abort(); state.nativeSource?.abort(); clearPrefetch(); clearCells(state.filmCells); paintGrid(); }
+    else { state.single?.abort(); state.native?.abort(); state.nativeSource?.abort(); clearPrefetch(); clearCells(state.filmCells); paintGrid(reveal); }
   }
   function setReview(review) {
     if (review && !selected()) return;
@@ -1392,7 +1404,7 @@
       $("zoom-button").setAttribute("aria-pressed", "false");
     }
     state.review = review; library.classList.toggle("review", review);
-    if (review) setView("single"); else setView(state.beforeReview);
+    if (review) setView("single"); else setView(state.beforeReview, true);
     postParent("review", { enabled: review });
   }
   function openGrade() {
