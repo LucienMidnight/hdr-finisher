@@ -313,13 +313,27 @@ def test_fresh_scene_draws_from_memory_before_atomic_store(tmp_path, invalidate)
     assert not list((tmp_path / "profile").rglob("*.tmp"))
 
 
-def test_cpu_fallback_hands_only_requested_size_to_draw_before_store(tmp_path):
+def test_cpu_fallback_hands_only_requested_size_to_draw_before_store(tmp_path, monkeypatch):
+    import gc
+    import weakref
+    from hdr_finisher import library_live
+    from hdr_finisher.sessions import SessionStore
+    sources = []
+    prepare = SessionStore.prepare_session
+    def track_source(self, *args, **kwargs):
+        source = prepare(self, *args, **kwargs)
+        sources.append(weakref.ref(source))
+        return source
+    monkeypatch.setattr(SessionStore, "prepare_session", track_source)
     path = photo(tmp_path)
     result = develop_cpu(tmp_path / "profile", path, None, 640, draw_first=True)
     scenes = result.pop("_pending_scenes")
     assert {scene["edge"] for scene in scenes} == {640}
     assert all(scene.get("_transient") for scene in scenes)
     assert not list((tmp_path / "profile").rglob("*.npz"))
+    gc.collect()
+    assert sources and all(source() is None for source in sources)
+    assert not library_live._cpu_flights
 
 
 def test_changed_photo_during_memory_encoding_never_publishes(tmp_path, monkeypatch):

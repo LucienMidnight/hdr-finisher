@@ -1572,3 +1572,14 @@ still waits at later GPU admission after cache reclamation. The observed app
 resident total plus the requested development reservation cannot fit the
 existing budget. Further memory diagnosis remains open; do not increase the
 budget to make the driver pass.
+
+### November 8: CPU draw-before-store job release
+
+Fixed a hidden owner outside cache accounting: collecting pending CPU previews
+overwrote the active preparation key, preventing last-requester cleanup from
+removing the job and clearing its decoded source/results. A weak-reference
+regression proves the completed source is collectible while the returned
+preview remains usable. The precision-source diagnostic helper had accumulated
+2.077 GB resident by the later EXR request (whole app 3.467 GB before its
+1.613 GB reservation). This is an ownership fix; all memory/VRAM allowances,
+cache shares and admission estimates stay unchanged.

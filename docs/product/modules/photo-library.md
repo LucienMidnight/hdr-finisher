@@ -7787,3 +7787,17 @@ with the already documented remembered-failure cached-scene fixture failure
 (`NoPreparation.status` missing). No unrelated repair or broad rerun. Automatic
 approval review blocked deletion of both the broad and explicitly named task
 scratch folders; those generated runs and temporary profiles were left intact.
+
+## November 8: completed CPU scene ownership leak (fixed)
+
+The precision-source sequence stalled at `gpu-2.exr`: the app could not fit
+its existing 1.613 GB reservation beside resident memory. CPU draw-before-store
+preparation accidentally reused the active-job lookup key for pending preview
+entries. Cleanup then missed the job, retaining its decoded session and results
+after its last requester left. The helper reached 2.077 GB resident before the
+blocked request; no other reservation or native scene was held.
+
+Pending-store iteration now leaves the job key intact. A behavior regression
+checks the pending preview still reaches the caller while the decoded session
+is freed and the completed job is removed. It fails before the fix and passes
+after it. No budget, tolerance, processing or picture sequencing changed.
