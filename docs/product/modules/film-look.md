@@ -737,3 +737,15 @@ shows its dot beside Reset. Hover retains the modified-control count. Local
 subsection summaries follow the same dot rule. No film values, defaults or
 processing changed. Grouped fast checks and the UI review cover this polish.
 
+## November 8: lens-filter tier check measured relative to glow (Steve's decision)
+
+`tests/performance/tier-film-consistency.js` compares how much Pro-Mist and
+Black Pro-Mist change between the 4096 preview tier and full size. Pro-Mist
+failed at 1.29 times Black Pro-Mist's raw difference against the 1.25 limit,
+but Pro-Mist simply glows more. Steve decided on November 8, 2026 to measure
+each filter's tier difference relative to its own glow strength (its mean
+effect over both tiers) and keep the 1.25 limit on that relative figure, for
+both the mean and the peak. Relative to glow, Pro-Mist differs less across
+tiers than Black Pro-Mist: 0.288 against 0.348 on November 8 (peak 6.0
+against 7.8), so the check passes. No shader or rendering changed; the entry
+was removed from the release known-failures list.

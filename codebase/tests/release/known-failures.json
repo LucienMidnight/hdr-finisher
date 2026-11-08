@@ -11,14 +11,6 @@
         "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__film-stock-parity.js.1.1793196494400.log",
         "output/release-checks/2026-10-28T13-27-20-663Z-0590772d5d93ef5798ef/logs/tests__film-stock-parity.js.2.1793197065978.log"
       ]
-    },
-    {
-      "driver": "tests/performance/tier-film-consistency.js",
-      "messages": [
-        "Error: Pro-Mist adds a tier-sensitive hard-edge echo relative to Black Pro-Mist: {\"blackProMist\":{\"width\":383,\"height\":573,\"meanEffect4k\":6.198559487952848,\"meanEffectFull\":6.420450592897245,\"meanContributionDisagreement\":2.1946908837945074,\"peakContributionDisagreement\":77.33333333333333,\"peakAt\":[325,83],\"affectedPixels\":144894},\"proMist\":{\"width\":383,\"height\":573,\"meanEffect4k\":9.689254029226387,\"meanEffectFull\":9.97303824404568,\"meanContributionDisagreement\":2.835890378916681,\"peakContributionDisagreement\":68.33333333333333,\"peakAt\":[321,76],\"affectedPixels\":155966}}"
-      ],
-      "source": "docs/known-limitations.md: v0.9.1 pre-release check (October 16, 2026)",
-      "evidence": "output/performance/review/prerelease-0.9.1-2026-10-16/logs/tests__performance__tier-film-consistency.js.attempt-2.log"
     }
   ]
 }

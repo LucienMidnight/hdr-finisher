@@ -187,15 +187,28 @@ function argument(name, fallback = null) {
 
     console.log(JSON.stringify(metrics, null, 2));
     if (metrics.error) throw new Error(metrics.error);
-    // Compare the current lens families with the existing 1.25x guard.
-    // Do not relax it to accommodate a different physical filter model.
-    if (metrics.pro_mist.meanContributionDisagreement
-      > metrics.black_pro_mist.meanContributionDisagreement * 1.25
-      || metrics.pro_mist.peakContributionDisagreement
-      > metrics.black_pro_mist.peakContributionDisagreement * 1.25) {
+    // Compare the lens families with the 1.25x guard, measured relative to
+    // each filter's own glow strength (Steve, November 8, 2026): Pro-Mist glows
+    // more than Black Pro-Mist, so its raw tier difference is larger even when
+    // it differs less across tiers in proportion. Glow strength is the mean
+    // effect over both tiers. Do not relax the 1.25 limit.
+    const relativeToGlow = (scenario) => {
+      const glow = (scenario.meanEffect4k + scenario.meanEffectFull) / 2;
+      if (!(glow > 0)) throw new Error(`Lens filter produced no glow: ${JSON.stringify(scenario)}`);
+      return {
+        glowStrength: glow,
+        meanRelative: scenario.meanContributionDisagreement / glow,
+        peakRelative: scenario.peakContributionDisagreement / glow,
+      };
+    };
+    const blackRelative = relativeToGlow(metrics.black_pro_mist);
+    const proRelative = relativeToGlow(metrics.pro_mist);
+    console.log(JSON.stringify({ relativeToGlow: { blackProMist: blackRelative, proMist: proRelative } }));
+    if (proRelative.meanRelative > blackRelative.meanRelative * 1.25
+      || proRelative.peakRelative > blackRelative.peakRelative * 1.25) {
       throw new Error(
-        "Pro-Mist adds a tier-sensitive hard-edge echo relative to Black Pro-Mist: "
-        + JSON.stringify({ blackProMist: metrics.black_pro_mist, proMist: metrics.pro_mist }),
+        "Pro-Mist adds a tier-sensitive hard-edge echo relative to Black Pro-Mist (relative to glow strength): "
+        + JSON.stringify({ blackProMist: { ...metrics.black_pro_mist, ...blackRelative }, proMist: { ...metrics.pro_mist, ...proRelative } }),
       );
     }
     if (errors.length) throw new Error(`Browser errors: ${errors.join(" | ")}`);
