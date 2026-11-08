@@ -184,7 +184,9 @@ window.HDRLibraryScenes = (() => {
         if (meta) return meta;
       } catch (error) {
         if (error.name === "AbortError" || error.libraryError || error.libraryRequeue) throw error;
-        if (!error.gpuUnavailable) {
+        // Explicit 100% detail is memory-admitted, so a source without a GPU
+        // detail route develops on the CPU instead of failing (philosophy 3).
+        if (!error.gpuUnavailable && !(error.unsupportedSource && edge === 100000)) {
           if(!version)throw error;
           error.developmentFailure=version.split(":")[0];
           throw error;

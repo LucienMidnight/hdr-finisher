@@ -78,7 +78,7 @@ for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const m
      await new Promise(r=>setTimeout(r,25));
     }
    }finally{clearInterval(interval);w.fetch=fetch;}
-   if(finished===null)throw Error('Mixed folder did not finish: '+seen.join(';'));
+   if(finished===null)throw Error('Mixed folder did not finish: '+seen.join(';')+' cells='+JSON.stringify([...w.document.querySelectorAll('#grid-space .library-cell')].map(c=>({text:c.textContent.trim().slice(0,80),canvases:[...c.querySelectorAll('canvas')].map(k=>({hidden:k.hidden,key:k.dataset.pictureKey||'',rendition:k.dataset.rendition||''})),classes:c.className})))+' status='+w.document.querySelector('#library-status')?.textContent+' activity='+w.document.querySelector('#library-activity')?.textContent.slice(0,300));
    const photo=run.dir+'/'+run.sample;// Unedited photos develop only on the explicit command (November 3).
    const meta=await w.HDRLibraryScenes.load(photo,640,undefined,10,null,{develop:true});const large=await w.HDRLibraryScenes.load(photo,2560,undefined,10,null,{develop:true});
    if(meta.renderer!==(run.mode==='baseline'?'cpu':run.mode))throw Error('Wrong DNG route: '+JSON.stringify({renderer:meta.renderer,seen}));

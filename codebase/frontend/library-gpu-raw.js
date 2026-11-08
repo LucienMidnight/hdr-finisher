@@ -1130,7 +1130,7 @@
     if (response.status === 204) {
       // An unsupported source is not a missing GPU. Do not turn it into an
       // unbounded CPU development while hardware is available.
-      throw new Error(response.headers.get("X-Library-Fallback") || "This source has no supported GPU development route.");
+      throw Object.assign(new Error(response.headers.get("X-Library-Fallback") || "This source has no supported GPU development route."),{unsupportedSource:true});
     }
     if (!response.ok) { const result = await response.json().catch(() => ({})); const error = result.changed || result.offline ? new DOMException(result.detail,"AbortError") : new Error(result.detail || "Library request failed."); if(result.offline) window.dispatchEvent(new CustomEvent("library-offline",{detail:result})); error.status = response.status; error.libraryError = result.library_error || (result.library_timeout ? {path:result.path,reason:result.detail,timeout:true,time:Date.now()/1000} : undefined); error.cloudOnly = !!result.cloud_only; throw error; }
     if ((response.headers.get("Content-Type") || "").includes("application/json")) return response.json();

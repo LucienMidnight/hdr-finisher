@@ -22,12 +22,25 @@ counting worker's direct request, and that response never reached the worker.
 The redirect now covers only app-address requests; the stress step passes
 (editor open 13 ms, recount 181 ms, longest page pause 11 ms, limits 250 ms).
 The synthetic candidates query still holds the marks lock 3.4-7.6 s.
+Zoomed arrow (5c): arrowing while zoomed now requests the next photo's 100%
+detail (Steve, November 4: same zoom and position). Two faults found on the
+way: (1) Single and Compare treated a full-size embedded camera preview as
+covering 100%, but the Library delivers it at 2560 px, so 100% showed it
+stretched and never developed (rule 3); 100% is now judged by the picture on
+screen. (2) Explicit 100% detail of a linear DNG with an embedded SDR rendition
+(DxO) had no GPU route and failed outright; full-size detail now falls back to
+the CPU, as philosophy 3 allows for a job with no GPU route. Grid and screen
+pictures keep the no-CPU rule for unsupported sources.
+library-dng-warp passes all three DNGs on both routes (DSC06885 CPU grid in
+0.27 s); none of these changes touch DNG, so the earlier failure most likely
+went with 757e2f62 (released CPU preparation data).
 
 Open:
-- photo-library-stage-c: the arrow key while zoomed to 100% never loads the
-  next photo at full size (open zoomed-arrow work, 5c).
-- library-dng-warp: DSC06885 on the CPU route develops and stores its pictures,
-  but the grid does not show both pictures within 240 s.
+- photo-library-stage-c: zoom, pan, zoomed arrow and the DxO DNG at 100%
+  (5304x7954) pass. Arrowing on to DSC00264.ARW (about 61 MP, about 1.5 GB of
+  detail planes) at 100% gets the memory refusal "Not enough memory for
+  full-size detail". Not investigated: whether the DNG's detail data is still
+  counted, or the ARW alone exceeds the target. Memory budgets are Steve's.
 - library-temporary-recovery's release failure (helper stopped after a rejected
   GPU result) did not reproduce; the November 6 open note stands.
 - Delete, rename and move scan every stored picture in library-pictures while
