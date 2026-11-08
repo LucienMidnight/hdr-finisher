@@ -11,11 +11,15 @@ was an unbounded wait for development that no longer starts on its own).
 Earlier the same day: photo-library-stage-a, library-picture-startup and the
 Unicode rename driver.
 
+Fixed later on November 8: docking the Library back now restores its saved
+place and Single view. The dock sent the saved state and then activated the
+page; activation reopened the folder, and the restore gave up because a newer
+folder read had started. Activation now waits for the restore
+(photo-library-navigation passes).
+
 Open:
 - photo-library-stage-c: the arrow key while zoomed to 100% never loads the
   next photo at full size (open zoomed-arrow work, 5c).
-- photo-library-navigation: after docking the popped-out Library back, the main
-  window's Library does not return to an active Single view within 30 s.
 - library-dng-warp: DSC06885 on the CPU route develops and stores its pictures,
   but the grid does not show both pictures within 240 s.
 - library-smart-albums: the ordinary workflow passes; the synthetic

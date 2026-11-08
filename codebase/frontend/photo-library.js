@@ -413,8 +413,12 @@
   setInterval(pollReadyMemory,100);
   function readyNeighbours(){return [-1,1].map(offset=>state.photos[state.index+offset]).filter(Boolean);}
   function clearPrefetch() { restoreStandIn(); readyWindow.invalidate(); quickWindow.invalidate(); }
+  let restoring = 0;
   function setActive(active) {
     state.active = active;
+    // Docking sends the saved place and then activates; the restore opens and
+    // draws that place itself, so activation must not reopen over it.
+    if (active && restoring) return;
     if (active && state.scan?.signal.aborted) {
       void reopen(); return;
     }
@@ -2289,6 +2293,11 @@
   }
   async function restoreState(saved) {
     if (!saved) return;
+    restoring++; let done = false;
+    try { await applySavedState(saved); done = true; }
+    finally { restoring--; if (!done && !restoring && state.active) setActive(true); }
+  }
+  async function applySavedState(saved) {
     const previousScan=state.scan;
     state.sort = saved.sort || "time"; state.descending = !!saved.descending; state.filters = { rules: saved.filters?.rules || [], any: false, raw: false };
     state.size = saved.size || 190; state.hdr = !!saved.hdr; state.zoom = !!saved.zoom;
