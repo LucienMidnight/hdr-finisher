@@ -7805,3 +7805,19 @@ Pending-store iteration now leaves the job key intact. A behavior regression
 checks the pending preview still reaches the caller while the decoded session
 is freed and the completed job is removed. It fails before the fix and passes
 after it. No budget, tolerance, processing or picture sequencing changed.
+
+Validation at `d4b2b401`: shared-lock Electron 2560x1440, disposable test profiles.
+Precision-source completes all twelve timing cases including `gpu-2.exr`, then
+fails the separate unchanged starting HDR peak assertion (1188.2466 versus
+1180.0155 nits), before finished-pixel comparison. Precision-rendition passes
+all seven fixtures in HDR/SDR. Neither expectation was relaxed.
+Final fast suites ran once: Node 804 passed, one unrelated runner syntax error
+while that tooling was being edited by another agent; Python 3,083 passed,
+three skipped, only the known `NoPreparation.status` cached-scene fixture
+failure. No unrelated repair or suite rerun. Logs: `codebase/output/precision-
+fix-{source,rendition,node,python}.log` and `precision-memory-diagnosis.log`.
+
+Scratch ended at 40.5 GB (started 40.2 GB), below 100 GB; the temporary heap
+snapshot was removed. Automatic approval review blocked deletion of this
+task's disposable Windows TEMP/pytest-of-Steve/pytest-1328, pytest-1329 and
+pytest-1330 folders ("blocked by policy"); these are safe to delete.

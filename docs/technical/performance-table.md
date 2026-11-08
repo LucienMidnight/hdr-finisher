@@ -1344,3 +1344,24 @@ Additional codec-source three-repeat medians in the same repair: CPU/GPU JXL
 0.868/0.337 s, direct AVIF 1.435/1.061 s, HEIC 0.574/0.290 s. These are source
 preparations, not displayed-picture timings. The large precision-source timing
 run remains incomplete at measured-memory admission; no speed claim follows.
+
+### November 8: precision-source memory-ownership repair
+
+`d4b2b401`, shared-lock Electron 2560x1440, default 4 GB, disposable test
+profile; three fresh paths per route, alternating order, warm processes and
+uncontrolled OS cache. CPU suite overlapped this diagnostic. These are scene
+preparations, not timings to a displayed picture; no new speed qualification.
+
+| Action | Observed | Conditions / result |
+| --- | --- | --- |
+| EXR paired 640/2560 scene preparation | Median CPU 8.887 s / GPU 4.013 s | All repeats complete, including formerly blocked gpu-2.exr |
+| Float TIFF paired 640/2560 scene preparation | Median CPU 5.782 s / GPU 3.773 s | All repeats complete |
+
+The driver then fails its unchanged starting HDR source-peak assertion
+(1188.2466 versus 1180.0155 nits); finished-pixel comparison is not reached.
+No image tolerance or budget was changed. Log: `codebase/output/precision-fix-source.log`.
+
+Precision-rendition in the same locked validation: seven fixture scene
+preparations 0.425-1.202 s (JPEG/PNG, edited PNG/16-bit TIFF, signed layered
+EXR, BT.709 TIFF, 100-nit-reference-white EXR); all HDR/SDR finished-pixel
+comparisons pass. Log: `codebase/output/precision-fix-rendition.log`.
