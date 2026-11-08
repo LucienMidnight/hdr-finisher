@@ -3,8 +3,18 @@ const fs=require("node:fs"),assert=require("node:assert/strict"),path=require("n
 async function check(page) {
  const root=path.resolve(__dirname,"../.."),child=spawn(path.join(root,".venv/Scripts/python.exe"),[path.join(__dirname,"library-smart-index.py"),"--serve"],{cwd:root,windowsHide:true});
  let output="",failure="";
- const context=page.context(),pattern="**/api/library/{smart-candidates,smart-albums}*";
+ // Redirect only the page's app-origin API calls. The worker already fetches the
+ // fixture directly; intercepting that request in Electron left its 155,000-photo
+ // response undelivered, so the count stayed at "Counting…".
+ const context=page.context(),appOrigin=new URL(page.url()).origin;
+ const pattern=url=>url.origin===appOrigin&&/^\/api\/library\/(smart-candidates|smart-albums)/.test(url.pathname);
  child.stderr.on("data",data=>{failure+=data;});
+ // Worker and request traces, printed only when the count never arrives.
+ const trace=[],stamp=()=>Math.round(performance.now());
+ const onRequest=kind=>request=>{if(/smart-(candidates|albums)|smart-worker/.test(request.url()))trace.push(`${stamp()} ${kind} ${request.url()} ${request.failure?.()?.errorText||""}`);};
+ const onWorker=worker=>{trace.push(`${stamp()} worker ${worker.url()}`);worker.on("close",()=>trace.push(`${stamp()} worker closed`));};
+ const onConsole=message=>{if(message.type()==="error"||message.type()==="warning")trace.push(`${stamp()} console ${message.type()} ${message.text()}`);};
+ page.on("request",onRequest("request"));page.on("requestfinished",onRequest("finished"));page.on("requestfailed",onRequest("failed"));page.on("worker",onWorker);page.on("console",onConsole);
  try {
   const url=await new Promise((resolve,reject)=>{
    const timer=setTimeout(()=>reject(new Error(`Synthetic index startup timed out: ${failure}`)),60000);
@@ -51,7 +61,7 @@ async function check(page) {
   assert.ok(timing.open_ms<250,JSON.stringify(timing));assert.equal(timing.loading,"Counting…");assert.equal(timing.enabled,true);
   const dialog=lib.getByRole("dialog",{name:"New smart album",exact:true});
   await dialog.getByLabel("Smart album name",{exact:true}).fill("Large library");
-  await dialog.getByText("15,500 matching photos",{exact:true}).waitFor({timeout:60000}).catch(async error=>{throw new Error(error.message+" count="+await lib.evaluate(()=>document.querySelector(".library-smart-count")?.textContent)+" server="+failure.slice(-2000));});
+  await dialog.getByText("15,500 matching photos",{exact:true}).waitFor({timeout:60000}).catch(async error=>{throw new Error(error.message+" count="+await lib.evaluate(()=>document.querySelector(".library-smart-count")?.textContent)+" alert="+await lib.evaluate(()=>document.querySelector(".library-smart-editor [role=alert]")?.textContent)+" trace="+trace.join(" | ").slice(-3000)+" server="+failure.slice(-2000));});
   const edits=await lib.evaluate(async()=>{
    let last=performance.now(),gap=0;const ticker=setInterval(()=>{const now=performance.now();gap=Math.max(gap,now-last);last=now;},10);
    const input=document.querySelector('[aria-label="Rule value"]'),s=performance.now();input.value="0";input.dispatchEvent(new Event("input"));

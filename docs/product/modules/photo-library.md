@@ -16,15 +16,18 @@ place and Single view. The dock sent the saved state and then activated the
 page; activation reopened the folder, and the restore gave up because a newer
 folder read had started. Activation now waits for the restore
 (photo-library-navigation passes).
+Also fixed: the smart-album 155,000-photo stress check. The count was lost in
+the test harness, not the app: its Electron request redirect also caught the
+counting worker's direct request, and that response never reached the worker.
+The redirect now covers only app-address requests; the stress step passes
+(editor open 13 ms, recount 181 ms, longest page pause 11 ms, limits 250 ms).
+The synthetic candidates query still holds the marks lock 3.4-7.6 s.
 
 Open:
 - photo-library-stage-c: the arrow key while zoomed to 100% never loads the
   next photo at full size (open zoomed-arrow work, 5c).
 - library-dng-warp: DSC06885 on the CPU route develops and stores its pictures,
   but the grid does not show both pictures within 240 s.
-- library-smart-albums: the ordinary workflow passes; the synthetic
-  155,000-photo stress step stays at "Counting..." under Electron. Its
-  candidates query holds the marks lock 3.4-7 s.
 - library-temporary-recovery's release failure (helper stopped after a rejected
   GPU result) did not reproduce; the November 6 open note stands.
 - Delete, rename and move scan every stored picture in library-pictures while
