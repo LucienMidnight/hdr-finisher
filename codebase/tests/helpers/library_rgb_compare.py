@@ -28,7 +28,11 @@ for row in data["rows"]:
         field="highlight_compression_source_peak_nits" if lane=="hdr" else "highlight_compression_source_peak_percent"
         actual=meta["adjustments"][lane][field]
         expected=getattr(getattr(session.starting_adjustments(),lane),field)
-        assert abs(actual-expected)<=max(.001,abs(expected)*.0001),(field,actual,expected)
+        assert abs(actual-expected)<=max(.001,abs(expected)*.0001),dict(
+            photo=str(photo), measurement="starting pre-compression source peak",
+            field=field, library=actual, grade=expected, renderer=meta.get("renderer"),
+            source_size=[session.image.shape[1], session.image.shape[0]],
+            library_source_size=[meta.get("source_width"), meta.get("source_height")])
     for product in (row["large"],row["native"]):
         if product is None:
             assert row.get('nativeMemoryRefusal') is True

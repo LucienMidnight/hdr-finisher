@@ -7824,3 +7824,55 @@ Scratch ended at 40.5 GB (started 40.2 GB), below 100 GB; the temporary heap
 snapshot was removed. Automatic approval review blocked deletion of this
 task's disposable Windows TEMP/pytest-of-Steve/pytest-1328, pytest-1329 and
 pytest-1330 folders ("blocked by policy"); these are safe to delete.
+
+## November 8: precision-source peak diagnosis (decision pending)
+
+The unchanged `library-precision-source` assertion measures the starting
+pre-compression source peak copied into Highlight Compression controls, not a
+finished/displayed/exported pixel or the Target Peak. It compares Library GPU
+scene metadata with `SessionStore.starting_adjustments()` from full-resolution
+Grade loading, before the finished-pixel comparisons run. Default Smooth color
+rolloff uses the exact maximum BT.2020 channel, converted at 203-nit white.
+
+The affected file is `DJI_0072-Lightroom-reference.tif` (the driver's `photo1.tif`,
+8000 x 6000 float32 BT.2020 linear). Library's requested 640/2560 tiers first
+reduce decoded TIFF samples to 5120 x 3840 with Lanczos, then perform GPU colour
+preparation and peak measurement. Grade and native Library retain full size.
+Full-source Grade peak: 1180.0155475 nits. CPU reproduction of the current GPU
+input route: 1188.2466462 nits; native input: 1180.0155944 nits. This isolates
+resampling overshoot, not a GPU reduction, colour-assumption or memory-leak bug.
+The EXR source still agrees (about 5865.38 nits).
+
+`b2c02e8c` (October 31) introduced this TIFF 5120-edge selection. Executing that
+commit's original reduction on the same TIFF reproduces 1188.2467806 nits;
+`12a4c4fa` gives the same value. The later compressed-strip reader `1f0a959c`
+therefore did not introduce the difference. Reduced source loading is intentional:
+see memory-and-caches' October 31 phase 3c decision and scheduler design section
+7.8. Earlier full-source passes are documented at `7374c807` (October 20) and
+the later RGB precision qualification `405d39dd` (November 3, smaller fixtures).
+The local release-check `history.jsonl` contains eight attempts, all failing or
+unable to launch, at `1709a5b4`, `41a18049` and `7f92e15f`; it provides no passing
+revision for this driver. Do not describe a historical release pass as verified.
+
+This is an output/control-value difference caused by an intended reduced-source
+route. Steve must decide whether Library should retain exact full-source starting
+peaks (extra source analysis work) or whether reduced-source starting peaks are
+acceptable. No tolerance, assertion or app output has been changed to accept it.
+The diagnostic now identifies the photo, measurement, route and source dimensions
+on failure. The earlier full-source-default claim does not qualify this reduced
+TIFF route. The failure does not establish a finished HDR ceiling violation:
+this fixture starts with HDR Highlight Compression bypassed, and the helper
+fails before finished-pixel comparison. Enabled-compression output ceilings
+remain strict and are being checked separately by the export/ceiling work.
+
+Validation: shared-lock Electron at 2560x1440 completes all twelve preparation
+cases and forced preemption, then fails the unchanged peak assertion on
+`photo1.tif`, GPU route, 1188.24659898 versus 1180.01554754 nits. Final fast suites
+ran once: Node 844 passed; Python 3,083 passed, three skipped, only the known
+`test_remembered_failure_does_not_hide_current_grade_cached_scene` failure
+(`NoPreparation.status` missing). No unrelated repair or rerun. Logs retained:
+`codebase/output/precision-peak-{source,node,python}.log`.
+Scratch output started at 40.7 GB and ended at 40.9 GB, under 100 GB. The driver
+removed its run folder and restored sidecars. Automatic approval review blocked
+deleting the identified disposable profile:
+`C:/Users/Steve/AppData/Local/Temp/hdr-finisher-electron-test-1vv5Ex`.

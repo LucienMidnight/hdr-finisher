@@ -1365,3 +1365,22 @@ Precision-rendition in the same locked validation: seven fixture scene
 preparations 0.425-1.202 s (JPEG/PNG, edited PNG/16-bit TIFF, signed layered
 EXR, BT.709 TIFF, 100-nit-reference-white EXR); all HDR/SDR finished-pixel
 comparisons pass. Log: `codebase/output/precision-fix-rendition.log`.
+
+### November 8: precision-source peak diagnosis
+
+`e22f4f20` plus diagnostic-only assertion context; shared-lock Electron,
+2560x1440, disposable test profile, default memory, concurrent final Python
+suite, warm processes and uncontrolled OS cache. Three alternating fresh paths
+per route. These are preparation times, not action-to-displayed-picture timings;
+no speed qualification or budget change follows.
+
+| Action | Observed | Conditions / result |
+| --- | --- | --- |
+| EXR paired 640/2560 preparation | Median CPU 8.454 s / GPU 3.324 s | All repeats complete |
+| Float TIFF paired 640/2560 preparation | Median CPU 4.342 s / GPU 3.353 s | All repeats complete; then unchanged starting-source-peak assertion fails |
+| CPU input preparation probes | TIFF reduced 0.881 s / native 0.370 s; EXR native 1.616 s | Single read-only probes isolating the peak difference; decoder plus metadata only, not whole Library wait |
+
+Log: `codebase/output/precision-peak-source.log`. The TIFF peak changes before
+GPU processing, from full-source 1180.0155 nits to reduced-source 1188.2466 nits.
+Historical October 31 reduction reproduces it. See the Library module PRD's
+November 8 peak diagnosis; no assertion or numerical tolerance was relaxed.
