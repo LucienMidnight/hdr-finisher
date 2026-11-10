@@ -1663,3 +1663,56 @@ steps, peak 2.419 GB, longest drawing gap 212 ms (250 ms gate). First picture
 1.1 s, ten pictures 5.3 s; Focus off with concurrent Python tests, so these
 are functional smoke figures, not Focus performance measurements. Report:
 `codebase/output/quick-library-check/focus-camera-culling/report.json`.
+
+
+### November 10: Exposure one-second target, temporary CPU/scheduling trial
+
+Based on 8eacf8ee; no production edits retained. Existing 10% diagnostic band
+unchanged. 2560 x 1440 Electron, fresh disposable profiles, shared forty-photo
+badminton-42mp Sony RAW folder. First camera picture visible before E, early
+folder scan; OS cache/other workspace activity uncontrolled. No concurrent
+parent suite. Endpoint: current-picture overlay canvas, not physical scan-out.
+Each case is one observation plus three immediate ArrowRight steps; later
+results may be prefetched. Focus-on cases press S, wait for camera map, then E.
+
+| Case | Current first E | Selected priority + exact mask trial | Remaining next-photo tail |
+|---|---|---|---|
+| Exposure alone | 1.440 s | 0.996 s | Current 3.170 s; trial 2.100 s |
+| Exposure with Focus on | 3.056 s | 1.314 s | Current 3.378 s; trial 1.959 s |
+
+Current first helper work is 0.979/0.938 s, with little helper yield; alone
+has about 0.345 s dispatch-to-helper admission, Focus adds much more waiting.
+The trial keeps approved memory estimates and allowances unchanged; selected
+Exposure uses priority 30 and existing main lane, filmstrip 85/kept. It
+preserves sensor masks and registration. It is not consistent one-second
+culling yet. A further reserved-browser-slot trial gives first E 1.033 s
+alone / 0.774 s with Focus, but tails 1.770/1.763 s; not kept. The alone
+change is within the diagnostic band, not an improvement claim. Full individual
+navigation observations are in the diagnostic JSON/logs below.
+
+Isolated candidate mask stages: Sony DSC07187 358 to 169 ms, Canon portrait
+IMG_0114 164 to 73 ms, Canon landscape IMG_3129 154 to 76 ms, masks exactly
+equal. Synthetic phase/tiny/odd/channel/float cases also match. In-app trial
+retains full colour-map verification and fallback; pooled masks stay exact.
+An initial incomplete-CFA tiny-frame error was fixed before passing parity.
+The old priority test is intentionally inapplicable during foreground trial,
+not loosened; it passes again with all 40 focused checks after restoration.
+
+Isolated Sony build: make 0.641 s, total 0.664 s; raw mask 353 ms, pooling
+about 40 ms twice, registration luminance 67 ms, embedded JPEG extraction
+19 ms, ECC 35 ms. Cache cleanup hit a Windows-held SQLite ledger after that
+first result and stopped a second sample. Later three-RAW mask diagnostic
+completed: sensor access 49 ms Sony, 248-286 ms Canon. Separate diagnostic
+costs are not additive app savings. A GPU transfer/filter would leave RAW
+reading/admission intact and has no evidenced 50% whole-wait benefit.
+
+Reserved-slot next-photo trace, alone: browser queue under 1 ms; filmstrip
+request waits about 1.035 s before a cancelled helper, replacement selected
+request waits 0.757 s before 0.881 s work. With Focus, selected helper queue
+0.445 s and work 0.791 s. Prioritize admission/cancellation/source readiness
+rather than browser concurrency or dropping verified placement.
+
+Evidence in codebase/output: exposure-cold-{alone,focus}.log,
+exposure-prototype-{alone,focus}.{log,json}, exposure-reserved-{alone,focus}.
+{log,json}, exposure-stages.log, exposure-mask-prototype.log,
+exposure-prototype-parity.log, exposure-restored-checks.log.

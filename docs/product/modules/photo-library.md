@@ -8415,3 +8415,53 @@ Output remains 42.6 GB. Disposable Electron profiles were removed by the
 runner. Automatic approval review rejected cleanup of this run's remaining
 TEMP pytest folders (`pytest-1408`, `pytest-1409`, `pytest-1410`) under its
 command policy; left in place. No push or installer build.
+
+
+## November 10: Exposure one-second culling investigation (prototype only)
+
+Steve accepts camera-first Focus and asks for comparable Exposure speed.
+Production source files were restored byte-for-byte after temporary trials;
+this records open work, not built behavior. No GPU route is justified by
+these measured stages. Sensor clipping remains the intended warning source.
+
+Current cold E takes 1.440 s alone and 3.056 s with Focus on. A next-photo
+tail reaches 3.170/3.378 s. Selected helper work is about 0.94-0.98 s;
+admission/scheduling accounts for much of the remaining combined wait.
+Exposure still receives the full CPU-development reservation, background
+82/85 priority and kept lane. No budget or allowance changed in the trial.
+
+Temporary selected priority 30/main lane, with filmstrip still 85, plus an
+exact repeating-CFA dark-cell accumulation gave first E 0.996 s alone and
+1.314 s with Focus. The mask simplification avoids building/padding/reducing
+a full dark plane; it preserves thresholds, incomplete-edge semantics,
+colour-pattern verification, general fallback, max pooling and registration.
+Masks match three real Sony/Canon RAWs and synthetic tiny/odd/channel/float/
+pattern cases. Thirty-five existing mask/placement checks pass under the
+trial. The original minimum-priority test is excluded for that experiment
+because promotion intentionally contradicts the old scheduling policy.
+An initial tiny-frame incomplete-CFA bug was fixed before the passing trial;
+no image tolerance or check was weakened. All 40 focused checks, including
+the original priority policy, pass after restoring production source.
+
+Next-photo tails still reach 2.100/1.959 s, so consistent roughly-one-second
+culling is not demonstrated. A reserved browser connection failed to remove
+the tail; traces show little browser queuing, with resource admission and
+helper work dominating. Do not adopt the global queue change from this test.
+Next work: exact mask simplification and selected-only promotion, then
+measure Exposure working memory before proposing a different admission
+estimate. Investigate cancellation/restart and priority handoff as a filmstrip
+photo becomes selected; avoid duplicate sensor work and delayed camera
+pictures. Preserve picture-first responsiveness and Grade/export preemption
+when intentionally updating the old priority-policy test. Registration was
+only about 35 ms in the isolated Sony run, so dropping alignment or making
+that stage a new GPU route would attack little of the wait.
+
+No permanent application edit, push or installer build. Existing full-suite
+results on unchanged 8eacf8ee are reused; no broad rerun for this read-only
+investigation. See performance-table.md for timings and evidence.
+
+
+Output stayed 42.7 GB. Disposable app profiles and scratch prototype source
+were removed. Automatic approval review blocked cleanup of the profiling
+TEMP folder hdr-exposure-profile-aaz152at under its command policy; left in
+place. This research commit changes records only.
