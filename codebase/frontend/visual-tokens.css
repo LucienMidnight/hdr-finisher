@@ -228,6 +228,9 @@
   --top-h: 44px;
   --window-chrome-h: 30px;
   --panel-header-h: 40px;
+  --panel-control-h: 30px; /* buttons in a panel header: 5px above and below */
+  --workflow-plate-h: 34px; /* Library/Grade/Proof/Export plate: 5px above and below in the top bar */
+  --divider-below: inset 0 -1px 0 var(--hairline); /* a bar's bottom divider that takes no height */
   --status-bar-h: 28px;
   --tab-row-h: 34px;
   --library-row-h: 24px;
@@ -330,10 +333,10 @@
   --font-size-4xl: 28px;   /* help page title */
   --font-size-display: clamp(30px, 4.5vw, 68px);
   --font-size-launcher-title: clamp(30px, 6vw, 46px);
+  --font-size-splash-title: 54px; /* startup splash product name */
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
-  --font-size-splash-title: 54px; /* startup splash product name */
   --font-weight-bold: 700;
   --line-height-none: 1;
   --line-height-tight: 1.25;

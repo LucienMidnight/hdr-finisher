@@ -205,11 +205,16 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root :is(.viewer-bar, .rail-title-row, .grade-header, .workflow-rail-header, .sheet-header, .control-title-row, .library-heading, .library-toolbar, .batch-header) {
  height: var(--panel-header-h); min-height: var(--panel-header-h); max-height: var(--panel-header-h);
  box-sizing: border-box; flex-shrink: 0; padding-block: 0; align-items: center;
+ /* The divider is drawn inside the bar so it doesn't take height: controls get the same space above and below. */
+ border-bottom-width: 0; box-shadow: var(--divider-below);
 }
+:root .grade-header { box-shadow: var(--divider-below), var(--plate-lift); }
+:root .source-rail.collapsed .rail-title-row { box-shadow: none; }
+:root .top-bar { border-bottom-width: 0; box-shadow: var(--divider-below); }
 :root .workflow-rail-header .panel-title { margin-block: 0; }
 :root :is(.batch-header, .batch-heading, .batch-header .batch-tools, .library-toolbar .library-tools) { flex-wrap: nowrap; }
 :root :is(.viewer-bar, .rail-title-row, .workflow-rail-header, .sheet-header, .control-title-row, .library-heading, .library-toolbar, .batch-header) :is(.tool-button, .zoom-step) {
- display: inline-flex; align-items: center; justify-content: center; height: 30px; min-height: 30px; box-sizing: border-box;
+ display: inline-flex; align-items: center; justify-content: center; height: var(--panel-control-h); min-height: var(--panel-control-h); box-sizing: border-box;
  /* Centre labels on their capitals; Afacad carries more space below than above. */
  text-box: trim-both cap alphabetic;
 }
@@ -404,12 +409,12 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 
 /* Workflow pages share one joined plate, like the in-panel tabs. */
 :root .workflow-tabs {
- align-self: center; gap: 1px; height: 36px; padding: 0;
+ align-self: center; gap: 1px; height: var(--workflow-plate-h); padding: 0;
  border: 1px solid var(--plate-edge); border-radius: var(--radius-plate);
  background: var(--plate-edge); box-shadow: var(--plate-lift);
 }
 :root .workflow-tab {
- position: relative; min-width: 0; height: 34px; min-height: 34px; padding-inline: 16px; gap: 6px;
+ position: relative; min-width: 0; height: calc(var(--workflow-plate-h) - 2px); min-height: calc(var(--workflow-plate-h) - 2px); padding-inline: 8px; gap: 6px;
  border: 0; border-radius: 0; background: var(--plate-up); box-shadow: none; color: var(--body);
  font: var(--font-weight-regular) var(--page-title-font-size)/var(--line-height-none) var(--font-title);
  letter-spacing: var(--tracking-slight); text-transform: uppercase; white-space: nowrap;
@@ -535,7 +540,7 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 /* Control Panel tab plates: one design, full width, a fixed inset from the dividers around them. */
 :root #grade-workflow-panel .grade-header > .control-mode-switch { flex: none; width: auto; min-height: 0; margin: var(--tab-plate-inset); }
 :root .grade-folder-tabs { padding: var(--tab-plate-inset); gap: 0; }
-:root :is(#grade-workflow-panel .grade-header > .control-mode-switch, .grade-folder-tabs > .lane-switch) > button { height: 30px; min-height: 30px; }
+:root :is(#grade-workflow-panel .grade-header > .control-mode-switch, .grade-folder-tabs > .lane-switch) > button { height: var(--panel-control-h); min-height: var(--panel-control-h); }
 :root .lane-switch button:is(:hover, :focus-visible) .lane-title-tooltip { transition-delay: 600ms; }
 
 /* Settings uses the existing larger type steps throughout, including controls. */
