@@ -207,3 +207,11 @@ Existing Grade, Proof and export decoders do not use this route.
 Bebas Neue, Copyright © 2010 by Dharma Type, is bundled under the SIL Open Font License 1.1. The regular face is used for titles and tab names. Its licence is included at `codebase/frontend/assets/fonts/bebas-neue/OFL.txt` and must accompany source and packaged distributions.
 
 Sofia Sans Semi Condensed is bundled from the official [Google Fonts repository](https://github.com/google/fonts/tree/main/ofl/sofiasanssemicondensed), Copyright 2019 The Sofia Sans Project Authors. It was the title face until November 7, 2026 and is no longer loaded. Its SIL Open Font License 1.1 is included at `codebase/frontend/assets/fonts/sofia-sans-semi-condensed/OFL.txt` and must accompany source and packaged distributions.
+
+JPEG XL metadata inspector: hdrf-jxl-info is built against the official libjxl
+v0.12.0 Windows shared SDK (https://github.com/libjxl/libjxl/releases/tag/v0.12.0).
+Bundled jxl.dll and jxl_cms.dll use the BSD-style libjxl license; Brotli DLLs
+use MIT; Highway uses Apache-2.0; skcms uses BSD-style terms. Complete upstream
+notices are in codebase/bin/licenses/LICENSE.libjxl, LICENSE.brotli,
+LICENSE.highway and LICENSE.skcms. Source and reproducible build instructions
+are in codebase/tools/jpegxl-info. These notices accompany packaged copies.

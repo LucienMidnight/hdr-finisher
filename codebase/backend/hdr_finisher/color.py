@@ -282,17 +282,17 @@ def normalize_to_acescg(image: np.ndarray, source_color_space: str | None = None
     transfer = _canonical_transfer_function(transfer_function)
 
     # Do not apply an irreversible gamut or transfer transform when the source
-    # primaries are explicitly unknown. PQ and HLG are standardized on BT.2020
-    # in the supported import paths, so those remain safe to normalize.
+    # primaries are explicitly unknown. PQ and HLG default to BT.2020
+    # when no source primaries are declared.
     if source_color_space is None and transfer not in {"PQ", "HLG", "sRGB", "BT.709"}:
         return sanitized
 
     colourspace = _canonical_colourspace(source_color_space, transfer)
 
     if transfer == "PQ":
-        return _pq_bt2020_to_acescg(sanitized, reference_white_nits)
+        return _pq_bt2020_to_acescg(sanitized, reference_white_nits, source_colourspace=hdr_source_colourspace(source_color_space, transfer))
     if transfer == "HLG":
-        return _hlg_bt2020_to_acescg(sanitized, reference_white_nits)
+        return _hlg_bt2020_to_acescg(sanitized, reference_white_nits, source_colourspace=hdr_source_colourspace(source_color_space, transfer))
     if transfer == "BT.709":
         sanitized = sanitize_finite_array(oetf_inverse_BT709(np.clip(sanitized, 0.0, 1.0)))
         transfer = "LINEAR"
@@ -435,28 +435,49 @@ def _canonical_colourspace(value: str | None, transfer: str | None) -> str:
     return SRGB_COLOURSPACE
 
 
-def _pq_bt2020_to_acescg(image: np.ndarray, reference_white_nits: int = 203) -> np.ndarray:
+def hdr_source_colourspace(value: str | None, transfer: str) -> str:
+    """Preserve the BT.2020 assumption for missing/unknown HDR primaries."""
+    if value is None or str(value).strip().lower() in {"", "unknown", "2"}:
+        return BT2020_COLOURSPACE
+    return _canonical_colourspace(value, transfer)
+
+
+def hlg_luminance_weights(source_colourspace: str) -> np.ndarray:
+    # Preserve BT.2100's rounded coefficients on the established default path.
+    if source_colourspace == BT2020_COLOURSPACE:
+        return np.array([0.2627, 0.6780, 0.0593])
+    return np.asarray(RGB_COLOURSPACES[source_colourspace].matrix_RGB_to_XYZ[1])
+
+
+def _pq_bt2020_to_acescg(image: np.ndarray, reference_white_nits: int = 203, *, source_colourspace: str = BT2020_COLOURSPACE) -> np.ndarray:
     encoded = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
     luminance_nits = eotf_ST2084(encoded)
     from .color_context import nits_to_scene_linear
     linear_bt2020 = nits_to_scene_linear(luminance_nits, reference_white_nits)
     converted = RGB_to_RGB(
         linear_bt2020,
-        BT2020_COLOURSPACE,
+        source_colourspace,
         ACESCG_COLOURSPACE,
         chromatic_adaptation_transform="CAT02",
     )
     return sanitize_finite_array(converted)
 
 
-def _hlg_bt2020_to_acescg(image: np.ndarray, reference_white_nits: int = 203, nominal_peak_nits: float = 1000.0) -> np.ndarray:
+def _hlg_bt2020_to_acescg(image: np.ndarray, reference_white_nits: int = 203, nominal_peak_nits: float = 1000.0, *, source_colourspace: str = BT2020_COLOURSPACE) -> np.ndarray:
     encoded = np.clip(image.astype(np.float32, copy=False), 0.0, 1.0)
-    luminance_nits = eotf_BT2100_HLG(encoded, L_B=0, L_W=nominal_peak_nits)
+    if source_colourspace == BT2020_COLOURSPACE:
+        luminance_nits = eotf_BT2100_HLG(encoded, L_B=0, L_W=nominal_peak_nits)
+    else:
+        from colour.models import oetf_inverse_ARIBSTDB67
+        scene = oetf_inverse_ARIBSTDB67(encoded) / 12.0
+        luminance = np.sum(scene * hlg_luminance_weights(source_colourspace), axis=-1, keepdims=True)
+        gamma = 1.2 + 0.42 * np.log10(nominal_peak_nits / 1000.0)
+        luminance_nits = nominal_peak_nits * scene * np.maximum(luminance, 0.0) ** (gamma - 1.0)
     from .color_context import nits_to_scene_linear
     linear_bt2020 = nits_to_scene_linear(luminance_nits, reference_white_nits)
     converted = RGB_to_RGB(
         linear_bt2020,
-        BT2020_COLOURSPACE,
+        source_colourspace,
         ACESCG_COLOURSPACE,
         chromatic_adaptation_transform="CAT02",
     )

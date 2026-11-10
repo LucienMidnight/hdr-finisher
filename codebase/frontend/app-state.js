@@ -389,7 +389,6 @@ const state = {
   lensProfileGeneration: 0,
   importInProgress: false,
   metadataOpen: false,
-  interpretationGateDismissed: false,
   zoomMode: "fit",
   zoomPercent: 100,
   zoomReferenceFrame: null,

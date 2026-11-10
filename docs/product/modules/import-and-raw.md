@@ -1,3 +1,42 @@
+### November 10: JXL metadata and explicit HDR primaries repair
+
+The native metadata helper reads libjxl structured DATA and ORIGINAL colour
+encodings. DATA controls decoded pixels; ORIGINAL remains provenance. Standard
+D65 sRGB, Display P3 and BT.2020 RGB with recognised transfers are automatic.
+Unsupported/custom profiles retain the manual gate; no filename/profile-name
+guesses or partial codestream parser. Windows bundles the pinned v0.12.0 helper,
+DLLs and licences; other platforms need the helper built from the provided
+source. Existing HDR Finisher hfmd interpretation retains precedence.
+
+PQ and HLG now use declared primaries on the CPU and Library GPU; HLG also
+uses their luminance weights. Unknown/missing-primary BT.2020 defaults,
+reference-white scaling and HLG's nominal 1,000-nit assumption stay unchanged.
+Manual JXL overrides start from encoded samples and apply once. Unresolved
+interpretations stay gated, including partial manual choices. The former
+Use assumption dismissal is removed because it never interpreted pixels.
+
+Source, colour-transform, RGB-adapter and dependent Library picture identities
+change so old pictures regenerate. Existing non-BT.2020 PQ/HLG saved grades
+may look different after correct decoding; no project migration is retained.
+Focused independent equation checks cover asymmetric colours, PQ/HLG,
+P3/sRGB/BT.2020 and reference whites 100/203. Real Electron qualification
+passes: the real 900x1200 P3/PQ file imports automatically, source controls
+retain P3/PQ, and an exact WebGPU Grade frame has normal contrast and colour.
+All seven real/synthetic JXL sources pass Library GPU HDR/SDR finished-pixel
+comparisons against an independent transfer/matrix oracle at white 203;
+existing perceptual tolerances are unchanged. The screenshot and summary are
+`codebase/output/review/jxl-fixes/grade.png` and `summary.json`.
+
+902 Node checks pass. Full Python run: 3,276 passed, 3 skipped, the known
+cached-scene failure and four old JXL override-order expectations. Those four
+now check encoded-sample interpretation once, and all 80 focused Library/import
+checks pass. The final source/loader/extended-format group has 118 passes; its one old
+source-label assertion now checks source BT.2020/PQ separately from working
+ACEScg and passes the targeted recheck (119 focused cases covered).
+No originals or grades changed. Newer-device sample qualification remains
+unavailable. No Proof/export delivery or packaged-app qualification in this
+pass; existing JXL round trips are covered by the focused CPU tests.
+
 ### November 10: washed-out JXL investigation (three Sol 6.1 medium agents)
 
 The screenshot shows an unresolved source-interpretation gate. The real JXL

@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.20)
+project(hdrf_jxl_info LANGUAGES CXX)
+find_path(JXL_INCLUDE_DIR jxl/decode.h REQUIRED)
+find_library(JXL_LIBRARY NAMES jxl REQUIRED)
+add_executable(hdrf-jxl-info info.cpp)
+target_compile_features(hdrf-jxl-info PRIVATE cxx_std_17)
+target_include_directories(hdrf-jxl-info PRIVATE ${JXL_INCLUDE_DIR})
+target_link_libraries(hdrf-jxl-info PRIVATE ${JXL_LIBRARY})

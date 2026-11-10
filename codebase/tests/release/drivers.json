@@ -4103,6 +4103,8 @@
       "protects": "JPEG/PNG cells and saved-grade native detail preserve selected-only reuse and recover automatically after device loss.",
       "launch": {"method": "electron"}
     },
+    {"path":"tests/jxl-source-colour.js","areas":["library","preview"],"tier":"area",
+      "protects":"Standard JXL P3/PQ auto interpretation, source-primary PQ/HLG GPU colour, Grade presentation and sidebar visibility menus.","launch":{"method":"electron"}},
     {"path":"tests/library-codec-source.js","areas":["library"],"tier":"area",
       "protects":"JXL/AVIF/HEIF precision, transfer, scene tiers and cached/native reuse against Grade.","launch":{"method":"electron"}},
     {"path":"tests/library-codec-native.js","areas":["library"],"tier":"area",

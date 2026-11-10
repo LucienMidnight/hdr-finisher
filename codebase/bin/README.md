@@ -50,3 +50,10 @@ app check executes its copy. Windows includes Perl; macOS uses /usr/bin/perl;
 Debian declares perl and Flatpak builds its own /app/bin/perl. A missing helper
 fails metadata-bearing exports explicitly. Metadata=None without templates
 continues to need only the encoder's own colour/HDR signalling.
+
+The Windows `hdrf-jxl-info.exe` and matching libjxl/Brotli DLLs provide
+structured JPEG XL precision and colour metadata. Pinned build instructions
+are in [tools/jpegxl-info/BUILD.txt](../tools/jpegxl-info/BUILD.txt).
+The helper reports DATA and ORIGINAL separately and does not decode pixels.
+Other platforms require a native build; unsupported/missing metadata stays
+behind the manual source-interpretation gate.

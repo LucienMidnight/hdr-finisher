@@ -284,7 +284,6 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
   state.zoomReferenceFrame = null;
   if (!projectPath && !window.HDRGradeSaving?.hasGrade(session.session_id)) await applyNewSessionPreferences();
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
-  state.interpretationGateDismissed = false;
   state.gpuPreview?.resetSession(session.session_id);
   if (state.denoise.hdr.enabled && state.gpuPreview?.warmDenoiseModel) {
     const native = Math.max(session.source.width, session.source.height);

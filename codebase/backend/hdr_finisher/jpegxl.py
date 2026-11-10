@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import ctypes
-import importlib
+import subprocess
 import json
 import math
 from pathlib import Path
@@ -11,6 +10,7 @@ from typing import Any, Callable
 import numpy as np
 
 from .color import acescg_to_linear_bt2020, normalize_to_acescg_bounded
+from .binaries import resolve_binary
 from .color_context import scene_linear_to_nits, validate_reference_white
 
 
@@ -39,13 +39,7 @@ def jpegxl_available() -> bool:
 
 
 def inspect_jpegxl(path: Path) -> dict[str, Any]:
-    """Return stable basic info plus HDR Finisher's optional container marker.
-
-    imagecodecs intentionally focuses on pixel I/O, so its libjxl is queried for
-    basic dimensions/bit depth when the dynamic library is available. Color is
-    only accepted automatically when our explicit container marker is present;
-    third-party files remain editable through the existing manual source gate.
-    """
+    """Inspect structured libjxl DATA/ORIGINAL profiles and our optional marker."""
 
     return _inspect_jpegxl_payload(path.read_bytes())
 
@@ -101,8 +95,10 @@ def decode_jpegxl(
     del decoded
 
     app_metadata = info.get("app_metadata") or {}
-    color_space = app_metadata.get("color_space")
-    transfer = app_metadata.get("transfer_function")
+    # hfmd describes our authored samples; do not apply DATA interpretation twice.
+    interpretation = app_metadata or _standard_data_interpretation(info)
+    color_space = interpretation.get("color_space")
+    transfer = interpretation.get("transfer_function")
     confident = bool(color_space and transfer)
     if confident:
         image = encoded if encoded_samples else normalize_to_acescg_bounded(
@@ -131,6 +127,8 @@ def decode_jpegxl(
         metadata["jpegxl_app_metadata"] = app_metadata
         metadata["source_reference_white_nits"] = app_metadata.get("reference_white_nits")
     if confident:
+        metadata["source_color_space_label"] = color_space
+        metadata["source_transfer_function_label"] = transfer
         if encoded_samples:
             metadata["sample_color_space"] = color_space
             metadata["sample_transfer_function"] = transfer
@@ -498,235 +496,32 @@ def _read_app_metadata_box(payload: bytes) -> dict[str, Any]:
     return {}
 
 
-class _BasicInfoPrefix(ctypes.Structure):
-    _fields_ = [
-        ("have_container", ctypes.c_int),
-        ("xsize", ctypes.c_uint32),
-        ("ysize", ctypes.c_uint32),
-        ("bits_per_sample", ctypes.c_uint32),
-        ("exponent_bits_per_sample", ctypes.c_uint32),
-        ("intensity_target", ctypes.c_float),
-        ("min_nits", ctypes.c_float),
-        ("relative_to_max_display", ctypes.c_int),
-        ("linear_below", ctypes.c_float),
-        ("uses_original_profile", ctypes.c_int),
-    ]
-
-
 def _probe_basic_info(payload: bytes) -> dict[str, Any]:
-    library_path = _find_libjxl()
-    if library_path is None:
-        return _parse_codestream_basic_info(payload)
+    helper = resolve_binary("hdrf-jxl-info")
+    if helper is None:
+        return {}
     try:
-        library = ctypes.CDLL(str(library_path))
-        library.JxlDecoderCreate.argtypes = [ctypes.c_void_p]
-        library.JxlDecoderCreate.restype = ctypes.c_void_p
-        library.JxlDecoderDestroy.argtypes = [ctypes.c_void_p]
-        library.JxlDecoderSubscribeEvents.argtypes = [ctypes.c_void_p, ctypes.c_int]
-        library.JxlDecoderSubscribeEvents.restype = ctypes.c_int
-        library.JxlDecoderSetInput.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t]
-        library.JxlDecoderSetInput.restype = ctypes.c_int
-        library.JxlDecoderCloseInput.argtypes = [ctypes.c_void_p]
-        library.JxlDecoderProcessInput.argtypes = [ctypes.c_void_p]
-        library.JxlDecoderProcessInput.restype = ctypes.c_int
-        library.JxlDecoderGetBasicInfo.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        library.JxlDecoderGetBasicInfo.restype = ctypes.c_int
-        decoder = library.JxlDecoderCreate(None)
-        if not decoder:
+        result = subprocess.run(
+            [str(helper)], input=payload, capture_output=True, check=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        info = json.loads(result.stdout)
+        if not isinstance(info, dict) or info.get("schema_version") != 1:
             return {}
-        try:
-            if library.JxlDecoderSubscribeEvents(decoder, 0x40) != 0:
-                return {}
-            data = (ctypes.c_uint8 * len(payload)).from_buffer_copy(payload)
-            if library.JxlDecoderSetInput(decoder, data, len(payload)) != 0:
-                return {}
-            library.JxlDecoderCloseInput(decoder)
-            for _ in range(16):
-                status = library.JxlDecoderProcessInput(decoder)
-                if status == 0x40:
-                    buffer = ctypes.create_string_buffer(1024)
-                    if library.JxlDecoderGetBasicInfo(decoder, buffer) != 0:
-                        return {}
-                    info = _BasicInfoPrefix.from_buffer_copy(buffer.raw)
-                    return {
-                        "width": int(info.xsize),
-                        "height": int(info.ysize),
-                        "bits_per_sample": int(info.bits_per_sample),
-                        "exponent_bits_per_sample": int(info.exponent_bits_per_sample),
-                        "intensity_target": float(info.intensity_target),
-                        "uses_original_profile": bool(info.uses_original_profile),
-                    }
-                if status in {0, 1, 2}:
-                    break
-        finally:
-            library.JxlDecoderDestroy(decoder)
-    except (AttributeError, OSError, ValueError):
-        return {}
-    return {}
-
-
-class _JXLBitReader:
-    """Read the JPEG XL codestream's least-significant-bit-first fields."""
-
-    def __init__(self, payload: bytes):
-        self.payload = payload
-        self.offset = 0
-
-    def read(self, count: int) -> int:
-        if count < 0 or self.offset + count > len(self.payload) * 8:
-            raise ValueError("Truncated JPEG XL codestream header.")
-        value = 0
-        for index in range(count):
-            bit_offset = self.offset + index
-            value |= ((self.payload[bit_offset // 8] >> (bit_offset % 8)) & 1) << index
-        self.offset += count
-        return value
-
-    def u32(self, constants: tuple[int, int, int, int], bits: tuple[int, int, int, int]) -> int:
-        choice = self.read(2)
-        return constants[choice] + (self.read(bits[choice]) if bits[choice] else 0)
-
-
-def _parse_codestream_basic_info(payload: bytes) -> dict[str, Any]:
-    """Parse the small, stable prefix needed when libjxl is statically linked.
-
-    Windows imagecodecs wheels embed libjxl inside ``_jpegxl.pyd`` and do not
-    export its C decoder API. The codestream header still carries dimensions
-    and sample precision, so read those fields directly rather than guessing
-    precision from decoded pixel brightness.
-    """
-
-    codestream = _first_codestream_box(payload)
-    if codestream is None:
-        return {}
-    try:
-        reader = _JXLBitReader(codestream)
-        if reader.read(16) != 0x0AFF:
-            return {}
-        width, height = _read_size_header(reader)
-        all_default = bool(reader.read(1))
-        if all_default:
-            bits_per_sample, exponent_bits = 8, 0
-        else:
-            if reader.read(1):
-                reader.read(3)  # orientation
-                if reader.read(1):
-                    _read_size_header(reader)  # intrinsic size
-                if reader.read(1):
-                    _read_preview_header(reader)
-                if reader.read(1):
-                    _read_animation_header(reader)
-            bits_per_sample, exponent_bits = _read_bit_depth(reader)
-        return {
-            "width": width,
-            "height": height,
-            "bits_per_sample": bits_per_sample,
-            "exponent_bits_per_sample": exponent_bits,
-        }
-    except (ValueError, OverflowError):
+        return info
+    except (OSError, subprocess.SubprocessError, ValueError):
         return {}
 
 
-def _first_codestream_box(payload: bytes) -> bytes | None:
-    if payload.startswith(b"\xff\x0a"):
-        return payload
-    signature = b"\x00\x00\x00\x0cJXL \r\n\x87\n"
-    if not payload.startswith(signature):
-        return None
-    offset = len(signature)
-    while offset + 8 <= len(payload):
-        size, kind = struct.unpack_from(">I4s", payload, offset)
-        header = 8
-        if size == 1:
-            if offset + 16 > len(payload):
-                return None
-            size = int(struct.unpack_from(">Q", payload, offset + 8)[0])
-            header = 16
-        elif size == 0:
-            size = len(payload) - offset
-        if size < header or offset + size > len(payload):
-            return None
-        body = payload[offset + header : offset + size]
-        if kind == b"jxlc":
-            return body
-        if kind == b"jxlp" and len(body) >= 4:
-            # The basic header is carried by the first partial codestream box.
-            index = struct.unpack_from(">I", body, 0)[0] & 0x7FFFFFFF
-            if index == 0:
-                return body[4:]
-        offset += size
-    return None
-
-
-def _read_size_header(reader: _JXLBitReader) -> tuple[int, int]:
-    if reader.read(1):
-        height = (reader.read(5) + 1) << 3
-        ratio = reader.read(3)
-        width = _width_from_ratio(height, ratio)
-        if not width:
-            width = (reader.read(5) + 1) << 3
-    else:
-        height = 1 + reader.u32((0, 0, 0, 0), (9, 13, 18, 30))
-        ratio = reader.read(3)
-        width = _width_from_ratio(height, ratio)
-        if not width:
-            width = 1 + reader.u32((0, 0, 0, 0), (9, 13, 18, 30))
-    return width, height
-
-
-def _width_from_ratio(height: int, ratio: int) -> int:
-    ratios = {
-        1: (1, 1),
-        2: (12, 10),
-        3: (4, 3),
-        4: (3, 2),
-        5: (16, 9),
-        6: (5, 4),
-        7: (2, 1),
-    }
-    if ratio not in ratios:
-        return 0
-    numerator, denominator = ratios[ratio]
-    return height * numerator // denominator
-
-
-def _read_bit_depth(reader: _JXLBitReader) -> tuple[int, int]:
-    if reader.read(1):
-        depth = reader.u32((32, 16, 24, 1), (0, 0, 0, 6))
-        return depth, reader.read(4) + 1
-    return reader.u32((8, 10, 12, 1), (0, 0, 0, 6)), 0
-
-
-def _read_preview_header(reader: _JXLBitReader) -> None:
-    if reader.read(1):
-        height = reader.u32((16, 32, 1, 33), (0, 0, 5, 9)) << 3
-        ratio = reader.read(3)
-        if not _width_from_ratio(height, ratio):
-            reader.u32((16, 32, 1, 33), (0, 0, 5, 9))
-    else:
-        height = reader.u32((1, 65, 321, 1345), (6, 8, 10, 12))
-        ratio = reader.read(3)
-        if not _width_from_ratio(height, ratio):
-            reader.u32((1, 65, 321, 1345), (6, 8, 10, 12))
-
-
-def _read_animation_header(reader: _JXLBitReader) -> None:
-    reader.u32((100, 1000, 1, 1), (0, 0, 10, 30))
-    reader.u32((1, 1001, 1, 1), (0, 0, 8, 10))
-    reader.u32((0, 0, 0, 0), (0, 3, 16, 32))
-    reader.read(1)
-
-
-def _find_libjxl() -> Path | None:
-    try:
-        module = importlib.import_module("imagecodecs")
-    except ImportError:
-        return None
-    root = Path(module.__file__).resolve().parent
-    candidates: list[Path] = []
-    for directory in (root / ".dylibs", root / ".libs", root.parent / "imagecodecs.libs", root):
-        if not directory.is_dir():
-            continue
-        for pattern in ("libjxl.[0-9]*.dylib", "libjxl.so*", "jxl.dll", "libjxl.dll"):
-            candidates.extend(directory.glob(pattern))
-    return next((path for path in candidates if "threads" not in path.name and "cms" not in path.name), None)
+def _standard_data_interpretation(info: dict[str, Any]) -> dict[str, str]:
+    """Accept only structured standard RGB encodings; ICC/custom stays gated."""
+    profile = info.get("data_color_encoding")
+    if not isinstance(profile, dict):
+        return {}
+    if profile.get("color_space") != 0 or profile.get("white_point") != 1:
+        return {}
+    primaries = {1: "sRGB", 9: "BT.2020", 11: "Display P3"}.get(profile.get("primaries"))
+    transfer = {1: "BT.709", 8: "LINEAR", 13: "sRGB", 16: "PQ", 18: "HLG"}.get(profile.get("transfer_function"))
+    if not primaries or not transfer:
+        return {}
+    return {"color_space": primaries, "transfer_function": transfer}

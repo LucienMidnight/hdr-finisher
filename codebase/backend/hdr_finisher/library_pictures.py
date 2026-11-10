@@ -27,7 +27,7 @@ from .projects import validate_saved
 from .render_cache import encode_rgba_proxy_rows
 
 SIDECAR_SUFFIX = ".hdrf"
-PICTURE_VERSION = "library-scene-demand-v11"
+PICTURE_VERSION = "library-scene-demand-v12"
 CACHE_LIMIT_BYTES = 2 * 1024**3
 _CACHE_LOCKS = [RLock() for _ in range(64)]
 _TRIM_LOCK = RLock()

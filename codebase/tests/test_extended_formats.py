@@ -17,7 +17,7 @@ from hdr_finisher.exporters import JPEGXLHDRExportBackend
 from hdr_finisher.import_jobs import ImportJobManager
 from hdr_finisher.jpegxl import (
     _box,
-    _parse_codestream_basic_info,
+    _probe_basic_info,
     decode_jpegxl,
     encode_hdr_jpegxl,
     encode_sdr_jpegxl,
@@ -56,7 +56,9 @@ def test_jpegxl_hdr_round_trip_carries_explicit_app_interpretation(tmp_path: Pat
 
     loaded, descriptor, loader_metadata, _analysis, _sdr = load_image(path)
     assert loaded.shape == image.shape
-    assert descriptor.source_color_space == "ACEScg"
+    assert descriptor.source_color_space == "BT.2020"
+    assert descriptor.transfer_function == "PQ"
+    assert descriptor.working_space == "ACEScg"
     assert loader_metadata["jpegxl_app_metadata"]["color_space"] == "BT.2020"
 
 
@@ -155,7 +157,7 @@ def test_jpegxl_decode_reads_the_container_once(tmp_path: Path, monkeypatch) -> 
 
 
 @pytest.mark.parametrize("bit_depth", [8, 10, 12, 16])
-def test_jpegxl_basic_info_fallback_reads_codestream_precision(bit_depth: int) -> None:
+def test_jpegxl_native_basic_info_reads_codestream_precision(bit_depth: int) -> None:
     import imagecodecs
 
     dtype = np.uint8 if bit_depth == 8 else np.uint16
@@ -169,7 +171,7 @@ def test_jpegxl_basic_info_fallback_reads_codestream_precision(bit_depth: int) -
         )
     )
 
-    info = _parse_codestream_basic_info(payload)
+    info = _probe_basic_info(payload)
 
     assert info["width"] == 24
     assert info["height"] == 18
@@ -183,7 +185,8 @@ def test_capabilities_report_imagecodecs_jpegxl() -> None:
     assert capabilities["jpegxl_export"].status == "available"
 
 
-def test_unmarked_third_party_jpegxl_requires_color_confirmation(tmp_path: Path) -> None:
+def test_unmarked_third_party_jpegxl_requires_color_confirmation(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("hdr_finisher.jpegxl._probe_basic_info", lambda _payload: {"bits_per_sample": 12})
     import imagecodecs
 
     source = np.full((8, 12, 3), 2048, dtype=np.uint16)
@@ -591,7 +594,8 @@ def test_bitmap_thumbnail_uses_the_bounded_pillow_path(tmp_path: Path, monkeypat
         assert image.size == (128, 64)
 
 
-def test_media_browser_requires_interpretation_for_unmarked_jpegxl_without_caching_placeholder(tmp_path: Path) -> None:
+def test_media_browser_requires_interpretation_for_unmarked_jpegxl_without_caching_placeholder(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("hdr_finisher.jpegxl._probe_basic_info", lambda _payload: {"bits_per_sample": 12})
     import imagecodecs
 
     source = tmp_path / "unmarked.jxl"
@@ -883,3 +887,58 @@ def test_owned_lens_input_avoids_copy_and_preserves_result(monkeypatch):
     assert shared == [False, True]
     np.testing.assert_array_equal(actual, expected)
     assert owned_metadata == metadata
+
+
+@pytest.mark.parametrize("primaries,color_space", [(1, "sRGB"), (9, "BT.2020"), (11, "Display P3")])
+@pytest.mark.parametrize("transfer,name", [(1, "BT.709"), (8, "LINEAR"), (13, "sRGB"), (16, "PQ"), (18, "HLG")])
+def test_jpegxl_native_data_profile_matches_decoded_samples(tmp_path, primaries, color_space, transfer, name):
+    import imagecodecs
+    from hdr_finisher.color import normalize_to_acescg
+    path = tmp_path / "standard.jxl"
+    pixels = np.full((8, 12, 3), 20000, dtype=np.uint16)
+    path.write_bytes(imagecodecs.jpegxl_encode(pixels, lossless=True, bitspersample=16,
+        primaries=primaries, transfer=transfer, usecontainer=True))
+    actual, metadata = decode_jpegxl(path)
+    raw = imagecodecs.jpegxl_decode(path.read_bytes()).astype(np.float32) / 65535
+    expected = normalize_to_acescg(raw, color_space, name)
+    np.testing.assert_allclose(actual, expected, rtol=1e-5, atol=1e-7)
+    assert metadata["needs_color_override"] is False
+    encoded, encoded_metadata = decode_jpegxl(path, encoded_samples=True)
+    np.testing.assert_allclose(encoded, raw, rtol=1e-6)
+    assert encoded_metadata["sample_color_space"] == color_space
+    assert encoded_metadata["sample_transfer_function"] == name
+
+
+@pytest.mark.parametrize("profile", [None, {"color_space": 0, "white_point": 2, "primaries": 11, "transfer_function": 16},
+    {"color_space": 0, "white_point": 1, "primaries": 2, "transfer_function": 16},
+    {"color_space": 0, "white_point": 1, "primaries": 11, "transfer_function": 65535}])
+def test_jpegxl_custom_data_never_borrows_original_profile(tmp_path, monkeypatch, profile):
+    import imagecodecs
+    path = tmp_path / "custom.jxl"
+    path.write_bytes(imagecodecs.jpegxl_encode(np.zeros((8, 12, 3), dtype=np.uint8)))
+    monkeypatch.setattr("hdr_finisher.jpegxl._probe_basic_info", lambda _: {
+        "bits_per_sample": 8, "data_color_encoding": profile,
+        "original_color_encoding": {"color_space": 0, "white_point": 1, "primaries": 11, "transfer_function": 16}})
+    _, metadata = decode_jpegxl(path)
+    assert metadata["needs_color_override"] is True
+    assert metadata["jpegxl_direct_hdr"] is False
+
+
+def test_jpegxl_data_profile_controls_pixels_original_is_provenance(tmp_path, monkeypatch):
+    import imagecodecs
+    from hdr_finisher.color import normalize_to_acescg
+    path = tmp_path / "different-profiles.jxl"
+    path.write_bytes(imagecodecs.jpegxl_encode(np.full((8, 12, 3), 128, dtype=np.uint8)))
+    original = {"color_space": 0, "white_point": 1, "primaries": 11, "transfer_function": 16}
+    data = {"color_space": 0, "white_point": 1, "primaries": 1, "transfer_function": 13}
+    monkeypatch.setattr("hdr_finisher.jpegxl._probe_basic_info", lambda _: {
+        "bits_per_sample": 8, "data_color_encoding": data, "original_color_encoding": original})
+    actual, metadata = decode_jpegxl(path)
+    raw = imagecodecs.jpegxl_decode(path.read_bytes()).astype(np.float32) / 255
+    np.testing.assert_allclose(actual, normalize_to_acescg(raw, "sRGB", "sRGB"), rtol=1e-5, atol=1e-7)
+    assert metadata["jpegxl_info"]["original_color_encoding"] == original
+    assert metadata["jpegxl_direct_hdr"] is False
+
+
+def test_jpegxl_native_probe_rejects_truncated_input():
+    assert _probe_basic_info(b"\xff\x0a") == {}

@@ -4,6 +4,9 @@ window.HDRLibraryRGB = (() => {
   "use strict";
   const {gpu,COMMON,TURN,FINISHING,reducedSize,uploadBuffer,yieldToWindow}=HDRLibraryGpuRaw.shared;
   const compiled=new WeakMap();
+  function writeRGBMatrix(setF, meta) {
+    meta.rgb_to_acescg.forEach((row, k) => setF(10 + k, [...row, (meta.hlg_luminance_weights || [0.2627, 0.6780, 0.0593])[k]]));
+  }
   const INPUT = `
   @group(0) @binding(1) var<storage, read> rgbInput: array<u32>;
   fn encoded(i:u32)->f32 {
@@ -28,7 +31,7 @@ window.HDRLibraryRGB = (() => {
   fn linear_rgb(i:u32)->vec3<f32> {
     var lin=vec3<f32>(eotf(encoded(i)),eotf(encoded(i+1u)),eotf(encoded(i+2u)));
     if(p.dims2.z==4u){
-      let y=dot(lin,vec3<f32>(0.2627,0.6780,0.0593));
+      let y=dot(lin,vec3<f32>(p.m0.w,p.m1.w,p.m2.w));
       lin=lin*pow(max(y,0.0),0.2)*1000.0*p.lensc.w;
     }
     return lin;
@@ -273,7 +276,9 @@ window.HDRLibraryRGB = (() => {
       const setU = (slot, values) => values.forEach((v, k) => { u32[slot * 4 + k] = v; });
       const setF = (slot, values) => values.forEach((v, k) => { f32[slot * 4 + k] = v; });
       setU(0, [w, h, 0, st]); setU(1, [meta.quantize_half ? 2 : meta.direct_srgb ? 1 : 0, meta.layout?.dtype === "float32" ? 1 : 0, meta.colour.transfer === "LINEAR" || meta.colour.transfer === "ACEScg" ? 1 : meta.colour.transfer === "BT.709" ? 2 : meta.colour.transfer === "PQ" ? 3 : meta.colour.transfer === "HLG" ? 4 : meta.colour.transfer === "BT.2020" ? 5 : 0, sw]);
-      meta.rgb_to_acescg.forEach((row, k) => setF(10 + k, row));
+      // RGB-only unused matrix w lanes carry HLG source luminance weights.
+      // Shared layout and RAW/DNG writers remain unchanged.
+      writeRGBMatrix(setF, meta);
       meta.acescg_to_srgb.forEach((row, k) => setF(13 + k, row));
       meta.acescg_to_bt2020.forEach((row, k) => setF(16 + k, row));
       // lensc.xy belongs to DNG tile dimensions; z is the RGB-only clamp flag.

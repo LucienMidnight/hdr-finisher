@@ -43,7 +43,7 @@ def recipe(document):
 def _quality(inputs):
     from .loader import SOURCE_DECODER_VERSION, SOURCE_COLOR_TRANSFORM_VERSION
     identity = {"recipe": inputs, "decoder": SOURCE_DECODER_VERSION,
-                "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-reduced-v4"}
+                "colour": SOURCE_COLOR_TRANSFORM_VERSION, "rgb_adapter": "library-rgb-reduced-v5"}
     return "live-scene-v2:" + sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
 
 

@@ -75,7 +75,6 @@ async function uploadFile(file, { confirmedDocument = documentTransitionToken(),
     await applyNewSessionPreferences();
     if (generation !== state.importGeneration || state.session?.session_id !== payload.session.session_id) return false;
     activateWorkflowTab("grade", { focus: false });
-    state.interpretationGateDismissed = false;
     state.gpuPreview?.resetSession(payload.session.session_id);
     invalidatePreview("hdr", { markDirty: false });
     invalidatePreview("sdr", { markDirty: false });
@@ -171,7 +170,6 @@ function clearCurrentSessionView() {
   state.projectPath = "";
   state.currentView = "hdr";
   activateWorkflowTab("import", { focus: false });
-  state.interpretationGateDismissed = false;
   state.lastScope = null;
   state.lastExportPath = "";
   state.lastExportMessage = "";
@@ -280,7 +278,6 @@ async function applyInterpretationOverride() {
     state.editRevision = payload.session.edit_revision || 0;
     recordAcknowledgedLocals(state.editDocument);
     state.documentDirty = Boolean(payload.session.dirty);
-    state.interpretationGateDismissed = false;
     invalidatePreview("hdr");
     invalidatePreview("sdr");
     state.gpuPreview?.resetSession(payload.session.session_id);
@@ -336,7 +333,7 @@ function syncInterpretationControls(session) {
   els.interpretationColorSpace.value = defaultInterpretationValue(session);
   els.interpretationTransfer.value = developedRaw ? "auto" : defaultTransferValue(session);
   els.interpretationLinearReference.value = session.source.linear_reference || "scene_0_18";
-  const needsReview = session.analysis.needs_color_override && mode !== "manual";
+  const needsReview = Boolean(session.analysis.needs_color_override);
   els.sourceSettingsNote.textContent = sourceInterpretationStatus(session);
   els.sourceSettingsNote.classList.toggle("warning", needsReview);
 }
@@ -344,6 +341,9 @@ function syncInterpretationControls(session) {
 function sourceInterpretationStatus(session) {
   if (isDevelopedRawSession(session)) {
     return "Camera-native RAW developed through its camera profile into the ACEScg working space.";
+  }
+  if (session.analysis.needs_color_override && session.source.interpretation_mode === "manual") {
+    return "Source interpretation is incomplete. Choose both primaries and transfer.";
   }
   if (session.source.interpretation_mode === "manual") {
     const colorSpace = session.source.source_color_space || "unknown";
@@ -644,7 +644,7 @@ function openManualInterpretation() {
 
 function renderInterpretationGate() {
   const needsReview = Boolean(state.session?.analysis?.needs_color_override);
-  const visible = needsReview && !state.interpretationGateDismissed;
+  const visible = needsReview;
   if (!visible) return status.clear("source-interpretation");
   status.post({
     id: "source-interpretation",
@@ -654,15 +654,6 @@ function renderInterpretationGate() {
     message: `Source interpretation needs review — ${overrideMessage(state.session)}`,
     persistent: true,
     actions: [
-      {
-        label: "Use assumption",
-        id: "accept-interpretation",
-        run: () => {
-          state.interpretationGateDismissed = true;
-          renderInterpretationGate();
-          updateExportAvailability();
-        },
-      },
       { label: "Set manually", id: "manual-interpretation", run: openManualInterpretation },
     ],
   });

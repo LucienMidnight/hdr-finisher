@@ -54,7 +54,8 @@ Supported manual primaries are ACEScg, BT.2020, Display P3, and sRGB/Rec.709. Su
 - Recognized EXR/OCIO `colorInteropID` values include `lin_rec709_scene`, `lin_rec2020_scene`, `lin_p3d65_scene`, and `lin_ap1_scene`.
 - If standard chromaticities and an interoperability ID disagree, review is required.
 - An EXR without known primaries remains untransformed until the user supplies them.
-- PQ and HLG supported inputs imply BT.2020 in the current normalization path.
+- JPEG XL structured DATA colour metadata describes decoded pixels; ORIGINAL is retained as provenance. Supported standard D65 RGB encodings are recognised automatically; unsupported/custom profiles require manual interpretation.
+- PQ and HLG honour declared primaries, with BT.2020 as the missing/unknown-primary default.
 
 This differs deliberately from OpenEXR’s historical fallback recommendation to assume Rec.709 when chromaticities are absent. HDR Finisher does not make that irreversible assumption for ambiguous HDR handoffs because contemporary CGI/photo pipelines commonly use ACEScg or Rec.2020.
 
@@ -71,14 +72,14 @@ If sRGB or Display P3 is selected with sRGB transfer, the sRGB CCTF is decoded b
 PQ values are clamped to 0–1 and decoded with ST 2084 to absolute nits:
 
 ```text
-BT.2020 PQ -> ST 2084 EOTF -> absolute nits
-linear BT.2020 = nits / project_reference_white_nits * 0.18
-linear BT.2020 -> ACEScg (CAT02)
+source PQ -> ST 2084 EOTF -> absolute nits
+linear source RGB = nits / project_reference_white_nits * 0.18
+linear source RGB -> ACEScg (CAT02)
 ```
 
 ### HLG input
 
-HLG values are decoded with colour-science’s BT.2100 HLG EOTF using `L_B = 0` and `L_W = 1000` nits, then normalized through the active project reference and converted like PQ.
+HLG values use inverse HLG followed by the OOTF with source-primary luminance weights, `L_B = 0` and `L_W = 1000` nits, then normalize through the active project reference and convert like PQ. BT.2020 retains the established BT.2100 HLG calculation.
 
 This 1,000-nit system assumption must be documented whenever HLG input behavior is discussed. It is not inferred from source mastering metadata.
 

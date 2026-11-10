@@ -46,7 +46,7 @@ Open the file named for the thing you are changing. Most files are focused.
 | Finished Library thumbnail redisplay | `library_finished_thumbnails.py` (local indexed identity, exact surface storage and batched transfer); `library-finished-thumbnails.js` (GPU capture/restore), wired through `library_screen_previews.py`, `library-gpu.js`, `photo-library.js` |
 | Live app memory setting (phase 3c) | `app_memory.py` (options/configure), `library_api.py` memory-setting endpoints, `library_scheduler.py` live ceiling/giant waits, `application-shell.js` and desktop application preferences |
 | Library RAM scheduling (phase 3a) | `library_scheduler.py` (priority, floor, reserve, owner cleanup), `library_estimates.py` (header dimensions and approved rates), `library_grants.py` (WebSocket channel, Grade accounting, backend waits); frontend `library-grants.js` (one channel per window, cancellation, reconnect) |
-| Machine and tools | `capabilities.py`, `binaries.py`, `subprocess_utils.py`, `display_probe.py` |
+| Machine and tools | `capabilities.py`, `binaries.py`, `subprocess_utils.py`, `display_probe.py`; `tools/jpegxl-info/` builds the structured libjxl DATA/ORIGINAL metadata helper used by `jpegxl.py` (Windows executable, DLLs and licences in `bin/`) |
 
 The largest are `adjustments.py` and `main.py`. Neither
 is in the sprint; see its section 9.

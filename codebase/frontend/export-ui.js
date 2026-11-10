@@ -515,7 +515,7 @@ function formatChroma(value) {
 
 function updateExportAvailability() {
   const needsOverride = Boolean(state.session?.analysis?.needs_color_override);
-  const sourceReady = Boolean(state.session) && (!needsOverride || state.interpretationGateDismissed);
+  const sourceReady = Boolean(state.session) && !needsOverride;
   const encoderKey = capabilityForFormat[els.exportFormat.value];
   const encoderReady = state.capabilities[encoderKey]?.status === "available";
   els.exportConfirmButton.disabled = state.importInProgress || !state.session || !sourceReady || !encoderReady;

@@ -41,8 +41,8 @@ EXR_COLOR_INTEROP_SPACES = {
 # Provenance for the persistent source mip cache (PRD 5.3). Bump either
 # constant when a change alters the decoded scene-linear pixels for the same
 # file; stale levels are then ignored and removed by version.
-SOURCE_DECODER_VERSION = "hdr-finisher-loader-dng-gpu-v4"
-SOURCE_COLOR_TRANSFORM_VERSION = "acescg-negative-neutral-v2"
+SOURCE_DECODER_VERSION = "hdr-finisher-loader-jxl-metadata-v5"
+SOURCE_COLOR_TRANSFORM_VERSION = "acescg-source-primaries-v3"
 
 # Display-P3 and sRGB share D65, so the hot-path linear conversion is a fixed
 # float32 matrix and does not require a general-purpose colour transform.
@@ -121,7 +121,15 @@ def load_image(
         elif suffix == ".jxl":
             if progress:
                 progress("decoding_jpegxl", "Decoding full-resolution JPEG XL")
-            image, metadata = decode_jpegxl(path, cancelled=cancelled)
+            # Manual interpretation must start from encoded samples, not from an
+            # already normalized working-space image returned by the decoder.
+            raw_samples = any(value is not None for value in (overrides or {}).values())
+            image, metadata = decode_jpegxl(path, cancelled=cancelled, encoded_samples=raw_samples)
+            if raw_samples and metadata.get("sample_color_space"):
+                metadata["color_space"] = metadata["sample_color_space"]
+                metadata["transfer_function"] = metadata["sample_transfer_function"]
+                metadata.pop("decoder_normalized_to_acescg", None)
+                metadata.pop("decoder_reference_white_nits", None)
         elif suffix == ".dng":
             inspection = inspect_dng(path, retained_session_bytes=retained_session_bytes)
             if inspection.route is DngRoute.LINEAR_DNG:
@@ -181,12 +189,14 @@ def load_image(
     for key in ("color_space", "transfer_function"):
         if overrides.get(key):
             metadata[key] = overrides[key]
+            label = "source_" + key + "_label"
+            if label in metadata:
+                metadata[label] = overrides[key]
     if overrides:
         metadata["user_override"] = {key: value for key, value in overrides.items() if value is not None}
-        # A transfer-only override cannot resolve unknown or conflicting source
-        # primaries. Only an explicit color-space choice is sufficient to clear
-        # the manual-review gate.
-        if metadata["user_override"].get("color_space"):
+        # Unknown samples need primaries AND a known transfer before this gate
+        # can clear. A primaries-only choice cannot resolve encoded code values.
+        if metadata["user_override"].get("color_space") and (metadata.get("transfer_function") or detect_transfer_function(metadata, suffix)):
             metadata["needs_color_override"] = False
 
     metadata["color_space"] = detect_color_space(metadata, suffix)
@@ -250,7 +260,7 @@ def load_image(
         channels=int(normalized.shape[2]),
         dtype=str(normalized.dtype),
         source_color_space=metadata.get("source_color_space_label", metadata.get("color_space")),
-        transfer_function=metadata.get("transfer_function"),
+        transfer_function=metadata.get("source_transfer_function_label", metadata.get("transfer_function")),
         linear_reference=linear_reference,
         interpretation_mode="manual" if metadata.get("user_override") else "auto",
         color_space_confident=not bool(metadata.get("needs_color_override")),

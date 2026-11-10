@@ -1,0 +1,23 @@
+hdrf-jxl-info: metadata-only structured libjxl inspector (JSON schema 1).
+Input: complete codestream/container bytes on stdin; output: one JSON object.
+Exit 1 on invalid/truncated input. No image output buffer or pixel decode.
+No preferred profile is set, matching imagecodecs' default decode.
+DATA describes returned pixels; ORIGINAL is provenance and may differ.
+ICC-only encodings return null, keeping the caller's manual gate.
+
+Windows: run build-windows.ps1 -WorkDir C:/path/to/scratch.
+Fetches official libjxl v0.12.0 SDK, verifies pinned SHA256, extracts with
+7-Zip and builds Release with VS2022 CMake. Requires installed VS C++ tools.
+The script installs executable, DLLs and dependency licenses into codebase/bin.
+MSVC runtime is the same system runtime required by the existing backend.
+
+Linux/macOS: build against libjxl v0.12.0 development headers/library:
+  cmake -S tools/jpegxl-info -B /path/to/build
+  cmake --build /path/to/build --config Release
+Copy hdrf-jxl-info into codebase/bin and deploy its libjxl dependencies using
+the platform's normal library loader paths. Existing resolve_binary also
+accepts a helper on PATH. No helper or unsupported profile stays manual.
+
+The existing PyInstaller bin-directory collection and desktop backend resource
+collection include these artifacts and licenses; no packaging allowlist change.
+Source API: https://github.com/libjxl/libjxl/tree/v0.12.0/lib/include/jxl

@@ -80,9 +80,9 @@ Classification is diagnostic, not a quality score. An image can be genuine HDR a
 
 ## Auto Detect and Manual Override
 
-**Auto Detect** uses ICC information, HEIF color properties, EXR `chromaticities`, recognized OCIO `colorInteropID` values, extension-based transfer hints, and other supported metadata.
+**Auto Detect** uses supported JPEG XL colour metadata, ICC information, HEIF color properties, EXR `chromaticities`, recognized OCIO `colorInteropID` values, extension-based transfer hints, and other supported metadata.
 
-Use **Manual Override** only when you know the upstream encoding. Select primaries and transfer separately:
+Use **Manual Override** only when you know the upstream encoding. Select primaries and transfer separately. An unresolved source keeps its warning and blocks export until both are known; **Set manually** opens these controls.
 
 ### Color Primaries
 
@@ -127,7 +127,7 @@ Not every HEIC is an Apple HDR gain-map image. A plain HEIC may be SDR, PQ, HLG,
 
 ## Under the hood
 
-The loader produces float32 RGB values, records the chosen source space and transfer, and calls the color normalization stage. Known linear RGB spaces are converted to ACEScg with CAT02 chromatic adaptation. PQ and HLG paths are decoded to luminance, scaled to the app convention, converted from BT.2020 to ACEScg, and sanitized. Unknown linear primaries are retained without an irreversible gamut transform until the user resolves them.
+The loader produces float32 RGB values, records the chosen source space and transfer, and calls the color normalization stage. Known linear RGB spaces are converted to ACEScg with CAT02 chromatic adaptation. PQ and HLG paths are decoded to luminance, scaled to the app convention, converted from the declared primaries to ACEScg, and sanitized. PQ and HLG use BT.2020 only when primaries are missing or unknown. HLG uses a 1,000-nit system assumption and the source primaries' luminance weights. Unknown linear primaries are retained without an irreversible gamut transform until the user resolves them.
 
 Changing interpretation reloads the source and rebuilds the session; it is not a cosmetic viewer setting.
 

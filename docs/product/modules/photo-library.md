@@ -1,3 +1,18 @@
+## November 10: JXL source colour repair
+
+Standard third-party JXL colour is read automatically. Library and Grade use
+the same declared PQ/HLG primaries, including HLG source luminance weights.
+Source/picture identities regenerate old washed-out cached pictures. No
+cache size, scheduling limit or global shader layout changes.
+
+Real Electron passes the real P3/PQ JXL plus six asymmetric standard-tagged
+P3/sRGB/BT.2020 PQ/HLG fixtures. HDR/SDR finished GPU pixels meet the existing
+perceptual limits against an independent oracle. Grade imports the real photo
+with no manual gate and presents an exact WebGPU frame. Evidence:
+`codebase/output/review/jxl-fixes/summary.json` and `grade.png`.
+Source recognition, manual interpretation and validation limits are recorded
+in [Import and RAW](import-and-raw.md).
+
 ## November 10: sidebar file visibility
 
 Show all files is available on sidebar folder rows, manual/smart album rows,

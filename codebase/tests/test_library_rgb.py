@@ -305,7 +305,7 @@ def test_precision_publication_matches_grade_document(tmp_path,authored,sample_b
             np.testing.assert_array_equal(stored['reference'], np.clip(expected.sdr_reference_image, 0, 65504).astype(np.float16))
 
 @pytest.mark.parametrize("transfer,bits,dtype",[("sRGB",8,"uint8"),("PQ",12,"uint16"),("HLG",16,"uint16"),("PQ",32,"float32")])
-def test_jxl_samples_precision_gate_and_normalized_override_order(tmp_path, monkeypatch, transfer, bits, dtype):
+def test_jxl_samples_precision_gate_and_encoded_override_order(tmp_path, monkeypatch, transfer, bits, dtype):
     import sys
     sys.path.insert(0,str(Path(__file__).parent/'helpers'))
     from library_codec_samples import marked_jxl
@@ -325,10 +325,11 @@ def test_jxl_samples_precision_gate_and_normalized_override_order(tmp_path, monk
     inputs=recipe(None);inputs['hdr_reference_white_nits']=100
     inputs['interpretation_override'].update(color_space='BT.2020',transfer_function='BT.709')
     overridden,parts=library_rgb.decoded(path,inputs)
-    np.testing.assert_array_equal(np.frombuffer(parts[0],dtype='<f4').reshape(values.shape),expected)
-    assert overridden['colour']['transfer']=='BT.709' and overridden['colour']['eotf_applied']
-    # The marker is required even when libjxl can decode the samples.
+    np.testing.assert_array_equal(np.frombuffer(parts[0],dtype='<f4').reshape(values.shape),raw)
+    assert overridden['colour']['transfer']=='BT.709' and not overridden['colour']['eotf_applied']
+    # Unknown/custom DATA still needs interpretation before decoding pixels.
     path.write_bytes(__import__('imagecodecs').jpegxl_encode(np.zeros((5,8,3),np.uint8),lossless=True))
+    monkeypatch.setattr(jpegxl, 'inspect_jpegxl', lambda _: {'app_metadata': None, 'data_color_encoding': None})
     def forbidden_decode(*args, **kwargs):
         pytest.fail('Unresolved JPEG XL must be rejected from the header')
     monkeypatch.setattr(library_rgb.loader, 'decode_jpegxl', forbidden_decode)
