@@ -8228,3 +8228,51 @@ existing `test_remembered_failure_does_not_hide_current_grade_cached_scene`
 failure; no new failure. Scratch output stayed 42.6 GB. Automatic approval
 review blocked cleanup of this run's TEMP `pytest-of-Steve/pytest-{1387,1388,1389}`
 folders; left in place. No push or installer build.
+
+
+## November 10: further overlay speed candidates (research, not built)
+
+Steve requested relatively easy further wins, including considering GPU for
+full Focus. Two read-only code reviews and small CPU prototypes favor:
+
+1. A Focus-only source loader retaining the exact default RAW decoder,
+   normalization/lens geometry and source-version checks, while avoiding
+   Grade session/hash/render-cache/default-document work. A direct existing
+   loader call returned exactly the same pixels on the Sony RAW and removed
+   about 0.53 s of isolated setup; it still performs unused HDR classification.
+   Separating that analysis is a further candidate, not yet implemented.
+2. When a valid full Focus map is retained, validate full directly rather
+   than allowing a missing half map to be rebuilt first. Disk-only reuse
+   needs a cache-only lookup so cold requests remain half-first. This saves
+   redundant work on revisits, not the cold full decode.
+3. Existing OpenCV separable filtering is a promising CPU experiment.
+   It cut isolated analysis substantially, but full/coarse variants showed
+   tiny rounding differences in noise or a map cell. No exact check was
+   relaxed and no replacement installed. Use current weights, reflect edges,
+   cancellation and CPU policy; establish map agreement before adoption.
+4. Borrow an exactly matching native CPU source or join already necessary
+   source preparation if available, without adding a retained-source cache.
+   Identity must include native resolution, default RAW settings, complete
+   frame, orientation and geometry. Finished/graded or reduced pictures are
+   unsuitable even when they look unedited.
+
+GPU: first prototype source eligibility/reuse and the optimistic whole-wait
+floor for a retained native owner. Filters alone have insufficient evidence
+for the master PRD's roughly 50% full-wait saving. An eligible native GPU
+source could avoid preparation and analysis together, but ownership,
+preemption, global percentile/noise reductions and small-map readback need
+real work. Cold undeveloped RAW normally has only a camera JPEG, not that
+source; do not start/publish development just for an overlay. No general GPU
+implementation is recommended as an easy win yet. A later prototype would
+keep existing shared budgets and one-attempt/CPU-fallback policy.
+
+Exposure remains sensor-based: demosaiced/graded GPU textures cannot recover
+clipping against channel black/white levels. Opportunistic masks from sensor
+samples already unpacked for requested development are worth considering;
+standalone GPU analysis and broad registration sharing are low priority.
+Registration geometry differs across sensor, half and native source routes.
+Small PNG transfer and already immediate warm maps are poor next targets.
+
+See the performance table's read-only prototype entry for timings and
+agreement limits. No production code changed or existing tests rerun for
+this research; the implementation validation at c38609b2 remains current.

@@ -1531,3 +1531,25 @@ errors. Existing 250 ms frame-gap gate failed at 1,952 ms. This is the already
 recorded general Library drawing-gap class, outside Focus work; no rerun,
 limit change or investigation. Report:
 `codebase/output/quick-library-check/focus-shared-maps/report.json`.
+
+
+### November 10: next overlay wins, read-only CPU prototypes
+
+No app implementation change after `c38609b2`. Same shared 42 MP Sony RAW,
+warm/uncontrolled OS cache, standalone CPU processes, no concurrent parent
+check or new photo copies. Existing 10% diagnostic app band and exact Focus
+map/noise checks are unchanged. These are isolated paired experiments,
+not action-to-overlay measurements, and cannot be added as an app speed claim.
+
+| Experiment | Current stage | Prototype stage | Agreement / limitation |
+|---|---|---|---|
+| Focus analysis, existing OpenCV separable filters, same weights and axis/edge order | 2.521 s | 1.210 s | Finished small map byte-identical on this RAW; noise differs by -2.21e-8. Noisy and sharp-edge controls were also tried. Not accepted as an exact replacement. |
+| Focus analysis, native coarse filter only, original fine/noise path | 2.916 s | 1.775 s | Noise exact; one of 165,834 map cells differs. Not accepted as an exact replacement. |
+| Full source loading without constructing a Grade session | 3.764 s | 3.231 s | All source pixels exactly equal on this RAW. Still includes 0.717 s of HDR classification, which Focus does not consume. |
+
+Logs: `codebase/output/focus-native-prototype.log`,
+`focus-coarse-native-prototype.log`, `focus-source-only-prototype.log`.
+Different experiment baselines are not cross-run comparisons. No test,
+threshold, precision guarantee or agreement tolerance was weakened. OpenCV
+is already an installed dependency. Production adoption needs whole-wait
+measurement and output checks; no whole-wait gain is measured here.
