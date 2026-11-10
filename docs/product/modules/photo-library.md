@@ -8346,3 +8346,58 @@ table. Automatic approval review blocked cleanup of this run's TEMP
 `pytest-of-Steve/pytest-1394` (and the native experiment reported its blocked
 `pytest-1391` cleanup); left in place. Unrelated DNG changes are outside this
 Focus commit. No push or installer build.
+
+
+## November 10: camera-first Focus for cold RAW culling
+
+Steve's revised target is roughly one second per photo in a brand-new RAW
+folder, using the embedded JPEG in filmstrip/Single/fullscreen. The first
+map may be approximate and sharpen up later. This intentionally changes the
+first-pass source; the precise RAW detector and Exposure masks are unchanged.
+
+Camera-picture surfaces now request a separate `camera` Focus map. LibRaw
+opens the file and extracts its embedded preview without sensor unpacking,
+demosaic or Grade preparation. Analysis uses oriented linear ACEScg pixels
+bounded to 2560 long edge and the existing Focus detector; placement matches
+the embedded picture directly, with no ECC registration. Preview maps are
+source-version keyed, marked provisional and cannot seed developed pictures.
+Missing previews or a short edge below 512 fall back to RAW half/full maps.
+
+The selected large picture starts before filmstrip requests. Camera analysis
+has foreground/soon priority, bounded admission using the existing quick
+working rate and existing helper foreground lane. Native half/full maps stay
+at background priority. No budget, cache allowance or worker pool changed.
+Valid full-map reuse remains. Single/Compare/fullscreen native refinement
+starts one second after the quick map; navigation/off cancels it. Filmstrip
+alone never starts native refinement. Optional native failure or failed
+alignment leaves the camera map visible; saved-grade refusal hides it.
+
+Camera sharpening can amplify blurred edges, and reduced previews can hide
+fine eye detail. Synthetic controlled defocus checks cover JPEG compression,
+noise and reduced detail, but cannot certify real eye accuracy. Steve's
+culling judgement remains the practical sign-off; the one-second result is
+measured on the Sony burst fixture, not guaranteed for every camera/storage.
+
+
+Validation for this change: final JavaScript suite 896 passed; Python suite
+3,182 passed/three skipped, with the previously known cached-scene failure
+and one new admission-test fixture error. The new fixture/status expectation
+was corrected and its four API checks pass. All other new camera-source and
+quality checks passed in the full run. Existing Focus Electron controls/views/
+Exposure/grade exclusion pass at 2560 x 1440; new camera culling checks pass
+for both settled listing and early scan, no pre-existing maps, ten distinct
+photos in the latter run, rapid navigation, cancellation and delayed full
+refinement. The 90-second plain Electron Single check passes, no errors,
+peak 2.419 GB and 212 ms drawing gap. No broad GPU sweep or output changes.
+
+First S to camera Focus is 0.815-1.184 s on the Sony burst; next-photo waits
+are 80-263 ms with same-visit prefetch. Early scan is slightly above one
+second; no claim that every camera/storage meets the target. Timings and
+conditions are in the performance table. Full RAW refinement still takes
+seconds, and missing/small camera previews use the slower RAW fallback.
+
+
+Output remains 42.6 GB. Disposable Electron profiles were removed by the
+runner. Automatic approval review rejected cleanup of this run's remaining
+TEMP pytest folders (`pytest-1408`, `pytest-1409`, `pytest-1410`) under its
+command policy; left in place. No push or installer build.

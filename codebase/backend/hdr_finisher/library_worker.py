@@ -529,6 +529,20 @@ def _worker_main(connection, root: str, parent_pid: int, paused: bool) -> None:
         raise
 
 
+def helper_lane(job):
+    if job.get("gpu_invalid_pixels") and job["command"] == "live-scene":
+        return "edge-cpu"
+    if job["command"] in {"stored-screen-write", "stored-screen-build"}:
+        return "stored"
+    if job["command"] in {"picture", "native", "live-scene", "live-fallback"}:
+        return "picture"
+    if job["command"] == "overlay":
+        return "main" if job.get("quality")=="camera" else "kept"
+    if job.get("checking"):
+        return "check"
+    return "index" if job.get("background") else "main"
+
+
 def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> None:
     # Partition CPU capacity between simultaneous photos and native libraries.
     # OS priority and pause/yield gates, rather than reserved cores, protect Grade.
@@ -554,18 +568,7 @@ def _worker_main_impl(connection, root: str, parent_pid: int, paused: bool) -> N
     scene_edges = {}
     state = {"paused": paused, "foreground": 0, "checking": 0, "source_busy": False, "developing": 0, "scanning": 0}
 
-    def lane(job):
-        if job.get("gpu_invalid_pixels") and job["command"] == "live-scene":
-            return "edge-cpu"
-        if job["command"] in {"stored-screen-write", "stored-screen-build"}:
-            return "stored"
-        if job["command"] in {"picture", "native", "live-scene", "live-fallback"}:
-            return "picture"
-        if job["command"] == "overlay":
-            return "kept"
-        if job.get("checking"):
-            return "check"
-        return "index" if job.get("background") else "main"
+    lane = helper_lane
 
     def reply(message):
         with write_lock:

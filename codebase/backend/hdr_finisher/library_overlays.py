@@ -237,6 +237,44 @@ def exposure_source(path,cancelled=None,probe=None):
     raise ValueError("Exposure warnings unavailable: this file has no recorded clipping limit.")
 
 
+class CameraFocusUnavailable(ValueError):
+    """No useful embedded picture; caller may request RAW precision."""
+
+
+def camera_focus_source(path, cancelled=None):
+    """Return (float32 linear ACEScg RGB, metadata), at most 2560 long edge.
+
+    Uses open_file/extract_thumb only. EXIF orientation matches camera display.
+    Raises CameraFocusUnavailable, never silently develops sensor pixels.
+    """
+    import rawpy
+    from .color import normalize_to_acescg
+    check_cancelled(cancelled)
+    try:
+        with rawpy.RawPy() as raw:
+            raw.open_file(str(path))
+            check_cancelled(cancelled)
+            thumb=raw.extract_thumb()
+            image=Image.open(BytesIO(thumb.data)) if thumb.format==rawpy.ThumbFormat.JPEG else Image.fromarray(thumb.data)
+            original_size=image.size
+            if min(original_size)<512:
+                raise CameraFocusUnavailable("Camera preview is too small for provisional Focus.")
+            if thumb.format==rawpy.ThumbFormat.JPEG:image.draft("RGB",(2560,2560))
+            image=ImageOps.exif_transpose(image)
+            image.thumbnail((2560,2560))
+            check_cancelled(cancelled)
+            signal=np.asarray(image.convert("RGB"),dtype=np.float32)/np.float32(255)
+        pixels=normalize_to_acescg(signal,"sRGB","sRGB").astype(np.float32,copy=False)
+        check_cancelled(cancelled)
+        return pixels,{"source_provenance":"embedded-camera-preview","provisional":True,
+            "camera_source_width":original_size[0],"camera_source_height":original_size[1],
+            "analysis_width":pixels.shape[1],"analysis_height":pixels.shape[0]}
+    except CameraFocusUnavailable:raise
+    except Exception as error:
+        check_cancelled(cancelled)
+        raise CameraFocusUnavailable(f"Camera preview unavailable: {error}") from error
+
+
 def full_focus_source(path, cancelled=None):
     """Load native RAW source pixels without creating a Grade document.
 
@@ -277,6 +315,7 @@ class OverlayMaps:
         if existing:return existing
         start=perf_counter();key=map_key(path,kind,quality);check_cancelled(cancelled)
         raw=Path(path).suffix.lower() in RAW_EXTENSIONS;probe={} if raw else None
+        provenance={}
         if kind=="exposure":
             try: blown,blocked=exposure_source(path,cancelled,probe)
             except ValueError as error: return {"unavailable":str(error)}
@@ -286,7 +325,12 @@ class OverlayMaps:
         elif kind=="focus":
             from .library_focus import focus_map
             from .library_pictures import decode_picture
-            if raw and quality=="full":
+            if quality=="camera":
+                if not raw:return {"unavailable":"Camera Focus requires a RAW camera preview."}
+                try:pixels,provenance=camera_focus_source(path,cancelled)
+                except CameraFocusUnavailable as error:return {"unavailable":str(error),"quality":"camera"}
+                info={}
+            elif raw and quality=="full":
                 pixels=full_focus_source(path,cancelled)
                 info={}
             else:
@@ -294,7 +338,7 @@ class OverlayMaps:
             check_cancelled(cancelled)
             if quality=="half" and info["route"]!="quick-half-raw":pixels=pixels[::2,::2]
             source=pixels.shape[:2]
-            if raw:probe["luminance"]=small_luminance(pixels)
+            if raw and quality!="camera":probe["luminance"]=small_luminance(pixels)
             values,_noise=focus_map(pixels,cancelled)
             data=values[:,:,None]
             del pixels
@@ -302,12 +346,14 @@ class OverlayMaps:
         # `frame` is the measured picture inside the map (pooling pads the last
         # cells); `camera_frame` is the camera preview's area, both in map pixels.
         cell=pool_cell(*source);frame=[0.,0.,source[1]/cell,source[0]/cell]
-        placed={}
+        placed={"camera_frame":list(frame)} if quality=="camera" else {}
         if raw and probe.get("luminance") is not None:
             check_cancelled(cancelled);placed=camera_frame(path,probe.pop("luminance"))
             if "camera_frame" in placed:
                 x,y,w,h=placed["camera_frame"];placed["camera_frame"]=[x*frame[2],y*frame[3],w*frame[2],h*frame[3]]
-        meta={"kind":kind,"quality":quality,"path":str(path),"width":data.shape[1],"height":data.shape[0],"frame":frame,**placed,"make_ms":round((perf_counter()-start)*1000,2)}
+        meta={"kind":kind,"quality":quality,"path":str(path),"width":data.shape[1],"height":data.shape[0],"frame":frame,**placed,**provenance,"make_ms":round((perf_counter()-start)*1000,2)}
+        check_cancelled(cancelled)
+        if map_key(path,kind,quality)!=key:raise ValueError("The source photo changed; overlay was not published.")
         if not self.cache.managed.preferences()['enabled']:
             return self.cache.transient_result(key, {'values':data,'metadata':np.asarray(json.dumps(meta))},meta)
         self.cache.managed.prepare()

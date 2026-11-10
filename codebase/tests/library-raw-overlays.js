@@ -83,12 +83,12 @@ function link(prefix,files){const folder=fs.mkdtempSync(path.join(root,'output',
   await page.waitForFunction(()=>document.querySelector('#library-frame').contentDocument.querySelectorAll('.compare-stage .library-source-overlay[data-kind="focus"][data-quality="full"]:not([hidden])').length>=2,null,{timeout:180000});
   checkPlacement(await placement(frame.locator('.compare-stage .library-source-overlay[data-key]:visible')),true);await page.keyboard.press('[');await frame.locator('#grid-view').click();await noneDeveloped();
 
-  // Develop the portrait: the overlay stays on, aligned to the developed picture, from the same maps.
+  // Develop the portrait: Exposure reuses its source map; provisional camera Focus is replaced by RAW Focus.
   const portrait=frame.locator(`.library-cell[data-path$="${names[1]}"]`);await portrait.click();await portrait.click({button:'right'});await frame.getByRole('menuitem',{name:'Develop',exact:true}).click();
   await portrait.locator('canvas[data-picture-key^="live-"]:not([hidden])').waitFor({timeout:180000});
   await page.waitForFunction(n=>[...document.querySelector('#library-frame').contentDocument.querySelectorAll(`.library-cell[data-path$="${n}"] .library-source-overlay[data-key][data-camera="false"]:not([hidden])`)].length>=2,names[1],{timeout:120000});
   rows=await placement(portrait.locator('.library-source-overlay[data-key]:visible'));checkPlacement(rows,false);
-  for(const row of rows)assert.equal(row.key,keys[names[1]+'|'+row.kind],'the developed photo was measured again');
+  for(const row of rows){if(row.kind==='exposure')assert.equal(row.key,keys[names[1]+'|'+row.kind],'Exposure must reuse its sensor map');else{assert.notEqual(row.key,keys[names[1]+'|focus'],'camera Focus must not seed a developed picture');assert.ok(['half','full'].includes(row.quality));}}
   assert.deepEqual(errors,[]);
   console.log(`TIMING: first overlay after key press; grid camera preview exposure ${cameraGrid} ms, focus ${cameraFocusGrid} ms; grid developed exposure ${developedGrid} ms; single camera preview focus half ${singleHalf} ms, full ${singleFull} ms.`);
   // Review page: downscaled JPEG crops and one index, overwritten on each run.
@@ -100,5 +100,5 @@ for p in sorted(d.glob('*.png')):
     i=Image.open(p).convert('RGB');i.thumbnail((1400,1400));i.save(p.with_suffix('.jpg'),quality=85);p.unlink();rows.append(p.stem)
 body=''.join(f'<h2>{html.escape(r)}</h2><img src="{r}.jpg">' for r in rows)
 (d/'index.html').write_text('<!doctype html><meta charset="utf-8"><title>RAW overlays</title><style>body{background:#111;color:#ddd;font:14px sans-serif;margin:16px}img{max-width:100%}</style><h1>Focus and Exposure on undeveloped RAW camera previews</h1><p>Exposure (red/blue) and Focus (green) over the camera preview; nothing was developed. Sony A-series landscape, Canon portrait, Canon landscape.</p>'+body,encoding='utf-8')`,review],{stdio:'inherit'});
-  console.log('PASS: Focus and Exposure on undeveloped Sony/Canon RAWs (landscape and portrait) in grid, filmstrip, single and compare, aligned to the camera preview within 1 CSS px, nothing developed; Develop keeps the same maps aligned.');
+  console.log('PASS: Focus and Exposure on undeveloped Sony/Canon RAWs (landscape and portrait) in grid, filmstrip, single and compare, aligned to the camera preview within 1 CSS px, nothing developed; Develop reuses Exposure and replaces provisional Focus with the source map.');
 }finally{await browser.close();for(const folder of folders)fs.rmSync(folder,{recursive:true,force:true,maxRetries:10,retryDelay:500});}})().catch(e=>{console.error(e);process.exitCode=1;});

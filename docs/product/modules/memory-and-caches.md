@@ -1583,3 +1583,11 @@ preview remains usable. The precision-source diagnostic helper had accumulated
 2.077 GB resident by the later EXR request (whole app 3.467 GB before its
 1.613 GB reservation). This is an ownership fix; all memory/VRAM allowances,
 cache shares and admission estimates stay unchanged.
+
+
+November 10, camera-first Focus: the provisional embedded-JPEG map has a
+2560-edge working surface, admitted at the existing quick-picture rate
+(23 bytes per analysis pixel, existing minimum). It uses existing foreground
+helper workers and the existing overlay disk/recent-map stores. Native
+refinement retains its normal admission and background lane. This changes
+no cache allowance, CPU pool count, RAM ceiling or VRAM budget.

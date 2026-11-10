@@ -42,7 +42,7 @@
     function sync(r){if(!r.canvas.isConnected)return;const c=r.canvas,absolute=c.style.position==='absolute';for(const item of Object.values(r.items)){const layer=item.layer;layer.style.cssText=absolute?c.style.cssText:`position:absolute;left:${c.offsetLeft}px;top:${c.offsetTop}px;width:${c.clientWidth}px;height:${c.clientHeight}px;object-fit:contain`;
       layer.style.pointerEvents='none';layer.style.zIndex=item.kind==='focus'?'4':'3';layer.style.padding=getComputedStyle(c).padding;layer.style.boxSizing='border-box';}}
     function keep(r,item){if(!item.values||r.photo.edited)return;const k=recentKey(r.photo,item.kind);recent.delete(k);recent.set(k,{values:item.values,map:item.map});while(recent.size>24)recent.delete(recent.keys().next().value);}
-    function remove(r){for(const item of Object.values(r.items)){keep(r,item);item.request?.abort();item.layer.remove();item.badge.remove();}r.observer.disconnect();r.resize.disconnect();if(records.get(r.canvas)===r)records.delete(r.canvas);r.controller.signal.removeEventListener('abort',r.cleanup);}
+    function remove(r){for(const item of Object.values(r.items)){keep(r,item);item.request?.abort();clearTimeout(item.refineTimer);item.layer.remove();item.badge.remove();}r.observer.disconnect();r.resize.disconnect();if(records.get(r.canvas)===r)records.delete(r.canvas);r.controller.signal.removeEventListener('abort',r.cleanup);}
     function attach(photo,canvas,meta,controller,current){
       const old=records.get(canvas);if(old)remove(old);if(!Object.values(enabled).some(Boolean)||!current()||controller.signal.aborted)return;
       const r={photo,canvas,meta,controller,current,items:{}};records.set(canvas,r);r.cleanup=()=>remove(r);
@@ -53,7 +53,7 @@
       const {photo,canvas}=r;
       for(const kind of kinds){if(!enabled[kind])continue;const layer=document.createElement('canvas');layer.className='library-source-overlay';layer.dataset.kind=kind;layer.hidden=true;canvas.parentElement.append(layer);
         const badge=document.createElement('span');badge.className='library-map-status';badge.dataset.kind=kind;badge.textContent=`${kind==='focus'?'S':'E'} · preparing`;canvas.parentElement.append(badge);r.items[kind]={kind,layer,badge,values:null};
-        const seed=!photo.edited&&recent.get(recentKey(photo,kind));if(seed){const item=r.items[kind];item.values=seed.values;item.map=seed.map;item.validating=kind==='focus'&&seed.map?.quality==='full';}}
+        const seed=!photo.edited&&recent.get(recentKey(photo,kind));if(seed&&(seed.map?.quality!=='camera'||cameraPicture(r.meta))){const item=r.items[kind];item.values=seed.values;item.map=seed.map;item.validating=kind==='focus'&&seed.map?.quality==='full';}}
       sync(r);for(const kind of kinds){const item=r.items[kind];if(!item)continue;if(item.values&&!(kind==='focus'&&item.map?.quality==='full')&&draw(r,item))item.badge.hidden=true;void request(r,item);}
     }
     // Only pending metadata is shared. Finished maps still use the existing
@@ -89,7 +89,8 @@
       });
     }
     async function request(r,item){const controller=new AbortController();item.request=controller;const current=()=>enabled[item.kind]&&records.get(r.canvas)===r&&r.items[item.kind]===item&&r.current()&&!controller.signal.aborted;
-      const large=largeCanvas(r.canvas);
+      const large=largeCanvas(r.canvas), camera=item.kind==='focus'&&!r.photo.edited&&cameraPicture(r.meta);
+      const quiet=()=>new Promise(resolve=>{const abort=()=>{clearTimeout(item.refineTimer);resolve();};controller.signal.addEventListener('abort',abort,{once:true});item.refineTimer=setTimeout(()=>{controller.signal.removeEventListener('abort',abort);resolve();},1000);});
       const fullSource=large||o.surfaces().some(s=>largeCanvas(s.canvas)&&recentKey(s.photo,item.kind)===recentKey(r.photo,item.kind)&&!s.controller.signal.aborted&&s.current());
       try{
         let cachedFull=null;
@@ -99,19 +100,23 @@
           catch(error){if(error.name==='AbortError'||!current())throw error;} // Optional lookup must not block the normal route.
           if(!current())return;
         }
-        const qualities=retainedFull||cachedFull&&!cachedFull.cache_miss?['full']:item.kind==='focus'&&large?['half','full']:['half'];
+        const qualities=retainedFull||cachedFull&&!cachedFull.cache_miss?['full']:camera?(large?['camera','full']:['camera']):item.kind==='focus'&&large?['half','full']:['half'];
         for(const quality of qualities){
-        const m=quality==='full'&&cachedFull&&!cachedFull.cache_miss?cachedFull:await mapRequest(r.photo,item.kind,quality,controller.signal,large?82:85);if(!current())return;
-        if(m.unavailable){item.values=null;item.layer.hidden=true;delete item.layer.dataset.key;const type=(r.photo.source_path||r.photo.path.split('|copy|',1)[0]).split(/[/\\]/).pop().split('.').pop().toUpperCase();item.badge.textContent=`${item.kind==='focus'?'Focus':'Exposure'} unavailable · ${m.reason==='graded'?'graded':type}`;item.badge.title=m.unavailable;item.badge.hidden=false;return;}
+        if(camera&&quality==='full'&&item.map?.quality==='camera'){await quiet();if(!current())return;}
+        let m;try{m=quality==='full'&&cachedFull&&!cachedFull.cache_miss?cachedFull:await mapRequest(r.photo,item.kind,quality,controller.signal,quality==='camera'?(large?30:70):(large?82:85));}catch(error){if(quality!=='camera'||error.name==='AbortError'||!current())throw error;m={unavailable:error.message};}if(!current())return;
+        if(quality==='camera'&&m.unavailable&&m.reason!=='graded'){qualities.splice(qualities.indexOf(quality)+1,0,'half');continue;}
+        if(m.unavailable){if(item.map?.quality==='camera'&&!m.reason&&quality==='full'){item.badge.hidden=true;return;}item.values=null;item.layer.hidden=true;delete item.layer.dataset.key;const type=(r.photo.source_path||r.photo.path.split('|copy|',1)[0]).split(/[/\\]/).pop().split('.').pop().toUpperCase();item.badge.textContent=`${item.kind==='focus'?'Focus':'Exposure'} unavailable · ${m.reason==='graded'?'graded':type}`;item.badge.title=m.unavailable;item.badge.hidden=false;return;}
+        if(quality==='full'&&item.map?.quality==='camera'&&cameraPicture(r.meta)&&!m.camera_frame){item.badge.hidden=true;return;}
         if(!placeable(r,item,m))return;
         if(item.values&&(item.map?.key===m.key)){item.validating=false;if(!draw(r,item))return;item.badge.textContent='S · refining';item.badge.hidden=!(item.kind==='focus'&&large&&quality==='half');continue;}
         const response=await fetch(`/api/library/overlay-pixels/${m.key}`,{signal:controller.signal});if(!response.ok)throw new Error('Overlay map unavailable; switch the overlay off and on to remake it.');
         const bitmap=await createImageBitmap(await response.blob());if(!current()){bitmap.close();return;}
         const temp=document.createElement('canvas');temp.width=bitmap.width;temp.height=bitmap.height;const ctx=temp.getContext('2d');ctx.drawImage(bitmap,0,0);bitmap.close();item.values=ctx.getImageData(0,0,temp.width,temp.height);item.map=m;item.validating=false;if(!draw(r,item))return;
         item.badge.textContent='S · refining';item.badge.hidden=!(item.kind==='focus'&&large&&quality==='half');
-      }}catch(e){if(e.name!=='AbortError'&&current()){item.badge.hidden=false;item.badge.textContent=`${item.kind==='focus'?'S':'E'} · unavailable`;item.badge.title=e.message;}}
+      }}catch(e){if(e.name!=='AbortError'&&current()){if(item.map?.quality==='camera'){item.badge.hidden=true;return;}item.badge.hidden=false;item.badge.textContent=`${item.kind==='focus'?'S':'E'} · unavailable`;item.badge.title=e.message;}}
     }
     function placeable(r,item,m){
+      if(m?.quality==='camera'&&!cameraPicture(r.meta)){item.values=null;item.layer.hidden=true;delete item.layer.dataset.key;return false;}
       if(!cameraPicture(r.meta)||m.camera_frame)return true;
       item.values=null;item.layer.hidden=true;delete item.layer.dataset.key;item.badge.textContent=`${label(item.kind)} unavailable · camera preview`;
       item.badge.title=m.camera_frame_error||'The camera preview could not be lined up with the sensor data. Develop the photo to see this overlay.';item.badge.hidden=false;return false;
@@ -136,13 +141,13 @@
     }
     function redraw(){syncSwitches();for(const r of records.values())for(const item of Object.values(r.items))draw(r,item);}
     function refresh(kind){
-      for(const r of [...records.values()]){
+      for(const r of [...records.values()].sort((a,b)=>Number(largeCanvas(b.canvas))-Number(largeCanvas(a.canvas)))){
         const item=r.items[kind];
-        if(!enabled[kind]&&item){keep(r,item);item.request?.abort();item.layer.remove();item.badge.remove();delete r.items[kind];}
+        if(!enabled[kind]&&item){keep(r,item);item.request?.abort();clearTimeout(item.refineTimer);item.layer.remove();item.badge.remove();delete r.items[kind];}
         if(!Object.keys(r.items).length&&!enabled[kind])remove(r);
         else if(enabled[kind]&&!item)addItems(r,[kind]);
       }
-      if(enabled[kind])for(const s of o.surfaces())if(!records.has(s.canvas))attach(s.photo,s.canvas,s.meta,s.controller,s.current);
+      if(enabled[kind])for(const s of [...o.surfaces()].sort((a,b)=>Number(largeCanvas(b.canvas))-Number(largeCanvas(a.canvas))))if(!records.has(s.canvas))attach(s.photo,s.canvas,s.meta,s.controller,s.current);
     }
     function toggle(kind,value){const task=switching.then(async()=>{const result=await o.api('/api/library/overlay-switch',{kind,enabled:value??!enabled[kind]});enabled[kind]=result.enabled;$(`${kind}-enabled`).checked=result.enabled;syncSwitches();controls[kind].button.classList.toggle('active',result.enabled);refresh(kind);});switching=task.catch(e=>o.status(e.message));return task;}
     async function init(){try{prefs=await o.api('/api/library/review-preferences');for(const [id,key] of Object.entries(fields)){const input=$(id);if(input.type==='checkbox')input.checked=prefs[key];else input.value=prefs[key];}redraw();}catch(e){o.status(e.message);}}

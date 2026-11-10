@@ -183,3 +183,33 @@ test('failed optional cache lookup falls back to the normal half-first route',as
  assert.equal(h.overlay.snapshot().maps[0].key,'half-after-probe-error');
  assert.equal(h.requests[1].data.quality,'full');h.owner.abort();
 });
+
+function cameraHarness(probe){const h=setup(probe);h.surfaces[0].meta={bitmap:{},picture_source:'camera picture'};return h;}
+const cameraMap=(key='camera')=>({key,quality:'camera',camera_frame:[0,0,1,1]});
+test('camera first shares selected priority with filmstrip and delays native until quiet',async()=>{
+ const h=cameraHarness(),film=h.surface();film.meta=h.surfaces[0].meta;
+ await h.overlay.toggle('focus',true);await tick();assert.equal(h.requests.length,1);assert.equal(h.requests[0].data.quality,'camera');assert.equal(h.requests[0].data.priority,30);
+ h.requests[0].resolve(cameraMap());await tick();assert.equal(h.requests.length,1);assert.equal(h.timers.size,1);assert.equal(h.overlay.snapshot().maps.filter(m=>m.key==='camera').length,2);
+ [...h.timers.values()][0]();await tick();assert.equal(h.requests[1].data.quality,'full');
+ h.requests[1].reject(new Error('optional native failure'));await tick();assert.equal(h.overlay.snapshot().maps[0].key,'camera');h.owner.abort();film.controller.abort();
+});
+test('fast navigation and switch off cancel the quiet native refinement',async()=>{
+ for(const off of [false,true]){const h=cameraHarness();await h.overlay.toggle('focus',true);await tick();h.requests[0].resolve(cameraMap());await tick();assert.equal(h.timers.size,1);
+ if(off)await h.overlay.toggle('focus',false);else h.owner.abort();await tick();assert.equal(h.timers.size,0);assert.equal(h.requests.length,1);}
+});
+test('camera filmstrip alone never starts native refinement',async()=>{
+ const h=cameraHarness();h.canvas.id='filmstrip-picture';await h.overlay.toggle('focus',true);await tick();assert.equal(h.requests[0].data.priority,70);h.requests[0].resolve(cameraMap());await tick();assert.equal(h.timers.size,0);assert.equal(h.requests.length,1);h.owner.abort();
+});
+test('unavailable camera and camera errors each fall back once to native half/full',async()=>{
+ for(const error of [false,true]){const h=cameraHarness();await h.overlay.toggle('focus',true);await tick();if(error)h.requests[0].reject(new Error('no camera'));else h.requests[0].resolve({unavailable:'no camera'});await tick();assert.equal(h.requests[1].data.quality,'half');h.requests[1].resolve({key:'half',quality:'half',camera_frame:[0,0,1,1]});await tick();assert.equal(h.requests[2].data.quality,'full');h.owner.abort();}
+});
+test('camera full cache reuse skips provisional construction',async()=>{
+ const h=cameraHarness(async()=>({key:'full',quality:'full',camera_frame:[0,0,1,1]}));await h.overlay.toggle('focus',true);await tick();assert.equal(h.requests.length,0);assert.equal(h.overlay.snapshot().maps[0].key,'full');h.owner.abort();
+});
+test('camera provenance cannot seed a developed sensor picture',async()=>{
+ const h=cameraHarness();await h.overlay.toggle('focus',true);await tick();h.requests[0].resolve(cameraMap());await tick();h.overlay.detach(h.canvas);
+ h.overlay.attach(h.surfaces[0].photo,h.canvas,{},h.owner,()=>true);await tick();assert.equal(h.overlay.snapshot().maps[0].ready,false);assert.equal(h.requests[1].data.quality,'half');h.owner.abort();
+});
+test('graded refusal hides quick camera while unalignable optional full retains it',async()=>{
+ for(const graded of [false,true]){const h=cameraHarness();await h.overlay.toggle('focus',true);await tick();h.requests[0].resolve(cameraMap());await tick();[...h.timers.values()][0]();await tick();h.requests[1].resolve(graded?{unavailable:'graded',reason:'graded'}:{key:'native',quality:'full'});await tick();assert.equal(h.overlay.snapshot().maps[0].ready,!graded);h.owner.abort();}
+});

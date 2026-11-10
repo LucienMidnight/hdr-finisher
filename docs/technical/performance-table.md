@@ -1604,3 +1604,52 @@ DNG work: first picture 3.5 s, ten 4.9 s, twenty 12.4 s; peak 3.196 GB and no
 picture/memory errors. Existing frame-gap gate fails at 2,007 ms. Functional
 smoke, not an overlay performance comparison; no rerun or tolerance change.
 Report: `codebase/output/quick-library-check/focus-source-and-reuse/report.json`.
+
+
+### November 10: camera-first cold RAW Focus culling
+
+Based on `1ee69b99`, camera-first implementation in this commit. Steve's
+new goal is roughly one second to a useful provisional overlay per photo;
+precise RAW detail may follow. Existing 10% diagnostic comparison band stays
+unchanged. The quick map intentionally measures the camera JPEG, so it is
+not a precision-equivalent comparison with the previous RAW half map.
+
+2560 x 1440 Electron, fresh disposable profiles with no pre-existing overlay
+maps, shared `output/test-photos/badminton-42mp` (forty 42 MP Sony RAWs),
+Single+filmstrip then fullscreen. Embedded picture is visible before S;
+folder-open latency is excluded. No parent suites during these timings.
+OS cache/other workspace activity uncontrolled. Endpoint: populated current
+picture's overlay canvas, not physical display scan-out. Two final runs:
+after listing settled and pressing S as soon as a camera picture appears
+while the folder is still filling in. Each navigates nine new photos;
+subsequent maps can be prefetched during that same cold folder visit.
+
+| Action | Current observations | Conditions / limit |
+|---|---|---|
+| S to first camera Focus | 0.815 s settled listing; 1.184 s early scan | Approximately one second; early condition is 184 ms over 1.0 s, not a universal under-one-second guarantee |
+| Next photo to picture + camera Focus, Single/filmstrip | 109-263 ms | Six subsequent photos in each run, maps may already be prepared by filmstrip |
+| Next photo in fullscreen to picture + camera Focus | 80-94 ms | Three further photos in each run |
+| Camera-map construction inside helper | 422-578 ms | Includes extraction, conversion and analysis; excludes admission/transport/presentation |
+
+Both complete runs confirm no native full build during rapid navigation,
+then a full map after dwelling; Focus does not publish development. Earlier
+background-priority exploratory runs gave 1.237-1.960 s first presentation
+and prompted the selected-picture admission/ordering fix; they are not the
+current result. The initial driver misread `cache_hit` (the API validates
+published cache after every build); final coldness is checked before S by
+asserting no `.map.npz` files exist in the disposable profile. An intermediate
+priority trial exposed the old API priority restriction; fixed before final
+runs. These driver issues did not require changing an acceptance tolerance.
+
+Evidence: `codebase/output/focus-camera-cold-priority.log` (settled),
+`focus-camera-cold-early.log` (early scan; ten distinct photos),
+`focus-camera-cold.log` (earlier background-priority exploration).
+Standalone diagnostic `focus-camera-stages.log`: source extraction/conversion
+0.227 s, analysis 0.089 s on DSC07187, outside app contention; not additive
+to an app saving claim. No GPU route, RAW copies or new cache allowance.
+
+The grouped 90-second Library Single smoke passes: no errors, ten Single
+steps, peak 2.419 GB, longest drawing gap 212 ms (250 ms gate). First picture
+1.1 s, ten pictures 5.3 s; Focus off with concurrent Python tests, so these
+are functional smoke figures, not Focus performance measurements. Report:
+`codebase/output/quick-library-check/focus-camera-culling/report.json`.

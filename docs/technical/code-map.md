@@ -544,3 +544,20 @@ classification/cancellation and unchanged route boundaries;
 graded refusal. `library-overlays.test.js` covers retained validation, optional
 lookup failure, priority and subscriber lifetime. Native filter experiments
 were rejected; `library_focus.py` is unchanged in this round.
+
+
+Camera-first cold Focus (November 10): `library_overlays.camera_focus_source`
+extracts a bounded oriented camera JPEG without unpacking the RAW sensor;
+`OverlayMaps.build(..., quality="camera")` publishes provisional maps with a
+direct camera frame. `library_api.OverlayRequest` separates camera Focus
+priority/admission from native background work. `library_worker.helper_lane`
+uses the existing foreground lane; `library_estimates` uses the existing
+bounded quick rate. `library-overlays.js` chooses camera/full refinement,
+orders large surfaces first and cancels its dwell timer on navigation/off.
+`test_focus_camera_source.py`, `test_focus_camera_api.py` and
+`test_focus_camera_quality.py` cover decoding/admission, source identity,
+placement, cancellation and synthetic sharpness limitations. The focused
+Electron driver `tests/library-focus-camera.js` uses the shared badminton
+RAW fixture folder (or `LIBRARY_FOCUS_CAMERA_FOLDER`, at least ten RAWs), no
+photo copies, a fresh profile, filmstrip/fullscreen navigation and native
+refinement after dwelling. It is registered in the release inventory.

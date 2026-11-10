@@ -20,7 +20,7 @@ from fastapi.exceptions import RequestValidationError
 from .file_gate import is_cloud_placeholder
 from .library_diagnostics import log, recent, timed_lock
 from .library_worker import DecoderTimeout
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from starlette.concurrency import run_in_threadpool
 
 from .library_pictures import LibraryPictureCache
@@ -97,9 +97,18 @@ class StopwatchEvent(BaseModel):
 class OverlayRequest(BaseModel):
     path: str
     kind: Literal["exposure", "focus"] = "exposure"
-    quality: Literal["half", "full"] = "half"
-    priority: int = Field(default=85,ge=82,le=85)
+    quality: Literal["camera", "half", "full"] = "half"
+    priority: int = Field(default=85,ge=0,le=100)
     cache_only: bool = False
+
+    @model_validator(mode="after")
+    def camera_priority(self):
+        if self.quality == "camera":
+            if self.kind != "focus":
+                raise ValueError("Camera-preview analysis is only available for Focus.")
+        elif not 82 <= self.priority <= 85:
+            raise ValueError("Native overlay work uses background priority 82 to 85.")
+        return self
 class OverlaySwitch(BaseModel):
     kind: Literal["exposure", "focus"]
     enabled: bool
@@ -1047,7 +1056,8 @@ def create_library_router(worker, browser, store=None):
 
     async def helper_result(request, command, *, retain_picture=False, source_token=None, **arguments):
         if command in {"picture","native","overlay","live-fallback"}:
-            async with backend_grant(arguments["path"],"cpu",arguments.get("priority",10),cancelled=request.is_disconnected):
+            grant_kind = "camera" if command == "overlay" and arguments.get("quality") == "camera" else "cpu"
+            async with backend_grant(arguments["path"],grant_kind,arguments.get("priority",10),cancelled=request.is_disconnected):
                 return await helper_result_inner(request,command,retain_picture=retain_picture,source_token=source_token,**arguments)
         return await helper_result_inner(request,command,retain_picture=retain_picture,source_token=source_token,**arguments)
 

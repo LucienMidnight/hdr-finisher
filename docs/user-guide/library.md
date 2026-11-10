@@ -75,11 +75,13 @@ Two overlays paint warnings on top of your pictures. They work in the grid, Sing
 - **Focus** (S) marks areas that look sharp. Open the **Focus** button to change **Strength**, **Sensitivity** and **Colour**.
 - **Exposure** (E) marks **Clipped highlights** and **Near-black shadows**. Open the **Exposure** button to change **Strength**, switch either warning off, and pick their colours.
 
-In Single and Compare, Focus first shows a quick result while full detail is prepared. If full detail is already available, it shows that result directly.
+On an undeveloped RAW, Focus first checks the embedded camera JPEG so you can cull without waiting for RAW development. In Single, fullscreen and Compare, pausing for one second after that quick result starts a full-detail RAW check. Moving on cancels it; filmstrip tiles keep the quick result. An existing valid full-detail map can show directly.
+
+The quick map reflects camera sharpening and JPEG detail. Use it as a guide, especially for borderline eyes; it is not an automatic sharpness verdict. A missing or very small embedded preview falls back to the slower RAW check.
 
 Each button has an **Enabled** / **Disabled** switch. The overlays are based on the source photo, not on your grade.
 
-They also work on RAW photos you have not developed: the warnings are measured from the RAW file and placed over the camera's preview. If a camera preview cannot be lined up with the RAW data, the photo shows **Focus unavailable · camera preview** (or Exposure); develop it to see the overlay. Photos with a saved grade show **unavailable · graded**.
+They also work on RAW photos you have not developed. Exposure measures the RAW sensor data and lines it up with the camera preview. The quick Focus map already matches that preview; full-detail Focus uses RAW data and also needs alignment. If full detail cannot be aligned, the quick Focus map stays visible. An unalignable Exposure map shows **Exposure unavailable ? camera preview**; develop the photo to see it. Photos with a saved grade show **unavailable ? graded**.
 
 ## Rate and label photos
 

@@ -1199,6 +1199,13 @@
       }
     },
     {
+      "path": "tests/library-focus-camera.js",
+      "areas": ["library"],
+      "tier": "area",
+      "protects": "Cold camera-JPEG Focus, rapid filmstrip/fullscreen navigation, cancellation and delayed native refinement without developing photos.",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/library-focus.js",
       "areas": [
         "library"

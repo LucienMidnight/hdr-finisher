@@ -144,6 +144,9 @@ def embedded_jpeg_header(path):
 
 
 def estimate_details(path, kind="source", ceiling=None, edge=2560):
+    if kind == "camera":
+        # Existing quick working rate on the bounded camera analysis surface.
+        return max(MINIMUM, 23*min(int(edge),2560)**2), ""
     if kind == "edge-cpu": kind = "cpu"
     ceiling = app_memory.CEILING if ceiling is None else ceiling
     try:
