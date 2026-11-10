@@ -27,7 +27,7 @@
   --accent: #d0612a;
   --accent-strong: #e8834f;
   --accent-low: #a8481a;
-  --accent-bed: #2a170e;
+  --accent-bed: var(--plate-down);
   --on-accent: #140904;
   --accent-preset-burnt-orange: #d0612a;
   --accent-preset-blue-gray: #566481;
@@ -85,13 +85,13 @@
   --equalizer-selected: #efbb55;
   --equalizer-grid: #ffffff14;
   --equalizer-grid-strong: #ece9df42;
-  --equalizer-zero: #9b7bff52;
+  --equalizer-zero: var(--equalizer-grid-strong);
   --equalizer-pq: #d9b672a6;
   --equalizer-axis: #9fbcca;
   --equalizer-curve: #edf0f1;
   --equalizer-node: #ece9df;
   --equalizer-disabled: #7f878d;
-  --equalizer-influence-wash: #efbb5517;
+  --equalizer-influence-wash: #ff7a1f1f;
   --graph-home-cue-color: #edf0f1;
   --depth-channel: inset 0 2.5px 3px rgba(0, 0, 0, 0.98), inset 0 -1.5px 0 rgba(255, 255, 255, 0.11);
   --depth-raised: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 6px 16px -6px rgba(0, 0, 0, 0.9);
@@ -126,7 +126,7 @@
   --accent: #a9471a;
   --accent-strong: #8a3a14;
   --accent-low: #c25a26;
-  --accent-bed: #f0ddd2;
+  --accent-bed: var(--plate-down);
   --on-accent: #ffffff;
   --attention: #735600;
   --clip: var(--blocking);
@@ -194,7 +194,7 @@
   --accent: #e0763d;
   --accent-strong: #f09a6a;
   --accent-low: #b85a28;
-  --accent-bed: #3d2a20;
+  --accent-bed: var(--plate-down);
   --on-accent: #140904;
   --clip: var(--blocking);
   --star: #f2f2f2;
@@ -372,21 +372,30 @@
    Modern Dark retains the original palette and materials above. */
 :root:not([data-theme]), [data-theme="default-dark"] {
   --viewer: #000000;
-  --app: #000000;
-  --panel: #050505;
-  --raised: #141414;
-  --input: #080808;
+  --app: #050505;
+  --panel: #080808;
+  --raised: #101010;
+  --input: #0a0a0a;
   --deep: #000000;
   --hairline: rgba(255, 255, 255, 0.18);
   --border: #505050;
-  --tooltip: #141414;
+  --tooltip: #101010;
   --text: #d8d8d8;
   --body: #c8c8c8;
   --muted: #aaaaaa;
   --quiet: #888888;
-  --plate-up: linear-gradient(180deg, #161616 0%, #101010 100%);
-  --plate-up-hover: linear-gradient(180deg, #202020 0%, #181818 100%);
-  --plate-down: linear-gradient(180deg, #000000 0%, #080808 100%);
-  --plate-edge: #303030;
-  --plate-lift: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 1px 2px rgba(0, 0, 0, 0.5);
+  --plate-up: linear-gradient(180deg, #383838 0%, #1c1c1c 100%);
+  --plate-up-hover: linear-gradient(180deg, #424242 0%, #222222 100%);
+  --plate-down: linear-gradient(180deg, #020202 0%, #090909 100%);
+  --plate-edge: #000000;
+  --plate-lift: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 2px 3px rgba(0, 0, 0, 0.95), 0 1px 0 1px rgba(255, 255, 255, 0.05);
+  --plate-press: inset 0 3px 4px rgba(0, 0, 0, 0.95), inset 0 0 0 1px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+:root {
+  --section-title-font: var(--font-weight-medium) var(--font-size-lg)/var(--line-height-tight) var(--font-body);
+  --subsection-title-font: var(--font-weight-medium) var(--font-size-md)/var(--line-height-tight) var(--font-body);
+  --list-row-h: 34px;
+  --scrollbar-w: 10px;
+  --graph-limit-line: var(--attention);
 }

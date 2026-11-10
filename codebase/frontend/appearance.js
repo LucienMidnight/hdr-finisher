@@ -15,7 +15,6 @@
     style.setProperty("--accent", accent.color);
     style.setProperty("--accent-strong", `color-mix(in srgb, ${accent.color} 72%, white)`);
     style.setProperty("--accent-low", `color-mix(in srgb, ${accent.color} 82%, black)`);
-    style.setProperty("--accent-bed", `color-mix(in srgb, ${accent.color} 16%, var(--panel))`);
     style.setProperty("--on-accent", luminance(accent.color) > .18 ? "#120c08" : "#ffffff");
     doc.documentElement.dataset.accent = JSON.stringify(accent);
     doc.dispatchEvent(new CustomEvent("appearancechange"));
@@ -23,7 +22,9 @@
   }
   function selectChevron(doc = root.document) {
     const ink = getComputedStyle(doc.documentElement).getPropertyValue("--muted").trim();
+    const hoverInk = getComputedStyle(doc.documentElement).getPropertyValue("--text").trim();
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${ink}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
+    doc.documentElement.style.setProperty("--select-chevron-hover", `url("data:image/svg+xml,${encodeURIComponent(svg.replace(ink, hoverInk))}")`);
     doc.documentElement.style.setProperty("--select-chevron", `url("data:image/svg+xml,${encodeURIComponent(svg)}")`);
   }
   // Canvas text cannot read CSS variables, so graphs ask for the same type tokens here.

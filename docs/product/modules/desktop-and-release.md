@@ -476,3 +476,17 @@ and `hdr-finisher-electron-test-` profiles UdyXEU, lbyl9h, gYG3RR, bGgCNl,
 LZXqy0, sUc0Fn and YEOB4l. A tooltip-only cleanup trial hit EPERM after the
 capture passed; the driver now reports cleanup blocks without changing the
 UI check result. These leftovers are safe for manual deletion.
+
+## November 10: approved component-sheet materials
+
+Built: Default Dark uses the approved deeper surfaces, stronger raised plates
+and pressed wells. Modern Dark, Default Light and Studio Gray keep their
+surface palettes. Neutral selection reads plate-down in every theme; accent
+changes no longer recolour that bed. The approved title/list/limit tokens live
+in visual-tokens.css and tokens.json; the component sheet reads them without
+proposal overrides or an approval/depth toggle. No image or saved-grade changes.
+
+Validation for the grouped component pass: 904 Node checks pass; the focused
+Electron UI driver passes in four themes. Full Python and the plain Library
+check are in progress; final results are recorded below when complete.
+

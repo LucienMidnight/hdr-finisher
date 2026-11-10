@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HDR Finisher Components</title>
 <!-- The app's own tokens. This page defines no colours, fonts or sizes of its own
-     except where marked PROPOSED, which need Steve's approval first. -->
+     and reads its approved tokens from the app. -->
 <link rel="stylesheet" href="../../codebase/frontend/visual-tokens.css">
 
 <!-- Sheet layout only: not part of the app's components. -->
@@ -39,7 +39,6 @@
   .specimen > details > summary { padding: 8px 14px; color: var(--muted); font-size: var(--font-size-xs); cursor: pointer; }
   .specimen pre { margin: 0; padding: 10px 14px 14px; overflow: auto; max-height: 360px; color: var(--body); font: var(--font-size-min)/var(--line-height-relaxed) var(--font-mono); white-space: pre; }
   .note { color: var(--muted); font-size: var(--font-size-xs); }
-  .proposed { display: inline-block; margin-left: 6px; padding: 0 5px; border: 1px solid var(--attention); border-radius: var(--radius-1); color: var(--attention); font: var(--font-weight-semibold) var(--font-size-min)/1.6 var(--font-body); letter-spacing: var(--tracking-caps); text-transform: uppercase; vertical-align: middle; }
   .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
   .swatch { border: 1px solid var(--hairline); border-radius: var(--radius-1); overflow: hidden; background: var(--panel); }
   .swatch i { display: block; height: 44px; border-bottom: 1px solid var(--hairline); }
@@ -55,45 +54,6 @@
      Tokens marked PROPOSED live here until Steve approves them; they then move
      to visual-tokens.css. -->
 <style id="spec">
-  :root {
-    /* PROPOSED: one section-title style everywhere; only the size steps down. */
-    --section-title-font: var(--font-weight-medium) var(--font-size-lg)/var(--line-height-tight) var(--font-body);
-    --subsection-title-font: var(--font-weight-medium) var(--font-size-md)/var(--line-height-tight) var(--font-body);
-    /* PROPOSED: list and scrollbar geometry. */
-    --list-row-h: 34px;
-    --scrollbar-w: 10px;
-  }
-  /* PROPOSED: the selection bed is neutral in every theme: the pressed plate.
-     In the app, appearance.js stops deriving it from the accent colour. */
-  :root, :root[data-theme] { --accent-bed: var(--plate-down); }
-  /* PROPOSED: the Exposure Bands influence band uses the existing band orange
-     (--exposure-band-highlight, #ff7a1f) at about 12%. Control points stay yellow. */
-  :root, :root[data-theme] { --equalizer-influence-wash: #ff7a1f1f; }
-  /* PROPOSED: graph marks. A limit or cut-off is a yellow dashed line, with its
-     label in the same yellow; the 0 EV line is neutral. */
-  :root, :root[data-theme] { --graph-limit-line: var(--attention); --equalizer-zero: var(--equalizer-grid-strong); }
-
-  /* PROPOSED: Default Dark depth. The chassis sits just above black so plate
-     shadows have something to fall on; plates get a visible gradient, a dark
-     edge and a light top line. The viewer and graph plots stay pure black. */
-  :root.depth-proposal:not([data-theme]) {
-    --app: #050505;
-    --panel: #080808;
-    --raised: #101010;
-    --input: #0a0a0a; /* light enough for the well's inner shadow to show */
-    --tooltip: #101010;
-    /* Raised: bright top line, face darkening about 28 steps, black edge,
-       a real drop shadow and a faint light lip under it. */
-    --plate-up: linear-gradient(180deg, #383838 0%, #1c1c1c 100%);
-    --plate-up-hover: linear-gradient(180deg, #424242 0%, #222222 100%);
-    --plate-edge: #000000;
-    --plate-lift: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 2px 3px rgba(0, 0, 0, 0.95), 0 1px 0 1px rgba(255, 255, 255, 0.05);
-    /* Pushed: a flat well darker than the panel, a heavy top inner shadow and
-       the same light lip below. */
-    --plate-down: linear-gradient(180deg, #020202 0%, #090909 100%);
-    --plate-press: inset 0 3px 4px rgba(0, 0, 0, 0.95), inset 0 0 0 1px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-
   /* Icons: Tabler outline, 24 grid, 2px stroke, currentColor. */
   .hf-icon { display: block; flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .hf-icon.sm { width: 16px; height: 16px; }
@@ -336,10 +296,7 @@
     <button type="button" data-theme-choice="studio-gray">Studio Gray</button>
     <button type="button" data-theme-choice="default-light">Default Light</button>
   </div>
-  <div class="sheet-depth" role="group" aria-label="Default Dark depth">
-    <button class="hf-button" type="button" id="depth-toggle" aria-pressed="true">Proposed plate depth</button>
-    <p class="note">Default Dark only. On by default; turn off to see today's plates.</p>
-  </div>
+
   <a href="#foundations">Foundations</a>
   <a href="#icons">Icons</a>
   <a href="#buttons">Buttons</a>
@@ -352,7 +309,6 @@
   <a href="#lists">Lists and scrollbars</a>
   <a href="#graphs">Graphs</a>
   <a href="#tooltips">Tooltips</a>
-  <a href="#proposed">Waiting for approval</a>
 </nav>
 
 <main>
@@ -368,8 +324,8 @@
     <div class="type-row"><code>--page-title-font-size · Bebas</code><span style="font: var(--font-weight-regular) var(--page-title-font-size)/1 var(--font-title); text-transform: uppercase; color: var(--text)">Library</span></div>
     <div class="type-row"><code>--panel-title-* · Bebas</code><span class="hf-panel-title" style="flex:none">Details</span></div>
     <div class="type-row"><code>--tab-font-size · Bebas</code><span style="font: var(--tab-font-size)/1 var(--font-title); text-transform: uppercase; color: var(--text)">Global</span></div>
-    <div class="type-row"><code>--section-title-font <span class="proposed">Proposed</span></code><span class="hf-section-title" style="margin:0">Raw development</span></div>
-    <div class="type-row"><code>--subsection-title-font <span class="proposed">Proposed</span></code><span class="hf-subsection-title" style="margin:0">Tags</span></div>
+    <div class="type-row"><code>--section-title-font </code><span class="hf-section-title" style="margin:0">Raw development</span></div>
+    <div class="type-row"><code>--subsection-title-font </code><span class="hf-subsection-title" style="margin:0">Tags</span></div>
     <div class="type-row"><code>--font-size-md · body, buttons</code><span style="color: var(--body)">Choose a mask tool to start an adjustment.</span></div>
     <div class="type-row"><code>--font-size-sm · values, helper</code><span style="font-size: var(--font-size-sm); color: var(--muted)">146 px · Inpaint · Original texture</span></div>
     <div class="type-row"><code>field label · --font-size-min caps</code><span class="hf-field-label">Focal length</span></div>
@@ -660,19 +616,7 @@
   </div>
 </section>
 
-<section id="proposed">
-  <h2>Waiting for approval</h2>
-  <p>These are new tokens or changes. Nothing here goes into the app until Steve approves it.</p>
-  <ul class="rules">
-    <li><b>Section titles</b>: <code>--section-title-font</code> (Afacad medium, <code>--font-size-lg</code>, sentence case) and <code>--subsection-title-font</code> (same, <code>--font-size-md</code>). Replaces small capitals in Details and the larger titles in Pinned.</li>
-    <li><b>Default Dark depth</b> (switch at the top left, on by default): app #050505, panel #080808, raised #101010, input #0a0a0a (darker than Modern Dark's #0c0c0c / #121212 / #191919, never pure black). Raised plates run #383838 to #1c1c1c with a black edge, a bright top line, a strong drop shadow and a faint light lip; pushed plates are a dark well with a heavy top inner shadow. The viewer and graph plots stay pure black. This brings Default Dark's buttons close to Modern Dark's, on a darker background with Default Dark's stronger lines and text.</li>
-    <li><b>Neutral selection</b>: <code>--accent-bed</code> becomes neutral in every theme: the pressed plate, <code>--plate-down</code>, instead of a tint of the accent colour (shown on this page, including its swatch). Selected rows, cells and pressed filter buttons are pushed in; selection keeps only its accent edge or accent text. It's used in about 25 places today (Library rows and cells, tags, filters, Export presets and photos, HSL picker).</li>
-    <li><b>Exposure Bands influence band</b>: orange instead of yellow, <code>--equalizer-influence-wash: #ff7a1f1f</code> (the existing band orange <code>#ff7a1f</code> at about 12%; today <code>#efbb55</code> at 9%). Selected control points in every graph stay yellow.</li>
-    <li><b>Graph marks</b>: a new token <code>--graph-limit-line</code> = <code>--attention</code> (yellow) for every limit or cut-off, dashed 4 × 3 px, label in the same yellow. Today the Exposure Bands 10K line uses a muted gold (<code>--equalizer-pq</code>) with a yellow label, and Highlight Compression draws no target line. <code>--equalizer-zero</code> becomes the neutral strong grid grey instead of purple. Highlight Compression's curve is typed in as cyan (<code>#68d7ed</code>) in <code>highlight-controls.js</code>; it should use the neutral curve token, and its dashed grey no-change line becomes a solid faint identity line so only limits are dashed.</li>
-    <li><b>Lists</b>: <code>--list-row-h</code> 34 px and <code>--scrollbar-w</code> 10 px.</li>
-    <li><b>Existing exceptions, kept as they are</b>: the primary button, the changed slider fill and the On switch knob mix the accent or white with other colours. The histogram fill uses 55% opacity. These were in the app before the tokens rule. Keep them, or replace them with new tokens?</li>
-  </ul>
-</section>
+
 </main>
 </div>
 
@@ -688,9 +632,6 @@
     document.querySelectorAll("[data-theme-choice]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.themeChoice === t)));
     try { localStorage.setItem("hf-sheet-theme", t); } catch {}
   };
-  const depth = document.getElementById("depth-toggle");
-  root.classList.add("depth-proposal");
-  depth.addEventListener("click", () => { const on = root.classList.toggle("depth-proposal"); depth.setAttribute("aria-pressed", String(on)); });
   document.querySelectorAll("[data-theme-choice]").forEach(b => b.addEventListener("click", () => setTheme(b.dataset.themeChoice)));
   let saved = ""; try { saved = localStorage.getItem("hf-sheet-theme") || ""; } catch {}
   setTheme(saved);
