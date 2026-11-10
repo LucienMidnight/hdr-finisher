@@ -639,10 +639,10 @@
             <label class="checkbox-row"><input id="lens-vignetting" type="checkbox" checked> Vignetting</label>
           </div>
           <div class="control-pair">
-            <label>Focal length <input id="lens-focal" type="number" min="0.1" max="2000" step="0.1" placeholder="from metadata"></label>
+            <label>Focal length <span class="component-unit"><input id="lens-focal" type="number" min="0.1" max="2000" step="0.1" placeholder="from metadata"><span>mm</span></span></label>
             <label>Aperture <input id="lens-aperture" type="number" min="0.1" max="128" step="0.1" placeholder="from metadata"></label>
           </div>
-          <label>Focus distance (m) <input id="lens-distance" type="number" min="0.01" max="1000000" step="0.1" placeholder="from metadata"></label>
+          <label>Focus distance <span class="component-unit"><input id="lens-distance" type="number" min="0.01" max="1000000" step="0.1" placeholder="from metadata"><span>m</span></span></label>
           <button id="apply-raw-settings" class="button-primary" type="button">Re-develop source</button>
         </div>
       </section>
@@ -844,8 +844,8 @@
         </div>
         <div class="control-group-body crop-options">
           <div class="geometry-tool-strip" role="toolbar" aria-label="Crop and rotate tools">
-            <button id="crop-tool-toggle" class="geometry-tool-crop" type="button" aria-pressed="false" aria-controls="crop-tool-settings"><span class="geometry-tool-icon" aria-hidden="true"></span><span>Crop</span></button>
-            <button id="rotate-tool-toggle" class="geometry-tool-rotate" type="button" aria-pressed="false" aria-controls="rotate-tool-settings"><span class="geometry-tool-icon" aria-hidden="true"></span><span>Rotate</span></button>
+            <button id="crop-tool-toggle" class="geometry-tool-crop" type="button" aria-pressed="false" aria-controls="crop-tool-settings" aria-label="Crop" data-tooltip="Crop"><span class="geometry-tool-icon" aria-hidden="true"></span></button>
+            <button id="rotate-tool-toggle" class="geometry-tool-rotate" type="button" aria-pressed="false" aria-controls="rotate-tool-settings" aria-label="Rotate" data-tooltip="Rotate"><span class="geometry-tool-icon" aria-hidden="true"></span></button>
           </div>
           <div id="crop-tool-settings" class="geometry-tool-settings hidden">
             <label>Aspect ratio
@@ -1421,8 +1421,8 @@
             <label class="select-control"><span class="tooltip-trigger" data-tooltip="Strip modes anchor the cross-scan dimension for stitched and linescan images.">Capture</span><select id="film-grain-geometry" data-path="current.film_look.grain_capture_geometry"><option value="frame" selected>Frame</option><option value="horizontal_strip">Horizontal strip</option><option value="vertical_strip">Vertical strip</option></select></label>
           </div>
 <div class="control-pair" data-film-grain-custom hidden>
-            <label class="numeric-control">Physical Width (mm)<input id="film-grain-custom-width" type="number" min="1" max="500" step="0.1" value="36" data-path="current.film_look.grain_custom_width_mm"></label>
-            <label class="numeric-control">Physical Height (mm)<input id="film-grain-custom-height" type="number" min="1" max="500" step="0.1" value="24" data-path="current.film_look.grain_custom_height_mm"></label>
+            <label class="numeric-control">Physical Width<span class="component-unit"><input id="film-grain-custom-width" type="number" min="1" max="500" step="0.1" value="36" data-path="current.film_look.grain_custom_width_mm"><span>mm</span></span></label>
+            <label class="numeric-control">Physical Height<span class="component-unit"><input id="film-grain-custom-height" type="number" min="1" max="500" step="0.1" value="24" data-path="current.film_look.grain_custom_height_mm"><span>mm</span></span></label>
           </div>
 <div class="control-row" data-control-path="current.film_look.stock_exposure"><div class="control-heading"><label class="tooltip-trigger" for="film-stock-exposure" data-tooltip="Exposes the negative brighter or darker before printing, which moves the picture along the stock&#39;s curve.">Film Exposure</label><output data-value-path="current.film_look.stock_exposure">0.00 EV</output></div><input id="film-stock-exposure" type="range" min="-3" max="3" step="0.01" value="0" data-path="current.film_look.stock_exposure"></div>
 <div class="film-stage-shortcuts" data-film-shortcuts="Lens" role="group" aria-label="Lens shortcuts"></div>

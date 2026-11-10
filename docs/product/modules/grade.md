@@ -2004,3 +2004,15 @@ and Balance together; wheel double-click still resets only the selected range.
 The panel shows through the wheel centre. Eight uniform SVG spokes and two
 inner circles form a polar grid, and every theme uses an outlined puck.
 The colour ring and pointer/value mapping are unchanged. Tabs are unchanged.
+
+## November 10: component-sheet control plates
+
+Built: joined tabs have equal tracks, centred labels and individual lift/press
+shadows, with the Control Panel inset above and below. Crop/Rotate are named
+icon-only tool plates. Fields are rounded recessed wells with internal units;
+dropdowns lift and brighten their chevron on hover. RAW switches are plain
+rows and Film section switches omit Enabled/Disabled copy. Titles use the
+approved sentence-case section/subsection fonts and ending hairlines.
+Keyboard handlers, tooltips, changed dots and saved grades are unchanged.
+Grouped validation and the small two-theme review are in Desktop and release.
+

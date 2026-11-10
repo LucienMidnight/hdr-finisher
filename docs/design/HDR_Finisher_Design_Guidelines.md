@@ -2,11 +2,11 @@
 
 Status: living guideline for the shipped application
 
-Last updated: 2026-11-04
+Last updated: 2026-11-10
 
 This guideline is authoritative for current UI behavior and supersedes persistence language in older product and sprint documents.
 
-The component sheet, `docs/design/component-sheet.html`, is its visual companion: every component (icons, buttons, tabs, fields, dropdowns, switches, sliders, panels and sections, lists and scrollbars, graphs, tooltips) drawn from `codebase/frontend/visual-tokens.css`, with the HTML and CSS for each. Open it in a browser and switch between the four themes. This document holds the rules and the reasons; the sheet shows how they look and how to build them. Where the two disagree, ask Steve. Items the sheet marks Proposed are not yet approved.
+The component sheet, `docs/design/component-sheet.html`, is its visual companion: every component (icons, buttons, tabs, fields, dropdowns, switches, sliders, panels and sections, lists and scrollbars, graphs, tooltips) drawn from `codebase/frontend/visual-tokens.css`, with the HTML and CSS for each. Open it in a browser and switch between the four themes. This document holds the rules and the reasons; the sheet shows how they look and how to build them. Where the two disagree, ask Steve. All component-sheet proposals were approved by Steve on November 10.
 
 ## Product character
 
@@ -469,3 +469,40 @@ Buttons use #161616 to #101010 faces, #303030 edges and a subdued top light;
 hover faces rise only to #202020. Menu borders keep their 2px width and use
 the softened muted ink. This is a neutral-text contrast check, not a claim
 of full-app WCAG AAA conformance; accent formulas remain as specified above.
+
+## November 10: approved component sheet
+
+These rules supersede earlier material, selection, title and graph rules above.
+Default Dark uses app #050505, panel #080808, raised/tooltip #101010 and input
+#0a0a0a, with the approved stronger plate gradient, black edge, lift and press
+shadows. Other palettes stay unchanged. Viewer colour remains unchanged.
+
+Each joined tab segment owns its shadow: raised when unselected, pressed when
+selected. The container has no drop shadow. Labels are centred and segments
+are equal width with space for the widest label. Tab plates keep the existing
+inset above and below. Crop and Rotate are icon-only tool plates with names on
+hover and keyboard focus, matching Local tools.
+
+Text and number fields use radius-1, input fill, plate-edge and plate-press;
+units sit inside the right edge. Hover and focus brighten the edge. Dropdowns
+use the button hover face and text-ink chevron. RAW toggles are plain rows.
+Film section switches sit in their header without Enabled/Disabled copy or a box.
+
+Local and Retouch lists use one input-colour surface with hairline dividers,
+list-row-h (34px) rows, no pills, and a permanently visible raised-colour rail
+with a pill thumb (scrollbar-w, 10px). Empty lists keep that well and rail with
+one centred muted line. Accent-bed is plate-down in every theme and is never
+derived from the accent. Selected rows and cells use plate-press; existing
+accent text and edges remain.
+
+Section titles use section-title-font (Afacad medium, lg); subordinate titles
+use subsection-title-font (Afacad medium, md), sentence case. Small capitals
+are for field labels. Titled panel sections end with full-width hairlines,
+including the last section. Details separates File, Marks, Tags and Camera.
+
+Graphs fill only the grid rectangle with viewer colour; gutters use panel
+colour and contain all axis labels. Limits use graph-limit-line (attention),
+4-by-3 dashes and matching labels. Identity lines are solid curve-identity;
+Highlight Compression uses curve-neutral. Exposure Bands zero is strong grid
+grey and its influence wash is #ff7a1f1f orange. Selected points remain yellow.
+

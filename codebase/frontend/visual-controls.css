@@ -591,3 +591,43 @@ html.desktop-shell .window-menu-popover button[data-shortcut]::after {
 }
 html.desktop-shell .window-menu-popover button[role="menuitemradio"] { padding-left: 28px; }
 html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checked="true"]::before { left: 10px; }
+
+/* Approved component-sheet materials: depth belongs to each segment. */
+:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs, .workflow-tabs) { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; box-shadow: none; }
+:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs, .workflow-tabs) > button { flex: 1 1 0; min-width: max-content; display: flex; align-items: center; justify-content: center; box-shadow: var(--plate-lift); }
+:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs, .workflow-tabs) > button:is(.active, [aria-selected="true"], [aria-pressed="true"]) { box-shadow: var(--plate-press); }
+:root .channel-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+:root .workflow-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+:root #grade-workflow-panel .grade-header { padding-bottom: var(--tab-plate-inset); }
+:root #grade-workflow-panel .grade-header > .control-mode-switch { margin-bottom: 0; }
+:root :is(input[type="text"], input[type="number"], input[type="search"], textarea) { border: 1px solid var(--plate-edge); border-radius: var(--radius-1); background: var(--input); box-shadow: var(--plate-press); }
+:root :is(input[type="text"], input[type="number"], input[type="search"], textarea):hover:not(:disabled) { border-color: var(--border); }
+:root :is(input[type="text"], input[type="number"], input[type="search"], textarea):focus { border-color: var(--muted); }
+:root select:hover:not(:disabled) { background-image: var(--select-chevron-hover), var(--plate-up-hover); }
+:root .geometry-tool-strip > button { display: inline-flex; align-items: center; justify-content: center; width: 40px; min-width: 40px; height: 34px; min-height: 34px; padding: 0; border: 1px solid var(--plate-edge); border-radius: var(--radius-plate); background: var(--plate-up); box-shadow: var(--plate-lift); }
+:root .geometry-tool-strip > button:hover { background: var(--plate-up-hover); }
+:root .geometry-tool-strip > button[aria-pressed="true"] { background: var(--plate-down); box-shadow: var(--plate-press); }
+:root .geometry-tool-strip .geometry-tool-icon { width: var(--font-size-xl); height: var(--font-size-xl); border: 0; background: transparent; box-shadow: none; }
+:root .raw-development-group .checkbox-row, :root .film-module-toggle { border: 0; background: transparent; box-shadow: none; }
+:root .film-module-header .film-toggle-state { display: none; }
+:root :is(.library-section-title, .library-kicker, .group-toggle) { font: var(--section-title-font); letter-spacing: var(--tracking-none); text-transform: none; }
+:root .film-module-header > strong { font: var(--subsection-title-font); }
+:root .control-group { border-bottom: 1px solid var(--hairline); }
+:root .component-unit { position: relative; display: block; min-width: 0; }
+:root .component-unit > input { width: 100%; padding-right: 28px; }
+:root .component-unit > span { position: absolute; inset: 0 8px 0 auto; display: grid; place-items: center; color: var(--muted); font-size: var(--font-size-sm); pointer-events: none; }
+
+
+:root .geometry-tool-strip { display: flex; justify-content: flex-start; }
+:root .geometry-tool-icon::before { width: var(--font-size-xl); height: var(--font-size-xl); }
+:root .percent-input { position: relative; display: block; }
+:root .percent-input input { width: 100%; padding-right: 28px; }
+:root .percent-input > span { position: absolute; inset: 0 8px 0 auto; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
+:root .batch-unit-field { border-color: var(--plate-edge); background: var(--input); box-shadow: var(--plate-press); }
+:root .batch-unit-field input[type="number"] { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+:root :is(#curve-editor, #tone-equalizer-editor, #highlight-compression-graph, #sdr-highlight-compression-graph, #histogram) { background: var(--panel); border: 0; }
+
+
+:root :is(input[type="text"], input[type="number"], input[type="search"]) { min-height: var(--panel-control-h); }
+:root :is(#sdr-tone-equalizer-editor) { background: var(--panel); }
+:root .source-rail :is(.source-summary, .disclosure-panel) { border-bottom: 1px solid var(--hairline); }
