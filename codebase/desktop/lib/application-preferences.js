@@ -47,7 +47,7 @@ function sanitizeApplicationPreferences(value = {}) {
       return {preset:"burnt-orange", color:presets["burnt-orange"]};
     })(),
     schemaVersion: 3,
-    theme: ["default-dark", "default-light", "studio-gray"].includes(value.theme) ? value.theme : "default-dark",
+    theme: ["default-dark", "modern-dark", "default-light", "studio-gray"].includes(value.theme) ? value.theme : "default-dark",
     defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
     previewResolution: tiers.includes(String(value.previewResolution)) ? String(value.previewResolution) : "auto",

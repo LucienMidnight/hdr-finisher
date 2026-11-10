@@ -35,9 +35,12 @@
   menuButton.setAttribute("aria-expanded", "false");
   menuButton.setAttribute("aria-controls", "unified-menus");
   menuButton.hidden = usesNativeApplicationMenu;
-  lockup.append(menuButton);
+  const menuAnchor = document.createElement("div");
+  menuAnchor.className = "unified-menu-anchor";
+  lockup.append(menuAnchor);
+  menuAnchor.append(menuButton);
   menuBar.id = "unified-menus";
-  lockup.append(menuBar);
+  menuAnchor.append(menuBar);
   menuBar.hidden = true;
   bar.querySelector(".top-actions").append(document.querySelector(".window-controls"));
   document.getElementById("project-recents").hidden = true;

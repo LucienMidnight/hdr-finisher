@@ -6,7 +6,7 @@
 @font-face { font-family: "IBM Plex Mono"; src: url("./assets/fonts/ibm-plex-mono/IBMPlexMono-Regular.ttf"); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: "IBM Plex Mono"; src: url("./assets/fonts/ibm-plex-mono/IBMPlexMono-Medium.ttf"); font-weight: 500; font-style: normal; font-display: swap; }
 /* HDR Finisher — generated from tokens.json */
-:root, [data-theme="default-dark"] {
+:root, [data-theme="modern-dark"] {
   --viewer: #080808;
   --app: #0c0c0c;
   --panel: #121212;
@@ -268,7 +268,7 @@
   --font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, monospace;
 }
 
-:root, [data-theme="default-dark"] {
+:root, [data-theme="modern-dark"] {
   --plate-up: linear-gradient(180deg, #282828 0%, #1e1e1e 100%);
   --plate-up-hover: linear-gradient(180deg, #2d2d2d 0%, #222222 100%);
   --plate-down: linear-gradient(180deg, #121212 0%, #181818 100%);
@@ -362,4 +362,26 @@
   --panel-collapse-button-icon-size: var(--chevron-size);
   --group-chevron-size: var(--chevron-size); --group-chevron-width: var(--chevron-size);
   --group-chevron-gap: var(--group-disclosure-gap); --group-chevron-color: var(--muted);
+}
+
+/* Default Dark: deep neutral surfaces with clear control and panel boundaries.
+   Modern Dark retains the original palette and materials above. */
+:root:not([data-theme]), [data-theme="default-dark"] {
+  --viewer: #000000;
+  --app: #000000;
+  --panel: #050505;
+  --raised: #141414;
+  --input: #080808;
+  --deep: #000000;
+  --hairline: rgba(255, 255, 255, 0.18);
+  --border: #505050;
+  --tooltip: #141414;
+  --text: #ffffff;
+  --body: #e3e3e3;
+  --muted: #b8b8b8;
+  --quiet: #888888;
+  --plate-up: linear-gradient(180deg, #202020 0%, #141414 100%);
+  --plate-up-hover: linear-gradient(180deg, #303030 0%, #222222 100%);
+  --plate-down: linear-gradient(180deg, #000000 0%, #080808 100%);
+  --plate-edge: #626262;
 }

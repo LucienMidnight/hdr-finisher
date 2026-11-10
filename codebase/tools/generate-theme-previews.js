@@ -4,7 +4,7 @@ const { chromium } = require("playwright");
 const path = require("path");
 
 const STORAGE_KEY = "hdr-finisher:application-preferences:v1";
-const THEMES = ["default-dark", "default-light", "studio-gray"];
+const THEMES = ["default-dark", "modern-dark", "default-light", "studio-gray"];
 const outputDir = path.join(__dirname, "..", "frontend", "assets", "theme-previews");
 
 async function main() {

@@ -53,7 +53,7 @@ is in the sprint; see its section 9.
 
 ## Frontend today
 
-The v1 appearance layer lives in `visual-tokens.css` (approved three-theme palettes, material faces, geometry and local font faces), `visual-controls.css` (skins on existing structures), and `appearance.js` (accent normalization, derived ramp and theme redraw). `theme-startup.js` applies it before first paint; `application-shell.js`, desktop application preferences and Library window messages persist/synchronize the accent. `range-controls.js` draws fine/snap hover markings without changing the interaction profiles. `tools/v1-visual-review.cjs` takes the focused real-Electron review captures.
+The v1 appearance layer lives in `visual-tokens.css` (four neutral theme palettes, material faces, geometry and local font faces), `visual-controls.css` (skins on existing structures), and `appearance.js` (accent normalization, derived ramp and theme redraw). `theme-startup.js` applies it before first paint; `application-shell.js`, desktop application preferences and Library window messages persist/synchronize the accent. `range-controls.js` draws fine/snap hover markings without changing the interaction profiles. `tools/v1-visual-review.cjs` takes the focused real-Electron review captures.
 
 Library browsing uses camera pictures for unedited RAWs and develops only visible
 photos that need it, zoom detail, or explicit Develop/Build previews selections.

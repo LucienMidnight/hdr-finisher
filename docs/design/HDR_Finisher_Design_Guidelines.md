@@ -95,14 +95,21 @@ The visible Reset action and accessible state supply meaning alongside the dot.
 
 ## Color system
 
-The v1 reference [tokens.json](v1-visual-refinement/tokens.json) and runtime `frontend/visual-tokens.css` own the three neutral palettes and material faces. `visual-controls.css` applies those tokens to the existing app structure. Do not add literal interface colours in component styles.
+The v1 reference [tokens.json](v1-visual-refinement/tokens.json) and runtime `frontend/visual-tokens.css` own the four neutral palettes and material faces. `visual-controls.css` applies those tokens to the existing app structure. Do not add literal interface colours in component styles.
 
-| Role | Default Dark | Default Light | Studio Gray |
-|---|---|---|---|
-| Viewer | `#080808` | `#dcdcdc` | `#383838` |
-| Panel | `#121212` | `#f1f1f1` | `#333333` |
-| Raised | `#191919` | `#fafafa` | `#3a3a3a` |
-| Text | `#f2f2f2` | `#1c1c1c` | `#f2f2f2` |
+| Role | Default Dark | Modern Dark | Default Light | Studio Gray |
+|---|---|---|---|---|
+| Viewer | `#000000` | `#080808` | `#dcdcdc` | `#383838` |
+| Panel | `#050505` | `#121212` | `#f1f1f1` | `#333333` |
+| Raised | `#141414` | `#191919` | `#fafafa` | `#3a3a3a` |
+| Text | `#ffffff` | `#f2f2f2` | `#1c1c1c` | `#f2f2f2` |
+
+November 10: Default Dark uses a pure-black app/viewer background, near-black
+panels, brighter text and distinct control edges. Modern Dark preserves the
+previous Default Dark palette. Settings uses existing lg (16px) text and
+controls, md (14.5px) supporting copy and 2xl headings. Application menus
+use a solid raised surface, a 2px muted-ink border and the existing popover
+shadow. The root menu aligns with the left edge of the hamburger glyph.
 
 The selectable accent starts at burnt orange `#d0612a`; presets also include Blue-gray `#566481` and Coating blue `#38a3dc`. For chosen A, derive strong as 72% A + 28% white, low as 82% A + 18% black, and bed as 16% A + 84% panel. On-accent is `#120c08` above linearized sRGB relative luminance 0.18, otherwise white. These formulas apply in every theme, following Steve's November 4 clarification; there is no automatic contrast substitution for Light or custom colours.
 

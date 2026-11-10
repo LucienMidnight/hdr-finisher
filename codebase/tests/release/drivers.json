@@ -1111,6 +1111,13 @@
       }
     },
     {
+      "path": "tests/theme-settings.js",
+      "areas": ["ui"],
+      "tier": "area",
+      "protects": "theme persistence, Settings readability and menu boundaries",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/library-appearance-navigation.js",
       "areas": [
         "library"

@@ -60,8 +60,14 @@
     {
       id: "default-dark",
       name: "Default Dark",
-      description: "Neutral near-black surround. The reference default for critical grading work.",
+      description: "Deep black surround with crisp text, distinct controls and clear panel edges.",
       preview: "/static/assets/theme-previews/default-dark.png",
+    },
+    {
+      id: "modern-dark",
+      name: "Modern Dark",
+      description: "The original soft near-black theme with subtle surface separation.",
+      preview: "/static/assets/theme-previews/modern-dark.png",
     },
     {
       id: "default-light",

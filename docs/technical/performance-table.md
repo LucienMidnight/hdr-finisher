@@ -30,6 +30,12 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 * Stage names in the logs (`page_picture_*`, `picture_*`, `startup_phase`)
   are given so the next measurement can be found quickly.
 
+November 10 dark-theme/Settings smoke check (parent aa9b6128, working tree;
+2560x1440 plain Electron, default mixed Library, concurrent Python suite):
+first/ten/twenty pictures 9.1/15.0/18.2 s, 29 shown by 90 s. No reported
+check errors. This is a UI smoke check, not a comparable speed baseline.
+Evidence: `codebase/output/quick-library-check/theme-settings/report.json`.
+
 ## 1. Startup
 
 | Action (from → to) | Target | Measured | Conditions | Status |

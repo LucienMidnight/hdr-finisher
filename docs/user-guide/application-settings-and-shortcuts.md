@@ -114,3 +114,10 @@ In Appearance, choose **On hover** (default, also shown on keyboard focus) or
 to both Library windows and stays separate from projects and presets.
 
 On Windows and Linux, click the menu button for the vertical File, Edit, View, Window and Help list. Hover a name to open its items to the side. Alt or F10 opens the list; Up/Down moves, Right enters a submenu, Left returns, and Escape closes it. macOS uses the system menu bar.
+
+### Appearance themes
+
+**Default Dark** uses a black background with brighter text and clear control
+edges. **Modern Dark** is the previous softer dark appearance. **Default Light**
+and **Studio Gray** remain available. Choose a theme in Settings > Appearance;
+it also applies to the Library.

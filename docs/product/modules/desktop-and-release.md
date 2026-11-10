@@ -47,6 +47,21 @@ and cannot hard-link; Windows also refuses file symlinks. Shared source
 photos and their saved grades are read-only. The affected RAW and precision
 drivers use the helper; no per-run RAW copy or hard-link is required.
 
+## November 10: darker default and readable Settings
+
+Default Dark now has a pure-black main background, near-black panels,
+brighter text and clearer control/divider edges. Modern Dark preserves the
+former Default Dark palette; Default Light and Studio Gray keep their palettes.
+All four choices persist and synchronize with Library windows. Existing
+Default Dark preferences select the new darker appearance; no saved projects
+are affected.
+
+Settings uses the existing 16px token for main text and controls, 14.5px for
+supporting text, and 20px headings. The application menu and its submenus
+have a solid raised surface and a visible 2px border; the root menu starts
+at the hamburger glyph rather than the product logo. Pending Steve's visual
+sign-off in the app. Review captures: `codebase/output/review/theme-settings/`.
+
 ## 4. Current state (October 18, 2026)
 
 **Built:** Windows, macOS and Linux packages; windows tracked by role

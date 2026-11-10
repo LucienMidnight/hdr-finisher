@@ -537,3 +537,17 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 :root .grade-folder-tabs { padding: var(--tab-plate-inset); gap: 0; }
 :root :is(#grade-workflow-panel .grade-header > .control-mode-switch, .grade-folder-tabs > .lane-switch) > button { height: 30px; min-height: 30px; }
 :root .lane-switch button:is(:hover, :focus-visible) .lane-title-tooltip { transition-delay: 600ms; }
+
+/* Settings uses the existing larger type steps throughout, including controls. */
+:root .settings-dialog { font-size: var(--font-size-lg); }
+:root .settings-dialog :is(button, input, select, textarea, label, .theme-option-name, .accent-option) { font-size: var(--font-size-lg); }
+:root .settings-dialog :is(.helper, .caption, small, .theme-option-desc, .shortcut-hardware-note span, .shortcut-list-header) { font-size: var(--font-size-md); }
+:root .settings-dialog :is(h2, h3) { font-size: var(--font-size-2xl); }
+:root .settings-dialog .shortcut-toolbar { grid-template-columns: minmax(160px, 1fr) 160px auto auto; }
+
+/* Anchor the menu beneath its glyph, independent of the product logo. */
+html.desktop-shell .unified-menu-anchor { position: relative; display: flex; align-items: center; }
+html.desktop-shell .window-menu-bar { left: 4px; }
+html.desktop-shell :is(.window-menu-bar, .window-menu-popover, .window-submenu-popover) {
+ border: 2px solid var(--muted); background: var(--raised); box-shadow: var(--popover-shadow);
+}

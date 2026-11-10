@@ -38,3 +38,9 @@ test("theme redraw waits for editor state and elements, then redraws loaded grap
  vm.runInContext('const els={};',context);
  changed();assert.equal(draws,1);
 });
+
+test("all four themes survive saved preference sanitization",()=>{
+ for(const theme of ["default-dark","modern-dark","default-light","studio-gray"])
+  assert.equal(sanitizeApplicationPreferences({theme}).theme,theme);
+ assert.equal(sanitizeApplicationPreferences({theme:"unknown"}).theme,"default-dark");
+});
