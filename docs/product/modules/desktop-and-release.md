@@ -486,9 +486,7 @@ changes no longer recolour that bed. The approved title/list/limit tokens live
 in visual-tokens.css and tokens.json; the component sheet reads them without
 proposal overrides or an approval/depth toggle. No image or saved-grade changes.
 
-Validation for the grouped component pass: 904 Node checks pass; the focused
-Electron UI driver passes in four themes. Full Python and the plain Library
-check are in progress; final results are recorded below when complete.
+Validation for the grouped component pass is recorded below.
 
 
 Component-pass UI diagnostic is registered in the release inventory. Its
@@ -497,3 +495,25 @@ The older Control Panel diagnostic now expects the intended 34px rows and
 204px inner well (previously 32px/192px), without changing its other limits.
 Export presets and tag selections also use the neutral pressed shadow.
 
+
+Validation completed: 904 Node checks pass. Python: 3,280 pass, three skip,
+two unrelated failures: GPU delivery queued-job shared memory is missing
+(WinError 2), and the known Library cached-scene test returns 200 instead of
+422. Neither was repaired or rerun. The focused Electron UI driver passes in
+all four themes, including populated/empty lists and graph captures. No
+processing GPU sweep or release build was appropriate for appearance-only work.
+
+The standard 90-second mixed Library check stays inside memory (3.432 GB),
+but reports a 1,680 ms drawing gap and invalid GPU development pixels for
+DSC01226.ARW. These untouched paths were not investigated or rerun. Timings and
+conditions are in the performance table. Browser-control services were
+unavailable; the component sheet was opened in local Edge through Playwright
+and switched through all four themes before app review.
+
+Review: `codebase/output/review/component-pass/index.html` (about 350 KB,
+Default Dark and Default Light). Four-theme checks: `checks.json` there.
+Logs: `codebase/output/component-pass-{node,python,review,library}.log` and
+`codebase/output/quick-library-check/component-pass/report.json`. The review
+folder is disposable after Steve's visual sign-off. Output starts/ends at
+42.7 GB, below 100 GB. Temporary sheet images/edit scripts were removed.
+No push, installer, original photo or read-only project changes.

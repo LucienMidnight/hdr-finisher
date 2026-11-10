@@ -224,6 +224,7 @@ section 7.19 records the corrected ordering and reconciliation.
 | Library live-grid / GPU recovery | Required focused release drivers pass | Both pass: 73.899 / 7.469 s; no flaky or known-failure classification; protected hashes unchanged | Nov 1 `5f400db`; separate focused release-runner selections | Met |
 | Library picture preservation | Deterministic pairs identical; otherwise mean dE2000 <1, p99.9 <=3 | 176 SDR/HDR lane pairs exact, max difference 0, all finite; 44 files x 640/2560 | `4d07bd4` picture code vs final; `output/library-freeze-pixels/comparison.json` | Pass for renderable fixtures; six existing source gates unverified |
 | Grade coexistence: fresh phase0 folder | Pause <1000 ms; ordinary <5000; resume <2000; edit saved | Pause 4110/3251 ms; ordinary 4114/3256; resume 346/1408; exposure 0.125 saved twice; protected hashes unchanged | Nov 1 `8e5396a` production code; `output/grade-final-{a,b}/report.json`; unchanged Grade driver | **Pause fails both runs**; other required checks pass |
+| Component-sheet mixed Library grid smoke | Existing frame-gap limit 250 ms; memory ceiling unchanged | First/ten/twenty pictures 1.2/1.9/8.9 s; frame gap 1,680 ms; peak 3.432 GB | Nov 10 `3afcdc2b`, default 90 s, concurrent Python suite; `quick-library-check/component-pass/report.json` | Frame-gap failure; GPU-invalid-pixels for DSC01226.ARW; not a speed baseline |
 | Locked mixed 50: detached window responsiveness | No frame/timer interval >250 ms; diagnose frame gaps >100 ms | Grid frame gap 418 -> 91-97 ms; Single 133 -> 55-61 ms. Latest timer blocks 109/70 ms; peaks 4.108/3.476 GB, settled | Nov 1 PNG fix `8e5396a`; 90 s cold name-sort, 4 GB, 2560x1440; `quick-library-check/{strict-before-grid,strict-before-single,transfer-final-grid,transfer-final-single,png-final-grid,png-final-single}` | Met, no frame gaps above 100 ms in final runs |
 | Library PNG decode: `_DSC6510-1.png` | Remove redundant round trip; unchanged pixels | Median 4176 -> 2875 ms (range after 2874-2908) | Nov 1 PNG fix `8e5396a`; edge 2560, warm filesystem, three repeats; `output/png-roundtrip-comparison.json` | 31% faster; exact bytes |
 | Library PNG decode: `IMG_6717.PNG` | same | 153 -> 27 ms (27.0-27.4) | same | 82% faster; exact bytes |
@@ -1870,3 +1871,14 @@ Grouped functional Single smoke: 90 seconds, concurrent Python checks,
 Focus off; no errors, sampled peak 3.464 GB, longest drawing gap 124 ms.
 Report codebase/output/quick-library-check/exposure-reservation/report.json
 owns its picture-load timings; they are not Exposure speed comparisons.
+
+
+## November 10: component-sheet appearance smoke
+
+At 3afcdc2b, the standard 90-second mixed Library check (concurrent Python
+suite, no speed comparison) showed first/ten/twenty pictures in 1.2/1.9/8.9 s.
+Its longest drawing gap was 1,680 ms, outside the existing 250 ms limit;
+main-thread block 143 ms, sampled peak 3.432 GB and no memory violation.
+DSC01226.ARW reported invalid GPU development pixels; five files were not
+shown by the end. No unrelated processing investigation, rerun or budget
+change. Report: codebase/output/quick-library-check/component-pass/report.json.

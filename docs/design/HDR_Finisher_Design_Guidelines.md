@@ -505,4 +505,3 @@ colour and contain all axis labels. Limits use graph-limit-line (attention),
 4-by-3 dashes and matching labels. Identity lines are solid curve-identity;
 Highlight Compression uses curve-neutral. Exposure Bands zero is strong grid
 grey and its influence wash is #ff7a1f1f orange. Selected points remain yellow.
-
