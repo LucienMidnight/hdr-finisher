@@ -551,3 +551,38 @@ html.desktop-shell .window-menu-bar { left: 4px; }
 html.desktop-shell :is(.window-menu-bar, .window-menu-popover, .window-submenu-popover) {
  border: 2px solid var(--muted); background: var(--raised); box-shadow: var(--popover-shadow);
 }
+
+/* November 10: application menu. Square panels like the rest of the app; the
+   row highlight is the soft-plate hover face with the 3px corner radius.
+   Shortcuts sit on the right in quiet ink; submenus use the Tabler chevron. */
+html.desktop-shell :is(.window-menu-bar, .window-menu-popover, .window-submenu-popover) {
+  padding: 4px; border: 2px solid var(--muted); border-radius: 0; background: var(--raised); box-shadow: var(--popover-shadow);
+}
+html.desktop-shell .window-menu-bar { top: calc(100% + 6px); min-width: 150px; }
+/* Each panel opens 4px beside its row, level with it. The invisible bridge
+   keeps a submenu open while the pointer crosses that gap. */
+html.desktop-shell :is(.window-menu > .window-menu-popover, .window-submenu-popover) { top: -6px; left: calc(100% + 10px); }
+html.desktop-shell .window-menu > .window-menu-popover { min-width: 220px; }
+html.desktop-shell .window-submenu-popover { min-width: 170px; }
+html.desktop-shell :is(.window-menu > .window-menu-popover, .window-submenu-popover)::before {
+  content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: 12px;
+}
+html.desktop-shell :is(.window-menu-trigger, .window-menu-popover button) {
+  display: flex; align-items: center; gap: 40px; width: 100%; height: 28px; min-height: 28px; padding: 0 10px 0 12px;
+  border: 0; border-radius: var(--radius-1); background: transparent; color: var(--body);
+  font: var(--font-weight-medium) var(--font-size-md) / var(--line-height-none) var(--font-body); white-space: nowrap; text-align: left;
+}
+html.desktop-shell :is(.window-menu-trigger, .window-menu-popover button):is(:hover, :focus-visible, [aria-expanded="true"]):not(:disabled) {
+  outline: none; background: var(--plate-up-hover); color: var(--text);
+}
+html.desktop-shell .window-menu-separator { margin: 4px -4px; background: var(--hairline); }
+html.desktop-shell :is(.window-menu-trigger, .window-submenu-trigger)::after {
+  content: ""; flex: 0 0 var(--chevron-size); width: var(--chevron-size); height: var(--chevron-size); margin-left: auto; padding: 0; color: var(--muted); background: currentColor;
+  -webkit-mask: url("assets/icons/tabler/chevron-right.svg") center / var(--chevron-size) no-repeat; mask: url("assets/icons/tabler/chevron-right.svg") center / var(--chevron-size) no-repeat;
+}
+html.desktop-shell :is(.window-menu-trigger, .window-submenu-trigger):is(:hover, [aria-expanded="true"])::after { color: var(--text); }
+html.desktop-shell .window-menu-popover button[data-shortcut]::after {
+  content: attr(data-shortcut); margin-left: auto; color: var(--quiet); font-size: var(--font-size-sm);
+}
+html.desktop-shell .window-menu-popover button[role="menuitemradio"] { padding-left: 28px; }
+html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checked="true"]::before { left: 10px; }

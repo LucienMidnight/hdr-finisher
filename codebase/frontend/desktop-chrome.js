@@ -15,6 +15,8 @@
     if (control.id === "project-save") control.textContent = "Save project";
     if (control.id === "settings-open") control.textContent = "Settings…";
     if (control.id === "help-open") control.textContent = "HDR Finisher help";
+    const shortcutAction = { "project-open": "project.open", "project-save": "project.save", "settings-open": "app.settings", "help-open": "app.help" }[control.id];
+    if (shortcutAction) control.dataset.shortcutAction = shortcutAction;
     slot.replaceWith(control);
   });
   const menuBar = document.querySelector(".window-menu-bar");
@@ -65,11 +67,22 @@
       (submenu.querySelector('[aria-checked="true"]') || submenu.querySelector(".window-submenu-popover button"))?.focus();
     }
   };
+  // Short delays let the pointer cut diagonally across a neighbouring row on
+  // its way into an open submenu without that submenu closing.
+  let submenuTimer = 0;
+  const scheduleSubmenu = (submenu, open, delay) => {
+    clearTimeout(submenuTimer);
+    submenuTimer = setTimeout(() => setSubmenuOpen(submenu, open), delay);
+  };
   for (const submenu of submenus) {
-    submenu.addEventListener("pointerenter", () => setSubmenuOpen(submenu, true));
-    submenu.addEventListener("pointerleave", () => setSubmenuOpen(submenu, false));
+    submenu.addEventListener("pointerenter", () => {
+      if (!submenu.querySelector(".window-submenu-popover").hidden) clearTimeout(submenuTimer);
+      else scheduleSubmenu(submenu, true, 120);
+    });
+    submenu.addEventListener("pointerleave", () => scheduleSubmenu(submenu, false, 300));
   }
   const closeMenus = ({ restoreFocus = false } = {}) => {
+    clearTimeout(submenuTimer);
     setSubmenuOpen(null, false);
     for (const menu of menus) {
       const trigger = menu.querySelector(".window-menu-trigger");
@@ -154,6 +167,7 @@
     const item = event.target.closest('[role^="menuitem"]');
     if (!item || item.disabled) return;
     if (item.classList.contains("window-submenu-trigger")) {
+      clearTimeout(submenuTimer);
       setSubmenuOpen(item.closest(".window-submenu"), true);
       return;
     }

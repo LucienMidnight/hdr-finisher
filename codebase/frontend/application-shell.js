@@ -229,7 +229,19 @@
     } catch (error) { status.textContent=error.message; }
   }
 
+  // Menu rows show the current shortcut on the right. The label lives in an
+  // attribute because some rows (Save project) rewrite their own text.
+  function renderMenuShortcuts() {
+    for (const item of document.querySelectorAll("[data-shortcut-action], [data-shortcut-fixed]")) {
+      const value = item.dataset.shortcutFixed
+        || (item.dataset.shortcutAction || "").split(" ").map(shortcutFor).find(Boolean);
+      if (value) item.dataset.shortcut = displayShortcut(value);
+      else delete item.dataset.shortcut;
+    }
+  }
+
   function persistPreferences() {
+    renderMenuShortcuts();
     const snapshot = clone(shell.preferences);
     document.documentElement.dataset.developedBadge = snapshot.developedBadge;
     shell.persistChain = shell.persistChain.then(async () => {
@@ -1145,6 +1157,7 @@
     bindUi();
     renderSettings();
     renderHelpNavigation();
+    renderMenuShortcuts();
     shell.onPreferencesChanged(clone(shell.preferences), { initial: true });
     if (shell.preferences.updates.checkAutomatically) window.setTimeout(() => checkForUpdates(), 900);
     return clone(shell.preferences);

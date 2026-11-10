@@ -14,13 +14,13 @@
       <div class="window-menu">
         <button class="window-menu-trigger" type="button" aria-expanded="false" aria-haspopup="menu">File</button>
         <div class="window-menu-popover" role="menu" hidden>
-          <button type="button" role="menuitem" data-desktop-command="open-source">Open image…</button>
+          <button type="button" role="menuitem" data-desktop-command="open-source" data-shortcut-action="file.import file.importQuick">Open image…</button>
           <span data-window-menu-slot="project-open"></span>
           <button type="button" role="menuitem" data-desktop-command="recent-projects">Recent projects…</button>
           <span class="window-menu-separator" role="separator"></span>
           <span data-window-menu-slot="project-save"></span>
-          <button type="button" role="menuitem" data-desktop-command="save-as">Save project as…</button>
-          <button type="button" role="menuitem" data-desktop-command="export">Export…</button>
+          <button type="button" role="menuitem" data-desktop-command="save-as" data-shortcut-action="project.saveAs">Save project as…</button>
+          <button type="button" role="menuitem" data-desktop-command="export" data-shortcut-action="file.exportStandard file.export">Export…</button>
           <span class="window-menu-separator" role="separator"></span>
           <button type="button" role="menuitem" data-desktop-command="revert-hdr">Revert HDR</button>
           <button type="button" role="menuitem" data-desktop-command="revert-sdr">Revert SDR</button>
@@ -33,25 +33,25 @@
       <div class="window-menu">
         <button class="window-menu-trigger" type="button" aria-expanded="false" aria-haspopup="menu">Edit</button>
         <div class="window-menu-popover" role="menu" hidden>
-          <button type="button" role="menuitem" data-desktop-command="undo">Undo</button>
-          <button type="button" role="menuitem" data-desktop-command="redo">Redo</button>
+          <button type="button" role="menuitem" data-desktop-command="undo" data-shortcut-action="edit.undo">Undo</button>
+          <button type="button" role="menuitem" data-desktop-command="redo" data-shortcut-action="edit.redo edit.redoAlternate edit.redoRequested">Redo</button>
           <span class="window-menu-separator" role="separator"></span>
           <button type="button" role="menuitem" data-desktop-command="copy-grade" disabled>Copy grade</button>
           <button type="button" role="menuitem" data-desktop-command="paste-grade" disabled>Paste grade</button>
           <button type="button" role="menuitem" data-desktop-command="paste-grade-choose" disabled>Paste grade (choose settings)…</button>
           <button type="button" role="menuitem" data-desktop-command="quick-export" disabled>Quick export…</button>
-          <button type="button" role="menuitem" data-native-edit="cut">Cut</button>
-          <button type="button" role="menuitem" data-native-edit="copy">Copy</button>
-          <button type="button" role="menuitem" data-native-edit="paste">Paste</button>
-          <button type="button" role="menuitem" data-native-edit="select-all">Select all</button>
+          <button type="button" role="menuitem" data-native-edit="cut" data-shortcut-fixed="Mod+X">Cut</button>
+          <button type="button" role="menuitem" data-native-edit="copy" data-shortcut-fixed="Mod+C">Copy</button>
+          <button type="button" role="menuitem" data-native-edit="paste" data-shortcut-fixed="Mod+V">Paste</button>
+          <button type="button" role="menuitem" data-native-edit="select-all" data-shortcut-fixed="Mod+A">Select all</button>
         </div>
       </div>
       <div class="window-menu">
         <button class="window-menu-trigger" type="button" aria-expanded="false" aria-haspopup="menu">View</button>
         <div class="window-menu-popover" role="menu" hidden>
-          <button type="button" role="menuitem" data-view-action="reset-zoom">Actual size</button>
-          <button type="button" role="menuitem" data-view-action="zoom-in">Zoom in</button>
-          <button type="button" role="menuitem" data-view-action="zoom-out">Zoom out</button>
+          <button type="button" role="menuitem" data-view-action="reset-zoom" data-shortcut-action="view.zoomActual">Actual size</button>
+          <button type="button" role="menuitem" data-view-action="zoom-in" data-shortcut-action="view.zoomIn">Zoom in</button>
+          <button type="button" role="menuitem" data-view-action="zoom-out" data-shortcut-action="view.zoomOut">Zoom out</button>
           <span class="window-menu-separator" role="separator"></span>
           <div class="window-submenu">
             <button class="window-submenu-trigger" type="button" role="menuitem" aria-haspopup="menu" aria-expanded="false">Preview compares</button>
