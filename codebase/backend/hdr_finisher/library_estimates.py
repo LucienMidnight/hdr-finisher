@@ -143,7 +143,18 @@ def embedded_jpeg_header(path):
         return None
 
 
+def exposure_reservation(path, ceiling=None):
+    from .library_exposure_admission import sensor_size, RATE
+    size = sensor_size(path)
+    if size is not None:
+        return "exposure", max(MINIMUM, RATE*size[0]*size[1]), ""
+    amount, reason = estimate_details(path,"cpu",ceiling)
+    return "cpu", amount, reason
+
+
 def estimate_details(path, kind="source", ceiling=None, edge=2560):
+    if kind == "exposure":
+        return exposure_reservation(path,ceiling)[1:]
     if kind == "camera":
         # Existing quick working rate on the bounded camera analysis surface.
         return max(MINIMUM, 23*min(int(edge),2560)**2), ""

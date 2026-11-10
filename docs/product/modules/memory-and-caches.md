@@ -1591,3 +1591,29 @@ November 10, camera-first Focus: the provisional embedded-JPEG map has a
 helper workers and the existing overlay disk/recent-map stores. Native
 refinement retains its normal admission and background lane. This changes
 no cache allowance, CPU pool count, RAM ceiling or VRAM budget.
+
+
+### November 10: approved Exposure-only reservation
+
+Steve approved the measured smaller per-photo reservation for flat Sony ARW
+and Canon CR2. Verified unsigned single-plane CFA ARW and unsubsampled full-RAW CR2
+use **12 bytes per full sensor pixel**, with the existing 64 MB minimum.
+The measured working increases were about 9.10-9.27 bytes/visible pixel;
+12 includes at least the existing 25% headroom, with full sensor margins
+also counted. These diagnostic jobs use kind exposure rather than consuming
+full-development slots. No global ceiling, cache share, floor, development
+slot count, protected peak tolerance or VRAM limit changes.
+
+Eligibility is header-only: ARW requires single-sample Bayer TIFF metadata;
+CR2 requires its declared RAW IFD, lossless-JPEG SOF3, two/four components
+and uniform 1:1 sampling. Reduced colour/chroma-subsampled CR2, unknown
+headers, other formats and ambiguous variants keep the existing CPU estimate
+AND CPU scheduling kind (including mezzanine protections). There is no
+pixel decoding before admission. Earlier temporary trials queried RawPy's
+raw_type, which implicitly unpacks pixels; production replaces that unsafe
+probe with bounded TIFF/JPEG headers. The installed RawPy source and the
+LibRaw ljpeg_start sampling rules informed this correction.
+
+Admission/release and measured-memory gating remain under the shared broker;
+exposure_reservation resolves both bytes and kind once per backend grant.
+Exact source warnings, pooling and camera alignment remain unchanged.

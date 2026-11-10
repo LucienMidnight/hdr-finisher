@@ -1056,7 +1056,12 @@ def create_library_router(worker, browser, store=None):
 
     async def helper_result(request, command, *, retain_picture=False, source_token=None, **arguments):
         if command in {"picture","native","overlay","live-fallback"}:
-            grant_kind = "camera" if command == "overlay" and arguments.get("quality") == "camera" else "cpu"
+            if command == "overlay" and arguments.get("kind") == "exposure":
+                grant_kind = "exposure"
+            elif command == "overlay" and arguments.get("quality") == "camera":
+                grant_kind = "camera"
+            else:
+                grant_kind = "cpu"
             async with backend_grant(arguments["path"],grant_kind,arguments.get("priority",10),cancelled=request.is_disconnected):
                 return await helper_result_inner(request,command,retain_picture=retain_picture,source_token=source_token,**arguments)
         return await helper_result_inner(request,command,retain_picture=retain_picture,source_token=source_token,**arguments)

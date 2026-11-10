@@ -1181,7 +1181,7 @@
       "areas": ["library"],
       "tier": "area",
       "protects": "Cold source Exposure and next-photo navigation on shared unmodified RAWs, optional simultaneous Focus.",
-      "launch": {"method": "electron"}
+      "launch": {"method": "electron", "args": ["--focus", "--paced", "--canon"]}
     },
     {
       "path": "tests/library-exposure.js",

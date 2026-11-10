@@ -8568,3 +8568,43 @@ they are a concrete proposal for Steve, not built. Source warnings remain
 exact. Keeping the new per-job reservation needs agreement on the existing
 approved sizing policy; no global RAM ceiling/cache allowance change is
 proposed. The retained code and its validation above remain current.
+
+
+November 10 approved third option: Steve agreed to the smaller reservation.
+Eligible flat ARW/CR2 Exposure jobs now reserve 12 bytes/full-sensor pixel
+and use diagnostic scheduling. Unknown/reduced/other formats retain full CPU
+admission and its scheduling limits. Header eligibility never unpacks a RAW:
+a flaw in the earlier prototype's RawPy.raw_type check was found and replaced
+with TIFF Bayer or Canon lossless-JPEG frame metadata. No warning math or
+map identity changed, and no cache allowance/global memory limit increased.
+The memory module owns the approved rate and exact eligibility boundaries.
+
+Fresh-profile Sony rapid culling, no parent suite: first E 1.173 s alone /
+1.400 s with Focus; next-photo tails 2.172/1.629 s. With a one-second dwell
+between flips and Focus active, first E 1.078 s, next 1.387/0.109/0.098 s;
+sampled app peak 2.437 GB against 4 GB setting. This is useful progress,
+not a universal one-second guarantee. Functional Canon portrait/landscape
+map and PNG checks pass, with sampled peak 2.714 GB; that run overlapped
+Python and its slower timings are not a performance comparison.
+
+
+Validation of the approved implementation: 897 JavaScript tests pass;
+3,213 Python pass, three skip, only the known cached-scene failure remains.
+Final focused admission/rate/grant/scheduler/warning/API checks: 194 pass,
+including unsigned-sample eligibility. Full suites ran once; the final
+conservative unsigned-header boundary was rechecked in that focused set.
+No exact warning/ceiling/tolerance check was relaxed. Existing Exposure
+controls/16-bit regions/alignment/views pass. Rapid eight-arrow cancellation
+with Focus recovers to the current map and passes memory guard (sampled
+peak 2.657 GB). Its 2.344 s measurement includes all eight keypresses plus
+recovery and is not a per-photo latency. The one first-E observation in
+that cancellation run was 1.444 s. Plain Electron 90-second Single smoke
+passes: no errors, peak 3.464 GB, longest drawing gap 124 ms.
+
+Evidence exposure-reservation-{node,python,final-focused,controls,quick}.log,
+exposure-approved-cancel-memory.json/app log, and the smoke report under
+quick-library-check/exposure-reservation. No push or installer build.
+
+
+Final output remains 42.7 GB, below 100 GB. Disposable Electron profiles
+were removed by the runner; only referenced logs/measurements remain.

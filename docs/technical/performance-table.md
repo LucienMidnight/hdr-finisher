@@ -1806,3 +1806,47 @@ requires Steve's decision. Further implementation/validation awaits that
 choice. Evidence exposure-kind-trial{,-focus}.json and app logs. All trials
 are single observations under the earlier recorded conditions, not a timing
 range or a repeated paired confidence estimate.
+
+
+### November 10: approved Exposure reservation, header-only implementation
+
+Based on f5997117; Steve approved rate 12 for verified flat ARW/CR2.
+Production eligibility uses TIFF/JPEG headers; the earlier raw_type probe
+silently unpacked RAW pixels before admission and is not retained. This
+corrects both admission safety and unnecessary first-request work. The new
+job kind does not spend full-development slots; conservative fallback keeps
+both old CPU bytes and CPU kind for unsupported/uncertain input.
+
+Same shared forty-photo Sony burst, fresh disposable profiles, 2560x1440,
+first picture ready before E, OS cache/workspace activity uncontrolled,
+existing 10% diagnostic band. No concurrent parent suite for speed samples.
+Rapid alone: E 1.173 s; next 0.210/2.172/0.102 s. Rapid with Focus: E
+1.400 s; next 1.011/1.629/0.110 s. Paced with Focus (one second after each
+shown map before next): E 1.078 s; next 1.387/0.109/0.098 s. Sampled whole-app
+maximum from grant logs 2,436,798,165 bytes; ceiling 4,000,000,000. The three
+navigation observations may include same-visit prefetch. Endpoint is current
+picture's populated overlay canvas, not physical scan-out. One observation
+per condition; no claim all cold photos appear in one second.
+
+Evidence: codebase/output/exposure-approved{,-focus}.json and app logs;
+exposure-approved-paced-memory.json and app log; actual real ARW/CR2 grant
+kind/bytes in exposure-approved-real-reservations.log. Functional concurrent-
+Python Canon/combined-overlay run: E 6.020 s, next 4.511/1.603/2.621 s,
+sampled peak 2,714,490,580 bytes; both Canon maps aligned and PNGs served.
+These CPU-contention timings are not comparisons to isolated samples.
+Evidence exposure-approved-canon-functional.json and app log. Source photos
+were reused read-only; no RAW copies or changed cached-map allowance.
+
+
+Additional cancellation acceptance, Focus on, eight ArrowRight events at
+100 ms intervals without waiting for maps: first E 1.444 s; the entire
+keypress burst plus current-map recovery took 2.344 s. Sampled whole-app
+peak 2,657,284,091 bytes against 4 GB ceiling, within unchanged protected
+peak rule; no source development or page errors. This is recovery evidence,
+not eight individual overlay latencies. Evidence exposure-approved-cancel-
+memory.json and app log. No concurrent parent suite in this run.
+
+Grouped functional Single smoke: 90 seconds, concurrent Python checks,
+Focus off; no errors, sampled peak 3.464 GB, longest drawing gap 124 ms.
+Report codebase/output/quick-library-check/exposure-reservation/report.json
+owns its picture-load timings; they are not Exposure speed comparisons.

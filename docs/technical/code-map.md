@@ -576,3 +576,15 @@ never writes source photos. tools/exposure-memory-diagnostic.py is a
 Windows-only, standalone RSS experiment for one specified RAW per process;
 its memory measurements are not shipped scheduler estimates. A pending-job
 backend sharing prototype was rejected and is not part of the code.
+
+
+Exposure admission (November 10): library_exposure_admission.py proves flat
+ARW/CR2 eligibility from TIFF/JPEG headers and owns the approved rate 12.
+library_estimates.exposure_reservation resolves (kind, bytes, reason), with
+conservative CPU fallback; backend_grant uses that resolution for reservation
+and scheduling. The API selects this path only for Exposure, preserving
+Focus/picture/Grade behavior. test_exposure_admission.py covers header-only
+parsing, Canon colour/subsampling rejection, malformed/unknown fallbacks,
+rate/minimum, slot classification and memory gating. The culling driver now
+samples grants/whole-app memory and offers --paced and --canon modes, with
+sampler cleanup on both success and failure.

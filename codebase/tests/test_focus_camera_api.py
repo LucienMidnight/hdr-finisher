@@ -56,15 +56,15 @@ def test_foreground_camera_admission_keeps_native_background(tmp_path, monkeypat
             return "fixture", result
         def cancel(self, job):
             pass
-    (tmp_path / "photo.raw").write_bytes(b"fixture")
+    (tmp_path / "photo.arw").write_bytes(b"fixture")
     monkeypatch.setattr(library_grants, "backend_grant", grant)
     app = FastAPI()
     app.include_router(create_library_router(Worker(), MediaBrowserStore(tmp_path)))
     with TestClient(app) as client:
-        for quality, priority in [("camera", 30), ("full", 82)]:
-            response = client.post("/api/library/overlay-map", json=dict(path=str(tmp_path / "photo.raw"), kind="focus", quality=quality, priority=priority))
+        for kind, quality, priority in [("focus", "camera", 30), ("focus", "full", 82), ("exposure", "half", 30)]:
+            response = client.post("/api/library/overlay-map", json=dict(path=str(tmp_path / "photo.arw"), kind=kind, quality=quality, priority=priority))
             assert response.status_code == 200, response.text
             assert response.json()["unavailable"] == "fixture without pixels"
         assert client.post("/api/library/overlay-map", json=dict(path="a.raw", kind="exposure", quality="camera")).status_code == 400
         assert client.post("/api/library/overlay-map", json=dict(path="a.raw", kind="focus", quality="full", priority=30)).status_code == 400
-    assert seen == [("camera", 30), ("cpu", 82)]
+    assert seen == [("camera", 30), ("cpu", 82), ("exposure", 30)]

@@ -10,7 +10,7 @@ from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from . import app_memory
 from .desktop_security import secret_matches
 from .library_diagnostics import log
-from .library_estimates import estimate_details
+from .library_estimates import estimate_details, exposure_reservation
 from .library_scheduler import scheduler, priority_class
 from .resource_preflight import detect_memory_resources
 
@@ -96,7 +96,10 @@ async def backend_grant(path, kind="source", priority=10, token=None, cancelled=
     own = token is None
     if own:
         token = uuid4().hex
-        amount, reason = await asyncio.to_thread(estimate_details, path, kind, scheduler.ceiling, edge)
+        if kind == "exposure":
+            kind, amount, reason = await asyncio.to_thread(exposure_reservation,path,scheduler.ceiling)
+        else:
+            amount, reason = await asyncio.to_thread(estimate_details, path, kind, scheduler.ceiling, edge)
         job = scheduler.ask(token, "backend", str(path), kind, amount, priority_class(priority), size_reason=reason)
         try:
             while job.granted is None:
