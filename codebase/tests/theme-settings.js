@@ -19,9 +19,27 @@ fs.mkdirSync(out, {recursive:true});
     const style = getComputedStyle(document.documentElement);
     return Object.fromEntries(['--panel','--text','--muted','--border'].map(k => [k,style.getPropertyValue(k).trim()]));
    });
+   if (theme === 'default-dark') {
+    const ratios = await page.evaluate(() => {
+     const style = getComputedStyle(document.documentElement);
+     const token = k => style.getPropertyValue(k).trim();
+     const luminance = hex => {
+      const rgb = hex.match(/[0-9a-f]{2}/gi).map(v => parseInt(v,16)/255).map(v => v <= .04045 ? v/12.92 : ((v+.055)/1.055)**2.4);
+      return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;
+     };
+     const surfaces = ['--app','--panel','--raised','--input','--tooltip','--plate-up','--plate-up-hover','--plate-down'].flatMap(k => token(k).match(/#[0-9a-f]{6}/gi));
+     return ['--text','--body','--muted'].flatMap(role => surfaces.map(bg => {
+      const a=luminance(token(role)), b=luminance(bg);
+      return {role,bg,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
+     }));
+    });
+    for (const pair of ratios) assert.ok(pair.ratio >= 7, JSON.stringify(pair));
+    console.log('Default Dark neutral text minimum contrast:',Math.min(...ratios.map(p => p.ratio)).toFixed(2)+':1');
+   }
    assert.equal(await page.locator('.theme-option').count(),4);
    await page.locator('#settings-dialog').screenshot({path:path.join(out,theme+'-settings.png')});
    await page.locator('#settings-close').click();
+   if (theme === 'default-dark' && process.argv.includes('--update-preview')) await page.screenshot({path:path.join(out,'default-dark-app.png')});
   }
   assert.notEqual(palettes['default-dark']['--panel'],palettes['modern-dark']['--panel']);
   assert.equal(palettes['modern-dark']['--panel'],'#121212');

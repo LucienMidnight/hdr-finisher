@@ -102,7 +102,7 @@ The v1 reference [tokens.json](v1-visual-refinement/tokens.json) and runtime `fr
 | Viewer | `#000000` | `#080808` | `#dcdcdc` | `#383838` |
 | Panel | `#050505` | `#121212` | `#f1f1f1` | `#333333` |
 | Raised | `#141414` | `#191919` | `#fafafa` | `#3a3a3a` |
-| Text | `#ffffff` | `#f2f2f2` | `#1c1c1c` | `#f2f2f2` |
+| Text | `#d8d8d8` | `#f2f2f2` | `#1c1c1c` | `#f2f2f2` |
 
 November 10: Default Dark uses a pure-black app/viewer background, near-black
 panels, brighter text and distinct control edges. Modern Dark preserves the
@@ -459,3 +459,11 @@ is sentence case ("Ctrl fine · Shift snap · …"). The Control Panel has no
 the full panel width less a fixed 10px inset (`--tab-plate-inset`) from the
 dividers around them. HDR grade and SDR grade carry one-line tooltips after
 600ms.
+
+November 10 follow-up: Default Dark neutral text is softened to text #d8d8d8,
+body #c8c8c8 and muted #aaaaaa. Neutral text uses WCAG 2.2 SC 1.4.6's
+7:1 normal-text contrast target on neutral surfaces, including hover plates.
+Buttons use #161616 to #101010 faces, #303030 edges and a subdued top light;
+hover faces rise only to #202020. Menu borders keep their 2px width and use
+the softened muted ink. This is a neutral-text contrast check, not a claim
+of full-app WCAG AAA conformance; accent formulas remain as specified above.

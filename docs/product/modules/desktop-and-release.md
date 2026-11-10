@@ -56,6 +56,11 @@ All four choices persist and synchronize with Library windows. Existing
 Default Dark preferences select the new darker appearance; no saved projects
 are affected.
 
+November 10 follow-up: Default Dark buttons have darker faces and subtle
+edges. Neutral text is softened from white, with at least 7:1 contrast on
+normal neutral surfaces and hover plates (WCAG AAA text contrast). Menu
+border thickness remains 2px. Accent colours retain the existing formulas.
+
 Settings uses the existing 16px token for main text and controls, 14.5px for
 supporting text, and 20px headings. The application menu and its submenus
 have a solid raised surface and a visible 2px border; the root menu starts

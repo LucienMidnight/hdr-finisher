@@ -36,6 +36,12 @@ first/ten/twenty pictures 9.1/15.0/18.2 s, 29 shown by 90 s. No reported
 check errors. This is a UI smoke check, not a comparable speed baseline.
 Evidence: `codebase/output/quick-library-check/theme-settings/report.json`.
 
+November 10 softer-button/text follow-up (parent 3b24e344, working tree;
+2560x1440 plain Electron, default mixed Library, concurrent Python suite):
+first/ten/twenty pictures 14.9/15.5/21.9 s, 29 shown by 90 s.
+No reported check errors. UI smoke check, not a comparable speed baseline.
+Evidence: `codebase/output/quick-library-check/theme-soften/report.json`.
+
 ## 1. Startup
 
 | Action (from → to) | Target | Measured | Conditions | Status |
