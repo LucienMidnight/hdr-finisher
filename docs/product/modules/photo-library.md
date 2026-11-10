@@ -7998,3 +7998,99 @@ Scratch output started at 40.7 GB and ended at 40.9 GB, under 100 GB. The driver
 removed its run folder and restored sidecars. Automatic approval review blocked
 deleting the identified disposable profile:
 `C:/Users/Steve/AppData/Local/Temp/hdr-finisher-electron-test-1vv5Ex`.
+
+
+## November 10: Exposure speed investigation (open work)
+
+No implementation change. On one 42 MP Sony RAW, a fresh-map Exposure
+request took 1.827 s to populate the visible overlay; reopening retained maps
+took 11-16 ms. CPU diagnostics point first to full-resolution warning-mask
+math and its per-pixel black/white arrays. A scratch calculation using scalar
+levels on the sensor's repeating pattern produced exactly the same two masks
+on that photo and saved about 0.37-0.40 s in isolation. Expected whole-wait
+saving is only about 20% until measured in the app. Prefer this focused CPU
+change before considering a GPU route. Other sensor patterns/channel levels,
+rotation, precision and warning pooling must retain existing behaviour.
+
+Additional code findings: surface requests are not joined while a map is
+being built; grid/filmstrip requests can occupy the same four-request queue
+before Single/Compare; switching either overlay rebuilds both enabled layers
+and can restart Focus refinement. These are separate candidates when the
+reported delay is during navigation or with Focus enabled. Recolouring is
+already local; slider redraws and preference writes could be coalesced.
+Camera-preview registration remains required before showing sensor warnings
+over an embedded JPEG. No cache allowance, source-warning definition or
+graded-photo exclusion should change.
+
+Timing conditions and limitations: [performance table](../../technical/performance-table.md#november-10-exposure-overlay-investigation-no-app-changes).
+
+
+## November 10: deletion interface audit (open work)
+
+Steve reported an album remaining in the sidebar after deletion. Controlled
+frontend execution reproduced two manual-album defects: an older list response
+can overwrite a newer post-delete list, restoring the removed row; and a
+successful deletion followed by failed list refresh skips closing the active
+album. This does not identify which caused Steve's actual incident.
+
+Static review also found unsequenced smart-album and pin-list refreshes;
+manual/smart collection closing without an available fallback folder can leave
+stale collection state; failed unpin can restore the row without restoring the
+view cleared before the request. These additional cases need focused behaviour
+checks. No fixes are built in this investigation.
+
+Proposed repair: apply only current list responses, invalidate older reads on
+mutation success, remove confirmed-deleted rows and leave their active views
+before reconciliation, and keep mutation errors distinct from refresh errors.
+Use shared collection-exit cleanup with a valid folder fallback or empty
+Library. Restore the prior navigation state if unpin fails. Validate delayed
+responses, failed refresh after successful delete, failed delete, no fallback
+folder and failed unpin. Album deletion/unpin do not delete source files;
+physical photo deletion is a separate confirmed file command.
+
+
+Physical file-delete audit follow-up (November 10; static findings, no real
+photos deleted): the November 8 passing `library-delete-file-commands` result
+supersedes the older remaining-photo-count failure. Current safeguards include
+counted confirmation, explicit Recycle Bin/permanent choice, no permanent
+fallback after Bin failure, settings flush and source checks for open Grade.
+Original deletion has no app Undo; restore both photo and settings from Windows.
+Virtual-copy-only removal preserves its source and supports app Undo.
+
+Open repair candidates:
+
+- Mixed original/separate-copy deletion removes separate copies only after
+  the initial `run()` returns, outside restart recovery and after the record
+  may be cleared. Make copy removal a durable, idempotent command phase.
+- Completion revisions/changes are published only when every item finishes.
+  Publish successful per-item progress so another Library window does not keep
+  removed items while one item needs attention. Report a removed photo with
+  settings still pending separately from nothing deleted.
+- Grade source protection is checked repeatedly but is not an atomic exclusion
+  against activating that source. This is a concurrency risk, not reproduced
+  data loss. Coordinate source activation and the destructive phase with a
+  consistent lock order/reservation; validate a controlled two-thread race.
+- Selection falls back to the first photo when the deleted selected path
+  disappears. Prefer the next surviving neighbour, or the preceding one at
+  the end, to retain position during culling.
+- Compare Delete outside fullscreen uses retained multi-selection, while
+  rating/flag controls target the displayed selection. Confirmation counts
+  all affected photos, but the intended shared action scope needs Steve's
+  decision before changing it.
+
+Use disposable originals for focused interruption/partial-completion checks;
+cover separate-copy recovery, failed settings after photo recycling, the Grade
+race and multi-window updates. Then run the Delete interface driver once.
+No broad GPU sweep is warranted. These are audit proposals, not implemented
+or new safety qualifications.
+
+
+Investigation validation: 853 JavaScript checks passed; Python 3,092 passed,
+three skipped, with only the already known
+`test_remembered_failure_does_not_hide_current_grade_cached_scene` failure.
+No unrelated failure was investigated or rerun. Focused disposable-profile
+Electron Exposure timing completed; two controlled manual-album frontend
+scenarios reproduced the ordering/refresh defects above. No application code,
+shader, tolerance, cache budget or photo was changed. Scratch scripts were
+removed. Automatic approval review blocked cleanup of this run's temporary
+`%TEMP%/pytest-of-Steve/pytest-1373` folder; left in place.

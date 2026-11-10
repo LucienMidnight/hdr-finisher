@@ -1434,3 +1434,29 @@ November 8 peak diagnosis; no assertion or numerical tolerance was relaxed.
 | --- | --- | --- | --- |
 | Saved grade available → Library picture ready (Library hidden) | 500 ms | Autosave 358 ms; manual Save 255 ms | `quick-library-check.cjs --grade-handoff --grade-handoff-sdr`, plain Electron 2560x1440, library-live-grid copies; picture now installed on return, so this is ready time |
 | Return to Library → edited tile replaced | Log separately | 41 ms | Old tile shown until then; 0 blank frames over 30 frames |
+
+
+### November 10: Exposure overlay investigation (no app changes)
+
+Baseline commit `50c8597c`. Diagnostic comparison band proposed before runs:
+10% for normal variation, not a change to an acceptance target. Fresh-profile
+Electron at 2560 x 1440, existing shared
+`output/test-photos/gpu-denoise-measurement/DSC07060.ARW` (42 MP Sony RAW),
+no photo copies or development, uncontrolled OS disk cache. One app run;
+these observations are not ranges or a general performance qualification.
+The endpoint is a populated visible overlay canvas, excluding display scan-out.
+
+| Action | Measured | Conditions |
+|---|---|---|
+| E to first Exposure, cold map | 1.827 s | Map request 1.606 s; reported map construction 1.533 s; PNG response 8.5 ms. Remaining time includes input, decoding/drawing and automation observation. |
+| E to Exposure, map retained in memory | Grid 11 ms; Single 16 ms | Same photo/session; validation still requests the stored map. |
+| CPU map stages, process/OS warm | 0.995-1.050 s | Two standalone diagnostics: exposure source 0.865-0.910 s (includes mask math 0.521-0.535 s and luminance preparation 47-95 ms); pooling 82-84 ms; preview extraction 8-19 ms; registration 37-39 ms. Nested stages must not be added together. |
+| Isolated RAW threshold/mask calculation | Existing 0.733-0.741 s; scratch candidate 0.337-0.365 s | Three paired in-memory runs, same RAW. Candidate uses scalar black/white levels on repeating sensor-pattern slices instead of full-frame level arrays; both full-resolution Boolean warning masks compare exactly. No production code changed; not a whole-wait result. |
+
+The candidate saves about 0.37-0.40 s in this isolated calculation. Against
+the observed 1.827 s app wait this suggests roughly 20% less waiting, provided
+the saving carries through. It does not establish an end-to-end improvement.
+Other RAW patterns, channel levels, orientations and formats remain untested
+for the candidate. The first failed harness attempt could not create a hard
+link on D:; the successful run reused an existing test-photo folder instead.
+Log: `codebase/output/exposure-investigation.log`. Scratch scripts removed.
