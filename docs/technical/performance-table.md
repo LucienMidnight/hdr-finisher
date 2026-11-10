@@ -1802,8 +1802,8 @@ same measured rate-12 eligibility/fallback. Alone E 1.322 s, next
 Source files restored byte-for-byte afterwards. Next-photo tails improve
 versus retained experiment 2, while first activation alone regresses;
 not a universal one-second result. Keeping a lowered approved reservation
-requires Steve's decision. Further implementation/validation awaits that
-choice. Evidence exposure-kind-trial{,-focus}.json and app logs. All trials
+was pending Steve's decision at that point. It is superseded by the approved,
+header-only production implementation below. Evidence exposure-kind-trial{,-focus}.json and app logs. All trials
 are single observations under the earlier recorded conditions, not a timing
 range or a repeated paired confidence estimate.
 

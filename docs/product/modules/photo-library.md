@@ -1,3 +1,26 @@
+## November 10: current Focus and Exposure implementation
+
+Focus culling uses the embedded camera JPEG first, then refines from the
+RAW after a pause; Steve reports that Focus now feels good. Exposure keeps
+exact sensor-based warnings, uses less shadow-mask scratch memory and gives
+the selected Single/Compare photo priority over background maps.
+
+The approved Exposure reservation is built in e2c818b2: header-proven flat
+Sony ARW/Canon CR2 jobs use 12 bytes per full sensor pixel and diagnostic
+scheduling. Uncertain, reduced-colour and other formats keep the existing
+CPU reservation and scheduling. Global memory limits and warning pixels are
+unchanged. Pending-job sharing and global browser-slot experiments were not
+retained. Earlier proposal/trial entries below are history, superseded by
+the approved implementation and validation near the end of this document.
+
+Validation: 897 JavaScript checks and 3,213 Python checks pass; three Python
+checks skip and the previously known cached-scene failure remains. Focused
+admission/memory/warning checks, real Sony/Canon app checks and the default
+90-second Single smoke pass. Consistent one-second Exposure on every cold
+photo is not established. See [memory policy](memory-and-caches.md#november-10-approved-exposure-only-reservation),
+[measured conditions/results](../../technical/performance-table.md#november-10-approved-exposure-reservation-header-only-implementation)
+and [code locations](../../technical/code-map.md).
+
 ## November 10: responsiveness failure reconciled with Steve's app trial
 
 Steve reports responsive normal use. Review places the benchmark's 10.4 s

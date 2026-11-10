@@ -402,7 +402,8 @@ Library slice 4 overlays: `backend/hdr_finisher/library_overlays.py` owns
 source-data exposure masks, source-versioned compressed map files and PNG
 transport. `library_focus.py` owns the Library-only, noise-subtracted peaking
 measurement; its noise and fine-detail stages share identical fine smoothing.
-`library_worker.py` makes half/full maps on the existing kept lane;
+`library_worker.py` uses the main lane for camera Focus and selected Exposure;
+native Focus and background Exposure use the existing kept lane;
 `library_api.py` owns transient switches and on-demand map/pixels routes.
 `library_review.py` stores options with other Library viewing preferences.
 `frontend/library-overlays.js` owns option panels, legend and separate canvases,
