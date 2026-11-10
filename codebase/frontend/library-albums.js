@@ -18,6 +18,7 @@
           { label: "Duplicate", run: () => duplicate(album) },
           { label: "Rename album…", run: () => rename(album) },
           { label: "Delete album…", run: () => remove(album) },
+          ...(options.showAllAction ? [{ separator: true }, options.showAllAction()] : []),
         ], { label: "Album actions", onError: report });
         row.addEventListener("contextmenu", menu);
         row.addEventListener("keydown", event => { if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) menu(event); });

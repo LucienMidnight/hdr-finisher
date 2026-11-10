@@ -22,7 +22,7 @@ The Library keeps pinned folders up to date in the background. If you copy new p
 
 ### Which files the Library shows
 
-By default, the Library shows camera RAW files (including DNG), EXR, PFM, Radiance HDR, and 16-bit or floating-point TIFF. Right-click a photo or the empty grid and choose **Show all files** to include export formats. This choice is remembered across Library windows.
+By default, the Library shows camera RAW files (including DNG), EXR, PFM, Radiance HDR, and 16-bit or floating-point TIFF. Right-click a photo, the empty grid, a sidebar folder or album, or the sidebar background and choose **Show all files** to include export formats. This choice is remembered across Library windows.
 
 With **Show all files**, supported file types include: JPEG (`.jpg`, `.jpeg`), PNG, TIFF (`.tif`, `.tiff`), HEIC and HEIF, AVIF, JPEG XL (`.jxl`), OpenEXR (`.exr`), Radiance HDR (`.hdr`), PFM, DNG, and camera RAW files: Sony `.arw`, Canon `.cr2` and `.cr3`, Nikon `.nef` and `.nrw`, Fujifilm `.raf`, Panasonic `.rw2`, Olympus `.orf` and `.ori`, Pentax `.pef` and Samsung `.srw`.
 

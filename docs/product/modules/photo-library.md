@@ -1,3 +1,17 @@
+## November 10: sidebar file visibility
+
+Show all files is available on sidebar folder rows, manual/smart album rows,
+and the sidebar background. It uses the existing remembered preference and
+query filtering; folder-picker menus remain unchanged. Albums keep their
+existing actions and one right-click opens one menu.
+
+Validation: folder/background menus pass in real Electron; manual/smart album
+actions pass behavioural checks. All 902 JavaScript checks pass. The normal
+90-second mixed-folder smoke has no photo errors or memory breach but flags
+one 1.237-second frame gap; no rerun or performance repair before Steve's
+normal-use judgement. Evidence: `codebase/output/review/jxl-fixes/summary.json`
+and `codebase/output/quick-library-check/jxl-fixes/report.json`.
+
 ## November 10: current Focus and Exposure implementation
 
 Focus culling uses the embedded camera JPEG first, then refines from the

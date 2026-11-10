@@ -40,7 +40,7 @@ function queryHarness(paths,index){
  const state={photos:paths.map(path=>({path})),allPhotos:[],index,selection:new Set([paths[index]]),anchor:index,filters:{},sort:'time',view:'grid'};
  const context=vm.createContext({state,selected:()=>state.photos[state.index],showAllFiles:true,HDRLibraryQuery:{apply:p=>p},paintFilterButton(){},updateDetails(){},paintGrid(){},paintFilm(){},showSingle(){},compare:{enabled:()=>false},setView:v=>state.view=v,status(){}});
  vm.runInContext(functionBody('function applyQuery(', 'let factsQueryTimer;'),context);
- return {state,apply:()=>vm.runInContext('applyQuery()',context)};
+ return {state,context,apply:()=>vm.runInContext('applyQuery()',context)};
 }
 for(const [name,index,remaining,want] of [['middle',1,['a','c'],'c'],['last',2,['a','b'],'b'],['all',1,[],undefined]])test(`removed ${name}: neighbour selection`,()=>{const h=queryHarness(['a','b','c'],index);h.state.allPhotos=remaining.map(path=>({path}));h.apply();assert.equal(h.state.photos[h.state.index]?.path,want);assert.deepEqual([...h.state.selection],want?[want]:[]);});
 test('filter changes retain existing first-result fallback',()=>{const h=queryHarness(['a','b','c'],1);h.state.allPhotos=['a','b','c'].map(path=>({path})); // source still contains lead
@@ -50,7 +50,7 @@ function navigationHarness(fail=false, fallback=false) {
  const state={pins:[pin,...(fallback?[{path:'C:/other',available:true}]:[])],folderSelection:new Set([pin.path]),path:pin.path,lastFolder:pin.path,collection:null,photos:[{path:'one'}],allPhotos:[{path:'one'}],selection:new Set(['one']),index:0,anchor:0,view:'single',cells:new Map(),filmCells:new Map(),scan:new AbortController(),single:new AbortController(),native:new AbortController()};
  const elements=new Map(),visited=[], error=new Error('remove failed');let menu;
  const get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};get('place-title').textContent='Photos';
- const context=vm.createContext({state,offlineSources:new Set(),pinsRevision:0,$:get,api:async route=>{if(route.endsWith('/impact'))return {leaving:1,kept:0};if(route.endsWith('/remove')){if(fail)throw error;return {};}throw new Error('GET failed');},HDRLibraryDialogs:{ask:async()=>true},showMenu:(_e,actions)=>menu=actions,paintFolderSelection(){},folderRow:()=>new Element(),status(){},clearPrefetch(){},clearCells:m=>m.clear(),albums:{setActive(){},refresh:async()=>{}},smart:{setActive(){}},tagWindow:{refresh:async()=>{}},setView:v=>state.view=v,updateDetails(){},paintGrid(){},paintFilm(){},browse:async p=>visited.push(p),reopen:async()=>{},portableState:()=>({path:state.path}),restoreState:async()=>{state.scan=new AbortController();},navigation:{orderPins:p=>p}});
+ const context=vm.createContext({state,offlineSources:new Set(),pinsRevision:0,$:get,api:async route=>{if(route.endsWith('/impact'))return {leaving:1,kept:0};if(route.endsWith('/remove')){if(fail)throw error;return {};}throw new Error('GET failed');},HDRLibraryDialogs:{ask:async()=>true},showAllAction:()=>({label:"Show all files"}),showMenu:(_e,actions)=>menu=actions,paintFolderSelection(){},folderRow:()=>new Element(),status(){},clearPrefetch(){},clearCells:m=>m.clear(),albums:{setActive(){},refresh:async()=>{}},smart:{setActive(){}},tagWindow:{refresh:async()=>{}},setView:v=>state.view=v,updateDetails(){},paintGrid(){},paintFilm(){},browse:async p=>visited.push(p),reopen:async()=>{},portableState:()=>({path:state.path}),restoreState:async()=>{state.scan=new AbortController();},navigation:{orderPins:p=>p}});
  vm.runInContext(functionBody('function leaveRemovedCollection()', 'void smart.refresh'),context);
  vm.runInContext(functionBody('async function refreshPins()', 'function paintFolderSelection()'),context);
  vm.runInContext(functionBody('function showFolderMenu(', '$("folders").addEventListener'),context);
@@ -70,3 +70,43 @@ test('pins: newest list wins',async()=>{
  assert.equal(state.pins[0].path,'new');assert.equal(folders.children[0].path,'new');
 });
 test('Single removal of all photos leaves empty Grid',()=>{const h=queryHarness(['a'],0);h.state.view='single';h.state.allPhotos=[];h.apply();assert.equal(h.state.view,'grid');assert.equal(h.state.index,-1);assert.equal(h.state.selection.size,0);});
+
+// Sidebar actions execute the existing preference and real query filtering.
+for (const place of ['folder', 'blank']) test(`Show all files from sidebar ${place} persists and filters the same query`, () => {
+ const h=queryHarness(['visible'],0), writes=[], nav=new Element();let menu, menus=0;
+ Object.assign(h.context, {showAllFiles:false,showAllKey:'hdr-finisher:library-show-all-files',localStorage:{setItem:(...args)=>writes.push(args)},
+  HDRLibraryQuery:{apply:p=>p,defaultVisible:p=>p.path==='visible'},
+  $:()=>new Element(),paintFolderSelection(){},openPicker(){},showMenu:(_e,actions)=>{menus++;menu=actions;},document:{querySelector:()=>nav}});
+ h.state.allPhotos=[{path:'visible'},{path:'hidden'}];h.state.pins=[];h.state.folderSelection=new Set();
+ vm.runInContext(source('photo-library.js').split('\n').find(line=>line.includes('function showAllAction()')),h.context);
+ if(place==='folder') {
+  vm.runInContext(functionBody('function showFolderMenu(', '$("folders").addEventListener'),h.context);
+  h.context.event={target:{closest:()=>null}};
+  vm.runInContext('showFolderMenu(event,"C:/photos")',h.context);
+ } else {
+  const text=source('photo-library.js'),start=text.indexOf('  document.querySelector(".library-nav").addEventListener("contextmenu"');
+  vm.runInContext(text.slice(start,text.indexOf('  function pickerBrowse',start)),h.context);
+  nav.events.contextmenu({target:{closest:()=>null}});
+ }
+ assert.equal(menus,1);assert.equal(menu.filter(a=>a.label==='Show all files').length,1);
+ const action=menu.find(a=>a.label==='Show all files');assert.equal(action.checked,false);action.run();
+ assert.deepEqual(writes, [['hdr-finisher:library-show-all-files','true']]);assert.equal(h.state.photos.length,2);
+ vm.runInContext('showAllAction().run()',h.context);assert.equal(h.state.photos.length,1);assert.equal(writes[1][1],'false');
+ if(place==='blank') {
+  nav.events.contextmenu({defaultPrevented:true,target:{closest:()=>null}});
+  nav.events.contextmenu({target:{closest:()=>({})}});assert.equal(menus,1);
+ }
+});
+
+for(const smart of [false,true])test(`sidebar ${smart?'smart':'manual'} album reuses the supplied Show all files action`,async()=>{
+ const item=smart?{id:'a',name:'A'}:{name:'A',count:2},root=new Element();let menu,toggles=0;
+ const action={label:'Show all files',checked:false,run:()=>toggles++};
+ const context=vm.createContext({URL,document:{currentScript:{src:'http://localhost/library-smart-albums.js'}},HDRLibraryQuery:{},
+  HDRLibraryDialogs:{make:()=>new Element(),ask:async()=>({}),showMenu:(event,items)=>{event.preventDefault();menu=items;}},window:{}});
+ vm.runInContext(source(smart?'library-smart-albums.js':'library-albums.js'),context);
+ const controller=context.window[smart?'HDRLibrarySmartAlbums':'HDRLibraryAlbums'].create({root,addButton:new Element(),api:async()=>({albums:[item]}),status(){},showAllAction:()=>action});
+ await controller.refresh();root.children[0].events.contextmenu({preventDefault(){}});
+ assert.equal(menu.filter(x=>x.label==='Show all files').length,1);
+ assert.equal(menu.find(x=>x.label==='Show all files'),action);action.run();assert.equal(toggles,1);
+ assert.ok(menu.some(x=>x.label?.startsWith('Delete')));
+});

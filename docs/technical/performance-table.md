@@ -46,6 +46,14 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+November 10 sidebar/JXL integration smoke (working tree based on `9d281d14`,
+2560x1440 plain Electron, disposable profile, default 50-photo mixed fixture,
+no concurrent tests): first picture 0.9 s, ten 2.5 s, twenty 7.3 s. One
+1.237-second frame gap fails the unchanged 250 ms responsiveness limit;
+longest timer block 107 ms, no photo errors or memory breach, peak 2.870 GB.
+Single observation, no speedup claim or new budget; Steve judges normal use
+before more timing work. `codebase/output/quick-library-check/jxl-fixes/report.json`.
+
 November 10 log review supersedes the foreground-freeze interpretation of the
 Pro Max smoke below: its 10,396 ms gap occurred 11:02:07-11:02:17 in idle
 observation, roughly 44 s after detail. Regular one-second timer cadence,

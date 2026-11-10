@@ -26,7 +26,7 @@
    root.replaceChildren(...albums.map(item=>{
     const row=make("div","library-folder-row library-album-row");row.dataset.smart=item.id;row.classList.toggle("active",active===item.id);row.setAttribute("aria-selected",String(active===item.id));
     const name=make("button","folder-name",item.name);name.type="button";name.title="Smart album · saved filter";name.addEventListener("click",()=>options.open(item.id));
-    const menu=event=>showMenu(event,[{label:"Edit rules and name…",run:()=>editor(item)},{label:"Save as manual album…",run:()=>copy(item,true)},{label:"Duplicate",run:()=>copy(item,false)},{label:"Delete smart album…",run:()=>remove(item)}],{label:"Smart album actions",onError:e=>options.status(e.message)});
+    const menu=event=>showMenu(event,[{label:"Edit rules and name…",run:()=>editor(item)},{label:"Save as manual album…",run:()=>copy(item,true)},{label:"Duplicate",run:()=>copy(item,false)},{label:"Delete smart album…",run:()=>remove(item)},...(options.showAllAction?[{separator:true},options.showAllAction()]:[])],{label:"Smart album actions",onError:e=>options.status(e.message)});
     row.addEventListener("contextmenu",menu);row.addEventListener("keydown",e=>{if(e.key==="ContextMenu" || e.shiftKey && e.key==="F10")menu(e);});
     // No drop handler: membership is determined only by the saved rules.
     row.append(name);return row;

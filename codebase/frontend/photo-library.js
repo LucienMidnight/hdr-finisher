@@ -115,9 +115,9 @@
       applyQuery(); updateSingleCaption(); void albums.refresh().catch(() => {});
     } });
   const albums = HDRLibraryAlbums.create({ root: $("albums"), addButton: $("add-album"), api, status, run: culling.run,
-    selection: () => [...state.selection], smartAction: () => smart.menuAction(), open: name => browseCollection("album", name),
+    showAllAction, selection: () => [...state.selection], smartAction: () => smart.menuAction(), open: name => browseCollection("album", name),
     closed: () => leaveRemovedCollection() });
-  const smart = HDRLibrarySmartAlbums.create({ root: $("smart-albums"), api, status, run: culling.run, pins: () => state.pins,
+  const smart = HDRLibrarySmartAlbums.create({ root: $("smart-albums"), api, status, run: culling.run, pins: () => state.pins, showAllAction,
     open: id => browseCollection("smart", id), closed: () => leaveRemovedCollection() });
   function leaveRemovedCollection() {
     state.scan?.abort(); state.single?.abort(); state.native?.abort(); clearPrefetch();
@@ -1859,10 +1859,15 @@
     }
     if(path && !state.picker)actions.push({separator:true},{label:"Build previews…",run:()=>HDRLibraryBuildPreviews.start({folder:path})},{label:"Discard built previews…",run:()=>HDRLibraryBuildPreviews.discard({folder:path})});
     if (path && !state.picker) actions.unshift({ label: "Check for new photos", run: () => requestCheck([...state.folderSelection]) }, { separator: true });
+    if (!state.picker) actions.push({ separator: true }, showAllAction());
     showMenu(event, actions, { label: "Folder actions", anchor: event.target.closest("button") || $("add-folder"),
       onError: error => { if (state.picker) $("picker-status").textContent = error.message; else status(error.message); } });
   }
   $("folders").addEventListener("contextmenu", event => showFolderMenu(event));
+  document.querySelector(".library-nav").addEventListener("contextmenu", event => {
+    if (event.defaultPrevented || event.target.closest(".library-folder-row")) return;
+    showMenu(event, [showAllAction()], { label: "Library options" });
+  });
   function pickerBrowse(path = "", returnPath = "") { return state.picker?.browse(path, returnPath); }
   function openPicker() {
     state.picker = HDRLibraryFolderPicker.create({ api, sleep, bindFolderMenu, closeFolderMenu });
