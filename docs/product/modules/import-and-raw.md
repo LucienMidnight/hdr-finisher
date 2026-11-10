@@ -1,3 +1,69 @@
+### November 10: neutral Apple ProRAW / linearization support
+
+Steve approved the researched ProRAW fix and checking newer Apple formats.
+Integer linear DNGs now validate and apply LinearizationTable before black
+subtraction and white-level scaling. Indices past the table use its last
+entry, per DNG. No nonlinear sample reduction is allowed before this lookup.
+The existing CPU import pool runs bounded row waves within its existing
+scratch allowance. No cache, memory limit, shader or finished-HDR ceiling
+changes. Malformed tables and unsupported mandatory operations still reject.
+
+ProfileGainTableMap and ProfileGainTableMap2 are optional starting looks, not
+the HDR delivery gain map. They are skipped explicitly, with a warning in
+source diagnostics, to follow neutral-import policy; ProfileToneCurve remains
+unapplied. BaselineExposure, white balance, colour matrices, crop/orientation,
+and scene-linear HDR headroom are preserved. Library selects its existing
+threaded CPU route before GPU admission for table-bearing linear DNGs; the
+GPU bridge refuses these samples rather than accidentally treating encoded
+values as linear. Reader identity changes so old error receipts are retried.
+This resolves the November 8 LinearizationTable limitation below.
+
+Validation: IMG_0284, IMG_0431 and IMG_1047 (iPhone 12 Pro) decode at full
+resolution, including orientation; copies are reused under
+`codebase/output/test-photos/iphone-proraw/`. Real decode evidence:
+`codebase/output/review/iphone-proraw/decode.json`. Electron recovery passes
+with IMG_0284, including CPU cache reopen. Synthetic 10/12/16-bit tables in
+uncompressed, JPEG XL lossless and JPEG XL lossy DNGs match independently
+expanded linear-reference DNGs exactly. Serial/threaded lookup matches bit
+for bit and the concurrency check observes multiple worker threads. Optional
+profile-map versions 1 and 2 preserve the same neutral pixels and HDR values
+above 1. No original or saved grade was written.
+
+#### Newer iPhone research (November 10)
+
+The implementation follows DNG metadata, not a camera-model list. The same
+linearization model therefore applies to newer integer linear ProRAW files
+whose remaining layout, compression and required tags are supported. The
+installed imagecodecs/tifffile stack decodes JPEG XL TIFF compression 52546;
+the synthetic tests exercise both lossless and lossy payloads, not just codec
+presence. Apple documents ProRAW on iPhone 12 Pro and later Pro models, with
+12 MP and 48 MP on iPhone 14 Pro and later. Real newer-model/48 MP samples
+have not been qualified; structural tests do not prove universal compatibility.
+
+HDR HEIC/JPEG is a separate work item. Apple documents Adaptive HDR starting
+with iOS 18 on iPhone 15/15 Pro, including an HDR gain map in newer ProRAW's
+full-size thumbnail. Our raw decode uses the scene-linear primary, not that
+thumbnail. The current HEIC loader recognises the older Apple auxiliary gain
+map and maker-note headroom; it does not implement the modern ISO/Adaptive HDR
+TMAP alternate. JPEG detection covers the existing Ultra HDR path, not a
+qualified set of Apple Adaptive HDR JPEG samples. Do not advertise complete
+newer-iPhone HDR photo support until real HEIC/JPEG samples preserve their
+HDR and authored SDR renditions. This is open work, not added in this fix.
+
+Final checks: 889 JavaScript checks passed; full Python 3,150 passed,
+3 skipped, with the previously recorded
+`test_remembered_failure_does_not_hide_current_grade_cached_scene` failure.
+Focused DNG/colour/routing checks: 139 passed, 1 skipped, including the
+additional JPEG XL lossy and profile-map-v2 cases. The default 90-second
+Library check passes. The iPhone-copy detail smoke has a drawing-gap failure;
+see the Library module and performance table. No acceptance limits changed.
+
+Primary references:
+- [Apple ProRAW processing and its required lookup](https://developer.apple.com/videos/play/wwdc2021/10160/).
+- [Apple ProRAW models and resolutions](https://support.apple.com/en-us/119916).
+- [Apple Adaptive HDR and ProRAW thumbnails](https://developer.apple.com/videos/play/wwdc2024/10177/).
+- [Adobe DNG 1.7.1, linearization and optional profile maps](https://helpx.adobe.com/content/dam/help/en/camera-raw/digital-negative/jcr_content/root/content/flex/items/position/position-par/download_section_733958301/download-1/DNG_Spec_1_7_1_0.pdf).
+
 ### November 8: Library unsupported-source CPU fallback
 
 Library now selects the existing CPU decoder when no GPU source adapter

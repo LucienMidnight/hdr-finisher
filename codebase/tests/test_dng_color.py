@@ -172,3 +172,44 @@ def test_color_conversion_cancellation_is_bounded_by_rows() -> None:
 
     with pytest.raises(DngImportCancelled):
         convert_to_acescg(np.ones((3, 1, 3), dtype=np.float32), _forward_metadata(), rows=1, cancelled=cancelled)
+
+
+def test_linearization_precedes_black_subtraction_and_clamps_table_indices():
+    from hdr_finisher.dng_color import normalize_camera_samples
+    source = np.array([[[0, 1, 2], [3, 4, 65535]]], dtype=np.uint16)
+    table = np.array([10, 40, 160, 640], dtype=np.uint16)
+    metadata = _forward_metadata(linearization_table=table, black_level=np.array([10,20,30]), white_level=np.array([640,650,660]))
+    expected = (np.array([[[10,40,160],[640,640,640]]],dtype=np.float32)-np.array([10,20,30],dtype=np.float32)) * np.float32(1/630)
+    np.testing.assert_array_equal(normalize_camera_samples(source,metadata), expected)
+    np.testing.assert_array_equal(source, np.array([[[0,1,2],[3,4,65535]]],dtype=np.uint16))
+
+
+def test_threaded_linearization_is_bit_identical_and_uses_multiple_workers(monkeypatch):
+    from threading import Barrier, get_ident
+    from hdr_finisher import import_bands
+    from hdr_finisher.dng_color import normalize_camera_samples
+    from hdr_finisher.cpu_budget import logical_cpus
+    if logical_cpus()<2: pytest.skip("One logical CPU")
+    image=np.random.default_rng(49).integers(0,5000,(256,256,3),dtype=np.uint16)
+    metadata=_forward_metadata(linearization_table=np.arange(4096,dtype=np.uint16)*8,white_level=np.array([32760]))
+    expected=normalize_camera_samples(image,metadata)
+    original=import_bands.run_bands;threads=set();barrier=Barrier(2)
+    def traced(function,starts):
+        starts=list(starts)
+        def work(start):
+            threads.add(get_ident())
+            if start in starts[:2] and len(starts)>1: barrier.wait(5)
+            return function(start)
+        yield from original(work,starts)
+    monkeypatch.setattr(import_bands,'run_bands',traced)
+    with import_bands.grade_import_bands():
+        actual=normalize_camera_samples(image,metadata)
+    np.testing.assert_array_equal(actual,expected)
+    assert len(threads)>=2
+
+
+@pytest.mark.parametrize('table',[np.array([],np.uint16),np.array([1.0]),np.array([[1,2]],np.uint16)])
+def test_invalid_linearization_tables_are_rejected(table):
+    from hdr_finisher.dng_color import normalize_camera_samples
+    with pytest.raises(DngColorError,match='LinearizationTable'):
+        normalize_camera_samples(np.zeros((2,3,3),np.uint16),_forward_metadata(linearization_table=table))

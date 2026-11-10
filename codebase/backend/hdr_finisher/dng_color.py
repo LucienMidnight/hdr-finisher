@@ -63,6 +63,7 @@ class DngColorMetadata:
     white_level: np.ndarray | None = None
     linear_response_limit: float = 1.0
     baseline_exposure: float = 0.0
+    linearization_table: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
@@ -187,15 +188,36 @@ def normalize_camera_samples(
     scale = white - black
     if np.any(scale <= 0) or not np.all(np.isfinite(scale)):
         raise DngColorError("WhiteLevel must be finite and greater than BlackLevel.")
+    table = metadata.linearization_table
+    if table is not None:
+        table = np.asarray(table)
+        if source.dtype.kind != "u" or table.ndim != 1 or not 1 <= table.size <= 65536 or table.dtype.kind != "u" or table.dtype.itemsize > 2:
+            raise DngColorError("LinearizationTable requires unsigned integer samples and 1-65536 SHORT entries.")
+        table = table.astype(np.float32)
     output = np.empty(source.shape, dtype=np.float32)
     black32 = black.astype(np.float32)
     inverse_scale32 = (1.0 / scale).astype(np.float32)
-    for start in range(0, source.shape[0], rows):
+    from .import_bands import parallel_import_enabled, run_bands
+    from .cpu_budget import logical_cpus
+    concurrent = 1
+    if table is not None and parallel_import_enabled():
+        # Reuse import_bands' existing 200k-pixel concurrent scratch allowance.
+        workers = logical_cpus()
+        rows = min(rows, max(1, 200_000 // workers // source.shape[1]))
+        concurrent = min(workers, max(1, 200_000 // (rows * source.shape[1])))
+    def band(start):
         if cancelled is not None and cancelled():
             raise DngImportCancelled("Experimental DNG import cancelled")
         end = min(source.shape[0], start + rows)
-        camera = np.asarray(source[start:end], dtype=np.float32)
+        camera = (np.take(table, source[start:end], mode="clip") if table is not None
+                  else np.asarray(source[start:end], dtype=np.float32))
+        # Lookup precedes black subtraction and scaling. Excess indices use
+        # the final table entry, as specified by DNG's linearization model.
         output[start:end] = (camera - black32) * inverse_scale32
+    starts = range(0, source.shape[0], rows)
+    for offset in range(0, len(starts), concurrent):
+        for _ in run_bands(band, starts[offset:offset + concurrent]):
+            pass
     return output
 
 

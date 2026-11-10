@@ -18,7 +18,7 @@ from hdr_finisher.sessions import SessionStore
 RESOURCES = ResourceSnapshot(64 * GIB, 48 * GIB, "test")
 
 
-def _write_linear(path: Path, image: np.ndarray, *, subifd: bool = False) -> None:
+def _write_linear(path: Path, image: np.ndarray, *, subifd: bool = False, extra_tags=(), compression=None, compressionargs=None) -> None:
     color_matrix = tuple(value for item in np.eye(3, dtype=int).reshape(-1) for value in (int(item), 1))
     neutral = (96422, 100000, 1, 1, 82521, 100000)
     extra = [
@@ -28,6 +28,7 @@ def _write_linear(path: Path, image: np.ndarray, *, subifd: bool = False) -> Non
         (50778, "H", 1, 23, False),
         (50728, "2I", 3, neutral, False),
     ]
+    extra.extend(extra_tags)
     if subifd:
         with tifffile.TiffWriter(path) as tif:
             tif.write(np.zeros((2, 3, 3), np.uint8), photometric="rgb", subfiletype=1, subifds=1, extratags=extra)
@@ -43,6 +44,8 @@ def _write_linear(path: Path, image: np.ndarray, *, subifd: bool = False) -> Non
         tifffile.imwrite(
             path,
             image,
+            compression=compression,
+            compressionargs=compressionargs,
             photometric=34892,
             planarconfig="contig",
             metadata={"axes": "YXS"},
@@ -279,3 +282,65 @@ def test_dng_cancellation_is_transactional(
     with pytest.raises(LoaderError, match="cancelled"):
         store.prepare_session(candidate)
     assert store.current() is active
+
+
+@pytest.mark.parametrize('compression',[None,'jpegxl','jpegxl_lossy'])
+@pytest.mark.parametrize('bits',[10,12,16])
+def test_table_dng_matches_expanded_neutral_dng_and_selects_cpu(tmp_path,compression,bits):
+    from hdr_finisher.library_estimates import gpu_metadata
+    from hdr_finisher.library_dng import decoded
+    from hdr_finisher.library_live import recipe
+    from hdr_finisher.library_gpu_raw import NotEligible
+    if compression in {'jpegxl','jpegxl_lossy'}:
+        import imagecodecs
+        if not imagecodecs.JPEGXL.available: pytest.skip('JPEG XL decoder unavailable')
+    source=np.random.default_rng(bits).integers(0,2**bits,(24,32,3),dtype=np.uint16)
+    table=np.rint(np.linspace(0,65535,2**bits)**1.0).astype(np.uint16)
+    table[:4]=[0,2,5,11]
+    path=tmp_path/'table.dng';expanded=tmp_path/'expanded.dng'
+    _write_linear(path,source,compression='jpegxl' if compression=='jpegxl_lossy' else compression,
+                  compressionargs={'distance':1.0,'lossless':False} if compression=='jpegxl_lossy' else None,extra_tags=[
+        (50712,'H',len(table),table,False),
+        (52525,'B',4,b'look',False),
+        (50717,'H',3,(65535,65535,65535),False),
+        (274,'H',1,6,False)])
+    stored=tifffile.imread(path)
+    _write_linear(expanded,table[np.minimum(stored,len(table)-1)],extra_tags=[(274,'H',1,6,False)])
+    inspection=inspect_dng(path,resource_snapshot=RESOURCES)
+    assert inspection.route is DngRoute.LINEAR_DNG
+    assert any('ProfileGainTableMap' in warning and 'neutral' in warning for warning in inspection.warnings)
+    actual,metadata=decode_linear_dng(path,inspection,library_edge=16)
+    expected,_=decode_linear_dng(expanded,inspect_dng(expanded,resource_snapshot=RESOURCES))
+    np.testing.assert_array_equal(actual,expected)
+    assert actual.shape==(32,24,3)
+    assert metadata['dng_linearization']=='lookup_table'
+    assert gpu_metadata(path)['cpu_route']=='unsupported-gpu'
+    with pytest.raises(NotEligible,match='LinearizationTable'):
+        decoded(path,recipe(None))
+
+
+@pytest.mark.parametrize('image,tag_type,values',[
+    (np.zeros((2,3,3),np.float32),'H',[0,100]),
+    (np.zeros((2,3,3),np.uint16),'f',[0.,100.]),
+])
+def test_invalid_table_metadata_never_opens_as_linear(tmp_path,image,tag_type,values):
+    path=tmp_path/'invalid-table.dng'
+    _write_linear(path,image,extra_tags=[(50712,tag_type,len(values),values,False)])
+    inspection=inspect_dng(path,resource_snapshot=RESOURCES)
+    assert inspection.route is DngRoute.UNSUPPORTED_DNG
+    assert inspection.rejection.code=='invalid_linearization_table'
+
+
+@pytest.mark.parametrize('tag',[52525,52544])
+def test_optional_profile_gain_look_is_skipped_without_changing_hdr_pixels(tmp_path,tag):
+    path=tmp_path/'neutral.dng';reference=tmp_path/'reference.dng'
+    image=np.full((12,16,3),32768,np.uint16)
+    exposure=(50730,'2i',1,(2,1),False)
+    _write_linear(path,image,extra_tags=[(tag,'B',4,b'look',False),exposure])
+    _write_linear(reference,image,extra_tags=[exposure])
+    inspection=inspect_dng(path,resource_snapshot=RESOURCES)
+    actual,metadata=decode_linear_dng(path,inspection)
+    expected,_=decode_linear_dng(reference,inspect_dng(reference,resource_snapshot=RESOURCES))
+    np.testing.assert_array_equal(actual,expected)
+    assert float(actual.max())>1.0, 'Import must retain editable HDR headroom'
+    assert 'Skipped optional ProfileGainTableMap' in metadata['dng_warnings']

@@ -15,6 +15,8 @@ def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640, m
     from .library_dng import geometry
     # A declared operation-free subset. Other linear cases retain the correct
     # decoder; no required correction or rendered SDR rendition is skipped.
+    if inspection.metadata.get("linearization_table") is not None:
+        raise NotEligible("LinearizationTable uses the existing threaded CPU decoder")
     if inspection.required_opcodes or inspection.optional_opcodes:
         raise NotEligible("Linear DNG operations retain the existing CPU route")
     shrink = edge <= 2560 and inspection.primary_page_index is not None and inspection.metadata.get("sdr_preview_series_index") is None

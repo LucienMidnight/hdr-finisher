@@ -27,6 +27,15 @@ Accepted extensions include EXR, TIFF, HDR, PFM, HEIC/HEIF, AVIF, JPEG XL, PNG, 
 
 ## Experimental DNG Import
 
+Apple ProRAW files with supported integer LinearRaw data and a
+LinearizationTable are decoded using that table. The Library develops these
+files on the CPU and caches the pictures. Apple's optional profile gain-table
+look is skipped to keep the starting image neutral; its omission is listed
+in the Metadata warnings. The file's exposure metadata and editable HDR
+headroom are retained. The result can look flatter than Apple's camera look.
+Newer ProRAW variants still depend on supported metadata and compression;
+this is not a claim of complete newer-iPhone Adaptive HDR HEIC/JPEG support.
+
 DNG import is experimental and intentionally variant-gated. Before reading the full pixel payload, HDR Finisher selects the largest full-resolution primary, distinguishes a three-channel LinearRaw image from a CFA mosaic, checks required metadata/opcodes/codecs, and performs a conservative memory preflight. Reduced previews and Lightroom Fast Load proxies are never accepted as the primary.
 
 The tested implementation supports uint16 and float16/float32, contiguous three-channel LinearRaw primaries with DNG matrix color metadata, plus ordinary mosaiced DNGs handled by the existing rawpy/LibRaw path. It implements OpcodeList3 `GainMap` and `WarpRectilinear` at the post-demosaic camera-linear stage for the audited LibRaw 0.22.1 build. Unsupported mandatory operations, non-unit `DefaultScale`, unusual sample/layout variants, missing codecs, and unsafe allocations are rejected instead of ignored.

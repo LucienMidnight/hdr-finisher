@@ -37,11 +37,8 @@ LINEAR_RAW = 34892
 CFA = 32803
 OPCODE_LIST_TAGS = ("OpcodeList1", "OpcodeList2", "OpcodeList3")
 UNSUPPORTED_PIXEL_TAGS = (
-    "LinearizationTable",
     "BlackLevelDeltaH",
     "BlackLevelDeltaV",
-    "ProfileGainTableMap",
-    "ProfileGainTableMap2",
 )
 
 
@@ -155,6 +152,16 @@ def inspect_dng(
 
             if rejection is None:
                 rejection = _metadata_rejection(page, root, metadata)
+            table = _tag(page, root, "LinearizationTable")
+            if table is not None:
+                # DNG SHORT lookup values; validate before reading an unbounded payload.
+                if dtype.kind != "u" or dtype.itemsize > 2 or int(table.dtype) != 3 or not 1 <= table.count <= 65536:
+                    rejection = rejection or DngRejection("invalid_linearization_table", "LinearizationTable requires 1-65536 unsigned SHORT entries and integer samples.")
+                else:
+                    metadata["linearization_table"] = np.asarray(table.value, dtype=np.uint16).reshape(-1)
+            for tag in ("ProfileGainTableMap", "ProfileGainTableMap2"):
+                if _tag(page, root, tag) is not None:
+                    warnings.append(f"Skipped optional {tag} to preserve neutral scene-linear import.")
             is_mosaic = samples == 1 and (photometric == CFA or _tag(page, root, "CFAPattern") is not None)
             is_linear = photometric == LINEAR_RAW and samples == 3
             if is_mosaic:
@@ -252,7 +259,7 @@ def decode_linear_dng(
     if library_edge is not None:
         library_edge = max(10240, library_edge)
     geometry_metadata = inspection.metadata
-    reduced = library_edge is not None and inspection.primary_page_index is not None and not (inspection.required_opcodes or inspection.optional_opcodes) and inspection.metadata.get("sdr_preview_series_index") is None
+    reduced = library_edge is not None and inspection.primary_page_index is not None and not (inspection.required_opcodes or inspection.optional_opcodes) and inspection.metadata.get("sdr_preview_series_index") is None and inspection.metadata.get("linearization_table") is None
     if reduced:
         from copy import deepcopy
         geometry_metadata = deepcopy(inspection.metadata)
@@ -347,6 +354,7 @@ def decode_linear_dng(
         "raw_mosaiced": False,
         "experimental_dng_import": True,
         "experimental_dng_label": "Experimental DNG Import",
+        "dng_linearization": "lookup_table" if color_metadata.linearization_table is not None else "identity",
         "dng_route": inspection.route.value,
         "dng_color_path": transform.color_path,
         "dng_highlight_color_recovery": (
@@ -566,6 +574,7 @@ def color_metadata_from_mapping(metadata: dict[str, Any]) -> DngColorMetadata:
         camera_calibration2=metadata.get("camera_calibration2"),
         analog_balance=metadata.get("analog_balance"),
         as_shot_neutral=metadata.get("as_shot_neutral"),
+        linearization_table=metadata.get("linearization_table"),
         black_level=metadata.get("black_level"),
         white_level=metadata.get("white_level"),
         linear_response_limit=float(metadata.get("linear_response_limit", 1.0)),

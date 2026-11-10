@@ -1,3 +1,23 @@
+## November 10: iPhone ProRAW decode
+
+The shared importer now applies LinearizationTable and explicitly skips the
+optional profile gain-map starting look, preserving a neutral, editable HDR
+source. Library uses its existing threaded CPU helper for these linear DNGs,
+before GPU-memory admission, and caches the resulting scenes normally. Old
+failure receipts are reconsidered by the new reader identity. IMG_0284,
+IMG_0431 and IMG_1047 pass full-size CPU decode; the real Electron recovery
+check passes IMG_0284 development and cache reopen. Newer-device coverage,
+JPEG XL structural tests and remaining Adaptive HDR HEIC/JPEG work are in the
+Import and RAW module's November 10 entry. No originals, grades, memory
+budgets or GPU shaders change.
+
+Default 90-second mixed Library check passes (no photo errors or over-limit
+pauses). The three-copy iPhone Single/detail check draws all three photos
+with no photo errors or zeroed channels, but flags a 2,461 ms drawing gap
+against the existing 250 ms limit. This responsiveness result needs Steve's
+app trial before more timing runs; the check was not relaxed or rerun.
+Timings and evidence are in the performance table.
+
 ## November 8: CPU fallback for unsupported GPU development
 
 Steve approved the existing CPU decoder whenever Library has no supported GPU

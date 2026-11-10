@@ -46,6 +46,24 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+November 10 ProRAW CPU recovery smoke (working tree based on `9d7d9e6a`,
+2560x1440 Electron, disposable profile, concurrent Python suite): IMG_0284
+source preparation was 2.208 s, then cache reopen required no CPU decode.
+This is one descriptive source-stage observation, not a whole-screen timing,
+new timing budget, or speedup claim. Evidence:
+`codebase/output/iphone-proraw-electron.log`. Whole-screen iPhone-copy smoke: Single open/arrow to the matching screen
+canvas 4.103-4.619 s across IMG_0284, IMG_0431 and IMG_1047; 100% detail
+click to draw 4.516 s (one observation). All three pictures draw with no
+photo errors or zeroed channels. A 2,461 ms drawing gap fails the existing
+250 ms limit, while the largest timer block is 66 ms; no repeat or timing
+investigation before Steve tries the app. Peak counted app 1.608 GB.
+Evidence: `codebase/output/quick-library-check/iphone-proraw-detail/report.json`.
+
+The default mixed 90-second check passes: no photo errors, no over-limit
+frame gaps or main-thread blocks, peak 2.770 GB. Its first/ten/twenty-picture
+observations are 5.7/8.9/14.9 s (concurrent Python suite). Evidence:
+`codebase/output/quick-library-check/iphone-proraw/report.json`.
+
 November 8 unsupported-DNG incident (pre-fix live app log, working tree
 on `3b1fd4ff`): the 2021-folder log showed repeated GPU-memory
 waits of roughly 30-41 s for iPhone DNGs, with 5,032,650,480 bytes requested

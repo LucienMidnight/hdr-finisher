@@ -266,6 +266,7 @@ def gpu_metadata(path, document=None, edge=2560):
             if inspection.route is DngRoute.UNSUPPORTED_DNG:
                 return {'cpu_route':'unsupported-gpu'}
             if inspection.route is DngRoute.LINEAR_DNG and (inspection.required_opcodes or inspection.optional_opcodes
+                    or inspection.metadata.get("linearization_table") is not None
                     or (edge == 100000 and inspection.metadata.get('sdr_preview_series_index') is not None)):
                 return {'cpu_route':'unsupported-gpu'}
             width, height, *_ = geometry(inspection.metadata, inspection.width, inspection.height)
