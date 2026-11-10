@@ -57,7 +57,7 @@ const fs = require("node:fs"), path = require("node:path");
    const rows=[...list.children].map(row=>row.getBoundingClientRect());
    return {short,height:surface.clientHeight,sixFit:rows[5].bottom<=surface.getBoundingClientRect().bottom,seventhBelow:rows[6].bottom>surface.getBoundingClientRect().bottom,heights:rows.map(r=>r.height),nested:getComputedStyle(list).overflowY,gutter:surface.offsetWidth-surface.clientWidth};
   });
-  assert.equal(compact.height,192);assert(compact.sixFit&&compact.seventhBelow);assert(compact.heights.every(h=>h===32));
+  assert.equal(compact.height,204);assert(compact.sixFit&&compact.seventhBelow);assert(compact.heights.every(h=>h===34));
   assert.equal(compact.short.overflow,'scroll');assert(compact.short.gutter>1);assert.equal(compact.gutter,compact.short.gutter);
   assert.notEqual(compact.short.track,'rgba(0, 0, 0, 0)');assert.equal(compact.nested,'visible');
   await page.screenshot({path:path.join(output,'compact-local.png')});

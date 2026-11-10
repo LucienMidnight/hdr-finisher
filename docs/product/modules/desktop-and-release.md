@@ -490,3 +490,10 @@ Validation for the grouped component pass: 904 Node checks pass; the focused
 Electron UI driver passes in four themes. Full Python and the plain Library
 check are in progress; final results are recorded below when complete.
 
+
+Component-pass UI diagnostic is registered in the release inventory. Its
+four-theme run passes and the review includes empty and seven-row Local lists.
+The older Control Panel diagnostic now expects the intended 34px rows and
+204px inner well (previously 32px/192px), without changing its other limits.
+Export presets and tag selections also use the neutral pressed shadow.
+

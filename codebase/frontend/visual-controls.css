@@ -631,3 +631,5 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 :root :is(input[type="text"], input[type="number"], input[type="search"]) { min-height: var(--panel-control-h); }
 :root :is(#sdr-tone-equalizer-editor) { background: var(--panel); }
 :root .source-rail :is(.source-summary, .disclosure-panel) { border-bottom: 1px solid var(--hairline); }
+
+:root :is(.batch-preset[aria-pressed="true"], .library-tags-tools [aria-pressed="true"], .library-tag-row[aria-selected="true"]) { box-shadow: var(--plate-press); }

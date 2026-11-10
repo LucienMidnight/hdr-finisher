@@ -589,3 +589,13 @@ parsing, Canon colour/subsampling rejection, malformed/unknown fallbacks,
 rate/minimum, slot classification and memory gating. The culling driver now
 samples grants/whole-app memory and offers --paced and --canon modes, with
 sampler cleanup on both success and failure.
+
+November 10 component-sheet pass: `tools/component-pass-review.cjs` is the
+release-registered UI diagnostic through `tests/run-in-electron.js`. It checks
+four-theme segment depth, equal curve tabs, icon-only Crop naming/geometry,
+empty and populated Local list geometry and permanent list rails; captures
+Default Dark and Default Light in `output/review/component-pass/`. Shared
+materials live in `visual-tokens.css`, application rules in `visual-controls.css`,
+list wells in `control-panel.css`, and Library sections in `photo-library.css`.
+Graph-only paint is in the existing curve/equalizer/highlight/scope drawing files.
+
