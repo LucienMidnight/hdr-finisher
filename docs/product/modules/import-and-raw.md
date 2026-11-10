@@ -1,3 +1,29 @@
+### November 10: additional Apple fixture testing and P3/PQ defect
+
+Steve requested focused testing with GPT-6.1 Sol medium agents. Five Lee
+Zavitz iPhone 12 Pro Max DNGs (IMG_0185, IMG_0329, IMG_0334, IMG_0338,
+IMG_0350) pass full-resolution CPU decode, orientation, finite-pixel and HDR
+headroom checks. Independent normalization matches exactly: four use the
+identity path and IMG_0350 applies its lookup once. Neutral profile-map
+handling passes focused tests. 54 focused DNG checks pass; source hashes
+and source-directory contents remain unchanged. Evidence:
+`codebase/output/review/apple-validation/cpu-dng.json`.
+
+The third-party 900x1200 P3/PQ JPEG XL retains encoded samples behind the
+expected manual interpretation gate. Explicit Display P3/PQ clears that gate
+and retains HDR headroom, but testing exposed a shared CPU import defect:
+`normalize_to_acescg` sends every PQ input through the BT.2020 matrix,
+ignoring explicitly selected P3 primaries. Equality with the BT.2020/PQ
+route reproduces the defect; this is not a colour acceptance pass. Nine
+focused JPEG XL checks pass, but they do not cover this missing primaries
+case. Evidence: `codebase/output/review/apple-validation/cpu-jxl.json`.
+
+Open work: preserve explicitly selected primaries when decoding PQ, add an
+independent P3/PQ regression and qualify the CPU/GPU result. HLG has the same
+hard-coded BT.2020 dispatch and needs a separate explicit-primaries audit.
+No colour maths, expected pixels or tolerances were changed in this testing
+pass. Newer-iPhone sample qualification remains deferred at Steve's request.
+
 ### November 10: neutral Apple ProRAW / linearization support
 
 Steve approved the researched ProRAW fix and checking newer Apple formats.

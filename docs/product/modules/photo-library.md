@@ -1,3 +1,17 @@
+## November 10: Pro Max fixture app check
+
+All five Lee Zavitz iPhone 12 Pro Max copies display in the real Library,
+including forward/back navigation; full-size detail completes and stored
+pictures have no zeroed colour channels. The 90-second app check nevertheless
+fails responsiveness: 10,396 ms drawing gap and 1,005 ms main-thread block
+against the unchanged 250 ms limit. No photo errors or memory breach; not
+rerun or investigated before Steve's app trial, following AGENTS.md.
+Evidence: `codebase/output/quick-library-check/apple-validation/report.json`.
+The test uses reusable copies under `output/test-photos/apple-validation`;
+fixtures and original grades are read-only. CPU correctness evidence and the
+separate third-party P3/PQ import defect are in Import and RAW's November 10
+testing entry. This is not a blanket validation pass for the JXL's colour.
+
 ## November 10: iPhone ProRAW decode
 
 The shared importer now applies LinearizationTable and explicitly skips the

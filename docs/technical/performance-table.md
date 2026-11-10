@@ -46,6 +46,16 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+November 10 Lee Zavitz Pro Max app check (`8eacf8ee`, 2560x1440,
+90-second disposable Electron profile, concurrent CPU-only delegated checks):
+all five camera pictures appear by 0.6 s. Single first open 410 ms, forward
+steps 266-327 ms, return steps 74-88 ms. These are camera-picture navigation,
+not five new full RAW developments. One 100% detail request draws in 4.909 s.
+The run fails with a 10,396 ms drawing gap and 1,005 ms main-thread block
+(limit 250 ms); no picture errors or zeroed channels, peak app 1.700 GB.
+No repeat or timing investigation before Steve tries the app. Evidence:
+`codebase/output/quick-library-check/apple-validation/report.json`.
+
 November 10 ProRAW CPU recovery smoke (working tree based on `9d7d9e6a`,
 2560x1440 Electron, disposable profile, concurrent Python suite): IMG_0284
 source preparation was 2.208 s, then cache reopen required no CPU decode.
