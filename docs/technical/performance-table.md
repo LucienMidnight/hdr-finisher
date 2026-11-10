@@ -1732,3 +1732,14 @@ Evidence in codebase/output: exposure-cold-{alone,focus}.log,
 exposure-prototype-{alone,focus}.{log,json}, exposure-reserved-{alone,focus}.
 {log,json}, exposure-stages.log, exposure-mask-prototype.log,
 exposure-prototype-parity.log, exposure-restored-checks.log.
+
+
+November 10 implementation experiment 1, based on 91b374c7: mask-only change,
+original priority/admission untouched, same Sony burst/early scan/fresh
+profile/2560x1440 conditions and existing 10% diagnostic band. First E alone
+1.199 s; next 3.199/0.108/0.100 s. Focus-on first 2.983 s; next
+2.459/0.084/0.088 s. One observation each, later maps may be prefetched. Alone
+first improves versus 1.440 s; Focus-on first remains within band of 3.056 s.
+Do not attribute the larger scheduling-prototype gains to mask changes.
+Evidence: codebase/output/exposure-mask-only{,-focus}.json and matching app
+logs; exposure-mask-only-unit.log. No concurrent parent suites.

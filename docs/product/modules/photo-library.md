@@ -8492,3 +8492,13 @@ Output stayed 42.7 GB. Disposable app profiles and scratch prototype source
 were removed. Automatic approval review blocked cleanup of the profiling
 TEMP folder hdr-exposure-profile-aaz152at under its command policy; left in
 place. This research commit changes records only.
+
+
+November 10, Exposure change 1: the repeating-CFA path now accumulates
+all-channel shadow answers directly per sensor group, expanding once. Full
+sample thresholds, pattern verification, irregular fallback, odd/incomplete
+edges and isolated-warning pooling remain exact. Scheduling is unchanged.
+Existing parity checks pass; tiny/narrow and partial-row/column cases are
+expanded. First cold E alone 1.199 s, with Focus 2.983 s; next-photo tails
+3.199/2.459 s. This is a mask-only change, not the earlier combined prototype.
+Grouped fast/app validation follows after the sequential experiments.

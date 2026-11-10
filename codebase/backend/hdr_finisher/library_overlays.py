@@ -61,17 +61,21 @@ def raw_exposure_regions(samples,colors,black,white,pattern):
         if colors.shape==samples.shape and all(
                 np.all(colors[y::sy,x::sx]==tile[y,x])
                 for y in range(tile.shape[0]) for x in range(tile.shape[1])):
-            blown=np.empty(samples.shape,dtype=bool);blocked=np.empty_like(blown)
+            h,w=samples.shape
+            blown=np.empty(samples.shape,dtype=bool)
+            # Keep one all-channels-dark answer per CFA group. Incomplete
+            # edge groups stay false, as with the former false-padded plane.
+            cells=np.ones(((h+sy-1)//sy,(w+sx-1)//sx),dtype=bool)
+            if h%sy:cells[-1,:]=False
+            if w%sx:cells[:,-1]=False
             for y in range(tile.shape[0]):
                 for x in range(tile.shape[1]):
                     channel=tile[y,x]
                     # One-element arrays preserve NumPy's array promotion and
                     # threshold arithmetic, including floating-point sources.
                     hi,lo=exposure_regions(samples[y::sy,x::sx],black[channel:channel+1],white[channel:channel+1])
-                    blown[y::sy,x::sx]=hi;blocked[y::sy,x::sx]=lo
-            h,w=blocked.shape;ph=int(np.ceil(h/sy))*sy;pw=int(np.ceil(w/sx))*sx
-            padded=np.pad(blocked,((0,ph-h),(0,pw-w)),constant_values=False)
-            cells=padded.reshape(ph//sy,sy,pw//sx,sx).all(axis=(1,3))
+                    blown[y::sy,x::sx]=hi
+                    cells[:lo.shape[0],:lo.shape[1]]&=lo
             return blown,np.repeat(np.repeat(cells,sy,axis=0),sx,axis=1)[:h,:w]
     return exposure_regions(samples,black[colors],white[colors],pattern)
 

@@ -157,7 +157,7 @@ def test_map_reports_the_measured_frame_inside_pooled_cells(tmp_path):
     assert 'camera_frame' not in meta  # Direct pictures are shown whole.
 
 
-@pytest.mark.parametrize("shape",[(13,17),(1,3),(6,7)])
+@pytest.mark.parametrize("shape",[(13,17),(1,3),(6,7),(1,1),(3,1),(7,6)])
 @pytest.mark.parametrize("pattern",[np.array([[0,1],[3,2]]),np.arange(36).reshape(6,6)%4])
 @pytest.mark.parametrize("dtype",[np.uint16,np.float32,np.float64])
 def test_raw_scalar_slices_match_array_reference(shape,pattern,dtype):
