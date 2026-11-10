@@ -237,6 +237,27 @@ def exposure_source(path,cancelled=None,probe=None):
     raise ValueError("Exposure warnings unavailable: this file has no recorded clipping limit.")
 
 
+def full_focus_source(path, cancelled=None):
+    """Load native RAW source pixels without creating a Grade document.
+
+    Linear DNG retains its existing Library decode; native camera RAW uses
+    the same default loader as SessionStore, including lens and orientation.
+    """
+    from .cpu_budget import library_bands
+    from .library_pictures import decode_picture
+    from .loader import load_image
+    path=Path(path)
+    check_cancelled(cancelled)
+    with library_bands():
+        if path.suffix.lower()==".dng":
+            from .linear_dng import inspect_dng,DngRoute
+            if inspect_dng(path).route is not DngRoute.MOSAICED_RAW_DNG:
+                return decode_picture(path,100000,"native")[0]
+        pixels,_,_,_,_=load_image(path,cancelled=cancelled,analyze_hdr=False)
+        check_cancelled(cancelled)
+        return pixels
+
+
 class OverlayMaps:
     def __init__(self,root): self.cache=LibraryPictureCache(root)
     def file(self,key):
@@ -265,7 +286,11 @@ class OverlayMaps:
         elif kind=="focus":
             from .library_focus import focus_map
             from .library_pictures import decode_picture
-            pixels,_,info=decode_picture(Path(path),100000,"native" if quality=="full" else "quick")
+            if raw and quality=="full":
+                pixels=full_focus_source(path,cancelled)
+                info={}
+            else:
+                pixels,_,info=decode_picture(Path(path),100000,"native" if quality=="full" else "quick")
             check_cancelled(cancelled)
             if quality=="half" and info["route"]!="quick-half-raw":pixels=pixels[::2,::2]
             source=pixels.shape[:2]

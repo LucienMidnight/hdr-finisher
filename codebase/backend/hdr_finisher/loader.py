@@ -69,6 +69,7 @@ def load_image(
     retained_session_bytes: int = 0,
     hdr_reference_white_nits: int = 203,
     library_edge: int | None = None,
+    analyze_hdr: bool = True,
 ) -> tuple[np.ndarray, SourceImageDescriptor, dict[str, Any], Any, np.ndarray | None]:
     from .file_gate import decode_suffix
     suffix = decode_suffix(path)  # by contents when they differ from the extension
@@ -254,11 +255,12 @@ def load_image(
         interpretation_mode="manual" if metadata.get("user_override") else "auto",
         color_space_confident=not bool(metadata.get("needs_color_override")),
     )
-    if progress:
+    if progress and analyze_hdr:
         progress("analysis", "Analyzing source HDR range")
     _raise_if_cancelled(cancelled)
     analysis_started = perf_counter()
-    analysis = classify_hdr(normalized, metadata, suffix, cancelled=cancelled)
+    # Source-only consumers need the same pixels, without the document analysis.
+    analysis = classify_hdr(normalized, metadata, suffix, cancelled=cancelled) if analyze_hdr else None
     metadata["import_timings_ms"] = {
         "decode": round(decode_ms, 3),
         "normalize_to_acescg": round(normalize_ms, 3),

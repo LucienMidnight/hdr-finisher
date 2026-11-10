@@ -75,6 +75,8 @@ Two overlays paint warnings on top of your pictures. They work in the grid, Sing
 - **Focus** (S) marks areas that look sharp. Open the **Focus** button to change **Strength**, **Sensitivity** and **Colour**.
 - **Exposure** (E) marks **Clipped highlights** and **Near-black shadows**. Open the **Exposure** button to change **Strength**, switch either warning off, and pick their colours.
 
+In Single and Compare, Focus first shows a quick result while full detail is prepared. If full detail is already available, it shows that result directly.
+
 Each button has an **Enabled** / **Disabled** switch. The overlays are based on the source photo, not on your grade.
 
 They also work on RAW photos you have not developed: the warnings are measured from the RAW file and placed over the camera's preview. If a camera preview cannot be lined up with the RAW data, the photo shows **Focus unavailable · camera preview** (or Exposure); develop it to see the overlay. Photos with a saved grade show **unavailable · graded**.

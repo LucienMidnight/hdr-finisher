@@ -8296,3 +8296,53 @@ Small PNG transfer and already immediate warm maps are poor next targets.
 See the performance table's read-only prototype entry for timings and
 agreement limits. No production code changed or existing tests rerun for
 this research; the implementation validation at c38609b2 remains current.
+
+
+## November 10: Focus options tested; source-only loading and full-map reuse kept
+
+Steve authorized trying all three easy options and keeping the useful ones.
+Full camera RAW Focus now calls the same normalized source loader without
+creating a Grade session, hashing for a Grade document, building its render
+cache/default document or classifying HDR. `load_image(analyze_hdr=True)`
+remains the default for all existing callers. Half Focus, non-RAW and linear
+DNG keep their existing decoder routes. Real Sony DSC07060 and Canon IMG_0114
+(portrait)/IMG_3129 (landscape) source arrays are pixel-for-pixel identical to
+native Grade preparation. No Focus filter, threshold, noise calculation,
+registration or map version changed.
+
+Single/Compare and their matching filmstrip surface first look for a valid
+full map. A retained full validates directly; a disk hit needs no half build.
+Cold misses still show half before full. Ordinary grid sources do not incur
+an extra probe. Lookup/build subscriptions remain separate and independently
+cancelled; stale full results stay hidden and successful retained validation
+redraws the layer. A failed optional lookup falls back to the normal route.
+The cache-only API miss returns 200 rather than entering pending retries.
+No extra cache or allowance was added.
+
+Native, coarse-only and double-accumulation OpenCV filters were rejected.
+Across 48 synthetic scenes, quantized maps matched but some noise/confidence
+values differed; the prior real coarse-only trial also changed a map cell.
+The agent's control checks passed and three exactness candidates were
+explicitly rejected. The unaccepted experimental test/helper was removed;
+no production filter or existing agreement check was weakened.
+
+Validation: 49 focused Python tests pass; source-route and cache-only tests
+are in `test_focus_source_loading.py` and `test_focus_cached_map.py`. Full
+JavaScript: 888 passed; final focused overlay frontend checks: 19 passed.
+Full Python: 3,137 passed, three skipped, only the known cached-scene failure.
+The existing Focus Electron driver passes controls/views/quality/preferences;
+the Sony RAW check passes cold half/full, retained full and disk-only full
+reuse after removing only the disposable profile's half map. Disk-only full
+appears in 35 ms without rebuilding half. Cold full observations span
+8.295-9.852 s versus the earlier 9.311 s: no reliable cold speedup is claimed.
+The first diagnostic completed its timing phases but later failed on renderer
+reload readiness; that harness issue was fixed for the complete check.
+
+Default Library check has no picture/memory error but repeats the known
+2,007 ms drawing gap against 250 ms, with Focus off, concurrent Python and
+unrelated DNG work. No limit change or rerun. Output stayed 42.6 GB. Scratch
+measurement driver removed; logs/reports are referenced in the performance
+table. Automatic approval review blocked cleanup of this run's TEMP
+`pytest-of-Steve/pytest-1394` (and the native experiment reported its blocked
+`pytest-1391` cleanup); left in place. Unrelated DNG changes are outside this
+Focus commit. No push or installer build.

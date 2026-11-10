@@ -529,3 +529,18 @@ covers mixed source/copy deletion and Single middle/last/all removal.
 File-command source reservations in `library_file_commands.py` and
 `sessions.py` serialize activation against destructive work; mixed-copy
 recovery waits for normal sidecar writer durability before clearing records.
+
+
+Focus source-only loading and cache reuse (November 10):
+`library_overlays.full_focus_source` uses the default normalized RAW loader
+with `loader.load_image(analyze_hdr=False)` to avoid unused Grade setup and
+HDR classification; linear DNG retains its established decoder.
+`library_api.OverlayRequest.cache_only` probes stored maps without starting
+work; `library-overlays.js` prefers valid full maps for Single/Compare and
+matching filmstrip sources, preserving half-first on a cold miss.
+`tests/test_focus_source_loading.py` checks source equality/defaults,
+classification/cancellation and unchanged route boundaries;
+`tests/test_focus_cached_map.py` checks no-build lookup, stale source and
+graded refusal. `library-overlays.test.js` covers retained validation, optional
+lookup failure, priority and subscriber lifetime. Native filter experiments
+were rejected; `library_focus.py` is unchanged in this round.

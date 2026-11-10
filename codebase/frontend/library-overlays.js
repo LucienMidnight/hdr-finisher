@@ -7,6 +7,7 @@
     const recent=new Map(), recentKey=(photo,kind)=>[photo.path,photo.bytes,photo.mtime_ns,photo.grade_identity,kind].join('|');
     // An undeveloped RAW shows the camera's embedded preview; the map is placed by its measured camera_frame.
     const cameraPicture=meta=>!!meta?.bitmap&&meta.picture_source==='camera picture';
+    const largeCanvas=canvas=>canvas.id==='single-picture'||canvas.classList.contains('compare-fit');
     const label=kind=>kind==='focus'?'Focus':'Exposure';
     const $=id=>document.getElementById(id);
     const controls={},fields={};
@@ -52,14 +53,14 @@
       const {photo,canvas}=r;
       for(const kind of kinds){if(!enabled[kind])continue;const layer=document.createElement('canvas');layer.className='library-source-overlay';layer.dataset.kind=kind;layer.hidden=true;canvas.parentElement.append(layer);
         const badge=document.createElement('span');badge.className='library-map-status';badge.dataset.kind=kind;badge.textContent=`${kind==='focus'?'S':'E'} · preparing`;canvas.parentElement.append(badge);r.items[kind]={kind,layer,badge,values:null};
-        const seed=!photo.edited&&recent.get(recentKey(photo,kind));if(seed){const item=r.items[kind];item.values=seed.values;item.map=seed.map;}}
-      sync(r);for(const kind of kinds){const item=r.items[kind];if(!item)continue;if(item.values&&draw(r,item))item.badge.hidden=true;void request(r,item);}
+        const seed=!photo.edited&&recent.get(recentKey(photo,kind));if(seed){const item=r.items[kind];item.values=seed.values;item.map=seed.map;item.validating=kind==='focus'&&seed.map?.quality==='full';}}
+      sync(r);for(const kind of kinds){const item=r.items[kind];if(!item)continue;if(item.values&&!(kind==='focus'&&item.map?.quality==='full')&&draw(r,item))item.badge.hidden=true;void request(r,item);}
     }
     // Only pending metadata is shared. Finished maps still use the existing
     // pixel handling and recent-map allowance; this table retains no results.
     const mapJobs=new Map();
-    function mapRequest(photo,kind,quality,signal,priority){
-      const key=JSON.stringify([kind,quality,photo.path,photo.bytes??null,photo.mtime_ns??null,photo.grade_identity??null]);
+    function mapRequest(photo,kind,quality,signal,priority,cacheOnly=false){
+      const key=JSON.stringify([kind,quality,cacheOnly,photo.path,photo.bytes??null,photo.mtime_ns??null,photo.grade_identity??null]);
       let job=mapJobs.get(key);
       // A queued background job cannot be promoted: preserve a later Single
       // request's priority rather than making it wait behind background maps.
@@ -71,7 +72,7 @@
         // unrelated grid/filmstrip jobs keep their existing background priority.
         job.promise=Promise.resolve().then(()=>{
           if(controller.signal.aborted)throw Object.assign(new Error('Cancelled'),{name:'AbortError'});
-          job.submitted=true;return o.api('/api/library/overlay-map',{path:photo.path,kind,quality,priority:job.priority},controller.signal);
+          job.submitted=true;return o.api('/api/library/overlay-map',{path:photo.path,kind,quality,priority:job.priority,cache_only:cacheOnly},controller.signal);
         }).finally(clean);
       }
       job.priority=Math.min(job.priority,priority);
@@ -88,15 +89,25 @@
       });
     }
     async function request(r,item){const controller=new AbortController();item.request=controller;const current=()=>enabled[item.kind]&&records.get(r.canvas)===r&&r.items[item.kind]===item&&r.current()&&!controller.signal.aborted;
-      const large=r.canvas.id==='single-picture'||r.canvas.classList.contains('compare-fit');
-      try{for(const quality of item.kind==='focus'&&large?['half','full']:['half']){
-        const m=await mapRequest(r.photo,item.kind,quality,controller.signal,large?82:85);if(!current())return;
+      const large=largeCanvas(r.canvas);
+      const fullSource=large||o.surfaces().some(s=>largeCanvas(s.canvas)&&recentKey(s.photo,item.kind)===recentKey(r.photo,item.kind)&&!s.controller.signal.aborted&&s.current());
+      try{
+        let cachedFull=null;
+        const retainedFull=item.kind==='focus'&&item.values&&item.map?.quality==='full';
+        if(item.kind==='focus'&&fullSource&&!retainedFull){
+          try{cachedFull=await mapRequest(r.photo,item.kind,'full',controller.signal,large?82:85,true);}
+          catch(error){if(error.name==='AbortError'||!current())throw error;} // Optional lookup must not block the normal route.
+          if(!current())return;
+        }
+        const qualities=retainedFull||cachedFull&&!cachedFull.cache_miss?['full']:item.kind==='focus'&&large?['half','full']:['half'];
+        for(const quality of qualities){
+        const m=quality==='full'&&cachedFull&&!cachedFull.cache_miss?cachedFull:await mapRequest(r.photo,item.kind,quality,controller.signal,large?82:85);if(!current())return;
         if(m.unavailable){item.values=null;item.layer.hidden=true;delete item.layer.dataset.key;const type=(r.photo.source_path||r.photo.path.split('|copy|',1)[0]).split(/[/\\]/).pop().split('.').pop().toUpperCase();item.badge.textContent=`${item.kind==='focus'?'Focus':'Exposure'} unavailable · ${m.reason==='graded'?'graded':type}`;item.badge.title=m.unavailable;item.badge.hidden=false;return;}
         if(!placeable(r,item,m))return;
-        if(item.values&&(item.map?.key===m.key||quality==='half'&&item.map?.quality==='full')){item.badge.textContent='S · refining';item.badge.hidden=!(item.kind==='focus'&&large&&quality==='half');continue;}
+        if(item.values&&(item.map?.key===m.key)){item.validating=false;if(!draw(r,item))return;item.badge.textContent='S · refining';item.badge.hidden=!(item.kind==='focus'&&large&&quality==='half');continue;}
         const response=await fetch(`/api/library/overlay-pixels/${m.key}`,{signal:controller.signal});if(!response.ok)throw new Error('Overlay map unavailable; switch the overlay off and on to remake it.');
         const bitmap=await createImageBitmap(await response.blob());if(!current()){bitmap.close();return;}
-        const temp=document.createElement('canvas');temp.width=bitmap.width;temp.height=bitmap.height;const ctx=temp.getContext('2d');ctx.drawImage(bitmap,0,0);bitmap.close();item.values=ctx.getImageData(0,0,temp.width,temp.height);item.map=m;if(!draw(r,item))return;
+        const temp=document.createElement('canvas');temp.width=bitmap.width;temp.height=bitmap.height;const ctx=temp.getContext('2d');ctx.drawImage(bitmap,0,0);bitmap.close();item.values=ctx.getImageData(0,0,temp.width,temp.height);item.map=m;item.validating=false;if(!draw(r,item))return;
         item.badge.textContent='S · refining';item.badge.hidden=!(item.kind==='focus'&&large&&quality==='half');
       }}catch(e){if(e.name!=='AbortError'&&current()){item.badge.hidden=false;item.badge.textContent=`${item.kind==='focus'?'S':'E'} · unavailable`;item.badge.title=e.message;}}
     }
@@ -108,7 +119,7 @@
     // The part of the map under the shown picture, in map pixels.
     const area=(r,item)=>cameraPicture(r.meta)?item.map.camera_frame:item.map.frame||[0,0,item.values.width,item.values.height];
     const rgb=color=>[1,3,5].map(i=>parseInt(color.slice(i,i+2),16));
-    function draw(r,item){if(!item.values)return false;if(!placeable(r,item,item.map))return false;const input=item.values,output=new ImageData(input.width,input.height),highlight=rgb(prefs.exposure_highlight_color),shadow=rgb(prefs.exposure_shadow_color),focus=rgb(prefs.focus_color);
+    function draw(r,item){if(item.validating||!item.values)return false;if(!placeable(r,item,item.map))return false;const input=item.values,output=new ImageData(input.width,input.height),highlight=rgb(prefs.exposure_highlight_color),shadow=rgb(prefs.exposure_shadow_color),focus=rgb(prefs.focus_color);
       const cutoff=Math.max(.02,.75-prefs.focus_strength*.6-(prefs.focus_sensitivity-.5)*.25);
       for(let i=0;i<input.data.length;i+=4){let color=null,alpha=0;
         if(item.kind==='focus'){const confidence=input.data[i]/255;if(confidence>=cutoff){color=focus;alpha=prefs.focus_strength*(.5+.5*(confidence-cutoff)/(1-cutoff));}}

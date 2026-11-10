@@ -99,6 +99,7 @@ class OverlayRequest(BaseModel):
     kind: Literal["exposure", "focus"] = "exposure"
     quality: Literal["half", "full"] = "half"
     priority: int = Field(default=85,ge=82,le=85)
+    cache_only: bool = False
 class OverlaySwitch(BaseModel):
     kind: Literal["exposure", "focus"]
     enabled: bool
@@ -1594,6 +1595,7 @@ def create_library_router(worker, browser, store=None):
             return {"unavailable":"Exposure warnings unavailable: this file has no recorded clipping limit."}
         cached = await run_in_threadpool(overlay_maps.cached,path,command.kind,command.quality)
         if cached:return cached
+        if command.cache_only:return {"cache_miss":True}
         result = await helper_result(request,"overlay",path=path,kind=command.kind,quality=command.quality,priority=command.priority)
         if isinstance(result,Response):return result
         if result.get("unavailable"):return result

@@ -1571,3 +1571,36 @@ Different experiment baselines are not cross-run comparisons. No test,
 threshold, precision guarantee or agreement tolerance was weakened. OpenCV
 is already an installed dependency. Production adoption needs whole-wait
 measurement and output checks; no whole-wait gain is measured here.
+
+
+### November 10: source-only Focus and full-map reuse acceptance
+
+Based on `9d7d9e6a`; native filters rejected, existing math unchanged.
+2560 x 1440 Electron, fresh disposable profiles, existing 42 MP Sony RAW
+`output/test-photos/gpu-denoise-measurement/DSC07060.ARW`, Single+filmstrip,
+no parent suite during timing; OS cache and other workspace activity not
+controlled. Existing 10% diagnostic band, no acceptance limit changed.
+Two cold observations, including timing phases completed before a later
+renderer-reload harness error; the corrected complete check also tests disk
+reuse. The whole-wait endpoint is populated overlay canvas, not scan-out.
+
+| Action | Observed | Assessment |
+|---|---|---|
+| S to initial Focus | 1.851-1.877 s | Same as prior 1.861 s within timing band |
+| S to full Focus | 8.295-9.852 s | Prior 9.311 s lies in the range; no firm cold gain claimed |
+| Retained full validation/show | 36-43 ms | Immediate; validates full without half work |
+| Disk-only full, half map absent, fresh Library renderer | 35 ms (one observation) | No half construction requested; actual full cache reused |
+
+Evidence: `codebase/output/focus-options-app.log`,
+`focus-options-observations.json` (both cold observations),
+`focus-options-parity.log` (exact Sony/Canon source arrays),
+`focus-options-interface.log`, `focus-options-unit.log`.
+No extra image copies or new cache allowances. Source-only loading is kept
+for removing unused setup with identical pixels; its cold whole-wait benefit
+is not established by these observations.
+
+Grouped 90-second Library smoke, Focus off, concurrent Python and unrelated
+DNG work: first picture 3.5 s, ten 4.9 s, twenty 12.4 s; peak 3.196 GB and no
+picture/memory errors. Existing frame-gap gate fails at 2,007 ms. Functional
+smoke, not an overlay performance comparison; no rerun or tolerance change.
+Report: `codebase/output/quick-library-check/focus-source-and-reuse/report.json`.
