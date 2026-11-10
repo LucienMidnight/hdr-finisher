@@ -216,3 +216,15 @@ body[data-grade-mode="retouch"] .local-mask-overlay.editing[data-retouch-cursor=
 #control-mode-retouch .local-adjustment-copy > small { max-width: 65%; overflow: hidden; text-overflow: ellipsis; }
 #control-mode-retouch .local-empty { padding: 11px 12px; font-size: var(--font-size-min); color: var(--muted); }
 
+
+/* Solid list well, six rows and a permanently visible lighter rail. */
+#control-mode-local #local-adjustments-panel > .local-stack-surface,
+#control-mode-retouch .repair-stack-surface { height: calc(6 * var(--list-row-h) + 2px); min-height: calc(6 * var(--list-row-h) + 2px); max-height: calc(6 * var(--list-row-h) + 2px); border-radius: var(--radius-1); background: var(--input); }
+#control-mode-local #local-adjustment-list, #control-mode-retouch #retouch-list { grid-auto-rows: var(--list-row-h); background: var(--input); }
+#control-mode-local .local-adjustment-item, #control-mode-retouch #retouch-list .local-adjustment-item { height: var(--list-row-h); border-radius: 0; border-bottom: 1px solid var(--hairline); background: transparent; }
+#control-mode-local .local-adjustment-select, #control-mode-retouch #retouch-list .local-adjustment-select { height: calc(var(--list-row-h) - 1px); border-radius: 0; border: 0; background: transparent; box-shadow: none; }
+#control-mode-local .local-adjustment-select.active, #control-mode-retouch #retouch-list .local-adjustment-select.active { background: var(--accent-bed); box-shadow: var(--plate-press); }
+#control-mode-local .local-stack-surface::-webkit-scrollbar, #control-mode-retouch .repair-stack-surface::-webkit-scrollbar { width: var(--scrollbar-w); background: var(--raised); }
+#control-mode-local .local-stack-surface::-webkit-scrollbar-track, #control-mode-retouch .repair-stack-surface::-webkit-scrollbar-track { background: var(--raised); box-shadow: none; }
+#control-mode-local .local-stack-surface::-webkit-scrollbar-thumb, #control-mode-retouch .repair-stack-surface::-webkit-scrollbar-thumb { background: var(--quiet); border: 2px solid var(--raised); border-radius: var(--radius-pill); }
+#control-mode-local .local-empty, #control-mode-retouch .local-empty { display: grid; place-items: center; min-height: calc(6 * var(--list-row-h)); margin: 0; padding: 0 12px; background: var(--input); color: var(--muted); text-align: center; font-size: var(--font-size-sm); }

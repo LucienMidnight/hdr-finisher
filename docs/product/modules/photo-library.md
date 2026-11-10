@@ -8660,3 +8660,15 @@ quick-library-check/exposure-reservation. No push or installer build.
 
 Final output remains 42.7 GB, below 100 GB. Disposable Electron profiles
 were removed by the runner; only referenced logs/measurements remain.
+
+## November 10: component-sheet lists and section dividers
+
+Built: Pinned and Details use the shared sentence-case section titles;
+Details separates File, Marks, Tags and Camera and ends under Show all.
+Pinned sections each own their ending hairline. Selected rows and pressed
+filters use the neutral pressed material. Local/Retouch lists use 34px rows,
+a solid recessed well and a permanently visible lighter 10px rail, including
+empty state; no row pills or black corner strips. No Library data or command
+changes. Four-theme UI checks pass; grouped fast/Library results and review
+location are recorded in Desktop and release.
+

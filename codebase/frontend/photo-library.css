@@ -355,3 +355,13 @@ img:not([src]), img[src=""] { visibility:hidden; }
  .library-tools { grid-column: 1 / -1; grid-row: 2; padding-block: 6px; }
  .library-bar-right { grid-column: 2; grid-row: 1; }
 }
+
+/* Each titled sidebar section owns its full-width ending divider. */
+.library-nav-section { border-bottom: 1px solid var(--hairline); }
+.library-nav-section + .library-nav-section { border-top: 0; }
+:root .library-kicker { font: var(--section-title-font); letter-spacing: var(--tracking-none); text-transform: none; }
+#details > .library-facts { border-top: 0; border-bottom: 1px solid var(--hairline); margin-inline: -12px; padding: 0 12px 12px; }
+#details > .library-kicker { border-top: 1px solid var(--hairline); margin-inline: -12px; padding: 12px 12px 0; }
+:root :is(.library-folder-row.active, .library-folder-row[aria-selected="true"], .library-tag-row[aria-selected="true"], .library-filterbar button[aria-pressed="true"], .library-toolbar #filter-button[aria-pressed="true"]) { box-shadow: var(--plate-press); }
+
+:root .library-tags-heading { font: var(--subsection-title-font); border-top: 1px solid var(--hairline); margin-inline: -12px; padding: 12px 12px 0; }

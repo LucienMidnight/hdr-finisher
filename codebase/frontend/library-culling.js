@@ -123,7 +123,7 @@
         control.setAttribute("aria-pressed", String(list.every(photo => marks(photo).label === label))); colours.append(control);
       });
       section.append(colours);
-      const heading = document.createElement("p"); heading.textContent = "Tags"; section.append(heading);
+      const heading = document.createElement("p"); heading.textContent = "Tags"; heading.className = "library-tags-heading"; section.append(heading);
       const chips = document.createElement("div"); chips.className = "library-tag-chips";
       const allTags = new Map();
       list.forEach(photo => marks(photo).tags.forEach(tag => { const key = tag.toLocaleLowerCase(); const value = allTags.get(key) || { tag, count: 0 }; value.count++; allTags.set(key, value); }));
