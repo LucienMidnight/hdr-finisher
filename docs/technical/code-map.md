@@ -515,3 +515,14 @@ as a UI diagnostic through `tests/run-in-electron.js`; crops are in
 control containment and overlap, includes an icon tooltip crop, and cleans up
 its disposable Electron profile (reporting OS/policy blocks). Registered as a UI diagnostic; run through
 `tests/run-in-electron.js`. Output overwrites `output/review/ui-polish/round-6/`.
+
+
+November 10 deletion/navigation checks: `tests/library-collection-removal.test.js`
+executes current album/pin controllers and navigation functions with controlled
+request order/failures, empty fallback and neighbour selection.
+`tests/library-membership.js` covers real unpin failure recovery and active
+manual/smart deletion without pins; `tests/library-delete-file-commands.js`
+covers mixed source/copy deletion and Single middle/last/all removal.
+File-command source reservations in `library_file_commands.py` and
+`sessions.py` serialize activation against destructive work; mixed-copy
+recovery waits for normal sidecar writer durability before clearing records.

@@ -63,7 +63,7 @@ class FileCommands:
         self.marks,self.browser,self.index,self.worker,self.store=marks,browser,index,worker,store
         self.root=Path(browser.root)/'library-file-commands'; self.root.mkdir(parents=True,exist_ok=True)
         self._lane=RLock(); self._stop=Event(); self._thread=None
-        self.epoch=0; self.retired=set(); self.plans={}; self.jobs={}; self.events=[];self.changes=[]
+        self.epoch=0; self.retired=set(); self.plans={}; self.jobs={}; self.events=[];self.changes=[];self.removed_copies=[]
         self.hook=lambda stage,item: None
         self.cross_drive=lambda a,b: Path(a).stat().st_dev != Path(b).parent.stat().st_dev
         from . import library_recycle
@@ -201,15 +201,13 @@ class FileCommands:
                 result=self.result(record)
                 if record.get('copy_paths'):
                     copies=self.marks.copies.remove_many(record['copy_paths']);result.update(copies,files_changed=True,copies_count=copies['count'],count=0)
+                    self.changes=[];self.removed_copies=copies['removed_copies'];self.epoch+=1
                 return result
             self.save(record);self.invalidate();self.hook('record',record['items'][0])
         if any(i['cross'] for i in record['items']):
             Thread(target=self.run,args=(record,),name='hdr-library-file-move',daemon=True).start()
             return self.result(record,queued=True)
-        result=self.run(record)
-        if record.get('copy_paths'):
-            copies=self.marks.copies.remove_many(record['copy_paths']);result['copies_count']=copies['count'];result['warnings']+=copies['warnings'];result['undo_available']=copies['undo_available']
-        return result
+        return self.run(record)
 
     def checkpoint(self,record,item,stage):
         item['phase']=stage;self.save(record);self.hook(stage,item)
@@ -316,13 +314,30 @@ class FileCommands:
         self.checkpoint(record,item,'settings')
 
     def result(self,record,**extra):
-        done=[i for i in record['items'] if i.get('done') and not i.get('cancelled')]
-        return {'photos':[],'warnings':record['warnings']+[i['error'] for i in record['items'] if i.get('error')],
+        done=[i for i in record['items'] if (i.get('done') or i.get('photo_gone')) and not i.get('cancelled')]
+        return {'photos':[],'warnings':record['warnings']+([record['copy_error']] if record.get('copy_error') else [])+[i['error'] for i in record['items'] if i.get('error')],
                 'undo_available':bool(self.marks._undo),'files_changed':True,'count':len(done),
+                'settings_pending':sum(bool(i.get('photo_gone') and not i.get('done')) for i in record['items']),
+                'copies_count':len(record.get('copies_removed',[])),
+                'removed_copies':record.get('copies_removed',[]),
                 'changes':[{'old':i['old'],'new':i.get('new','')} for i in done],**extra}
 
     def run(self,record,recovery=False):
-        with self._lane,self.marks.writer._lane:
+        # Reserve before writer/marks locks; activation checks under the same lock.
+        # No session lock is held during file IO or cache scans.
+        with self._lane:
+            paths={os.path.normcase(p) for i in record['items'] for p in [i['old'],i.get('new','')] + [c[k] for c in i.get('children',[]) for k in ('old','new')]}
+            if self.store is not None:
+                with self.store._lock:
+                    self.store.file_command_sources=getattr(self.store,'file_command_sources',set()) | paths
+            try: return self._run_reserved(record,recovery)
+            finally:
+                if self.store is not None:
+                    with self.store._lock: self.store.file_command_sources.difference_update(paths)
+
+    def _run_reserved(self,record,recovery=False):
+        with self.marks.writer._lane:
+            if record.get('copy_paths'): record.setdefault('copies_done',False)
             for item in record['items']:
                 if item.get('done'): continue
                 if self._stop.is_set() or record.get('paused'): break
@@ -340,11 +355,21 @@ class FileCommands:
                 except (OSError,ValueError) as e:
                     item['error']=f"{item['old']} → {item.get('new','')}: {e}"
                     self.save(record);log('file_command_attention',old=item['old'],new=item.get('new',''),reason=str(e),action='both locations retained; retry forward')
-            if all(i.get('done') for i in record['items']):
+            changes=[{'old':i['old'],'new':i.get('new','')} for i in record['items']
+                     if (i.get('done') or i.get('photo_gone')) and not i.get('cancelled')]
+            if not record.get('paused') and not self._stop.is_set() and (not record.get('cancelled') or record.get('copies_started')):
+                self.remove_record_copies(record)
+            elif record.get('cancelled') and not record.get('copies_started'):
+                record['copies_done']=True
+            copies=record.get('copies_removed',[])
+            if changes != record.get('published_changes',[]) or copies != record.get('published_copies',[]):
+                record['published_changes']=changes;record['published_copies']=list(copies);self.save(record)
+                self.changes=changes;self.removed_copies=list(copies);self.epoch+=1
+            if all(i.get('done') for i in record['items']) and record.get('copies_done',True):
                 self.hook('before_clear',record['items'][0])
                 (self.root/(record['id']+'.json')).unlink(missing_ok=True);self.records.pop(record['id'],None)
                 completed=[i for i in record['items'] if not i.get('cancelled')]
-                self.changes=[{'old':i['old'],'new':i.get('new','')} for i in completed];self.epoch+=1
+                self.epoch+=1
                 if completed and not recovery and record['action'] not in {'undo','delete','delete_rejected'}:
                     def undo():
                         reverse=FileRequest(action='move',paths=[])
@@ -372,6 +397,63 @@ class FileCommands:
                 log('file_command_complete',operation=record['action'],count=len(completed),recovery=recovery)
             return self.result(record)
 
+    def remove_record_copies(self,record):
+        if not record.get('copy_paths') or record.get('copies_done'): return
+        record['copies_done']=False
+        self.save(record)
+        try:
+            pending=[]
+            for path in record['copy_paths']:
+                if path in record.get('copies_skipped',[]): continue
+                source,identifier=path.split('|copy|',1)
+                if any(i['photo_id']==identifier for i in self.marks.copies.items(source)):
+                    pending.append(path)
+            if pending:
+                for path in pending: self.hook('before_copy_remove',{'old':path})
+                record['copies_started']=True;self.save(record)
+                if 'copy_undo' not in record:
+                    record['copy_undo']=[(source,position,deepcopy(item)) for source in dict.fromkeys(p.split('|copy|',1)[0] for p in pending)
+                        for position,item in enumerate(self.marks.copies.items(source)) if source+'|copy|'+item['photo_id'] in pending]
+                    self.save(record)
+                result=self.marks.copies.remove_many(pending,undo=False)
+                for path in pending: self.hook('copy_remove_returned',{'old':path})
+                removed=result['removed_copies']
+                record['warnings']+=result['warnings']
+                record['copies_skipped']=list(dict.fromkeys(record.get('copies_skipped',[])+[p for p in pending if p not in removed]))
+            if record.get('copy_undo') and not any(e.get('copy_record')==record['id'] for e in self.marks._undo):
+                def restore():
+                    copies=self.marks.copies
+                    with copies.marks.grades.store._lock, self.marks._lock:
+                        entries=[e for e in record['copy_undo'] if e[0]+'|copy|'+e[2]['photo_id'] not in record.get('copies_skipped',[])]
+                        _,plans=copies.selection(list(dict.fromkeys(e[0] for e in entries)))
+                        for source,position,item in entries:
+                            items,doc=plans[source]
+                            if not any(i['photo_id']==item['photo_id'] for i in items): items.insert(min(position,len(items)),deepcopy(item))
+                        copies.commit_many(plans)
+                        return {'photos':[copies.row(p,i) for p,_,i in entries],'copies_changed':True}
+                with self.marks._lock: self.marks._undo.append({'command':restore,'copy_record':record['id']})
+            # _attempt uses the normal protected, revision-checked sidecar writer.
+            # We already own its lane: drain() here would deadlock.
+            sources={p.split('|copy|',1)[0] for p in record['copy_paths'] if p not in record.get('copies_skipped',[])}
+            for source in sources:
+                writer=self.marks.writer
+                if writer._paused or writer._busy(): raise ValueError('Copy removal is waiting for the settings writer.')
+                writer._attempt(source)
+                if writer._snapshot(source) is not None:
+                    raise ValueError('Copy removal is waiting for durable settings.')
+                doc=self.marks._document(Path(source)) or {}
+                ids={i['photo_id'] for i in doc.get('virtual_copies',[])}
+                if any(p.split('|copy|',1)[1] in ids for p in record['copy_paths'] if p.split('|copy|',1)[0]==source and p not in record.get('copies_skipped',[])):
+                    raise ValueError('Copy removal is waiting for durable settings.')
+            for path in record['copy_paths']:
+                if path in record.get('copies_skipped',[]) or path in record.get('copies_removed',[]): continue
+                record.setdefault('copies_removed',[]).append(path)
+                self.save(record);self.hook('copy_removed',{'old':path})
+            record.pop('copy_error',None)
+            record['copies_done']=True
+        except (OSError,ValueError) as error: record['copy_error']=str(error)
+        self.save(record)
+
     def locations(self,item):
         paths=[item['old'],item.get('new','')]
         for child in item.get('children',[item]):
@@ -382,8 +464,8 @@ class FileCommands:
 
     def status(self):
         records=list(self.records.values())
-        return {'revision':self.epoch,'changes':self.changes,'jobs':[{'id':r['id'],'action':r['action'],'done':sum(bool(i.get('done')) for i in r['items']),'total':len(r['items']),'paused':r.get('paused',False)} for r in records],
-                'attention':[{'id':r['id'],'old':i['old'],'new':i.get('new',''),'message':i['error'],'locations':self.locations(i)} for r in records for i in r['items'] if i.get('error')]}
+        return {'revision':self.epoch,'changes':self.changes,'removed_copies':self.removed_copies,'jobs':[{'id':r['id'],'action':r['action'],'done':sum(bool(i.get('done')) for i in r['items']),'total':len(r['items']),'paused':r.get('paused',False)} for r in records],
+                'attention':[{'id':r['id'],'old':i['old'],'new':i.get('new',''),'message':i['error'],'locations':self.locations(i)} for r in records for i in r['items'] if i.get('error')]+[{'id':r['id'],'old':'Separate virtual copies','new':'','message':r['copy_error'],'locations':r.get('copy_paths',[])} for r in records if r.get('copy_error')]}
 
     def start(self):
         # Read and finish records before the settings writer/indexer is started.

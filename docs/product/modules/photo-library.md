@@ -8116,3 +8116,65 @@ its expected pixel values are unchanged. First Exposure wait was 1.337 s
 against the earlier 1.827 s diagnostic (about 27% less); see the performance
 table for scope and conditions. Duplicate in-flight map requests remain open;
 subscriber cancellation needs separate work.
+
+
+## November 10: deletion and sidebar fixes
+
+The November 10 audit's album/pin refresh and collection-exit defects are
+fixed. List responses apply only if current; confirmed deletion removes the
+row and exits its view before reconciliation. Mutation failures retain their
+own error even when the follow-up read also fails. Removed active collections
+choose an available pinned folder or clear to an empty Library. Unpin stops
+the folder scan before removing membership; failure reopens the saved view
+and selection without requiring another successful pin-list read.
+
+Physical deletion removes original and separately removed copy rows in the
+initiating view and health updates. Selection keeps the next surviving
+neighbour, or the preceding one at the end; removing all returns to empty
+Grid. Compare's Delete scope remains unchanged and is still Steve's open
+decision. No silent permanent-delete fallback or original-delete app Undo
+was added.
+
+Mixed deletion's separate-copy phase is now durable and restart-safe: it
+respects pause/cancel, saves one grouped Undo, and leaves a recovery/attention
+record until the normal sidecar writer confirms removal. Copy-only results
+identify actual removed paths, excluding the copy open in Grade. Partial
+original completion publishes cumulative updates, including explicit
+photo-removed/settings-pending feedback. Source/destination reservations,
+including child photos in folder commands, exclude Grade activation through
+the destructive phase without holding the session lock during file work.
+
+A real Delete run exposed existing unnecessary Recycle Bin enumeration:
+a fresh, still-present file searched old receipts before being recycled.
+Only absent files now use receipt recovery; present files retain identity
+validation and the explicit Windows recycle operation. Recovery and
+restoration checks remain in force.
+
+Validation: 84 focused backend deletion/command checks pass after integration;
+124 focused checks passed the subagent's correction batch. The extended real
+Electron Delete check passes mixed selection, permanent-warning Cancel,
+actual recycling, filtered-out rejected originals, and Single middle/last/all
+removal. Membership check passes failed-unpin restoration plus active manual
+and smart deletion with no fallback. Direct-image and Sony RAW Exposure app
+checks pass. All app checks ran serially at 2560 x 1440 on disposable PNGs or
+existing shared RAW copies. Default 90-second plain-Electron Library check
+passes with no picture/memory errors. Logs use `codebase/output/` names
+`library-delete-fixes.log`, `deletion-membership-check.log`,
+`exposure-direct-check.log` and `quick-library-check/exposure-delete-fixes/report.json`.
+
+
+Final grouped checks: JavaScript 874 passed. Full Python 3,121 passed, three
+skipped, with the known cached-scene failure and one new test-double failure
+from the source reservation check. The latter was fixed by reading source
+identity only while reservations exist; all 109 affected memory/session and
+file-command checks then passed. The full suite was not repeated to reconfirm
+unrelated results. Final real Delete and membership drivers pass after the
+integration corrections, including actual Single neighbour navigation. The
+original Recycle Bin lookup hang and the unpin/listing race found during app
+validation were fixed without raising timeouts or relaxing expectations.
+
+
+Output finished at 42.6 GB (started 42.6 GB). Scratch measurement driver was
+removed; disposable app media/profile cleanup is handled by the drivers.
+Automatic approval review blocked removal of this run's TEMP pytest folders
+`pytest-of-Steve/pytest-{1384,1385,1386}`; left in place. No push or installer.

@@ -68,7 +68,10 @@ def prepare_settings(service,record,item):
 def take(service,record,item,path,stamp,checksum,key):
     if item['new']=='Recycle Bin':
         receipt=item.get(key)
-        if receipt is None: receipt=service.recycle_find(path,stamp,checksum)
+        # Search old receipts only for interrupted work whose file is absent.
+        # A fresh, still-present original must be recycled, not confused with
+        # an earlier identical entry; scanning a large Bin can take minutes.
+        if receipt is None and not Path(path).exists(): receipt=service.recycle_find(path,stamp,checksum)
         if not receipt:
             if not same(path,stamp,checksum): raise ValueError('The recorded file is absent or changed, and its Recycle Bin entry could not be found. Both locations were left alone.')
             receipt=service.recycle(path)

@@ -4,7 +4,7 @@
   const { ask, make, showMenu } = HDRLibraryDialogs;
   const DRAG = "application/x-hdr-library-photos";
   function create(options) {
-    let albums = [], active = "";
+    let albums = [], active = "", revision = 0;
     const root = options.root, same = (a, b) => a.toLocaleLowerCase() === b.toLocaleLowerCase();
     const photos = count => `${count.toLocaleString()} ${count === 1 ? "photo" : "photos"}`;
     const report = error => options.status(error.message);
@@ -29,10 +29,16 @@
       }));
       if (!albums.length) root.append(make("p", "library-nav-empty", "No albums yet. Use + to make one."));
     }
-    async function refresh() { albums = (await options.api("/api/library/albums")).albums; render(); }
-    async function command(route, body, done) {
-      try { const result = await options.run(route, body); options.status(result.warnings.at(-1) || done(result)); return result; }
-      finally { await refresh(); }
+    async function refresh() { const request = ++revision; const result = await options.api("/api/library/albums"); if (request === revision) { albums = result.albums; render(); } }
+    async function command(route, body, done, accepted = () => {}) {
+      ++revision;
+      let result;
+      try { result = await options.run(route, body); }
+      catch (error) { ++revision; await refresh().catch(() => {}); throw error; }
+      ++revision; accepted();
+      options.status(result.warnings.at(-1) || done(result));
+      await refresh().catch(report);
+      return result;
     }
     async function newAlbum(paths = []) {
       const answer = await ask({ title: "New Album", message: paths.length ? `The album starts with the ${photos(paths.length)} selected. Photos stay where they are. Photos in an album stay in the library even if their folder is unpinned.` : "An album is a hand-picked set. Photos stay where they are. Photos in an album stay in the library even if their folder is unpinned.", fields: [{ name: "name", label: "Album name" }], confirm: "Create" });
@@ -58,8 +64,10 @@
       const impact = await options.api("/api/library/albums/impact", { name: album.name });
       const answer = await ask({ title: "Delete Album", message: `${album.name} is removed from the list. Its ${photos(album.count)} stay where they are; nothing is deleted from disk. Ctrl+Z brings the album back.${impact.leaving ? ` ${impact.leaving.toLocaleString()} photos will leave the library; their folder is not pinned.` : ""}`, confirm: "Delete album" });
       if (!answer) return;
-      await command("/api/library/albums/delete", { name: album.name }, () => `Album ${album.name} deleted. Photos untouched.`);
-      if (active && same(active, album.name)) options.closed();
+      await command("/api/library/albums/delete", { name: album.name }, () => `Album ${album.name} deleted. Photos untouched.`, () => {
+        albums = albums.filter(item => !same(item.name, album.name)); render();
+        if (active && same(active, album.name)) { active = ""; options.closed(); }
+      });
     }
     function menuActions(paths) {
       // Entries for the photo right-click menu.

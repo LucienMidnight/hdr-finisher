@@ -134,7 +134,11 @@ def test_actual_windows_bin_receipt_recovers_before_checkpoint(setup):
     assert side and json.loads(Path(side).read_text(encoding='utf-8'))['marks']==doc['marks']
 
 
-def test_mixed_selection_never_deletes_a_copy_source(tmp_path,monkeypatch):
+@pytest.mark.parametrize('boundary',[None,'before_copy_remove','copy_remove_returned','copy_removed','copy_error'])
+def test_mixed_selection_never_deletes_a_copy_source(tmp_path,monkeypatch,boundary):
+    from hdr_finisher.library_marks import LibraryMarks
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.library_index import LibraryIndex
     from PIL import Image
     from hdr_finisher.sessions import SessionStore
     from hdr_finisher.library_grades import LibraryGrades
@@ -147,14 +151,33 @@ def test_mixed_selection_never_deletes_a_copy_source(tmp_path,monkeypatch):
     marks=LibraryMarks(tmp_path/'app');store=SessionStore();LibraryGrades(marks,store);copies=LibraryCopies(marks)
     a=copies.create(str(photos[0]),'clean','Attached')['photos'][0]
     b=copies.create(str(photos[1]),'clean','Separate')['photos'][0]
+    d=copies.create(str(photos[1]),'clean','Second')['photos'][0]
     browser=MediaBrowserStore(tmp_path/'app');index=LibraryIndex(marks,browser,None);c=FileCommands(marks,browser,index,None,store)
     monkeypatch.setattr(library_recycle,'available',lambda p:False)
-    preview=c.plan(FileRequest(action='delete',paths=[str(photos[0]),a['path'],b['path']]))
-    assert preview['count']==1 and preview['attached_copies']==1 and preview['copy_paths']==[b['path']]
-    result=c.execute(preview['token'],'permanent');marks.writer.drain()
-    assert result['count']==1 and result['copies_count']==1 and not photos[0].exists() and photos[1].exists()
+    preview=c.plan(FileRequest(action='delete',paths=[str(photos[0]),a['path'],b['path'],d['path']]))
+    assert preview['count']==1 and preview['attached_copies']==1 and preview['copy_paths']==[b['path'],d['path']]
+    if boundary=='copy_error':
+        remove=c.marks.copies.remove_many
+        monkeypatch.setattr(c.marks.copies,'remove_many',lambda *a,**k:(_ for _ in ()).throw(OSError('copy settings locked')))
+        failed=c.execute(preview['token'],'permanent')
+        assert failed['count']==1 and failed['warnings'] and c.records and not photos[0].exists()
+        assert c.status()['attention']
+        monkeypatch.setattr(c.marks.copies,'remove_many',remove)
+        c=FileCommands(marks,browser,index,None,store)
+        result=c.run(next(iter(c.records.values())),True)
+        assert not c.records
+    elif boundary:
+        c.hook=lambda at,i:(_ for _ in ()).throw(Stop()) if at==boundary else None
+        with pytest.raises(Stop): c.execute(preview['token'],'permanent')
+        c=FileCommands(marks,browser,index,None,store)
+        record=next(iter(c.records.values()));result=c.run(record,True)
+        assert not c.records
+    else: result=c.execute(preview['token'],'permanent')
+    marks.writer.drain()
+    assert result['removed_copies']==[b['path'],d['path']]
+    assert result['count']==1 and result['copies_count']==2 and not photos[0].exists() and photos[1].exists()
     assert not copies.items(str(photos[1])) and not Path(str(photos[0])+'.hdrf').exists()
-    c.marks.undo();assert photos[1].exists() and len(copies.items(str(photos[1])))==1
+    c.marks.undo();assert photos[1].exists() and len(copies.items(str(photos[1])))==2
 
 
 def test_complete_bin_delete_then_restore_both_rehydrates_marks_and_albums(setup,monkeypatch):
@@ -194,3 +217,114 @@ def test_slow_bin_probe_does_not_own_marks_lock(setup,monkeypatch):
         finally:release.set()
         assert task.result()['count']==1
         assert photo.exists()
+
+
+def test_partial_delete_publishes_removed_photo_with_settings_pending(setup,monkeypatch):
+    photo,_,c,_=setup
+    other=photo.with_name('other.ARW');other.write_bytes(b'other disposable original')
+    c.marks.read([str(other)])
+    monkeypatch.setattr(library_recycle,'available',lambda p:True)
+    bin=Bin(photo.parent.parent/'bin');bin.attach(c)
+    recycle=c.recycle
+    def fail_settings(path):
+        if str(path)==str(photo)+'.hdrf': raise OSError('settings locked')
+        return recycle(path)
+    c.recycle=fail_settings
+    plan=c.plan(FileRequest(action='delete',paths=[str(photo),str(other)]))
+    result=c.execute(plan['token'],'recycle')
+    assert result['count']==2 and result['settings_pending']==1
+    assert {i['old'] for i in c.status()['changes']}=={str(photo),str(other)}
+    assert c.status()['attention'] and not photo.exists() and Path(str(photo)+'.hdrf').exists()
+    revision=c.epoch
+    c.recycle=recycle
+    c.run(next(iter(c.records.values())),True)
+    assert not c.records and c.epoch>revision
+
+
+def test_source_activation_excluded_during_delete_without_holding_store_lock(setup,monkeypatch):
+    from threading import Event,Thread
+    from types import SimpleNamespace
+    from hdr_finisher.sessions import SessionStore
+    photo,_,c,_=setup;c.store=SessionStore()
+    monkeypatch.setattr(library_recycle,'available',lambda p:True)
+    Bin(photo.parent.parent/'bin').attach(c)
+    entered,release=Event(),Event();errors=[]
+    def pause(at,item):
+        if at=='delete_started':
+            entered.set()
+            if not release.wait(5): raise ValueError('test timed out')
+    c.hook=pause
+    plan=c.plan(FileRequest(action='delete',paths=[str(photo)]))
+    def execute():
+        try: c.execute(plan['token'],'recycle')
+        except BaseException as error: errors.append(error)
+    thread=Thread(target=execute);thread.start()
+    try:
+        assert entered.wait(5)
+        session=SimpleNamespace(to_payload=lambda:None,source_reference=lambda:SimpleNamespace(durable_path=photo))
+        with pytest.raises(ValueError,match='file command in progress'): c.store.activate_session(session)
+        assert c.store.current() is None and photo.exists()
+    finally:
+        release.set();thread.join(5)
+    assert not thread.is_alive() and not errors and not photo.exists()
+    assert not c.store.file_command_sources
+
+
+@pytest.mark.parametrize('state',['paused','cancelled','write_failure'])
+def test_copy_removal_waits_for_permission_and_durable_sidecar(tmp_path,monkeypatch,state):
+    from hdr_finisher.library_marks import LibraryMarks
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.library_index import LibraryIndex
+    from PIL import Image
+    from hdr_finisher.sessions import SessionStore
+    from hdr_finisher.library_grades import LibraryGrades
+    from hdr_finisher.library_copies import LibraryCopies
+    photo=tmp_path/'keep.png';Image.new('RGB',(8,8)).save(photo)
+    marks=LibraryMarks(tmp_path/'app');store=SessionStore();LibraryGrades(marks,store);copies=LibraryCopies(marks)
+    key=copies.create(str(photo),'clean','Separate')['photos'][0]['path']
+    marks.writer.drain()
+    browser=MediaBrowserStore(tmp_path/'app');index=LibraryIndex(marks,browser,None);c=FileCommands(marks,browser,index,None,store)
+    record={'id':'test','action':'delete','items':[{'old':str(photo),'new':'Recycle Bin','done':True,'cancelled':True}],'warnings':[],'copy_paths':[key]}
+    if state!='write_failure':
+        record[state]=True;c.save(record);c.run(record)
+        assert copies.items(str(photo))
+    else:
+        write=marks._write_sidecar
+        monkeypatch.setattr(marks,'_write_sidecar',lambda *a,**k:(_ for _ in ()).throw(PermissionError('settings locked')))
+        c.save(record);c.run(record)
+        assert c.records and not record.get('copies_removed')
+        assert json.loads(Path(str(photo)+'.hdrf').read_text())['virtual_copies']
+        # Rebuild the disposable database: recovery must remove the old disk copy.
+        root=tmp_path/'rebuilt';rebuilt=LibraryMarks(root);LibraryGrades(rebuilt,store);LibraryCopies(rebuilt)
+        c.marks=rebuilt;rebuilt.file_commands=c
+        c.run(record,True)
+        assert not c.records and not rebuilt.copies.items(str(photo))
+
+
+def test_copy_only_result_excludes_grade_copy(tmp_path):
+    from hdr_finisher.library_marks import LibraryMarks
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.library_index import LibraryIndex
+    from PIL import Image
+    from hdr_finisher.sessions import SessionStore
+    from hdr_finisher.library_grades import LibraryGrades
+    from hdr_finisher.library_copies import LibraryCopies
+    photo=tmp_path/'keep.png';Image.new('RGB',(8,8)).save(photo)
+    marks=LibraryMarks(tmp_path/'app');store=SessionStore();grades=LibraryGrades(marks,store);copies=LibraryCopies(marks)
+    keys=[copies.create(str(photo),'clean',name)['photos'][0]['path'] for name in ['First','Second']]
+    browser=MediaBrowserStore(tmp_path/'app');index=LibraryIndex(marks,browser,None);c=FileCommands(marks,browser,index,None,store)
+    plan=c.plan(FileRequest(action='delete',paths=keys))
+    grades.history.current=lambda key:key==keys[0]
+    result=c.execute(plan['token'],'recycle')
+    assert result['removed_copies']==[keys[1]] and result['copies_count']==1
+    assert len(copies.items(str(photo)))==1
+
+
+def test_fresh_bin_delete_does_not_search_old_receipts(setup,monkeypatch):
+    photo,_,c,_=setup
+    monkeypatch.setattr(library_recycle,'available',lambda p:True)
+    Bin(photo.parent.parent/'bin').attach(c)
+    def unexpected(*args): raise AssertionError('A present original does not need receipt recovery')
+    c.recycle_find=unexpected
+    result=delete(c,photo)
+    assert result['count']==1 and not photo.exists() and not Path(str(photo)+'.hdrf').exists()

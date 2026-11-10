@@ -94,7 +94,7 @@
    const confirmation=plan.permanent?'permanent':'recycle';
    if(!await confirm({title:rejected?'Delete all rejected':'Delete photos',message:parts.join(' '),confirm:plan.permanent?'Delete permanently':plan.count?'Move to Recycle Bin':'Remove copies',danger:true}))return;
    const result=await command({action,paths:[],token:plan.token,confirmation});await options.changed(result);
-   options.status(`${result.count} photos deleted.${result.copies_count?` ${result.copies_count} separate virtual copies removed.`:''} ${result.warnings.join(' ')}${plan.recycle?' Restore photos and settings together from the Recycle Bin to bring them back.':''}`);
+   options.status(`${result.count} photos deleted.${result.settings_pending?` ${result.settings_pending} photos removed; settings still need attention.`:''}${result.copies_count?` ${result.copies_count} separate virtual copies removed.`:''} ${result.warnings.join(' ')}${plan.recycle?' Restore photos and settings together from the Recycle Bin to bring them back.':''}`);
   }
   return Object.freeze({rename,move,folder,remove,destination,clash});
  }

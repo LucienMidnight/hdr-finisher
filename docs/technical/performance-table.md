@@ -1480,3 +1480,15 @@ not a speed qualification across photos or a new acceptance target.
 Log: `codebase/output/exposure-implementation-check.log`. Repeating sensor
 slices avoid full-frame black/white level arrays. The check also verifies
 Focus full refinement survives Exposure toggles without developing the RAW.
+
+
+November 10 grouped-fix Library smoke (`13d56cf0` plus deletion changes,
+2560 x 1440, default 90-second mixed-folder run, concurrent Python suite):
+first picture 1.1 s, ten 1.8 s, twenty 10.3 s; no picture/memory errors.
+Functional smoke, not a speed comparison. Report:
+`codebase/output/quick-library-check/exposure-delete-fixes/report.json`.
+The Delete UI check initially exceeded its unchanged 30-second wait while
+fresh deletion searched the existing Recycle Bin. Fresh-present files now
+skip that recovery search; the full mixed-delete and neighbour-navigation
+driver passes within its original timeouts. No deletion speed target or
+numeric end-to-end improvement is claimed.

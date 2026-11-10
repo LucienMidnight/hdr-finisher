@@ -14,7 +14,7 @@ When you have no folders yet, the Library shows **Add a folder to start browsing
 
 A pinned folder stays in the **Folders** list and its photos are part of your Library. Photos stay where they are. Pinning a folder never moves or copies anything.
 
-To stop showing a folder, right-click it and choose **Unpin folder**. Nothing is deleted from disk. Photos that are also in an album stay in the Library.
+To stop showing a folder, right-click it and choose **Unpin folder**. Nothing is deleted from disk. Photos that are also in an album stay in the Library. If unpinning fails, your folder view and selection are restored.
 
 Right-click a folder for more: **Check for new photos**, **New folder inside…**, **Rename label…**, **Rename folder…**, **Move folder…** and **Show in Explorer**.
 
@@ -126,7 +126,7 @@ An album gathers photos from any folder without moving them. A photo can be in m
 
 Choose the **+** next to **Albums** to make **New empty album…**, or **New album from selected photos…**. You can also right-click photos and choose **New album from this photo…**, **Add to** an album, or **Remove from** the open album.
 
-Right-click an album to **Duplicate**, **Rename album…** or **Delete album…**. Deleting an album does not delete any photo.
+Right-click an album to **Duplicate**, **Rename album…** or **Delete album…**. Deleting an album does not delete any photo. If it was open, the Library switches to an available pinned folder, or an empty Library when none is available.
 
 A photo in an album stays in your Library even if its folder is not pinned.
 
@@ -197,6 +197,8 @@ Right-click a photo for **Rename photo…**, **Move to folder…** and **Delete�
 - **Rename photo…** keeps the file ending.
 - **Move to folder…** asks if a file with the same name already exists: **Keep both**, **Skip this one** or **Cancel move**.
 - **Delete…** explains what will happen before it does anything. Photos go to the Recycle Bin together with their settings. Restore both from the Recycle Bin to bring back the marks, grades and copies. If a drive has no Recycle Bin, the message says the photos will be gone for good, and the button reads **Delete permanently**.
+
+After deleting the current photo, Single view selects the next remaining photo, or the previous one at the end. When none remain, the Library returns to an empty Grid. If only part of a deletion finishes, the status reports what was removed and whether settings still need attention; use **Activity** to review the unfinished work.
 
 Folders have **Rename folder…** and **Move folder…** in their right-click menu.
 

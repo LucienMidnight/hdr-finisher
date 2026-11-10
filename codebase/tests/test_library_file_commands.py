@@ -216,3 +216,23 @@ def test_recovery_rebuilds_album_names_after_database_loss(setup):
     assert not restarted.records
     assert marks.album_paths('keepers')==[str(photo.with_name('new.ARW'))]
     assert any(row['name']=='keepers' for row in marks.albums())
+
+
+def test_folder_children_reserved_during_controlled_activation(setup):
+    from threading import Event,Thread
+    from hdr_finisher.sessions import SessionStore
+    photo,_,c,_=setup;c.store=SessionStore()
+    entered,release=Event(),Event()
+    record={'items':[{'old':str(photo.parent),'new':str(photo.parent)+'-new','children':[{'old':str(photo),'new':str(photo)+'-new'}]}]}
+    def hold(*args):
+        entered.set();assert release.wait(5)
+    c._run_reserved=hold
+    thread=Thread(target=c.run,args=(record,));thread.start()
+    try:
+        assert entered.wait(5)
+        assert c.store._lock.acquire(timeout=.2);c.store._lock.release()
+        session=SimpleNamespace(to_payload=lambda:None,source_reference=lambda:SimpleNamespace(durable_path=photo))
+        with pytest.raises(ValueError,match='file command in progress'): c.store.activate_session(session)
+    finally:
+        release.set();thread.join(5)
+    assert not thread.is_alive() and not c.store.file_command_sources

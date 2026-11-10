@@ -276,7 +276,7 @@ class LibraryCopies:
                     return {"photos":[self.row(p,i) for p,_,i in removed], "copies_changed":True}
             if undo and removed: self.marks._undo.append({"command":restore})
             for path, _, item in removed: log("virtual_copy_removed", photo=path, copy=item["photo_id"], action="photo untouched; removal undoable")
-            return {"photos":[], "count":len(removed), "warnings":warnings, "undo_available":bool(self.marks._undo), "copies_changed":bool(removed)}
+            return {"photos":[], "count":len(removed), "removed_copies":[p+SEPARATOR+i["photo_id"] for p,_,i in removed], "warnings":warnings, "undo_available":bool(self.marks._undo), "copies_changed":bool(removed)}
 
     def states(self, paths):
         states = {}

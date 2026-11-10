@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import InitVar, dataclass, field
 from concurrent.futures import ThreadPoolExecutor
+import os
 import hashlib
 import json
 from time import perf_counter
@@ -365,6 +366,11 @@ class SessionStore:
     def activate_session(self, session: LoadedSession) -> SessionPayload:
         payload = session.to_payload()
         with self._lock:
+            reserved = getattr(self, "file_command_sources", ())
+            if reserved:
+                source = session.source_reference().durable_path
+                if source is not None and os.path.normcase(str(source)) in reserved:
+                    raise ValueError("This photo has a file command in progress. Try opening it again when it finishes.")
             previous = self._current
             self._current = session
             self._publish_retained_session_bytes()

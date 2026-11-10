@@ -13,6 +13,17 @@ for(const p of photos)fs.copyFileSync(path.join(root,"tests","fixtures","library
  await api("/api/library/albums/create",{name:"Keep",paths:[photos[0]]});
  await api("/api/library/smart-albums",{action:"create",name:"All five stars",filters:{rules:[{field:"rating",op:"is",value:5}]}});
  await lib.goto(new URL("/library",process.env.HDR_FINISHER_URL).href);await lib.waitForFunction(()=>window.HDRLibrary&&HDRLibrary.getSnapshot().count===2);
+ // A failed unpin must restore the same usable Single view and selection.
+ await lib.locator('.library-cell[data-path]').first().click();await lib.locator('#single-view').click();
+ const before=await lib.evaluate(()=>HDRLibrary.getSnapshot());
+ await page.route('**/api/library/pins/remove',route=>route.fulfill({status:500,contentType:'application/json',body:JSON.stringify({detail:'Unpin test failure'})}));
+ await lib.locator('.library-folder-row[data-path]').filter({hasText:path.basename(folder)}).first().click({button:"right"});
+ await lib.getByRole("menuitem",{name:"Unpin folder",exact:true}).click();
+ await lib.getByRole("dialog",{name:`Stop showing ${path.basename(folder)}?`,exact:true}).getByRole("button",{name:"Unpin folder",exact:true}).click();
+ await lib.waitForFunction(before=>{const now=HDRLibrary.getSnapshot();return !now.reading&&now.path===before.path&&now.view===before.view&&now.selected===before.selected;},before);
+ await lib.waitForFunction(()=>document.querySelector('#library-status').textContent.includes('Unpin test failure'));
+ assert.equal(await lib.locator('#folders .library-folder-row[data-path]').count(),1);
+ await page.unroute('**/api/library/pins/remove');await lib.locator('#grid-view').click();
  await lib.locator('.library-folder-row[data-path]').filter({hasText:path.basename(folder)}).first().click({button:"right"});await lib.getByRole("menuitem",{name:"Unpin folder",exact:true}).click();
  const dialog=lib.getByRole("dialog",{name:`Stop showing ${path.basename(folder)}?`,exact:true});await dialog.waitFor();assert.ok((await dialog.textContent()).includes("1 photos leave the library. 1 stay because they are in albums."));await dialog.getByRole("button",{name:"Unpin folder",exact:true}).click();
  await lib.waitForFunction(()=>!document.querySelector('#folders .library-folder-row[data-path]'));
@@ -23,5 +34,19 @@ for(const p of photos)fs.copyFileSync(path.join(root,"tests","fixtures","library
  result=await api("/api/library/albums/remove",{name:"Keep",paths:[photos[0]]});assert.equal(result.left_library,1);
  assert.equal((await api("/api/library/smart-candidates")).photos.length,0);
  await api("/api/library/undo",{});assert.equal((await api("/api/library/smart-candidates")).photos.length,1);
- assert.deepEqual(errors,[]);assert.ok(photos.every(p=>fs.existsSync(p)));console.log("PASS: unpin confirmation, album-only membership, tag/smart scope, last-album exit and Undo; originals untouched.");
+ // Delete the active album after the last pin has gone: both navigation and
+ // collection identity must leave it, even with no fallback folder.
+ await lib.locator('#albums .library-album-row').filter({hasText:"Keep"}).click({button:"right"});
+ await lib.getByRole("menuitem",{name:/^Delete album/}).click();
+ await lib.getByRole("dialog",{name:"Delete Album",exact:true}).getByRole("button",{name:"Delete album",exact:true}).click();
+ await lib.waitForFunction(()=>!document.querySelector('#albums [data-album="Keep"]')&&!HDRLibrary.getSnapshot().collection&&HDRLibrary.getSnapshot().count===0);
+ assert.equal(await lib.locator('#place-title').textContent(),"Library");
+ await lib.locator('#smart-albums .folder-name').filter({hasText:"All five stars"}).click();
+ await lib.waitForFunction(()=>HDRLibrary.getSnapshot().collection?.kind==="smart");
+ await lib.locator('#smart-albums .library-album-row').first().click({button:"right"});
+ await lib.getByRole("menuitem",{name:/^Delete smart album/}).click();
+ await lib.getByRole("dialog",{name:"Delete smart album",exact:true}).getByRole("button",{name:"Delete smart album",exact:true}).click();
+ await lib.waitForFunction(()=>!document.querySelector('#smart-albums [data-smart]')&&!HDRLibrary.getSnapshot().collection&&HDRLibrary.getSnapshot().count===0);
+ assert.equal(await lib.locator('#place-title').textContent(),"Library");
+ assert.deepEqual(errors,[]);assert.ok(photos.every(p=>fs.existsSync(p)));console.log("PASS: unpin confirmation, album-only membership, tag/smart scope, last-album exit and Undo, active manual/smart deletion without fallback; originals untouched.");
 }finally{try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); }}})().catch(e=>{console.error(e);process.exitCode=1;});

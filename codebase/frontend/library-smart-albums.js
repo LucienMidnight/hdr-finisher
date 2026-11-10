@@ -4,7 +4,7 @@
  const {make,ask,showMenu}=HDRLibraryDialogs, query=HDRLibraryQuery;
  const workerURL=new URL("library-smart-worker.js",document.currentScript.src);
  function create(options) {
-  let albums=[], active="", version="", photos=[], flight=null, worker=null, serial=0;
+  let albums=[], active="", version="", photos=[], flight=null, worker=null, serial=0, revision=0;
   const pending=new Map();
   function work(action,extra={}) {
    if(!worker){
@@ -32,7 +32,8 @@
     row.append(name);return row;
    }));
   }
-  async function refresh() {albums=(await options.api("/api/library/smart-albums")).albums;render();return albums;}
+  async function refresh() {const request=++revision;const result=await options.api("/api/library/smart-albums");if(request===revision){albums=result.albums;render();}return albums;}
+  async function mutate(body) {++revision;try{return await options.run("/api/library/smart-albums",body);}finally{++revision;}}
   async function open(id) {
    await refresh();const item=album(id);if(!item)throw new Error("That smart album is no longer in the library.");
    active=id;render();const result=await candidates();return {...result,filters:item.filters,name:item.name};
@@ -45,7 +46,10 @@
   }
   async function remove(item) {
    if(!await ask({title:"Delete smart album",message:`Delete ${item.name}? Photos, grades and settings stay untouched. Ctrl+Z restores the rules.`,confirm:"Delete smart album"}))return;
-   await options.run("/api/library/smart-albums",{action:"delete",id:item.id});await refresh();if(active===item.id){active="";options.closed();}
+   try {await mutate({action:"delete",id:item.id});}
+   catch(error){await refresh().catch(()=>{});throw error;}
+   albums=albums.filter(a=>a.id!==item.id);render();if(active===item.id){active="";options.closed();}
+   await refresh().catch(e=>options.status(e.message));
   }
   async function copy(item,manual) {
    await refresh();
@@ -58,7 +62,7 @@
     await work("refresh",{filters:current.filters});
     const paths=await work("paths",{filters:current.filters});
     await options.run("/api/library/albums/create",{name:answer.name,paths});
-   } else await options.run("/api/library/smart-albums",{action:"duplicate",id:item.id,name:answer.name});
+   } else await mutate({action:"duplicate",id:item.id,name:answer.name});
    await refresh();options.status(`Album ${answer.name} created.`);
   }
   async function editor(item=null,initial=null) {
@@ -124,7 +128,7 @@
     field.addEventListener("change",()=>{filters.rules[i]={field:field.value};renderRules();count();});op.addEventListener("change",()=>{rule.op=op.value;delete rule.from;delete rule.to;delete rule.value;delete rule.values;delete rule.labels;renderRules();count();});return row;
    }));}
    add.addEventListener("click",()=>{filters.rules.push({field:"rating",op:"at-least",value:3});renderRules();count();});mode.addEventListener("change",count);name.addEventListener("input",()=>{save.disabled=!name.value.trim()||(boxes.length>0&&!boxes.some(b=>b.checked));});
-   form.addEventListener("submit",async e=>{e.preventDefault();save.disabled=true;try{await options.run("/api/library/smart-albums",{action:item?"edit":"create",id:item?.id||"",name:name.value.trim(),filters});dialog.close();await refresh();if(active===item?.id)options.open(active);}catch(e){error.textContent=e.message;save.disabled=false;}});
+   form.addEventListener("submit",async e=>{e.preventDefault();save.disabled=true;try{await mutate({action:item?"edit":"create",id:item?.id||"",name:name.value.trim(),filters});dialog.close();await refresh();if(active===item?.id)options.open(active);}catch(e){error.textContent=e.message;save.disabled=false;}});
    ready=work("refresh",{filters:structuredClone(filters)});
    // Attach a rejection handler immediately, including editors closed before the debounce.
    ready.catch(e=>{if(dialog.isConnected){live.textContent="Count unavailable";error.textContent=e.message;}});

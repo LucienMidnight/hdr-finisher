@@ -116,9 +116,25 @@
     } });
   const albums = HDRLibraryAlbums.create({ root: $("albums"), addButton: $("add-album"), api, status, run: culling.run,
     selection: () => [...state.selection], smartAction: () => smart.menuAction(), open: name => browseCollection("album", name),
-    closed: () => { const back = state.lastFolder || state.pins.find(pin => pin.available)?.path; if (back) void browse(back); else void reopen(); } });
+    closed: () => leaveRemovedCollection() });
   const smart = HDRLibrarySmartAlbums.create({ root: $("smart-albums"), api, status, run: culling.run, pins: () => state.pins,
-    open: id => browseCollection("smart", id), closed: () => { const back = state.lastFolder || state.pins.find(pin => pin.available)?.path; if (back) void browse(back); }, });
+    open: id => browseCollection("smart", id), closed: () => leaveRemovedCollection() });
+  function leaveRemovedCollection() {
+    state.scan?.abort(); state.single?.abort(); state.native?.abort(); clearPrefetch();
+    clearCells(state.cells); clearCells(state.filmCells);
+    state.folderOpen = null; state.scan = null; state.collection = null; state.smartFilters = null;
+    state.path = ""; state.photos = []; state.allPhotos = []; state.index = -1; state.anchor = -1;
+    state.selection.clear(); state.reading = false; state.scanError = "";
+    state.singleIdentity = ""; state.displayEpoch++; state.fitMeta = null; state.nativeMeta = null;
+    albums.setActive(""); smart.setActive("");
+    $("place-title").textContent = "Library"; $("place-title").title = "";
+    $("check-photos").disabled = true;
+    setView("grid"); updateDetails(); paintGrid(); paintFilm();
+    const back = state.pins.find(pin => pin.available && pin.path === state.lastFolder)
+      || state.pins.find(pin => pin.available);
+    if (back) void browse(back.path).catch(error => status(error.message));
+  }
+
   void smart.refresh().catch(error => status(error.message));
   $("add-smart-album").addEventListener("click", () => void smart.editor().catch(error => status(error.message)));
   $("filter-save-smart").addEventListener("click", () => { void smart.editor(null, { ...structuredClone(state.filters), raw: undefined, folders: state.path ? [state.path] : [] }).catch(error => status(error.message)); });
@@ -129,10 +145,20 @@
   async function filesChanged(result) {
     culling.setUndo(result.undo_available); $("library-undo").hidden = !result.undo_available;
     for(const change of result.changes || []) {
+      if (["Recycle Bin", "Gone for good"].includes(change.new)) continue;
       const remap = p => p === change.old || p.startsWith(change.old + "\\") || p.startsWith(change.old + "/") ? change.new + p.slice(change.old.length) : p;
       state.path = remap(state.path); if(state.lastFolder) state.lastFolder=remap(state.lastFolder);
     }
-    await refreshPins(); await reopen();
+    const deleted = new Set((result.changes || []).filter(change => ["Recycle Bin", "Gone for good"].includes(change.new)).map(change => change.old));
+    for (const path of result.removed_copies || []) deleted.add(path);
+    if (deleted.size) {
+      // Keep the old visible order until applyQuery chooses a surviving neighbour.
+      state.allPhotos = state.allPhotos.filter(photo => !deleted.has(photo.path) && !deleted.has(photo.source_path));
+      applyQuery();
+    }
+    await refreshPins().catch(error => status(error.message));
+    if (!deleted.size) await reopen();
+
   }
   const fileCommands = HDRLibraryFileCommands.create({api,status,pins:()=>state.pins,changed:filesChanged,removeCopies:removeCopy});
   const reopen = () => state.collection ? browseCollection(state.collection.kind, state.collection.name) : openPlace({ path: state.path, refresh: true });
@@ -1638,6 +1664,7 @@
   function applyQuery(paint = true) {
     paintFilterButton();
     const restored=state.folderOpen?.restore;
+    const oldPaths = state.photos.map(photo => photo.path), oldIndex = state.index;
     const lead = restored?.selected || selected()?.path, anchor = restored?.anchor || state.photos[state.anchor]?.path;
     const files=state.allPhotos.filter(photo=>showAllFiles || HDRLibraryQuery.defaultVisible(photo));
     const base = state.collection?.kind === "smart" ? HDRLibraryQuery.apply(files, state.sort, state.descending, state.smartFilters || {}) : files;
@@ -1645,7 +1672,13 @@
     const visible = new Set(state.photos.map(photo => photo.path));
     state.selection = new Set([...state.selection].filter(path => visible.has(path)));
     state.index = state.photos.findIndex(photo => photo.path === lead);
-    if (state.index < 0 && state.photos.length) { state.index = 0; state.selection.add(state.photos[0].path); }
+    if (state.index < 0 && state.photos.length) {
+      const removed = lead && !state.reading && !state.folderOpen?.loading && !state.allPhotos.some(photo => photo.path === lead);
+      const neighbour = removed ? oldPaths.slice(oldIndex + 1).find(path => visible.has(path))
+        || oldPaths.slice(0, oldIndex).reverse().find(path => visible.has(path)) : null;
+      state.index = neighbour ? state.photos.findIndex(photo => photo.path === neighbour) : 0;
+      state.selection.add(state.photos[state.index].path);
+    }
     if(restored && visible.has(restored.selected)) {
       state.selection=new Set((restored.selection||[restored.selected]).filter(path=>visible.has(path)));
       state.selection.add(restored.selected);state.folderOpen.restore=null;
@@ -1739,8 +1772,10 @@
     offlineSources.clear();
     void refreshPins().then(() => reopen()).catch(error => status(error.message));
   });
+  let pinsRevision = 0;
   async function refreshPins() {
-    const result = await api("/api/library/pins"); state.pins = navigation.orderPins(result.pinned);
+    const request = ++pinsRevision;
+    const result = await api("/api/library/pins"); if (request !== pinsRevision) return; state.pins = navigation.orderPins(result.pinned);
     const key = path => path.replaceAll("\\", "/").replace(/\/$/, "").toLowerCase();
     for (const pin of state.pins) if ([...offlineSources].some(path => key(path).startsWith(key(pin.path) + "/"))) pin.available = false;
     $("folders").replaceChildren(...state.pins.map((pin) => folderRow(pin))); paintGrid();
@@ -1776,23 +1811,29 @@
         const message = `${impact.leaving.toLocaleString()} photos leave the library. ${impact.kept ? `${impact.kept.toLocaleString()} stay because they are in albums. ` : ""}Nothing is deleted from disk.`;
         if (!await HDRLibraryDialogs.ask({ title: `Stop showing ${pinned.name}?`, message, confirm: "Unpin folder" })) return;
       }
-      // An unpinned folder is never read again: drop its row and leave its
-      // view now, before the server forgets it (it may be gone from disk).
       const plain = value => key(value).replaceAll("\\", "/").replace(/\/$/, "");
       const inside = value => !!value && (plain(value) + "/").startsWith(plain(pinned.path) + "/");
       const leaving = pinned && !state.collection && inside(state.path);
-      if (pinned) {
-        state.pins = state.pins.filter(pin => pin !== pinned); state.folderSelection.delete(pinned.path);
-        if (inside(state.lastFolder)) state.lastFolder = "";
-        $("folders").replaceChildren(...state.pins.map(pin => folderRow(pin)));
-        if (leaving) { state.scan?.abort(); state.single?.abort(); state.native?.abort(); clearPrefetch(); clearCells(state.cells); clearCells(state.filmCells); state.folderOpen = null; state.path = ""; state.photos = []; state.allPhotos = []; state.index = -1; state.selection.clear(); state.reading = false; state.scanError = ""; $("place-title").textContent = "Library"; $("place-title").title = ""; paintGrid(); }
-      }
+      const saved = leaving ? portableState() : null;
+      if (leaving) state.scan?.abort(); // Stop listing before membership is removed.
+      ++pinsRevision;
       try {
         await api(pinned ? "/api/library/pins/remove" : "/api/library/pins", pinned ? { path: pinned.path } : { paths: [path] });
-      } finally { await refreshPins(); }
+      } catch (error) {
+        ++pinsRevision; await refreshPins().catch(() => {});
+        if (saved) await restoreState(saved, { refreshPins: false }).catch(() => {});
+        throw error;
+      }
+      ++pinsRevision;
+      if (pinned) {
+        state.pins = state.pins.filter(pin => key(pin.path) !== key(pinned.path)); state.folderSelection.delete(pinned.path);
+        if (inside(state.lastFolder)) state.lastFolder = "";
+        $("folders").replaceChildren(...state.pins.map(pin => folderRow(pin)));
+        if (leaving) leaveRemovedCollection();
+      }
+      await refreshPins().catch(error => status(error.message));
       updateDetails(); void albums.refresh().catch(error => status(error.message)); void tagWindow.refresh().catch(error => status(error.message));
-      const back = leaving && state.pins.find(pin => pin.available)?.path;
-      if (back) void browse(back); else if (state.collection || state.path) void reopen();
+      if (!leaving && (state.collection || state.path)) void reopen();
       status(pinned ? "Folder unpinned. Photos stay where they are." : "Folder pinned.");
     }}] : [{ label: "Add folder…", run: openPicker }];
     if (path && !state.picker) {
@@ -1956,7 +1997,7 @@
   const activity = HDRLibraryActivity.create({ button: $("index-status"), panel: $("library-activity"), api, status,
     acceptsPhoto: path=>state.photos.some(photo=>photo.path===path),
     onPictureError: record => pictureErrors.show(record),
-    onHealth: next => { pictureErrors.update(next.picture_errors || [], next.picture_errors_checked_at); if(next.file_commands && next.file_commands.revision !== fileRevision) {fileRevision=next.file_commands.revision;if(next.file_commands.changes.length)void filesChanged({...next.file_commands,undo_available:culling.undoAvailable()});} showIndexing(next.index); void refreshCheckedFolders(next.index.checks); } });
+    onHealth: next => { pictureErrors.update(next.picture_errors || [], next.picture_errors_checked_at); if(next.file_commands && next.file_commands.revision !== fileRevision) {fileRevision=next.file_commands.revision;if(next.file_commands.changes.length || next.file_commands.removed_copies?.length)void filesChanged({...next.file_commands,undo_available:culling.undoAvailable()});} showIndexing(next.index); void refreshCheckedFolders(next.index.checks); } });
   $("library-undo").addEventListener("click", () => { void culling.undo(); });
   let checkEvent = 0, refreshingCheck = false;
   const checkClient = crypto.randomUUID();
@@ -2361,13 +2402,13 @@
       gridScroll: grid.scrollTop, filmScroll: film.scrollLeft, filterOpen: !$("library-filterbar").hidden,
       leftClosed: library.classList.contains("library-left-closed"), rightClosed: library.classList.contains("library-right-closed") };
   }
-  async function restoreState(saved) {
+  async function restoreState(saved, options = {}) {
     if (!saved) return;
     restoring++; let done = false;
-    try { await applySavedState(saved); done = true; }
+    try { await applySavedState(saved, options); done = true; }
     finally { restoring--; if (!done && !restoring && state.active) setActive(true); }
   }
-  async function applySavedState(saved) {
+  async function applySavedState(saved, options = {}) {
     const previousScan=state.scan;
     state.sort = saved.sort || "time"; state.descending = !!saved.descending; state.filters = { rules: saved.filters?.rules || [], any: false, raw: false };
     state.size = saved.size || 190; state.hdr = !!saved.hdr; state.zoom = !!saved.zoom;
@@ -2376,7 +2417,7 @@
     $("hdr-button").setAttribute("aria-pressed", String(state.hdr)); $("zoom-button").setAttribute("aria-pressed", String(state.zoom));
     $("library-filterbar").hidden = !saved.filterOpen; paintFilterButton();
     collapse("left", !!saved.leftClosed); collapse("right", !!saved.rightClosed); ruleFilters.render();
-    await refreshPins();
+    if (options.refreshPins !== false) await refreshPins();
     if(state.scan!==previousScan)return;
     if (saved.collection) await browseCollection(saved.collection.kind, saved.collection.name);
     else if (saved.path) await browse(saved.path);
