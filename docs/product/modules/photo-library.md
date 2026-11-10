@@ -8512,3 +8512,59 @@ limits and warning pixels are unchanged. Cold first E 0.880 s alone, 1.654 s
 with Focus; next-photo tails 3.481/2.144 s remain. Pending-work sharing is
 being evaluated separately. The old native-priority test now explicitly
 covers the selected-Exposure exception and unchanged Focus background rule.
+
+
+November 10, Exposure change 3 experiment: backend sharing/promotion of
+pending source-version/epoch jobs was tried with independent subscribers,
+a 150 ms DOM-handoff grace, existing memory reservations and worker/grant
+priority promotion. Four controlled async checks passed for cancellation,
+sharing, promotion, source versions and failure release. Whole-wait results
+did not establish a reliable improvement: first E 1.073 s alone / 1.631 s
+with Focus; next tails 3.014/2.504 s. The experiment and its helper/tests were
+removed; the retained implementation remains mask simplification plus
+selected priority. No in-flight table or handoff grace is shipped.
+
+The new disposable Electron driver library-exposure-culling.js reuses the
+shared badminton RAW folder without copies; --focus exercises both overlays.
+It checks cold E and three current-photo navigation results, no development
+or page errors, and writes trace-backed measurements. It is registered in
+the release inventory. Existing Exposure controls/view/alignment checks pass.
+No browser queue, admission rate, cache allowance or memory budget changed.
+
+
+November 10 final outcome: keep changes 1 and 2; discard pending-job sharing
+and the rate-only trial. The temporary rate-12 estimate was limited
+to flat ARW/CR2, using only header dimensions/type and preserving CPU job
+admission policy; all other formats fell back to the existing estimate. It
+gave E 1.332 s alone / 1.921 s with Focus, next tails 2.652/1.764 s. This
+is not a dependable overall gain versus selected priority, so it was restored.
+No memory estimate, cache budget, global queue policy or native Focus route
+changes ship. Per-photo source-version freshness and original clipping
+semantics remain. Consistent roughly-one-second Exposure navigation is still
+open; the retained first-result observations are 0.880 s alone / 1.654 s with
+Focus, with some later cold-photo waits over two seconds. Steve's app trial
+is the practical next check before another performance round.
+
+Grouped validation of retained changes: 897 JavaScript checks pass;
+3,201 Python pass, three skip, only the known cached-scene failure remains.
+Existing Exposure Electron controls/regions/16-bit precision/alignment/views
+and grade-related behavior pass. Cold RAW culling driver passes at each
+sequential stage with and without Focus. Plain Electron 90-second Single
+smoke passes, no errors, peak 2.545 GB, longest drawing gap 194 ms. Exact
+warning checks cover tiny/narrow/odd cells, shifted patterns, channel levels,
+floating/integer precision and rotations. No existing tolerance was loosened.
+Logs: exposure-final-{node,python,controls,quick}.log; quick report under
+output/quick-library-check/exposure-mask-priority/report.json. Output size
+is checked after completion. No push or installer build.
+
+
+Further third-option trial corrected classification too: Exposure diagnostic
+jobs do not consume full-development slots, with the measured rate-12 flat
+ARW/CR2 estimate and existing estimate fallback elsewhere. Alone first E
+1.322 s, slowest next 1.487 s; with Focus first 1.640 s, slowest next 1.805 s.
+This improves navigation in the trial but worsens first activation alone
+versus retained change 2. The estimate and classification were restored;
+they are a concrete proposal for Steve, not built. Source warnings remain
+exact. Keeping the new per-job reservation needs agreement on the existing
+approved sizing policy; no global RAM ceiling/cache allowance change is
+proposed. The retained code and its validation above remain current.

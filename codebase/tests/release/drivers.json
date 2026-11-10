@@ -1177,6 +1177,13 @@
       }
     },
     {
+      "path": "tests/library-exposure-culling.js",
+      "areas": ["library"],
+      "tier": "area",
+      "protects": "Cold source Exposure and next-photo navigation on shared unmodified RAWs, optional simultaneous Focus.",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/library-exposure.js",
       "areas": [
         "library"

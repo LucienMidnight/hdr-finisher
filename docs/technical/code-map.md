@@ -561,3 +561,18 @@ Electron driver `tests/library-focus-camera.js` uses the shared badminton
 RAW fixture folder (or `LIBRARY_FOCUS_CAMERA_FOLDER`, at least ten RAWs), no
 photo copies, a fresh profile, filmstrip/fullscreen navigation and native
 refinement after dwelling. It is registered in the release inventory.
+
+
+Exposure mask simplification/priority (November 10): raw_exposure_regions
+combines channel-dark comparisons directly in CFA cells, marking incomplete
+cells false before expanding once; highlights, verification and fallback
+retain exact behavior. Selected Single/Compare Exposure requests use 30/main,
+filmstrip/grid use 85/kept, native Focus remains 82/85. Tiny/partial-group
+cases extend test_library_overlays.py; library-overlays.test.js and
+test_focus_camera_source.py check selected/background routing.
+The release-registered library-exposure-culling.js reuses shared RAWs in a
+fresh profile, optionally --focus, records navigation/request traces and
+never writes source photos. tools/exposure-memory-diagnostic.py is a
+Windows-only, standalone RSS experiment for one specified RAW per process;
+its memory measurements are not shipped scheduler estimates. A pending-job
+backend sharing prototype was rejected and is not part of the code.

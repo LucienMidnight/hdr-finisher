@@ -92,6 +92,8 @@ def test_native_focus_stays_background_and_selected_exposure_can_promote():
     assert OverlayRequest(path='a').priority==85
     assert OverlayRequest(path='a',kind='exposure',priority=30).priority==30
     with pytest.raises(ValueError):OverlayRequest(path='a',kind='focus',priority=80)
+    for priority in (0,10,80):
+        with pytest.raises(ValueError):OverlayRequest(path='a',kind='exposure',priority=priority)
 
 
 def test_rgb16_png_near_white_is_not_falsely_clipped_and_alpha_is_ignored(tmp_path):

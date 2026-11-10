@@ -213,3 +213,11 @@ test('camera provenance cannot seed a developed sensor picture',async()=>{
 test('graded refusal hides quick camera while unalignable optional full retains it',async()=>{
  for(const graded of [false,true]){const h=cameraHarness();await h.overlay.toggle('focus',true);await tick();h.requests[0].resolve(cameraMap());await tick();[...h.timers.values()][0]();await tick();h.requests[1].resolve(graded?{unavailable:'graded',reason:'graded'}:{key:'native',quality:'full'});await tick();assert.equal(h.overlay.snapshot().maps[0].ready,!graded);h.owner.abort();}
 });
+
+
+test('selected Exposure is foreground while unrelated filmstrip maps stay background',async()=>{
+ const h=setup();const film=h.surface({path:'other.raw'});
+ await h.overlay.toggle('exposure',true);await tick();
+ assert.deepEqual(h.requests.map(r=>[r.data.path,r.data.priority]),[['test.raw',30],['other.raw',85]]);
+ h.owner.abort();film.controller.abort();
+});

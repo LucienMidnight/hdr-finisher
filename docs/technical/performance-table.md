@@ -1751,3 +1751,58 @@ Exposure priority/main lane. Same conditions/band as experiment 1. First E
 1.462/1.158/2.144 s. First presentation improves, consistent one-second
 navigation not achieved. No memory rate/allowance change. Evidence:
 codebase/output/exposure-selected{,-focus}.json and matching app logs.
+
+
+November 10 implementation experiment 3, pending-job sharing added to
+experiment 2 with unchanged memory rates: alone E 1.073 s, next
+3.014/0.098/0.091 s; Focus E 1.631 s, next 1.445/0.947/2.504 s. Same
+conditions/10% band. No reliable overall benefit; the extra source/epoch
+job table, promotion callbacks and 150 ms handoff grace were removed.
+Evidence codebase/output/exposure-shared{,-focus}.json and app logs;
+exposure-shared-unit.log. No repeated runs to chase a number.
+
+Separate standalone Windows RSS measurement of the retained mask path,
+2 ms sampling after native-library initialization, one fresh process per
+photo; concurrent Python checks, so no speed claim from these runs. Source
+masking/pooling/alignment only; no retained cache or picture copies. Candidate
+sizing uses the existing measured-peak-plus-25% method, no approved rate
+changed. Sony DSC07187: 385.6 MB increase, 9.10 bytes/visible sensor pixel;
+Canon IMG_0114 167.0 MB, 9.27; Canon IMG_3129 167.3 MB, 9.24. Including
+25% headroom gives 11.37-11.59 bytes/pixel in these cases, versus the current
+CPU-development reservation rate 25. This supports a limited rate-12 trial
+on tested ARW/CR2 flat RAWs, not a universal rate or whole-app memory proof.
+Unknown/other formats must retain the existing estimate. Keeping a changed
+estimate remains Steve's decision. Evidence exposure-memory-{sony,canon-
+portrait,canon-landscape}.log; script tools/exposure-memory-diagnostic.py.
+
+
+November 10 final memory-reservation experiment, after fast suites completed:
+retained mask/selected priority plus temporary Exposure-only 12 bytes/raw
+sensor pixel for flat ARW/CR2; CPU lane/count/limits unchanged, other formats
+keep CPU estimate. Same fresh-profile Sony/early-scan/band conditions. Alone
+E 1.332 s, next 2.652/0.100/0.096 s; Focus E 1.921 s, next
+1.110/1.764/0.095 s. No dependable overall improvement; estimate restored,
+not proposed for adoption from this trial. Evidence exposure-memory-trial
+{,-focus}.json and app logs. No production rate change retained.
+
+Final retained implementation remains experiment 2 (0.880/1.654 s first E,
+not a claim that all cold navigation meets one second). Full fast suites run
+once after removing shared-job prototype; the memory trial afterward was
+restored byte-for-byte. Functional 90-second Single smoke, Focus off and
+concurrent Python tests: first picture 1.0 s, ten 7.4 s, peak 2.545 GB,
+longest drawing gap 194 ms, no errors. Smoke report is authoritative for its
+exact figures: codebase/output/quick-library-check/exposure-mask-priority/
+report.json. These are not Exposure performance comparisons.
+
+
+Follow-up temporary combined reservation/classification trial: Exposure
+uses its own diagnostic job kind (not a full-development slot) plus the
+same measured rate-12 eligibility/fallback. Alone E 1.322 s, next
+1.487/0.100/0.101 s; Focus E 1.640 s, next 1.805/1.481/0.087 s.
+Source files restored byte-for-byte afterwards. Next-photo tails improve
+versus retained experiment 2, while first activation alone regresses;
+not a universal one-second result. Keeping a lowered approved reservation
+requires Steve's decision. Further implementation/validation awaits that
+choice. Evidence exposure-kind-trial{,-focus}.json and app logs. All trials
+are single observations under the earlier recorded conditions, not a timing
+range or a repeated paired confidence estimate.

@@ -71,5 +71,8 @@ def test_camera_uses_existing_foreground_lane_and_bounded_admission(monkeypatch)
     from hdr_finisher import library_estimates as estimates
     assert helper_lane({'command':'overlay','quality':'camera'})=='main'
     assert helper_lane({'command':'overlay','quality':'full'})=='kept'
+    assert helper_lane({'command':'overlay','kind':'exposure','quality':'half','priority':30})=='main'
+    assert helper_lane({'command':'overlay','kind':'exposure','quality':'half','priority':85})=='kept'
+
     monkeypatch.setattr(estimates,'dimensions',lambda *a:pytest.fail('must not inspect sensor dimensions'))
     assert estimates.estimate_details('unused.arw','camera')==(max(estimates.MINIMUM,23*2560**2),'')
