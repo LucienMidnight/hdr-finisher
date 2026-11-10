@@ -1,3 +1,42 @@
+### November 10: washed-out JXL investigation (three Sol 6.1 medium agents)
+
+The screenshot shows an unresolved source-interpretation gate. The real JXL
+contains valid P3/D65/PQ colour information; missing camera/software metadata
+is unrelated. On Windows, our reader gets only dimensions/depth from the
+static imagecodecs/libjxl build and trusts only HDR Finisher's own hfmd box.
+Default import therefore passes encoded PQ values through unchanged while
+labelling the working buffer ACEScg. That source misinterpretation explains
+the washed-out picture; the evidence does not establish GPU corruption.
+
+Selecting Display P3/PQ reloads and decodes brightness but still uses the
+wrong BT.2020 matrix. The defect exists in both shared CPU normalization and
+Library GPU preparation, across PQ and HLG sources, not just JPEG XL. HLG
+also hardcodes BT.2020 OOTF luminance weights: a matrix-only change is
+insufficient. Missing-primary BT.2020 defaults and current reference-white
+scaling must remain unchanged. CPU/GPU agreement alone cannot qualify a fix
+because both paths share the error; use an independent colour oracle.
+
+The Grade **Use assumption** action currently only dismisses the warning and
+enables export. It does not apply or reload any explicit interpretation.
+For this file it accepts the unresolved encoded-as-linear picture. A manual
+colour-space-only selection can also clear the gate with transfer unresolved;
+validate the complete interpretation before calling it trusted.
+
+Recommended repair group (not implemented in this investigation): recognise
+real JPEG XL colour metadata matching the decoder's DATA profile; honour
+source primaries in CPU and GPU PQ/HLG development, including HLG brightness
+weights; make the gate apply a named interpretation or remain untrusted.
+A small libjxl metadata helper or extended imagecodecs binding can expose the
+structured metadata; do not guess HDR from filenames/ICC profile names or
+build a partial custom codestream parser. Bump source colour-transform,
+RGB-adapter and dependent Library picture identities so old pixels regenerate.
+Saved grades retain their interpretation settings but non-BT.2020 PQ/HLG
+projects may look different after corrected source decoding; no migrations.
+
+Evidence: `codebase/output/review/apple-investigation/jxl-interpretation.json`
+and `pq-primaries.json` in that same directory. No production code, original,
+grade, tolerance or render expectation changed; no extra app runs.
+
 ### November 10: additional Apple fixture testing and P3/PQ defect
 
 Steve requested focused testing with GPT-6.1 Sol medium agents. Five Lee

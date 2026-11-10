@@ -1,3 +1,30 @@
+## November 10: responsiveness failure reconciled with Steve's app trial
+
+Steve reports responsive normal use. Review places the benchmark's 10.4 s
+gap at 11:02:07-11:02:17, during idle observation about 44 s after detail
+finished. Nearly one-second timer intervals, no recorded long tasks,
+continuing backend logs and ample free RAM strongly suggest background-window
+throttling, rather than an active application freeze. Focus/visibility was
+not recorded, so a false positive is not proven. No performance fix, relaxed
+threshold or rerun is warranted on this evidence. Future harness work should
+record visibility/focus/minimize transitions and distinguish timer delay from
+actual long-running main-thread work.
+
+Steve's older DNG logs contain thousands of missing-thumbnail and unsupported
+LinearizationTable events (event counts, not distinct photos), ending at
+10:58:23, before the successful Pro Max fixture check. Those errors span the
+source fix's commit time; no logged decoder identity proves what the running
+user process loaded. No app/backend process remained during the parent's
+follow-up census. Confirm a restart on current code before calling this a
+current decode regression. Repeated failures/thumbnail requests deserve a
+focused follow-up only if they persist after restart.
+
+Latest JXL log shows one unsupported GPU attempt, successful CPU fallback,
+and a Grade first frame in 622 ms; it does not establish selected source
+interpretation or correct colour. The washed-out screenshot is explained by
+the separate source-interpretation findings in Import and RAW.
+Evidence: `codebase/output/review/apple-investigation/responsiveness-logs.json`.
+
 ## November 10: Pro Max fixture app check
 
 All five Lee Zavitz iPhone 12 Pro Max copies display in the real Library,

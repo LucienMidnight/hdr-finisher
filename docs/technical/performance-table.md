@@ -46,6 +46,22 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 
 ## 2. Opening folders and the grid
 
+November 10 log review supersedes the foreground-freeze interpretation of the
+Pro Max smoke below: its 10,396 ms gap occurred 11:02:07-11:02:17 in idle
+observation, roughly 44 s after detail. Regular one-second timer cadence,
+no long tasks and continuing backend/memory samples suggest background-window
+throttling. Visibility telemetry is absent, so leave the raw failure and
+threshold intact; Steve reports normal responsiveness and no rerun is needed.
+
+Actual user JXL log at 12:42:23: GPU unsupported-source rejection then one
+CPU fallback (helper work 213 ms, source preparation 167 ms). Grade first frame
+622 ms; Library grid navigation to picture 5.567 s included 4.489 s in the
+thumbnail-cache scheduling interval. These are single descriptive log
+observations from Steve's existing app, not a new timing run or speedup claim;
+the logs do not prove chosen interpretation or correct colour. Conditions:
+ordinary user session, hardware/window/visibility not instrumented.
+Evidence: `codebase/output/review/apple-investigation/responsiveness-logs.json`.
+
 November 10 Lee Zavitz Pro Max app check (`8eacf8ee`, 2560x1440,
 90-second disposable Electron profile, concurrent CPU-only delegated checks):
 all five camera pictures appear by 0.6 s. Single first open 410 ms, forward
