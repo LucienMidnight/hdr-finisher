@@ -106,7 +106,7 @@ class OverlayRequest(BaseModel):
         if self.quality == "camera":
             if self.kind != "focus":
                 raise ValueError("Camera-preview analysis is only available for Focus.")
-        elif not 82 <= self.priority <= 85:
+        elif not 82 <= self.priority <= 85 and not (self.kind == "exposure" and self.priority == 30):
             raise ValueError("Native overlay work uses background priority 82 to 85.")
         return self
 class OverlaySwitch(BaseModel):

@@ -8502,3 +8502,13 @@ Existing parity checks pass; tiny/narrow and partial-row/column cases are
 expanded. First cold E alone 1.199 s, with Focus 2.983 s; next-photo tails
 3.199/2.459 s. This is a mask-only change, not the earlier combined prototype.
 Grouped fast/app validation follows after the sequential experiments.
+
+
+November 10, Exposure change 2: selected Single/Compare maps use priority 30
+and the existing foreground helper lane. Filmstrip/grid remain 85/kept;
+native Focus stays 82/85. Only selected Exposure 30 is newly accepted by the
+API; arbitrary foreground priorities remain refused. Admission estimates,
+limits and warning pixels are unchanged. Cold first E 0.880 s alone, 1.654 s
+with Focus; next-photo tails 3.481/2.144 s remain. Pending-work sharing is
+being evaluated separately. The old native-priority test now explicitly
+covers the selected-Exposure exception and unchanged Focus background rule.

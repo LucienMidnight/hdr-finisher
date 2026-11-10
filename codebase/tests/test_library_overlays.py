@@ -85,12 +85,13 @@ def test_old_map_pixels_are_not_served_after_source_changes(tmp_path):
     with pytest.raises(ValueError,match='source photo changed'):maps.png(old['key'])
 
 
-def test_large_map_priority_stays_below_saved_pictures():
+def test_native_focus_stays_background_and_selected_exposure_can_promote():
     from hdr_finisher.library_api import OverlayRequest
     import pytest
     assert OverlayRequest(path='a',kind='focus',priority=82).priority==82
     assert OverlayRequest(path='a').priority==85
-    with pytest.raises(ValueError):OverlayRequest(path='a',priority=80)
+    assert OverlayRequest(path='a',kind='exposure',priority=30).priority==30
+    with pytest.raises(ValueError):OverlayRequest(path='a',kind='focus',priority=80)
 
 
 def test_rgb16_png_near_white_is_not_falsely_clipped_and_alpha_is_ignored(tmp_path):

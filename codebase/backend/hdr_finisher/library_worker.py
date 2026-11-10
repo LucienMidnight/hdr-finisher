@@ -537,7 +537,7 @@ def helper_lane(job):
     if job["command"] in {"picture", "native", "live-scene", "live-fallback"}:
         return "picture"
     if job["command"] == "overlay":
-        return "main" if job.get("quality")=="camera" else "kept"
+        return "main" if job.get("quality")=="camera" or (job.get("kind")=="exposure" and job.get("priority",85)<50) else "kept"
     if job.get("checking"):
         return "check"
     return "index" if job.get("background") else "main"

@@ -1743,3 +1743,11 @@ first improves versus 1.440 s; Focus-on first remains within band of 3.056 s.
 Do not attribute the larger scheduling-prototype gains to mask changes.
 Evidence: codebase/output/exposure-mask-only{,-focus}.json and matching app
 logs; exposure-mask-only-unit.log. No concurrent parent suites.
+
+
+November 10 implementation experiment 2, mask simplification plus selected
+Exposure priority/main lane. Same conditions/band as experiment 1. First E
+0.880 s alone, next 3.481/0.097/0.114 s; with Focus first 1.654 s, next
+1.462/1.158/2.144 s. First presentation improves, consistent one-second
+navigation not achieved. No memory rate/allowance change. Evidence:
+codebase/output/exposure-selected{,-focus}.json and matching app logs.
