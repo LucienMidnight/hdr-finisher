@@ -42,3 +42,23 @@ test("a stalled initial load fails within its deadline", async () => {
   await assert.rejects(waitForInitialLoad(f.app, f.page, { timeout: 20 }), /did not stop within/);
   assert.equal(f.contents.eventNames().length, 0);
 });
+
+test("the main app window is chosen over the splash, and the load waits until it is shown", async () => {
+  const splash = Object.assign(new EventEmitter(), { getURL: () => "file:///app/splash/splash.html", isLoadingMainFrame: () => false });
+  const main = Object.assign(new EventEmitter(), { getURL: () => "http://127.0.0.1/", isLoadingMainFrame: () => true });
+  let visible = false;
+  const mainWindow = { webContents: main, isDestroyed: () => false, isVisible: () => visible };
+  const app = { evaluate: (callback, argument) => callback({ BrowserWindow: {
+    getAllWindows: () => [{ webContents: splash }, mainWindow],
+    fromWebContents: (contents) => contents === main ? mainWindow : null,
+  } }, argument) };
+  let done = false;
+  const pending = waitForInitialLoad(app, { waitForURL: async () => {} }, { timeout: 1000 }).then(() => { done = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  main.isLoadingMainFrame = () => false; main.emit("did-stop-loading");
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(done, false, "waits while the main window is still hidden");
+  visible = true;
+  await pending;
+  assert.equal(splash.eventNames().length, 0);
+});

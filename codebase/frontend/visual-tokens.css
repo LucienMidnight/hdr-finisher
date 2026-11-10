@@ -333,6 +333,7 @@
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
+  --font-size-splash-title: 54px; /* startup splash product name */
   --font-weight-bold: 700;
   --line-height-none: 1;
   --line-height-tight: 1.25;

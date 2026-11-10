@@ -2,7 +2,9 @@
 async function waitForInitialLoad(app, page, { timeout = 180000 } = {}) {
   await page.waitForURL(url => /^https?:$/.test(url.protocol), { waitUntil: "load", timeout });
   await app.evaluate(async ({ BrowserWindow }, timeout) => {
-    const contents = BrowserWindow.getAllWindows().find(win => !win.webContents.getURL?.()?.includes("gpu-delivery.html"))?.webContents;
+    // The main window is the one on the app's own http page, not the hidden
+    // GPU worker or the startup splash.
+    const contents = BrowserWindow.getAllWindows().find(win => /^https?:/.test(win.webContents.getURL?.() || "") && !win.webContents.getURL().includes("gpu-delivery.html"))?.webContents;
     if (!contents) throw new Error("Initial app window disappeared.");
     await new Promise((resolve, reject) => {
       const cleanup = () => {
@@ -24,8 +26,12 @@ async function waitForInitialLoad(app, page, { timeout = 180000 } = {}) {
       // Register first, then check: a completed load needs no future event.
       stopped();
     });
-    // Let the app's awaiting loadURL continuation finish before returning.
+    // Let the app's awaiting loadURL continuation finish, then wait for the
+    // swap from the splash to the visible main window.
     await new Promise(resolve => setImmediate(resolve));
+    const window = BrowserWindow.fromWebContents?.(contents);
+    const shownBy = Date.now() + 25000;
+    while (window && !window.isDestroyed() && !window.isVisible() && Date.now() < shownBy) await new Promise(resolve => setTimeout(resolve, 25));
   }, timeout);
 }
 module.exports = { waitForInitialLoad };

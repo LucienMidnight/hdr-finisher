@@ -27,6 +27,7 @@ const { detectVideoMemory } = require("./lib/video-memory");
 const { DEFAULT_APPLICATION_PREFERENCES, sanitizeApplicationPreferences } = require("./lib/application-preferences");
 
 const { leaveCurrentPhoto } = require(app.isPackaged ? "./shared/photo-transition" : "../frontend/photo-transition");
+const { createSplashWindow } = require("./lib/splash-window");
 
 if (!app.isPackaged) app.setVersion(require("./package.json").version);
 
@@ -77,6 +78,10 @@ let applicationPreferences = null;
 let updateCheckCache = null;
 let pendingOpenPaths = [];
 let rendererReady = false;
+let splash = null;
+// At launch the main window loads hidden behind the splash and is shown by
+// revealMainWindow(); a main window opened later shows itself when ready.
+let awaitingStartupReveal = false;
 const windows = new Map();
 let libraryWindowState = null;
 let libraryCommandState = { selected: 0, copied: false, active: false };
@@ -1108,6 +1113,7 @@ async function createWindow(role = "main") {
       contextIsolation: true,
       sandbox: true,
       webviewTag: false,
+      ...(isMain && awaitingStartupReveal ? { backgroundThrottling: false } : {}),
     },
   });
   libraryStage("window_created", { role });
@@ -1172,6 +1178,7 @@ async function createWindow(role = "main") {
     window.on(eventName, () => scheduleWindowDisplayState(record));
   }
   window.once("ready-to-show", () => {
+    if (isMain && awaitingStartupReveal) return;
     if (!window.isDestroyed()) {
       window.show();
       libraryStage("window_visible", { role, duration_ms: Date.now() - libraryAppStarted });
@@ -1182,8 +1189,8 @@ async function createWindow(role = "main") {
     : !app.isPackaged && process.env.HDR_FINISHER_DEV_LIBRARY_WINDOW === "1"
       ? "/static/window-foundation.html" : "/library";
   try {
-    if (isMain && !backend) await window.loadFile(path.join(__dirname, "starting.html"));
-    else await window.loadURL(isMain ? backend.url : `${backend.url}${secondaryPage}`);
+    // Without a backend yet, the hidden main window waits; the splash shows.
+    if (!isMain || backend) await window.loadURL(isMain ? backend.url : `${backend.url}${secondaryPage}`);
   } catch (error) {
     // Another same-origin navigation can supersede this page load. The
     // backend is already ready; only genuine load failures reach startup.
@@ -1191,6 +1198,19 @@ async function createWindow(role = "main") {
   }
   if (isMain) updateWindowDocumentState();
   return window;
+}
+
+function revealMainWindow() {
+  if (!awaitingStartupReveal) return;
+  awaitingStartupReveal = false;
+  if (mainWindow && !mainWindow.isDestroyed() && !shuttingDown) {
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.setBackgroundThrottling(true);
+    libraryStage("window_visible", { role: "main", duration_ms: Date.now() - libraryAppStarted });
+  }
+  splash?.close();
+  splash = null;
 }
 
 async function dispatchPendingOpenPaths() {
@@ -1297,7 +1317,9 @@ if (!gotLock) {
   pendingOpenPaths.push(...applicationArgs(process.argv));
   app.on("second-instance", (_event, argv) => {
     pendingOpenPaths.push(...applicationArgs(argv));
-    if (mainWindow) {
+    if (awaitingStartupReveal && splash?.isOpen()) {
+      splash.window.focus();
+    } else if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
       if (rendererReady) dispatchPendingOpenPaths();
@@ -1329,10 +1351,23 @@ if (!gotLock) {
     loadApplicationPreferences();
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     try {
-      // The Starting page and Python imports are independent startup work.
+      // Python imports and window construction are independent startup work.
       // Start Python before BrowserWindow construction can occupy this thread.
+      // The hidden main window is created before the splash so it stays the
+      // first window, which test launchers rely on.
       const shellStarted = Date.now();
-      await Promise.all([startBackend(), createWindow()]);
+      awaitingStartupReveal = true;
+      const backendStarting = startBackend();
+      const windowCreating = createWindow();
+      splash = createSplashWindow({
+        BrowserWindow, app,
+        icon: path.join(__dirname, "assets", "icon.png"),
+        isShuttingDown: () => shuttingDown,
+        onVisible: () => libraryStage("splash_visible", { duration_ms: Date.now() - libraryAppStarted }),
+      });
+      splash?.step("Starting image engine…", 0.04, 0.5);
+      void backendStarting.then(() => splash?.step("Image engine ready", 0.5), () => {});
+      await Promise.all([backendStarting, windowCreating]);
       libraryStage("desktop_startup_join", { duration_ms: Date.now() - shellStarted });
       if (shuttingDown || !mainWindow || mainWindow.isDestroyed()) return;
       const activeBackend = backend;
@@ -1404,10 +1439,34 @@ if (!gotLock) {
         screen.on(eventName, scheduleDisplayState);
       }
       buildMenu();
-      await mainWindow.loadURL(backend.url);
-      // The loading screen must not stay in history, or the mouse Back
-      // button returns to it and the app sits there forever.
+      splash?.step("Loading interface…", 0.55, 0.78);
+      const contents = mainWindow.webContents;
+      // The Library frame and the main page finish in either order; each takes
+      // the next bar position as it arrives.
+      const laterSteps = [[0.8, 0.9], [0.92, 0.97]];
+      const laterStep = (text) => splash?.step(text, ...(laterSteps.shift() || [0.97, 0.97]));
+      contents.once("dom-ready", () => laterStep("Building workspace…"));
+      const frameLoaded = (_event, isMainFrame) => {
+        if (isMainFrame) return;
+        contents.removeListener("did-frame-finish-load", frameLoaded);
+        laterStep("Library loaded");
+      };
+      contents.on("did-frame-finish-load", frameLoaded);
+      // A stalled page must not leave the app hidden behind the splash.
+      const revealFallback = setTimeout(() => revealMainWindow(), 20000);
+      try {
+        await mainWindow.loadURL(backend.url);
+      } finally {
+        contents.removeListener("did-frame-finish-load", frameLoaded);
+      }
+      // Earlier versions loaded a Starting page first; keep Back from
+      // returning to anything before the app.
       mainWindow.webContents.navigationHistory.clear();
+      splash?.step("Ready", 1);
+      // Let the bar finish before the window swaps.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      clearTimeout(revealFallback);
+      revealMainWindow();
       if (process.env.HDR_FINISHER_QUICK_LIBRARY_CONFIG) {
         void require("./quick-library-test.cjs").run({app, window:mainWindow, backend})
           .catch(error => console.error("Quick Library check:", error));
@@ -1424,6 +1483,7 @@ if (!gotLock) {
         await createWindow("library");
       }
     } catch (error) {
+      splash?.close();
       await dialog.showMessageBox({ type: "error", title: "HDR Finisher could not start", message: "HDR Finisher could not start its image-processing backend.", detail: error.message, buttons: ["Quit"] });
       beginShutdown();
     }

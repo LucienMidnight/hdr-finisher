@@ -185,23 +185,44 @@ let startupTimer;
   }
   app.on("window", page => { page.on("console", msg => { if(msg.type()==="error")console.error("[renderer]",msg.text()); }); page.on("pageerror", error=>console.error("[renderer]",error)); });
   let window = await app.firstWindow({ timeout: 180000 });
-  const visible = app.windows().find(page => !page.url().includes("gpu-delivery.html"));
+  const visible = app.windows().find(page => !page.url().includes("gpu-delivery.html") && !page.url().includes("/splash/splash.html"));
   if (visible) window = visible;
   if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") console.error("[runner] initial", window.url());
   if (testPath.replaceAll("\\", "/").endsWith("startup-state.js")) {
-    await window.locator('[role="status"]').waitFor({timeout:10000});
-    const starting = await window.locator('[role="status"]').textContent();
-    if (starting !== "Starting…") throw Error(`Expected calm startup screen, got ${starting}`);
+    // The splash opens beside the hidden main window and shows the version
+    // and real startup steps until the app is ready.
+    const deadline = Date.now() + 10000;
+    let splash;
+    while (!(splash = app.windows().find(page => page.url().includes("/splash/splash.html"))) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+    if (!splash) throw Error("The startup splash did not open.");
+    await splash.locator(".lines li").first().waitFor({timeout:10000});
+    const shown = await splash.evaluate(() => ({ name: document.querySelector(".name").textContent, version: document.querySelector(".version").textContent, step: document.querySelector(".lines li").textContent }));
+    const version = require(path.join(DESKTOP_DIRECTORY, "package.json")).version;
+    if (shown.name !== "HDR Finisher" || shown.version !== `Version ${version}` || !shown.step) throw Error(`Unexpected splash: ${JSON.stringify(shown)}`);
     fs.mkdirSync(path.resolve(DESKTOP_DIRECTORY,"../output"),{recursive:true});
-    await window.screenshot({path:path.resolve(DESKTOP_DIRECTORY,"../output/starting-screen.png")});
+    await splash.screenshot({path:path.resolve(DESKTOP_DIRECTORY,"../output/starting-screen.png")});
+    // Follow the splash until it closes: every step arrives in order, and the
+    // list scrolls once it holds more than four lines.
+    let steps = [], scrolled = false;
+    for (;;) {
+      try {
+        const now = await splash.evaluate(() => ({ steps: [...document.querySelectorAll(".lines li")].map(li => li.textContent), full: document.querySelector(".log").classList.contains("full") }));
+        steps = now.steps;
+        if (now.full && !scrolled) { scrolled = true; await splash.screenshot({path:path.resolve(DESKTOP_DIRECTORY,"../output/starting-screen-scrolled.png")}); }
+      } catch { break; }
+      await new Promise(resolve => setTimeout(resolve, 60));
+    }
+    console.log(`Splash steps: ${steps.join(" | ")}`);
+    if (steps[0] !== "Starting image engine…" || !steps.includes("Loading interface…")) throw Error(`Splash steps out of order: ${JSON.stringify(steps)}`);
   }
   await require("./electron-initial-load").waitForInitialLoad(app, window);
   if (testPath.replaceAll("\\", "/").endsWith("startup-state.js")) {
     const log = fs.readFileSync(path.join(userDataDirectory,"logs/backend.log"),"utf8");
-    const line = log.split("\n").find(line => line.includes("[library] window_visible"));
+    const line = log.split("\n").find(line => line.includes("[library] splash_visible"));
     const timing = Math.round(JSON.parse(line.slice(line.indexOf("{"))).time * 1000 - launchStarted);
-    console.log(`Window visible: ${timing} ms (limit 1500 ms); Starting… screen verified.`);
-    if (timing > 1500) throw Error(`Window visibility exceeded 1500 ms: ${timing}`);
+    console.log(`Splash visible: ${timing} ms (limit 1500 ms); splash verified.`);
+    if (timing > 1500) throw Error(`Splash visibility exceeded 1500 ms: ${timing}`);
+    if (app.windows().some(page => page.url().includes("/splash/splash.html"))) throw Error("The splash stayed open after the app loaded.");
   }
   if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") console.error("[runner] loaded", window.url());
   // The launcher pid Playwright tracks is the shell on Windows; the main

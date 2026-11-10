@@ -107,7 +107,7 @@ test('Electron load barrier remains blocked until main-frame completion and reje
   const { waitForInitialLoad } = require('./electron-initial-load');
   for (const failed of [false, true]) {
     const contents = new EventEmitter();
-    let loading = true; contents.isLoadingMainFrame = () => loading;
+    let loading = true; contents.isLoadingMainFrame = () => loading; contents.getURL = () => 'http://127.0.0.1/';
     let finished = false;
     const flight = waitForInitialLoad({ evaluate: (fn, argument) => fn({ BrowserWindow: { getAllWindows: () => [{ webContents: contents }] } }, argument) },
       { waitForURL: async () => {} }).then(() => { finished = true; });

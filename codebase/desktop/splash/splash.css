@@ -1,0 +1,34 @@
+/* The splash uses the app's tokens with no data-theme, which is Default Dark:
+   it is always black, whatever theme the app uses, because it shows before
+   preferences load. */
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--app); }
+body { -webkit-app-region: drag; user-select: none; cursor: default; }
+
+.splash { position: relative; box-sizing: border-box; height: 100%; border: 1px solid var(--hairline); overflow: hidden; color: var(--body); font-family: var(--font-body); }
+
+/* The wave runs off the bottom and right edges, so it is cropped by the
+   window rather than ending inside it. */
+.art { position: absolute; right: -150px; bottom: -150px; width: 520px; height: 440px; color: var(--raised); }
+
+.stack { position: absolute; left: 44px; top: 44px; display: inline-grid; }
+.lockup { display: flex; align-items: center; gap: 14px; }
+.mark { display: block; width: 54px; height: 46px; color: var(--text); }
+.name { margin: 6px 0 0; color: var(--text); font: var(--font-weight-regular) var(--font-size-splash-title) / var(--line-height-none) var(--font-title); letter-spacing: var(--tracking-slight); text-transform: uppercase; }
+
+/* The bar is as wide as the lockup: it finishes under the end of the name.
+   It uses the neutral fill of the view sliders on a recessed rail. */
+.bar { height: 3px; margin-top: 14px; overflow: hidden; border-radius: var(--radius-1); background: var(--rail-face); }
+.bar i { display: block; width: 0; height: 100%; border-radius: var(--radius-1); background: var(--fill-neutral); }
+
+/* Four rows; older rows scroll up and fade out behind the bar. */
+.log { margin-top: 9px; overflow: hidden; }
+.log.full { -webkit-mask: linear-gradient(180deg, transparent 0, #000 16px); mask: linear-gradient(180deg, transparent 0, #000 16px); }
+.lines { margin: 0; padding: 0; list-style: none; transition: transform .35s ease; }
+.lines li { color: var(--quiet); font: var(--font-weight-regular) var(--font-size-xs) / var(--line-height-relaxed) var(--font-mono); white-space: nowrap; opacity: 0; transform: translateY(4px); transition: opacity .25s, transform .25s; }
+.lines li.in { opacity: 1; transform: none; }
+
+.version { position: absolute; left: 44px; bottom: 22px; margin: 0; color: var(--muted); font-size: var(--font-size-sm); }
+
+@media (prefers-reduced-motion: reduce) {
+  .lines, .lines li { transition: none; }
+}
