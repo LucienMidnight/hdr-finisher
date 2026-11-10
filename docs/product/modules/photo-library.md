@@ -8114,8 +8114,8 @@ check confirms undeveloped source warnings and uninterrupted Focus refinement.
 The pixel check waits one animation frame for the intended grouped redraw;
 its expected pixel values are unchanged. First Exposure wait was 1.337 s
 against the earlier 1.827 s diagnostic (about 27% less); see the performance
-table for scope and conditions. Duplicate in-flight map requests remain open;
-subscriber cancellation needs separate work.
+table for scope and conditions. The later Focus follow-up below adds shared
+pending metadata requests with independently cancelled subscribers.
 
 
 ## November 10: deletion and sidebar fixes
@@ -8178,3 +8178,53 @@ Output finished at 42.6 GB (started 42.6 GB). Scratch measurement driver was
 removed; disposable app media/profile cleanup is handled by the drivers.
 Automatic approval review blocked removal of this run's TEMP pytest folders
 `pytest-of-Steve/pytest-{1384,1385,1386}`; left in place. No push or installer.
+
+
+## November 10: faster first Focus overlay
+
+Focus now reuses the exact fine smoothing already calculated for its noise
+estimate. The map and noise value compare exactly with the prior calculation;
+noise rejection, coarse detail, thresholds, pooling and full-resolution source
+remain unchanged. Gradient/smoothing temporaries are released before coarse
+analysis rather than retained through it.
+
+Matching pending overlay metadata requests in one Library page now join by
+photo/version/grade, kind and quality. This avoids filmstrip and Single
+calculating the same half Focus map concurrently (and also applies to Exposure).
+Cancelling a surface removes only its subscription; the last cancellation
+aborts the job. Results/errors release the pending entry; stale layers cannot
+display it. This is not a new retained-map cache. PNG transport and the
+existing recent-map allowance are unchanged. Grid-only work keeps priority
+85; same-turn Single/Compare demand uses 82. A later higher-priority request
+starts independently if background work was already submitted, because that
+queue cannot promote it. Virtual-copy paths remain separate.
+
+On the existing 42 MP Sony RAW, fresh-profile Single S-to-first Focus was
+1.861 s versus 2.366 s before (about 21% less waiting). Full refinement was
+9.311 versus 10.299 s, within the proposed 10% diagnostic variation band:
+no clear full-refinement gain is claimed. Warm reuse stayed immediate.
+The earlier duplicate failed half request is absent in the after trace.
+Full source decode/preparation remains a large cost; no reduced-quality
+substitute or GPU route was introduced. Conditions/stage breakdown are in the
+performance table. The focused app check covers controls, half/full quality,
+views, graded exclusion and preferences. Exact-map/noise, blur/noise and
+cancellation checks pass; frontend tests cover shared subscriber lifetime,
+source/grade separation, late results and foreground/background priority.
+
+
+Focus validation follow-up: 883 JavaScript checks and 36 focused Python
+overlay checks pass, including exact previous-map/noise agreement. The
+existing real Electron Focus driver passes controls, quality tiers, all views,
+graded exclusion and saved preferences; the Sony RAW diagnostic passes with
+one shared half request and one full request. Default 90-second Library check
+has no picture/memory error but repeats the known general drawing-gap miss
+(1,952 ms against 250 ms), with Focus off and the Python suite concurrent.
+It was not rerun or relaxed. Scratch measurement scripts were removed;
+small timing/app logs remain in `codebase/output/focus-*.log`.
+
+
+Final Focus grouped validation: Python 3,124 passed, three skipped, only the
+existing `test_remembered_failure_does_not_hide_current_grade_cached_scene`
+failure; no new failure. Scratch output stayed 42.6 GB. Automatic approval
+review blocked cleanup of this run's TEMP `pytest-of-Steve/pytest-{1387,1388,1389}`
+folders; left in place. No push or installer build.

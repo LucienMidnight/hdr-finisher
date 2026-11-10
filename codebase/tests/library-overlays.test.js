@@ -10,7 +10,11 @@ function setup(){
  const context={devicePixelRatio:1,ImageData:class{constructor(w,h){this.width=w;this.height=h;this.data=new Uint8ClampedArray(w*h*4);}},fetch:async()=>({ok:true,blob:async()=>({})}),createImageBitmap:async()=>({width:1,height:1,close(){}}),window:{},document:{getElementById:id=>elements.get(id),createElement:()=>element(),body,querySelectorAll:()=>[],addEventListener(){}},AbortController,MutationObserver:class{observe(){}disconnect(){}},ResizeObserver:class{observe(){}disconnect(){}},getComputedStyle:()=>({padding:'0'}),requestAnimationFrame:f=>(frames.push(f),frames.length),setTimeout:f=>{timers.set(++timer,f);return timer;},clearTimeout:id=>timers.delete(id)};
  vm.runInNewContext(fs.readFileSync(require.resolve('../frontend/library-overlays.js'),'utf8'),context);
  const overlay=context.window.HDRLibraryOverlays.create({surfaces:()=>surfaces,status:m=>messages.push(m),api:(url,data,signal)=>{if(url.endsWith('overlay-switch'))return Promise.resolve({enabled:data.enabled});if(url.endsWith('review-preferences')){requests.push({url,data});return Promise.resolve(data);}return new Promise((resolve,reject)=>requests.push({url,data,signal,resolve,reject}));}});
- return {overlay,requests,messages,canvas,owner,elements,frames,timers};
+ function surface(photo={...surfaces[0].photo},id='filmstrip-picture'){
+  const next=element(id),controller=new AbortController();body.append(next);
+  const entry={photo,canvas:next,meta:{},controller,current:()=>true};surfaces.push(entry);return entry;
+ }
+ return {overlay,requests,messages,canvas,owner,elements,frames,timers,surface,surfaces};
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 test('switching Exposure preserves Focus request and switching Focus preserves Exposure',async()=>{
@@ -45,4 +49,73 @@ test('Exposure toggles leave the pending full Focus refinement running',async()=
  assert.equal(full.signal.aborted,false);assert.equal(h.requests.filter(r=>r.data.kind==='focus').length,2);
  full.resolve({key:'full-map',quality:'full',frame:[0,0,1,1]});await tick();
  assert.equal(h.overlay.snapshot().maps[0].quality,'full');h.owner.abort();
+});
+
+test('duplicate surfaces share metadata, and one detach leaves the other live',async()=>{
+ const h=setup(),film=h.surface();await h.overlay.toggle('focus',true);
+ assert.equal(h.requests.length,1);const half=h.requests[0];assert.equal(half.data.priority,82);
+ h.overlay.detach(h.canvas);assert.equal(half.signal.aborted,false);
+ half.resolve({key:'shared-half',quality:'half',frame:[0,0,1,1]});await tick();
+ assert.equal(h.overlay.snapshot().maps.length,1);assert.equal(h.overlay.snapshot().maps[0].key,'shared-half');
+ assert.equal(h.requests.length,1);film.controller.abort();
+});
+test('last subscriber abort removes the job immediately and late success cannot display',async()=>{
+ const h=setup(),film=h.surface();await h.overlay.toggle('focus',true);const first=h.requests[0];
+ h.overlay.detach(h.canvas);film.controller.abort();assert.equal(first.signal.aborted,true);
+ first.resolve({key:'stale',quality:'half',frame:[0,0,1,1]});await tick();
+ assert.equal(h.overlay.snapshot().maps.length,0);
+ const next=h.surface();h.overlay.attach(next.photo,next.canvas,next.meta,next.controller,next.current);await tick();
+ assert.equal(h.requests.length,2);assert.equal(h.requests[1].signal.aborted,false);next.controller.abort();
+});
+test('failed shared metadata is released for a subsequent request',async()=>{
+ const h=setup();h.surface();await h.overlay.toggle('focus',true);
+ h.requests[0].reject(new Error('map failed'));await tick();
+ assert.equal(h.overlay.snapshot().maps.filter(m=>m.unavailable==='map failed').length,2);
+ const next=h.surface();h.overlay.attach(next.photo,next.canvas,next.meta,next.controller,next.current);await tick();
+ assert.equal(h.requests.length,2);next.controller.abort();h.owner.abort();
+});
+test('half and full jobs stay separate while matching half requests join',async()=>{
+ const h=setup();await h.overlay.toggle('focus',true);
+ h.requests[0].resolve({key:'half',quality:'half',frame:[0,0,1,1]});await tick();
+ assert.equal(h.requests[1].data.quality,'full');
+ const film=h.surface();h.overlay.attach(film.photo,film.canvas,film.meta,film.controller,film.current);await tick();
+ assert.equal(h.requests.length,3);assert.equal(h.requests[2].data.quality,'half');
+ assert.equal(h.requests[1].signal.aborted,false);h.owner.abort();film.controller.abort();
+});
+test('source version and grade identities do not join, nor do virtual-copy paths',async()=>{
+ const h=setup();h.surfaces[0].photo={path:'test.raw',bytes:10,mtime_ns:20,grade_identity:'a'};
+ h.surface({...h.surfaces[0].photo});
+ for(const change of [{bytes:11},{mtime_ns:21},{grade_identity:'b'},{path:'test.raw|copy|1'}])h.surface({...h.surfaces[0].photo,...change});
+ await h.overlay.toggle('focus',true);assert.equal(h.requests.length,5);
+ for(const s of h.surfaces)s.controller.abort();
+});
+test('disabled layers ignore a late successful shared result',async()=>{
+ const h=setup();h.surface();await h.overlay.toggle('focus',true);const first=h.requests[0];
+ await h.overlay.toggle('focus',false);assert.equal(first.signal.aborted,true);
+ first.resolve({key:'disabled',quality:'half',frame:[0,0,1,1]});await tick();
+ assert.equal(h.overlay.snapshot().maps.length,0);assert.equal(h.requests.length,1);
+});
+test('filmstrip-first sharing retains Single priority and both surfaces receive the result',async()=>{
+ const h=setup();h.canvas.id='filmstrip-picture';const single=h.surface(undefined,'single-picture');
+ await h.overlay.toggle('focus',true);assert.equal(h.requests.length,1);assert.equal(h.requests[0].data.priority,82);
+ h.requests[0].resolve({key:'both',quality:'half',frame:[0,0,1,1]});await tick();
+ assert.equal(h.overlay.snapshot().maps.filter(m=>m.key==='both').length,2);
+ assert.equal(h.requests.length,2);assert.equal(h.requests[1].data.quality,'full');
+ h.owner.abort();single.controller.abort();
+});
+
+
+test('grid-only maps keep their background priority',async()=>{
+ const h=setup();h.canvas.id='grid-picture';await h.overlay.toggle('focus',true);
+ assert.equal(h.requests[0].data.priority,85);h.owner.abort();
+});
+
+
+test('late Single demand keeps its priority when background work is already submitted',async()=>{
+ const h=setup();h.canvas.id='grid-picture';await h.overlay.toggle('focus',true);
+ const background=h.requests[0];const single=h.surface(undefined,'single-picture');
+ h.overlay.attach(single.photo,single.canvas,single.meta,single.controller,single.current);await tick();
+ assert.equal(h.requests.length,2);assert.equal(background.data.priority,85);
+ assert.equal(h.requests[1].data.priority,82);assert.equal(background.signal.aborted,false);
+ h.owner.abort();single.controller.abort();
 });

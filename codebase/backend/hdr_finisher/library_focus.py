@@ -24,7 +24,9 @@ def focus_map(pixels,cancelled=None):
     scale=max(float(np.percentile(gray[::4,::4],99)),1e-6);gray=np.sqrt(np.minimum(gray/scale,4))
     smooth=gaussian_filter(gray,.7,cancelled)
     noise=float(np.median(np.abs(gray[::4,::4]-smooth[::4,::4])))*1.4826
-    fine=magnitude(gray,.7,cancelled)
+    # The noise estimate already made this exact fine-scale smoothing.
+    gy,gx=np.gradient(smooth);fine=np.hypot(gx,gy)
+    del gx,gy,smooth
     coarse=magnitude(gray,1.5,cancelled)
     ratio=np.maximum(fine-coarse,0)/(coarse+.005)
     confidence=np.clip((ratio-.08)/.45,0,1)*np.clip((fine-coarse-max(2*noise,.012))/.12,0,1)

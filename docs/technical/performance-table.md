@@ -1492,3 +1492,42 @@ fresh deletion searched the existing Recycle Bin. Fresh-present files now
 skip that recovery search; the full mixed-delete and neighbour-navigation
 driver passes within its original timeouts. No deletion speed target or
 numeric end-to-end improvement is claimed.
+
+
+### November 10: Focus first-result work
+
+Baseline `7194e20f`, then the Focus changes on it. Proposed comparison band
+before measurement: 10%, diagnostic only; existing acceptance limits unchanged.
+Fresh disposable profile, Electron 2560 x 1440, Single with filmstrip on the
+same existing 42 MP `output/test-photos/gpu-denoise-measurement/DSC07060.ARW`;
+no photo copies/development, no concurrent parent test suite during timing,
+OS disk cache uncontrolled. One app observation per version, not a camera
+benchmark or a statistical range. Endpoint is populated overlay canvas,
+excluding display scan-out.
+
+| Action | Before | After | Assessment |
+|---|---|---|---|
+| S to first half Focus overlay | 2.366 s | 1.861 s | About 21% less waiting |
+| S to full Focus refinement | 10.299 s | 9.311 s | Within 10% band; no clear improvement claimed |
+| Retained map, S to Focus | 18 ms | 17 ms | Immediate; ordinary variation |
+
+Before/after logs: `codebase/output/focus-investigation.log` and
+`codebase/output/focus-after.log`. Before has two simultaneous half metadata
+requests, one failing; after has one half and one full, both successful.
+A separate warm-process CPU diagnostic of the old calculation found native
+source decode/preparation 3.466 s and Focus analysis 3.058 s; the latter
+included two identical fine smoothing passes of about 0.56 s each. Quick
+source decode was 0.629 s and analysis 0.774 s. Those isolated stages exclude
+app scheduling and cannot be added to the app observations; they explain
+why source preparation and full analysis remain the next full-quality costs.
+Stage log: `codebase/output/focus-stages.log`. Only duplicate requests and
+identical fine smoothing were removed; output quality and budgets unchanged.
+
+
+Focus grouped-check Library smoke (November 10, `7194e20f` plus Focus changes,
+2560 x 1440, 90-second mixed-folder check, concurrent Python suite, Focus off):
+first picture 0.9 s, ten 2.0 s, twenty 7.4 s, peak 2.982 GB; no picture/memory
+errors. Existing 250 ms frame-gap gate failed at 1,952 ms. This is the already
+recorded general Library drawing-gap class, outside Focus work; no rerun,
+limit change or investigation. Report:
+`codebase/output/quick-library-check/focus-shared-maps/report.json`.

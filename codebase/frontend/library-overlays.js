@@ -55,10 +55,42 @@
         const seed=!photo.edited&&recent.get(recentKey(photo,kind));if(seed){const item=r.items[kind];item.values=seed.values;item.map=seed.map;}}
       sync(r);for(const kind of kinds){const item=r.items[kind];if(!item)continue;if(item.values&&draw(r,item))item.badge.hidden=true;void request(r,item);}
     }
+    // Only pending metadata is shared. Finished maps still use the existing
+    // pixel handling and recent-map allowance; this table retains no results.
+    const mapJobs=new Map();
+    function mapRequest(photo,kind,quality,signal,priority){
+      const key=JSON.stringify([kind,quality,photo.path,photo.bytes??null,photo.mtime_ns??null,photo.grade_identity??null]);
+      let job=mapJobs.get(key);
+      // A queued background job cannot be promoted: preserve a later Single
+      // request's priority rather than making it wait behind background maps.
+      if(job?.submitted && priority<job.priority)job=null;
+      if(!job){
+        const controller=new AbortController();job={controller,subscribers:new Set(),priority};mapJobs.set(key,job);
+        const clean=()=>{if(mapJobs.get(key)===job)mapJobs.delete(key);};
+        // Same-turn subscribers can raise importance before queue submission;
+        // unrelated grid/filmstrip jobs keep their existing background priority.
+        job.promise=Promise.resolve().then(()=>{
+          if(controller.signal.aborted)throw Object.assign(new Error('Cancelled'),{name:'AbortError'});
+          job.submitted=true;return o.api('/api/library/overlay-map',{path:photo.path,kind,quality,priority:job.priority},controller.signal);
+        }).finally(clean);
+      }
+      job.priority=Math.min(job.priority,priority);
+      return new Promise((resolve,reject)=>{
+        const token={};job.subscribers.add(token);
+        const leave=()=>{
+          signal.removeEventListener('abort',abort);job.subscribers.delete(token);
+          if(!job.subscribers.size){if(mapJobs.get(key)===job)mapJobs.delete(key);job.controller.abort();}
+        };
+        const abort=()=>{leave();reject(Object.assign(new Error('Cancelled'),{name:'AbortError'}));};
+        signal.addEventListener('abort',abort,{once:true});
+        job.promise.then(value=>{leave();if(!signal.aborted)resolve(value);},error=>{leave();reject(error);});
+        if(signal.aborted)abort();
+      });
+    }
     async function request(r,item){const controller=new AbortController();item.request=controller;const current=()=>enabled[item.kind]&&records.get(r.canvas)===r&&r.items[item.kind]===item&&r.current()&&!controller.signal.aborted;
       const large=r.canvas.id==='single-picture'||r.canvas.classList.contains('compare-fit');
       try{for(const quality of item.kind==='focus'&&large?['half','full']:['half']){
-        const m=await o.api('/api/library/overlay-map',{path:r.photo.path,kind:item.kind,quality,priority:large?82:85},controller.signal);if(!current())return;
+        const m=await mapRequest(r.photo,item.kind,quality,controller.signal,large?82:85);if(!current())return;
         if(m.unavailable){item.values=null;item.layer.hidden=true;delete item.layer.dataset.key;const type=(r.photo.source_path||r.photo.path.split('|copy|',1)[0]).split(/[/\\]/).pop().split('.').pop().toUpperCase();item.badge.textContent=`${item.kind==='focus'?'Focus':'Exposure'} unavailable · ${m.reason==='graded'?'graded':type}`;item.badge.title=m.unavailable;item.badge.hidden=false;return;}
         if(!placeable(r,item,m))return;
         if(item.values&&(item.map?.key===m.key||quality==='half'&&item.map?.quality==='full')){item.badge.textContent='S · refining';item.badge.hidden=!(item.kind==='focus'&&large&&quality==='half');continue;}

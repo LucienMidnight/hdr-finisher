@@ -182,3 +182,23 @@ def test_raw_nonrepeating_colors_and_no_pattern_keep_reference():
     for pattern in [None,np.array([[0,1],[3,2]])]:
         for a,b in zip(raw_exposure_regions(samples,colors,black,white,pattern),exposure_regions(samples,black[colors],white[colors],pattern)):
             np.testing.assert_array_equal(a,b)
+
+
+def test_focus_reuses_fine_smoothing_without_changing_map_or_noise():
+    from hdr_finisher.library_focus import focus_map,gaussian_filter,magnitude
+    from hdr_finisher.library_overlays import pool_max
+    rng=np.random.default_rng(14)
+    scenes=[rng.random((257,385,3),dtype=np.float32),np.full((90,120,3),.2,dtype=np.float32)]
+    scenes[1][15:65,20:80]=.8
+    for pixels in scenes:
+        gray=np.maximum(pixels[...,:3]@np.asarray([.2722,.6741,.0537],dtype=np.float32),0)
+        scale=max(float(np.percentile(gray[::4,::4],99)),1e-6);gray=np.sqrt(np.minimum(gray/scale,4))
+        smooth=gaussian_filter(gray,.7)
+        noise=float(np.median(np.abs(gray[::4,::4]-smooth[::4,::4])))*1.4826
+        fine=magnitude(gray,.7);coarse=magnitude(gray,1.5)
+        ratio=np.maximum(fine-coarse,0)/(coarse+.005)
+        confidence=np.clip((ratio-.08)/.45,0,1)*np.clip((fine-coarse-max(2*noise,.012))/.12,0,1)
+        expected=(pool_max(confidence)*255).astype(np.uint8)
+        actual,measured_noise=focus_map(pixels)
+        np.testing.assert_array_equal(actual,expected)
+        assert measured_noise==noise

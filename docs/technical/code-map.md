@@ -401,11 +401,14 @@ and `tests/library-compare.js` (fast command checks and focused Electron check).
 Library slice 4 overlays: `backend/hdr_finisher/library_overlays.py` owns
 source-data exposure masks, source-versioned compressed map files and PNG
 transport. `library_focus.py` owns the Library-only, noise-subtracted peaking
-measurement. `library_worker.py` makes half/full maps on the existing kept lane;
+measurement; its noise and fine-detail stages share identical fine smoothing.
+`library_worker.py` makes half/full maps on the existing kept lane;
 `library_api.py` owns transient switches and on-demand map/pixels routes.
 `library_review.py` stores options with other Library viewing preferences.
 `frontend/library-overlays.js` owns option panels, legend and separate canvases,
-with no Grade transition or settings-file action. `photo-library.js` attaches
+with no Grade transition or settings-file action. Pending metadata jobs join
+with independently cancelled subscribers; results are not retained there.
+`photo-library.js` attaches
 only visible grid/film/single/compare surfaces and cancels work on exit.
 `test_library_overlays.py` checks source regions, focus/noise, freshness,
 cancellation, eviction, exact scalar-slice RAW masks and camera-preview registration;
