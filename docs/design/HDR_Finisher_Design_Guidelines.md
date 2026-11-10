@@ -6,6 +6,8 @@ Last updated: 2026-11-04
 
 This guideline is authoritative for current UI behavior and supersedes persistence language in older product and sprint documents.
 
+The component sheet, `docs/design/component-sheet.html`, is its visual companion: every component (icons, buttons, tabs, fields, dropdowns, switches, sliders, panels and sections, lists and scrollbars, graphs, tooltips) drawn from `codebase/frontend/visual-tokens.css`, with the HTML and CSS for each. Open it in a browser and switch between the four themes. This document holds the rules and the reasons; the sheet shows how they look and how to build them. Where the two disagree, ask Steve. Items the sheet marks Proposed are not yet approved.
+
 ## Product character
 
 HDR Finisher should feel like a precise finishing instrument: quiet, dense, predictable, and subordinate to the image. The interface is dark because it surrounds color-critical work, not because decoration is a goal. Controls should communicate their state without competing with the preview.

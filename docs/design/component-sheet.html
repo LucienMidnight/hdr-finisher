@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HDR Finisher Components</title>
+<!-- The app's own tokens. This page defines no colours, fonts or sizes of its own
+     except where marked PROPOSED, which need Steve's approval first. -->
+<link rel="stylesheet" href="../../codebase/frontend/visual-tokens.css">
+
+<!-- Sheet layout only: not part of the app's components. -->
+<style id="sheet">
+  html, body { margin: 0; background: var(--app); color: var(--body); font: var(--font-weight-regular) var(--font-size-md)/var(--line-height-normal) var(--font-body); }
+  * { box-sizing: border-box; }
+  .sheet { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
+  .sheet-nav { position: sticky; top: 0; height: 100vh; overflow: auto; padding: 20px 16px; border-right: 1px solid var(--hairline); background: var(--panel); }
+  .sheet-nav h1 { margin: 0 0 4px; color: var(--text); font: var(--font-weight-regular) var(--font-size-3xl)/var(--line-height-none) var(--font-title); letter-spacing: var(--tracking-slight); text-transform: uppercase; }
+  .sheet-nav p { margin: 0 0 16px; color: var(--muted); font-size: var(--font-size-xs); }
+  .sheet-nav a { display: block; padding: 3px 0; color: var(--body); text-decoration: none; font-size: var(--font-size-sm); }
+  .sheet-nav a:hover { color: var(--text); }
+  .sheet-themes { display: grid; gap: 4px; margin: 0 0 20px; }
+  .sheet-themes button { padding: 5px 8px; border: 1px solid var(--plate-edge); border-radius: var(--radius-plate); background: var(--plate-up); color: var(--body); font: inherit; font-size: var(--font-size-sm); text-align: left; cursor: pointer; }
+  .sheet-themes button[aria-pressed="true"] { background: var(--plate-down); box-shadow: var(--plate-press); color: var(--accent-strong); }
+  main { padding: 24px 32px 80px; max-width: 1180px; }
+  main > section { margin-bottom: 48px; }
+  main h2 { margin: 0 0 6px; color: var(--text); font: var(--font-weight-regular) var(--font-size-4xl)/var(--line-height-none) var(--font-title); letter-spacing: var(--tracking-slight); text-transform: uppercase; }
+  main > section > p, .rules { max-width: 760px; color: var(--body); }
+  .rules { margin: 8px 0 16px; padding-left: 18px; }
+  .rules li { margin: 3px 0; }
+  .specimens { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); align-items: start; gap: 16px; }
+  .specimen { min-width: 0; border: 1px solid var(--hairline); border-radius: var(--radius-2); background: var(--app); }
+  .specimen > h3 { margin: 0; padding: 10px 14px; border-bottom: 1px solid var(--hairline); color: var(--text); font: var(--font-weight-medium) var(--font-size-md) var(--font-body); }
+  .specimen > h3 small { margin-left: 6px; color: var(--muted); font-weight: var(--font-weight-regular); font-size: var(--font-size-xs); }
+  .demo { padding: 16px 14px; background: var(--panel); }
+  .demo.on-raised { background: var(--raised); }
+  .demo.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .demo.stack { display: grid; gap: 12px; }
+  .specimen > details { border-top: 1px solid var(--hairline); }
+  .specimen > details > summary { padding: 8px 14px; color: var(--muted); font-size: var(--font-size-xs); cursor: pointer; }
+  .specimen pre { margin: 0; padding: 10px 14px 14px; overflow: auto; max-height: 360px; color: var(--body); font: var(--font-size-min)/var(--line-height-relaxed) var(--font-mono); white-space: pre; }
+  .note { color: var(--muted); font-size: var(--font-size-xs); }
+  .proposed { display: inline-block; margin-left: 6px; padding: 0 5px; border: 1px solid var(--attention); border-radius: var(--radius-1); color: var(--attention); font: var(--font-weight-semibold) var(--font-size-min)/1.6 var(--font-body); letter-spacing: var(--tracking-caps); text-transform: uppercase; vertical-align: middle; }
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .swatch { border: 1px solid var(--hairline); border-radius: var(--radius-1); overflow: hidden; background: var(--panel); }
+  .swatch i { display: block; height: 44px; border-bottom: 1px solid var(--hairline); }
+  .swatch span { display: block; padding: 6px 8px; font: var(--font-size-min)/var(--line-height-normal) var(--font-mono); color: var(--body); }
+  .type-row { display: grid; grid-template-columns: 210px 1fr; align-items: baseline; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--hairline); }
+  .type-row code { color: var(--muted); font: var(--font-size-min) var(--font-mono); }
+  .sheet-depth { display: grid; gap: 4px; margin: -8px 0 20px; }
+  .sheet-depth p { margin: 0; }
+  .mock-panel { width: 320px; max-width: 100%; border: 1px solid var(--hairline); background: var(--panel); }
+</style>
+
+<!-- The components. Each rule here is the reference the app should match.
+     Tokens marked PROPOSED live here until Steve approves them; they then move
+     to visual-tokens.css. -->
+<style id="spec">
+  :root {
+    /* PROPOSED: one section-title style everywhere; only the size steps down. */
+    --section-title-font: var(--font-weight-medium) var(--font-size-lg)/var(--line-height-tight) var(--font-body);
+    --subsection-title-font: var(--font-weight-medium) var(--font-size-md)/var(--line-height-tight) var(--font-body);
+    /* PROPOSED: list and scrollbar geometry. */
+    --list-row-h: 34px;
+    --scrollbar-w: 10px;
+  }
+  /* PROPOSED: the selection bed is neutral in every theme: the pressed plate.
+     In the app, appearance.js stops deriving it from the accent colour. */
+  :root, :root[data-theme] { --accent-bed: var(--plate-down); }
+  /* PROPOSED: the Exposure Bands influence band uses the existing band orange
+     (--exposure-band-highlight, #ff7a1f) at about 12%. Control points stay yellow. */
+  :root, :root[data-theme] { --equalizer-influence-wash: #ff7a1f1f; }
+  /* PROPOSED: graph marks. A limit or cut-off is a yellow dashed line, with its
+     label in the same yellow; the 0 EV line is neutral. */
+  :root, :root[data-theme] { --graph-limit-line: var(--attention); --equalizer-zero: var(--equalizer-grid-strong); }
+
+  /* PROPOSED: Default Dark depth. The chassis sits just above black so plate
+     shadows have something to fall on; plates get a visible gradient, a dark
+     edge and a light top line. The viewer and graph plots stay pure black. */
+  :root.depth-proposal:not([data-theme]) {
+    --app: #050505;
+    --panel: #080808;
+    --raised: #101010;
+    --input: #0a0a0a; /* light enough for the well's inner shadow to show */
+    --tooltip: #101010;
+    /* Raised: bright top line, face darkening about 28 steps, black edge,
+       a real drop shadow and a faint light lip under it. */
+    --plate-up: linear-gradient(180deg, #383838 0%, #1c1c1c 100%);
+    --plate-up-hover: linear-gradient(180deg, #424242 0%, #222222 100%);
+    --plate-edge: #000000;
+    --plate-lift: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 2px 3px rgba(0, 0, 0, 0.95), 0 1px 0 1px rgba(255, 255, 255, 0.05);
+    /* Pushed: a flat well darker than the panel, a heavy top inner shadow and
+       the same light lip below. */
+    --plate-down: linear-gradient(180deg, #020202 0%, #090909 100%);
+    --plate-press: inset 0 3px 4px rgba(0, 0, 0, 0.95), inset 0 0 0 1px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  /* Icons: Tabler outline, 24 grid, 2px stroke, currentColor. */
+  .hf-icon { display: block; flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .hf-icon.sm { width: 16px; height: 16px; }
+  .hf-icon.chevron { width: var(--chevron-size); height: var(--chevron-size); }
+  .hf-icon.bypass { width: var(--bypass-icon-size); height: var(--bypass-icon-size); }
+
+  /* Plate button: the default button everywhere. */
+  .hf-button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: var(--panel-control-h); padding: 0 14px;
+    border: 1px solid var(--plate-edge); border-radius: var(--radius-plate);
+    background: var(--plate-up); box-shadow: var(--plate-lift); color: var(--body);
+    font: var(--font-weight-medium) var(--font-size-md)/var(--line-height-none) var(--font-body); white-space: nowrap;
+    text-box: trim-both cap alphabetic; cursor: pointer;
+  }
+  .hf-button:hover:not(:disabled) { background: var(--plate-up-hover); color: var(--text); }
+  .hf-button:is(:active, [aria-pressed="true"]):not(:disabled) { background: var(--plate-down); box-shadow: var(--plate-press); color: var(--accent-strong); }
+  .hf-button:disabled { opacity: var(--disabled-opacity); cursor: default; }
+  .hf-button.wide { width: 100%; }
+  /* Primary: the existing accent plate (keeps today's formula). */
+  .hf-button.primary {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, white), color-mix(in srgb, var(--accent) 90%, black));
+    border-color: color-mix(in srgb, var(--accent) 45%, black); color: var(--on-accent); font-weight: var(--font-weight-semibold);
+  }
+  .hf-button.primary:active:not(:disabled) { box-shadow: var(--plate-press); color: var(--on-accent); }
+  .hf-button.primary:disabled { background: var(--plate-up); border-color: var(--plate-edge); color: var(--muted); opacity: 1; }
+  /* Icon plate: a square 30px target. */
+  .hf-button.icon { width: var(--panel-control-h); padding: 0; }
+  /* Tool: an icon-only plate, named by its tooltip (Local and Retouch tools, Crop, Rotate). */
+  .hf-button.tool { position: relative; width: 40px; height: 34px; padding: 0; }
+  .hf-button.tool[data-tip]:is(:hover, :focus-visible)::after {
+    content: attr(data-tip); position: absolute; z-index: 10; top: calc(100% + 7px); left: 0; width: max-content; pointer-events: none;
+    padding: 6px 9px; border: 1px solid var(--plate-edge); border-radius: var(--radius-plate); background: var(--panel); box-shadow: var(--plate-lift);
+    color: var(--text); font: var(--font-weight-regular) var(--font-size-sm)/var(--line-height-tight) var(--font-body);
+  }
+  .hf-tool-strip { display: flex; flex-wrap: wrap; gap: 6px; }
+  /* Ghost icon: no plate, for header actions (preset, bypass). */
+  .hf-ghost {
+    display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0;
+    border: 0; border-radius: var(--radius-1); background: transparent; color: var(--muted); cursor: pointer;
+  }
+  .hf-ghost:hover { color: var(--text); }
+  /* Text button. */
+  .hf-text-button { padding: 0 4px; border: 0; background: transparent; color: var(--muted); font: var(--font-weight-regular) var(--font-size-md) var(--font-body); cursor: pointer; }
+  .hf-text-button:hover { color: var(--text); }
+
+  /* Joined tabs: one plate, 1px edge between segments, text centred.
+     Every segment is as wide as the widest label, so labels never touch the edges. */
+  .hf-tabs {
+    display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 1px;
+    border: 1px solid var(--plate-edge); border-radius: var(--radius-plate);
+    background: var(--plate-edge);
+  }
+  .hf-tabs.full { display: grid; width: 100%; }
+  .hf-tabs > button {
+    min-width: max-content; height: calc(var(--panel-control-h) - 2px); padding: 0 12px;
+    border: 0; border-radius: 0; background: var(--plate-up); box-shadow: var(--plate-lift); color: var(--body);
+    font: var(--font-weight-regular) var(--tab-font-size)/var(--line-height-none) var(--font-title);
+    letter-spacing: var(--tracking-slight); text-transform: uppercase; text-align: center;
+    text-box: trim-both cap alphabetic; cursor: pointer;
+  }
+  .hf-tabs.small > button { height: 24px; padding: 0 10px; }
+  .hf-tabs > button:first-child { border-radius: calc(var(--radius-plate) - 1px) 0 0 calc(var(--radius-plate) - 1px); }
+  .hf-tabs > button:last-child { border-radius: 0 calc(var(--radius-plate) - 1px) calc(var(--radius-plate) - 1px) 0; }
+  .hf-tabs > button:hover:not([aria-selected="true"]) { background: var(--plate-up-hover); color: var(--text); }
+  .hf-tabs > button[aria-selected="true"] { background: var(--plate-down); box-shadow: var(--plate-press); color: var(--accent-strong); }
+  /* A tab plate always keeps the same inset from the dividers around it. */
+  .hf-tab-bar { padding: var(--tab-plate-inset); box-shadow: var(--divider-below); }
+
+  /* Fields. */
+  .hf-field { display: grid; gap: 5px; }
+  .hf-field-label { color: var(--muted); font: var(--font-weight-semibold) var(--font-size-min)/var(--line-height-none) var(--font-body); letter-spacing: var(--tracking-caps); text-transform: uppercase; }
+  .hf-input {
+    width: 100%; height: var(--panel-control-h); padding: 0 8px;
+    border: 1px solid var(--plate-edge); border-radius: var(--radius-1);
+    background: var(--input); box-shadow: var(--plate-press); color: var(--text);
+    font: var(--font-weight-regular) var(--font-size-md) var(--font-body); font-variant-numeric: tabular-nums;
+  }
+  .hf-input::placeholder { color: var(--quiet); }
+  .hf-input:hover:not(:disabled) { border-color: var(--border); }
+  .hf-input:focus { outline: none; border-color: var(--muted); }
+  .hf-input:disabled { opacity: var(--disabled-opacity); }
+  /* The unit sits inside the field, at the right. */
+  .hf-unit { position: relative; display: block; }
+  .hf-unit > .hf-input { padding-right: 28px; }
+  .hf-unit > span { position: absolute; top: 0; right: 8px; bottom: 0; display: grid; place-items: center; color: var(--muted); font-size: var(--font-size-sm); pointer-events: none; }
+  .hf-field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  /* Dropdown: a plate with a chevron, with the same hover as buttons. */
+  .hf-select { position: relative; display: block; }
+  .hf-select > select {
+    appearance: none; width: 100%; height: var(--panel-control-h); padding: 0 30px 0 8px;
+    border: 1px solid var(--plate-edge); border-radius: var(--radius-1);
+    background: var(--plate-up); box-shadow: var(--plate-lift); color: var(--text);
+    font: var(--font-weight-regular) var(--font-size-md) var(--font-body); cursor: pointer;
+  }
+  .hf-select > select:hover:not(:disabled) { background: var(--plate-up-hover); }
+  .hf-select > select:focus { outline: none; border-color: var(--muted); }
+  .hf-select > select:disabled { opacity: var(--disabled-opacity); cursor: default; }
+  .hf-select > select option { background: var(--panel); color: var(--text); }
+  .hf-select::after {
+    content: ""; position: absolute; top: 0; right: 9px; bottom: 0; width: var(--chevron-size); margin: auto 0; height: var(--chevron-size);
+    background: var(--muted); pointer-events: none; transform: rotate(90deg);
+    -webkit-mask: var(--hf-chevron) center/contain no-repeat; mask: var(--hf-chevron) center/contain no-repeat;
+  }
+  .hf-select:hover::after { background: var(--text); }
+
+  /* Switch: the ON/OFF marks are built in, so it needs no "Enabled" text,
+     no box and no background behind it. */
+  .hf-switch {
+    appearance: none; position: relative; flex: 0 0 50px; width: 50px; height: 22px; margin: 0;
+    border: 1px solid var(--plate-edge); border-radius: var(--radius-pill);
+    background: var(--switch-track); box-shadow: var(--switch-track-shadow); cursor: pointer;
+  }
+  .hf-switch::before {
+    content: ""; position: absolute; z-index: 1; top: 50%; left: -1px; width: 22px; height: 22px; box-sizing: border-box;
+    border: 1px solid var(--plate-edge); border-radius: 50%; background: var(--knob-face); box-shadow: var(--knob-lift);
+    transform: translateY(-50%); transition: transform 140ms cubic-bezier(.2,.75,.3,1);
+  }
+  .hf-switch::after { content: "OFF"; position: absolute; right: 5px; top: 0; bottom: 0; display: grid; place-items: center; color: var(--muted); font: var(--font-weight-semibold) var(--font-size-min)/var(--line-height-none) var(--font-body); letter-spacing: var(--tracking-caps); }
+  .hf-switch:checked { background: var(--accent); }
+  .hf-switch:checked::before { transform: translate(28px, -50%); background: linear-gradient(180deg, white, color-mix(in srgb, white 85%, var(--muted))); }
+  .hf-switch:checked::after { content: "ON"; right: auto; left: 6px; color: var(--on-accent); }
+  .hf-switch:disabled { opacity: var(--disabled-opacity); cursor: default; }
+  /* A labelled switch row: no border, no fill. */
+  .hf-toggle-row { display: flex; align-items: center; gap: 10px; min-height: var(--panel-control-h); color: var(--body); font: var(--font-weight-regular) var(--font-size-md) var(--font-body); cursor: pointer; }
+
+  /* Instrument slider: label and value above a full-width rail. */
+  .hf-slider { display: grid; gap: var(--instrument-control-heading-gap); padding-block: 3px 4px; }
+  .hf-slider-head { display: flex; justify-content: space-between; align-items: baseline; min-height: var(--instrument-control-heading-min-h); }
+  .hf-slider-head label { color: var(--body); font: var(--font-weight-regular) var(--font-size-md) var(--font-body); }
+  .hf-slider-head output { padding: 0 4px; border: 1px solid transparent; border-radius: var(--radius-1); color: var(--muted); font: var(--font-weight-medium) var(--font-size-sm) var(--font-body); font-variant-numeric: tabular-nums; }
+  .hf-slider:hover .hf-slider-head output { border-color: var(--border); }
+  .hf-slider.modified .hf-slider-head output { color: var(--text); }
+  .hf-rail { position: relative; height: var(--instrument-slider-hit-h); --v: .5; --home: .5; }
+  .hf-rail::before { content: ""; position: absolute; left: 0; right: 0; top: var(--instrument-slider-track-top); height: var(--instrument-slider-track-h); border-radius: var(--radius-pill); background: var(--rail-face); box-shadow: var(--rail-shadow); }
+  .hf-rail > .fill {
+    position: absolute; top: calc(var(--instrument-slider-track-top) + 2px); height: calc(var(--instrument-slider-track-h) - 4px);
+    left: calc(min(var(--v), var(--home)) * 100%); width: calc(max(var(--v) - var(--home), var(--home) - var(--v)) * 100%);
+    background: var(--fill-neutral);
+  }
+  .hf-slider.modified .hf-rail > .fill { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 62%, white), var(--accent) 42%, color-mix(in srgb, var(--accent) 78%, black)); box-shadow: var(--plate-lift); }
+  .hf-rail > .origin { position: absolute; left: calc(var(--home) * 100%); top: calc(var(--instrument-slider-track-top) + 1px); width: 1px; height: calc(var(--instrument-slider-track-h) - 2px); background: var(--origin-line-idle); }
+  .hf-slider.modified .hf-rail > .origin { background: var(--origin-line); }
+  .hf-rail > .thumb {
+    position: absolute; top: calc(var(--instrument-slider-track-top) + var(--instrument-slider-track-h) / 2 - var(--instrument-slider-thumb-h) / 2);
+    left: calc(var(--v) * (100% - var(--instrument-slider-thumb-w)));
+    width: var(--instrument-slider-thumb-w); height: var(--instrument-slider-thumb-h);
+    border-radius: var(--radius-1); background: var(--thumb-face); box-shadow: var(--thumb-shadow);
+  }
+  .hf-rail > input { position: absolute; inset: 0; width: 100%; margin: 0; opacity: 0; cursor: pointer; }
+
+  /* Panel header: 40px, title at left, actions at right, divider drawn inside. */
+  .hf-panel-header { display: flex; align-items: center; gap: 8px; height: var(--panel-header-h); padding: 0 12px; box-shadow: var(--divider-below); }
+  .hf-panel-title { flex: 1; margin: 0; color: var(--text); font: var(--panel-title-font-weight) var(--panel-title-font-size)/var(--line-height-none) var(--panel-title-font-family); letter-spacing: var(--tracking-slight); text-transform: uppercase; text-box: trim-both cap alphabetic; }
+
+  /* Section: a titled group in a panel. Every section ends with a
+     full-width divider, including the last one. */
+  .hf-section { padding: 12px; border-bottom: 1px solid var(--hairline); }
+  .hf-section-title { margin: 0 0 10px; color: var(--text); font: var(--section-title-font); }
+  .hf-subsection-title { margin: 12px 0 6px; color: var(--text); font: var(--subsection-title-font); }
+  .hf-props { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 4px 10px; margin: 0; font-size: var(--font-size-sm); }
+  .hf-props dt { color: var(--muted); }
+  .hf-props dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+
+  /* Disclosure group (Control Panel module). */
+  .hf-group { border-top: 1px solid var(--hairline); }
+  .hf-group:last-child { border-bottom: 1px solid var(--hairline); }
+  .hf-group-header { display: flex; align-items: center; gap: 4px; height: var(--control-group-header-h); padding: 0 8px 0 12px; }
+  .hf-group-toggle { display: flex; flex: 1; align-items: center; gap: var(--group-disclosure-gap); min-width: 0; padding: 0; border: 0; background: transparent; color: var(--text); font: var(--section-title-font); text-align: left; cursor: pointer; }
+  .hf-group-toggle .hf-icon { color: var(--muted); transition: transform 120ms ease; }
+  .hf-group[open-group] .hf-group-toggle .hf-icon { transform: rotate(90deg); }
+  .hf-group-toggle span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hf-group-reset { display: inline-flex; align-items: center; gap: 4px; }
+  .hf-group-reset::after { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
+  .hf-group-body { padding: 4px 14px 12px; background: var(--raised); }
+
+  /* List: one solid surface, thin dividers, and a scrollbar rail that is
+     always shown and lighter than the list. The outer box clips the corners. */
+  .hf-list { border: 1px solid var(--border); border-radius: var(--radius-1); overflow: hidden; background: var(--raised); }
+  .hf-list-scroll { height: calc(var(--list-row-h) * 4); overflow-y: scroll; }
+  .hf-list-scroll::-webkit-scrollbar { width: var(--scrollbar-w); }
+  .hf-list-scroll::-webkit-scrollbar-track { background: var(--border); }
+  .hf-list-scroll::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: var(--radius-pill); background: var(--quiet) padding-box; }
+  .hf-list-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted) padding-box; }
+  .hf-list-row { display: flex; align-items: center; gap: 8px; height: var(--list-row-h); padding: 0 6px 0 12px; border-bottom: 1px solid var(--hairline); color: var(--text); font: var(--font-weight-medium) var(--font-size-sm) var(--font-body); cursor: pointer; }
+  .hf-list-row:hover { background: var(--plate-up-hover); }
+  /* Selected is neutral: the row is pushed in like a selected tab; only the 2px edge carries the accent. */
+  .hf-list-row[aria-selected="true"] { background: var(--accent-bed); box-shadow: var(--plate-press), inset 2px 0 var(--accent); }
+  .hf-list-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hf-list-row .meta { color: var(--muted); font-weight: var(--font-weight-regular); white-space: nowrap; }
+  .hf-list-empty { display: grid; place-items: center; height: 100%; padding: 0 16px; color: var(--muted); font-size: var(--font-size-sm); text-align: center; }
+
+  /* Graphs: the black plot area is exactly the grid. Axis labels sit outside
+     it, on the panel surface, with room for the end labels. */
+  .hf-graph { display: block; width: 100%; height: auto; overflow: visible; }
+  .hf-graph .plot { fill: var(--viewer); }
+  .hf-graph .grid { stroke: var(--curve-grid); stroke-width: 1; shape-rendering: crispEdges; }
+  .hf-graph .guide { stroke: var(--scope-guide-line-labeled); stroke-width: 1; shape-rendering: crispEdges; }
+  .hf-graph .label { fill: var(--curve-axis-label); font: var(--font-weight-medium) var(--font-size-min) var(--font-body); }
+  .hf-graph .label.home { fill: var(--text); }
+  .hf-graph .identity { stroke: var(--curve-identity); stroke-width: 1; fill: none; }
+  .hf-graph .curve { fill: none; stroke: var(--curve-neutral); stroke-width: 2; stroke-linejoin: round; }
+  .hf-graph .node { fill: var(--panel); stroke: var(--curve-neutral); stroke-width: 2; }
+  .hf-graph .node.end { fill: var(--curve-endpoint); stroke: none; }
+  .hf-graph .node.selected { fill: var(--curve-selected); stroke: var(--curve-selected-ring); }
+  .hf-graph .band-wash { fill: var(--equalizer-influence-wash); }
+  .hf-graph .zero { stroke: var(--equalizer-zero); stroke-width: 1; }
+  .hf-graph .eq-curve { fill: none; stroke: var(--equalizer-curve); stroke-width: 2; }
+  .hf-graph .eq-node { fill: var(--equalizer-node); }
+  .hf-graph .eq-node.selected { fill: var(--equalizer-selected); }
+  .hf-graph .hist-luma { fill: var(--scope-luma); fill-opacity: .55; stroke: var(--scope-luma); stroke-width: 1; }
+  .hf-graph .hist-r { fill: none; stroke: var(--scope-red); stroke-width: 1; }
+  .hf-graph .hist-g { fill: none; stroke: var(--scope-green); stroke-width: 1; }
+  .hf-graph .hist-b { fill: none; stroke: var(--scope-blue); stroke-width: 1; }
+  .hf-graph .limit { stroke: var(--graph-limit-line); stroke-width: 1; stroke-dasharray: 4 3; }
+  .hf-graph .label.limit-label { fill: var(--graph-limit-line); stroke: none; }
+
+  /* Tooltip. */
+  .hf-tooltip { display: inline-block; max-width: 280px; padding: 6px 9px; border: 1px solid var(--plate-edge); border-radius: var(--radius-plate); background: var(--panel); box-shadow: var(--plate-lift); color: var(--text); font: var(--font-weight-regular) var(--font-size-sm)/var(--line-height-tight) var(--font-body); }
+</style>
+</head>
+<body>
+<!-- Tabler outline icons used on this page (same files as codebase/frontend/assets/icons/tabler). -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-crop" viewBox="0 0 24 24"><path d="M8 5v10a1 1 0 0 0 1 1h10"/><path d="M5 8h10a1 1 0 0 1 1 1v10"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M4.05 11a8 8 0 1 1 .5 4m-.5 5v-5h5"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M10 12a2 2 0 1 0 4 0a2 2 0 0 0 -4 0"/><path d="M21 12c-2.4 4 -5.4 6 -9 6c-3.6 0 -6.6 -2 -9 -6c2.4 -4 5.4 -6 9 -6c3.6 0 6.6 2 9 6"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 6l6 6l-6 6"/></symbol>
+  <symbol id="i-preset" viewBox="0 0 24 24"><path d="M12 6a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M4 6l8 0"/><path d="M16 6l4 0"/><path d="M6 12a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M4 12l2 0"/><path d="M10 12l10 0"/><path d="M15 18a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"/><path d="M4 18l11 0"/><path d="M19 18l1 0"/></symbol>
+</svg>
+
+<div class="sheet">
+<nav class="sheet-nav" aria-label="Sections">
+  <h1>Components</h1>
+  <p>The visual reference for HDR Finisher. Rules and reasons: <code>HDR_Finisher_Design_Guidelines.md</code>. Tokens: <code>visual-tokens.css</code>.</p>
+  <div class="sheet-themes" role="group" aria-label="Theme">
+    <button type="button" data-theme-choice="">Default Dark</button>
+    <button type="button" data-theme-choice="modern-dark">Modern Dark</button>
+    <button type="button" data-theme-choice="studio-gray">Studio Gray</button>
+    <button type="button" data-theme-choice="default-light">Default Light</button>
+  </div>
+  <div class="sheet-depth" role="group" aria-label="Default Dark depth">
+    <button class="hf-button" type="button" id="depth-toggle" aria-pressed="true">Proposed plate depth</button>
+    <p class="note">Default Dark only. On by default; turn off to see today's plates.</p>
+  </div>
+  <a href="#foundations">Foundations</a>
+  <a href="#icons">Icons</a>
+  <a href="#buttons">Buttons</a>
+  <a href="#tabs">Tabs</a>
+  <a href="#fields">Fields</a>
+  <a href="#dropdowns">Dropdowns</a>
+  <a href="#switches">Switches</a>
+  <a href="#sliders">Sliders</a>
+  <a href="#panels">Panels and sections</a>
+  <a href="#lists">Lists and scrollbars</a>
+  <a href="#graphs">Graphs</a>
+  <a href="#tooltips">Tooltips</a>
+  <a href="#proposed">Waiting for approval</a>
+</nav>
+
+<main>
+<section id="foundations">
+  <h2>Foundations</h2>
+  <p>Everything on this page is drawn from <code>visual-tokens.css</code>. Switch theme at the left to check all four.</p>
+  <h3 class="hf-subsection-title">Surfaces</h3>
+  <div class="swatches" data-swatches="app panel raised input viewer plate-up plate-up-hover plate-down"></div>
+  <h3 class="hf-subsection-title">Ink and lines</h3>
+  <div class="swatches" data-swatches="text body muted quiet accent accent-strong accent-bed hairline border plate-edge"></div>
+  <h3 class="hf-subsection-title">Type</h3>
+  <div>
+    <div class="type-row"><code>--page-title-font-size · Bebas</code><span style="font: var(--font-weight-regular) var(--page-title-font-size)/1 var(--font-title); text-transform: uppercase; color: var(--text)">Library</span></div>
+    <div class="type-row"><code>--panel-title-* · Bebas</code><span class="hf-panel-title" style="flex:none">Details</span></div>
+    <div class="type-row"><code>--tab-font-size · Bebas</code><span style="font: var(--tab-font-size)/1 var(--font-title); text-transform: uppercase; color: var(--text)">Global</span></div>
+    <div class="type-row"><code>--section-title-font <span class="proposed">Proposed</span></code><span class="hf-section-title" style="margin:0">Raw development</span></div>
+    <div class="type-row"><code>--subsection-title-font <span class="proposed">Proposed</span></code><span class="hf-subsection-title" style="margin:0">Tags</span></div>
+    <div class="type-row"><code>--font-size-md · body, buttons</code><span style="color: var(--body)">Choose a mask tool to start an adjustment.</span></div>
+    <div class="type-row"><code>--font-size-sm · values, helper</code><span style="font-size: var(--font-size-sm); color: var(--muted)">146 px · Inpaint · Original texture</span></div>
+    <div class="type-row"><code>field label · --font-size-min caps</code><span class="hf-field-label">Focal length</span></div>
+    <div class="type-row"><code>--font-mono · file names</code><span style="font: var(--font-size-xs) var(--font-mono); color: var(--body)">DSC00264.ARW</span></div>
+  </div>
+  <h3 class="hf-subsection-title">Geometry</h3>
+  <ul class="rules">
+    <li>Work in whole pixels. Where a control sits inside a bar, the space left over is even, so it splits equally above and below: top bar 44 px with a 34 px plate, panel headers 40 px with 30 px buttons, 5 px each side.</li>
+    <li>Bar dividers are drawn inside the bar (<code>--divider-below</code>) so they take no height.</li>
+    <li>Corners: buttons, tab plates and tooltips <code>--radius-plate</code> (5 px); fields, dropdowns, lists and row highlights <code>--radius-1</code> (3 px); panels and menus are square.</li>
+    <li>A tab plate keeps <code>--tab-plate-inset</code> (10 px) from the dividers around it.</li>
+  </ul>
+</section>
+
+<section id="icons">
+  <h2>Icons</h2>
+  <ul class="rules">
+    <li>Tabler outline icons only, from the bundled folder: 24 px grid, 2 px stroke, <code>currentColor</code>. No font glyphs or emoji.</li>
+    <li>18 px in toolbars and tiles, 16 px in dense rows, <code>--chevron-size</code> for chevrons, <code>--bypass-icon-size</code> for the eye.</li>
+    <li>Idle icons use muted ink and turn to text ink on hover. One symbol means one action.</li>
+  </ul>
+  <div class="specimens">
+    <div class="specimen"><h3>Sizes</h3>
+      <div class="demo row" data-css="hf-icon">
+        <svg class="hf-icon"><use href="#i-crop"/></svg>
+        <svg class="hf-icon sm"><use href="#i-rotate"/></svg>
+        <svg class="hf-icon chevron"><use href="#i-chevron"/></svg>
+        <svg class="hf-icon bypass"><use href="#i-eye"/></svg>
+      </div></div>
+  </div>
+</section>
+
+<section id="buttons">
+  <h2>Buttons</h2>
+  <ul class="rules">
+    <li>Every button is a plate: raised face, plate edge and lift. Hover lifts the face to the hover plate; pressed or on is pushed in with accent-strong ink.</li>
+    <li>Tools are icon-only plates, 40 × 34 px, named by a tooltip on hover and keyboard focus: the Local and Retouch tools, Crop and Rotate. No label under the icon.</li>
+    <li>One primary button per area, in the accent plate. Disabled primary falls back to the neutral plate with muted ink at full opacity.</li>
+    <li>Small actions inside headers (preset, bypass) are ghost icons: no plate, muted ink.</li>
+  </ul>
+  <div class="specimens">
+    <div class="specimen"><h3>Plate button <small>rest · on · disabled</small></h3>
+      <div class="demo row" data-css="hf-button">
+        <button class="hf-button" type="button">Sort</button>
+        <button class="hf-button" type="button" aria-pressed="true">Compare</button>
+        <button class="hf-button" type="button" disabled>Filter</button>
+        <button class="hf-button icon" type="button" aria-label="Rotate"><svg class="hf-icon"><use href="#i-rotate"/></svg></button>
+      </div></div>
+    <div class="specimen"><h3>Tool buttons <small>Crop &amp; rotate · hover for the name</small></h3>
+      <div class="demo on-raised" data-css="hf-button hf-tool-strip">
+        <div class="hf-tool-strip">
+          <button class="hf-button tool" type="button" data-tip="Crop" aria-label="Crop"><svg class="hf-icon"><use href="#i-crop"/></svg></button>
+          <button class="hf-button tool" type="button" data-tip="Rotate" aria-label="Rotate" aria-pressed="true"><svg class="hf-icon"><use href="#i-rotate"/></svg></button>
+        </div>
+      </div></div>
+    <div class="specimen"><h3>Primary <small>rest · disabled</small></h3>
+      <div class="demo stack on-raised" data-css="hf-button">
+        <button class="hf-button primary wide" type="button">Re-develop source</button>
+        <button class="hf-button primary wide" type="button" disabled>Apply guides</button>
+      </div></div>
+    <div class="specimen"><h3>Text and ghost icon</h3>
+      <div class="demo row" data-css="hf-text-button hf-ghost">
+        <button class="hf-text-button" type="button">Add band</button>
+        <button class="hf-text-button" type="button">Remove band</button>
+        <button class="hf-ghost" type="button" aria-label="Presets"><svg class="hf-icon sm"><use href="#i-preset"/></svg></button>
+        <button class="hf-ghost" type="button" aria-label="Bypass"><svg class="hf-icon bypass"><use href="#i-eye"/></svg></button>
+      </div></div>
+  </div>
+</section>
+
+<section id="tabs">
+  <h2>Tabs</h2>
+  <ul class="rules">
+    <li>Tabs are one joined plate with a 1 px edge between segments. Each segment carries its own depth: unselected segments are raised with the lift shadow; the selected one is pushed in with only the pressed shadow, so no drop shadow shows under it. Its ink is accent-strong. The same applies to the workflow tabs.</li>
+    <li>Labels are centred. Every segment is as wide as the widest label plus its padding, so no label touches an edge (Luma, Red, Green, Blue are equal).</li>
+    <li>A tab plate sits <code>--tab-plate-inset</code> (10 px) from the dividers above and below it. It never touches a divider.</li>
+  </ul>
+  <div class="specimens">
+    <div class="specimen"><h3>Mode tabs in a panel</h3>
+      <div class="demo" data-css="hf-tabs hf-tab-bar hf-panel-header" style="padding:0">
+        <div class="mock-panel" style="width:100%;border:0">
+          <div class="hf-panel-header"><h4 class="hf-panel-title">Control panel</h4></div>
+          <div class="hf-tab-bar">
+            <div class="hf-tabs full" role="tablist">
+              <button type="button" role="tab" aria-selected="true">Global</button>
+              <button type="button" role="tab" aria-selected="false">Local</button>
+              <button type="button" role="tab" aria-selected="false">Retouch</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    <div class="specimen"><h3>Channel tabs <small>small, equal width</small></h3>
+      <div class="demo on-raised row" data-css="hf-tabs">
+        <div class="hf-tabs small" role="tablist">
+          <button type="button" role="tab" aria-selected="true">Luma</button>
+          <button type="button" role="tab" aria-selected="false">Red</button>
+          <button type="button" role="tab" aria-selected="false">Green</button>
+          <button type="button" role="tab" aria-selected="false">Blue</button>
+        </div>
+      </div></div>
+  </div>
+</section>
+
+<section id="fields">
+  <h2>Fields</h2>
+  <ul class="rules">
+    <li>Fields are recessed wells, the same depth as a pushed button: input surface, plate edge, the pressed inner shadow (<code>--plate-press</code>) and <code>--radius-1</code> corners. Never square, never a plain outlined box.</li>
+    <li>The label sits above in the small capital field-label style. A unit sits inside the field at the right, in muted ink.</li>
+    <li>Hover shows a grey edge; focus brightens it further. Placeholders use quiet ink.</li>
+  </ul>
+  <div class="specimens">
+    <div class="specimen"><h3>Text and number fields</h3>
+      <div class="demo stack on-raised" data-css="hf-field hf-field-label hf-input hf-unit hf-field-pair">
+        <label class="hf-field"><span class="hf-field-label">Focal length</span><input class="hf-input" placeholder="from metadata"></label>
+        <div class="hf-field-pair">
+          <label class="hf-field"><span class="hf-field-label">Center X</span><span class="hf-unit"><input class="hf-input" value="50"><span>%</span></span></label>
+          <label class="hf-field"><span class="hf-field-label">Center Y</span><span class="hf-unit"><input class="hf-input" value="50"><span>%</span></span></label>
+        </div>
+        <label class="hf-field"><span class="hf-field-label">Disabled</span><input class="hf-input" value="35 mm" disabled></label>
+      </div></div>
+  </div>
+</section>
+
+<section id="dropdowns">
+  <h2>Dropdowns</h2>
+  <ul class="rules">
+    <li>A dropdown is a plate with a chevron at the right. It responds to hover like a button: the face lifts and the chevron turns to text ink.</li>
+  </ul>
+  <div class="specimens">
+    <div class="specimen"><h3>Dropdown <small>hover it</small></h3>
+      <div class="demo stack on-raised" data-css="hf-select">
+        <label class="hf-field"><span class="hf-field-label">Repair method</span>
+          <span class="hf-select"><select><option>Inpaint</option><option>Heal</option><option>Clone</option></select></span></label>
+        <span class="hf-select"><select disabled><option>Disabled</option></select></span>
+      </div></div>
+  </div>
+</section>
+
+<section id="switches">
+  <h2>Switches</h2>
+  <ul class="rules">
+    <li>The switch carries its own ON/OFF marks. Do not add "Enabled" or "Disabled" text beside it.</li>
+    <li>A labelled switch is a plain row: no border, no box, no background.</li>
+    <li>A switch that turns a whole section on or off sits in that section's header, at the right.</li>
+  </ul>
+  <div class="specimens">
+    <div class="specimen"><h3>Switch rows <small>RAW development</small></h3>
+      <div class="demo on-raised" data-css="hf-switch hf-toggle-row">
+        <label class="hf-toggle-row"><input class="hf-switch" type="checkbox" checked> Distortion</label>
+        <label class="hf-toggle-row"><input class="hf-switch" type="checkbox" checked> Lateral chromatic aberration</label>
+        <label class="hf-toggle-row"><input class="hf-switch" type="checkbox"> Vignetting</label>
+      </div></div>
+    <div class="specimen"><h3>Section switch <small>Film Look</small></h3>
+      <div class="demo" data-css="hf-group hf-group-header hf-group-toggle" style="padding:0">
+        <div class="hf-group">
+          <div class="hf-group-header">
+            <button class="hf-group-toggle" type="button"><svg class="hf-icon chevron"><use href="#i-chevron"/></svg><span>Halation</span></button>
+            <input class="hf-switch" type="checkbox" checked aria-label="Halation">
+          </div>
+        </div>
+        <div class="hf-group">
+          <div class="hf-group-header">
+            <button class="hf-group-toggle" type="button"><svg class="hf-icon chevron"><use href="#i-chevron"/></svg><span>Grain</span></button>
+            <input class="hf-switch" type="checkbox" aria-label="Grain">
+          </div>
+        </div>
+      </div></div>
+  </div>
+</section>
+
+<section id="sliders">
+  <h2>Sliders, rails and handles</h2>
+  <ul class="rules">
+    <li>Name at the left and value at the right on the first row; the rail takes the whole second row.</li>
+    <li>The rail is a recessed channel. The fill starts at home: neutral at home, accent once changed. A mid-rail home has a 1 px origin line.</li>
+    <li>The handle is a satin bar (<code>--instrument-slider-thumb-w</code> × <code>-h</code>). It does not change size on hover. Drag these to try them.</li>
+  </ul>
+  <div class="specimens">
+    <div class="specimen"><h3>Instrument sliders <small>home · changed</small></h3>
+      <div class="demo stack on-raised" data-css="hf-slider hf-rail">
+        <div class="hf-slider"><div class="hf-slider-head"><label>Exposure</label><output>0.00 EV</output></div>
+          <div class="hf-rail" style="--v:.5;--home:.5"><i class="fill"></i><i class="origin"></i><i class="thumb"></i><input type="range" min="0" max="1" step=".01" value=".5" aria-label="Exposure"></div></div>
+        <div class="hf-slider modified"><div class="hf-slider-head"><label>Contrast</label><output>+18</output></div>
+          <div class="hf-rail" style="--v:.68;--home:.5"><i class="fill"></i><i class="origin"></i><i class="thumb"></i><input type="range" min="0" max="1" step=".01" value=".68" aria-label="Contrast"></div></div>
+        <div class="hf-slider modified"><div class="hf-slider-head"><label>Feather</label><output>40%</output></div>
+          <div class="hf-rail" style="--v:.4;--home:0"><i class="fill"></i><i class="thumb"></i><input type="range" min="0" max="1" step=".01" value=".4" aria-label="Feather"></div></div>
+      </div></div>
+  </div>
+</section>
+
+<section id="panels">
+  <h2>Panels and sections</h2>
+  <ul class="rules">
+    <li>Every panel starts with a 40 px header: the title in the panel-title style at the left, actions at the right.</li>
+    <li>A section is a titled group inside a panel. Every section ends with a full-width hairline divider, including the last one, so the content never just stops.</li>
+    <li>All section titles use one style (<code>--section-title-font</code>): Afacad medium, sentence case. Sub-sections inside a section use the same style one size down (<code>--subsection-title-font</code>). This replaces the small capitals ("FILE") and the larger title text ("Folders") used today.</li>
+    <li>Small capitals are kept only for field labels.</li>
+    <li>Control Panel modules are disclosure groups: a 34 px header with chevron, name, then preset, Reset with its changed dot, and the eye. An open group shows its body on the raised surface.</li>
+  </ul>
+  <div class="specimens">
+    <div class="specimen"><h3>Details panel <small>sections and dividers</small></h3>
+      <div class="demo" data-css="hf-panel-header hf-panel-title hf-section hf-section-title hf-subsection-title hf-props" style="padding:0">
+        <div class="mock-panel" style="width:100%;border:0">
+          <div class="hf-panel-header"><h4 class="hf-panel-title">Details</h4><button class="hf-button icon" type="button" aria-label="Collapse"><svg class="hf-icon chevron"><use href="#i-chevron"/></svg></button></div>
+          <section class="hf-section"><h5 class="hf-section-title">File</h5>
+            <dl class="hf-props"><dt>Name</dt><dd>DSC00264.ARW</dd><dt>File type</dt><dd>ARW</dd><dt>Size</dt><dd>81.6 MB</dd><dt>Dimensions</dt><dd>7952 × 5304</dd></dl></section>
+          <section class="hf-section"><h5 class="hf-section-title">Marks</h5>
+            <div style="display:flex;gap:6px"><button class="hf-button" type="button">Pick</button><button class="hf-button" type="button">Reject</button><button class="hf-button" type="button">Clear</button></div></section>
+          <section class="hf-section"><h5 class="hf-section-title">Tags</h5>
+            <input class="hf-input" placeholder="Add tag…"></section>
+          <section class="hf-section"><h5 class="hf-section-title">Camera</h5>
+            <dl class="hf-props"><dt>Camera</dt><dd>ILCE-7RM3</dd><dt>Lens</dt><dd>E 35mm F2.8 F053</dd><dt>ISO</dt><dd>ISO 800</dd></dl>
+            <button class="hf-text-button" type="button" style="margin-top:8px;padding:0">Show all</button></section>
+        </div>
+      </div></div>
+    <div class="specimen"><h3>Pinned panel <small>same title style</small></h3>
+      <div class="demo" data-css="hf-section hf-section-title" style="padding:0">
+        <div class="mock-panel" style="width:100%;border:0">
+          <div class="hf-panel-header"><h4 class="hf-panel-title">Pinned</h4></div>
+          <section class="hf-section"><h5 class="hf-section-title">Folders</h5><div class="note">HDR Test Images</div></section>
+          <section class="hf-section"><h5 class="hf-section-title">Albums</h5><div class="note">Portfolio</div></section>
+        </div>
+      </div></div>
+    <div class="specimen"><h3>Disclosure groups <small>Control Panel</small></h3>
+      <div class="demo" data-css="hf-group hf-group-header hf-group-toggle hf-group-reset hf-group-body" style="padding:0">
+        <div class="hf-group">
+          <div class="hf-group-header">
+            <button class="hf-group-toggle" type="button"><svg class="hf-icon chevron"><use href="#i-chevron"/></svg><span>Raw development</span></button>
+          </div>
+        </div>
+        <div class="hf-group" open-group>
+          <div class="hf-group-header">
+            <button class="hf-group-toggle" type="button" aria-expanded="true"><svg class="hf-icon chevron"><use href="#i-chevron"/></svg><span>Exposure bands</span></button>
+            <button class="hf-ghost" type="button" aria-label="Presets"><svg class="hf-icon sm"><use href="#i-preset"/></svg></button>
+            <button class="hf-text-button hf-group-reset" type="button">Reset</button>
+            <button class="hf-ghost" type="button" aria-label="Bypass"><svg class="hf-icon bypass"><use href="#i-eye"/></svg></button>
+          </div>
+          <div class="hf-group-body"><div class="note">Group content on the raised surface.</div></div>
+        </div>
+      </div></div>
+  </div>
+</section>
+
+<section id="lists">
+  <h2>Lists and scrollbars</h2>
+  <ul class="rules">
+    <li>A list is one solid surface with thin dividers between rows, no pills. Rows are <code>--list-row-h</code> (34 px).</li>
+    <li>The list's own border clips everything inside, so the scrollbar can't poke out at the corners.</li>
+    <li>The scrollbar rail is always shown, lighter than the list, with a quiet pill thumb that brightens on hover.</li>
+    <li>An empty list keeps the same surface and rail, with one centred muted line. No black blocks.</li>
+    <li>The selected row is neutral: pushed in like a selected tab (<code>--plate-down</code>, <code>--plate-press</code>), with a 2 px accent edge at the left. No coloured background.</li>
+  </ul>
+  <div class="specimens">
+    <div class="specimen"><h3>Repair list</h3>
+      <div class="demo on-raised" data-css="hf-list hf-list-scroll hf-list-row">
+        <div class="hf-list"><div class="hf-list-scroll" role="listbox" data-rows></div></div>
+      </div></div>
+    <div class="specimen"><h3>Empty list</h3>
+      <div class="demo on-raised" data-css="hf-list-empty">
+        <div class="hf-list"><div class="hf-list-scroll"><div class="hf-list-empty">Choose a mask tool to start an adjustment.</div></div></div>
+      </div></div>
+  </div>
+</section>
+
+<section id="graphs">
+  <h2>Graphs</h2>
+  <ul class="rules">
+    <li>The black plot area is exactly the grid: its edges are the outer grid lines. Nothing black spills past them.</li>
+    <li>Axis labels sit outside the plot on the panel surface, in <code>--font-size-min</code>. Leave enough margin that the first and last labels are never cut off.</li>
+    <li>The home or reference value label uses text ink; other labels use the axis-label ink.</li>
+    <li>A limit or cut-off (the 1000-nit target, the 10K PQ boundary) is a yellow dashed line, <code>--graph-limit-line</code>, dashes 4 × 3 px, with its label in the same yellow. Nothing else in a graph is dashed or yellow, apart from selected control points.</li>
+    <li>Zero and identity lines are neutral. Curves are neutral too unless the graph's channel gives them a colour (Red, Green, Blue).</li>
+    <li>Each graph keeps its own curve, node and band tokens (listed in the guideline). Only the frame is shared. Selected control points are yellow in every graph; the Exposure Bands influence band is orange.</li>
+  </ul>
+  <div class="specimens">
+    <div class="specimen"><h3>Curves</h3><div class="demo on-raised"><svg class="hf-graph" id="g-curves"></svg></div></div>
+    <div class="specimen"><h3>Exposure bands</h3><div class="demo on-raised"><svg class="hf-graph" id="g-bands"></svg></div></div>
+    <div class="specimen"><h3>Highlight compression</h3><div class="demo on-raised"><svg class="hf-graph" id="g-compress"></svg></div></div>
+    <div class="specimen" style="grid-column: 1 / -1"><h3>Histogram</h3><div class="demo"><svg class="hf-graph" id="g-hist"></svg></div></div>
+  </div>
+  <p class="note">The graph frame code is the <code>drawGraph</code> function at the bottom of this page: margins, grid and labels. In the app the same layout applies to the canvas drawing.</p>
+</section>
+
+<section id="tooltips">
+  <h2>Tooltips</h2>
+  <div class="specimens">
+    <div class="specimen"><h3>Tooltip</h3><div class="demo" data-css="hf-tooltip"><span class="hf-tooltip">Exposure: show clipped highlights and shadows</span></div></div>
+  </div>
+</section>
+
+<section id="proposed">
+  <h2>Waiting for approval</h2>
+  <p>These are new tokens or changes. Nothing here goes into the app until Steve approves it.</p>
+  <ul class="rules">
+    <li><b>Section titles</b>: <code>--section-title-font</code> (Afacad medium, <code>--font-size-lg</code>, sentence case) and <code>--subsection-title-font</code> (same, <code>--font-size-md</code>). Replaces small capitals in Details and the larger titles in Pinned.</li>
+    <li><b>Default Dark depth</b> (switch at the top left, on by default): app #050505, panel #080808, raised #101010, input #0a0a0a (darker than Modern Dark's #0c0c0c / #121212 / #191919, never pure black). Raised plates run #383838 to #1c1c1c with a black edge, a bright top line, a strong drop shadow and a faint light lip; pushed plates are a dark well with a heavy top inner shadow. The viewer and graph plots stay pure black. This brings Default Dark's buttons close to Modern Dark's, on a darker background with Default Dark's stronger lines and text.</li>
+    <li><b>Neutral selection</b>: <code>--accent-bed</code> becomes neutral in every theme: the pressed plate, <code>--plate-down</code>, instead of a tint of the accent colour (shown on this page, including its swatch). Selected rows, cells and pressed filter buttons are pushed in; selection keeps only its accent edge or accent text. It's used in about 25 places today (Library rows and cells, tags, filters, Export presets and photos, HSL picker).</li>
+    <li><b>Exposure Bands influence band</b>: orange instead of yellow, <code>--equalizer-influence-wash: #ff7a1f1f</code> (the existing band orange <code>#ff7a1f</code> at about 12%; today <code>#efbb55</code> at 9%). Selected control points in every graph stay yellow.</li>
+    <li><b>Graph marks</b>: a new token <code>--graph-limit-line</code> = <code>--attention</code> (yellow) for every limit or cut-off, dashed 4 × 3 px, label in the same yellow. Today the Exposure Bands 10K line uses a muted gold (<code>--equalizer-pq</code>) with a yellow label, and Highlight Compression draws no target line. <code>--equalizer-zero</code> becomes the neutral strong grid grey instead of purple. Highlight Compression's curve is typed in as cyan (<code>#68d7ed</code>) in <code>highlight-controls.js</code>; it should use the neutral curve token, and its dashed grey no-change line becomes a solid faint identity line so only limits are dashed.</li>
+    <li><b>Lists</b>: <code>--list-row-h</code> 34 px and <code>--scrollbar-w</code> 10 px.</li>
+    <li><b>Existing exceptions, kept as they are</b>: the primary button, the changed slider fill and the On switch knob mix the accent or white with other colours. The histogram fill uses 55% opacity. These were in the app before the tokens rule. Keep them, or replace them with new tokens?</li>
+  </ul>
+</section>
+</main>
+</div>
+
+<script>
+(() => {
+  const root = document.documentElement;
+  // Chevron mask for dropdowns, as a data URL so it works from a file.
+  root.style.setProperty("--hf-chevron", `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6l-6 6"/></svg>')}")`);
+
+  // Theme switch.
+  const setTheme = (t) => {
+    if (t) root.dataset.theme = t; else delete root.dataset.theme;
+    document.querySelectorAll("[data-theme-choice]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.themeChoice === t)));
+    try { localStorage.setItem("hf-sheet-theme", t); } catch {}
+  };
+  const depth = document.getElementById("depth-toggle");
+  root.classList.add("depth-proposal");
+  depth.addEventListener("click", () => { const on = root.classList.toggle("depth-proposal"); depth.setAttribute("aria-pressed", String(on)); });
+  document.querySelectorAll("[data-theme-choice]").forEach(b => b.addEventListener("click", () => setTheme(b.dataset.themeChoice)));
+  let saved = ""; try { saved = localStorage.getItem("hf-sheet-theme") || ""; } catch {}
+  setTheme(saved);
+
+  // Swatches.
+  document.querySelectorAll("[data-swatches]").forEach(box => {
+    box.innerHTML = box.dataset.swatches.split(" ").map(n => `<div class="swatch"><i style="background: var(--${n})"></i><span>--${n}</span></div>`).join("");
+  });
+
+  // Tabs and switches behave.
+  document.querySelectorAll(".hf-tabs").forEach(tabs => tabs.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    tabs.querySelectorAll("button").forEach(x => x.setAttribute("aria-selected", String(x === b)));
+  }));
+  document.querySelectorAll(".hf-group-toggle").forEach(b => b.addEventListener("click", () => b.closest(".hf-group").toggleAttribute("open-group")));
+  document.querySelectorAll(".hf-rail > input").forEach(input => input.addEventListener("input", () => {
+    const rail = input.parentElement; rail.style.setProperty("--v", input.value);
+    const home = parseFloat(getComputedStyle(rail).getPropertyValue("--home"));
+    rail.closest(".hf-slider").classList.toggle("modified", Math.abs(input.value - home) > .005);
+  }));
+
+  // Repair list rows.
+  const rows = [[16, "75 px · Heal"], [15, "146 px · Inpaint"], [14, "146 px · Inpaint"], [13, "146 px · Inpaint"], [12, "48 px · Inpaint"], [11, "166 px · Inpaint"]];
+  document.querySelectorAll("[data-rows]").forEach(list => {
+    list.innerHTML = rows.map(([n, m], i) => `<div class="hf-list-row" role="option" aria-selected="${i === 1}"><span class="name">Spot ${n}</span><span class="meta">${m}</span><button class="hf-ghost" type="button" aria-label="Bypass"><svg class="hf-icon bypass"><use href="#i-eye"/></svg></button></div>`).join("");
+    list.addEventListener("click", e => { const r = e.target.closest(".hf-list-row"); if (!r) return; list.querySelectorAll(".hf-list-row").forEach(x => x.setAttribute("aria-selected", String(x === r))); });
+  });
+
+  // Graph frame: black plot = grid; labels outside with room for the end labels.
+  function drawGraph(svg, { w, h, m, xs = [], ys = [], vgrid, hgrid, body }) {
+    const pw = w - m.l - m.r, ph = h - m.t - m.b;
+    const X = p => m.l + p * pw, Y = p => m.t + (1 - p) * ph;
+    let s = `<rect class="plot" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}"/>`;
+    for (const p of vgrid ?? xs.map(x => x[0])) s += `<line class="grid" x1="${X(p)}" x2="${X(p)}" y1="${m.t}" y2="${m.t + ph}"/>`;
+    for (const p of hgrid ?? ys.map(y => y[0])) s += `<line class="grid" x1="${m.l}" x2="${m.l + pw}" y1="${Y(p)}" y2="${Y(p)}"/>`;
+    s += body(X, Y);
+    for (const [p, t, home] of xs) s += `<text class="label${home ? " home" : ""}" x="${X(p)}" y="${m.t + ph + 16}" text-anchor="middle">${t}</text>`;
+    for (const [p, t, home] of ys) s += `<text class="label${home ? " home" : ""}" x="${m.l - 8}" y="${Y(p) + 3.5}" text-anchor="end">${t}</text>`;
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`); svg.setAttribute("width", w); svg.setAttribute("height", h);
+    svg.innerHTML = s;
+  }
+  const smooth = pts => pts.map(([x, y], i) => {
+    if (!i) return `M${x},${y}`;
+    const [x0, y0] = pts[i - 1], p = pts[i - 2] ?? pts[i - 1], n = pts[i + 1] ?? pts[i];
+    return `C${x0 + (x - p[0]) / 6},${y0 + (y - p[1]) / 6} ${x - (n[0] - x0) / 6},${y - (n[1] - y0) / 6} ${x},${y}`;
+  }).join("");
+
+  // Curves.
+  drawGraph(document.getElementById("g-curves"), {
+    w: 310, h: 230, m: { l: 14, r: 16, t: 8, b: 24 },
+    xs: [[0, "0"], [.4, "20"], [.48, "51"], [.55, "102", true], [.62, "203"], [.7, "406"], [.8, "1K"], [1, "10K"]],
+    hgrid: [0, .25, .5, .75, 1], vgrid: [0, .25, .5, .75, 1],
+    body: (X, Y) => {
+      const pts = [[0, 0], [.25, .25], [.55, .55], [.8, .8], [1, 1]].map(([a, b]) => [X(a), Y(b)]);
+      return `<line class="identity" x1="${X(0)}" y1="${Y(0)}" x2="${X(1)}" y2="${Y(1)}"/><path class="curve" d="${smooth(pts)}"/>` +
+        pts.map(([x, y], i) => `<circle class="node${i === 0 || i === 4 ? " end" : i === 2 ? " selected" : ""}" cx="${x}" cy="${y}" r="${i === 0 || i === 4 ? 4 : 5}"/>`).join("");
+    }
+  });
+
+  // Exposure bands.
+  const ev = v => (v + 6) / 12, gain = v => (v + 2) / 4;
+  drawGraph(document.getElementById("g-bands"), {
+    w: 310, h: 240, m: { l: 40, r: 16, t: 18, b: 24 },
+    xs: [-6, -4, -2, 0, 2, 4, 6].map(v => [ev(v), `${v > 0 ? "+" : ""}${v} EV`, v === 0]),
+    ys: [2, 1, 0, -1, -2].map(v => [gain(v), `${v > 0 ? "+" : ""}${v} EV`, v === 0]),
+    body: (X, Y) => {
+      const nodes = [[-6, 0], [-3, .95], [0, 1.5], [1.5, 1.15], [3, .4], [6, -.45]].map(([a, b]) => [X(ev(a)), Y(gain(b))]);
+      return `<rect class="band-wash" x="${X(ev(-1.2))}" y="${Y(1)}" width="${X(ev(1.2)) - X(ev(-1.2))}" height="${Y(0) - Y(1)}"/>` +
+        `<line class="zero" x1="${X(0)}" x2="${X(1)}" y1="${Y(.5)}" y2="${Y(.5)}"/><line class="zero" x1="${X(.5)}" x2="${X(.5)}" y1="${Y(0)}" y2="${Y(1)}"/>` +
+        `<line class="limit" x1="${X(ev(5.2))}" x2="${X(ev(5.2))}" y1="${Y(0)}" y2="${Y(1)}"/><text class="label limit-label" x="${X(ev(5.2))}" y="${Y(1) - 5}" text-anchor="middle">10K</text>` +
+        `<path class="eq-curve" d="${smooth(nodes)}"/>` +
+        nodes.map(([x, y], i) => `<circle class="eq-node${i === 2 ? " selected" : ""}" cx="${x}" cy="${y}" r="${i === 2 ? 6 : 4.5}"/>`).join("");
+    }
+  });
+
+  // Highlight compression: output against input, up to a 1000-nit target.
+  const lin = n => Math.log10(1 + n) / Math.log10(10001), out = n => n < 500 ? n : 1000 - 500 * Math.exp(-(n - 500) / 500);
+  drawGraph(document.getElementById("g-compress"), {
+    w: 310, h: 230, m: { l: 40, r: 16, t: 8, b: 24 },
+    xs: [[0, "0"], [lin(203), "203", true], [lin(1000), "1K"], [lin(4000), "4K"], [1, "10K"]],
+    ys: [[0, "0"], [.203, "203"], [.5, "500"]],
+    body: (X, Y) => {
+      const pts = []; for (let i = 0; i <= 80; i++) { const n = 10000 * Math.pow(i / 80, 3); pts.push(`${X(lin(n))},${Y(out(n) / 1000)}`); }
+      const id = []; for (let i = 0; i <= 40; i++) { const n = 1000 * Math.pow(i / 40, 3); id.push(`${X(lin(n))},${Y(n / 1000)}`); }
+      const lim = `<text class="label limit-label" x="${X(0) - 8}" y="${Y(1) + 3.5}" text-anchor="end">1000</text>`;
+      return lim + `<polyline class="identity" points="${id.join(" ")}"/><line class="limit" x1="${X(0)}" x2="${X(1)}" y1="${Y(1)}" y2="${Y(1)}"/><polyline class="curve" points="${pts.join(" ")}"/>`;
+    }
+  });
+
+  // Histogram.
+  const W = 1000, logx = n => Math.log10(n) / Math.log10(4000);
+  const wave = (seed) => Array.from({ length: 160 }, (_, i) => { const t = i / 159; return t < .07 || t > .86 ? 0 : .55 + .12 * Math.sin(t * 40 + seed) + .08 * Math.sin(t * 97 + seed * 2) + (t < .1 ? .4 : 0) + (t > .82 ? .3 : 0); });
+  drawGraph(document.getElementById("g-hist"), {
+    w: W, h: 190, m: { l: 12, r: 16, t: 8, b: 24 },
+    xs: [[0, "1"], [logx(10), "10"], [logx(100), "100"], [logx(203), "RW 203", true], [logx(1000), "1k"], [1, "4k"]],
+    hgrid: [0, .25, .5, .75, 1], vgrid: [0, logx(10), logx(100), logx(1000), 1],
+    body: (X, Y) => {
+      const line = (vals) => vals.map((v, i) => `${X(i / 159)},${Y(Math.min(v, 1))}`).join(" ");
+      const l = wave(0);
+      return `<line class="guide" x1="${X(logx(203))}" x2="${X(logx(203))}" y1="${Y(0)}" y2="${Y(1)}"/>` +
+        `<polygon class="hist-luma" points="${X(0)},${Y(0)} ${line(l)} ${X(1)},${Y(0)}"/>` +
+        `<polyline class="hist-r" points="${line(wave(1))}"/><polyline class="hist-g" points="${line(wave(2))}"/><polyline class="hist-b" points="${line(wave(3))}"/>`;
+    }
+  });
+
+  // Code panels: the markup of each demo, and the component rules it uses.
+  const spec = [...document.getElementById("spec").sheet.cssRules];
+  const indent = html => html.replace(/\s+data-css="[^"]*"/g, "").replace(/>\s*</g, ">\n<").split("\n").map(l => l.trim()).filter(Boolean).join("\n");
+  document.querySelectorAll(".demo[data-css]").forEach(demo => {
+    const names = demo.dataset.css.split(" ");
+    const css = spec.filter(r => r.selectorText && names.some(n => new RegExp(`\\.${n}(?![\\w-])`).test(r.selectorText))).map(r => r.cssText.replace(/; /g, ";\n  ").replace("{ ", "{\n  ").replace(/ }$/, "\n}")).join("\n\n");
+    const details = document.createElement("details");
+    details.innerHTML = "<summary>Code</summary><pre></pre>";
+    details.querySelector("pre").textContent = `<!-- HTML -->\n${indent(demo.innerHTML)}\n\n/* CSS */\n${css}`;
+    demo.parentElement.append(details);
+  });
+})();
+</script>
+</body>
+</html>
