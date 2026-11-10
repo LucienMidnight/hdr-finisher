@@ -8094,3 +8094,25 @@ scenarios reproduced the ordering/refresh defects above. No application code,
 shader, tolerance, cache budget or photo was changed. Scratch scripts were
 removed. Automatic approval review blocked cleanup of this run's temporary
 `%TEMP%/pytest-of-Steve/pytest-1373` folder; left in place.
+
+
+## November 10: Exposure speed and independent switches
+
+The Exposure CPU calculation now uses scalar black/white levels on verified
+repeating visible sensor slices, retaining the general route otherwise.
+Warning masks remain exact against the previous calculation across pattern
+offsets, channel levels, odd edges, floating precision and rotations. No
+warning threshold, pooling, map format, registration or cache allowance changed.
+Exposure/Focus switches affect only their own layer, preserving the other's
+request and full Focus refinement. Slider redraws coalesce into one animation
+frame; pending preference updates coalesce without an idle timer.
+
+Validation: 35 focused Python overlay tests, four frontend tests, plus the
+874-check JavaScript suite. Real Electron checks pass direct-image warning
+pixels/colour/strength and grid/filmstrip/Single/Compare; the real Sony RAW
+check confirms undeveloped source warnings and uninterrupted Focus refinement.
+The pixel check waits one animation frame for the intended grouped redraw;
+its expected pixel values are unchanged. First Exposure wait was 1.337 s
+against the earlier 1.827 s diagnostic (about 27% less); see the performance
+table for scope and conditions. Duplicate in-flight map requests remain open;
+subscriber cancellation needs separate work.

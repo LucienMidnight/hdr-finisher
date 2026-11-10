@@ -1460,3 +1460,23 @@ Other RAW patterns, channel levels, orientations and formats remain untested
 for the candidate. The first failed harness attempt could not create a hard
 link on D:; the successful run reused an existing test-photo folder instead.
 Log: `codebase/output/exposure-investigation.log`. Scratch scripts removed.
+
+
+### November 10: Exposure CPU implementation
+
+Baseline `3c257e43` records the earlier app observation on `50c8597c`.
+Implementation on that baseline, same existing 42 MP Sony
+`output/test-photos/gpu-denoise-measurement/DSC07060.ARW`, fresh disposable
+profile, Electron 2560 x 1440, one photo, no concurrent parent test suite;
+OS disk cache uncontrolled. Same E-key to populated visible canvas endpoint
+and proposed 10% diagnostic comparison band. These are single observations,
+not a speed qualification across photos or a new acceptance target.
+
+| Action | Earlier observation | After implementation | Status |
+|---|---|---|---|
+| Cold map, E key to visible Exposure | 1.827 s | 1.337 s | About 27% less waiting; synthetic mask equality and RAW app behavior pass |
+| Retained map, E key to visible Exposure | 11 ms | 8 ms | Immediate; no regression claim based on millisecond variation |
+
+Log: `codebase/output/exposure-implementation-check.log`. Repeating sensor
+slices avoid full-frame black/white level arrays. The check also verifies
+Focus full refinement survives Exposure toggles without developing the RAW.

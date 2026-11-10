@@ -155,3 +155,30 @@ def test_map_reports_the_measured_frame_inside_pooled_cells(tmp_path):
     meta=OverlayMaps(tmp_path/'app').build(p)
     assert (meta['width'],meta['height'])==(500,334) and meta['frame']==pytest.approx([0,0,500,1001/3])
     assert 'camera_frame' not in meta  # Direct pictures are shown whole.
+
+
+@pytest.mark.parametrize("shape",[(13,17),(1,3),(6,7)])
+@pytest.mark.parametrize("pattern",[np.array([[0,1],[3,2]]),np.arange(36).reshape(6,6)%4])
+@pytest.mark.parametrize("dtype",[np.uint16,np.float32,np.float64])
+def test_raw_scalar_slices_match_array_reference(shape,pattern,dtype):
+    from hdr_finisher.library_overlays import raw_exposure_regions
+    sy,sx=pattern.shape
+    y,x=np.indices(shape)
+    # Visible sensor origin differs from the recorded full-sensor pattern.
+    colors=pattern[(y+1)%sy,(x+1)%sx]
+    black=np.array([16,32,64,128]);white=np.array([1023,2047,4095,8191])
+    threshold=black[colors]+np.maximum(1 if np.dtype(dtype).kind in 'ui' else 1e-6,(white[colors]-black[colors])*.001)
+    for samples in [np.zeros(shape,dtype=dtype),white[colors].astype(dtype),threshold.astype(dtype),np.nextafter(threshold,np.inf).astype(dtype),np.random.default_rng(4).integers(0,9000,shape).astype(dtype)]:
+        expected=exposure_regions(samples,black[colors],white[colors],pattern)
+        actual=raw_exposure_regions(samples,colors,black,white,pattern)
+        for a,b in zip(actual,expected):
+            for turns in range(4):np.testing.assert_array_equal(np.rot90(a,turns),np.rot90(b,turns))
+
+
+def test_raw_nonrepeating_colors_and_no_pattern_keep_reference():
+    from hdr_finisher.library_overlays import raw_exposure_regions
+    colors=np.random.default_rng(8).integers(0,4,(13,17));samples=np.arange(221).reshape(13,17).astype(np.uint16)
+    black=np.array([0,20,50,100]);white=np.array([120,150,180,200])
+    for pattern in [None,np.array([[0,1],[3,2]])]:
+        for a,b in zip(raw_exposure_regions(samples,colors,black,white,pattern),exposure_regions(samples,black[colors],white[colors],pattern)):
+            np.testing.assert_array_equal(a,b)

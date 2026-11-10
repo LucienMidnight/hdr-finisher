@@ -408,7 +408,9 @@ measurement. `library_worker.py` makes half/full maps on the existing kept lane;
 with no Grade transition or settings-file action. `photo-library.js` attaches
 only visible grid/film/single/compare surfaces and cancels work on exit.
 `test_library_overlays.py` checks source regions, focus/noise, freshness,
-cancellation, eviction and camera-preview registration; `library-exposure.js`
+cancellation, eviction, exact scalar-slice RAW masks and camera-preview registration;
+`library-overlays.test.js` checks independent toggles, Focus continuation,
+cancellation/errors and grouped slider redraws; `library-exposure.js`
 and `library-focus.js` are the focused disposable Electron checks, and
 `library-raw-overlays.js` checks overlays on undeveloped RAW camera previews.
 RAW maps carry `camera_frame` (where the embedded preview sits, found by ECC

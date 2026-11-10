@@ -47,6 +47,35 @@ def exposure_regions(samples,black,white,pattern=None):
     return blown,blocked
 
 
+def raw_exposure_regions(samples,colors,black,white,pattern):
+    """Use scalar channel levels on verified repeating visible sensor slices.
+
+    The visible origin need not match raw_pattern (sensor margins can shift it).
+    Non-repeating colour maps retain the general per-pixel calculation.
+    """
+    samples=np.asarray(samples);colors=np.asarray(colors)
+    black=np.asarray(black);white=np.asarray(white)
+    if pattern is not None and np.ndim(pattern)==2 and all(pattern.shape):
+        sy,sx=pattern.shape
+        tile=colors[:sy,:sx]
+        if colors.shape==samples.shape and all(
+                np.all(colors[y::sy,x::sx]==tile[y,x])
+                for y in range(tile.shape[0]) for x in range(tile.shape[1])):
+            blown=np.empty(samples.shape,dtype=bool);blocked=np.empty_like(blown)
+            for y in range(tile.shape[0]):
+                for x in range(tile.shape[1]):
+                    channel=tile[y,x]
+                    # One-element arrays preserve NumPy's array promotion and
+                    # threshold arithmetic, including floating-point sources.
+                    hi,lo=exposure_regions(samples[y::sy,x::sx],black[channel:channel+1],white[channel:channel+1])
+                    blown[y::sy,x::sx]=hi;blocked[y::sy,x::sx]=lo
+            h,w=blocked.shape;ph=int(np.ceil(h/sy))*sy;pw=int(np.ceil(w/sx))*sx
+            padded=np.pad(blocked,((0,ph-h),(0,pw-w)),constant_values=False)
+            cells=padded.reshape(ph//sy,sy,pw//sx,sx).all(axis=(1,3))
+            return blown,np.repeat(np.repeat(cells,sy,axis=0),sx,axis=1)[:h,:w]
+    return exposure_regions(samples,black[colors],white[colors],pattern)
+
+
 def orient_samples(values,orientation):
     if orientation==2:return np.fliplr(values)
     if orientation==3:return np.rot90(values,2)
@@ -156,15 +185,16 @@ def exposure_source(path,cancelled=None,probe=None):
             samples=raw.raw_image_visible
             if samples.ndim==2:
                 colors=raw.raw_colors_visible
-                black=np.asarray(raw.black_level_per_channel)[colors]
+                black=np.asarray(raw.black_level_per_channel)
                 levels=raw.camera_white_level_per_channel
                 levels=np.asarray(levels if levels and all(v>0 for v in levels) else [raw.white_level]*4)
-                white=levels[colors]
+                white=levels
             else:
                 black=np.asarray(raw.black_level_per_channel)[:samples.shape[2]]
                 levels=raw.camera_white_level_per_channel
                 white=np.asarray(levels if levels and all(v>0 for v in levels) else [raw.white_level]*4)[:samples.shape[2]]
-            blown,blocked=exposure_regions(samples,black,white,raw.raw_pattern if samples.ndim==2 else None)
+            blown,blocked=(raw_exposure_regions(samples,colors,black,white,raw.raw_pattern)
+                if samples.ndim==2 else exposure_regions(samples,black,white))
             # LibRaw flip values correspond to its default output orientation.
             rotations={3:2,5:1,6:3};turns=rotations.get(raw.sizes.flip,0)
             if turns: blown=np.rot90(blown,turns);blocked=np.rot90(blocked,turns)

@@ -10,7 +10,15 @@
     const label=kind=>kind==='focus'?'Focus':'Exposure';
     const $=id=>document.getElementById(id);
     const controls={},fields={};
-    function change(key,value){prefs[key]=value;syncSwitches();redraw();saveQueue=saveQueue.then(()=>o.api('/api/library/review-preferences',{[key]:value})).catch(e=>o.status(e.message));}
+    let drawFrame=null,saveScheduled=false,pendingPrefs={};
+    function change(key,value){
+      prefs[key]=value;pendingPrefs[key]=value;syncSwitches();
+      if(drawFrame===null)drawFrame=requestAnimationFrame(()=>{drawFrame=null;redraw();});
+      if(!saveScheduled){saveScheduled=true;saveQueue=saveQueue.then(()=>{
+        saveScheduled=false;const values=pendingPrefs;pendingPrefs={};
+        return o.api('/api/library/review-preferences',values);
+      }).catch(e=>o.status(e.message));}
+    }
     function switchControl(id, label, checked=false) {
       return `<label class="checkbox-row"><input id="${id}" type="checkbox" aria-label="${label}" ${checked?'checked':''}><span data-switch-for="${id}">${checked?'Enabled':'Disabled'}</span></label>`;
     }
@@ -37,13 +45,17 @@
     function attach(photo,canvas,meta,controller,current){
       const old=records.get(canvas);if(old)remove(old);if(!Object.values(enabled).some(Boolean)||!current()||controller.signal.aborted)return;
       const r={photo,canvas,meta,controller,current,items:{}};records.set(canvas,r);r.cleanup=()=>remove(r);
-      for(const kind of ['exposure','focus']){if(!enabled[kind])continue;const layer=document.createElement('canvas');layer.className='library-source-overlay';layer.dataset.kind=kind;layer.hidden=true;canvas.parentElement.append(layer);
+      r.observer=new MutationObserver(()=>sync(r));r.observer.observe(canvas,{attributes:true,attributeFilter:['style']});r.resize=new ResizeObserver(()=>sync(r));r.resize.observe(canvas);sync(r);controller.signal.addEventListener('abort',r.cleanup,{once:true});
+      addItems(r,['exposure','focus']);
+    }
+    function addItems(r,kinds){
+      const {photo,canvas}=r;
+      for(const kind of kinds){if(!enabled[kind])continue;const layer=document.createElement('canvas');layer.className='library-source-overlay';layer.dataset.kind=kind;layer.hidden=true;canvas.parentElement.append(layer);
         const badge=document.createElement('span');badge.className='library-map-status';badge.dataset.kind=kind;badge.textContent=`${kind==='focus'?'S':'E'} · preparing`;canvas.parentElement.append(badge);r.items[kind]={kind,layer,badge,values:null};
         const seed=!photo.edited&&recent.get(recentKey(photo,kind));if(seed){const item=r.items[kind];item.values=seed.values;item.map=seed.map;}}
-      r.observer=new MutationObserver(()=>sync(r));r.observer.observe(canvas,{attributes:true,attributeFilter:['style']});r.resize=new ResizeObserver(()=>sync(r));r.resize.observe(canvas);sync(r);controller.signal.addEventListener('abort',r.cleanup,{once:true});
-      for(const item of Object.values(r.items)){if(item.values&&draw(r,item))item.badge.hidden=true;void request(r,item);}
+      sync(r);for(const kind of kinds){const item=r.items[kind];if(!item)continue;if(item.values&&draw(r,item))item.badge.hidden=true;void request(r,item);}
     }
-    async function request(r,item){const controller=new AbortController();item.request=controller;const current=()=>enabled[item.kind]&&records.get(r.canvas)===r&&r.current()&&!controller.signal.aborted;
+    async function request(r,item){const controller=new AbortController();item.request=controller;const current=()=>enabled[item.kind]&&records.get(r.canvas)===r&&r.items[item.kind]===item&&r.current()&&!controller.signal.aborted;
       const large=r.canvas.id==='single-picture'||r.canvas.classList.contains('compare-fit');
       try{for(const quality of item.kind==='focus'&&large?['half','full']:['half']){
         const m=await o.api('/api/library/overlay-map',{path:r.photo.path,kind:item.kind,quality,priority:large?82:85},controller.signal);if(!current())return;
@@ -80,8 +92,16 @@
       item.layer.width=width;item.layer.height=height;const layer=item.layer.getContext('2d');layer.clearRect(0,0,width,height);layer.drawImage(full,x,y,w,h,0,0,width,height);full.width=full.height=0;item.layer.hidden=false;item.layer.dataset.camera=String(cameraPicture(r.meta));item.layer.dataset.key=item.map.key;item.layer.dataset.quality=item.map.quality;item.layer.dataset.strength=String(prefs[item.kind+'_strength']);sync(r);return true;
     }
     function redraw(){syncSwitches();for(const r of records.values())for(const item of Object.values(r.items))draw(r,item);}
-    function refresh(){for(const r of [...records.values()])remove(r);for(const s of o.surfaces())attach(s.photo,s.canvas,s.meta,s.controller,s.current);}
-    function toggle(kind,value){const task=switching.then(async()=>{const result=await o.api('/api/library/overlay-switch',{kind,enabled:value??!enabled[kind]});enabled[kind]=result.enabled;$(`${kind}-enabled`).checked=result.enabled;syncSwitches();controls[kind].button.classList.toggle('active',result.enabled);refresh();});switching=task.catch(e=>o.status(e.message));return task;}
+    function refresh(kind){
+      for(const r of [...records.values()]){
+        const item=r.items[kind];
+        if(!enabled[kind]&&item){keep(r,item);item.request?.abort();item.layer.remove();item.badge.remove();delete r.items[kind];}
+        if(!Object.keys(r.items).length&&!enabled[kind])remove(r);
+        else if(enabled[kind]&&!item)addItems(r,[kind]);
+      }
+      if(enabled[kind])for(const s of o.surfaces())if(!records.has(s.canvas))attach(s.photo,s.canvas,s.meta,s.controller,s.current);
+    }
+    function toggle(kind,value){const task=switching.then(async()=>{const result=await o.api('/api/library/overlay-switch',{kind,enabled:value??!enabled[kind]});enabled[kind]=result.enabled;$(`${kind}-enabled`).checked=result.enabled;syncSwitches();controls[kind].button.classList.toggle('active',result.enabled);refresh(kind);});switching=task.catch(e=>o.status(e.message));return task;}
     async function init(){try{prefs=await o.api('/api/library/review-preferences');for(const [id,key] of Object.entries(fields)){const input=$(id);if(input.type==='checkbox')input.checked=prefs[key];else input.value=prefs[key];}redraw();}catch(e){o.status(e.message);}}
     return {attach,detach:canvas=>{const record=records.get(canvas);if(record)remove(record);},toggle,init,snapshot:()=>({enabled:{...enabled},settings:{...prefs},maps:[...records.values()].flatMap(r=>Object.values(r.items).map(item=>({path:r.photo.path,kind:item.kind,camera:cameraPicture(r.meta),key:item.map?.key,quality:item.map?.quality,ready:!!item.values,unavailable:item.badge.title})))})};
   }
