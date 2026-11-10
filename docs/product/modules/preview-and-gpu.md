@@ -158,3 +158,15 @@ changed the CPU/binning domain but left the GPU peak reduction in linear light;
 automatic settled measurement exposed that mismatch. HDR measurement and
 rendered/exported pixels are unchanged. `gpu-scope-parity` passes all modes,
 including SDR Exposure Bands, against the unchanged 3% peak limit.
+
+## November 10: component-sheet graph frames and marks
+
+Built: Curves, Exposure Bands, Highlight Compression and histogram canvases
+paint panel-colour label gutters and restrict viewer fill to the grid rectangle.
+End-label gutters are widened where needed. Exposure Bands uses a neutral
+zero line, orange influence wash, and the shared yellow 4-by-3 dashed limit.
+Highlight Compression uses a neutral curve, faint solid identity and labelled
+yellow target line for HDR and SDR. Only graph drawing changes; all processing,
+export/Proof output, tolerances and limits remain unchanged. Four-theme UI
+review passes; grouped validation is in Desktop and release.
+

@@ -277,8 +277,10 @@ function drawToneEqualizerEditor(lane = state.currentView) {
   const yForAdjustment = (value) => top + ((TONE_EQUALIZER_MAX_ADJUSTMENT_EV - value) / (TONE_EQUALIZER_MAX_ADJUSTMENT_EV * 2)) * graphHeight;
 
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = uiToken("--app");
+  ctx.fillStyle = uiToken("--panel");
   ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = uiToken("--viewer");
+  ctx.fillRect(left, top, graphWidth, graphHeight);
   ctx.font = HDRAppearance.font("min");
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
@@ -309,14 +311,14 @@ function drawToneEqualizerEditor(lane = state.currentView) {
   }
   const outputBoundaryEv = lane === "hdr" ? toneEqualizerPqMaxEv() : Math.log2(1 / 0.18);
   const pqX = xForEv(outputBoundaryEv);
-  ctx.setLineDash([3, 3]);
-  ctx.strokeStyle = uiToken("--equalizer-pq");
+  ctx.setLineDash([4, 3]);
+  ctx.strokeStyle = uiToken("--graph-limit-line");
   ctx.beginPath();
   ctx.moveTo(pqX, top);
   ctx.lineTo(pqX, height - bottom);
   ctx.stroke();
   ctx.setLineDash([]);
-  ctx.fillStyle = uiToken("--attention");
+  ctx.fillStyle = uiToken("--graph-limit-line");
   ctx.textAlign = "right";
   ctx.fillText(lane === "hdr" ? "10K" : "100%", pqX, 3);
 
@@ -516,7 +518,7 @@ function formatToneBandNits(value) {
 }
 
 function toneEqualizerEditorLayout() {
-  return { left: 34, right: 14, top: 16, bottom: 28 };
+  return { left: 34, right: 28, top: 16, bottom: 28 };
 }
 
 function defaultToneEqualizerNodes() {

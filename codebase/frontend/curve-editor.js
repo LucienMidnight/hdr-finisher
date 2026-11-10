@@ -169,8 +169,10 @@ function drawCurveEditor() {
   const curveSamples = sampleCurvePoints(curve, 96);
 
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = uiToken("--app");
+  ctx.fillStyle = uiToken("--panel");
   ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = uiToken("--viewer");
+  ctx.fillRect(plotLeft, plotTop, plotWidth, plotHeight);
 
   if (currentCurveLane() === "hdr") {
     drawCurveExposureBands(ctx, layout, width, height);

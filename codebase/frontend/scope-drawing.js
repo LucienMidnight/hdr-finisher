@@ -4,7 +4,7 @@ function drawHistogram(scope) {
   if (!surface) return;
   const { ctx, width, height } = surface;
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = uiToken("--deep");
+  ctx.fillStyle = uiToken("--panel");
   ctx.fillRect(0, 0, width, height);
   if (!scope?.channels?.length) {
     els.scopeTitle.textContent = "Histogram";
@@ -43,12 +43,14 @@ function drawHistogram(scope) {
   };
   const isWaveform = scope.scope_type.includes("waveform");
   const plotLeft = isWaveform ? 62 : 14;
-  const plotRight = 10;
+  const plotRight = 22;
   const plotTop = 8;
   const plotBottom = 22;
   const plotWidth = Math.max(1, width - plotLeft - plotRight);
   const plotHeight = Math.max(1, height - plotTop - plotBottom);
 
+  ctx.fillStyle = uiToken("--viewer");
+  ctx.fillRect(plotLeft, plotTop, plotWidth, plotHeight);
   ctx.font = HDRAppearance.font("min");
   ctx.textBaseline = "middle";
   drawScopeGrid(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight, height);

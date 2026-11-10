@@ -136,7 +136,7 @@ function renderHighlightCompressionControls() {
   const surface = resizeCanvasSurface(canvas);
   if (!surface) return;
   const {ctx: context, width, height} = surface;
-  const pad = { left: 35, right: 9, top: 9, bottom: 24 };
+  const pad = { left: 35, right: 26, top: 9, bottom: 24 };
   const sourcePeak = Math.max(1000, mode === "peak_fit"
     ? toneAdjustedHighlightPeakNits(hdr)
     : (Number(hdr.highlight_compression_source_peak_nits) || 1000) * (2 ** (Number(hdr.exposure) || 0)));
@@ -145,6 +145,10 @@ function renderHighlightCompressionControls() {
   const xFor = (value) => pad.left + (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (width - pad.left - pad.right);
   const yFor = (value) => height - pad.bottom - (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (height - pad.top - pad.bottom);
   context.clearRect(0, 0, width, height);
+  context.fillStyle = uiToken("--panel");
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = uiToken("--viewer");
+  context.fillRect(pad.left, pad.top, width - pad.left - pad.right, height - pad.top - pad.bottom);
   context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--hairline").trim();
   context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
   context.font = HDRAppearance.font("min");
@@ -159,11 +163,20 @@ function renderHighlightCompressionControls() {
     context.fillText(tick >= 1000 ? `${tick / 1000}k` : String(tick), xFor(tick) - 6, height - 8);
   }
   context.save(); context.beginPath(); context.rect(pad.left, pad.top, width - pad.left - pad.right, height - pad.top - pad.bottom); context.clip();
-  context.setLineDash([4, 3]);
-  context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--quiet").trim();
+  context.setLineDash([]);
+  context.strokeStyle = uiToken("--curve-identity");
   context.beginPath(); context.moveTo(xFor(minimum), yFor(minimum)); context.lineTo(xFor(maximum), yFor(maximum)); context.stroke();
   context.setLineDash([]);
-  context.strokeStyle = "#68d7ed";
+  context.strokeStyle = uiToken("--graph-limit-line");
+  context.setLineDash([4, 3]);
+  const target = hdr.highlight_compression_target_nits;
+  context.beginPath(); context.moveTo(pad.left, yFor(target)); context.lineTo(width - pad.right, yFor(target)); context.stroke();
+  context.setLineDash([]);
+  context.fillStyle = uiToken("--graph-limit-line");
+  context.textAlign = "right";
+  context.fillText(`${Math.round(target)} nit`, width - pad.right, yFor(target) - 4);
+  context.textAlign = "left";
+  context.strokeStyle = uiToken("--curve-neutral");
   context.lineWidth = 2;
   context.beginPath();
   for (let index = 0; index <= 160; index += 1) {
@@ -255,13 +268,17 @@ function renderSdrHighlightCompressionControls() {
   const surface = resizeCanvasSurface(canvas);
   if (!surface) return;
   const {ctx: context, width, height} = surface;
-  const pad = { left: 35, right: 9, top: 9, bottom: 24 };
+  const pad = { left: 35, right: 26, top: 9, bottom: 24 };
   const sourcePeak = Math.max(100, Number(curve.highlight_compression_source_peak_nits) || 100);
   const maximum = Math.max(1000, sourcePeak * 1.25);
   const minimum = 1;
   const xFor = (value) => pad.left + (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (width - pad.left - pad.right);
   const yFor = (value) => height - pad.bottom - (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (height - pad.top - pad.bottom);
   context.clearRect(0, 0, width, height);
+  context.fillStyle = uiToken("--panel");
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = uiToken("--viewer");
+  context.fillRect(pad.left, pad.top, width - pad.left - pad.right, height - pad.top - pad.bottom);
   context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--hairline").trim();
   context.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--muted").trim();
   context.font = HDRAppearance.font("min");
@@ -273,11 +290,20 @@ function renderSdrHighlightCompressionControls() {
     context.fillText(tick >= 1000 ? `${tick / 1000}k%` : `${tick}%`, xFor(tick) - 7, height - 8);
   }
   context.save(); context.beginPath(); context.rect(pad.left, pad.top, width - pad.left - pad.right, height - pad.top - pad.bottom); context.clip();
-  context.setLineDash([4, 3]);
-  context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--quiet").trim();
+  context.setLineDash([]);
+  context.strokeStyle = uiToken("--curve-identity");
   context.beginPath(); context.moveTo(xFor(minimum), yFor(minimum)); context.lineTo(xFor(maximum), yFor(maximum)); context.stroke();
   context.setLineDash([]);
-  context.strokeStyle = "#68d7ed";
+  context.strokeStyle = uiToken("--graph-limit-line");
+  context.setLineDash([4, 3]);
+  const target = curve.highlight_compression_target_nits;
+  context.beginPath(); context.moveTo(pad.left, yFor(target)); context.lineTo(width - pad.right, yFor(target)); context.stroke();
+  context.setLineDash([]);
+  context.fillStyle = uiToken("--graph-limit-line");
+  context.textAlign = "right";
+  context.fillText(`${Math.round(target)}%`, width - pad.right, yFor(target) - 4);
+  context.textAlign = "left";
+  context.strokeStyle = uiToken("--curve-neutral");
   context.lineWidth = 2;
   context.beginPath();
   for (let index = 0; index <= 160; index += 1) {
