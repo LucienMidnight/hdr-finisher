@@ -50,6 +50,7 @@ test("desktop chrome uses a native frame on macOS and custom frames elsewhere", 
     frame: true,
     autoHideMenuBar: true,
     roundedCorners: true,
+    titleBarStyle: "hiddenInset",
   });
   assert.equal(windowChromeOptions("win32").roundedCorners, false);
   assert.equal(windowChromeOptions("linux").roundedCorners, false);
