@@ -30,20 +30,6 @@ def nits_to_scene_linear(value: np.ndarray | float, reference_white_nits: int | 
     return np.asarray(value) / np.float32(validate_reference_white(reference_white_nits)) * np.float32(AUTHORING_ANCHOR)
 
 
-def scene_linear_to_canvas(
-    value: np.ndarray | float,
-    reference_white_nits: int | float,
-    canvas_reference_white_nits: float = CHROMIUM_CANVAS_REFERENCE_WHITE_NITS,
-) -> np.ndarray | float:
-    if not math.isfinite(canvas_reference_white_nits) or canvas_reference_white_nits <= 0:
-        raise ValueError("Canvas reference white must be finite and positive.")
-    return (
-        np.asarray(value)
-        / np.float32(AUTHORING_ANCHOR)
-        * (np.float32(validate_reference_white(reference_white_nits)) / np.float32(canvas_reference_white_nits))
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class RenderColorContext:
     hdr_reference_white_nits: int = DEFAULT_HDR_REFERENCE_WHITE_NITS

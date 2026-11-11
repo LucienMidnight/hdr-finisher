@@ -1399,45 +1399,6 @@ def _distance_to_polygon(
     return edge_distance
 
 
-def _offset_polygon(
-    vertices: list[tuple[float, float]],
-    amount: float,
-    pixel_aspect: float,
-) -> list[tuple[float, float]]:
-    """Build a stable miter-limited parallel polygon in display-correct space."""
-    if amount <= 0.0:
-        return list(vertices)
-    aspect = max(float(pixel_aspect), 1e-6)
-    scale_x = max(aspect, 1.0)
-    scale_y = max(1.0 / aspect, 1.0)
-    points = np.asarray([(vx * scale_x, vy * scale_y) for vx, vy in vertices], dtype=np.float64)
-    area = 0.5 * float(
-        np.sum(points[:, 0] * np.roll(points[:, 1], -1) - np.roll(points[:, 0], -1) * points[:, 1])
-    )
-    orientation = 1.0 if area >= 0.0 else -1.0
-    result: list[tuple[float, float]] = []
-    for index, point in enumerate(points):
-        previous = points[(index - 1) % len(points)]
-        following = points[(index + 1) % len(points)]
-        before = point - previous
-        after = following - point
-        before /= max(float(np.linalg.norm(before)), 1e-12)
-        after /= max(float(np.linalg.norm(after)), 1e-12)
-        before_normal = orientation * np.array([before[1], -before[0]], dtype=np.float64)
-        after_normal = orientation * np.array([after[1], -after[0]], dtype=np.float64)
-        miter = before_normal + after_normal
-        norm = float(np.linalg.norm(miter))
-        if norm <= 1e-8:
-            miter = after_normal
-        else:
-            miter /= norm
-        projection = max(float(np.dot(miter, after_normal)), 0.25)
-        distance = min(float(amount) / projection, float(amount) * 4.0)
-        shifted = point + miter * distance
-        result.append((float(shifted[0] / scale_x), float(shifted[1] / scale_y)))
-    return result
-
-
 def _flatten_path(leaf: MaskLeaf, steps: int = 12) -> list[tuple[float, float]]:
     return _flatten_path_nodes(leaf.nodes, steps)
 
