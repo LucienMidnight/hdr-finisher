@@ -412,3 +412,10 @@ between batches. Do not substitute PowerShell `New-Item` for atomic acquisition:
 three simultaneous W1 launches passed that existence check on November 11;
 those reports were invalidated. The os.mkdir contention check had exactly one
 winner among eight processes on the shared drive. Use only one plan controller.
+
+`--profile` retains request/GPU-stage and anchor-dispatch records for each
+Exposure reference. It also repeats Exposure three times without another tool
+edit, and measures it with Denoise disabled or all repairs disabled, before
+restoring the fixture. The ordinary reset restores Amount/Opacity to its
+starting value; it does not mean the tool is disabled. Compare these conditions
+separately. Profiling adds observations, without changing the settlement clock.

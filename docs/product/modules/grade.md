@@ -1,5 +1,31 @@
 # Module PRD: Grade
 
+## November 11: W9 post-tool measurement scheduling
+
+A pending highlight-anchor measurement now wakes when the exact foreground
+picture is presented and again when its GPU completion wait retires. The
+existing active-input, current-generation, photo and lane guards still decide
+whether it may start; the 200 ms poll remains a fallback. This removes idle
+waiting without changing the measurement, processing formulas or delivery.
+The focused investigation distinguishes restored Amount/Opacity values from
+a tool actually being disabled. Timing qualification and remaining cold-probe
+and Film Look drag limits are recorded in performance-table.md section 5. Retouch's
+sampled reference medians are within the combined slowdown allowance; Denoise's
+cold active/default-reset probes remain about 26 ms above their current baseline.
+Actual tool-off and repeated unchanged-source references return to normal.
+Color Grading's sampled native controls settle in tens of milliseconds; the old
+roughly 0.8 s endpoint included offscreen catch-up. Film Look remains below the
+20 presentations/s drag target; no render-graph change was retained.
+
+Post-rebase checks: 921 Node tests passed; 3,244 Python tests passed, 55
+skipped. Adaptive Denoise preview/export parity, all six Retouch GPU/forced-CPU
+Proof/export identity cases, and highlight-compression parity passed under the
+shared graphics lock. The scheduling regression suite covers current input,
+photo/lane replacement and a GPU completion wait retiring after presentation.
+The standard Library smoke had no photo errors or memory violation, but repeated
+the existing drawing-gap failure (1,134 ms versus 250 ms); see the performance
+table for conditions and the retained report. No unrelated repair or rerun.
+
 ## November 11: Denoise asynchronous work stays with its photo
 
 Denoise toggle completions, analysis results (including failures), queued
@@ -19,7 +45,7 @@ The release diagnostic inventories static and JavaScript-created Grade controls,
 then records per-control Fit/100% presentation waits, typed entries, reset picture
 checks, drag presentations and Exposure-reference probes before/active/after reset.
 The shared sprint limits are under 1.0 s settled, at least 20 presentations/s for
-pointwise drags, and no reference slowdown over 25%. Heavy reconstruction may be
+pointwise drags, and no reference slowdown over both 25% and 20 ms. Heavy reconstruction may be
 an explicitly recorded exception. This review is **not complete release sign-off**;
 coverage gaps and unresolved observations remain open in performance-table.md
 section 5 and `codebase/output/performance/grade-0-9-2/summary.json`.
@@ -33,11 +59,11 @@ are unchanged; the app timing rerun remains subject to the measurement cap.
 
 The review stopped at the two-hour measurement allowance: 188 distinct control
 values had repeated observations, and 174 changed/restored the picture in at
-least one lane/view. This is partial response evidence. SDR Exposure remained
+least one lane/view. This is partial response evidence. At W1 handback, SDR Exposure remained
 roughly 0.23–0.25 s after Denoise/Retouch versus roughly 0.03–0.04 s before;
 some Film Look pointwise drags were about 15 presentations/s. These exceed the
-shared slowdown/drag limits and remain open, along with unmeasured panels and
-authoring gestures. No heavy-reconstruction exception or whole-Grade acceptance
+shared slowdown/drag limits; the targeted W9 follow-up above supersedes the named
+conditions. Unmeasured panels and authoring gestures remain open. No heavy-reconstruction exception or whole-Grade acceptance
 is claimed. The complete bounds/options inventory, raw archive and coverage
 ledger are under the performance output folder cited above.
 

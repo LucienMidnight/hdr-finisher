@@ -32,13 +32,14 @@ def stop(child):
 
 def acquire(label):
     token = str(uuid.uuid4())
-    text = f"release/grade-performance {label} {now()} pid={os.getpid()} token={token}\n"
+    branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=ROOT, text=True).strip()
     while True:
         try:
             os.mkdir(LOCK)  # Win32 CreateDirectory: ERROR_ALREADY_EXISTS is an error.
             break
         except FileExistsError:
             time.sleep(.5)
+    text = f"{branch} {label} {now()} pid={os.getpid()} token={token}\n"
     try:
         with (LOCK / "owner.txt").open("x", encoding="utf-8") as stream:
             stream.write(text)

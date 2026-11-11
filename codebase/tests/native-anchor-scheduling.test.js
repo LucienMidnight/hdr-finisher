@@ -6,10 +6,10 @@ function fixture() {
   const timers = new Map(), jobs = []; let serial = 0;
   const state = { session: {session_id:'one'}, currentView:'hdr', previewGeneration:{hdr:1},
     acceptedPresentation:{exact:true,generation:1}, gpuPreview:{requestedCanonicalHighlightKeys:new Set()}, previewScheduler:{} };
-  const context = vm.createContext({state, window:{setTimeout:fn => {timers.set(++serial,fn);return serial;},clearTimeout:id => timers.delete(id)},
+  const context = vm.createContext({state, window:{setTimeout:(fn,ms) => {timers.set(++serial,{fn,ms});return serial;},clearTimeout:id => timers.delete(id)},
     measureExactHighlightAnchor:r => jobs.push(r)});
-  vm.runInContext(declarations('pendingHighlightAnchors', 'scheduleExactHighlightAnchor'), context);
-  return {state,jobs,schedule:context.scheduleExactHighlightAnchor, tick:() => {const batch=[...timers.values()];timers.clear();batch.forEach(fn=>fn());}};
+  vm.runInContext(declarations('pendingHighlightAnchors', 'scheduleExactHighlightAnchor', 'wakePendingHighlightAnchor'), context);
+  return {state,jobs,wake:context.wakePendingHighlightAnchor,schedule:context.scheduleExactHighlightAnchor, tick:(maxDelay=Infinity) => {const batch=[...timers].filter(([,job])=>job.ms<=maxDelay);batch.forEach(([id])=>timers.delete(id));batch.forEach(([,job])=>job.fn());}};
 }
 test('Native anchors coalesce latest inputs and wait for foreground presentation', () => {
   const f=fixture(); f.state.previewScheduler.interacting=true;
@@ -22,4 +22,35 @@ test('Pending native work is discarded on session or lane replacement', () => {
   for(const replacement of ['session','lane']) {const f=fixture();f.schedule({lane:'hdr',key:'old'});
     if(replacement==='session') f.state.session.session_id='two';else f.state.currentView='sdr';
     f.tick();assert.equal(f.jobs.length,0);}
+});
+
+test('Presentation wakes the queued measurement without the polling delay', () => {
+  const f=fixture();
+  f.schedule({lane:'hdr',key:'old'});
+  f.schedule({lane:'hdr',key:'new'});
+  f.tick(0); assert.equal(f.jobs.length,0,'the fallback poll is still deferred');
+  f.wake('hdr'); f.wake('hdr'); f.tick(0);
+  assert.equal(f.jobs.length,1);
+  assert.equal(f.jobs[0].key,'new');
+  f.tick(); assert.equal(f.jobs.length,1);
+});
+test('Presentation wake preserves interaction, generation and session guards', () => {
+  for(const reason of ['interaction','frame','generation','session']) {
+    const f=fixture();f.schedule({lane:'hdr',key:'one'});
+    if(reason==='interaction') f.state.previewScheduler.interacting=true;
+    if(reason==='frame') f.state.gpuDraftInFlight={};
+    if(reason==='generation') f.state.previewGeneration.hdr++;
+    if(reason==='session') f.state.session.session_id='two';
+    f.wake('hdr');f.tick();assert.equal(f.jobs.length,0,reason);
+  }
+});
+
+test('A GPU fence retiring after presentation wakes without another poll', () => {
+  const f=fixture(); f.state.previewScheduler.frameInFlight=true;
+  f.schedule({lane:'hdr',key:'one'}); f.wake('hdr'); f.tick(0);
+  assert.equal(f.jobs.length,0);
+  f.state.previewScheduler.frameInFlight=false;
+  f.wake('hdr'); f.tick(0);
+  assert.equal(f.jobs.length,1);
+  f.tick(); assert.equal(f.jobs.length,1);
 });

@@ -517,6 +517,112 @@ these were corrected to exercise the intended tiered behavior.
 
 ## 5. Grade (editing)
 
+### W9 targeted slowdown follow-up (November 11, 2026)
+
+Implementation: `0dc12ce8` (rebased onto local `main` `8d55516f`). Same-day
+partial improvement, **not whole-Grade release acceptance**. No pixel formula,
+export/Proof path, memory allowance or acceptance tolerance changed.
+
+Windows / RTX 4070 Ti / Electron, 2560x1440, SDR Fit for tool/reference probes;
+6000x4000 TIFF regenerated once from the shared DSC00264.ARW because W1's
+scratch TIFF was absent. Original W1 TIFF byte identity is not established.
+Three trials per condition, atomic shared GPU lock; final timings without
+W9 fast suites; other workspace activity uncontrolled. Endpoint: exact current-generation presentation,
+including pending automatic anchors, plus two animation frames, not physical
+scan-out. Native background catch-up is measured separately. The combined HDR/SDR
+control rows pool three change samples per lane; the reference rows contain
+three samples per listed condition.
+
+The confirmed post-tool cost is a cold highlight-anchor measurement following
+a changed source, plus an avoidable 200 ms polling delay. Denoise's reconstruction
+version changes and Retouch's source refresh invalidate the old measurement.
+Restoring Amount/Opacity is another source change, not disabling the tool.
+Repeated Exposure without another tool edit is fast even before this fix.
+The fixture enables/prepares Denoise before Amount and creates three repairs
+before Opacity; the baseline is before that parameter edit, not a blank grade.
+The measurement was requested about 9-10 ms after input but dispatched about
+210 ms after input. Presentation can arrive before the scheduler's GPU fence
+retires; waking both at presentation and after that fence removes the idle poll
+while retaining every foreground/interaction/generation/session guard.
+
+| Exposure reference at SDR Fit | Before parameter edit (current final run) | Effect active | Amount/Opacity restored | Tool actually off |
+| --- | --- | --- | --- | --- |
+| denoise-amount | 40-69 ms (median 41) | 60-67 ms (median 67) | 62-77 ms (median 67) | 27-47 ms (median 32) |
+| retouch-opacity | 28-95 ms (median 55) | 54-83 ms (median 65) | 60-80 ms (median 74) | 28-108 ms (median 35) |
+
+Before the scheduling fix, W9 Retouch active/reset medians were 235/231 ms,
+with subsequent unchanged-source probes 22-34 ms. W1 recorded Denoise
+235/245 ms and Retouch 235/233 ms, versus 31-36 ms before the tool edit.
+W9's pre-fix Denoise trace also shows the 200 ms delay, but overlapped the
+Python suite and is trace evidence, not an isolated speed-ratio baseline.
+
+**Remaining:** Denoise active/reset medians 67/67 ms versus 41 ms before
+still exceed both 25% and 20 ms (about 26 ms). This is not waived. Retouch's
+65/74 ms medians versus 55 ms before are within the combined allowance in
+this run. Both tool-off medians and repeated unchanged-source medians return
+to normal; individual cold probes vary, including 108 ms on Retouch disable.
+Further removal of the cold measurement cost needs profiling/coordination of
+shared anchor/readout GPU work, estimated 1-2 hours plus focused parity; not
+attempted as another release-day scheduler change.
+
+| Targeted control / condition | Change to settled picture (range and median) | Other observation |
+| --- | --- | --- |
+| `denoise-amount`, SDR Fit | 113-125 ms (median 117) | Reset sampled pixels restored; not a preview/export parity claim |
+| `retouch-opacity`, SDR Fit | 377-996 ms (median 389) | Reset sampled pixels restored; not a preview/export parity claim |
+| `current.color_grading.shadows.saturation`, HDR/SDR 100% | 33-54 ms (median 41) | Background completion remains about 0.75-0.84 s |
+| `current.color_grading.shadows.luminance_ev`, HDR/SDR 100% | 32-85 ms (median 49) | Background completion remains about 0.75-0.84 s |
+| `current.color_grading.blending`, HDR/SDR 100% | 32-67 ms (median 51) | Background completion remains about 0.75-0.84 s |
+| `current.film_look.lens_strength`, SDR Fit | 37-82 ms (median 82) | Drag 10.5-11.5 presentations/s; below 20 |
+| `current.film_look.stock_color`, SDR Fit | 39-50 ms (median 41) | Drag 15.8-16.0 presentations/s; below 20 |
+| `current.film_look.grain_amount`, SDR Fit | 30-51 ms (median 44) | Drag 14.9-16.5 presentations/s; below 20 |
+| `current.film_look.print_exposure`, SDR Fit | 33-45 ms (median 44) | Drag 15.6-16.5 presentations/s; below 20 |
+
+**Color Grading:** the old 0.76-0.83 s observations included the coordinator's
+700 ms offscreen whole-frame catch-up. The selected pointwise controls above
+settle in 32-85 ms at 100%; no render-path fix is needed or claimed. This is
+sampling of saturation, luminance and blending in both lanes, not requalification
+of every wheel gesture.
+
+**Film Look:** no fix retained. In the selected drags, scheduler frame durations
+including GPU completion are about 47-66 ms for stock controls and 76-117 ms
+for lens strength. Proxy/mask awaits and CPU encode/submit are under about
+1 ms on the inspected warm frames; stock-colour drags have no new GPU refusal.
+The current exact Film Look graph/device completion is the dominant wait,
+not repeated source upload or compilation. These observations do not isolate
+individual shader passes. Reusing/specializing unchanged stages within existing
+resources needs a multi-hour render-graph/shader change and film/lens parity;
+there is no demonstrated cheap safe release-day fix. No budget or resolution
+policy changed to raise the frame-rate number.
+
+Evidence retained locally: `codebase/output/performance/w9-profile/{denoise,retouch}.json`
+(pre-fix traces), `w9-after/{denoise,retouch}.json` (presentation-only trial,
+not final), `w9-final/{denoise,retouch}.json` (final wake including GPU fence),
+and `w9-after/{color-grading,film-look}.json`. Reports name their base commit;
+uncommitted scheduling edits in the timing runs are the implementation now in
+`0dc12ce8`. Retouch final was run after that rebase. All sampled controls
+changed and restored their sampled picture. Superseded source-tile HTTP 409
+errors remain recorded; these diagnostics alone are not pixel acceptance.
+Final post-rebase fast checks: Node 921 passed; Python 3,244 passed, 55 skipped.
+Serial locked GPU checks passed: adaptive Denoise against export Python (no
+samples outside its half-float allowance), Retouch GPU/forced-CPU delivery
+(six Proof/export identity cases), and highlight-compression/anchor scheduling
+parity. Logs: `codebase/output/w9-{denoise-adaptive-parity,retouch-delivery,gpu-highlight-compression-parity}.log`.
+
+Standard 90-second Library smoke at `0dc12ce8`, plain Electron 2560x1440,
+shared mixed photo copies, no W9 fast suite concurrently: first/ten/twenty
+pictures 1.2/2.7/6.7 s; 29 of 33 shown by 90 s, four not shown. No photo
+errors or memory violation; independent peak 3,034,693,042 bytes under 4 GB.
+The existing drawing-gap failure category repeats: 1,134 ms versus the
+unchanged 250 ms gate. No rerun or unrelated investigation. This is a
+functional smoke, not a Grade speed comparison. Report:
+`codebase/output/quick-library-check/w9-slowdowns/report.json`.
+End scratch census: 35.0 GB, overwhelmingly the shared test-photo junction,
+below the unchanged 100 GB limit. Failed launch scratch removed; reports and
+check logs retained, with no output files committed.
+
+The original W1 ledger below remains historical; W9 supersedes only the
+named conditions above. Other lanes, zooms and controls were not rerun.
+
 <!-- grade-sweep-start -->
 ### 0.9.2 Grade control observations (November 11, 2026)
 
@@ -526,7 +632,7 @@ Conditions: disposable 6000×4000 resized photo TIFF, Electron 43.4.0, Windows, 
 
 **Review stopped at the two-hour measurement allowance.** 188 distinct control values had three-sample observations; 174 changed and returned to their starting picture in at least one lane/view. That is response evidence, not proof that all 174 work correctly in every condition. Full acceptance remains open. Vignette, Geometry/Crop, highlight handling, Exposure Bands, Curves, Match, RAW-only controls, most authoring gestures, native Film Look/Local and the unfinished Black & White/SDR Tone cases need coverage. No heavy reconstruction timing exception has been claimed from the resized TIFF.
 
-**Unresolved speed observations:** SDR Exposure reference after Denoise Amount went from 31 ms to 235 ms active / 245 ms reset; after Retouch Opacity from 36 ms to 235 / 233 ms at Fit (three-trial medians). These exceed the 25% limit. The scheduler/source invalidation work needs focused profiling and a strong fixture before a safe fix (estimate 1–2 hours plus focused pixel checks); this was not started after the cap. Film print exposure and stock colour controls produced about 15 presentations/s, also below the pointwise target; lens controls were about 10–12 presentations/s. These are unresolved, not exceptions. Smaller frame-quantized reference increases remain in the ledger without being waived.
+**W9 follow-up:** the cold post-tool reference delay is improved, with Denoise still outside the combined allowance. Film/lens drags remain below 20 presentations/s. See the targeted W9 rows above; these original W1 rows remain historical observations.
 
 **Correctness follow-up:** a behaviour regression reproduced generic percentage readouts using a stale unit and clamping typed percentages. The focused fix captures the unit before edit mode; the regression passes, but the app rerun was prevented by the measurement cap. Original failed typed observations stay in the ledger. Superseded source-tile HTTP 409 responses are retained as errors requiring review, not silently suppressed. Earlier Push/Pull probes injected fractional stops into its hidden integer input, causing HTTP 400 validation errors; the driver now uses its real whole-stop buttons, but that rerun is unperformed. This is a fixture error, not evidence of a broken segmented control. Retouch method/feather/hardness/texture need separated repairs on a visible defect; Local range-handle setup and Sharpen Radius also need stronger fixtures. Sharpen Amount/Threshold responded at 100%; Fit is inconclusive, consistent with the existing native-view judgement requirement. No processing formula was changed, and this diagnostic does not prove preview/export colour agreement.
 
