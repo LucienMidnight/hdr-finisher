@@ -41,6 +41,13 @@ def test_camera_picture_requires_current_unedited_photo_regardless_of_other_cach
         return {'url': 'data:image/jpeg;base64,camera', 'route': 'camera-preview'}
     monkeypatch.setattr(library_pictures, 'camera_preview', preview)
     monkeypatch.setattr(library_pictures, 'original_preview', preview)
+    # Picture choice, not memory admission: the shared scheduler measures this
+    # whole test process, which can sit above the app target on small CI runners.
+    from contextlib import asynccontextmanager
+    from hdr_finisher import library_grants
+    @asynccontextmanager
+    async def admitted(*args, **kwargs): yield
+    monkeypatch.setattr(library_grants, 'backend_grant', admitted)
     app = FastAPI(); app.include_router(create_library_router(Helper(), MediaBrowserStore(tmp_path / 'profile')))
     with TestClient(app) as client:
         response = client.post('/api/library/preview', json={'path': str(path), 'quick_draw': True,
