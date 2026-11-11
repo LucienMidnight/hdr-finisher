@@ -13,7 +13,17 @@ const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
     await page.goto(base);await page.setInputFiles("#file-input",path.join(root,"fixture.tiff"));
     await page.waitForFunction(()=>state.session?.session_id,null,{timeout:120000});
     await page.waitForTimeout(500);
-    if(await page.locator("#interpretation-gate").isVisible().catch(()=>false))await page.click("#accept-interpretation");
+    if (await page.evaluate(() => Boolean(state.session?.analysis?.needs_color_override))) {
+      await page.locator('[data-workflow-tab="grade"]').click();
+      // Untagged fixture: choose its known encoding; dismissal no longer resolves a source.
+      if (await page.locator("#source-settings-toggle").getAttribute("aria-expanded") !== "true") await page.locator("#source-settings-toggle").click();
+      await page.locator("#interpretation-mode").selectOption("manual");
+      await page.locator("#interpretation-color-space").selectOption("linear_srgb");
+      await page.locator("#interpretation-transfer").selectOption("linear");
+      await page.locator("#interpretation-linear-reference").selectOption("scene_0_18");
+      await page.locator("#apply-interpretation").click();
+      await page.waitForFunction(() => state.session?.analysis?.needs_color_override === false, null, { timeout: 120000 });
+    }
     await page.waitForFunction(()=>viewerState().status==="ready",null,{timeout:120000});
     await page.click("#photo-frame-toggle");await page.check("#photo-framing-enabled");
     await page.waitForFunction(()=>state.editDocument?.framing?.enabled);

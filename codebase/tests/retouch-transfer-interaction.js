@@ -27,9 +27,9 @@ const hash=p=>crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex
   const localLayout = await page.evaluate(() => {
     const surface=document.querySelector("#local-adjustments-panel > .local-stack-surface");
     const list=document.getElementById("local-adjustment-list"), style=getComputedStyle(surface);
-    return {height:surface.clientHeight, overflow:style.overflowY, rail:style.getPropertyValue("scrollbar-gutter"), nested:getComputedStyle(list).overflowY};
+    return {rowHeight:parseFloat(style.getPropertyValue("--list-row-h")), height:surface.clientHeight, overflow:style.overflowY, rail:style.getPropertyValue("scrollbar-gutter"), nested:getComputedStyle(list).overflowY};
   });
-  assert.equal(localLayout.height,192);assert.equal(localLayout.overflow,"scroll");assert.equal(localLayout.nested,"visible");
+  assert(localLayout.rowHeight>0,"List row token must resolve");assert.equal(localLayout.height,6*localLayout.rowHeight,"Local surface must fit six token-sized rows");assert.equal(localLayout.overflow,"scroll");assert.equal(localLayout.nested,"visible");
   await page.locator("#grade-mode-retouch").click();
   const repairLayout = await page.evaluate(() => {
     const surface=document.querySelector(".repair-stack-surface"), tools=document.querySelector(".retouch-mode-switch");
@@ -155,7 +155,7 @@ const hash=p=>crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex
     const surface=document.querySelector(".repair-stack-surface"),r=[...document.querySelectorAll("#retouch-list > li")].map(el=>el.getBoundingClientRect());
     return {sixFit:r[5].bottom<=surface.getBoundingClientRect().bottom,seventhBelow:r[6].bottom>surface.getBoundingClientRect().bottom,heights:r.map(x=>x.height)};
   });
-  assert(rows.sixFit&&rows.seventhBelow);assert(rows.heights.every(h=>h===32));
+  assert(rows.sixFit&&rows.seventhBelow);assert(rows.heights.every(h=>h===localLayout.rowHeight),"Repair rows must use the list row token");
   await page.screenshot({path:path.join(output,"compact-repairs-ui.png")});
   await page.evaluate(()=>document.querySelectorAll("[data-layout-fixture]").forEach(row=>row.remove()));
   await page.screenshot({path:path.join(output,"synthetic-heal-ui.png")});
