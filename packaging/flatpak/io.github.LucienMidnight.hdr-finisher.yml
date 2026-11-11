@@ -20,15 +20,16 @@ finish-args:
 modules:
   - name: perl-metadata-runtime
     buildsystem: simple
-    # Perl installs read-only binaries; newer flatpak-builder debugedit cannot
-    # rewrite them. This is a metadata-only runtime, so skip debug info.
+    # Perl installs hard-linked binaries that newer flatpak-builder's debugedit
+    # cannot rewrite. This is a metadata-only runtime, so skip debug info.
     build-options:
       no-debuginfo: true
     build-commands:
       - ./Configure -des -Dprefix=/app -Dman1dir=none -Dman3dir=none
       - make -j${FLATPAK_BUILDER_N_JOBS}
       - make install
-      - chmod -R u+w /app/bin /app/lib/perl5
+      # rofiles-fuse refuses to modify hard-linked files; give each its own copy.
+      - for f in /app/bin/*; do if [ -f "$f" ] && [ "$(stat -c %h "$f")" -gt 1 ]; then cp -p "$f" "$f.copy" && mv -f "$f.copy" "$f"; fi; done
       - install -Dm644 Artistic /app/share/licenses/io.github.LucienMidnight.hdr-finisher/Perl-Artistic
       - install -Dm644 Copying /app/share/licenses/io.github.LucienMidnight.hdr-finisher/Perl-Copying
     sources:
