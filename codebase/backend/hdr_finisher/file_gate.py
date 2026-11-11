@@ -6,7 +6,6 @@ section 6.9, and docs/user-guide/library.md for the user-facing list.
 """
 from __future__ import annotations
 
-import os
 import stat as stat_module
 import time
 from pathlib import Path
@@ -138,10 +137,6 @@ _EXPECTED = {
     ".raf": "raf", ".cr3": "cr3", ".heic": "isobmff", ".heif": "isobmff",
     ".avif": "isobmff", ".jxl": "jxl", ".exr": "exr", ".hdr": "hdr", ".pfm": "pfm",
 }
-
-
-def expected_format(path) -> str | None:
-    return _EXPECTED.get(Path(str(path)).suffix.lower())
 
 
 _RGB_SUFFIXES = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".exr", ".hdr", ".pfm", ".heic", ".heif", ".avif", ".jxl"}

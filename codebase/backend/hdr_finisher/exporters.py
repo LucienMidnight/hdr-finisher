@@ -884,14 +884,6 @@ def _png_with_exif(payload: bytes, exif_payload: bytes) -> bytes:
     raise ExportProcessError("The 16-bit PNG stream is missing its IEND chunk.")
 
 
-def _write_sdr_rgba8888(path: Path, image: np.ndarray, *, dithering: str = "auto") -> None:
-    # Ultra HDR has an 8-bit JPEG base and an 8-bit gain map. A small,
-    # deterministic signal-domain dither prevents long quantization plateaus
-    # in smooth gradients before libultrahdr derives and compresses the map.
-    rgb = _linear_to_srgb8(image[..., :3], dither=dithering)
-    _write_sdr_rgba8888_pixels(path, rgb)
-
-
 def _floor_ultrahdr_base(sdr_rgb: np.ndarray, hdr_image: np.ndarray) -> np.ndarray:
     """Keep the Ultra HDR base above zero wherever the HDR grade has signal.
 
@@ -939,11 +931,6 @@ def _acescg_to_bt2020_linear(image: np.ndarray) -> np.ndarray:
         return acescg_to_linear_bt2020(image)
     except ImportError as exc:
         raise ExportProcessError("colour-science is required for JPEG Ultra HDR color conversion.") from exc
-
-
-def _target_hdr_peak_nits(image: np.ndarray, reference_white_nits: int = 203) -> float:
-    bt2020 = np.clip(_acescg_to_bt2020_linear(image[..., :3]), 0.0, None)
-    return _target_hdr_peak_nits_from_bt2020(bt2020, reference_white_nits)
 
 
 def _target_hdr_peak_nits_from_bt2020(bt2020: np.ndarray, reference_white_nits: int = 203) -> float:

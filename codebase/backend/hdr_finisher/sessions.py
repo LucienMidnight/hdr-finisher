@@ -15,8 +15,7 @@ import numpy as np
 
 from .import_defaults import apply_import_defaults, starting_adjustments, sync_highlight_source_peaks
 from .capabilities import probe_capabilities
-from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext, scene_linear_to_nits
-from .adjustments import SDR_SCENE_TO_DISPLAY_SCALE
+from .color_context import DEFAULT_HDR_REFERENCE_WHITE_NITS, RenderColorContext
 from .import_bands import grade_import_bands
 from .loader import SOURCE_COLOR_TRANSFORM_VERSION, SOURCE_DECODER_VERSION, load_image
 from .metadata import extract_metadata
@@ -59,7 +58,6 @@ class EditCommandError(ValueError):
     pass
 
 
-from .adjustments import apply_adjustments
 
 
 def _source_mip_identity(session: "LoadedSession", lane: str = "hdr") -> SourceMipIdentity:
@@ -138,7 +136,6 @@ class LoadedSession:
     source_byte_size: int = field(init=False)
     preview: PreviewSettings = field(default_factory=PreviewSettings)
     preview_tokens: dict[PreviewKind, int] = field(default_factory=lambda: {PreviewKind.HDR: 0, PreviewKind.SDR: 0})
-    scope_tokens: dict[PreviewKind, int] = field(default_factory=lambda: {PreviewKind.HDR: 0, PreviewKind.SDR: 0})
     render_cache: SessionRenderCache = field(init=False, repr=False)
 
     def __post_init__(self, prepared_fingerprint: str | None, eager_peak_candidates: bool) -> None:
@@ -1002,7 +999,6 @@ class SessionStore:
             if session.adjustments.hdr.highlight_compression_peak_measurement != "manual":
                 session._sync_highlight_source_peaks()
             session.preview_tokens = {PreviewKind.HDR: 0, PreviewKind.SDR: 0}
-            session.scope_tokens = {PreviewKind.HDR: 0, PreviewKind.SDR: 0}
             session.render_cache.replace_source(
                 repaired,
                 sdr_reference_image,
@@ -1039,22 +1035,6 @@ class SessionStore:
                 and session.session_id == session_id
                 and session.preview_tokens[kind] == token
             )
-
-    def next_scope_token(self, session_id: str, kind: PreviewKind) -> int:
-        with self._lock:
-            session = self.get(session_id)
-            session.scope_tokens[kind] += 1
-            return session.scope_tokens[kind]
-
-    def is_scope_current(self, session_id: str, kind: PreviewKind, token: int) -> bool:
-        with self._lock:
-            session = self._current
-            return bool(
-                session is not None
-                and session.session_id == session_id
-                and session.scope_tokens[kind] == token
-            )
-
 
 def _remove_owned_source(path: Path) -> None:
     try:

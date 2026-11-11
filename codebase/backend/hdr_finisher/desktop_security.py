@@ -9,7 +9,7 @@ from uuid import uuid4
 
 
 # The supported photo list and name rules live in file_gate (one rule set).
-from .file_gate import SOURCE_EXTENSIONS, is_photo_name  # noqa: E402,F401
+from .file_gate import is_photo_name
 EXPORT_EXTENSIONS = {".avif", ".jpg", ".jpeg", ".png", ".jxl"}
 
 

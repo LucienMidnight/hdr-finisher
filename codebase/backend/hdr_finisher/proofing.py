@@ -3,7 +3,6 @@ from __future__ import annotations
 import atexit
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import hashlib
 import json
 import math
@@ -21,12 +20,10 @@ from .avif_info import inspect_avif
 from .binaries import resolve_binary
 from .color import acescg_to_linear_bt2020, linear_bt2020_to_acescg, linear_srgb_to_acescg
 from .color_context import RenderColorContext, nits_to_scene_linear, scene_linear_to_nits
-from .config import APP_DATA_DIR, APP_VERSION
+from .config import APP_VERSION
 from .exporters import ExportBackend, _finishing_adjustments_for_export, _render_export_branch, _run_command
 from .gainmap_decoders import parse_jpeg_gain_map_probe
 from .models import (
-    BrowserEvidenceRecord,
-    BrowserEvidenceResponse,
     JPEGGainMapProofMetadata,
     PreviewKind,
     ProofArtifactRequest,
@@ -662,40 +659,6 @@ def _optional_float(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return parsed if math.isfinite(parsed) else None
-
-
-class EvidenceStore:
-    def __init__(self, path: Path | None = None) -> None:
-        self.path = path or (APP_DATA_DIR / "delivery-proof-evidence.json")
-        self._lock = RLock()
-
-    def list(self) -> BrowserEvidenceResponse:
-        with self._lock:
-            records = self._read()
-        return BrowserEvidenceResponse(records=records)
-
-    def add(self, record: BrowserEvidenceRecord) -> BrowserEvidenceResponse:
-        normalized = record.model_copy(update={"observed_at": datetime.now(timezone.utc)})
-        with self._lock:
-            records = self._read()
-            records.append(normalized)
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = self.path.with_suffix(".tmp")
-            temporary.write_text(
-                json.dumps([item.model_dump(mode="json") for item in records], indent=2),
-                encoding="utf-8",
-            )
-            temporary.replace(self.path)
-        return BrowserEvidenceResponse(records=records)
-
-    def _read(self) -> list[BrowserEvidenceRecord]:
-        if not self.path.exists():
-            return []
-        try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
-            return [BrowserEvidenceRecord.model_validate(item) for item in payload]
-        except (OSError, ValueError, TypeError):
-            return []
 
 
 def _inspect_artifact(path: Path, format_name: str, reference_white_nits: int = 203) -> tuple[float, str]:

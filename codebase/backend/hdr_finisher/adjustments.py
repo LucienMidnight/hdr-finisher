@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from .cpu_budget import CpuExecutor
 from dataclasses import dataclass, replace
 
@@ -18,13 +17,12 @@ from .finishing import apply_geometry
 from .models import AdjustmentState, LocalAdjustment, PreviewKind
 from .detail import apply_detail
 from . import film_grain
-from .film_stock import controlled_film_stock, measured_push_stock, load_film_stock, render_film_stock, render_film_stock_with_grey, stock_parameters
+from .film_stock import controlled_film_stock, measured_push_stock, render_film_stock, render_film_stock_with_grey, stock_parameters
 from .sdr_gamut import compress_to_srgb_gamut
 
 
 TONE_EQUALIZER_MIN_EV = -6
 TONE_EQUALIZER_MAX_EV = 6
-TONE_EQUALIZER_BAND_COUNT = TONE_EQUALIZER_MAX_EV - TONE_EQUALIZER_MIN_EV + 1
 TONE_EQUALIZER_MAX_ADJUSTMENT_EV = 2.0
 _TONE_EQUALIZER_MIN_TARGET_STEP = np.float32(1e-3)
 SDR_DISPLAY_REFERENCE_WHITE = np.float32(100.0 / 203.0)

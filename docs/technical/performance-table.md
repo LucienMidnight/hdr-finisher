@@ -30,6 +30,14 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 * Stage names in the logs (`page_picture_*`, `picture_*`, `startup_phase`)
   are given so the next measurement can be found quickly.
 
+November 11 W8 backend audit smoke (`6a932355`; 2560x1440 plain
+Electron, reused mixed Library fixture, default 90-second check): no photo
+errors, unreadable stored pictures, zeroed channels or memory violations.
+Drawing cadence fails: largest frame gap 1,425 ms against the unchanged
+250 ms limit; largest timer block 81 ms. The existing drawing-gap failure
+category is unchanged; this is a smoke check, not a paired speed baseline.
+Evidence: `codebase/output/quick-library-check/w8-backend-deep/report.json`.
+
 November 11 W2 Grade audit smoke check (`1b3ca447`; 2560x1440 plain
 Electron, default mixed Library, concurrent fast Python suites): first/ten/
 twenty pictures at 2.8/3.5/11.8 s, 29 shown by 90 s; peak RAM 2.823 GB.

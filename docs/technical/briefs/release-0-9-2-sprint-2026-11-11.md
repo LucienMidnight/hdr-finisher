@@ -117,3 +117,36 @@ run and their results, anything Steve must decide.
   waiting on Steve's decision.
 - Retouch changes after Steve's November 2 review (no list from Steve yet).
 - Installer signing, notarisation, new features.
+
+## W8 backend-deep outcome (November 11)
+
+- Fixed preview/scope retry hangs after source resize errors and stale reduced
+  SDR noise models after switching the authored base (`a5696f30`). Regression
+  tests reproduced both failures before the fixes and compare real results.
+- Backend-wide symbol/import/route audit, excluding vendored and Library
+  modules: cleanup commits remove 293 lines and add 13 replacement import
+  lines (280 net removed). Includes the six named unused helpers, cache
+  invalidators, constants, repair protocol, old scope tokens and five uncalled
+  evidence/favorites HTTP routes. Removed the orphan evidence store/schema
+  and its sole test, `test_evidence_store_round_trips_records`.
+- No saved photo or test projects affected. Old browser observation records in
+  `delivery-proof-evidence.json` are no longer consumed. Dynamic hue-sampling,
+  candidate, returned Proof-tile and preset-deletion routes were verified and
+  retained. No further unused settings/model fields were proven outside the
+  retired evidence schema.
+- Final rebased fast checks: Node 917 passed; Python 3,244 passed, 55 skipped.
+  The formerly failing Library test was repaired on main before this final
+  rebase and passes. Targeted render-cache/native-noise tests: 63 passed;
+  Proof tests: 33 passed; project/repair checks: 31 passed.
+- Graphics checks ran serially under the shared lock at 2560x1440. Adaptive
+  Denoise GPU/CPU parity passed. Quick Library check completed with no photo
+  errors or memory violations, but repeats the existing drawing-gap failure
+  category (1,425 ms, unchanged 250 ms limit); retained report and timing note
+  are in the performance table. Its first attempt failed only at report-time
+  Git worktree ownership; the rerun used process-local safe.directory.
+- Successful export/Proof pixels and files are unchanged; their removed
+  helpers/storage were unreachable. The optional HDR-peak policy is untouched.
+  No additional reproducible defect was found; the Library cadence failure
+  remains outside W8. No push. Scratch output ends at 5.5 GB, predominantly
+  the junction to existing test photos; graphics scratch/profiles cleaned by
+  the drivers. The small quick-check report/logs remain for review.

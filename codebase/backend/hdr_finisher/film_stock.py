@@ -180,11 +180,6 @@ def available_film_stocks() -> list[dict[str, str]]:
     return entries
 
 
-def clear_film_stock_cache() -> None:
-    with _cache_lock:
-        _cache.clear()
-
-
 def _array(payload: dict[str, Any], key: str, shape: tuple[int, ...]) -> np.ndarray:
     try:
         value = np.asarray(payload[key], dtype=np.float64)

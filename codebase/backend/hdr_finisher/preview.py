@@ -202,18 +202,6 @@ def downsample_image(
     return result
 
 
-def _encode_png(image: np.ndarray) -> bytes:
-    try:
-        from PIL import Image
-    except ImportError as exc:
-        raise RuntimeError("Pillow is required for preview rendering.") from exc
-
-    image_8bit = (np.clip(image, 0.0, 1.0) * 255.0).astype(np.uint8)
-    buffer = BytesIO()
-    Image.fromarray(image_8bit).save(buffer, format=PREVIEW_IMAGE_FORMAT)
-    return buffer.getvalue()
-
-
 def _encode_png_sdr(image: np.ndarray) -> bytes:
     try:
         from PIL import Image

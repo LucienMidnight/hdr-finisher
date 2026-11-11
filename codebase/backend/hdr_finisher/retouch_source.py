@@ -9,9 +9,7 @@ import json
 import numpy as np
 
 from .retouch_jobs import RepairRevision, RepairWorker
-from .retouch_recipe import prepare_repair, stroke_mask
-from .retouch_methods import finish_repair
-from .retouch_transfer import transfer_repair
+from .retouch_recipe import stroke_mask
 
 
 def repair_identity(records):

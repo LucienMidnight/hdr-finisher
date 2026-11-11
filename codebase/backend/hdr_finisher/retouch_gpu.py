@@ -4,7 +4,6 @@ Native inputs always include the entire saved search rectangle, or both transfer
 windows including Heal's boundary ring. Least-squares setup and seeded proposals
 are shared host preparation; image search, reconstruction and finishing run on GPU.
 """
-from concurrent.futures import CancelledError
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -12,8 +11,7 @@ import os
 import shutil
 import time
 import numpy as np
-from .retouch import (RepairInput, NativeRepairInput, RepairPatch, _box_sum,
-                      _patch_mean, _tone_guide, MAX_TEXTURE_EDGE, MAX_TEXTURE_CANDIDATES)
+from .retouch import NativeRepairInput, RepairPatch, _box_sum, _patch_mean, _tone_guide, MAX_TEXTURE_EDGE, MAX_TEXTURE_CANDIDATES
 from .retouch_recipe import prepare_repair, stroke_mask
 from .retouch_search import proposals
 

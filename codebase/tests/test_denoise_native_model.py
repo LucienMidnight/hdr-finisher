@@ -259,3 +259,27 @@ def test_source_epoch_can_be_checked_by_resize_workers_under_cache_lock() -> Non
         with cache._lock:
             check = pool.submit(lambda: cache.source_epoch)
             assert check.result(timeout=2) == 0
+
+
+def test_sdr_proxy_noise_model_changes_with_authored_base(monkeypatch):
+    from hdr_finisher import main
+
+    source = _noisy_source(300, 400)
+    reference = np.full_like(source, 0.25)
+    cache = SessionRenderCache(source, reference)
+    state = AdjustmentState()
+    session = SimpleNamespace(edit_revision=0, adjustments=state, render_cache=cache)
+    monkeypatch.setattr(main.store, "get", lambda _id: session)
+    monkeypatch.setattr(main, "_DENOISE_MODEL_CACHE", {})
+
+    def request(cached=True):
+        return main._adaptive_denoise_model("authored-base-test", PreviewKind.SDR, 256, None, None, cached=cached)
+
+    state.sdr.use_authored_base = True
+    authored = request()
+    state.sdr.use_authored_base = False
+    expected = request(cached=False)
+    assert authored != expected
+    assert request() == expected
+    state.sdr.use_authored_base = True
+    assert request() == authored

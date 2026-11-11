@@ -30,12 +30,6 @@ HDR_GUIDES = [
     ScopeGuide(value=10000.0, label="10000 PQ peak"),
 ]
 
-SDR_GUIDES = [
-    ScopeGuide(value=0.18, label="18%"),
-    ScopeGuide(value=0.5, label="50%"),
-    ScopeGuide(value=1.0, label="100%"),
-]
-
 SDR_SIGNAL_GUIDES = [
     ScopeGuide(value=0.18, label="18% signal"),
     ScopeGuide(value=0.5, label="50% signal"),

@@ -12,7 +12,7 @@ from threading import Condition, Lock, Thread
 from time import monotonic
 from uuid import uuid4
 from .config import APP_DATA_DIR
-from .export_presets import ExportPreset, ExportVersion, version_destination
+from .export_presets import ExportPreset, version_destination
 from .library_grades import grade_key
 
 RECORD_PATH = APP_DATA_DIR / "export-records.json"

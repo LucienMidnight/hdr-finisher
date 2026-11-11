@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from dataclasses import InitVar, dataclass, field, replace
+from dataclasses import InitVar, dataclass, field
 import hashlib
 import json
 import logging
@@ -1317,10 +1317,9 @@ class SessionRenderCache:
         if cached is not None:
             return cached
         assert flight is not None
-        with self._lock:
-            source, sdr_reference = self._proxies_locked(edge)
-
         try:
+            with self._lock:
+                source, sdr_reference = self._proxies_locked(edge)
             compiled_masks = self._compiled_masks(
                 source,
                 adjustments,
