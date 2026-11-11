@@ -29,15 +29,6 @@ _JPEGXL_PRECISIONS: dict[str, tuple[int, str, Any]] = {
 }
 
 
-def jpegxl_available() -> bool:
-    try:
-        import imagecodecs
-
-        return bool(imagecodecs.JPEGXL.available)
-    except (ImportError, AttributeError):
-        return False
-
-
 def inspect_jpegxl(path: Path) -> dict[str, Any]:
     """Inspect structured libjxl DATA/ORIGINAL profiles and our optional marker."""
 
