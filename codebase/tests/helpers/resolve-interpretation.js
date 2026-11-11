@@ -5,7 +5,7 @@ async function resolveInterpretation(page, {
 } = {}) {
   await page.waitForFunction(() => Boolean(state.session?.session_id) && !state.importInProgress,
     null, { timeout: 120000 });
-  if (!await page.evaluate(() => Boolean(state.session.analysis?.needs_color_override))) return;
+  if (!await page.evaluate(() => Boolean(state.session.analysis?.needs_color_override))) return false;
   await page.locator('[data-workflow-tab="grade"]').click();
   // The review notice's "Set manually" action opens the (possibly collapsed)
   // source rail in manual mode, as a person would.
@@ -39,6 +39,7 @@ async function resolveInterpretation(page, {
   await page.waitForFunction(id => state.session?.session_id === id && state.session.analysis?.needs_color_override === false,
     sessionId, { timeout: 120000 });
   await page.locator("#interpretation-gate").waitFor({ state: "hidden", timeout: 120000 });
+  return true;
 }
 
 module.exports = { resolveInterpretation };

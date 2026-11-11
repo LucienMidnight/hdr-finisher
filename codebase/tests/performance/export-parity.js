@@ -552,7 +552,7 @@ function pythonExecutable() {
     await page.setInputFiles("#file-input", fixture);
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 900000 });
     await page.waitForTimeout(500);
-    await resolveInterpretation(page, { primaries: "linear_acescg" });
+    const interpretationGated = await resolveInterpretation(page, { primaries: "linear_acescg" });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
     await waitReady();
 
