@@ -1,3 +1,35 @@
+## November 11: indexed Smart Album opening
+
+Smart Albums keep the last matched rows in the existing SQLite index. After
+restart, opening displays that saved grid before rebuilding candidates or
+checking source folders. After the first paint, the shared JavaScript rule
+engine refreshes membership and queues the existing background folder checker
+for the Look in pins (all pins for whole-library rules). Thumbnail work is
+independent. Disconnected indexed photos remain available. Briefly stale
+membership is accepted, as with indexed folder opening.
+
+Rule edits, deletion and pin changes invalidate saved grids; tokens reject
+late saves after edits/Undo and navigation guards discard obsolete work.
+A new album or an invalidated grid still needs its first candidate calculation.
+Candidate rebuilding still holds the marks lock; large responses now render
+in a route worker instead of blocking the backend event loop and memory polls.
+No image cache, memory allowance, GPU route or authored photo data changes.
+
+Validation: restart/empty-grid persistence, invalidation and stale-write guards
+pass focused tests. Full-library click-to-grid speed on Steve's photos remains
+unmeasured. Electron validates the Smart Album workflow and 155,000 indexed
+rows: a fresh controller restores 15,500 matches without creating a worker.
+Default Library smoke has no photo error or memory breach but flags a 1.558 s
+frame gap against 250 ms; no rerun, pending Steve's normal-use check.
+See the performance table for evidence and conditions.
+
+Fast validation: 905 JavaScript checks pass; 63 focused Python checks pass.
+The full Python run reports 3,278 pass, three skip and seven failures: six
+outdated browser test doubles were corrected for the availability option and
+pass in the focused rerun; the recorded remembered-failure/cached-scene check
+remains unrelated. No thresholds were relaxed. Synthetic Electron coverage
+now expects persisted matching rows rather than all-library array identity.
+
 ## November 10: JXL source colour repair
 
 Standard third-party JXL colour is read automatically. Library and Grade use

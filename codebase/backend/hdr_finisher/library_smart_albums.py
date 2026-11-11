@@ -1,11 +1,13 @@
 """Durable saved filters and indexed candidates; the shared frontend engine matches."""
 from copy import deepcopy
 import json
+import hashlib
 from pathlib import Path
 from uuid import uuid4
 from threading import RLock
 from pydantic import BaseModel, ConfigDict, Field
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 from .library_documents import atomic_json, identity
 from .library_grades import grade_key
 from .library_marks import Marks, clean_names
@@ -25,6 +27,13 @@ class SmartCommand(BaseModel):
     id: str = ""
     name: str = ""
     filters: SmartRules = Field(default_factory=SmartRules)
+
+
+class SmartGrid(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    token: str
+    photos: list[dict]
 
 
 class SmartAlbums:
@@ -91,6 +100,13 @@ class SmartAlbums:
             else: raise ValueError("That smart album command is not available.")
             if albums == before: return {"photos":[],"warnings":[],"undo_available":bool(self.marks._undo)}
             saved["smart_albums"] = albums; atomic_json(self.index.preferences_path, saved)
+            # Removed/edited collections do not retain obsolete derived rows.
+            db = self.marks._connect()
+            try:
+                with db:
+                    if db.execute("SELECT 1 FROM sqlite_master WHERE name='smart_album_grids'").fetchone():
+                        db.execute("DELETE FROM smart_album_grids WHERE id=?", (request.id,))
+            finally: db.close()
             def undo():
                 with self.index._state:
                     current = self.preferences()
@@ -102,6 +118,32 @@ class SmartAlbums:
             self.marks._undo.append({"command":undo})
             log("smart_album_"+request.action, name=request.name, id=request.id, action="rules saved outside index; photos untouched")
             return {"albums":deepcopy(albums),"photos":[],"warnings":[],"smart_changed":True,"undo_available":True}
+
+    def grid(self, identifier, token=None, photos=None, *, token_only=False):
+        with self.marks._lock, self.index._state:
+            item = next((a for a in self.list() if a["id"] == identifier), None)
+            if item is None:
+                raise ValueError("That smart album is no longer in the library.")
+            scope = getattr(self.marks, "membership", None)
+            pins = scope.pins(check_available=False) if scope else []
+            # Timestamp rejects stale writes even after edit then Undo.
+            stamp = self.index.preferences_path.stat().st_mtime_ns
+            current = hashlib.sha256(json.dumps([item["filters"], pins, stamp], sort_keys=True).encode()).hexdigest()
+            db = self.marks._connect()
+            try:
+                with db:
+                    db.execute("CREATE TABLE IF NOT EXISTS smart_album_grids (id TEXT PRIMARY KEY, token TEXT NOT NULL, photos TEXT NOT NULL)")
+                    row = db.execute("SELECT token, photos FROM smart_album_grids WHERE id=?", (identifier,)).fetchone()
+                    if token is not None:
+                        if token != current: return {"saved": False}
+                        encoded = json.dumps(photos, separators=(",", ":"))
+                        if row != (current, encoded):
+                            db.execute("INSERT OR REPLACE INTO smart_album_grids VALUES (?,?,?)", (identifier, current, encoded))
+                        return {"saved": True}
+                    return {"token": current, "photos": json.loads(row[1]) if not token_only and row and row[0] == current else None,
+                            "filters": item["filters"], "name": item["name"], "indexing": False,
+                            "undo_available": bool(self.marks._undo), "unreadable_folders": [], "warnings": []}
+            finally: db.close()
 
     def version(self):
         try:
@@ -125,7 +167,9 @@ class SmartAlbums:
         # The stamp is sampled inside that lock, never before a transaction.
         with self.marks._lock, self._cache_lock:
             scope = getattr(self.marks,"membership",None)
-            pins = scope.pins() if scope else []
+            # Opening uses saved scope, including disconnected folders. Probing
+            # their availability belongs to the background folder checker.
+            pins = scope.pins(check_available=False) if scope else []
             from .batch_export import RECORD_PATH, read_records, export_state
             records = read_records()
             record_version = str(RECORD_PATH.stat().st_mtime_ns) if RECORD_PATH.exists() else ""
@@ -176,8 +220,18 @@ def add_smart_album_routes(router, marks, index):
     def command(request:SmartCommand):
         try: return smart.command(request)
         except (ValueError,OSError) as e: raise HTTPException(400,str(e)) from e
+    @router.get("/smart-grid")
+    def grid(id: str, token_only: bool = False):
+        try: return JSONResponse(smart.grid(id, token_only=token_only))
+        except (ValueError, OSError) as e: raise HTTPException(400, str(e)) from e
+    @router.post("/smart-grid")
+    def save_grid(request: SmartGrid):
+        try: return smart.grid(request.id, request.token, request.photos)
+        except (ValueError, OSError) as e: raise HTTPException(400, str(e)) from e
     @router.get("/smart-candidates")
     def candidates(version:str=""):
         result=smart.candidates(version)
-        return {**result,"indexing":index.status()["state"] not in {"idle","off"},"undo_available":bool(marks._undo),"unreadable_folders":[],"warnings":[]}
+        # Render here in the synchronous route worker, not on the ASGI event
+        # loop: a whole-library snapshot can contain hundreds of thousands of rows.
+        return JSONResponse({**result,"indexing":index.status()["state"] not in {"idle","off"},"undo_available":bool(marks._undo),"unreadable_folders":[],"warnings":[]})
     return smart

@@ -131,3 +131,121 @@ def test_multi_tick_rules_round_trip_without_fixed_properties(smart):
     assert set(stored)=={"rules","any","folders"}
     for values in [[],[{}],"alpha",[1]]:
         with pytest.raises(ValueError):create(smart,"Invalid",{"rules":[{"field":"camera","op":"in","values":values}]})
+
+
+def test_index_open_never_probes_pinned_source_availability(smart, tmp_path, monkeypatch):
+    from pathlib import Path
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.library_membership import LibraryMembership
+    browser = MediaBrowserStore(tmp_path / "browser")
+    folder = str(tmp_path / "disconnected")
+    browser._write_paths(browser.pinned_path, [folder])
+    scope = object.__new__(LibraryMembership)
+    scope.index = SimpleNamespace(browser=browser)
+    smart.marks.membership = scope
+    photo = str(Path(folder) / "last-known.jpg")
+    db = smart.marks._connect()
+    with db:
+        db.execute("INSERT INTO files VALUES (?,?,?,NULL)", (photo, 100, 1))
+    db.close()
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Indexed Smart Album opening probed a source folder")
+    monkeypatch.setattr(Path, "is_dir", forbidden)
+    before = smart.candidates()
+    assert before["photos"][0]["path"] == photo
+    assert before["photos"][0]["library_pins"] == [folder]
+    assert smart.candidates(before["version"])["photos"] is None
+    # New indexed membership is picked up without touching the source disk.
+    db = smart.marks._connect()
+    with db:
+        db.execute("DELETE FROM files WHERE path=?", (photo,))
+    db.close()
+    assert smart.candidates(before["version"])["photos"] == []
+
+
+def test_large_candidate_response_renders_off_event_loop(smart, monkeypatch):
+    import asyncio
+    import threading
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+    from httpx import AsyncClient, ASGITransport
+    from hdr_finisher.library_smart_albums import add_smart_album_routes
+    # A serialization gate makes the concurrency guarantee deterministic, with
+    # no speed threshold or dependency on the machine's current load.
+    entered, release = threading.Event(), threading.Event()
+    threads = []
+    original = JSONResponse.render
+    def render(self, content):
+        threads.append(threading.get_ident())
+        entered.set()
+        assert release.wait(5), "Event loop could not release serialization"
+        return original(self, content)
+    monkeypatch.setattr(JSONResponse, "render", render)
+    rows = [{"path": f"offline/{i}.jpg", "marks": {"rating": 5}} for i in range(155000)]
+    monkeypatch.setattr(SmartAlbums, "candidates", lambda self, version="": {"version": "large", "photos": rows})
+    smart.index.status = lambda: {"state": "idle"}
+    app = FastAPI()
+    add_smart_album_routes(app, smart.marks, smart.index)
+    async def check():
+        main_thread = threading.get_ident()
+        client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+        task = asyncio.create_task(client.get("/smart-candidates"))
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            assert threads == [threads[0]] and threads[0] != main_thread
+            # The event loop is available while the large response is rendered.
+            release.set()
+            response = await task
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "application/json"
+            body = response.json()
+            assert len(body["photos"]) == 155000
+            assert body["photos"][-1]["path"] == "offline/154999.jpg"
+            assert body["version"] == "large"
+        finally:
+            release.set()
+            await task
+            await client.aclose()
+    asyncio.run(check())
+
+
+def test_matched_grid_survives_restart_without_candidate_rebuild(smart, monkeypatch):
+    create(smart)
+    identifier = smart.list()[0]["id"]
+    first = smart.grid(identifier)
+    assert first["photos"] is None
+    rows = [{"path": "offline/photo.jpg", "marks": {"pick": "pick"}}]
+    assert smart.grid(identifier, first["token"], rows)["saved"]
+    restarted = SmartAlbums(LibraryMarks(smart.marks.database.parent), smart.index)
+    monkeypatch.setattr(restarted, "candidates", lambda *a: pytest.fail("candidate rebuild before grid"))
+    assert restarted.grid(identifier)["photos"] == rows
+    # Empty membership is a valid durable result too.
+    assert restarted.grid(identifier, first["token"], [])["saved"]
+    assert restarted.grid(identifier)["photos"] == []
+
+
+def test_grid_rejects_inflight_rules_edits_undo_and_deleted_album(smart):
+    create(smart)
+    identifier = smart.list()[0]["id"]
+    token = smart.grid(identifier)["token"]
+    smart.grid(identifier, token, [{"path": "old.jpg"}])
+    smart.command(SmartCommand(action="edit", id=identifier, name="Changed", filters={"rules": []}))
+    assert smart.grid(identifier)["photos"] is None
+    assert not smart.grid(identifier, token, [])["saved"]
+    smart.marks.undo()
+    assert smart.grid(identifier)["photos"] is None
+    assert not smart.grid(identifier, token, [])["saved"]
+    smart.command(SmartCommand(action="delete", id=identifier))
+    with pytest.raises(ValueError): smart.grid(identifier, token, [])
+
+
+def test_grid_invalidates_when_saved_pins_change(smart):
+    create(smart)
+    identifier = smart.list()[0]["id"]
+    pins = ["offline/one"]
+    smart.marks.membership = SimpleNamespace(pins=lambda check_available: list(pins))
+    token = smart.grid(identifier)["token"]
+    smart.grid(identifier, token, [{"path": "offline/one/a.jpg"}])
+    pins.append("offline/two")
+    assert smart.grid(identifier)["photos"] is None
+    assert not smart.grid(identifier, token, [])["saved"]

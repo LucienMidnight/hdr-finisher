@@ -4,7 +4,7 @@
  const {make,ask,showMenu}=HDRLibraryDialogs, query=HDRLibraryQuery;
  const workerURL=new URL("library-smart-worker.js",document.currentScript.src);
  function create(options) {
-  let albums=[], active="", version="", photos=[], flight=null, worker=null, serial=0, revision=0;
+  let albums=[], active="", version="", photos=[], flight=null, worker=null, serial=0, revision=0, navigation=0, displayedVersion="", savedGridToken="", savedGridVersion="";
   const pending=new Map();
   function work(action,extra={}) {
    if(!worker){
@@ -35,13 +35,42 @@
   async function refresh() {const request=++revision;const result=await options.api("/api/library/smart-albums");if(request===revision){albums=result.albums;render();}return albums;}
   async function mutate(body) {++revision;try{return await options.run("/api/library/smart-albums",body);}finally{++revision;}}
   async function open(id) {
+   const generation=++navigation;
    await refresh();const item=album(id);if(!item)throw new Error("That smart album is no longer in the library.");
-   active=id;render();const result=await candidates();return {...result,filters:item.filters,name:item.name};
+   if(generation!==navigation)return {photos:[],unreadable_folders:[],warnings:[]};
+   active=id;render();
+   const cached=await options.api(`/api/library/smart-grid?id=${encodeURIComponent(id)}`);
+   if(generation!==navigation)return {...cached,photos:[]};
+   if(cached.photos!==null){displayedVersion="";return cached;}
+   const result=await candidates();await saveGrid(id,cached.token,generation);
+   if(generation===navigation)displayedVersion=version;
+   return {...result,filters:item.filters,name:item.name};
+  }
+  async function checkSources(id) {
+   const item=album(id);if(active!==id||!item)return;
+   const folders=item.filters.folders||[];
+   const paths=options.pins().map(pin=>pin.path).filter(path=>!folders.length||folders.includes(path));
+   if(paths.length)await options.api("/api/library/checks",{paths});
+  }
+  async function saveGrid(id,token,generation) {
+   const item=album(id);if(!item)return;
+   const requestRevision=revision;
+   const matched=await work("matched",{filters:item.filters});
+   if(active!==id||navigation!==generation||revision!==requestRevision)return;
+   const saved=await options.api("/api/library/smart-grid",{id,token,photos:matched});
+   if(saved.saved){savedGridToken=token;savedGridVersion=version;}
   }
   async function poll() {
    if(flight)return flight;
-   flight=(async()=>{await refresh();if(!active)return null;const item=album(active);if(!item){active="";options.closed();return null;}
-    const before=version;const result=await candidates();return {changed:before!==version,...result,filters:item.filters,name:item.name};})();
+   const id=active,generation=navigation;
+   flight=(async()=>{await refresh();if(!id||active!==id||generation!==navigation)return null;
+    const item=album(id);if(!item){active="";options.closed();return null;}
+    const cached=await options.api(`/api/library/smart-grid?id=${encodeURIComponent(id)}&token_only=true`);
+    const result=await candidates();
+    if(active!==id||generation!==navigation)return null;
+    if(savedGridToken!==cached.token||savedGridVersion!==version)await saveGrid(id,cached.token,generation);
+    const changed=displayedVersion!==version;displayedVersion=version;
+    return {changed,...result,filters:item.filters,name:item.name};})();
    try{return await flight;}finally{flight=null;}
   }
   async function remove(item) {
@@ -134,7 +163,7 @@
    ready.catch(e=>{if(dialog.isConnected){live.textContent="Count unavailable";error.textContent=e.message;}});
    renderRules();count();dialog.showModal();name.focus();
   }
-  return Object.freeze({refresh,open,poll,editor,menuAction:()=>({label:"New smart album…",run:()=>editor()}),active:()=>active,setActive:id=>{active=id||"";render();},name:id=>album(id)?.name,filters:id=>album(id)?.filters});
+  return Object.freeze({refresh,open,checkSources,poll,editor,menuAction:()=>({label:"New smart album…",run:()=>editor()}),active:()=>active,setActive:id=>{navigation++;active=id||"";render();},name:id=>album(id)?.name,filters:id=>album(id)?.filters});
  }
  window.HDRLibrarySmartAlbums=Object.freeze({create});
 })();

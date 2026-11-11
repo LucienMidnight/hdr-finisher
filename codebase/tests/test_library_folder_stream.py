@@ -24,7 +24,7 @@ class Helper:
 def setup(tmp_path):
     folder=tmp_path/"photos";folder.mkdir()
     data=tmp_path/"data";data.mkdir()
-    browser=SimpleNamespace(root=data,pinned=lambda:[])
+    browser=SimpleNamespace(root=data,pinned=lambda **kwargs:[])
     marks=LibraryMarks(data)
     db=marks._connect();db.close()
     index=LibraryIndex(marks,browser,Helper())

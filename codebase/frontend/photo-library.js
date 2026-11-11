@@ -1471,6 +1471,16 @@
       state.selection = new Set(state.index >= 0 ? [state.photos[0].path] : []); state.anchor = state.index;
       culling.setUndo(result.undo_available);
       applyQuery();
+      if (place.kind === "smart") requestAnimationFrame(() => setTimeout(() => {
+        if (controller.signal.aborted || state.scan !== controller) return;
+        void smart.poll().then(snapshot => {
+          if (!snapshot || controller.signal.aborted || state.scan !== controller) return;
+          state.allPhotos = snapshot.photos; state.smartFilters = snapshot.filters; state.smartIndexing = snapshot.indexing; applyQuery();
+        }).catch(error => { if (state.scan === controller) status(error.message); });
+        void smart.checkSources(place.name).catch(error => {
+          if (state.scan === controller) status(error.message);
+        });
+      }, 0));
       const notes = [...(result.unreadable_folders.length ? ["Some sub-folders could not be read"] : []), ...(result.missing ? [`${result.missing.toLocaleString()} more are on folders that are not connected`] : [])];
       if (notes.length) status(`${result.photos.length.toLocaleString()} photos · ${notes.join(" · ")}`);
       if (result.warnings?.length) status(result.warnings[0]);

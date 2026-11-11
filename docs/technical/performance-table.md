@@ -42,6 +42,43 @@ first/ten/twenty pictures 14.9/15.5/21.9 s, 29 shown by 90 s.
 No reported check errors. UI smoke check, not a comparable speed baseline.
 Evidence: `codebase/output/quick-library-check/theme-soften/report.json`.
 
+## November 11: Smart Album timeout investigation
+
+Steve's real-app log at `%APPDATA%/hdr-finisher-desktop/logs/backend.log`
+(November 11, Bangkok time; running commit not identified) records candidate
+marks-lock holds of 9.031-11.657 s at 09:04:42 and 09:05:07, and backend
+heartbeat lag of 9.930-10.663 s immediately afterwards. Ten memory-controller
+HTTP requests time out during these two intervals against their existing
+2 s deadline. Nearby completed memory samples show 2.95-3.41 GB, no pressure
+and no waiting admission. This establishes stalled backend service, not a
+memory-budget shortage; the exact executing stack during the later loop lag
+was not captured. Click-to-grid time is not recorded, so the candidate lock
+timing must not be presented as the whole opening wait. Regression tolerance
+for comparable whole waits remains the existing 5%; no memory or timing
+limits are changed by this investigation.
+
+November 11 Smart Album checks (working tree based on `74f2f29c`,
+2560x1440 Electron; concurrent full Python suite): real 155,000-row editor
+opens in 26.7 ms cold / 2 ms warm, rule recount 190.9 ms and largest page
+timer gap 11 ms. These measure editor responsiveness, not album click-to-grid.
+Smart Album workflow passes, including marks joining/leaving and Undo.
+Default 90-second mixed Library smoke: first/ten/twenty pictures 1.7/4.3/10.2 s,
+29 pictured by the end; no photo errors or memory breach, independent process
+peak 3.419 GB. One 1.558 s frame gap fails the unchanged 250 ms limit (timer
+block 59 ms, no recorded long tasks). No rerun or responsiveness repair;
+Steve's normal-use check remains the next step. Evidence:
+`codebase/output/smart-album-electron.log` and
+`codebase/output/quick-library-check/smart-album/report.json`.
+
+Final Smart Album persisted-grid check (same working-tree base and concurrent
+Python suite): 155,000-row editor opens in 8.9-10.6 ms / 1.7-1.8 ms warm, recount
+170.8-180.5 ms, timer gap 10.7-11.1 ms. Fresh controller restores 15,500 saved matches
+with worker construction forbidden; this validates indexed-first behavior,
+not a real-library click-to-grid timing. Original stress harness was updated
+to route the new grid API and expect matched saved rows instead of shared
+all-library array identity. Evidence:
+`codebase/output/smart-album-final-electron.log`.
+
 ## 1. Startup
 
 | Action (from → to) | Target | Measured | Conditions | Status |

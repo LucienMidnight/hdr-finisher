@@ -7,7 +7,7 @@ async function check(page) {
  // fixture directly; intercepting that request in Electron left its 155,000-photo
  // response undelivered, so the count stayed at "Counting…".
  const context=page.context(),appOrigin=new URL(page.url()).origin;
- const pattern=url=>url.origin===appOrigin&&/^\/api\/library\/(smart-candidates|smart-albums)/.test(url.pathname);
+ const pattern=url=>url.origin===appOrigin&&/^\/api\/library\/(smart-candidates|smart-albums|smart-grid)/.test(url.pathname);
  child.stderr.on("data",data=>{failure+=data;});
  // Worker and request traces, printed only when the count never arrives.
  const trace=[],stamp=()=>Math.round(performance.now());
@@ -52,7 +52,7 @@ async function check(page) {
   const lib=page;
   await lib.waitForFunction(()=>window.HDRLibrarySmartAlbums);
   const timing=await lib.evaluate(async()=>{
-   const smart=HDRLibrarySmartAlbums.create({root:document.querySelector("#albums"),pins:()=>[{path:"D:/Missing",name:"Offline folder"}],api:async url=>(await fetch(url)).json(),status:()=>{}});
+   const smart=HDRLibrarySmartAlbums.create({root:document.querySelector("#albums"),pins:()=>[{path:"D:/Missing",name:"Offline folder"}],api:async (url,body)=>(await fetch(url,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:undefined)).json(),status:()=>{}});
    window.largeSmart=smart;
    const s=performance.now();await smart.editor(null,{rules:[{field:"rating",op:"at-least",value:5},{field:"camera",op:"is",value:"trial camera"}]});
    const choice=document.querySelector('[data-rule-value="1"]');choice.value="trial camera";choice.dispatchEvent(new Event("input"));
@@ -74,13 +74,21 @@ async function check(page) {
   assert.ok(warm<250,`warm open ${warm} ms`);
   await lib.getByText("15,500 matching photos",{exact:true}).waitFor();
   await lib.getByRole("button",{name:"Cancel",exact:true}).click();
-  // Warm candidates are reused by album open and poll too: no second full response.
+  // A fresh controller reuses the durable matched grid without a worker.
   const cache=await lib.evaluate(async()=>{
    const albums=await largeSmart.refresh(),first=await largeSmart.open(albums[0].id),second=await largeSmart.open(albums[0].id),poll=await largeSmart.poll();
-   return {size:first.photos.length,unchanged:first.photos===second.photos&&second.photos===poll.photos&&!poll.changed,
-    membership:HDRLibraryQuery.apply(first.photos,"name",false,first.filters).length};
+   const OriginalWorker=window.Worker;
+   let restored;
+   try {
+    window.Worker=class { constructor(){throw new Error("Cached opening rebuilt candidates");} };
+    const fresh=HDRLibrarySmartAlbums.create({root:document.querySelector("#albums"),pins:()=>[{path:"D:/Missing",name:"Offline folder"}],api:async (url,body)=>(await fetch(url,body?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}:undefined)).json(),status:()=>{}});
+    restored=await fresh.open(albums[0].id);
+   } finally { window.Worker=OriginalWorker; }
+   return {first:HDRLibraryQuery.apply(first.photos,"name",false,first.filters).length,
+    cached:second.photos.length,refreshed:HDRLibraryQuery.apply(poll.photos,"name",false,poll.filters).length,
+    restored:restored.photos.length};
   });
-  assert.deepEqual(cache,{size:155000,unchanged:true,membership:15500});
+  assert.deepEqual(cache,{first:15500,cached:15500,refreshed:15500,restored:15500});
   console.log("PASS: real 155,000-row smart editor",JSON.stringify({...timing,warm_open_ms:warm,...edits}));
  }finally {
   await context.unroute("**/smart-editor-test");await context.unroute(pattern);

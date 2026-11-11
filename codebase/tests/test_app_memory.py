@@ -454,3 +454,55 @@ def test_preview_acceptance_does_not_block_memory_poll(tmp_path, monkeypatch):
             finally: release.set()
             assert (await task).json()['key'] == 'accepted'
     asyncio.run(run())
+
+
+def test_memory_controller_and_scheduler_do_not_wait_for_album_marks_lock(tmp_path, monkeypatch):
+    """A slow album owner must not hold up the independent memory lane."""
+    import asyncio
+    import httpx
+    from types import SimpleNamespace
+    from fastapi import FastAPI
+    from hdr_finisher import library_api, library_grants
+    from hdr_finisher.library_scheduler import Scheduler
+    from hdr_finisher.library_worker import LibraryWorker
+    from hdr_finisher.media_browser import MediaBrowserStore
+
+    marks = LibraryMarks(tmp_path)
+    monkeypatch.setattr(library_api, 'LibraryMarks', lambda root: marks)
+    scheduler = Scheduler()
+    monkeypatch.setattr(library_grants, 'scheduler', scheduler)
+    monkeypatch.setattr(app_memory, 'process_tree', lambda root: [dict(pid=1, workingSetBytes=100)])
+    monkeypatch.setattr(app_memory, 'system_pressure', lambda: 'none')
+    monkeypatch.setattr(library_grants, 'detect_memory_resources', lambda: SimpleNamespace(
+        available_ram_bytes=20_000_000_000, total_ram_bytes=32_000_000_000))
+    app = FastAPI()
+    app.include_router(library_api.create_library_router(LibraryWorker(tmp_path), MediaBrowserStore(tmp_path)))
+    entered, release = Event(), Event()
+
+    def hold_album_lock():
+        with marks._lock:
+            entered.set()
+            assert release.wait(5)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+            # Exercise a fresh census and actual grant admission, not only a
+            # successful HTTP response backed by an old sample.
+            await asyncio.wait_for(asyncio.to_thread(library_grants.Runtime().sample), 1)
+            job = scheduler.ask('album-memory-test', 'window', 'test.jpg', 'quick', 64_000_000, 'now')
+            assert job.granted is not None
+            for _ in range(3):
+                response = await asyncio.wait_for(client.get('/api/library/memory'), 1)
+                assert response.is_success
+                assert response.json()['totalBytes'] == 100
+                assert response.json()['level'] == 'none'
+            scheduler.finish(job.id)
+
+    with ThreadPoolExecutor(1) as pool:
+        owner = pool.submit(hold_album_lock)
+        try:
+            assert entered.wait(1)
+            asyncio.run(run())
+        finally:
+            release.set()
+        owner.result()

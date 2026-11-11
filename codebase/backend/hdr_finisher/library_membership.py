@@ -44,9 +44,9 @@ class LibraryMembership:
         # Recovery is durable already. Re-walking every photo family here used
         # to delay helper startup; the index schedules upkeep after page startup.
 
-    def pins(self):
+    def pins(self, *, check_available=True):
         browser = self.index.browser
-        return [pin["path"] for pin in browser.pinned()]
+        return [pin["path"] for pin in browser.pinned(check_available=check_available)]
 
     @staticmethod
     def under(path, folder):

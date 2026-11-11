@@ -149,11 +149,11 @@ class MediaBrowserStore:
             places.append({"name": name, "path": resolved, "available": path.is_dir()})
         return places
 
-    def pinned(self) -> list[dict[str, Any]]:
+    def pinned(self, *, check_available=True) -> list[dict[str, Any]]:
         with self._lock:
             values = self._read_paths(self.pinned_path)
         return [
-            {"name": Path(value).name or value, "path": value, "available": Path(value).is_dir()}
+            {"name": Path(value).name or value, "path": value, **({"available": Path(value).is_dir()} if check_available else {})}
             for value in values
         ]
 

@@ -110,3 +110,27 @@ for(const smart of [false,true])test(`sidebar ${smart?'smart':'manual'} album re
  assert.equal(menu.find(x=>x.label==='Show all files'),action);action.run();assert.equal(toggles,1);
  assert.ok(menu.some(x=>x.label?.startsWith('Delete')));
 });
+
+
+test('smart opening returns indexed photos before explicit background checks; scope and navigation are respected', async()=>{
+ const root=new Element(), requests=[], filters={folders:['C:/selected'],rules:[]};
+ let stamp='one', workerCalls=0, photos=[{path:'C:/selected/old.jpg'}];
+ const context=vm.createContext({URL,document:{currentScript:{src:'http://localhost/library-smart-albums.js'}},HDRLibraryQuery:{},
+  HDRLibraryDialogs:{make:()=>new Element()},window:{},Worker:class {
+   postMessage(data){workerCalls++;queueMicrotask(()=>this.onmessage({data:{id:data.id,result:data.action==="matched"?photos:{version:stamp,photos:data.knownVersion===stamp?null:photos,indexing:false}}}));}
+  }});
+ vm.runInContext(source('library-smart-albums.js'),context);
+ const controller=context.window.HDRLibrarySmartAlbums.create({root,pins:()=>[{path:'C:/selected'},{path:'C:/other'}],
+  api:async(route,body)=>{requests.push({route,body});if(route.includes('/smart-grid'))return body?{saved:true}:{token:'token',photos,filters,name:'A',unreadable_folders:[],warnings:[]};return {albums:[{id:'a',name:'A',filters}]};}});
+ const result=await controller.open('a');
+ assert.equal(result.photos[0].path,'C:/selected/old.jpg');
+ assert.equal(workerCalls,0,'cached opening must not rebuild candidates');
+ assert.equal(requests.some(r=>r.route.endsWith('/checks')),false);
+ await controller.checkSources('a');
+ assert.deepEqual(Array.from(requests.at(-1).body.paths),['C:/selected']);
+ stamp='two';photos=[{path:'C:/selected/new.jpg'}];
+ const updated=await controller.poll();assert.equal(updated.changed,true);assert.equal(updated.photos[0].path,'C:/selected/new.jpg');
+ controller.setActive('');const count=requests.length;await controller.checkSources('a');assert.equal(requests.length,count);
+ filters.folders=[];await controller.open('a');await controller.checkSources('a');
+ assert.deepEqual(Array.from(requests.at(-1).body.paths),['C:/selected','C:/other']);
+});

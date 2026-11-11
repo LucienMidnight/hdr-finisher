@@ -38,7 +38,7 @@ if "--serve" in sys.argv:
     index.status=lambda: {"state":"idle"}
     from fastapi.middleware.cors import CORSMiddleware
     app=FastAPI()
-    app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["GET"])
+    app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["GET", "POST"],allow_headers=["Content-Type"])
     router=APIRouter(prefix="/api/library")
     add_smart_album_routes(router,marks,index)
     app.include_router(router)

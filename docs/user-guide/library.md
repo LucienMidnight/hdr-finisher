@@ -138,6 +138,8 @@ A photo in an album stays in your Library even if its folder is not pinned.
 
 A smart album is a saved set of filter rules. It updates itself as photos change.
 
+Opening an album shows its last known matches first, including after restarting the app. Thumbnails load separately while the album checks for changes in the background. A new album, or one whose rules or pinned folders have changed, needs a fresh check before its first grid appears.
+
 1. Set up filters in the filter bar, then choose **Save as smart album…**. Or choose the **+** next to **Smart Albums** and **New smart album…**.
 2. Give it a name. Choose **Match all of these rules** or **Match any of these rules**.
 3. Under **Look in**, tick the pinned folders it should search.

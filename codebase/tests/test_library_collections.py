@@ -201,8 +201,8 @@ class Pins:
     def __init__(self, root, folders):
         self.root, self.folders = root, folders
 
-    def pinned(self):
-        return [{"name": folder.name, "path": str(folder), "available": folder.is_dir()} for folder in self.folders]
+    def pinned(self, *, check_available=True):
+        return [{"name": folder.name, "path": str(folder), **({"available": folder.is_dir()} if check_available else {})} for folder in self.folders]
 
 
 def record(source, **facts):
