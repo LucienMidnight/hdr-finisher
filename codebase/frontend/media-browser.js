@@ -11,6 +11,7 @@ window.HDRMediaBrowser = Object.freeze({
     };
     const state = {
       mediaBrowserGeneration: 0,
+      mediaBrowserDirectoryReady: false,
       mediaPreviewGeneration: 0,
       mediaPreviewRequest: null,
       mediaPreviewObjectUrl: null,
@@ -112,7 +113,7 @@ function settleMediaBrowserSelection(selection) {
 
 function updateProjectSaveBrowserAction() {
   if (els.directoryBrowser.dataset.mode !== "project_save") return;
-  els.directoryBrowserSelect.disabled = !els.directoryBrowserFilename.value.trim();
+  els.directoryBrowserSelect.disabled = !state.mediaBrowserDirectoryReady || !els.directoryBrowserFilename.value.trim();
 }
 
 function formatMediaBrowserSize(bytes) {
@@ -407,6 +408,7 @@ function renderMediaBrowserEntries(entries, mode) {
 
 async function loadMediaDirectory(path) {
   const generation = ++state.mediaBrowserGeneration;
+  state.mediaBrowserDirectoryReady = false;
   state.mediaPreviewGeneration += 1;
   clearMediaBrowserPreview();
   els.directoryBrowserStatus.textContent = "Loading folders…";
@@ -427,6 +429,7 @@ async function loadMediaDirectory(path) {
     }
 
     els.directoryBrowserPath.value = payload.current;
+    state.mediaBrowserDirectoryReady = true;
     els.directoryBrowser.dataset.parent = payload.parent || "";
     els.directoryBrowserUp.disabled = !payload.parent;
     els.directoryBrowserSelect.disabled = mode === "source" || mode === "project_open";
@@ -668,6 +671,7 @@ async function confirmMediaBrowserSelection() {
     return;
   }
   if (mode === "project_open" || mode === "project_save") {
+    if (!state.mediaBrowserDirectoryReady) return;
     try {
       const requestedPath = mode === "project_open"
         ? els.directoryBrowser.dataset.selectedPath

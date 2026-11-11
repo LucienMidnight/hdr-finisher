@@ -94,6 +94,15 @@ async function main() {
     cwd: desktopDirectory,
     env: { ...process.env, HDR_FINISHER_USER_DATA_DIR: userDataPath, HDR_FINISHER_DISABLE_GPU: "1" },
   });
+  const diagnostics = [];
+  electronApp.process().stdout.on("data", (data) => diagnostics.push(`[main stdout] ${data}`));
+  electronApp.process().stderr.on("data", (data) => diagnostics.push(`[main stderr] ${data}`));
+  const observeWindow = (page) => {
+    page.on("console", (message) => diagnostics.push(`[renderer ${message.type()}] ${message.text()}`));
+    page.on("pageerror", (error) => diagnostics.push(`[renderer error] ${error.stack || error}`));
+  };
+  electronApp.windows().forEach(observeWindow);
+  electronApp.on("window", observeWindow);
   try {
     // The startup splash opens first and closes once the app is ready, and the
     // hidden GPU delivery window is not the app either: wait for the main window.
@@ -322,8 +331,10 @@ async function main() {
     assert.equal(await window.locator(".top-actions #hdr-reference-white").count(), 0);
     await window.locator("#hdr-reference-white").selectOption("100");
     await window.waitForFunction(async () => (await window.hdrFinisherDesktop.getPreferences()).defaultReferenceWhiteNits === 100);
+    await window.waitForFunction(() => !els.hdrReferenceWhite.disabled && projectReferenceWhiteNits() === 100);
     await window.locator("#hdr-reference-white").selectOption("203");
     await window.waitForFunction(async () => (await window.hdrFinisherDesktop.getPreferences()).defaultReferenceWhiteNits === 203);
+    await window.waitForFunction(() => !els.hdrReferenceWhite.disabled && projectReferenceWhiteNits() === 203);
     assert.ok(await window.locator(".shortcut-row").count() > 100, "settings should expose application and continuous-control commands");
     await window.locator('[data-settings-tab="locations"]').click();
     const defaultPresetDirectory = await window.evaluate(() => window.hdrFinisherDesktop.getDefaultPresetDirectory());
@@ -659,6 +670,13 @@ async function main() {
     if (importedExrMetadata.metadata?.extra) delete importedExrMetadata.metadata.extra.analysis_timings_ms;
     assert.deepEqual(importedExrMetadata, droppedExrMetadata);
     checkpoint("staged desktop metadata verified");
+    // Packaged portable builds keep presets beside the executable. Use this
+    // run's disposable library so earlier smoke runs cannot prompt to replace.
+    await window.evaluate(async (directory) => {
+      const preferences = await window.hdrFinisherDesktop.getPreferences();
+      preferences.folders.presetSave = directory;
+      await window.hdrFinisherDesktop.setPreferences(preferences);
+    }, path.join(userDataPath, "smoke-presets"));
     const exposureBeforeShortcut = await window.locator("#hdr-exposure").inputValue();
     await window.keyboard.press("i");
     await window.waitForFunction(
@@ -716,13 +734,27 @@ async function main() {
     assert.equal(appliedFilmModel.lens_strength, 0.125);
     assert.deepEqual(Object.keys(appliedFilmModel).sort(), Object.keys(await window.evaluate(() => defaultFilmLook())).sort());
 
+    // Keep the destination lookup pending while the filename is edited.
+    // A packaged backend can answer more slowly than the filename input.
+    let releaseProjectDirectory;
+    const projectDirectoryGate = new Promise((resolve) => { releaseProjectDirectory = resolve; });
+    await window.route("**/api/media-browser?*", async (route) => {
+      if (new URL(route.request().url()).searchParams.get("mode") === "project_save") {
+        await projectDirectoryGate;
+      }
+      await route.continue();
+    });
     await window.evaluate(() => { saveProjectToPath({ saveAs: true }); });
     await window.locator("#directory-browser").waitFor({ state: "visible" });
     assert.equal(await window.locator("#directory-browser").getAttribute("data-mode"), "project_save");
     assert.equal(await window.locator("#directory-browser-filename").inputValue(), "blender_linear_rec2020.hdrfinisher");
     await window.locator("#directory-browser-filename").fill("electron-smoke.hdrfinisher");
+    const saveDisabledWhileLoading = await window.locator("#directory-browser-select").isDisabled();
+    releaseProjectDirectory();
+    assert.equal(saveDisabledWhileLoading, true, "typing a filename must not enable Save before its folder is ready");
     await window.locator("#directory-browser-select").click();
     await window.locator("#directory-browser").waitFor({ state: "hidden" });
+    await window.unroute("**/api/media-browser?*");
     checkpoint("project save returned");
     await window.waitForFunction(() => document.querySelector('[data-status-id="project-save"]')?.textContent.includes("Project saved"));
     checkpoint("project saved");
@@ -789,11 +821,25 @@ async function main() {
 
     const nativeTitle = await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).getTitle());
     process.stdout.write(JSON.stringify({ environment, projectPath, exportPath, title: nativeTitle, capabilities }) + "\n");
+  } catch (error) {
+    console.error(error);
+    for (const [index, page] of electronApp.windows().entries()) {
+      if (page.isClosed() || !/^https?:/.test(page.url())) continue;
+      await page.screenshot({ path: path.join(outputDirectory, `failure-window-${index}.png`), timeout: 5000 }).catch(() => {});
+      diagnostics.push(`[window ${index}] ${await page.locator("body").innerText().catch(() => "unavailable")}`);
+    }
+    throw error;
   } finally {
+    fs.writeFileSync(path.join(outputDirectory, "diagnostics.log"), diagnostics.join("\n"));
     if (process.platform === "darwin") {
       await electronApp.evaluate(({ app }) => app.quit());
     }
     await electronApp.close();
+    // Keep small diagnostics, not Chromium caches or disposable source copies.
+    const logs = path.join(userDataPath, "logs");
+    if (fs.existsSync(logs)) fs.cpSync(logs, path.join(outputDirectory, "logs"), { recursive: true });
+    fs.rmSync(fixtureDirectory, { recursive: true, force: true, maxRetries: 5 });
+    fs.rmSync(userDataPath, { recursive: true, force: true, maxRetries: 5 });
   }
 }
 

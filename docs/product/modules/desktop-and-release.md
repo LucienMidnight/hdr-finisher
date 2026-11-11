@@ -541,3 +541,20 @@ unchanged macOS chrome expectation failure; main Node 917 pass; Python
 Electron file-command workflow passes. The standard Library smoke's 3,149 ms
 drawing gap is recorded in the Library PRD and performance table, without a
 rerun or changed threshold.
+
+
+## November 12: packaged project-save readiness
+
+Fixed a real Save Project race found while checking the 0.9.2 Windows package:
+editing a filename re-enabled Save while the destination lookup was pending.
+Clicking then had no destination (or the previous directory), so the dialog
+could remain open silently. Save now stays disabled until the folder lookup
+succeeds; keyboard confirmation has the same readiness guard. No project
+format or image-processing change.
+
+The desktop smoke holds that lookup pending to check the disabled state before
+continuing through save and export. It also waits for reference-white edits to
+finish before changing the setting again, and uses a disposable preset library
+so the portable package's shared presets cannot trigger a replacement prompt.
+Failures retain screenshots, renderer/main console output and small logs;
+disposable source copies and profiles are removed after shutdown.
