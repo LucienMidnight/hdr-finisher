@@ -39,6 +39,7 @@
 - Choosing primaries and transfer by hand now clears the source review notice for linear and untagged TIFF or HEIC files, so they can be exported.
 - After adding a tag in the Library, the tag field and its suggestions clear again.
 - Save Project no longer gets stuck when a file name is typed before the folder list has loaded.
+- On Linux, sorting a Library folder by name works again with older system SQLite versions.
 - After using Denoise or Retouch, other Grade sliders respond about three times faster, and return to full speed when the tool is turned off.
 
 ## Changed or removed
@@ -47,7 +48,7 @@ Earlier tone controls and retired settings are not migrated before 1.0. Review o
 
 ## Known limitations
 
-This remains a technical alpha. Windows packages are unsigned; macOS packages are not notarized. In HDR with Highlight Compression turned off, extremely bright grades (for example Exposure around +8, or several Film Look controls at their extremes together) can show magenta, green or white blotches in the brightest parts of the preview; export and Proof are correct. Retouch's final quality review, some Library responsiveness targets and physical platform HDR qualification remain incomplete. Two GPU exports of the same photo were once seen to differ; this did not reproduce in 0.9.2 testing and a check now watches for it.
+This remains a technical alpha. Windows packages are unsigned; macOS packages are not notarized. In HDR with Highlight Compression turned off, extremely bright grades (for example Exposure around +8, or several Film Look controls at their extremes together) can show magenta, green or white blotches in the brightest parts of the preview; export and Proof are correct. Retouch's final quality review, some Library responsiveness targets and physical platform HDR qualification remain incomplete. Two GPU exports of the same photo were once seen to differ; this did not reproduce in 0.9.2 testing and a check now watches for it. On macOS and Linux, JPEG XL files open with their size and bit depth, but their colour tags are not read yet: choose the primaries and transfer by hand in the source review notice (Windows reads them automatically).
 
 See [Known limitations](https://github.com/LucienMidnight/hdr-finisher/blob/v0.9.2/docs/known-limitations.md) for support and validation status.
 
