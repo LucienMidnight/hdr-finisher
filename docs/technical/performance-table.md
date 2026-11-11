@@ -522,11 +522,48 @@ these were corrected to exercise the intended tiered behavior.
 
 **233 controls timed three times; 229 demonstrated the intended response and restoration in at least one view. 57 separate gesture checks were also timed. 92 satisfied all measured rendition/view/input checks.** This is response coverage, not picture-quality or release sign-off.
 
-**Slowest:** raw edge colour expand: 13.64 s; raw highlight method: 13.26 s; lens focal: 6.33 s. Heavy RAW rebuilds are permitted exceptions. Ordinary editing: hsl / selection toggle: 1.42 s; sdr / match entire: 1.21 s; denoise color: 0.98 s. Three-trial medians; older W1 timings include background drain and are upper bounds.
+**Slowest:** raw edge colour expand: 13.64 s; raw highlight method: 13.26 s; lens focal: 6.33 s. Heavy RAW rebuilds are permitted exceptions. Ordinary editing (W11 post-W9): SDR HSL Show selection median 1.48 s (up to 1.96 s); SDR Match entire median 1.19 s (up to 1.44 s); denoise color: 0.98 s. Three-trial medians; older W1 timings include background drain and are upper bounds.
 
-**Problems:** W9 fixed the roughly 200 ms anchor poll (`0dc12ce8`): Retouch reference medians now meet the combined allowance; Denoise retains a 26 ms excess. Film/lens drags remain below 20/s. W9's targeted detail is preserved below. Before that merge, W10 found smaller reference increases at SDR Vignette Centre Y (25 to 46 ms after reset) and native HDR Bias (34 to 56/59 ms); other pre-fix crossings are flagged below; these were not rerun after W9. Pre-W9 HSL Show selection took 1.40-1.42 s and Match 1.20-1.21 s, above the one-second bar; both need post-merge confirmation. No speed code was changed. **Fixed:** `38821253` percentage entry passed the app rerun (44% stored correctly); Push/Pull's real buttons passed both renditions/views.
+**Problems:** W9 fixed the roughly 200 ms anchor poll (`0dc12ce8`): Retouch reference medians now meet the combined allowance; Denoise retains a 26 ms excess. Film/lens drags remain below 20/s. W9's targeted detail is preserved below. Before that merge, W10 found smaller reference increases at SDR Vignette Centre Y (25 to 46 ms after reset) and native HDR Bias (34 to 56/59 ms); other pre-fix crossings are flagged below; these were not rerun after W9. W11 confirmed both misses after W9: SDR Show selection still rebuilds its CPU stage; Match spends its time in colour fitting. No product speed change was retained; see W11 findings below. **Fixed:** `38821253` percentage entry passed the app rerun (44% stored correctly); Push/Pull's real buttons passed both renditions/views.
 
 **Untested:** remaining mode/profile fields, brush/gradient/Hue-mask parameters, complete Boolean authoring, perspective/custom geometry, repair move/list actions and preset I/O were not qualified within the bounded review. Missing view/input checks and the remaining actions in each gesture family are explicit below. Unchanged sampled crops are fixture exceptions where the other view demonstrated change/reset.
+
+**W11 investigation, November 11, 2026 (`5359ea80`, after W9):** three trials
+per rendition/view, 2560x1440 Electron, shared lock acquired with
+`run_grade_batch.py`'s atomic acquisition/ownership helpers. Original comparison
+and Match ran serially under one acquisition; a focused visible-selection
+check used a second completed acquisition. No application code, pixels, cache
+sizes or budgets changed. Raw reports/profiles and runner logs are in the main
+checkout's `codebase/output/performance/grade-0-9-2/w11/`: `w11-match-before.json`,
+`w11-hsl-profile.json`, `w11-profile.log`; an interrupted accidental duplicate
+authoring launch is labelled superseded in `w11-hsl-before.json`.
+
+The final HSL check selects built-in Red, rather than the authoring driver's
+empty Custom recipe. HDR show: Fit 0.390-0.756 s, native 0.475-0.508 s; SDR
+show: Fit 1.470-1.961 s, native 1.452-1.661 s. Hide: 0.019-0.033 s, with no
+HSL sampling request. SDR sampling requests account for 1.426-1.729 s of
+the whole wait; the cold Fit trial also includes about 0.23 s of UI/settlement
+overhead. A standalone CPU profile of the same chart's Red selection explains
+the repeated cost: about 1.14 s rebuilding the SDR stage (0.70 s highlight
+compression, 0.40 s gamut mapping), plus roughly 0.33 s preparing/selecting
+coverage and PNG/response overhead. This is CPU reconstruction, not a full
+preview re-upload/recompile caused by visibility. Proposed follow-up: expose
+the existing GPU HSL stage/coverage for the overlay, with independent overlay
+pixel checks and budget accounting; that is larger than a safe release patch.
+Reusing another cached overlay would add retained memory and needs an explicit
+design within the existing allowance.
+
+Match backend request time is 1.012-1.123 s warm, 1.300 s cold; the cold
+source proxy costs 0.234 s. The fit renders 11 GPU candidates, including nine
+exposure-refinement candidates. Exposure refinement costs 0.489-0.551 s,
+neutral tonal fitting 0.164-0.215 s, and CPU certification 0.131-0.137 s;
+the remaining stages build/score the target and merge the fit. GPU candidate
+wait (included in those stages) is 0.226-0.283 s. Request completion to settled
+picture adds about 0.06-0.14 s. This is genuinely colour-fit time; removing
+preview scheduling cannot bring it below one second. Proposed follow-up:
+profile repeated fit statistics/candidate scoring for reuse while preserving
+the selected recipe and certification; do not reduce candidates or relax the
+quality gate as a release shortcut. No small safe product fix was found.
 
 Limits: under 1 s; pointwise Fit drags at least 20 presentations/s. A reference slowdown counts only above **25% and 20 ms together**. Met = measured checks passed; Not met (real problem) = measured limit crossed; Exception = stated reason; Untested = missing evidence.
 
@@ -704,7 +741,7 @@ Limits: under 1 s; pointwise Fit drags at least 20 presentations/s. A reference 
 | hsl / opacity | 0 to 1 | 0.032-0.041 | 0.069-0.070 | 30.0-31.4 | Not met (real problem): Exposure reference over both 25% and 20 ms slower after reset; Typed input unverified; typed value differs from entered value | grade-24mp.tiff / `4f5a5e14` |
 | hsl / pick | Discrete / see inventory | 0.103-0.515 | 0.113-0.532 | Not measured / N/A | Untested: Gesture only; surrounding Exposure references are in value-control rows | grade-colour-chart.tiff / `8cfdb24a` |
 | hsl / saturation | -100 to 100 | 0.041-0.044 | 0.073-0.074 | 29.7-31.0 | Met (measured observations only) | grade-24mp.tiff / `4f5a5e14` |
-| hsl / selection toggle | Discrete / see inventory | 0.378-1.404 | 0.343-1.415 | Not measured / N/A | Not met (real problem): Gesture only; surrounding Exposure references are in value-control rows; settled preview at or over 1 second | grade-colour-chart.tiff / `8cfdb24a` |
+| hsl / selection toggle | Discrete / built-in Red channel | 0.390-1.961 | 0.475-1.661 | Not measured / N/A | Not met: SDR show exceeds 1 s; HDR show meets; hide 0.019-0.033 s. Decoded overlay/state and photograph restoration verified; surrounding Exposure references not measured | grade-colour-chart.tiff / `5359ea80`, November 11 W11 |
 | hsl / subtract | Discrete / see inventory | 0.091-0.512 | 0.111-0.519 | Not measured / N/A | Untested: Gesture only; surrounding Exposure references are in value-control rows | grade-colour-chart.tiff / `8cfdb24a` |
 | hsl / uniformity | 0 to 100 | 0.034-0.046 | 0.072-0.075 | 30.4-30.9 | Met (measured observations only) | grade-24mp.tiff / `4f5a5e14` |
 | hsl / width | 1 to 180 | 0.038-0.046 | 0.071-0.074 | 28.7-29.3 | Met (measured observations only) | grade-24mp.tiff / `4f5a5e14` |
@@ -830,7 +867,7 @@ Limits: under 1 s; pointwise Fit drags at least 20 presentations/s. A reference 
 | sdr / highlights | -100 to 100 | 0.032-0.032 | 0.062-0.062 | 32.8-32.8 | Met (measured observations only) | grade-colour-chart.tiff / `05e34f85` |
 | sdr / highlights center | -8 to 8 | 0.027-0.027 | 0.062-0.062 | 36.5-36.5 | Met (measured observations only) | grade-colour-chart.tiff / `05e34f85` |
 | sdr / highlights width | 0.5 to 12 | 0.029-0.029 | 0.053-0.053 | 33.5-33.5 | Met (measured observations only) | grade-colour-chart.tiff / `05e34f85` |
-| sdr / match entire | Discrete / see inventory | 1.214-1.214 | 1.197-1.197 | Not measured / N/A | Not met (real problem): settled preview at or over 1 second | grade-24mp.tiff / `8cfdb24a` |
+| sdr / match entire | Discrete / HDR exposure +0.15, saturation 0 | 1.117-1.442 | 1.103-1.146 | Not measured / N/A | Not met: colour fit itself exceeds 1 s; changed picture and revert verified in both views | grade-24mp.tiff / `5359ea80`, November 11 W11 |
 | sdr / midtones | -100 to 100 | 0.052-0.052 | 0.082-0.082 | 32.0-32.0 | Untested: early first-exact observation; complete-settlement rerun required; Typed input unverified | grade-24mp.tiff / `d5bd061e` |
 | sdr / midtones center | -8 to 8 | 0.027-0.027 | 0.053-0.053 | 31.0-31.0 | Met (measured observations only) | grade-colour-chart.tiff / `05e34f85` |
 | sdr / midtones width | 0.5 to 12 | 0.055-0.055 | 0.071-0.071 | 31.1-31.1 | Untested: early first-exact observation; complete-settlement rerun required; Typed input unverified | grade-24mp.tiff / `d5bd061e` |

@@ -471,3 +471,21 @@ The 24 MP HDR pattern/low-knee probe makes SDR Start observable. A native
 Sharpen Radius probe must cross the quantized kernel boundary (2.2 rather than
 0.8 -> 1.34, which both choose 3x3 boxes). These are fixture corrections, with
 no change to app processing or acceptance tolerances.
+
+### W11 HSL / Match investigation (November 11)
+
+`--batch hsl-selection --followup` measures Show selection with the built-in
+Red channel (nonempty selection), without running the picker-authoring cases.
+It waits for a decoded overlay and records hide/restore time and request times
+separately. The existing `hsl-authoring` case restores an empty Custom recipe
+before Show selection; do not treat its state-only check as visible-selection
+qualification. Neither case establishes overlay pixel/export agreement.
+
+Match accepts `--match-exposure .15 --match-saturation 0` to reproduce W10's
+successful modest recipe; defaults stay unchanged. Each observation now retains
+the backend's `X-SDR-Match-Timing` breakdown. The default stronger recipe may
+correctly fail the existing colour-safety gate on the W10 photo.
+
+W11 reports/profiles are retained in the main checkout's
+`output/performance/grade-0-9-2/w11/`. Sampling and Match remain above one second
+in SDR; see performance-table section 5 for the breakdown and proposed work.

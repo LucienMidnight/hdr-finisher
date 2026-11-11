@@ -1,5 +1,26 @@
 # Module PRD: Grade
 
+## November 11: W11 HSL / Match speed investigation
+
+Post-W9 three-trial checks still miss the one-second bar in SDR. Built-in Red
+Show selection takes 1.45-1.96 s; HDR takes 0.39-0.76 s. Hiding takes 19-33 ms.
+The show request rebuilds the SDR HSL input on the CPU; highlight compression
+and gamut mapping dominate. Reusing the GPU stage needs an overlay-specific
+implementation and pixel checks, beyond a small safe release patch.
+
+Match entire takes 1.10-1.44 s on the modest +0.15 EV recipe. Most of the wait
+is the colour fit itself, including 11 GPU candidates and CPU certification,
+with only 0.06-0.14 s from response to display. No product speed change was
+retained; candidates, quality gates, output pixels and memory remain unchanged.
+The driver now supports focused nonempty HSL selection checks, records hide
+time/request timing, retains Match stage timings and accepts the successful
+modest recipe explicitly. Performance-table section 5 holds conditions,
+raw evidence, detailed attribution and proposed follow-up work.
+
+Checks after rebasing onto local main: 921 Node tests and 33 focused Python
+HSL/Match tests passed. No backend code changed. Graphics measurements ran
+serially under the shared lock; the focused HSL run reported no app errors.
+
 ## November 11: W10 control coverage follow-up
 
 W10 used 89.4 minutes of serialized graphics runs including startup/shutdown,
@@ -24,7 +45,7 @@ reset/bypass gestures were exercised. No application formula changed.
 
 The 42 MP RAW rebuilds take about 4-14 seconds, an accepted heavy-work exception.
 Match changed/reverted in both views at 1.20-1.21 seconds before W9; HSL Show
-selection took 1.40-1.42 seconds. Both speeds need post-merge confirmation. A stronger
+selection took 1.40-1.42 seconds. W11 subsequently confirmed both speed misses; see the investigation above. A stronger
 recipe was correctly refused by the existing colour-safety gate (OKLab P95 0.066 exceeds 0.05). W9's merged wake-up
 fix removes the 200 ms poll and qualifies the targeted Retouch references;
 Denoise retains a 26 ms excess and Film/lens drags remain below 20/s. W10 made
