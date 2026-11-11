@@ -14,8 +14,9 @@ const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
     await page.goto(base);await page.setInputFiles("#file-input",path.join(root,"fixture.tiff"));
     await page.waitForFunction(()=>state.session?.session_id,null,{timeout:120000});
     await page.waitForTimeout(500);
-    // The linear TIFF needs a manual interpretation, as it would for a user.
-    await resolveInterpretation(page);
+    // The old untagged import kept these samples unchanged in the ACEScg
+    // working buffer. Choose that same picture explicitly through the UI.
+    await resolveInterpretation(page, { primaries: "linear_acescg", transfer: "linear", reference: "scene_0_18" });
     await page.waitForFunction(()=>viewerState().status==="ready",null,{timeout:120000});
     await page.click("#photo-frame-toggle");await page.check("#photo-framing-enabled");
     await page.waitForFunction(()=>state.editDocument?.framing?.enabled);
