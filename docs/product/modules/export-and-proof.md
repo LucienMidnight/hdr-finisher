@@ -1,5 +1,39 @@
 # Module PRD: Export and Proof
 
+## November 11: framing delivery fixture interpretation (W20)
+
+The framing driver's colour shift came from changing its input interpretation.
+At `503b5105`, the untagged float TIFF had unknown primaries and transfer;
+"Use assumption" only dismissed the notice. The loader retained the samples
+unchanged in its ACEScg working buffer, with the scene 0.18 reference.
+`de7516a3` selected linear sRGB manually, introducing an sRGB-to-ACEScg
+conversion. The largest source-sample change is 0.036477, before export.
+
+The driver now explicitly selects ACEScg Linear / linear / scene 0.18 through
+the manual UI. Loading the fixture with the archived November 8 loader and
+current manual ACEScg produces exactly equal float32 pixels (SHA-256
+`007edb85e24c7369fce40d8f54430ba9cf671c9fbc4b3d023f6256c49ad90112`).
+The manual sRGB buffer differs. No production import, export, Proof or
+perceptual limit changed. Diagnostic details: `output/w20-framing/interpretation.json`.
+
+Validation: the corrected framing driver passes every unchanged mean <1 /
+p99.9 <=3 comparison, GPU and CPU framed exports, full-size Proof identity,
+Library framing, flat mat colours and decoded HDR ceilings. SDR JPEG mean /
+p99.9 is 0.341 / 2.856, PNG 0.190 / 1.639, JPEG XL 0.316 / 1.962: the
+November 8 results are restored. AVIF HDR is 0.602 / 2.910. No export
+regression is established by the previous changed-input failures.
+Node: 921 passed after rebase onto local main `de8b5b25`. Python: 3,253 passed,
+55 skipped; unrelated Library helper recovery timeout in
+`test_identified_bad_decoder_is_not_replayed_and_next_file_recovers[HANG]`.
+Checks use the shared GPU lock; logs: `output/w20-framing.log`,
+`output/w20-node.log`, `output/w20-python.log`. No push.
+
+The standard 90-second Library smoke also passes (no errors or memory
+violation, 85 ms drawing gap); its timings are in the performance table.
+Shared main scratch output started and ended at 45.9 GB; the worktree reuses
+the same test-photo copies. Temporary TIFFs, exports and archived loader were
+removed; only logs, diagnostic metrics and the smoke report are retained.
+
 ## November 11: expected delivery hand-over (W7)
 
 Grade taking the shared GPU budget, or a higher-priority delivery taking the

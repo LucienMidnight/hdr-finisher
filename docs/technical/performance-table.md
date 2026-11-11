@@ -2565,3 +2565,14 @@ by 90 s. No photo errors or memory breach (external peak 3.189 GB), but
 investigation before Steve's normal-use trial. This is a smoke observation,
 not original-file action speed acceptance. Evidence:
 codebase/output/quick-library-check/w3-audit/report.json.
+
+
+## November 11: W20 framing interpretation smoke
+
+At `cf1f499f` (rebased onto `de8b5b25`), the standard 90-second mixed Library
+check passed: no application/photo errors, no memory violation, 85 ms longest
+drawing gap within the unchanged 250 ms limit. First/ten/twenty pictures:
+1.0/1.4/5.9 s; 29 shown at 90 s; external peak 3.277 GB. Plain Electron,
+2560x1440, disposable profile, shared run-photo copies, shared GPU lock;
+Python and Node suites had finished. This is a smoke observation, not a speed
+comparison. Evidence: codebase/output/quick-library-check/w20-framing/report.json.
