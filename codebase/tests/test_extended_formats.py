@@ -889,6 +889,8 @@ def test_owned_lens_input_avoids_copy_and_preserves_result(monkeypatch):
     assert owned_metadata == metadata
 
 
+@pytest.mark.skipif(__import__("hdr_finisher.binaries", fromlist=["resolve_binary"]).resolve_binary("hdrf-jxl-info") is None,
+                    reason="Structured JPEG XL colour profiles need the native hdrf-jxl-info helper (Windows build only).")
 @pytest.mark.parametrize("primaries,color_space", [(1, "sRGB"), (9, "BT.2020"), (11, "Display P3")])
 @pytest.mark.parametrize("transfer,name", [(1, "BT.709"), (8, "LINEAR"), (13, "sRGB"), (16, "PQ"), (18, "HLG")])
 def test_jpegxl_native_data_profile_matches_decoded_samples(tmp_path, primaries, color_space, transfer, name):
