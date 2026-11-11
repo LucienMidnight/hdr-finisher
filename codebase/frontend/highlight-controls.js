@@ -145,8 +145,6 @@ function renderHighlightCompressionControls() {
   const xFor = (value) => pad.left + (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (width - pad.left - pad.right);
   const yFor = (value) => height - pad.bottom - (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (height - pad.top - pad.bottom);
   context.clearRect(0, 0, width, height);
-  context.fillStyle = uiToken("--panel");
-  context.fillRect(0, 0, width, height);
   context.fillStyle = uiToken("--viewer");
   context.fillRect(pad.left, pad.top, width - pad.left - pad.right, height - pad.top - pad.bottom);
   context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--hairline").trim();
@@ -275,8 +273,6 @@ function renderSdrHighlightCompressionControls() {
   const xFor = (value) => pad.left + (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (width - pad.left - pad.right);
   const yFor = (value) => height - pad.bottom - (Math.log10(clamp(value, minimum, maximum)) - Math.log10(minimum)) / (Math.log10(maximum) - Math.log10(minimum)) * (height - pad.top - pad.bottom);
   context.clearRect(0, 0, width, height);
-  context.fillStyle = uiToken("--panel");
-  context.fillRect(0, 0, width, height);
   context.fillStyle = uiToken("--viewer");
   context.fillRect(pad.left, pad.top, width - pad.left - pad.right, height - pad.top - pad.bottom);
   context.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--hairline").trim();

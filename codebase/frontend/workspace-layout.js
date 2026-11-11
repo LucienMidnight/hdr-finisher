@@ -169,6 +169,8 @@ function dispatchLayoutSettled() {
 function initSplitter({ element, stateKey, cssVar, axis, direction }) {
   if (!element) return;
   const [minimum, maximum] = LAYOUT_LIMITS[stateKey];
+  element.setAttribute("aria-valuemin", String(minimum));
+  element.setAttribute("aria-valuemax", String(maximum));
   let frame = null;
   let pendingValue = state.layout[stateKey];
 

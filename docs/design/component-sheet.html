@@ -47,7 +47,7 @@
   .type-row code { color: var(--muted); font: var(--font-size-min) var(--font-mono); }
   .sheet-depth { display: grid; gap: 4px; margin: -8px 0 20px; }
   .sheet-depth p { margin: 0; }
-  .mock-panel { width: 320px; max-width: 100%; border: 1px solid var(--hairline); background: var(--panel); }
+  .mock-panel { width: var(--grade-w); max-width: 100%; border: 1px solid var(--hairline); background: var(--panel); }
 </style>
 
 <!-- The components. Each rule here is the reference the app should match.
@@ -248,8 +248,8 @@
   .hf-list-empty { display: grid; place-items: center; height: 100%; padding: 0 16px; color: var(--muted); font-size: var(--font-size-sm); text-align: center; }
 
   /* Graphs: the black plot area is exactly the grid. Axis labels sit outside
-     it, on the panel surface, with room for the end labels. */
-  .hf-graph { display: block; width: 100%; height: auto; overflow: visible; }
+     it, on the owning surface, with room for the end labels. */
+  .hf-graph { background: transparent; display: block; width: 100%; height: auto; overflow: visible; }
   .hf-graph .plot { fill: var(--viewer); }
   .hf-graph .grid { stroke: var(--curve-grid); stroke-width: 1; shape-rendering: crispEdges; }
   .hf-graph .guide { stroke: var(--scope-guide-line-labeled); stroke-width: 1; shape-rendering: crispEdges; }
@@ -594,7 +594,7 @@
   <h2>Graphs</h2>
   <ul class="rules">
     <li>The black plot area is exactly the grid: its edges are the outer grid lines. Nothing black spills past them.</li>
-    <li>Axis labels sit outside the plot on the panel surface, in <code>--font-size-min</code>. Leave enough margin that the first and last labels are never cut off.</li>
+    <li>Axis labels sit outside the plot on the owning surface (raised inside an expanded module, panel in the analysis dock); labels use <code>--font-size-min</code> and the gutter is transparent. Leave enough margin that the first and last labels are never cut off.</li>
     <li>The home or reference value label uses text ink; other labels use the axis-label ink.</li>
     <li>A limit or cut-off (the 1000-nit target, the 10K PQ boundary) is a yellow dashed line, <code>--graph-limit-line</code>, dashes 4 × 3 px, with its label in the same yellow. Nothing else in a graph is dashed or yellow, apart from selected control points.</li>
     <li>Zero and identity lines are neutral. Curves are neutral too unless the graph's channel gives them a colour (Red, Green, Blue).</li>
@@ -606,6 +606,7 @@
     <div class="specimen"><h3>Highlight compression</h3><div class="demo on-raised"><svg class="hf-graph" id="g-compress"></svg></div></div>
     <div class="specimen" style="grid-column: 1 / -1"><h3>Histogram</h3><div class="demo"><svg class="hf-graph" id="g-hist"></svg></div></div>
   </div>
+  <p class="note">The Grade panel uses <code>--grade-w</code>: 328 px default/minimum, up from 320 px. Exposure Bands actions stay on one line; the app minimum remains 1100 px.</p>
   <p class="note">The graph frame code is the <code>drawGraph</code> function at the bottom of this page: margins, grid and labels. In the app the same layout applies to the canvas drawing.</p>
 </section>
 

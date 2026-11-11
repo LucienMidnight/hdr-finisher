@@ -277,8 +277,6 @@ function drawToneEqualizerEditor(lane = state.currentView) {
   const yForAdjustment = (value) => top + ((TONE_EQUALIZER_MAX_ADJUSTMENT_EV - value) / (TONE_EQUALIZER_MAX_ADJUSTMENT_EV * 2)) * graphHeight;
 
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = uiToken("--panel");
-  ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = uiToken("--viewer");
   ctx.fillRect(left, top, graphWidth, graphHeight);
   ctx.font = HDRAppearance.font("min");

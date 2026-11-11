@@ -1,5 +1,18 @@
 # Module PRD: Grade
 
+## November 11: graph gutters and sidebar room
+
+Graph gutters are transparent so axis labels sit on the owning module surface,
+including Curves, HDR/SDR Exposure Bands, Highlight Compression and the analysis
+histogram. Only the plot gets the viewer fill; Curves keeps its coloured zones.
+The existing `--grade-w` token now sets the default and splitter minimum at
+328 px (previously 320 px). Exposure Bands action labels stay on one line;
+the window minimum remains 1100 px. No processing or saved-file changes.
+
+Review: `codebase/output/review/component-pass/index.html`, graph follow-up
+section, Default Dark/Light at minimum and normal width. Visual sign-off is
+pending Steve's review.
+
 ## November 8: Retouch selection visibility and Local brush size keys
 
 Selecting a repair in the list restarts its Retouch tool so its labelled

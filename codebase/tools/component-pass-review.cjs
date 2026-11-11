@@ -2,6 +2,53 @@ const {chromium}=require('playwright'),fs=require('node:fs'),path=require('node:
 const out=path.resolve(__dirname,'../output/review/component-pass');fs.mkdirSync(out,{recursive:true});
 (async()=>{const browser=await chromium.launch();try{const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'domcontentloaded'});
 await page.evaluate(async()=>{const r=await fetch('/api/proof/test-pattern');await importByteFile(new File([await r.blob()],'component-pass.tiff',{type:'image/tiff'}));});await page.waitForFunction(()=>state.session&&document.body.dataset.workflow==='grade');
+if(process.argv.includes('--graphs-only')) {
+ await page.locator('#grade-splitter').press('End');await page.locator('#grade-splitter').press('Home');
+ assert.equal(await page.evaluate(()=>state.layout.gradeW),328);
+ assert.equal(await page.locator('#grade-splitter').getAttribute('aria-valuemin'),'328');
+ const cdp=await page.context().newCDPSession(page),checks=[],shots=[];
+ const shot=async(name,loc)=>{await loc.scrollIntoViewIfNeeded();await loc.screenshot({path:path.join(out,name+'.png')});shots.push(name+'.png');};
+ const contained=async(selector)=>page.locator(selector).evaluate(e=>{
+ const p=e.getBoundingClientRect();const children=[...e.querySelectorAll('button,input[type=range]')].filter(x=>x.getClientRects().length&&!x.closest('[hidden],.workflow-side-panel')).map(x=>{const r=x.getBoundingClientRect();return {id:x.id,left:r.left,right:r.right,top:r.top,bottom:r.bottom}});
+ return children.every(r=>r.left>=p.left-1&&r.right<=p.right+1&&r.top>=p.top-1&&r.bottom<=p.bottom+1)&&children.every((a,i)=>children.slice(i+1).every(b=>Math.min(a.right,b.right)-Math.max(a.left,b.left)<1||Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)<1));});
+ for(const theme of ['default-dark','default-light']) {
+ await page.evaluate(t=>{HDRApplicationShell.openSettings('appearance');document.querySelector(`[data-theme-option="${t}"]`).click();},theme);await page.locator('#settings-close').click();
+ for(const [size,width,appWidth] of [['minimum',328,1100],['normal',380,2560]]) {
+ await cdp.send('Emulation.setDeviceMetricsOverride',{width:appWidth,height:1440,deviceScaleFactor:1,mobile:false});
+ await page.evaluate(w=>{state.layout.gradeW=w;applyLayoutState();setGradeMode('global');document.querySelectorAll('.control-group').forEach(e=>e.classList.add('collapsed'));for(const name of ['curves','hdr-equalizer'])document.querySelector(`[data-group="${name}"]`).classList.remove('collapsed');},width);
+ await page.evaluate(()=>document.fonts.ready);
+ await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
+ await page.evaluate(()=>{drawCurveEditor();drawToneEqualizerEditor();});
+ const geometry=await page.evaluate(()=>[...document.querySelectorAll('[data-group="hdr-equalizer"] .tone-equalizer-actions > *')].map(e=>{const r=e.getBoundingClientRect(),p=e.parentElement.getBoundingClientRect(),range=document.createRange();range.selectNodeContents(e);return {text:e.textContent,lines:range.getClientRects().length,left:r.left,right:r.right,parentRight:p.right,scroll:e.scrollWidth,client:e.clientWidth};}));
+ assert.ok(geometry.every(x=>x.lines===1&&x.right<=x.parentRight+1&&x.scroll<=x.client+1),JSON.stringify(geometry));
+ assert.equal(await contained('.top-bar'),true);assert.equal(await contained('.viewer-bar'),true);
+ for(const id of ['curve-editor','tone-equalizer-editor'])assert.equal(await page.locator('#'+id).evaluate(c=>c.getContext('2d').getImageData(0,0,1,1).data[3]),0,id+' gutter is transparent');
+ const prefix='graphs-'+theme+'-'+size;
+ await shot(prefix,page.locator('#grade-workflow-panel'));
+ await page.evaluate(()=>{document.querySelector('[data-group="hdr-highlights"]').classList.remove('collapsed');renderHighlightCompressionControls();});
+ await shot(prefix+'-compression',page.locator('[data-group="hdr-highlights"]'));
+ assert.equal(await page.locator('#highlight-compression-graph').evaluate(c=>c.getContext('2d').getImageData(0,0,1,1).data[3]),0);
+ await page.locator('#view-sdr').click();
+ await page.locator('[data-group="sdr-equalizer"]').evaluate(e=>e.classList.remove('collapsed'));
+ await page.locator('[data-group="sdr-equalizer"]').scrollIntoViewIfNeeded();
+ await page.evaluate(()=>drawToneEqualizerEditor());
+ assert.equal(await page.locator('#sdr-tone-equalizer-editor').evaluate(c=>c.getContext('2d').getImageData(0,0,1,1).data[3]),0);
+ const sdr=await page.locator('[data-group="sdr-equalizer"] .tone-equalizer-actions').evaluate(row=>[...row.children].every(e=>{const r=document.createRange();r.selectNodeContents(e);return r.getClientRects().length===1&&e.getBoundingClientRect().right<=row.getBoundingClientRect().right+1;}));assert.ok(sdr,'SDR actions fit');
+ await page.locator('#view-hdr').click();
+ // Both rendition action rows obey the same layout at the minimum.
+ await page.evaluate(()=>{document.querySelector('[data-group="hdr-highlights"]').classList.add('collapsed');});
+ checks.push({theme,size,panelWidth:width,appWidth,actions:'one line and contained',gutters:'transparent',toolbar:'contained, no overlaps'});
+ if(size==='minimum')await shot(prefix+'-toolbar',page.locator('.viewer-bar'));
+ }
+ await shot('graphs-'+theme+'-histogram',page.locator('#histogram'));
+ }
+ assert.deepEqual(errors,[]);await cdp.detach();
+ fs.writeFileSync(path.join(out,'graph-checks.json'),JSON.stringify({checks,errors},null,2));
+ const review=path.join(out,'index.html');let html=fs.existsSync(review)?fs.readFileSync(review,'utf8'): '<!doctype html><meta charset="utf-8"><title>Component review</title>';
+ html=html.replace(/<section id="graph-followup">[\s\S]*?<\/section>/,'');
+ html+='<section id="graph-followup"><h2>Grade graph follow-up</h2><p>328 px minimum (previously 320); 380 px normal. Default Dark and Default Light. Minimum-width toolbar at 1100 px. Transparent axis gutters, original Curves zone bands.</p>'+shots.map(f=>`<figure><figcaption>${f}</figcaption><img src="${f}"></figure>`).join('')+'</section>';
+ fs.writeFileSync(review,html);console.log('Graph follow-up passed',checks);return;
+}
 const crop=async(name,loc)=>{await loc.scrollIntoViewIfNeeded();await loc.screenshot({path:path.join(out,name+'.png')});};
 for(const theme of ['default-dark','modern-dark','default-light','studio-gray']){
 await page.evaluate(t=>{HDRApplicationShell.openSettings('appearance');document.querySelector(`[data-theme-option="${t}"]`).click();},theme);await page.locator('#settings-close').click();await page.evaluate(()=>{activateWorkflowTab('grade');setGradeMode('global');});const keep=['default-dark','default-light'].includes(theme);

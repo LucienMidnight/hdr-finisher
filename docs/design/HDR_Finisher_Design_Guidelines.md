@@ -2,7 +2,7 @@
 
 Status: living guideline for the shipped application
 
-Last updated: 2026-11-10
+Last updated: 2026-11-11
 
 This guideline is authoritative for current UI behavior and supersedes persistence language in older product and sprint documents.
 
@@ -326,7 +326,7 @@ Curves and Exposure Bands use the same directional cue geometry and color. The c
 Use the runtime tokens and existing component rhythm as the baseline:
 
 - Source rail: 232 px default.
-- Grade rail: 320 px default.
+- Grade rail: 328 px default and minimum (existing `--grade-w` token; previously 320 px). Exposure Bands actions stay on one line. The app minimum remains 1100 px.
 - Analysis dock: 252 px default.
 - Top bar: 44 px; panel headers: 40 px; status: 28 px; Library rows: 24 px.
 - Control rows keep their existing content layout with the shared slider scale strip.
@@ -500,8 +500,10 @@ use subsection-title-font (Afacad medium, md), sentence case. Small capitals
 are for field labels. Titled panel sections end with full-width hairlines,
 including the last section. Details separates File, Marks, Tags and Camera.
 
-Graphs fill only the grid rectangle with viewer colour; gutters use panel
-colour and contain all axis labels. Limits use graph-limit-line (attention),
+Graphs fill only the grid rectangle with viewer colour; transparent gutters
+show the owning surface (raised inside expanded modules, panel in the analysis
+dock) and contain all axis labels. Curves retain their coloured zone bands.
+Limits use graph-limit-line (attention),
 4-by-3 dashes and matching labels. Identity lines are solid curve-identity;
 Highlight Compression uses curve-neutral. Exposure Bands zero is strong grid
 grey and its influence wash is #ff7a1f1f orange. Selected points remain yellow.

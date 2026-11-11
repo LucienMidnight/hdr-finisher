@@ -4,8 +4,6 @@ function drawHistogram(scope) {
   if (!surface) return;
   const { ctx, width, height } = surface;
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = uiToken("--panel");
-  ctx.fillRect(0, 0, width, height);
   if (!scope?.channels?.length) {
     els.scopeTitle.textContent = "Histogram";
     els.scopeNote.textContent = "Reference scopes will appear here after a preview is rendered.";

@@ -625,11 +625,14 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 :root .percent-input > span { position: absolute; inset: 0 8px 0 auto; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
 :root .batch-unit-field { border-color: var(--plate-edge); background: var(--input); box-shadow: var(--plate-press); }
 :root .batch-unit-field input[type="number"] { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-:root :is(#curve-editor, #tone-equalizer-editor, #highlight-compression-graph, #sdr-highlight-compression-graph, #histogram) { background: var(--panel); border: 0; }
+:root :is(#curve-editor, #tone-equalizer-editor, #highlight-compression-graph, #sdr-highlight-compression-graph, #histogram) { background: transparent; border: 0; }
 
 
 :root :is(input[type="text"], input[type="number"], input[type="search"]) { min-height: var(--panel-control-h); }
-:root :is(#sdr-tone-equalizer-editor) { background: var(--panel); }
+:root :is(#sdr-tone-equalizer-editor) { background: transparent; }
 :root .source-rail :is(.source-summary, .disclosure-panel) { border-bottom: 1px solid var(--hairline); }
 
 :root :is(.batch-preset[aria-pressed="true"], .library-tags-tools [aria-pressed="true"], .library-tag-row[aria-selected="true"]) { box-shadow: var(--plate-press); }
+
+/* Keep Exposure Bands actions on one line at the token-owned rail minimum. */
+:root .tone-equalizer-actions > * { white-space: nowrap; flex-shrink: 0; }
