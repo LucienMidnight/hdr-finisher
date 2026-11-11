@@ -17,3 +17,24 @@ test('HSL primary directions match grading hues and wheel dragging round-trips',
  }
  for(let h=0;h<360;h+=3){c.hue=h;assert(Math.abs(HDRHSL.delta(vm.runInContext('hslWheelHue(hslWheelAngle(hue))',c),h))<1e-9);}
 });
+
+test('a readout populated after binding accepts a typed percentage without clamping it to maximum',()=>{
+ const listeners={};
+ const slider={value:'0.5',min:'0',max:'1',step:'0.01',disabled:false,dispatchEvent(){}};
+ const row={querySelectorAll:()=>[slider],querySelector:()=>({textContent:'Amount'})};
+ const output={textContent:'',dataset:{},classList:{add(){},remove(){}},closest:()=>row,
+  setAttribute(){},removeAttribute(){},focus(){},addEventListener:(name,fn)=>{listeners[name]=fn;}};
+ const c=context();Object.assign(c,{state:{session:{}},clamp:(v,lo,hi)=>Math.min(hi,Math.max(lo,v)),
+  document:{createRange:()=>({selectNodeContents(){}})},
+  window:{getSelection:()=>({removeAllRanges(){},addRange(){}}),setTimeout(){}},
+  requestAnimationFrame:fn=>fn(),Event:class{},root:{querySelectorAll:()=>[output]}});
+ vm.runInContext('bindSliderReadouts(root)',c);
+ output.textContent='50%';
+ listeners.dblclick({preventDefault(){}});
+ assert.equal(output.textContent,'50');
+ output.textContent='70';listeners.keydown({key:'Enter',preventDefault(){}});
+ assert.equal(slider.value,'0.7');
+ output.textContent='70%';listeners.dblclick({preventDefault(){}});
+ output.textContent='30';listeners.keydown({key:'Enter',preventDefault(){}});
+ assert.equal(slider.value,'0.3');
+});

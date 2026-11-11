@@ -188,12 +188,13 @@ function bindEditableValue(element, { getValue, normalize, commit, label, range,
       ? document.querySelector(`[data-path="${element.dataset.valuePath}"]`)
       : null;
     if (pairedControl?.disabled || disabled?.()) return;
+    // Read the displayed unit before editing hides it from generic readouts.
+    const value = Number(getValue());
     editing = true;
     previousText = element.textContent;
     element.dataset.editing = "true";
     element.setAttribute("contenteditable", "plaintext-only");
     element.setAttribute("role", "textbox");
-    const value = Number(getValue());
     const rule = element.dataset.valuePath ? MANUAL_VALUE_RULES[element.dataset.valuePath] : null;
     element.textContent = String(rule?.entryScale ? value * rule.entryScale : value);
     element.focus({ preventScroll: true });
