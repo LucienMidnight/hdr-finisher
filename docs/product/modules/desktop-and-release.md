@@ -521,3 +521,23 @@ No push, installer, original photo or read-only project changes.
 v0.9.0 was published on GitHub on October 9 and v0.9.1 on October 16,
 2026, each with Windows, macOS and Linux packages (confirmed by Steve).
 This resolves the former publication question; signing and notarisation remain open.
+## November 11: progress IPC release audit
+
+The taskbar-progress event now ignores stale/unregistered senders, malformed
+payloads and destroyed main windows. An event listener has no invoke reply
+to carry a rejected sender check; previously those inputs could throw in the
+Electron main process. Valid main-window progress values, clamping and states
+are unchanged. No user workflow or project format changes.
+
+Validation: two behavioural IPC checks execute the actual registration and
+event callback with stale senders, null/non-object payloads, other window
+roles, destroyed windows and valid progress/state updates; both pass.
+The unchanged desktop suite has one existing macOS chrome expectation
+failure (titleBarStyle hiddenInset); no platform appearance change was made.
+
+Final W3 fast checks on main 5d338e64 plus the audit: desktop 27 pass / one
+unchanged macOS chrome expectation failure; main Node 917 pass; Python
+3,241 pass / 55 skip / one known cached-scene failure. The focused real
+Electron file-command workflow passes. The standard Library smoke's 3,149 ms
+drawing gap is recorded in the Library PRD and performance table, without a
+rerun or changed threshold.

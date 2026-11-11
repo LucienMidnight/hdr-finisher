@@ -8739,3 +8739,63 @@ empty state; no row pills or black corner strips. No Library data or command
 changes. Four-theme UI checks pass; grouped fast/Library results and review
 location are recorded in Desktop and release.
 
+
+## November 11: release audit, original file-command cache work
+
+Original Rename/Move/Delete no longer run a full cache-size reconciliation
+while holding the settings writer and marks locks. Each changed cache file
+updates the existing running ledger instead. Delete also avoids decoding
+pixel arrays it will discard. Originals, sidecar durability, recovery and
+cache allowances are unchanged; no user-guide workflow changes.
+
+Disposable-copy measurements reproduce the blocking cache work: the existing
+code opens metadata from every picture archive under both locks. Removing
+size reconciliation cuts the warm backend plan-plus-execute probe from about
+4.2-4.3 s to 0.79-1.40 s. This is not screen-completion acceptance: the probe
+uses a tiny disposable original, copies Steve's picture cache, and substitutes
+a disposable Bin. Cold-cache disk reads, real RAW hashing, actual Windows
+Recycle Bin and redraw time are additional costs. The under-one-second goal
+and independent marks/settings saving remain open: the remaining scan still
+holds both locks. See the performance table for ranges and conditions.
+
+A contained bookkeeping fix is retained for release. A complete fix should
+index source-to-cache-file identities at publication, reconcile that index
+in background, and retarget only the affected source's files. It must cover
+folder operations, cache eviction/location changes, concurrent publication
+and crash recovery before replacing the current scan; moving the scan to an
+untracked thread alone risks late publication under an obsolete path.
+
+Audit: Delete's apparent missing interrupted-command check is already covered
+by LibraryMarks._path; no additional guard is needed. Reviewed Library async
+acceptance/file-command flow and desktop sender validation, preload listeners,
+path grants, close flow and packaging hooks; no further confirmed bug was
+changed. Removed only library_file_state's unused durable import: repository
+callers, string references, and release-listed tools/tests have no consumer
+of that imported alias. No old saved projects or test projects are affected.
+
+Validation: 905 Node checks pass. Focused file safety/accounting: 108 pass,
+43 skip. Full Python on the pre-final-rebase code: 3,239 pass, 55 skip,
+one known unrelated cached-scene failure (test_library_live's
+remembered_failure_does_not_hide_current_grade_cached_scene). Post-main-rebase
+confirmation is recorded in the final validation note below.
+Real Electron rename/move/clash/Unicode/Undo passes. Standard 90-second Library
+smoke has no photo errors or memory breach, but fails the unchanged 250 ms
+drawing limit with a 3,149 ms gap; no rerun or investigation before Steve's
+normal-use trial, per AGENTS.md. Memory census peaks at 3.189 GB. Report:
+codebase/output/quick-library-check/w3-audit/report.json. Both app checks
+held the shared graphics lock and ran at 2560x1440. Disposable cache/temporary
+profile scratch was removed; reusable photo copies are shared through
+worktree junctions. Output ends at 5.7 GB including those shared copies,
+below 100 GB. No push or installer build.
+
+Desktop audit follow-up: taskbar progress events ignore invalid or stale
+sender/payload input instead of throwing in the shell. Valid progress and
+Library/main role restrictions are unchanged. Two behavioural IPC checks pass;
+see Desktop and release's November 11 entry.
+
+Final W3 validation after rebasing onto local main 5d338e64: 917 Node checks
+pass; Python 3,241 pass, 55 skip and the same known cached-scene test fails.
+Desktop: 27 pass, one unchanged macOS chrome expectation fails. File-command
+Electron passes; the standard smoke drawing-gap failure above is retained,
+not rerun. The rebase preserved both workers' appended desktop notes. The
+cache accounting and IPC code are unchanged from the app-tested versions.
