@@ -161,6 +161,10 @@ Writes the authored SDR rendition as conventional **8-bit sRGB JPEG XL**, with n
 
 **Source Metadata** offers None, Copyright only, All except location, and All including location. Web Default preserves copyright where supported; Web Optimized carries no source metadata; Maximum Fidelity carries everything except location. Color, HDR, and gain-map signaling is technical output metadata and is never removed by this choice. Source metadata support depends on the selected encoder; the UI disables the control where the current backend cannot carry it.
 
+In batch export, Cancel stops the remaining work; a late Pause or Resume
+request cannot undo it. Files already completed stay in the destination.
+Once the export queue is shutting down, it rejects new jobs.
+
 ## Filename and destination
 
 HDR Finisher sanitizes the filename, adds the appropriate extension, and asks before overwriting an existing file. **Browse** opens a native folder chooser and writes the selected directory into Destination. It stages complex gain-map exports and only replaces the destination after validation, reducing the chance of leaving a partial file.
