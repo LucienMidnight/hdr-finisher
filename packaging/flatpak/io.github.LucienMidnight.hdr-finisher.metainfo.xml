@@ -31,6 +31,15 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.2" date="2026-11-11">
+      <description>
+        <p>Moves export and Proof onto the graphics card with a CPU fallback, adds Retouch Heal and Clone, hue-selection masks and preset management, and speeds up Library browsing, rename, move and delete.</p>
+        <p>Fixes stale replies after switching photos, export queue cancellation, and several preview and Denoise ownership issues. Known limitations remain documented.</p>
+      </description>
+    </release>
+    <release version="0.9.1" date="2026-10-16">
+      <description><p>Adds the Photo Library and rebuilds Film Look with film stocks, print papers and lens filters.</p></description>
+    </release>
     <release version="0.9.0" date="2026-10-09">
       <description>
         <p>Adds viewport-bounded GPU editing, adaptive Denoise, responsive Perspective drafts, and lane-specific Revert commands. Improves scope ownership, tiny-image previews, accepted-frame processing labels, and display capability changes.</p>
