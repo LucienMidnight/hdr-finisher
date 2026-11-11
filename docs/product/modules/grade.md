@@ -3,13 +3,17 @@
 ## November 11: W10 control coverage follow-up
 
 W10 used 89.4 minutes of serialized graphics runs including startup/shutdown,
-within the 90-minute allowance. 233 controls have three timings; 229 demonstrated
+within the 90-minute allowance. Rebased fast checks passed: 921 Node tests;
+3,246 Python tests, 55 skipped. 233 controls have three timings; 229 demonstrated
 the intended response/reset in at least one view. 57 separate gesture checks were
 also timed; 92 controls satisfied every measured rendition/view/input condition.
 This is response coverage, not complete release or picture-quality sign-off.
 
 Real Push/Pull buttons and typed percentages passed after `38821253` (44%
-stored correctly in both renditions). Charts resolved missing-hue/crop cases.
+stored correctly in both renditions). Existing W9 evidence also confirms
+normalized Denoise entry 70% stores 0.7; its hashed excerpt is retained in the
+W10 results folder, without another graphics run. Charts resolved
+missing-hue/crop cases.
 Sharpen radii 0.8 and 1.34 share the native 3x3 blur kernel; 2.2 changes it.
 Local reset comparisons must use the photograph before/after: grade edits
 intentionally hide the mask preview. Visible separated repair fixtures qualify
@@ -19,9 +23,9 @@ Curves, Bands, wheel pads, committed geometry, HSL picking and basic history/
 reset/bypass gestures were exercised. No application formula changed.
 
 The 42 MP RAW rebuilds take about 4-14 seconds, an accepted heavy-work exception.
-Match changed/reverted in both views at 1.20-1.21 seconds before W9; its speed
-needs post-merge confirmation. A stronger recipe was correctly refused by the
-existing colour-safety gate (OKLab P95 0.066 exceeds 0.05). W9's merged wake-up
+Match changed/reverted in both views at 1.20-1.21 seconds before W9; HSL Show
+selection took 1.40-1.42 seconds. Both speeds need post-merge confirmation. A stronger
+recipe was correctly refused by the existing colour-safety gate (OKLab P95 0.066 exceeds 0.05). W9's merged wake-up
 fix removes the 200 ms poll and qualifies the targeted Retouch references;
 Denoise retains a 26 ms excess and Film/lens drags remain below 20/s. W10 made
 no speed fix and did not rerun graphics after merging W9, having reached its

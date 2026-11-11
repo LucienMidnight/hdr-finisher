@@ -170,7 +170,10 @@ def main():
             row["triage"] = "Heavy real-RAW reconstruction/re-development; owner allows waits over one second. Other missing checks remain open."
         if "Needs investigation: no screen change" in issues:
             fit = latest.get((row["control"], row["lane"], "fit"))
-            if row["zoom"] == "actual" and fit and fit["imageChanged"] and fit["resetPictureConfirmed"]:
+            if row["control"] == "sdr.highlight_compression_start_percent":
+                row["triage"] = "Fixture/prerequisite: prepared HDR Fit with manual headroom and Start 2% demonstrated change/reset. Original sampled conditions stayed unchanged; this does not qualify their native visual effect."
+                if set(issues) == {"Needs investigation: no screen change"}: row["observationStatus"] = "Exception"
+            elif row["zoom"] == "actual" and fit and fit["imageChanged"] and fit["resetPictureConfirmed"]:
                 row["triage"] = "Fixture: sampled native crop unchanged; full-frame change/reset demonstrated. Native visual effect remains unqualified."
                 if set(issues) == {"Needs investigation: no screen change"}:
                     row["observationStatus"] = "Exception"
@@ -191,8 +194,6 @@ def main():
                 row["triage"] = "Fixture/driver: hue requires nonzero saturation; numeric fields also require their selected wheel tab. Native crop may omit the affected tonal range. See prepared chart rerun."
             elif "black_and_white" in row["control"]:
                 row["triage"] = "Fixture: selected hue is absent or weak in sampled photo patches; see saturated colour-chart rerun."
-            elif row["control"] == "sdr.highlight_compression_start_percent":
-                row["triage"] = "Fixture: no qualifying shoulder difference at the sampled input/range. HDR-pattern rerun with a manual headroom anchor and Start 2% demonstrated change/reset; clipped or below-knee pixels can stay identical."
             elif "grain_custom_height" in row["control"]:
                 row["triage"] = "Fixture: capture geometry/format prerequisite; inspect prepared horizontal-strip/custom-format rerun."
             elif "sharpen" in row["control"]:
@@ -346,8 +347,8 @@ def update_docs(rows, fully_observed, value_types):
             "**Slowest:** " + slow_summary + ". Heavy RAW rebuilds are permitted exceptions. Ordinary editing: " + ordinary_summary + ". Three-trial medians; older W1 timings include background drain and are upper bounds.", "",
             "**Problems:** W9 fixed the roughly 200 ms anchor poll (`0dc12ce8`): Retouch reference medians now meet the combined allowance; Denoise retains a 26 ms excess. Film/lens drags remain below 20/s. W9's targeted detail is preserved below. "
             "Before that merge, W10 found smaller reference increases at SDR Vignette Centre Y (25 to 46 ms after reset) and native HDR Bias (34 to 56/59 ms); other pre-fix crossings are flagged below; these were not rerun after W9. "
-            "Pre-W9 Match took 1.20-1.21 s, above the one-second bar; it needs post-merge confirmation. No speed code was changed. **Fixed:** `38821253` percentage entry passed the app rerun (44% stored correctly); Push/Pull's real buttons passed both renditions/views.", "",
-            "**Untested:** remaining mode/profile fields, complete Boolean/Hue-mask authoring, repair move/list actions and preset I/O were not qualified within the bounded review. "
+            "Pre-W9 HSL Show selection took 1.40-1.42 s and Match 1.20-1.21 s, above the one-second bar; both need post-merge confirmation. No speed code was changed. **Fixed:** `38821253` percentage entry passed the app rerun (44% stored correctly); Push/Pull's real buttons passed both renditions/views.", "",
+            "**Untested:** remaining mode/profile fields, brush/gradient/Hue-mask parameters, complete Boolean authoring, perspective/custom geometry, repair move/list actions and preset I/O were not qualified within the bounded review. "
             "Missing view/input checks and the remaining actions in each gesture family are explicit below. Unchanged sampled crops are fixture exceptions where the other view demonstrated change/reset.", "",
             "Limits: under 1 s; pointwise Fit drags at least 20 presentations/s. A reference slowdown counts only above **25% and 20 ms together**. "
             "Met = measured checks passed; Not met (real problem) = measured limit crossed; Exception = stated reason; Untested = missing evidence.", "",
@@ -383,6 +384,7 @@ def update_docs(rows, fully_observed, value_types):
         fps = f"{min(rates):.1f}-{max(rates):.1f}" if rates else "Not measured / N/A"
         conditions = "; ".join(sorted({f"{r.get('photo') or 'see JSON'} / `{(r.get('commit') or 'unrecorded')[:8]}`" for r in items})) or "-"
         labels = {
+            "Exposure reference over 25% slower":"Exposure reference over both 25% and 20 ms slower",
             "Needs investigation: no screen change":"Fixture: sampled picture unchanged",
             "typed entry not confirmed":"Typed input unverified",
             "reset picture not confirmed":"Reset unverified",
@@ -400,7 +402,7 @@ def update_docs(rows, fully_observed, value_types):
         "Color wheels":"range keyboard navigation, module reset and pad throughput",
         "HSL":"wheel/range handles, range removal and Local picker",
         "Local masks":"Hue sampling, Boolean combinations, Bezier/edge modes, fan, native authoring and list rename/reorder",
-        "Retouch":"source/destination moves, list/retry/cancel and independently timed paint creation",
+        "Retouch":"source/destination moves, list/retry/cancel and native paint creation",
         "Geometry":"perspective guides and crop-guide variants",
         "Vignette":"Pick centre, overlay toggle and handle keyboard movement",
         "Film Look":"stage shortcuts, per-stock reset dots and SDR copy",

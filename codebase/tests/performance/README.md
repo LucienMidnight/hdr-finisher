@@ -461,3 +461,13 @@ TIFF was not retained; W10's freshly resized TIFF is not an identical timing
 baseline. `w10-triage.json` preserves a decision for every retained no-change
 row. Keep the W1 archive and failed driver attempts; use the latest qualified
 row for the measured value, and keep failed later reruns visible as gaps.
+
+The W10 result folder also retains `w10-normalized-percentage-evidence.json`:
+a hashed excerpt of W9's existing Denoise run confirming 70% -> 0.7. This is
+reused evidence, not additional W10 GPU time; W10 separately confirmed Film's
+44% entry and real Push/Pull segments. Normal grade edits intentionally hide
+the Local mask preview, so reset diagnostics compare photograph to photograph.
+The 24 MP HDR pattern/low-knee probe makes SDR Start observable. A native
+Sharpen Radius probe must cross the quantized kernel boundary (2.2 rather than
+0.8 -> 1.34, which both choose 3x3 boxes). These are fixture corrections, with
+no change to app processing or acceptance tolerances.
