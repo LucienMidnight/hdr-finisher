@@ -17,6 +17,7 @@
     "D:/Photos/Play_Raw/Fantastic light over village - AdamFromCanada/DSC00950.hdrfinisher"
   ],
   "sourceAreas": [
+    {"pattern":"^codebase/frontend/key-hints\\.js$","areas":["ui"]},
     {"pattern":"^codebase/backend/hdr_finisher/(app_memory|cpu_budget|file_gate|instrument_work)\\.py$","areas":["export-proof","film","lens","library","masks","detail","geometry","preview","ui"]},
     {"pattern":"^codebase/backend/hdr_finisher/(delivery(?:_[^/]*)?|hdr_ceiling|hdr_delivery)\\.py$","areas":["export-proof","library","preview"]},
     {"pattern":"^codebase/(frontend|backend/hdr_finisher)/photo[-_]framing\\.(js|py)$","areas":["geometry","preview","export-proof"]},
