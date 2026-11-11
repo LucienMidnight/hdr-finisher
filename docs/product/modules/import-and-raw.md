@@ -1,3 +1,12 @@
+### November 11: source interpretation replies keep their owner
+
+The Grade source-interpretation UI discards delayed successes and failures
+when a photo is replaced, a new import starts or a newer interpretation
+request supersedes them. Its own preview completion also checks that owner.
+A late response can no longer reinstall the previous photo or put an old
+error over the new one. Source decoding, colour maths and saved fields are
+unchanged. Four delayed-response Node regressions cover these cases.
+
 ### November 10: JXL metadata and explicit HDR primaries repair
 
 The native metadata helper reads libjxl structured DATA and ORIGINAL colour

@@ -156,24 +156,32 @@ async function persistDenoiseSettings() {
 }
 
 async function setDenoiseEnabled(enabled) {
+  if (!state.session) return;
+  const sessionId = state.session.session_id;
   const lane = state.currentView;
   state.denoise[lane].enabled = Boolean(enabled);
   const runtime = state.denoiseRuntime[lane];
+  const generation = ++runtime.generation;
+  const isCurrent = () => state.session?.session_id === sessionId
+    && state.denoiseRuntime[lane] === runtime && generation === runtime.generation;
   runtime.error = "";
   if (!enabled) {
-    runtime.generation += 1;
     runtime.status = "off";
     runtime.showOriginal = true;
     state.denoiseNoiseView = false;
     state.gpuPreview?.cancelDenoiseProcessing?.({ selectOriginal: true });
-    // The button answers the click at once; the redraw can take a while at Full.
+    // Save while this photo still owns the action; a Full redraw can outlast
+    // the switch to another photo.
+    void persistDenoiseSettings();
     renderDenoiseControls();
     await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+    if (!isCurrent()) return;
     renderDenoiseControls();
-    void persistDenoiseSettings();
     return;
   }
-  if (!await persistDenoiseSettings()) {
+  const applied = await persistDenoiseSettings();
+  if (!isCurrent()) return;
+  if (!applied) {
     runtime.status = "error";
     runtime.error = "Denoise settings could not be saved";
     renderDenoiseControls();
@@ -186,11 +194,12 @@ async function setDenoiseEnabled(enabled) {
     runtime.status = "ready";
     runtime.showOriginal = false;
     await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+    if (!isCurrent()) return;
     debounceOverlayAndScopes();
     renderDenoiseControls();
     return;
   }
-  await recalculateDenoise();
+  await recalculateDenoise(lane);
 }
 
 async function recalculateDenoise(lane = state.currentView, options = {}) {
@@ -215,9 +224,10 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
   } finally {
     if (runtime.analysisInFlight === pending) runtime.analysisInFlight = null;
   }
-  if (!ready || !settings.enabled) return false;
+  if (!ready || !settings.enabled || state.denoiseRuntime[lane] !== runtime) return false;
   if (options.renderAfter !== false) {
     await renderGpuDraft(lane, { longEdge });
+    if (state.denoiseRuntime[lane] !== runtime || !settings.enabled) return false;
     debounceOverlayAndScopes();
   }
   return true;
@@ -226,8 +236,11 @@ async function recalculateDenoise(lane = state.currentView, options = {}) {
 async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}) {
   const settings = state.denoise[lane];
   if (!state.session || !settings.enabled || !state.gpuPreview?.available) return false;
+  const sessionId = state.session.session_id;
   const runtime = state.denoiseRuntime[lane];
   const generation = ++runtime.generation;
+  const isCurrent = () => state.session?.session_id === sessionId
+    && state.denoiseRuntime[lane] === runtime && generation === runtime.generation;
   runtime.status = state.gpuPreview.diagnosticsSnapshot().denoise.cacheReady ? "recalculating" : "preparing";
   runtime.error = "";
   if (lane === state.currentView) renderDenoiseControls();
@@ -241,19 +254,20 @@ async function recalculateDenoiseAnalysis(lane = state.currentView, options = {}
       "source",
       denoiseRendererControls(settings.controls),
     );
-    if (generation !== runtime.generation) return false;
+    if (!isCurrent()) return false;
     if (!ready) throw new Error("The denoise analysis was replaced before completion.");
     runtime.status = "ready";
     runtime.dirty = false;
     runtime.showOriginal = false;
     if (options.renderAfter !== false) {
       await renderGpuDraft(lane, { longEdge: options.longEdge || refinementProxyLongEdge() });
+      if (!isCurrent()) return false;
       debounceOverlayAndScopes();
     }
     if (lane === state.currentView) renderDenoiseControls();
     return true;
   } catch (error) {
-    if (generation !== runtime.generation) return false;
+    if (!isCurrent()) return false;
     runtime.status = "error";
     runtime.error = error?.message || error?.detail || JSON.stringify(error) || "Denoise analysis failed.";
     console.warn("Denoise analysis failed.", error);
@@ -274,6 +288,8 @@ async function updateLiveDenoiseControl(key, value) {
   // events and the last value is the one that lands.
   await denoiseInputQueue().submit({
     lane,
+    sessionId: state.session?.session_id,
+    generation: runtime.generation,
     controls: denoiseRendererControls(settings.controls),
   });
 }
@@ -323,7 +339,10 @@ function liveDenoiseRegion() {
   };
 }
 
-async function runLiveDenoise({ lane, controls, wholeFrame = false }) {
+async function runLiveDenoise({ lane, sessionId, generation, controls, wholeFrame = false }) {
+  const isCurrent = () => sessionId === state.session?.session_id
+    && generation === state.denoiseRuntime[lane]?.generation && state.denoise[lane]?.enabled;
+  if (!isCurrent()) return;
   const startedAt = performance.now();
   const interacting = !wholeFrame && Boolean(state.previewScheduler?.interacting);
   // NEXT-01 #4. During a drag only what is on screen is reconstructed: a
@@ -333,13 +352,13 @@ async function runLiveDenoise({ lane, controls, wholeFrame = false }) {
   // rest of the frame is brought up to date once, on release (wholeFrame).
   const region = interacting ? liveDenoiseRegion() : null;
   if (interacting && interactiveDraftGuaranteedTiled(lane) && state.gpuPreview?.setDenoiseControls?.(controls)) {
-    state.denoiseWholeFrameStale = { lane, controls };
+    state.denoiseWholeFrameStale = { lane, sessionId, generation, controls };
   } else {
     const ready = await state.gpuPreview?.resolveDenoiseProxy?.(controls, region ? { region } : {});
-    if (!ready) return;
-    state.denoiseWholeFrameStale = region ? { lane, controls } : null;
+    if (!ready || !isCurrent()) return;
+    state.denoiseWholeFrameStale = region ? { lane, sessionId, generation, controls } : null;
   }
-  if (lane !== state.currentView) return;
+  if (!isCurrent() || lane !== state.currentView) return;
   if (interacting) {
     // NEXT-01 #4. During a drag the picture is drawn by the ordinary drag
     // path, so a Denoise drag gets what every other slider has: the 60 fps
@@ -357,6 +376,7 @@ async function runLiveDenoise({ lane, controls, wholeFrame = false }) {
     return;
   }
   await renderGpuDraft(lane, { longEdge: refinementProxyLongEdge() });
+  if (!isCurrent()) return;
   debounceOverlayAndScopes();
 }
 

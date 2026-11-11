@@ -30,6 +30,14 @@ timing, update its row (range, date, commit, conditions) in the same commit.
 * Stage names in the logs (`page_picture_*`, `picture_*`, `startup_phase`)
   are given so the next measurement can be found quickly.
 
+November 11 W2 Grade audit smoke check (`1b3ca447`; 2560x1440 plain
+Electron, default mixed Library, concurrent fast Python suites): first/ten/
+twenty pictures at 2.8/3.5/11.8 s, 29 shown by 90 s; peak RAM 2.823 GB.
+No photo errors or zeroed channels. Existing drawing-gap failure repeated:
+1,684 ms against the unchanged 250 ms limit. This smoke run is not a
+comparable speed baseline. Evidence:
+`codebase/output/quick-library-check/w2-audit-grade/report.json`.
+
 November 10 dark-theme/Settings smoke check (parent aa9b6128, working tree;
 2560x1440 plain Electron, default mixed Library, concurrent Python suite):
 first/ten/twenty pictures 9.1/15.0/18.2 s, 29 shown by 90 s. No reported

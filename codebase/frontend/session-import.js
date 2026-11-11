@@ -254,6 +254,11 @@ async function requestSourceImport() {
 
 async function applyInterpretationOverride() {
   if (!state.session) return;
+  let session = state.session;
+  const importGeneration = state.importGeneration;
+  const generation = state.interpretationGeneration = (state.interpretationGeneration || 0) + 1;
+  const isCurrent = () => state.session === session && state.importGeneration === importGeneration
+    && state.interpretationGeneration === generation;
   const override = interpretationPayload();
   status.post({ id: "interpretation", severity: "progress", message: "Re-interpreting source file…", progress: "indeterminate" });
   setPreviewMessage("Re-interpreting source file...", 8);
@@ -264,12 +269,13 @@ async function applyInterpretationOverride() {
       body: JSON.stringify(override),
     });
     const payload = await safeJson(response);
+    if (!isCurrent()) return;
     if (!response.ok || !payload?.session) {
       status.post({ id: "interpretation", severity: "error", message: payload?.detail || "Interpretation override failed." });
       setPreviewError(payload?.detail || "Interpretation override failed.");
       return;
     }
-    state.session = payload.session;
+    session = state.session = payload.session;
     state.renderCoordinator?.noteSource(payload.session.session_id);
     setPreviewMessage("Interpretation applied. Preparing preview...", 28);
     state.adjustments = payload.session.adjustments;
@@ -284,16 +290,19 @@ async function applyInterpretationOverride() {
     renderSession();
     renderLocalAdjustments();
     const gpuReady = await renderGpuDraft(state.currentView, { hideStatus: false, longEdge: settledProxyLongEdge() });
+    if (!isCurrent()) return;
     await Promise.all([
       gpuReady ? Promise.resolve(true) : refreshPreview({ progressSteps: [36, 76, 92] }),
       refreshOverlay(),
       refreshScopes(scopeLongEdge("settled"), { tier: "settled" }),
     ]);
+    if (!isCurrent()) return;
     hidePreviewMessage();
     prepareInactivePreview();
     if (previewNeedsRefinement()) debouncePreview(state.currentView);
     status.post({ id: "interpretation", severity: "success", message: "Source interpretation applied." });
   } catch (error) {
+    if (!isCurrent()) return;
     console.error(error);
     const message = "Interpretation override could not reach the local HDR Finisher server.";
     status.post({ id: "interpretation", severity: "error", message });
