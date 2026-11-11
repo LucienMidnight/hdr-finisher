@@ -236,3 +236,28 @@ def test_folder_children_reserved_during_controlled_activation(setup):
     finally:
         release.set();thread.join(5)
     assert not thread.is_alive() and not c.store.file_command_sources
+
+
+@pytest.mark.parametrize('delete', [False, True])
+def test_file_cache_changes_update_running_accounting(setup, delete):
+    import numpy as np
+    from hdr_finisher.library_pictures import LibraryPictureCache, picture_key
+    from hdr_finisher.library_file_state import pictures
+    photo, destination, c, _ = setup
+    cache = LibraryPictureCache(c.browser.root)
+    cache.managed.prepare(); cache.root.mkdir()
+    old = cache.file(picture_key(photo, 512, 'quick'))
+    meta = {'path': str(photo), 'edge': 512, 'quality': 'quick'}
+    with old.open('wb') as stream:
+        np.savez_compressed(stream, pixels=np.zeros((2, 2, 3)), metadata=np.asarray(json.dumps(meta)))
+    cache.managed.record(old)
+    new = destination/photo.name
+    photo.rename(new)
+    pictures(c.browser.root, {'old': str(photo), 'new': str(new)}, delete=delete)
+    db = cache.managed._ledger()
+    actual = sum(p.stat().st_size for p in cache.root.glob('*.npz'))
+    assert cache.managed._used(db)['thumbnail'] == actual
+    assert db.execute('SELECT size FROM files WHERE path=?', (str(old),)).fetchone() is None
+    assert db.execute('SELECT stamp FROM ages WHERE path=?', (str(old),)).fetchone() is None
+    assert not old.exists()
+    assert cache.file(picture_key(new, 512, 'quick')).exists() == (not delete)

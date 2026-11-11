@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 from hashlib import sha256
-from .library_file_io import durable
 
 TABLES = {'photos':'path','photo_tags':'path','album_photos':'path','files':'path',
           'settings_writes':'path','photo_grades':'path','library_copies':'source'}
@@ -91,8 +90,9 @@ def pictures(root, item, delete=False):
             with np.load(file,allow_pickle=False) as data:
                 meta=json.loads(str(data['metadata'])); p=meta.get('path','')
                 if mapped(p,old,new)==p: continue
-                arrays={k:data[k] for k in data.files}
-            if delete: file.unlink(missing_ok=True);continue
+                if not delete: arrays={k:data[k] for k in data.files}
+            if delete:
+                file.unlink(missing_ok=True);managed.record(file);continue
             target=mapped(p,old,new); s=Path(target).stat();meta['path']=target
             if file.name.endswith('.map.npz'):
                 key=sha256(f"{MAP_VERSION}:{Path(target).resolve()}:{s.st_size}:{s.st_mtime_ns}:{meta['kind']}:{meta['quality']}".encode()).hexdigest();suffix='.map.npz'
@@ -100,6 +100,7 @@ def pictures(root, item, delete=False):
                 key=sha256(f"{PICTURE_VERSION}:{Path(target).resolve()}:{s.st_mtime_ns}:{s.st_size}:{meta['edge']}:{meta['quality']}".encode()).hexdigest();suffix='.npz'
             arrays['metadata']=np.asarray(json.dumps(meta));temporary=root/(key+'.file-command.tmp')
             with temporary.open('wb') as f: np.savez_compressed(f,**arrays)
-            os.replace(temporary,root/(key+suffix));file.unlink(missing_ok=True)
+            destination=root/(key+suffix)
+            os.replace(temporary,destination);managed.record(destination)
+            file.unlink(missing_ok=True);managed.record(file)
         except (OSError,ValueError,KeyError): continue
-    managed.usage()

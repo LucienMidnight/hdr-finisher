@@ -1948,3 +1948,36 @@ main-thread block 143 ms, sampled peak 3.432 GB and no memory violation.
 DSC01226.ARW reported invalid GPU development pixels; five files were not
 shown by the end. No unrelated processing investigation, rerun or budget
 change. Report: codebase/output/quick-library-check/component-pass/report.json.
+
+## November 11: W3 original-file command audit
+
+Target (Steve, release task): single-photo action under 1 s, with marks and
+settings not blocked. **Not met / screen completion unverified.** Working
+change based on 40c633c9; cache bookkeeping commit in this branch.
+
+| Backend plan + execute | Before | After |
+| --- | --- | --- |
+| Rename | 4.329-11.543 s | 1.001-1.074 s |
+| Move | 4.266-4.294 s | 0.789-0.803 s |
+| Delete | 4.172-4.316 s | 0.968-1.398 s |
+
+Two trials per action on November 11, same machine, disposable NTFS profile
+and tiny original with marks/grade/copies; disposable Bin adapter (no real
+Recycle Bin). A private copy of Steve's library-pictures directory started
+with 5,475 files / 966 MB; explicit initial usage reconciles retired entries
+before each timed action. No live cache, original or protected project is
+written. Whole backend command includes planning, durable checkpoints,
+sidecar/index changes and completion, but excludes dialog time, UI refresh,
+real RAW hashing and Windows recycling. First before Rename is colder;
+subsequent runs are OS-cache warm. Do not claim those cold/warm numbers as a
+like-for-like speed ratio. A separate first-copy Rename probe took 20.813 s.
+
+Before, size reconciliation alone takes 3.313-3.482 s on every action;
+after, changed files update the existing ledger directly. Remaining archive
+metadata scanning still holds marks/settings-writer locks. A source-keyed
+cache-file index is proposed, requiring publication/eviction/recovery tests;
+not attempted as a same-day design change. Under-one-second screen completion
+on Steve's cache remains unqualified. No tolerance or budget changed.
+
+Local evidence: codebase/output/w3-audit/timings-before.json,
+timings-after.json and measurement harness/logs in the same folder.
