@@ -95,9 +95,16 @@ async function main() {
     env: { ...process.env, HDR_FINISHER_USER_DATA_DIR: userDataPath, HDR_FINISHER_DISABLE_GPU: "1" },
   });
   try {
-    const window = await electronApp.firstWindow();
+    // The startup splash opens first and closes once the app is ready, and the
+    // hidden GPU delivery window is not the app either: wait for the main window.
+    const isMainWindow = (page) => !page.isClosed() && /^https?:\/\/[^/]+\/(?:[?#].*)?$/.test(page.url());
+    let window = electronApp.windows().find(isMainWindow);
+    for (const deadline = Date.now() + 120000; !window; window = electronApp.windows().find(isMainWindow)) {
+      if (Date.now() > deadline) throw new Error(`Main window did not open: ${electronApp.windows().map((page) => page.url()).join(", ")}`);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
     // The Library owns the start screen; the shared import input is the ready signal.
-    await window.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 60000 });
+    await window.waitForFunction(() => document.body?.dataset.ready === "true", null, { timeout: 60000 });
     checkpoint("window ready");
     // The editor opens once a picture is loaded; the Library covers it until then.
     await window.locator("#file-input").setInputFiles(sourcePath);
@@ -402,7 +409,7 @@ async function main() {
 
     // Start the import coverage from a fresh renderer with no picture open.
     await window.reload({ waitUntil: "domcontentloaded" });
-    await window.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 60000 });
+    await window.waitForFunction(() => document.body?.dataset.ready === "true", null, { timeout: 60000 });
     await window.locator("#file-input").setInputFiles(sourcePath);
     await window.evaluate(({ base64, name }) => {
       const binary = atob(base64);
@@ -428,7 +435,7 @@ async function main() {
     // upload/drop coverage intentionally replaces an active session and is a
     // separate desktop-import contract.
     await window.reload({ waitUntil: "domcontentloaded" });
-    await window.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 60000 });
+    await window.waitForFunction(() => document.body?.dataset.ready === "true", null, { timeout: 60000 });
     await window.locator("#file-input").setInputFiles(sourcePath);
     await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
     const beforeRotation = await presentedPreviewSnapshot(window);
@@ -517,7 +524,7 @@ async function main() {
     // deliberately inside Crop so its settled pixels can be observed without
     // a later UI action becoming part of the handoff assertion.
     await window.reload({ waitUntil: "domcontentloaded" });
-    await window.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 60000 });
+    await window.waitForFunction(() => document.body?.dataset.ready === "true", null, { timeout: 60000 });
     await window.locator("#file-input").setInputFiles(sourcePath);
     await window.waitForFunction(() => document.querySelector("#session-name")?.textContent.includes("sdr_gradient.png"));
     // Session metadata becomes visible before the first preview frame is
@@ -598,7 +605,7 @@ async function main() {
     await window.waitForFunction(() => state.geometryTransformHandoffSignature === null, null, { timeout: 30000 });
     checkpoint("straighten slider cancellation ready");
     await window.reload({ waitUntil: "domcontentloaded" });
-    await window.waitForFunction(() => document.body.dataset.ready === "true", null, { timeout: 60000 });
+    await window.waitForFunction(() => document.body?.dataset.ready === "true", null, { timeout: 60000 });
 
     await window.locator("#file-input").setInputFiles(pathlessDropPath);
     await window.evaluate(async () => {
