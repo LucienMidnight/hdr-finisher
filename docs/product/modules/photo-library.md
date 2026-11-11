@@ -1,3 +1,26 @@
+## November 11: JPEG XL admission no longer launches metadata processes
+
+Library size estimates and decoder deadlines now read only JPEG XL's small
+codestream SizeHeader, including container codestream boxes. The November 10
+structured metadata helper had inadvertently reached these repeated control
+checks: saved release diagnostics show successful JXL decoding followed by
+deadline expiry, automatic retries and eventual helper shutdown. The repeated
+process launches also stalled backend polling. Colour and precision still use
+the pinned structured libjxl helper; decoded colours, memory rates and timeout
+budgets are unchanged. Both PyInstaller specifications already collect the
+helper, adjacent DLLs and notices, and electron-builder includes that backend
+tree. The control-path fault therefore also applied to packaged Windows builds;
+there was no missing packaging entry.
+
+Regression checks compare header dimensions with libjxl without permitting
+process launches or pixel decode during admission, and decode a JXL CPU scene
+in the separate Library helper, checking its stored pixels against the ordinary
+decoder. The codec driver now completes all CPU/GPU source repetitions with
+no helper restarts, then stops in the existing stored-source comparator because
+a `.npz` file is missing; that driver does not qualify finished pixel parity.
+The standard 90-second Library smoke check passes. Validation results are
+recorded in the fix commits.
+
 ## November 11: Smart Album refresh leaves Library control responsive
 
 Candidate refresh now fixes a read-only SQLite WAL snapshot and its version

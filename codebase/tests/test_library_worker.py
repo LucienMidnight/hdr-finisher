@@ -243,3 +243,24 @@ def test_hidden_grade_requests_and_errors_cannot_strand_holds(worker):
             assert not worker.status()["writer_pause_owners"]
             raise RuntimeError("scope failed")
     assert not worker.status()["paused"]
+
+
+def test_jpegxl_cpu_scene_in_helper_preserves_decoded_pixels(worker, tmp_path):
+    import numpy as np
+    from hdr_finisher.jpegxl import encode_sdr_jpegxl, decode_jpegxl
+    from hdr_finisher.library_pictures import LibraryPictureCache
+    path = tmp_path / "photo.jxl"
+    values = np.linspace(0, 1, 96*64*3, dtype=np.float32).reshape(64,96,3)
+    path.write_bytes(encode_sdr_jpegxl(values, 100))
+    expected, _ = decode_jpegxl(path)
+    before = path.read_bytes()
+    _, future = worker.submit_library("live-scene", path=str(path), document=None, edge=640)
+    result = future.result(timeout=15)
+    assert result["renderer"] == "cpu"
+    assert (result["width"], result["height"]) == (96,64)
+    cache = LibraryPictureCache(worker.root)
+    cache.accept_transient(result)
+    with np.load(cache.open(result["key"])) as stored:
+        np.testing.assert_array_equal(stored["pixels"], expected.astype(np.float16))
+    assert worker.status()["restarts"] == 0
+    assert path.read_bytes() == before
