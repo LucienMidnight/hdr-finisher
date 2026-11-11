@@ -40,7 +40,7 @@ Ship 0.9.2 from current `main` (792 commits since v0.9.1) after:
 | Grade control: change to settled preview at Fit, 24 MP class photo, 2560x1440 | under 1.0 s | Steve's release bar |
 | Grade control: same, 100% zoom | under 1.0 s, or recorded as an exception with reason | Steve's release bar |
 | Live drag frame rate on a pointwise control | 20 frames/s or better at Fit | Matches the October local-drag baseline (31 frames/s) with headroom |
-| "Slows other actions significantly" | another action's time rises more than 25% after using a control, or stays raised after the control is reset | Run-to-run noise on these timings is about 5–10% |
+| "Slows other actions significantly" | another action's time rises more than 25% **and** more than 20 ms after using a control, or stays raised by that much after the control is reset | Run-to-run noise is about 5–10%, and these timings move in whole display frames (16.7 ms), so a rise smaller than about one frame is noise (refined by the coordinator after W1, November 11) |
 | Timing repeat noise | judge against these limits, never against one earlier run | AGENTS.md |
 
 ## Workstreams
