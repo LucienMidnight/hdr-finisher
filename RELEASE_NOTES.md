@@ -27,7 +27,15 @@
 - Context-sensitive keyboard hints appear in the status bar. Navigate can be moved by its title bar.
 - Improved JPEG XL colour-tag handling and threaded CPU decoding for supported ProRAW linearization tables.
 
-<!-- coordinator: add sprint fixes -->
+## Fixes
+
+- Library rename, move and delete are about four times faster, and no longer hold up saving for as long.
+- Switching photos quickly no longer lets a late Denoise result, source re-interpretation or Apply RAW settings land on the wrong photo.
+- Cancelling a batch export can no longer be undone by a late Pause or Resume, and closing the app no longer leaves new exports waiting forever.
+- The preview no longer hangs after a resize error, and Denoise no longer reuses the previous picture's noise measurement after the SDR base changes.
+- Typing a percentage into a slider no longer jumps to the maximum.
+- A normal graphics-memory hand-over between Grade and an export is no longer reported as an error.
+<!-- coordinator: add W9/W10 fixes -->
 
 ## Changed or removed
 
@@ -35,7 +43,7 @@ Earlier tone controls and retired settings are not migrated before 1.0. Review o
 
 ## Known limitations
 
-This remains a technical alpha. Windows packages are unsigned; macOS packages are not notarized. Film-stock preview/export differences at the GPU half-precision limit remain open. Retouch's final quality review, some Library responsiveness targets and physical platform HDR qualification remain incomplete. GPU export repeatability is under review in this sprint; these draft notes do not claim release validation has passed.
+This remains a technical alpha. Windows packages are unsigned; macOS packages are not notarized. In HDR with Highlight Compression turned off, extremely bright grades (for example Exposure around +8, or several Film Look controls at their extremes together) can show magenta, green or white blotches in the brightest parts of the preview; export and Proof are correct. Retouch's final quality review, some Library responsiveness targets and physical platform HDR qualification remain incomplete. Two GPU exports of the same photo were once seen to differ; this did not reproduce in 0.9.2 testing and a check now watches for it.
 
 See [Known limitations](https://github.com/LucienMidnight/hdr-finisher/blob/v0.9.2/docs/known-limitations.md) for support and validation status.
 
