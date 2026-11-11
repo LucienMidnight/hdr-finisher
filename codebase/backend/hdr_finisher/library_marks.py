@@ -204,10 +204,11 @@ class LibraryMarks:
         except ValueError as error:
             raise ValueError(f"Settings for {path.name} have unreadable albums; they were left untouched.") from error
 
-    def _rows(self, paths):
+    def _rows(self, paths, *, db=None):
         if not self.database.exists():
             return {}
-        db = self._connect()
+        owned = db is None
+        if owned: db = self._connect()
         try:
             rows = {}
             for start in range(0, len(paths), 800):
@@ -228,7 +229,7 @@ class LibraryMarks:
                 row["albums"].sort(key=str.casefold)
             return rows
         finally:
-            db.close()
+            if owned: db.close()
 
     @staticmethod
     def _index(db, row):

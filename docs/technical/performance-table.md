@@ -44,6 +44,26 @@ Evidence: `codebase/output/quick-library-check/theme-soften/report.json`.
 
 ## November 11: Smart Album timeout investigation
 
+Latest real session (10:33:58-10:44:04 Bangkok, after `1782b749`) has seven
+memory-controller timeouts during Smart Album candidate rebuilds. Associated
+marks-lock holds are 8.094-9.328 s; recorded backend loop lag reaches 2.773 s.
+The completed sample before the first timeout is 2.743 GB, no OS pressure.
+This is log correlation, not a whole-action speed measurement. The follow-up
+moves preparation outside the marks lock and bounds JSON encoding; no speedup
+claim or changed timing/memory tolerance. Validation results follow below.
+
+Follow-up validation (working tree based on `1782b749`, 2560x1440 Electron,
+concurrent full Python suite): 155,000-row editor opens in 8.8 ms / 1.9 ms warm,
+rule recount 180.7 ms and page timer gap 11 ms. A same-server HTTP heartbeat
+runs throughout the large-index workflow with the existing 2 s abort deadline;
+none times out. This validates backend responsiveness during candidate work,
+not real-library click-to-grid speed. Normal 90-second mixed Library smoke:
+first/ten/twenty pictures 4.1/5.9/11.5 s, 29 shown, no reported errors or
+memory breach; largest frame gap 140 ms passes the existing 250 ms limit.
+Whole-app memory settles under the existing target. No speedup claim from
+these non-isolated smoke timings. Evidence: `codebase/output/memory-controller-smart-electron.log`
+and `codebase/output/quick-library-check/memory-controller/report.json`.
+
 Steve's real-app log at `%APPDATA%/hdr-finisher-desktop/logs/backend.log`
 (November 11, Bangkok time; running commit not identified) records candidate
 marks-lock holds of 9.031-11.657 s at 09:04:42 and 09:05:07, and backend

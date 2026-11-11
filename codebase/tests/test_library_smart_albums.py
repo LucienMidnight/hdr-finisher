@@ -167,25 +167,31 @@ def test_large_candidate_response_renders_off_event_loop(smart, monkeypatch):
     import asyncio
     import threading
     from fastapi import FastAPI
-    from fastapi.responses import JSONResponse
     from httpx import AsyncClient, ASGITransport
     from hdr_finisher.library_smart_albums import add_smart_album_routes
     # A serialization gate makes the concurrency guarantee deterministic, with
     # no speed threshold or dependency on the machine's current load.
     entered, release = threading.Event(), threading.Event()
     threads = []
-    original = JSONResponse.render
-    def render(self, content):
-        threads.append(threading.get_ident())
-        entered.set()
-        assert release.wait(5), "Event loop could not release serialization"
-        return original(self, content)
-    monkeypatch.setattr(JSONResponse, "render", render)
+    original = json.dumps
+    batches = []
+    def encode(content, *args, **kwargs):
+        if isinstance(content, list):
+            batches.append(len(content))
+            if not entered.is_set():
+                threads.append(threading.get_ident())
+                entered.set()
+                assert release.wait(5), "Event loop could not release serialization"
+        return original(content, *args, **kwargs)
+    monkeypatch.setattr(json, "dumps", encode)
     rows = [{"path": f"offline/{i}.jpg", "marks": {"rating": 5}} for i in range(155000)]
-    monkeypatch.setattr(SmartAlbums, "candidates", lambda self, version="": {"version": "large", "photos": rows})
+    monkeypatch.setattr(SmartAlbums, "candidates", lambda self, version="": {"version": "large", "photos": None if version == "large" else rows})
     smart.index.status = lambda: {"state": "idle"}
     app = FastAPI()
     add_smart_album_routes(app, smart.marks, smart.index)
+    @app.get("/heartbeat")
+    async def heartbeat():
+        return {"alive": True}
     async def check():
         main_thread = threading.get_ident()
         client = AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
@@ -193,7 +199,9 @@ def test_large_candidate_response_renders_off_event_loop(smart, monkeypatch):
         try:
             assert await asyncio.to_thread(entered.wait, 5)
             assert threads == [threads[0]] and threads[0] != main_thread
-            # The event loop is available while the large response is rendered.
+            # Another HTTP request completes while serialization is held.
+            pulse = await asyncio.wait_for(client.get("/heartbeat"), 2)
+            assert pulse.json() == {"alive": True}
             release.set()
             response = await task
             assert response.status_code == 200
@@ -202,6 +210,10 @@ def test_large_candidate_response_renders_off_event_loop(smart, monkeypatch):
             assert len(body["photos"]) == 155000
             assert body["photos"][-1]["path"] == "offline/154999.jpg"
             assert body["version"] == "large"
+            assert len(batches) > 1 and max(batches) < len(rows)
+            unchanged = await client.get("/smart-candidates?version=large")
+            assert unchanged.status_code == 200
+            assert unchanged.json()["photos"] is None
         finally:
             release.set()
             await task
@@ -249,3 +261,51 @@ def test_grid_invalidates_when_saved_pins_change(smart):
     pins.append("offline/two")
     assert smart.grid(identifier)["photos"] is None
     assert not smart.grid(identifier, token, [])["saved"]
+
+
+def test_candidate_snapshot_allows_writes_without_mixing_versions(smart, tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    path = str(tmp_path / "offline.jpg")
+    db = smart.marks._connect()
+    with db:
+        db.execute("INSERT INTO files VALUES (?,?,?,NULL)", (path, 100, 1))
+        db.execute("INSERT INTO photos VALUES (?,?,?,0)", (path, "one", '{"rating":1}'))
+    db.close()
+    entered, release = Event(), Event()
+    original = smart.marks._rows
+    def read(paths, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return original(paths, **kwargs)
+    monkeypatch.setattr(smart.marks, "_rows", read)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(smart.candidates)
+        try:
+            assert entered.wait(5)
+            # A real concurrent commit must complete while preparation waits.
+            assert smart.marks._lock.acquire(timeout=1)
+            try:
+                db = smart.marks._connect()
+                with db:
+                    db.execute("UPDATE files SET bytes=200")
+                    db.execute("UPDATE photos SET marks=?", ('{"rating":5}',))
+                db.close()
+            finally:
+                smart.marks._lock.release()
+        finally:
+            release.set()
+        before = pending.result(timeout=5)
+    assert before["photos"][0]["bytes"] == 100
+    assert before["photos"][0]["marks"]["rating"] == 1
+    after = smart.candidates(before["version"])
+    assert after["version"] != before["version"]
+    assert after["photos"][0]["bytes"] == 200
+    assert after["photos"][0]["marks"]["rating"] == 5
+    after["photos"][0]["marks"]["rating"] = 0
+    assert smart.candidates()["photos"][0]["marks"]["rating"] == 5
+
+
+def test_missing_candidate_database_stays_missing(smart):
+    assert smart.candidates()["photos"] == []
+    assert not smart.marks.database.exists()

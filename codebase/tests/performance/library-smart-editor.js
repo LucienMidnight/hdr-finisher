@@ -2,7 +2,7 @@
 const fs=require("node:fs"),assert=require("node:assert/strict"),path=require("node:path"),{spawn}=require("node:child_process");
 async function check(page) {
  const root=path.resolve(__dirname,"../.."),child=spawn(path.join(root,".venv/Scripts/python.exe"),[path.join(__dirname,"library-smart-index.py"),"--serve"],{cwd:root,windowsHide:true});
- let output="",failure="";
+ let output="",failure="",pulseTimer,pulseFlight=null,pulseCount=0;const pulseErrors=[];
  // Redirect only the page's app-origin API calls. The worker already fetches the
  // fixture directly; intercepting that request in Electron left its 155,000-photo
  // response undelivered, so the count stayed at "Counting…".
@@ -27,6 +27,14 @@ async function check(page) {
   const base=new URL(url).origin;
   const deadline=Date.now()+10000;
   while(true){try{if((await fetch(url)).ok)break;}catch(error){if(Date.now()>deadline)throw error;}await new Promise(resolve=>setTimeout(resolve,25));}
+  // Probe the same Python server while it builds and sends the large list.
+  // Keep the app memory monitor's existing two-second HTTP deadline.
+  pulseTimer=setInterval(()=>{
+   if(pulseFlight)return;
+   pulseFlight=fetch(`${base}/heartbeat`,{signal:AbortSignal.timeout(2000)})
+    .then(async response=>{assert.equal(response.status,200);assert.equal((await response.json()).alive,true);pulseCount++;})
+    .catch(error=>pulseErrors.push(error.message)).finally(()=>{pulseFlight=null;});
+  },100);
   await context.route("**/smart-editor-test",async route=>{
    const response=await route.fetch({url});
    await route.fulfill({response,body:(await response.text()).replaceAll('src="/','src="/static/')});
@@ -89,6 +97,8 @@ async function check(page) {
     restored:restored.photos.length};
   });
   assert.deepEqual(cache,{first:15500,cached:15500,refreshed:15500,restored:15500});
+  clearInterval(pulseTimer);await pulseFlight;
+  assert.ok(pulseCount>0,"No backend heartbeat completed");assert.deepEqual(pulseErrors,[],"Backend heartbeat missed memory-monitor deadline");
   console.log("PASS: real 155,000-row smart editor",JSON.stringify({...timing,warm_open_ms:warm,...edits}));
  }finally {
   await context.unroute("**/smart-editor-test");await context.unroute(pattern);

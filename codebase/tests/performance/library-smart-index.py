@@ -42,6 +42,9 @@ if "--serve" in sys.argv:
     router=APIRouter(prefix="/api/library")
     add_smart_album_routes(router,marks,index)
     app.include_router(router)
+    @app.get("/heartbeat")
+    async def heartbeat():
+        return {"alive": True}
     @app.get("/smart-editor-test")
     def harness():
         return HTMLResponse('<div id="albums"></div>' + ''.join(

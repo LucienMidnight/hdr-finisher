@@ -2,12 +2,13 @@
 from copy import deepcopy
 import json
 import hashlib
+import sqlite3
 from pathlib import Path
 from uuid import uuid4
 from threading import RLock
 from pydantic import BaseModel, ConfigDict, Field
 from fastapi import HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from .library_documents import atomic_json, identity
 from .library_grades import grade_key
 from .library_marks import Marks, clean_names
@@ -156,38 +157,43 @@ class SmartAlbums:
             try:
                 wal_info = wal.stat()
                 with wal.open("rb") as handle: wal_header = handle.read(32)
-                wal_stamp = f"{wal_info.st_mtime_ns}:{wal_info.st_size}:{wal_header.hex()}"
+                wal_stamp = f"{wal_info.st_mtime_ns}:{wal_info.st_size}:{wal_header.hex()}" if wal_info.st_size else ""
             except FileNotFoundError:
                 wal_stamp = ""
             return f"{self.marks._revision}:{info.st_ino}:{info.st_mtime_ns}:{info.st_size}:{header[24:28].hex()}:{wal_stamp}"
         except FileNotFoundError: return "empty"
 
     def candidates(self, version=""):
-        # SQLite writes are serialized by the existing backend ownership lock.
-        # The stamp is sampled inside that lock, never before a transaction.
-        with self.marks._lock, self._cache_lock:
-            scope = getattr(self.marks,"membership",None)
-            # Opening uses saved scope, including disconnected folders. Probing
-            # their availability belongs to the background folder checker.
-            pins = scope.pins(check_available=False) if scope else []
-            from .batch_export import RECORD_PATH, read_records, export_state
-            records = read_records()
-            record_version = str(RECORD_PATH.stat().st_mtime_ns) if RECORD_PATH.exists() else ""
-            stamp = self.version() + record_version + (json.dumps(pins) if scope else "")
-            if version == stamp: return {"version":stamp,"photos":None}
-            if self._version == stamp: return {"version":stamp,"photos":deepcopy(self._snapshot)}
-            photos=[]
-            if self.marks.database.exists():
-                db=self.marks._connect()
-                try:
-                    tables={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-                    files=list(db.execute("SELECT path,bytes,mtime_ns,facts FROM files"))
-                    paths=[r[0] for r in files]
-                    states={p:json.loads(s) for p,s in db.execute("SELECT path,state FROM photo_grades")} if "photo_grades" in tables else {}
-                    copies={p:json.loads(s) for p,s in db.execute("SELECT source,state FROM library_copies")} if "library_copies" in tables else {}
-                    keys = paths + [p+"|copy|"+item["photo_id"] for p,state in copies.items() for item in (state.get("desired",[]) if state.get("pending") else state.get("baseline",[]))]
-                    rows = self.marks._rows(keys)
-                finally: db.close()
+        # Serialize builders here, never while waiting on the shared marks lock.
+        # WAL readers keep a consistent view while marks/index writers continue.
+        with self._cache_lock:
+            db = None
+            try:
+                with self.marks._lock:
+                    scope = getattr(self.marks, "membership", None)
+                    pins = scope.pins(check_available=False) if scope else []
+                    from .batch_export import RECORD_PATH, read_records, export_state
+                    records = read_records()
+                    record_version = str(RECORD_PATH.stat().st_mtime_ns) if RECORD_PATH.exists() else ""
+                    stamp = self.version() + record_version + (json.dumps(pins) if scope else "")
+                    if version == stamp: return {"version":stamp,"photos":None}
+                    cached = self._snapshot if self._version == stamp else None
+                    if cached is None and self.marks.database.exists():
+                        db = sqlite3.connect(self.marks.database.as_uri()+"?mode=ro", uri=True)
+                        db.execute("BEGIN")
+                        # The first read fixes the snapshot under the same lock
+                        # as its version. No whole-library work belongs here.
+                        tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                if cached is not None:
+                    return {"version":stamp,"photos":deepcopy(cached)}
+                photos, files, states, copies, rows = [], [], {}, {}, {}
+                if db is not None:
+                    files = list(db.execute("SELECT path,bytes,mtime_ns,facts FROM files"))
+                    states = {p:json.loads(s) for p,s in db.execute("SELECT path,state FROM photo_grades")} if "photo_grades" in tables else {}
+                    copies = {p:json.loads(s) for p,s in db.execute("SELECT source,state FROM library_copies")} if "library_copies" in tables else {}
+                    keys = [r[0] for r in files] + [p+"|copy|"+item["photo_id"] for p,state in copies.items() for item in (state.get("desired",[]) if state.get("pending") else state.get("baseline",[]))]
+                    rows = self.marks._rows(keys, db=db)
+                    db.close(); db = None
                 def grade_status(key, fallback=None, default=None):
                     s=states.get(key,{})
                     grade=s.get("desired") if s.get("pending") else s.get("indexed_grade",s.get("baseline",fallback))
@@ -206,8 +212,10 @@ class SmartAlbums:
                         photos.append({**row,**rows.get(key,{}),"path":key,"source_path":path,"name":item["name"],"copy_name":item["name"],"copy_id":item["photo_id"],"copy_order":i,
                                        "marks":rows.get(key,{}).get("marks",item.get("marks",Marks().model_dump())),"albums":rows.get(key,{}).get("albums",item.get("albums",[])),"storage":rows.get(key,{}).get("storage","database" if family.get("pending") else "sidecar"),
                                        **grade_status(key,item.get("grade"),item.get("grade_default"))})
-            self._version=stamp;self._snapshot=deepcopy(photos)
-            return {"version":stamp,"photos":photos}
+                self._version=stamp;self._snapshot=deepcopy(photos)
+                return {"version":stamp,"photos":photos}
+            finally:
+                if db is not None: db.close()
 
 
 def add_smart_album_routes(router, marks, index):
@@ -231,7 +239,21 @@ def add_smart_album_routes(router, marks, index):
     @router.get("/smart-candidates")
     def candidates(version:str=""):
         result=smart.candidates(version)
-        # Render here in the synchronous route worker, not on the ASGI event
-        # loop: a whole-library snapshot can contain hundreds of thousands of rows.
-        return JSONResponse({**result,"indexing":index.status()["state"] not in {"idle","off"},"undo_available":bool(marks._undo),"unreadable_folders":[],"warnings":[]})
+        metadata = {k:v for k,v in result.items() if k != "photos"}
+        metadata.update(indexing=index.status()["state"] not in {"idle","off"},
+                        undo_available=bool(marks._undo), unreadable_folders=[], warnings=[])
+        def encoded():
+            # A single json.dumps of the entire list holds Python's GIL even
+            # on a worker thread. Bound each encode and yield between batches.
+            yield json.dumps(metadata, ensure_ascii=False, allow_nan=False)[:-1] + ',"photos":'
+            photos = result["photos"]
+            if photos is None:
+                yield "null}"
+                return
+            yield "["
+            for start in range(0, len(photos), 128):
+                if start: yield ","
+                yield json.dumps(photos[start:start+128], ensure_ascii=False, allow_nan=False, separators=(",", ":"))[1:-1]
+            yield "]}"
+        return StreamingResponse(encoded(), media_type="application/json")
     return smart

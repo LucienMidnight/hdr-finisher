@@ -1,3 +1,38 @@
+## November 11: Smart Album refresh leaves Library control responsive
+
+Candidate refresh now fixes a read-only SQLite WAL snapshot and its version
+under the marks lock, then reads and prepares the full Library list outside
+that lock. Marks, grades, copies and facts come from the same transaction;
+concurrent commits appear on the next refresh. Cached-list copies also run
+outside the shared lock. The existing cache and its invalidation rules stay;
+an empty WAL created by a reader does not count as a content change.
+
+Candidate HTTP responses encode and stream small batches in worker threads.
+One whole-library JSON encode can hold Python's interpreter lock even off the
+backend event loop, starving its memory polls. Response fields, matching,
+saved grids, authored files, memory allowances and the two-second memory
+monitor deadline are unchanged. The existing rows reader can borrow this
+transaction so marks and albums cannot come from a newer database version.
+
+Validation: concurrent-write/snapshot isolation and bounded-response checks
+pass. The 155,000-row Electron workflow passes, with no same-server heartbeat
+missing the existing two-second deadline. Normal Library smoke passes with
+no memory-controller errors, photo errors, memory breach or frame-limit
+failure. Fast checks: 905 JavaScript passed; Python 3,289 passed, three skipped,
+with only the previously recorded unrelated
+`test_remembered_failure_does_not_hide_current_grade_cached_scene` failure.
+No additional GPU driver covers this backend scheduling/HTTP change; the
+existing Smart Album Electron workflow is the focused integration check.
+
+Timings and conditions are in the performance table. Evidence:
+`codebase/output/memory-controller-{node,python,smart-electron,smoke}.log`
+and `codebase/output/quick-library-check/memory-controller/`. Scratch output
+started at 42.7 GB and ended at 42.8 GB, below 100 GB. The synthetic large
+index and normal profiles were removed by their harnesses. A helper-only
+Electron launch was stopped before the correct parent driver was run;
+automatic approval review blocked removal of its disposable TEMP profile
+`hdr-finisher-electron-test-S40SPw`, which is safe to delete.
+
 ## November 11: indexed Smart Album opening
 
 Smart Albums keep the last matched rows in the existing SQLite index. After
