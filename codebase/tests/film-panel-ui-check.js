@@ -35,16 +35,16 @@ module.exports = async function checkFilmPanel(page) {
  assert.equal(await group.locator('[data-film-grain-custom]').isVisible(),true);
  await group.locator('[data-stock-reset="grain_film_format"]').click();
  assert.equal(await group.locator('[data-film-grain-custom]').isVisible(),false);
- // Equal-to-baseline is still deliberate, and dots must be reset buttons before names.
- await group.locator('[data-film-stage="Format"][data-film-recipe="1"]').click();
- assert.match(await group.locator('[data-film-section="camera"] .film-stage-mod').innerText(),/1 Mod/);
+ // A format choice is deliberate, and dots must be reset buttons before names.
+ await format.selectOption('65mm');
+ assert.match(await group.locator('[data-film-section="camera"] .film-stage-mod').getAttribute('title'),/^1 modified/);
  assert.equal(await group.locator('[data-stock-reset="grain_film_format"]').isVisible(),true);
  await group.locator('[data-stock-reset="grain_film_format"]').click();
  assert.equal(await group.locator('[data-film-section="camera"] .film-stage-mod').innerText(),'');
  await stage('camera').click();
  const grain = group.locator('#film-grain-amount');
  await grain.evaluate(c=>{c.value='24';c.dispatchEvent(new Event('input',{bubbles:true}));});
- assert.equal(await group.locator('[data-film-section="negative"] .film-stage-mod').innerText(),'1 Mod');
+ assert.equal(await group.locator('[data-film-section="negative"] .film-stage-mod').getAttribute('title'),'1 modified controls');
  assert.equal(await group.locator('[data-control-path="current.film_look.grain_amount"]').evaluate(e=>e.classList.contains('modified')),true);
  await grain.dblclick();
  assert.equal(await group.locator('[data-stock-reset="grain_amount"]').isVisible(),false);
@@ -52,7 +52,7 @@ module.exports = async function checkFilmPanel(page) {
  await stage('development').click();
  await group.locator('[data-film-push="0"]').focus();await page.keyboard.press('ArrowRight');
  assert.equal(await group.locator('[data-film-push="1"]').getAttribute('aria-pressed'),'true');
- assert.equal(await group.locator('[data-film-section="development"] .film-stage-mod').innerText(),'1 Mod');
+ assert.equal(await group.locator('[data-film-section="development"] .film-stage-mod').getAttribute('title'),'1 modified controls');
  await group.locator('[data-stock-reset="push_pull"]').click();
  assert.equal(await group.locator('[data-film-push="0"]').getAttribute('aria-pressed'),'true');
  await stage('development').click();

@@ -113,7 +113,6 @@
       ["Soft glow (Pro-Mist 1/4)", {lens_filter:"pro_mist", lens_strength:.25, lens_size:1}],
       ["Sparkle (Glimmerglass 1/4)", {lens_filter:"glimmerglass", lens_strength:.25, lens_size:1}],
       ["Heavy bloom (CineBloom 1/2)", {lens_filter:"cinebloom", lens_strength:.5, lens_size:1}]],
-    Format: ["65mm", "35mm", "super16", "super8"].map((value, i) => [["65mm", "35mm", "Super 16", "Super 8"][i], {grain_film_format:value}]),
     Development: [["Pull 1", {push_pull:-1}], ["Normal", {push_pull:0}], ["Push 1", {push_pull:1}], ["Push 2", {push_pull:2}]],
     Print: [
       ["Neutral print", {}], ["Warm print", {stock_print_warmth:15}],

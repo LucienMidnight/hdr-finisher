@@ -79,7 +79,7 @@ Both are in the **Negative** stage.
 
 **Grain** is the texture of the film. Turn it on, then set **Amount**. **Size** sets how coarse it looks. **Softness** blurs it. **Chroma** adds colour to it. Under **Tone response**, **Shadows**, **Midtones** and **Highlights** let you keep grain strong in some tones and weaker in others. Choose **Show grain map** for a diagnostic view, also not exported.
 
-**Film Format** (in **Camera**) changes how big the grain looks, because a small film frame is enlarged more. Choose from 65mm, 35mm, Super 35, Super 16, 16mm, Super 8 or Custom.
+**Format** (in **Camera**) changes how big the grain looks, because a small film frame is enlarged more. Choose from 65mm, 35mm, Super 35, Super 16, 16mm, Super 8 or Custom.
 
 Fit view approximates the grain you will see at full size. Check at 100% before you decide on an amount.
 
