@@ -22,14 +22,14 @@ const report = { date: new Date().toISOString(), batch, samples, rows: [], error
   methodology: 'Normal input/change handlers to exact current-generation presentation plus two animation frames; texture readback after clock. Nine 32px patches diagnose changes, not whole-picture or export agreement. Reference Exposure steps are restored between trials. Native-pointer drag presentation events are throughput observations, not physical scanout.' };
 const network=[];
 fs.mkdirSync(out, { recursive: true });
-const spentBeforeMs = fs.readdirSync(out).filter(n=>n.endsWith('.json')).reduce((total,name)=> {
+const spentBeforeMs = fs.readdirSync(out).filter(n=>n.endsWith('.json') && (!args.includes('--followup') || n.startsWith('w10-'))).reduce((total,name)=> {
   try { const file=path.join(out,name), data=JSON.parse(fs.readFileSync(file,'utf8'));
     return total+(data?.date && Array.isArray(data.rows) ? Math.max(0,(data.completedAt ? Date.parse(data.completedAt) : fs.statSync(file).mtimeMs)-Date.parse(data.date)) : 0);
   } catch { return total; }
 },0);
 // Leave ten minutes for Electron launches and early overwritten diagnostic attempts.
-const measurementLimitMs = 110*60000;
-report.budget={spentBeforeMs,measurementLimitMs,allowance:'10 minutes for launches/early overwritten attempts within the two-hour cap'};
+const measurementLimitMs = (args.includes('--followup') ? 85 : 110)*60000;
+report.budget={spentBeforeMs,measurementLimitMs,allowance:args.includes('--followup') ? 'W10: 85 measurement minutes plus 5 launch minutes within 90-minute cap' : 'W1: 110 measurement minutes plus 10 launch minutes'};
 const budgetExceeded=()=>spentBeforeMs+Date.now()-startedAt>=measurementLimitMs;
 const save = () => fs.writeFileSync(path.join(out, `${path.basename(opt('--label', batch))}.json`), JSON.stringify(report, null, 2));
 async function signature(page) {
@@ -60,6 +60,7 @@ async function stable(page,drainBackground=true) {
 }
 async function change(page, selector, value, reset = false, capture = true) {
   const networkStart=network.length;
+  const priorSession=await page.evaluate(()=>state.session?.session_id);
   const start = await page.evaluate(({ selector, value, reset }) => {
     const c = document.querySelector(selector);
     const t = performance.now();
@@ -76,6 +77,7 @@ async function change(page, selector, value, reset = false, capture = true) {
     if (selector.startsWith('#retouch-')) applySelectedRetouch(false);
     return { t, generation: state.previewGeneration[state.currentView] };
   }, { selector, value, reset });
+  if(batch==='raw-highlights' && selector.startsWith('#raw-')) await page.waitForFunction(id=>state.session?.session_id!==id && !state.importInProgress,priorSession,{timeout:120000});
   await stable(page,false);
   const visibleMs=await page.evaluate(t=>performance.now()-t,start.t);
   if(capture) await stable(page);
@@ -114,6 +116,7 @@ async function curves(page,lane,zoom) {
       save();
     };
     for(let trial=0;trial<samples;trial++) {
+      if(budgetExceeded() || Date.now()-startedAt>14*60000){report.stopped='Measurement allowance reached or 14 minute batch limit';return;}
       await observe('add',async()=>{await page.locator('#curve-add').click();});
       await observe('drag',async()=>{
         const point=await page.evaluate(()=>curvePointCanvasPosition(currentCurveValues()[state.selectedCurvePoint]));
@@ -140,7 +143,7 @@ async function match(page,zoom) {
   for(let i=0;i<samples;i++)row.referenceBefore.push(await ref());
   const baseline=await signature(page);
   for(let i=0;i<samples;i++) {
-    if(budgetExceeded()){report.stopped='Two-hour measurement allowance reached';return;}
+    if(budgetExceeded()){report.stopped='Measurement allowance reached';return;}
     const t=await page.evaluate(()=>performance.now());
     const response=page.waitForResponse(r=>r.url().endsWith('/sdr-match')&&r.request().method()==='POST',{timeout:120000});
     await page.locator('#sdr-match-entire').click();
@@ -160,14 +163,69 @@ async function match(page,zoom) {
     console.log(`sdr/${zoom} Match sample ${i+1}: ${ms.toFixed(1)} ms`);
   }
 }
+async function gestureChecks(page,lane,zoom) {
+  const observe=async(name,act,restore,expected='change')=>{
+    if(budgetExceeded() || Date.now()-startedAt>14*60000){report.stopped='Measurement allowance reached or 14 minute batch limit';return;}
+    const row={path:name,lane,zoom,observations:[],errors:[],status:'Preview changed',resetPixelsMatch:true,
+      expected,referenceNotMeasured:'Gesture only; surrounding Exposure references are in value-control rows'};
+    report.rows.push(row); save();
+    try {
+      for(let i=0;i<samples;i++) {
+        const baseline=await signature(page), t=await page.evaluate(()=>performance.now());
+        await act(); await stable(page,false);
+        const ms=await page.evaluate(t=>performance.now()-t,t); await stable(page);
+        const pixels=await signature(page);
+        row.observations.push({ms,pixels,expectedPicture:expected==='identity'?pixels===baseline:pixels!==baseline});
+        await restore(); await stable(page);
+        row.resetPixelsMatch &&= (await signature(page))===baseline;
+      }
+      if(row.observations.some(o=>!o.expectedPicture))row.status='Needs investigation: gesture picture mismatch';
+    }catch(e){row.errors.push(e.message);row.status='Not checked: gesture driver error';}
+    save();
+  };
+  if(batch.endsWith('-equalizer')) {
+    const prefix=lane==='sdr'?'sdr-tone-equalizer':'tone-equalizer';
+    const original=await page.evaluate(lane=>structuredClone(currentToneEqualizerNodes(lane)),lane);
+    const restore=async()=>page.evaluate(({lane,original})=>commitAdjustmentValue(`${lane}.tone_equalizer_nodes`,original,{manual:true}),{lane,original});
+    await observe(`${lane}.bands.add-remove`,async()=>page.locator(`#${prefix}-add`).click(),async()=>{await page.locator(`#${prefix}-remove`).click();},'identity');
+    await observe(`${lane}.bands.keyboard-vertical`,async()=>{await page.locator(`#${prefix}-editor`).focus();await page.keyboard.press('ArrowUp');},restore);
+    await observe(`${lane}.bands.drag`,async()=>{
+      const point=await page.evaluate(lane=>{const c=toneEqualizerUi(lane).editor,r=c.getBoundingClientRect(),l=toneEqualizerEditorLayout(),n=currentToneEqualizerNodes(lane)[state.selectedToneEqualizerBand];return {x:r.x+l.left+(n.input_ev-TONE_EQUALIZER_MIN_EV)/(toneEqualizerPqMaxEv()-TONE_EQUALIZER_MIN_EV)*(r.width-l.left-l.right),y:r.y+l.top+(2-n.adjustment_ev)/4*(r.height-l.top-l.bottom)};},lane);
+      await page.mouse.move(point.x,point.y);await page.mouse.down();await page.mouse.move(point.x+6,point.y-25,{steps:8});await page.mouse.up();
+    },restore);
+  }
+  if(batch==='raw-highlights') {
+    await page.locator('#raw-settings-toggle').click();
+    for(const [id,value] of [['lens-mode','off'],['lens-distortion',false],['lens-ca',false],['lens-vignetting',false],['lens-focal',35],['lens-aperture',8],['lens-distance',10]]) {
+      const original=await page.locator(`#${id}`).evaluate(c=>c.type==='checkbox'?c.checked:c.value);
+      const apply=async value=>{
+        const generation=await page.evaluate(()=>state.importGeneration);
+        await page.locator(`#${id}`).evaluate((c,v)=>{if(c.type==='checkbox')c.checked=v;else c.value=String(v);c.dispatchEvent(new Event('change',{bubbles:true}));},value);
+        await page.locator('#apply-raw-settings').click();
+        await page.waitForFunction(g=>state.importGeneration>g&&!state.importInProgress,generation,{timeout:120000});
+        await stable(page);
+      };
+      await observe(`raw.import.${id}`,()=>apply(value),()=>apply(original),'identity');
+    }
+  }
+  if(batch==='geometry') {
+    for(const id of ['rotate-left','rotate-right','flip-horizontal','flip-vertical']) {
+      await observe(`geometry.${id}`,async()=>{await page.locator('#rotate-tool-toggle').click();await page.locator(`#${id}`).click();await page.evaluate(()=>closeRotateMode(true));},async()=>page.evaluate(()=>resetControlGroup('geometry')));
+    }
+    await observe('geometry.crop-handle-apply',async()=>{
+      await page.locator('#crop-tool-toggle').click();const h=page.locator('.crop-handle').first();const b=await h.boundingBox();
+      await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+80,b.y+60,{steps:8});await page.mouse.up();await page.locator('#crop-done').click();
+    },async()=>page.evaluate(()=>resetControlGroup('geometry')));
+  }
+}
 async function main() {
-  if(budgetExceeded()) { report.stopped='Two-hour measurement allowance reached'; save(); process.exit(0); }
+  if(budgetExceeded()) { report.stopped='Measurement allowance reached'; save(); process.exit(0); }
   const browser = await chromium.launch({ headless: false });
   try {
     const page = await browser.newPage({ viewport: { width: 2560, height: 1440 } });
     page.on('pageerror', e => report.errors.push({ kind: 'page', message: e.message }));
     page.on('console', m => { if (m.type() === 'error') report.errors.push({ kind: 'console', message: m.text() }); });
-    page.on('response', r => { if (r.status() >= 400) report.errors.push({ kind: 'backend', status: r.status(), url: r.url() }); });
+    page.on('response', async r => { if (r.status() >= 400) {const entry={kind:'backend',status:r.status(),url:r.url()};report.errors.push(entry);try{entry.body=(await r.text()).slice(0,4000);}catch{}} });
     const pending=new Map();
     page.on('request',r=>{ const url=new URL(r.url()); if(!url.pathname.startsWith('/api/')) return; const record={path:url.pathname,method:r.method(),startedAt:Date.now()}; network.push(record);pending.set(r,record); });
     page.on('response',r=>{const record=pending.get(r.request());if(record){record.status=r.status();record.ms=Date.now()-record.startedAt;record.timings=Object.fromEntries(Object.entries(r.headers()).filter(([key])=>/^x-(cpu|mask|image|source-level)/.test(key)));pending.delete(r.request());}});
@@ -194,7 +252,14 @@ async function main() {
         };
       }
     });
-    await page.setInputFiles('#file-input', path.resolve(opt('--input', 'output/test-photos/grade-24mp.tiff')));
+    const input=path.resolve(opt('--input', args.includes('--followup') && ['black-and-white','color-grading','detail','hdr-color','sdr-color'].includes(batch) ? 'output/test-photos/grade-colour-chart.tiff' : 'output/test-photos/grade-24mp.tiff'));
+    if(batch==='raw-highlights' && args.includes('--followup')) {
+      const disposable=path.resolve('output/test-photos/grade-review-raw'+path.extname(input));
+      if(!fs.existsSync(disposable))fs.copyFileSync(input,disposable);
+      report.rawSource={original:input,disposable,sha256:require('crypto').createHash('sha256').update(fs.readFileSync(input)).digest('hex')};
+      await page.evaluate(async input=>{state.appPreferences.gradeAutosave=false;const selection=await desktop.grantSourcePath(input);await openStagedDesktopSource(selection);},disposable);
+    }
+    else await page.setInputFiles('#file-input',input);
     await page.waitForFunction(() => state.session, null, { timeout: 120000 });
     await stable(page);
     await page.evaluate(() => {
@@ -260,7 +325,7 @@ async function main() {
     if(batch==='match') {
       await page.evaluate(()=>{commitAdjustmentValue('hdr.exposure',.8,{manual:true});commitAdjustmentValue('hdr.saturation',30,{manual:true});});await stable(page);
     }
-    for (const lane of opt('--lanes',batch==='match'||batch.startsWith('sdr-') ? 'sdr' : batch.startsWith('hdr-') ? 'hdr' : 'hdr,sdr').split(',')) {
+    for (const lane of opt('--lanes',batch==='raw-highlights'||batch==='geometry' ? 'hdr' : batch==='match'||batch.startsWith('sdr-') ? 'sdr' : batch.startsWith('hdr-') ? 'hdr' : 'hdr,sdr').split(',')) {
       await page.evaluate(lane => switchLane(lane), lane); await stable(page);
       if (batch === 'retouch' && !report.retouchSetup) {
         await page.locator('#grade-mode-retouch').click();
@@ -276,6 +341,7 @@ async function main() {
         }
         report.retouchSetup = await page.evaluate(() => state.editDocument.repairs.map(r=>({id:r.id,mode:r.recipe.mode})));
       }
+      if (batch.endsWith('-equalizer')) { await page.evaluate(lane => { const nodes=currentToneEqualizerNodes(lane); nodes[Math.floor(nodes.length/2)].adjustment_ev=.8; commitAdjustmentValue(`${lane}.tone_equalizer_nodes`,nodes,{manual:true}); },lane); await stable(page); }
       if (batch === 'denoise') { await page.evaluate(() => setDenoiseEnabled(true)); await stable(page); }
       if (batch === 'film-look') {
         await page.evaluate(() => commitAdjustmentValue('current.film_look.film_stock','kodak_portra_400',{manual:true}));
@@ -302,17 +368,18 @@ async function main() {
         document.querySelector(`[data-group="${group}"]`)?.classList.remove('collapsed');
         for (const d of document.querySelectorAll(`[data-group="${group}"] details`)) d.open = true;
       }, batch);
-      for (const zoom of opt('--zooms','fit,actual').split(',')) {
+      for (const zoom of opt('--zooms',batch==='raw-highlights'?'fit':'fit,actual').split(',')) {
         await page.evaluate(zoom => setZoomMode(zoom), zoom); await stable(page);
         if(batch==='denoise') {
           const started=Date.now(); await page.evaluate(()=>recalculateDenoise()); await stable(page);
           (report.denoisePreparation ||= []).push({lane,zoom,ms:Date.now()-started,reason:'Analysis preparation; warm control timings follow'});
         }
+        if(args.includes('--followup') && (batch==='geometry'||batch==='raw-highlights'||batch.endsWith('-equalizer'))) await gestureChecks(page,lane,zoom);
         if(batch === 'curves') { await curves(page,lane,zoom); continue; }
         if(batch === 'match') { await match(page,zoom); continue; }
         for (const c of controls) {
           if (!only.test(controlName(c))) continue;
-          if(budgetExceeded()) { report.stopped='Two-hour measurement allowance reached'; return; }
+          if(budgetExceeded()) { report.stopped='Measurement allowance reached'; return; }
           if (Date.now() - startedAt > 14 * 60000) { report.stopped = '14 minute batch limit'; return; }
           const selector = c.id ? `#${c.id}` : c.path ? `[data-path="${c.path}"]` : c.data.sectionPath ? `[data-section-path="${c.data.sectionPath}"]`
             : c.data.localGrade ? `[data-local-grade="${c.data.localGrade}"]`
@@ -323,6 +390,8 @@ async function main() {
           report.rows.push(row); save();
           const errorStart = report.errors.length;
           const prepared = [];
+          const wheel=c.path?.match(/color_grading\.(shadows|midtones|highlights)\./)?.[1];
+          if(wheel) await page.locator(`#wheel-tab-${wheel}`).click();
           let localBefore=null;
           try {
             if(batch==='local-adjustments') {
@@ -500,6 +569,7 @@ async function main() {
               await page.locator(selector).fill(String(plan.alternative));
               await page.locator(selector).press('Tab'); await stable(page);
               row.typed = await page.evaluate(({ p, selector }) => p ? getValueByPath(state.adjustments, p) : document.querySelector(selector).value, { p: c.path, selector });
+              row.typedMatches=Number(row.typed)===Number(plan.alternative);
               await change(page, selector, plan.value);
             }
             row.defaultReset = c.type === 'range' ? await change(page, selector, null, true) : null;

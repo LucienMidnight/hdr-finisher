@@ -91,7 +91,7 @@ def main():
             raise
         finally:
             entry["completedAt"] = now()
-            (OUT / "launches.json").write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
+            (OUT / "w10-launches.json").write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
             if owns(owner):
                 os.unlink(LOCK / "owner.txt")
                 os.rmdir(LOCK)
