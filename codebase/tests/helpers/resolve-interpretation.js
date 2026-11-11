@@ -7,10 +7,12 @@ async function resolveInterpretation(page, {
     null, { timeout: 120000 });
   if (!await page.evaluate(() => Boolean(state.session.analysis?.needs_color_override))) return;
   await page.locator('[data-workflow-tab="grade"]').click();
-  if (await page.locator("#source-settings-toggle").getAttribute("aria-expanded") !== "true") {
-    await page.locator("#source-settings-toggle").click();
-  }
-  await page.locator("#interpretation-mode").selectOption("manual");
+  // The review notice's "Set manually" action opens the (possibly collapsed)
+  // source rail in manual mode, as a person would.
+  const action = page.locator("#manual-interpretation");
+  if (await action.isVisible().catch(() => false)) await action.click();
+  else await page.evaluate(() => openManualInterpretation()); // same action, notice folded away
+  await page.locator("#interpretation-color-space").waitFor({ state: "visible" });
   await page.locator("#interpretation-color-space").selectOption(primaries);
   await page.locator("#interpretation-transfer").selectOption(transfer);
   if (transfer === "linear") {
