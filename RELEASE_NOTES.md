@@ -38,6 +38,7 @@
 - JPEG XL photos no longer make the Library stop drawing pictures (it kept relaunching a metadata reader while checking sizes).
 - Choosing primaries and transfer by hand now clears the source review notice for linear and untagged TIFF or HEIC files, so they can be exported.
 - After adding a tag in the Library, the tag field and its suggestions clear again.
+- Save Project no longer gets stuck when a file name is typed before the folder list has loaded.
 - After using Denoise or Retouch, other Grade sliders respond about three times faster, and return to full speed when the tool is turned off.
 
 ## Changed or removed
