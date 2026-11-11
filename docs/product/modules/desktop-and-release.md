@@ -558,3 +558,20 @@ finish before changing the setting again, and uses a disposable preset library
 so the portable package's shared presets cannot trigger a replacement prompt.
 Failures retain screenshots, renderer/main console output and small logs;
 disposable source copies and profiles are removed after shutdown.
+
+
+Validation of `a5367a61`: rebuilt `pack:dir` succeeds, and the exact Windows
+CI command (`npm --prefix desktop run test:packaged`) passes to completion.
+The unpackaged smoke through `run-native-electron.js` also passes, both with
+the delayed-folder regression. Node: 921 pass; desktop unit checks: 28 pass;
+Python: 3,306 pass, three skip (PowerShell reports stderr from the helper's
+normal shutdown after the passing summary). No additional GPU pixel driver
+covers folder readiness, and none was substituted. No installer, push or tag.
+
+Evidence: `codebase/output/w21-save-race.png`, `w21-save-race.log` and
+`w21-save-race-diagnostics.log` capture the original dialog timeout; no
+project-save exception is emitted because the early click had no destination.
+Final logs: `codebase/output/w21-packaged-final.log`, `w21-unpackaged.log`,
+`w21-node.log`, `w21-desktop.log`, `w21-python.log` and `w21-pack.log`.
+Output starts/ends at 45.9 GB, below 100 GB. Owned smoke scratch was removed;
+the retained failure screenshot and logs are disposable after review.
