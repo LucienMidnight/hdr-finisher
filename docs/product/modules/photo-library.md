@@ -8815,3 +8815,28 @@ broken-photo records. Focused Electron passes under the shared graphics lock
 at 2560x1440; fast Node passes after rebasing onto local main (921 checks).
 Backend unchanged; Python not rerun for this driver-only repair. Evidence:
 `codebase/output/w15-gpu-recovery/{baseline,driver,node-rebased}.log`.
+
+## November 11: scroll-cache regression checks a stable photo order
+
+The release driver's default capture-time order could change while background
+metadata arrived. In the reproduced failure, DSC07254.ARW moved from the first
+cell to index 44; returning to scroll position zero correctly showed other
+photos. No picture-key upgrade or cache regression was established.
+
+The scroll-cache check now waits for the streamed folder list to finish, uses
+filename order and identifies the original photo by path in sorted grid order
+(retained DOM insertion order can differ). It starts with a visible finished
+picture, records visible tiles only, leaves the one-screen retention buffer,
+and checks exact displayed pixels and no redevelopment on
+return. If needed, the existing Develop command prepares the first photo in
+the disposable cache before capture; an unedited camera preview is not treated
+as a finished picture. Retained cells still must make zero backend picture
+requests. No app behavior, photo sidecar, cache size or budget changes.
+
+Validation: the original assumption fails after a two-second metadata pause;
+the repaired Electron driver passes under the shared lock at 2560x1440, with
+exact pixels, no redevelopment and no backend picture requests on return.
+All 921 fast Node checks pass after rebasing onto local main. Backend unchanged;
+Python not rerun. Evidence: `codebase/output/w14-scroll-cache/` (driver and
+Node logs, compact diagnosis). Output remains below 0.1 GB in this worktree;
+disposable app profiles are removed by the harness.

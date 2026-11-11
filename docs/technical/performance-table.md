@@ -38,6 +38,16 @@ deadline is unchanged. Evidence: `codebase/output/w15-gpu-recovery/driver.log`.
 
 ## How to read and update it
 
+November 11 W14 scroll-cache driver repair (parent `790b4a4d`, Electron,
+2560x1440, disposable profile, Steve's badminton folder read-only): returning
+four screens to the top reused 20 visible tiles in 12.4 ms, with zero backend
+picture requests, zero redevelopment and exact displayed pixels. This is one
+bounded cache check, not a speed comparison. Earlier diagnostic returns were
+11.3 and 178.5 ms while capture-time metadata was still changing grid order;
+the reproduced failure moved the original first photo to index 44. The driver
+now waits for the complete list and uses filename order. No app timing or
+cache allowance changed. Evidence: `codebase/output/w14-scroll-cache/`.
+
 * **Target:** an agreed target (with who agreed it and when) or
   "proposed". Only Steve agrees targets.
 * **Measured:** a range (p50 to max, or min to max), never a single best
