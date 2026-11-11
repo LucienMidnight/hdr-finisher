@@ -352,3 +352,63 @@ over-budget debt. Use a positive idle interval when testing eventual drain.
 Edge in both lanes; add `--native` for 100% rather than Fit. Zoom preparation
 is excluded. These are trusted slider drags with current picture/scope
 settlement, not a pixel-agreement or GPU-route assertion.
+
+## Grade 0.9.2 diagnostic
+
+`grade-release-sweep.js` runs through `tests/run-in-electron.js`, with
+`HDR_FINISHER_ELECTRON_WINDOW_SIZE=2560x1440`, under the sprint's shared
+`D:/AI/AI Projects/HDR Finisher Tool/gpu-run.lock` directory. Acquire that
+folder atomically, write branch/time to owner.txt, and release after **one**
+batch. Never overlap another worker's run.
+
+Use `--batch hdr-tone --samples 3`, substituting any `data-group` from
+index.html; `--only <regex>` restricts reruns to changed controls.
+`--list --batch inventory` captures runtime controls in five Local mask and
+three Retouch modes (and stock variants in the current driver). Output overwrites
+`output/performance/grade-0-9-2/`; completed rows survive later failures.
+The driver stops a batch after 14 minutes. It never saves a project.
+
+Supply `--input <disposable photo>`; the default is the reusable
+`output/test-photos/grade-24mp.tiff` (6000x4000, resized from DSC00264's
+existing test-photo copy). TIFF timings do not qualify RAW reconstruction.
+Each ordinary control is exercised at Fit and 100%, with three changed/reset
+pairs and three Exposure-reference trials before, during and after reset.
+Tiled texture signatures cover nine 32px patches; Direct Fit uses compositor screenshots. They detect changes and reset
+identity but do not establish visual correctness or preview/export agreement.
+A no-change signature needs prerequisite/content investigation, not an
+automatic product-bug verdict. Unsupported/disabled controls remain explicit
+coverage gaps. Drag presentation counts are observations, not scanout FPS.
+The JSON keeps raw timings, prerequisites, typed entries, reset values,
+errors and adapter/source/viewport metadata; this diagnostic has no automatic
+release-pass exit status. Review coverage and the sprint limits separately.
+
+Current timings separate on-screen exact settlement (`ms`) from completion of
+deferred background catch-up (`drainedMs`). Earlier reports without
+`latencyContract` include that catch-up in `ms`, so they are conservative upper
+bounds, not a comparable before/after baseline. Typed failures recorded before
+the percentage-readout fix stay visible; a passing unit regression does not
+silently replace the missing app rerun. `summary.json` distinguishes responding
+controls from controls that satisfied every measured condition.
+
+Special `--batch curves` and `--batch match` cases exercise authored curve
+points and the real SDR Match/revert action. They were implemented but were not
+run before the sprint's measurement allowance expired. Retouch settings require
+a visible defect and independent repairs before no-change results can be judged.
+
+Run `.venv/Scripts/python.exe tools/grade_sweep_summary.py` to rebuild summary.json and timings.csv from the completed/partial batch reports.
+
+The capped November 11 handback retains the named raw files in
+`output/performance/grade-0-9-2/raw-results.zip`, with hashes in
+`evidence-manifest.json`. Summary, CSV, complete inventory, conditions,
+qualification and checks are also retained separately. The archive keeps the
+exact original reports (including invalidated runs) when a worktree is retired;
+extract its members beside summary.json to follow the source filenames.
+
+For a serialized plan, use `.venv/Scripts/python.exe tools/run_grade_batch.py <plan.json>`.
+The plan is an array of argument arrays, for example
+`[["--batch","hdr-tone","--samples","3"]]`. The controller uses atomic
+`os.mkdir`, checks its owner token during the driver, and yields the lock
+between batches. Do not substitute PowerShell `New-Item` for atomic acquisition:
+three simultaneous W1 launches passed that existence check on November 11;
+those reports were invalidated. The os.mkdir contention check had exactly one
+winner among eight processes on the shared drive. Use only one plan controller.

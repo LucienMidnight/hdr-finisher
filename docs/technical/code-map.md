@@ -609,3 +609,13 @@ the export delivery render; CPU and GPU are compared within perceptual tolerance
 November 11 export repeatability: `tests/gpu-delivery-repeat.js` forces independent
 saved-grade exports at different admission caps; `tests/helpers/export_repeat_compare.py`
 compares complete decoded renditions with `delivery_colour.py` limits. No render path changed.
+
+November 11 Grade release diagnostic: `codebase/tests/performance/grade-release-sweep.js`
+captures the live Grade control inventory, per-control exact-presentation waits,
+texture change/reset observations, typed values, native-pointer presentations and
+before/active/reset Exposure references. Run one module per shared GPU lock;
+method and limits are in `codebase/tests/performance/README.md`. It is diagnostic,
+not an export-agreement or automatic release gate.
+The companion `codebase/tools/grade_sweep_summary.py` overwrites the compact JSON and CSV observation ledgers; coverage gaps never count as passes.
+
+Grade sweep launch ownership: `codebase/tools/run_grade_batch.py` acquires the shared lock through atomic `os.mkdir`, monitors the owner token, runs one Electron driver and releases only its own folder.

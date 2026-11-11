@@ -13,6 +13,39 @@ No processing formula, project schema or delivery code changed.
 Checks: eight delayed-operation Node regressions cover photo replacement and
 normal completion. Full-suite and focused app results are in the commit note.
 
+## November 11: 0.9.2 Grade performance review
+
+The release diagnostic inventories static and JavaScript-created Grade controls,
+then records per-control Fit/100% presentation waits, typed entries, reset picture
+checks, drag presentations and Exposure-reference probes before/active/after reset.
+The shared sprint limits are under 1.0 s settled, at least 20 presentations/s for
+pointwise drags, and no reference slowdown over 25%. Heavy reconstruction may be
+an explicitly recorded exception. This review is **not complete release sign-off**;
+coverage gaps and unresolved observations remain open in performance-table.md
+section 5 and `codebase/output/performance/grade-0-9-2/summary.json`.
+
+The review found and fixed typed percentages in generic slider readouts: their
+unit was cached before the populated readout appeared, so entering 70% could
+clamp a 0–1 value to 1. The readout now captures its displayed unit before
+starting an edit. A behaviour regression reproduces the failure and covers
+successive percentage entries. Processing formulas and stored-value rendering
+are unchanged; the app timing rerun remains subject to the measurement cap.
+
+The review stopped at the two-hour measurement allowance: 188 distinct control
+values had repeated observations, and 174 changed/restored the picture in at
+least one lane/view. This is partial response evidence. SDR Exposure remained
+roughly 0.23–0.25 s after Denoise/Retouch versus roughly 0.03–0.04 s before;
+some Film Look pointwise drags were about 15 presentations/s. These exceed the
+shared slowdown/drag limits and remain open, along with unmeasured panels and
+authoring gestures. No heavy-reconstruction exception or whole-Grade acceptance
+is claimed. The complete bounds/options inventory, raw archive and coverage
+ledger are under the performance output folder cited above.
+
+Post-rebase checks: 918 Node tests passed; 3,244 Python tests passed and 55
+were skipped. The percentage regression failed before the fix and passes after
+it. Graphics measurements ended at the allowance; no post-fix app timing or
+preview/export agreement result is claimed. No rendering formula changed.
+
 ## November 11: graph gutters and sidebar room
 
 Graph gutters are transparent so axis labels sit on the owning module surface,

@@ -37,7 +37,7 @@ function moduleFor(controlPath) {
   if (controlPath.includes(".highlight_compression_")) return "Highlight Compression";
   if (controlPath.includes(".tone_equalizer_")) return "Exposure Bands";
   if (/\.(exposure|contrast|contrast_pivot|blacks|shadows|midtones|highlights)(_center|_width)?$/.test(controlPath)) return "Tone";
-  if (/\.(white_balance_kelvin|tint|tint_hue|tint_purity|saturation|vibrance|red_hue|red_purity|green_hue|green_purity|blue_hue|blue_purity)$/.test(controlPath)) return "Color / Primaries";
+  if (/\.(white_balance_kelvin|tint|tint_hue|tint_purity|saturation|vibrance|red_hue|red_purity|green_hue|green_purity|blue_hue|blue_purity|highlight_desaturation|highlight_desaturation_start|shadow_desaturation|shadow_desaturation_start)$/.test(controlPath)) return "Color / Primaries";
   if (controlPath.startsWith("current.black_and_white.")) return "Black & White";
   if (controlPath.startsWith("current.color_grading.")) return "Color Grading";
   if (controlPath.startsWith("current.detail.")) return "Detail";

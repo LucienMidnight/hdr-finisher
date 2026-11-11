@@ -75,6 +75,15 @@ publishes the release.
   then remove the folder. If the lock exists, wait and retry; do not break
   another agent's lock unless `owner.txt` is older than 60 minutes. Fast
   Node and Python suites do not need the lock.
+- **Atomic lock correction (W1, November 11):** do not use PowerShell
+  `New-Item -ItemType Directory` as the atomic operation. Concurrent
+  existence checks let three waiting launchers through on this machine.
+  Python `os.mkdir` must create the folder directly and handle
+  `FileExistsError`; eight simultaneous contenders were checked on drive D
+  with exactly one winner. W1 uses `tools/run_grade_batch.py`, one controller,
+  one driver per lock, and checks its owner token while the driver runs.
+  The three affected W1 reports are explicitly invalidated; previous recorded
+  W1 run intervals did not overlap each other.
 - **Fast checks** before handing back, from `codebase`:
   `node --test tests/*.test.js` and `.venv/Scripts/python.exe -m pytest tests -q`.
 - **Worktree setup:** if `codebase/node_modules` or `codebase/.venv` is

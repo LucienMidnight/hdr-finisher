@@ -2133,6 +2133,18 @@
       }
     },
     {
+      "path": "tests/performance/grade-release-sweep.js",
+      "areas": [
+        "preview",
+        "ui"
+      ],
+      "tier": "diagnostic",
+      "protects": "0.9.2 per-control Grade inventory, screen change/reset and lingering latency",
+      "launch": {
+        "method": "electron"
+      }
+    },
+    {
       "path": "tests/performance/heavy-project-control-sweep.js",
       "areas": [
         "preview"
