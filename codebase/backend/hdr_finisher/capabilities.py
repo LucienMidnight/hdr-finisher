@@ -130,5 +130,3 @@ def _probe_capabilities_cached() -> dict[str, CapabilityInfo]:
 def probe_capabilities() -> dict[str, CapabilityInfo]:
     """Return process-cached capability results without exposing the cached mapping."""
     return dict(_probe_capabilities_cached())
-
-

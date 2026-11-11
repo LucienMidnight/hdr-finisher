@@ -1646,5 +1646,3 @@ class ProofReconstructionResponse(BaseModel):
     reconstruction: str
     cache_id: str
     tile: ProofMatrixTile
-
-
