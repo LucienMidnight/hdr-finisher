@@ -612,8 +612,11 @@ def test_remembered_failure_does_not_hide_current_grade_cached_scene(tmp_path):
         result=api.post('/api/library/live-plan',json={'path':str(path),'edge':640})
         assert result.status_code==200,result.text
         assert result.json()['cached']['edge']==640
+        # An unedited SDR original is drawn from the file itself (75f1de90), so
+        # the remembered development failure must not block it either.
         missing=api.post('/api/library/live-plan',json={'path':str(path),'edge':2560})
-        assert missing.status_code==422,missing.text
+        assert missing.status_code==200,missing.text
+        assert missing.json()['cached'] is None and missing.json()['original_file'] is True
 
 
 @pytest.mark.parametrize("edge", [640, 100000])
