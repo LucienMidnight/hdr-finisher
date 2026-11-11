@@ -47,6 +47,7 @@ class BatchExports:
         job = {"id":uuid4().hex,"state":"queued","completed":0,"total":len(photos)*len(preset.versions),"results":[],"directory":directory,"estimated_seconds":None,
                "active_photo":None,"photo_completed":0,"photo_total":len(preset.versions),"photos":photos,"preset":preset.model_dump(mode="json"),"started":monotonic()}
         with self.condition:
+            if self._closing: raise ValueError("The export queue is closing.")
             self.jobs[job["id"]] = job
             self.condition.notify_all()
         return self.status(job["id"])
@@ -57,7 +58,7 @@ class BatchExports:
     def control(self, identity, action):
         with self.condition:
             job = self.jobs[identity]
-            if job["state"] not in {"finished","cancelled","failed"}:
+            if job["state"] not in {"finished","cancelled","failed","cancelling"}:
                 job["state"] = {"pause":"paused","resume":"queued","cancel":"cancelling"}[action]
                 self.condition.notify_all()
         return self.status(identity)

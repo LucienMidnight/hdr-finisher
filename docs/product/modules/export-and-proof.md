@@ -48,6 +48,21 @@ baseline measurement on unchanged production code, not a repeatability fix
 or a new parity acceptance. The v1 JPEG agreement limitation remains open;
 retained metrics: `output/gpu-delivery-repeat/cpu-comparison.json`.
 
+## November 11: batch cancellation and shutdown audit
+
+A Cancel request now stays in force when a late Pause or Resume request arrives;
+the queue cannot restart remaining photos or hide cancellation behind a paused
+state. Once shutdown begins, new jobs are rejected instead of being accepted
+into a queue whose worker has stopped. Completed files remain available.
+Rendering, encoding, metadata and Proof are unchanged. Result-based Python
+regressions reproduce both failures and cover the corrected queue behavior.
+
+Audit follow-up for the release coordinator: `_peak_ceiling` still
+requires `guarantee_hdr_peak`, and `encode_within_ceiling` still delivers an
+uncorrectable overshoot with a note. Tests explicitly expect this behavior.
+This conflicts with the sprint's mandatory encoded HDR target requirement;
+resolve the policy and qualify the export/Proof paths before claiming that
+requirement is met. This audit did not alter the existing peak option.
 
 ## November 5: delivery-job buffer lifetime
 

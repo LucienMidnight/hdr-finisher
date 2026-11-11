@@ -217,3 +217,37 @@ def test_export_snapshot_completes_during_grade_status(tmp_path):
     finally:
         worker.join(3)
         store.batch_exports.close()
+
+
+def test_cancellation_cannot_be_undone_by_late_pause_or_resume(tmp_path):
+    entered, release = Event(), Event()
+    calls = []
+    photos = {str(i): {"path": str(i), "source_path": f"{i}.raw"} for i in range(2)}
+
+    def runner(photo, preset, directory, sequence):
+        calls.append(photo["path"])
+        entered.set()
+        assert release.wait(5)
+        return []
+
+    queue = BatchExports(photos.__getitem__, tmp_path / "records.json", runner)
+    try:
+        job = queue.start(list(photos), preset(), tmp_path)
+        assert entered.wait(5)
+        assert queue.control(job["id"], "cancel")["state"] == "cancelling"
+        assert queue.control(job["id"], "pause")["state"] == "cancelling"
+        assert queue.control(job["id"], "resume")["state"] == "cancelling"
+        release.set()
+        assert wait_job(queue, job["id"])["state"] == "cancelled"
+        assert calls == ["0"]
+    finally:
+        release.set()
+        queue.close()
+
+
+def test_closed_queue_rejects_new_jobs(tmp_path):
+    queue = BatchExports(lambda path: {"path": path}, tmp_path / "records.json", lambda *args: [])
+    queue.close()
+    with pytest.raises(ValueError, match="closing"):
+        queue.start(["photo.raw"], preset(), tmp_path)
+    assert not queue.jobs
