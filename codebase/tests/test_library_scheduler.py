@@ -481,7 +481,9 @@ def test_higher_classes_and_fast_lane_bypass_starvation_guard():
 
 
 def test_grade_preempts_guard_before_reclamation_and_during_owner_wait():
-    s = Scheduler()
+    # One instant: on a fine clock (Linux, macOS) the census taken before these
+    # grants is correctly treated as stale, which this test does not cover.
+    s = Scheduler(clock=lambda: 1000.0)
     s.update(total=2_500_000_000, available=60*GB, ram=68*GB)
     active = ask(s, "active", 200_000_000)
     blocked = ask(s, "blocked", 2*GB)
