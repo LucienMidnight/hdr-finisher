@@ -8774,3 +8774,8 @@ callers, string references, and release-listed tools/tests have no consumer
 of that imported alias. No old saved projects or test projects are affected.
 
 Validation: pending final fast suites and focused real-app checks.
+
+Desktop audit follow-up: taskbar progress events ignore invalid or stale
+sender/payload input instead of throwing in the shell. Valid progress and
+Library/main role restrictions are unchanged. Two behavioural IPC checks pass;
+see Desktop and release's November 11 entry.
