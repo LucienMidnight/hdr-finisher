@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from .cpu_budget import CpuExecutor
 from dataclasses import dataclass, replace
 
@@ -18,7 +17,7 @@ from .finishing import apply_geometry
 from .models import AdjustmentState, LocalAdjustment, PreviewKind
 from .detail import apply_detail
 from . import film_grain
-from .film_stock import controlled_film_stock, measured_push_stock, load_film_stock, render_film_stock, render_film_stock_with_grey, stock_parameters
+from .film_stock import controlled_film_stock, measured_push_stock, render_film_stock, render_film_stock_with_grey, stock_parameters
 from .sdr_gamut import compress_to_srgb_gamut
 
 

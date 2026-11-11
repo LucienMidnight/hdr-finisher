@@ -17,7 +17,7 @@ import numpy as np
 
 from .color import acescg_to_linear_srgb
 from .config import APP_DATA_DIR, EXPORTS_DIR
-from .file_gate import SOURCE_EXTENSIONS, hidden_or_system, is_cloud_placeholder, is_link, is_photo_name, is_skipped_folder_name, listed_photo
+from .file_gate import hidden_or_system, is_cloud_placeholder, is_link, is_photo_name, is_skipped_folder_name, listed_photo
 from .preview import downsample_image
 from .raw_import import RAW_EXTENSIONS
 

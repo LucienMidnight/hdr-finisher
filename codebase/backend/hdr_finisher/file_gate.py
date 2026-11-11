@@ -6,7 +6,6 @@ section 6.9, and docs/user-guide/library.md for the user-facing list.
 """
 from __future__ import annotations
 
-import os
 import stat as stat_module
 import time
 from pathlib import Path

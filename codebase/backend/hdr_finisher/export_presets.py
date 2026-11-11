@@ -1,7 +1,5 @@
 """Batch configuration and safe exported-file naming. Originals are never renamed."""
-from copy import deepcopy
 from datetime import datetime
-import json
 import os
 from pathlib import Path
 import re
