@@ -8,11 +8,42 @@ RATES = {".jpg":23, ".jpeg":23, ".hdr":23, ".png":28, ".tif":28,
          ".heic":52, ".heif":52, ".jxl":52}
 
 
+def _jpegxl_size(header):
+    """Read only SizeHeader; colour/precision still use structured libjxl.
+
+    Admission and the deadline watchdog call this repeatedly. Launching the
+    metadata process here stalls those control paths and can time out a
+    healthy Library decoder.
+    """
+    if not header.startswith(b"\xff\x0a"):
+        raise ValueError("Invalid JPEG XL codestream")
+    offset = 16
+
+    def read(count):
+        nonlocal offset
+        if offset + count > len(header) * 8:
+            raise ValueError("Truncated JPEG XL size header")
+        value = (int.from_bytes(header, "little") >> offset) & ((1 << count) - 1)
+        offset += count
+        return value
+
+    small = read(1)
+
+    def dimension():
+        return (read(5) + 1) * 8 if small else 1 + read((9, 13, 18, 30)[read(2)])
+
+    height = dimension()
+    ratio = read(3)
+    ratios = ((0, 1), (1, 1), (12, 10), (4, 3), (3, 2), (16, 9), (5, 4), (2, 1))
+    numerator, denominator = ratios[ratio]
+    width = height * numerator // denominator if ratio else dimension()
+    return width, height
+
+
 def dimensions(path):
     """Never unpack a RAW or load pixels to decide whether decoding can start."""
     path = Path(path)
     if path.suffix.lower() == ".jxl":
-        from .jpegxl import _probe_basic_info
         import struct
         with path.open("rb") as handle:
             prefix = handle.read(12)
@@ -37,8 +68,7 @@ def dimensions(path):
                     if size < count:
                         raise ValueError("Invalid JPEG XL box")
                     handle.seek(size-count, 1)
-            info = _probe_basic_info(handle.read(65536))
-        return info["width"], info["height"]
+            return _jpegxl_size(handle.read(16))
     if path.suffix.lower() in {".hdr", ".pfm"}:
         import re
         with path.open("rb") as handle:

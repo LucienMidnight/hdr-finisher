@@ -301,3 +301,19 @@ def test_known_unsupported_dng_selects_cpu_before_gpu_admission(tmp_path, monkey
         inspection.metadata["sdr_preview_series_index"] = 1
     monkeypatch.setattr(linear_dng, "inspect_dng", lambda _: inspection)
     assert gpu_metadata(path, edge=edge) == {"cpu_route": "unsupported-gpu"}
+
+
+@pytest.mark.parametrize("shape,container", [((200,300),False), ((128,256),True), ((321,123),True), ((17,17),False)])
+def test_jpegxl_admission_and_watchdog_do_not_launch_metadata_process(tmp_path, monkeypatch, shape, container):
+    import imagecodecs
+    import numpy as np
+    from hdr_finisher import jpegxl
+    from hdr_finisher.library_worker import LibraryWorker
+    path = tmp_path / "photo.jxl"
+    path.write_bytes(imagecodecs.jpegxl_encode(np.zeros((*shape,3),dtype=np.uint8),usecontainer=container))
+    expected = jpegxl.inspect_jpegxl(path)
+    monkeypatch.setattr(jpegxl.subprocess, "run", lambda *a, **k: pytest.fail("metadata process launched by admission/watchdog"))
+    monkeypatch.setattr(imagecodecs, "jpegxl_decode", lambda *a, **k: pytest.fail("pixels decoded by admission/watchdog"))
+    for _ in range(3):
+        assert dimensions(path) == (expected["width"], expected["height"]) == shape[::-1]
+        assert LibraryWorker.decoder_timeout(path) == 6
