@@ -361,14 +361,37 @@ cold folder and retires cancellation immediately. The limit remains four and
 application behavior is unchanged. This corrects the request-peak diagnosis;
 the other release limitations above remain open.
 
-## Release 0.9.2 draft status (November 11, 2026)
+## Release 0.9.2 status (November 11, 2026)
 
 GPU delivery is implemented for export and Proof, with CPU fallback.
-Full-size Proof shares the export render; this is not independent proof of
-GPU repeatability. Repeatability is being checked in the release sprint.
-The extreme HDR preview range limit (above) ships as a known limitation in
-0.9.2 (Steve, November 11, 2026): with output Highlight Compression off and
-extreme brightness, the preview can show wrong colours in the brightest
-areas; export and Proof are correct. Retouch interaction is built, but its final
-quality review remains open. Historical qualification entries above retain
-their original dates and do not claim that the 0.9.2 release check has passed.
+Full-size Proof shares the export render. The November 8 report of two GPU
+exports differing did not reproduce: independent exports under 3 GiB and
+2 GiB memory admission were byte-identical, and `tests/gpu-delivery-repeat.js`
+now guards it. Retouch interaction is built; its final quality review remains
+open.
+
+Focused release check at `3b19986f` (102 drivers, 120-minute cap approved by
+Steve for this release): 86 passed, 15 failed, 1 unfinished. Every failure was
+resolved and its driver rerun on later `main`, except the two below. Causes:
+eleven out-of-date tests (removed interpretation dismissal, component-sheet
+row and contrast changes, Film marker tooltip, preset row buttons, Look timing,
+Library sort timing, worker fault injection, a stray test-photo sidecar), and
+three application bugs fixed before release: the Library helper stalling on
+JPEG XL size checks, manual interpretation not clearing the review gate, and
+the Library tag field keeping its text after adding a tag.
+
+Shipping with:
+
+- `film-stock-parity.js`: the extreme HDR preview range limit above (known
+  failure; Steve, November 11, 2026). With output Highlight Compression off
+  and extreme brightness, the preview can show wrong colours in the brightest
+  areas; export and Proof are correct.
+- `edge-colour-raw.js`: on the release test machine, GPU edge colour produced
+  3, 6 and 4 invalid pixels on three runs (non-repeatable; the machine's
+  recorded faulty VRAM, see October 24 in import-and-raw). The range guard
+  rejects the result and the CPU fallback finishes the photo, as designed.
+  The same GPU path passed on Steve's Mac.
+
+Grade speed items carried to the next version are listed in section 5 of
+`docs/technical/performance-table.md` (SDR HSL Show selection about 1.5 s,
+SDR Match entire about 1.2 s, Film and lens drags 10 to 16 frames per second).
