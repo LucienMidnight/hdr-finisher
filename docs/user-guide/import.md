@@ -2,6 +2,8 @@
 
 Import is where HDR Finisher decides what the source numbers mean. A perfectly valid EXR can still display the wrong color if its primaries are missing or interpreted incorrectly.
 
+Opening another photo cancels any pending source-interpretation update in the viewer; a late reply cannot replace the new photo.
+
 ## Recommended source
 
 For photography or CGI, prefer:
