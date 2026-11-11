@@ -59,12 +59,13 @@ def owns(text):
 def main():
     plan = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
     OUT.mkdir(parents=True, exist_ok=True)
-    ledger_path = OUT / "w10-launches.json"
-    ledger = json.loads(ledger_path.read_text(encoding="utf-8")) if ledger_path.exists() else {"startedAt": now(), "runs": []}
+    followup = any("--followup" in arguments for arguments in plan)
+    ledger_path = OUT / ("w10-launches.json" if followup else "launches.json")
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8")) if followup and ledger_path.exists() else {"startedAt": now(), "runs": []}
     for arguments in plan:
         label = arguments[arguments.index("--label") + 1] if "--label" in arguments else arguments[arguments.index("--batch") + 1]
         held_seconds = sum((datetime.fromisoformat(r["completedAt"]) - datetime.fromisoformat(r["startedAt"])).total_seconds() for r in ledger["runs"] if r.get("completedAt"))
-        if held_seconds >= 89.5 * 60:
+        if followup and held_seconds >= 89.5 * 60:
             print("Shared graphics allowance nearly exhausted; remaining plan not launched.", flush=True)
             break
         owner = acquire(label)
@@ -84,7 +85,7 @@ def main():
                 if not owns(owner):
                     stop(child)
                     raise RuntimeError("Shared lock ownership changed during driver; observations invalid")
-                if held_seconds + (datetime.now(timezone.utc) - datetime.fromisoformat(entry["startedAt"])).total_seconds() > 90 * 60:
+                if followup and held_seconds + (datetime.now(timezone.utc) - datetime.fromisoformat(entry["startedAt"])).total_seconds() > 90 * 60:
                     stop(child)
                     raise RuntimeError("90-minute shared graphics allowance reached")
                 if time.monotonic() - started > 15 * 60:
@@ -99,12 +100,12 @@ def main():
             raise
         finally:
             entry["completedAt"] = now()
-            (OUT / "w10-launches.json").write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
+            ledger_path.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
             if owns(owner):
                 os.unlink(LOCK / "owner.txt")
                 os.rmdir(LOCK)
         report_path = OUT / f"{label}.json"
-        if report_path.exists() and "allowance reached" in json.loads(report_path.read_text()).get("stopped", ""):
+        if report_path.exists() and "allowance reached" in json.loads(report_path.read_text(encoding="utf-8")).get("stopped", ""):
             print("Measurement allowance exhausted; remaining plan not launched.", flush=True)
             break
         time.sleep(15)  # Let another worker acquire the GPU between batches.

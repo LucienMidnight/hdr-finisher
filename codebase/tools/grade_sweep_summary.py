@@ -44,7 +44,7 @@ def error_kind(error):
 
 def main():
     complete_inventory()
-    inventory = json.loads((OUT / "inventory-complete.json").read_text())
+    inventory = json.loads((OUT / "inventory-complete.json").read_text(encoding="utf-8"))
     value_types = {}
     lanes_by_key = {}
     for control in inventory["controls"]:
@@ -263,10 +263,10 @@ def complete_inventory():
     runtime = OUT / "inventory-runtime.json"
     if not runtime.exists():
         return
-    snapshots = [("initial Grade/viewer", json.loads(runtime.read_text()))]
+    snapshots = [("initial Grade/viewer", json.loads(runtime.read_text(encoding="utf-8")))]
     variants = OUT / "inventory-variants.json"
     if variants.exists():
-        snapshots.extend((item["type"], item["controls"]) for item in json.loads(variants.read_text()))
+        snapshots.extend((item["type"], item["controls"]) for item in json.loads(variants.read_text(encoding="utf-8")))
     controls = {}
     for variant, items in snapshots:
         for item in items:
@@ -278,7 +278,7 @@ def complete_inventory():
                 controls[binding] = {**item, "seenIn": []}
             controls[binding]["seenIn"].append(variant)
     static_file = OUT / "inventory-static.json"
-    static = json.loads(static_file.read_text()) if static_file.exists() else {"controls": []}
+    static = json.loads(static_file.read_text(encoding="utf-8")) if static_file.exists() else {"controls": []}
     missing = sorted({c["path"] for c in static["controls"]} - {c.get("path") for c in controls.values()})
     report = {
         "scope": "Grade and viewer widgets, including hidden controls, five mask modes and three Retouch modes. Repeated user-created list items and canvas handles are represented by their authoring families.",
@@ -344,9 +344,9 @@ def update_docs(rows, fully_observed, value_types):
             f"**{len(checked & value_types.keys())} controls timed three times; {len(responded & value_types.keys())} demonstrated the intended response and restoration in at least one view. "
             f"{len(checked - value_types.keys())} separate gesture checks were also timed. {len(fully_observed)} satisfied all measured rendition/view/input checks.** This is response coverage, not picture-quality or release sign-off.", "",
             "**Slowest:** " + slow_summary + ". Heavy RAW rebuilds are permitted exceptions. Ordinary editing: " + ordinary_summary + ". Three-trial medians; older W1 timings include background drain and are upper bounds.", "",
-            "**Problems:** lingering Denoise/Retouch Exposure waits (about 0.24 s) and Film/lens drags below 20/s remain W9's fix/retest responsibility. "
-            "W10 found smaller reference increases at SDR Vignette Centre Y (25 to 46 ms after reset) and native HDR Bias (34 to 56/59 ms); other crossings are flagged below. "
-            "Valid Match also takes about 1.20-1.21 s, above the one-second bar. No speed code was changed. **Fixed:** `38821253` percentage entry passed the app rerun (44% stored correctly); Push/Pull's real buttons passed both renditions/views.", "",
+            "**Problems:** W9 fixed the roughly 200 ms anchor poll (`0dc12ce8`): Retouch reference medians now meet the combined allowance; Denoise retains a 26 ms excess. Film/lens drags remain below 20/s. W9's targeted detail is preserved below. "
+            "Before that merge, W10 found smaller reference increases at SDR Vignette Centre Y (25 to 46 ms after reset) and native HDR Bias (34 to 56/59 ms); other pre-fix crossings are flagged below; these were not rerun after W9. "
+            "Pre-W9 Match took 1.20-1.21 s, above the one-second bar; it needs post-merge confirmation. No speed code was changed. **Fixed:** `38821253` percentage entry passed the app rerun (44% stored correctly); Push/Pull's real buttons passed both renditions/views.", "",
             "**Untested:** remaining mode/profile fields, complete Boolean/Hue-mask authoring, repair move/list actions and preset I/O were not qualified within the bounded review. "
             "Missing view/input checks and the remaining actions in each gesture family are explicit below. Unchanged sampled crops are fixture exceptions where the other view demonstrated change/reset.", "",
             "Limits: under 1 s; pointwise Fit drags at least 20 presentations/s. A reference slowdown counts only above **25% and 20 ms together**. "
@@ -432,6 +432,12 @@ def update_docs(rows, fully_observed, value_types):
         source = first + block + tail.lstrip("\n")
     else:
         source = source.replace("## 5. Grade (editing)\n", "## 5. Grade (editing)\n\n" + block, 1)
+    section = source.index("## 5. Grade (editing)\n") + len("## 5. Grade (editing)\n")
+    block_start = source.index(start, section)
+    prefix = source[section:block_start].strip()
+    if prefix.startswith("### W9 targeted"):
+        block_end = source.index(end, block_start) + len(end)
+        source = source[:section] + "\n" + source[block_start:block_end] + "\n\n" + prefix + "\n\n" + source[block_end:].lstrip("\n")
     file.write_bytes(source.replace("\n", newline).encode("utf-8"))
 
 

@@ -1,5 +1,40 @@
 # Module PRD: Grade
 
+## November 11: W10 control coverage follow-up
+
+W10 used 89.4 minutes of serialized graphics runs including startup/shutdown,
+within the 90-minute allowance. 233 controls have three timings; 229 demonstrated
+the intended response/reset in at least one view. 57 separate gesture checks were
+also timed; 92 controls satisfied every measured rendition/view/input condition.
+This is response coverage, not complete release or picture-quality sign-off.
+
+Real Push/Pull buttons and typed percentages passed after `38821253` (44%
+stored correctly in both renditions). Charts resolved missing-hue/crop cases.
+Sharpen radii 0.8 and 1.34 share the native 3x3 blur kernel; 2.2 changes it.
+Local reset comparisons must use the photograph before/after: grade edits
+intentionally hide the mask preview. Visible separated repair fixtures qualify
+Method, Standard Inpaint Hardness, Feather and Texture at native view. Fit may
+hide those small differences. Inpaint/Heal/Clone creation/removal, repair bypass,
+Curves, Bands, wheel pads, committed geometry, HSL picking and basic history/
+reset/bypass gestures were exercised. No application formula changed.
+
+The 42 MP RAW rebuilds take about 4-14 seconds, an accepted heavy-work exception.
+Match changed/reverted in both views at 1.20-1.21 seconds before W9; its speed
+needs post-merge confirmation. A stronger recipe was correctly refused by the
+existing colour-safety gate (OKLab P95 0.066 exceeds 0.05). W9's merged wake-up
+fix removes the 200 ms poll and qualifies the targeted Retouch references;
+Denoise retains a 26 ms excess and Film/lens drags remain below 20/s. W10 made
+no speed fix and did not rerun graphics after merging W9, having reached its
+allowance. Two smaller pre-W9 reference crossings are retained, not waived.
+
+Remaining prerequisites/workflows are explicit in performance-table section 5:
+custom geometry/guide fields, manual lens/profile selection, full Boolean/Hue
+mask authoring, perspective guides, repair moves/retry/cancel and preset I/O.
+Every retained no-change row has a disposition in `w10-triage.json`. Superseded
+409 bodies, Match safety refusal and driver errors remain in the raw evidence.
+All W10 results are in the main checkout's
+`codebase/output/performance/grade-0-9-2/`. Original RAW hash is unchanged.
+
 ## November 11: W9 post-tool measurement scheduling
 
 A pending highlight-anchor measurement now wakes when the exact foreground
@@ -55,9 +90,9 @@ unit was cached before the populated readout appeared, so entering 70% could
 clamp a 0–1 value to 1. The readout now captures its displayed unit before
 starting an edit. A behaviour regression reproduces the failure and covers
 successive percentage entries. Processing formulas and stored-value rendering
-are unchanged; the app timing rerun remains subject to the measurement cap.
+are unchanged; the W10 app rerun is recorded below.
 
-The review stopped at the two-hour measurement allowance: 188 distinct control
+The W1 phase stopped at its two-hour measurement allowance: 188 distinct control
 values had repeated observations, and 174 changed/restored the picture in at
 least one lane/view. This is partial response evidence. At W1 handback, SDR Exposure remained
 roughly 0.23–0.25 s after Denoise/Retouch versus roughly 0.03–0.04 s before;
