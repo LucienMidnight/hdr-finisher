@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../tests/helpers/resolve-interpretation.js");
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
@@ -175,10 +176,7 @@ async function main() {
         const sessionName = document.getElementById("session-name");
         return sessionName && sessionName.textContent && sessionName.textContent !== "No active image";
       }, undefined, { timeout: 30000 });
-      const gate = page.locator("#interpretation-gate");
-      if (await gate.isVisible()) {
-        await page.locator("#accept-interpretation").click();
-      }
+      await resolveInterpretation(page);
       await page.waitForFunction(() => {
         const image = document.getElementById("preview-image");
         const canvas = document.getElementById("preview-canvas");

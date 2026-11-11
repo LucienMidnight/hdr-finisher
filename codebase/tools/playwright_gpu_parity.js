@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../tests/helpers/resolve-interpretation.js");
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
@@ -202,8 +203,7 @@ async function loadSource(page, input) {
     await page.locator("#file-input").setInputFiles(input);
   }
   await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 30000 });
-  const gate = page.locator("#interpretation-gate");
-  if (await gate.isVisible()) await page.locator("#accept-interpretation").click();
+  await resolveInterpretation(page);
 }
 
 async function auditLane(page, lane, outputDir) {

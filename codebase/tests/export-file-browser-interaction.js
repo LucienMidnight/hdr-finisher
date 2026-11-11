@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("./helpers/resolve-interpretation.js");
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
@@ -60,9 +61,7 @@ async function main() {
     // Wait for import completion, then review the source on the Grade screen.
     await page.waitForFunction(() => Boolean(state.session) && !state.importInProgress, null, { timeout: 120000 });
     await page.locator('[data-workflow-tab="grade"]').click();
-    if (await page.evaluate(() => Boolean(state.session?.analysis?.needs_color_override))) {
-      await page.locator("#accept-interpretation").click();
-    }
+    await resolveInterpretation(page);
     await page.locator('[data-path="hdr.exposure"]').evaluate((control) => {
       control.value = "0.2";
       control.dispatchEvent(new Event("input", { bubbles: true }));

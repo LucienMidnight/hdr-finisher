@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../tests/helpers/resolve-interpretation.js");
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
@@ -191,7 +192,7 @@ async function main() {
     await page.evaluate(() => { gpuScopeEligible = () => false; });
     await page.locator("#file-input").setInputFiles(input);
     await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 30000 });
-    if (await page.locator("#interpretation-gate").isVisible()) await page.locator("#accept-interpretation").click();
+    await resolveInterpretation(page);
     await waitForSettledScope(page);
     const scopeZoom = await selectScopeZoom(page, 10000);
 

@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../tests/helpers/resolve-interpretation.js");
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
@@ -63,8 +64,7 @@ async function main() {
     await page.reload({ waitUntil: "networkidle" });
     await page.locator("#file-input").setInputFiles(inputPath);
     await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", { timeout: 30000 });
-    const gate = page.locator("#interpretation-gate");
-    if (await gate.isVisible()) await page.locator("#accept-interpretation").click();
+    await resolveInterpretation(page, { transfer: "srgb" });
     await page.waitForFunction(() => {
       const image = document.getElementById("preview-image");
       const canvas = document.getElementById("preview-canvas");

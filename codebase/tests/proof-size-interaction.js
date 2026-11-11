@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("./helpers/resolve-interpretation.js");
 // Proof size: a reduced proof says it is reduced, and a full-size proof is
 // built at the selected export size with output finishing included.
 //
@@ -44,7 +45,7 @@ function assert(condition, message) {
     await page.setInputFiles("#file-input", ensureLargeNoisySource());
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 900000 });
     await page.waitForTimeout(500);
-    if (await page.locator("#interpretation-gate").isVisible().catch(() => false)) await page.click("#accept-interpretation");
+    await resolveInterpretation(page, { transfer: "srgb" });
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 900000 });
 
     await page.evaluate(() => activateWorkflowTab("proof", { focus: false }));

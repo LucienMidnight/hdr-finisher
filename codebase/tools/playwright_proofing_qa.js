@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../tests/helpers/resolve-interpretation.js");
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
@@ -33,8 +34,7 @@ async function main() {
     await page.goto(url, { waitUntil: "networkidle", timeout: 30000 });
     await page.locator("#file-input").setInputFiles(input);
     await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", { timeout: 30000 });
-    const gate = page.locator("#interpretation-gate");
-    if (await gate.isVisible()) await page.locator("#accept-interpretation").click();
+    await resolveInterpretation(page);
 
     if (await page.locator('[data-proof-mode="matrix"], #delivery-matrix-view, #live-browser-view').count()) {
       throw new Error("Legacy proofing tabs are still present.");

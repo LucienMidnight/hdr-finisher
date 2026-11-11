@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("./helpers/resolve-interpretation.js");
 const {chromium}=require("playwright");
 const fs=require("node:fs"),os=require("node:os"),path=require("node:path"),assert=require("node:assert/strict"),{execFileSync}=require("node:child_process");
 const root=fs.mkdtempSync(path.join(os.tmpdir(),"hdr-framing-"));
@@ -13,7 +14,7 @@ const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
     await page.goto(base);await page.setInputFiles("#file-input",path.join(root,"fixture.tiff"));
     await page.waitForFunction(()=>state.session?.session_id,null,{timeout:120000});
     await page.waitForTimeout(500);
-    if(await page.locator("#interpretation-gate").isVisible().catch(()=>false))await page.click("#accept-interpretation");
+    await resolveInterpretation(page);
     await page.waitForFunction(()=>viewerState().status==="ready",null,{timeout:120000});
     await page.click("#photo-frame-toggle");await page.check("#photo-framing-enabled");
     await page.waitForFunction(()=>state.editDocument?.framing?.enabled);

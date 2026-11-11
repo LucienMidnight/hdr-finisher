@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../tests/helpers/resolve-interpretation.js");
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
@@ -207,7 +208,7 @@ async function compactViewportCheck(browser, url, viewport, screenshotBase) {
       return {
         contained: rect.left >= viewer.left && rect.right <= viewer.right,
         noInternalOverflow: element.scrollWidth <= element.clientWidth,
-        actionsVisible: buttons.length === 2 && buttons.every((button) => button.width > 0 && button.left >= rect.left && button.right <= rect.right),
+        actionsVisible: buttons.length === 1 && buttons.every((button) => button.width > 0 && button.left >= rect.left && button.right <= rect.right),
       };
     });
 
@@ -554,8 +555,7 @@ async function main() {
     if (inputPath) {
       await page.locator("#file-input").setInputFiles(inputPath);
       await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", { timeout: 30000 });
-      const gate = page.locator("#interpretation-gate");
-      if (await gate.isVisible()) await page.locator("#accept-interpretation").click();
+      await resolveInterpretation(page);
       await page.locator("#preview-image").waitFor({ state: "visible", timeout: 120000 });
       await page.locator('[data-group="hdr-tone"] .group-toggle').click();
       const requests = [];
