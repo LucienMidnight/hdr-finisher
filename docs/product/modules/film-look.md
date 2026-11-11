@@ -156,7 +156,7 @@ target panel:
 | Stage | Controls |
 |---|---|
 | Top | Shared Preset button for Looks; Look Strength; Film stock card and credit |
-| Camera | Format shortcuts; Film Format, Capture, custom dimensions; Film Exposure; Lens shortcuts, Lens Filter, Strength, Size |
+| Camera | Format dropdown, Capture, custom dimensions; Film Exposure; Lens shortcuts, Lens Filter, Strength, Size |
 | Negative | Stock Color, Stock Tone, Color Separation, Halation tile, Film Resolution, Grain tile with Tone response trims and maps |
 | Development | Push/Pull |
 | Print | Paper, Print Exposure, Print Warmth, Print Tint, Preflash, Print Contrast, Shadow Contrast, Highlight Contrast |

@@ -396,7 +396,7 @@ the user sees happen. A step uses a size; the two are never interchangeable.
 | --- | --- |
 | Camera preview | The JPEG embedded in a camera RAW file. Not HDRF's grade. Used in the grid and filmstrip only without an eligible finished thumbnail; extracted previews are retained in bounded RAM (October 26). In Single and fullscreen it may be the quick draw only for an **unedited** photo with no thumbnail yet (Steve, October 25; amends the October 14 "never" rule). |
 | Thumbnail | 640 px picture with the current grade and HDR/SDR mode. Used in the grid and filmstrip. |
-| Screen preview | Picture sized to the display (2560 px long edge today), with the current grade and HDR/SDR mode. Used in Single, fullscreen and Compare at Fit. A *stored screen preview* is one saved to disk (built for Single/fullscreen Fit, October 26; Build previews remains planned). |
+| Screen preview | Picture sized to the display (2560 px long edge today), with the current grade and HDR/SDR mode. Used in Single, fullscreen and Compare at Fit. A *stored screen preview* is one saved to disk (built for Single/fullscreen Fit and Build previews, October 26-27). |
 | Detail preview | Full-resolution picture for 100% focus checking. Today it is developed for the selected photo only; stored detail previews are later work. |
 
 **Fullscreen steps**
@@ -412,7 +412,7 @@ the user sees happen. A step uses a size; the two are never interchangeable.
 | --- | --- |
 | Scene | Developed, ungraded working data (640 and 2560 px, float16) that thumbnails and screen previews are drawn from. Not a finished picture. |
 | Ready window | Finished screen previews kept in memory around the current photo in fullscreen. |
-| Build previews | The planned user command that makes stored screen previews (and later detail previews) for a selection, kept until discarded. |
+| Build previews | The implemented user command that makes stored screen previews for a selection, kept until discarded. Stored detail previews remain later work. |
 
 Older documents say "640 tier", "2560 tier", "Fit picture", "kept picture",
 "stand-in" or "1:1". Read them with this table; do not rewrite history to match.
