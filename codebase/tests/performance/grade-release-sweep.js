@@ -63,6 +63,7 @@ async function change(page, selector, value, reset = false, capture = true) {
   const start = await page.evaluate(({ selector, value, reset }) => {
     const c = document.querySelector(selector);
     const t = performance.now();
+    window.__gradeAnchorProfile = [];
     if(selector==='#film-push_pull') document.querySelector(`[data-film-push="${Math.round(Number(value))}"]`)?.click();
     else if (c.tagName === 'BUTTON') { if(window.__gradeValue(c)!==value) c.click(); }
     else if (reset && c.type === 'range') c.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
@@ -78,17 +79,19 @@ async function change(page, selector, value, reset = false, capture = true) {
   await stable(page,false);
   const visibleMs=await page.evaluate(t=>performance.now()-t,start.t);
   if(capture) await stable(page);
-  const result = await page.evaluate(async ({ t, selector, capture }) => {
+  const result = await page.evaluate(async ({ t, selector, capture, profile }) => {
     const c = document.querySelector(selector);
     const ended = performance.now();
-    const gpu=capture ? window.HDRFinisherPerformance.gpuSnapshot() : null;
+    const gpu=(capture || profile) ? window.HDRFinisherPerformance.gpuSnapshot() : null;
     return { ms: ended - t, value: window.__gradeValue(c),
       stored: c.dataset.path || c.dataset.sectionPath ? getValueByPath(state.adjustments, c.dataset.path || c.dataset.sectionPath) : null,
       gpu:gpu ? {renders:gpu.renders?.slice(-4),stages:gpu.stages?.slice(-16),allocator:gpu.resources?.memory?.allocator,refusal:state.lastGpuDraftRefusal} : null,
+      anchorProfile: profile ? window.__gradeAnchorProfile : undefined,
       accepted: structuredClone(state.acceptedPresentation) };
-  }, { t: start.t, selector, capture });
+  }, { t: start.t, selector, capture, profile: args.includes('--profile') });
   result.drainedMs=capture ? result.ms : null; result.ms=visibleMs;
-  if (capture) { result.pixels = await signature(page); result.network=network.slice(networkStart); }
+  if (capture) result.pixels = await signature(page);
+  if (capture || args.includes('--profile')) result.network=network.slice(networkStart);
   return result;
 }
 async function curves(page,lane,zoom) {
@@ -171,6 +174,15 @@ async function main() {
     await page.goto(process.env.HDR_FINISHER_URL || 'http://127.0.0.1:8799');
     await page.waitForFunction(() => window.HDRFinisherPerformance?.gpuSnapshot()?.available, null, { timeout: 120000 });
     await page.evaluate(()=>window.HDRFinisherPerformance.enableGpuInstrumentation(true));
+    if(args.includes('--profile')) await page.evaluate(() => {
+      for(const name of ['scheduleExactHighlightAnchor','measureExactHighlightAnchor']) {
+        const original=window[name];
+        window[name]=function(...args) {
+          (window.__gradeAnchorProfile ||= []).push({name,at:performance.now(),key:args[0]?.key});
+          return original.apply(this,args);
+        };
+      }
+    });
     await page.setInputFiles('#file-input', path.resolve(opt('--input', 'output/test-photos/grade-24mp.tiff')));
     await page.waitForFunction(() => state.session, null, { timeout: 120000 });
     await stable(page);
@@ -381,7 +393,7 @@ async function main() {
             const ref = async () => {
               const s = `#${lane}-exposure`;
               const v = await page.locator(s).inputValue();
-              const r = await change(page, s, Number(v) + .2, false, false); await change(page, s, v, false, false); return r.ms;
+              const r = await change(page, s, Number(v) + .2, false, false); await change(page, s, v, false, false); if(args.includes('--profile')) (row.referenceProfiles ||= []).push(r); return r.ms;
             };
             row.referenceBefore = []; row.referenceActive = []; row.referenceReset = [];
             for (let i = 0; i < samples; i++) row.referenceBefore.push(await ref());
@@ -391,9 +403,29 @@ async function main() {
               const changed = await change(page, selector, plan.alternative);
               row.observations.push(changed);
               row.referenceActive.push(await ref());
+              if(args.includes('--profile') && i===0) {
+                row.referenceActiveWarm=[];
+                for(let warm=0;warm<3;warm++) row.referenceActiveWarm.push(await ref());
+              }
               const restored = await change(page, selector, plan.value);
               row.observations.push({ ...restored, restore: true });
               row.referenceReset.push(await ref());
+              if(args.includes('--profile') && i===0) {
+                row.referenceResetWarm=[];
+                for(let warm=0;warm<3;warm++) row.referenceResetWarm.push(await ref());
+              }
+            }
+            if(args.includes('--profile') && ['denoise','retouch'].includes(batch)) {
+              const enabled = await page.evaluate(() => state.denoise[state.currentView].enabled);
+              const repairs = await page.evaluate(() => structuredClone(state.editDocument.repairs));
+              if(batch==='denoise') await page.evaluate(() => setDenoiseEnabled(false));
+              else await page.evaluate(repairs => queueEditCommand('set_repairs',{repairs:repairs.map(r=>({...r,enabled:false}))}), repairs);
+              await stable(page);
+              row.referenceOff=[];
+              for(let warm=0;warm<3;warm++) row.referenceOff.push(await ref());
+              if(batch==='denoise') await page.evaluate(enabled => setDenoiseEnabled(enabled), enabled);
+              else await page.evaluate(repairs => queueEditCommand('set_repairs',{repairs}), repairs);
+              await stable(page);
             }
             row.status = row.observations.some(o => !o.restore && o.pixels !== plan.pixels) ? 'Preview changed' : 'Needs investigation: no screen change';
             row.resetPixelsMatch = row.observations.filter(o => o.restore).every(o => o.pixels === plan.pixels);
