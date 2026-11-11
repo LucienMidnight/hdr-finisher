@@ -12,6 +12,10 @@ FIXTURES = ROOT / "tests" / "fixtures"
 if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
+# Tests assume the standard 4 GB app memory budget. Machines under 16 GB RAM
+# (such as the macOS CI runner) otherwise get the smaller 2.5 GB default.
+os.environ.setdefault("HDR_FINISHER_MEMORY_BYTES", "4000000000")
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _isolate_source_mip_cache(tmp_path_factory) -> None:
