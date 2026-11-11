@@ -36,6 +36,24 @@ additional development on cached reopen. This is one source-stage observation,
 not a whole-screen timing or a speedup comparison. Existing 30-second test
 deadline is unchanged. Evidence: `codebase/output/w15-gpu-recovery/driver.log`.
 
+November 11 W16 JXL control-path fix (release/library-jxl-helper, rebased on
+`7650661b`; 2560x1440 Electron, shared graphics lock):
+`library-codec-source.js` completed all three CPU/GPU cold-source repetitions.
+CPU/GPU median source waits were JXL 0.883/0.429 s, AVIF 0.625/0.327 s,
+HEIC 0.641/0.335 s. These are validation observations, with the fast Python
+suite also running, not a paired performance claim. JXL no longer exhausts
+the helper restart limit. The driver later failed in the existing stored-source
+pixel comparator (`library_rgb_compare.py:53`, missing `.npz`, StopIteration);
+finished pixel parity from that driver is therefore unqualified. The Python
+helper regression independently checks decoded JXL scene pixels.
+Evidence: `codebase/output/w16-codec.log`.
+
+The standard 90-second Library smoke check passed on `ecb6dd05` under the
+same lock: first/ten/twenty pictures 1.2/2.0/9.4 s, 29 shown by 90 seconds,
+2.885 GB sampled peak, no reported errors or failed photos. This mixed-folder
+smoke observation is not a JXL speed baseline. Report:
+`codebase/output/quick-library-check/w16-jxl-helper/report.json`.
+
 ## How to read and update it
 
 * **Target:** an agreed target (with who agreed it and when) or

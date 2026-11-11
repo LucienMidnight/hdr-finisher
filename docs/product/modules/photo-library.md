@@ -15,7 +15,11 @@ there was no missing packaging entry.
 Regression checks compare header dimensions with libjxl without permitting
 process launches or pixel decode during admission, and decode a JXL CPU scene
 in the separate Library helper, checking its stored pixels against the ordinary
-decoder. Validation results are recorded in the fix commit.
+decoder. The codec driver now completes all CPU/GPU source repetitions with
+no helper restarts, then stops in the existing stored-source comparator because
+a `.npz` file is missing; that driver does not qualify finished pixel parity.
+The standard 90-second Library smoke check passes. Validation results are
+recorded in the fix commits.
 
 ## November 11: Smart Album refresh leaves Library control responsive
 
