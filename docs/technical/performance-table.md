@@ -1981,3 +1981,12 @@ on Steve's cache remains unqualified. No tolerance or budget changed.
 
 Local evidence: codebase/output/w3-audit/timings-before.json,
 timings-after.json and measurement harness/logs in the same folder.
+
+W3 standard smoke after rebasing onto fdba7f9a (tested cd978c83): plain
+Electron, 2560x1440, disposable profile and shared mixed run-photo copies,
+concurrent Python suite. First/ten/twenty pictures: 1.1/1.5/9.2 s; 29 shown
+by 90 s. No photo errors or memory breach (external peak 3.189 GB), but
+3,149 ms drawing gap against the unchanged 250 ms limit. No rerun or timing
+investigation before Steve's normal-use trial. This is a smoke observation,
+not original-file action speed acceptance. Evidence:
+codebase/output/quick-library-check/w3-audit/report.json.

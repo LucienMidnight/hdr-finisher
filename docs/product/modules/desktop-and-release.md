@@ -534,3 +534,10 @@ event callback with stale senders, null/non-object payloads, other window
 roles, destroyed windows and valid progress/state updates; both pass.
 The unchanged desktop suite has one existing macOS chrome expectation
 failure (titleBarStyle hiddenInset); no platform appearance change was made.
+
+Final W3 fast checks on main 5d338e64 plus the audit: desktop 27 pass / one
+unchanged macOS chrome expectation failure; main Node 917 pass; Python
+3,241 pass / 55 skip / one known cached-scene failure. The focused real
+Electron file-command workflow passes. The standard Library smoke's 3,149 ms
+drawing gap is recorded in the Library PRD and performance table, without a
+rerun or changed threshold.

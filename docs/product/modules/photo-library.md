@@ -8773,9 +8773,29 @@ changed. Removed only library_file_state's unused durable import: repository
 callers, string references, and release-listed tools/tests have no consumer
 of that imported alias. No old saved projects or test projects are affected.
 
-Validation: pending final fast suites and focused real-app checks.
+Validation: 905 Node checks pass. Focused file safety/accounting: 108 pass,
+43 skip. Full Python on the pre-final-rebase code: 3,239 pass, 55 skip,
+one known unrelated cached-scene failure (test_library_live's
+remembered_failure_does_not_hide_current_grade_cached_scene). Post-main-rebase
+confirmation is recorded in the final validation note below.
+Real Electron rename/move/clash/Unicode/Undo passes. Standard 90-second Library
+smoke has no photo errors or memory breach, but fails the unchanged 250 ms
+drawing limit with a 3,149 ms gap; no rerun or investigation before Steve's
+normal-use trial, per AGENTS.md. Memory census peaks at 3.189 GB. Report:
+codebase/output/quick-library-check/w3-audit/report.json. Both app checks
+held the shared graphics lock and ran at 2560x1440. Disposable cache/temporary
+profile scratch was removed; reusable photo copies are shared through
+worktree junctions. Output ends at 5.7 GB including those shared copies,
+below 100 GB. No push or installer build.
 
 Desktop audit follow-up: taskbar progress events ignore invalid or stale
 sender/payload input instead of throwing in the shell. Valid progress and
 Library/main role restrictions are unchanged. Two behavioural IPC checks pass;
 see Desktop and release's November 11 entry.
+
+Final W3 validation after rebasing onto local main 5d338e64: 917 Node checks
+pass; Python 3,241 pass, 55 skip and the same known cached-scene test fails.
+Desktop: 27 pass, one unchanged macOS chrome expectation fails. File-command
+Electron passes; the standard smoke drawing-gap failure above is retained,
+not rerun. The rebase preserved both workers' appended desktop notes. The
+cache accounting and IPC code are unchanged from the app-tested versions.
