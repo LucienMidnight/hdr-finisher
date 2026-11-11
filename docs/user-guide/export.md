@@ -226,3 +226,8 @@ The report compares hashes, MIME type, caching headers, format signatures, gain-
 - Reviewing only the local file
 - Overwriting a known-good delivery without retaining evidence
 - Calling a successful encode “ISO-compliant” beyond what the application actually validates
+
+## Export progress and log
+
+Progress appears in the status bar. Open **Advanced settings** at the bottom
+of Export Settings to inspect the export log.

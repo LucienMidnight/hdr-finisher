@@ -212,11 +212,11 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 | Highlight Contrast | -100 to 100 % | -100 to 100 % | Paper's highlight layers and softer shoulder. |
 | Scan Sharpening | 0 to 100 % | 0 to 100 % | Starts at 0; 70 matches upstream. |
 | Halation Amount | 0 to 100 % | 0 to 100 % | |
-| Spread | 0 to 2 % of 35mm gate | **0 to 5 % of 35mm gate** | Follows Film Format. |
+| Spread | 0 to 2 % of 35mm gate | **0 to 5 % of 35mm gate** | Follows Format. |
 | Hue Offset | -100 to 100 % | -100 to 100 % |  |
 | Saturation | 0 to 100 % | 0 to 100 % |  |
 | Lens Strength | 1/8 to 2 | 0.125 to 2 | Continuous commercial grades. |
-| Lens Size | 0.25 to 4 | 0.25 to 4 | 1 is normal; follows Film Format. |
+| Lens Size | 0.25 to 4 | 0.25 to 4 | 1 is normal; follows Format. |
 | Film Resolution | 0 to 100 % | 0 to 100 % |  |
 | Amount | 0 to 100 % | 0 to 100 % |  |
 | Size | 0 to 100 % | 0 to 100 % |  |

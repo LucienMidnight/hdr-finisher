@@ -97,3 +97,15 @@ When entries disagree, resolve them in this order:
 6. Backup copies
 
 Fix both implementation and documentation when the discrepancy represents a bug rather than intentional behavior.
+
+## November 11 release documentation refresh
+
+- Two-click Heal/Clone and labelled repair circles: `frontend/retouch-ui.js`,
+  `tests/retouch-interaction.js`; Grade PRD November 8 decisions.
+- Context tool keys: `frontend/key-hints.js`; user guide shortcuts.
+- Export log and status: `frontend/export-ui.js`, `tests/control-panel-polish.js`.
+- Film Format dropdown and Local shared-mask note: `frontend/index.html`.
+- Indexed Smart Album opening: Photo Library PRD November 11 decisions and
+  `tests/library-smart-album-stress.js`.
+- Button selection uses a neutral pressed plate; accent outlines no longer
+  mark selection (component-sheet rules in the Grade PRD).

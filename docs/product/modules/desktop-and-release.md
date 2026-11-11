@@ -99,8 +99,6 @@ investigation; the test remains failing.
   hands-on result is recorded.
 - The Updates panel has no link to the GitHub Releases page.
 - The Flatpak metainfo has no 0.9.1 release entry.
-- Whether 0.9.0 and 0.9.1 were published as GitHub releases can't be told
-  from the code. Steve to confirm.
 - October 19: the window shows Starting… while the backend starts, then
   loads the app when it is ready. Measured visible in 0.424 s from launch
   (limit 1.5 s); remembered bounds and the Library window use the same shell.
@@ -517,3 +515,9 @@ Logs: `codebase/output/component-pass-{node,python,review,library}.log` and
 folder is disposable after Steve's visual sign-off. Output starts/ends at
 42.7 GB, below 100 GB. Temporary sheet images/edit scripts were removed.
 No push, installer, original photo or read-only project changes.
+
+## November 11: published release history
+
+v0.9.0 was published on GitHub on October 9 and v0.9.1 on October 16,
+2026, each with Windows, macOS and Linux packages (confirmed by Steve).
+This resolves the former publication question; signing and notarisation remain open.

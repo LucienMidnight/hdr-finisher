@@ -360,3 +360,13 @@ renderer fetch/body work peaked at four. Stage A now counts live work in the
 cold folder and retires cancellation immediately. The limit remains four and
 application behavior is unchanged. This corrects the request-peak diagnosis;
 the other release limitations above remain open.
+
+## Release 0.9.2 draft status (November 11, 2026)
+
+GPU delivery is implemented for export and Proof, with CPU fallback.
+Full-size Proof shares the export render; this is not independent proof of
+GPU repeatability. Repeatability is being checked in the release sprint.
+Film-stock preview/export differences at the GPU half-precision limit remain
+open, awaiting Steve's decision. Retouch interaction is built, but its final
+quality review remains open. Historical qualification entries above retain
+their original dates and do not claim that the 0.9.2 release check has passed.

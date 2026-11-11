@@ -159,9 +159,8 @@ batch export, the photo Library, desktop packaging for three platforms.
 
 **V1 additions (Steve, October 21, 2026):** a healing brush in the local
 adjustment module (Retouch: Inpaint, Heal and Clone; CPU first), and hue
-selection as a local-adjustment mask. Both are
-required for v1 and the full features remain unbuilt. An interactive CPU Inpaint
-prototype is implemented; Heal and Clone remain open. Details belong to the [Grade PRD](modules/grade.md).
+selection as a local-adjustment mask. Both are required for v1. Hue selection is built. Inpaint, Heal and Clone
+are implemented on the GPU with CPU fallback; Retouch acceptance remains open. Details belong to the [Grade PRD](modules/grade.md).
 
 **Out of scope (decided):** compositing and layers, pixel painting and
 retouching beyond the v1 Retouch brush, AI-based selection or generation,
@@ -282,9 +281,9 @@ Working rules for coding agents, including how much to test:
 | Grade | HDR and SDR controls, curves, Detail, local adjustments and masks, Denoise, Black & White, SDR Match, presets | `adjustments.py`, `local_adjustments.py`, `denoise_adaptive.py`, `sdr_match.py`, `frontend/*` panels | [grade](modules/grade.md) | Built, including hue-selection masks, Color desaturation and preset management. Complete v1 Retouch and the Match fault remain open. |
 | Film Look | Stocks, papers, lens filter, grain, halation, Looks | `film_stock.py`, `film_grain.py`, `film_stocks/`, shaders | [film-look](modules/film-look.md) | Rebuild phases 1 to 6 built. Grain data mostly estimates. |
 | Preview and GPU | WebGPU preview, viewport-bounded rendering, zoom, scopes, GPU memory, CPU/GPU parity | `webgpu-*.js`, `gpu-*.js`, `render_cache.py`, `scopes.py` | [preview-and-gpu](modules/preview-and-gpu.md) | Built. Several performance follow-ups open. |
-| Memory and caches | Whole-app RAM ceiling and its split between caches, disk allowances, VRAM budget pointers, memory-pressure response | `app_memory.py`, `library_raw.py`, `library_pictures.py`, `library_cache.py`, `library-tile-pool.js`, `gpu-budget.js` | [memory-and-caches](modules/memory-and-caches.md) | 4 GB budget agreed October 29; code still uses older per-cache sizes. |
-| Export and Proof | Output formats, settings, presets, batch export, Proof, HDR ceiling, **GPU delivery** | `exporters.py`, `batch_export.py`, `proofing.py`, `hdr_ceiling.py` | [export-and-proof](modules/export-and-proof.md) | CPU export built. **GPU export, Proof and Library pictures not built (top priority).** |
-| Photo Library | Browsing, culling, albums, sidecars, thumbnails, paste, Library pictures | `library_*.py`, `photo-library.js`, `library-*.js` | [photo-library](modules/photo-library.md) | Slices 0 to 6 and paste built. Metadata not built; Library Looks, links and portable projects deferred to v2. |
+| Memory and caches | Whole-app RAM ceiling and its split between caches, disk allowances, VRAM budget pointers, memory-pressure response | `app_memory.py`, `library_raw.py`, `library_pictures.py`, `library_cache.py`, `library-tile-pool.js`, `gpu-budget.js` | [memory-and-caches](modules/memory-and-caches.md) | 4 GB budget agreed October 29; implementation and acceptance status are recorded in the module PRD. |
+| Export and Proof | Output formats, settings, presets, batch export, Proof, HDR ceiling, **GPU delivery** | `exporters.py`, `batch_export.py`, `proofing.py`, `hdr_ceiling.py` | [export-and-proof](modules/export-and-proof.md) | GPU export, Proof and Library pictures built; repeatability and speed follow-ups remain open. |
+| Photo Library | Browsing, culling, albums, sidecars, thumbnails, paste, Library pictures | `library_*.py`, `photo-library.js`, `library-*.js` | [photo-library](modules/photo-library.md) | Slices 0 to 6 and paste built. Batch-export metadata built; Library Looks, links and portable projects deferred to v2. |
 | Desktop and release | Electron shell, windows, packaging, updates, platforms, release process | `codebase/desktop/`, `packaging/`, `.github/` | [desktop-and-release](modules/desktop-and-release.md) | 0.9.1 tagged. Linux leftovers open. |
 
 ## 6. Priorities (Steve, October 18, 2026)
@@ -346,7 +345,6 @@ Found during the November 8 release check. Each needs a brief before work starts
 | Black & White slider strength, fade points and presets | Test | Grade |
 | Exposure-warning wording, shadow warning threshold | Test | Photo Library |
 | Match entire HDR grade fault: photos and message | Report | Grade |
-| Whether 0.9.0 and 0.9.1 were published as GitHub releases | Check | Desktop and release |
 
 ## 8. How the documents are kept
 

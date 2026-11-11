@@ -137,11 +137,11 @@ Black & White runs straight after Color and before the highlight stage measures 
 
 Film Look follows local adjustments. Choose a stock, then develop, print and scan it. **Neutral** starts with a straight response. **Look Strength** mixes the completed look once; Detail's Softness and Microcontrast follow that mix independently.
 
-- **Lens Filter** spreads light before the film: None, Black Pro-Mist, Pro-Mist, Glimmerglass or CineBloom. None bypasses the filter. **Strength** runs continuously from 1/8 to 2, with commercial grade marks. **Size** runs from 0.25 to 4 (1 is the filter's normal scale). Film Format changes its physical size. The filter moves light instead of adding it; bright cores soften and surrounding areas receive that light.
+- **Lens Filter** spreads light before the film: None, Black Pro-Mist, Pro-Mist, Glimmerglass or CineBloom. None bypasses the filter. **Strength** runs continuously from 1/8 to 2, with commercial grade marks. **Size** runs from 0.25 to 4 (1 is the filter's normal scale). Format changes its physical size. The filter moves light instead of adding it; bright cores soften and surrounding areas receive that light.
 - **Development** provides whole-stop Push/Pull from -2 to +2. Portra 800 has measured +1/+2 variants; other choices use an approximation.
 - **Print** provides the stock's default paper, Kodak 2383 or Fujifilm Crystal Archive Type II, exposure and paper contrast controls. Slides bypass Print.
 - **Scan** provides sharpening (off by default) and optional Lab Levels.
-- **Halation** adds coloured edge scatter with a fixed highlight threshold. Spread follows Film Format; Hue Offset and Saturation control its colour. Its map is a viewer diagnostic excluded from export.
+- **Halation** adds coloured edge scatter with a fixed highlight threshold. Spread follows Format; Hue Offset and Saturation control its colour. Its map is a viewer diagnostic excluded from export.
 - **Grain** is developed density before paper and scan. Its seeded field is shared between HDR and SDR. Fit preview approximates the full-resolution export downsized. Its map is also excluded from export.
 - **Film Resolution** softens fine resolving character before the negative.
 

@@ -749,3 +749,8 @@ both the mean and the peak. Relative to glow, Pro-Mist differs less across
 tiers than Black Pro-Mist: 0.288 against 0.348 on November 8 (peak 6.0
 against 7.8), so the check passes. No shader or rendering changed; the entry
 was removed from the release known-failures list.
+
+## November 11: Format control
+
+Camera has one **Format** dropdown. The shortcut buttons were removed;
+the same film-gate choice still controls grain, halation and physical scale.

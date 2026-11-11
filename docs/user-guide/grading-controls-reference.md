@@ -83,7 +83,7 @@ scanned directly without print.
 
 The five folding stages have triangles, summaries and a small modified-state dot:
 
-- Camera: Format shortcuts, Film Format, Capture and physical dimensions for
+- Camera: the Format dropdown, Capture and physical dimensions for
   Custom format; Film Exposure; Lens shortcuts, Lens Filter, Strength and Size.
 - Negative (open initially): Stock Color, Stock Tone, Color Separation; Halation
   tile and map; Film Resolution; Grain tile and map, with Tone response trims.
@@ -124,7 +124,7 @@ Film stock data is derived from [spektrafilm](https://github.com/andreavolpato/s
 | Scan Sharpening | Scanner RGB unsharp mask; no Detail edge threshold. Starts at 0; 70 matches spektrafilm's amount. | 0–100% |
 | Lab Levels | Scanner auto black/white calibration. | Off/On |
 | Halation Amount | Light reflected off the film base re-exposes mostly the red layer before development. | 0–100% |
-| Halation Spread | Sets scatter scale relative to the film gate and Film Format. | Slider 0–2%; direct entry 0–5% of 35mm gate |
+| Halation Spread | Sets scatter scale relative to the film gate and Format. | Slider 0–2%; direct entry 0–5% of 35mm gate |
 | Halation Hue Offset / Saturation | Tune the warm scatter color without changing the source grade. | Hue -100 to +100%; Saturation 0–100% |
 | Show halation map | Replaces the viewer with a grey map of where the halation glow can appear. It shows placement, not strength. It is suppressed during export. | Off/On |
 | Lens Filter | None (bypass), Black Pro-Mist, Pro-Mist, Glimmerglass or CineBloom; spreads light before film without adding energy. | Family selection |

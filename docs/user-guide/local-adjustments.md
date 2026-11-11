@@ -144,7 +144,14 @@ The overlay is only a guide. It is never exported.
 
 Masks belong to the photo, not to the frame. If you crop, rotate, straighten or flip, the masks stay on the same parts of the picture. You can change the crop after you have drawn a mask without redoing it. A mask drawn near the edge of the photo still works if you crop the edge out and later bring it back.
 
-## Coming in 1.0
+## Hue selection and Retouch
 
-- **Hue selection** as a mask, so you can pick an area by colour.
-- A **Retouch brush** with Inpaint, Heal and Clone.
+Hue selection masks are implemented: select by colour, then refine Edge,
+Feather and Edge detail. The note at the top of Local explains that masks
+are shared by HDR and SDR; their grading controls remain separate.
+
+Retouch has Inpaint, Heal and Clone. Heal and Clone use two clicks: pick
+the source, then the destination; drag the second click to paint a stroke.
+Shift keeps the source for the next repair. Selected repairs show labelled
+Source and Destination circles which can be moved. Retouch quality review
+remains open; see the Grade PRD.

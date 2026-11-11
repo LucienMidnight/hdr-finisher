@@ -19,9 +19,8 @@ scheduling) see [architecture](architecture.md). For testing rules see
 | Frontend | `codebase/frontend/` | The interface and the GPU preview, in plain JavaScript. |
 | Desktop shell | `codebase/desktop/` | Electron windows tracked by role in `main.js`, with per-window bounds and display state; starts one shared backend. |
 
-The same image maths exists twice on purpose: once in Python (the exact
-reference used by export and Proof) and once in GPU shaders (the fast
-preview). A change to how an adjustment looks usually touches both, and the
+The same image maths exists twice on purpose: once in Python (the CPU fallback) and once in GPU shaders (preview,
+Library pictures, export and Proof). A change to how an adjustment looks usually touches both, and the
 parity checks compare them.
 
 ## Backend
@@ -599,3 +598,10 @@ materials live in `visual-tokens.css`, application rules in `visual-controls.css
 list wells in `control-panel.css`, and Library sections in `photo-library.css`.
 Graph-only paint is in the existing curve/equalizer/highlight/scope drawing files.
 
+## Tool hints and delivery
+
+`frontend/key-hints.js` supplies context-sensitive status-bar shortcuts.
+`frontend/retouch-ui.js` owns the two-click repair interaction.
+`frontend/export-ui.js` keeps the export log under Advanced settings;
+progress is reported through the shared status bar. Full-size Proof reuses
+the export delivery render; CPU and GPU are compared within perceptual tolerances.

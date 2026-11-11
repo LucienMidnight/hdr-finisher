@@ -333,3 +333,9 @@ also shown on keyboard focus) or **Always** for grid thumbnails. This applicatio
 preference is separate from projects and presets.
 
 Move the pointer over the collections sidebar to reveal the larger + buttons beside Folders, Albums and Smart Albums. Keyboard focus also reveals them. Drag the matching grip beside a section or pinned folder to reorder it. Right-click a smart album and choose **Edit rules and name…** to change its saved filter.
+
+## Opening a Smart Album
+
+The Library shows its saved indexed matches immediately, then refreshes
+them in the background. An empty saved result stays empty until refresh
+finds matches. Refresh does not block the Library control and memory polls.
