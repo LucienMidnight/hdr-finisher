@@ -27,10 +27,14 @@ fs.mkdirSync(out, {recursive:true});
       const rgb = hex.match(/[0-9a-f]{2}/gi).map(v => parseInt(v,16)/255).map(v => v <= .04045 ? v/12.92 : ((v+.055)/1.055)**2.4);
       return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;
      };
-     const surfaces = ['--app','--panel','--raised','--input','--tooltip','--plate-up','--plate-up-hover','--plate-down'].flatMap(k => token(k).match(/#[0-9a-f]{6}/gi));
-     return ['--text','--body','--muted'].flatMap(role => surfaces.map(bg => {
+     // Every text role on every flat surface; on button plates, the text roles
+     // the controls actually use (labels are --body at rest and --text on hover).
+     const flat = ['--app','--panel','--raised','--input','--tooltip'];
+     const pairs = [...flat.flatMap(s => ['--text','--body','--muted'].map(role => [role,s])),
+      ['--body','--plate-up'],['--text','--plate-up'],['--text','--plate-up-hover'],['--text','--plate-down'],['--body','--plate-down']];
+     return pairs.flatMap(([role,surface]) => token(surface).match(/#[0-9a-f]{6}/gi).map(bg => {
       const a=luminance(token(role)), b=luminance(bg);
-      return {role,bg,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
+      return {role,surface,bg,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
      }));
     });
     for (const pair of ratios) assert.ok(pair.ratio >= 7, JSON.stringify(pair));
