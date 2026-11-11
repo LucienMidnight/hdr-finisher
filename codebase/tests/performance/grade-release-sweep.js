@@ -161,7 +161,7 @@ async function match(page,zoom) {
     await stable(page,false);
     const ms=await page.evaluate(t=>performance.now()-t,t);
     await stable(page);const pixels=await signature(page);
-    row.observations.push({ms,pixels,response:await reply.json()});
+    row.observations.push({ms,pixels,response:await reply.json(),timing:JSON.parse(reply.headers()['x-sdr-match-timing'] || 'null')});
     if(pixels===baseline)row.status='Needs investigation: Match picture unchanged';
     row.referenceActive.push(await ref());
     if(!await page.evaluate(()=>revertRendition('sdr')))throw Error('SDR revert failed');
@@ -179,12 +179,16 @@ async function gestureChecks(page,lane,zoom) {
     report.rows.push(row); save();
     try {
       for(let i=0;i<samples;i++) {
+        const networkStart=network.length;
         const baseline=await signature(page), t=await page.evaluate(()=>performance.now());
         await act(); await stable(page,false);
         const ms=await page.evaluate(t=>performance.now()-t,t); await stable(page);
         const pixels=await signature(page);
         row.observations.push({ms,pixels,rawImport:batch==='raw-highlights'?await page.evaluate(()=>state.editDocument?.source?.raw_import_settings):undefined,expectedPicture:expected==='state'?true:expected==='identity'?pixels===baseline:pixels!==baseline});
+        const hideStart=await page.evaluate(()=>performance.now());
         await restore(); await stable(page);
+        row.observations.at(-1).restoreMs=await page.evaluate(t=>performance.now()-t,hideStart);
+        row.observations.at(-1).network=network.slice(networkStart);
         row.resetPixelsMatch &&= (await signature(page))===baseline;
       }
       if(row.observations.some(o=>!o.expectedPicture))row.status='Needs investigation: gesture picture mismatch';
@@ -220,14 +224,16 @@ async function gestureChecks(page,lane,zoom) {
     await observe(`${lane}.local.invert`,async()=>page.locator('#local-invert').click(),async()=>page.locator('#local-invert').click());
     await observe(`${lane}.local.duplicate-delete`,async()=>page.locator('#local-duplicate').click(),async()=>page.locator('#local-delete').click());
   }
-  if(batch==='hsl-authoring') {
+  if(batch==='hsl-authoring' || batch==='hsl-selection') {
     await page.evaluate(()=>document.querySelector('[data-group="hsl"]').classList.remove('collapsed'));
     const host=page.locator('#hsl-global-panel');
-    await observe(`${lane}.hsl.custom-add-delete`,async()=>{const n=await page.evaluate(()=>hslOwner(hslUI.panels[0]).hsl.channels.length);await host.getByText('+ Custom',{exact:true}).click();if(await page.evaluate(()=>hslOwner(hslUI.panels[0]).hsl.channels.length)!==n+1)throw Error('Custom channel not added');},async()=>host.locator('[data-hsl-action="delete"]').click(),'state');
-    await host.getByText('+ Custom',{exact:true}).click();
-    const original=await page.evaluate(()=>structuredClone(hslChannel(hslUI.panels[0]).recipe));
-    for(const mode of ['pick','add','subtract']) await observe(`${lane}.hsl.${mode}`,async()=>{await host.locator(`[data-hsl-mode="${mode}"]`).click();const b=await page.evaluate(()=>activePreviewElement().getBoundingClientRect().toJSON());await page.mouse.click(b.x+b.width/2,b.y+b.height/2);await page.waitForFunction(()=>!hslUI.stroke&&!hslUI.panels[0].sampling);const recipe=await page.evaluate(()=>hslChannel(hslUI.panels[0]).recipe);if(recipe.ranges.length!==1)throw Error('Picker did not author one range');},async()=>page.evaluate(original=>{hslUI.picker=null;const ui=hslUI.panels[0];hslEdit(ui,()=>{hslChannel(ui).recipe=structuredClone(original);});},original),'state');
-    await observe(`${lane}.hsl.selection-toggle`,async()=>{await host.locator('[data-hsl-selection]').click();await page.waitForFunction(()=>document.getElementById('hsl-selection-overlay')?.complete);if(await host.locator('[data-hsl-selection]').getAttribute('aria-pressed')!=='true')throw Error('Selection overlay was not enabled');},async()=>host.locator('[data-hsl-selection]').click(),'state');
+    if(batch==='hsl-authoring') {
+      await observe(`${lane}.hsl.custom-add-delete`,async()=>{const n=await page.evaluate(()=>hslOwner(hslUI.panels[0]).hsl.channels.length);await host.getByText('+ Custom',{exact:true}).click();if(await page.evaluate(()=>hslOwner(hslUI.panels[0]).hsl.channels.length)!==n+1)throw Error('Custom channel not added');},async()=>host.locator('[data-hsl-action="delete"]').click(),'state');
+      await host.getByText('+ Custom',{exact:true}).click();
+      const original=await page.evaluate(()=>structuredClone(hslChannel(hslUI.panels[0]).recipe));
+      for(const mode of ['pick','add','subtract']) await observe(`${lane}.hsl.${mode}`,async()=>{await host.locator(`[data-hsl-mode="${mode}"]`).click();const b=await page.evaluate(()=>activePreviewElement().getBoundingClientRect().toJSON());await page.mouse.click(b.x+b.width/2,b.y+b.height/2);await page.waitForFunction(()=>!hslUI.stroke&&!hslUI.panels[0].sampling);const recipe=await page.evaluate(()=>hslChannel(hslUI.panels[0]).recipe);if(recipe.ranges.length!==1)throw Error('Picker did not author one range');},async()=>page.evaluate(original=>{hslUI.picker=null;const ui=hslUI.panels[0];hslEdit(ui,()=>{hslChannel(ui).recipe=structuredClone(original);});},original),'state');
+    } else await page.evaluate(()=>{hslUI.panels[0].channel='red';hslSync(hslUI.panels[0]);});
+    await observe(`${lane}.hsl.selection-toggle`,async()=>{await host.locator('[data-hsl-selection]').click();await page.waitForFunction(()=>document.getElementById('hsl-selection-overlay')?.complete && document.getElementById('hsl-selection-overlay')?.naturalWidth>0);if(await host.locator('[data-hsl-selection]').getAttribute('aria-pressed')!=='true')throw Error('Selection overlay was not enabled');},async()=>host.locator('[data-hsl-selection]').click(),'state');
   }
   if(batch==='commands' && !report.matchDiagnostic) {
     report.matchDiagnostic={reason:'Capture original 400 reason, then test modest exposure without extra saturation'};
@@ -392,7 +398,7 @@ async function main() {
       && c.type !== 'file';
     const controls = inventory.filter(eligible);
     if(batch==='match') {
-      await page.evaluate(()=>{commitAdjustmentValue('hdr.exposure',.8,{manual:true});commitAdjustmentValue('hdr.saturation',.3,{manual:true});});await stable(page);
+      await page.evaluate(({exposure,saturation})=>{commitAdjustmentValue('hdr.exposure',Number(exposure),{manual:true});commitAdjustmentValue('hdr.saturation',Number(saturation),{manual:true});},{exposure:opt('--match-exposure','.8'),saturation:opt('--match-saturation','.3')});await stable(page);
     }
     for (const lane of opt('--lanes',batch==='raw-highlights'||batch==='geometry' ? 'hdr' : batch==='match'||batch.startsWith('sdr-') ? 'sdr' : batch.startsWith('hdr-') ? 'hdr' : 'hdr,sdr').split(',')) {
       await page.evaluate(lane => switchLane(lane), lane); await stable(page);
@@ -445,7 +451,7 @@ async function main() {
           const started=Date.now(); await page.evaluate(()=>recalculateDenoise()); await stable(page);
           (report.denoisePreparation ||= []).push({lane,zoom,ms:Date.now()-started,reason:'Analysis preparation; warm control timings follow'});
         }
-        if(args.includes('--followup') && (batch==='retouch-authoring'||batch==='local-authoring'||batch==='hsl-authoring'||batch==='commands'||batch==='geometry'||batch==='vignette'||batch==='raw-highlights'||batch==='color-grading'||batch.endsWith('-equalizer'))) await gestureChecks(page,lane,zoom);
+        if(args.includes('--followup') && (batch==='retouch-authoring'||batch==='local-authoring'||batch==='hsl-authoring'||batch==='hsl-selection'||batch==='commands'||batch==='geometry'||batch==='vignette'||batch==='raw-highlights'||batch==='color-grading'||batch.endsWith('-equalizer'))) await gestureChecks(page,lane,zoom);
         if(batch === 'curves') { await curves(page,lane,zoom); continue; }
         if(batch === 'match') { await match(page,zoom); continue; }
         for (const c of controls) {
