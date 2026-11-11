@@ -53,8 +53,6 @@ from .models import (
     DesktopProjectOpenRequest,
     DesktopProjectSaveRequest,
     DesktopSessionOpenRequest,
-    BrowserEvidenceRecord,
-    BrowserEvidenceResponse,
     EditCommandBatch,
     EditDocument,
     EditStateResponse,
@@ -98,7 +96,7 @@ from .cpu_strips import StripExecutionRefused
 from .render_cache import StaleRender, TileUnavailableError, downsample_target_dimensions, encode_rgba_proxy, encode_rgba_proxy_rows, rgba_proxy_pixel_format
 from .finishing import geometry_output_dimensions, perspective_guide_transform, solve_perspective_guides
 from .display_probe import probe_displays
-from .proofing import EvidenceStore, ProofArtifactStore
+from .proofing import ProofArtifactStore
 from .projects import ProjectError, ProjectSourceRelinkRequired, open_project, save_project
 from .resource_preflight import (
     FULL_PREVIEW_BASELINE_DIMENSION,
@@ -434,7 +432,6 @@ def get_export_backends():
         export_backends = build_export_backends(get_capabilities())
     return export_backends
 proof_store = ProofArtifactStore()
-evidence_store = EvidenceStore()
 library_worker = LibraryWorker(MediaBrowserStore().root)
 atexit.register(library_worker.close)
 media_browser_store = MediaBrowserStore(thumbnail_worker=library_worker)
@@ -2461,20 +2458,6 @@ def delivery_test_pattern() -> Response:
         raise HTTPException(status_code=500, detail=f"Could not generate the delivery test pattern: {exc}") from exc
 
 
-@app.get("/api/proof/evidence", response_model=BrowserEvidenceResponse)
-def list_proof_evidence() -> BrowserEvidenceResponse:
-    return evidence_store.list()
-
-
-@app.post("/api/proof/evidence", response_model=BrowserEvidenceResponse)
-def add_proof_evidence(record: BrowserEvidenceRecord) -> BrowserEvidenceResponse:
-    try:
-        proof_store.artifact(record.artifact_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return evidence_store.add(record)
-
-
 @app.post("/api/export-directory")
 def export_directory(request: DirectoryPickRequest) -> DirectoryPickResponse:
     try:
@@ -2595,24 +2578,6 @@ async def media_browser_thumbnail(request: Request, path: str = Query(), size: i
         if not task.done():
             task.cancel()
     return FileResponse(thumbnail, media_type="image/jpeg", headers={"Cache-Control": "private, no-cache"})
-
-
-@app.get("/api/media-browser/favorites")
-def media_browser_favorites() -> dict[str, object]:
-    return {"favorites": media_browser_store.pinned()}
-
-
-@app.post("/api/media-browser/favorites")
-def add_media_browser_favorite(request: FavoritePathRequest) -> dict[str, object]:
-    try:
-        return {"favorites": media_browser_store.add_pin(request.path)}
-    except MediaBrowserError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.delete("/api/media-browser/favorites")
-def remove_media_browser_favorite(path: str = Query()) -> dict[str, object]:
-    return {"favorites": media_browser_store.remove_pin(path)}
 
 
 @app.get("/api/media-browser/pinned")
