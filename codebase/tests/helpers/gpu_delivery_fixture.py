@@ -9,21 +9,12 @@ from hdr_finisher.color_context import scene_linear_to_nits
 from hdr_finisher.delivery_colour import compare_finished_pixels
 from hdr_finisher.hdr_delivery import check_decoded_hdr_ceiling
 from hdr_finisher.loader import load_image
-if sys.argv[1] in {"make", "make-sdr"}:
+if sys.argv[1] == "make":
     import tifffile
     y,x=np.mgrid[:64,:96].astype(np.float32)
     v=.015+.55*(x/95)**2+.04*np.sin(y/5)**2
     image=np.stack([v,v*.87,v*.65],axis=-1)
-    if sys.argv[1] == "make-sdr":
-        # Preserve the linear fixture's scene in a tagged display-referred file.
-        # Low-headroom TIFFs remain under review even after manual interpretation.
-        from PIL import Image, ImageCms
-        encoded = np.rint(colour.cctf_encoding(image, function="sRGB") * 255).astype(np.uint8)
-        profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
-        # Keep this tiny real photo above the Library's 1 KiB placeholder cutoff.
-        Image.fromarray(encoded).save(sys.argv[2], icc_profile=profile, compress_level=0)
-    else:
-        tifffile.imwrite(sys.argv[2],image,photometric="rgb")
+    tifffile.imwrite(sys.argv[2],image,photometric="rgb")
 else:
     root=Path(sys.argv[2])
     first=load_image(root/"gpu.jpg")

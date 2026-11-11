@@ -5,17 +5,17 @@ const root=fs.mkdtempSync(path.join(os.tmpdir(),"hdr-framing-"));
 const python=path.resolve(__dirname,"../.venv/Scripts/python.exe"),helper=path.join(__dirname,"helpers/gpu_delivery_fixture.py");
 const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
 (async()=>{
-  execFileSync(python,[helper,"make-sdr",path.join(root,"fixture.png")],{env});
+  execFileSync(python,[helper,"make",path.join(root,"fixture.tiff")],{env});
   const browser=await chromium.launch(),page=await browser.newPage();
   const base=process.env.HDR_FINISHER_URL||"http://127.0.0.1:8765",api=route=>new URL(route,base).href,errors=[];
   page.on("pageerror",e=>{errors.push(e.message);console.error("PAGE",e.message);});page.on("console",m=>{if(m.type()==="error")console.error("BROWSER",m.text());});
   const post=async(route,data)=>{const r=await page.request.post(api(route),{data,timeout:240000});const p=await r.json();assert(r.ok(),JSON.stringify(p));return p;};
   try{
-    await page.goto(base);await page.setInputFiles("#file-input",path.join(root,"fixture.png"));
+    await page.goto(base);await page.setInputFiles("#file-input",path.join(root,"fixture.tiff"));
     await page.waitForFunction(()=>state.session?.session_id,null,{timeout:120000});
     await page.waitForTimeout(500);
-    // Tagged SDR PNG: the framing test does not need an unresolved TIFF source.
-    await resolveInterpretation(page, { transfer: "srgb" });
+    // The linear TIFF needs a manual interpretation, as it would for a user.
+    await resolveInterpretation(page);
     await page.waitForFunction(()=>viewerState().status==="ready",null,{timeout:120000});
     await page.click("#photo-frame-toggle");await page.check("#photo-framing-enabled");
     await page.waitForFunction(()=>state.editDocument?.framing?.enabled);
@@ -60,16 +60,13 @@ const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
     }
     // Saved Library framing travels separately from the creative pixels.
     const folder=path.join(root,"library");fs.mkdirSync(folder);
-    const photo=path.join(folder,"saved.png");fs.copyFileSync(path.join(root,"fixture.png"),photo);
+    const photo=path.join(folder,"saved.tiff");fs.copyFileSync(path.join(root,"fixture.tiff"),photo);
     const document=await page.evaluate(()=>state.editDocument);
     fs.writeFileSync(photo+".hdrf",JSON.stringify({format:"HDR Finisher Photo",schema_version:1,photo_id:"framing-test",grade:document,marks:{},albums:[]}));
     await page.evaluate(()=>activateWorkflowTab("import",{focus:false}));
     const library=page.frame({url:/\/library(?:\?|$)/});
     await library.waitForFunction(()=>window.HDRLibrary && document.body.dataset.libraryReady === "true");
     await library.evaluate(folder=>HDRLibrary.browse(folder),folder);
-    // PNGs are hidden by the Library's default source filter.
-    await library.locator("#library-grid").click({button:"right",position:{x:4,y:4}});
-    await library.locator("#library-folder-menu").getByText("Show all files",{exact:true}).click();
     await library.locator("#grid-space .library-cell").first().click();await library.click("#single-view");
     await library.waitForSelector("#single-stage > svg[data-photo-framing]",{state:"visible",timeout:120000});
     const box=await library.locator("#single-stage > svg[data-photo-framing]").getAttribute("viewBox");assert.equal(box,"0 0 120 88");
