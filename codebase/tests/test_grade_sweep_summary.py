@@ -21,4 +21,6 @@ def test_error_triage_keeps_unknown_failures_open():
     assert summary.error_kind({"status": 409, "url": "/api/session/id/denoise-measurement/sdr"}).startswith("expected")
     assert summary.error_kind({"status": 500, "url": "/api/session/id/source-tile/hdr"}) == "unresolved"
     assert summary.error_kind({"status": 409, "url": "/different-endpoint"}) == "unresolved"
+    assert summary.error_kind({"status": 409, "url": "/api/session/id/source-tile/hdr", "body": '{"detail":{"code":"edit_revision_mismatch"}}'}).startswith("expected")
+    assert summary.error_kind({"status": 409, "url": "/api/session/id/source-tile/hdr", "body": '{"detail":"Unexplained refusal"}'}).startswith("unresolved")
     assert summary.error_kind("locator.scrollIntoViewIfNeeded: Timeout") == "driver"

@@ -59,7 +59,8 @@ def owns(text):
 def main():
     plan = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8-sig"))
     OUT.mkdir(parents=True, exist_ok=True)
-    ledger = {"startedAt": now(), "runs": []}
+    ledger_path = OUT / "w10-launches.json"
+    ledger = json.loads(ledger_path.read_text(encoding="utf-8")) if ledger_path.exists() else {"startedAt": now(), "runs": []}
     for arguments in plan:
         label = arguments[arguments.index("--label") + 1] if "--label" in arguments else arguments[arguments.index("--batch") + 1]
         owner = acquire(label)

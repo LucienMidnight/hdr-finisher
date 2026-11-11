@@ -78,7 +78,7 @@ async function change(page, selector, value, reset = false, capture = true) {
     if (selector.startsWith('#retouch-')) applySelectedRetouch(false);
     return { t, generation: state.previewGeneration[state.currentView] };
   }, { selector, value, reset });
-  if(batch==='raw-highlights' && selector.startsWith('#raw-')) await page.waitForFunction(g=>state.importGeneration>g && !state.importInProgress,priorImport,{timeout:120000});
+  if(batch==='raw-highlights' && selector.startsWith('#raw-')) await page.waitForFunction(g=>state.importGeneration>g && !state.importInProgress && !els.applyRawSettings.disabled,priorImport,{timeout:120000});
   await stable(page,false);
   const visibleMs=await page.evaluate(t=>performance.now()-t,start.t);
   if(capture) await stable(page);
@@ -147,6 +147,7 @@ async function match(page,zoom) {
     if(budgetExceeded()){report.stopped='Measurement allowance reached';return;}
     const t=await page.evaluate(()=>performance.now());
     const response=page.waitForResponse(r=>r.url().endsWith('/sdr-match')&&r.request().method()==='POST',{timeout:120000});
+    response.catch(()=>{}); // A failed click must not leave an unhandled response waiter.
     await page.locator('#sdr-match-entire').click();
     const reply=await response;
     if(!reply.ok())throw Error(`Match failed with HTTP ${reply.status()}`);
@@ -176,12 +177,13 @@ async function gestureChecks(page,lane,zoom) {
         await act(); await stable(page,false);
         const ms=await page.evaluate(t=>performance.now()-t,t); await stable(page);
         const pixels=await signature(page);
-        row.observations.push({ms,pixels,rawImport:batch==='raw-highlights'?await page.evaluate(()=>state.editDocument?.source?.raw_import_settings):undefined,expectedPicture:expected==='identity'?pixels===baseline:pixels!==baseline});
+        row.observations.push({ms,pixels,rawImport:batch==='raw-highlights'?await page.evaluate(()=>state.editDocument?.source?.raw_import_settings):undefined,expectedPicture:expected==='state'?true:expected==='identity'?pixels===baseline:pixels!==baseline});
         await restore(); await stable(page);
         row.resetPixelsMatch &&= (await signature(page))===baseline;
       }
       if(row.observations.some(o=>!o.expectedPicture))row.status='Needs investigation: gesture picture mismatch';
       else if(expected==='identity')row.status='Expected identity verified';
+      else if(expected==='state')row.status='Expected state verified';
     }catch(e){row.errors.push(e.message);row.status='Not checked: gesture driver error';}
     save();
   };
@@ -189,12 +191,33 @@ async function gestureChecks(page,lane,zoom) {
     const prefix=lane==='sdr'?'sdr-tone-equalizer':'tone-equalizer';
     const original=await page.evaluate(lane=>structuredClone(currentToneEqualizerNodes(lane)),lane);
     const restore=async()=>page.evaluate(({lane,original})=>commitAdjustmentValue(`${lane}.tone_equalizer_nodes`,original,{manual:true}),{lane,original});
-    await observe(`${lane}.bands.add-remove`,async()=>page.locator(`#${prefix}-add`).click(),async()=>{await page.locator(`#${prefix}-remove`).click();},'identity');
+    await observe(`${lane}.bands.add-remove`,async()=>{const n=await page.evaluate(lane=>currentToneEqualizerNodes(lane).length,lane);await page.locator(`#${prefix}-add`).click();if(await page.evaluate(lane=>currentToneEqualizerNodes(lane).length,lane)!==n+1)throw Error('Band was not added');},async()=>{await page.locator(`#${prefix}-remove`).click();},'state');
+    if(lane==='sdr') await observe('sdr.bands.match-hdr',async()=>page.locator('#sdr-match-hdr-bands').click(),restore);
     await observe(`${lane}.bands.keyboard-vertical`,async()=>{await page.locator(`#${prefix}-editor`).focus();await page.keyboard.press('ArrowUp');},restore);
     await observe(`${lane}.bands.drag`,async()=>{
       const point=await page.evaluate(lane=>{const c=toneEqualizerUi(lane).editor,r=c.getBoundingClientRect(),l=toneEqualizerEditorLayout(),n=currentToneEqualizerNodes(lane)[state.selectedToneEqualizerBand];return {x:r.x+l.left+(n.input_ev-TONE_EQUALIZER_MIN_EV)/(toneEqualizerPqMaxEv()-TONE_EQUALIZER_MIN_EV)*(r.width-l.left-l.right),y:r.y+l.top+(2-n.adjustment_ev)/4*(r.height-l.top-l.bottom)};},lane);
       await page.mouse.move(point.x,point.y);await page.mouse.down();await page.mouse.move(point.x+6,point.y-25,{steps:8});await page.mouse.up();
     },restore);
+  }
+  if(batch==='hsl-authoring') {
+    await page.evaluate(()=>document.querySelector('[data-group="hsl"]').classList.remove('collapsed'));
+    const host=page.locator('#hsl-global-panel');
+    await observe(`${lane}.hsl.custom-add-delete`,async()=>{const n=await page.evaluate(()=>hslOwner(hslUI.panels[0]).hsl.channels.length);await host.getByText('+ Custom',{exact:true}).click();if(await page.evaluate(()=>hslOwner(hslUI.panels[0]).hsl.channels.length)!==n+1)throw Error('Custom channel not added');},async()=>host.locator('[data-hsl-action="delete"]').click(),'state');
+    await host.getByText('+ Custom',{exact:true}).click();
+    const original=await page.evaluate(()=>structuredClone(hslChannel(hslUI.panels[0]).recipe));
+    for(const mode of ['pick','add','subtract']) await observe(`${lane}.hsl.${mode}`,async()=>{await host.locator(`[data-hsl-mode="${mode}"]`).click();const b=await page.evaluate(()=>activePreviewElement().getBoundingClientRect().toJSON());await page.mouse.click(b.x+b.width/2,b.y+b.height/2);await page.waitForFunction(()=>!hslUI.stroke);const recipe=await page.evaluate(()=>hslChannel(hslUI.panels[0]).recipe);if(recipe.ranges.length!==1)throw Error('Picker did not author one range');},async()=>page.evaluate(original=>{hslUI.picker=null;const ui=hslUI.panels[0];hslEdit(ui,()=>{hslChannel(ui).recipe=structuredClone(original);});},original),'state');
+    await observe(`${lane}.hsl.selection-toggle`,async()=>{await host.locator('[data-hsl-selection]').click();if(await host.locator('[data-hsl-selection]').getAttribute('aria-pressed')!=='true')throw Error('Selection overlay was not enabled');},async()=>host.locator('[data-hsl-selection]').click(),'state');
+  }
+  if(batch==='commands') {
+    await page.evaluate(lane=>{document.querySelector(`[data-group="${lane}-tone"]`).classList.remove('collapsed');commitAdjustmentValue(`${lane}.exposure`,0,{manual:true});},lane);await stable(page);await page.evaluate(lane=>commitAdjustmentValue(`${lane}.exposure`,.5,{manual:true}),lane);await stable(page);
+    await observe(`${lane}.commands.undo-redo`,async()=>{await page.evaluate(()=>document.activeElement?.blur());await page.keyboard.press('Control+z');},async()=>page.keyboard.press('Control+y'));
+    await observe(`${lane}.commands.tone-bypass`,async()=>page.locator(`[data-section-path="${lane}.tone_section_enabled"]`).click(),async()=>page.locator(`[data-section-path="${lane}.tone_section_enabled"]`).click());
+    await observe(`${lane}.commands.tone-reset-undo`,async()=>page.locator(`[data-reset-group="${lane}-tone"]`).click(),async()=>{await page.evaluate(()=>document.activeElement?.blur());await page.keyboard.press('Control+z');});
+  }
+  if(batch==='vignette') {
+    await page.evaluate(()=>commitAdjustmentValue('current.vignette.amount',-40,{manual:true}));await stable(page);
+    const original=await page.evaluate(()=>structuredClone(state.adjustments[state.currentView].vignette));
+    await observe('vignette.centre-handle',async()=>{const h=page.locator('#vignette-center-handle');const b=await h.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+60,b.y+40,{steps:8});await page.mouse.up();const v=await page.evaluate(()=>state.adjustments[state.currentView].vignette);if(v.center_x===original.center_x&&v.center_y===original.center_y)throw Error('Vignette centre did not move');},async()=>page.evaluate(original=>commitAdjustmentValue('current.vignette',original,{manual:true}),original),'state');
   }
   if(batch==='color-grading') {
     for(const zone of ['shadows','midtones','highlights']) {
@@ -210,13 +233,13 @@ async function gestureChecks(page,lane,zoom) {
         const generation=await page.evaluate(()=>state.importGeneration);
         await page.locator(`#${id}`).evaluate((c,v)=>{if(c.type==='checkbox')c.checked=v;else c.value=String(v);c.dispatchEvent(new Event('change',{bubbles:true}));},value);
         await page.locator('#apply-raw-settings').click();
-        await page.waitForFunction(g=>state.importGeneration>g&&!state.importInProgress,generation,{timeout:120000});
+        await page.waitForFunction(g=>state.importGeneration>g&&!state.importInProgress&&!els.applyRawSettings.disabled,generation,{timeout:120000});
         await stable(page);
         const saved=await page.evaluate(()=>state.editDocument.source.raw_import_settings.lens);
         const keys={'lens-mode':'mode','lens-distortion':'distortion','lens-ca':'chromatic_aberration','lens-vignetting':'vignetting','lens-focal':'focal_length_mm','lens-aperture':'aperture','lens-distance':'focus_distance_m'};
-        if(String(saved[keys[id]])!==String(value))throw Error(`RAW ${id} did not persist: ${saved[keys[id]]} expected ${value}`);
+        if(String(saved[keys[id]])!==String(value===''?null:value))throw Error(`RAW ${id} did not persist: ${saved[keys[id]]} expected ${value}`);
       };
-      await observe(`raw.import.${id}`,()=>apply(value),()=>apply(original),'identity');
+      await observe(`raw.import.${id}`,()=>apply(value),()=>apply(original),'state');
     }
   }
   if(batch==='geometry') {
@@ -266,6 +289,7 @@ async function main() {
       }
     });
     const input=path.resolve(opt('--input', args.includes('--followup') && ['black-and-white','color-grading','detail','hdr-color','sdr-color','hdr-tone','sdr-tone'].includes(batch) ? 'output/test-photos/grade-colour-chart.tiff' : 'output/test-photos/grade-24mp.tiff'));
+    report.input={path:input,sha256:require('crypto').createHash('sha256').update(fs.readFileSync(input)).digest('hex')};
     if(batch==='raw-highlights' && args.includes('--followup')) {
       const disposable=path.resolve('output/test-photos/grade-review-raw'+path.extname(input));
       if(!fs.existsSync(disposable))fs.copyFileSync(input,disposable);
@@ -336,7 +360,7 @@ async function main() {
       && c.type !== 'file';
     const controls = inventory.filter(eligible);
     if(batch==='match') {
-      await page.evaluate(()=>{commitAdjustmentValue('hdr.exposure',.8,{manual:true});commitAdjustmentValue('hdr.saturation',30,{manual:true});});await stable(page);
+      await page.evaluate(()=>{commitAdjustmentValue('hdr.exposure',.8,{manual:true});commitAdjustmentValue('hdr.saturation',.3,{manual:true});});await stable(page);
     }
     for (const lane of opt('--lanes',batch==='raw-highlights'||batch==='geometry' ? 'hdr' : batch==='match'||batch.startsWith('sdr-') ? 'sdr' : batch.startsWith('hdr-') ? 'hdr' : 'hdr,sdr').split(',')) {
       await page.evaluate(lane => switchLane(lane), lane); await stable(page);
@@ -347,8 +371,10 @@ async function main() {
           await page.evaluate(() => ensureGeometryCoordinateMap());
           const box = await page.evaluate(() => activePreviewElement().getBoundingClientRect().toJSON());
           const count = await page.evaluate(() => state.editDocument.repairs.length);
-          if (mode !== 'inpaint') await page.mouse.click(box.x+box.width*.35,box.y+box.height*.45);
-          await page.mouse.click(box.x+box.width*.5,box.y+box.height*.5);
+          if(args.includes('--followup')) await page.locator('#retouch-size').evaluate(c=>{c.value='128';c.dispatchEvent(new Event('input',{bubbles:true}));c.dispatchEvent(new Event('change',{bubbles:true}));});
+          const destination=args.includes('--followup') ? ({inpaint:.44,heal:.50,clone:.56})[mode] : .5;
+          if (mode !== 'inpaint') await page.mouse.click(box.x+box.width*.38,box.y+box.height*.45);
+          await page.mouse.click(box.x+box.width*destination,box.y+box.height*.5);
           await page.waitForFunction(count => state.editDocument.repairs.length > count && !retouchUI.busy, count, { timeout:45000 });
           await stable(page);
         }
@@ -381,24 +407,24 @@ async function main() {
         document.querySelector(`[data-group="${group}"]`)?.classList.remove('collapsed');
         for (const d of document.querySelectorAll(`[data-group="${group}"] details`)) d.open = true;
       }, batch);
-      for (const zoom of (args.includes('--followup')&&batch==='film-look' ? 'actual,fit' : opt('--zooms',batch==='raw-highlights'?'fit':'fit,actual')).split(',')) {
+      for (const zoom of (args.includes('--followup')&&batch==='film-look'&&!args.includes('--respect-only') ? 'fit,actual' : opt('--zooms',batch==='raw-highlights'?'fit':'fit,actual')).split(',')) {
         await page.evaluate(zoom => setZoomMode(zoom), zoom); await stable(page);
         if(batch==='denoise') {
           const started=Date.now(); await page.evaluate(()=>recalculateDenoise()); await stable(page);
           (report.denoisePreparation ||= []).push({lane,zoom,ms:Date.now()-started,reason:'Analysis preparation; warm control timings follow'});
         }
-        if(args.includes('--followup') && (batch==='geometry'||batch==='raw-highlights'||batch==='color-grading'||batch.endsWith('-equalizer'))) await gestureChecks(page,lane,zoom);
+        if(args.includes('--followup') && (batch==='hsl-authoring'||batch==='commands'||batch==='geometry'||batch==='vignette'||batch==='raw-highlights'||batch==='color-grading'||batch.endsWith('-equalizer'))) await gestureChecks(page,lane,zoom);
         if(batch === 'curves') { await curves(page,lane,zoom); continue; }
         if(batch === 'match') { await match(page,zoom); continue; }
         for (const c of controls) {
-          if (!only.test(controlName(c)) && !(args.includes('--followup') && batch==='film-look' && (zoom==='actual' || c.path?.endsWith('.grain_amount')))) continue;
+          if (!only.test(controlName(c)) && !(args.includes('--followup') && batch==='film-look' && !args.includes('--respect-only') && (zoom==='actual' || c.path?.endsWith('.grain_amount')))) continue;
           if(budgetExceeded()) { report.stopped='Measurement allowance reached'; return; }
           if (Date.now() - startedAt > 14 * 60000) { report.stopped = '14 minute batch limit'; return; }
           const selector = c.id ? `#${c.id}` : c.path ? `[data-path="${c.path}"]` : c.data.sectionPath ? `[data-section-path="${c.data.sectionPath}"]`
             : c.data.localGrade ? `[data-local-grade="${c.data.localGrade}"]`
               : c.data.localMaskParam ? `[data-local-mask-param="${c.data.localMaskParam}"]`
                 : c.data.hslKey ? `#hsl-${batch === 'hsl' ? 'global' : 'local'}-panel [data-hsl-key="${c.data.hslKey}"]`
-                  : c.data.rangeHandle !== undefined ? `[aria-label=${JSON.stringify(c.label)}][data-range-handle="${c.data.rangeHandle}"]` : c.selector;
+                  : c.data.rangeHandle !== undefined ? `${batch==='local-adjustments'?'#local-adjustments-panel ':''}[aria-label=${JSON.stringify(c.label)}][data-range-handle="${c.data.rangeHandle}"]` : c.selector;
           const row = { path: controlName(c), selector, lane, zoom, observations: [], errors: [] };
           report.rows.push(row); save();
           const errorStart = report.errors.length;
@@ -424,7 +450,7 @@ async function main() {
               }
             }
             if (batch === 'retouch') {
-              const mode = c.id === 'retouch-opacity' ? 'clone' : 'inpaint';
+              const mode = ['retouch-opacity','retouch-hardness'].includes(c.id) ? 'clone' : 'inpaint';
               const id = report.retouchSetup.find(r=>r.mode === mode)?.id;
               await page.evaluate(id => { selectRetouchRepair(id); retouchUI.active=false; renderLocalMaskOverlay(); }, id);
               if (['retouch-feather','retouch-texture'].includes(c.id)) {
@@ -435,7 +461,7 @@ async function main() {
             const dependencies = [];
             if(batch==='raw-highlights' && c.id==='raw-edge-colour-expand') await change(page,'#raw-highlight-method','edge_colour_v1');
             if(c.data.sectionPath?.endsWith('.tone_section_enabled')) dependencies.push([`${lane}.exposure`,.5]);
-            if(c.data.sectionPath?.endsWith('.color_section_enabled')) dependencies.push([`${lane}.saturation`,30]);
+            if(c.data.sectionPath?.endsWith('.color_section_enabled')) dependencies.push([`${lane}.saturation`,.3]);
             if(c.data.sectionPath?.endsWith('.detail_section_enabled')) dependencies.push(['current.detail.texture_amount',50]);
             if(batch.endsWith('-highlights') && c.path?.endsWith('_softness')) dependencies.push([`${lane}.highlight_compression_mode`,'soft_ceiling']);
             if(batch.endsWith('-highlights') && c.path?.includes('_manual_peak_')) dependencies.push([`${lane}.highlight_compression_peak_measurement`,'manual']);
@@ -443,7 +469,7 @@ async function main() {
             if(batch==='hdr-highlights') dependencies.push(['hdr.exposure',3],['hdr.highlight_section_enabled',true]);
             if(batch==='sdr-highlights') dependencies.push(['sdr.exposure',1]);
             const match = c.path?.match(/^(.*\.(?:shadows|midtones|highlights))_(center|width)$/);
-            if (match) dependencies.push([match[1], .5]);
+            if (match) dependencies.push([match[1], 50]);
             if (c.path?.startsWith('hdr.highlights')) dependencies.push(['hdr.exposure', 2]);
             if (c.path?.endsWith('.contrast_pivot')) dependencies.push([`${lane}.contrast`, .3]);
             if (c.path?.endsWith('_desaturation_start')) dependencies.push([c.path.replace('_start',''), 50]);
@@ -458,6 +484,7 @@ async function main() {
             }
             if (c.path?.endsWith('clarity_radius_percent')) dependencies.push(['current.detail.clarity_amount', 50]);
             if (c.path?.includes('sharpen_') && !c.path.endsWith('sharpen_amount')) dependencies.push(['current.detail.sharpen_amount', 100]);
+            if (c.path?.endsWith('.film_look.grain_capture_geometry')) dependencies.push(['current.film_look.grain_film_format','custom'],['current.film_look.grain_custom_width_mm',36],['current.film_look.grain_custom_height_mm',36]);
             if (c.path?.includes('.film_look.grain_') && !c.path.endsWith('grain_amount')) dependencies.push(['current.film_look.grain_amount',40]);
             if (c.path?.includes('.film_look.halation_') && !c.path.endsWith('halation_amount')) dependencies.push(['current.film_look.halation_amount',80]);
             if (c.path?.includes('.film_look.lens_') && !c.path.endsWith('lens_filter')) dependencies.push(['current.film_look.lens_filter','black_pro_mist']);
@@ -478,9 +505,11 @@ async function main() {
             const plan = await page.evaluate(async selector => {
               const c = document.querySelector(selector), value = window.__gradeValue(c);
               let alternative;
-              if (c.type === 'checkbox' || c.tagName === 'BUTTON') alternative = !value;
+              if(c.type==='color') alternative=value==='#00ff00'?'#ff263d':'#00ff00';
+              else if (c.type === 'checkbox' || c.tagName === 'BUTTON') alternative = !value;
               else if (c.options) alternative = [...c.options].find(o => !o.disabled && o.value !== value)?.value;
               else { const delta = c.id==='film-push_pull' ? 1 : (Number(c.max) - Number(c.min)) * .2; alternative = Number(value) + delta <= Number(c.max) ? Number(value) + delta : Number(value) - delta; }
+              if(c.dataset.rangeHandle==='1' && c.closest('#local-adjustments-panel')) alternative=Number(c.min)+(Number(c.max)-Number(c.min))*.35;
               return { value, alternative, disabled: c.disabled };
             }, selector);
             plan.pixels = await signature(page);
@@ -584,7 +613,9 @@ async function main() {
             }
             if (c.type === 'number' && zoom === 'fit' && await page.locator(selector).isVisible()) {
               await page.locator(selector).fill(String(plan.alternative));
-              await page.locator(selector).press('Tab'); await stable(page);
+              await page.locator(selector).press('Tab');
+              if(batch==='raw-highlights') await page.waitForFunction(()=>!els.applyRawSettings.disabled,null,{timeout:120000});
+              await stable(page);
               row.typed = await page.evaluate(({ p, selector }) => p ? getValueByPath(state.adjustments, p) : document.querySelector(selector).value, { p: c.path, selector });
               row.typedMatches=Number(row.typed)===Number(plan.alternative);
               await change(page, selector, plan.value);

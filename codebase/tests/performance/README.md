@@ -445,3 +445,18 @@ another action requires both a rise over 25% and a rise over 20 ms.
 `grade_sweep_summary.py --update-docs` rebuilds the table without calling a
 missing measurement a product failure. Response signatures do not establish
 visual quality or export/Proof agreement.
+
+The default W10 Film continuation checks the four targeted Fit controls first
+(including the actual Push/Pull segments and a percentage readout), then all
+visible native Film values. Use `--respect-only` on a focused Film rerun to
+honour `--only` and `--zooms` without that expansion. `--batch commands` times
+Undo/Redo and Tone reset/bypass; `--batch hsl-authoring` checks Custom channel
+creation/deletion and picker modes. These are state/picture-response checks,
+not visual-quality sign-off. The marked-photo Retouch rerun separates Inpaint,
+Heal and Clone at three visible defects and uses Clone for Hardness.
+
+`w10-fixtures.json` records hashes and generation recipes. W1's exact original
+TIFF was not retained; W10's freshly resized TIFF is not an identical timing
+baseline. `w10-triage.json` preserves a decision for every retained no-change
+row. Keep the W1 archive and failed driver attempts; use the latest qualified
+row for the measured value, and keep failed later reruns visible as gaps.
