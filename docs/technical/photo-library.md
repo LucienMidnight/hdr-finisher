@@ -1261,7 +1261,7 @@ The SDR base is exact; HDR gain-map interpolation has a small display-only
 rounding difference, measured in the running report. The 1000-nit cap stays.
 
 `kept_picture_saved` and `kept_picture_failed` record production. New user messages
-and all trial/check results are in `slice-3-stage-reports-2026-10-11.md`. Slice 7
+and all trial/check results are in `archive/slice-3-stage-reports-2026-10-11.md`. Slice 7
 can call the same producer for unopened photos; its durable bulk queue, Activity,
 Pause/Resume, restart/offline recovery and visible-photo priority remain future
 work. The latest-grade/source checks and cooperative foreground gates are built.

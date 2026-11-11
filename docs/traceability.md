@@ -106,6 +106,6 @@ Fix both implementation and documentation when the discrepancy represents a bug 
 - Export log and status: `frontend/export-ui.js`, `tests/control-panel-polish.js`.
 - Film Format dropdown and Local shared-mask note: `frontend/index.html`.
 - Indexed Smart Album opening: Photo Library PRD November 11 decisions and
-  `tests/library-smart-album-stress.js`.
+  `tests/library-smart-albums.js`.
 - Button selection uses a neutral pressed plate; accent outlines no longer
   mark selection (component-sheet rules in the Grade PRD).
