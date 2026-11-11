@@ -19,6 +19,8 @@ Find it in **Grade**, in the **Denoise** group. It works the same way for camera
 
 Click the switch again to compare. Turning Denoise off shows the original picture.
 
+If you open another photo while Denoise is preparing or updating, the old work is discarded; it cannot change the new photo’s settings or status.
+
 **Reset** in the group header puts the Denoise sliders back to their defaults.
 
 ## Basic controls

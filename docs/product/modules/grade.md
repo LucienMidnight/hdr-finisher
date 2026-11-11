@@ -1,5 +1,18 @@
 # Module PRD: Grade
 
+## November 11: Denoise asynchronous work stays with its photo
+
+Denoise toggle completions, analysis results (including failures), queued
+slider reconstructions and drag-release catch-up now check their owning photo
+and runtime generation. Switching photos or replacing the document discards
+old work before it saves settings, changes status or requests another preview.
+Turning Denoise off saves before the redraw, so a quick photo switch keeps
+the change on its original photo. Enabling retains its original HDR/SDR lane.
+No processing formula, project schema or delivery code changed.
+
+Checks: eight delayed-operation Node regressions cover photo replacement and
+normal completion. Full-suite and focused app results are in the commit note.
+
 ## November 11: graph gutters and sidebar room
 
 Graph gutters are transparent so axis labels sit on the owning module surface,
