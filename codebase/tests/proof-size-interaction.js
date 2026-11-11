@@ -9,6 +9,8 @@ const { resolveInterpretation } = require("./helpers/resolve-interpretation.js")
 // size choice, the labels, and that changing the size makes the proof stale.
 
 const fs = require("fs");
+const os = require("os");
+const { execFileSync } = require("node:child_process");
 const path = require("path");
 const { chromium } = require("playwright");
 const { ensureLargeNoisySource } = require("./large-noisy-tiff.js");
@@ -40,9 +42,16 @@ function assert(condition, message) {
     source: [state.session.source.width, state.session.source.height],
   }));
 
+  const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "hdr-proof-size-"));
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
-    await page.setInputFiles("#file-input", ensureLargeNoisySource());
+    // Keep the large noisy samples and dimensions, with an explicit sRGB
+    // profile in a bitmap format that does not require TIFF/HDR confirmation.
+    const fixture = path.join(fixtureRoot, "noisy-srgb.png");
+    execFileSync(path.resolve(__dirname, "../.venv/Scripts/python.exe"), ["-c",
+      "from PIL import Image, ImageCms; import sys; Image.open(sys.argv[1]).save(sys.argv[2], icc_profile=ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes())",
+      ensureLargeNoisySource(), fixture]);
+    await page.setInputFiles("#file-input", fixture);
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 900000 });
     await page.waitForTimeout(500);
     await resolveInterpretation(page, { transfer: "srgb" });
@@ -110,7 +119,8 @@ function assert(condition, message) {
     assert(pageErrors.length === 0, `Page errors: ${pageErrors.join(" | ")}`);
     console.log(JSON.stringify({ reduced, full, sharpenedStatus: sharpened.status }, null, 2));
   } finally {
-    await browser.close();
+    try { await browser.close(); }
+    finally { fs.rmSync(fixtureRoot, { recursive: true, force: true }); }
   }
 })().catch((error) => {
   console.error(error);
