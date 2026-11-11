@@ -16,15 +16,18 @@ if(!process.env.HDR_LIBRARY_UNSUPPORTED_PHOTO)fs.copyFileSync(oomPhoto,unsupport
     await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
  const result=await page.locator('#library-frame').evaluate(async(element,{oomPhoto,lostPhoto,unsupportedPhoto,realSource})=>{
   const w=element.contentWindow,original=w.HDRLibraryRGB,requests=[],events=[];
-  const originalFetch=w.fetch.bind(w);
-  w.fetch=(url,options)=>{
+  const originalFetch=w.fetch.bind(w),originalUpload=w.HDRLibraryUpload;
+  const observe=(url,options)=>{
    requests.push({url:String(url),body:typeof options?.body==='string'?options.body:null});
    if(!realSource && url==='/api/library/live-scene' && options?.body){
     const request=JSON.parse(options.body);
-    if(request.path===unsupportedPhoto && request.gpu)return Promise.resolve(new w.Response(null,{status:204,headers:{'X-Library-Fallback':'Synthetic unsupported source adapter'}}));
+    if(request.path===unsupportedPhoto && request.gpu)return new w.Response(null,{status:204,headers:{'X-Library-Fallback':'Synthetic unsupported source adapter'}});
    }
-   return originalFetch(url,options);
   };
+  w.fetch=(url,options)=>observe(url,options)||originalFetch(url,options);
+  // GPU source downloads use a worker, so window.fetch alone cannot inject
+  // the unsupported response or observe those development requests.
+  w.HDRLibraryUpload={...originalUpload,fetchSource:async(url,options)=>observe(url,options)||originalUpload.fetchSource(url,options)};
   const log=w.HDRLibraryStopwatch;
   w.HDRLibraryStopwatch=(stage,fields)=>{events.push({stage,...fields});log(stage,fields);};
   let oomAttempts=0,lostAttempts=0;
@@ -57,7 +60,7 @@ if(!process.env.HDR_LIBRARY_UNSUPPORTED_PHOTO)fs.copyFileSync(oomPhoto,unsupport
    const reopened=await w.HDRLibraryScenes.load(unsupportedPhoto,640,undefined,10,null,{cachedOnly:true});
    const errors=(await (await originalFetch('/api/library/health')).json()).picture_errors||{};
    return {oomEdge:oomValue.edge,lostEdge:lostValue.edge,unsupportedEdge:unsupportedValue.edge,reopenedKey:reopened?.key,unsupportedKey:unsupportedValue.key,cpuPrepareMs,oomAttempts,lostAttempts,requests,events,errors,remaining:w.HDRLibraryGrants.snapshot()};
-  }finally{w.HDRLibraryRGB=original;w.fetch=originalFetch;}
+  }finally{w.HDRLibraryRGB=original;w.fetch=originalFetch;w.HDRLibraryUpload=originalUpload;w.HDRLibraryStopwatch=log;}
  },{oomPhoto,lostPhoto,unsupportedPhoto,realSource:!!process.env.HDR_LIBRARY_UNSUPPORTED_PHOTO}).catch(async error=>{
   let dump=null;
   try{dump=await page.locator('#library-frame').evaluate(element=>element.contentWindow.__diagDump||null);}catch{}
@@ -67,6 +70,10 @@ if(!process.env.HDR_LIBRARY_UNSUPPORTED_PHOTO)fs.copyFileSync(oomPhoto,unsupport
  fs.writeFileSync(path.join(folder,'recovery.json'),JSON.stringify(result,null,2));
  const parsed=result.requests.map(r=>{let body=null;try{body=r.body?JSON.parse(r.body):null;}catch{}return {url:r.url,body};});
  const cpuCalls=target=>parsed.filter(r=>r.url==='/api/library/live-scene'&&r.body?.gpu===false&&r.body?.path===target).length;
+ if(!process.env.HDR_LIBRARY_UNSUPPORTED_PHOTO){
+  assert.equal(parsed.filter(r=>r.url==='/api/library/live-scene'&&r.body?.gpu===true&&r.body?.path===unsupportedPhoto).length,1,'One unsupported GPU attempt, including cached reopen');
+  assert.equal(result.events.filter(e=>e.stage==='picture_source_gpu_fallback'&&e.path===unsupportedPhoto&&e.reason==='Synthetic unsupported source adapter').length,1,'Synthetic rejection reaches the CPU fallback');
+ }
  assert.equal(result.unsupportedEdge,640,'Unsupported GPU source finishes on CPU');
  assert.equal(result.reopenedKey,result.unsupportedKey,'CPU picture reopens from cache');
  assert.equal(cpuCalls(unsupportedPhoto),1,'One CPU development, including cached reopen');

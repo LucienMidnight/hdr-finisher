@@ -29,6 +29,13 @@ Independent GPU export/Proof/decoding turns at 3/2 GiB admission caps took
 44.238-45.236 s; both pairs and both independent exports are byte-identical.
 Evidence: `codebase/output/gpu-delivery-repeat/result.json`.
 
+November 11 W15 unsupported-source recovery check (driver repair on parent
+`7650661b`, 2560x1440 Electron, disposable profile and synthetic PNG): CPU
+fallback preparation took 224 ms, with exactly one CPU development and no
+additional development on cached reopen. This is one source-stage observation,
+not a whole-screen timing or a speedup comparison. Existing 30-second test
+deadline is unchanged. Evidence: `codebase/output/w15-gpu-recovery/driver.log`.
+
 ## How to read and update it
 
 * **Target:** an agreed target (with who agreed it and when) or
