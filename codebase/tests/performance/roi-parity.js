@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../helpers/resolve-interpretation.js");
 // Phase 2 work item 9 -- legacy-versus-ROI parity over the visible region.
 //
 //   node tests/performance/roi-parity.js --url http://127.0.0.1:8765
@@ -178,9 +179,7 @@ function assert(condition, message) {
     // A file source without color metadata raises the interpretation gate; the
     // test pattern and the generated 8-bit noisy TIFF do not.
     await page.waitForTimeout(500);
-    if (await page.locator("#interpretation-gate").isVisible().catch(() => false)) {
-      await page.click("#accept-interpretation");
-    }
+    await resolveInterpretation(page, { transfer: "srgb" });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
     await waitReady();
     await page.evaluate(() => applyExecutionOverride("tiled"));

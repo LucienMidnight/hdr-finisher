@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../tests/helpers/resolve-interpretation.js");
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
@@ -32,8 +33,7 @@ async function main() {
     await page.goto("http://127.0.0.1:8000", { waitUntil: "networkidle" });
     await page.locator("#file-input").setInputFiles(input);
     await page.waitForFunction(() => document.getElementById("session-name")?.textContent !== "No active image", null, { timeout: 30000 });
-    const gate = page.locator("#interpretation-gate");
-    if (await gate.isVisible()) await page.locator("#accept-interpretation").click();
+    await resolveInterpretation(page);
 
     await setControl(page, "hdr.vibrance", 0.35);
     await setControl(page, "hdr.red_hue", 8);

@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../helpers/resolve-interpretation.js");
 /**
  * Compare the visible contribution of spatial film effects at 4K and Full.
  *
@@ -84,19 +85,12 @@ function argument(name, fallback = null) {
   try {
     await page.goto(url, { waitUntil: "networkidle" });
     await page.setInputFiles("#file-input", input);
+    await resolveInterpretation(page, { primaries: "linear_p3", reference: "diffuse_white_1_0" });
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 900000 });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 900000 });
 
-    // This fixture has no chromaticities. Accept the application's disclosed
-    // fallback explicitly so the interpretation warning no longer overlaps
-    // the canvas: compositor capture is required for WebGPU, but UI chrome is
-    // not picture data and must not dilute the per-pixel measurements.
-    const interpretationGate = page.locator("#interpretation-gate");
-    if (await interpretationGate.isVisible()) {
-      await page.click("#accept-interpretation");
-      await interpretationGate.waitFor({ state: "hidden" });
-    }
+    // The untagged Affinity fixture is Display P3 linear, 1.0 diffuse white.
 
     await configure("neutral");
     const neutral4k = await captureTier("4096");

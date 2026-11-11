@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../helpers/resolve-interpretation.js");
 // Phase 3 work item 2 -- ROI source routing and the warm-Fit transport gate.
 //
 //   node tests/performance/roi-source-transport.js --url http://127.0.0.1:8799
@@ -54,9 +55,7 @@ function bytesForFrame(width, height, bytesPerPixel = 8) {
     await page.setInputFiles("#file-input", fixture);
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 900000 });
     await page.waitForTimeout(500);
-    if (await page.locator("#interpretation-gate").isVisible().catch(() => false)) {
-      await page.click("#accept-interpretation");
-    }
+    await resolveInterpretation(page, { primaries: "linear_acescg" });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 300000 });
     await waitReady();
     const sourceSize = await page.evaluate(() => [state.session.source.width, state.session.source.height]);

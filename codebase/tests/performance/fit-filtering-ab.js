@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../helpers/resolve-interpretation.js");
 // Phase 0 work item 6 -- Fit filtering A/B, set up so the owner can judge it
 // perceptually: "would the exported file look like this on my screen?"
 //
@@ -327,8 +328,7 @@ function saveDataUrl(dataUrl, filePath) {
     await page.setInputFiles("#file-input", fixture);
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 900000 });
     await page.waitForTimeout(500);
-    const interpretationGated = await page.locator("#interpretation-gate").isVisible().catch(() => false);
-    if (interpretationGated) await page.click("#accept-interpretation");
+    await resolveInterpretation(page, { primaries: "linear_acescg" });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
     await waitReady();
 

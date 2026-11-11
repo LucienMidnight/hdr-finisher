@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../helpers/resolve-interpretation.js");
 // NEXT-01 #1 -- does the Show halation map change with preview resolution?
 //
 //   node tests/run-in-electron.js tests/performance/halation-map-zoom.js [--input path]
@@ -35,13 +36,9 @@ function argument(name, fallback = null) {
   try {
     await page.goto(url, { waitUntil: "networkidle" });
     await page.setInputFiles("#file-input", input);
-    await page.waitForFunction(() => state.session?.session_id && state.gpuPreview?.available === true, null, { timeout: 900000 });
+    await resolveInterpretation(page);
+    await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 900000 });
     await page.waitForFunction(() => viewerState().status === "ready", null, { timeout: 900000 });
-    const gate = page.locator("#interpretation-gate");
-    if (await gate.isVisible()) {
-      await page.click("#accept-interpretation");
-      await gate.waitFor({ state: "hidden" });
-    }
     await page.evaluate(() => {
       activateWorkflowTab("grade");
       Object.assign(state.adjustments.hdr.film_look, {

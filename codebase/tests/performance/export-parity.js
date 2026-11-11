@@ -1,3 +1,4 @@
+const { resolveInterpretation } = require("../helpers/resolve-interpretation.js");
 // Phase 0 item 7 / PRD 15.27 -- export/reference parity.
 //
 //   node tests/performance/export-parity.js --url http://127.0.0.1:8799
@@ -551,8 +552,7 @@ function pythonExecutable() {
     await page.setInputFiles("#file-input", fixture);
     await page.waitForFunction(() => state.session?.session_id, null, { timeout: 900000 });
     await page.waitForTimeout(500);
-    const interpretationGated = await page.locator("#interpretation-gate").isVisible().catch(() => false);
-    if (interpretationGated) await page.click("#accept-interpretation");
+    await resolveInterpretation(page, { primaries: "linear_acescg" });
     await page.waitForFunction(() => state.gpuPreview?.available === true, null, { timeout: 120000 });
     await waitReady();
 
