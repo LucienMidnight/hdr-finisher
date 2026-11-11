@@ -57,6 +57,12 @@ Determine where clipping occurs:
 
 Use Highlight Compression, Exposure Bands, or a lower exposure only after identifying the stage.
 
+## The brightest areas of the HDR preview show magenta, green or white blotches
+
+This is a known limit of the editing preview, not of your file. It happens only in HDR with output Highlight Compression turned off, when the grade pushes the picture far brighter than any display can show: for example Exposure around +8, or several Film Look controls at their extremes together (Push +2, Print Exposure −3, Print, Shadow and Highlight Contrast at +100). The preview has a fixed brightness ceiling, and colours beyond it are drawn wrongly.
+
+Export and Proof are not affected and show the correct colours. To see an accurate preview, turn Highlight Compression back on (it is on by default) or bring the extreme controls back down. See [Known limitations](known-limitations.md#extreme-hdr-preview-range-october-16-2026).
+
 ## HDR looks flat on a low-nit monitor
 
 A limited display may compress a much larger authored range into 400–500 nits, especially without effective local dimming. Build a proof at the display’s credible peak, keep SDR white stable, and inspect highlight hierarchy rather than expecting a 1,000-nit appearance.

@@ -366,7 +366,9 @@ the other release limitations above remain open.
 GPU delivery is implemented for export and Proof, with CPU fallback.
 Full-size Proof shares the export render; this is not independent proof of
 GPU repeatability. Repeatability is being checked in the release sprint.
-Film-stock preview/export differences at the GPU half-precision limit remain
-open, awaiting Steve's decision. Retouch interaction is built, but its final
+The extreme HDR preview range limit (above) ships as a known limitation in
+0.9.2 (Steve, November 11, 2026): with output Highlight Compression off and
+extreme brightness, the preview can show wrong colours in the brightest
+areas; export and Proof are correct. Retouch interaction is built, but its final
 quality review remains open. Historical qualification entries above retain
 their original dates and do not claim that the 0.9.2 release check has passed.
