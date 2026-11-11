@@ -326,7 +326,7 @@ Curves and Exposure Bands use the same directional cue geometry and color. The c
 Use the runtime tokens and existing component rhythm as the baseline:
 
 - Source rail: 232 px default.
-- Grade rail: 328 px default and minimum (existing `--grade-w` token; previously 320 px). Exposure Bands actions stay on one line. The app minimum remains 1100 px.
+- Grade rail: 336 px default and minimum (existing `--grade-w` token; previously 320 px). Exposure Bands actions stay on one line and Curves nit labels fit on one row. The app minimum remains 1100 px.
 - Analysis dock: 252 px default.
 - Top bar: 44 px; panel headers: 40 px; status: 28 px; Library rows: 24 px.
 - Control rows keep their existing content layout with the shared slider scale strip.

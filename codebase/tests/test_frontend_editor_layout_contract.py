@@ -227,11 +227,11 @@ def test_grade_rail_keeps_a_readable_minimum_width() -> None:
     html = (FRONTEND / "index.html").read_text(encoding="utf-8")
     css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
     javascript = frontend_scripts()
-    assert 'aria-valuemin="320"' in html
-    assert 'aria-valuenow="320"' in html
-    assert "--grade-w: 320px" in css
-    assert "gradeW: 320" in javascript
-    assert "gradeW: [320, 420]" in javascript
+    assert 'aria-valuemin="336"' in html
+    assert 'aria-valuenow="336"' in html
+    assert "--grade-w: 336px" in css
+    assert "gradeW: GRADE_PANEL_MIN_WIDTH" in javascript
+    assert "gradeW: [GRADE_PANEL_MIN_WIDTH, 420]" in javascript
 
 
 def test_adjustable_module_headers_expose_consistent_modified_and_reset_affordances() -> None:

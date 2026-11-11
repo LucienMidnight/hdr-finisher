@@ -311,7 +311,7 @@ function drawCurveExposureBands(ctx, layout, width, height) {
     const labelWidth = ctx.measureText(label).width;
     const labelX = clamp(x, labelWidth / 2 + 1, width - labelWidth / 2 - 1);
     const leftEdge = labelX - labelWidth / 2;
-    const row = lastLabelRight.findIndex((rightEdge) => leftEdge >= rightEdge + 5);
+    const row = lastLabelRight.findIndex((rightEdge) => leftEdge >= rightEdge + 3);
     if (row < 0) return;
     ctx.fillStyle = nits === levels.referenceWhite ? uiToken("--equalizer-axis") : uiToken("--curve-axis-label");
     ctx.textAlign = "center";
@@ -377,7 +377,7 @@ function currentCurveLane() {
 }
 
 function curveEditorLayout() {
-  return { left: 18, right: 14, top: 14, bottom: 34 };
+  return { left: 10, right: 10, top: 14, bottom: 34 };
 }
 
 function canvasLogicalSize(canvas) {

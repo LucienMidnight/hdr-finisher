@@ -4,8 +4,8 @@ const out=path.resolve(__dirname,'../output/review/component-pass');fs.mkdirSync
 await page.evaluate(async()=>{const r=await fetch('/api/proof/test-pattern');await importByteFile(new File([await r.blob()],'component-pass.tiff',{type:'image/tiff'}));});await page.waitForFunction(()=>state.session&&document.body.dataset.workflow==='grade');
 if(process.argv.includes('--graphs-only')) {
  await page.locator('#grade-splitter').press('End');await page.locator('#grade-splitter').press('Home');
- assert.equal(await page.evaluate(()=>state.layout.gradeW),328);
- assert.equal(await page.locator('#grade-splitter').getAttribute('aria-valuemin'),'328');
+ assert.equal(await page.evaluate(()=>state.layout.gradeW),336);
+ assert.equal(await page.locator('#grade-splitter').getAttribute('aria-valuemin'),'336');
  const cdp=await page.context().newCDPSession(page),checks=[],shots=[];
  const shot=async(name,loc)=>{await loc.scrollIntoViewIfNeeded();await loc.screenshot({path:path.join(out,name+'.png')});shots.push(name+'.png');};
  const contained=async(selector)=>page.locator(selector).evaluate(e=>{
@@ -13,7 +13,7 @@ if(process.argv.includes('--graphs-only')) {
  return children.every(r=>r.left>=p.left-1&&r.right<=p.right+1&&r.top>=p.top-1&&r.bottom<=p.bottom+1)&&children.every((a,i)=>children.slice(i+1).every(b=>Math.min(a.right,b.right)-Math.max(a.left,b.left)<1||Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)<1));});
  for(const theme of ['default-dark','default-light']) {
  await page.evaluate(t=>{HDRApplicationShell.openSettings('appearance');document.querySelector(`[data-theme-option="${t}"]`).click();},theme);await page.locator('#settings-close').click();
- for(const [size,width,appWidth] of [['minimum',328,1100],['normal',380,2560]]) {
+ for(const [size,width,appWidth] of [['minimum',336,1100],['normal',380,2560]]) {
  await cdp.send('Emulation.setDeviceMetricsOverride',{width:appWidth,height:1440,deviceScaleFactor:1,mobile:false});
  await page.evaluate(w=>{state.layout.gradeW=w;applyLayoutState();setGradeMode('global');document.querySelectorAll('.control-group').forEach(e=>e.classList.add('collapsed'));for(const name of ['curves','hdr-equalizer'])document.querySelector(`[data-group="${name}"]`).classList.remove('collapsed');},width);
  await page.evaluate(()=>document.fonts.ready);
@@ -46,7 +46,7 @@ if(process.argv.includes('--graphs-only')) {
  fs.writeFileSync(path.join(out,'graph-checks.json'),JSON.stringify({checks,errors},null,2));
  const review=path.join(out,'index.html');let html=fs.existsSync(review)?fs.readFileSync(review,'utf8'): '<!doctype html><meta charset="utf-8"><title>Component review</title>';
  html=html.replace(/<section id="graph-followup">[\s\S]*?<\/section>/,'');
- html+='<section id="graph-followup"><h2>Grade graph follow-up</h2><p>328 px minimum (previously 320); 380 px normal. Default Dark and Default Light. Minimum-width toolbar at 1100 px. Transparent axis gutters, original Curves zone bands.</p>'+shots.map(f=>`<figure><figcaption>${f}</figcaption><img src="${f}"></figure>`).join('')+'</section>';
+ html+='<section id="graph-followup"><h2>Grade graph follow-up</h2><p>336 px minimum (previously 320); 380 px normal. Default Dark and Default Light. Minimum-width toolbar at 1100 px. Transparent axis gutters, original Curves zone bands.</p>'+shots.map(f=>`<figure><figcaption>${f}</figcaption><img src="${f}"></figure>`).join('')+'</section>';
  fs.writeFileSync(review,html);console.log('Graph follow-up passed',checks);return;
 }
 const crop=async(name,loc)=>{await loc.scrollIntoViewIfNeeded();await loc.screenshot({path:path.join(out,name+'.png')});};
