@@ -9,6 +9,26 @@ Started October 30, 2026 by Claude from the module PRDs and the October 30
 logs. Keep it current: whenever a change, test or log review produces a
 timing, update its row (range, date, commit, conditions) in the same commit.
 
+November 11 W7 delivery-yield smoke check (parent `53f7ec2e`, delivery-yield change;
+2560x1440 plain Electron, default mixed Library, default memory allowance):
+first/ten/twenty pictures 0.8/1.6/6.3 s, 29 shown by 90 s; sampled peak
+3.015 GB. The check failed its existing 250 ms drawing-gap limit (1,128 ms);
+no application errors were reported. No investigation or rerun of that
+unrelated responsiveness failure. This is a smoke check, not a paired speed
+measurement. Evidence: `codebase/output/quick-library-check/w7-delivery-yield/report.json`.
+
+November 11 W7 delivery checks (parent `53f7ec2e`, delivery-yield change;
+2560x1440 Electron, saved DSC07060, 4000 px, JPEG 95/4:4:4/full gain map,
+sharpening off): export plus full-size Proof and peak decoding took 42.862 s
+on the GPU and 314.084 s forced CPU. Both pairs are byte-identical and below
+800 nits. These are single validation turns, not a paired speed comparison;
+the CPU turn is slower than the earlier recorded 120-second class run and
+needs an ordinary user trial before any new performance investigation.
+Evidence: `codebase/output/w7-gpu-delivery-ceiling.log`.
+Independent GPU export/Proof/decoding turns at 3/2 GiB admission caps took
+44.238-45.236 s; both pairs and both independent exports are byte-identical.
+Evidence: `codebase/output/gpu-delivery-repeat/result.json`.
+
 ## How to read and update it
 
 * **Target:** an agreed target (with who agreed it and when) or
