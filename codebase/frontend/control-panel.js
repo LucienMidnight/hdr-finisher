@@ -43,13 +43,12 @@ function initializeControlPanel() {
   const stack = local.querySelector(".local-stack-surface");
   stack.after(actions);
   const newLabel = local.querySelector(".control-shared-label");
-  strip.before(newLabel);
+  const maskNote = document.createElement("p");
+  maskNote.className = "helper retouch-shared-note";
+  maskNote.textContent = "Masks apply to both renditions; HDR and SDR keep their own settings.";
+  strip.before(maskNote, newLabel);
   const heading = local.querySelector(".local-stack-heading");
-  const maskScope = document.createElement("small");
-  maskScope.className = "local-mask-scope";
-  maskScope.textContent = "HDR + SDR";
   heading.querySelector("span").textContent = "Masks";
-  heading.querySelector("span").after(maskScope);
   heading.append(local.querySelector(".local-stack-primary-actions"), document.getElementById("local-adjustments-bypass"));
   for (const section of local.querySelectorAll(".local-grade-section")) {
     const name = section.dataset.localGradeSection;

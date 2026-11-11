@@ -36,7 +36,6 @@
 #sdr-match-entire-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 body[data-grade-mode="local"] .sdr-match-entire-actions { display: none; }
 .lane-folder-shell > .lane-panel, .local-lane-folder > .local-grade-folder-body { border: 0; border-radius: 0; background: var(--panel); overflow: visible; }
-.local-mask-scope { color: var(--muted); font: var(--font-weight-medium) var(--font-size-min) var(--font-body); white-space: nowrap; }
 .retouch-shared-note { margin: 12px 0 0; }
 .retouch-content > .control-shared-label { padding-left: 0; }
 .retouch-content > .retouch-mode-switch { padding-left: 0; }
@@ -229,3 +228,4 @@ body[data-grade-mode="retouch"] .local-mask-overlay.editing[data-retouch-cursor=
 #control-mode-local .local-stack-surface::-webkit-scrollbar-track, #control-mode-retouch .repair-stack-surface::-webkit-scrollbar-track { background: var(--raised); box-shadow: none; }
 #control-mode-local .local-stack-surface::-webkit-scrollbar-thumb, #control-mode-retouch .repair-stack-surface::-webkit-scrollbar-thumb { background: var(--quiet); border: 2px solid var(--raised); border-radius: var(--radius-pill); }
 #control-mode-local .local-empty, #control-mode-retouch .local-empty { display: grid; place-items: center; min-height: calc(6 * var(--list-row-h)); margin: 0; padding: 0 12px; background: var(--input); color: var(--muted); text-align: center; font-size: var(--font-size-sm); }
+#control-mode-local .retouch-shared-note { margin: 12px 16px 0; }
