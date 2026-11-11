@@ -1023,3 +1023,33 @@ def test_lazy_peak_candidates_match_eager_results(monkeypatch):
     assert len(calls) == 2
     assert lazy.peak_candidates(PreviewKind.HDR, AdjustmentState()) == expected
     assert len(calls) == 2
+
+
+@pytest.mark.parametrize("request_scopes", [False, True])
+def test_preview_recovers_after_source_resize_failure(monkeypatch, request_scopes):
+    image = np.full((32, 48, 3), 0.18, dtype=np.float32)
+    cache = SessionRenderCache(image, None)
+    adjustments = AdjustmentState()
+    expected = SessionRenderCache(image, None).adjusted_frame(adjustments, PreviewKind.HDR, 256)
+    original = cache._proxies_locked
+
+    def fail_resize(*args, **kwargs):
+        raise OSError("Source resize failed")
+
+    def request(**kwargs):
+        if request_scopes:
+            return cache.scope_result(adjustments, PreviewKind.HDR, 256, "histogram", 64, 64, **kwargs)
+        return cache.adjusted_frame(adjustments, PreviewKind.HDR, 256, **kwargs)
+
+    monkeypatch.setattr(cache, "_proxies_locked", fail_resize)
+    with pytest.raises(OSError, match="Source resize failed"):
+        request()
+    monkeypatch.setattr(cache, "_proxies_locked", original)
+    deadline = time.monotonic() + 1.0
+    # The deadline turns the old infinite wait into a bounded test failure.
+    recovered = request(is_current=lambda: time.monotonic() < deadline)
+    if request_scopes:
+        baseline = SessionRenderCache(image, None).scope_result(adjustments, PreviewKind.HDR, 256, "histogram", 64, 64)
+        assert recovered.model_dump() == baseline.model_dump()
+    else:
+        np.testing.assert_array_equal(recovered, expected)

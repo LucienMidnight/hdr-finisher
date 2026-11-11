@@ -1442,7 +1442,8 @@ def _adaptive_denoise_model(session_id, kind, long_edge, edit_revision, geometry
     # size and geometry, so the picture never depends on which geometry was
     # seen first.
     source_epoch = session.render_cache.source_epoch
-    key = (session_id, kind.value, long_edge, source_epoch, json.dumps(authoritative_geometry, sort_keys=True))
+    key = (session_id, kind.value, long_edge, source_epoch, session.adjustments.sdr.use_authored_base,
+           json.dumps(authoritative_geometry, sort_keys=True))
 
     def measure() -> dict:
         revision = session.edit_revision

@@ -8,6 +8,16 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 11: backend preview recovery and SDR noise identity
+
+A failed source-proxy resize now releases the pending render, so the next
+preview or scope request can retry instead of waiting indefinitely. Reduced
+SDR noise measurements distinguish the authored SDR base from the scene
+source; switching that choice no longer reuses the other picture's noise
+model. Successful export/Proof rendering and files are unchanged. Regression
+checks compare recovered preview pixels/scopes and cached noise models with
+fresh results.
+
 ## November 8: movable Navigate window
 
 The Navigate window can be moved by dragging its labelled title bar, marked
