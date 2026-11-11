@@ -18,9 +18,26 @@ async function resolveInterpretation(page, {
   if (transfer === "linear") {
     await page.locator("#interpretation-linear-reference").selectOption(reference);
   }
-  await page.locator("#apply-interpretation").click();
-  await page.waitForFunction(() => state.session?.analysis?.needs_color_override === false,
-    null, { timeout: 120000 });
+  const sessionId = await page.evaluate(() => state.session.session_id);
+  // Watch the actual Apply response before waiting for the UI. A successful
+  // interpretation can still be unresolved (for example a linear TIFF without
+  // HDR headroom); waiting longer cannot clear that classification.
+  const [response] = await Promise.all([
+    page.waitForResponse(response => response.request().method() === "POST"
+      && new URL(response.url()).pathname === `/api/session/${sessionId}/interpretation`,
+      { timeout: 120000 }),
+    page.locator("#apply-interpretation").click(),
+  ]);
+  const payload = await response.json();
+  if (!response.ok() || payload.session?.analysis?.needs_color_override !== false) {
+    const current = await page.evaluate(() => ({ source: state.session?.source, analysis: state.session?.analysis }));
+    throw new Error(`Source interpretation did not resolve: ${JSON.stringify({
+      status: response.status(), request: response.request().postDataJSON(),
+      source: payload.session?.source, analysis: payload.session?.analysis, detail: payload.detail, current,
+    })}`);
+  }
+  await page.waitForFunction(id => state.session?.session_id === id && state.session.analysis?.needs_color_override === false,
+    sessionId, { timeout: 120000 });
   await page.locator("#interpretation-gate").waitFor({ state: "hidden", timeout: 120000 });
 }
 

@@ -1,3 +1,20 @@
+### November 11: delivery-driver source fixtures (W17)
+
+The Proof-size and photo-framing drivers now use tagged sRGB PNG fixtures.
+The noisy Proof source retains its 4200 x 2800 samples; the framing source
+retains its 96 x 64 geometry and encodes the previous linear scene as sRGB.
+All delivery dimensions, perceptual limits, ceiling and Proof/export identity
+checks remain in place. The framing driver selects Show all files before
+opening its PNG in the Library. Production interpretation and rendering are unchanged.
+
+Both former TIFFs successfully applied manual primaries/transfer (HTTP 200,
+manual mode, color-confident source), but the current classifier
+keeps sub-1.0 linear TIFFs HDR_LINEAR_UNCONFIRMED and SDR TIFFs SDR_ONLY with
+needs_color_override set. Existing API coverage explicitly expects the former.
+The shared driver helper now checks the Apply response and reports its request,
+classification and live session instead of waiting 120 seconds for a gate that
+cannot clear. The underlying review policy is unchanged by this test repair.
+
 ### November 11: source interpretation replies keep their owner
 
 The Grade source-interpretation UI discards delayed successes and failures
