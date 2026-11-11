@@ -1,5 +1,54 @@
 # Module PRD: Export and Proof
 
+## November 11: repeatability investigation (W5, unresolved)
+
+No rendering fix is claimed. The saved DSC07060 grade at 4000 x 2671,
+Ultra HDR JPEG 95, 4:4:4, full gain map and no output sharpening produced
+byte-identical independent GPU exports, first with ordinary admission and
+then with 3 GiB versus 2 GiB delivery admission caps. Each full-size Proof
+was byte-identical to its export; decoded peaks were 798.184 nits against
+the saved 800-nit target. Repeated-export perceptual mean and p99.9 are zero.
+
+The tile encoder uses the scheduler's fixed default tile size; the memory
+budget controls admission and cache retention. That does not establish that
+all neighbourhood processing is seam-free, or rule out a memory-sensitive
+failure elsewhere. The November 8 difference (HDR mean 0.853 / p99.9 26.50)
+remains unexplained. The machine's previously recorded faulty VRAM is another
+possible cause, not a confirmed diagnosis. Do not change export pixels or
+relax the mean <1 / p99.9 <=3 delivery limits on this evidence.
+
+`tests/gpu-delivery-repeat.js` is a core export/Proof release driver. Fresh
+sessions prevent the export/Proof pair cache from answering the second export;
+an idle test activity client varies admission room without allocating dummy
+VRAM or changing production budgets. It checks repeated finished files against
+the existing perceptual helper, full-size Proof identity and every decoded
+ceiling, and optionally reports the forced-CPU comparison separately (`--cpu`). Temporary exports
+are removed; only `output/gpu-delivery-repeat/result.json` is retained.
+Validation: the final repeatability driver passes; the expanded diagnostic
+also completed the existing saved-grade ceiling/Proof checks on both GPU and
+CPU. `gpu-delivery-smoke` passes its Denoise acceptance and SDR delivery limits;
+its unchanged stricter HDR p99.9 failure is 3.377 (mean 0.780), with a
+666.415-nit decoded peak under 1000. No full preview/export parity matrix was
+run because no production rendering or encoding code changed. Node: 905 pass.
+Final Python: 3238 pass / 54 skip / one unrelated failure,
+`test_library_live.py::test_remembered_failure_does_not_hide_current_grade_cached_scene`.
+Rebased onto local main `b9980767` (documentation/driver mapping only); Node
+was rerun against the merged registry. No push. Output remains below 100 GB.
+
+Noise measurement is intentionally reused as in ordinary exports; this does
+not qualify independent cold measurements or every memory pressure condition.
+The ceiling driver's fixture application also follows the opened session's
+canonical source path, allowing worktree fixture junctions without replacing
+the session source. No production code or export pixels changed.
+
+The forced-CPU comparison does **not** pass the unchanged delivery limits:
+HDR mean 1.338 / p99.9 10.052; SDR mean 0.253 / p99.9 3.052. Both forced-CPU
+files peak at 798.493 nits and are byte-identical to one another. This is a
+baseline measurement on unchanged production code, not a repeatability fix
+or a new parity acceptance. The v1 JPEG agreement limitation remains open;
+retained metrics: `output/gpu-delivery-repeat/cpu-comparison.json`.
+
+
 ## November 5: delivery-job buffer lifetime
 
 The hidden delivery worker ends each job's async frame before waiting for the

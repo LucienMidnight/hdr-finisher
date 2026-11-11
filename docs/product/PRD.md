@@ -325,6 +325,9 @@ Found during the November 8 release check. Each needs a brief before work starts
    graphics memory). Affects export; Proof reuses the export's render, so
    it no longer shows the difference. See
    [export-and-proof](modules/export-and-proof.md).
+   November 11 W5: not reproduced with independent sessions and 3/2 GiB
+   admission caps (byte-identical files); cause still unconfirmed. Core
+   repeatability regression added; no rendering change.
 2. **Library delete, rename and move are slow.** About 10 seconds each with
    Steve's cache, and saving marks or settings waits during that time. See
    [photo-library](modules/photo-library.md).

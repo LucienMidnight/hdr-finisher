@@ -513,6 +513,7 @@ on this branch only. Results: `codebase/output/test-grade-gpu-raw/paused-results
 | Full-size single export | under 15 s | 24 s | same | Not met |
 | Full-size Ultra HDR export, CPU | — | about 33 s | Oct 19 | Baseline |
 | GPU export then full-size Proof of the same grade | — | 57 s (was 133 s: Proof rendered again) | Nov 8, `gpu-delivery-ceiling`, DSC07060, 4000 px long edge, includes app start-up work; Proof now reuses the export's render | Baseline |
+| Independent export plus full-size Proof, W5 repeatability probe | — | GPU 56.3–80.3 s per pair; forced CPU 411.7 s | Nov 11, parent `40c633c9`, DSC07060 saved 800-nit grade, 4000 px, 2560x1440 Electron, fast suites running concurrently; includes two peak decodes; diagnostic, not a speed comparison | No timing qualification |
 | Ultra HDR JPEG file write, 42 MP, by step | Part of the single-export target | 13.1 s total: HDR half-float prepare and raw write 1.95 s; SDR to 8-bit sRGB with dither 2.33 s; SDR JPEG 0.23 s; raw SDR write 0.27 s; ultrahdr_app encode 2.56 s; gain-map clean-up pass 5.43 s (its tool runs 0.21 s, the rest is Python filtering) | Nov 2, main `120a394`, synthetic 7968×5304 picture, quality 95, 4:4:4, full-size gain map, 12-core machine; pixel steps single-threaded, filter 2–3 threads | Ceiling check (philosophy 3): per-pixel steps are about 9.4 s, about 39% of a 24 s export, so not a GPU case; using all cores is the cheaper route |
 
 Ceiling checks, November 2 (philosophy 3; no code built). AVIF gain-map

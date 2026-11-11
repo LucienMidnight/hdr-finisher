@@ -605,3 +605,7 @@ Graph-only paint is in the existing curve/equalizer/highlight/scope drawing file
 `frontend/export-ui.js` keeps the export log under Advanced settings;
 progress is reported through the shared status bar. Full-size Proof reuses
 the export delivery render; CPU and GPU are compared within perceptual tolerances.
+
+November 11 export repeatability: `tests/gpu-delivery-repeat.js` forces independent
+saved-grade exports at different admission caps; `tests/helpers/export_repeat_compare.py`
+compares complete decoded renditions with `delivery_colour.py` limits. No render path changed.

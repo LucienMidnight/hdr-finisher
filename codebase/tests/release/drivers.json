@@ -3950,6 +3950,7 @@
         "method": "electron"
       }
     },
+    {"path":"tests/gpu-delivery-repeat.js","areas":["export-proof"],"tier":"core","protects":"Independent saved-grade exports under 3 GiB and 2 GiB memory admission agree within existing delivery limits; full-size Proof identity and HDR ceiling; Optional --cpu comparison.","launch":{"method":"electron"}},
     {
       "path": "tests/gpu-delivery-ceiling.js",
       "areas": [

@@ -32,6 +32,8 @@ const harness=global.HDRFinisherElectronTestHarness;
     const opened=await api("/api/desktop/session",{grant:grant.grant,raw_import_settings:document.source.raw_import_settings});
     const id=opened.session.session_id;
     const state=await api(`/api/session/${id}/edit-state`,undefined,"GET");
+    // Worktree fixture junctions resolve to the canonical source in the backend.
+    document.source=state.document.source;
     await api(`/api/session/${id}/edit-state?expected_revision=${state.revision}`,document,"PUT");
     const results=[];
     for(const force_cpu of process.argv.includes("--cpu-only")?[true]:process.argv.includes("--gpu-only")?[false]:[false,true]){
