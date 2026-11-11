@@ -1,3 +1,21 @@
+### November 11: accepted manual interpretation clears confirmation gates
+
+Low-headroom linear files and SDR TIFF/HEIF files no longer remain blocked
+once the loader accepts manual primaries and a resolvable transfer. Analysis
+retains the measured classification; the linear badge reports manual
+confirmation instead of asking again. Auto Detect still requires review for
+these ambiguous sources. A missing or failed HEIC gain map still blocks
+export because primaries and transfer cannot repair its missing HDR data.
+No decoded pixels, colour maths or automatic HDR classification changed.
+API regressions cover real linear and untagged SDR TIFF uploads, Apply,
+partial choices and switching back to Auto Detect; a HEIC regression keeps
+the missing-headroom gate for both automatic and manual interpretations.
+Validation: 921 fast Node checks passed. Full Python: 3,248 passed, 55 skipped,
+with one old EXR expectation that still required the stuck gate. That
+expectation now requires the accepted manual interpretation to clear it;
+all 146 loader/API/core checks pass after the correction. Electron and GPU
+qualification are left to the release coordinator.
+
 ### November 11: delivery-driver source fixtures (W17)
 
 The Proof-size and photo-framing drivers now use tagged sRGB PNG fixtures.
@@ -8,12 +26,13 @@ checks remain in place. The framing driver selects Show all files before
 opening its PNG in the Library. Production interpretation and rendering are unchanged.
 
 Both former TIFFs successfully applied manual primaries/transfer (HTTP 200,
-manual mode, color-confident source), but the current classifier
-keeps sub-1.0 linear TIFFs HDR_LINEAR_UNCONFIRMED and SDR TIFFs SDR_ONLY with
-needs_color_override set. Existing API coverage explicitly expects the former.
+manual mode, color-confident source), but the classifier at the time kept sub-1.0 linear TIFFs HDR_LINEAR_UNCONFIRMED and SDR TIFFs SDR_ONLY with
+needs_color_override set. The confirmation-gate fix above resolves this
+and updates the old API expectation.
 The shared driver helper now checks the Apply response and reports its request,
 classification and live session instead of waiting 120 seconds for a gate that
 cannot clear. The underlying review policy is unchanged by this test repair.
+
 
 ### November 11: source interpretation replies keep their owner
 

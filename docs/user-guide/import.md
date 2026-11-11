@@ -86,6 +86,13 @@ Classification is diagnostic, not a quality score. An image can be genuine HDR a
 
 Use **Manual Override** only when you know the upstream encoding. Select primaries and transfer separately. An unresolved source keeps its warning and blocks export until both are known; **Set manually** opens these controls.
 
+After you apply a complete interpretation, low-headroom linear files and SDR
+TIFF/HEIF files can proceed without repeated confirmation. The classification
+still describes the measured image; confirming a source does not add HDR
+headroom. Switching back to Auto Detect can restore the warning. A HEIC gain
+map that cannot be applied still requires attention: choosing primaries and
+transfer cannot supply missing headroom metadata or repair a decode failure.
+
 ### Color Primaries
 
 - Scene-Linear sRGB / Rec.709

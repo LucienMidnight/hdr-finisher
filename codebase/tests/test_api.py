@@ -1212,7 +1212,7 @@ def test_real_exr_interpretation_override_and_auto_reset_preserve_review_state()
     assert manual_session["source"]["color_space_confident"] is True
     assert manual_session["source"]["linear_reference"] == "diffuse_white_1_0"
     assert manual_session["analysis"]["classification"] == "HDR_LINEAR_UNCONFIRMED"
-    assert manual_session["analysis"]["needs_color_override"] is True
+    assert manual_session["analysis"]["needs_color_override"] is False
 
     automatic = client.post(
         f"/api/session/{session_id}/interpretation",
@@ -1470,3 +1470,56 @@ def test_overlay_omits_grain_without_changing_the_saved_grade(monkeypatch) -> No
     assert seen and not seen[0].hdr.film_look.grain_enabled
     assert session.adjustments.hdr.film_look.grain_enabled
     assert session.adjustments.hdr.film_look.grain_amount == 75
+
+
+@pytest.mark.parametrize("linear", [True, False], ids=["linear-low-headroom", "untagged-sdr"])
+def test_tiff_manual_interpretation_clears_gate_and_auto_restores_it(linear) -> None:
+    import numpy as np
+    import tifffile
+    from PIL import ImageCms
+
+    # Real TIFF bytes go through upload, loader, session and the Apply endpoint.
+    buffer = BytesIO()
+    extra_tags = []
+    if linear:
+        profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+        old_name = "sRGB built-in".encode("utf-16-be")
+        new_name = "sRGB linear  ".encode("utf-16-be")
+        assert old_name in profile
+        profile = profile.replace(old_name, new_name)
+        extra_tags = [(34675, "B", len(profile), profile, False)]
+    samples = np.full((12, 16, 3), 0.25 if linear else 64,
+                      dtype=np.float32 if linear else np.uint8)
+    tifffile.imwrite(buffer, samples, photometric="rgb", metadata=None, extratags=extra_tags)
+    expected_class = "HDR_LINEAR_UNCONFIRMED" if linear else "SDR_ONLY"
+    upload = client.post("/api/session", files={"file": ("low-headroom.tiff", buffer.getvalue(), "image/tiff")})
+    assert upload.status_code == 200
+    initial = upload.json()["session"]
+    session_id = initial["session_id"]
+    try:
+        assert initial["analysis"]["classification"] == expected_class
+        assert initial["analysis"]["peak_linear"] <= 1.0
+        assert initial["analysis"]["needs_color_override"] is True
+        transfer = "LINEAR" if linear else "sRGB"
+        # Transfer alone cannot resolve unknown primaries in the untagged file.
+        if not linear:
+            partial = client.post(f"/api/session/{session_id}/interpretation",
+                                  json={"transfer_function": transfer})
+            assert partial.status_code == 200
+            assert partial.json()["session"]["analysis"]["needs_color_override"] is True
+        manual = client.post(f"/api/session/{session_id}/interpretation",
+                             json={"color_space": "sRGB", "transfer_function": transfer})
+        assert manual.status_code == 200
+        confirmed = manual.json()["session"]
+        assert confirmed["source"]["interpretation_mode"] == "manual"
+        assert confirmed["source"]["color_space_confident"] is True
+        assert confirmed["analysis"]["classification"] == expected_class
+        assert confirmed["analysis"]["needs_color_override"] is False
+        automatic = client.post(f"/api/session/{session_id}/interpretation", json={})
+        assert automatic.status_code == 200
+        restored = automatic.json()["session"]
+        assert restored["source"]["interpretation_mode"] == "auto"
+        assert restored["analysis"]["classification"] == expected_class
+        assert restored["analysis"]["needs_color_override"] is True
+    finally:
+        store.clear()

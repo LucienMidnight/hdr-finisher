@@ -42,6 +42,13 @@ def classify_hdr(
     linear_hint = transfer == "LINEAR"
     encoded_hint = transfer in {"PQ", "HLG"}
     needs_override = bool(metadata.get("needs_color_override"))
+    # The loader clears this flag only after accepting a manual interpretation.
+    # Confirmation heuristics must not undo it; decode failures below still gate.
+    manual_interpretation_accepted = bool(
+        (metadata.get("user_override") or {}).get("color_space")
+        and (metadata.get("transfer_function") or transfer)
+        and metadata.get("needs_color_override") is False
+    )
     developed_camera_raw = bool(
         metadata.get("raw_input") and metadata.get("decoder_normalized_to_acescg")
     )
@@ -109,15 +116,18 @@ def classify_hdr(
         latitude = SourceLatitude.WIDE
     elif linear_hint:
         classification = HDRClassification.HDR_LINEAR_UNCONFIRMED
-        badge = "Scene-linear file detected with no values above 1.0. Confirm whether this should be treated as HDR."
-        needs_override = True
+        if manual_interpretation_accepted:
+            badge = "Scene-linear interpretation confirmed manually; no values above 1.0 detected."
+        else:
+            badge = "Scene-linear file detected with no values above 1.0. Confirm whether this should be treated as HDR."
+        needs_override = not manual_interpretation_accepted
         latitude = SourceLatitude.WIDE
     else:
         classification = HDRClassification.SDR_ONLY
         badge = "No HDR headroom or transfer metadata detected. Treating this file as SDR."
         latitude = SourceLatitude.NARROW if suffix in {".tif", ".tiff", ".heic", ".heif"} else SourceLatitude.MEDIUM
         if suffix in {".tif", ".tiff", ".heic", ".heif"}:
-            needs_override = True
+            needs_override = not manual_interpretation_accepted
 
     return HDRAnalysis(
         classification=classification,
