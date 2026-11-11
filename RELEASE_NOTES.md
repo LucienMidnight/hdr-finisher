@@ -35,7 +35,7 @@
 - The preview no longer hangs after a resize error, and Denoise no longer reuses the previous picture's noise measurement after the SDR base changes.
 - Typing a percentage into a slider no longer jumps to the maximum.
 - A normal graphics-memory hand-over between Grade and an export is no longer reported as an error.
-<!-- coordinator: add W9/W10 fixes -->
+- After using Denoise or Retouch, other Grade sliders respond about three times faster, and return to full speed when the tool is turned off.
 
 ## Changed or removed
 
