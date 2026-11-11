@@ -10,7 +10,8 @@ module.exports = async function(page) {
   const applyLook=async id=>{
    state.groupPresetContext=groupPresetContextForElement(group);
    const preset=builtInGroupPresets(state.groupPresetContext).find(p=>p.id===`built-in:${id}`);
-   check(preset,`missing Look ${id}`); applyGroupPreset(preset); await syncGlobalEditState();
+   // Preset validation reads the saved-grade API before installing the Look.
+   check(preset,`missing Look ${id}`); await applyGroupPreset(preset); await syncGlobalEditState();
   };
   const checkPanel = () => {
    for (const section of group.querySelectorAll('[data-film-section]')) {
@@ -42,7 +43,7 @@ module.exports = async function(page) {
     for(const look of FILM_LOOK_PRESETS) {
      await applyLook(look.id);checkPanel();
      const expected=HDRFilmCharacter.expand(look.recipe);
-     for(const key of Object.keys(expected)) check(JSON.stringify(state.adjustments[lane].film_look[key])===JSON.stringify(expected[key]),`${lane} ${look.id} replacement ${key}`);
+     for(const key of Object.keys(expected)) check(JSON.stringify(state.adjustments[lane].film_look[key])===JSON.stringify(expected[key]),`${lane} ${look.id} replacement ${key}: actual ${JSON.stringify(state.adjustments[lane].film_look[key])}, expected ${JSON.stringify(expected[key])}`);
     }
     const after=structuredClone(state.adjustments);
     delete outside[lane].film_look;delete after[lane].film_look;
@@ -55,7 +56,7 @@ module.exports = async function(page) {
     const stored=saved.at(-1).values[`${lane}.film_look`];
     check(!Object.hasOwn(stored,'grain_amount') && stored.push_pull===1,'saved Look expanded stock defaults');
     await applyLook('portra-400-natural');
-    state.groupPresetContext=groupPresetContextForElement(group);applyGroupPreset(saved.at(-1));await syncGlobalEditState();
+    state.groupPresetContext=groupPresetContextForElement(group);await applyGroupPreset(saved.at(-1));await syncGlobalEditState();
     check(state.adjustments[lane].film_look.push_pull===1 && !state.adjustments[lane].film_look.stock_overrides.includes('grain_amount'),'saved Look reapply');
     HDRFilmCharacter.select(state.adjustments[lane].film_look,'kodak_gold_200');syncControlsFromState();await syncGlobalEditState();
     check(state.adjustments[lane].film_look.grain_film_format==='super16' && state.adjustments[lane].film_look.grain_amount===HDRFilmCharacterData.stocks.kodak_gold_200.defaults.grain_amount,'stock swap in Look');
