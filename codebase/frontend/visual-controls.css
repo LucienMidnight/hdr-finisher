@@ -647,3 +647,6 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 /* The label row sizes to its text so a slider handle never rides up into the label. */
 :root :is(.instrument-slider-control, .local-grade-controls .instrument-slider-control, .local-brush-control.instrument-slider-control, .local-adjustment-opacity.instrument-slider-control) { grid-template-rows: auto var(--instrument-slider-hit-h); }
 :root .instrument-slider-control > .range-shell { margin-bottom: 0; align-self: start; }
+
+/* Selection on a button is the pressed plate and accent ink, never an accent outline or border (Steve, November 11, 2026). Photo and folder tiles keep their selection frame. */
+:root :is(button, [role="button"], [role="tab"]):is(.active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):not(.batch-photo, .directory-browser-entry, .hsl-channel, .accent-option) { border-color: var(--plate-edge) !important; outline: none; }

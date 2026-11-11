@@ -9033,7 +9033,6 @@ img:not([src]), img[src=""] { visibility:hidden; }
 #retouch-list { padding-left:0; list-style:none; max-height:180px; overflow:auto; }
 #retouch-list li { display:flex; align-items:center; gap:6px; margin-top:5px; }
 #retouch-list li button:first-of-type { flex:1; text-align:left; }
-.retouch-panel button[aria-pressed="true"] { outline:1px solid currentColor; }
 
 /* Selection outline sits above both GPU canvases and thumbnail images. */
 .batch-photo { position: relative; isolation: isolate; }
