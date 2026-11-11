@@ -176,7 +176,7 @@ async function gestureChecks(page,lane,zoom) {
         await act(); await stable(page,false);
         const ms=await page.evaluate(t=>performance.now()-t,t); await stable(page);
         const pixels=await signature(page);
-        row.observations.push({ms,pixels,expectedPicture:expected==='identity'?pixels===baseline:pixels!==baseline});
+        row.observations.push({ms,pixels,rawImport:batch==='raw-highlights'?await page.evaluate(()=>state.editDocument?.source?.raw_import_settings):undefined,expectedPicture:expected==='identity'?pixels===baseline:pixels!==baseline});
         await restore(); await stable(page);
         row.resetPixelsMatch &&= (await signature(page))===baseline;
       }
@@ -212,6 +212,9 @@ async function gestureChecks(page,lane,zoom) {
         await page.locator('#apply-raw-settings').click();
         await page.waitForFunction(g=>state.importGeneration>g&&!state.importInProgress,generation,{timeout:120000});
         await stable(page);
+        const saved=await page.evaluate(()=>state.editDocument.source.raw_import_settings.lens);
+        const keys={'lens-mode':'mode','lens-distortion':'distortion','lens-ca':'chromatic_aberration','lens-vignetting':'vignetting','lens-focal':'focal_length_mm','lens-aperture':'aperture','lens-distance':'focus_distance_m'};
+        if(String(saved[keys[id]])!==String(value))throw Error(`RAW ${id} did not persist: ${saved[keys[id]]} expected ${value}`);
       };
       await observe(`raw.import.${id}`,()=>apply(value),()=>apply(original),'identity');
     }
@@ -262,7 +265,7 @@ async function main() {
         };
       }
     });
-    const input=path.resolve(opt('--input', args.includes('--followup') && ['black-and-white','color-grading','detail','hdr-color','sdr-color'].includes(batch) ? 'output/test-photos/grade-colour-chart.tiff' : 'output/test-photos/grade-24mp.tiff'));
+    const input=path.resolve(opt('--input', args.includes('--followup') && ['black-and-white','color-grading','detail','hdr-color','sdr-color','hdr-tone','sdr-tone'].includes(batch) ? 'output/test-photos/grade-colour-chart.tiff' : 'output/test-photos/grade-24mp.tiff'));
     if(batch==='raw-highlights' && args.includes('--followup')) {
       const disposable=path.resolve('output/test-photos/grade-review-raw'+path.extname(input));
       if(!fs.existsSync(disposable))fs.copyFileSync(input,disposable);
@@ -378,7 +381,7 @@ async function main() {
         document.querySelector(`[data-group="${group}"]`)?.classList.remove('collapsed');
         for (const d of document.querySelectorAll(`[data-group="${group}"] details`)) d.open = true;
       }, batch);
-      for (const zoom of opt('--zooms',batch==='raw-highlights'?'fit':'fit,actual').split(',')) {
+      for (const zoom of (args.includes('--followup')&&batch==='film-look' ? 'actual,fit' : opt('--zooms',batch==='raw-highlights'?'fit':'fit,actual')).split(',')) {
         await page.evaluate(zoom => setZoomMode(zoom), zoom); await stable(page);
         if(batch==='denoise') {
           const started=Date.now(); await page.evaluate(()=>recalculateDenoise()); await stable(page);
@@ -388,7 +391,7 @@ async function main() {
         if(batch === 'curves') { await curves(page,lane,zoom); continue; }
         if(batch === 'match') { await match(page,zoom); continue; }
         for (const c of controls) {
-          if (!only.test(controlName(c))) continue;
+          if (!only.test(controlName(c)) && !(args.includes('--followup') && batch==='film-look' && (zoom==='actual' || c.path?.endsWith('.grain_amount')))) continue;
           if(budgetExceeded()) { report.stopped='Measurement allowance reached'; return; }
           if (Date.now() - startedAt > 14 * 60000) { report.stopped = '14 minute batch limit'; return; }
           const selector = c.id ? `#${c.id}` : c.path ? `[data-path="${c.path}"]` : c.data.sectionPath ? `[data-section-path="${c.data.sectionPath}"]`
@@ -434,6 +437,9 @@ async function main() {
             if(c.data.sectionPath?.endsWith('.tone_section_enabled')) dependencies.push([`${lane}.exposure`,.5]);
             if(c.data.sectionPath?.endsWith('.color_section_enabled')) dependencies.push([`${lane}.saturation`,30]);
             if(c.data.sectionPath?.endsWith('.detail_section_enabled')) dependencies.push(['current.detail.texture_amount',50]);
+            if(batch.endsWith('-highlights') && c.path?.endsWith('_softness')) dependencies.push([`${lane}.highlight_compression_mode`,'soft_ceiling']);
+            if(batch.endsWith('-highlights') && c.path?.includes('_manual_peak_')) dependencies.push([`${lane}.highlight_compression_peak_measurement`,'manual']);
+            if(batch.endsWith('-highlights') && c.path?.endsWith('_attenuation')) dependencies.push([`${lane}.highlight_compression_color_handling`,'agx_attenuate']);
             if(batch==='hdr-highlights') dependencies.push(['hdr.exposure',3],['hdr.highlight_section_enabled',true]);
             if(batch==='sdr-highlights') dependencies.push(['sdr.exposure',1]);
             const match = c.path?.match(/^(.*\.(?:shadows|midtones|highlights))_(center|width)$/);
