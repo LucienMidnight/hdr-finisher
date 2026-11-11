@@ -160,7 +160,7 @@ def _open_document(store, document, source_path, reuse_session_id):
         )
     # Replay before replacing any live document or its last valid pixels.
     from copy import copy
-    from .retouch_source import build_repaired_source, install_repaired_source
+    from .retouch_source import install_repaired_source
     from .sessions import _source_mip_identity
     candidate_session = copy(session)
     candidate_session.retouch_worker = None

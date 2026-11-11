@@ -9,7 +9,6 @@ No Qt, paint-device, colour-space or pyramid code is imported.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
 
 import numpy as np
 
