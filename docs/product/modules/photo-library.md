@@ -8799,3 +8799,19 @@ Desktop: 27 pass, one unchanged macOS chrome expectation fails. File-command
 Electron passes; the standard smoke drawing-gap failure above is retained,
 not rerun. The rebase preserved both workers' appended desktop notes. The
 cache accounting and IPC code are unchanged from the app-tested versions.
+
+## November 11: GPU recovery release-driver repair
+
+The synthetic unsupported-source check now intercepts worker source downloads
+as well as window requests. Its previous window.fetch hook missed the GPU
+request, so the PNG developed successfully on the GPU and the CPU counter
+correctly remained zero. Real request tracing reproduced that failure.
+No application behavior, retry policy, picture size or budget changed.
+
+The repaired driver requires one synthetic GPU rejection, its CPU fallback
+event, exactly one CPU development including cached reopen, the existing
+one-attempt allocation/two-attempt device-loss limits, and no stuck grants or
+broken-photo records. Focused Electron passes under the shared graphics lock
+at 2560x1440; fast Node passes after rebasing onto local main (921 checks).
+Backend unchanged; Python not rerun for this driver-only repair. Evidence:
+`codebase/output/w15-gpu-recovery/{baseline,driver,node-rebased}.log`.
