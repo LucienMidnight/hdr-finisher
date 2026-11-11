@@ -86,7 +86,7 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root :is(.checkbox-row, .film-module-toggle, .proof-enable-row, .gradient-luma-toggle) > input[type="checkbox"]:checked::after { content: "ON"; right: auto; left: 5px; color: var(--accent-strong); }
 :root .instrument-slider-control { min-height: var(--instrument-control-row-min-h); padding-block: 3px 1px; }
 :root .control-heading { min-height: var(--instrument-control-heading-min-h); }
-:root .control-heading label, :root .instrument-control-label { color: var(--body); font: var(--font-weight-regular) var(--font-size-sm) var(--font-body); }
+:root .control-heading label, :root .instrument-control-label { color: var(--body); font: var(--font-weight-regular) var(--font-size-sm)/var(--line-height-tight) var(--font-body); }
 :root .control-row output { color: var(--muted); border: 1px solid transparent; border-radius: var(--radius-1); padding: 0 4px; }
 :root .control-row.modified output { color: var(--text); }
 :root .control-row:hover output { border-color: var(--border); }
@@ -202,7 +202,7 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root[data-input-modality="pointer"] .batch-unit-field:focus-within { outline: none; }
 
 /* One header geometry for the main window and the embedded Library. */
-:root :is(.viewer-bar, .rail-title-row, .grade-header, .workflow-rail-header, .sheet-header, .control-title-row, .library-heading, .library-toolbar, .batch-header) {
+:root :is(.viewer-bar, .dock-bar, .rail-title-row, .grade-header, .workflow-rail-header, .sheet-header, .control-title-row, .library-heading, .library-toolbar, .batch-header) {
  height: var(--panel-header-h); min-height: var(--panel-header-h); max-height: var(--panel-header-h);
  box-sizing: border-box; flex-shrink: 0; padding-block: 0; align-items: center;
  /* The divider is drawn inside the bar so it doesn't take height: controls get the same space above and below. */
@@ -636,3 +636,14 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 
 /* Keep Exposure Bands actions on one line at the token-owned rail minimum. */
 :root .tone-equalizer-actions > * { white-space: nowrap; flex-shrink: 0; }
+
+/* The Scopes bar matches the preview bar: same height, 30px controls centred, room between dropdowns. */
+:root .analysis-dock { grid-template-rows: var(--panel-header-h) minmax(0, 1fr); }
+:root .analysis-dock.collapsed { grid-template-rows: var(--panel-header-h) 0; }
+:root .workspace-main:has(.analysis-dock.collapsed) { grid-template-rows: minmax(320px, 1fr) var(--splitter-size) var(--panel-header-h); }
+:root .scope-header-controls, :root .compact-workspace .scope-header-controls { gap: 12px; }
+:root :is(.scope-zoom-control, .scope-detail-control) { gap: 8px; }
+:root .scope-header-controls .scope-mode-select { height: var(--panel-control-h); min-height: var(--panel-control-h); }
+/* The label row sizes to its text so a slider handle never rides up into the label. */
+:root :is(.instrument-slider-control, .local-grade-controls .instrument-slider-control, .local-brush-control.instrument-slider-control, .local-adjustment-opacity.instrument-slider-control) { grid-template-rows: auto var(--instrument-slider-hit-h); }
+:root .instrument-slider-control > .range-shell { margin-bottom: 0; align-self: start; }
