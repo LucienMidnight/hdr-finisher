@@ -132,6 +132,3 @@ def probe_capabilities() -> dict[str, CapabilityInfo]:
     return dict(_probe_capabilities_cached())
 
 
-def invalidate_capability_cache() -> None:
-    """Invalidate after executable search-path or bundled-binary configuration changes."""
-    _probe_capabilities_cached.cache_clear()

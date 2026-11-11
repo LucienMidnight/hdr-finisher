@@ -9,7 +9,7 @@ No Qt, paint-device, colour-space or pyramid code is imported.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Callable
 
 import numpy as np
 
@@ -101,12 +101,6 @@ class RepairPatch:
     @property
     def nbytes(self):
         return self.pixels.nbytes + self.source_centres.nbytes + self.target_centres.nbytes
-
-
-class RepairEngine(Protocol):
-    """Future Heal/Clone/GPU engines can implement the same ROI/job boundary."""
-    def solve(self, request: RepairInput, settings: InpaintSettings,
-              checkpoint: Callable[[], None]) -> RepairPatch: ...
 
 
 def _box_sum(mask, radius):

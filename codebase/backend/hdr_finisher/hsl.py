@@ -11,7 +11,6 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MAX_RANGES = 32
-MAX_CUSTOM_CHANNELS = 4
 MAX_CHANNELS = 13
 
 

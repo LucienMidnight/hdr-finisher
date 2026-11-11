@@ -140,10 +140,6 @@ _EXPECTED = {
 }
 
 
-def expected_format(path) -> str | None:
-    return _EXPECTED.get(Path(str(path)).suffix.lower())
-
-
 _RGB_SUFFIXES = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".exr", ".hdr", ".pfm", ".heic", ".heif", ".avif", ".jxl"}
 _CANONICAL = {"jpeg": ".jpg", "png": ".png", "tiff": ".tif", "jxl": ".jxl", "exr": ".exr", "hdr": ".hdr", "pfm": ".pfm"}
 
