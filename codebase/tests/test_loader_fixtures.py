@@ -269,7 +269,7 @@ def test_manual_bt2020_override_applies_to_linear_exr_fixture() -> None:
     assert source.interpretation_mode == "manual"
     assert metadata["user_override"]["color_space"] == "BT.2020"
     assert analysis.classification == HDRClassification.HDR_LINEAR_UNCONFIRMED
-    assert analysis.needs_color_override is True
+    assert analysis.needs_color_override is False
     assert sdr_reference is None
 
 

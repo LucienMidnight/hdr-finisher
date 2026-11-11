@@ -321,10 +321,16 @@ def test_undecodable_heic_gain_map_reports_the_decoder_reason() -> None:
     assert "not implemented" not in analysis.badge_message
 
 
-def test_heic_gain_map_without_headroom_metadata_names_the_missing_metadata() -> None:
+@pytest.mark.parametrize("manual", [False, True])
+def test_heic_gain_map_without_headroom_metadata_names_the_missing_metadata(manual) -> None:
     image = np.ones((2, 2, 3), dtype=np.float32) * 0.5
-    analysis = classify_hdr(image, {"heif_aux_types": [APPLE_GAINMAP_AUX]}, ".heic")
+    metadata = {"heif_aux_types": [APPLE_GAINMAP_AUX]}
+    if manual:
+        metadata.update(user_override={"color_space": "sRGB", "transfer_function": "sRGB"},
+                        transfer_function="sRGB", needs_color_override=False)
+    analysis = classify_hdr(image, metadata, ".heic")
     assert analysis.classification == HDRClassification.HDR_ENCODED
+    assert analysis.needs_color_override is True
     assert "headroom metadata" in analysis.badge_message
 
 
