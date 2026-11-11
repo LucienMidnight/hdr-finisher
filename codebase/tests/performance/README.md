@@ -419,3 +419,29 @@ edit, and measures it with Denoise disabled or all repairs disabled, before
 restoring the fixture. The ordinary reset restores Amount/Opacity to its
 starting value; it does not mean the tool is disabled. Compare these conditions
 separately. Profiling adds observations, without changing the settlement clock.
+
+### W10 completion review
+
+`--followup` gives W10 a separate 85-minute measurement ledger (only `w10-`
+reports count), reserving five minutes of the agreed 90-minute GPU allowance
+for launches. Keep a `--label w10-...` on every batch. Continue using the
+atomic controller and the same main-checkout output folder. The controller
+yields the GPU for 15 seconds after every batch; waiting for another worker
+does not consume GPU time. Never run two controllers for the same worker.
+
+Follow-up coverage adds timed Crop/Rotate Apply gestures, Exposure Bands
+add/remove/keyboard/drag, wheel-pad/reset gestures and RAW lens re-development.
+Hidden wheel fields select their range tab first. Invisible controls remain
+Untested until their prerequisites are supplied. A rotation draft cannot be
+judged with the ordinary settled-picture wait; measure through Apply instead.
+RAW imports use one disposable photo copy with autosave off, and wait for the
+import generation to complete (re-development preserves the session ID).
+
+Content-sensitive colour/sharpening reruns use the repeated 6000x4000
+`grade-colour-chart.tiff`; photo timings remain separately labelled.
+Superseded source-tile/Denoise 409s are retained in the raw reports and
+classified as expected cancellation; unknown errors stay open. Slowing
+another action requires both a rise over 25% and a rise over 20 ms.
+`grade_sweep_summary.py --update-docs` rebuilds the table without calling a
+missing measurement a product failure. Response signatures do not establish
+visual quality or export/Proof agreement.

@@ -19,6 +19,7 @@ const report = { date: new Date().toISOString(), batch, samples, rows: [], error
   latencyContract:'On-screen exact current generation after automatic anchors; background catch-up drain recorded separately',
   referenceContract:'Reference steps measure on-screen settlement; actual control observations additionally drain background work before sampling their pixels',
   commit: require('child_process').execFileSync('git', ['rev-parse','HEAD'], { encoding: 'utf8' }).trim(),
+  driverSha256:require('crypto').createHash('sha256').update(fs.readFileSync(__filename)).digest('hex'),
   methodology: 'Normal input/change handlers to exact current-generation presentation plus two animation frames; texture readback after clock. Nine 32px patches diagnose changes, not whole-picture or export agreement. Reference Exposure steps are restored between trials. Native-pointer drag presentation events are throughput observations, not physical scanout.' };
 const network=[];
 fs.mkdirSync(out, { recursive: true });
@@ -60,7 +61,7 @@ async function stable(page,drainBackground=true) {
 }
 async function change(page, selector, value, reset = false, capture = true) {
   const networkStart=network.length;
-  const priorSession=await page.evaluate(()=>state.session?.session_id);
+  const priorImport=await page.evaluate(()=>state.importGeneration);
   const start = await page.evaluate(({ selector, value, reset }) => {
     const c = document.querySelector(selector);
     const t = performance.now();
@@ -77,7 +78,7 @@ async function change(page, selector, value, reset = false, capture = true) {
     if (selector.startsWith('#retouch-')) applySelectedRetouch(false);
     return { t, generation: state.previewGeneration[state.currentView] };
   }, { selector, value, reset });
-  if(batch==='raw-highlights' && selector.startsWith('#raw-')) await page.waitForFunction(id=>state.session?.session_id!==id && !state.importInProgress,priorSession,{timeout:120000});
+  if(batch==='raw-highlights' && selector.startsWith('#raw-')) await page.waitForFunction(g=>state.importGeneration>g && !state.importInProgress,priorImport,{timeout:120000});
   await stable(page,false);
   const visibleMs=await page.evaluate(t=>performance.now()-t,start.t);
   if(capture) await stable(page);
@@ -180,6 +181,7 @@ async function gestureChecks(page,lane,zoom) {
         row.resetPixelsMatch &&= (await signature(page))===baseline;
       }
       if(row.observations.some(o=>!o.expectedPicture))row.status='Needs investigation: gesture picture mismatch';
+      else if(expected==='identity')row.status='Expected identity verified';
     }catch(e){row.errors.push(e.message);row.status='Not checked: gesture driver error';}
     save();
   };
@@ -193,6 +195,12 @@ async function gestureChecks(page,lane,zoom) {
       const point=await page.evaluate(lane=>{const c=toneEqualizerUi(lane).editor,r=c.getBoundingClientRect(),l=toneEqualizerEditorLayout(),n=currentToneEqualizerNodes(lane)[state.selectedToneEqualizerBand];return {x:r.x+l.left+(n.input_ev-TONE_EQUALIZER_MIN_EV)/(toneEqualizerPqMaxEv()-TONE_EQUALIZER_MIN_EV)*(r.width-l.left-l.right),y:r.y+l.top+(2-n.adjustment_ev)/4*(r.height-l.top-l.bottom)};},lane);
       await page.mouse.move(point.x,point.y);await page.mouse.down();await page.mouse.move(point.x+6,point.y-25,{steps:8});await page.mouse.up();
     },restore);
+  }
+  if(batch==='color-grading') {
+    for(const zone of ['shadows','midtones','highlights']) {
+      await page.locator(`#wheel-tab-${zone}`).click();
+      await observe(`wheels.${zone}.pad-reset`,async()=>{const b=await page.locator(`[data-wheel="${zone}"] .color-wheel-pad`).boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width*.8,b.y+b.height*.4,{steps:8});await page.mouse.up();},async()=>page.locator(`[data-wheel="${zone}"] .color-wheel-pad`).dblclick());
+    }
   }
   if(batch==='raw-highlights') {
     await page.locator('#raw-settings-toggle').click();
@@ -209,6 +217,8 @@ async function gestureChecks(page,lane,zoom) {
     }
   }
   if(batch==='geometry') {
+    await observe('geometry.straighten-apply',async()=>{await page.locator('#rotate-tool-toggle').click();await page.locator('#crop-straighten').evaluate(c=>{c.value='2';c.dispatchEvent(new Event('input',{bubbles:true}));c.dispatchEvent(new Event('change',{bubbles:true}));});await page.locator('#rotate-apply').click();},async()=>page.evaluate(()=>resetControlGroup('geometry')));
+    await observe('geometry.crop-ratio-apply',async()=>{await page.locator('#crop-tool-toggle').click();await page.locator('#crop-ratio').selectOption('1:1');await page.locator('#crop-done').click();},async()=>page.evaluate(()=>resetControlGroup('geometry')));
     for(const id of ['rotate-left','rotate-right','flip-horizontal','flip-vertical']) {
       await observe(`geometry.${id}`,async()=>{await page.locator('#rotate-tool-toggle').click();await page.locator(`#${id}`).click();await page.evaluate(()=>closeRotateMode(true));},async()=>page.evaluate(()=>resetControlGroup('geometry')));
     }
@@ -374,7 +384,7 @@ async function main() {
           const started=Date.now(); await page.evaluate(()=>recalculateDenoise()); await stable(page);
           (report.denoisePreparation ||= []).push({lane,zoom,ms:Date.now()-started,reason:'Analysis preparation; warm control timings follow'});
         }
-        if(args.includes('--followup') && (batch==='geometry'||batch==='raw-highlights'||batch.endsWith('-equalizer'))) await gestureChecks(page,lane,zoom);
+        if(args.includes('--followup') && (batch==='geometry'||batch==='raw-highlights'||batch==='color-grading'||batch.endsWith('-equalizer'))) await gestureChecks(page,lane,zoom);
         if(batch === 'curves') { await curves(page,lane,zoom); continue; }
         if(batch === 'match') { await match(page,zoom); continue; }
         for (const c of controls) {
@@ -420,6 +430,7 @@ async function main() {
               }
             }
             const dependencies = [];
+            if(batch==='raw-highlights' && c.id==='raw-edge-colour-expand') await change(page,'#raw-highlight-method','edge_colour_v1');
             if(c.data.sectionPath?.endsWith('.tone_section_enabled')) dependencies.push([`${lane}.exposure`,.5]);
             if(c.data.sectionPath?.endsWith('.color_section_enabled')) dependencies.push([`${lane}.saturation`,30]);
             if(c.data.sectionPath?.endsWith('.detail_section_enabled')) dependencies.push(['current.detail.texture_amount',50]);
@@ -468,7 +479,7 @@ async function main() {
             }, selector);
             plan.pixels = await signature(page);
             row.plan = plan;
-            if (plan.disabled || plan.alternative === undefined) { row.status = 'Not checked: inactive prerequisite'; continue; }
+            if (plan.disabled || plan.alternative === undefined || c.id!=='film-push_pull' && !await page.locator(selector).isVisible()) { row.status = 'Not checked: inactive prerequisite'; continue; }
             // Reference uses normal Exposure input events, restores its value every time.
             const ref = async () => {
               const s = `#${lane}-exposure`;
@@ -572,7 +583,7 @@ async function main() {
               row.typedMatches=Number(row.typed)===Number(plan.alternative);
               await change(page, selector, plan.value);
             }
-            row.defaultReset = c.type === 'range' ? await change(page, selector, null, true) : null;
+            row.defaultReset = c.type === 'range' && batch!=='raw-highlights' ? await change(page, selector, null, true) : null;
             await change(page, selector, plan.value);
           } catch (e) { row.errors.push(e.message); row.status = 'Not met: driver/control error'; }
           finally {
