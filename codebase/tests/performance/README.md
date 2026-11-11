@@ -419,3 +419,55 @@ edit, and measures it with Denoise disabled or all repairs disabled, before
 restoring the fixture. The ordinary reset restores Amount/Opacity to its
 starting value; it does not mean the tool is disabled. Compare these conditions
 separately. Profiling adds observations, without changing the settlement clock.
+
+### W10 completion review
+
+`--followup` gives W10 a separate 90-minute actual lock-held graphics ledger,
+including startup and shutdown. Earlier reports used an 85-minute measurement
+ledger plus a five-minute launch reserve; the final controller uses actual
+held time instead, so launch overhead cannot exceed that reserve unnoticed. Keep a `--label w10-...` on every batch. Continue using the
+atomic controller and the same main-checkout output folder. The controller
+yields the GPU for 15 seconds after every batch; waiting for another worker
+does not consume GPU time. Never run two controllers for the same worker.
+
+Follow-up coverage adds timed Crop/Rotate Apply gestures, Exposure Bands
+add/remove/keyboard/drag, wheel-pad/reset gestures and RAW lens re-development.
+Hidden wheel fields select their range tab first. Invisible controls remain
+Untested until their prerequisites are supplied. A rotation draft cannot be
+judged with the ordinary settled-picture wait; measure through Apply instead.
+RAW imports use one disposable photo copy with autosave off, and wait for the
+import generation to complete (re-development preserves the session ID).
+
+Content-sensitive colour/sharpening reruns use the repeated 6000x4000
+`grade-colour-chart.tiff`; photo timings remain separately labelled.
+Superseded source-tile/Denoise 409s are retained in the raw reports and
+classified as expected cancellation; unknown errors stay open. Slowing
+another action requires both a rise over 25% and a rise over 20 ms.
+`grade_sweep_summary.py --update-docs` rebuilds the table without calling a
+missing measurement a product failure. Response signatures do not establish
+visual quality or export/Proof agreement.
+
+The default W10 Film continuation checks the four targeted Fit controls first
+(including the actual Push/Pull segments and a percentage readout), then all
+visible native Film values. Use `--respect-only` on a focused Film rerun to
+honour `--only` and `--zooms` without that expansion. `--batch commands` times
+Undo/Redo and Tone reset/bypass; `--batch hsl-authoring` checks Custom channel
+creation/deletion and picker modes. These are state/picture-response checks,
+not visual-quality sign-off. The marked-photo Retouch rerun separates Inpaint,
+Heal and Clone at three visible defects and uses Standard Inpaint for Hardness.
+
+`w10-fixtures.json` records hashes and generation recipes. W1's exact original
+TIFF was not retained; W10's freshly resized TIFF is not an identical timing
+baseline. `w10-triage.json` preserves a decision for every retained no-change
+row. Keep the W1 archive and failed driver attempts; use the latest qualified
+row for the measured value, and keep failed later reruns visible as gaps.
+
+The W10 result folder also retains `w10-normalized-percentage-evidence.json`:
+a hashed excerpt of W9's existing Denoise run confirming 70% -> 0.7. This is
+reused evidence, not additional W10 GPU time; W10 separately confirmed Film's
+44% entry and real Push/Pull segments. Normal grade edits intentionally hide
+the Local mask preview, so reset diagnostics compare photograph to photograph.
+The 24 MP HDR pattern/low-knee probe makes SDR Start observable. A native
+Sharpen Radius probe must cross the quantized kernel boundary (2.2 rather than
+0.8 -> 1.34, which both choose 3x3 boxes). These are fixture corrections, with
+no change to app processing or acceptance tolerances.
