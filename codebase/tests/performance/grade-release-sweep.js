@@ -83,7 +83,7 @@ async function change(page, selector, value, reset = false, capture = true) {
     const c = document.querySelector(selector);
     const ended = performance.now();
     const gpu=(capture || profile) ? window.HDRFinisherPerformance.gpuSnapshot() : null;
-    return { ms: ended - t, value: window.__gradeValue(c),
+    return { startedAt: profile ? t : undefined, ms: ended - t, value: window.__gradeValue(c),
       stored: c.dataset.path || c.dataset.sectionPath ? getValueByPath(state.adjustments, c.dataset.path || c.dataset.sectionPath) : null,
       gpu:gpu ? {renders:gpu.renders?.slice(-4),stages:gpu.stages?.slice(-16),allocator:gpu.resources?.memory?.allocator,refusal:state.lastGpuDraftRefusal} : null,
       anchorProfile: profile ? window.__gradeAnchorProfile : undefined,
@@ -175,7 +175,18 @@ async function main() {
     await page.waitForFunction(() => window.HDRFinisherPerformance?.gpuSnapshot()?.available, null, { timeout: 120000 });
     await page.evaluate(()=>window.HDRFinisherPerformance.enableGpuInstrumentation(true));
     if(args.includes('--profile')) await page.evaluate(() => {
-      for(const name of ['scheduleExactHighlightAnchor','measureExactHighlightAnchor']) {
+      const timeout=window.setTimeout;
+      window.setTimeout=function(callback,ms,...args) {
+        if(callback.name==='dispatch') return timeout.call(this,()=>{
+          (window.__gradeAnchorProfile ||= []).push({name:'dispatch',at:performance.now(),ms,
+            interacting:state.previewScheduler?.interacting,frame:state.previewScheduler?.frameInFlight,
+            pending:state.previewScheduler?.framePending,draft:Boolean(state.gpuDraftInFlight),
+            exact:state.acceptedPresentation?.exact,current:state.acceptedPresentation?.generation===state.previewGeneration[state.currentView]});
+          callback(...args);
+        },ms);
+        return timeout.call(this,callback,ms,...args);
+      };
+      for(const name of ['scheduleExactHighlightAnchor','measureExactHighlightAnchor','wakePendingHighlightAnchor']) {
         const original=window[name];
         window[name]=function(...args) {
           (window.__gradeAnchorProfile ||= []).push({name,at:performance.now(),key:args[0]?.key});
@@ -461,7 +472,7 @@ async function main() {
                 row.dragTrials = [];
                 for (let trial = 0; trial < samples; trial++) {
                 await page.evaluate(() => {
-                  window.__gradeDrag = { events: [], start: performance.now() };
+                  window.__gradeDrag = { events: [], start: performance.now(), refusalsBefore: structuredClone(state.gpuDraftRefusals), schedulerBefore: state.previewScheduler?.snapshot() };
                   window.__gradeDragListener = e => window.__gradeDrag.events.push({ t: performance.now(), ...e.detail });
                   window.addEventListener('hdrfinisher:preview-presented', window.__gradeDragListener);
                 });
@@ -475,6 +486,7 @@ async function main() {
                 row.drag = await page.evaluate(() => {
                   const d = window.__gradeDrag; d.end = performance.now();
                   window.removeEventListener('hdrfinisher:preview-presented', window.__gradeDragListener);
+                  d.refusalsAfter=structuredClone(state.gpuDraftRefusals); d.schedulerAfter=state.previewScheduler?.snapshot();
                   d.presentationsPerSecond = d.events.length / ((d.end - d.start) / 1000); return d;
                 });
                 row.dragTrials.push(row.drag);

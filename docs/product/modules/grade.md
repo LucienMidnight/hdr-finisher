@@ -1,5 +1,16 @@
 # Module PRD: Grade
 
+## November 11: W9 post-tool measurement scheduling
+
+A pending highlight-anchor measurement now wakes when the exact foreground
+picture is presented and again when its GPU completion wait retires. The
+existing active-input, current-generation, photo and lane guards still decide
+whether it may start; the 200 ms poll remains a fallback. This removes idle
+waiting without changing the measurement, processing formulas or delivery.
+The focused investigation distinguishes restored Amount/Opacity values from
+a tool actually being disabled. Timing qualification and remaining cold-probe
+and Film Look drag limits are recorded in performance-table.md section 5.
+
 ## November 11: Denoise asynchronous work stays with its photo
 
 Denoise toggle completions, analysis results (including failures), queued

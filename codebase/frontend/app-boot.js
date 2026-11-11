@@ -210,6 +210,10 @@ function initializePreviewScheduler() {
       // input coalesces to the newest task instead of queueing obsolete
       // frames (up to seven were measured in flight at 200%).
       if (rendered) await state.gpuPreview?.waitForSubmittedWork?.();
+      // Presentation can arrive while this GPU fence still owns frameInFlight.
+      // Wake again after it retires; the zero-delay dispatch observes the
+      // scheduler's completed callback rather than rearming its 200 ms poll.
+      wakePendingHighlightAnchor(task.lane);
       return rendered;
     },
     onScope: (task) => {
@@ -1122,6 +1126,11 @@ function bindEvents() {
     const { lane, key, used } = event.detail || {};
     if (!state.session || lane !== state.currentView || !key) return;
     scheduleExactHighlightAnchor({ lane, key, used });
+  });
+  window.addEventListener("hdrfinisher:preview-presented", (event) => {
+    const { lane, sessionId, generation, coarse } = event.detail || {};
+    if (sessionId !== state.session?.session_id || generation !== state.previewGeneration[lane] || coarse) return;
+    wakePendingHighlightAnchor(lane);
   });
   window.addEventListener("hdrfinisher:webgpulost", (event) => {
     const message = event.detail?.message || "WebGPU device lost";

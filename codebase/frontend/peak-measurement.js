@@ -121,7 +121,7 @@ function scheduleExactHighlightAnchor(request) {
   // Renderer deduplication covers dispatched work. Pending work belongs to
   // this latest-input queue and must not suppress a later generation's event.
   state.gpuPreview?.requestedCanonicalHighlightKeys?.delete(key);
-  const pending = { request, sessionId: state.session?.session_id, timer: null };
+  const pending = { request, sessionId: state.session?.session_id, timer: null, dispatch: null };
   const dispatch = () => {
     if (pendingHighlightAnchors.get(lane) !== pending) return;
     if (state.session?.session_id !== pending.sessionId || state.currentView !== lane || state.importInProgress) {
@@ -138,8 +138,20 @@ function scheduleExactHighlightAnchor(request) {
     pendingHighlightAnchors.delete(lane);
     void measureExactHighlightAnchor(pending.request);
   };
+  pending.dispatch = dispatch;
   pendingHighlightAnchors.set(lane, pending);
   pending.timer = window.setTimeout(dispatch, 200);
+}
+
+// The polling delay protects active input; once the exact frame is visible
+// there is no reason to leave its final anchor waiting for that timer.
+function wakePendingHighlightAnchor(lane) {
+  const pending = pendingHighlightAnchors.get(lane);
+  if (!pending) return;
+  window.clearTimeout(pending.timer);
+  // Leave the presentation callback and its render promise before checking
+  // foreground ownership again. Dispatch retains every normal busy guard.
+  pending.timer = window.setTimeout(pending.dispatch, 0);
 }
 
 async function measureExactHighlightAnchor({ lane, key, used }) {
