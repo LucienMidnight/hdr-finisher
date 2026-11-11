@@ -103,7 +103,6 @@ from .resource_preflight import (
     detect_memory_resources,
     estimate_preview_resources,
 )
-from .scopes import build_scope_from_processed
 from .sdr_match_remote import bridge_for, close_bridge, open_bridge
 from .sessions import EditCommandError, RevisionConflictError, SessionStore
 from .test_pattern import build_delivery_proof_pattern
