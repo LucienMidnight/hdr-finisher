@@ -156,7 +156,7 @@ async function match(page,zoom) {
     response.catch(()=>{}); // A failed click must not leave an unhandled response waiter.
     await page.locator('#sdr-match-entire').click();
     const reply=await response;
-    if(!reply.ok())throw Error(`Match failed with HTTP ${reply.status()}`);
+    if(!reply.ok()){row.failureBody=await reply.text();throw Error(`Match failed with HTTP ${reply.status()}: ${row.failureBody}`);}
     await page.waitForFunction(()=>!els.sdrMatchEntire.disabled,null,{timeout:120000});
     await stable(page,false);
     const ms=await page.evaluate(t=>performance.now()-t,t);
@@ -205,6 +205,14 @@ async function gestureChecks(page,lane,zoom) {
       await page.mouse.move(point.x,point.y);await page.mouse.down();await page.mouse.move(point.x+6,point.y-25,{steps:8});await page.mouse.up();
     },restore);
   }
+  if(batch==='retouch-authoring') {
+    await page.locator('#grade-mode-retouch').click();
+    const create=async mode=>{const button=page.locator(`#retouch-mode-${mode}`);if(await page.evaluate(mode=>retouchUI.active&&retouchUI.mode===mode,mode))await button.click();await button.click();await page.locator('#retouch-size').evaluate(c=>{c.value='128';c.dispatchEvent(new Event('input',{bubbles:true}));c.dispatchEvent(new Event('change',{bubbles:true}));});await page.evaluate(()=>ensureGeometryCoordinateMap());const b=await page.evaluate(()=>activePreviewElement().getBoundingClientRect().toJSON());const n=await page.evaluate(()=>state.editDocument.repairs.length);if(mode!=='inpaint')await page.mouse.click(b.x+b.width*.38,b.y+b.height*.45);await page.mouse.click(b.x+b.width*({inpaint:.44,heal:.50,clone:.56})[mode],b.y+b.height*.5);await page.waitForFunction(n=>!retouchUI.busy&&state.editDocument.repairs.length===n+1,n);};
+    const remove=async()=>{const n=await page.evaluate(()=>state.editDocument.repairs.length);await page.locator('#retouch-list').getByRole('button',{name:/^Remove /}).click();await page.waitForFunction(n=>!retouchUI.busy&&state.editDocument.repairs.length===n-1,n);};
+    for(const mode of ['inpaint','heal','clone'])await observe(`retouch.create-remove.${mode}`,()=>create(mode),remove);
+    await create('clone');await stable(page);
+    await observe('retouch.repair-bypass',async()=>page.locator('#retouch-list').getByRole('button',{name:/^Hide /}).click(),async()=>page.locator('#retouch-list').getByRole('button',{name:/^Show /}).click());
+  }
   if(batch==='local-authoring') {
     const {createLocalAdjustment}=require('../helpers/local-adjustments');
     for(const type of ['brush','linear_gradient','luminance_range','path']) await observe(`${lane}.local.author-${type}`,async()=>{await createLocalAdjustment(page,type);await page.locator('#local-exposure').evaluate(c=>{c.value='.5';c.dispatchEvent(new Event('input',{bubbles:true}));c.dispatchEvent(new Event('change',{bubbles:true}));});},async()=>page.locator('#local-delete').click());
@@ -220,6 +228,15 @@ async function gestureChecks(page,lane,zoom) {
     const original=await page.evaluate(()=>structuredClone(hslChannel(hslUI.panels[0]).recipe));
     for(const mode of ['pick','add','subtract']) await observe(`${lane}.hsl.${mode}`,async()=>{await host.locator(`[data-hsl-mode="${mode}"]`).click();const b=await page.evaluate(()=>activePreviewElement().getBoundingClientRect().toJSON());await page.mouse.click(b.x+b.width/2,b.y+b.height/2);await page.waitForFunction(()=>!hslUI.stroke&&!hslUI.panels[0].sampling);const recipe=await page.evaluate(()=>hslChannel(hslUI.panels[0]).recipe);if(recipe.ranges.length!==1)throw Error('Picker did not author one range');},async()=>page.evaluate(original=>{hslUI.picker=null;const ui=hslUI.panels[0];hslEdit(ui,()=>{hslChannel(ui).recipe=structuredClone(original);});},original),'state');
     await observe(`${lane}.hsl.selection-toggle`,async()=>{await host.locator('[data-hsl-selection]').click();await page.waitForFunction(()=>document.getElementById('hsl-selection-overlay')?.complete);if(await host.locator('[data-hsl-selection]').getAttribute('aria-pressed')!=='true')throw Error('Selection overlay was not enabled');},async()=>host.locator('[data-hsl-selection]').click(),'state');
+  }
+  if(batch==='commands' && !report.matchDiagnostic) {
+    report.matchDiagnostic={reason:'Capture original 400 reason, then test modest exposure without extra saturation'};
+    for(const [exposure,saturation,zooms] of [[.8,.3,['fit']],[.15,0,['fit','actual']]]) {
+      await page.evaluate(({exposure,saturation})=>{commitAdjustmentValue('hdr.exposure',exposure,{manual:true});commitAdjustmentValue('hdr.saturation',saturation,{manual:true});},{exposure,saturation});
+      await page.evaluate(()=>switchLane('sdr'));await stable(page);
+      for(const z of zooms){await page.evaluate(z=>setZoomMode(z),z);await stable(page);try{await match(page,z);}catch(e){const r=report.rows.at(-1);r.errors.push(e.message);r.status='Not checked: Match rejected fixture';save();}}
+    }
+    await page.evaluate(lane=>switchLane(lane),lane);await stable(page);
   }
   if(batch==='commands') {
     await page.evaluate(lane=>{document.querySelector(`[data-group="${lane}-tone"]`).classList.remove('collapsed');commitAdjustmentValue(`${lane}.exposure`,0,{manual:true});},lane);await stable(page);await page.evaluate(lane=>commitAdjustmentValue(`${lane}.exposure`,.5,{manual:true}),lane);await stable(page);
@@ -428,7 +445,7 @@ async function main() {
           const started=Date.now(); await page.evaluate(()=>recalculateDenoise()); await stable(page);
           (report.denoisePreparation ||= []).push({lane,zoom,ms:Date.now()-started,reason:'Analysis preparation; warm control timings follow'});
         }
-        if(args.includes('--followup') && (batch==='local-authoring'||batch==='hsl-authoring'||batch==='commands'||batch==='geometry'||batch==='vignette'||batch==='raw-highlights'||batch==='color-grading'||batch.endsWith('-equalizer'))) await gestureChecks(page,lane,zoom);
+        if(args.includes('--followup') && (batch==='retouch-authoring'||batch==='local-authoring'||batch==='hsl-authoring'||batch==='commands'||batch==='geometry'||batch==='vignette'||batch==='raw-highlights'||batch==='color-grading'||batch.endsWith('-equalizer'))) await gestureChecks(page,lane,zoom);
         if(batch === 'curves') { await curves(page,lane,zoom); continue; }
         if(batch === 'match') { await match(page,zoom); continue; }
         for (const c of controls) {
@@ -465,9 +482,10 @@ async function main() {
               }
             }
             if (batch === 'retouch') {
-              const mode = ['retouch-opacity','retouch-hardness'].includes(c.id) ? 'clone' : 'inpaint';
+              const mode = c.id==='retouch-opacity' ? 'clone' : 'inpaint';
               const id = report.retouchSetup.find(r=>r.mode === mode)?.id;
               await page.evaluate(id => { selectRetouchRepair(id); retouchUI.active=false; renderLocalMaskOverlay(); }, id);
+              if(c.id==='retouch-hardness'){await page.locator('#retouch-method').selectOption('standard');await page.locator('#retouch-apply').click();await stable(page);}
               if (['retouch-feather','retouch-texture'].includes(c.id)) {
                 await page.locator('#retouch-method').selectOption('original-detail');
                 await page.locator('#retouch-apply').click(); await stable(page);
@@ -481,8 +499,9 @@ async function main() {
             if(batch.endsWith('-highlights') && c.path?.endsWith('_softness')) dependencies.push([`${lane}.highlight_compression_mode`,'soft_ceiling']);
             if(batch.endsWith('-highlights') && c.path?.includes('_manual_peak_')) dependencies.push([`${lane}.highlight_compression_peak_measurement`,'manual']);
             if(batch.endsWith('-highlights') && c.path?.endsWith('_attenuation')) dependencies.push([`${lane}.highlight_compression_color_handling`,'agx_attenuate']);
+            if(batch==='sdr-highlights' && c.path?.endsWith('start_percent') && args.includes('--start-fixture')) dependencies.push(['sdr.highlight_compression_peak_measurement','manual'],['sdr.highlight_compression_manual_peak_percent',1600],['sdr.highlight_compression_color_handling','preserve_color']);
             if(batch==='hdr-highlights') dependencies.push(['hdr.exposure',3],['hdr.highlight_section_enabled',true]);
-            if(batch==='sdr-highlights') dependencies.push(['sdr.exposure',1]);
+            if(batch==='sdr-highlights') dependencies.push(['sdr.exposure',args.includes('--start-fixture')?0:1]);
             const match = c.path?.match(/^(.*\.(?:shadows|midtones|highlights))_(center|width)$/);
             if (match) dependencies.push([match[1], 50]);
             if (c.path?.startsWith('hdr.highlights')) dependencies.push(['hdr.exposure', 2]);
@@ -517,16 +536,21 @@ async function main() {
                 if ((element.hidden || element.classList.contains('hidden')) && element.id) document.querySelector(`[aria-controls="${CSS.escape(element.id)}"]`)?.click();
               }
             }, selector);
-            const plan = await page.evaluate(async selector => {
+            if(batch==='local-adjustments' && c.data.localGrade){await page.evaluate(()=>hideLocalMaskOverlayForGradePreview());await stable(page);row.fixtureNote='Photo baseline: normal grade edits hide the mask preview; compare the same view before and after.';}
+            const plan = await page.evaluate(async ({selector,startFixture}) => {
               const c = document.querySelector(selector), value = window.__gradeValue(c);
               let alternative;
               if(c.type==='color') alternative=value==='#00ff00'?'#ff263d':'#00ff00';
               else if (c.type === 'checkbox' || c.tagName === 'BUTTON') alternative = !value;
+              else if(c.id==='retouch-method') alternative=value==='original-detail'?'standard':'original-detail';
               else if (c.options) alternative = [...c.options].find(o => !o.disabled && o.value !== value)?.value;
               else { const delta = c.id==='film-push_pull' ? 1 : (Number(c.max) - Number(c.min)) * .2; alternative = Number(value) + delta <= Number(c.max) ? Number(value) + delta : Number(value) - delta; }
+              // The production blur quantizes 0.8 and 1.34 to the same 3x3 kernel at native scale.
+              if(c.dataset.path==='sdr.highlight_compression_start_percent' && startFixture) alternative=2;
+              if(c.dataset.path?.endsWith('sharpen_radius_px') || c.dataset.localGrade==='detail.sharpen_radius_px') alternative=2.2;
               if(c.dataset.rangeHandle==='1' && c.closest('#local-adjustments-panel')) alternative=Number(c.min)+(Number(c.max)-Number(c.min))*.35;
               return { value, alternative, disabled: c.disabled };
-            }, selector);
+            }, {selector,startFixture:args.includes('--start-fixture')});
             plan.pixels = await signature(page);
             row.plan = plan;
             if (plan.disabled || plan.alternative === undefined || c.id!=='film-push_pull' && !await page.locator(selector).isVisible()) { row.status = 'Not checked: inactive prerequisite'; continue; }

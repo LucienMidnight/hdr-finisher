@@ -19,6 +19,8 @@ def significant_slowdown(before, after):
 
 def error_kind(error):
     if isinstance(error, str):
+        if "Automatic Match could not be safely materialized" in error:
+            return "expected Match colour/quality safety refusal"
         return "driver" if "locator." in error or "Timeout" in error else "unresolved"
     message = error.get("message", "")
     url = error.get("url", "")
@@ -29,6 +31,8 @@ def error_kind(error):
         return "expected superseded work" if body else "expected recoverable 409; W1 body absent, exact reason unconfirmed"
     if "status of 409" in message:
         return "expected superseded work (browser resource log)"
+    if "Automatic Match could not be safely materialized" in message + error.get("body", ""):
+        return "expected Match colour/quality safety refusal"
     if "saturation" in message + error.get("body", "") and "input_value=30" in message + error.get("body", ""):
         return "driver fixture: saturation 30 exceeds stored-value limit 3; use 0.3"
     if "int_from_float" in message + error.get("body", ""):
@@ -42,13 +46,16 @@ def main():
     complete_inventory()
     inventory = json.loads((OUT / "inventory-complete.json").read_text())
     value_types = {}
+    lanes_by_key = {}
     for control in inventory["controls"]:
         data = control.get("data", {})
-        key = (control.get("path") or control.get("id") or
+        key = (control.get("path") or data.get("sectionPath") or control.get("id") or
                ("local." + data["localGrade"] if data.get("localGrade") else
                 ("local.hsl." if control.get("group") == "local-adjustments" else "hsl.") + data["hslKey"] if data.get("hslKey") else None))
         if key:
             value_types[key] = control.get("type")
+            group = control.get("group") or ""
+            lanes_by_key[key] = {"hdr"} if group.startswith("hdr-") else {"sdr"} if group.startswith("sdr-") else {"hdr", "sdr"}
     rows = []
     batches = []
     for file in sorted(OUT.glob("*.json")):
@@ -62,6 +69,8 @@ def main():
         for row in report["rows"]:
             if row["path"].startswith("raw.import."):
                 row["path"] = row["path"].removeprefix("raw.import.")
+            if row["path"].startswith(("hdr.hsl.", "sdr.hsl.", "hdr.local.author-", "sdr.local.author-", "hdr.local.invert", "sdr.local.invert", "hdr.local.duplicate-delete", "sdr.local.duplicate-delete", "hdr.commands.undo-redo", "sdr.commands.undo-redo")):
+                row["path"] = row["path"].split(".", 1)[1]
             measurements = [o["ms"] for o in row["observations"] if not o.get("restore")]
             drained = [o["drainedMs"] for o in row["observations"]
                        if not o.get("restore") and o.get("drainedMs") is not None]
@@ -148,6 +157,12 @@ def main():
             row["observationStatus"] = "Met"
         else:
             row["observationStatus"] = "Untested"
+        if "reset picture not confirmed" in issues and row["control"] in ("local-exposure", "local.detail.sharpen_amount"):
+            row["triage"] = "Driver compared mask preview before the first grade edit with the photograph after it; editing intentionally hides the mask. Photo-to-photo native rerun restores exactly."
+        if row["control"] == "retouch.repair-bypass" and "reset picture not confirmed" in issues:
+            row["triage"] = "Driver baseline included the active Retouch cursor; clicking the list moves the pointer off the photo. Repair enabled-state returned, but clean-picture reset was not captured."
+        if row["control"] == "geometry.crop-handle-apply" and row["zoom"] == "actual" and "Needs investigation: gesture picture mismatch" in issues:
+            row["triage"] = "Driver: a full-frame crop corner is offscreen at 100%; unpanned pointer drag did not reach a handle. Fit drag and native ratio Apply passed."
         if row["control"].endswith(".bands.add-remove") and row.get("expected") == "identity" and "Needs investigation: gesture picture mismatch" in issues:
             row["triage"] = "Driver mistake: adding a node changes a non-neutral influence curve; removal restored the original picture. New checks verify node count instead."
         if row["batch"] == "raw-highlights" and row.get("medianMs", 0) and row["medianMs"] >= 1000:
@@ -160,7 +175,12 @@ def main():
                 if set(issues) == {"Needs investigation: no screen change"}:
                     row["observationStatus"] = "Exception"
             elif row["control"].startswith("retouch-"):
-                row["triage"] = "Fixture: independent repairs on a visible defect were not authored; settings on this repair cannot qualify repair quality."
+                native = latest.get((row["control"], row["lane"], "actual"), {})
+                if str(row.get("photo", "")).startswith("grade-retouch-defects") and row["zoom"] == "fit" and native.get("imageChanged") and native.get("resetPictureConfirmed"):
+                    row["triage"] = "Fixture: native defect/edge probes changed and reset; Fit downsampling hides the small repair-setting difference."
+                    if set(issues) == {"Needs investigation: no screen change"}: row["observationStatus"] = "Exception"
+                else:
+                    row["triage"] = "Fixture: method pairs can coincide on uniform donors. Marked, separate repairs and Standard versus Original Texture are the qualifying rerun; no disconnected control is established."
             elif row["control"] in ("shared.geometry.ratio_mode", "shared.geometry.custom_ratio.width", "shared.geometry.custom_ratio.height"):
                 row["triage"] = "Fixture: ratio constraints do not change committed pixels until a crop is authored and Apply is pressed; use the committed crop gesture row."
             elif row["control"] in ("hdr.highlights_center", "hdr.midtones_center", "sdr.highlights", "sdr.highlights_center"):
@@ -171,10 +191,12 @@ def main():
                 row["triage"] = "Fixture/driver: hue requires nonzero saturation; numeric fields also require their selected wheel tab. Native crop may omit the affected tonal range. See prepared chart rerun."
             elif "black_and_white" in row["control"]:
                 row["triage"] = "Fixture: selected hue is absent or weak in sampled photo patches; see saturated colour-chart rerun."
+            elif row["control"] == "sdr.highlight_compression_start_percent":
+                row["triage"] = "Fixture: no qualifying shoulder difference at the sampled input/range. HDR-pattern rerun with a manual headroom anchor and Start 2% demonstrated change/reset; clipped or below-knee pixels can stay identical."
             elif "grain_custom_height" in row["control"]:
                 row["triage"] = "Fixture: capture geometry/format prerequisite; inspect prepared horizontal-strip/custom-format rerun."
             elif "sharpen" in row["control"]:
-                row["triage"] = "Fixture: reduced/sampled image lacks qualifying detail; use repeated fine-edge chart and native view."
+                row["triage"] = "Fixture: native radii 0.8 and 1.34 both use the same production 3x3 box kernel. Retest Radius at 2.2; judge Amount/Threshold with native detail."
                 native = latest.get((row["control"], row["lane"], "actual"), {})
                 if row["zoom"] == "fit" and native.get("imageChanged") and native.get("resetPictureConfirmed"):
                     row["triage"] = "Exception: native Detail judgement demonstrated change/reset; reduction at Fit hides fine sharpening."
@@ -189,13 +211,16 @@ def main():
     fully_observed = []
     for control in controls:
         items = [r for r in rows if r["control"] == control]
-        lanes = {"hdr"} if control.startswith("hdr.") else {"sdr"} if control.startswith("sdr.") else {"hdr", "sdr"}
+        lanes = {"hdr"} if control.startswith("hdr.") else {"sdr"} if control.startswith("sdr.") else lanes_by_key.get(control, {"hdr", "sdr"})
         expected = {(lane, zoom) for lane in lanes for zoom in ("fit", "actual")}
         if ({(r["lane"], r["zoom"]) for r in items if r["samples"] >= 3 and not r["issues"]} == expected
                 and all(r["typedEntryConfirmed"] or r["control"].endswith(".film_look.push_pull") for r in items if r["zoom"] == "fit" and value_types.get(r["control"]) in ("range", "number"))):
             fully_observed.append(control)
     result = {"purpose": "Observation ledger, not release sign-off. Missing controls and untested gestures remain open.",
               "coverage": {"distinctControlsWithThreeSamples": len(controls),
+                           "valueControlsWithThreeSamples": len(controls & value_types.keys()),
+                           "valueControlsWithExpectedResponseAndReset": len(expected_responses & value_types.keys()),
+                           "separateGestureChecksWithThreeSamples": len(controls - value_types.keys()),
                            "distinctControlsWithExpectedResponseAndReset": len(expected_responses),
                            "changeAndReturnObservations": len(image_checks),
                            "distinctControlsWithAChangeAndReturnObservation": len({r["control"] for r in image_checks}),
@@ -231,7 +256,7 @@ def main():
     print(json.dumps({"rows": len(rows), "observationsWithoutIssues": sum(not r["issues"] for r in rows),
                       "batchesWithFatalErrors": [b["file"] for b in batches if b["fatal"]]}))
     if "--update-docs" in sys.argv:
-        update_docs(rows, fully_observed)
+        update_docs(rows, fully_observed, value_types)
 
 
 def complete_inventory():
@@ -281,7 +306,7 @@ def complete_inventory():
         raise RuntimeError(f"Runtime inventory missed static paths: {missing}")
 
 
-def update_docs(rows, fully_observed):
+def update_docs(rows, fully_observed, value_types):
     complete = json.loads((OUT / "inventory-complete.json").read_text(encoding="utf-8"))
     inventory = complete["controls"]
     controls = {}
@@ -316,12 +341,12 @@ def update_docs(rows, fully_observed):
     slow_summary = "; ".join(f"{title(r['control'])}: {r['medianMs']/1000:.2f} s" for r in slowest[:3])
     ordinary_summary = "; ".join(f"{title(r['control'])}: {r['medianMs']/1000:.2f} s" for r in ordinary)
     text = ["<!-- grade-sweep-start -->", "### 0.9.2 Grade control review (November 11, 2026)", "",
-            f"**{len(checked)} distinct controls/actions timed three times; {len(responded)} demonstrated the intended response and restoration in at least one view. "
-            f"{len(fully_observed)} satisfied all measured rendition/view/input checks.** This is response coverage, not picture-quality or release sign-off.", "",
+            f"**{len(checked & value_types.keys())} controls timed three times; {len(responded & value_types.keys())} demonstrated the intended response and restoration in at least one view. "
+            f"{len(checked - value_types.keys())} separate gesture checks were also timed. {len(fully_observed)} satisfied all measured rendition/view/input checks.** This is response coverage, not picture-quality or release sign-off.", "",
             "**Slowest:** " + slow_summary + ". Heavy RAW rebuilds are permitted exceptions. Ordinary editing: " + ordinary_summary + ". Three-trial medians; older W1 timings include background drain and are upper bounds.", "",
             "**Problems:** lingering Denoise/Retouch Exposure waits (about 0.24 s) and Film/lens drags below 20/s remain W9's fix/retest responsibility. "
             "W10 found smaller reference increases at SDR Vignette Centre Y (25 to 46 ms after reset) and native HDR Bias (34 to 56/59 ms); other crossings are flagged below. "
-            "No speed code was changed. **Fixed:** `38821253` percentage entry passed the app rerun (44% stored correctly); Push/Pull's real buttons passed both renditions/views.", "",
+            "Valid Match also takes about 1.20-1.21 s, above the one-second bar. No speed code was changed. **Fixed:** `38821253` percentage entry passed the app rerun (44% stored correctly); Push/Pull's real buttons passed both renditions/views.", "",
             "**Untested:** remaining mode/profile fields, complete Boolean/Hue-mask authoring, repair move/list actions and preset I/O were not qualified within the bounded review. "
             "Missing view/input checks and the remaining actions in each gesture family are explicit below. Unchanged sampled crops are fixture exceptions where the other view demonstrated change/reset.", "",
             "Limits: under 1 s; pointwise Fit drags at least 20 presentations/s. A reference slowdown counts only above **25% and 20 ms together**. "
@@ -393,7 +418,7 @@ def update_docs(rows, fully_observed):
                  "**Error triage:** captured source-tile 409 bodies confirm superseded edit revisions; Denoise/peak 409s are recoverable obsolete-work refusals. "
                  "W1 did not capture bodies, so its exact refusal reason remains unconfirmed. Current-preview settlement is required. "
                  "Fractional Push/Pull and Match saturation 30 instead of 0.3 were driver mistakes, as were hidden/detached-field waits and waiting for a rotation draft before Apply. "
-                 "Unknown errors stay open; expected cancellation is retained and classified rather than suppressed.",
+                 "The stronger Match recipe was correctly refused by the existing quality gate (OKLab P95 0.066 exceeds 0.05); a modest exposure-only fit passed. Unknown errors stay open; expected cancellation/refusal is retained and classified rather than suppressed.",
                  "", "<!-- grade-sweep-end -->", ""])
     file = ROOT.parent / "docs/technical/performance-table.md"
     original = file.read_bytes()

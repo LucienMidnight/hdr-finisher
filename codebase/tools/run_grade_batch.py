@@ -64,7 +64,7 @@ def main():
     for arguments in plan:
         label = arguments[arguments.index("--label") + 1] if "--label" in arguments else arguments[arguments.index("--batch") + 1]
         held_seconds = sum((datetime.fromisoformat(r["completedAt"]) - datetime.fromisoformat(r["startedAt"])).total_seconds() for r in ledger["runs"] if r.get("completedAt"))
-        if held_seconds >= 89 * 60:
+        if held_seconds >= 89.5 * 60:
             print("Shared graphics allowance nearly exhausted; remaining plan not launched.", flush=True)
             break
         owner = acquire(label)
@@ -78,7 +78,7 @@ def main():
                 raise RuntimeError("Shared lock ownership changed before launch")
             print(f"Starting serialized Grade batch: {label}", flush=True)
             env = dict(os.environ, HDR_FINISHER_ELECTRON_WINDOW_SIZE="2560x1440")
-            child = subprocess.Popen(["node", "tests/run-in-electron.js", "tests/performance/grade-release-sweep.js", *arguments], cwd=ROOT, env=env)
+            child = subprocess.Popen(["node", "tests/run-in-electron.js", "tests/performance/grade-release-sweep.js", *arguments], cwd=ROOT, env=env, stderr=subprocess.STDOUT)
             started = time.monotonic()
             while child.poll() is None:
                 if not owns(owner):

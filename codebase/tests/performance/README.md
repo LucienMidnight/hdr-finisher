@@ -454,7 +454,7 @@ honour `--only` and `--zooms` without that expansion. `--batch commands` times
 Undo/Redo and Tone reset/bypass; `--batch hsl-authoring` checks Custom channel
 creation/deletion and picker modes. These are state/picture-response checks,
 not visual-quality sign-off. The marked-photo Retouch rerun separates Inpaint,
-Heal and Clone at three visible defects and uses Clone for Hardness.
+Heal and Clone at three visible defects and uses Standard Inpaint for Hardness.
 
 `w10-fixtures.json` records hashes and generation recipes. W1's exact original
 TIFF was not retained; W10's freshly resized TIFF is not an identical timing
