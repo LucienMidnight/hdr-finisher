@@ -63,6 +63,10 @@ def main():
     ledger = json.loads(ledger_path.read_text(encoding="utf-8")) if ledger_path.exists() else {"startedAt": now(), "runs": []}
     for arguments in plan:
         label = arguments[arguments.index("--label") + 1] if "--label" in arguments else arguments[arguments.index("--batch") + 1]
+        held_seconds = sum((datetime.fromisoformat(r["completedAt"]) - datetime.fromisoformat(r["startedAt"])).total_seconds() for r in ledger["runs"] if r.get("completedAt"))
+        if held_seconds >= 89 * 60:
+            print("Shared graphics allowance nearly exhausted; remaining plan not launched.", flush=True)
+            break
         owner = acquire(label)
         entry = {"label": label, "startedAt": now(), "arguments": arguments}
         ledger["runs"].append(entry)
@@ -80,6 +84,9 @@ def main():
                 if not owns(owner):
                     stop(child)
                     raise RuntimeError("Shared lock ownership changed during driver; observations invalid")
+                if held_seconds + (datetime.now(timezone.utc) - datetime.fromisoformat(entry["startedAt"])).total_seconds() > 90 * 60:
+                    stop(child)
+                    raise RuntimeError("90-minute shared graphics allowance reached")
                 if time.monotonic() - started > 15 * 60:
                     stop(child)
                     raise RuntimeError("Driver exceeded the 15-minute batch bound")

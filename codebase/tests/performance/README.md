@@ -422,9 +422,10 @@ separately. Profiling adds observations, without changing the settlement clock.
 
 ### W10 completion review
 
-`--followup` gives W10 a separate 85-minute measurement ledger (only `w10-`
-reports count), reserving five minutes of the agreed 90-minute GPU allowance
-for launches. Keep a `--label w10-...` on every batch. Continue using the
+`--followup` gives W10 a separate 90-minute actual lock-held graphics ledger,
+including startup and shutdown. Earlier reports used an 85-minute measurement
+ledger plus a five-minute launch reserve; the final controller uses actual
+held time instead, so launch overhead cannot exceed that reserve unnoticed. Keep a `--label w10-...` on every batch. Continue using the
 atomic controller and the same main-checkout output folder. The controller
 yields the GPU for 15 seconds after every batch; waiting for another worker
 does not consume GPU time. Never run two controllers for the same worker.

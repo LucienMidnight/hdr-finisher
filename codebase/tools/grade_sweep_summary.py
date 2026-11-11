@@ -111,7 +111,7 @@ def main():
                          "photo": report.get("conditions", {}).get("source", {}).get("filename"),
                          "samples": len(measurements), "minimumMs": min(measurements, default=None),
                          "medianMs": median(measurements), "maximumMs": max(measurements, default=None),
-                         "latencyContract": report.get("latencyContract", "Settlement including background drain; conservative upper bound"),
+                         "latencyContract": ("Gesture/source settlement including background drain; conservative upper bound" if report["batch"] == "curves" or report["batch"] == "raw-highlights" and row.get("expected") == "state" else row.get("latencyContract", report.get("latencyContract", "Settlement including background drain; conservative upper bound"))),
                          "backgroundDrainedMedianMs": median(drained),
                          "imageChanged": row.get("status") == "Preview changed" and row.get("expected") not in ("identity", "state") and not str(row.get("expected", "")).startswith("Neutral point"),
                          "expectedPictureVerified": bool(row.get("observations")) and all(o.get("expectedPicture") for o in row["observations"]),
@@ -175,6 +175,11 @@ def main():
                 row["triage"] = "Fixture: capture geometry/format prerequisite; inspect prepared horizontal-strip/custom-format rerun."
             elif "sharpen" in row["control"]:
                 row["triage"] = "Fixture: reduced/sampled image lacks qualifying detail; use repeated fine-edge chart and native view."
+                native = latest.get((row["control"], row["lane"], "actual"), {})
+                if row["zoom"] == "fit" and native.get("imageChanged") and native.get("resetPictureConfirmed"):
+                    row["triage"] = "Exception: native Detail judgement demonstrated change/reset; reduction at Fit hides fine sharpening."
+                    if set(issues) == {"Needs investigation: no screen change"}:
+                        row["observationStatus"] = "Exception"
             else:
                 row["triage"] = "Fixture/prerequisite inconclusive: no sampled difference is not a demonstrated app defect; consult W10 chart rerun."
     controls = {r["control"] for r in rows if r["samples"] >= 3}
@@ -226,7 +231,7 @@ def main():
     print(json.dumps({"rows": len(rows), "observationsWithoutIssues": sum(not r["issues"] for r in rows),
                       "batchesWithFatalErrors": [b["file"] for b in batches if b["fatal"]]}))
     if "--update-docs" in sys.argv:
-        update_docs(rows)
+        update_docs(rows, fully_observed)
 
 
 def complete_inventory():
@@ -276,7 +281,7 @@ def complete_inventory():
         raise RuntimeError(f"Runtime inventory missed static paths: {missing}")
 
 
-def update_docs(rows):
+def update_docs(rows, fully_observed):
     complete = json.loads((OUT / "inventory-complete.json").read_text(encoding="utf-8"))
     inventory = complete["controls"]
     controls = {}
@@ -305,30 +310,22 @@ def update_docs(rows):
         if row.get("medianMs") is not None and row["medianMs"] > slow_by_control.get(row["control"], {}).get("medianMs", -1):
             slow_by_control[row["control"]] = row
     slowest = sorted(slow_by_control.values(), key=lambda r:r["medianMs"], reverse=True)[:6]
-    qualified = {r["control"] for r in rows if r["observationStatus"] == "Met" and r["samples"] >= 3}
+    def title(key):
+        return key.replace("current.", "").replace("_", " ").replace("-", " ").replace(".", " / ")
+    ordinary = sorted((r for r in slow_by_control.values() if r["batch"] != "raw-highlights"), key=lambda r:r["medianMs"], reverse=True)[:3]
+    slow_summary = "; ".join(f"{title(r['control'])}: {r['medianMs']/1000:.2f} s" for r in slowest[:3])
+    ordinary_summary = "; ".join(f"{title(r['control'])}: {r['medianMs']/1000:.2f} s" for r in ordinary)
     text = ["<!-- grade-sweep-start -->", "### 0.9.2 Grade control review (November 11, 2026)", "",
-            f"**Checked: {len(checked)} distinct controls/actions with three timings. {len(responded)} demonstrated the expected response and restoration in at least one view.** "
-            f"{len(qualified)} have at least one row meeting all measured conditions. These counts include gestures; they do not mean every control works in both views or that picture quality is signed off.", "",
-            "**Slowest measured waits:** " + "; ".join(f"`{r['control']}` {r['medianMs']/1000:.2f} s ({r['lane']}, {r['zoom']})" for r in slowest) + ". "
-            "Times are three-trial medians. Older W1 times include background catch-up and are upper bounds, not comparable before/after timings.", "",
-            "**Real problems:** W1 found lingering Exposure delays after Denoise and Retouch (about 0.24 s versus 0.03 s), "
-            "Film print/stock drags near 15 presentations/s and lens drags near 10-12. W9 owns their fixes; this review does not claim they are repaired. "
-            "The typed-percentage bug was fixed in `38821253`; see the Film rerun rows for app confirmation. No image-processing formula was changed by W10.", "",
-            "**Coverage limits:** Untested means missing evidence, inactive prerequisites or a driver/fixture limitation, rather than a demonstrated broken control. "
-            "A native centre crop may miss edge effects even when the Fit check responds. Retouch method/feather/hardness/texture need independent repairs on visible defects. "
-            "The authoring-family rows below identify gestures that still lack complete timings. Heavy RAW work may exceed one second as Steve's accepted exception; only actual RAW measurements can qualify it.", "",
-            "**Error triage:** source-tile and Denoise HTTP 409s reject obsolete work after newer edits; their matching browser resource logs are expected cancellation, "
-            "provided the current preview settles. W1 did not capture response bodies, so the exact 409 reason is unconfirmed; W10 captures them. Fractional Push/Pull HTTP 400s and the first Match fixture using saturation 30 instead of 0.3 were driver mistakes. Detached/hidden-field and scroll timeouts are driver limitations. "
-            "Unknown errors remain Untested and visible in JSON; they are not silently treated as passes.", "",
-            "Release limits: settled preview under 1 s at Fit and 100%; pointwise drag at least 20 presentations/s. "
-            "Slowing other actions counts only when the Exposure median rises **more than 25% and more than 20 ms**, active or after reset. "
-            "Frame-sized noise is no longer flagged. Met means the measured conditions passed; Not met (real problem) identifies measured speed failures; "
-            "Exception carries its specific reason; Untested explains the missing check.", "",
-            "Conditions: fresh W10 24 MP TIFF resized from the same RAW (W1 original TIFF was not retained; not a byte-identical baseline), repeated 24 MP colour/detail chart for content-sensitive reruns, a marked-photo fixture for Retouch, and a disposable 42 MP Sony RAW (714,405 clipped sensels) for reconstruction/import. "
-            "Windows/Electron, NVIDIA GPU, 2560x1440, DPR 1, one atomic shared-lock batch at a time, each under about 15 minutes. "
-            "Photo, commit, exact samples, prerequisites, errors and surrounding-action timings are in the main checkout's "
-            "`codebase/output/performance/grade-0-9-2/summary.json`, `timings.csv`, `w10-triage.json` and named batch reports. "
-            "Screen signatures test response/reset, not visual quality or preview/export agreement.", "",
+            f"**{len(checked)} distinct controls/actions timed three times; {len(responded)} demonstrated the intended response and restoration in at least one view. "
+            f"{len(fully_observed)} satisfied all measured rendition/view/input checks.** This is response coverage, not picture-quality or release sign-off.", "",
+            "**Slowest:** " + slow_summary + ". Heavy RAW rebuilds are permitted exceptions. Ordinary editing: " + ordinary_summary + ". Three-trial medians; older W1 timings include background drain and are upper bounds.", "",
+            "**Problems:** lingering Denoise/Retouch Exposure waits (about 0.24 s) and Film/lens drags below 20/s remain W9's fix/retest responsibility. "
+            "W10 found smaller reference increases at SDR Vignette Centre Y (25 to 46 ms after reset) and native HDR Bias (34 to 56/59 ms); other crossings are flagged below. "
+            "No speed code was changed. **Fixed:** `38821253` percentage entry passed the app rerun (44% stored correctly); Push/Pull's real buttons passed both renditions/views.", "",
+            "**Untested:** remaining mode/profile fields, complete Boolean/Hue-mask authoring, repair move/list actions and preset I/O were not qualified within the bounded review. "
+            "Missing view/input checks and the remaining actions in each gesture family are explicit below. Unchanged sampled crops are fixture exceptions where the other view demonstrated change/reset.", "",
+            "Limits: under 1 s; pointwise Fit drags at least 20 presentations/s. A reference slowdown counts only above **25% and 20 ms together**. "
+            "Met = measured checks passed; Not met (real problem) = measured limit crossed; Exception = stated reason; Untested = missing evidence.", "",
             "| Control | Range | Fit (s) | 100% (s) | Fit drag (presentations/s) | Status / open check | Photo / commit |",
             "| --- | --- | --- | --- | --- | --- | --- |"]
     for key, control in sorted(controls.items()):
@@ -351,7 +348,7 @@ def update_docs(rows):
                 real = [i for i in real if "1 second" not in i]
             issues = [i.replace("Not met: driver/control error", "Driver could not finish").replace("Not checked: inactive prerequisite", "Inactive mode prerequisite") for i in issues]
             native_crop_only = set(issues) == {"Needs investigation: no screen change"} and any(r["observationStatus"] == "Exception" for r in items)
-            status = ("Not met (real problem): " if real else "Exception (heavy RAW; remaining gaps listed): " if heavy else "Exception (native crop; Fit passed): " if native_crop_only else "Untested: ") + "; ".join(issues)
+            status = ("Not met (real problem): " if real else "Exception (heavy RAW; remaining gaps listed): " if heavy else "Exception (fixture; other view passed): " if native_crop_only else "Untested: ") + "; ".join(issues)
             triage = sorted({r["triage"] for r in items if r.get("triage")})
             if triage: status += "; " + " ".join(triage)
         else:
@@ -359,7 +356,7 @@ def update_docs(rows):
         minimum, maximum = control.get("min"), control.get("max")
         bounds = f"{minimum} to {maximum}" if minimum not in (None, "") else "Discrete / see inventory"
         fps = f"{min(rates):.1f}-{max(rates):.1f}" if rates else "Not measured / N/A"
-        conditions = "; ".join(sorted({f"{r.get('photo') or 'see JSON'} / `{(r.get('commit') or 'unrecorded')[:8]}`" for r in items})) or "—"
+        conditions = "; ".join(sorted({f"{r.get('photo') or 'see JSON'} / `{(r.get('commit') or 'unrecorded')[:8]}`" for r in items})) or "-"
         labels = {
             "Needs investigation: no screen change":"Fixture: sampled picture unchanged",
             "typed entry not confirmed":"Typed input unverified",
@@ -370,14 +367,33 @@ def update_docs(rows):
             "HDR/SDR lane coverage incomplete":"Missing rendition",
         }
         for old, new in labels.items(): status = status.replace(old, new)
-        label = key.replace("current.", "").replace("_", " ").replace(".", " / ")
+        label = title(key)
         text.append(f"| {label} | {bounds} | {seconds(fit)} | {seconds(native)} | {fps} | {status} | {conditions} |")
+    remaining = {
+        "Curves":"keyboard point movement",
+        "Exposure Bands":"horizontal movement and influence wheel/bracket gestures",
+        "Color wheels":"range keyboard navigation, module reset and pad throughput",
+        "HSL":"wheel/range handles, range removal and Local picker",
+        "Local masks":"Hue sampling, Boolean combinations, Bezier/edge modes, fan, native authoring and list rename/reorder",
+        "Retouch":"source/destination moves, list/retry/cancel and independently timed paint creation",
+        "Geometry":"perspective guides and crop-guide variants",
+        "Vignette":"Pick centre, overlay toggle and handle keyboard movement",
+        "Film Look":"stage shortcuts, per-stock reset dots and SDR copy",
+        "Grade commands":"preset save/import/export and remaining group-copy actions",
+    }
     for family in complete["canvasAndRepeatedFamilies"]:
-        text.append(f"| {family['family']} authoring/actions family | {'; '.join(family['controls'])} | Not measured | Not measured | Not measured | Untested: complete gesture family not qualified; individual measured actions are listed above | `{family['source']}`; November 11 inventory |")
-    text.extend(["", "Gestures and actions need separate evidence: Curves point add/drag/remove/channel; Exposure Bands "
-                 "node add/drag/remove/influence/Match; colour-wheel pads; HSL picking, selection structure and edges; "
-                 "Local mask painting, Boolean structure and each mask type; Retouch repair creation/moves and method settings; "
-                 "crop handles/rotation/flips; module bypass/reset/copy actions and SDR Match. A value-control timing row does not qualify these actions.",
+        text.append(f"| {family['family']} remaining actions | {remaining[family['family']]} | Not measured | Not measured | Not measured | Untested: bounded review; measured actions are listed individually above | `{family['source']}` |")
+    text.extend(["", "**Conditions and evidence:** fresh W10 24 MP TIFF resized from the same RAW (W1 original TIFF was not retained; not an identical baseline), "
+                 "repeated colour/detail chart, marked-photo Retouch fixture and a disposable 42 MP Sony RAW with 714,405 clipped sensels. "
+                 "Windows/Electron, NVIDIA GPU, 2560x1440, DPR 1. Atomic shared lock, batches under about 15 minutes. "
+                 "No preview/export colour agreement or HDR ceiling sign-off is claimed by these signatures.", "",
+                 "All evidence is in the main checkout's `codebase/output/performance/grade-0-9-2/`: `summary.json`, `timings.csv`, "
+                 "`w10-triage.json`, `w10-fixtures.json` and the named batch reports. They retain exact samples, commit/hash, prerequisites and errors. "
+                 "W1's archive and failed attempts remain intact; later incomplete attempts never erase earlier timings.", "",
+                 "**Error triage:** captured source-tile 409 bodies confirm superseded edit revisions; Denoise/peak 409s are recoverable obsolete-work refusals. "
+                 "W1 did not capture bodies, so its exact refusal reason remains unconfirmed. Current-preview settlement is required. "
+                 "Fractional Push/Pull and Match saturation 30 instead of 0.3 were driver mistakes, as were hidden/detached-field waits and waiting for a rotation draft before Apply. "
+                 "Unknown errors stay open; expected cancellation is retained and classified rather than suppressed.",
                  "", "<!-- grade-sweep-end -->", ""])
     file = ROOT.parent / "docs/technical/performance-table.md"
     original = file.read_bytes()

@@ -20,7 +20,7 @@ const report = { date: new Date().toISOString(), batch, samples, rows: [], error
   referenceContract:'Reference steps measure on-screen settlement; actual control observations additionally drain background work before sampling their pixels',
   commit: require('child_process').execFileSync('git', ['rev-parse','HEAD'], { encoding: 'utf8' }).trim(),
   driverSha256:require('crypto').createHash('sha256').update(fs.readFileSync(__filename)).digest('hex'),
-  methodology: 'Normal input/change handlers to exact current-generation presentation plus two animation frames; texture readback after clock. Nine 32px patches diagnose changes, not whole-picture or export agreement. Reference Exposure steps are restored between trials. Native-pointer drag presentation events are throughput observations, not physical scanout.' };
+  methodology: 'Normal input/change handlers to exact current-generation presentation plus two animation frames; texture readback after clock. Nine 32px patches (plus centre/edge probes around three authored defects in the Retouch fixture) diagnose changes, not whole-picture or export agreement. Reference Exposure steps are restored between trials. Native-pointer drag presentation events are throughput observations, not physical scanout.' };
 const network=[];
 fs.mkdirSync(out, { recursive: true });
 const spentBeforeMs = fs.readdirSync(out).filter(n=>n.endsWith('.json') && (!args.includes('--followup') || n.startsWith('w10-'))).reduce((total,name)=> {
@@ -29,9 +29,15 @@ const spentBeforeMs = fs.readdirSync(out).filter(n=>n.endsWith('.json') && (!arg
   } catch { return total; }
 },0);
 // Leave ten minutes for Electron launches and early overwritten diagnostic attempts.
-const measurementLimitMs = (args.includes('--followup') ? 85 : 110)*60000;
-report.budget={spentBeforeMs,measurementLimitMs,allowance:args.includes('--followup') ? 'W10: 85 measurement minutes plus 5 launch minutes within 90-minute cap' : 'W1: 110 measurement minutes plus 10 launch minutes'};
-const budgetExceeded=()=>spentBeforeMs+Date.now()-startedAt>=measurementLimitMs;
+const measurementLimitMs = (args.includes('--followup') ? 90 : 110)*60000;
+report.budget={spentBeforeMs,measurementLimitMs,allowance:args.includes('--followup') ? 'W10: 90 minutes of actual lock-held graphics runs, including launch/shutdown; excludes waiting for other workers' : 'W1: 110 measurement minutes plus 10 launch minutes'};
+let heldBeforeMs=0,lockStartedAt=startedAt;
+if(args.includes('--followup')) {
+  try { const ledger=JSON.parse(fs.readFileSync(path.join(out,'w10-launches.json'),'utf8')); heldBeforeMs=ledger.runs.filter(r=>r.completedAt).reduce((n,r)=>n+Date.parse(r.completedAt)-Date.parse(r.startedAt),0); }catch{}
+  try {const stamp=fs.readFileSync('D:/AI/AI Projects/HDR Finisher Tool/gpu-run.lock/owner.txt','utf8').trim().split(/\s+/)[2];lockStartedAt=Date.parse(stamp)||startedAt;}catch{}
+}
+report.budget.heldBeforeMs=heldBeforeMs;report.budget.lockStartedAt=lockStartedAt;
+const budgetExceeded=()=>args.includes('--followup') ? heldBeforeMs+Date.now()-lockStartedAt>=90*60000 : spentBeforeMs+Date.now()-startedAt>=measurementLimitMs;
 const save = () => fs.writeFileSync(path.join(out, `${path.basename(opt('--label', batch))}.json`), JSON.stringify(report, null, 2));
 async function signature(page) {
   const texture = await page.evaluate(() => window.__gradeSignature());
@@ -199,20 +205,27 @@ async function gestureChecks(page,lane,zoom) {
       await page.mouse.move(point.x,point.y);await page.mouse.down();await page.mouse.move(point.x+6,point.y-25,{steps:8});await page.mouse.up();
     },restore);
   }
+  if(batch==='local-authoring') {
+    const {createLocalAdjustment}=require('../helpers/local-adjustments');
+    for(const type of ['brush','linear_gradient','luminance_range','path']) await observe(`${lane}.local.author-${type}`,async()=>{await createLocalAdjustment(page,type);await page.locator('#local-exposure').evaluate(c=>{c.value='.5';c.dispatchEvent(new Event('input',{bubbles:true}));c.dispatchEvent(new Event('change',{bubbles:true}));});},async()=>page.locator('#local-delete').click());
+    await createLocalAdjustment(page,'luminance_range');await page.locator('#local-exposure').evaluate(c=>{c.value='.5';c.dispatchEvent(new Event('input',{bubbles:true}));c.dispatchEvent(new Event('change',{bubbles:true}));});await stable(page);
+    await observe(`${lane}.local.invert`,async()=>page.locator('#local-invert').click(),async()=>page.locator('#local-invert').click());
+    await observe(`${lane}.local.duplicate-delete`,async()=>page.locator('#local-duplicate').click(),async()=>page.locator('#local-delete').click());
+  }
   if(batch==='hsl-authoring') {
     await page.evaluate(()=>document.querySelector('[data-group="hsl"]').classList.remove('collapsed'));
     const host=page.locator('#hsl-global-panel');
     await observe(`${lane}.hsl.custom-add-delete`,async()=>{const n=await page.evaluate(()=>hslOwner(hslUI.panels[0]).hsl.channels.length);await host.getByText('+ Custom',{exact:true}).click();if(await page.evaluate(()=>hslOwner(hslUI.panels[0]).hsl.channels.length)!==n+1)throw Error('Custom channel not added');},async()=>host.locator('[data-hsl-action="delete"]').click(),'state');
     await host.getByText('+ Custom',{exact:true}).click();
     const original=await page.evaluate(()=>structuredClone(hslChannel(hslUI.panels[0]).recipe));
-    for(const mode of ['pick','add','subtract']) await observe(`${lane}.hsl.${mode}`,async()=>{await host.locator(`[data-hsl-mode="${mode}"]`).click();const b=await page.evaluate(()=>activePreviewElement().getBoundingClientRect().toJSON());await page.mouse.click(b.x+b.width/2,b.y+b.height/2);await page.waitForFunction(()=>!hslUI.stroke);const recipe=await page.evaluate(()=>hslChannel(hslUI.panels[0]).recipe);if(recipe.ranges.length!==1)throw Error('Picker did not author one range');},async()=>page.evaluate(original=>{hslUI.picker=null;const ui=hslUI.panels[0];hslEdit(ui,()=>{hslChannel(ui).recipe=structuredClone(original);});},original),'state');
-    await observe(`${lane}.hsl.selection-toggle`,async()=>{await host.locator('[data-hsl-selection]').click();if(await host.locator('[data-hsl-selection]').getAttribute('aria-pressed')!=='true')throw Error('Selection overlay was not enabled');},async()=>host.locator('[data-hsl-selection]').click(),'state');
+    for(const mode of ['pick','add','subtract']) await observe(`${lane}.hsl.${mode}`,async()=>{await host.locator(`[data-hsl-mode="${mode}"]`).click();const b=await page.evaluate(()=>activePreviewElement().getBoundingClientRect().toJSON());await page.mouse.click(b.x+b.width/2,b.y+b.height/2);await page.waitForFunction(()=>!hslUI.stroke&&!hslUI.panels[0].sampling);const recipe=await page.evaluate(()=>hslChannel(hslUI.panels[0]).recipe);if(recipe.ranges.length!==1)throw Error('Picker did not author one range');},async()=>page.evaluate(original=>{hslUI.picker=null;const ui=hslUI.panels[0];hslEdit(ui,()=>{hslChannel(ui).recipe=structuredClone(original);});},original),'state');
+    await observe(`${lane}.hsl.selection-toggle`,async()=>{await host.locator('[data-hsl-selection]').click();await page.waitForFunction(()=>document.getElementById('hsl-selection-overlay')?.complete);if(await host.locator('[data-hsl-selection]').getAttribute('aria-pressed')!=='true')throw Error('Selection overlay was not enabled');},async()=>host.locator('[data-hsl-selection]').click(),'state');
   }
   if(batch==='commands') {
     await page.evaluate(lane=>{document.querySelector(`[data-group="${lane}-tone"]`).classList.remove('collapsed');commitAdjustmentValue(`${lane}.exposure`,0,{manual:true});},lane);await stable(page);await page.evaluate(lane=>commitAdjustmentValue(`${lane}.exposure`,.5,{manual:true}),lane);await stable(page);
-    await observe(`${lane}.commands.undo-redo`,async()=>{await page.evaluate(()=>document.activeElement?.blur());await page.keyboard.press('Control+z');},async()=>page.keyboard.press('Control+y'));
+    await observe(`${lane}.commands.undo-redo`,async()=>{await page.evaluate(()=>document.activeElement?.blur());await page.keyboard.press('Control+z');await page.waitForFunction(lane=>state.adjustments[lane].exposure===0,lane);},async()=>{await page.keyboard.press('Control+y');await page.waitForFunction(lane=>state.adjustments[lane].exposure===.5,lane);});
     await observe(`${lane}.commands.tone-bypass`,async()=>page.locator(`[data-section-path="${lane}.tone_section_enabled"]`).click(),async()=>page.locator(`[data-section-path="${lane}.tone_section_enabled"]`).click());
-    await observe(`${lane}.commands.tone-reset-undo`,async()=>page.locator(`[data-reset-group="${lane}-tone"]`).click(),async()=>{await page.evaluate(()=>document.activeElement?.blur());await page.keyboard.press('Control+z');});
+    await observe(`${lane}.commands.tone-reset-undo`,async()=>{await page.locator(`[data-reset-group="${lane}-tone"]`).click();await page.waitForFunction(lane=>state.adjustments[lane].exposure!==.5,lane);},async()=>{await page.evaluate(()=>document.activeElement?.blur());await page.keyboard.press('Control+z');await page.waitForFunction(lane=>state.adjustments[lane].exposure===.5,lane);});
   }
   if(batch==='vignette') {
     await page.evaluate(()=>commitAdjustmentValue('current.vignette.amount',-40,{manual:true}));await stable(page);
@@ -309,8 +322,10 @@ async function main() {
         if (!target?.valid || state.acceptedPresentation?.execution !== 'tiled') return null;
         const visible = visibleOutputRect(target.width, target.height) || { x:0,y:0,width:target.width,height:target.height };
         let hash = 2166136261;
-        for (const [fx, fy] of [[.1,.1],[.5,.1],[.9,.1],[.1,.5],[.5,.5],[.9,.5],[.1,.9],[.5,.9],[.9,.9]]) {
-          const patch = await gpu.readPresentationRegion(32,32,Math.floor(visible.x+visible.width*fx),Math.floor(visible.y+visible.height*fy));
+        const points=[[.1,.1],[.5,.1],[.9,.1],[.1,.5],[.5,.5],[.9,.5],[.1,.9],[.5,.9],[.9,.9]].map(([fx,fy])=>[Math.floor(visible.x+visible.width*fx),Math.floor(visible.y+visible.height*fy)]);
+        if(state.session.source.filename.includes('grade-retouch-defects')) for(const fx of [.44,.50,.56])for(const [dx,dy] of [[-16,-16],[40,-16],[-16,40]])points.push([Math.round(target.width*fx)+dx,Math.round(target.height*.5)+dy]);
+        for (const [x,y] of points) {
+          const patch = await gpu.readPresentationRegion(32,32,x,y);
           const bytes = new Uint8Array(new Float32Array(patch.values).buffer);
           for (const byte of bytes) hash = Math.imul(hash ^ byte, 16777619);
         }
@@ -413,7 +428,7 @@ async function main() {
           const started=Date.now(); await page.evaluate(()=>recalculateDenoise()); await stable(page);
           (report.denoisePreparation ||= []).push({lane,zoom,ms:Date.now()-started,reason:'Analysis preparation; warm control timings follow'});
         }
-        if(args.includes('--followup') && (batch==='hsl-authoring'||batch==='commands'||batch==='geometry'||batch==='vignette'||batch==='raw-highlights'||batch==='color-grading'||batch.endsWith('-equalizer'))) await gestureChecks(page,lane,zoom);
+        if(args.includes('--followup') && (batch==='local-authoring'||batch==='hsl-authoring'||batch==='commands'||batch==='geometry'||batch==='vignette'||batch==='raw-highlights'||batch==='color-grading'||batch.endsWith('-equalizer'))) await gestureChecks(page,lane,zoom);
         if(batch === 'curves') { await curves(page,lane,zoom); continue; }
         if(batch === 'match') { await match(page,zoom); continue; }
         for (const c of controls) {
@@ -438,7 +453,7 @@ async function main() {
               if(key==='contrast_pivot')changes.push(['contrast',.3]);
               if(key==='tint_hue')changes.push(['tint_purity',40]);
               if(key==='detail.clarity_radius_percent')changes.push(['detail.clarity_amount',50]);
-              if(key?.startsWith('detail.sharpen_') && key!=='detail.sharpen_amount')changes.push(['detail.sharpen_amount',100]);
+              if(key?.startsWith('detail.sharpen_') && key!=='detail.sharpen_amount')changes.push(['detail.sharpen_amount',key==='detail.sharpen_radius_px'?10:100]);
               if(key?.startsWith('color_grading.') && !key.endsWith('.saturation')) {
                 for(const zone of ['shadows','midtones','highlights'])changes.push([`color_grading.${zone}.saturation`,40]);
                 if(key.endsWith('.blending')||key.endsWith('.balance')) for(const [zone,hue] of [['shadows',220],['midtones',130],['highlights',30]])changes.push([`color_grading.${zone}.hue`,hue]);
@@ -483,7 +498,7 @@ async function main() {
               }
             }
             if (c.path?.endsWith('clarity_radius_percent')) dependencies.push(['current.detail.clarity_amount', 50]);
-            if (c.path?.includes('sharpen_') && !c.path.endsWith('sharpen_amount')) dependencies.push(['current.detail.sharpen_amount', 100]);
+            if (c.path?.includes('sharpen_') && !c.path.endsWith('sharpen_amount')) dependencies.push(['current.detail.sharpen_amount', c.path.endsWith('sharpen_radius_px')?10:100]);
             if (c.path?.endsWith('.film_look.grain_capture_geometry')) dependencies.push(['current.film_look.grain_film_format','custom'],['current.film_look.grain_custom_width_mm',36],['current.film_look.grain_custom_height_mm',36]);
             if (c.path?.includes('.film_look.grain_') && !c.path.endsWith('grain_amount')) dependencies.push(['current.film_look.grain_amount',40]);
             if (c.path?.includes('.film_look.halation_') && !c.path.endsWith('halation_amount')) dependencies.push(['current.film_look.halation_amount',80]);
