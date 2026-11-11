@@ -15,7 +15,6 @@ from PIL import Image
 import hdr_finisher.proofing as proofing_module
 from hdr_finisher.models import (
     AdjustmentState,
-    BrowserEvidenceRecord,
     CapabilityInfo,
     CapabilityStatus,
     DenoiseDocumentSettings,
@@ -26,7 +25,6 @@ from hdr_finisher.models import (
 )
 from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.proofing import (
-    EvidenceStore,
     GainMapParameters,
     ProofArtifact,
     ProofArtifactStore,
@@ -612,31 +610,6 @@ def test_auto_reconstruction_requires_display_headroom() -> None:
             json={"artifact_id": "missing", "target": {"mode": "fixed", "peak_nits": invalid_peak}},
         )
         assert bounds.status_code == 422
-
-
-def test_evidence_store_round_trips_records(tmp_path: Path) -> None:
-    store = EvidenceStore(tmp_path / "evidence.json")
-    record = BrowserEvidenceRecord(
-        artifact_id="abc",
-        format="jpeg_ultrahdr",
-        browser_name="Chrome",
-        browser_version="150",
-        highlight_observation="matched",
-        midtone_observation="matched",
-        color_observation="matched",
-        overall_observation="effectively-equivalent",
-    )
-    assert record.observed_at.utcoffset().total_seconds() == 0
-    serialized = record.model_dump(mode="json")
-    assert serialized["observed_at"].endswith("Z")
-    assert BrowserEvidenceRecord.model_validate(serialized).observed_at == record.observed_at
-
-    result = store.add(record)
-    assert len(result.records) == 1
-    loaded = store.list()
-    assert loaded.records[0].browser_version == "150"
-    assert loaded.records[0].observed_at.utcoffset().total_seconds() == 0
-    assert loaded.stale_after_days == 180
 
 
 @pytest.mark.parametrize(

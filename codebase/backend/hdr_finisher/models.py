@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from enum import Enum
 import math
 from typing import Any, ClassVar, Literal
@@ -1649,28 +1648,3 @@ class ProofReconstructionResponse(BaseModel):
     tile: ProofMatrixTile
 
 
-class BrowserEvidenceRecord(BaseModel):
-    artifact_id: str
-    format: str
-    browser_name: str = "Unknown"
-    browser_version: str = "Unknown"
-    operating_system: str = "Unknown"
-    display_label: str = "Unknown display"
-    hdr_state: str = "unknown"
-    sdr_white_nits: float | None = None
-    max_luminance_nits: float | None = None
-    nominal_headroom: float | None = None
-    dynamic_range_limit: str = "no-limit"
-    mime_mode: str = "correct"
-    presentation_variant: str = "native"
-    highlight_observation: str
-    midtone_observation: str
-    color_observation: str
-    overall_observation: str
-    notes: str = ""
-    observed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-class BrowserEvidenceResponse(BaseModel):
-    records: list[BrowserEvidenceRecord]
-    stale_after_days: int = 180
