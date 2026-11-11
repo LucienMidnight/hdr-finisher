@@ -21,12 +21,14 @@
   // reused for PERMIT_REUSE_MS: Grade or a more urgent job still takes the GPU
   // back within about a tenth of a second plus the batch already running.
   const PERMIT_REUSE_MS=100;let permitted=0;
+  // Hand-over is normal scheduling; preserve the broker requeue reason.
+  const yielded=reason=>Object.assign(Error(reason),{deliveryPreempted:true});
   async function permit(){
     if(performance.now()-permitted<PERMIT_REUSE_MS)return;
     for(;;){const response=await fetch(`/api/delivery/gpu/permit${identity?"?identity="+identity:""}`);if(!response.ok)throw Error("Delivery scheduler unavailable.");
       const value=await response.json();
       if(value.cancelled)throw Error("GPU delivery job cancelled.");
-      if(value.preempt)throw Error(value.reason);
+      if(value.preempt)throw yielded(value.reason);
       if(value.ready){permitted=performance.now();return;}await pause(30);}
   }
   // Finish this async frame before polling again: a suspended polling frame
@@ -47,7 +49,7 @@
         if(required>job.budget)throw Error("GPU repair exceeds the existing shared memory budget.");
         const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
           headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:required})});
-        if(!lease.ok)throw Error("Grade needs the shared GPU memory budget.");
+        if(!lease.ok)throw yielded("Grade needs the shared GPU memory budget.");
         await permit();
         const response=await fetch(`/api/delivery/gpu/${job.id}/retouch-source`);
         if(!response.ok)throw Error("GPU repair input handoff failed.");
@@ -64,7 +66,7 @@
         if(required>job.budget)throw Error("GPU DNG correction exceeds the available shared memory budget.");
         const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
           headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:required})});
-        if(!lease.ok)throw Error("Grade needs the shared GPU memory budget.");
+        if(!lease.ok)throw yielded("Grade needs the shared GPU memory budget.");
         await permit();
         const response=await fetch(`/api/delivery/gpu/${job.id}/dng-source`);
         if(!response.ok)throw Error("GPU DNG input handoff failed.");
@@ -89,7 +91,7 @@
         if(required>job.budget)throw Error(`GPU edge colour needs ${required} bytes; shared budget has ${job.budget}.`);
         const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
           headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:required})});
-        if(!lease.ok)throw Error("Grade needs the shared GPU memory budget.");
+        if(!lease.ok)throw yielded("Grade needs the shared GPU memory budget.");
         await permit();
         const {device}=await HDRLibraryGpuRaw.shared.gpu();
         const owned=new Set();let live=0,peak=0;
@@ -135,7 +137,7 @@
         if(scratch>job.budget)throw Error("GPU RAW development exceeds the available memory budget.");
         const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
           headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:job.budget})});
-        if(!lease.ok)throw Error("Grade needs the shared GPU memory budget.");
+        if(!lease.ok)throw yielded("Grade needs the shared GPU memory budget.");
         await permit();
         const response=await fetch(`/api/delivery/gpu/${job.id}/raw-sensor`);
         if(!response.ok)throw Error("GPU RAW sensor handoff failed.");
@@ -174,7 +176,7 @@
       if(reserve>job.budget*.8)throw Error("GPU delivery finishing exceeds the available memory budget.");
       const lease=await fetch(`/api/delivery/gpu/${job.id}/reserve`,{method:"POST",
         headers:{"Content-Type":"application/json"},body:JSON.stringify({bytes:job.budget})});
-      if(!lease.ok)throw Error("Grade needs the shared GPU memory budget.");
+      if(!lease.ok)throw yielded("Grade needs the shared GPU memory budget.");
       const creativeBudget=job.budget-reserve;
       if(creativeBudget<256*1024*1024)throw Error("Insufficient memory for the delivery graph.");
       gpu.setMemoryBudget(creativeBudget/(1024**3));
@@ -226,7 +228,8 @@
       finishing.destroy();finishing=null;gpu.resetSession(null);
       await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({timings_ms:timings,total_ms:performance.now()-started})});
     }catch(error){
-      console.error("GPU delivery",error);
+      if(error.deliveryPreempted)console.info("GPU delivery yielded",error.message);
+      else console.error("GPU delivery",error);
       finishing?.destroy();finishing=null;gpu?.resetSession(null);
       if(job)await fetch(`/api/delivery/gpu/${job.id}/complete`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({error:error.message})}).catch(()=>{});
       await pause(100);

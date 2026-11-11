@@ -1,5 +1,34 @@
 # Module PRD: Export and Proof
 
+## November 11: expected delivery hand-over (W7)
+
+Grade taking the shared GPU budget, or a higher-priority delivery taking the
+next turn, is now logged as an informational yield rather than a renderer
+error. The existing cleanup and backend requeue reasons are preserved. Genuine
+GPU failures still log errors and use the existing CPU fallback; no retry
+policy, memory budget, rendered pixels or encoding changed.
+
+The November 8 Retouch driver actually failed because its cancellation route
+was continued twice (`Route is already handled!`); the GPU hand-over error was
+incidental. Current main already fixes that driver and its baseline passes.
+Fault injection still reproduced the misleading delivery error log before this
+fix. The delivery lifetime test now covers Grade, priority and reservation
+hand-overs across Retouch, DNG, Edge colour, RAW and ordinary delivery, checking
+cleanup, unchanged requeue reasons and continued error logging on real failures.
+
+Validation: Retouch passes before and after the fix. Delivery smoke completes:
+Denoise, SDR and ceiling checks pass; the documented stricter HDR p99.9 miss
+remains 3.377 (limit unchanged). Saved-grade ceiling/Proof passes on GPU and
+CPU; peaks are 798.184/798.493 nits against 800. Independent GPU exports at
+3/2 GiB admission caps are byte-identical, as are their full-size Proofs.
+All graphics checks ran serially under the shared sprint lock. The default
+Library smoke check reports no application errors but fails the existing
+250 ms drawing-gap limit (1,128 ms); left to its owner. Timings are recorded
+in the performance table. Logs: `codebase/output/w7-*.log`.
+Final rebase onto local main `db41e0f9`: Node 917 passed; Python 3,244 passed,
+55 skipped. Output started and ended at 42.7 GB; temporary ceiling JPEGs
+were recycled, with metrics and logs retained. No push.
+
 ## November 11: repeatability investigation (W5, unresolved)
 
 No rendering fix is claimed. The saved DSC07060 grade at 4000 x 2671,
