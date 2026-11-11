@@ -35,6 +35,9 @@
 - The preview no longer hangs after a resize error, and Denoise no longer reuses the previous picture's noise measurement after the SDR base changes.
 - Typing a percentage into a slider no longer jumps to the maximum.
 - A normal graphics-memory hand-over between Grade and an export is no longer reported as an error.
+- JPEG XL photos no longer make the Library stop drawing pictures (it kept relaunching a metadata reader while checking sizes).
+- Choosing primaries and transfer by hand now clears the source review notice for linear and untagged TIFF or HEIC files, so they can be exported.
+- After adding a tag in the Library, the tag field and its suggestions clear again.
 - After using Denoise or Retouch, other Grade sliders respond about three times faster, and return to full speed when the tool is turned off.
 
 ## Changed or removed
