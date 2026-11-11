@@ -103,7 +103,7 @@ module.exports = async function checkFilmPanel(page) {
   await saved.waitFor();
   await saved.locator('.button-secondary').click();
   await group.locator('.group-preset').click();
-  await saved.locator('.text-button').click();
+  await saved.locator('.text-button', { hasText: 'Delete' }).click();
   await page.waitForFunction(()=>window.__filmPanelPresets.length===0);
   await page.keyboard.press('Escape');
  } finally {

@@ -16,7 +16,7 @@ module.exports = async function(page) {
    for (const section of group.querySelectorAll('[data-film-section]')) {
     const keys=[...new Set([...section.querySelectorAll('[data-path]')].map(c=>c.dataset.path.split('.').at(-1)))];
     const count=keys.filter(key=>state.adjustments[state.currentView].film_look.stock_overrides.includes(key)).length;
-    check(section.querySelector('.film-stage-mod').textContent===(count ? `${count} Mod` : ''),'stage Mod count disagrees with deliberate controls');
+    check(section.querySelector('.film-stage-mod').title===(count ? `${count} modified controls` : ''),'stage Mod count disagrees with deliberate controls');
     check(Boolean(section.querySelector('.film-stage-summary').textContent),'missing current-setting summary');
    }
   };
