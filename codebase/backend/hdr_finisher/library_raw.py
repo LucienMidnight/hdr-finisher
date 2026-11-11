@@ -242,6 +242,12 @@ class RawBrowsing:
                             self.cv.notify_all()
                             continue
                         if not self._trim_raw(job["size"]):
+                            if not self.raw:
+                                # Nothing left to evict and the app-wide share refused
+                                # the copy: decode from disk instead of waiting forever.
+                                job['uncached']=True
+                                self.cv.notify_all()
+                                continue
                             self.cv.wait(.025)
                             continue
                         memory = SharedMemory(create=True, size=max(1, job["size"]))

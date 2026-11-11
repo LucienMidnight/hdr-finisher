@@ -125,3 +125,19 @@ def test_raw_larger_than_readahead_share_uses_uncached_disk_lane(tmp_path,monkey
         assert service.jobs[identity(path)[0]]['uncached']
         assert not service.raw and service.partial is None
     finally:service.close()
+
+def test_refused_raw_share_with_nothing_to_evict_uses_uncached_disk_lane(tmp_path,monkeypatch):
+    # A whole-app memory refusal must not leave the request waiting forever.
+    from hdr_finisher import app_memory
+    path=tmp_path/'refused.arw';path.write_bytes(b'raw refused')
+    service=RawBrowsing(tmp_path)
+    monkeypatch.setattr(service,'start',lambda:None)
+    monkeypatch.setattr(app_memory,'claim',lambda *args:False)
+    service.request(path)
+    reader=Thread(target=service._read,daemon=True);service.threads.append(reader);reader.start()
+    try:
+        until=time.monotonic()+2
+        while not service.jobs[identity(path)[0]].get('uncached') and time.monotonic()<until:time.sleep(.01)
+        assert service.jobs[identity(path)[0]]['uncached']
+        assert not service.raw and service.partial is None
+    finally:service.close()
