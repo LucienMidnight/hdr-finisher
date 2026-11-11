@@ -136,7 +136,8 @@
       input.setAttribute("aria-label", "Add tag · T"); input.setAttribute("role", "combobox"); input.setAttribute("aria-autocomplete", "list"); input.setAttribute("aria-expanded", "false"); input.setAttribute("aria-controls", "library-tag-suggestions");
       const suggestions = document.createElement("div"); suggestions.id = "library-tag-suggestions"; suggestions.setAttribute("role", "listbox");
       let index = -1;
-      const commit = tag => { if (!tag.trim()) return; draft = ""; void change({ add_tag: tag }).then(() => document.getElementById("library-tag-input")?.focus()); };
+      // Clear this field too: a focused field survives Details redraws (1f4e69ef).
+      const commit = tag => { if (!tag.trim()) return; draft = ""; input.value = ""; index = -1; suggestions.replaceChildren(); input.setAttribute("aria-expanded", "false"); input.removeAttribute("aria-activedescendant"); void change({ add_tag: tag }).then(() => document.getElementById("library-tag-input")?.focus()); };
       input.addEventListener("input", () => {
         draft = input.value; clearTimeout(tagTimer); tagRequest?.abort(); tagRequest = new AbortController(); const controller = tagRequest;
         tagTimer = setTimeout(async () => {
