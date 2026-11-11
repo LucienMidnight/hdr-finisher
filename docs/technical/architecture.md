@@ -48,7 +48,7 @@ flowchart LR
 | `scopes.py` | Vectorized histograms/waveforms, peak/clipping data, reference-nit statistics |
 | `overlay.py` | False-color and zebra images |
 | `exporters.py` | SDR JPEG/PNG, AVIF gain map, JPEG Ultra HDR, bounded SDR-guided JPEG gain-map denoising, staging and validation |
-| `proofing.py` | Encoded proof artifacts, gain-map reconstruction, evidence records |
+| `proofing.py` | Encoded proof artifacts and gain-map reconstruction |
 | `display_probe.py` | Read-only Windows QueryDisplayConfig/DXGI telemetry |
 | `capabilities.py` / `binaries.py` | Optional library and encoder discovery |
 | `sessions.py` | In-memory active session and owned temporary-source lifecycle |
@@ -67,7 +67,7 @@ flowchart LR
 - `gpu-param-layout.js`: the single frozen list of 190 global shader positions; JavaScript and generated WGSL use that list.
 - `webgpu-preview.js`: the intact renderer class, reusable GPU resources and direct/tiled execution.
 - `webgpu-shaders.js`: generated shader sources with unchanged arithmetic.
-- `proofing-ui.js`: proof artifact controls, reconstruction state, and observation workflow.
+- `proofing-ui.js`: proof artifact controls and reconstruction state.
 
 The frontend deliberately has no build framework. This keeps packaging and offline operation simple, but places more state coordination in plain JavaScript.
 

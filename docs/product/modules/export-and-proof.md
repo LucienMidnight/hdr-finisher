@@ -882,3 +882,12 @@ covers the batch or the histogram (Steve). The shared status bar shows
 "Exporting N of M" while a batch runs, from any page, then "Export
 finished". The Library footer's Activity button says "Exporting N of M".
 UI only: no output or settings changed.
+
+## November 11: unused browser observation storage retired
+
+Removed the uncalled browser-evidence HTTP endpoints, their private store,
+and record models. The current frontend, desktop, tests and listed drivers
+never called these routes; the sole store round-trip unit test was removed
+with the store. Old `delivery-proof-evidence.json` records are no longer
+consumed; no saved photo or test projects are affected. Encoded Proof,
+reconstruction, file serving and export pixels/files are unchanged.
