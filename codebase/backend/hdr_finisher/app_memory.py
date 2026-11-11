@@ -4,6 +4,7 @@ Windows charged RAM is proportional resident memory (QueryWorkingSet).
 Shared pages are divided by their OS share count, never added as full copies.
 """
 import ctypes
+import errno
 from ctypes import wintypes
 import os
 import sys
@@ -259,8 +260,11 @@ def mac_process_tree(root):
     for pid in owned:
         usage=Usage()
         if lib.proc_pid_rusage(pid,0,ctypes.byref(usage)):
-            if pid not in rows:continue
-            raise OSError(ctypes.get_errno(),'proc_pid_rusage failed; memory gate unavailable')
+            error=ctypes.get_errno()
+            # A child that exited since ps listed it (ps itself is one) holds no
+            # memory. Only an unreadable live process, or the app itself, fails.
+            if pid not in rows or (pid!=root and error==errno.ESRCH):continue
+            raise OSError(error,'proc_pid_rusage failed; memory gate unavailable')
         result.append(dict(pid=pid,parentPid=rows.get(pid,(0,''))[0],name=rows.get(pid,(0,''))[1],
             workingSetBytes=usage.resident,chargedBytes=usage.footprint))
     return result
