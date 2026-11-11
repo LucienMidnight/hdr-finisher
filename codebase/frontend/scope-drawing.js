@@ -168,10 +168,6 @@ function guidePosition(scope, value) {
   return scopeUi.guidePosition(scope, value);
 }
 
-function scopeHdrCeiling(scope) {
-  return scopeUi.hdrCeiling(scope);
-}
-
 function bindZoneScopeOverlays() {
   document.querySelectorAll("[data-zone-hover]").forEach((target) => {
     const show = () => {

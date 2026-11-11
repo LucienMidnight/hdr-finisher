@@ -572,14 +572,18 @@ async function applyRawImportSettings() {
     els.lensSettingsNote.dataset.tooltip = "Choose a manual Lensfun profile or switch to Auto/Off.";
     return;
   }
+  // Read the settings and owner before the grant wait, so a photo switch
+  // during it cannot apply this photo's settings to the next one.
+  const sessionId = state.session.session_id;
+  const rawImportSettings = rawImportSettingsPayload();
   const selection = await desktop.grantSourcePath(sourcePath);
-  if (!selection) return;
+  if (!selection || state.session?.session_id !== sessionId) return;
   els.applyRawSettings.disabled = true;
   try {
     await openStagedDesktopSource({
       ...selection,
-      rawImportSettings: rawImportSettingsPayload(),
-      replaceSessionId: state.session.session_id,
+      rawImportSettings,
+      replaceSessionId: sessionId,
     });
   } finally {
     els.applyRawSettings.disabled = false;
