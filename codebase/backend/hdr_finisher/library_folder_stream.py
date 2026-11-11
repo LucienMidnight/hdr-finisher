@@ -157,7 +157,8 @@ class OrderedExtent:
         def natural(value):
             value = ''.join(c for c in unicodedata.normalize('NFD', str(value)).casefold() if not unicodedata.combining(c))
             return re.sub(r'\d+', lambda m: m[0].lstrip('0').zfill(24), value)
-        self.db.create_function('natural', 1, natural, deterministic=True)
+        # NATURAL is an SQL keyword; older SQLite (Ubuntu 22.04) rejects it as a function name.
+        self.db.create_function('natural_key', 1, natural, deterministic=True)
         self.db.create_function('basename', 1, os.path.basename, deterministic=True)
         self.db.create_function('extension', 1, lambda p: os.path.splitext(p)[1].upper(), deterministic=True)
         where = "f.path>=? AND f.path<?" + NOT_JUNK.replace("path", "f.path")
@@ -185,7 +186,7 @@ class OrderedExtent:
             self.db.create_function('edited',1,lambda p: int(edited.get(p,{}).get('edited',False)))
             order = 'edited(f.path)'+direction+', '
         self.cursor = self.db.execute("SELECT f.path,f.bytes,f.mtime_ns,f.facts FROM files f"+join+" WHERE "+where+
-            " ORDER BY "+order+"natural(basename(f.path))"+direction+", natural(f.path)"+direction, bounds)
+            " ORDER BY "+order+"natural_key(basename(f.path))"+direction+", natural_key(f.path)"+direction, bounds)
         self.offset = 0
 
     def page(self, limit):
