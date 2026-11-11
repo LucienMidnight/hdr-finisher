@@ -100,24 +100,6 @@ function cancelLocalPathDraft() {
   renderLocalAdjustments();
 }
 
-function beginPendingLocalAdjustment() {
-  if (state.pendingLocalAdjustment) return state.pendingLocalAdjustment;
-  const currentLocal = selectedLocal();
-  const number = localAdjustmentRows().length + 1;
-  state.pendingLocalAdjustment = {
-    id: crypto.randomUUID(),
-    name: `Local Adjustment ${number}`,
-  };
-  state.pendingSubMask = null;
-  // Keep the existing editor mounted while the new row waits for a mask
-  // choice. Collapsing it makes the entire grade rail jump to a new scroll
-  // position even though only the adjustment stack changed.
-  if (!currentLocal) state.selectedLocalId = state.pendingLocalAdjustment.id;
-  state.selectedSubMaskId = null;
-  state.localTool = null;
-  return state.pendingLocalAdjustment;
-}
-
 function beginPendingSubMask(local) {
   if (!local) return null;
   const ordinal = subMaskRows(local.mask).length + 1;
