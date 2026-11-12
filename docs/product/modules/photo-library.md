@@ -1,5 +1,20 @@
 ## November 11: JPEG XL admission no longer launches metadata processes
 
+## November 12: selection and fullscreen return
+
+Selected grid/filmstrip cells have a neutral text-ink outline and readable
+caption. The current selected photo adds an accent outer edge and a neutral
+inner picture outline, so custom accent contrast does not hide selection.
+Existing palette/geometry tokens are used in all four themes.
+
+Fullscreen saves the grid pixel offset and photo identity. On exit, unchanged
+selection restores that offset; changed selection centers the current photo.
+The restoration also survives the asynchronous native fullscreen resize.
+Pointer/wheel/keyboard interaction releases it for normal browsing; opening
+another folder releases it too. Tests cover multi-selection, exact non-row
+positions, changed selection and changed column count.
+
+
 Library size estimates and decoder deadlines now read only JPEG XL's small
 codestream SizeHeader, including container codestream boxes. The November 10
 structured metadata helper had inadvertently reached these repeated control

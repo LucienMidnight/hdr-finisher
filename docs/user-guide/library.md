@@ -339,3 +339,8 @@ Move the pointer over the collections sidebar to reveal the larger + buttons bes
 The Library shows its saved indexed matches immediately, then refreshes
 them in the background. An empty saved result stays empty until refresh
 finds matches. Refresh does not block the Library control and memory polls.
+
+Fullscreen return restores the exact grid scroll position when the displayed photo
+is unchanged. If you navigate to another photo in fullscreen, the grid returns
+with that photo centered (as far as the first/last rows allow). Selected tiles
+have a clear outline; the current photo also has an inner picture outline.

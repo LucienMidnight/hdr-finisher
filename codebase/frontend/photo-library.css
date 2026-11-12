@@ -69,7 +69,11 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-cell { position: absolute; display: flex; flex-direction: column; padding: 7px 7px 0; cursor: default; border-radius: var(--radius); overflow: hidden; background: var(--panel); }
 .library-cell:hover { background: var(--raised); }
 .library-cell.active { background: var(--accent-bed); box-shadow: var(--plate-press); }
-.library-cell.lead { box-shadow: var(--plate-lift); }
+.library-cell.active { outline: 2px solid var(--text); outline-offset: -2px; }
+.library-cell.active .name { color: var(--text); }
+.library-cell.lead { box-shadow: var(--plate-press); }
+.library-cell.lead.active { outline-color: var(--accent-strong); }
+.library-cell.lead.active .picture-frame { outline: 2px solid var(--text); outline-offset: 2px; }
 .library-cell .picture-frame { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; aspect-ratio: 4 / 3; min-height: 0; overflow: hidden; width: 100%; }
 .library-cell canvas, .library-cell img { width: 100%; height: 100%; object-fit: contain; }
 .library-cell .library-marks { order: 1; }

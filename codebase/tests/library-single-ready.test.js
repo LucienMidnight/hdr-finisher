@@ -114,7 +114,7 @@ test('fullscreen entry resets inherited zoom and explicit detail demand to Fit',
  const fn=source.slice(source.indexOf('  function setReview('),source.indexOf('  function openGrade('));
  let aborted=false,view;
  const state={zoom:true,detailRequested:'photo',nativeMeta:{},native:{abort(){aborted=true;}},view:'single',selection:new Set()};
- const context={state,selected:()=>({path:'photo'}),$:()=>({setAttribute(){}}),library:{classList:{toggle(){}}},setView:v=>view=v,postParent(){}};
+ const context={grid:{scrollTop:417},reviewGrid:null,restoreReviewGrid:null,state,selected:()=>({path:'photo'}),$:()=>({setAttribute(){}}),library:{classList:{toggle(){}}},setView:v=>view=v,postParent(){}};
  vm.runInNewContext(fn+';this.run=setReview;',context);context.run(true);
  assert.equal(state.zoom,false);assert.equal(state.detailRequested,null);assert.equal(state.nativeMeta,null);assert.equal(aborted,true);assert.equal(view,'single');
 });

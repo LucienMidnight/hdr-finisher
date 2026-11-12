@@ -819,17 +819,27 @@
     }
     return requested;
   }
+  grid.addEventListener("wheel", () => { restoreReviewGrid = null; }, {passive: true});
+  grid.addEventListener("pointerdown", () => { restoreReviewGrid = null; });
+  grid.addEventListener("keydown", () => { restoreReviewGrid = null; });
   let gridRequests = 0, gridSettleTimer;
   let lastGridTop = 0, gridWidth = 0, gridHeight = 0;
+  let reviewGrid = null, restoreReviewGrid = null;
   function paintGrid(reveal = false) {
     const count = state.photos.length ? String(state.photos.length) : ""; if ($("place-count").textContent !== count) $("place-count").textContent = count;
     if (!state.active || state.view !== "grid") return;
     // Keep the current photo in view through the fullscreen window resize too.
     const resized = gridWidth !== grid.clientWidth || gridHeight !== grid.clientHeight;
-    reveal ||= resized && state.layout && state.index >= state.layout.first && state.index < state.layout.last;
+    reveal ||= !restoreReviewGrid && resized && state.layout && state.index >= state.layout.first && state.index < state.layout.last;
     gridWidth = grid.clientWidth; gridHeight = grid.clientHeight;
     let layout = HDRLibraryLayout.gridLayout(state.photos.length, gridWidth, gridHeight, grid.scrollTop, state.size);
     space.style.height = `${layout.totalHeight}px`;
+    if (restoreReviewGrid) {
+      grid.scrollTop = selected()?.path === restoreReviewGrid.path ? restoreReviewGrid.top
+        : Math.max(0, layout.scrollFor(state.index) + layout.rowHeight / 2 - gridHeight / 2);
+      reveal = false;
+      layout = HDRLibraryLayout.gridLayout(state.photos.length, gridWidth, gridHeight, grid.scrollTop, state.size);
+    }
     if (reveal && state.index >= 0) {
       const top = layout.scrollFor(state.index);
       const bottom = layout.scrollFor(state.index + layout.columns);
@@ -1111,6 +1121,7 @@
     }
   }
   function select(index, scroll = false, mode = "single") {
+    if (!state.review && state.view === "grid") restoreReviewGrid = null;
     if(state.folderOpen)state.folderOpen.restore=null;
     if (!state.photos.length) return;
     if (compare.enabled() && state.view === "single") mode = "single";
@@ -1422,6 +1433,8 @@
     if (review && !selected()) return;
     if (review) {
       state.beforeReview = state.view;
+      restoreReviewGrid = null;
+      reviewGrid = {top: grid.scrollTop, path: selected()?.path};
       // Keep the grid selection for when fullscreen closes. Ratings, labels
       // and Delete act on the shown picture only while fullscreen is open.
       state.selection.add(selected().path);
@@ -1430,7 +1443,10 @@
       $("zoom-button").setAttribute("aria-pressed", "false");
     }
     state.review = review; library.classList.toggle("review", review);
-    if (review) setView("single"); else setView(state.beforeReview, true);
+    if (review) setView("single"); else {
+      restoreReviewGrid = reviewGrid;
+      setView(state.beforeReview);
+    }
     postParent("review", { enabled: review });
   }
   function openGrade() {
@@ -1443,6 +1459,7 @@
   const browse = path => openPlace({ path });
   const browseCollection = (kind, name) => openPlace({ kind, name });
   async function openPlace(place) {
+    restoreReviewGrid = null; reviewGrid = null;
     const path = place.path || "";
     HDRLibraryStopwatch("folder_clicked", {path, kind:place.kind || "folder"});
     if (!place.refresh && !place.kind && !state.collection && state.folderOpen?.path === path
