@@ -243,9 +243,15 @@ async function main() {
     assert.equal(await window.locator(".top-actions #grade-autosave").count(), 1);
     assert.equal(await window.locator(".top-actions :is(#project-open, #project-save, #settings-open, #help-open)").count(), 0);
     for (const [width, height] of [[1280, 720], [1366, 768], [1440, 900], [1600, 900], [1920, 1080]]) {
-      await electronApp.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).setSize(...size), [width, height]);
-      // Wait for the resize to reach the page (a fixed pause raced on busy CI), then one frame.
-      await window.waitForFunction((size) => Math.abs(window.innerWidth - size[0]) <= 1 && Math.abs(window.innerHeight - size[1]) <= 1, [width, height], { timeout: 10000 });
+      // The OS may clamp the size to a small screen (macOS CI); wait for the page to
+      // reach the content size the window actually got (a fixed pause raced on busy CI).
+      const content = await electronApp.evaluate(({ BrowserWindow }, size) => {
+        const win = BrowserWindow.getAllWindows().find((item) => !item.webContents.getURL().includes("gpu-delivery.html"));
+        win.setSize(...size);
+        const bounds = win.getContentBounds();
+        return [bounds.width, bounds.height];
+      }, [width, height]);
+      await window.waitForFunction((size) => Math.abs(window.innerWidth - size[0]) <= 1 && Math.abs(window.innerHeight - size[1]) <= 1, content, { timeout: 10000 });
       await window.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const layout = await window.evaluate(() => {
         // Measure the instance on screen; each workflow panel has its own header.
