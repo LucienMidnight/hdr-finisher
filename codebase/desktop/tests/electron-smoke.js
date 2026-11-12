@@ -243,15 +243,19 @@ async function main() {
     assert.equal(await window.locator(".top-actions #grade-autosave").count(), 1);
     assert.equal(await window.locator(".top-actions :is(#project-open, #project-save, #settings-open, #help-open)").count(), 0);
     for (const [width, height] of [[1280, 720], [1366, 768], [1440, 900], [1600, 900], [1920, 1080]]) {
-      // The OS may clamp the size to a small screen (macOS CI); wait for the page to
-      // reach the content size the window actually got (a fixed pause raced on busy CI).
-      const content = await electronApp.evaluate(({ BrowserWindow }, size) => {
-        const win = BrowserWindow.getAllWindows().find((item) => !item.webContents.getURL().includes("gpu-delivery.html"));
-        win.setSize(...size);
-        const bounds = win.getContentBounds();
+      // The OS may clamp or adjust the size later (macOS CI's small screen); poll until
+      // the page matches the window's current content size (a fixed pause raced on CI).
+      const mainContentSize = () => electronApp.evaluate(({ BrowserWindow }) => {
+        const bounds = BrowserWindow.getAllWindows().find((item) => !item.webContents.getURL().includes("gpu-delivery.html")).getContentBounds();
         return [bounds.width, bounds.height];
-      }, [width, height]);
-      await window.waitForFunction((size) => Math.abs(window.innerWidth - size[0]) <= 1 && Math.abs(window.innerHeight - size[1]) <= 1, content, { timeout: 10000 });
+      });
+      await electronApp.evaluate(({ BrowserWindow }, size) => BrowserWindow.getAllWindows().find((item) => !item.webContents.getURL().includes("gpu-delivery.html")).setSize(...size), [width, height]);
+      for (const deadline = Date.now() + 10000; ;) {
+        const [content, page] = await Promise.all([mainContentSize(), window.evaluate(() => [window.innerWidth, window.innerHeight])]);
+        if (Math.abs(content[0] - page[0]) <= 1 && Math.abs(content[1] - page[1]) <= 1) break;
+        if (Date.now() > deadline) throw new Error(`Window resize did not settle at ${width}x${height}: content ${content}, page ${page}`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
       await window.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const layout = await window.evaluate(() => {
         // Measure the instance on screen; each workflow panel has its own header.
