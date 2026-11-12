@@ -599,6 +599,8 @@ function bindEvents() {
       state.gpuPreview?.resetSession(state.session?.session_id || null);
       state.gpuPreparedLane = { hdr: false, sdr: false };
       renderSession();
+      // The Export summary states the reference white; keep it current.
+      renderFormatCards();
       await settlePreview(state.currentView);
     }
     els.hdrReferenceWhite.disabled = false;

@@ -427,6 +427,8 @@ async function main() {
       }
     }
 
+    // The export summary updates after the control; let it settle before comparing.
+    await window.waitForFunction(() => document.querySelector("#export-reference-white")?.textContent.includes("203 nits"), null, { timeout: 10000 }).catch(() => {});
     const referenceWhiteContract = await window.evaluate(() => ({
       selected: document.querySelector("#hdr-reference-white")?.value,
       bandAnchor: document.querySelector("#false-color-band-anchor")?.value,
