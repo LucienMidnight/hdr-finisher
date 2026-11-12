@@ -256,6 +256,13 @@ async function main() {
         if (Date.now() > deadline) throw new Error(`Window resize did not settle at ${width}x${height}: content ${content}, page ${page}`);
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
+      // A layout at a size the OS would not give the window (macOS CI's virtual
+      // screen) cannot be judged; record it and check the sizes it does reach.
+      const reached = await mainContentSize();
+      if (Math.abs(reached[0] - width) > 1 || Math.abs(reached[1] - height) > 1) {
+        checkpoint(`layout ${width}x${height} skipped: window reached ${reached[0]}x${reached[1]}`);
+        continue;
+      }
       await window.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       const layout = await window.evaluate(() => {
         // Measure the instance on screen; each workflow panel has its own header.
