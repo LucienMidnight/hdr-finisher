@@ -400,7 +400,7 @@ async function main() {
     await window.locator("#settings-dialog").waitFor({ state: "visible" });
     await window.locator("#settings-close").click();
 
-    await selectMenuItem("Help", "HDR Finisher Help", "Help", "#help-open");
+    await selectMenuItem("Help", "HDR Finisher help", "Help", "#help-open");
     await window.locator("#help-document h1").waitFor({ state: "visible" });
     assert.equal(await window.locator("#help-document h1").textContent(), "Five-Minute Quick Start");
     await window.locator("#help-search").fill("reference white");
@@ -792,7 +792,7 @@ async function main() {
       return title;
     });
     assert.equal(savedNativeTitle, "HDR Finisher");
-    await selectMenuItem("File", "Open Project…", "File", "#project-open");
+    await selectMenuItem("File", "Open project…", "File", "#project-open");
     await window.locator("#directory-browser").waitFor({ state: "visible" });
     assert.equal(await window.locator("#directory-browser").getAttribute("data-mode"), "project_open");
     const savedProjectRow = window.locator(".directory-browser-entry.supported").filter({ hasText: "electron-smoke.hdrfinisher" });
@@ -846,10 +846,13 @@ async function main() {
     throw error;
   } finally {
     fs.writeFileSync(path.join(outputDirectory, "diagnostics.log"), diagnostics.join("\n"));
+    // Never let cleanup hang the job (a failed run can leave a prompt open).
+    const bounded = (promise, ms) => Promise.race([promise.catch(() => {}), new Promise((resolve) => setTimeout(resolve, ms))]);
     if (process.platform === "darwin") {
-      await electronApp.evaluate(({ app }) => app.quit());
+      await bounded(electronApp.evaluate(({ app }) => app.quit()), 15000);
     }
-    await electronApp.close();
+    await bounded(electronApp.close(), 30000);
+    try { electronApp.process()?.kill("SIGKILL"); } catch {}
     // Keep small diagnostics, not Chromium caches or disposable source copies.
     const logs = path.join(userDataPath, "logs");
     if (fs.existsSync(logs)) fs.cpSync(logs, path.join(outputDirectory, "logs"), { recursive: true });
