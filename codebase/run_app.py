@@ -8,6 +8,14 @@ from pathlib import Path
 if sys.version_info < (3, 12):
     raise SystemExit("HDR Finisher requires Python 3.12 or newer.")
 
+# A packaged windowed app (and its spawned helpers) starts with no console:
+# sys.stdout/sys.stderr are None, and any print or traceback would raise.
+if sys.stdout is None or sys.stderr is None:
+    import os
+    _devnull = open(os.devnull, "w", encoding="utf-8")
+    sys.stdout = sys.stdout or _devnull
+    sys.stderr = sys.stderr or _devnull
+
 # PyInstaller must dispatch spawned library workers before importing the app
 # or parsing its normal command line (otherwise the helper relaunches the UI).
 if __name__ == "__main__":

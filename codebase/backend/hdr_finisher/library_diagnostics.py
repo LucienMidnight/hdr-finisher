@@ -33,9 +33,16 @@ def log(event, **fields):
         _sink(record)
     else:
         # A single locked write includes the newline.
+        # A packaged windowed process has no stderr, and it closes on shutdown.
+        stream = sys.stderr
+        if stream is None:
+            return
         with _lock:
-            sys.stderr.write("[library] " + event + " " + json.dumps({"time": record["time"], **fields}, ensure_ascii=False, default=str) + "\n")
-            sys.stderr.flush()
+            try:
+                stream.write("[library] " + event + " " + json.dumps({"time": record["time"], **fields}, ensure_ascii=False, default=str) + "\n")
+                stream.flush()
+            except (OSError, ValueError):
+                pass
 
 
 def recent():
