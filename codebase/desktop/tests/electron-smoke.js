@@ -143,7 +143,10 @@ async function main() {
         titleBarHeight: BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).getBounds().height - BrowserWindow.getAllWindows().find((win) => !win.webContents.getURL().includes("gpu-delivery.html")).getContentBounds().height,
         menus: Menu.getApplicationMenu().items.map((item) => item.label),
       }));
-      assert.ok(nativeWindow.titleBarHeight > 0, "macOS should have a native title bar outside the renderer");
+      // November 6 unified toolbar: inset traffic lights sit over the content
+      // (titleBarStyle hiddenInset), and the toolbar leaves room for them.
+      assert.equal(nativeWindow.titleBarHeight, 0, "macOS content should run under the inset title bar");
+      assert.equal(await window.locator(".product-lockup").evaluate((el) => getComputedStyle(el).paddingLeft), "74px", "macOS toolbar must leave room for the traffic lights");
       assert.ok(nativeWindow.menus.includes("File"));
       assert.ok(nativeWindow.menus.includes("Window"));
     }
