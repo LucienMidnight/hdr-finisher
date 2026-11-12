@@ -235,3 +235,17 @@ The report compares hashes, MIME type, caching headers, format signatures, gain-
 
 Progress appears in the status bar. Open **Advanced settings** at the bottom
 of Export Settings to inspect the export log.
+
+## Text watermark and gain-map test
+
+Export Settings includes Text watermark. Choose Text in both renditions, enter
+a single line, and set corner, size (percentage of the output short edge) and
+opacity. Each batch output version saves its own settings. Inspect the result
+in Proof; Grade and Library previews do not include export watermarks.
+
+Gain-map test appends HDR to your text in the HDR picture and SDR in the SDR
+fallback, on a common panel. At 100% opacity, a viewer using the full gain map
+replaces SDR with HDR. Partial headroom may blend both. Keep the text large;
+a full-resolution gain map gives sharper letters. Recompression can strip the
+map, leaving SDR. This diagnoses which rendition is decoded, not whether the
+screen itself is HDR. JPEG XL HDR always says HDR and is not a gain-map test.

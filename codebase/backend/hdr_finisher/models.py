@@ -1375,6 +1375,21 @@ _ENCODING_FIELD_ORDER = (
 )
 
 
+class WatermarkSettings(BaseModel):
+    mode: Literal["off", "text", "rendition_test"] = "off"
+    text: str = Field(default="HDR Finisher", max_length=120)
+    position: Literal["top_left", "top_right", "bottom_left", "bottom_right"] = "bottom_right"
+    size: float = Field(default=4, ge=1, le=15, allow_inf_nan=False)
+    opacity: float = Field(default=1, ge=0, le=1, allow_inf_nan=False)
+
+    @field_validator("text")
+    @classmethod
+    def single_line(cls, value):
+        if any(ord(c) < 32 for c in value):
+            raise ValueError("Watermark text must be a single line without control characters.")
+        return value
+
+
 class _EncodingSettings(BaseModel):
     _serialized_field_order: ClassVar[tuple[str, ...]]
 
@@ -1390,6 +1405,7 @@ class _EncodingSettings(BaseModel):
     avif_gain_map_scale: Literal["full", "half"] = "half"
     jpegxl_precision: Literal["uint10", "uint12", "uint16", "float16", "float32"] = "uint12"
     dithering: Literal["auto", "off", "subtle"] = "auto"
+    watermark: WatermarkSettings = Field(default_factory=WatermarkSettings)
     export_with_frame: bool = True
     output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
 
@@ -1409,7 +1425,7 @@ class ExportSettings(_EncodingSettings):
         "sdr_png_bit_depth",
         *_ENCODING_FIELD_ORDER[10:],
         "metadata_policy", "metadata_template", "metadata_strip_location", "metadata_strip_serials", "metadata_sequence", "guarantee_hdr_peak", "output_path", "path_grant", "overwrite", "overwrite_target",
-        "edit_revision", "output_finishing", "export_with_frame", "editing_measurements",
+        "edit_revision", "output_finishing", "watermark", "export_with_frame", "editing_measurements",
     )
 
     sdr_png_bit_depth: Literal[8, 16] = 8
@@ -1502,7 +1518,7 @@ class DesktopProjectSaveRequest(BaseModel):
 class ProofArtifactRequest(_EncodingSettings):
     _serialized_field_order: ClassVar[tuple[str, ...]] = (
         "adjustments", "edit_revision", *_ENCODING_FIELD_ORDER,
-        "long_edge", "full_size", "output_finishing", "export_with_frame", "guarantee_hdr_peak", "force", "editing_measurements",
+        "long_edge", "full_size", "output_finishing", "watermark", "export_with_frame", "guarantee_hdr_peak", "force", "editing_measurements",
     )
 
     adjustments: AdjustmentState | None = None
@@ -1532,6 +1548,7 @@ class ProofArtifactRequest(_EncodingSettings):
             output_finishing=self.output_finishing,
             guarantee_hdr_peak=self.guarantee_hdr_peak,
             export_with_frame=self.export_with_frame,
+            watermark=self.watermark,
         )
 
 

@@ -311,6 +311,13 @@ function currentExportSettings(outputPath = null, overwrite = false, pathGrant =
       metadata_strip_serials: document.getElementById("export-metadata-strip-serials").checked,
       guarantee_hdr_peak: els.exportGuaranteePeak?.checked === true,
       export_with_frame: els.exportWithFrame?.checked !== false,
+      watermark: {
+        mode: document.getElementById("export-watermark-mode").value,
+        text: document.getElementById("export-watermark-text").value,
+        position: document.getElementById("export-watermark-position").value,
+        size: Number(document.getElementById("export-watermark-size").value),
+        opacity: Number(document.getElementById("export-watermark-opacity").value) / 100,
+      },
       output_path: outputPath,
       path_grant: pathGrant,
       overwrite,

@@ -50,6 +50,7 @@
     // The full-size label states whether the export adds finishing the proof
     // does not carry, so it has to follow those two export controls.
     [els.exportResizeMode, els.exportSharpening].forEach((control) => control?.addEventListener("change", renderProofUi));
+    for (const control of document.querySelectorAll("[id^=export-watermark-]")) control.addEventListener("input", () => { artifactDirty = true; markProofDirty(); });
     els.chromeProofTarget.addEventListener("change", () => {
       state.proofTarget = els.chromeProofTarget.value;
       markProofDirty();
@@ -206,6 +207,7 @@
             jpeg_gain_map_scale: els.jpegGainMapScale.value || "full",
             guarantee_hdr_peak: els.exportGuaranteePeak?.checked === true,
             export_with_frame: els.exportWithFrame?.checked !== false,
+            watermark: currentExportSettings().watermark,
             output_finishing: currentExportSettings().output_finishing,
             jpeg_chroma_subsampling: els.jpegUltrahdrChromaSubsampling.value || "420",
             avif_bit_depth: Number(els.avifBitDepth.value) || 10,

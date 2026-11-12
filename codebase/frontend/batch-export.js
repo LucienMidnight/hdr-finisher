@@ -20,6 +20,10 @@
     els.jpegChromaSubsampling.value=s.jpeg_chroma_subsampling||"420"; els.jpegUltrahdrChromaSubsampling.value=s.jpeg_chroma_subsampling||"420";
     const f=s.output_finishing||{}; for(const [key,id] of Object.entries({resize_mode:"exportResizeMode",long_edge:"exportLongEdge",width:"exportWidth",height:"exportHeight",sharpening:"exportSharpening"}))if(f[key]!=null)els[id].value=String(f[key]);
     if(els.exportWithFrame)els.exportWithFrame.checked=s.export_with_frame!==false;
+    const watermark=s.watermark||{};
+    for(const [key,fallback] of Object.entries({mode:"off",text:"HDR Finisher",position:"bottom_right",size:4,opacity:1})) {
+      $("export-watermark-"+key).value=key==="opacity"?(watermark[key]??fallback)*100:(watermark[key]??fallback);
+    }
     els.exportPreventEnlargement.checked=f.prevent_enlargement!==false; if(els.exportGuaranteePeak)els.exportGuaranteePeak.checked=s.guarantee_hdr_peak===true; els.exportPreset.value=v.quality_preset||"custom";
     $("batch-pattern").value=v.pattern; $("batch-subfolder").value=v.subfolder; $("batch-version-name").value=v.name; $("batch-white").value=String(v.reference_white||"");
     if(typeof applyZoomGeometry==="function")applyZoomGeometry();window.HDRProofing?.invalidate();
@@ -266,6 +270,14 @@
     const framed=els.exportWithFrame.closest("label"),framingNote=$("export-framing-note");framingNote.hidden=true;
     framed.replaceChildren(help(node("span","Export with frame"),framingNote.textContent),els.exportWithFrame);framed.classList.add("batch-setting-row");finishing.append(framed,framingNote);
     const prevent=els.exportPreventEnlargement.closest("label");prevent.replaceChildren(node("span","Prevent enlargement"),els.exportPreventEnlargement);prevent.classList.add("batch-setting-row");finishing.append(prevent,field("Output sharpening",els.exportSharpening),$("export-sharpening-note"));
+    const watermarkSection=section("Text watermark");
+    const watermarkFields=$("export-watermark-mode").closest("fieldset");
+    watermarkFields.querySelector("legend").remove();
+    for(const label of [...watermarkFields.querySelectorAll("label")]) {
+      const control=label.querySelector("input,select");
+      watermarkSection.append(field(label.firstChild.textContent.trim(),control));
+    }
+    watermarkSection.append(watermarkFields.querySelector(".helper"));
     const naming=section("File naming"),pattern=node("input");pattern.id="batch-pattern";pattern.value="{filename}_{version}";pattern.setAttribute("aria-label","File name pattern");
     const patternRow=node("div","","batch-pattern-row"),tokens=node("select");tokens.setAttribute("aria-label","Insert filename token");tokens.append(new Option("Insert token…",""));
     for(const token of ["filename","copy","sequence:3","date:YYYYMMDD","rating","version","preset"])tokens.append(new Option(`{${token}}`,token));

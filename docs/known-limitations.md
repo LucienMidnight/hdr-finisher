@@ -1,5 +1,45 @@
 # Known Limitations and Support Status
 
+## November 12: watermark and Library polish validation
+
+Fast validation: Node 923 passed; full Python run 3,327 passed, 3 skipped,
+two failures. The intended Proof schema field-order change was then added to
+the contract test (including watermark cache identity/conversion), and the
+affected model/watermark suites pass: 13 tests. The remaining unrelated failure
+is `test_library_worker.py::test_identified_bad_decoder_is_not_replayed_and_next_file_recovers[HANG]`
+(recovery timeout, previously documented). Focused fullscreen/Single: 16 passed.
+No frontend build step exists; changed JavaScript syntax and git diff checks pass.
+Output starts and ends at 45.9 GB.
+
+Text watermarks are delivery-only: Export and encoded Proof, not Grade or
+Library pictures. Rendition-test mode is verified by decoding real Ultra HDR
+JPEG and AVIF files and classifying their different HDR/SDR labels. Full-size
+Proof matches those exports byte for byte. The GPU delivery smoke also checks
+watermarked GPU and CPU exports against their own full-size Proof bytes;
+both pass. The existing HDR delivery p99.9 miss remains 3.377 against 3;
+SDR and Denoise acceptance pass. No tolerance was relaxed.
+
+The framing delivery driver passes GPU/CPU, all six formats, Proof, Library
+and decoded ceilings. The batch UI driver passes new watermark version
+round-trip and all four theme outline contrast checks (minimum 11.62:1), then
+times out at its existing bounded-help-tooltip visibility step; the complete
+batch UI driver is not claimed as passing.
+
+The 90-second plain Electron Library check reports no application errors,
+failed photos or memory violations, but fails responsiveness with a 649 ms
+frame gap and 670 ms main-thread block. It ran concurrently with the full
+Python suite; no isolated speed comparison or regression conclusion is made.
+Logs are `codebase/output/watermark-*.log`; the smoke report is in
+`codebase/output/quick-library-check/watermark-library-polish/report.json`.
+
+Steve still needs to inspect layout at his usual window size, native fullscreen
+return, and actual viewer/display behavior. Use full gain map and 100% opacity:
+full HDR headroom should show HDR, ignored/stripped map should show SDR, and
+partial headroom can blend the labels. An HDR label after tone mapping is not
+proof that the display is presenting HDR. No physical-viewer qualification or
+packaged installer build was performed.
+
+
 This page prevents implemented, validated, expected, and planned behavior from being conflated. Platform and distribution status reflects **September 4, 2026**; the Denoise and preview notes below were refreshed on **October 5, 2026** against the viewport-preview PRD and baseline. Editing scope, export rendering, packaging and planned work were refreshed on **October 22, 2026** against the master PRD.
 
 ## Platform matrix

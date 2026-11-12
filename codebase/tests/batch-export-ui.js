@@ -14,6 +14,27 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
     page.on('pageerror',error=>errors.push(error.message));
     await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     await page.goto(process.env.HDR_FINISHER_URL||'http://127.0.0.1:8000',{waitUntil:'networkidle'});
+    const library=await (await page.locator("#library-frame").elementHandle()).contentFrame();
+    assert(library,"Library frame exists");
+    const contrasts=await library.evaluate(()=>{
+      const cell=document.createElement("div");cell.className="library-cell active lead";
+      cell.innerHTML='<div class="picture-frame"></div><span class="name">Selected</span>';
+      document.body.append(cell);
+      const original=document.documentElement.dataset.theme,results=[];
+      const luminance=color=>{
+        const rgb=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;});
+        return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;
+      };
+      for(const theme of ["default-dark","modern-dark","studio-gray","default-light"]){
+        document.documentElement.dataset.theme=theme;
+        const ink=getComputedStyle(cell.firstChild),face=getComputedStyle(cell),a=luminance(ink.outlineColor),backgrounds=face.backgroundImage.match(/rgb\([^)]+\)/g)||[face.backgroundColor];
+        results.push({theme,contrast:Math.min(...backgrounds.map(color=>{const b=luminance(color);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);})),width:ink.outlineWidth,style:ink.outlineStyle});
+      }
+      if(original===undefined)delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=original;
+      cell.remove();return results;
+    });
+    for(const result of contrasts){assert.equal(result.width,"2px");assert.equal(result.style,"solid");assert(result.contrast>=7,JSON.stringify(result));}
+    console.log("Selected-photo contrast",JSON.stringify(contrasts));
     for(const workflow of ['grade','proof','export','import']){
       await page.locator(`[data-workflow-tab="${workflow}"]`).click();
       assert.equal(await page.evaluate(()=>document.body.dataset.workflow),workflow);
@@ -39,6 +60,9 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
     await page.locator('#export-format').selectOption('sdr_jpeg');
     await page.locator('#export-preset').selectOption('maximum_fidelity');
     await renameVersion('SDR');
+    await page.locator('#export-watermark-mode').selectOption('rendition_test');
+    await page.locator('#export-watermark-text').fill('Delivery test');
+    await page.locator('#export-watermark-position').selectOption('top_left');
     await page.locator('#batch-pattern').fill('{filename}_{sequence:3}_{version}');
     await page.locator('#jpeg-advanced-settings > summary').click();
     await page.locator('.batch-advanced-group > summary').filter({hasText:'Subfolder'}).click();
@@ -53,6 +77,9 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
     await page.locator('#batch-version-select').selectOption({label:'SDR'});
     assert.equal(await page.locator('#export-format').inputValue(),'sdr_jpeg');
     assert.equal(await page.locator('#export-quality').inputValue(),'100');
+    assert.equal(await page.locator('#export-watermark-mode').inputValue(),'rendition_test');
+    assert.equal(await page.locator('#export-watermark-text').inputValue(),'Delivery test');
+    assert.equal(await page.locator('#export-watermark-position').inputValue(),'top_left');
     await page.locator('#batch-version-select').selectOption({label:'PNG'});
     assert.equal(await page.locator('#export-format').inputValue(),'sdr_png');
     assert.match(await page.locator('#batch-example').textContent(),/PNG\/first_001_PNG.png/);

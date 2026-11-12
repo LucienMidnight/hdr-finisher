@@ -1,5 +1,17 @@
 # Performance table
 
+November 12 watermark/Library polish smoke (parent `b2ce850d`, branch
+`feat/watermark-and-library-polish`, 2560x1440 plain Electron, default mixed
+Library, concurrent full Python suite): first/ten/twenty pictures 4.4/5.0/25.8 s;
+29 of 33 shown by 90 s; sampled peak 3.035 GB. No application errors or memory
+violations; existing responsiveness limits fail at 649 ms drawing gap and
+670 ms main-thread block. This is a smoke observation under concurrent load,
+not an isolated comparison. Evidence:
+`codebase/output/quick-library-check/watermark-library-polish/report.json`.
+The GPU delivery smoke's original 72px Denoise fixture export took 7.10 s;
+this tiny fixture/encoding check is not a photo export speed benchmark.
+
+
 How long each action in HDR Finisher takes, against its target. Use it to
 choose performance work, and to spot regressions: a new measurement well
 outside its recorded range needs a one-line note, even when it is still

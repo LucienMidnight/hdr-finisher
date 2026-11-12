@@ -153,7 +153,14 @@ def _denoised_export_source(session: object, kind: PreviewKind) -> np.ndarray:
     )
 
 
-def _render_export_branch(
+def _render_export_branch(session, settings, kind, adjustments):
+    from .watermark import apply_watermark
+    image = _render_unwatermarked_branch(session, settings, kind, adjustments)
+    return apply_watermark(image, settings.watermark, kind.value,
+        getattr(session, "hdr_reference_white_nits", 203), delivery_ceiling_nits(adjustments))
+
+
+def _render_unwatermarked_branch(
     session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState
 ) -> np.ndarray:
     from .gpu_delivery import render_pair

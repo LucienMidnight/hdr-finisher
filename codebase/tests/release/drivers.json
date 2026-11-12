@@ -3957,7 +3957,7 @@
         "export-proof"
       ],
       "tier": "core",
-      "protects": "Small GPU and forced-CPU export, delivery resize/sharpening, decoded perceptual limits and HDR peak.",
+      "protects": "Small GPU and forced-CPU export, delivery resize/sharpening, watermarked full-size Proof byte identity, decoded perceptual limits and HDR peak.",
       "launch": {
         "method": "electron"
       }

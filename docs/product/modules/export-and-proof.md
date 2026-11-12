@@ -1,5 +1,30 @@
 # Module PRD: Export and Proof
 
+## November 12: text and rendition-test watermarks
+
+Export settings now carry a text watermark (off by default), corner, size as
+percent of short edge, and opacity. Batch output versions save these settings;
+Proof includes them in its signature and encoding. Grade/Library previews do
+not show this delivery-only mark. It is composited after resizing, sharpening
+and framing on both CPU and GPU results, without modifying cached pixels.
+
+The rendition-test mode appends HDR or SDR to the text on a common backing
+panel. The encoders derive a gain map from those two different authored
+pictures: at full HDR reconstruction the HDR label replaces the SDR label.
+The HDR ink is up to twice reference white, bounded by the active delivery
+ceiling; SDR ink is 80% white and backing is 20% white in each lane. Ratios
+stay within the JPEG encoder's chromatic latitude. This tests rendition
+selection, not measured display brightness. Use 100% opacity and a reasonably
+large font/full-size gain map for a clean switch. Partial display headroom,
+reduced gain maps, compression and lower opacity can blend/blur the labels.
+A viewer that ignores or loses the gain map shows SDR. A decoder that applies
+the map then tone-maps to SDR may still show HDR: the mark proves decoding,
+not an HDR panel. JPEG XL HDR has no gain map and always carries HDR; SDR
+formats always carry SDR. Supported glyphs come from bundled IBM Plex Mono.
+
+Validation and remaining physical-viewer checks are recorded in known limitations.
+
+
 ## November 11: framing delivery fixture interpretation (W20)
 
 The framing driver's colour shift came from changing its input interpretation.
