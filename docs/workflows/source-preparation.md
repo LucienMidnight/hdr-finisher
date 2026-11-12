@@ -61,6 +61,10 @@ A full round trip on 2026-08-17 nailed the cause of an earlier false negative he
 
 No Source Interpretation override should be needed with Maximize Compatibility off; auto-detection already resolves both primaries and transfer function confidently. If you do see the ambiguous/`HDR_LINEAR_UNCONFIRMED` state on a TIFF export, check that checkbox first before troubleshooting anything else.
 
+## Adobe Photoshop (ordinary SDR)
+
+Save an 8/16-bit TIFF with its ordinary Display P3 or sRGB ICC profile embedded. Auto Detect resolves its primaries and sRGB transfer as SDR; do not select Linear for a gamma-encoded SDR file. P3D65 names without PQ/HLG/linear hints receive the same integer-only fallback.
+
 ## Adobe Photoshop (32-bit HDR via Camera Raw)
 
 **Status: hands-on validated 2026-08-17**, via a different and more involved path than originally assumed. `File > Automate > Merge to HDR Pro` and direct EXR/Radiance opening (the original guess for this section) remain untested — the recipe below is the one actually verified.
@@ -72,8 +76,7 @@ No Source Interpretation override should be needed with Maximize Compatibility o
 5. No further profile conversion is needed at this point — the document is now Display P3 primaries (confirmed by directly parsing the embedded ICC profile's `rXYZ`/`gXYZ`/`bXYZ`/`wtpt` tags; chromaticities match canonical Display P3 to within normal ICC fixed-point rounding) and linear transfer, which is exactly HDR Finisher's **Display P3 Linear** preset.
 6. Export with **`File > Save As`** (or **Save a Copy**) — **not `File > Export As`**, which is a real trap: that dialog is 8-bit PNG/JPG/GIF only and has **"Convert to sRGB" checked by default**, silently flattening HDR data to SDR.
 7. Choose **TIFF**. In the TIFF Options dialog, confirm **Bit Depth: 32 bit (Float)** (it may default there already if the document is genuinely 32-bit). ZIP compression is fine; no Maximize-Compatibility-style trap was found in this dialog.
-8. Import into HDR Finisher. **Auto-detection will likely report the source as ambiguous** — not because the data is wrong, but because the profile name is literally `P3D65 ... Display ...`, not the contiguous phrase "Display P3" the classifier matches on. HDR Finisher correctly detects this and stops to ask via the "Source Interpretation Needs Review" prompt — this part works as intended. The catch is that the *default guess* it offers alongside that prompt (and what "Use assumption" would accept) is **sRGB primaries with an sRGB gamma decode applied**, which is wrong on both counts for this file (wrong primaries, and a double decode on top of already-linear data) and produces badly incorrect color. Don't accept the default here — always override manually for this recipe.
-9. Open **Source Interpretation > Manual Override** and set **both** Color Primaries **Display P3 Linear** and Transfer Function **Linear** together — setting only one is not enough (confirmed: primaries alone still left a visible color error until Transfer Function was also corrected). Apply. Expect the badge to clear to `HDR_TRUE` with a real peak in stops and the preview to look like a normal photograph again.
+8. Import into HDR Finisher. Auto Detect recognizes `P3D65` primaries and gives `(Linear RGB Profile)` precedence over the stale PQ text, so the 32-bit file is interpreted as Display P3 + Linear. A low-headroom linear file can still require confirmation; if needed, select **Display P3 Linear** primaries and **Linear** transfer together.
 
 ## darktable RAW photo
 

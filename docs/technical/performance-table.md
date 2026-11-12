@@ -9,6 +9,13 @@ Started October 30, 2026 by Claude from the module PRDs and the October 30
 logs. Keep it current: whenever a change, test or log review produces a
 timing, update its row (range, date, commit, conditions) in the same commit.
 
+November 12 integer SDR ICC detection smoke (parent `1eae2dcb`, plain
+Electron, default mixed Library, concurrent full Python suite): first/ten/
+twenty pictures 6.1/8.1/12.2 s; 29 of 33 shown by 90 s, sampled peak 2.872 GB.
+No reported errors or failed photos. Concurrent test load makes this a smoke
+observation, not an isolated performance comparison.
+Evidence: `codebase/output/quick-library-check/icc-integer-srgb-transfer/report.json`.
+
 November 11 W7 delivery-yield smoke check (parent `53f7ec2e`, delivery-yield change;
 2560x1440 plain Electron, default mixed Library, default memory allowance):
 first/ten/twenty pictures 0.8/1.6/6.3 s, 29 shown by 90 s; sampled peak

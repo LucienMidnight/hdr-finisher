@@ -243,6 +243,15 @@ def detect_transfer_function(metadata: dict[str, Any], suffix: str) -> str | Non
         return "LINEAR"
     if "acescg" in text:
         return "ACEScg"
+    # Only original integer samples with a recognised SDR ICC name get this
+    # fallback. Float TIFFs and unknown/Rec.2020 encodings remain unresolved.
+    try:
+        integer_samples = np.issubdtype(np.dtype(metadata.get("bit_depth", "")), np.integer)
+    except (TypeError, ValueError):
+        integer_samples = False
+    if integer_samples and profile_name and "2020" not in profile_name:
+        if any(name in profile_name for name in ("display p3", "p3d65", "srgb", "rec.709", "bt.709")):
+            return "sRGB"
     return None
 
 

@@ -160,6 +160,8 @@ def test_pillow_import_converts_embedded_icc_profile_to_srgb(tmp_path) -> None:
     loaded, descriptor, metadata, _analysis, reference = load_image(source_path)
     assert descriptor.source_color_space == "sRGB"
     assert metadata["icc_converted_to_srgb"] is True
+    assert metadata["transfer_function"] == "sRGB"
+    assert not _analysis.needs_color_override
     # Mid grey 128 decodes to linear 0.216; the scene holds it at 0.18 of that.
     assert float(reference.mean()) == pytest.approx(0.216, abs=0.01)
     assert float(loaded.mean()) == pytest.approx(0.216 * 0.18, abs=0.002)
@@ -304,3 +306,41 @@ def test_transfer_only_override_does_not_confirm_unknown_exr_primaries() -> None
     assert source.color_space_confident is False
     assert metadata["needs_color_override"] is True
     assert analysis.needs_color_override is True
+
+
+@pytest.mark.parametrize("name,dtype,transfer,resolved", [
+    ("Display P3", "uint16", "sRGB", True),
+    ("P3D65 Display Gamma", "uint16", "sRGB", True),
+    ("sRGB", "uint8", "sRGB", True),
+    ("Rec.709", "uint16", "sRGB", True),
+    ("Display P3", "float32", None, False),
+    ("P3D65 PQ Display Full", "uint16", "PQ", True),
+    ("Display P3 HLG", "uint16", "HLG", True),
+    ("P3D65 PQ (Linear RGB Profile)", "float32", "LINEAR", True),
+    ("Linear Rec.2020", "float32", "LINEAR", True),
+    ("ProPhoto RGB", "uint16", None, False),
+    ("Unknown profile", "uint16", None, False),
+    ("Rec.2020", "uint16", None, False),
+])
+def test_integer_sdr_icc_tiff_interpretation(tmp_path, monkeypatch, name, dtype, transfer, resolved):
+    path = tmp_path / "tagged.tif"
+    # Real TIFF sample metadata and ICC tag handling; substitute only the name.
+    monkeypatch.setattr("hdr_finisher.loader._read_icc_profile_name", lambda _: name)
+    value = 2.0 if dtype == "float32" and transfer == "LINEAR" else (0.5 if dtype == "float32" else (32768 if dtype == "uint16" else 128))
+    tifffile.imwrite(path, np.full((4, 6, 3), value, dtype=dtype), photometric="rgb",
+                      extratags=[(34675, "B", 4, b"test", False)])
+    _, descriptor, metadata, analysis, reference = load_image(path)
+    assert metadata["transfer_function"] == transfer
+    assert analysis.needs_color_override is not resolved
+    if transfer == "sRGB":
+        assert descriptor.color_space_confident
+        assert analysis.classification == HDRClassification.SDR_ONLY
+        assert reference is not None
+        assert float(reference.mean()) == pytest.approx(0.216, abs=0.003)
+    if transfer == "LINEAR":
+        assert analysis.classification == HDRClassification.HDR_TRUE
+
+
+@pytest.mark.parametrize("suffix", [".exr", ".hdr", ".pfm"])
+def test_integer_icc_preserves_linear_formats(suffix):
+    assert detect_transfer_function({"icc_profile_name": "Display P3", "bit_depth": "uint16"}, suffix) == "LINEAR"

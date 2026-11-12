@@ -4,6 +4,8 @@ Import is where HDR Finisher decides what the source numbers mean. A perfectly v
 
 Opening another photo cancels any pending source-interpretation update in the viewer; a late reply cannot replace the new photo.
 
+Integer (8/16-bit) files tagged with Display P3 (including P3D65), sRGB or Rec.709 ICC profiles automatically use the sRGB transfer curve when no PQ, HLG or linear hint is present. These are resolved SDR sources and need no manual override. Floating-point files keep their existing interpretation; ProPhoto, unknown profiles and integer Rec.2020 without an explicit transfer still need review.
+
 ## Recommended source
 
 For photography or CGI, prefer:

@@ -1,3 +1,13 @@
+### November 12: integer SDR ICC transfer detection
+
+Integer sources tagged Display P3/P3D65 or sRGB/Rec.709 now fall back to
+sRGB transfer only after explicit PQ, HLG and linear detection. Analysis
+accepts resolved SDR TIFF interpretations without manual confirmation.
+Float sources, gain-map/HEIC decoding and explicit HDR transfers are unchanged.
+Integer Rec.2020 has no assumed curve; ProPhoto and unknown profiles remain gated.
+Validation: 55 focused loader tests, 3,322 full Python tests (3 skipped),
+921 Node tests and the 90-second Library smoke passed; no reported failures.
+
 ### November 11: accepted manual interpretation clears confirmation gates
 
 Low-headroom linear files and SDR TIFF/HEIF files no longer remain blocked

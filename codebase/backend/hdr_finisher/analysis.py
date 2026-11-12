@@ -127,7 +127,12 @@ def classify_hdr(
         badge = "No HDR headroom or transfer metadata detected. Treating this file as SDR."
         latitude = SourceLatitude.NARROW if suffix in {".tif", ".tiff", ".heic", ".heif"} else SourceLatitude.MEDIUM
         if suffix in {".tif", ".tiff", ".heic", ".heif"}:
-            needs_override = not manual_interpretation_accepted
+            resolved_sdr_icc = (
+                transfer == "sRGB" and bool(metadata.get("icc_profile_name"))
+                and metadata.get("needs_color_override") is False
+                and metadata.get("color_space") in {"sRGB", "Display P3"}
+            )
+            needs_override = not (manual_interpretation_accepted or resolved_sdr_icc)
 
     return HDRAnalysis(
         classification=classification,

@@ -29,6 +29,8 @@
 
 ## Fixes
 
+- Integer TIFFs with ordinary Display P3/P3D65 or sRGB/Rec.709 ICC profiles now resolve automatically as SDR with the sRGB transfer curve. Explicit HDR/linear hints and float sources keep their existing behavior.
+
 - Library rename, move and delete are about four times faster, and no longer hold up saving for as long.
 - Switching photos quickly no longer lets a late Denoise result, source re-interpretation or Apply RAW settings land on the wrong photo.
 - Cancelling a batch export can no longer be undone by a late Pause or Resume, and closing the app no longer leaves new exports waiting forever.
