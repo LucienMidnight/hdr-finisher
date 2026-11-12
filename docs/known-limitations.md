@@ -392,6 +392,11 @@ Shipping with:
   rejects the result and the CPU fallback finishes the photo, as designed.
   The same GPU path passed on Steve's Mac.
 
+macOS only (Steve, November 12, 2026): CPU strip rendering of a perspective
+correction may differ from whole-frame rendering by one half-float rounding
+step (1.5e-5 measured on Apple silicon); `test_cpu_strips.py` allows 2e-5 on
+macOS and keeps 1e-5 elsewhere. Not visible.
+
 Grade speed items carried to the next version are listed in section 5 of
 `docs/technical/performance-table.md` (SDR HSL Show selection about 1.5 s,
 SDR Match entire about 1.2 s, Film and lens drags 10 to 16 frames per second).

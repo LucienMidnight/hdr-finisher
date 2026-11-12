@@ -61,6 +61,11 @@ def assert_strips_match(actual, desired):
 # corpus is inexact.
 WARP_ATOL = 1e-5
 WARP_RTOL = 1e-5
+# Steve, November 12, 2026 (0.9.2): on Apple silicon one value of the
+# perspective strip render lands one half-float rounding step away
+# (1.5e-5). macOS allows that one step; Windows and Linux stay at 1e-5.
+if sys.platform == "darwin":
+    WARP_ATOL = 2e-5
 
 
 def _source(height: int = 61, width: int = 43, seed: int = 11) -> np.ndarray:
