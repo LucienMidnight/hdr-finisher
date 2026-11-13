@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { treeOf, stopProcessTree } = require('./release/process-tree.cjs');
+const { ELECTRON_NAME, elapsedSeconds, listProcesses, treeOf, stopProcessTree } = require('./release/process-tree.cjs');
 const { shutdownLines } = require('./launcher-shutdown.cjs');
 const { profileProblem } = require('./test-profile.cjs');
 const runner = require('./release/runner.cjs');
@@ -160,4 +160,35 @@ test('only folders with "test-" outside the real profile count as disposable', t
   assert.match(profileProblem(dir, { real }), /not a test folder/);
   fs.writeFileSync(path.join(dir, 'library-cache-settings.json'), JSON.stringify({ location: path.join(dir, 'Cache') }));
   assert.equal(profileProblem(dir, { real }), null);
+});
+
+test('elapsed times from every ps format become seconds', () => {
+  assert.equal(elapsedSeconds('75'), 75);
+  assert.equal(elapsedSeconds('01:15'), 75);
+  assert.equal(elapsedSeconds('02:01:15'), 7275);
+  assert.equal(elapsedSeconds('3-02:01:15'), 266475);
+  assert.ok(Number.isNaN(elapsedSeconds('soon')));
+});
+
+test('Electron and its macOS helper processes block the next GPU driver', () => {
+  for (const name of ['electron.exe', 'Electron', 'HDR Finisher', 'Electron Helper (GPU)', 'HDR Finisher Helper (Renderer)', 'Electron Helper'])
+    assert.ok(ELECTRON_NAME.test(name), name);
+  for (const name of ['node', 'python', 'Electron Fiddle']) assert.ok(!ELECTRON_NAME.test(name), name);
+});
+
+test('the real process list holds this process with a plausible start time', () => {
+  const self = listProcesses().find(row => row.pid === process.pid);
+  assert.ok(self, 'current process missing from the process list');
+  assert.equal(self.ppid, process.ppid);
+  const started = Date.now() - process.uptime() * 1000;
+  assert.ok(Math.abs(self.created - started) < 5000, `start time off by ${Math.round(self.created - started)} ms`);
+});
+
+test('a killed child that is not yet collected counts as stopped', { skip: process.platform === 'win32' && 'Windows has no zombie processes' }, () => {
+  const child = require('node:child_process').spawn('sleep', ['30']);
+  const started = Date.now();
+  // Synchronous: Node cannot collect the child until this returns.
+  const report = stopProcessTree([{ pid: child.pid, name: 'sleep' }], { waitMs: 5000 });
+  assert.deepEqual(report.survivors, []);
+  assert.ok(Date.now() - started < 2500, `waited ${Date.now() - started} ms for an exited child`);
 });

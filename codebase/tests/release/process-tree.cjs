@@ -16,8 +16,9 @@ const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
 // Electron itself (development or packaged). Any of these alive means the GPU
-// may still be in use, so the next GPU driver must not start.
-const ELECTRON_NAME = /^(electron|hdr finisher)(\.exe)?$/i;
+// may still be in use, so the next GPU driver must not start. On macOS the GPU
+// and renderer processes are separate "<app> Helper (GPU)" style programs.
+const ELECTRON_NAME = /^(electron|hdr finisher)( helper( \([^)]*\))?)?(\.exe)?$/i;
 // Allowed error between start times from different sources (CIM rounding,
 // `ps` whole seconds, an uptime-based estimate).
 const START_SLACK_MS = 2000;
@@ -44,14 +45,30 @@ function listProcesses() {
       .map(row => ({ pid: row.p, ppid: row.q, name: String(row.n || ''), created: Number(row.c) || 0 }));
   }
   const now = Date.now();
-  return execFileSync('ps', ['-eo', 'pid=,ppid=,etimes=,comm='], { encoding: 'utf8', timeout: 10000 })
-    .trim().split('\n').map(line => line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean)
-    .map(m => ({ pid: +m[1], ppid: +m[2], created: now - m[3] * 1000, name: path.basename(m[4]) }));
+  // macOS `ps` has no `etimes` (elapsed seconds), only `etime` ([[dd-]hh:]mm:ss).
+  const elapsed = process.platform === 'darwin' ? 'etime' : 'etimes';
+  // A zombie (state Z) has exited and only waits for its parent to collect it.
+  return execFileSync('ps', ['-eo', `pid=,ppid=,stat=,${elapsed}=,comm=`], { encoding: 'utf8', timeout: 10000 })
+    .trim().split('\n').map(line => line.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(.*)$/))
+    .filter(m => m && !m[3].startsWith('Z') && Number.isFinite(elapsedSeconds(m[4])))
+    .map(m => ({ pid: +m[1], ppid: +m[2], created: now - elapsedSeconds(m[4]) * 1000, name: path.basename(m[5]) }));
+}
+
+/** Seconds from `ps` elapsed time: plain seconds or [[dd-]hh:]mm:ss. */
+function elapsedSeconds(text) {
+  if (/^\d+$/.test(text)) return Number(text);
+  const m = text.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
+  return m ? ((Number(m[1] || 0) * 24 + Number(m[2] || 0)) * 60 + Number(m[3])) * 60 + Number(m[4]) : NaN;
 }
 
 function isAlive(pid) {
-  try { process.kill(pid, 0); return true; }
+  try { process.kill(pid, 0); }
   catch (error) { return error.code === 'EPERM'; }
+  if (process.platform === 'win32') return true;
+  // A killed child stays a zombie until its parent collects it, and the parent
+  // (often this process) cannot while the wait below blocks. A zombie has exited.
+  try { return !execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8', timeout: 5000 }).trim().startsWith('Z'); }
+  catch { return false; } // ps exits non-zero once the ID is gone
 }
 
 function terminate(pid) {
@@ -156,4 +173,4 @@ function stopProcessTree(roots, { waitMs = 20000, deps = {} } = {}) {
 
 const describe = list => list.map(item => `${item.name || 'unknown'} (PID ${item.pid})`).join(', ');
 
-module.exports = { ELECTRON_NAME, listProcesses, treeOf, stopProcessTree, describe };
+module.exports = { ELECTRON_NAME, listProcesses, elapsedSeconds, treeOf, stopProcessTree, describe };
