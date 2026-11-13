@@ -183,3 +183,6 @@ a changed range. Double-click the wheel to reset only the selected range.
 
 Opening a photo starts with Grade modules and RAW settings closed. Open the
 modules you need; background reloads of that photo keep your modules open.
+
+An open module has a separated header above its controls. Keyboard focus
+remains visible on its disclosure button.

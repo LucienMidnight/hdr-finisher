@@ -51,6 +51,7 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root .control-group-header { height: var(--control-group-header-h); min-height: var(--control-group-header-h); padding-block: 0; }
 :root .control-group:not(.collapsed) { border-top: 1px solid var(--accent); background: var(--raised); }
 :root .control-group-body { margin: 0; padding: 4px 14px 12px; border: 0; background: var(--raised); }
+:root .control-group:not(.collapsed) > .control-group-header { background: var(--panel); box-shadow: var(--divider-below); }
 :root .control-group.bypassed .control-group-body { opacity: .35; }
 :root .control-group .group-toggle, :root .control-group .control-group-name, :root .control-foldout > summary { font: var(--font-weight-medium) var(--font-size-md) var(--font-body); letter-spacing: var(--tracking-none); text-transform: none; color: var(--text); }
 :root .group-toggle > .control-group-name { margin-left: 0; }
@@ -134,13 +135,13 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 .accent-chip.custom { background: conic-gradient(var(--accent-preset-burnt-orange), var(--label-green), var(--accent-preset-coating-blue), var(--label-red), var(--accent-preset-burnt-orange)); }
 .accent-option[aria-pressed="true"] .accent-chip { outline: 1.5px solid var(--text); outline-offset: 2px; border: 2px solid var(--panel); }
 
-/* Shared status entries fit the lower status bar. */
 /* Shared progress track: neutral and visible on every theme's status surface. */
 :root .status-entry-progress { background: var(--border); border-radius: var(--radius-pill); }
 :root .status-entry-progress:not(:indeterminate)::-webkit-progress-bar { background: var(--border); border-radius: var(--radius-pill); }
 :root .status-entry-progress::-webkit-progress-value { background: var(--accent); border-radius: var(--radius-pill); }
 :root .status-entry-progress:not(:indeterminate)::-moz-progress-bar { background: var(--accent); border-radius: var(--radius-pill); }
 
+/* Shared status entries fit the lower status bar. */
 :root .viewer-status-dock :is(.application-status-entries, .status-entry) { height: var(--status-bar-h); min-height: 0; }
 :root .viewer-status-dock .status-entry { padding: 2px 0; border-bottom: 0; font: var(--font-weight-regular) var(--font-size-sm) var(--font-body); }
 :root .viewer-status-dock .status-entry-actions button { min-height: var(--panel-collapse-button-size); }
@@ -666,4 +667,4 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 :root .instrument-slider-control > .range-shell { margin-bottom: 0; align-self: start; }
 
 /* Selection on a button is the pressed plate and accent ink, never an accent outline or border (Steve, November 11, 2026). Photo and folder tiles keep their selection frame. */
-:root :is(button, [role="button"], [role="tab"]):is(.active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):not(.batch-photo, .directory-browser-entry, .hsl-channel, .accent-option) { border-color: var(--plate-edge) !important; outline: none; }
+:root :is(button, [role="button"], [role="tab"]):is(.active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):not(.batch-photo, .directory-browser-entry, .hsl-channel, .accent-option, .group-toggle, .disclosure-trigger) { border-color: var(--plate-edge) !important; outline: none; }

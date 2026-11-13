@@ -2167,3 +2167,8 @@ Grouped validation and the small two-theme review are in Desktop and release.
 Built: opening a photo from Library, import, a project or recent files closes
 Grade modules and RAW settings. Background reloads of the current photo preserve
 the open modules. Adjustments are unchanged.
+
+## November 13: expanded module headers
+
+Built: expanded module headers use the panel surface and shared divider-below
+token above the raised controls. Disclosure buttons retain visible keyboard focus.
