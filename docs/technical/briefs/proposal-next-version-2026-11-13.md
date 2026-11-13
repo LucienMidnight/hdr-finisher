@@ -1,6 +1,10 @@
 # Proposal: what to do after 0.9.2 (November 13, 2026)
 
-**Status:** proposal for review. Nothing here is approved or built.
+**Status:** approved by Steve, November 13, 2026: phases 1–3, and
+decisions 1–8 as recommended, except that the work moves to his MacBook
+(this changes decision 6 and section 3.12). Decision 9 is still open.
+The work is given in [mac-phases-1-3-2026-11-13.md](mac-phases-1-3-2026-11-13.md).
+Nothing here is built yet.
 **Coordinator:** Claude (Opus 5.5). **Research:** 12 Codex researchers
 (`gpt-6.1-sol`, medium effort), each in its own worktree from `main`.
 **Sprint plan:** [next-version-investigation-sprint-2026-11-13.md](next-version-investigation-sprint-2026-11-13.md).
@@ -298,6 +302,9 @@ was added because two older lock methods did not see each other
   tier overlap, GPU Edge colour on a healthy GPU, Library quick check.
   If the Mac is offline, the release is not blocked; the gap is written
   into the release record. One-time setup 6–10 h; 0.5–1 h per release.
+- **Changed by Steve (November 13):** phases 1–3 are built and tested on
+  the MacBook. The Windows PC takes the advisory release-point role
+  instead (see the Mac brief, "Machines").
 
 ### 3.13 Grade controls not timed in 0.9.2
 
@@ -533,6 +540,10 @@ with you. No app integration before that.
 ---
 
 ## 8. Decisions for Steve (one at a time)
+
+Steve's answers (November 13, 2026): 1–5, 7 and 8 as recommended; 6
+changed (the MacBook becomes the main machine, the PC is advisory); 9
+still open (asked at the start of Phases 2 and 3).
 
 1. **HDR film-preview blotches: keep as a known limit?** Keep (recommended):
    no cost; the preview stays wrong only with compression off and extreme
