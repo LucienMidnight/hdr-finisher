@@ -53,3 +53,16 @@ def make_png_bytes(color: tuple[int, int, int] = (120, 90, 60)) -> bytes:
 
 def fixture_path(name: str) -> Path:
     return FIXTURES / name
+
+
+@pytest.fixture
+def ample_preflight_memory(monkeypatch):
+    """Pixel/route fixtures exercise their intended path regardless of host load.
+
+    Resource-safety tests use explicit low/unknown snapshots or the real reader
+    instead; no production allowance or expected output is changed here.
+    """
+    from hdr_finisher import linear_dng, resource_preflight
+    resources = resource_preflight.ResourceSnapshot(16 * 1024**3, 8 * 1024**3, "test")
+    monkeypatch.setattr(resource_preflight, "detect_memory_resources", lambda: resources)
+    monkeypatch.setattr(linear_dng, "detect_memory_resources", lambda: resources)

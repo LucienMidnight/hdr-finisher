@@ -455,3 +455,31 @@ def test_deterministic_refusal_runs_once_releases_grant_and_allows_explicit_retr
     assert asyncio.run(prepare(command)).status_code == 422
     assert len(calls) == 3
     assert not scheduler.jobs
+
+
+def test_helper_preflight_refusal_is_returned_once_through_live_scene_api(tmp_path):
+    from concurrent.futures import Future
+    from hdr_finisher.media_browser import MediaBrowserError
+    class RefusedHelper(Helper):
+        def submit_library(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+            future = Future()
+            future.set_exception(MediaBrowserError("Opening this Experimental DNG is estimated to require 1.63 GiB of additional memory; only 0.00 GiB is safely available."))
+            return "refused-job", future
+        def cancel(self, job):
+            pass
+        def prioritize(self, job, priority):
+            pass
+    path = tmp_path / "photo.png"
+    Image.new("RGB", (8, 4)).save(path)
+    helper = RefusedHelper()
+    api = client(tmp_path / "app", helper)
+    for _ in range(3):
+        result = api.post("/api/library/live-scene", json={"path": str(path), "gpu": False})
+        assert result.status_code == 422, result.text
+        assert "safely available" in result.json()["library_error"]["details"]
+    assert len(helper.calls) == 1
+    record = result.json()["library_error"]
+    assert api.post("/api/library/picture-error", json={"path": str(path), "revision": record["revision"], "action": "retry"}).status_code == 200
+    assert api.post("/api/library/live-scene", json={"path": str(path), "gpu": False}).status_code == 422
+    assert len(helper.calls) == 2
