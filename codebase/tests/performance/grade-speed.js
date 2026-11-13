@@ -125,7 +125,7 @@ async function drag(page, selector, low, high) {
     await stable(page);
     await drag(page, '#film-lens-strength', 0.15, 0.55);
     }
-    if (part === 'all' || part === 'denoise') {
+    if ((part === 'all' || part === 'denoise') && !process.argv.includes('--skip-denoise')) {
     await page.evaluate(async () => { await switchLane('hdr'); await setDenoiseEnabled(true); });
     await stable(page);
     for (let trial = 0; trial < 3; trial++) {

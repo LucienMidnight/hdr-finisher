@@ -134,9 +134,14 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       while (pendingHighlightAnchors.size || exactHighlightAnchorInflight.size)
         await new Promise(resolve => setTimeout(resolve, 20));
       state.previewScheduler?.cancel();
+      state.renderCoordinator?.cancelFollowUps(lane);
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
       const renderStarted=performance.now();
-      if (!await renderGpuDraft(lane, { longEdge })) return { error: "GPU render failed" };
+      if (!await state.gpuPreview.render(state.session.session_id, lane,
+        JSON.parse(JSON.stringify(state.adjustments)), sampleCurvePoints, longEdge, [],
+        state.editRevision, null, projectReferenceWhiteNits(),
+        { width: state.session.source.width, height: state.session.source.height },
+        { isCurrent: () => true })) return { error: "GPU render failed" };
       await state.gpuPreview.device.queue.onSubmittedWorkDone();
       const renderMs=performance.now()-renderStarted;
       let textureStats=null;

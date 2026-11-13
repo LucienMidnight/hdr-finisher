@@ -4,36 +4,49 @@
 
 MacBook Neo, Apple A18 Pro, 8 GB unified RAM; 1408x794-point unpackaged
 Electron under the shared GPU lock; no overlapping suites. Baseline
-`87b91385`, implementation committed with these entries. Reusable synthetic
+`87b91385`, production `f542c0a8`; November 14 strict follow-up has test-only
+launcher/capture repairs and no production edits. Reusable synthetic
 `codebase/output/test-photos/grade-24mp.tiff`, not a real RAW. Grade timing
 tolerance: 10% (proposal); PC results remain separate. Show selection includes
 request, overlay decode and two animation frames. Evidence:
-`codebase/output/performance/p1b/{before,after}.json`; diagnostic trace is
-separate from paired timings.
+`codebase/output/performance/p1b/{before,after}.json`; final clean pass
+`codebase/output/performance/p1bv/final-timing.json`. Diagnostic trace is
+separate from paired timings; the After column now records final code.
 
 | Action | Before | After | Conditions / result |
 | --- | --- | --- | --- |
-| SDR Show selection, warm Fit | 0.684–0.700 s | 0.674–0.699 s | MacBook; three warm show/hide cycles; <1 s passes; within timing tolerance, no speed claim |
-| SDR Show selection, warm 100% | 0.766–0.799 s | 0.749–0.801 s | MacBook; same bounded 1600-pixel CPU overlay; <1 s passes; within timing tolerance |
-| SDR selection range edit, Fit / 100% | 0.746 / 0.765 s | 0.731 / 0.763 s | MacBook; edge feather edit, pre-HSL pixels reused; within timing tolerance |
-| SDR first show, Fit / 100% | 1.235 / 1.049 s | 1.217 / 1.132 s | MacBook; first call at each zoom, not the warm acceptance; within timing tolerance |
-| Film Stock Color drag | 1.80 frames/s | 17.28 frames/s | MacBook; SDR Fit; displayed frames during 150 programmed input events; exact release; below 20 frames/s |
-| Film Print Contrast drag | 0.25 frames/s | 8.35 frames/s | MacBook; SDR Fit; same driver; exact release; below 20 frames/s |
-| Film Grain Amount drag | 1.80 frames/s | 17.40 frames/s | MacBook; SDR Fit; same driver; exact release; below 20 frames/s |
-| Film lens Strength drag | 0.86 frames/s | 13.12 frames/s | MacBook; SDR Fit; same driver; exact release; below 20 frames/s |
+| SDR Show selection, warm Fit | 0.684–0.700 s | 0.783–0.798 s | MacBook; three warm show/hide cycles; <1 s passes, outside prior 10% band; Steve to try |
+| SDR Show selection, warm 100% | 0.766–0.799 s | 0.899–1.079 s | MacBook; same bounded 1600-pixel CPU overlay; one of three misses <1 s; outside prior 10% band |
+| SDR selection range edit, Fit / 100% | 0.746 / 0.765 s | 0.863 / 0.934 s | MacBook; edge feather edit, pre-HSL pixels reused; outside prior 10% band |
+| SDR first show, Fit / 100% | 1.235 / 1.049 s | 1.455 / 1.465 s | MacBook; first call at each zoom, not the warm acceptance; outside prior 10% band |
+| Film Stock Color drag | 1.80 frames/s | 16.96 frames/s | MacBook; SDR Fit; displayed frames during 150 programmed input events; exact release; below 20 frames/s |
+| Film Print Contrast drag | 0.25 frames/s | 7.41 frames/s | MacBook; SDR Fit; exact release; below 20 frames/s; >10% below earlier 8.35, unexplained; Steve to try |
+| Film Grain Amount drag | 1.80 frames/s | 16.85 frames/s | MacBook; SDR Fit; same driver; exact release; below 20 frames/s |
+| Film lens Strength drag | 0.86 frames/s | 12.42 frames/s | MacBook; SDR Fit; same driver; exact release; below 20 frames/s |
 | First Exposure after idle Denoise | 27.7–36.1 ms | 35.5–44.6 ms | MacBook; synthetic scene, three observations after anchor work finishes; does not exercise an edit racing the anchor; unexplained change exceeds 10%, Steve to try before another run |
 
 Film rows measure the whole event-to-presentation throughput, not GPU kernel
-time or native pointer input. Diagnostic-only trace rates are 17.55 / 8.42 /
-17.05 / 13.66 frames/s in the same order (MacBook; within 10% of the paired
-implementation run). The trace shows summed-glow reuse and roughly 37–68 ms
-direct GPU-render waits, with additional scope/queue/scheduler work; these
-are not a whole-wait speed claim by themselves. Paired captures precede the
-final conservative withdrawal of tiled approximation, preservation of preview
-glow keys across measurement passes and resize-allocation cleanup. The timed
-Fit path was direct, but the final revision was not retimed after those edits.
-No Denoise scheduler change was made. P1-B is partial, not accepted at 20 fps.
-Validation gaps and Decisions for Steve are in the Grade and Film Look PRDs.
+time or native pointer input. Earlier paired implementation rates were 17.28 /
+8.35 / 17.40 / 13.12 frames/s; diagnostic-only trace rates were 17.55 / 8.42 /
+17.05 / 13.66. Final Stock, Grain and lens are within the agreed 10% of their
+paired implementation values, so no investigation is warranted. Final Print
+and HSL are outside it, unexplained; no repeat timing run was made, per the
+responsiveness rule. The final pass follows the conservative withdrawal of
+tiled approximation and preview-glow lifetime fixes. Denoise was explicitly
+excluded (`--skip-denoise`) to avoid chasing its already-recorded unexplained
+movement before Steve tries the app. No Denoise scheduler change was made.
+P1-B stays partial: no 20 fps or final HSL speed acceptance. The Grade and Film
+Look PRDs hold the validation ledger and Decisions for Steve.
+
+November 14 P1-B validation's default 90 s quick Library check: **MacBook**
+Neo / A18 Pro / 8 GB, 1408x794-point plain unpackaged Electron, GPU lock,
+default mixed 33-photo fixture, no overlapping tests. Branch `f542c0a8` plus
+test-only validation repairs: first picture 2.0 s, 6/33 by 90 s, ten never.
+Base `87b91385`: first 2.8 s, same 6/33 by 90 s, ten never. Both exit for
+incomplete coverage; neither reports a memory violation. This is an existing
+minimum-machine Library qualification gap, not a P1-B speed or complete
+Library pass. Evidence: `codebase/output/performance/p1bv/quick-library.json`
+and `quick-library-base.json`; no speed-gain claim from these single observations.
 
 November 14 macOS file-command smoke (working tree based on `696a3fd6`,
 `p1/mac-file-commands`; MacBook Neo, A18 Pro, 8 GB, 6 cores; 1408x794 points;
