@@ -295,10 +295,17 @@ GitHub. This file is tracked in Git so both always have the same rules.
   performance-table row. Mac and PC numbers are separate baselines and are
   never compared with each other; judge a change by before and after on
   the same machine.
-- **Photos missing on the Mac** (November 13): drivers that need D:/Photos
-  files other than DSC00264.ARW, IMG_0114.CR2 and the DSC00950 project
-  could not run at handover. Setup now lists current missing dependencies;
-  use that report as photos are added, and name gaps rather than skipping silently.
+- **Photos on the Mac** (November 13): every D:/Photos file the release
+  drivers use is copied except the two below. Setup lists missing
+  dependencies (including one-off measurement tools); name gaps rather than
+  skipping silently.
+  - **PC-only by Steve's choice:** the `2026/20261017 badminton` folder is
+    too large for the Mac, so `library-fullscreen-raw.js`,
+    `library-scroll-cache.js`, `library-stored-screen-preview.js` and
+    `library-live-picture.js` run on the PC only.
+  - **Asked for:** `HDR Test Images/e053a5bf16a9398eaa3da890-900x1200.jxl`
+    (`jxl-source-colour.js`; that driver also needs the JPEG XL helper,
+    which is Windows-only until Phase 2).
 
 ## Disk space and test output
 
