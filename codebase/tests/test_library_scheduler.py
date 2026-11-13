@@ -704,3 +704,57 @@ def test_cancelled_mezzanine_keeps_its_place_until_backend_stops():
         s.release_decode(first.id)
         assert following.granted is not None
         assert first.id not in s.jobs
+
+
+def test_compact_lifecycle_and_stalls(monkeypatch):
+    from hdr_finisher import library_diagnostics as diagnostics
+    from hdr_finisher.library_scheduler import GRANT_STALL_SECONDS
+    records = []
+    monkeypatch.setattr(diagnostics, "_sink", records.append)
+    now = [100.0]
+    s = Scheduler(ceiling=2_300_000_000, clock=lambda: now[0])
+    s.ask("run", "window", "run.dng", "source", GB)
+    assert records == []
+    waiting = s.ask("wait", "window", "wait.dng", "source", GB)
+    assert waiting.granted is None
+    now[0] += GRANT_STALL_SECONDS - 1
+    s.update()
+    assert not [r for r in records if r["event"] == "library_grant_stalled"]
+    now[0] += 1
+    s.update()
+    s.update()
+    stalls = [r for r in records if r["event"] == "library_grant_stalled"]
+    assert len(stalls) == 2
+    assert {(r["request"], r["phase"]) for r in stalls} == {("run", "running"), ("wait", "waiting")}
+    s.finish("run", outcome="failed")
+    first = records[-1]
+    assert first["event"] == "library_grant_completed"
+    assert first["outcome"] == "failed"
+    assert first["asked_at"] == first["granted_at"] == 100
+    assert first["finished_at"] == 160
+    assert first["wait_ms"] == 0 and first["run_ms"] == 60000
+    assert {**first, **first.get("asked_fields", {})}["unmeasured_grant_bytes"] == 0
+    assert first["granted_fields"]["unmeasured_grant_bytes"] == GB
+    now[0] += GRANT_STALL_SECONDS
+    s.update()
+    assert len([r for r in records if r["event"] == "library_grant_stalled"]) == 3
+    s.disconnect("window")
+    completed = [r for r in records if r["event"] == "library_grant_completed"]
+    assert [r["outcome"] for r in completed] == ["failed", "cancelled"]
+    assert completed[1]["wait_ms"] == completed[1]["run_ms"] == 60000
+    s.ask("run2", "other", "run.dng", "source", GB)
+    s.ask("never", "other", "never.dng", "source", GB)
+    s.finish("never", outcome="cancelled")
+    assert records[-1]["granted_at"] is None and records[-1]["run_ms"] is None
+
+
+def test_normal_grant_writes_only_one_line(monkeypatch):
+    from hdr_finisher import library_diagnostics as diagnostics
+    records = []
+    monkeypatch.setattr(diagnostics, "_sink", records.append)
+    s = fresh()
+    ask(s, "normal", kind="quick")
+    s.finish("normal")
+    assert len(records) == 1
+    assert records[0]["event"] == "library_grant_completed"
+    assert records[0]["outcome"] == "finished"

@@ -19,6 +19,8 @@ STARTING = 1_300_000_000
 # A job that fits an empty app is never refused. When freeing pictures did not
 # make room, it lets other photos run and asks again after this cool-down.
 RECLAIM_RETRY_SECONDS = 10
+# Diagnostic only: report once per phase at the regular memory census.
+GRANT_STALL_SECONDS = 60
 CLASSES = {"Grade": 0, "now": 1, "soon": 2, "eventually": 3}
 
 
@@ -57,6 +59,8 @@ class Job:
     decode_holds: int = 0
     finish_pending: str = ""
     outcome: str = ""
+    log_stages: dict = field(default_factory=dict)
+    stall_phases: set = field(default_factory=set)
     ready: Event = field(default_factory=Event)
 
     @property
@@ -137,6 +141,7 @@ class Scheduler:
                         if request.get("action") == "collect": job.collected = True
                         else: job.reclaimed = True
                     self.reclamation = None
+            self._report_stalls()
             self._measure_overrun()
             self._pump()
             if grade_changed:
@@ -367,7 +372,7 @@ class Scheduler:
                 log("library_gpu_priority_release", request=job.id, path=job.path,
                     wait_ms=round((self.clock()-job.gpu_preempted_at)*1000, 3),
                     reason=getattr(job, "preempt_reason", "a higher-priority photo needed the resource"))
-            self._log(job, outcome)
+            self._log(job, "completed", outcome=outcome)
             job.ready.set()
             self._pump()
 
@@ -408,7 +413,7 @@ class Scheduler:
                 self.jobs.pop(id)
                 if job.granted is not None and not job.fast:
                     self.drained_at = self.clock()
-                self._log(job, "cancelled")
+                self._log(job, "completed", outcome="cancelled")
                 job.ready.set()
             self._pump()
 
@@ -445,7 +450,7 @@ class Scheduler:
     def _terminal_memory(self, job):
         job.reason = job.outcome = "needs more memory"
         self.jobs.pop(job.id, None)
-        self._log(job, "needs_memory")
+        self._log(job, "completed", outcome="needs_memory")
         job.ready.set()
         if job.notify:
             job.notify(dict(self._message(job, "needs-memory"), reason=job.reason))
@@ -631,14 +636,40 @@ class Scheduler:
             return job.estimate
         return max(0, job.estimate-(job.peak or 0))
 
-    def _log(self, job, event):
-        log("library_grant_"+event, request=job.id, owner=job.owner, path=job.path,
+    def _log(self, job, event, **extra):
+        now = self.clock()
+        fields = dict(request=job.id, owner=job.owner, path=job.path,
             priority_class=job.cls, estimate_bytes=job.estimate, gpu_estimate_bytes=job.gpu_bytes, gpu_unified=job.gpu_unified, saving=job.saving,
             alone=job.alone, floor=job.floor, measured_total_bytes=self.total,
             unmeasured_grant_bytes=sum(self._outstanding(j) for j in self.jobs.values() if j.granted is not None),
             measured_peak_bytes=job.peak, peak_scope="whole-app-increment",
-            wait_ms=round(((job.granted if job.granted is not None else self.clock())-job.asked)*1000),
+            wait_ms=round(((job.granted if job.granted is not None else now)-job.asked)*1000),
             reason=job.size_reason or job.reason or None, waited_for=job.reason or None, over_estimate=job.peak is not None and job.peak > job.estimate)
+        if event in {"asked", "granted"}:
+            job.log_stages[event] = fields
+            return
+        if event in {"completed", "stalled"}:
+            fields.update(asked_at=job.asked, granted_at=job.granted,
+                          finished_at=now if event == "completed" else None,
+                          run_ms=round((now-job.granted)*1000) if job.granted is not None else None,
+                          clock="monotonic_seconds")
+            # Store only values which differed at earlier lifecycle stages.
+            # The final shared fields plus these overrides reconstruct each stage.
+            for stage, previous in job.log_stages.items():
+                changes = {k: v for k, v in previous.items() if fields.get(k) != v}
+                if changes:
+                    fields[stage + "_fields"] = changes
+        log("library_grant_"+event, **fields, **extra)
+
+    def _report_stalls(self):
+        now = self.clock()
+        for job in self.jobs.values():
+            phase = "waiting" if job.granted is None else "running"
+            since = job.asked if job.granted is None else job.granted
+            if now-since >= GRANT_STALL_SECONDS and phase not in job.stall_phases:
+                job.stall_phases.add(phase)
+                self._log(job, "stalled", phase=phase, threshold_seconds=GRANT_STALL_SECONDS)
+
 
 
 from .app_memory import CEILING

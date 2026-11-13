@@ -1,5 +1,16 @@
 # Code map
 
+## November 13: compact grant diagnostics
+
+Library jobs emit library_grant_completed on completion, failure or cancellation,
+with outcome, monotonic asked/granted/finished times, wait/run milliseconds and
+shared grant fields. asked_fields/granted_fields store only earlier values that
+differ from the final shared fields. Exceptional grant events remain. The regular
+memory census emits library_grant_stalled once per waiting/running phase after
+60 seconds (diagnostic only; scheduling unchanged). No existing general grant
+stall threshold/report was present.
+
+
 Where things live after the October 8 modularization sprint. Read this before
 searching the code. The [sprint PRD](../product/archive/Codebase_Modularization_Sprint_PRD_2026-10-06.md)
 records the moves and validation.
