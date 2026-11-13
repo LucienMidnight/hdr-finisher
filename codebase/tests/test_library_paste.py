@@ -126,3 +126,54 @@ def test_gpu_raw_start_is_reused_by_simultaneous_paste_requests(setup, monkeypat
     assert results[0] == results[1] == results[2]
     assert results[0][1] == cache.default_document(raw)
     assert grades._get(str(raw))['default'] == results[0][1]
+
+
+@pytest.mark.parametrize('contents', ['{', '[]', '{}', '{"lanes":"hdr","settings":[]}', '{"lanes":[],"settings":[{}]}'])
+def test_corrupt_preferences_use_defaults(setup, contents):
+    photo,store,session,marks,grades=setup
+    paste=LibraryPaste(grades);expected=paste.copy(str(photo))['selection']
+    paste.preferences.write_text(contents,encoding='utf-8')
+    assert paste.copy(str(photo))['selection']==expected
+
+
+def test_stale_preferences_allow_copy_and_paste(setup):
+    import json
+    photo,store,session,marks,grades=setup;saved(setup)
+    paste=LibraryPaste(grades)
+    paste.preferences.write_text(json.dumps({'lanes':['hdr','obsolete'], 'settings':[HDR,'shadow_lift','primaries_section_enabled']}),encoding='utf-8')
+    description=paste.copy(str(photo))
+    assert description['name'] and description['selection']=={'lanes':['hdr'],'settings':[HDR]}
+    paste.clipboard['grade']['global_adjustments']['hdr']['exposure']=2
+    assert paste.paste([str(photo)])['count']==1
+    assert paste.document(str(photo))[0]['global_adjustments']['hdr']['exposure']==2
+    assert json.loads(paste.preferences.read_text())==description['selection']
+    assert paste.describe()['selection']==description['selection']
+
+
+@pytest.mark.parametrize('selection', [{'lanes':['obsolete'],'settings':[HDR]}, {'lanes':['hdr'],'settings':['shadow_lift']}, {'lanes':['hdr'],'settings':[{}]}])
+def test_explicit_bad_selection_is_rejected(setup, selection):
+    photo,store,session,marks,grades=setup
+    paste=LibraryPaste(grades);paste.copy(str(photo))
+    with pytest.raises(ValueError,match='Unknown paste setting'):
+        paste.paste([str(photo)],selection)
+
+
+@pytest.mark.parametrize('raw_first', [True,False])
+def test_preferences_shared_between_raw_and_nonraw(setup, monkeypatch, raw_first):
+    import json
+    photo,store,session,marks,grades=setup
+    paste=LibraryPaste(grades)
+    raw=photo.with_suffix('.ARW');raw.write_bytes(b'test RAW placeholder')
+    document=session.edit_document().model_dump(mode='json')
+    monkeypatch.setattr(paste,'document',lambda path:(deepcopy(document),deepcopy(document)))
+    first,second=(raw,photo) if raw_first else (photo,raw)
+    description=paste.copy(str(first))
+    raw_id=next(r['id'] for g in description['groups'] if g['id']=='raw-development' for r in g['settings'])
+    selection={'lanes':['hdr'],'settings':[HDR,raw_id]}
+    paste.paste([str(first)],selection)
+    assert json.loads(paste.preferences.read_text())==selection
+    assert paste.copy(str(second))['selection']==selection
+    result=paste.paste([str(second)],preview=True)
+    assert bool(result['warnings'])==raw_first
+    groups=[g for g in description['groups'] if g['id']!='raw-development']
+    assert paste.selection(groups)=={'lanes':['hdr'],'settings':[HDR]}

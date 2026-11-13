@@ -20,8 +20,10 @@
     async function refresh() { copied = await api('/api/library/grade-copy'); notify(); return copied; }
     async function copy(path) {
       if (!path || running) return;
-      copied = await api('/api/library/grade-copy', {path}); notify();
-      status(`Grade copied from ${copied.name}`);
+      try {
+        copied = await api('/api/library/grade-copy', {path}); notify();
+        status(`Grade copied from ${copied.name}`);
+      } catch (error) { status(`Could not copy grade: ${error.message}`); }
     }
     async function paste(paths, choose = false) {
       if (!paths.length || running) return;

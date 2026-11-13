@@ -4093,6 +4093,9 @@ Settings that don't apply to a file type are skipped and reported. Paste
 always confirms, saves at once whatever the autosave setting, keeps each
 photo's previous grade as its before state, and is one Undo step. Masks,
 local adjustments, crop and lens corrections are unticked by default.
+Saved paste choices are optional: obsolete setting IDs and lanes are ignored,
+and malformed preferences use the defaults. Settings absent from a valid saved
+selection stay unticked. Explicit paste requests still reject unknown choices.
 
 ## 4. Current state (October 18, 2026)
 

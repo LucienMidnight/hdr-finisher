@@ -128,11 +128,19 @@ class LibraryPaste:
     def selection(self, groups, selection=None):
         allowed={r['id'] for g in groups for r in g['settings']}
         if selection is None:
-            try: selection=json.loads(self.preferences.read_text(encoding='utf-8'))
-            except (OSError,ValueError): selection={'lanes':['hdr','sdr'],'settings':[r['id'] for g in groups if g['id'] not in ('lens-corrections','geometry','local-adjustments') for r in g['settings']]}
+            default={'lanes':['hdr','sdr'],'settings':[r['id'] for g in groups if g['id'] not in ('lens-corrections','geometry','local-adjustments') for r in g['settings']]}
+            try: saved=json.loads(self.preferences.read_text(encoding='utf-8'))
+            except (OSError,ValueError): return default
+            # Preferences are optional; only explicit requests require strict IDs.
+            if (not isinstance(saved,dict) or set(saved)!={'lanes','settings'}
+                    or not all(isinstance(saved[key],list) and all(isinstance(item,str) for item in saved[key])
+                               for key in ('lanes','settings'))):
+                return default
+            selection={'lanes':[lane for lane in saved['lanes'] if lane in ('hdr','sdr')],
+                       'settings':[setting for setting in saved['settings'] if setting in allowed]}
         if not isinstance(selection,dict) or set(selection)-{'lanes','settings'}: raise ValueError('Choose the settings to paste.')
         lanes=selection.get('lanes',[]); settings=selection.get('settings',[])
-        if not isinstance(lanes,list) or not isinstance(settings,list) or set(lanes)-{'hdr','sdr'} or set(settings)-allowed:
+        if not isinstance(lanes,list) or not isinstance(settings,list) or not all(isinstance(item,str) for item in lanes+settings) or set(lanes)-{'hdr','sdr'} or set(settings)-allowed:
             raise ValueError('Unknown paste setting.')
         return {'lanes':list(dict.fromkeys(lanes)),'settings':list(dict.fromkeys(settings))}
 

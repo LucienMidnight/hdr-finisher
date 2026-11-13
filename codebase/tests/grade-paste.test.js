@@ -20,3 +20,12 @@ test('quick paste choices select results from per-setting modifications', () => 
   model.choose('none'); assert.deepEqual(model.active(),[]);
   model.choose('all'); assert.equal(model.value().settings.length,4);
 });
+
+test('copy failure is reported through the Library status message', async () => {
+  const {create} = require('../frontend/grade-paste.js');
+  const messages = [];
+  const paste = create({api: async () => { throw new Error('Copy failed'); }, status: message => messages.push(message)});
+  await paste.copy('photo.png');
+  assert.equal(paste.available(), false);
+  assert.deepEqual(messages, ['Could not copy grade: Copy failed']);
+});
