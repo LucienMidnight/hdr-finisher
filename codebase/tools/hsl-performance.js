@@ -2,7 +2,7 @@
 // --photo <raw> --tag before|after [--local] [--lanes sdr,hdr] [--views fit,100,400]
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path');
 const arg=(k,d)=>{const i=process.argv.indexOf(k);return i<0?d:process.argv[i+1];};
-const source=arg('--photo','D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2'),local=process.argv.includes('--local'),tag=arg('--tag','before');
+const source=arg('--photo',require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2')),local=process.argv.includes('--local'),tag=arg('--tag','before');
 const out=path.resolve('output/hsl-performance');fs.mkdirSync(out,{recursive:true});
 const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.lane===state.currentView&&state.acceptedPresentation.generation===state.previewGeneration[state.currentView]&&viewerState().status==='ready';
 const navigationSettled=()=>{const a=state.acceptedPresentation,s=state.renderCoordinator?.state(state.currentView);

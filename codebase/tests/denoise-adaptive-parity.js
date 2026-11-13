@@ -21,7 +21,7 @@ const WIDTH = 1500;
 const HEIGHT = 1000;
 const ROOT = path.resolve(__dirname, "..");
 const PYTHON = process.platform === "win32"
-  ? path.join(ROOT, ".venv", "Scripts", "python.exe")
+  ? require('../tools/lib/platform.cjs').pythonExecutable()
   : path.join(ROOT, ".venv", "bin", "python");
 
 function argument(name, fallback = null) {

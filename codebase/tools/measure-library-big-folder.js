@@ -33,7 +33,7 @@ const bounded = (promise, ms, label) => {
     const lib = page.frame({url:/\/library(?:\?|$)/});
     await lib.waitForFunction(() => window.HDRLibrary);
     stream = fs.createWriteStream(path.join(output,'measurement-memory.jsonl'));
-    observer = spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID],{windowsHide:true});
+    observer = spawn(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID],{windowsHide:true});
     let pending = '';
     observer.stdout.on('data',chunk => {
       pending += chunk;
@@ -64,9 +64,9 @@ const bounded = (promise, ms, label) => {
       while(!fs.existsSync(log)||!fs.readFileSync(log,'utf8').includes('[library] startup_upkeep_finished '))await sleep(200);
     })(),20000,'Startup cleanup did not finish before opening real data');
     report.startupCleanupFinishedBeforeRealFolder=true;
-    await api('pins',{paths:['D:/Photos']});
+    await api('pins',{paths:[require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos')]});
     const opening = Date.now();
-    void lib.evaluate(()=>HDRLibrary.browse('D:/Photos')).catch(error=>{report.browseError=String(error);});
+    void lib.evaluate(folder=>HDRLibrary.browse(folder),require('../tests/helpers/photos-root.cjs').photosRoot()).catch(error=>{report.browseError=String(error);});
     while (!exceeded) {
       const count = await bounded(lib.evaluate(()=>HDRLibrary.getSnapshot().count),10000,'Folder startup did not answer');
       if (count>0) break;
@@ -113,7 +113,7 @@ const bounded = (promise, ms, label) => {
     if(!exceeded){
     await lib.evaluate(folder=>HDRLibrary.browse(folder),disposable);
     await lib.locator('#grid-space .library-cell').first().click();
-    await api('pins',{paths:['D:/Photos']});
+    await api('pins',{paths:[require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos')]});
     report.backgroundBeforeDelete=await bounded(api('health'),5000,'Activity did not answer');
     // Pin refresh and the streamed listing may repaint the initial cell.
     // Select the disposable picture again after the refresh has settled.

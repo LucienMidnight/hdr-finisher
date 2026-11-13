@@ -8,7 +8,7 @@ const raw=reusePhoto(reusePhoto.source('DSC07072.ARW'),path.join(folder,'DSC0707
 const edited=path.join(path.dirname(raw),'edited.png');
 const cleanupEdited=()=>{for(const file of [edited,edited+'.hdrf'])fs.rmSync(file,{force:true});};
 process.once('exit',cleanupEdited);
-execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import sys,json
 from pathlib import Path
 from PIL import Image

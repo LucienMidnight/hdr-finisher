@@ -31,7 +31,7 @@ const MAX_CLARITY_MEAN_DIFFERENCE = 0.06 / 255;
 const MAX_CLARITY_P999_DIFFERENCE = 2 / 255;
 
 function writeFixture() {
-  const python = path.resolve(__dirname, "..", ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+  const python = require('../tools/lib/platform.cjs').pythonExecutable();
   const target = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "clarity-parity-")), "clarity_edges.tiff");
   const script = `
 import numpy as np, tifffile, sys

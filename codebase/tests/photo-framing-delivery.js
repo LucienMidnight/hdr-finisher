@@ -2,7 +2,7 @@ const { resolveInterpretation } = require("./helpers/resolve-interpretation.js")
 const {chromium}=require("playwright");
 const fs=require("node:fs"),os=require("node:os"),path=require("node:path"),assert=require("node:assert/strict"),{execFileSync}=require("node:child_process");
 const root=fs.mkdtempSync(path.join(os.tmpdir(),"hdr-framing-"));
-const python=path.resolve(__dirname,"../.venv/Scripts/python.exe"),helper=path.join(__dirname,"helpers/gpu_delivery_fixture.py");
+const python=require('../tools/lib/platform.cjs').pythonExecutable(),helper=path.join(__dirname,"helpers/gpu_delivery_fixture.py");
 const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
 (async()=>{
   execFileSync(python,[helper,"make",path.join(root,"fixture.tiff")],{env});

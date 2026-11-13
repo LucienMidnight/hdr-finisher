@@ -1,4 +1,8 @@
 """Read-only Balanced Rock review and reproducible source-pixel crops."""
+import sys as _tool_sys
+from pathlib import Path as _ToolPath
+_tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[1] / 'tools'))
+from lib.machine_settings import photos_path
 from pathlib import Path
 import sys, json, time
 import numpy as np
@@ -9,7 +13,7 @@ from hdr_finisher.loader import load_image
 from hdr_finisher.preview import downsample_image, encode_processed_preview_bytes
 from hdr_finisher.models import RawImportSettings
 out=ROOT/'output/hue-mask-smooth';out.mkdir(parents=True,exist_ok=True)
-source=Path(r'D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2')
+source=Path(photos_path(r'D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2'))
 cache=out/'scene.npy'
 if not cache.exists():
  scene,*_=load_image(source,raw_import_settings=RawImportSettings())

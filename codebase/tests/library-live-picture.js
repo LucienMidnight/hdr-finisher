@@ -7,7 +7,7 @@ fs.mkdirSync(folder,{recursive:true});
 const sources=[reusePhoto.source('DSC07072.ARW'),path.join(root,'tests/fixtures/sdr_gradient.png')];
 const photos=sources.map(source=>{const p=path.join(folder,path.basename(source));return reusePhoto(source,p);});
 const edited=path.join(folder,'edited.png');fs.copyFileSync(sources[1],edited);photos.push(edited);
-execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import sys,json
 from pathlib import Path
 sys.path.insert(0,'backend')
@@ -47,7 +47,7 @@ p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo'
   gpu.renderTo=original;return {location,rows};
  },photos);
  const file=path.join(folder,'pixels.json');fs.writeFileSync(file,JSON.stringify(result));
- const output=execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_live_compare.py'),file],{cwd:root,encoding:'utf8',maxBuffer:1<<24});
+ const output=execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tests/helpers/library_live_compare.py'),file],{cwd:root,encoding:'utf8',maxBuffer:1<<24});
  const report=JSON.parse(output.trim().split('\n').at(-1));console.log(JSON.stringify(report));
  for(const row of report)for(const check of row.checks)assert.ok(check.passed,JSON.stringify({photo:row.photo,...check}));
  // Optional real-photo extension; the saved synthetic Film Look fixture above always runs.

@@ -39,7 +39,7 @@ const CASES = [
 ];
 
 function writeFixture() {
-  const python = path.resolve(__dirname, "..", ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+  const python = require('../tools/lib/platform.cjs').pythonExecutable();
   const target = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "bw-parity-")), "bw_hues.tiff");
   const script = `
 import numpy as np, tifffile, sys, colorsys

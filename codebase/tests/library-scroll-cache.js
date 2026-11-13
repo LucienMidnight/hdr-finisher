@@ -29,7 +29,7 @@ const assert = require('node:assert/strict');
       input.value = 360; input.dispatchEvent(new w.Event('input'));
     });
     await library.evaluate((element, folder) => element.contentWindow.HDRLibrary.browse(folder),
-      process.env.HDR_LIBRARY_SCROLL_FOLDER || 'D:/Photos/2026/20261017 badminton');
+      process.env.HDR_LIBRARY_SCROLL_FOLDER || require('./helpers/photos-root.cjs').photosPath('D:/Photos/2026/20261017 badminton'));
     // browse() resolves at the first usable rows, before the streamed list ends.
     await page.waitForFunction(() => document.getElementById('library-frame').contentWindow.__folderComplete,
       null, {timeout:180000});

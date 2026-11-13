@@ -8,7 +8,7 @@ const root=path.join(__dirname,'..'), index=process.argv.indexOf('--output');
 const output=path.resolve(index<0?'output/performance/mask-raster-reference.json':process.argv[index+1]);
 const shared=process.argv.includes('--shared');
 const orthogonal=process.argv.includes('--orthogonal');
-const cases=JSON.parse(execFileSync(process.env.HDR_FINISHER_PYTHON || path.join(root,'.venv/Scripts/python.exe'),['-c',`
+const cases=JSON.parse(execFileSync(process.env.HDR_FINISHER_PYTHON || require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import json, sys
 import numpy as np
 from backend.hdr_finisher.models import MaskExpression,GeometryAdjustments

@@ -4,7 +4,7 @@ const {chromium}=require('playwright');
 const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'output/badminton');
 const crypto=require('node:crypto');
-const photos='D:/Photos/2026/20261017 badminton';
+const photos=require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos/2026/20261017 badminton');
 const manifest=()=>Object.fromEntries(fs.readdirSync(photos).filter(n=>/\.hdrf$/i.test(n)).map(n=>[n,crypto.createHash('sha256').update(fs.readFileSync(path.join(photos,n))).digest('hex')]));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 (async()=>{
@@ -14,7 +14,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
  const report={events:[],errors:[],cells:[],peakBytes:0},browser=await chromium.launch();let observer;
  const record=()=>fs.writeFileSync(path.join(out,'scroll.json'),JSON.stringify(report,null,2));
  try{
-  observer=spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID],{windowsHide:true});
+  observer=spawn(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID],{windowsHide:true});
   let buffer='';observer.stdout.on('data',chunk=>{buffer+=chunk;let at;while((at=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,at);buffer=buffer.slice(at+1);if(line){const s=JSON.parse(line);if(s.totalBytes>report.peakBytes){report.peakBytes=s.totalBytes;report.peakSample=s;}if(s.totalBytes>4e9)report.ceilingExceeded=true;}}});
   observer.stderr.on('data',b=>report.errors.push(String(b)));
   const page=await browser.newPage();page.on('pageerror',e=>report.errors.push(String(e)));
@@ -39,7 +39,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
     }
    }).observe(document.getElementById('grid-space'),{childList:true});
   });
-  await lib.evaluate(()=>HDRLibrary.browse('D:/Photos/2026/20261017 badminton'));
+  await lib.evaluate(folder=>HDRLibrary.browse(folder),photos);
   await lib.waitForFunction(()=>!HDRLibrary.getSnapshot().reading&&HDRLibrary.getSnapshot().paths.some(p=>p.includes("DSC07200")));
   await lib.evaluate(()=>document.querySelector('[data-sort="name"]').click());report.initial=await lib.evaluate(()=>HDRLibrary.getSnapshot());await sleep(1000);
   for(const name of ['DSC07268','DSC07274','DSC07278','DSC07500','DSC07506','DSC07512']){

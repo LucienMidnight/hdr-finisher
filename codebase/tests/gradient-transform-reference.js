@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const root=path.join(__dirname,'..'),args=process.argv.slice(2);
 const output=path.resolve(args.includes('--output')?args[args.indexOf('--output')+1]:'output/performance/gradient-transform-reference.json');
-const cases=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+const cases=JSON.parse(execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import json,numpy as np
 from backend.hdr_finisher.models import MaskExpression,GeometryAdjustments
 from backend.hdr_finisher.local_adjustments import compile_geometry_fixed_mask

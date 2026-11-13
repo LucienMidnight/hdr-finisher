@@ -4,7 +4,7 @@ const {spawn,execFileSync}=require('node:child_process');const {chromium}=requir
 const root=path.resolve(__dirname,'../..'),out=path.join(root,'output/library-raw-deep-dive');
 const write=(n,v)=>fs.writeFileSync(path.join(out,n),JSON.stringify(v,null,2));
 (async()=>{const log=fs.openSync(path.join(out,'service.log'),'w');
- const service=spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-raw-deep-dive.py'),'serve'],{cwd:root,env:{...process.env,M9_THREADS:'12'},stdio:['ignore',log,log],windowsHide:true});let browser;
+ const service=spawn(require('../../tools/lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'library-raw-deep-dive.py'),'serve'],{cwd:root,env:{...process.env,M9_THREADS:'12'},stdio:['ignore',log,log],windowsHide:true});let browser;
  try {const deadline=Date.now()+90000;while(true){try{if((await fetch('http://127.0.0.1:8809/health')).ok)break;}catch{}assert.equal(service.exitCode,null);assert.ok(Date.now()<deadline);await new Promise(r=>setTimeout(r,200));}
  browser=await chromium.launch({headless:true});const page=await browser.newPage();const cdp=await page.context().newCDPSession(page);await cdp.send('Page.setBypassCSP',{enabled:true});await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});const lib=page.frame({url:/\/library(?:\?|$)/});assert.ok(lib);await cdp.send('Browser.grantPermissions',{origin:new URL(page.url()).origin,permissions:['localNetworkAccess']});
   const setup=await lib.evaluate(async()=>{
@@ -124,5 +124,5 @@ const write=(n,v)=>fs.writeFileSync(path.join(out,n),JSON.stringify(v,null,2));
  }
  }
  results.complete=true;write('gpu.json',results);
- }finally{if(browser)await browser.close().catch(()=>{});if(service.exitCode===null)try{execFileSync('taskkill',['/PID',String(service.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}catch{}fs.closeSync(log);}
+ }finally{if(browser)await browser.close().catch(()=>{});if(service.exitCode===null)try{require('../../tools/lib/platform.cjs').stopTree(service.pid);}catch{}fs.closeSync(log);}
 })().catch(e=>{console.error(e);process.exitCode=1;});

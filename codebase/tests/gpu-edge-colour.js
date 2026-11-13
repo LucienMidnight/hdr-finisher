@@ -1,7 +1,7 @@
 /* Focused shared reconstruction execution; no source photos are written. */
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
-const root=path.resolve(__dirname,'..'),python=path.join(root,'.venv/Scripts/python.exe');
+const root=path.resolve(__dirname,'..'),python=require('../tools/lib/platform.cjs').pythonExecutable();
 const folder=path.join(root,'output/edge-colour-gpu');fs.mkdirSync(folder,{recursive:true});
 const helper=path.join(__dirname,'helpers/edge_colour_fixture.py');
 const meta=JSON.parse(execFileSync(python,[helper,folder],{encoding:'utf8'}));

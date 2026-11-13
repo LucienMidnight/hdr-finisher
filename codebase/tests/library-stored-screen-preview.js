@@ -6,8 +6,8 @@ const phase=process.env.HDR_FINISHER_STORED_PHASE||'prepare';
 fs.mkdirSync(folder,{recursive:true});
 const photo=path.join(folder,'DSC07202.ARW');
 if(phase==='prepare'){
- fs.copyFileSync('D:/Photos/2026/20261017 badminton/DSC07202.ARW',photo);
- fs.copyFileSync('D:/Photos/2026/20261017 badminton/DSC07202.ARW.hdrf',photo+'.hdrf');
+ fs.copyFileSync(require('./helpers/photos-root.cjs').photosPath('D:/Photos/2026/20261017 badminton/DSC07202.ARW'),photo);
+ fs.copyFileSync(require('./helpers/photos-root.cjs').photosPath('D:/Photos/2026/20261017 badminton/DSC07202.ARW.hdrf'),photo+'.hdrf');
  // Only the disposable sidecar changes. Ensure a near-target compression case.
  const sidecar=JSON.parse(fs.readFileSync(photo+'.hdrf','utf8'));
  sidecar.grade.global_adjustments.hdr.highlight_section_enabled=true;
@@ -64,7 +64,7 @@ if(phase==='prepare'){
   while(Date.now()<deadline&&(!fs.existsSync(directory)||fs.readdirSync(directory).filter(x=>x.endsWith('.json')).length<2))await page.waitForTimeout(100);
   if(!fs.existsSync(directory))throw Error('No stored screen previews: '+JSON.stringify(await page.locator('#library-frame').evaluate(el=>el.contentWindow.HDRLibraryScreenPreviews.snapshot())));
   assert.equal(fs.readdirSync(directory).filter(x=>x.endsWith('.json')).length,2,'Both renditions stored');
-  const check=execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+  const check=execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import sys,json
 from pathlib import Path
 import numpy as np

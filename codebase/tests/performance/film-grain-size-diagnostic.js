@@ -9,7 +9,7 @@ const codebase = path.resolve(__dirname, '../..');
 const {chromium} = require(path.join(codebase, 'node_modules/playwright'));
 const work = path.resolve(codebase, '../output/phase3-grain');
 fs.mkdirSync(work, {recursive:true});
-const python = path.join(codebase, '.venv/Scripts/python.exe');
+const python = require('../../tools/lib/platform.cjs').pythonExecutable();
 execFileSync(python, ['-c', `import numpy as np, tifffile, sys
 h,w=1600,2400
 rgb=np.full((h,w,3),0.18,np.float32)

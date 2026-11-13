@@ -5,7 +5,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('nod
 const {_electron}=require('playwright');
 (async()=>{
  const root=path.resolve(__dirname,'..'),out=path.join(root,'output/hsl-selection-engine');
- require('node:child_process').execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tools/hsl_selection_fixture.py')],{stdio:'inherit'});
+ require('node:child_process').execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tools/hsl_selection_fixture.py')],{stdio:'inherit'});
  const fixture=JSON.parse(fs.readFileSync(path.join(out,'fixture.json')));
  const profile=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-test-selection-'));
  const app=await _electron.launch({executablePath:require('../desktop/node_modules/electron'),args:[path.join(root,'tools/hsl-prototype/electron-main.cjs')],env:{...process.env,HDR_FINISHER_USER_DATA_DIR:profile,HSL_PROTOTYPE_TEST:'1'}});

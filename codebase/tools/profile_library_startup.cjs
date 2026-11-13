@@ -4,7 +4,7 @@ const {_electron}=require('playwright');
 const root=path.resolve(__dirname,'..'), profile=path.resolve(process.argv[2]);
 (async()=>{
  const env={...process.env,HDR_FINISHER_USER_DATA_DIR:profile};delete env.ELECTRON_RUN_AS_NODE;
- fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width:2560,height:1440}));
+ fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,...Object.fromEntries(['width','height'].map((k,i)=>[k,Number(require('./lib/platform.cjs').machineSettings().windowSize.split('x')[i])]))}));
  const launched=Date.now();
  const app=await _electron.launch({executablePath:require(path.join(root,'desktop/node_modules/electron')),args:[path.join(root,'desktop')],cwd:root,env,timeout:60000});
  try {

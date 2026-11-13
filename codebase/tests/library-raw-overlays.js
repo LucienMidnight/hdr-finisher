@@ -92,7 +92,7 @@ function link(prefix,files){const folder=fs.mkdtempSync(path.join(root,'output',
   assert.deepEqual(errors,[]);
   console.log(`TIMING: first overlay after key press; grid camera preview exposure ${cameraGrid} ms, focus ${cameraFocusGrid} ms; grid developed exposure ${developedGrid} ms; single camera preview focus half ${singleHalf} ms, full ${singleFull} ms.`);
   // Review page: downscaled JPEG crops and one index, overwritten on each run.
-  if(review)execFileSync(path.join(root,'.venv','Scripts','python.exe'),['-c',`import sys,html
+  if(review)execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`import sys,html
 from pathlib import Path
 from PIL import Image
 d=Path(sys.argv[1]);rows=[]

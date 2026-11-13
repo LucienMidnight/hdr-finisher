@@ -1,7 +1,7 @@
 /* Real 155,000-row SQLite index and HTTP endpoint, isolated from Steve's library. */
 const fs=require("node:fs"),assert=require("node:assert/strict"),path=require("node:path"),{spawn}=require("node:child_process");
 async function check(page) {
- const root=path.resolve(__dirname,"../.."),child=spawn(path.join(root,".venv/Scripts/python.exe"),[path.join(__dirname,"library-smart-index.py"),"--serve"],{cwd:root,windowsHide:true});
+ const root=path.resolve(__dirname,"../.."),child=spawn(require('../../tools/lib/platform.cjs').pythonExecutable(),[path.join(__dirname,"library-smart-index.py"),"--serve"],{cwd:root,windowsHide:true});
  let output="",failure="",pulseTimer,pulseFlight=null,pulseCount=0;const pulseErrors=[];
  // Redirect only the page's app-origin API calls. The worker already fetches the
  // fixture directly; intercepting that request in Electron left its 155,000-photo

@@ -3,7 +3,7 @@ const reusePhoto=require('./helpers/reuse-test-photo.cjs');
 const fs=require("node:fs"),path=require("node:path"),{execFileSync}=require("node:child_process");
 const {chromium}=require("playwright");
 const root=path.resolve(__dirname,"../output/gpu-denoise-measurement",String(Date.now()));fs.mkdirSync(root,{recursive:true});
-const python=path.resolve(__dirname,"../.venv/Scripts/python.exe"),helper=path.join(__dirname,"helpers/denoise_measurement_fixture.py");
+const python=require('../tools/lib/platform.cjs').pythonExecutable(),helper=path.join(__dirname,"helpers/denoise_measurement_fixture.py");
 const env={...process.env,PYTHONPATH:[path.resolve(__dirname,"../backend"),path.resolve(__dirname,"..")].join(path.delimiter)};
 (async()=>{
   execFileSync(python,[helper,"make",root],{env,stdio:"inherit"});

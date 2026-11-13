@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const root=path.join(__dirname,'..'),index=process.argv.indexOf('--output');
 const output=path.resolve(index<0?'output/performance/local-grade-reference.json':process.argv[index+1]);
-const cases=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+const cases=JSON.parse(execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import json,numpy as np
 from backend.hdr_finisher.models import LocalGrade,PreviewKind
 from backend.hdr_finisher.local_adjustments import _apply_local_grade

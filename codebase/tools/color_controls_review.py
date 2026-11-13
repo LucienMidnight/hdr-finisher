@@ -1,4 +1,8 @@
 """Read-only photographic review; all outputs remain inside output/."""
+import sys as _tool_sys
+from pathlib import Path as _ToolPath
+_tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[1] / 'tools'))
+from lib.machine_settings import photos_path
 from pathlib import Path
 import sys,json
 import numpy as np
@@ -9,7 +13,7 @@ from hdr_finisher.models import AdjustmentState,PreviewKind,LocalAdjustment,Mask
 from hdr_finisher.local_adjustments import sample_hue_range
 from hdr_finisher.adjustments import apply_adjustments
 from hdr_finisher.preview import encode_processed_preview_bytes,downsample_image
-SOURCE=Path(r'D:/Photos/2026/20261017 badminton/DSC07147.ARW')
+SOURCE=Path(photos_path(r'D:/Photos/2026/20261017 badminton/DSC07147.ARW'))
 scene=np.load(ROOT/'output/sharpen-review/DSC07147-scene.npy',mmap_mode='r')
 mode=sys.argv[1]
 out=ROOT/'output'/mode;out.mkdir(parents=True,exist_ok=True)

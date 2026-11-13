@@ -6,10 +6,10 @@
  *
  *   HDR_FINISHER_PHOTOS_ROOT=/path/to/Photos
  *
- * When it is not set, a `Photos` folder beside the repository (next to `ai`)
- * is used if D:/Photos does not exist. Paths outside D:/Photos are unchanged.
+ * Otherwise the machine JSON supplies the root; its default is Photos beside
+ * the main checkout on POSIX and D:/Photos on Windows. Agent worktrees use
+ * the same JSON. Paths outside D:/Photos are unchanged.
  */
-const fs = require('node:fs');
 const path = require('node:path');
 
 const PC_ROOT = /^D:[\\/]+Photos(?=[\\/]|$)/i;

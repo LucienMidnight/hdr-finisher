@@ -1,6 +1,10 @@
 """Disposable Batch 3 inputs; photographic fixtures stay in ignored local media.
 Run from codebase with an output directory. No original sidecars are read.
 """
+import sys as _tool_sys
+from pathlib import Path as _ToolPath
+_tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[2] / 'tools'))
+from lib.machine_settings import photos_path
 import hashlib, json, shutil, sys, urllib.request
 from pathlib import Path
 import numpy as np
@@ -61,7 +65,7 @@ def generate(folder):
     photos=[]
     for name in ("example.heic","cosmos.avif","kodim.avif"):
         target=folder/name;shutil.copyfile(media/name,target);photos.append(str(target))
-    photographic=Path("D:/Photos/Play_Raw/Zebras Crossing - thekman/darktable_exported/DSC_3931_01.jpg")
+    photographic=Path(photos_path("D:/Photos/Play_Raw/Zebras Crossing - thekman/darktable_exported/DSC_3931_01.jpg"))
     image=np.asarray(Image.open(photographic)).astype(np.float32)/255
     sdr=folder/"photo.jxl";sdr.write_bytes(jpegxl.encode_sdr_jpegxl(image,100));photos.append(str(sdr))
     hdr=folder/"pq12.jxl";hdr.write_bytes(jpegxl.encode_hdr_jpegxl(image*2,100,"uint12"));sidecar(hdr,white=100,edited=True);photos.append(str(hdr))

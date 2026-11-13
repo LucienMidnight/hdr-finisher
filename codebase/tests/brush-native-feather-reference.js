@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const root=path.join(__dirname,'..'),args=process.argv.slice(2),opt=(k,d)=>args.includes(k)?args[args.indexOf(k)+1]:d;
 const output=path.resolve(opt('--output','output/performance/review/phase3-continuation/native-feather-reference.json'));
-const cases=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+const cases=JSON.parse(execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import base64,json,numpy as np
 from backend.hdr_finisher.models import MaskExpression,GeometryAdjustments
 from backend.hdr_finisher.local_adjustments import compile_geometry_fixed_mask

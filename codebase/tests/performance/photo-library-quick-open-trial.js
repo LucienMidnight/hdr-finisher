@@ -12,7 +12,7 @@ const mode=opt('--mode','pilot');
 const write=(n,d)=>fs.writeFileSync(path.join(out,n+'.json'),JSON.stringify(d,null,2));
 (async()=>{
  const log=fs.openSync(path.join(out,'service-'+mode+'.log'),'w');
- const service=spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'photo-library-quick-open-trial.py')],{cwd:root,stdio:['ignore',log,log],windowsHide:true});
+ const service=spawn(require('../../tools/lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'photo-library-quick-open-trial.py')],{cwd:root,stdio:['ignore',log,log],windowsHide:true});
  let stopping=false;
  service.on('exit',(code,signal)=>{if(!stopping&&code!==null&&code!==0)console.error('Trial helper exit: '+code+' '+signal);});
  let browser;
@@ -220,7 +220,7 @@ const write=(n,d)=>fs.writeFileSync(path.join(out,n+'.json'),JSON.stringify(d,nu
  }finally{
   stopping=true;
   if(browser)await browser.close();
-  if(process.platform==='win32'){try{execFileSync('taskkill',['/PID',String(service.pid),'/T','/F'],{stdio:'ignore',windowsHide:true});}catch{}}else service.kill();
+  try{require('../../tools/lib/platform.cjs').stopTree(service.pid);}catch{}
   fs.closeSync(log);
  }
 })().catch(error=>{console.error(error);process.exitCode=1;});

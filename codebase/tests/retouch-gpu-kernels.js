@@ -5,7 +5,7 @@ const {execFileSync}=require('node:child_process');
 (async()=>{
  const folder=path.resolve('output/retouch-gpu-validation');fs.mkdirSync(folder,{recursive:true});
  const input=path.join(folder,'input.json');
- execFileSync(path.resolve('.venv/Scripts/python.exe'),['tests/retouch_gpu_cases.py',input],{cwd:process.cwd()});
+ execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['tests/retouch_gpu_cases.py',input],{cwd:process.cwd()});
  const browser=await chromium.launch();
  try{
   const page=await browser.newPage();await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});

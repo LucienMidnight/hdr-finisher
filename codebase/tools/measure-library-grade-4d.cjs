@@ -10,16 +10,16 @@ for(const [dir,name]of sources){const target=path.join(folder,name);if(!fs.exist
 const profile=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-finisher-test-4d-'));
 const config={batch4d:true,folder:folder.replaceAll('\\','/'),photoA:path.join(folder,'DSC03819.ARW').replaceAll('\\','/'),photoB:path.join(folder,'DSC00264.ARW').replaceAll('\\','/'),out};
 const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
-fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width:2560,height:1440}));
+fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,...Object.fromEntries(['width','height'].map((k,i)=>[k,Number(require('./lib/platform.cjs').machineSettings().windowSize.split('x')[i])]))}));
 const env={...process.env,HDR_FINISHER_USER_DATA_DIR:profile,HDR_FINISHER_QUICK_LIBRARY_CONFIG:configPath};delete env.ELECTRON_RUN_AS_NODE;
 const desktop=path.join(root,'desktop');let app,observer,gpu;
-function kill(p){if(p?.pid)try{execFileSync('taskkill',['/pid',String(p.pid),'/T','/F'],{windowsHide:true,stdio:'ignore',timeout:5000});}catch{}}
+function kill(p){if(p?.pid)try{require('./lib/platform.cjs').stopTree(p.pid);}catch{}}
 (async()=>{const start=Date.now();try{
   fs.writeFileSync(path.join(out,'points.jsonl'),'');
   app=spawn(require(path.join(desktop,'node_modules/electron')),[desktop],{cwd:desktop,env,windowsHide:true,stdio:['ignore','pipe','pipe']});
   const log=fs.createWriteStream(path.join(out,'electron.log'));app.stdout.pipe(log);app.stderr.pipe(log);
-  observer=spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'measure-library-processes.py'),String(app.pid),'1'],{windowsHide:true});observer.stdout.pipe(fs.createWriteStream(path.join(out,'memory.jsonl')));observer.stderr.pipe(fs.createWriteStream(path.join(out,'process-errors.txt')));
-  gpu=spawn('powershell.exe',['-NoProfile','-NonInteractive','-File',path.join(__dirname,'record-gpu-4d.ps1'),'-RootPid',String(app.pid),'-Output',path.join(out,'gpu.jsonl')],{windowsHide:true,stdio:['ignore','ignore','pipe']});gpu.stderr.pipe(fs.createWriteStream(path.join(out,'gpu-errors.txt')));
+  observer=spawn(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'measure-library-processes.py'),String(app.pid),'1'],{windowsHide:true});observer.stdout.pipe(fs.createWriteStream(path.join(out,'memory.jsonl')));observer.stderr.pipe(fs.createWriteStream(path.join(out,'process-errors.txt')));
+  if(process.platform==='win32'){gpu=spawn('powershell.exe',['-NoProfile','-NonInteractive','-File',path.join(__dirname,'record-gpu-4d.ps1'),'-RootPid',String(app.pid),'-Output',path.join(out,'gpu.jsonl')],{windowsHide:true,stdio:['ignore','ignore','pipe']});gpu.stderr.pipe(fs.createWriteStream(path.join(out,'gpu-errors.txt')));}else{fs.writeFileSync(path.join(out,'gpu.jsonl'),JSON.stringify({unavailable:'NVIDIA board counters are Windows-only; process memory is sampled separately'})+'\n');}
   const result=path.join(profile,'quick-result.json');let last='';
   while(!fs.existsSync(result)){
     if(Date.now()-start>540000)throw Error('540s deadline reached');if(app.exitCode!==null)throw Error('App exited '+app.exitCode);
@@ -31,5 +31,5 @@ function kill(p){if(p?.pid)try{execFileSync('taskkill',['/pid',String(p.pid),'/T
   const log=path.join(profile,'logs/backend.log');if(fs.existsSync(log))fs.copyFileSync(log,path.join(out,'backend.log'));
   if(app&&app.exitCode===null){fs.writeFileSync(path.join(profile,'quick-quit'),'quit');await sleep(2000);}kill(app);kill(observer);kill(gpu);
   // Only our own resolved temporary directories are removed, with native PowerShell.
-  for(const target of [profile,folder]){const base=target===profile?os.tmpdir():photos;const script='$target=[IO.Path]::GetFullPath($env:HDR_4D_TARGET);$base=[IO.Path]::GetFullPath($env:HDR_4D_BASE);if(!$target.StartsWith($base+[IO.Path]::DirectorySeparatorChar) -or !(Split-Path -Leaf $target).Contains("test-")){throw "Unsafe cleanup"};Remove-Item -LiteralPath $target -Recurse -Force';execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{env:{...process.env,HDR_4D_TARGET:target,HDR_4D_BASE:base},windowsHide:true,timeout:20000});}
+  for(const target of [profile,folder])require('./lib/platform.cjs').removeTestFolder(target,target===profile?os.tmpdir():photos);
 }})().catch(e=>{fs.writeFileSync(path.join(out,'failure.txt'),String(e.stack||e));console.error(e);process.exitCode=1;});

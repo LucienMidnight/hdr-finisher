@@ -107,7 +107,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
   const sidecars=new Map(), hiddenFiles=[];
   const kill=()=>{
     observer?.kill();
-    if(app?.pid){try{execFileSync('taskkill',['/pid',String(app.pid),'/T','/F'],{stdio:'ignore',timeout:5000});}catch{try{app.kill('SIGKILL');}catch{}}}
+    if(app?.pid)require('./lib/platform.cjs').stopTree(app.pid);
   };
   const cleanup=()=>{
     for(const [file,hidden] of hiddenFiles)if(fs.existsSync(hidden))fs.renameSync(hidden,file);
@@ -136,7 +136,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
       const file=path.join(directory,name+'.hdrf');sidecars.set(file,fs.existsSync(file)?fs.readFileSync(file):null);
     }
   }
-    if(folderName===null)execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-mixed-fixture.py'),'run-copy'],{stdio:'inherit',timeout:30000});
+    if(folderName===null)execFileSync(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'library-mixed-fixture.py'),'run-copy'],{stdio:'inherit',timeout:30000});
     // Reproduce the pre-5a default set without undoing the TIFF listing fix.
     if(process.argv.includes('--pre5a-set')){
       if(path.basename(folder)!=='library-mixed-v1-run')throw Error('Pre-5a set requires the standard fixture');
@@ -149,7 +149,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     const config={virtualCopy:process.argv.includes("--virtual-copy"),detail:process.argv.includes("--detail"),thumbnailMemory:process.argv.includes("--thumbnail-memory"),timingOnly:process.argv.includes("--timing-only"),appStartedAt:Date.now(),warmupFolder:path.join(root,'output/test-photos/library-live-grid').replaceAll('\\','/'),startupWarm:process.argv.includes("--startup-warm"),noStartupWarm:process.argv.includes("--no-startup-warm"),coldPipelines:process.argv.includes("--cold-pipelines"),gradeNativeMemory:process.argv.includes("--grade-native-memory"),batch5c:process.argv.includes("--batch5c"),popout:process.argv.includes("--popout"),idle:process.argv.includes('--idle'),loseReservation:process.argv.includes('--lose-reservation'),fullscreen:process.argv.includes('--fullscreen'),busy:process.argv.includes('--busy'),pixelReviewOut:out,gradeHandoffSdr:process.argv.includes("--grade-handoff-sdr"),gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,back:process.argv.includes('--back'),hdr:process.argv.includes('--hdr'),redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
     require('../tests/test-profile.cjs').assertDisposableProfile(profile,'quick-library-check');
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
-    const [width,height]=(process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE||'2560x1440').split('x').map(Number);
+    const [width,height]=(require('./lib/platform.cjs').machineSettings().windowSize).split('x').map(Number);
     fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width,height}));
     const env={...process.env,HDR_FINISHER_USER_DATA_DIR:profile,HDR_FINISHER_QUICK_LIBRARY_CONFIG:configPath};
     delete env.ELECTRON_RUN_AS_NODE;
@@ -160,7 +160,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     const stdout=fs.createWriteStream(path.join(out,'electron.log'));app.stdout.pipe(stdout);app.stderr.pipe(stdout);
     const memory=new MemoryMonitor(4e9),memoryPath=path.join(out,'memory.jsonl');fs.writeFileSync(memoryPath,'');
     let pending='',observerError=null,sampleCount=0,lastSampleAt;const sampleIntervals=[];
-    observer=spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'measure-library-processes.py'),String(app.pid),'.25'],{windowsHide:true});
+    observer=spawn(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'measure-library-processes.py'),String(app.pid),'.25'],{windowsHide:true});
     observer.on('error',e=>{observerError=String(e);});observer.stderr.on('data',chunk=>{observerError=String(chunk);});
     observer.stdout.on('data',chunk=>{
       pending+=chunk;let end;
@@ -178,7 +178,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
         console.log('Library: '+next);lastStage=next;
         if(memoryDiagnostic && /^trim backend \d+$/.test(next)){
           const pid=next.split(' ').at(-1);
-          const record=execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'trim-backend-working-set.py'),'--pid',pid],{encoding:'utf8',timeout:10000,windowsHide:true});
+          const record=execFileSync(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'trim-backend-working-set.py'),'--pid',pid],{encoding:'utf8',timeout:10000,windowsHide:true});
           fs.writeFileSync(path.join(out,'trim.json'),record);
         }
       }
@@ -222,7 +222,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     sampleIntervals.sort((a,b)=>a-b);
     // Stored pictures with a whole colour channel at zero (teal/black thumbnails).
     let channels;
-    try{channels=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-channel-audit.py'),path.join(profile,'Cache')],{timeout:60000}).toString());}
+    try{channels=JSON.parse(execFileSync(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'library-channel-audit.py'),path.join(profile,'Cache')],{timeout:60000}).toString());}
     catch(error){channels={error:String(error.message||error)};}
     if(channels.one_channel_zero?.length||channels.all_channels_zero?.length)errors.push(`Zeroed colour channels in ${channels.one_channel_zero.length+channels.all_channels_zero.length} stored pictures`);
     const report={label,acceptance_scope:config.gradeHandoffPixels?'42 MP visible-pixel hand-off':retentionMode?'whole-app retention (cadence recorded separately)':'Library quick check',folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,

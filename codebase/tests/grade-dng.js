@@ -2,20 +2,20 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require('playwright'),{execFileSync,spawn}=require('node:child_process');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/grade-dng',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
-const originals=[process.env.HDR_DNG_LEICA||'D:/Photos/HDR Test Images/Leica-X2-L1021324.DNG',process.env.HDR_DNG_DJI||'D:/Photos/HDR Test Images/DJI Samples/DJI_0071-2.DNG'];
+const originals=[process.env.HDR_DNG_LEICA||require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/Leica-X2-L1021324.DNG'),process.env.HDR_DNG_DJI||require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/DJI Samples/DJI_0071-2.DNG')];
 const fixture=require('./fixtures/dng-real-samples.json').leica_x2;
 const originalHash=require('node:crypto').createHash('sha256').update(fs.readFileSync(originals[0])).digest('hex');assert.equal(originalHash,fixture.sha256,'Leica fixture identity');
 const photos=originals.map(src=>{const dest=path.join(folder,path.basename(src));fs.copyFileSync(src,dest);return dest;});
 const repeats=process.argv.includes('--measure')?3:1,rows=[];
 let backend;
-function stopBackend(){if(backend?.pid){const pid=backend.pid;backend=null;try{execFileSync('taskkill',['/PID',String(pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}catch{}}}
+function stopBackend(){if(backend?.pid){const pid=backend.pid;backend=null;try{require('../tools/lib/platform.cjs').stopTree(pid);}catch{}}}
 process.once('exit',stopBackend);
 (async()=>{
  { // Own the backend so cache isolation cannot depend on the caller's server.
   const net=require('node:net'),server=net.createServer();await new Promise(r=>server.listen(0,'127.0.0.1',r));const port=server.address().port;await new Promise(r=>server.close(r));
   process.env.HDR_FINISHER_URL='http://127.0.0.1:'+port;
   const log=fs.openSync(path.join(folder,'backend.log'),'w');
-  backend=spawn(path.join(root,'.venv/Scripts/python.exe'),['-m','uvicorn','hdr_finisher.main:app','--host','127.0.0.1','--port',String(port)],{cwd:root,windowsHide:true,env:{...process.env,PYTHONPATH:path.join(root,'backend'),HDR_FINISHER_APP_DATA_DIR:path.join(folder,'test-appdata'),HDR_FINISHER_SOURCE_CACHE_DISABLE:'1'},stdio:['ignore',log,log]});
+  backend=spawn(require('../tools/lib/platform.cjs').pythonExecutable(),['-m','uvicorn','hdr_finisher.main:app','--host','127.0.0.1','--port',String(port)],{cwd:root,windowsHide:true,env:{...process.env,PYTHONPATH:path.join(root,'backend'),HDR_FINISHER_APP_DATA_DIR:path.join(folder,'test-appdata'),HDR_FINISHER_SOURCE_CACHE_DISABLE:'1'},stdio:['ignore',log,log]});
   const deadline=Date.now()+30000;while(true){try{if((await fetch(process.env.HDR_FINISHER_URL+'/health')).ok)break;}catch{}if(Date.now()>deadline)throw Error('Backend startup timed out');await new Promise(r=>setTimeout(r,200));}
  }
  const startupDeadline=Date.now()+30000;while(true){try{if((await fetch(process.env.HDR_FINISHER_URL+'/health')).ok)break;}catch{}if(Date.now()>startupDeadline)throw Error('Backend startup timed out');await new Promise(r=>setTimeout(r,200));}
@@ -49,7 +49,7 @@ process.once('exit',stopBackend);
    fs.writeFileSync(path.join(folder,'results.json'),JSON.stringify({folder,rows},null,2));console.log('DONE',path.basename(photo),repeat,mode,JSON.stringify(timing));
    await page.request.delete(new URL('/api/session/current',process.env.HDR_FINISHER_URL).href);
   }
-  console.log(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'helpers/grade_dng_compare.py'),path.join(folder,'results.json')],{encoding:'utf8',maxBuffer:1<<24}));
+  console.log(execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'helpers/grade_dng_compare.py'),path.join(folder,'results.json')],{encoding:'utf8',maxBuffer:1<<24}));
   console.log('Evidence:',folder);
  }finally{await page.request.post(new URL('/api/delivery/preferences',process.env.HDR_FINISHER_URL).href,{data:{force_cpu:false}}).catch(()=>{});await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(stopBackend);

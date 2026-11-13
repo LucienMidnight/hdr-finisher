@@ -640,3 +640,23 @@ Five isolated tooling checks pass (settings agreement, inherited window/exit
 status, old-wrapper exclusion, stale dead-owner recovery and detached child
 cleanup). Setup and fresh-worktree app validation are the remaining P1-E work.
 No application cache location, cache size or rendering behavior changed.
+
+
+### P1-E setup and driver migration (November 13)
+
+`tools/setup.sh` / `setup.ps1` now prepare a clone or agent worktree with the
+Python 3.12 venv, both npm installs, pinned ExifTool, validated native encoders
+and shared private-media links. Native build scratch handles paths containing
+spaces; subsequent worktrees reuse recipe/architecture-verified binaries.
+Drivers use shared Python/process helpers and mapped photo paths; diagnostic
+memory sampling has a POSIX counterpart without claiming NVIDIA counters.
+Windows' PowerShell sampling and taskkill behavior remain in Windows branches.
+
+Setup completed twice on the Mac; the second run reused the validated native
+encoders. Upstream native checks: 14 libavif and one libultrahdr pass. Node fast
+checks: 933 pass, one Windows-only skip. Seven focused tooling checks and both
+startup-log checks pass. The first full Python run observed a module import
+while its helper was being edited; the clean rerun and fresh-worktree
+Library/GPU/plan checks are pending below. No workflow, application image maths,
+tolerance, budget or shader was changed. The four Desktop release platform
+jobs were read; their existing install/build/test commands remain supported.

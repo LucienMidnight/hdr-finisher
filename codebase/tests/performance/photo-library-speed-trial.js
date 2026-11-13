@@ -17,7 +17,7 @@ const p95 = a => [...a].sort((a,b)=>a-b)[Math.ceil(a.length*.95)-1];
 const write=(name,data)=>fs.writeFileSync(path.join(out,name),JSON.stringify(data,null,2));
 (async()=>{
   const log=fs.openSync(path.join(out,`service-${mode}.log`),"w");
-  const service=spawn(path.join(root,".venv/Scripts/python.exe"),[path.join(__dirname,"photo-library-speed-trial.py"),"serve"],
+  const service=spawn(require('../../tools/lib/platform.cjs').pythonExecutable(),[path.join(__dirname,"photo-library-speed-trial.py"),"serve"],
     {cwd:root,stdio:["ignore",log,log],windowsHide:true});
   let browser;
   try {
@@ -232,9 +232,7 @@ const write=(name,data)=>fs.writeFileSync(path.join(out,name),JSON.stringify(dat
     }else throw new Error("Unknown mode "+mode);
   }finally{
     if(browser)await browser.close();
-    if(process.platform==="win32"){
-      try{execFileSync("taskkill",["/PID",String(service.pid),"/T","/F"],{stdio:"ignore",windowsHide:true});}catch{}
-    }else service.kill();
+    try{require('../../tools/lib/platform.cjs').stopTree(service.pid);}catch{}
     fs.closeSync(log);
   }
 })().catch(error=>{console.error(error);process.exitCode=1;});

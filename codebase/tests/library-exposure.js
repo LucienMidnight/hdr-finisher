@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=fs.mkdtempSync(path.join(root,'output','exposure-'));
-execFileSync(path.join(root,'.venv','Scripts','python.exe'),['-c',"from PIL import Image; import imagecodecs,numpy as np,sys; from pathlib import Path; a=np.full((900,1200,3),128,dtype=np.uint8); a[:300,:300]=255; a[600:,900:]=0; [Image.fromarray(a).save(Path(sys.argv[1])/n) for n in ['a.png','b.png']]; (Path(sys.argv[1])/'c16.png').write_bytes(imagecodecs.png_encode(np.full((900,1200,3),65500,dtype=np.uint16)))",folder]);
+execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',"from PIL import Image; import imagecodecs,numpy as np,sys; from pathlib import Path; a=np.full((900,1200,3),128,dtype=np.uint8); a[:300,:300]=255; a[600:,900:]=0; [Image.fromarray(a).save(Path(sys.argv[1])/n) for n in ['a.png','b.png']]; (Path(sys.argv[1])/'c16.png').write_bytes(imagecodecs.png_encode(np.full((900,1200,3),65500,dtype=np.uint16)))",folder]);
 (async()=>{const browser=await chromium.launch({headless:true});try{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.addInitScript(()=>localStorage.setItem('hdr-finisher:library-show-all-files','true'));await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});await page.evaluate(()=>activateWorkflowTab('import'));
  const host=page.locator('#library-frame'),frame=page.frameLocator('#library-frame');await host.evaluate((e,p)=>e.contentWindow.HDRLibrary.browse(p),folder);await frame.locator('.library-cell canvas[data-picture-key]').first().waitFor();

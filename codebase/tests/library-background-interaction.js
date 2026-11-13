@@ -28,7 +28,7 @@ const { chromium } = require("playwright");
     assert.ok(photos.length >= 5, "The corpus must contain several previewable camera formats");
   } else {
     const folder = fs.mkdtempSync(path.join(output, "photos-"));
-    const python = path.join(codebase, ".venv", "Scripts", "python.exe");
+    const python = require('../tools/lib/platform.cjs').pythonExecutable();
     execFileSync(python, ["-c", "from PIL import Image; import numpy as np,sys; Image.fromarray(np.random.default_rng(42).integers(0,256,(1000,1500,3),dtype=np.uint8)).save(sys.argv[1])", path.join(folder, "photo-0.png")]);
     photos = Array.from({ length: 12 }, (_, i) => path.join(folder, `photo-${i}.png`));
     for (const photo of photos.slice(1)) fs.copyFileSync(photos[0], photo);

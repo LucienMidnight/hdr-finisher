@@ -10,7 +10,7 @@ if(!source)throw Error('RAW test corpus is unavailable');
 const folder=fs.mkdtempSync(path.join(output,'photos-'));
 const portrait=corpus.rows.find(row=>!row.error&&!row.excluded&&row.path.endsWith('DSC06615_DxO-optical-corr-only.dng')&&fs.existsSync(row.path))?.path;
 if(!portrait)throw Error('Portrait RAW test corpus is unavailable');
-const trialSources=part0f ? ['DSC07313','DSC07216','DSC07318'].map(name=>path.join('D:/Photos/2026/20261017 badminton',name+'.ARW')) : cold ? ['DSC07165','DSC07166','DSC07168'].map(name=>path.join('D:/Photos/2026/20261017 badminton',name+'.ARW')) : graded ? ['DSC07178','DSC07253','DSC07254'].map(name=>path.join('D:/Photos/2026/20261017 badminton',name+'.ARW')) : [source,source,portrait];
+const trialSources=part0f ? ['DSC07313','DSC07216','DSC07318'].map(name=>path.join(require('./helpers/photos-root.cjs').photosPath('D:/Photos/2026/20261017 badminton'),name+'.ARW')) : cold ? ['DSC07165','DSC07166','DSC07168'].map(name=>path.join(require('./helpers/photos-root.cjs').photosPath('D:/Photos/2026/20261017 badminton'),name+'.ARW')) : graded ? ['DSC07178','DSC07253','DSC07254'].map(name=>path.join(require('./helpers/photos-root.cjs').photosPath('D:/Photos/2026/20261017 badminton'),name+'.ARW')) : [source,source,portrait];
 for(let i=0;i<3;i++) {
  const target=path.join(folder,`photo-${i}.${i===2&&!graded&&!cold&&!part0f?'dng':'ARW'}`);
  fs.copyFileSync(trialSources[i],target);

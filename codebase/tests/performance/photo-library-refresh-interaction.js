@@ -65,7 +65,7 @@ const median = values => {
     }
     const baseline = await gestures();
     const log = fs.openSync(path.join(output, "m6-"+count+".log"), "w");
-    worker = spawn(path.join(root, ".venv/Scripts/python.exe"),
+    worker = spawn(require('../../tools/lib/platform.cjs').pythonExecutable(),
       [path.join(__dirname, "photo-library-remaining.py"), "bulk", "--count", String(count),
         "--cached", "--edited", "--result", "m6-"+count+".json"],
       {cwd:root, stdio:["ignore",log,log], windowsHide:true});

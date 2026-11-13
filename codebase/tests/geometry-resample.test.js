@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),path=require('node:path');
 const {execFileSync}=require('node:child_process'),{test}=require('node:test');
 const {HDRGeometryResample:G}=require('../frontend/geometry-resample.js');
 const root=path.join(__dirname,'..');
-const cases=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+const cases=JSON.parse(execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import base64,json,numpy as np
 from backend.hdr_finisher.models import GeometryAdjustments
 from backend.hdr_finisher.finishing import apply_geometry,_oriented_view,geometry_output_dimensions

@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require('playwright');
 
-const folder = process.env.HDR_FINISHER_SPEED_FOLDER || 'D:/Photos/2026/20261017 badminton';
+const folder = process.env.HDR_FINISHER_SPEED_FOLDER || require('../../tests/helpers/photos-root.cjs').photosPath('D:/Photos/2026/20261017 badminton');
 const count = Number(process.env.HDR_FINISHER_SPEED_COUNT || 24);
 const raws = fs.existsSync(folder) ? fs.readdirSync(folder).filter(name => /\.(arw|cr2|cr3|nef|orf)$/i.test(name)).sort() : [];
 if (raws.length < 2 * count) { console.log(JSON.stringify({ skipped: `Need ${2 * count} RAWs in ${folder}.` })); process.exit(0); }

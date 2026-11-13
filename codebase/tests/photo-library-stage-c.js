@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, ".."), output = path.join(root, "output", "
 fs.mkdirSync(output, { recursive: true });
 const folder = fs.mkdtempSync(path.join(output, "photos-"));
 const fixture = path.join(output, "native-pattern.png");
-require("node:child_process").execFileSync(path.join(root, ".venv", "Scripts", "python.exe"), ["-c", "from PIL import Image; import numpy as np,sys; y,x=np.indices((1800,3000)); a=np.stack([(x%256),(y%256),(((x+y)%2)*255)],axis=2).astype(np.uint8); Image.fromarray(a).save(sys.argv[1])", fixture]);
+require("node:child_process").execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(), ["-c", "from PIL import Image; import numpy as np,sys; y,x=np.indices((1800,3000)); a=np.stack([(x%256),(y%256),(((x+y)%2)*255)],axis=2).astype(np.uint8); Image.fromarray(a).save(sys.argv[1])", fixture]);
 for (let i = 0; i < 12; i++) fs.copyFileSync(fixture, path.join(folder, `photo-${String(i).padStart(2, "0")}.png`));
 fs.mkdirSync(path.join(folder, "z-subfolder"));
 (async () => {
@@ -118,7 +118,7 @@ fs.mkdirSync(path.join(folder, "z-subfolder"));
   await library.waitForFunction(() => document.querySelector("#picker-list .directory-browser-entry"));
   assert.ok(await library.locator("#picker-list .directory-browser-entry").first().evaluate(element => element.classList.contains("directory")), "Subfolders appear before files");
   await library.locator("#picker-cancel").click();
-  const samples = ["D:/Photos/HDR Test Images/DSC00264.ARW", "D:/Photos/HDR Test Images/DJI Samples/DSC00264_DxO-optical-corr-only.dng", "D:/Photos/HDR Test Images/Test Suite Images/iphone_16_pro_IMG_3324.HEIC"].map(file => photosPath(file));
+  const samples = [require('./helpers/photos-root.cjs').photosPath("D:/Photos/HDR Test Images/DSC00264.ARW"), require('./helpers/photos-root.cjs').photosPath("D:/Photos/HDR Test Images/DJI Samples/DSC00264_DxO-optical-corr-only.dng"), require('./helpers/photos-root.cjs').photosPath("D:/Photos/HDR Test Images/Test Suite Images/iphone_16_pro_IMG_3324.HEIC")].map(file => photosPath(file));
   if (samples.every(source => fs.existsSync(source))) {
    const copied = path.join(root,"output","test-photos","stage-c");
    const reusable = copied;

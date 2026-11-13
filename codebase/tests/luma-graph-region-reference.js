@@ -7,7 +7,7 @@ const { chromium } = require('playwright');
 const root = path.join(__dirname, '..'), index = process.argv.indexOf('--output');
 const output = path.resolve(index < 0 ? 'output/performance/luma-graph-region-reference.json' : process.argv[index + 1]);
 const sdrBase = process.argv.includes('--sdr-base');
-const cases = JSON.parse(execFileSync(path.join(root, '.venv/Scripts/python.exe'), ['-c', `
+const cases = JSON.parse(execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(), ['-c', `
 import json, numpy as np
 from backend.hdr_finisher.models import MaskExpression, GeometryAdjustments
 from backend.hdr_finisher.local_adjustments import compile_spatial_preview_mask

@@ -10,13 +10,13 @@ const { execFileSync } = require('node:child_process');
 const { chromium } = require('playwright');
 
 const root = path.resolve(__dirname, '..'), out = path.join(root, 'output', 'library-gpu-raw');
-const python = path.join(root, '.venv', 'Scripts', 'python.exe');
+const python = require('../tools/lib/platform.cjs').pythonExecutable();
 const defaults = [
-  'D:/Photos/Play_Raw/Hawai\'ian Fire Dancers - Challenge the Darkside - LaurentFromSF/IMG_0790.CR2',
-  'D:/Photos/Play_Raw/An alley at Seoul - lucas faco/2025_0730_1331_3.arw',
-  'D:/Photos/Play_Raw/Lakeland landscape in dry Summer/A7R00619.ARW',
-  'D:/Photos/Play_Raw/Zebras Crossing - thekman/DSC_3931.NEF',
-  'D:/Photos/Play_Raw/Foggy morning at Dunn Lake/IMG_7723.CR3',
+  require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Hawai\'ian Fire Dancers - Challenge the Darkside - LaurentFromSF/IMG_0790.CR2'),
+  require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/An alley at Seoul - lucas faco/2025_0730_1331_3.arw'),
+  require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Lakeland landscape in dry Summer/A7R00619.ARW'),
+  require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Zebras Crossing - thekman/DSC_3931.NEF'),
+  require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Foggy morning at Dunn Lake/IMG_7723.CR3'),
 ];
 const samples = (process.env.HDR_FINISHER_GPU_RAW_SAMPLES ? process.env.HDR_FINISHER_GPU_RAW_SAMPLES.split(';') : defaults).filter(p => fs.existsSync(p));
 if (!samples.length) { console.log(JSON.stringify({ skipped: 'No sample camera RAWs on this machine.' })); process.exit(0); }

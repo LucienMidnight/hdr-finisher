@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {execFileSync}=require('node:child_process');const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=fs.mkdtempSync(path.join(root,'output','compare-'));
-execFileSync(path.join(root,'.venv','Scripts','python.exe'),['-c',"from PIL import Image; from pathlib import Path; import sys; im=Image.open(sys.argv[1]).resize((3000,2000)); [im.save(Path(sys.argv[2])/n) for n in ['a.png','b.png','c.png']]",path.join(root,'tests','fixtures','sdr_gradient.png'),folder]);
+execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',"from PIL import Image; from pathlib import Path; import sys; im=Image.open(sys.argv[1]).resize((3000,2000)); [im.save(Path(sys.argv[2])/n) for n in ['a.png','b.png','c.png']]",path.join(root,'tests','fixtures','sdr_gradient.png'),folder]);
 (async()=>{const browser=await chromium.launch({headless:true});try{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});await page.evaluate(()=>activateWorkflowTab('import'));
  const host=page.locator('#library-frame'),frame=page.frameLocator('#library-frame');await host.evaluate((e,p)=>e.contentWindow.HDRLibrary.browse(p),folder);await frame.locator('.library-cell canvas').first().waitFor();

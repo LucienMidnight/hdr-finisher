@@ -30,6 +30,12 @@ for command in git cmake ctest find file ldd; do
   command -v "$command" >/dev/null 2>&1 || { echo "Required build tool is missing: $command" >&2; exit 1; }
 done
 
+# Upstream libavif shell tests split unquoted build paths at spaces.
+# A physical temporary build directory also covers source paths (not just -B).
+if [[ "$work_dir" == *" "* ]]; then
+  work_dir="$(TMPDIR=/tmp mktemp -d /tmp/hdr-finisher-native.XXXXXX)"
+  trap 'rm -rf "$work_dir"' EXIT
+fi
 mkdir -p "$work_dir" "$bin_dir" "$license_dir"
 
 checkout_ref() {

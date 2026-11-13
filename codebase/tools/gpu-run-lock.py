@@ -39,6 +39,40 @@ def old_lock_held(folder):
         return False
 
 
+def recover_stale(lock):
+    # Stale breakers serialize and re-read ownership, so an earlier observation
+    # cannot delete a new holder that acquired between two stale-break attempts.
+    guard = lock.with_name('gpu-run.reap')
+    try:
+        guard.mkdir()
+    except FileExistsError:
+        return False
+    try:
+        record = lock / 'owner.txt'
+        try:
+            text = record.read_text(encoding='utf-8')
+            pid = re.search(r'pid=(\d+)', text)
+            if time.time() - record.stat().st_mtime <= STALE_SECONDS or not pid or pid_alive(int(pid[1])):
+                return False
+            tomb = lock.with_name(f'gpu-run.stale-{os.getpid()}')
+            lock.rename(tomb)
+            shutil.rmtree(tomb)
+            return True
+        except FileNotFoundError:
+            # A process can die between mkdir and publishing its owner.
+            try:
+                if not record.exists() and time.time() - lock.stat().st_mtime > STALE_SECONDS:
+                    lock.rmdir()
+                    return True
+            except OSError:
+                pass
+        except OSError:
+            pass
+        return False
+    finally:
+        guard.rmdir()
+
+
 def acquire(folder, owner):
     folder.mkdir(parents=True, exist_ok=True)
     lock = folder / 'gpu-run.lock'
@@ -54,23 +88,8 @@ def acquire(folder, owner):
                     raise
                 return lock
             except FileExistsError:
-                record = lock / 'owner.txt'
-                try:
-                    text = record.read_text(encoding='utf-8')
-                    pid = re.search(r'pid=(\d+)', text)
-                    # Age alone cannot make a live GPU holder safe to overlap.
-                    if time.time() - record.stat().st_mtime > STALE_SECONDS and pid and not pid_alive(int(pid[1])):
-                        tomb = lock.with_name(f'gpu-run.stale-{os.getpid()}')
-                        lock.rename(tomb)
-                        shutil.rmtree(tomb)
-                        continue
-                except (OSError, ValueError):
-                    # A process can die between mkdir and owner publication.
-                    if not record.exists() and time.time() - lock.stat().st_mtime > STALE_SECONDS:
-                        try:
-                            lock.rmdir()
-                        except OSError:
-                            pass
+                if recover_stale(lock):
+                    continue
         if waited % 120 == 0:
             print(f'[gpu-run-lock] waiting for {lock}', flush=True)
         time.sleep(5)

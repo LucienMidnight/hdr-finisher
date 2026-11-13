@@ -24,7 +24,7 @@ for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const m
  await page.keyboard.down('h');const held=await button.getAttribute('aria-pressed');await page.keyboard.down('h');assert.equal(await button.getAttribute('aria-pressed'),held);await page.keyboard.up('h');
  await page.keyboard.press('Tab');await button.focus();assert.equal(await button.evaluate(b=>b.matches(':focus-visible')),true,'normal keyboard focus remains visible');await button.evaluate(b=>b.blur());
  console.log('H shortcut matches click; keyboard focus retained');
- const probes=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_dng_geometry.py')],{cwd:root,encoding:'utf8',maxBuffer:1<<26}));
+ const probes=JSON.parse(execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tests/helpers/library_dng_geometry.py')],{cwd:root,encoding:'utf8',maxBuffer:1<<26}));
  const geometry=await page.locator('#library-frame').evaluate(async(element,probes)=>{
   const w=element.contentWindow;let worst=0;
   for(const probe of probes){
@@ -94,5 +94,5 @@ for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const m
  const file=path.join(folder,'results.json');fs.writeFileSync(file,JSON.stringify({rows}));
  console.log('Evidence:',file);
  if(!rows.length||modes)return;
- const report=execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_dng_compare.py'),file],{cwd:root,encoding:'utf8',timeout:300000,maxBuffer:1<<26});console.log(report);
+ const report=execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tests/helpers/library_dng_compare.py'),file],{cwd:root,encoding:'utf8',timeout:300000,maxBuffer:1<<26});console.log(report);
 }finally{if(page)await page.request.post(new URL('/api/delivery/preferences',process.env.HDR_FINISHER_URL).href,{data:{force_cpu:false}}).catch(()=>{});await browser.close();fs.rmSync(folder,{recursive:true,force:true,maxRetries:10,retryDelay:100});}})().catch(error=>{console.error(error);process.exitCode=1;});

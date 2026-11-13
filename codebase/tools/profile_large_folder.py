@@ -1,15 +1,19 @@
 """One read-only D:\\Photos timing per invocation; output is a new disposable profile."""
+import sys as _tool_sys
+from pathlib import Path as _ToolPath
+_tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[1] / 'tools'))
+from lib.machine_settings import photos_path, desktop_profile, desktop_cache
 from pathlib import Path
 import json, os, sqlite3, subprocess, sys
 root = Path(__file__).resolve().parents[1]
 target = Path(sys.argv[1]).resolve()
 target.mkdir(parents=True, exist_ok=False)
-with sqlite3.connect((Path(os.environ['APPDATA'])/'hdr-finisher-desktop/library.sqlite3').as_uri()+'?mode=ro',uri=True) as src, sqlite3.connect(target/'library.sqlite3') as dst:
+with sqlite3.connect((desktop_profile()/'library.sqlite3').as_uri()+'?mode=ro',uri=True) as src, sqlite3.connect(target/'library.sqlite3') as dst:
     src.backup(dst)
     dst.execute('UPDATE photos SET pending=0')
     dst.execute('DELETE FROM settings_writes')
 for name,value in {
-    'pinned-folders.json':[r'D:\Photos'],
+    'pinned-folders.json':[photos_path(r'D:\Photos')],
     'library-preferences.json':{'background_indexing':False},
     'library-cache-settings.json':{'location':str(target/'Cache'),'old_locations':[]},
     'window-state.json':{'x':0,'y':0,'width':2560,'height':1440},

@@ -8,7 +8,7 @@ const {chromium} = require('playwright');
 const root = path.join(__dirname, '..');
 const index = process.argv.indexOf('--output');
 const output = path.resolve(index < 0 ? 'output/performance/neutral-color-grading.json' : process.argv[index + 1]);
-const cases = JSON.parse(execFileSync(process.env.HDR_FINISHER_PYTHON || path.join(root, '.venv/Scripts/python.exe'), ['-c', `
+const cases = JSON.parse(execFileSync(process.env.HDR_FINISHER_PYTHON || require('../tools/lib/platform.cjs').pythonExecutable(), ['-c', `
 import json
 import numpy as np
 from backend.hdr_finisher.color import map_negative_acescg

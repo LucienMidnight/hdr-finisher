@@ -9,7 +9,7 @@ const root=path.resolve(__dirname,'..'),base=path.join(root,'output/part-c-edite
 const folder=path.join(root,'output/test-photos/part-c-edited'),phase=process.argv.includes('--baseline')?'baseline':'after',out=path.join(base,phase);
 fs.mkdirSync(out,{recursive:true});
 const protectedProjects=require('../tests/release/drivers.json').protectedProjects,before=hashProjects(protectedProjects);
-execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-edited-fixtures.py'),folder]);
+execFileSync(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'library-edited-fixtures.py'),folder]);
 (async()=>{
  const filmOnly=process.argv.includes('--filmstrip-only');
  const browser=await chromium.launch(),report={phase,images:[],errors:[]};

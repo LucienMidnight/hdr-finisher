@@ -1,4 +1,8 @@
 """One startup timing on a disposable snapshot; live data is opened read-only."""
+import sys as _tool_sys
+from pathlib import Path as _ToolPath
+_tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[1] / 'tools'))
+from lib.machine_settings import photos_path, desktop_profile, desktop_cache
 import collections
 import json
 import os
@@ -10,7 +14,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 
-live = Path(os.environ['APPDATA']) / 'hdr-finisher-desktop'
+live = desktop_profile()
 target = Path(sys.argv[1]).resolve()
 target.mkdir(parents=True, exist_ok=False)
 with sqlite3.connect((live / 'library.sqlite3').as_uri() + '?mode=ro', uri=True) as src:
@@ -31,7 +35,7 @@ preferences['background_indexing'] = False
 (target / 'library-preferences.json').write_text(json.dumps(preferences))
 cache_settings = live / 'library-cache-settings.json'
 settings = json.loads(cache_settings.read_text()) if cache_settings.exists() else {}
-cache_source = Path(settings.get('location', Path(os.environ['LOCALAPPDATA']) / 'HDR Finisher' / 'Cache'))
+cache_source = Path(settings.get('location', desktop_cache()))
 cache_target = target / 'Cache'
 shutil.copytree(cache_source, cache_target, ignore=shutil.ignore_patterns('*.sqlite3', '*.sqlite3-wal', '*.sqlite3-shm'))
 ledger = cache_source / '.library-cache-size.sqlite3'
@@ -43,7 +47,7 @@ if ledger.exists():
                         (str(cache_target), len(str(cache_source))+1, len(str(cache_source)), str(cache_source)))
 settings.update(location=str(cache_target), old_locations=[])
 (target / 'library-cache-settings.json').write_text(json.dumps(settings))
-folder = r'D:\Photos\2026\20261017 badminton'
+folder = photos_path(r'D:\Photos\2026\20261017 badminton')
 (target / 'pinned-folders.json').write_text(json.dumps([folder]))
 print(json.dumps({'snapshot': str(target), 'files': photo_count, 'cache_source_read_only': str(cache_source)}), flush=True)
 import subprocess

@@ -7,7 +7,7 @@ const output=path.join(root,'output/batch3g',both?'both-invalid':label);fs.mkdir
 const photos=['DSC03819','DSC00264'].map(n=>path.join(root,'output/test-photos/library-mixed-v1-run',n+'.ARW'));
 for(const photo of photos)assert.ok(fs.existsSync(photo),photo);
 const {execFileSync}=require('node:child_process');
-const recipe=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`import json,sys
+const recipe=JSON.parse(execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`import json,sys
 from pathlib import Path
 from hdr_finisher.models import EditDocument,SourceReference,SourceLuminanceDescriptor
 from hdr_finisher.library_marks import LibraryMarks

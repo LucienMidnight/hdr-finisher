@@ -16,7 +16,7 @@ function edgeExecutable() {
 }
 
 function compareScreenshots(gpuBuffer, settledBuffer) {
-  const python = path.join(__dirname, "..", ".venv", "Scripts", "python.exe");
+  const python = require('./lib/platform.cjs').pythonExecutable();
   const script = [
     "import base64, io, json, sys",
     "import numpy as np",

@@ -95,3 +95,29 @@ def test_timeout_stops_detached_grandchild(tmp_path):
     assert marker.exists()
     assert not module.pid_alive(int(marker.read_text()))
     assert not (tmp_path / 'gpu-run.lock').exists()
+
+
+def test_live_owner_is_not_broken_after_sixty_minutes(tmp_path):
+    module = load_lock()
+    lock = tmp_path / 'gpu-run.lock'
+    lock.mkdir()
+    owner = lock / 'owner.txt'
+    owner.write_text(f'live pid={os.getpid()}\n')
+    os.utime(owner, (time.time() - 3601,) * 2)
+    assert not module.recover_stale(lock)
+    assert owner.exists()
+
+
+def test_shared_media_link_is_repeatable_and_keeps_one_copy(tmp_path):
+    spec = importlib.util.spec_from_file_location('setup_machine', TOOLS / 'setup-machine.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    source = tmp_path / 'shared'
+    source.mkdir()
+    (source / 'photo').write_text('one original')
+    target = tmp_path / 'worktree' / 'test-photos'
+    module.link_directory(source, target)
+    module.link_directory(source, target)
+    assert (source / 'photo').samefile(target / 'photo')
+    (target / 'photo').write_text('same original')
+    assert (source / 'photo').read_text() == 'same original'

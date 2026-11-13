@@ -1,4 +1,8 @@
 """Sequential GPU campaign with frozen source and read-only fixture hashes."""
+import sys as _tool_sys
+from pathlib import Path as _ToolPath
+_tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[2] / 'tools'))
+from lib.machine_settings import photos_path
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
@@ -9,10 +13,12 @@ import sys
 from datetime import datetime, timezone
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'tools'))
+from lib.machine_settings import settings
 OUT = ROOT / 'output/performance/review/followup-2026-10-01-attempt-3'
-PROJECT = Path(r'D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher')
+PROJECT = Path(photos_path(r'D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher'))
 RAW = PROJECT.with_suffix('.ARW')
-PYTHON = str(ROOT / '.venv/Scripts/python.exe')
+PYTHON = sys.executable
 OUT.mkdir(parents=True, exist_ok=True)
 
 
@@ -31,7 +37,7 @@ def manifest():
 
 def run(label, command, extra_env=None):
     print(f'Start {label}', flush=True)
-    env = {**os.environ, 'HDR_FINISHER_ELECTRON_WINDOW_SIZE': '2560x1440', **(extra_env or {})}
+    env = {**os.environ, 'HDR_FINISHER_ELECTRON_WINDOW_SIZE': settings()['windowSize'], **(extra_env or {})}
     with (OUT / f'{label}.log').open('w', encoding='utf-8') as log:
         result = subprocess.run(command, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
     print(f'Finished {label}: {result.returncode}', flush=True)

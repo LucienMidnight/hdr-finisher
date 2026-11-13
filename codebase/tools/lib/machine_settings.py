@@ -56,3 +56,20 @@ def python_executable(codebase=CODEBASE):
 
 if __name__ == '__main__':
     print(json.dumps(settings(), indent=2))
+
+
+def desktop_profile():
+    if os.environ.get('HDR_FINISHER_USER_DATA_DIR'):
+        return Path(os.environ['HDR_FINISHER_USER_DATA_DIR'])
+    if os.name == 'nt':
+        base = Path(os.environ.get('APPDATA', Path.home() / 'AppData/Roaming'))
+    elif sys.platform == 'darwin':
+        base = Path.home() / 'Library/Application Support'
+    else:
+        base = Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config'))
+    return base / 'hdr-finisher-desktop'
+
+
+def desktop_cache():
+    # Match today's fallback, including the extra HDR Finisher folder on POSIX.
+    return Path(os.environ.get('LOCALAPPDATA', desktop_profile())) / 'HDR Finisher/Cache'

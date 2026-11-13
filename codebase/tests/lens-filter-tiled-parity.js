@@ -15,7 +15,7 @@ function argument(name, fallback = null) {
 const MAX_CHANNEL_DELTA = 0;
 
 function writeFixture() {
-  const python = path.resolve(__dirname, "..", ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+  const python = require('../tools/lib/platform.cjs').pythonExecutable();
   const target = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "film-stock-parity-")), "stock_hues.tiff");
   const script = `
 import numpy as np, tifffile, sys, colorsys

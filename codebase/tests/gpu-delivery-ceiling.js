@@ -8,7 +8,7 @@ const output=path.resolve(__dirname,"../output/gpu-delivery-ceiling",String(Date
 fs.mkdirSync(output,{recursive:true});
 const original=process.env.HDR_CEILING_RAW||reusePhoto.source("DSC07060.ARW");
 const source=reusePhoto(original,path.join(output,path.basename(original)));
-const python=path.resolve(__dirname,"../.venv/Scripts/python.exe");
+const python=require('../tools/lib/platform.cjs').pythonExecutable();
 const pythonEnv={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
 const document=JSON.parse(execFileSync(python,["-c",
   "import sys,json;from pathlib import Path;from hdr_finisher.projects import validate_saved_document;print(validate_saved_document(json.loads(Path(sys.argv[1]).read_text())['grade']).model_dump_json())",

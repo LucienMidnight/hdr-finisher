@@ -23,7 +23,7 @@ const CASES = [[0, 35], [20, 35], [40, 35], [90, 35], [20, 100], [90, 100]]
   .map(([attenuation, detail]) => ({ label: `attenuation ${attenuation}% detail ${detail}%`, attenuation, detail }));
 
 function writeFixture() {
-  const python = path.resolve(__dirname, "..", ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+  const python = require('../tools/lib/platform.cjs').pythonExecutable();
   const target = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "attenuate-parity-")), "attenuate_hues.tiff");
   const script = `
 import numpy as np, tifffile, sys, colorsys

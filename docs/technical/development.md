@@ -45,15 +45,104 @@ Technical documents belong under the repository's `docs/technical/`, not
 
 ## Environment
 
-Requires Python 3.12+.
+For a fresh clone **or agent worktree**, run from the repository root:
+
+```bash
+# macOS / Linux
+./codebase/tools/setup.sh
+```
 
 ```powershell
-cd codebase
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements-dev.txt
-python run_app.py
+# Windows (no administrator session required)
+powershell -NoProfile -ExecutionPolicy Bypass -File .\codebase\tools\setup.ps1
 ```
+
+Re-run the same command after pulling. Install Git, Node/npm and Python **3.12**
+first; `HDR_FINISHER_SETUP_PYTHON` can name that interpreter. Windows uses
+`py -3.12` when available. Native builds additionally need Apple's command-line
+tools on macOS, or the compiler/CMake/NASM/pkg-config dependencies listed in the
+Desktop release Linux job. Setup installs CMake into the Mac venv.
+
+Setup creates `codebase/.venv`, installs `requirements-dev.txt`, runs `npm install`
+in `codebase` and `codebase/desktop`, fetches the pinned ExifTool runtime, and
+builds macOS/Linux encoders with their upstream checks. First setup can take
+several minutes. A recipe/architecture fingerprint and executable hashes let
+subsequent worktrees reuse the validated native tools beside the main checkout.
+Unknown old binaries are rebuilt once. Build scratch is removed on success or
+failure; upstream scripts always receive a space-free physical build path.
+Windows continues using the committed encoder executables.
+
+### One machine settings file
+
+`hdr-finisher-machine.json` sits beside the **main checkout**, outside all agent
+worktrees. Git's common directory finds it even when an agent worktree is under
+`.t3/worktrees`. Setup writes defaults once; re-runs preserve your settings.
+`HDR_FINISHER_MACHINE_SETTINGS=/absolute/path/to/file.json` selects a different
+shared file (for a clone in another parent folder, for example). Paths inside
+JSON may be absolute or relative to that file. The fields are:
+
+| Field | Default |
+| --- | --- |
+| `windowSize` | `1408x794` on macOS; `2560x1440` on Windows/Linux |
+| `photosRoot` | `D:/Photos` on Windows; `Photos` beside the settings file otherwise |
+| `testFixturesRoot` | `test-fixtures` beside the settings file |
+| `sharedTestPhotos` | Main checkout's existing `codebase/output/test-photos` |
+| `sharedLocalTestMedia` | Main checkout's existing `codebase/local-test-media` |
+| `lockFolder` | Main checkout's parent folder (the existing wrapper's lock) |
+| `nativeToolsRoot` | `native-tools` beside the settings file |
+
+The photo defaults deliberately reuse the existing private folders without
+moving Steve's files. Point them at other shared machine folders if desired.
+Setup links those folders into each worktree (directory junctions on Windows,
+symlinks elsewhere); it never copies RAWs per worktree or replaces a nonempty
+folder. Missing private media is listed at the end; setup cannot download it.
+Supply the same named photos/fixtures from Steve's other machine, then rerun.
+The report includes mixed-fixture sizes, protected projects and literal external
+photo dependencies; computed filenames and user-provided arguments still need
+their driver's input set. Missing private media does not fail dependency setup.
+
+`HDR_FINISHER_PHOTOS_ROOT` and `HDR_FINISHER_ELECTRON_WINDOW_SIZE` remain explicit
+one-run overrides. The Python used by JavaScript tools defaults to this
+worktree's `.venv/Scripts/python.exe` on Windows or `.venv/bin/python` elsewhere;
+`HDR_FINISHER_PYTHON` remains available. No compatibility symlink is needed.
+
+### GPU / real-app checks
+
+From `codebase`, always take the one shared lock:
+
+```bash
+.venv/bin/python tools/gpu-run-lock.py --label my-library-check -- node tools/quick-library-check.cjs --label=my-library-check
+.venv/bin/python tools/gpu-run-lock.py --label my-gpu-check -- node tests/run-in-electron.js tests/webgpu-shader-compilation.js
+npm run test:release -- --plan
+```
+
+On Windows replace `.venv/bin/python` with `.venv/Scripts/python.exe`. For an
+approved focused release run, set `--minutes 75` and run
+`npm run test:release -- --release` through the same wrapper. Planning starts no
+GPU process. Release selection, retry rules and all three protected-project
+hashes are unchanged. The machine's window size is used by the launchers,
+quick check and release runner.
+
+The wrapper uses atomic directory acquisition, waits for legacy `gpu-check.lock`
+holders, and acquires the parent `gpu-run.lock` even if `lockFolder` is changed.
+The existing parent wrapper therefore interoperates during handover. No tracked
+`gpu-lock.cjs` remains on this branch; do not restore a separate lock. Dead
+owners may be recovered after 60 minutes; a live owner is never broken merely
+because it is old. Timeouts/interruption stop the entire owned process tree;
+failed shutdown retains the lock. Do not remove another agent's live lock.
+
+Fast checks do not need the GPU lock:
+
+```bash
+node --test tests/*.test.js
+.venv/bin/python -m pytest tests -q
+```
+
+Pytest sets disposable app-data, local-data and source-cache roots **before test
+collection**, including subprocesses, and removes them when done. This prevents
+`codebase/HDR Finisher/Cache` and `library.sqlite3` appearing in the repository.
+The real application's POSIX cache-location fallback is unchanged; see
+[known limitations](../known-limitations.md).
 
 Production dependencies include FastAPI, Uvicorn, Pydantic, NumPy, Pillow, tifffile/imagecodecs, imageio, colour-science, OpenEXR, pillow-heif, and exifread.
 

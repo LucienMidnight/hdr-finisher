@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {chromium}=require('playwright');
 const out=path.resolve(__dirname,'../output/library-nonraw-picture');fs.mkdirSync(out,{recursive:true});
 const folder=fs.mkdtempSync(path.join(out,'photos-'));
-fs.copyFileSync('D:/Photos/Play_Raw/HDR exercise on urbanscape/5M071612_finished.avif',path.join(folder,'slow.avif'));
+fs.copyFileSync(require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/HDR exercise on urbanscape/5M071612_finished.avif'),path.join(folder,'slow.avif'));
 (async()=>{
  const browser=await chromium.launch({headless:true});
  try {

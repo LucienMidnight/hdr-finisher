@@ -18,7 +18,7 @@ const memory=new MemoryMonitor(4e9);let observer;
 (async()=>{
  const browser=await chromium.launch();
  if(process.env.HDR_FINISHER_ELECTRON_MAIN_PID){
-  observer=spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tools/measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID,'.25'],{windowsHide:true});
+  observer=spawn(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tools/measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID,'.25'],{windowsHide:true});
   let pending='';observer.stdout.on('data',chunk=>{pending+=chunk;let end;while((end=pending.indexOf('\n'))>=0){const line=pending.slice(0,end);pending=pending.slice(end+1);if(line){const sample=JSON.parse(line);memory.sample(sample);fs.appendFileSync(path.join(folder,'memory.jsonl'),line+'\n');}}});
  }
  try{
@@ -90,7 +90,7 @@ const memory=new MemoryMonitor(4e9);let observer;
   await new Promise(resolve=>setTimeout(resolve,10000));
   fs.writeFileSync(path.join(folder,'memory-summary.json'),JSON.stringify({...memory.report(),lastBytes:memory.last?.totalBytes},null,2));
   if(observer){assert.equal(memory.violation,null,'Native RAW exceeded the whole-app memory rule');assert.ok(memory.report().settledUnderTarget,'Native RAW did not settle below the target');}
-  const compared=await execFile(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/gpu_raw_single_compare.py'),path.join(folder,'result.json')],{cwd:root,maxBuffer:1<<24});
+  const compared=await execFile(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tests/helpers/gpu_raw_single_compare.py'),path.join(folder,'result.json')],{cwd:root,maxBuffer:1<<24});
   report=JSON.parse(compared.stdout.trim().split('\n').at(-1));
   }
   fs.writeFileSync(path.join(folder,'comparison.json'),JSON.stringify(report,null,2));

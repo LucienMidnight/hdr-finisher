@@ -45,7 +45,7 @@ const enforce = args.includes('--enforce');
 
 function pythonExecutable() {
   if (process.env.HDR_FINISHER_PYTHON) return process.env.HDR_FINISHER_PYTHON;
-  const candidate = path.join(ROOT, '.venv', 'Scripts', 'python.exe');
+  const candidate = require('../../tools/lib/platform.cjs').pythonExecutable();
   return fs.existsSync(candidate) ? candidate : 'python';
 }
 

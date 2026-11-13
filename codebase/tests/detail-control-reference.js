@@ -8,7 +8,7 @@ const root = path.join(__dirname, '..');
 const args = process.argv.slice(2);
 const output = path.resolve(args.includes('--output') ? args[args.indexOf('--output') + 1]
   : path.join(root, 'output/performance/detail-control-reference.json'));
-const python = process.env.HDR_FINISHER_PYTHON || path.join(root, '.venv/Scripts/python.exe');
+const python = process.env.HDR_FINISHER_PYTHON || require('../tools/lib/platform.cjs').pythonExecutable();
 const fixtures = JSON.parse(execFileSync(python, ['-c', `
 import base64,json,numpy as np
 from backend.hdr_finisher.detail import apply_detail

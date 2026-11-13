@@ -1,4 +1,8 @@
 """Focused JXL fixtures and independent DATA-profile source oracle; no hfmd."""
+import sys as _tool_sys
+from pathlib import Path as _ToolPath
+_tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[2] / 'tools'))
+from lib.machine_settings import photos_path
 import base64
 import hashlib
 import json
@@ -60,7 +64,7 @@ def oracle(path, white):
 
 def prepare(folder):
     folder = Path(folder); folder.mkdir(parents=True, exist_ok=True)
-    original = Path('D:/Photos/HDR Test Images/e053a5bf16a9398eaa3da890-900x1200.jxl')
+    original = Path(photos_path('D:/Photos/HDR Test Images/e053a5bf16a9398eaa3da890-900x1200.jxl'))
     real = folder / 'real.jxl'
     if not real.exists():
         shutil.copyfile(original, real)

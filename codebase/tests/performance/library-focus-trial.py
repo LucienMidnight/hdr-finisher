@@ -1,4 +1,8 @@
 """Small, read-only trial; controlled softness supplements unlabeled real frames."""
+import sys as _tool_sys
+from pathlib import Path as _ToolPath
+_tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[2] / 'tools'))
+from lib.machine_settings import photos_path
 import json,time,os
 os.environ.setdefault("OMP_NUM_THREADS","1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS","1")
@@ -9,7 +13,7 @@ from hdr_finisher.library_pictures import decode_picture
 from PIL import Image
 
 if __name__=='__main__':
-    files=[r'D:\Photos\HDR Test Images\DSC00264.ARW',r'D:\Photos\HDR Test Images\DSC01212.ARW',r'D:\Photos\HDR Test Images\Test Suite Images\noisy_canon_IMG_0790.CR2']
+    files=[photos_path(r'D:\Photos\HDR Test Images\DSC00264.ARW'),photos_path(r'D:\Photos\HDR Test Images\DSC01212.ARW'),photos_path(r'D:\Photos\HDR Test Images\Test Suite Images\noisy_canon_IMG_0790.CR2')]
     output=Path('output/focus-trial');output.mkdir(exist_ok=True);rows=[]
     for file in files:
         for quality in ['quick','native']:

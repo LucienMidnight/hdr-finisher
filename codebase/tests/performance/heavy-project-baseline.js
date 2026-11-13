@@ -385,7 +385,7 @@ async function main() {
   const page = await browser.newPage({ viewport });
   const memoryTimeline = [];
   const rootPid = Number(process.env.HDR_FINISHER_ELECTRON_MAIN_PID || 0);
-  const memorySampler = rootPid ? spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path.join(__dirname, "sample-process-memory.ps1"), "-RootProcessId", String(rootPid)], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }) : null;
+  const memorySampler = rootPid ? require("../../tools/lib/platform.cjs").memorySampler(rootPid, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }) : null;
   let samplerBuffer = "";
   const samplerErrors = [];
   memorySampler?.stdout.on("data", (chunk) => {

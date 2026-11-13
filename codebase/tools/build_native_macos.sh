@@ -8,8 +8,8 @@ fi
 
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 codebase_dir="$(cd "$script_dir/.." && pwd)"
-work_dir="$codebase_dir/output/macos-native-tools"
-bin_dir="$codebase_dir/bin"
+work_dir="${HDR_FINISHER_NATIVE_WORK_DIR:-$codebase_dir/output/macos-native-tools}"
+bin_dir="${HDR_FINISHER_NATIVE_BIN_DIR:-$codebase_dir/bin}"
 license_dir="$bin_dir/licenses"
 libavif_ref="${HDR_FINISHER_LIBAVIF_REF:-v1.4.1}"
 libultrahdr_ref="${HDR_FINISHER_LIBULTRAHDR_REF:-ad4a92eea0d2f39f18b5ecae3165fdd56c6a478b}"
@@ -33,6 +33,12 @@ for command in git cmake xcrun; do
   fi
 done
 
+# Upstream libavif shell tests split unquoted build paths at spaces.
+# A physical temporary build directory also covers source paths (not just -B).
+if [[ "$work_dir" == *" "* ]]; then
+  work_dir="$(TMPDIR=/tmp mktemp -d /tmp/hdr-finisher-native.XXXXXX)"
+  trap 'rm -rf "$work_dir"' EXIT
+fi
 mkdir -p "$work_dir" "$bin_dir" "$license_dir"
 
 checkout_ref() {

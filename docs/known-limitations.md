@@ -1,5 +1,18 @@
 # Known Limitations and Support Status
 
+## November 13: POSIX cache-location fallback (reported; unchanged)
+
+The standalone Python backend falls back to its runtime directory when
+`HDR_FINISHER_APP_DATA_DIR` and `LOCALAPPDATA` are absent. Library's default
+cache then adds `HDR Finisher/Cache` beneath that profile on POSIX, including
+Electron profiles without the `test-` isolation marker. Desktop passes its
+user-data profile explicitly, so it avoids a repository-relative database;
+the extra cache subfolder still differs from the native macOS convention.
+This tooling task isolates pytest before collection and does not move any real
+app cache or change allowances. Choosing a new app cache location remains
+Steve's decision in the memory-and-caches module.
+
+
 ## November 12: watermark and Library polish validation
 
 Fast validation: Node 923 passed; full Python run 3,327 passed, 3 skipped,

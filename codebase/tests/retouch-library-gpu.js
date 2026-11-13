@@ -1,7 +1,7 @@
 /* A saved repaired RAW develops on the Library GPU, with one disposable copy. */
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),assert=require('node:assert/strict');
 const {chromium}=require('playwright');
-const owner='D:/Photos/HDR Test Images/DSC04375.ARW',folder=path.resolve('output/test-photos'),copy=path.join(folder,'DSC04375.ARW');
+const owner=require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/DSC04375.ARW'),folder=path.resolve('output/test-photos'),copy=path.join(folder,'DSC04375.ARW');
 const hash=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const before=[hash(owner),hash(owner+'.hdrf')];fs.mkdirSync(folder,{recursive:true});
 if(!fs.existsSync(copy))fs.copyFileSync(owner,copy);

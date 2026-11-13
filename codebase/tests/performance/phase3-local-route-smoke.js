@@ -98,7 +98,7 @@ async function completeGeneration(page){
    });
    const files=['whole','region'].map(name=>output.replace(/\.json$/,'')+`-${name}.rgba32`);
    parity.buffers.forEach((data,i)=>fs.writeFileSync(files[i],Buffer.from(data,'base64')));delete parity.buffers;
-   parity.tone=JSON.parse(execFileSync(path.resolve('.venv/Scripts/python.exe'),['-c',`
+   parity.tone=JSON.parse(execFileSync(require('../../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import sys,json,numpy as np
 sys.path.insert(0,'tests/performance')
 from preview_export_compare import srgb_decode,presentation_space,tone_statistics

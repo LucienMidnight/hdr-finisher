@@ -49,7 +49,7 @@ const QUICK_CASES = ["glimmerglass","black_pro_mist","pro_mist","cinebloom"].map
 if (QUICK_CASES.some(label => !CASES.some(c => c.label === label))) throw new Error("Quick lens cases are missing from the matrix.");
 
 function writeFixture() {
-  const python = path.resolve(__dirname, "..", ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+  const python = require('../tools/lib/platform.cjs').pythonExecutable();
   const target = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "film-stock-parity-")), "stock_hues.tiff");
   const script = `
 import numpy as np, tifffile, sys, colorsys

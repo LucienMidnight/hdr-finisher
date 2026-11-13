@@ -14,7 +14,7 @@ const textureProbe = process.argv.includes('--texture');
 const outputIndex = process.argv.indexOf('--output');
 const output = path.resolve(outputIndex >= 0 ? process.argv[outputIndex + 1]
   : path.join(root, 'output/performance/sharpen-blur-reference.json'));
-const python = process.env.HDR_FINISHER_PYTHON || path.join(root, '.venv/Scripts/python.exe');
+const python = process.env.HDR_FINISHER_PYTHON || require('../tools/lib/platform.cjs').pythonExecutable();
 const fixtures = JSON.parse(execFileSync(python, ['-c', `
 import json
 import numpy as np

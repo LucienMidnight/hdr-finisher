@@ -31,7 +31,11 @@ provides process cleanup/sampling. `tools/gpu-run-lock.py` owns the shared
 `gpu-run.lock`, interoperates with the parent wrapper, and stops descendants
 before releasing it. `tests/conftest.py` isolates pytest state before collection.
 `tests/test_machine_tooling.py` checks settings agreement, locking and cleanup
-without starting Electron. See [development](development.md) for setup and use.
+without starting Electron. `tools/setup.sh` / `setup.ps1` call
+`setup-machine.py` for repeatable venv/npm/native-tool/media setup;
+`lib/media-dependencies.cjs` inventories literal private-photo dependencies.
+`tools/sample-process-memory.py` supplies POSIX diagnostics in the established
+sampler schema; the Windows PowerShell sampler remains unchanged. See [development](development.md) for setup and use.
 
 ## The three parts
 

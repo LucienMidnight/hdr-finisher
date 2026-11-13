@@ -23,7 +23,7 @@ const hashes = new Map(names.map(name => [name, require('node:crypto').createHas
   const env = { ...process.env, HDR_FINISHER_USER_DATA_DIR: profile };
   delete env.ELECTRON_RUN_AS_NODE;
   const app = await _electron.launch({
-    executablePath: packaged ? path.join(root, 'dist-electron/win-unpacked/HDR Finisher.exe') : require('../desktop/node_modules/electron'),
+    executablePath: packaged ? require('../tools/lib/platform.cjs').packagedExecutable() : require('../desktop/node_modules/electron'),
     args: packaged ? [] : [path.join(root, 'desktop')], env, timeout: 180000
   });
   let page;

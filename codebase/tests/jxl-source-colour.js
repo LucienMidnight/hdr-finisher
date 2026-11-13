@@ -3,7 +3,7 @@
  */
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
-const root=path.resolve(__dirname,'..'),python=path.join(root,'.venv/Scripts/python.exe');
+const root=path.resolve(__dirname,'..'),python=require('../tools/lib/platform.cjs').pythonExecutable();
 const folder=path.join(root,'output/test-photos/jxl-fixes'),review=path.join(root,'output/review/jxl-fixes');
 const helper=path.join(__dirname,'helpers/jxl_source_colour.py');
 const run=(...args)=>execFileSync(python,[helper,...args],{cwd:root,encoding:'utf8',maxBuffer:32<<20});

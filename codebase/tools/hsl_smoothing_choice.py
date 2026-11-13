@@ -1,3 +1,7 @@
+import sys as _tool_sys
+from pathlib import Path as _ToolPath
+_tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[1] / 'tools'))
+from lib.machine_settings import photos_path
 from pathlib import Path
 import sys, time, json
 import numpy as np
@@ -14,7 +18,7 @@ from hdr_finisher import hsl
 from hdr_finisher.hue_mask import select_hue
 
 OUT=ROOT/'output/hsl-smoothing-choice'; OUT.mkdir(parents=True,exist_ok=True)
-SOURCE=Path(r'D:\Photos\Play_Raw\Balanced Rock in Arches Nat Park - LaurentFromSF\IMG_0114.CR2')
+SOURCE=Path(photos_path(r'D:\Photos\Play_Raw\Balanced Rock in Arches Nat Park - LaurentFromSF\IMG_0114.CR2'))
 STRENGTHS={'light':4,'medium':8,'strong':16}
 LABELS={'off':'HSL off (reference)','now':'Now in the app','light':'Light','medium':'Medium','strong':'Strong'}
 original_selection=hsl.selection

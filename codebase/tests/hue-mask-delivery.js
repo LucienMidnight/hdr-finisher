@@ -4,7 +4,7 @@ const {chromium}=require('playwright');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {execFileSync}=require('node:child_process');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'hsl-app-'));
-const python=path.resolve(__dirname,'../.venv/Scripts/python.exe');
+const python=require('../tools/lib/platform.cjs').pythonExecutable();
 const env={...process.env,PYTHONPATH:path.resolve(__dirname,'../backend')};
 const run=(script,args=[])=>execFileSync(python,['-c',script,...args],{env,encoding:'utf8'});
 (async()=>{

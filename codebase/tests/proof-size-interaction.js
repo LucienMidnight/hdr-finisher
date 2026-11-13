@@ -48,7 +48,7 @@ function assert(condition, message) {
     // Keep the large noisy samples and dimensions, with an explicit sRGB
     // profile in a bitmap format that does not require TIFF/HDR confirmation.
     const fixture = path.join(fixtureRoot, "noisy-srgb.png");
-    execFileSync(path.resolve(__dirname, "../.venv/Scripts/python.exe"), ["-c",
+    execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(), ["-c",
       "from PIL import Image, ImageCms; import sys; Image.open(sys.argv[1]).save(sys.argv[2], icc_profile=ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes())",
       ensureLargeNoisySource(), fixture]);
     await page.setInputFiles("#file-input", fixture);

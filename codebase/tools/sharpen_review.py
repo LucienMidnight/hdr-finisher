@@ -1,4 +1,8 @@
 """Reproducible read-only Sharpen review. Writes only under output/sharpen-review."""
+import sys as _tool_sys
+from pathlib import Path as _ToolPath
+_tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[1] / 'tools'))
+from lib.machine_settings import photos_path
 from pathlib import Path
 import json, sys
 import numpy as np
@@ -11,7 +15,7 @@ from hdr_finisher.adjustments import apply_adjustments
 from hdr_finisher.preview import encode_processed_preview_bytes, downsample_image
 OUT=ROOT/'output/sharpen-review'
 OUT.mkdir(parents=True,exist_ok=True)
-SOURCES=[Path(r'D:\Photos\2026\20261017 badminton')/name for name in ('DSC07147.ARW','DSC07178.ARW')]
+SOURCES=[Path(photos_path(r'D:\Photos\2026\20261017 badminton'))/name for name in ('DSC07147.ARW','DSC07178.ARW')]
 VARIANTS={'off':(0,.8,10),'default':(0,.8,10),'working':(80,.8,10),'strong':(200,3,0)}
 BOXES={'DSC07147':(4180,2570),'DSC07178':(1500,1740)}
 

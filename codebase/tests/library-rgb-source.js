@@ -3,25 +3,25 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/test-photos',path.basename(process.argv[1],'.js'));
 fs.mkdirSync(folder,{recursive:true});
-const photographic='D:/Photos/Play_Raw/Zebras Crossing - thekman/darktable_exported/DSC_3931_01.jpg';
+const photographic=require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Zebras Crossing - thekman/darktable_exported/DSC_3931_01.jpg');
 const jpeg=path.join(folder,'photo.jpg'),png=path.join(folder,'photo.png');
 if(!fs.existsSync(jpeg))fs.copyFileSync(photographic,jpeg);
-execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',"from PIL import Image;import sys;Image.open(sys.argv[1]).save(sys.argv[2])",jpeg,png]);
+execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',"from PIL import Image;import sys;Image.open(sys.argv[1]).save(sys.argv[2])",jpeg,png]);
 let sources=[jpeg,png];const photos=[...sources];
 if(process.argv.includes('--ultrahdr')){
  const hdr=path.join(folder,'ultrahdr.jpg');
- if(!fs.existsSync(hdr))fs.copyFileSync("D:/Photos/Play_Raw/Hawai'ian Fire Dancers - Challenge the Darkside - LaurentFromSF/IMG_0790_finished.jpg",hdr);
+ if(!fs.existsSync(hdr))fs.copyFileSync(require('./helpers/photos-root.cjs').photosPath("D:/Photos/Play_Raw/Hawai'ian Fire Dancers - Challenge the Darkside - LaurentFromSF/IMG_0790_finished.jpg"),hdr);
  sources=process.argv.includes('--measure')?[hdr]:[];photos.splice(0,photos.length,hdr);
 }
 if(process.argv.includes('--codecs')){
- const cases=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_codec_samples.py'),folder],{cwd:root,encoding:'utf8'}));
+ const cases=JSON.parse(execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tests/helpers/library_codec_samples.py'),folder],{cwd:root,encoding:'utf8'}));
  sources=cases.sources;photos.push(...cases.photos);
 }
 const isoRoute=process.argv.includes('--iso-avif');
 if(isoRoute){
  photos.length=0;sources=[];
  for(const [name,original] of [['reference.avif',path.join(root,'samples/hdr_reference.avif')],
-   ['urbanscape.avif','D:/Photos/Play_Raw/HDR exercise on urbanscape/5M071612_finished.avif']]){
+   ['urbanscape.avif',require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/HDR exercise on urbanscape/5M071612_finished.avif')]]){
   const target=path.join(folder,name);if(!fs.existsSync(target))fs.copyFileSync(original,target);photos.push(target);
  }
  const reversed=path.join(folder,'hdr-base.avif');
@@ -32,13 +32,13 @@ const edited=path.join(folder,isoRoute?'edited.avif':'edited.png');fs.copyFileSy
 let editedTiff=null,layeredExr=null,bt709Tiff=null,whiteExr=null;
 if(process.argv.includes('--precision')){
  editedTiff=path.join(folder,'edited-16bit.tif');photos.push(editedTiff);
- execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`import sys,numpy as np,tifffile
+ execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`import sys,numpy as np,tifffile
 from PIL import Image,ImageCms
 profile=ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
 a=np.asarray(Image.open(sys.argv[1])).astype(np.uint16)*257
 tifffile.imwrite(sys.argv[2],a,photometric='rgb',extratags=[(34675,'B',len(profile),profile,False),(274,'H',1,6,False)])`,jpeg,editedTiff]);
  layeredExr=path.join(folder,'signed-layer.exr');photos.push(layeredExr);
- execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`import sys,numpy as np,OpenEXR,Imath
+ execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`import sys,numpy as np,OpenEXR,Imath
 from PIL import Image
 a=np.asarray(Image.open(sys.argv[1]).resize((192,128))).astype(np.float32)/255*4-.5
 h=OpenEXR.Header(192,128);names=['Combined.R','Combined.G','Combined.B']
@@ -48,7 +48,7 @@ f=OpenEXR.OutputFile(sys.argv[2],h);f.writePixels({n:a[...,i].tobytes() for i,n 
  bt709Tiff=path.join(folder,'bt709.tif');fs.copyFileSync(editedTiff,bt709Tiff);photos.push(bt709Tiff);
  whiteExr=path.join(folder,'white100.exr');fs.copyFileSync(layeredExr,whiteExr);photos.push(whiteExr);
 }
-for(const target of [edited,editedTiff,layeredExr,bt709Tiff,whiteExr].filter(Boolean))execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+for(const target of [edited,editedTiff,layeredExr,bt709Tiff,whiteExr].filter(Boolean))execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import sys,json
 from pathlib import Path
 sys.path.insert(0,'backend')
@@ -160,7 +160,7 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
   console.log(JSON.stringify({format,cpuMedianMs:cpu,gpuMedianMs:gpu,improvementPercent:(cpu-gpu)/cpu*100}));
  }
  const file=path.join(folder,'pixels.json');fs.writeFileSync(file,JSON.stringify(result));
- const output=execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(root,'tests/helpers/library_rgb_compare.py'),file],{cwd:root,encoding:'utf8',maxBuffer:1<<24});
+ const output=execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tests/helpers/library_rgb_compare.py'),file],{cwd:root,encoding:'utf8',maxBuffer:1<<24});
  const report=JSON.parse(output.trim().split('\n').at(-1));console.log(JSON.stringify(report));
  for(const row of report)for(const check of row.checks)assert.ok(check.passed,JSON.stringify({photo:row.photo,...check}));
 }finally{await browser.close();for(const name of ['pixels.json','timing.json'])fs.rmSync(path.join(folder,name),{force:true});}})().catch(error=>{console.error(error);process.exitCode=1;});

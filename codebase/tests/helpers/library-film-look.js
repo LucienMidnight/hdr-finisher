@@ -6,7 +6,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const {execFileSync}=require('node:child_process');
 module.exports=async({page,folder})=>{
  const root=path.resolve(__dirname,'../..'),reports=[];
- const source=process.env.HDR_FINISHER_FILM_PHOTOS || 'D:/Photos/2026/20261017 badminton';
+ const source=process.env.HDR_FINISHER_FILM_PHOTOS || require('./photos-root.cjs').photosPath('D:/Photos/2026/20261017 badminton');
  const photos=['DSC07202','DSC07217','DSC07178'].map(name=>{
   const file=path.join(folder,name+'.ARW');
   for(const suffix of ['', '.hdrf'])fs.copyFileSync(path.join(source,name+'.ARW'+suffix),file+suffix);
@@ -92,7 +92,7 @@ module.exports=async({page,folder})=>{
    return {photo,edge,lane,width:meta.width,height:meta.height,actual,expected,quick,timing,camera:{route:camera.route,width:camera.width,height:camera.height}};
   },{photo,edge,lane});
   const file=path.join(folder,'film-pixels.json');fs.writeFileSync(file,JSON.stringify(row));
-  const output=execFileSync(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library_film_compare.py'),file],{cwd:root,encoding:'utf8',maxBuffer:1<<20});
+  const output=execFileSync(require('../../tools/lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'library_film_compare.py'),file],{cwd:root,encoding:'utf8',maxBuffer:1<<20});
   const report=JSON.parse(output.trim().split('\n').at(-1));reports.push(report);console.log(JSON.stringify(report));
   assert.ok(report.checks.every(c=>c.passed),JSON.stringify(report));
   assert.equal(report.camera.route,'camera-preview-placeholder');

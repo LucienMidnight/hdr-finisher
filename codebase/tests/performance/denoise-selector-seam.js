@@ -173,7 +173,7 @@ async function main() {
   const gradeRepetitions = Number(argument("--grade-repetitions", "12"));
   const importTimeout = Number(argument("--import-timeout", "120000"));
   const outputPath = path.resolve(argument("--output", path.join(codebase, "output", "performance", "denoise-selector-seam.json")));
-  const defaultPackagedExecutable = path.join(codebase, "dist-electron", "win-unpacked", "HDR Finisher.exe");
+  const defaultPackagedExecutable = require('../../tools/lib/platform.cjs').packagedExecutable();
   const executablePath = packaged
     ? path.resolve(argument("--executable", process.env.HDR_FINISHER_PACKAGED_EXECUTABLE || defaultPackagedExecutable))
     : electronExecutable;

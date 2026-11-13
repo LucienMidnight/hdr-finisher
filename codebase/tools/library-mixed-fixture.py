@@ -17,10 +17,11 @@ D:\\Photos is never written.
 """
 import hashlib, json, os, shutil, stat, sys
 from pathlib import Path
+from lib.machine_settings import settings, photos_path
 
 CODEBASE = Path(__file__).resolve().parents[1]
 # Beside the repository folder ("ai"), on every machine.
-FIXTURE = CODEBASE.parents[1] / "test-fixtures" / "library-mixed-v1"
+FIXTURE = Path(settings()["testFixturesRoot"]) / "library-mixed-v1"
 MANIFEST = Path(__file__).with_name("library-mixed-v1.manifest.json")
 RUN = CODEBASE / "output" / "test-photos" / "library-mixed-v1-run"
 
@@ -100,7 +101,7 @@ def build():
     FIXTURE.mkdir(parents=True, exist_ok=True)
     entries = []
     for source, why in SOURCES:
-        src = Path(source)
+        src = Path(photos_path(source.replace('\\', '/')))
         dst = FIXTURE / src.name
         assert not dst.exists(), f"duplicate name {src.name}"
         shutil.copy2(src, dst)  # reads the source only
@@ -149,8 +150,14 @@ def run_copy():
             shutil.copyfile(src, p)
             os.chmod(p, stat.S_IREAD | stat.S_IWRITE)
         else:
-            # D: does not support hard links: copy once, keep read-only.
-            shutil.copy2(src, p)
+            # Reuse originals without copying large photos into each worktree.
+            if os.name != "nt":
+                p.symlink_to(src)
+            else:
+                try:
+                    os.link(src, p)
+                except OSError:
+                    shutil.copy2(src, p)  # exFAT has no hard links: one shared run copy.
             os.chmod(p, stat.S_IREAD)
     for name, e in wanted.items():
         if not is_sidecar(name):

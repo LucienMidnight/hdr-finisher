@@ -22,7 +22,7 @@ for (let index = 0; index <= 256; index += 1) {
 }
 
 function cpuReference(input) {
-  const python = path.join(__dirname, "..", ".venv", "Scripts", "python.exe");
+  const python = require('../tools/lib/platform.cjs').pythonExecutable();
   const script = [
     "import json, sys, numpy as np",
     "from hdr_finisher.sdr_gamut import compress_to_srgb_gamut",

@@ -8,7 +8,7 @@ const write=(n,v)=>fs.writeFileSync(path.join(out,n),JSON.stringify(v,null,2));
 const cpu=JSON.parse(fs.readFileSync(path.join(out,'cpu.json'),'utf8'));
 (async()=>{
  const log=fs.openSync(path.join(out,'service.log'),'w');
- const service=spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'library-fullscreen-speed-trial.py'),'serve'],{cwd:root,stdio:['ignore',log,log],windowsHide:true});
+ const service=spawn(require('../../tools/lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'library-fullscreen-speed-trial.py'),'serve'],{cwd:root,stdio:['ignore',log,log],windowsHide:true});
  let browser;
  try{
   const deadline=Date.now()+120000;
@@ -205,5 +205,5 @@ const cpu=JSON.parse(fs.readFileSync(path.join(out,'cpu.json'),'utf8'));
   });
   results.vram_after=gpuMemory();await lib.evaluate(()=>{for(const t of trialHeld)t.destroy();});
   results.complete=true;write('gpu.json',results);console.log('M7/M8 GPU trial complete');
- }finally{if(browser)await browser.close();if(service.exitCode===null)try{execFileSync('taskkill',['/PID',String(service.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}catch{}fs.closeSync(log);}
+ }finally{if(browser)await browser.close();if(service.exitCode===null)try{require('../../tools/lib/platform.cjs').stopTree(service.pid);}catch{}fs.closeSync(log);}
 })().catch(e=>{console.error(e);process.exitCode=1;});

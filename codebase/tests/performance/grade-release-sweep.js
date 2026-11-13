@@ -34,7 +34,7 @@ report.budget={spentBeforeMs,measurementLimitMs,allowance:args.includes('--follo
 let heldBeforeMs=0,lockStartedAt=startedAt;
 if(args.includes('--followup')) {
   try { const ledger=JSON.parse(fs.readFileSync(path.join(out,'w10-launches.json'),'utf8')); heldBeforeMs=ledger.runs.filter(r=>r.completedAt).reduce((n,r)=>n+Date.parse(r.completedAt)-Date.parse(r.startedAt),0); }catch{}
-  try {const stamp=fs.readFileSync('D:/AI/AI Projects/HDR Finisher Tool/gpu-run.lock/owner.txt','utf8').trim().split(/\s+/)[2];lockStartedAt=Date.parse(stamp)||startedAt;}catch{}
+  try {const stamp=fs.readFileSync(path.join(require('../../tools/lib/platform.cjs').machineSettings().lockFolder,'gpu-run.lock/owner.txt'),'utf8').trim().split(/\s+/)[2];lockStartedAt=Date.parse(stamp)||startedAt;}catch{}
 }
 report.budget.heldBeforeMs=heldBeforeMs;report.budget.lockStartedAt=lockStartedAt;
 const budgetExceeded=()=>args.includes('--followup') ? heldBeforeMs+Date.now()-lockStartedAt>=90*60000 : spentBeforeMs+Date.now()-startedAt>=measurementLimitMs;

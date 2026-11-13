@@ -175,7 +175,7 @@ function networkProbe(page) {
 }
 function sampler() {
   const rows = [], errors = []; let buffer = '';
-  const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(__dirname, 'sample-process-memory.ps1'), '-RootProcessId', process.env.HDR_FINISHER_ELECTRON_MAIN_PID], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = require('../../tools/lib/platform.cjs').memorySampler(process.env.HDR_FINISHER_ELECTRON_MAIN_PID, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.on('data', chunk => { buffer += chunk; let i; while ((i = buffer.indexOf('\n')) >= 0) { const line = buffer.slice(0, i).trim(); buffer = buffer.slice(i + 1); try { if (line) rows.push(JSON.parse(line)); } catch { errors.push(line); } } });
   child.stderr.on('data', chunk => errors.push(String(chunk))); child.on('error', e => errors.push(String(e)));
   return { rows, errors, stop: () => child.kill() };

@@ -76,7 +76,7 @@ source+=String.raw`
   },{scenario,repeat});results.browse.push(r);write('gpu.json',results);console.log('M10 browse',repeat,scenario.name,r.sharp_ready_at_selection,r.final_wait_ms);
  }
  results.complete=true;write('gpu.json',results);
- }finally{if(browser)await browser.close().catch(()=>{});if(service.exitCode===null)try{execFileSync('taskkill',['/PID',String(service.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});}catch{}fs.closeSync(log);}
+ }finally{if(browser)await browser.close().catch(()=>{});if(service.exitCode===null)try{require('../../tools/lib/platform.cjs').stopTree(service.pid);}catch{}fs.closeSync(log);}
 })().catch(e=>{console.error(e);process.exitCode=1;});
 `;
 const compiled=new Module(__filename,module);compiled.filename=__filename;compiled.paths=module.paths;compiled._compile(source,__filename);

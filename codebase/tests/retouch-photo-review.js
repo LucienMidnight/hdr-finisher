@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),crypto=require('node:crypto');
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
-const folder=path.resolve('output/retouch-review'),python=path.resolve('.venv/Scripts/python.exe');
-const owner='D:/Photos/HDR Test Images/DSC04375.ARW',hash=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+const folder=path.resolve('output/retouch-review'),python=require('../tools/lib/platform.cjs').pythonExecutable();
+const owner=require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/DSC04375.ARW'),hash=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
 const before=[hash(owner),hash(owner+'.hdrf')];
 (async()=>{const browser=await chromium.launch();try{
  execFileSync(python,['tests/helpers/retouch_photo_review.py','prepare',folder],{stdio:'inherit'});

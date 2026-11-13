@@ -259,20 +259,36 @@ GitHub. This file is tracked in Git so both always have the same rules.
 - **Minimum hardware.** The MacBook Neo is the minimum supported machine
   (master PRD, Scope). Every feature must work on it. A failure that only
   happens there is a real failure, not a slow-machine excuse.
-- **Outside Git, on both machines:** the parent folder of `ai` holds the
-  parent `AGENTS.md`, `gpu-run-lock.py`, `Photos/` (Mac) and
-  `test-fixtures/`. Test photos copied into `codebase/output/test-photos/`
-  and `codebase/local-test-media/` must match on both. When a new driver
-  needs a new photo, tell Steve which file to copy to the other machine.
+- **Setup/update, including fresh agent worktrees:** from the Git root run
+  `./codebase/tools/setup.sh` on macOS/Linux, or
+  `powershell -NoProfile -ExecutionPolicy Bypass -File .\codebase\tools\setup.ps1`
+  on Windows. Requires Git, Node/npm, Python 3.12 and native compiler tools
+  on POSIX. Re-run after pulling; see `docs/technical/development.md`.
+- **Machine settings outside every worktree:** `hdr-finisher-machine.json`
+  beside the main checkout. Git's common directory finds it from agent
+  worktrees too. `HDR_FINISHER_MACHINE_SETTINGS` can select another shared
+  JSON file. It holds `windowSize`, `photosRoot`, `testFixturesRoot`,
+  `sharedTestPhotos`, `sharedLocalTestMedia`, `lockFolder`, `nativeToolsRoot`.
+  Defaults: Mac window 1408x794, other platforms 2560x1440; PC photos
+  D:/Photos, POSIX Photos beside the JSON; fixtures beside it. Setup adopts
+  existing main-checkout test-photo/media folders and links them into new
+  worktrees without moving or duplicating RAWs. Missing media is reported.
+  When a driver needs a new photo, name the file Steve must transfer.
+- **One GPU lock:** from `codebase`, use the venv Python to run
+  `tools/gpu-run-lock.py --label <who-what> -- <command...>`. It reads the
+  machine window and locks outside all worktrees; it also takes the existing
+  parent `gpu-run.lock` so agents using the parent wrapper cannot overlap.
+  Keep using the same wrapper for quick Library and release checks. The
+  old `gpu-lock.cjs` is absent; do not create a second independent lock.
 
 | | Windows PC | MacBook Neo |
 | --- | --- | --- |
 | Hardware | Steve's PC (dedicated GPU) | Apple A18 Pro, 8 GB unified memory, 6 cores |
 | Repository | `D:/AI/AI Projects/HDR Finisher Tool/ai` | `~/HDR Finisher Tool/ai` |
-| Python | `.venv/Scripts/python.exe` | `.venv/bin/python` (a local link at `.venv/Scripts/python.exe` keeps Windows-path drivers running) |
+| Python | `.venv/Scripts/python.exe` | `.venv/bin/python` (shared tooling resolves it; no shim) |
 | GPU check window | 2560x1440 | 1408x794 points (2816x1588 pixels), the largest the built-in screen gives |
 | Photos root | `D:/Photos` (originals) | `~/HDR Finisher Tool/Photos` (copies; `HDR_FINISHER_PHOTOS_ROOT` moves it, see `codebase/tests/helpers/photos-root.cjs`) |
-| Native encoders | `codebase/bin/*.exe` (committed) | build with `tools/build_native_macos.sh`; its libavif tests fail if the path has spaces, so run it through a link on a path without spaces |
+| Native encoders | `codebase/bin/*.exe` (committed) | setup builds with `tools/build_native_macos.sh`; build scratch handles spaces automatically and validated encoders are reused |
 | Read-only projects | as committed | also `chmod a-w` |
 
 - **Timings.** Write the machine into the conditions of every
@@ -281,8 +297,8 @@ GitHub. This file is tracked in Git so both always have the same rules.
   the same machine.
 - **Photos missing on the Mac** (November 13): drivers that need D:/Photos
   files other than DSC00264.ARW, IMG_0114.CR2 and the DSC00950 project
-  cannot run there yet. Name the gap in the report rather than skipping
-  silently.
+  could not run at handover. Setup now lists current missing dependencies;
+  use that report as photos are added, and name gaps rather than skipping silently.
 
 ## Disk space and test output
 

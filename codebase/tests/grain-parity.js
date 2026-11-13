@@ -45,7 +45,7 @@ const CASES = [
 ];
 
 function writeFixture() {
-  const python = path.resolve(__dirname, "..", ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+  const python = require('../tools/lib/platform.cjs').pythonExecutable();
   const target = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "grain-parity-")), "grain_tones.tiff");
   // Every tone from deep shadow to highlight, with a band of saturated colour
   // so each dye layer develops differently.

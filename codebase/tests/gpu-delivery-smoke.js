@@ -1,7 +1,7 @@
 const {chromium}=require("playwright");
 const fs=require("node:fs"),os=require("node:os"),path=require("node:path"),{execFileSync}=require("node:child_process");
 const root=fs.mkdtempSync(path.join(os.tmpdir(),"hdr-gpu-smoke-"));
-const python=path.resolve(__dirname,"../.venv/Scripts/python.exe");
+const python=require('../tools/lib/platform.cjs').pythonExecutable();
 const helper=path.join(__dirname,"helpers/gpu_delivery_fixture.py");
 const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
 (async()=>{

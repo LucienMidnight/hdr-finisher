@@ -17,7 +17,10 @@ import os
 import re
 import sys
 
-LOG = os.path.expandvars(r"%APPDATA%\hdr-finisher-desktop\logs\backend.log")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib.machine_settings import desktop_profile
+LOG = str(desktop_profile() / 'logs/backend.log')
 STAGES = ("cache_check", "queue_wait", "lease_wait", "pixel_fetch", "upload",
           "denoise_prepare", "denoise_analysis", "render", "draw_complete",
           "development", "store", "stored_screen_preview_draw")

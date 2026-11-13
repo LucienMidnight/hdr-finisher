@@ -13,7 +13,7 @@ const fixture = path.join(root, "tests", "fixtures", "library_photo.png");
 for (let i = 0; i < 4; i++) fs.copyFileSync(fixture, path.join(folder, `plain-${i}.png`));
 fs.copyFileSync(fixture, path.join(unvisited, "far.png"));
 // Two JPEGs with camera details, written by the project's own Python.
-execFileSync(path.join(root, ".venv", "Scripts", "python.exe"), ["-c", `
+execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(), ["-c", `
 import sys
 from PIL import Image
 from PIL.TiffImagePlugin import IFDRational as R

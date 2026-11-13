@@ -7,7 +7,7 @@ const rgb=path.join(folder,'authored.png'),cropped=path.join(folder,'cropped.png
 (async()=>{
  let browser;
  try{
-  execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+  execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 from PIL import Image
 import numpy as np,sys
 y,x=np.mgrid[:1800,:3200]
@@ -99,7 +99,7 @@ p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo'
    }finally{w.localStorage.removeItem('library-gpu-raw');}
   },cpuPhoto);assert.ok(cpu,'CPU fallback displays native detail');
   const input=path.join(folder,'pixels.json');fs.writeFileSync(input,JSON.stringify(rows));
-  const metrics=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+  const metrics=JSON.parse(execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import sys,json,numpy as np,colour
 sys.path.insert(0,'backend')
 from hdr_finisher.delivery_colour import compare_finished_pixels

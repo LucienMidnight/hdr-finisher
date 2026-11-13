@@ -23,7 +23,7 @@ const parse = () => fs.readFileSync(path.join(profile, 'logs/backend.log'), 'utf
 (async () => {
   const env = { ...process.env, HDR_FINISHER_USER_DATA_DIR: profile };
   delete env.ELECTRON_RUN_AS_NODE;
-  const app = await _electron.launch({ executablePath: packaged ? path.join(root, 'dist-electron/win-unpacked/HDR Finisher.exe') : require('../desktop/node_modules/electron'),
+  const app = await _electron.launch({ executablePath: packaged ? require('../tools/lib/platform.cjs').packagedExecutable() : require('../desktop/node_modules/electron'),
     args: packaged ? [] : [path.join(root, 'desktop')], env, timeout: 180000 });
   let page;
   const samples = [], errors = [];

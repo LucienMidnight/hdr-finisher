@@ -6,7 +6,7 @@ const review=path.join(root,"output/graceful-grades"),photo=path.join(folder,"ph
 if(!fs.existsSync(photo))throw Error("Place a small reusable real-photo copy at "+photo);
 fs.mkdirSync(review,{recursive:true});
 const original=fs.readFileSync(photo);
-execFileSync(path.join(root,".venv/Scripts/python.exe"),["-c",`
+execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),["-c",`
 import json,sys
 from pathlib import Path
 from hdr_finisher.sessions import SessionStore

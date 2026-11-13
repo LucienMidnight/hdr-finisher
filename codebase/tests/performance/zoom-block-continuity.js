@@ -117,7 +117,7 @@ const edits = opt('--set','').split(',').filter(Boolean).map(item => {
       assert.equal(frames[0].format,frames[1].format);
       const metadata=output.replace(/\.json$/,'')+`-${lane}-${comparisonZoom}-frames.json`;
       fs.writeFileSync(metadata,JSON.stringify({lane,frames},null,2)+'\n');
-      const result=JSON.parse(execFileSync(path.resolve('.venv/Scripts/python.exe'),['tests/performance/zoom_block_compare.py',metadata],{encoding:'utf8',maxBuffer:1024*1024}));
+      const result=JSON.parse(execFileSync(require('../../tools/lib/platform.cjs').pythonExecutable(),['tests/performance/zoom_block_compare.py',metadata],{encoding:'utf8',maxBuffer:1024*1024}));
       report.results.push({lane,zoom:comparisonZoom,frames,...result});c.write(output,report);
       console.log(JSON.stringify({lane,zoom:comparisonZoom,blocks:result.blocks,luminanceP99:result.tone.luminance.p99,
         oklabP99:result.tone.oklab.p99,passed:result.passed}));

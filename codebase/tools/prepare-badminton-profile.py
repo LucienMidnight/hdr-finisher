@@ -3,6 +3,10 @@
 No RAW copies, cache links, original cache touches/publication, or photo writes.
 The runner may mutate only the disposable copies. Its owner removes the profile.
 """
+import sys as _tool_sys
+from pathlib import Path as _ToolPath
+_tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[1] / 'tools'))
+from lib.machine_settings import photos_path, desktop_profile, desktop_cache
 import json
 import os
 from pathlib import Path
@@ -17,8 +21,8 @@ from hdr_finisher.library_live import quality, equivalent_qualities, recipe, _qu
 from hdr_finisher.library_pictures import picture_key
 from hdr_finisher.library_grades import grade_key
 
-folder = Path('D:/Photos/2026/20261017 badminton')
-cache = Path(os.environ['LOCALAPPDATA']) / 'HDR Finisher/Cache'
+folder = Path(photos_path('D:/Photos/2026/20261017 badminton'))
+cache = desktop_cache()
 output = ROOT / 'output/badminton'
 output.mkdir(parents=True, exist_ok=True)
 profile = Path(tempfile.mkdtemp(prefix='hdr-finisher-test-badminton-'))

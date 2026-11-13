@@ -8,7 +8,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('nod
 const {chromium}=require('playwright');const {execFileSync}=require('node:child_process');
 const {photosPath}=require('./helpers/photos-root.cjs');
 const local=process.argv.includes('--local'),keep=process.argv.includes('--keep');
-const python=path.resolve(__dirname,'../.venv/Scripts/python.exe'),env={...process.env,PYTHONPATH:path.resolve(__dirname,'../backend')};
+const python=require('../tools/lib/platform.cjs').pythonExecutable(),env={...process.env,PYTHONPATH:path.resolve(__dirname,'../backend')};
 const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.lane===state.currentView
  &&state.acceptedPresentation.generation===state.previewGeneration[state.currentView]&&viewerState().status==='ready';
 (async()=>{

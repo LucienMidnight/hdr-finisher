@@ -9,10 +9,10 @@ const only=process.env.HDR_FINISHER_PIXEL_ONLY;
 const photos=fs.readdirSync(folder).filter(n=>!n.endsWith('.hdrf')&&!n.startsWith('.')).map((n,index)=>({index,photo:path.join(folder,n)})).filter(p=>!only||only.split('|').includes(path.basename(p.photo)));
 const profile=fs.mkdtempSync(path.join(root,'output/pixel-test-native-')),configPath=path.join(profile,'quick-config.json');
 fs.writeFileSync(configPath,JSON.stringify({pixelCapture:{phase,edge,out,photos,resume:process.argv.includes('--resume')}}));
-fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,width:2560,height:1440}));
+fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,...Object.fromEntries(['width','height'].map((k,i)=>[k,Number(require('./lib/platform.cjs').machineSettings().windowSize.split('x')[i])]))}));
 const env={...process.env,HDR_FINISHER_USER_DATA_DIR:profile,HDR_FINISHER_QUICK_LIBRARY_CONFIG:configPath};delete env.ELECTRON_RUN_AS_NODE;
 const desktop=path.join(root,'desktop'),app=spawn(require(path.join(desktop,'node_modules/electron')),[desktop],{cwd:desktop,env,windowsHide:true,stdio:'ignore'});
-const kill=()=>{try{execFileSync('taskkill',['/PID',String(app.pid),'/T','/F'],{stdio:'ignore',timeout:5000});}catch{}};
+const kill=()=>{try{require('./lib/platform.cjs').stopTree(app.pid);}catch{}};
 const deadline=setTimeout(()=>{console.error('Pixel capture hard timeout',profile);kill();process.exit(1);},900000);
 let last='';const poll=setInterval(()=>{
  try{

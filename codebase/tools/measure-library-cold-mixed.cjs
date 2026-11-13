@@ -27,14 +27,14 @@ if(singleFile){
  if(fs.existsSync(original+'.hdrf')){fs.renameSync(original+'.hdrf',singleFileRestore.temporary+'.hdrf');singleFileRestore.sidecar=true;}
 }
 if(hdrTest){
- const original='D:/Photos/HDR Test Images';
+ const original=require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images');
  for(const name of fs.readdirSync(original,{recursive:true})){
   const src=path.join(original,name),dst=path.join(photos,name);
   if(fs.statSync(src).isDirectory())fs.mkdirSync(dst,{recursive:true});
   else if(!fs.existsSync(dst)){fs.mkdirSync(path.dirname(dst),{recursive:true});fs.copyFileSync(src,dst);}
  }
 }
-const source=hdrTest?photos:phase0?photos:aceh?'D:/Photos/2017/Aceh-Wedding/Pesta':'D:/Photos/2023/11';
+const source=hdrTest?photos:phase0?photos:aceh?require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos/2017/Aceh-Wedding/Pesta'):require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos/2023/11');
 let names=fs.readdirSync(source).filter(n=>/\.(heic|jpg|png|arw)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
 if(phase0||hdrTest)names=fs.readdirSync(photos,{recursive:true}).filter(n=>/\.(dng|jxl|raf|tiff?|jpg|jpeg|png|arw|avif|heic|cr2|cr3|orf|rw2|nef|exr|hdr|pfm)$/i.test(n)).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
 let junk=[];
@@ -94,7 +94,7 @@ const before=hashProjects(require('../tests/release/drivers.json').protectedProj
   page.on('request',r=>{if(r.url().includes('/api/library/'))requests.set(r,Date.now());});
   const ended=r=>{if(requests.has(r)){report.network.push({url:r.url(),start:requests.get(r),end:Date.now(),failure:r.failure()?.errorText});requests.delete(r);}};
   page.on('requestfinished',ended);page.on('requestfailed',ended);
-  observer=spawn(path.join(root,'.venv/Scripts/python.exe'),[path.join(__dirname,'measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID,'.25'],{windowsHide:true});
+  observer=spawn(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'measure-library-processes.py'),process.env.HDR_FINISHER_ELECTRON_MAIN_PID,'.25'],{windowsHide:true});
   observer.stdout.on('data',chunk=>{
    pending+=chunk;let at;while((at=pending.indexOf('\n'))>=0){const line=pending.slice(0,at);pending=pending.slice(at+1);if(!line)continue;
     const sample=JSON.parse(line);memory.sample(sample,[...liveGrants.values()]);

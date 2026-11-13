@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),path=require('node:path'),fs=require(
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),args=process.argv.slice(2),idx=args.indexOf('--output');
 const output=path.resolve(idx<0?'output/performance/brush-regional-erase-reference.json':args[idx+1]);
-const cases=JSON.parse(execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+const cases=JSON.parse(execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import base64,json,numpy as np
 from backend.hdr_finisher.models import MaskExpression,GeometryAdjustments
 from backend.hdr_finisher.local_adjustments import compile_geometry_fixed_mask
@@ -56,7 +56,7 @@ print(json.dumps(cases))
   const error=await renderer.device.popErrorScope();if(error)throw Error(error.message);return results;
  },cases);
  fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,JSON.stringify({results},null,2)+'\n');
- execFileSync(path.join(root,'.venv/Scripts/python.exe'),['-c',`
+ execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import base64,json,sys,numpy as np
 from backend.hdr_finisher.models import MaskExpression
 from backend.hdr_finisher.mask_softness import gpu_bitmap_soft_verdict

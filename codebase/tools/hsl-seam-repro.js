@@ -10,7 +10,7 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
  await page.goto(process.env.HDR_FINISHER_URL||'http://127.0.0.1:8765');
  await page.waitForFunction(()=>state.gpuPreview?.available,null,{timeout:30000});
  const photo=path.join(out,'IMG_0114.CR2');
- if(!fs.existsSync(photo))fs.copyFileSync('D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2',photo);
+ if(!fs.existsSync(photo))fs.copyFileSync(require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2'),photo);
  await page.evaluate(async photo=>{const grant=await desktop.grantSourcePath(photo);const c=await projectIo.createImportJob(fetch,{grant:grant.grant});let job=c.payload;
   while(!['ready','error','cancelled'].includes(job.state)){await new Promise(r=>setTimeout(r,150));job=(await projectIo.pollImportJob(fetch,job.job_id)).payload;}
   if(job.state!=='ready')throw Error(JSON.stringify(job));await activateDesktopSession((await projectIo.fetchSession(fetch,job.session_id)).payload.session,'');activateWorkflowTab('grade');},photo);
