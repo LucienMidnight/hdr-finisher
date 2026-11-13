@@ -1,5 +1,76 @@
 # Module PRD: Export and Proof
 
+## November 14: encoded HDR target and delivery startup recovery
+
+The November 14 Mac export brief makes an enabled Highlight Compression
+target mandatory after encoding, for export and reduced/full-size Proof on
+both CPU and GPU. This supersedes the October 18–19 optional-check and
+export-with-a-note decisions below. Every checked file is decoded and its
+brightest BT.2020 channel must be at or below the target. The former 20%
+input-headroom shortcut cannot establish that, so it is removed. Existing
+local correction, encoder settings and correction margins are unchanged;
+an uncorrectable or non-finite result fails delivery and never replaces an
+existing destination. SDR pixels and already-compliant encoded bytes stay
+unchanged. With Highlight Compression bypassed, the existing optional
+Guarantee HDR peak setting still enables the 10,000-nit codec-limit check.
+
+The reported 1038–1437-nit readings were real decoded, reduced Proof files,
+not a readback-scale mistake. The old diagnostic deliberately excused them,
+measured luminance instead of the brightest channel, and allowed 1% + 1 nit.
+It now enforces the exact channel ceiling at both scales. On this MacBook,
+the six-case JPEG Proof matrix lands below 1000 nits with no exceptions.
+The base's synthetic default JPEG and JPEG XL exports also exceeded their
+target. Thus this is a correction of a real output violation, including on
+the PC if its encodes overshoot; it is not a Mac-specific shader change.
+
+GPU delivery is supported on this Mac: the unchanged base smoke already
+completes GPU and forced-CPU export/Proof, including watermarks. A separate
+startup defect is reproduced: asking before the hidden worker's first
+heartbeat permanently caches its unavailable/CPU decision for that grade.
+That pre-submission unavailability is no longer cached; a later request can
+use the worker after startup. Submitted GPU failures still keep their CPU
+decision and are not retried. Broker regressions cover both cases. No GPU
+budget, shader, retry count, encoder or gain-map formula changes.
+
+The fix is committed as `9bfea9e5`. Fast suites pass: Node 951 passed,
+one skipped; Python 3,323 passed, 145 skipped, one xpassed. The three real
+HDR codecs pass reduced/full-size Proof ceiling regressions and preserve
+already-compliant encoded bytes. All 22 non-helper export/Proof inventory
+drivers were attempted on final code, including the separate local-HSL
+follow-up: 23 invocations, 12 passes, eight failures/fixture blocks, three
+interrupted or time-limited checks. Every non-pass was also attempted on
+unchanged `87b91385e19a`; the same assertions, fixture gaps or bounded
+non-completion reproduce. No check or tolerance was weakened to pass.
+
+The final six-case reduced JPEG Proof peaks are 977.461–994.067 nits,
+with zero pixels above 1000 nits. Global/local HSL real-RAW CPU and GPU
+exports pass their exact ceilings and full-size Proof identity; the HSL
+integration check also passes its existing perceptual limits and ceiling.
+GPU/CPU watermark identity, framing, hue-mask delivery, export browser,
+presets, Proof size, Library export menu and GPU Edge-colour checks pass.
+The three protected project hashes remain unchanged. Detailed blockers and
+bounded checks are in `docs/known-limitations.md`; compact evidence is
+`codebase/output/mac-export/validation-summary.json`.
+
+This is not full release qualification. No sampled final delivered file
+exceeded its target, but the missing fixtures and incomplete long drivers
+prevent claiming every real-project path is qualified. The ordinary Library
+smoke also remains unqualified (6/33 photos; 399 ms frame gap). PC hardware
+checks are still required; no shader or rendering maths changed, and only
+an encode that actually violates its active target is intentionally corrected.
+
+### Decisions for Steve
+
+- Transfer `saved-grades/DSC07060.ARW.hdrf` and
+  `local-test-media/inputs/Affinity_DSC06898_DisplayP3_Linear_32f.exr`,
+  and approve a separate read-only test-fixture/source-path repair for the
+  Windows-linked real project. Safest overnight choice: do not substitute
+  a different grade or save over a protected project.
+- Approve a longer follow-up for the preview/export and real-RAW Edge-colour
+  checks, then qualify the Windows paths. Validation stopped at roughly the
+  standing slow-test allowance rather than spending more unattended time;
+  these paths remain unqualified, not passed.
+
 ## November 12: text and rendition-test watermarks
 
 Export settings now carry a text watermark (off by default), corner, size as
@@ -145,7 +216,7 @@ into a queue whose worker has stopped. Completed files remain available.
 Rendering, encoding, metadata and Proof are unchanged. Result-based Python
 regressions reproduce both failures and cover the corrected queue behavior.
 
-Audit follow-up for the release coordinator: `_peak_ceiling` still
+Historical audit, resolved by the November 14 brief above: `_peak_ceiling` still
 requires `guarantee_hdr_peak`, and `encode_within_ceiling` still delivers an
 uncorrectable overshoot with a note. Tests explicitly expect this behavior.
 This conflicts with the sprint's mandatory encoded HDR target requirement;
@@ -468,8 +539,8 @@ Settings rules (from v1.2 section 5, still in force):
 | **Approved GPU architecture:** a hidden Electron renderer reuses Grade's renderer and shaders. Export resize and output sharpening join the shared GPU graph, after the creative look and before the final highlight limiter. Preset versions that share rendering reuse the same finished lanes. | Steve, 2026-10-18 |
 | **Scheduling:** Grade first, then visible Library pictures (top-left first), then background export. GPU work yields between bounded submissions and shares one memory budget. Closing the last visible window cancels a batch cleanly; finished files stay. | Steve, 2026-10-18 |
 | **Perceptual limits** for GPU against CPU, Proof against export, and Library picture against export: SDR ΔE 2000 and HDR ΔE ITP (BT.2124), per image and per lane, mean below 1.0, 99.9th percentile at or below 3.0. No per-pixel maximum. Include grain and local adjustments. | Steve, 2026-10-18 |
-| **HDR ceiling:** Guarantee HDR peak is optional per preset version, HDR formats only, off by default. Off encodes once without a decoded peak check. On checks near-target files and applies local correction; any remaining overshoot is delivered with its nits-over-target note. Library pictures skip the check. | Steve, 2026-10-18 |
-| Enabled highlight targets are mandatory after encoding for export, Proof and saved Library pictures. Decode every file, correct local overshoots, reject any file still over target. With Highlights off, the optional per-version codec check enforces 10,000 nits. This supersedes the optional-target and deliver-anyway decision. | Steve, 2026-10-19 |
+| **HDR ceiling:** enabled Highlight Compression always enforces its target after encoding, on CPU/GPU export and reduced/full Proof. Decode every checked file, correct locally and reject an uncorrectable result. The optional checkbox additionally checks the codec ceiling with Highlights bypassed. Supersedes October 18–19 opt-in/note policy. | Mac export brief, 2026-11-14 |
+| Enabled highlight targets are mandatory after encoding for export, Proof and saved Library pictures. Decode every file, correct local overshoots, reject any file still over target. With Highlights off, the optional per-version codec check enforces 10,000 nits. This supersedes the optional-target and deliver-anyway decision. | November 14 Mac export brief, 2026-11-14 |
 | Each export result records which renderer made it and any fallback reason. | Steve, 2026-10-18 |
 | GPU failure rule: each GPU route makes one attempt, then uses its CPU fallback. A second GPU try only for a temporary failure outside the work (preemption, memory held by other work, device lost or renderer restarting, contention timeout). A result that fails a validity or range check, a compile or validation error, a job too large for the card, or no GPU goes straight to the CPU. Master PRD philosophy 3, "When a GPU attempt fails". | Steve, 2026-11-06 |
 | The Export page stays and grows. Two routes: the Export page and Quick export… with a preset. It must leave room for print settings and watermarks. | Steve, 2026-10-11 |
@@ -501,13 +572,12 @@ Settings rules (from v1.2 section 5, still in force):
   numbered names on collisions, per-file results. Exported and "Edited
   since last export" states feed the Library.
 - Proof: reduced size (1,200 px) or full size, through the export pipeline.
-- Guarantee HDR peak is back in each preset version's Advanced settings for
-  HDR formats only, off by default (Steve restored the October 18 decision,
-  October 19). Off encodes each file once with no decoded peak check. On
-  skips pictures whose finished peak is at least 20% below target, otherwise
-  checks the decoded file and applies the existing local correction. A file
-  still over target is delivered with a note stating how many nits over.
-  With Highlights off, the enabled option uses the 10,000-nit codec ceiling.
+- Highlight Compression's target is mandatory after encoding on every HDR
+  export and Proof path. The decoded brightest channel is checked even when
+  the source is well below the target; uncorrectable overshoots fail without
+  replacing an existing file. Guarantee HDR peak remains in Advanced
+  settings, off by default, and additionally checks the 10,000-nit codec
+  ceiling when Highlights are bypassed (November 14 brief).
   Library pictures never run this check; cache v7 refreshes checked pictures.
   Proof carries the same option and includes it in its cache identity; changing
   it invalidates the current Proof. No encoder or gain-map maths changed.

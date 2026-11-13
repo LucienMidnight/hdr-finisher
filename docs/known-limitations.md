@@ -1,5 +1,85 @@
 # Known Limitations and Support Status
 
+## November 14: Mac encoded HDR ceiling and GPU delivery
+
+Baseline investigation confirms that the 1038–1437-nit parity readings are
+real encoded reduced Proof files against a 1000-nit target. The diagnostic
+previously excused reduced Proof overshoots. Default synthetic JPEG and
+JPEG XL export can overshoot too; this is not only a diagnostic error.
+
+Enabled Highlight Compression now always checks the decoded brightest
+BT.2020 channel and uses the existing local correction. Uncorrectable files
+are rejected without replacing the destination. The diagnostic uses the
+same exact ceiling at both scales, without its old 1% + 1-nit allowance.
+No shader, budget, codec formula or tolerance is relaxed. Already-compliant
+files and SDR pixels are unchanged; correcting an actual PC-path violation
+is intentional under this brief. Windows hardware checks remain pending.
+
+The Mac's GPU worker works on the unchanged base and final code. A broker
+regression establishes a startup race: a request before the worker heartbeat
+could cache CPU-only delivery indefinitely for unchanged settings. That
+pre-submission unavailability is no longer cached. Actual failed GPU jobs
+still fall back once and are not retried. The previously reported smoke
+failure is not evidence of unsupported Mac hardware; it did not reproduce
+in the unchanged-base real-app smoke. The existing stricter HDR perceptual
+p99.9 miss (3.377 against 3) does reproduce and is unchanged.
+
+Final code `9bfea9e5`: Node 951 passed / one skipped; Python 3,323 passed /
+145 skipped / one xpassed. All 22 non-helper export/Proof catalog entries
+were attempted, plus local HSL: 23 invocations, 12 passed, eight failed or
+fixture-blocked, three stopped/time-limited. Every non-pass has an
+unchanged-base attempt with the same failure or bounded non-completion.
+The five catalog helpers are covered only through their parent drivers; an
+incomplete parent does not qualify its helpers. The protected project
+hashes are unchanged.
+
+Ceiling results: six reduced JPEG Proof cases are 977.461–994.067 nits,
+zero above 1000. Full-size real-RAW HSL GPU/CPU deliveries and full-size
+Proof identity pass (neutral/global/local decoded peaks 941.168–987.561
+nits); HSL integration passes at 989.669 nits. Real JPEG, AVIF and JPEG XL
+unit regressions cover default-option enforcement, reduced/full-size Proof,
+unchanged compliant bytes and refusal to replace a destination with an
+uncorrectable file. No sampled final delivered file exceeds its target.
+
+Unchanged-base blockers/non-passes (not repaired in this task):
+- `gpu-delivery-ceiling.js` and `gpu-delivery-repeat.js` lack
+  `output/test-photos/saved-grades/DSC07060.ARW.hdrf` on both trees.
+- `proof_export_identity.py` and `proof-grade-diagnostic.js` cannot resolve
+  the protected project's stored Windows source path on this Mac. The
+  project and its source were not rewritten.
+- `retouch-delivery.js` expects GPU Retouch but receives CPU; the Tone Zones
+  and Color/Desat delivery drivers fail their hidden-renderer assertion.
+  The same failures occur before the fix. The actual GPU/CPU delivery smoke,
+  HSL and framing checks do work on this Mac.
+- `batch-export-ui.js` times out waiting for `#bounded-help-tooltip` on both
+  trees, before delivery qualification.
+- `gpu-denoise-measurement.js` lacks
+  `local-test-media/inputs/Affinity_DSC06898_DisplayP3_Linear_32f.exr` on both
+  trees and hangs after reporting that error. Final run interrupted; base
+  run bounded after reproducing the same error. Neither is a pass.
+- `preview-export-compare.js` does not finish within the same 86-second
+  cap on base or final. `edge-colour-raw.js` does not finish within the
+  remaining 52–54-second caps. These are incomplete checks, not established
+  output regressions. Longer follow-up requires Steve's approval under the
+  overnight slow-test allowance; nothing was relaxed.
+
+The default locked 90-second Library smoke shows 6/33 photos and a 399 ms
+frame gap against 250 ms; it is not accepted. No sustained memory violation
+is reported. Incomplete mixed-folder coverage already exists in the Mac
+baseline notes; the new gap was not investigated or re-run. Steve should try
+Library before more timing work.
+
+Decisions for Steve: transfer the two named private fixtures, approve a
+separate read-only fixture/source-path repair and longer incomplete checks,
+then run Windows export/Proof qualification. Safest overnight choice was to
+leave unrelated routes, protected projects and limits alone. Logs, base
+comparisons and compact ceiling evidence:
+`codebase/output/mac-export/validation-summary.json` and adjacent logs.
+Scratch output began at 6.1 GB and ends at 6.3 GB, below the 100 GB limit.
+Float readbacks, redundant captures, base archives and finished disposable
+Electron profiles were removed; compact logs/JSON and reduced encoded Proof
+files remain. Shared source photos and protected projects were not changed.
+
 ## November 13: POSIX cache-location fallback (reported; unchanged)
 
 The standalone Python backend falls back to its runtime directory when

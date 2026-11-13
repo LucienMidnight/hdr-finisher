@@ -1,5 +1,21 @@
 # Performance table
 
+November 14 Mac export-ceiling fix (`9bfea9e5`; MacBook Neo, Apple A18
+Pro, 8 GB, 6 cores; 1408x794 points; unpackaged Electron, shared GPU lock;
+other agents active, uncontrolled available memory). These are observations,
+not a before/after speed comparison or timing qualification:
+
+| Action | Observed | Conditions / result |
+| --- | --- | --- |
+| Balanced Rock full-size Ultra HDR export, neutral / Global HSL / local hue-mask grades | GPU 11.5–25.0 s; forced CPU 19.6–50.6 s | `IMG_0114.CR2`, 1000-nit target, quality 95, 4:4:4, full gain map, no sharpening; already-open photo; request-to-export response, excluding import/Proof. Global and local drivers pass their existing relative perceptual checks, exact decoded ceiling and full-size Proof identity. |
+| Synthetic GPU/forced-CPU export smoke | GPU 1.052 s; forced CPU 0.041 s | Tiny fixture, first GPU submission includes startup; backend-reported total, not user action-to-screen. GPU and CPU full-size Proof identity and watermark checks pass; not representative speed evidence. |
+| Synthetic Edge-colour GPU kernel, 400x400 | 0.121–0.406 s | Expand 0, 0.5, 3; existing parity and rejected-invalid-result CPU fallback pass. Kernel time only, not action-to-screen; no optimisation or controlled before/after comparison. |
+| Mixed Library 90-second smoke | First picture 0.5 s; 6/33 pictured; longest frame gap 399 ms | Incomplete coverage and gap above the unchanged 250 ms limit; no sustained memory violation. App peak 3.891 GB; independent charged-process peak 4.123 GB settles within the existing grace period. Not Library acceptance; ask Steve to try it before another timing run. |
+
+Evidence: `codebase/output/mac-export/final/` and
+`codebase/output/quick-library-check/mac-export-ceiling/report.json`.
+No new speed claim, tolerance or budget is introduced.
+
 November 14 macOS file-command smoke (working tree based on `696a3fd6`,
 `p1/mac-file-commands`; MacBook Neo, A18 Pro, 8 GB, 6 cores; 1408x794 points;
 unpackaged plain Electron under the shared GPU lock; disposable synthetic
