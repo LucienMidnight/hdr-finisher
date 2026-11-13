@@ -1,0 +1,99 @@
+The preview ceiling is real, predates Film Look, and needs a change across several stages to remove it.
+Keep the known limit for now; a final-pass-only precision change is insufficient.
+The evidence favours a machine or driver fault for Edge colour, but does not independently prove faulty VRAM.
+The November retry fixes are present, with remaining exceptions described below.
+This investigation changes documentation only; no GPU run, renderer change, push or installer was made.
+
+# A3 — Preview/GPU research, November 13, 2026
+
+Baseline: main `b2ce850da62ae8c2c3480b78e718d36490119d1e`, branch `research/a3-preview-gpu`. Paths below are repository-relative unless stated otherwise. **Read in code** includes document/log inspection; historical measurements are explicitly attributed rather than claimed as fresh runs. Local untracked AGENTS.md was read from the main checkout because it is absent from this worktree. Its Still-strict, tolerance and exact HDR-ceiling requirements apply.
+
+## 6. Extreme HDR film preview
+
+**Cause — read in code.** This is an intermediate-storage ceiling, not half-precision arithmetic throughout the shaders. `codebase/frontend/webgpu-preview.js:7101–7173` allocates Direct base, film, finish, local, optional detail A/B and spatial A/B as rgba16float. Tile graphs allocate base, local, detail scratch/result, film, finish, spatial A/B and optional denoise-resolved in that format (`:2018–2065`). Source format is independent: rgba32float input does not protect subsequent writes. Stage pipelines explicitly target half-float (`:6875–7043`): base; local/candidate and local Detail; global Detail; film response; spatial extract/blur; finish; lens extract/blur/accumulation; peak-candidate locals and film stages. Scope and output-picture targets are also half-float (`:682–696`); masks are r16float and HSL selection fields rgba32float (`:6881–6887`). Masks are bounded coverage, not the HDR RGB bottleneck.
+
+**Read in code.** The first unencoded vulnerable write is `baseFragmentMain` returning `renderHdrBase` with alpha 1 (`codebase/frontend/webgpu-shaders.js:1231–1240,2589–2610`) into baseTexture. Exposure and grading can already exceed range here, before Film Look. Locals can introduce another over-range write. `sampleFilm` reads raw RGB (`:1513`); lens/scatter returns raw RGB (`:2709–2717`). Later Neutral film, scanner and Structure writes use `storeFilm` and matching RGB-times-alpha readers (`:1913–1930,2023–2035,2721,2791–2798`). That power-of-two scale preserves late ideal-Neutral highlights but cannot recover earlier lost channel values. `filmHalfPrecision` explicitly quantizes even before texture storage (`:1986–2021`), so merely changing attachment formats leaves that rounding active. Peak reduction and blended lens targets also require separate review; blindly converting every target is not a safe patch.
+
+**Measured historically, not rerun.** `docs/known-limitations.md:258–292` records pre-rebuild e4274ae, Film off, Exposure +8, compression off: scene peak 262,144, 297,722 channel samples at 65,504, no NaN/Inf; displayed mean 2.936/p99.9 255 levels. The stacked Neutral case reaches approximately 4,848,818 CPU scene units, added mean 3.201/p99.9 250. Individual controls on the peak-16 ramp remain below the ceiling. `docs/product/modules/film-look.md`, Phase 3 range validation, records that final-pass float32 alone still failed (0.128/22). Exact first failing attachment for that stacked fixture has NOT been measured here: the allocation/reader boundary is established, but per-pass captures are still needed to distinguish upstream saturation from later quantization amplification. Do not describe that experiment as completed.
+
+**Options compared — memory, speed and effort are estimated.** Each upgraded RGBA texture adds 8 bytes/pixel. At 3840×2160 that is 63.3 MiB; four/six full-grid textures add 253/380 MiB; at 42 MP six add about 1.88 GiB. Two quarter-linear spatial targets add only 1/8 of one full-grid increment. These are incremental allocations, excluding source, tiles, retained caches and driver overhead. The automatic policy default is 2 GiB, with detected dedicated-memory and limited-adapter rules; Grade, Library and delivery share admission (`docs/product/modules/memory-and-caches.md:758–775`). A large Direct graph therefore may no longer fit; tile estimates/accounting must change within the existing budget, not increase it.
+
+| Change | VRAM/memory | Speed | Output risk | Verification drivers | Agent-hours |
+|---|---|---|---|---|---|
+| Float32 across vulnerable RGB stages | +8 B/pixel per target; six 42 MP targets nearly consume 2 GiB extra | Doubles those attachments' traffic; frame-rate cost unknown, not necessarily 2× | Lowest mathematical distortion, but format, filtering, blending, explicit quantization and budgeting changes | film-stock-parity, tiled-film-parity, webgpu-shader-compilation, full-tier-preview; delivery ceiling/Proof checks if shared renderer touched | 20–40 |
+| Extend scaled encoding / pre-exposure; log encoding alternative | Alpha scale can keep texture bytes unchanged; graph metadata may grow | Extra encode/decode; unknown frame cost | Decode before interpolation, blur, thresholds and nonlinear grading; log-space interpolation is wrong. Signed values and alpha's spatial meaning complicate it | Same drivers plus signed HDR, locals, spatial seams and encoded-neighbour interpolation | 30–60 |
+| Hue-preserving soft clamp before vulnerable writes | No added target | A few arithmetic operations; unmeasured | Intentional brightness loss; later nonlinear colour stages can still change hue. Preview differs from delivery; previous channel cap failed badly | film-stock-parity, tiled-film-parity, preview/export perceptual and HDR ceiling cases | 8–16 |
+| Keep known limit | No change | No change | Existing extreme-preview misrepresentation persists | No new run needed for documentation | 0–1 |
+
+**Recommendation.** Keep the recorded limit now. If Steve encounters it on a real grade, prefer a bounded float32 prototype covering the first vulnerable stage onward over a preview-only tone change. Compression off plus extreme brightness/stacking is the documented trigger; its frequency in real photos is unknown, not measured. No outside-user incidence data exists. This is plausible for bright EXR work, but not evidence of a common photographic problem. A soft clamp is poor value because it hides a different picture. Encoding is a substantial renderer project, not a small Film Look fix.
+
+All active options can leave CPU export/Proof equations untouched, but this frontend renderer also serves GPU delivery: preview-only isolation must be demonstrated. Format changes need compatible pipeline targets; encoding may require parameter-layout changes. Do not alter pinned peak shaders, layout, blur limits or budgets casually. Any such change invokes Still strict and every applicable check.
+
+**Test plan.** First capture base/local/pre-negative/post-negative/scanner/finish extrema on both existing triggers, without changing maths. Then one selected prototype, ordinary and extreme film parity, Direct/Tiled and signed/local/spatial cases. Run fast checks and focused Library smoke for implementation; add all delivery/Proof and pinned-area checks if shared code changes. No broad sweep for this report.
+
+**Proposed tolerance.** Keep existing film mean 0.1/p99.9 2 display-level limits; propose finished perceptual mean <1 and p99.9 =3 alongside them, not replacing pins. Propose =5% whole-interaction slowdown and no budget exceedance: avoid buying a rare correction with noticeable everyday latency. Exact finished HDR compression ceiling remains mandatory after encoding.
+
+**Confidence.** High on storage topology and general cause; medium on best repair; low on trigger frequency and performance costs. Exact stacked-case first-loss stage remains open.
+
+## 9. Random Edge colour pixels
+
+**Cause — read in code and logs.** Hardware/driver instability is the leading explanation, not confirmed hardware diagnosis. October 24 notes record different results on identical replay and Steve's Mac pass (`docs/product/modules/import-and-raw.md:661–684`). Main-checkout output has November 11 release logs with 6 and 3 rejected pixels under `release-checks/2026-11-11T12-43-34-299Z-ba565c5c798c5841005e/logs/tests__edge-colour-raw.js.*.log:8`; the later `2026-11-11T15-47-37-460Z-65ec41052a69f51c0c3b` logs contain 1 and 4, not just the three counts in the release summary. October 28 logs also contain 63/65 and 7/2. These are rejection counts, not coordinates or proof of VRAM bit faults.
+
+**Read in code.** `codebase/frontend/highlight-edge-colour.js:17–71`: scalar float32 storage, ceil-divided 16×16 dispatch, x/y guards, 1024-row bands, queue completion after each submit. Scan threads all reach workgroupBarrier, including out-of-image lanes; m/n use atomics. Allocators create new buffers, not recycled application buffers; readback copies only declared plane bytes and awaits mapAsync (`codebase/frontend/gpu-delivery.js:96–123`; `library-gpu-raw.js:694–701,754–759`). Uniform buffer is per reconstruction. No confirmed missing barrier, shared-uniform race, uninitialised application write or padding read was found. Blur coordinates clamp to grid bounds (`highlight-edge-colour.js:78–118`). Releasing ratio twice is harmless in the inspected Set-based release callbacks. This is static review, not a driver-conformance proof.
+
+**Read in code: separate safety concern.** The input scan counts non-finite pixels, but processing continues; output rejection is conditional on `input.rejected===0` near the end of `highlight-edge-colour.js`. Thus non-finite input does not itself force immediate rejection in this function. Backend finiteness checking (`highlight_edge_gpu.py:85–86`) provides another guard, but a finite damaged result may escape. Propose immediate failure after a bad input scan. This is not established as the cause of finite-input random failures.
+
+**Read in logs: other routes.** App log `C:/Users/Steve/AppData/Roaming/hdr-finisher-desktop/logs/backend.log:3412231,3435066` records general Library `/api/library/live-developed` invalid pixels on DSC07208.ARW and DSC01226.ARW, without an Edge-specific error. Main output `cold-mixed/guard-hdr-final-two/backend.log:4453–4477` records the same general rejection for DSC01204.ARW. These support a wider failure domain, but do not identify which upstream kernel failed. App log `:4910720` records Edge input magnitude 1.0859780150468808e+38; `:4991182` records 127 rejected output pixels. No located record contains coordinates, so repeat positions cannot be determined; CPU-fallback proxy files cannot reveal the rejected GPU locations.
+
+**Measured inventory, November 13.** Read-only `Get-CimInstance Win32_VideoController` reports NVIDIA GeForce RTX 4070 Ti driver 32.0.16.1742 and AMD Radeon Graphics driver 32.0.21045.16010. This does not establish which adapter Electron selected. WMI AdapterRAM is not used to estimate VRAM. `Get-Command *vram*,*occt*,*memtest*` found no command; this is not an exhaustive installed-program inventory.
+
+| Change/probe | VRAM/memory | Speed | Output risk | Verification drivers | Agent-hours (estimated) |
+|---|---|---|---|---|---|
+| Keep guard and immediate CPU fallback | Existing reservation | Existing fallback cost | Plausible finite corruption remains undetectable | edge-colour-raw; gpu-edge-colour | 0 |
+| Diagnostic identical replay with stage checksums and first bad coordinates | Serial replay reuses peak allowance; compact logs | Approximately doubles kernel work, diagnosis only | Never accept a second success after a rejection | gpu-edge-colour with frozen inputs; odd dimensions and band boundaries | 4–8 |
+| Reject bad input scan immediately | Negligible | Saves wasted work | Conservative CPU fallback; validate signal propagation | gpu-edge-colour; test_highlight_edge_gpu; Library invalid-result routing | 2–4 |
+| Dedicated VRAM pattern test, if a suitable existing tool is located | Most free VRAM during exclusive test | Diagnostic only | Does not certify app correctness; a pass cannot clear hardware | Tool's documented patterns plus app replay on known-good adapter | 2–4 |
+
+**Recommendation.** Keep fallback; do not add production retries or declare hardware proven. Prioritise immediate bad-input rejection as a small safety fix. For diagnosis, freeze host input and capture stage hashes/coordinates, repeat serially with fresh allocations, then replay on a known-good adapter. Changing addresses/patterns and failures outside this kernel strengthen hardware evidence; stable stage/coordinate failures strengthen software evidence. Driver compiler defects remain possible even when results vary. Two matching runs alone cannot certify hardware.
+
+**Test plan.** No graphics rerun made: existing runs already establish recurrence, while the current driver discards bad positions and another count adds little diagnostic value. An instrumented scratch probe should stop after three repeats, use the shared lock and remain inside 30 minutes. Verify input hash, adapter identity, band-boundary/odd-size cases and range-rejection propagation; never return replay output to the application. A later safety fix needs fast checks and the directly affected GPU/Library routing drivers; expand for shared delivery effects under Still strict.
+
+**Proposed tolerance.** Diagnostic repeated finite-input kernel runs should be bit-identical on the same device with unchanged code; any difference is evidence to retain, not proof of hardware. Zero invalid pixels is the existing validity requirement. Do not relax pixel-range guards or perceptual delivery tolerances.
+
+**Confidence.** Medium that failure is machine/driver related; low that VRAM specifically is independently confirmed. High on the missing input-rejection branch and absence of coordinate evidence.
+
+## 13. November GPU retry follow-up
+
+**Cause/status — read in code.** Library rejects remembered work before submission (`library-gpu-raw.js:932–935`). Rejected pixels/empty channels go to CPU and latch; other deterministic errors latch via gpuFailures. OOM gets one retry only with another active GPU work/draw and a grant (`:1021–1055`). Preparation now permits at most two temporary attempts and records deterministic development failure immediately (`library-scenes.js:139–165`); GPU-unavailable/rejected work selects CPU (`:180–205`). These implement the intended main fixes.
+
+**Read in code: qualifications.** Library device loss is still handled before rejection and requeues with a grant without a persistent device-recovery ceiling (`library-gpu-raw.js:1017–1020`); repeated device loss can therefore keep requeueing. Failed-work identity is path plus requested edges, not a complete source/settings identity (`:931`): different edge lists can evade the remembered rejection and changed inputs can inherit a stale rejection. Both deserve fault-injection coverage.
+
+Grade limits a retry to one (`preview-pipeline.js:814–827`), resets its counter after success (`:707`), and does not retry validation, limits, unsupported or unknown errors (`render-failure.js:27–84`). However all OOM and timeout/network messages are classified temporary without proof of other work holding memory or a contention timeout. Validation disables the photo only after three consecutive failures; successful presentation resets that count (`render-failure.js:99–153`). This is the documented deliberate exception, not exact compliance with first-failure session suppression. Other deterministic errors are not persistently latched per identical work.
+
+Export/Proof retain one submission and CPU fallback, with exact preemption-message requeues and a signature cache (`backend/hdr_finisher/gpu_delivery.py:127–130,182–214`). Edge uses the same preemption-only loop (`highlight_edge_gpu.py:72–90`). The November audit's DNG, Retouch and Denoise optional device-recovery gaps remain the accepted policy choice; no new output defect is established by leaving them single-attempt. Retry/fallback logging is not uniform: Library stopwatch calls are optional and backend preemption loops lack explicit per-requeue records. This is a targeted audit, not certification of every GPU call in the repository.
+
+| Change | VRAM/memory | Speed | Output risk | Verification drivers | Agent-hours (estimated) |
+|---|---|---|---|---|---|
+| Keep accepted delivery/DNG/Edge/Retouch/Denoise policy | Unchanged | Rare reset takes CPU | Existing conservative fallback | Existing route drivers only when those areas change | 0 |
+| Bound Library device recovery and define failed-work identity | Tiny session metadata | Stops recovery loops; possible earlier CPU | Scheduling/source-identity mistakes | library-gpu-recovery; library-invalid-gpu-retry.test; preparation fault injection | 4–8 |
+| Type Grade contention and retain failed-render identity | Tiny metadata | Avoids futile retry; CPU may be slow/refuse graphs | Preview availability regression | preview-scheduler-settle.test; full-tier-preview; failure injection | 6–12 |
+| Add shared temporary recovery to strict delivery routes | Small broker metadata | Rare reset gain, unmeasured | High: delivered pixels and nested attempt budgets | All applicable export/Proof, DNG, Edge, Retouch, Denoise checks | 16–32 |
+
+**Recommendation.** Honour Steve's decision to leave strict delivery routes alone. First fix the bounded Library device-loss exception if a focused failure-injection check confirms the loop. Grade's broad temporary classification merits a narrow follow-up, but preserve the explicitly accepted three-validation exception unless Steve chooses otherwise; an abrupt CPU switch can remove supported preview graphs. Do not call both fixes universally compliant with the full rule.
+
+**Test plan.** Use deterministic mocked faults for invalid pixels, compile/validation, isolated OOM, contended OOM, repeated device loss, then a successful render and photo switch. Assert submission counts, CPU completion and reason logs. One focused real Library/Grade driver per change group, not a broad sweep. No tests run for this documentation-only report.
+
+**Proposed tolerance.** Exact control-flow counts: zero retry for permanent rejection, at most one for external temporary failure, preemption does not spend an attempt. Reason: this is policy, not a noisy timing measurement. Existing pixel tolerances remain unchanged.
+
+**Confidence.** High on inspected branches; medium on scheduler-wide effects until fault injection exercises requeue consumers.
+
+## Close-out
+
+- Graphics minutes used: **0/30**; no extra graphics budget requested. No Electron/GPU command ran, inside or outside the lock.
+- Output sizes: worktree `codebase/.venv/Scripts/python.exe codebase/tools/output_size.py` reports **0.0 GB** before; main-checkout tool additionally reports **45.9 GB**, largest test-photos 35.6 GB, release-checks 3.0 GB. Both below 100 GB. After: worktree **0.0 GB**, main checkout **45.9 GB**, same largest folders; no existing output deleted.
+- Scratch: removed after inspection. Dependency directories are junctions to main checkout, never copied or committed. Only this report is committed.
+- Decision needed from Steve: keep the extreme-preview limit or fund the 20–40-hour float32 investigation; recommendation is keep until a real grade demonstrates need.
+- Separate decision: authorise the small input-rejection and bounded-recovery follow-ups; no implementation included here.
+- Other Preview/GPU open work: Crop/Rotate cost, Full settling and Linux HDR dithering remain open; no new breakage established.
+- Other Film Look open work: real-use lens/grain judgement remains outstanding; historical Black & White/sharpen failures must not be relabelled current without checking their later fixes.
+
