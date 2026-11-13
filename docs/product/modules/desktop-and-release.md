@@ -1,5 +1,13 @@
 # Module PRD: Desktop and release
 
+## November 13: page shortcut hints (approved by Steve, built)
+
+The shared bar uses page-specific hints on Library, Export and Proof; Grade
+keeps its pointer-based slider/tool hints. Proof uses current Export and Help
+bindings. Export selection hints apply inside the photo grid. Progress tracks
+use the existing border token across themes; the accent fill is unchanged.
+
+
 ## November 13: compact grant diagnostics
 
 Library jobs emit library_grant_completed on completion, failure or cancellation,

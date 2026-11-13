@@ -249,6 +249,7 @@
       else localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
     }).catch((error) => console.warn("Could not save application preferences.", error));
     shell.onPreferencesChanged(clone(snapshot));
+    window.dispatchEvent(new Event("hdrfinisher:shortcutchange"));
   }
 
   function shortcutFor(actionId) {
@@ -1237,6 +1238,7 @@
     listGradingPresets,
     saveGradingPreset,
     deleteGradingPreset,
+    shortcutLabel: id => { const value = shortcutFor(id); return value ? displayShortcut(value) : ""; },
     preferences: () => clone(shell.preferences),
   });
 }());

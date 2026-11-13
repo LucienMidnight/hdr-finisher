@@ -1,5 +1,7 @@
 # Performance table
 
+November 13 page-hints UI smoke (working tree, parent `3f298547`, plain Electron, default mixed Library, Python finished): first/ten/twenty pictures 1.0/2.5/6.7 s; 29 of 33 shown by 90 s. No application errors or memory violations; responsiveness failed with one 1758 ms frame gap (250 ms limit). Cause unexplained; Steve should try Library before another timing run. Evidence: `codebase/output/quick-library-check/status-hints/report.json`.
+
 November 13 status-bar UI smoke (working tree, parent `8d5706ec`, 2560x1440 plain Electron, default mixed Library, sequential validation): first/ten/twenty pictures 1.2/4.2/8.0 s; 29 of 33 shown by 90 s. No application errors, memory violations or responsiveness-limit failures. This UI smoke is not a controlled speed comparison. Evidence: `codebase/output/quick-library-check/status-bar/report.json`.
 
 

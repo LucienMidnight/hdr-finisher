@@ -1,4 +1,5 @@
-/* Status bar key hints. Over the control panel the bar lists the slider keys;
+/* Status bar key hints. Library, Export and Proof show page keys. On Grade,
+ * over the control panel the bar lists the slider keys;
  * over the photo it lists the keys of the tool in use. A tool registers a
  * function that returns [key, action] pairs for its current step, or null
  * when it is not in use. The most important pair comes first; pairs drop off
@@ -22,12 +23,23 @@ const keyHints = (() => {
     return null;
   }
 
+  // The parent owns page hints, including Library's iframe workspace.
+  function pageItems() {
+    switch (document.body.dataset.workflow) {
+      case "import": return [["Arrows", "browse"], ["Space", "grid/single"], ["Enter", "Grade"], ["Ctrl+Shift+E", "quick export"]];
+      case "export": return [["Ctrl+A", "select all"], ["Space/Enter", "select photo"]];
+      case "proof": return [["file.exportStandard", "export"], ["app.help", "help"]].map(([id, action]) => [window.HDRApplicationShell?.shortcutLabel(id), action]).filter(([key]) => key);
+      default: return null;
+    }
+  }
+
   function render() {
     frame = 0;
     const node = legend();
     if (!node) return;
-    const tool = toolItems();
-    const items = (tool || sliderItems).slice(0, 4);
+    const page = pageItems();
+    const tool = page ? null : toolItems();
+    const items = (page || tool || sliderItems).slice(0, 4);
     document.body.classList.toggle("tool-key-hints", Boolean(tool));
     const signature = JSON.stringify(items) + node.clientWidth + ":" + node.parentElement?.clientWidth;
     if (signature === shown) return;
@@ -59,6 +71,8 @@ const keyHints = (() => {
   }, { capture: true, passive: true });
   for (const type of ["keydown", "keyup", "pointerup"]) document.addEventListener(type, refresh, { capture: true, passive: true });
   window.addEventListener("resize", refresh);
+  window.addEventListener("hdrfinisher:workflowchange", refresh);
+  window.addEventListener("hdrfinisher:shortcutchange", refresh);
   if (typeof ResizeObserver === "function" && legend()) new ResizeObserver(refresh).observe(legend());
 
   return { register, refresh };

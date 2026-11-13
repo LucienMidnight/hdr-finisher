@@ -25,3 +25,14 @@ test('Export Batch footer includes the non-empty selection and drops it when cle
  const ctx={model:{draft:{versions:[{name:'SDR',pattern:'photo',settings:{format:'sdr_jpeg'}}]},version:0,photos:[{path:'one'},{path:'two'}],selected:new Set(['one'])},els:{exportResizeMode:{selectedOptions:[{textContent:'Original'}]}},$:id=>{if(!nodes.has(id))nodes.set(id,{dataset:{},setAttribute(){}});return nodes.get(id);},HDRExportPatterns:{render:()=> 'photo'},exportExtensionForFormat:()=>'.jpg',hdrSkipped:()=>false,fileCount:()=>1};
  vm.createContext(ctx);vm.runInContext(source.slice(start,end),ctx);ctx.example();assert.match(nodes.get('batch-count').textContent,/2 photos.*2 files.*1 selected$/);ctx.model.selected.clear();ctx.example();assert.doesNotMatch(nodes.get('batch-count').textContent,/selected/);
 });
+
+test('each workspace chooses its hints before Grade tools or sliders',()=>{
+ const node={clientWidth:2000,scrollWidth:0,parentElement:{clientWidth:2000},text:'',replaceChildren(){this.text='';},append(...parts){this.text+=parts.map(p=>typeof p==='string'?p:p.textContent).join('');}};
+ const body={dataset:{workflow:'grade'},classList:{toggle(){}}};let pending;const listeners={};class Element {closest(s){return s==='.viewport-frame';}}
+ const ctx={document:{body,querySelector:()=>node,createElement:()=>({textContent:''}),addEventListener:(type,fn)=>listeners[type]=fn},window:{HDRApplicationShell:{shortcutLabel:id=>id==='app.help'?'F2':'Alt+E'},addEventListener(){}},Element,requestAnimationFrame:fn=>{pending=fn;return 1;}};
+ vm.createContext(ctx);vm.runInContext(fs.readFileSync(require.resolve('../frontend/key-hints.js'),'utf8')+';globalThis.hints=keyHints;',ctx);
+ const render=()=>{ctx.hints.refresh();pending();return node.text;};assert.match(render(),/Ctrl fine.*Shift snap/);
+ ctx.hints.register(()=>[['Brush','paint']]);listeners.pointermove({target:new Element()});assert.equal(render(),'Brush paint');
+ for(const [page,expected] of [['import',/Arrows browse.*Space grid\/single.*Enter Grade.*Ctrl\+Shift\+E quick export/],['export',/Ctrl\+A select all.*Space\/Enter select photo/],['proof',/Alt\+E export.*F2 help/]]){body.dataset.workflow=page;assert.match(render(),expected);}
+ body.dataset.workflow='grade';assert.equal(render(),'Brush paint');body.dataset.workflow='import';node.clientWidth=1;node.scrollWidth=200;assert.equal(render(),'Arrows browse');
+});

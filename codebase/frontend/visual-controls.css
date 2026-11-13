@@ -135,6 +135,12 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 .accent-option[aria-pressed="true"] .accent-chip { outline: 1.5px solid var(--text); outline-offset: 2px; border: 2px solid var(--panel); }
 
 /* Shared status entries fit the lower status bar. */
+/* Shared progress track: neutral and visible on every theme's status surface. */
+:root .status-entry-progress { background: var(--border); border-radius: var(--radius-pill); }
+:root .status-entry-progress:not(:indeterminate)::-webkit-progress-bar { background: var(--border); border-radius: var(--radius-pill); }
+:root .status-entry-progress::-webkit-progress-value { background: var(--accent); border-radius: var(--radius-pill); }
+:root .status-entry-progress:not(:indeterminate)::-moz-progress-bar { background: var(--accent); border-radius: var(--radius-pill); }
+
 :root .viewer-status-dock :is(.application-status-entries, .status-entry) { height: var(--status-bar-h); min-height: 0; }
 :root .viewer-status-dock .status-entry { padding: 2px 0; border-bottom: 0; font: var(--font-weight-regular) var(--font-size-sm) var(--font-body); }
 :root .viewer-status-dock .status-entry-actions button { min-height: var(--panel-collapse-button-size); }

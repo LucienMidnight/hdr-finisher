@@ -95,7 +95,7 @@ Home/End, direct numeric entry, and double-click reset keep their existing behav
 
 ## Status bar key hints
 
-The right end of the status bar lists useful keys. Over a panel it shows the slider keys. Over the photo, while a Retouch tool or a Local mask tool is in use, it shows that tool's keys for what you are doing now.
+The right end of the status bar lists useful keys. On Library, Export and Proof it shows keys for that page (Export selection keys work in the photo grid; Proof uses your current shortcuts). On Grade, over a panel it shows the slider keys. Over the photo, while a Retouch tool or a Local mask tool is in use, it shows that tool's keys for what you are doing now.
 
 ## Updates
 
