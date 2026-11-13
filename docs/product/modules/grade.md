@@ -28,6 +28,26 @@ PC whole-wait confirmation and Steve's visual review remain open. Timings are
 in the performance table; overlay review captures are in
 `codebase/output/hsl-smooth/`. No PC baseline is replaced.
 
+### P1-B Exposure after Denoise — not reproduced
+
+The existing anchor-needed/presentation listeners already queue exact highlight
+measurement in the background once the current Denoise frame has settled.
+This task makes no Denoise or anchor-scheduling production change. On the
+isolated MacBook synthetic 24 MP scene, the first Exposure result after Denoise
+took 27.7–36.1 ms before and 35.5–44.6 ms after the grouped preview changes.
+The driver waits for pending anchor work to finish before issuing Exposure,
+so these are idle-after-Denoise observations, not a check of an edit racing
+the background measurement. The reported extra anchor wait was not reproduced
+or ruled out. The difference exceeds the
+10% Grade timing tolerance and is unexplained. Per the responsiveness rule,
+do not chase another timing run before Steve tries the app.
+
+**Decisions for Steve:** try Exposure immediately after Denoise on a real RAW;
+if the pause is visible, capture that case before changing the existing
+background scheduler. Confirm the original PC case at the release point.
+P1-B is not closed: Film remains below 20 frames/s and has the validation gaps
+listed in the Film Look module. No memory allowance or image tolerance changed.
+
 ## November 13–14: P1-C Edge-colour rejection safety
 
 The shared Edge-colour kernel now rejects a bad input scan immediately,

@@ -17,6 +17,23 @@ separate from paired timings.
 | SDR Show selection, warm 100% | 0.766–0.799 s | 0.749–0.801 s | MacBook; same bounded 1600-pixel CPU overlay; <1 s passes; within timing tolerance |
 | SDR selection range edit, Fit / 100% | 0.746 / 0.765 s | 0.731 / 0.763 s | MacBook; edge feather edit, pre-HSL pixels reused; within timing tolerance |
 | SDR first show, Fit / 100% | 1.235 / 1.049 s | 1.217 / 1.132 s | MacBook; first call at each zoom, not the warm acceptance; within timing tolerance |
+| Film Stock Color drag | 1.80 frames/s | 17.28 frames/s | MacBook; SDR Fit; displayed frames during 150 programmed input events; exact release; below 20 frames/s |
+| Film Print Contrast drag | 0.25 frames/s | 8.35 frames/s | MacBook; SDR Fit; same driver; exact release; below 20 frames/s |
+| Film Grain Amount drag | 1.80 frames/s | 17.40 frames/s | MacBook; SDR Fit; same driver; exact release; below 20 frames/s |
+| Film lens Strength drag | 0.86 frames/s | 13.12 frames/s | MacBook; SDR Fit; same driver; exact release; below 20 frames/s |
+| First Exposure after idle Denoise | 27.7–36.1 ms | 35.5–44.6 ms | MacBook; synthetic scene, three observations after anchor work finishes; does not exercise an edit racing the anchor; unexplained change exceeds 10%, Steve to try before another run |
+
+Film rows measure the whole event-to-presentation throughput, not GPU kernel
+time or native pointer input. Diagnostic-only trace rates are 17.55 / 8.42 /
+17.05 / 13.66 frames/s in the same order (MacBook; within 10% of the paired
+implementation run). The trace shows summed-glow reuse and roughly 37–68 ms
+direct GPU-render waits, with additional scope/queue/scheduler work; these
+are not a whole-wait speed claim by themselves. Paired captures precede the
+final conservative withdrawal of tiled approximation, preservation of preview
+glow keys across measurement passes and resize-allocation cleanup. The timed
+Fit path was direct, but the final revision was not retimed after those edits.
+No Denoise scheduler change was made. P1-B is partial, not accepted at 20 fps.
+Validation gaps and Decisions for Steve are in the Grade and Film Look PRDs.
 
 November 14 macOS file-command smoke (working tree based on `696a3fd6`,
 `p1/mac-file-commands`; MacBook Neo, A18 Pro, 8 GB, 6 cores; 1408x794 points;

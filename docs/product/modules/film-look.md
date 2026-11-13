@@ -1,5 +1,75 @@
 # Module PRD: Film Look
 
+### November 14: P1-B preview acceleration — partial target
+
+Decision 3 is implemented for the direct preview: one grain sample while an
+interaction is active, the original supersampled grain on release. Presentation
+records explicitly mark approximate grain, even at the selected resolution,
+so it cannot satisfy the settled-frame requirement. Film interactions use the
+existing paced scheduler instead of repeatedly superseding unfinished frames.
+CPU rendering, settled shader maths, Proof and export quality are unchanged.
+
+Direct preview lens Strength edits reuse the exact 27-component summed glow.
+The key excludes only Strength; source/Denoise identity, lane, dimensions,
+source scale, SDR highlight anchor, geometry, recipe and locals still matter.
+Measurement/delivery passes use the original route and do not overwrite or
+invalidate the separate preview sum. Resize/reset destroys it. The optional
+half-float texture is included in existing GPU admission and resident-byte
+accounting; no allowance was increased (see Memory and caches).
+
+MacBook Neo / A18 Pro / 8 GB, 1408x794-point unpackaged Electron, shared GPU
+lock, synthetic 24 MP TIFF, no concurrent suites: whole input-to-screen
+presentation throughput improved from 1.80 to 17.28 frames/s for Stock Color,
+0.25 to 8.35 for Print Contrast, 1.80 to 17.40 for Grain Amount and 0.86 to
+13.12 for lens Strength. These count displayed frames during 150 programmed
+input events, not GPU-only time or a native pointer drag. All four released
+frames were exact. A separate diagnostic reproduces the new rates within
+10%; scope readbacks and queue/scheduler overhead remain significant.
+**The 20 frames/s target is not met; P1-B remains open.** Detailed conditions
+and paired results are in the performance table.
+
+Validation: grain GPU/CPU parity (12 cases) and exact tiled Film parity pass.
+The stock matrix completes with only the two known failures: HDR Neutral
+maximum paper gain (mean 2.553627 / p99.9 249 levels) and SDR Velvia physical
+chain (mean 0.104330 / p99.9 1). The SDR result matches the prior Mac result;
+no same-machine before capture of the extreme HDR case was made, so its
+change is not quantified. No image limit was loosened. A targeted diagnostic
+reached and passed direct release byte equality and cached-versus-fresh lens
+glow byte equality at HDR edge 1520, then failed its added tiled-ROI comparison.
+The ROI comparison included the whole surface although a region pass may
+clear nonrequested pixels; it is not a qualified settlement test. To avoid
+shipping unvalidated tile-quality reuse, the tiled approximation was withdrawn:
+**all tiled preview, Proof and export passes retain their original exact grain**.
+The final narrowed diagnostic has not been rerun.
+
+Required validation gaps: `film-look-interaction.js` stops before the scenario
+because the native launcher follows the disposable splash window; the additional
+`lens-filter-parity.js` stops on Mac Fit 1287x858 versus CPU 1520x1013 dimensions.
+The complete `lens-filter-tiled-parity.js` matrix remains unrun. Slow GPU checks
+were stopped at the roughly 30-minute allowance; no blanket parity, delivery
+or final-version timing acceptance is claimed. Evidence and failure logs:
+`codebase/output/performance/p1b/`. No release check, push or merge.
+
+Fast validation: Node 955 passed / one skipped; Python 3313 passed / 145
+skipped / one existing xpass. The old source-wording presentation assertion
+is replaced by executed JavaScript checks for trimmed geometry, exact tier
+equality, empty frames and approximate grain. The replacement and frontend
+inventory also pass a separate seven-test Python run. Scratch profiles,
+generated lens fixtures and the overlay grid were removed; end-of-task output
+is 6.1 GB, below 100 GB. Overlay review captures may be deleted after review.
+
+**Open work / Decisions for Steve:**
+- Try the direct Fit drags and judge whether the improvement feels worthwhile;
+  the minimum-machine 20 frames/s acceptance still needs work.
+- Approve another bounded validation session (roughly 20–30 minutes) after the
+  native-window/dimension harness issues are addressed: start with native drags,
+  final-version timings and quick Library smoke. Estimate the full lens matrix
+  separately before starting it; it may need a larger approved allowance.
+- Tiled interactive grain needs a viewport-aware settlement check before it
+  can be enabled. Until then, native/tiled drags keep full quality and may be slower.
+- PC follow-up at the release point: native Film drags, direct/tiled lens and
+  stock parity, and export/Proof checks; keep PC timings separate.
+
 ### November 13: MacBook Velvia precision diagnostic
 
 On Apple A18 Pro/Metal, the SDR synthetic Velvia physical chain reproduces
