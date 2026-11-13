@@ -8,6 +8,8 @@
 //
 //   node tests/run-in-electron.js tests/film-stock-parity.js [--input photo.heic]
 //
+// --lane sdr --diagnose-velvia isolates the physical effects with unchanged limits.
+// --diagnostic-output <folder> saves finished CPU/GPU RGBA for perceptual analysis.
 // --input runs the same cases on a real file instead, and reports rather than
 // fails.
 
@@ -19,6 +21,10 @@ const { execFileSync } = require("child_process");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 const LONG_EDGE = 1200;
+// Optional diagnostic capture: preserve the same pass/fail limits and pixels.
+const diagnosticIndex = process.argv.indexOf("--diagnostic-output");
+const diagnosticOutput = diagnosticIndex < 0 ? null : path.resolve(process.argv[diagnosticIndex + 1]);
+const diagnoseVelvia = process.argv.includes("--diagnose-velvia");
 const extremeHdr = process.argv.includes("--extreme-hdr");
 const laneIndex = process.argv.indexOf("--lane");
 const selectedLane = laneIndex >= 0 ? process.argv[laneIndex + 1] : null;
@@ -70,6 +76,14 @@ let CASES = [
   {label: "Neutral maximum paper gain", stock: {film_stock:"none", push_pull:2, print_exposure:-3,
     print_contrast:100, shadow_contrast:100, highlight_contrast:100}},
   {label: "Neutral actual paper", stock: {film_stock:"none", print_paper:"kodak_2383", scan_sharpening:100, lab_levels:true}},
+];
+
+if (diagnoseVelvia) CASES = [
+  {label:"Velvia physical chain", stock:{film_stock:"fujifilm_velvia_100", ...EFFECTS}},
+  {label:"Velvia no grain", stock:{film_stock:"fujifilm_velvia_100", ...EFFECTS, grain_amount:0}},
+  ...["grain", "lens", "scatter", "halation"].map(effect => ({label:`Velvia ${effect} only`, stock:{
+    film_stock:"fujifilm_velvia_100", ...(effect==="grain" ? {grain_amount:60,grain_size:80,grain_film_format:"super16",grain_chroma:40} :
+      effect==="lens" ? {lens_filter:"black_pro_mist",lens_size:1.2} : effect==="scatter" ? {film_resolution:50} : {halation_amount:45,halation_radius:0.7})}})),
 ];
 
 const stockCharacterOnly = process.argv.includes("--stock-character-only");
@@ -156,7 +170,7 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       }
       return compareOnce(...args);
     };
-    const compareOnce = async (lane, stock, lookStrength) => page.evaluate(async ({ lane, stock, lookStrength, longEdge, extremeHdr }) => {
+    const compareOnce = async (lane, stock, lookStrength) => page.evaluate(async ({ lane, stock, lookStrength, longEdge, extremeHdr, capture }) => {
       if (state.currentView !== lane) await switchLane(lane);
       state.previewScheduler?.cancel();
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
@@ -248,16 +262,31 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         worst.push({d:raw,x:pixel%surface.width,y:Math.floor(pixel/surface.width),
           gpu:Array.from(gpu.slice(j,j+3)),cpu:Array.from(cpu.slice(j,j+3))});
       }
-      return { size, differences, raw, worst, textureStats, slot: state.gpuPreview && window.HDRFilmStocks.slot(stock.film_stock, stock) };
-    }, { lane, stock, lookStrength, longEdge: LONG_EDGE, extremeHdr });
+      const encode = values => {
+        let binary = "";
+        for(let i=0;i<values.length;i+=32768) binary += String.fromCharCode(...values.subarray(i,i+32768));
+        return btoa(binary);
+      };
+      return { size, differences, raw, worst, textureStats, captured: capture ? {gpu:encode(gpu), cpu:encode(cpu)} : null, slot: state.gpuPreview && window.HDRFilmStocks.slot(stock.film_stock, stock) };
+    }, { lane, stock, lookStrength, longEdge: LONG_EDGE, extremeHdr, capture:!!diagnosticOutput });
 
+    const capture = (lane, label, result) => {
+      if (!diagnosticOutput || !result.captured) return;
+      fs.mkdirSync(diagnosticOutput,{recursive:true});
+      const name = `${lane}-${label.replaceAll(/[^a-z0-9]+/gi,"-")}`;
+      for (const kind of ["gpu","cpu"]) fs.writeFileSync(path.join(diagnosticOutput,`${name}-${kind}.rgba`),Buffer.from(result.captured[kind],"base64"));
+      fs.writeFileSync(path.join(diagnosticOutput,`${name}.json`),JSON.stringify({width:result.size[0],height:result.size[1]}));
+      delete result.captured;
+    };
     const failures = [];
     for (const lane of LANES) {
       const off = await compare(lane, NEUTRAL, 100);
       if (off.error) throw new Error(`${lane} off: ${off.error}`);
+      capture(lane,"off",off);
       for (const { label, stock, look_strength: lookStrength = 100 } of CASES.filter(c => !selectedCase || c.label === selectedCase)) {
         const on = await compare(lane, { ...NEUTRAL, ...stock }, lookStrength);
         if (on.error) throw new Error(`${lane} ${label}: ${on.error}`);
+        capture(lane,label,on);
         if (stockCharacterOnly && stock.film_stock === "none") {
           if (on.slot) throw new Error(`${lane} ${label}: Neutral default should bypass stock allocation`);
         } else if (!on.slot) throw new Error(`${lane} ${label}: the stock never reached the GPU`);

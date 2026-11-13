@@ -1,5 +1,28 @@
 # Performance table
 
+November 13 minimum-hardware fix (`2202eddd`, app code identical during capture):
+MacBook, Apple A18 Pro, 8 GB unified memory, 6 cores; 1408x794-point plain
+Electron window; default 2.5 GB app ceiling; shared main-checkout 33-photo mixed
+fixture via `--folder=library-mixed-v1-run`; no concurrent fast suite from this
+task during the Library run, other system work not controlled. First picture
+1.7 s, ten never, 2/33 shown by 90 s. No unknown-memory refusals or repeated
+DNG failures; heavy work stays queued at system reserve (1.982–2.504 GB
+available, unchanged 2 GB reserve), so development/decode/GPU times are not
+measurable in this run. Independent app peak 0.833 GB, sparse app-log peak
+0.625 GB; five reserve-breach samples make this a failed memory check.
+Not a speed comparison with the older Mac or PC observations. Proposal before
+measurement: 5% tolerance for Mac whole waits; changed headroom prevents a
+speedup claim. Evidence: `codebase/output/quick-library-check/minimum-hardware/`.
+The initial default command failed fixture discovery from the worktree;
+protected tooling was not edited.
+
+November 13 review of the earlier MacBook `ef29f60e` step-0 log: the 32 refused
+DNG grants hold work for a summed 4.078 s (overlapping, not a whole-screen
+wait). The completed TIFF source records 0.992 s decode and 0.730 s GPU;
+those are stage observations, not a screen-time benchmark. Remaining waits
+are admission, so no slow-decoder conclusion or estimate change follows.
+Evidence: main checkout `codebase/output/quick-library-check/mac-step0/backend.log`.
+
 November 13 first MacBook quick Library check (MacBook, Apple A18 Pro, 8 GB unified memory, 6 cores; `ef29f60e` plus Mac set-up fixes; 1408x794-point window, the largest the built-in screen gives; default mixed Library): first picture 0.5 s, ten never; 7 of 33 shown by 90 s; peak 0.989 GB; no memory violation. New Mac baseline, not compared with PC rows. Developments wait for room under the 8 GB memory ceiling (estimates 1.2–1.5 GB each), and both DJI 8000x6000 DNGs are refused because macOS available memory cannot be measured (no psutil; `SC_AVPHYS_PAGES` is missing on macOS). Evidence: `codebase/output/quick-library-check/mac-step0/report.json`.
 
 November 13 page-hints UI smoke (working tree, parent `3f298547`, plain Electron, default mixed Library, Python finished): first/ten/twenty pictures 1.0/2.5/6.7 s; 29 of 33 shown by 90 s. No application errors or memory violations; responsiveness failed with one 1758 ms frame gap (250 ms limit). Cause unexplained; Steve should try Library before another timing run. Evidence: `codebase/output/quick-library-check/status-hints/report.json`.

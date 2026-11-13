@@ -17,15 +17,84 @@ because its text includes "memory". Unreadable filenames containing "memory"
 also no longer defeat the failed-photo record. Existing explicit retry and
 source/settings changes clear it. Backend grants release on refusal before
 the next request; temporary waits, interruptions and GPU fallback rules stay.
-Focused regression checks: 64 passed, including the running platform without
+Focused regression checks: 65 passed, including the running platform without
 psutil, kernel available-memory selection, repeated refusal, released grants,
 explicit retry and changed files.
 
 No ceiling, share, estimate, reserve, budget or rendering output changes.
 Timing interpretation uses 5% against the earlier Mac whole waits (ordinary
 run-to-run variation); the existing responsiveness and memory limits stay.
-Real-app observations and remaining decisions are recorded below after the
-focused Mac checks. This is not full 8 GB feature acceptance.
+
+**MacBook observation (November 13, app fix `2202eddd`).** The 90-second
+plain-Electron check at 1408x794 points, default 2.5 GB setting, shared
+33-photo mixed fixture shows first picture at 1.7 s and 2/33 by 90 s; ten
+never arrives. No unknown-memory refusal, helper failure or repeated DNG
+request occurs. Both DNG developments remain queued once, so this run does
+not independently exercise a refused-DNG retry; the API/guard regressions do.
+Direct header inspection of both real 8000x6000 DNGs now returns a numerical
+safety refusal (1.63 GiB additional required), rather than unknown resources.
+
+The bottleneck is **system reserve**, before decode or GPU work: all four
+heavy photo grants remain ungranted for over 60 s, with estimates of
+1.104 GB (TIFF), 1.200 GB (each DNG) and 1.554 GB (selected RAW, including
+1.259 GB unified GPU reservation). The independent census measures only
+1.982–2.504 GB available system RAM, leaving at most 0.504 GB after the
+unchanged 2 GB scheduler reserve. Four quick jobs run for 12–45 ms after
+about 1.4 s admission; no development starts. App counted peak is 0.833 GB
+independently (the app's sparse logged peak is 0.625 GB). Available memory
+dips below the reserve in five of 366 samples, so the check fails the real
+system-reserve gate. No whole-wait speedup is claimed under different system
+headroom. The old Mac record's 7/33 and PC's 29/33 remain separate conditions,
+not a Mac/PC speed ratio.
+
+The old Mac log's 32 DNG failures occupy grants for 4.078 s in total
+(overlapping holds, not an additive screen delay). Its completed TIFF source
+records about 0.992 s decode and 0.730 s GPU work; remaining room waits cannot
+be attributed to slow image processing. The fixed 1.3 GB starting footprint
+and running estimates are approved conservative admission inputs, not a
+measured-allocation bug; no accounting or rate adjustment is justified by
+this stalled run. No ceiling, share, rate or budget was tuned.
+
+**Next decision, recommended first:** qualify the same 90-second check with
+more system headroom. Cost: about 2–5 minutes of Steve/agent time, no code
+change. The existing DNG preflight needs about 3.90 GB available (its 1.63 GiB
+requirement plus 2 GiB reserve), roughly 1.4–1.9 GB more than this run.
+Closing other work can lose unsaved work; Steve chooses what to close.
+Raising only the app ceiling cannot fix the physical reserve gate.
+If that controlled run still stalls, a per-route memory/estimate study costs
+roughly 4–8 agent-hours; changing a rate would need Steve's decision and can
+admit overlapping peaks. A bounded CPU DNG development route is a larger,
+roughly 1–2 agent-day option; it risks strip/border or colour mistakes and
+requires output checks. Neither option has a measured whole-wait gain yet;
+no new GPU route or allowance is proposed.
+
+**Validation limits.** Full Node: 932 passed, one skipped, one unrelated
+`release-runner.test.js` path failure (`photosPath` receives a numeric map
+index). Initial full Python: 3,157 passed, 184 skipped, one xpass, 16 failures.
+Fourteen DNG/framing pixel and route cases had depended on unmeasured host
+memory; explicit ample-memory fixtures now preserve their existing expected
+outputs. The final affected suites pass 152, with one JPEG XL encoder skip.
+The two unrelated remaining failures are native-upload admission in
+`test_library_gpu_raw.py` (`test_native_chunk_owner_admits_before_allocation_and_survives_trim`
+and `test_abandoned_native_upload_releases_owner_without_expiring_replacement`);
+the full suite was not repeated to reconfirm unrelated results. The quick
+harness independently uses a hard-coded 4 GB ceiling despite the app's
+2.5 GB setting; its peak is below either, but its ceiling qualification is
+not an 8 GB acceptance. Left to the two-machine tooling workstream.
+Mac film output findings are in the Film Look module. No export/Proof code,
+shader, tolerance, processing arithmetic or Windows memory reader changed.
+Linux's kernel reader is fixture-checked, not qualified on a Linux machine.
+This is not full 8 GB feature acceptance.
+
+Evidence: `codebase/output/quick-library-check/minimum-hardware/` (report,
+backend log and independent census), `output/minimum-hardware-{node,pytest}.log`
+and `output/minimum-hardware-focused-final.log` under codebase. The quick run
+uses `--folder=library-mixed-v1-run` to reuse the main checkout's fixture;
+default fixture discovery still assumes a repository-adjacent parent and
+fails from this worktree. No protected tooling or Python-path plumbing was
+edited. Scratch output starts and ends at 5.9 GB (including the shared photo
+fixture), below 100 GB. This task's raw captures, failed Electron profile and
+identified test TEMP folders were removed; no source photos were copied.
 
 ### November 6: CPU Edge colour working memory
 

@@ -1,5 +1,38 @@
 # Module PRD: Film Look
 
+### November 13: MacBook Velvia precision diagnostic
+
+On Apple A18 Pro/Metal, the SDR synthetic Velvia physical chain reproduces
+mean added GPU/CPU difference 0.104330 levels against the unchanged 0.1 limit;
+p99.9 is one level (limit two). This remains a strict film-test failure.
+The same chain with grain off is 0.104514; grain alone is 0.020, lens alone
+0.090, scatter alone 0.017 and halation alone 0.020. Thus the crossing belongs
+to the combined spatial processing, dominated by lens diffusion, not to the
+grain field. The GPU's spatial/film intermediates are half-float and its maths
+float32; the CPU works in float32 arrays. Accumulated filtering/rounding is
+consistent with this small platform-dependent difference; an instruction-level
+Metal-versus-PC cause was not proved and no shader change is justified here.
+
+Full finished SDR pixels, decoded from sRGB before the existing
+`delivery_colour.compare_finished_pixels`, measure Delta E 2000 mean
+0.119114 / p99.9 1.044661, inside the existing perceptual 1/3 limits. All
+isolated cases also pass those perceptual limits. The 0.004330-level excess
+therefore does not establish a visible defect. **For Steve:** the byte-level
+film limit is tighter than the existing perceptual acceptance on this Mac;
+it remains failed and was not loosened. No pixel or PC-output change.
+The known extreme HDR Neutral maximum-paper-gain failure was not rerun.
+
+`film-stock-parity.js --lane sdr --diagnose-velvia` adds optional isolated
+cases; `--diagnostic-output <folder>` captures finished CPU/GPU RGBA without
+changing rendering or pass/fail limits. MacBook 1408x794, 1200x800 synthetic
+fixture, shared GPU lock; fast Python checks ran concurrently during isolation
+(no speed claim). The first diagnostic's JSON pixel lists exhausted Node's
+heap; compact captures fixed the diagnostic, and its orphan app/profile were
+removed. Final driver completes, failing only the chain and added no-grain
+case above. Evidence: `codebase/output/minimum-hardware-film-isolation.log`
+and `codebase/output/minimum-hardware-film/perceptual-results.json`.
+Raw diagnostic pixel buffers were removed after analysis.
+
 - **Status:** Living document for the Film Look module. Created October 15, 2026.
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
