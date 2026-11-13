@@ -1,5 +1,15 @@
 # Module PRD: Desktop and release
 
+### November 13: bounded local diagnostics
+
+Electron owns backend.log (backend stdout/stderr and main-process Library
+events) and desktop.log (crash/lifecycle records). Both now use one rotating
+writer per file, closing append handles before rotation on Windows. Current
+paths and Open Logs remain unchanged; .1 and .2 sit alongside them. Packaged
+builds include the writer through lib/**/*.js. Disk allowance proposal is in
+memory-and-caches.md; historical diagnostics beyond retention are discarded.
+
+
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
 - **Last status check:** October 18, 2026, against the code.

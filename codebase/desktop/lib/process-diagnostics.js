@@ -1,13 +1,13 @@
-const fs = require("node:fs");
 const path = require("node:path");
 
 // Lives in the main process: a renderer cannot report its own fatal exit.
 function installProcessDiagnostics({ app, crashReporter, dialog, shell, isShuttingDown, getDocumentState, onRendererGone, quit }) {
   const logPath = path.join(app.getPath("userData"), "logs", "desktop.log");
+  let log;
   function record(event, details = {}) {
     try {
-      fs.mkdirSync(path.dirname(logPath), { recursive: true });
-      fs.appendFileSync(logPath, `${JSON.stringify({
+      log ||= require("./rotating-log").create(logPath);
+      log.append(`${JSON.stringify({
         timestamp: new Date().toISOString(),
         pid: process.pid,
         uptimeSeconds: process.uptime(),

@@ -305,11 +305,17 @@ function backendCommand() {
   });
 }
 
+let backendLogWriter;
+function getBackendLogWriter() {
+  if (!backendLogWriter) {
+    const logPath = path.join(app.getPath("userData"), "logs", "backend.log");
+    const log = require("./lib/rotating-log").create(logPath).stream;
+    backendLogWriter = {log, write:require("./lib/backend-log").create(log)};
+  }
+  return backendLogWriter;
+}
 function libraryStage(event, fields = {}) {
-  const directory = path.join(app.getPath("userData"), "logs");
-  fs.mkdirSync(directory, { recursive: true });
-  fs.appendFileSync(path.join(directory, "backend.log"),
-    `[library] ${event} ${JSON.stringify({ time: Date.now() / 1000, ...fields })}\n`);
+  getBackendLogWriter().write(`[library] ${event} ${JSON.stringify({ time: Date.now() / 1000, ...fields })}`);
 }
 
 async function startBackend() {
@@ -319,8 +325,7 @@ async function startBackend() {
   const logsDirectory = path.join(app.getPath("userData"), "logs");
   fs.mkdirSync(logsDirectory, { recursive: true });
   const logPath = path.join(logsDirectory, "backend.log");
-  const log = fs.createWriteStream(logPath, { flags: "a" });
-  const writeBackendLog = require("./lib/backend-log").create(log);
+  const {log, write:writeBackendLog} = getBackendLogWriter();
   const child = spawn(command.executable, command.args, {
     cwd: command.cwd,
     env: {

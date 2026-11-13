@@ -1573,6 +1573,14 @@ resident total plus the requested development reservation cannot fit the
 existing budget. Further memory diagnosis remains open; do not increase the
 budget to make the driver pass.
 
+
+### November 13: proposed desktop log disk allowance
+
+Pending Steve's approval: implemented guardrail of 20 MiB per active log,
+with two rotated files per log (60 MiB each, 120 MiB total for backend.log
+and desktop.log). Existing oversized logs are reduced to their last 20 MiB
+when the new writer first opens them. These are diagnostics, not photo caches.
+
 ### November 8: CPU draw-before-store job release
 
 Fixed a hidden owner outside cache accounting: collecting pending CPU previews
