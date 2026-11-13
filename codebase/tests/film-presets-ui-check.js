@@ -22,6 +22,32 @@ module.exports = async function(page) {
    }
   };
   try {
+   group.classList.remove('collapsed');
+   await activateDesktopSession(state.session, state.projectPath, null, {stayOnTab:true});
+   check(!group.classList.contains('collapsed'), 'background reload closed module');
+   await activateDesktopSession(state.session, state.projectPath);
+   check([...document.querySelectorAll('.control-group')].every(item => item.classList.contains('collapsed')), 'new photo left modules open');
+   group.classList.remove('collapsed');
+   const probe=document.createElement('div');probe.style.background='var(--panel)';document.body.append(probe);
+   check(getComputedStyle(group.querySelector('.control-group-header')).backgroundColor === getComputedStyle(probe).backgroundColor, 'open header panel surface');probe.remove();
+   await openGroupPresetDialog(group);
+   const rows = [...els.groupPresetList.querySelectorAll('.group-preset-row')];
+   check(rows[0].getAttribute('aria-label') === 'Portra 400 Natural', 'first Look');
+   rows[0].click();
+   rows[2].dispatchEvent(new MouseEvent('click', {bubbles:true, ctrlKey:true}));
+   check(groupPresetSelection.size === 2, 'toggle selection');
+   rows[4].dispatchEvent(new MouseEvent('click', {bubbles:true, shiftKey:true}));
+   check(groupPresetSelection.size === 3 && groupPresetSelection.has(rows[3].dataset.presetId), 'range selection');
+   rows[4].dispatchEvent(new KeyboardEvent('keydown', {bubbles:true, key:'ArrowDown'}));
+   check(document.activeElement === rows[5] && groupPresetSelection.size === 1, 'arrow movement');
+   rows[5].dispatchEvent(new KeyboardEvent('keydown', {bubbles:true, key:' ', ctrlKey:true}));
+   check(groupPresetSelection.size === 0 && document.getElementById('group-preset-export').disabled, 'Space toggle');
+   rows[5].dispatchEvent(new KeyboardEvent('keydown', {bubbles:true, key:'Enter'}));
+   check(groupPresetSelection.size === 1, 'Enter selection');
+   document.getElementById('group-preset-search').value = 'Portra';
+   paintGroupPresetList();
+   check(groupPresetSelection.size === 0 && groupPresetAnchor === null && groupPresetOrder.length > 0, 'filter clears selection and range anchor');
+   closeGroupPresetDialog();
    for(const lane of ['hdr','sdr']) {
     await switchLane(lane);
     const outside=structuredClone(state.adjustments);

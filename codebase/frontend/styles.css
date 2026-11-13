@@ -9155,8 +9155,9 @@ body[data-workflow="export"].batch-presets-collapsed .batch-grid-panel { left:44
   #photo-frame-popover { right: auto; top: calc(anchor(bottom) + 6px); left: anchor(right); transform: translateX(-100%); }
 }
 
-.group-preset-name label { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.group-preset-name input[type="checkbox"] { flex: none; }
+/* Preset rows select like Library photos; the selection is what Export selected writes. */
+.group-preset-row { cursor: default; user-select: none; }
+.group-preset-row[aria-selected="true"] { background: var(--accent-bed); box-shadow: var(--plate-press); }
 
 /* The empty batch message owns the free space below the batch header. */
 .batch-grid-panel:has(> .batch-empty:not([hidden])) > #batch-grid { display: none; }

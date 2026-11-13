@@ -179,3 +179,8 @@ These controls use the same ranges in each branch, but HDR works in the scene-re
 ## Why some controls do not get extra room
 
 Highlight Detail, Softness, Compression Bias, Curve Smoothing, and Exposure Band adjustment already occupy a complete normalized or shape-safe domain. Extending them would either duplicate an existing endpoint, be silently clipped by the processing formula, or make monotonic tone mapping harder to guarantee. Their direct-entry range therefore matches their slider range.
+
+Adjustment Presets: click a row to select it for **Export selected**. Ctrl/Cmd-click
+toggles a row; Shift-click selects a range. Arrow keys move between rows; hold
+Ctrl/Cmd to move focus alone. Space or Enter selects the focused row with the
+same modifiers. Searching clears selection. Use **Apply** to apply a preset.

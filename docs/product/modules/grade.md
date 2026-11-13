@@ -2177,3 +2177,10 @@ token above the raised controls. Disclosure buttons retain visible keyboard focu
 
 Built: Portra 400 Natural is first in the built-in Looks. Preset identity and
 recipes are unchanged; opening or resetting Film Look still starts Neutral.
+
+## November 13: preset row selection
+
+Built: Adjustment Presets rows select by click, Ctrl/Cmd toggle and Shift
+range; Space/Enter select and arrows move between rows (Ctrl/Cmd arrows move
+focus only). Export selected uses that selection. Search/reload clears selection
+and its range anchor. Applying, renaming and deleting remain separate actions.

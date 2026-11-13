@@ -174,13 +174,33 @@ function appendGroupPresetRow(preset) {
   name.className = "group-preset-name";
   const strong = document.createElement("strong");
   strong.textContent = preset.name;
-  const label = document.createElement("label"), selected = document.createElement("input");
-  selected.type = "checkbox"; selected.setAttribute("aria-label", `Select ${preset.name} for export`);
-  selected.addEventListener("change", () => {
-    if(selected.checked) groupPresetSelection.set(preset.id,preset); else groupPresetSelection.delete(preset.id);
-    document.getElementById("group-preset-export").disabled = !groupPresetSelection.size;
+  name.append(strong);
+  // Rows select like Library photos: click, Ctrl/Cmd-click to toggle, Shift-click for a range.
+  row.setAttribute("role", "option");
+  row.setAttribute("aria-label", preset.name);
+  row.setAttribute("aria-selected", "false");
+  row.tabIndex = 0;
+  row.dataset.presetId = preset.id;
+  groupPresetOrder.push(preset);
+  row.addEventListener("click", event => {
+    if (event.target.closest("button")) return;
+    selectGroupPresetRow(preset, event);
   });
-  label.append(selected,strong); name.append(label);
+  row.addEventListener("keydown", event => {
+    if (event.target !== row) return;
+    const direction = {ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1}[event.key];
+    if (direction) {
+      event.preventDefault();
+      const index = groupPresetOrder.findIndex(item => item.id === preset.id);
+      const next = groupPresetOrder[Math.max(0, Math.min(groupPresetOrder.length - 1, index + direction))];
+      const nextRow = [...els.groupPresetList.querySelectorAll(".group-preset-row")].find(item => item.dataset.presetId === next.id);
+      nextRow?.focus();
+      if (!event.ctrlKey && !event.metaKey) selectGroupPresetRow(next, event);
+    } else if ([" ", "Enter"].includes(event.key)) {
+      event.preventDefault();
+      selectGroupPresetRow(preset, event);
+    }
+  });
   if (preset.description) {
     const description = document.createElement("span");
     description.textContent = preset.description;
@@ -227,6 +247,8 @@ function paintGroupPresetList() {
   const builtIns = HDRGradingPresetFiles.filter(groupPresetRows.builtIns, query);
   const presets = HDRGradingPresetFiles.filter(groupPresetRows.saved, query);
   groupPresetSelection.clear();
+  groupPresetOrder = [];
+  groupPresetAnchor = null;
   document.getElementById("group-preset-export").disabled = true;
   els.groupPresetList.replaceChildren();
   if (builtIns.length) { appendGroupPresetSubheading("Built-in"); builtIns.forEach(appendGroupPresetRow); }
@@ -289,6 +311,30 @@ async function saveCurrentGroupPreset() {
 }
 
 const groupPresetSelection = new Map();
+let groupPresetOrder = [], groupPresetAnchor = null;
+function selectGroupPresetRow(preset, event) {
+  const toggle = event.ctrlKey || event.metaKey;
+  const anchorIndex = groupPresetOrder.findIndex(item => item.id === groupPresetAnchor);
+  if (event.shiftKey && anchorIndex >= 0) {
+    const index = groupPresetOrder.findIndex(item => item.id === preset.id);
+    if (!toggle) groupPresetSelection.clear();
+    for (const item of groupPresetOrder.slice(Math.min(index, anchorIndex), Math.max(index, anchorIndex) + 1)) groupPresetSelection.set(item.id, item);
+  } else {
+    if (toggle && groupPresetSelection.has(preset.id)) groupPresetSelection.delete(preset.id);
+    else {
+      if (!toggle) groupPresetSelection.clear();
+      groupPresetSelection.set(preset.id, preset);
+    }
+    groupPresetAnchor = preset.id;
+  }
+  paintGroupPresetSelection();
+}
+function paintGroupPresetSelection() {
+  for (const row of els.groupPresetList.querySelectorAll(".group-preset-row")) {
+    row.setAttribute("aria-selected", String(groupPresetSelection.has(row.dataset.presetId)));
+  }
+  document.getElementById("group-preset-export").disabled = !groupPresetSelection.size;
+}
 async function groupPresetAction(action) {
   try { await action(); } catch(error) { els.groupPresetStatus.textContent=error?.message || "Presets could not be saved."; }
 }
