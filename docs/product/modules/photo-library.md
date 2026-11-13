@@ -1,3 +1,66 @@
+## November 14: native macOS file commands
+
+Original photo rename and move, same-volume folder rename/move, and confirmed
+Delete/Delete all rejected now run on macOS as well as Windows. The Mac port
+uses Foundation's `trashItemAtURL:resultingItemURL:error:` and checks the returned
+Trash location against the recorded file identity and SHA-256. A native persistent
+bookmark is saved before each Trash call, so a restart can find the exact item
+even if the process stopped before saving its returned location. There is no
+permanent-delete fallback or permanent-delete offer on macOS. A volume must
+provide a same-volume Trash and persistent file identities; otherwise the
+preview refuses deletion and leaves the photo and settings untouched.
+
+Mac photo moves across volumes copy and verify the destination before removing
+the source. Native metadata copying retains extended attributes, resource forks,
+permissions and ACLs; rewritten settings retain a fresh modification time.
+`renamex_np(RENAME_EXCL)` publishes files and folders without overwriting a
+concurrent arrival. Source cleanup atomically captures an original in a private
+folder, verifies it there, and retains it until the destination has been checked
+again. Interrupted captures remain recoverable and are listed in Activity.
+These checks do not turn macOS's advisory locks into Windows sharing locks.
+
+On Mac, app Undo restores a completed Trash deletion's original photos,
+settings, marks, grades, albums and attached virtual copies. It records the
+restoration before moving anything and refuses occupied names or missing/changed
+Trash entries. Separately selected virtual-copy removals retain their existing
+separate Undo step. Undo history is session-local, as with other Library commands;
+after restarting, restore both photo and `.hdrf` from Trash. A photo present at
+the ambiguous `delete_started` checkpoint is deliberately left in Needs attention
+rather than risking deletion of something already restored outside the app.
+
+Qualification on the MacBook Neo (A18 Pro, 8 GB; November 14): disposable-file
+checks cover native Trash receipts, deletion and restoration interruption points,
+rename/move/folder recovery, metadata, name clashes and destination replacement.
+Actual cross-volume photo moves, interruption recovery and Undo also pass using
+a disposable mounted APFS disk image, not Steve's photos or a physical removable
+drive. Windows code paths and confirmation rules remain unchanged; no pixel,
+shader, cache-size or memory-budget changes and no new runtime dependencies.
+
+Final checks: JavaScript 951 passed / 1 skipped; Python 3,311 passed / 145
+skipped / 1 existing expected-failure test unexpectedly passed, with the existing
+Starlette deprecation warning and no failures. The locked native/shared selection
+passes 102 tests, with 2 Windows data-stream checks skipped; it includes actual
+APFS cross-volume recovery/Undo and a saved Trash bookmark resolved after its
+creating process exits. All three existing photo/folder/delete real-app drivers
+pass. The plain-Electron 90-second quick check passes on one disposable synthetic
+EXR (1/1 pictured, visible throughout, no memory violation); this is a smoke check,
+not mixed-RAW performance qualification. Earlier fixture/import test-harness
+failures were corrected; no safety check or tolerance was relaxed. Test Trash
+entries and the disposable second volume were cleaned up; only the compact smoke
+report and its reusable synthetic fixture remain.
+
+**Decisions for Steve / remaining qualification:** Linux stays behind the existing
+platform refusal overnight; its freedesktop Trash port is not implemented or
+qualified. Whole folders still move only within one volume on both platforms,
+matching the existing Windows guarantee; cross-volume whole-folder moves remain
+deferred. Real FAT/exFAT/removable-volume behaviour, unplug/power-loss tests and
+packaged macOS qualification remain open. The system may deny opening the Trash
+directory for explicit directory sync; normal process-interruption recovery is
+covered, but this is not a hard-power-loss qualification. Before release, run
+the existing photo/folder/delete and exFAT recovery checks on the PC, and the
+GitHub packaged desktop workflow. No push, merge, installer or release is part
+of this change.
+
 ## November 14: P1-A source-cache index and per-photo file-command fences
 
 Rename/move/delete cache work now looks up only the affected photo or folder
@@ -30,13 +93,9 @@ The final full Python suite passes 3,205 checks, with 176 platform/fixture skips
 and one existing xpass. The initial regressions in deferred CPU-scene transport
 and equivalent `/var`/`/private/var` cache paths were corrected before that run.
 
-**Open acceptance / Decisions for Steve:** the existing production platform
-guard still refuses original rename/move/delete on macOS. A real Mac app check
-confirmed all three refuse before touching a disposable photo. Windows-only
-ownership-guarded removal and no-replace folder primitives were not replaced
-with unsafe POSIX substitutes overnight. Completing native Mac qualification
-therefore requires the Phase 2 native-file-operations port (or an explicitly
-approved change in its priority). Keep that guard meanwhile. At the PC release
+**Open acceptance / Decisions for Steve:** the native macOS file-command port
+above supersedes the original Mac platform refusal recorded for P1-A. Linux
+remains blocked. At the PC release
 point, run the photo/delete/folder file-command drivers and recovery/slow-storage
 checks, plus the visible drawing-gap confirmation. P1-A is not fully accepted
 on both platforms until these gaps and mixed-folder coverage are resolved.

@@ -2,6 +2,7 @@
 from copy import deepcopy
 import json
 import os
+import sys
 from pathlib import Path
 import shutil
 from threading import Event, RLock, Thread, get_ident
@@ -18,10 +19,8 @@ import asyncio
 import time
 
 OPEN_MESSAGE = 'Open another photo before changing this one. Nothing was changed for it.'
-# Removing an original safely relies on Windows file locks. Elsewhere these
-# commands are refused while planning, before any file is touched.
-FILE_COMMANDS_SUPPORTED = os.name == 'nt'
-PLATFORM_MESSAGE = 'Renaming, moving and deleting photos from the Library is available on Windows only in this version. Nothing was changed.'
+FILE_COMMANDS_SUPPORTED = os.name == 'nt' or sys.platform == 'darwin'
+PLATFORM_MESSAGE = 'Renaming, moving and deleting photos from the Library is available on Windows and macOS only in this version. Nothing was changed.'
 
 
 class FileRequest(BaseModel):
@@ -201,7 +200,7 @@ class FileCommands:
             record=self.plans.get(token)
             if record is None: raise ValueError('The command preview expired. Open it again; nothing was changed.')
             if record['action'] in {'delete','delete_rejected'}:
-                expected='permanent' if any(i['new']!='Recycle Bin' for i in record['items']) else 'recycle'
+                expected='permanent' if any(i['new']=='Gone for good' for i in record['items']) else 'recycle'
                 if confirmation!=expected: raise ValueError('Confirm this deletion first. Nothing was deleted.')
                 record['confirmed']=expected
             for path,document in record.get('copy_documents',{}).items():
@@ -253,6 +252,9 @@ class FileCommands:
                 dst.write(block);self.hook('copy_chunk',item)
             dst.flush();os.fsync(dst.fileno())
         shutil.copystat(source,stage)
+        if sys.platform=='darwin':
+            from .library_macos import copy_metadata
+            copy_metadata(source,stage)
         if digest(stage)!=checksum: raise ValueError('The copy could not be checked. The original was kept.')
         item['publish_stamp']=signature(stage);self.checkpoint(record,item,'verified');return stage
 
@@ -274,8 +276,9 @@ class FileCommands:
                     rename(old,stage);self.checkpoint(record,item,'photo_staged')
             rename(stage,new)
             self.checkpoint(record,item,'photo')
-        if item['cross'] and old.exists():
-            if not same(old,item['stamp'],item['checksum']): raise ValueError('The old location changed. Nothing there was removed.')
+        from .library_file_io import removal_pending
+        if item['cross'] and (old.exists() or removal_pending(old,item['stamp'])):
+            if old.exists() and not same(old,item['stamp'],item['checksum']): raise ValueError('The old location changed. Nothing there was removed.')
             from .library_file_io import remove_owned,read_guard
             with read_guard(new,item['publish_stamp'],item['checksum']):
                 remove_owned(old,item['stamp'],item['checksum'])
@@ -300,7 +303,7 @@ class FileCommands:
     def settings(self,record,item):
         old=Path(item['settings_old']) if item.get('settings_old') else self.marks._sidecar(Path(item['old']))
         new=self.marks._sidecar(Path(item.get('settings_target',item['new'])))
-        if os.path.normcase(str(old))==os.path.normcase(str(new)) and str(old)!=str(new):
+        if str(old)!=str(new) and (os.path.normcase(str(old))==os.path.normcase(str(new)) or sys.platform=='darwin' and old.parent==new.parent and old.name.casefold()==new.name.casefold() and old.exists() and new.exists() and os.path.samefile(old,new)):
             backup=Path(item['side_old_stage'])
             if not backup.exists() and not item.get('settings_published') and old.exists():
                 if not relocated(old,item['side_stamp'],item['side_hash']): raise ValueError('The old settings changed. They were left alone.')
@@ -324,11 +327,15 @@ class FileCommands:
                     if not item.get('settings_stamp') or not relocated(temp,item['settings_stamp'],checksum): raise ValueError('The settings temporary file changed. It was left alone.')
                 else:
                     with temp.open('xb') as f: f.write(data);f.flush();os.fsync(f.fileno())
+                    if sys.platform=='darwin' and old.exists():
+                        from .library_macos import copy_metadata
+                        copy_metadata(old,temp,preserve_times=False)
                 item['settings_stamp']=signature(temp);self.save(record)
                 rename(temp,new)
             item['settings_published']=True;self.checkpoint(record,item,'settings_published')
         if not relocated(new,item['settings_stamp'],checksum): raise ValueError('The new settings changed. Both locations were left alone.')
-        if old.exists() and str(old)!=str(new):
+        from .library_file_io import removal_pending
+        if (old.exists() or item['side_stamp'] and removal_pending(old,item['side_stamp'])) and str(old)!=str(new):
             if item['side_stamp'] is None: raise ValueError('Unexpected settings appeared at the old location. They were left alone.')
             from .library_file_io import remove_owned,read_guard
             with read_guard(new,item['settings_stamp'],checksum):
@@ -359,7 +366,7 @@ class FileCommands:
 
     def _run_reserved(self,record,recovery=False):
         from .library_cache import LibraryCache
-        paths=[path for item in record['items'] for path in (item['old'],item.get('new','')) if path and path not in ('Recycle Bin','Gone for good')]
+        paths=[path for item in record['items'] for path in (item['old'],item.get('new','')) if path and path not in ('Recycle Bin','Trash','Gone for good')]
         with self.fence(paths + record.get('copy_paths',[])), LibraryCache(self.browser.root).mutation(paths,self.root/(record['id']+'.json')):
             if record.get('copy_paths'): record.setdefault('copies_done',False)
             for item in record['items']:
@@ -394,6 +401,10 @@ class FileCommands:
                 (self.root/(record['id']+'.json')).unlink(missing_ok=True);self.records.pop(record['id'],None)
                 completed=[i for i in record['items'] if not i.get('cancelled')]
                 self.epoch+=1
+                if completed and not recovery and record['action'] in {'delete','delete_rejected'} and all(i['new']=='Trash' for i in completed):
+                    from .library_file_delete import restore
+                    with self.marks._lock:
+                        self.marks._undo.append({'command':lambda:restore(self,completed),'file_command':True})
                 if completed and not recovery and record['action'] not in {'undo','delete','delete_rejected'}:
                     def undo():
                         reverse=FileRequest(action='move',paths=[])
@@ -480,9 +491,15 @@ class FileCommands:
     def locations(self,item):
         paths=[item['old'],item.get('new','')]
         for child in item.get('children',[item]):
-            paths += [child['old']+'.hdrf',child['new']+'.hdrf' if not child.get('delete') else child.get('settings_receipt','Recycle Bin' if child['new']=='Recycle Bin' else 'Gone for good')]
+            paths += [child['old']+'.hdrf',child['new']+'.hdrf' if not child.get('delete') else child.get('settings_receipt',child['new'])]
             paths += child.get('retained_temps',[])
             paths += [child.get(k,'') for k in ('stage','settings_old','side_old_stage','side_stage','photo_receipt','settings_receipt')]
+            if sys.platform=='darwin':
+                from .library_file_io import removal_folder
+                for path,stamp in ((child['old'],child.get('stamp')),(child.get('settings_old',child['old']+'.hdrf'),child.get('side_stamp'))):
+                    if stamp:
+                        captured=removal_folder(path,stamp)
+                        if captured.exists(): paths.append(str(captured/'item'))
         return list(dict.fromkeys(p for p in paths if p))
 
     def status(self):

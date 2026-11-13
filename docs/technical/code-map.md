@@ -462,22 +462,27 @@ Source generations fence helper-process publication across file commands;
 `library_file_commands.py` fences affected marks while cache/hashing work runs
 outside the global marks/settings-writer locks. Stale mappings are cache misses
 rebuilt in background, never a source of authored marks or grades. Production
-original file operations remain Windows-only pending their native platform port.
+original file operations run on Windows and macOS; Linux remains refused.
 
 
 Original Delete and Delete all rejected: `library_file_delete.py` owns counted
 preview, route confirmation, pending settings, restored-photo and interruption
 handling. `library_recycle.py` owns explicit native Windows RecycleItem and
-checked receipt discovery, with no permanent fallback. `library_file_io.py`
+checked receipt discovery, with no permanent fallback. On macOS it dispatches to
+`library_macos.py`: system Foundation Trash URLs, pre-recorded persistent
+bookmarks, volume identity checks and metadata copying, through existing ctypes.
+`library_file_delete.py` also records Mac Trash Undo. `library_file_io.py`
 checks stable NTFS identities or recorded FAT/exFAT contents, guards verified
-source removal and refuses extra named streams on copies/settings rewrites.
+source removal and refuses extra Windows named streams on copies/settings rewrites.
+Its Mac branch provides exclusive native renames, destination-checked private
+source capture and recoverable cleanup; whole folders still stay on one volume.
 `library_api.py`, `library_index.py` and `library_folder_checks.py` discard late
 helper answers at locked acceptance; `library_file_state.py` restores indexed
 album membership/names. Frontend Delete controls and all-rejected scoping live
 in `library-file-commands.js` and `photo-library.js`; Activity gives progress and
 Needs attention locations. Data checks: `test_library_file_commands.py`,
 `test_library_file_folders.py`, `test_library_file_delete.py`,
-`test_library_file_exfat.py`. Focused Electron: `library-photo-file-commands.js`,
+`test_library_file_exfat.py`, `test_library_file_macos.py`. Focused Electron: `library-photo-file-commands.js`,
 `library-folder-file-commands.js`, `library-delete-file-commands.js`.
 
 October 31 scheduler follow-up: `library_scheduler.py` also owns the global

@@ -1,6 +1,7 @@
 """Confirmed original deletion, with recorded settings and no Bin fallback."""
 from copy import deepcopy
 import json
+import sys
 from pathlib import Path
 from uuid import uuid4
 from .library_file_io import signature,digest,same,rename,remove_owned,relocated,check_streams
@@ -32,7 +33,10 @@ def plan(service,request):
                 rows=snapshot(service.marks,str(old))
             side=service.marks._sidecar(old);key=uuid4().hex
             if side.exists(): check_streams(side)
-            items.append({'old':str(old),'new':'Recycle Bin' if library_recycle.available(old) else 'Gone for good',
+            recyclable=library_recycle.available(old)
+            if sys.platform=='darwin' and not recyclable:
+                raise ValueError('Trash is unavailable on this volume. Nothing was changed; permanent deletion is not offered on macOS.')
+            items.append({'old':str(old),'new':library_recycle.label() if recyclable else 'Gone for good',
                 'delete':True,'settings_target':str(old),'cross':False,'stamp':signature(old),'checksum':digest(old),
                 'side_stamp':signature(side) if side.exists() else None,'side_hash':digest(side) if side.exists() else None,
                 'payload':payload,'rows':rows,
@@ -47,7 +51,8 @@ def plan(service,request):
     token=uuid4().hex
     service.plans[token]={'id':token,'action':request.action,'items':items,'warnings':warnings,'copy_paths':copies,'copy_documents':{p:service.marks.copies.document(p) for p in copies}}
     return {'token':token,'count':len(items),'attached_copies':attached,'copy_paths':copies,
-        'recycle':sum(i['new']=='Recycle Bin' for i in items),'permanent':sum(i['new']!='Recycle Bin' for i in items),
+        'recycle':sum(i['new'] in {'Recycle Bin','Trash'} for i in items),'permanent':sum(i['new']=='Gone for good' for i in items),
+        'recycle_label':library_recycle.label(),
         'warnings':warnings,'clashes':[]}
 
 
@@ -66,17 +71,21 @@ def prepare_settings(service,record,item):
 
 
 def take(service,record,item,path,stamp,checksum,key):
-    if item['new']=='Recycle Bin':
+    label=library_recycle.label()
+    if item['new'] in {'Recycle Bin','Trash'}:
         receipt=item.get(key)
         # Search old receipts only for interrupted work whose file is absent.
         # A fresh, still-present original must be recycled, not confused with
         # an earlier identical entry; scanning a large Bin can take minutes.
-        if receipt is None and not Path(path).exists(): receipt=service.recycle_find(path,stamp,checksum)
+        if receipt is None and not Path(path).exists(): receipt=find_receipt(service,item,path,stamp,checksum,key)
         if not receipt:
-            if not same(path,stamp,checksum): raise ValueError('The recorded file is absent or changed, and its Recycle Bin entry could not be found. Both locations were left alone.')
+            if not same(path,stamp,checksum): raise ValueError(f'The recorded file is absent or changed, and its {label} entry could not be found. Both locations were left alone.')
+            reference=library_recycle.reference(path)
+            if reference:
+                item[key+'_reference']=reference;service.save(record)
             receipt=service.recycle(path)
             service.hook('recycle_returned' if key=='photo_receipt' else 'settings_recycle_returned',item)
-        if not relocated(receipt,stamp,checksum): raise ValueError('Windows did not return the checked Recycle Bin entry. Nothing was permanently deleted.')
+        if not relocated(receipt,stamp,checksum): raise ValueError(f'The system did not return the checked {label} entry. Nothing was permanently deleted.')
         item[key]=receipt;service.save(record)
     elif Path(path).exists():
         remove_owned(path,stamp,checksum)
@@ -96,9 +105,9 @@ def run(service,record,item,recovery=False):
     if service.protected(old): raise ValueError('Open another photo before changing this one. Nothing was changed for it.')
     # A crash after RecycleItem, before checkpoint, is identified by a receipt.
     if not item.get('photo_gone') and not old.exists():
-        if item['new']=='Recycle Bin':
-            receipt=service.recycle_find(old,item['stamp'],item['checksum'])
-            if not receipt: raise ValueError('The photo is absent and its Recycle Bin entry could not be found. Its settings were left alone.')
+        if item['new'] in {'Recycle Bin','Trash'}:
+            receipt=find_receipt(service,item,old,item['stamp'],item['checksum'],'photo_receipt')
+            if not receipt: raise ValueError(f'The photo is absent and its {library_recycle.label()} entry could not be found. Its settings were left alone.')
             item['photo_receipt']=receipt
         else: raise ValueError('The photo is absent after an interrupted permanent delete, and its deletion could not be proved. Its settings were left alone in Needs attention.')
         item['photo_gone']=True;service.checkpoint(record,item,'photo_deleted')
@@ -119,3 +128,38 @@ def run(service,record,item,recovery=False):
         service.retired.add(item['old'])
     pictures(service.browser.root,item,delete=True)
     service.checkpoint(record,item,'indexed')
+
+
+def find_receipt(service,item,path,stamp,checksum,key):
+    reference=item.get(key+'_reference')
+    return service.recycle_find(path,stamp,checksum,reference) if reference else service.recycle_find(path,stamp,checksum)
+
+
+def restore(service,deleted):
+    paths=[path for item in deleted for path in (item['old'],item.get('photo_receipt',''),item.get('settings_receipt','')) if path]
+    with service._lane, service.fence(paths):
+        return restore_reserved(service,deleted)
+
+
+def restore_reserved(service,deleted):
+    items=[]
+    for original in deleted:
+        old=Path(original['old']);side=service.marks._sidecar(old)
+        if service.protected(old) or old.exists() or side.exists():
+            raise ValueError(f'{old}: the original location is occupied or open. Nothing was restored or overwritten.')
+        receipt=original.get('photo_receipt')
+        if not receipt or not relocated(receipt,original['stamp'],original['checksum']):
+            raise ValueError(f'{old}: the checked Trash entry is absent or changed. Nothing was restored.')
+        settings=original.get('settings_receipt')
+        if original.get('delete_side_stamp') and (not settings or not relocated(settings,original['delete_side_stamp'],original['delete_side_hash'])):
+            raise ValueError(f'{old}: the checked settings entry in Trash is absent or changed. Nothing was restored.')
+        key=uuid4().hex
+        items.append({'old':receipt,'new':str(old),'stamp':original['stamp'],'checksum':original['checksum'],
+            'side_stamp':original.get('delete_side_stamp'),'side_hash':original.get('delete_side_hash'),
+            'settings_old':settings or receipt+'.hdrf','payload':deepcopy(original['payload']),
+            'rows':deepcopy(original['rows']),'cross':False,'done':False,
+            'stage':str(old.parent/('.hdr-moving-'+key+'.tmp')),
+            'side_stage':str(old.parent/('.hdr-settings-'+key+'.tmp'))})
+    record={'id':uuid4().hex,'action':'undo','items':items,'warnings':[]}
+    service.save(record);service.invalidate();service.hook('record',items[0])
+    return service.run(record)

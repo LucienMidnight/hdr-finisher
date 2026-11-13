@@ -1,11 +1,15 @@
-"""Windows no-replace primitives and durable command records."""
+"""Native no-replace primitives and durable command records."""
 import ctypes
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from contextlib import contextmanager
+from contextvars import ContextVar
+
+_removals = ContextVar('library_file_removals', default=None)
 
 
 def digest(path):
@@ -29,6 +33,9 @@ def same(path, stamp, checksum=None):
 
 
 def stable_ids(path):
+    if sys.platform=='darwin':
+        from . import library_macos
+        return library_macos.stable_ids(path)
     if os.name!='nt': return True
     kernel=ctypes.WinDLL('kernel32',use_last_error=True)
     get=kernel.GetVolumeInformationW
@@ -92,12 +99,23 @@ def rename(source, target, replace=False):
             raise ctypes.WinError(ctypes.get_last_error())
     elif replace:
         os.replace(source, target)
+    elif sys.platform == 'darwin':
+        library = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
+        move = library.renamex_np
+        move.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        move.restype = ctypes.c_int
+        if move(os.fsencode(source), os.fsencode(target), 4):
+            error = ctypes.get_errno()
+            raise OSError(error, os.strerror(error), str(target))
     elif Path(source).is_file():
         os.link(source, target)
         Path(source).unlink()
     else:
         # The app runs on Windows; do not use POSIX rename's replace semantics.
         raise ValueError('Folder commands require Windows no-replace rename.')
+    if sys.platform == 'darwin':
+        for folder in {Path(source).parent, Path(target).parent}:
+            sync_directory(folder)
 
 
 def durable(path, value):
@@ -122,7 +140,36 @@ def occupied(path, except_path=None):
 
 
 def remove_owned(path, stamp, checksum):
-    """Bind deletion to the verified file handle, never a replaceable pathname."""
+    """Capture the checked original before removal; never unlink its replaceable name."""
+    if sys.platform == 'darwin':
+        folder = removal_folder(path, stamp)
+        folder.mkdir(mode=0o700, exist_ok=True)
+        if folder.is_symlink() or folder.stat().st_uid != os.getuid() or folder.stat().st_mode & 0o077:
+            raise ValueError(f'The removal staging folder changed. Files were left alone: {folder}')
+        staged = folder / 'item'
+        if not staged.exists() and not staged.is_symlink():
+            if not Path(path).exists():
+                folder.rmdir()
+                return
+            rename(path, staged)
+        try:
+            checked = relocated(staged, stamp, checksum)
+        except ValueError:
+            checked = False
+        if not checked:
+            try:
+                rename(staged, path)
+                folder.rmdir()
+            except OSError:
+                pass
+            raise ValueError(f'The file changed. It was kept at {path} or {staged}.')
+        removals = _removals.get()
+        if removals is not None:
+            removals.append((Path(path), stamp, checksum))
+        else:
+            staged.unlink()
+            folder.rmdir()
+        return
     if os.name != 'nt':
         raise ValueError('Removing originals requires the Windows ownership guard.')
     import msvcrt
@@ -145,8 +192,40 @@ def remove_owned(path, stamp, checksum):
 
 @contextmanager
 def read_guard(path, stamp, checksum):
-    """Keep a verified destination unchangeable while removing its source."""
-    if os.name != 'nt': raise ValueError('Original-file removal requires Windows.')
+    """Verify destinations and retain captured Mac originals until the guard exits."""
+    if sys.platform == 'darwin':
+        import fcntl
+        with open(path, 'rb') as stream:
+            fcntl.flock(stream, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            if not same(path, stamp, checksum):
+                raise ValueError('The checked copy changed. The original was kept.')
+            removals = []
+            token = _removals.set(removals)
+            try:
+                yield
+                if not same(path, stamp, checksum):
+                    raise ValueError('The checked copy changed during the command. The original was retained.')
+                for original, original_stamp, original_checksum in removals:
+                    staged = removal_folder(original, original_stamp) / 'item'
+                    if not relocated(staged, original_stamp, original_checksum):
+                        raise ValueError(f'The captured original changed. It was kept at {staged}.')
+                for original, original_stamp, original_checksum in removals:
+                    folder = removal_folder(original, original_stamp)
+                    (folder / 'item').unlink()
+                    folder.rmdir()
+            except BaseException:
+                for original, original_stamp, original_checksum in removals:
+                    folder = removal_folder(original, original_stamp)
+                    try:
+                        rename(folder / 'item', original)
+                        folder.rmdir()
+                    except OSError:
+                        pass
+                raise
+            finally:
+                _removals.reset(token)
+        return
+    if os.name != 'nt': raise ValueError('Original-file removal requires Windows or macOS.')
     import msvcrt
     kernel=ctypes.WinDLL('kernel32',use_last_error=True)
     create=kernel.CreateFileW;create.argtypes=[ctypes.c_wchar_p,ctypes.c_uint,ctypes.c_uint,ctypes.c_void_p,ctypes.c_uint,ctypes.c_uint,ctypes.c_void_p];create.restype=ctypes.c_void_p
@@ -158,3 +237,27 @@ def read_guard(path, stamp, checksum):
         if not matches_handle(path,[s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns],stamp) or hashlib.file_digest(stream,'sha256').hexdigest()!=checksum:
             raise ValueError('The checked copy changed. The original was kept.')
         yield
+
+
+def removal_folder(path, stamp):
+    key = hashlib.sha256((str(path) + json.dumps(stamp)).encode()).hexdigest()
+    return Path(path).parent / ('.hdr-removing-' + key)
+
+
+def removal_pending(path, stamp):
+    return sys.platform == 'darwin' and removal_folder(path, stamp).exists()
+
+
+def sync_directory(path):
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    except PermissionError:
+        from . import library_macos
+        with library_macos.pool():
+            if Path(path) == Path(library_macos.trash_directory(path)):
+                return
+        raise
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)

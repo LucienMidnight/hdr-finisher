@@ -1,6 +1,7 @@
-"""Explicit Windows RecycleItem; no permanent-delete fallback is called."""
+"""Native Windows RecycleItem and macOS Trash; never fall back to permanent deletion."""
 import ctypes as c
 import os
+import sys
 from pathlib import Path
 from uuid import UUID
 
@@ -32,6 +33,9 @@ def item(shell,path):
 
 
 def available(path):
+    if sys.platform=='darwin':
+        from . import library_macos
+        return library_macos.available(path)
     if os.name!='nt': return False
     kernel=c.WinDLL('kernel32',use_last_error=True);get=kernel.GetDriveTypeW;get.argtypes=[c.c_wchar_p];get.restype=c.c_uint
     root=Path(path).anchor
@@ -43,6 +47,9 @@ def available(path):
 
 
 def recycle(path):
+    if sys.platform=='darwin':
+        from . import library_macos
+        return library_macos.recycle(path)
     if os.name!='nt': raise ValueError('Recycle Bin commands require Windows.')
     ole=c.OleDLL('ole32');ole.CoInitializeEx.argtypes=[c.c_void_p,c.c_uint];ole.CoInitializeEx.restype=c.c_long
     initialized=ole.CoInitializeEx(None,2);check(initialized)
@@ -66,8 +73,11 @@ def recycle(path):
         ole.CoUninitialize()
 
 
-def find(path,stamp,checksum):
+def find(path,stamp,checksum,reference_url=None):
     """Find only the recorded original, including a crash before saving its receipt."""
+    if sys.platform=='darwin':
+        from . import library_macos
+        return library_macos.find(path,stamp,checksum,reference_url)
     import struct
     from .library_file_io import relocated
     root=Path(Path(path).anchor)/'$Recycle.Bin'
@@ -89,3 +99,14 @@ def find(path,stamp,checksum):
                 if relocated(recycled,stamp,checksum): return str(recycled)
             except (OSError,ValueError,struct.error): continue
     return None
+
+
+def reference(path):
+    if sys.platform=='darwin':
+        from . import library_macos
+        return library_macos.reference(path)
+    return None
+
+
+def label():
+    return 'Trash' if sys.platform=='darwin' else 'Recycle Bin'

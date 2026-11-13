@@ -1,5 +1,16 @@
 # Performance table
 
+November 14 macOS file-command smoke (working tree based on `696a3fd6`,
+`p1/mac-file-commands`; MacBook Neo, A18 Pro, 8 GB, 6 cores; 1408x794 points;
+unpackaged plain Electron under the shared GPU lock; disposable synthetic
+96x128 scene-linear Rec.2020 EXR, not a real-photo workload): first picture
+0.7 s; 1/1 eligible pictures shown; 5,400 frames over 90 s, no recorded frame
+gap or timer block above the harness thresholds, no memory violation. Independent
+app peak 0.731 GB. Observation only, not a speed comparison or whole-folder RAW
+qualification; existing tolerances unchanged. The initial SDR-PNG fixture was
+ineligible under normal Library filters and was replaced, not treated as a pass.
+Evidence: `codebase/output/quick-library-check/filecmd-mac/report.json`.
+
 November 13–14 P1-C safety validation (Edge safety `1d64ab23`; Library safety
 committed with this follow-up; MacBook Neo, A18 Pro, 8 GB unified RAM, 6 cores; 1408x794 points;
 unpackaged Electron under the shared GPU lock; other agents' fast suites
@@ -49,8 +60,9 @@ while the actual settings writer runs. In both cases the unrelated rating is
 acknowledged within 250 ms and its sidecar contains the new rating within
 1 s, before the blocked file work is released. These are threshold assertions,
 not a native macOS or physical slow-storage timing baseline. Real Mac
-rename/move/delete remain refused by the existing Windows-only safety guard;
-their whole-command completion time is unqualified. PC native/recovery and
+rename/move/delete were refused in that P1-A observation; the November 14 native
+Mac file-command port supersedes the refusal, not the timing baseline. Their
+whole-command completion time is still unqualified. PC native/recovery and
 slow-storage qualification remains required. No tolerance was relaxed.
 
 November 14 P1-A drawing/cache work (working tree based on `10eb390d`,
