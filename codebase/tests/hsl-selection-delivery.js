@@ -6,13 +6,14 @@
 // node tests/run-in-electron.js tests/hsl-selection-delivery.js [--local]
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {chromium}=require('playwright');const {execFileSync}=require('node:child_process');
+const {photosPath}=require('./helpers/photos-root.cjs');
 const local=process.argv.includes('--local'),keep=process.argv.includes('--keep');
 const python=path.resolve(__dirname,'../.venv/Scripts/python.exe'),env={...process.env,PYTHONPATH:path.resolve(__dirname,'../backend')};
 const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.lane===state.currentView
  &&state.acceptedPresentation.generation===state.previewGeneration[state.currentView]&&viewerState().status==='ready';
 (async()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'hsl-selection-delivery-'));
- const original='D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2';
+ const original=photosPath('D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2');
  const photos=path.resolve('output/test-photos');fs.mkdirSync(photos,{recursive:true});
  const photo=path.join(photos,'IMG_0114.CR2');if(!fs.existsSync(photo))fs.copyFileSync(original,photo);
  const browser=await chromium.launch(),page=await browser.newPage(),base=process.env.HDR_FINISHER_URL||'http://127.0.0.1:8765';

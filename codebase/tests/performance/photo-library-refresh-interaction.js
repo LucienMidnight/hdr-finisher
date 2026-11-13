@@ -7,6 +7,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 const { chromium } = require("playwright");
+const { photosPath } = require("../helpers/photos-root.cjs");
 const root = path.resolve(__dirname, "../..");
 const output = path.join(root, "output/library-measurements/remaining");
 fs.mkdirSync(output, {recursive:true});
@@ -27,7 +28,7 @@ const median = values => {
     await page.evaluate(async source => {
       const selection = await desktop.grantSourcePath(source);
       await openDesktopSelection({ kind: "source", ...selection });
-    }, String.raw`D:\Photos\HDR Test Images\DSC00264.ARW`);
+    }, photosPath(String.raw`D:\Photos\HDR Test Images\DSC00264.ARW`));
     await page.waitForFunction(() => state.acceptedPresentation?.exact && viewerState().status === "ready", null, { timeout: 120000 });
     const adapter = await page.evaluate(() => state.gpuPreview?.adapterInfo || null);
     assert.ok(adapter && !adapter.fallback, "Grade must use the real app GPU adapter");

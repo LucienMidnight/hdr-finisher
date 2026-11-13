@@ -4,6 +4,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
 const { installPictureRequestMonitor } = require("./support/picture-request-monitor.cjs");
+const { photosPath } = require("./helpers/photos-root.cjs");
+const TEST_IMAGES = photosPath("D:/Photos/HDR Test Images");
 const root = path.resolve(__dirname, "..");
 const output = path.join(root, "output", "library-stage-a");
 fs.mkdirSync(output, { recursive: true });
@@ -153,9 +155,9 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     assert.equal(fs.readdirSync(folder).filter(name => name.endsWith(".hdrf")).length, 1);
     // Local real-photo check: copy samples to output, never write to originals.
     const rawSources = [
-      "D:/Photos/HDR Test Images/DSC00264.ARW",
-      "D:/Photos/HDR Test Images/DJI Samples/DSC00264_DxO-optical-corr-only.dng",
-      "D:/Photos/HDR Test Images/Test Suite Images/iphone_16_pro_IMG_3324.HEIC",
+      photosPath("D:/Photos/HDR Test Images/DSC00264.ARW"),
+      photosPath("D:/Photos/HDR Test Images/DJI Samples/DSC00264_DxO-optical-corr-only.dng"),
+      photosPath("D:/Photos/HDR Test Images/Test Suite Images/iphone_16_pro_IMG_3324.HEIC"),
     ];
     if (rawSources.every(source => fs.existsSync(source))) {
       rawFolder = fs.mkdtempSync(path.join(output, "formats-"));
@@ -178,10 +180,10 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
       }
     } else console.log("[library format] local real samples unavailable; synthetic route checks only");
     // Cold real-folder startup must draw pixels while other photos are still queued.
-    if (fs.existsSync("D:/Photos/HDR Test Images")) {
+    if (fs.existsSync(TEST_IMAGES)) {
       // Count live fetch/body work in this frame and folder. Browser requestfailed
       // events can arrive after replacement requests have already started.
-      await library.evaluate(installPictureRequestMonitor, { folder: "D:/Photos/HDR Test Images" });
+      await library.evaluate(installPictureRequestMonitor, { folder: TEST_IMAGES });
       let firstPixels = null, firstMeta = null, finished = 0;
       const started = Date.now();
       const request = req => {
@@ -189,7 +191,7 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
       };
       const response = res => { if (res.url().endsWith("/api/library/live-plan")) { firstMeta ??= Date.now() - started; finished++; } };
       page.on("request", request); page.on("response", response);
-      await library.evaluate(() => HDRLibrary.browse("D:/Photos/HDR Test Images"));
+      await library.evaluate(folder => HDRLibrary.browse(folder), TEST_IMAGES);
       await library.waitForSelector("#grid-space canvas[data-picture-key]", { timeout: 60000 });
       const { peak, started: pictureRequests } = await library.evaluate(() => {
         const monitor = window.__pictureRequestMonitor, snapshot = monitor.snapshot();

@@ -1,5 +1,6 @@
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path');
+const {photosPath}=require('./helpers/photos-root.cjs');
 const out=path.resolve('output/hsl-smooth');fs.mkdirSync(out,{recursive:true});
 const tag=process.argv.includes('--before')?'before':'after';
 (async()=>{const browser=await chromium.launch(),page=await browser.newPage();
@@ -7,7 +8,7 @@ try{
 await page.addInitScript(() => localStorage.setItem('hdr-finisher:library-show-all-files','true'));
 await page.goto(process.env.HDR_FINISHER_URL||'http://127.0.0.1:8765');
 await page.waitForFunction(()=>state.gpuPreview?.available,null,{timeout:30000});
-const photo=path.join(out,'IMG_0114.CR2');if(!fs.existsSync(photo))fs.copyFileSync('D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2',photo);
+const photo=path.join(out,'IMG_0114.CR2');if(!fs.existsSync(photo))fs.copyFileSync(photosPath('D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2'),photo);
 await page.evaluate(async photo=>{
  const grant=await desktop.grantSourcePath(photo);
  const created=await projectIo.createImportJob(fetch,{grant:grant.grant});let job=created.payload;if(!created.response.ok)throw Error(JSON.stringify(job));

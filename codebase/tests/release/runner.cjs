@@ -3,6 +3,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn, execFileSync } = require('node:child_process');
 const { stopProcessTree, describe } = require('./process-tree.cjs');
+const { photosPath } = require('../helpers/photos-root.cjs');
 const ROOT = path.resolve(__dirname, '../..');
 const OUTPUT = path.join(ROOT, 'output/release-checks');
 const read = file => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -59,7 +60,7 @@ function select(list, mode, value, changed = []) {
   return { rows, ...mapping };
 }
 function command(row, out, list) {
-  const vars = { output: out, root: ROOT, project: list.protectedProjects[2], electron: path.join(ROOT, 'desktop/node_modules/electron/dist/electron.exe') };
+  const vars = { output: out, root: ROOT, project: photosPath(list.protectedProjects[2]), electron: path.join(ROOT, 'desktop/node_modules/electron/dist/electron.exe') };
   const expand = text => String(text).replace(/\{(output|root|project|electron)\}/g, (_, key) => vars[key]);
   const method = row.launch.method;
   const args = ['node', 'python', 'powershell'].includes(method) ? [] : [method === 'native' ? 'tests/run-native-electron.js' : 'tests/run-in-electron.js'];
@@ -67,7 +68,7 @@ function command(row, out, list) {
   if (method === 'powershell') args.push('-NoProfile', '-File');
   args.push(row.path);
   if (method === 'packaged') args.push('--packaged');
-  args.push(...(row.launch.args || []).map(expand));
+  args.push(...(row.launch.args || []).map(expand).map(photosPath));
   return { executable: method === 'python' ? path.join(ROOT, '.venv/Scripts/python.exe') : method === 'powershell' ? 'powershell.exe' : process.execPath, args, env: Object.fromEntries(Object.entries(row.launch.env || {}).map(([key, value]) => [key, expand(value)])) };
 }
 // Historical results supply estimates only; never count them as current passes.
@@ -124,7 +125,7 @@ function classify(attempts, known, driver) {
   return logs.every(log => knownMessage(log, known, driver)) ? 'known' : 'new';
 }
 function hashProjects(projects) {
-  return projects.map(file => ({ file: path.resolve(ROOT, file), hash: digest(fs.readFileSync(path.resolve(ROOT, file))) }));
+  return projects.map(photosPath).map(file => ({ file: path.resolve(ROOT, file), hash: digest(fs.readFileSync(path.resolve(ROOT, file))) }));
 }
 function checkProjects(before) {
   for (const item of before) if (!fs.existsSync(item.file) || digest(fs.readFileSync(item.file)) !== item.hash) throw Error(`STOP: protected project changed: ${item.file}`);
