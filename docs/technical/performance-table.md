@@ -22,6 +22,26 @@ Evidence: `codebase/output/p1c-edge-kernel.log`,
 `codebase/output/p1c-edge-cpu-fallback.log`,
 `codebase/output/quick-library-check/p1c-gpu-safety/report.json`. PC values elsewhere remain separate
 baselines; these runs do not judge a timing regression.
+November 14 guarded macOS available-memory correction (working tree on
+`fix/macos-available-memory`, parent `10eb390d`; app code unchanged after
+capture): **MacBook** Neo, Apple A18 Pro, 8 GB unified memory, 6 cores;
+1408x794-point plain Electron; shared 33-photo mixed fixture; **other agents
+running**, with this task's full Python suite also running throughout the
+90-second observation. The existing quick-check scenario selects a 4 GB
+app ceiling after launching at the default 2.5 GB; no setting or budget
+changed in this fix. First picture **0.6 s**, ten never, **6/33 shown by
+90 s**; both DJI 8000x6000 DNGs now develop without photo-work errors.
+The check still **fails system reserve**: 22/386 independent samples have
+1.192–1.770 GB available against the unchanged 2 GB reserve, through the
+conservative fallback rather than the normal-pressure percentage. App peak
+3.618 GB; longest frame gap 167 ms passes the 250 ms limit. This is not a
+default-ceiling acceptance or a controlled speed comparison: the existing
+5% whole-wait tolerance cannot turn differing load/ceiling conditions into
+a speedup claim. Steve should try Library before another timing run.
+Evidence: `codebase/output/quick-library-check/fixmem/report.json`,
+`backend.log`, `memory.jsonl`; full fast suites and the exact-pixel Retouch
+interaction check pass (logs in the same folder).
+
 
 November 13 P1-E fresh-worktree tooling smoke (`98a88b2a`; MacBook Neo,
 Apple A18 Pro, 8 GB, 6 cores; 1408x794 points; setup-only worktree with spaces
