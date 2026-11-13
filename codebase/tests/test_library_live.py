@@ -556,6 +556,28 @@ def test_non_xtrans_gpu_refusal_never_submits_cpu_helper(tmp_path, monkeypatch):
     assert response.headers["X-Library-Fallback"] == "unsupported source recipe"
 
 
+def test_gpu_source_carries_existing_picture_error_revision(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher import library_api, library_gpu_raw
+    from hdr_finisher.library_picture_errors import PictureErrors
+    from hdr_finisher.media_browser import MediaBrowserStore
+    path = photo(tmp_path)
+    profile = tmp_path / "profile"
+    class Helper:
+        def status(self): return {"paused": False}
+        def submit_library(self, *args, **kwargs): pytest.fail("GPU request submitted CPU work")
+    app = FastAPI()
+    app.include_router(library_api.create_library_router(Helper(), MediaBrowserStore(profile)))
+    with TestClient(app) as client:
+        response = client.post('/api/library/live-scene', json={"path":str(path),"edge":640,"gpu":True})
+        assert response.status_code == 200, response.text
+        header, _ = library_gpu_raw.unframe(response.content)
+        marks = LibraryMarks(profile / "library")
+        assert header["failure_revision"] == PictureErrors(marks).revision(str(path))
+        client.delete('/api/library/live-source/' + header['source_job'])
+
+
 def test_native_requests_share_one_source_and_release_it_after_the_hold(tmp_path, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier

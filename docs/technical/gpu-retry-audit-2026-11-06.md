@@ -23,6 +23,39 @@ refuses GPU delivery; accepted CPU fallback passes Proof/export byte identity
 and decoded HDR ceilings (Grade PRD and `output/p1c-edge-delivery.log`).
 Export/Proof, DNG, retouch and Denoise optional recovery remain as Steve chose.
 
+## November 13–14 follow-up: P1-C Library recovery
+
+`library-gpu-raw.js` now bounds device-loss recovery at one retry per work
+identity. Callback and exception handling count each loss once, including
+loss before registration and cancellation during admission. Repeated loss
+selects the CPU, never another requeue. The counter clears after successful
+native handoff rather than just after the shader step; concurrent device,
+cancellation or allocation errors cannot convert a pixel rejection into a
+temporary retry or erase its remembered refusal.
+
+The failure key is no longer path plus sizes: source identity, existing
+`PictureErrors.revision`, source-quality identity, full RAW settings, repair
+context and canonical sizes distinguish the work. `library_api.py` transports
+that existing revision; no duplicate persistent rejection store was added.
+Behavioural tests check changed settings, permanent rejection, device startup,
+admission and handoff losses, and successful recovery. The Mac hardware
+`library-gpu-recovery.js` passes: one uncontented OOM attempt; exactly two
+device-loss attempts followed by one CPU development; no stuck reservations
+or broken-photo records. Fast Node: 942 passed / one skipped. Python:
+3,171 passed / 176 skipped / one xpass / 25 unrelated Retouch failures
+(24 memory refusals, one cancellation wait); no repair or rerun of those.
+
+Additional real-app `library-temporary-recovery.js --invalid-input` stalled
+without reporting a scenario and was stopped after about seven minutes; the
+shutdown restored its sidecar and removed its temporary cache. Do not count
+that end-to-end scenario as passed. Kernel input refusal and backend CPU
+selection have passing behavioural coverage; no rerun or stall diagnosis was
+attempted (`output/p1c-edge-cpu-fallback.log`).
+
+Remaining: Grade's broad OOM/timeout classification is explicitly outside
+P1-C. The optional recovery omissions on export/Proof, DNG, Edge, retouch and
+Denoise remain Steve's November 6 choice. PC hardware checks remain due.
+
 ## Status (November 6, after Steve's decision)
 
 Steve chose to fix the two routes that retry what the rule sends to the CPU,
@@ -38,7 +71,7 @@ and to leave the routes that only miss an optional retry:
   would touch Still-strict export code. Revisit only if those fallbacks show
   up in Steve's use.
 
-## Findings
+## Findings (November 6 baseline)
 
 ### Library RAW development: retries rejected pixels
 

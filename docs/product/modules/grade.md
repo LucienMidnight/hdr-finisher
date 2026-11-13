@@ -1,6 +1,6 @@
 # Module PRD: Grade
 
-## November 13: P1-C Edge-colour rejection safety
+## November 13–14: P1-C Edge-colour rejection safety
 
 The shared Edge-colour kernel now rejects a bad input scan immediately,
 before reconstruction or the no-clipping return. Non-finite input and input
@@ -31,6 +31,15 @@ one skip; Python has 3,171 passes, 176 skips, one xpass and 25 unrelated Retouch
 failures (24 memory refusals and one cancellation-wait assertion). These were
 not repaired or rerun. Repeat the strict checks on the PC before release. Logs:
 `codebase/output/p1c-edge-kernel.log`, `codebase/output/p1c-edge-delivery.log`.
+
+An additional real-app input-rejection-to-CPU check
+(`library-temporary-recovery.js --invalid-input`) stalled without reporting a
+scenario result and was stopped after about seven minutes, within the overnight
+slow-test limit. Its forced renderer shutdown is not a spontaneous app crash;
+the driver restored its sidecar and removed its temporary cache. This extra
+end-to-end scenario remains unqualified on the Mac; the kernel input refusals
+and backend CPU-selection regressions pass. No rerun or diagnosis was attempted.
+Log: `codebase/output/p1c-edge-cpu-fallback.log`.
 
 ## November 11: W11 HSL / Match speed investigation
 

@@ -3,7 +3,8 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),label=process.argv.includes('--baseline')?'baseline':'fixed';
 const both=process.argv.includes('--both-invalid');
-const output=path.join(root,'output/batch3g',both?'both-invalid':label);fs.mkdirSync(output,{recursive:true});
+const invalidInput=process.argv.includes('--invalid-input');
+const output=path.join(root,'output/batch3g',invalidInput?'input-invalid':both?'both-invalid':label);fs.mkdirSync(output,{recursive:true});
 const photos=['DSC03819','DSC00264'].map(n=>path.join(root,'output/test-photos/library-mixed-v1-run',n+'.ARW'));
 for(const photo of photos)assert.ok(fs.existsSync(photo),photo);
 const {execFileSync}=require('node:child_process');
@@ -29,7 +30,7 @@ const temporaryCache=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'hdr-r
  originalCacheSettings=fs.existsSync(cacheSettingsPath)?fs.readFileSync(cacheSettingsPath):null;
  const switched=await request.post(new URL('/api/library/cache-settings',page.url()).href,{data:{location:temporaryCache}});assert.ok(switched.ok(),'Temporary cache must be selected');
  await page.evaluate(()=>activateWorkflowTab('import'));
- const result=await page.locator('#library-frame').evaluate(async(el,{photos,both})=>{
+ const result=await page.locator('#library-frame').evaluate(async(el,{photos,both,invalidInput})=>{
   const w=el.contentWindow,events=[],results=[],originalLog=w.HDRLibraryStopwatch,upload=w.HDRLibraryUpload,edge=w.HDREdgeColour;
   w.HDRLibraryStopwatch=(stage,fields)=>{events.push({stage,...fields});originalLog(stage,fields);};
   const check=async(name,task)=>{try{results.push({name,passed:true,...await task()});}catch(error){results.push({name,passed:false,error:error.message});}};
@@ -59,12 +60,12 @@ const temporaryCache=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'hdr-r
    let injected=0,scans=0;
    w.HDREdgeColour={...edge,reconstruct:args=>edge.reconstruct({...args,read:async(buffer,bytes)=>{
     const actual=await args.read(buffer,bytes);
-    if(bytes===16&&++scans%2===0&&injected<(both?2:1)){injected++;const value=actual.slice(0);new Uint32Array(value)[1]=141;return value;}
+    if(bytes===16&&++scans%2===(invalidInput?1:0)&&injected<(both?2:1)){injected++;const value=actual.slice(0);new Uint32Array(value)[1]=141;return value;}
     return actual;
    }})};
    await check('invalid-gpu-pixels',async()=>{
     const value=await w.HDRLibraryScenes.load(photos[1],640,undefined,0,null,{develop:true});
-    if(!injected)throw Error('Output scan injection was not reached');
+    if(!injected)throw Error((invalidInput?'Input':'Output')+' scan injection was not reached');
     const cpu=events.some(e=>e.stage==='picture_source_cpu_completed'&&e.path===photos[1]);
     // GPU failure rule (master PRD, November 6): a rejected GPU result takes
     // the CPU route at once, with no second GPU attempt.
@@ -76,7 +77,7 @@ const temporaryCache=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'hdr-r
    const health=await (await w.fetch('/api/library/health')).json();
    return {results,events,errors:health.picture_errors,grants:w.HDRLibraryGrants.snapshot()};
   }finally{w.HDRLibraryUpload=upload;w.HDREdgeColour=edge;w.HDRLibraryStopwatch=originalLog;}
- },{photos,both});
+ },{photos,both,invalidInput});
  fs.writeFileSync(path.join(output,label+'-faults.json'),JSON.stringify(result,null,2));
  await page.screenshot({path:path.join(output,label+'-faults.png')});
  console.log(JSON.stringify({label,results:result.results}));

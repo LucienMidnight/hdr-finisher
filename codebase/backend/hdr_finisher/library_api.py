@@ -731,7 +731,8 @@ def create_library_router(worker, browser, store=None):
                         if await request.is_disconnected():
                             raise HTTPException(499, "Library request cancelled.")
                         header.setdefault("source_timings_ms", {}).update(checks_claim=(claimed_at-requested_at)*1000, decode_prepare=(time.perf_counter()-claimed_at)*1000)
-                        header.update(edge=command.edge, source_quality=source_quality, item_path=command.path, source_job=token)
+                        header.update(edge=command.edge, source_quality=source_quality, item_path=command.path, source_job=token,
+                            failure_revision=await run_in_threadpool(picture_errors.revision, command.path))
                         # Lets the page skip a description round trip for grades
                         # whose sharp draw needs the backend (masks, warps, denoise).
                         header["direct_eligible"] = await run_in_threadpool(direct_eligible, document)

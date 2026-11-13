@@ -4008,7 +4008,7 @@
       "path": "tests/library-temporary-recovery.js",
       "areas": ["library", "ui"],
       "tier": "area",
-      "protects": "A real upload timeout and edge-colour output rejection recover without durable errors.",
+      "protects": "A real upload timeout and Edge-colour rejection recover without durable errors; --invalid-input exercises immediate input rejection and CPU fallback.",
       "launch": {"method": "electron"}
     },
     {
