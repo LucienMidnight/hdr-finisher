@@ -25,10 +25,39 @@ function assert(condition, message) {
     await page.locator("#grade-workflow-panel").waitFor({ state: "visible", timeout: 30000 });
     await page.locator("#preview-status").waitFor({ state: "hidden", timeout: 60000 }).catch(() => null);
 
+    await page.evaluate(() => {
+      const render = renderCropFrame;
+      renderCropFrame = () => {
+        render();
+        if (!state.cropMode) return;
+        const crop = activeCropGeometry().crop;
+        const style = els.cropEditorOverlay.style;
+        for (const [edge, value] of Object.entries({left:crop.x, top:crop.y, right:crop.x+crop.width, bottom:crop.y+crop.height})) {
+          if (Math.abs(parseFloat(style.getPropertyValue(`--crop-${edge}`)) - value*100) > 1e-9) throw Error(`Crop shade ${edge} detached from frame`);
+        }
+        if (getComputedStyle(els.cropEditorOverlay, '::before').clipPath === 'none') throw Error('Crop shade has no cutout');
+      };
+    });
     const geometryGroup = page.locator('[data-group="geometry"]');
     if (await geometryGroup.evaluate((element) => element.classList.contains("collapsed"))) {
       await geometryGroup.locator(".group-toggle").click();
     }
+    await page.locator("#crop-tool-toggle").click();
+    await page.locator("#crop-ratio").selectOption("4:3");
+    // Exercise the live shade through resize and move, with the active aspect lock.
+    const handle = page.locator('.crop-handle[data-crop-handle="se"]');
+    const handleBox = await handle.boundingBox();
+    assert(handleBox, 'Missing crop resize handle');
+    await page.mouse.move(handleBox.x + handleBox.width/2, handleBox.y + handleBox.height/2);
+    await page.mouse.down();
+    await page.mouse.move(handleBox.x - 40, handleBox.y - 30, {steps:4});
+    await page.mouse.up();
+    const frame = await page.locator('.crop-box').boundingBox();
+    await page.mouse.move(frame.x + frame.width/2, frame.y + frame.height/2);
+    await page.mouse.down();
+    await page.mouse.move(frame.x + frame.width/2 + 10, frame.y + frame.height/2 + 10, {steps:4});
+    await page.mouse.up();
+    await page.evaluate(() => closeCropMode(false));
     // A normal editing session leaves the most recent task resident in the
     // scheduler. Releasing Straighten must not re-arm that old task against
     // the unapplied rotate geometry.

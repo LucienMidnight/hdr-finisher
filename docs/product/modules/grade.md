@@ -2184,3 +2184,9 @@ Built: Adjustment Presets rows select by click, Ctrl/Cmd toggle and Shift
 range; Space/Enter select and arrows move between rows (Ctrl/Cmd arrows move
 focus only). Export selected uses that selection. Search/reload clears selection
 and its range anchor. Applying, renaming and deleting remain separate actions.
+
+## November 13: crop shading
+
+Built: crop mode shades only outside the frame. The cutout uses the same
+normalized bounds as the frame on entry, drag, resize and aspect changes,
+including a rotated image. Crop processing and exported pixels are unchanged.

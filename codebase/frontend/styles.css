@@ -5258,7 +5258,10 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
 }
 .checkbox-row { display: flex !important; align-items: center; gap: 8px; }
 
-.crop-editor-overlay { position: absolute; inset: 0; z-index: 16; background: var(--backdrop); pointer-events: auto; overflow: visible; }
+.crop-editor-overlay { position: absolute; inset: 0; z-index: 16; pointer-events: auto; overflow: visible; }
+/* Only the picture outside the crop frame is shaded; the frame itself stays clear. */
+.crop-editor-overlay::before { content: ""; position: absolute; inset: 0; background: var(--backdrop); pointer-events: none;
+  clip-path: polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, var(--crop-left, 0%) var(--crop-top, 0%), var(--crop-right, 100%) var(--crop-top, 0%), var(--crop-right, 100%) var(--crop-bottom, 100%), var(--crop-left, 0%) var(--crop-bottom, 100%), var(--crop-left, 0%) var(--crop-top, 0%)); }
 .crop-box { position: absolute; min-width: 24px; min-height: 24px; border: 1px solid var(--border); background: transparent; box-shadow: var(--plate-lift); cursor: move; touch-action: none; }
 .crop-box canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .crop-handle { position: absolute; width: 10px; height: 10px; border: 1px solid var(--border); background: var(--text); transform: translate(-50%, -50%); }

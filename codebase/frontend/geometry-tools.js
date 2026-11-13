@@ -1088,6 +1088,12 @@ function renderCropFrame() {
   if (!state.cropMode || !els.cropBox) return;
   const crop = activeCropGeometry().crop;
   Object.assign(els.cropBox.style, { left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.width * 100}%`, height: `${crop.height * 100}%` });
+  // The shade outside the frame cuts its hole from the same numbers (styles.css .crop-editor-overlay::before).
+  const shade = els.cropEditorOverlay.style;
+  shade.setProperty("--crop-left", `${crop.x * 100}%`);
+  shade.setProperty("--crop-top", `${crop.y * 100}%`);
+  shade.setProperty("--crop-right", `${(crop.x + crop.width) * 100}%`);
+  shade.setProperty("--crop-bottom", `${(crop.y + crop.height) * 100}%`);
   requestAnimationFrame(drawCropGuide);
 }
 

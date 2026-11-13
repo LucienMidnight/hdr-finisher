@@ -168,3 +168,6 @@ Combine scopes with [Chrome Proof](proof.md) and physical delivery checks.
 - Assuming a clean scope guarantees an attractive or compatible result
 - Dragging Perspective guide handles and expecting the preview to update before pressing Apply Guides
 - Expecting Crop & Rotate's Reset to also clear a Perspective correction, or the reverse — the two reset independently
+
+While Crop is open, only the area outside the crop frame is shaded. The
+inside stays clear, and the shade follows the frame as you move or resize it.
