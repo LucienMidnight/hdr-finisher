@@ -132,11 +132,13 @@ def _render_pair(frame, owner, settings, adjustments):
     record = renderer_record()
     root = Path(os.environ[ROOT_ENV]) if os.environ.get(ROOT_ENV) else None
     directory = None
+    cacheable = True
     memory = DeliveryMemory()
     try:
         if policy["effective_force_cpu"]:
             return None
         if root is None or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 5:
+            cacheable = False
             raise RuntimeError("The GPU delivery renderer is unavailable.")
         identity = "delivery-" + uuid4().hex
         directory = root / identity
@@ -211,7 +213,7 @@ def _render_pair(frame, owner, settings, adjustments):
         memory.close()
         frame._delivery_record = record
         owner._delivery_record = record
-        frame._delivery_cache = owner._delivery_cache = (signature, result, record)
+        frame._delivery_cache = owner._delivery_cache = (signature, result, record) if cacheable else None
     return result
 
 

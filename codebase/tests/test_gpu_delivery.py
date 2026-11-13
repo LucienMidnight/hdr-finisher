@@ -3,13 +3,15 @@ from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 import time
 import numpy as np
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from hdr_finisher import gpu_delivery, delivery
 from hdr_finisher.models import AdjustmentState, DenoiseDocumentSettings, ExportSettings
 
 
-def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, monkeypatch):
+@pytest.mark.parametrize("worker_ready_at_first_request", [True, False])
+def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, monkeypatch, worker_ready_at_first_request):
     monkeypatch.setattr(delivery, "PREFERENCES_PATH", tmp_path / "policy.json")
     monkeypatch.delenv(delivery.FORCE_CPU_ENV, raising=False)
     monkeypatch.setattr(gpu_delivery, "_clients", {})
@@ -19,6 +21,9 @@ def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, mon
         adjustments=AdjustmentState(), denoise=DenoiseDocumentSettings())
     settings=ExportSettings()
     with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as worker:
+        if not worker_ready_at_first_request:
+            assert gpu_delivery.render_pair(frame, settings, frame.adjustments) is None
+            assert frame._delivery_record["fallback_reason"] == "The GPU delivery renderer is unavailable."
         client.get("/api/delivery/gpu/permit")
         pending=worker.submit(gpu_delivery.render_pair, frame, settings, frame.adjustments)
         deadline=time.monotonic()+5
@@ -40,6 +45,28 @@ def test_paired_handoff_reuses_compatible_versions_and_proof_owner(tmp_path, mon
         compatible=ExportSettings(format="sdr_png")
         assert gpu_delivery.render_pair(proof, compatible, frame.adjustments) is pair
         assert proof._delivery_record=={"renderer":"gpu", "fallback_reason":None}
+        assert client.get("/api/delivery/gpu/next").json() is None
+
+
+def test_a_submitted_gpu_failure_is_not_retried(tmp_path, monkeypatch):
+    monkeypatch.setattr(delivery, "PREFERENCES_PATH", tmp_path / "policy.json")
+    monkeypatch.delenv(delivery.FORCE_CPU_ENV, raising=False)
+    monkeypatch.setenv(gpu_delivery.ROOT_ENV, "")
+    app = FastAPI()
+    app.include_router(gpu_delivery.create_gpu_delivery_router())
+    attempts = []
+    def invalid_result(*args):
+        attempts.append(True)
+        return {"error": "GPU delivery returned invalid pixels."}
+    monkeypatch.setattr(gpu_delivery, "_wait_for_result", invalid_result)
+    frame = SimpleNamespace(image=np.full((4, 6, 3), .18, dtype=np.float32),
+        local_adjustments=[], adjustments=AdjustmentState(), denoise=DenoiseDocumentSettings())
+    with TestClient(app) as client:
+        client.get("/api/delivery/gpu/permit")
+        for request in range(2):
+            assert gpu_delivery.render_pair(frame, ExportSettings(), frame.adjustments) is None
+            assert frame._delivery_record["fallback_reason"] == "GPU delivery returned invalid pixels."
+        assert attempts == [True]
         assert client.get("/api/delivery/gpu/next").json() is None
 
 
