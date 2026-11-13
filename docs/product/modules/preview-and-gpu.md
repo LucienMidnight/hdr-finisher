@@ -8,6 +8,50 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 13–14: P1-C Library GPU recovery safety
+
+Library development now permits at most one device-loss recovery for the same
+work, then selects the CPU. The count survives requeue, reservation cancellation
+and a loss before work registration; a lost device is counted once, not again
+when its operation throws. The temporary budget clears only after development
+and native handoff both succeed. Pixel rejection still goes straight to the
+CPU even when device loss, reservation cancellation or an allocation error
+arrives at the same time.
+
+The session failure key now includes source identity, the existing backend
+`PictureErrors` source/settings revision, source-quality identity, complete RAW
+import settings, repair context and requested output sizes. Canonical object
+and size ordering prevents equivalent work from bypassing a remembered
+rejection. Changed sources/settings get their own opportunity; unchanged
+permanent failures do not resubmit. This reuses the existing revision owner,
+not a second persistent failure store; its explicit retry behaviour is unchanged.
+
+Checks: behavioural regressions cover permanent rejection, changed settings,
+the device-loss callback, admission cancellation, pre-registration loss,
+native-handoff loss and successful recovery. The backend metadata check passes.
+Real MacBook Neo GPU injection (`library-gpu-recovery.js`, shared lock,
+1408x794 points) passes: permanent OOM makes one GPU attempt, two device losses
+make two attempts total, both photos finish on the CPU, reservations clear and
+no broken-photo record remains. No agreed limit was relaxed.
+Logs: `codebase/output/p1c-library-recovery.log`,
+`codebase/output/p1c-node-suite.log`, `codebase/output/p1c-python-suite.log`.
+
+The default 90-second plain-Electron Library check runs without app errors
+or memory-limit violations, but shows only 2/33 photos (first at 0.5 s; ten
+never). No scene development completes, so this is not a Library progress
+acceptance pass. The existing mixed-folder admission stall remains outside
+this safety fix; no extra timing run or budget change was made. Evidence:
+`codebase/output/quick-library-check/p1c-gpu-safety/report.json`.
+
+The additional `library-temporary-recovery.js --invalid-input` real-app check
+also stalled without a completed scenario; it was deliberately stopped after
+about seven minutes, not rerun. Sidecar/cache cleanup completed. Its end-to-end
+input-rejection-to-CPU scenario remains unqualified; see the Grade module and
+`codebase/output/p1c-edge-cpu-fallback.log`.
+
+Remaining, outside P1-C: narrow Grade's broad out-of-memory/timeout temporary
+classification (proposal 3.10). PC hardware confirmation is still needed.
+
 ## November 11: backend preview recovery and SDR noise identity
 
 A failed source-proxy resize now releases the pending render, so the next
@@ -122,6 +166,8 @@ photo to it. Initialization failure still disables the GPU everywhere.
 3. Preview settling, as its own piece of work.
 4. Linux HDR gradient dithering.
 5. The "Later" performance rows, when Steve asks.
+6. Narrow Grade's out-of-memory/timeout retry classification to established
+   external contention; Library's P1-C recovery bound does not change it.
 
 ## 6. Detail and history
 

@@ -1,5 +1,28 @@
 # Performance table
 
+November 13–14 P1-C safety validation (Edge safety `1d64ab23`; Library safety
+committed with this follow-up; MacBook Neo, A18 Pro, 8 GB unified RAM, 6 cores; 1408x794 points;
+unpackaged Electron under the shared GPU lock; other agents' fast suites
+running, uncontrolled headroom). Observations only, not a speed comparison:
+
+| Action | Observed | Conditions / result |
+| --- | --- | --- |
+| Synthetic Edge-colour GPU kernel, 400x400 | 0.147–0.508 s | Expand 0, 0.5, 3; existing parity passes; kernel time only, not action-to-screen |
+| DSC00264.ARW Grade first frame, CPU / GPU | 21.300 / 24.567 s | One observation each; GPU Edge reconstruction clean; concurrent work, no speed claim |
+| DSC00264.ARW Library GPU scene | 9.667 s | Clean Edge-colour result; existing source development route |
+| IMG_3129.CR2 Grade first frame, CPU / GPU | 11.173 / 9.337 s | One observation each; GPU Edge reconstruction clean; concurrent work, no speed claim |
+| IMG_3129.CR2 Library GPU scene | 22.117 s | Clean Edge-colour result; existing source development route |
+| Both RAWs, export / Proof | Pass, not timed separately | GPU full-source admission refuses 3.41 / 1.60 GiB with 0.00 GiB safely available; CPU fallback finishes; existing perceptual, byte-identity and decoded-ceiling checks pass |
+| Synthetic unsupported Library source, CPU fallback | 0.180 s | `library-gpu-recovery.js`; one CPU development; cached reopening reuses its result |
+| Default mixed Library, first / ten pictures | 0.500 s / never by 90 s | 2/33 shown; no completed scene development, app error or memory-limit violation; existing admission stall, not a progress acceptance pass; no own fast suite running during this capture |
+| Additional real-app Edge input-rejection fallback check | No completed scenario; stopped at about 7 min | `library-temporary-recovery.js --invalid-input`; deliberate renderer shutdown to end stalled check and run cleanup; not a completed action time or performance baseline |
+
+Evidence: `codebase/output/p1c-edge-kernel.log`,
+`codebase/output/p1c-edge-delivery.log`,
+`codebase/output/p1c-edge-cpu-fallback.log`,
+`codebase/output/quick-library-check/p1c-gpu-safety/report.json`. PC values elsewhere remain separate
+baselines; these runs do not judge a timing regression.
+
 November 13 P1-E fresh-worktree tooling smoke (`98a88b2a`; MacBook Neo,
 Apple A18 Pro, 8 GB, 6 cores; 1408x794 points; setup-only worktree with spaces
 in its path; plain Electron through the in-repo lock; fast suites finished):

@@ -1,6 +1,60 @@
 ﻿# GPU retry audit — November 6, 2026
 
-Report only. No code changes, commits, tests, GPU work or Electron runs. Read AGENTS.md, master PRD philosophy 3 and the code map. Locations below are relative to `codebase/`. This is a static audit: confirmed control-flow findings are separated from safety questions requiring fault injection. It does not certify every GPU route or prove pixel safety.
+The original November 6 report was a static audit, without code changes or
+test runs. Locations below are relative to `codebase/`. Dated follow-ups record
+implemented fixes separately; the historical findings are not a current
+certification of every GPU route or proof of pixel safety.
+
+## November 13 follow-up: P1-C Edge colour
+
+`highlight-edge-colour.js` now refuses a rejected input scan immediately,
+including an unrepresentable existing 32x float32 range allowance. Rejection
+does not depend on whether the eventual output happens to be finite, and the
+output scan no longer has an input-error bypass. `highlight_edge_gpu.py`
+independently rejects returned finite magnitudes beyond that allowance derived
+from the trusted source and colour matrix. Neither route retries rejection;
+good-pixel reconstruction and existing numerical limits are unchanged.
+
+Fault-injection tests check one submission, no accepted bad result, CPU
+selection and cleanup. On the MacBook Neo, hardware kernel parity and three
+injected corrupt inputs pass; both real clipped RAWs have clean Grade/Library
+GPU reconstruction and pass finished-pixel comparisons. Host-memory admission
+refuses GPU delivery; accepted CPU fallback passes Proof/export byte identity
+and decoded HDR ceilings (Grade PRD and `output/p1c-edge-delivery.log`).
+Export/Proof, DNG, retouch and Denoise optional recovery remain as Steve chose.
+
+## November 13–14 follow-up: P1-C Library recovery
+
+`library-gpu-raw.js` now bounds device-loss recovery at one retry per work
+identity. Callback and exception handling count each loss once, including
+loss before registration and cancellation during admission. Repeated loss
+selects the CPU, never another requeue. The counter clears after successful
+native handoff rather than just after the shader step; concurrent device,
+cancellation or allocation errors cannot convert a pixel rejection into a
+temporary retry or erase its remembered refusal.
+
+The failure key is no longer path plus sizes: source identity, existing
+`PictureErrors.revision`, source-quality identity, full RAW settings, repair
+context and canonical sizes distinguish the work. `library_api.py` transports
+that existing revision; no duplicate persistent rejection store was added.
+Behavioural tests check changed settings, permanent rejection, device startup,
+admission and handoff losses, and successful recovery. The Mac hardware
+`library-gpu-recovery.js` passes: one uncontented OOM attempt; exactly two
+device-loss attempts followed by one CPU development; no stuck reservations
+or broken-photo records. Fast Node: 942 passed / one skipped. Python:
+3,171 passed / 176 skipped / one xpass / 25 unrelated Retouch failures
+(24 memory refusals, one cancellation wait); no repair or rerun of those.
+
+Additional real-app `library-temporary-recovery.js --invalid-input` stalled
+without reporting a scenario and was stopped after about seven minutes; the
+shutdown restored its sidecar and removed its temporary cache. Do not count
+that end-to-end scenario as passed. Kernel input refusal and backend CPU
+selection have passing behavioural coverage; no rerun or stall diagnosis was
+attempted (`output/p1c-edge-cpu-fallback.log`).
+
+Remaining: Grade's broad OOM/timeout classification is explicitly outside
+P1-C. The optional recovery omissions on export/Proof, DNG, Edge, retouch and
+Denoise remain Steve's November 6 choice. PC hardware checks remain due.
 
 ## Status (November 6, after Steve's decision)
 
@@ -17,7 +71,7 @@ and to leave the routes that only miss an optional retry:
   would touch Still-strict export code. Revisit only if those fallbacks show
   up in Steve's use.
 
-## Findings
+## Findings (November 6 baseline)
 
 ### Library RAW development: retries rejected pixels
 

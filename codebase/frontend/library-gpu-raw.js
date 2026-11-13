@@ -501,7 +501,7 @@
       const state = {lost:false};
       device.lost.then(() => {
         state.lost=true; shared = null;
-        for(const [key,work] of activeGpuWorks)if(work.state===state)gpuFailures.set(key,(gpuFailures.get(key)||0)+1);
+        for(const [key,work] of activeGpuWorks)if(work.state===state){work.lossCounted=true;gpuFailures.set(key,(gpuFailures.get(key)||0)+1);}
         releaseNative();
         root.HDRLibraryGrants?.gpuLost();
       });
@@ -923,18 +923,22 @@
   // `consume` runs inside this development's GPU lease with full-size planes
   // still on the GPU, so their memory stays reserved until they are uploaded.
   async function scheduledDevelopment({mosaic, meta, lensData, edges, background = false, syncStages = false, importance = () => 30, grant = null, consume = null}, signal) {
-    const context = await gpu();
     // Keep the approved reservation; requesting fewer products must not remove
     // headroom used by full-source RGB preparation. Only development is tiered.
     let retained = false;
     const id = crypto.randomUUID(), bytes = rawBudget(meta, edges.includes(100000) ? [100000] : [640,2560,...edges]);
-    const key=meta.path+'|'+edges.join(',');
+    const canonical=value=>Array.isArray(value) ? value.map(canonical) : value && typeof value==='object'
+      ? Object.fromEntries(Object.keys(value).sort().map(name=>[name,canonical(value[name])])) : value;
+    const key=JSON.stringify(canonical([meta.path,meta.identity,meta.failure_revision,meta.source_quality,
+      meta.raw_import_settings,meta.repairs,[...edges].sort((left,right)=>left-right)]));
     // GPU failure rule (master PRD, November 6): work that already failed on the
     // GPU this session goes straight to the CPU; other work keeps the GPU.
     if(gpuRejectedWork.has(key))throw Object.assign(Error('GPU result was rejected earlier this session; using the CPU.'),{gpuUnavailable:true,gpuInvalidPixels:true});
     if((gpuFailures.get(key)||0)>=2)throw Object.assign(Error('GPU failed twice; using visible CPU fallback.'),{gpuUnavailable:true});
+    const context = await gpu();
     const allocations=allocationScope(context);
-    activeGpuWorks.set(key,{state:context.state,grant});
+    const work={state:context.state,grant,lossCounted:false};
+    activeGpuWorks.set(key,work);
     const url = `/api/delivery/gpu/raw-budget/${id}`;
     const lease = async release => {
       if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
@@ -997,7 +1001,6 @@
           const result=await (meta.rgb ? root.HDRLibraryRGB.develop : developRaw)({mosaic, meta, lensData, edges, beforeSubmit, syncStages, signal, context:allocations.context, memoryBudget:bytes,direct:background && !!meta.rgb && !meta.dng_warp && !meta.dng_linear && !edges.includes(100000) && !root.HDRLibraryProfileLegacy,keepNative:!!consume});
           try{await allocations.check();}
           catch(error){for(const picture of Object.values(result.reduced || {}))for(const texture of picture.textures || [])texture.destroy();destroyKept(result.reduced);throw error;}
-          gpuFailures.delete(key);
           root.HDRLibraryStopwatch?.('picture_development_gpu_done',{path:meta.path,gpu_estimate_bytes:bytes,gpu_peak_bytes:result.memory_peak_bytes,peak_scope:'job-allocated'});
           if(consume){try{
             result.device=context.device;
@@ -1011,17 +1014,18 @@
             };
             result.consumed=await consume(result);
           }finally{destroyKept(result.reduced);}}
+          gpuFailures.delete(key);
           return result;
         }
         catch (error) {
-          if(context.state?.lost){
-            throw Object.assign(Error('GPU device lost.'),{libraryRequeue:!!grant,gpuUnavailable:!grant});
+          const rejected=!!(error.gpuInvalidPixels || error.emptyChannel);
+          if(context.state?.lost && !rejected){
+            throw error;
           }
-          await allocations.check().catch(oom=>{error=oom;});
+          await allocations.check().catch(oom=>{if(!rejected)error=oom;});
           // A rejected result (invalid pixels, or an empty channel that means a
           // GPU step wrote nothing) cannot be trusted: CPU now, no GPU retry, and
           // the same work skips the GPU for the rest of the session.
-          const rejected=!!(error.gpuInvalidPixels || error.emptyChannel);
           if(error.gpuMemory && !rejected){
             // One retry only when other GPU work could have held the memory.
             const failures=(gpuFailures.get(key)||0)+1;gpuFailures.set(key,failures);
@@ -1036,9 +1040,9 @@
             throw Object.assign(error,{gpuUnavailable:true});
           }
           // Cancellation is not a failure: pass it through unchanged.
-          if (signal?.aborted || error?.name === "AbortError") throw error;
+          if (!rejected && (signal?.aborted || error?.name === "AbortError")) throw error;
           // Neither is a refused detail upload: it asks for memory, then retries.
-          if (error.needsMemory) throw error;
+          if (error.needsMemory && !rejected) throw error;
           // Yielding to more urgent work is not a failure either: release the
           // lease and wait for the next turn without spending an attempt.
           if (error.yieldRaw && !rejected) {
@@ -1058,6 +1062,13 @@
         await lease(true); await wait(50, signal);
       }
     } catch (error) {
+      if(context.state?.lost && !error.gpuInvalidPixels && !error.emptyChannel){
+        if(!work.lossCounted){work.lossCounted=true;gpuFailures.set(key,(gpuFailures.get(key)||0)+1);}
+        const failures=gpuFailures.get(key),retry=!!grant && failures<2;
+        root.HDRLibraryStopwatch?.(retry ? 'picture_development_gpu_retry' : 'picture_development_gpu_fallback',
+          {path:meta.path,attempt:retry ? 2 : failures,reason:'GPU device lost.'});
+        error=Object.assign(Error('GPU device lost.',{cause:error}),{libraryRequeue:retry,gpuUnavailable:!retry,gpuRetry:retry});
+      }
       root.HDRLibraryStopwatch?.(error.libraryRequeue ? "picture_development_requeued" : "picture_development_outcome", {path:meta.path,reason:error.message,
         work_stage:error.libraryRequeue ? "waiting" : error.gpuInvalidPixels ? "CPU fallback" : error.name === "AbortError" ? "cancelled" : "failed"});
       throw error;
