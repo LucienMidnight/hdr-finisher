@@ -1,5 +1,16 @@
 # Performance table
 
+November 13 P1-E fresh-worktree tooling smoke (`98a88b2a`; MacBook Neo,
+Apple A18 Pro, 8 GB, 6 cores; 1408x794 points; setup-only worktree with spaces
+in its path; plain Electron through the in-repo lock; fast suites finished):
+first picture 3.2 s; 7 of 33 shown by 90 s; ten never. Longest frame gap 216 ms
+is inside the unchanged 250 ms limit; no memory-limit violation. The two
+8000x6000 DJI DNGs were refused because available system memory could not be
+measured, the existing Step 0 Mac gap; most other developments waited. This
+checks tooling, not a controlled speed comparison or completed Library
+acceptance. Evidence: `codebase/output/p1e-tooling/library-report.json`.
+
+
 November 13 first MacBook quick Library check (MacBook, Apple A18 Pro, 8 GB unified memory, 6 cores; `ef29f60e` plus Mac set-up fixes; 1408x794-point window, the largest the built-in screen gives; default mixed Library): first picture 0.5 s, ten never; 7 of 33 shown by 90 s; peak 0.989 GB; no memory violation. New Mac baseline, not compared with PC rows. Developments wait for room under the 8 GB memory ceiling (estimates 1.2–1.5 GB each), and both DJI 8000x6000 DNGs are refused because macOS available memory cannot be measured (no psutil; `SC_AVPHYS_PAGES` is missing on macOS). Evidence: `codebase/output/quick-library-check/mac-step0/report.json`.
 
 November 13 page-hints UI smoke (working tree, parent `3f298547`, plain Electron, default mixed Library, Python finished): first/ten/twenty pictures 1.0/2.5/6.7 s; 29 of 33 shown by 90 s. No application errors or memory violations; responsiveness failed with one 1758 ms frame gap (250 ms limit). Cause unexplained; Steve should try Library before another timing run. Evidence: `codebase/output/quick-library-check/status-hints/report.json`.

@@ -678,3 +678,49 @@ arguments, and still detects a changed project. The explicit memory-sampler
 diagnostic now chooses Python on POSIX instead of PowerShell. The lock refreshes
 its owner timestamp for interoperability with the old wrapper during long runs,
 and stale recovery uses an automatically released OS mutex to serialize breakers.
+
+
+### P1-E validation outcome (November 13)
+
+Built and committed locally. Final Node suite: 934 pass, one platform skip.
+Clean full Python suite: 3,182 pass, 176 skip, one xpass; seven isolated tooling
+checks also pass after the lock hardening. Initial Node fixture-dependency
+failures and the Python import observed during edits were corrected; clean
+checks pass. No app-data/cache/database files appeared in the repository.
+
+From the setup-only worktree at `98a88b2a`, including a path containing spaces:
+quick Library ran for 90 seconds through the new lock at 1408x794; the short
+neutral-colour GPU driver passed 20 cases / 160 pixels using its migrated venv
+Python helper and Electron launcher. All three protected-project hashes stayed
+unchanged. Setup and update reused validated native tools, linked the existing
+private media, and created no `.venv/Scripts/python.exe` shim. Release planning
+worked with the conservative 102-driver selection and explicitly missing
+history. No focused release sweep or installer was run for this tooling task.
+
+The Library result remains partial for the existing Mac Step 0 memory-detection
+fault: 7/33 pictures shown; both large DJI DNGs refused. Its frame and memory
+checks passed. That backend fault belongs to the minimum-hardware workstream;
+no app behavior was changed here. The POSIX real-app cache fallback was reported
+in known limitations and left unchanged. Setup lists 13 missing literal private
+photo/folder dependencies on this Mac, including the badminton folder and
+ICC-only JPEG XL sample; no fake inputs or silent skips were added.
+
+Evidence: `codebase/output/p1e-tooling/` holds setup/build, fast-check, Library,
+GPU and plan logs plus the small Library/GPU reports. Output stayed 5.9 GB,
+below 100 GB. Temporary native build folders and the fresh validation worktree
+were removed; shared media and validated native tools remain for future agents.
+Windows/Linux execution and packaged smoke tests were not run locally. Existing
+Desktop release Windows/macOS/Linux/Flatpak jobs remain unchanged.
+
+**PC handover checks after pulling:**
+
+1. Run the PowerShell setup command in the main checkout and a new worktree;
+   rerun it to confirm reuse, the junctions and the missing-media report. Run
+   both fast suites with the local venv.
+2. Through the in-repo lock at 2560x1440, run the quick Library check and
+   `neutral-color-grading-reference.js`. Confirm a second wrapper waits while
+   the parent/legacy wrapper holds `gpu-run.lock`, and vice versa.
+3. Use a disposable child/grandchild timeout to confirm Windows `taskkill /T`
+   stops the full tree before lock release. Verify Python/Electron selection.
+4. Run release `--plan` and verify the three protected-project hashes. Keep the
+   full focused release check and packaged GitHub builds at release points.
