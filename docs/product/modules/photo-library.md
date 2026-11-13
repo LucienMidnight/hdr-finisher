@@ -1,3 +1,25 @@
+## November 14: P1-A drawing preparation and honest smoke coverage
+
+Library drawing awaits the existing asynchronous GPU-program preparation,
+including foreground/background requests for the same program, before changing
+the display surface. It no longer creates a synchronous duplicate while that
+program is pending. The previous picture remains visible meanwhile; shaders,
+rendered pixels and the 250 ms drawing-gap limit are unchanged.
+
+The quick Library check now counts every eligible photo by full path, lists
+missing photos, and fails ordinary whole-folder acceptance when coverage is
+incomplete. Same-named photos in different folders remain separate. Hidden
+windows or missing animation-frame evidence invalidate drawing-gap results.
+
+Validation: 939 JavaScript checks passed, one skipped. A locked real-GPU check
+on the MacBook verified one asynchronous compilation, zero synchronous
+duplicates and an unchanged displayed picture during preparation. The visible
+90-second mixed-folder check covered only 2/33 eligible photos and now correctly
+fails coverage; memory admission remains outside this change. The PC's 1–3 s
+gap was not reproduced on the Mac; confirm on the PC at the release point.
+These checks do not establish full-folder responsiveness or a speed gain.
+Details and local report paths are in the performance table.
+
 ## November 13: deterministic memory refusals stop repeating
 
 Large-DNG preflight refusals and validation failures now use the existing

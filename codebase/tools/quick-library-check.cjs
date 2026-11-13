@@ -71,11 +71,12 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
   let gap = 0, last = 0;
   for (const x of times) { gap = Math.max(gap, x - last); last = x; }
   return {
+    photo_coverage:require('./library-quick-metrics.cjs').coverage(visibleFiles || [],shown),
     photos: visibleFiles?.length ?? 50, shown_by: { s15: by(15), s30: by(30), s60: by(60), s90: by(90), end: times.length },
     time_to: { first: at(1), ten: at(10), twenty: at(20), thirty: at(30), forty: at(40) },
     longest_picture_gap_s: +gap.toFixed(1), developments: developed.length,
     camera_previews: preview.size, reclaims, peak_gb: +(Math.max(0, ...memory.map(x => x[1])) / 1e9).toFixed(3),
-    failed: Object.fromEntries(failed), not_shown: (visibleFiles ? visibleFiles.map(file=>path.basename(file)) : fs.readdirSync(folder).filter(n=>!n.endsWith(".hdrf"))).filter(n=>!shown.has(n)),
+    failed: Object.fromEntries(failed), not_shown: (visibleFiles || fs.readdirSync(folder).filter(n=>!n.endsWith(".hdrf")).map(name=>path.join(folder,name))).map(file=>file.replaceAll('\\','/')).filter(file=>!shown.has(file)),
   };
 }
 
@@ -219,6 +220,8 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     if(freezes.frame_gaps.longest_ms>250)failures.push(`frame gap ${freezes.frame_gaps.longest_ms} ms`);
     if(freezes.main_thread_blocks.longest_ms>250)failures.push(`main thread block ${freezes.main_thread_blocks.longest_ms} ms`);
     const errors=[...(result.errors||[])];if(!sampleCount||observerError)errors.push('Independent memory observer: '+(observerError||'no samples'));
+    const visibility=require('./library-quick-metrics.cjs').visibility(result.probe);
+    if(!visibility.valid)errors.push('Invalid drawing-gap run: window hidden or no presented animation frames');
     sampleIntervals.sort((a,b)=>a-b);
     // Stored pictures with a whole colour channel at zero (teal/black thumbnails).
     let channels;
@@ -227,6 +230,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     if(channels.one_channel_zero?.length||channels.all_channels_zero?.length)errors.push(`Zeroed colour channels in ${channels.one_channel_zero.length+channels.all_channels_zero.length} stored pictures`);
     const report={label,acceptance_scope:config.gradeHandoffPixels?'42 MP visible-pixel hand-off':retentionMode?'whole-app retention (cadence recorded separately)':'Library quick check',folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
       ...(config.gradeHandoffPixels?{}:analyse(text,result.opened_epoch_ms,result.events,result.opened_ms,result.visible_files)),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,memory_diagnostic:result.memory_diagnostic,grade_handoff:result.grade_handoff,grade_return:result.grade_return,grade_return_saves:result.grade_return_saves,
+      visibility,
       independent_memory:{...memory.report(),samples:sampleCount,lastBytes:memory.last?.totalBytes,sampleIntervalMs:{requested:250,median:sampleIntervals[Math.floor(sampleIntervals.length/2)],maximum:sampleIntervals.at(-1)},grants_note:'External process census; no DevTools WebSocket instrumentation.'},observerError,
       picture_timing_clock:'Library performance.now()',stage:result.stage,scenario_ms:result.scenario_ms,harness_total_ms:Date.now()-harnessAt,harness_outside_scenario_ms:Date.now()-harnessAt-result.scenario_ms,cdp_attached:false};
     if(failures.length&&!retentionMode){console.error(`FREEZE: ${failures.join('; ')} (limit 250 ms)`);process.exitCode=1;}
@@ -247,6 +251,11 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
       // This scenario has its own presentation checks, rather than the
       // standard 90-second stopwatch observer.
       for(const key of ['shown_by','time_to','longest_picture_gap_s','camera_previews','not_shown'])delete report[key];
+    }
+    if(report.photo_coverage&&!report.photo_coverage.complete){
+      report.acceptance_scope+='; incomplete photo coverage';
+      if(!singleMode&&!retentionMode&&!config.thumbnailMemory&&!config.batch4d&&!config.batch5c&&!config.gradeHandoffPixels&&!gradeHandoffMode)
+        errors.push(`Photo coverage: ${report.photo_coverage.pictured} of ${report.photo_coverage.eligible} eligible photos pictured`);
     }
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,1));
     console.log(JSON.stringify(report,null,1));

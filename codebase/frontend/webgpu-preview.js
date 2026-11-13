@@ -1327,6 +1327,7 @@
         // neighbourhood stages. Unrelated atlas neighbours never feed Detail.
         params[GPU_PARAMS.HIGHLIGHT_MODE] = 0;
         this.uploadParamsAndCurves(lane, adjustments, curveSampler, params, locals);
+        if (this.prepareLibraryPipelines) await this.prepareLibraryPipelines("rgba16float");
         const pipelines = this.pipelineFor("rgba16float");
         const masks = [];
         if (lane === "hdr") this.markResidentMaskFrame(sessionId, locals, 1600, signature);
@@ -1839,6 +1840,7 @@
           const single = height <= bandRows;
           const channels = [{ ranges: [{ center: leaf.hue_center, width: leaf.hue_width, feather: leaf.hue_smoothness, subtract: false }],
             floor: Number(leaf.saturation_floor ?? 0.04), edge: leaf.edge, edge_feather: leaf.edge_feather, edge_detail: leaf.edge_detail }];
+          if (this.prepareLibraryPipelines) await this.prepareLibraryPipelines("rgba16float");
           const pipelines = this.pipelineFor("rgba16float");
           const scratch = single && !maskRegion ? null : this.device.createTexture({
             label: "Hue mask band source", size: [width, Math.min(height, bandRows + 2 * reach)],
@@ -2483,6 +2485,7 @@
       }
       proxyPin = this.gpuAllocator && proxy.allocatorEntry ? this.gpuAllocator.pin(proxy.allocatorEntry) : null;
 
+      if (this.prepareLibraryPipelines) await this.prepareLibraryPipelines(surface.format);
       const pipelines = this.pipelineFor(surface.format);
 
       const params = buildParams(
@@ -4968,6 +4971,7 @@
       let masksReadyAt = proxyReadyAt;
 
       let surface = this.configureSurface(canvas, context, lane === "hdr" && !sourceOptions?.forceSdrSurface);
+      if (this.prepareLibraryPipelines) await this.prepareLibraryPipelines(surface.format);
       let pipelines = this.pipelineFor(surface.format);
       const sourcePixelScale = this.sourcePixelScaleFor(proxy, sourceSize);
       let params = buildParams(
@@ -5112,6 +5116,7 @@
       const presentationSurface = this.configureSurface(canvas, context, lane === "hdr" && !sourceOptions?.forceSdrSurface);
       if (presentationSurface.format !== surface.format || presentationSurface.hdr !== surface.hdr) {
         surface = presentationSurface;
+        if (this.prepareLibraryPipelines) await this.prepareLibraryPipelines(surface.format);
         pipelines = this.pipelineFor(surface.format);
         params = buildParams(
           lane,

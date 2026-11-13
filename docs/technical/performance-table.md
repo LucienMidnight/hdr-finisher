@@ -1,5 +1,26 @@
 # Performance table
 
+November 14 P1-A drawing/cache work (working tree based on `10eb390d`,
+`p1a/library`; MacBook, Apple A18 Pro, 8 GB; other agents running;
+1408x794 points; locked plain Electron; existing reserve and allowances):
+the initial 90-second quick check showed 2/33 photos, first picture 0.8 s,
+maximum recorded frame gap 117 ms, no timer block, app peak 0.818 GB and no
+memory violation. That old harness exited successfully despite incomplete
+coverage and had no explicit visibility evidence: not gap qualification.
+After the changes, first picture was 0.5 s, still only 2/33 after 90 s;
+5,400 animation frames with the window visible throughout, no recorded
+frame gap of 50 ms or more, no timer block, app peak 0.792 GB and no memory
+violation. The corrected harness exits unsuccessfully for incomplete coverage.
+Both 48 MP DJI DNGs reported insufficient safely available memory; most
+remaining developments waited for admission. No admission limits were changed.
+The final cache-path canonicalisation fix was subsequently covered by backend
+tests, not another timing run. No controlled speed comparison is claimed;
+the PC's 1–3 s gap was not reproduced on the Mac; confirm on the PC at the
+release point. The unchanged drawing-gap tolerance is 250 ms; incomplete
+coverage prevents whole-folder acceptance. Local evidence retained:
+`codebase/output/quick-library-check/p1a-before/report.json` and
+`codebase/output/quick-library-check/p1a-after/report.json`.
+
 November 13 P1-E fresh-worktree tooling smoke (`98a88b2a`; MacBook Neo,
 Apple A18 Pro, 8 GB, 6 cores; 1408x794 points; setup-only worktree with spaces
 in its path; plain Electron through the in-repo lock; fast suites finished):

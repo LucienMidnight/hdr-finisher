@@ -1,16 +1,17 @@
 const test=require('node:test'), assert=require('node:assert/strict'), vm=require('node:vm'), fs=require('node:fs');
 function gate(){let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};}
 for(const route of ['camera-raw-gpu','cached-picture']) test(`Library ${route} keeps old shape during loading`,async()=>{
- const raw=gate(),rawStarted=gate(),pixels=gate(),renderStarted=gate();
+ const raw=gate(),rawStarted=gate(),pixels=gate(),renderStarted=gate(),pipeline=gate(),pipelineStarted=gate();
  const canvas={width:600,height:400,dataset:{}},controller=new AbortController();
  class Base {
-  constructor(){this.surfaceKeys=new Map();}
+  constructor(){this.surfaceKeys=new Map();this.pipelines=new Map();this.device={createRenderPipelineAsync:async descriptor=>{pipelineStarted.resolve();await pipeline.promise;return {descriptor};}};}
+  pipelineFor(format,factory){return {base:factory({format})};}
   setDetectedVideoMemory(){}
   async initialize(){this.deliveryActivityTimer=1;return true;}
   async renderTo(target,key,lane){assert.equal(lane,'sdr');renderStarted.resolve();await pixels.promise;target.width=400;target.height=600;return {rendered:true};}
   async waitForSubmittedWork(){}
  }
- const context=vm.createContext({window:{},document:{createElement:()=>({})},HDRWebGPUPreview:Base,
+ const context=vm.createContext({window:{},navigator:{gpu:{getPreferredCanvasFormat:()=> 'bgra8unorm'}},document:{createElement:()=>({})},HDRWebGPUPreview:Base,
   performance,structuredClone,sampleCurvePoints:()=>{},HDRLibraryStopwatch:()=>{},HDRLibrarySceneScheduler:require('../frontend/library-scene-scheduler'),
   HDRLibraryRawGPU:{create:()=>({get:()=>false,configure(){},convert:()=>{rawStarted.resolve();return raw.promise;}})}});
  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../frontend/library-gpu.js'),'utf8'),context);
@@ -19,6 +20,7 @@ for(const route of ['camera-raw-gpu','cached-picture']) test(`Library ${route} k
  if(route==='camera-raw-gpu'){
   await rawStarted.promise;assert.deepEqual([canvas.width,canvas.height],[600,400],'RAW conversion retains accepted shape');raw.resolve();
  }
+ await pipelineStarted.promise;assert.deepEqual([canvas.width,canvas.height],[600,400],'Pending compilation retains accepted shape');pipeline.resolve();
  await renderStarted.promise;assert.deepEqual([canvas.width,canvas.height],[600,400],'Pixel fetch retains accepted shape');
  pixels.resolve();await pending;assert.deepEqual([canvas.width,canvas.height],[400,600],'Presentation changes shape');
  await pictures.show({key:'stale',width:900,height:300},canvas,controller.signal,()=>false);

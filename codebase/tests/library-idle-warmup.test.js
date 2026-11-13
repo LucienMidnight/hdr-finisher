@@ -25,6 +25,26 @@ test("foreground can take over between idle pipeline compilations",async()=>{
   await gpu.warmPipelines("rgba16float",async()=>{gpu.pipelines.set("rgba16float",foreground);});
   assert.equal(compiled,0);assert.equal(gpu.pipelines.get("rgba16float"),foreground);
 });
+test("foreground preparation shares a pending program without synchronous duplication",async()=>{
+  const gpu=setup();let release,compiled=0;
+  gpu.device={createRenderPipeline(){throw Error('Duplicate synchronous compilation');},
+    createRenderPipelineAsync:descriptor=>{compiled++;return new Promise(resolve=>{release=()=>resolve({descriptor});});}};
+  const background=gpu.prepareLibraryPipelines('rgba16float',['base']);
+  await Promise.resolve();
+  const foreground=gpu.prepareLibraryPipelines('rgba16float',['base']);
+  await Promise.resolve();
+  assert.equal(compiled,1);
+  release();await Promise.all([background,foreground]);
+  assert.ok(gpu.pipelineFor('rgba16float').base);
+  assert.equal(compiled,1);
+});
+test("a failed pending program can be prepared again",async()=>{
+  const gpu=setup();let compiled=0;
+  gpu.device={createRenderPipelineAsync:async descriptor=>{if(!compiled++)throw Error('compile failed');return {descriptor};}};
+  await assert.rejects(gpu.prepareLibraryPipelines('rgba16float',['base']),/compile failed/);
+  await gpu.prepareLibraryPipelines('rgba16float',['base']);
+  assert.ok(gpu.pipelineFor('rgba16float').base);assert.equal(compiled,2);
+});
 test("idle preparation waits for quiet and foreground demand bypasses that wait",async()=>{
   let now=0;
   const context=vm.createContext({window:{addEventListener(){}},navigator:{gpu:{requestAdapter:async()=>({})}},

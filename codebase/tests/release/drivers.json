@@ -1355,6 +1355,13 @@
       }
     },
     {
+      "path": "tests/library-pipeline-preparation.js",
+      "areas": ["library"],
+      "tier": "area",
+      "protects": "one pending Library program, retained picture and native file-command guard",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/library-picture-startup.js",
       "areas": [
         "library"
