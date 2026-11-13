@@ -12,6 +12,36 @@ specific file, rule or message.
   how-to-use guide will be written when they settle. Product intent lives in
   the [Photo Library PRD](../product/archive/Photo_Library_PRD_2026-10-09.md).
 
+### Native macOS original-file operations (November 14, 2026)
+
+The original Windows-only restriction is superseded for macOS, not Linux.
+`library_macos.py` calls the system Objective-C runtime/Foundation directly using
+Python's existing `ctypes`; there are no added packages or bundled native helpers.
+`library_recycle.py` dispatches the native Trash call and recovery bookmark
+resolution without changing the Windows RecycleItem route. Photo and settings
+receipts are individually identity/hash checked; persistent bookmarks are written to
+the durable command record before each native call. Recovery never scans or
+empties unrelated Trash contents. Unsupported Trash/persistent-ID volumes are
+refused, not offered permanent deletion.
+
+The Mac I/O path uses exclusive native renames, directory-synced app records,
+native metadata copying and private checked source capture. Destination guards
+defer disposal of captured originals until their final verification. macOS locks
+are advisory; an observed outside replacement retains the captured original and
+reports Needs attention. Explicit directory syncing can be denied for the
+system-protected Trash root; process-crash recovery is tested, not hard power
+failure. File-command restoration from Trash is itself recorded and recoverable.
+Windows deletion still has no app Undo; macOS adds session-local original Undo.
+Whole-folder cross-volume moves remain refused on both platforms.
+
+Focused native checks: `test_library_file_macos.py`, plus shared original/folder
+tests. To exercise actual Trash under the shared lock, set
+`HDR_FINISHER_TEST_MAC_TRASH=1`; optional `HDR_FINISHER_TEST_CROSS_VOLUME` names a
+disposable writable second volume. Tests create only temporary files and remove
+only their checked receipts. The existing three file-command Electron drivers
+remain the real-app checks; Delete uses the platform's multi-select modifier and
+Trash label, then restores its own Mac Trash entries before cleanup.
+
 Terms used here:
 
 - **Marks:** a photo's rating, pick or reject flag, colour label and tags.

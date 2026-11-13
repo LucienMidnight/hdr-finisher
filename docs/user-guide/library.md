@@ -204,13 +204,13 @@ Right-click a photo for **Rename photo…**, **Move to folder…** and **Delete�
 
 - **Rename photo…** keeps the file ending.
 - **Move to folder…** asks if a file with the same name already exists: **Keep both**, **Skip this one** or **Cancel move**.
-- **Delete…** explains what will happen before it does anything. Photos go to the Recycle Bin together with their settings. Restore both from the Recycle Bin to bring back the marks, grades and copies. If a drive has no Recycle Bin, the message says the photos will be gone for good, and the button reads **Delete permanently**.
+- **Delete…** explains what will happen before it does anything. Photos go to the **Trash** on macOS or the **Recycle Bin** on Windows, together with their settings. Restore both the photo and its `.hdrf` settings file to bring back the marks, grades and copies. On Mac, **Undo** can also restore a completed deletion during the current app session; it never replaces something already at the old name. On Windows only, if a drive has no Recycle Bin, the message says the photos will be gone for good, and the button reads **Delete permanently**. On Mac, if a checked Trash receipt is unavailable, deletion is refused instead; nothing is permanently deleted.
 
 After deleting the current photo, Single view selects the next remaining photo, or the previous one at the end. When none remain, the Library returns to an empty Grid. If only part of a deletion finishes, the status reports what was removed and whether settings still need attention; use **Activity** to review the unfinished work.
 
-Folders have **Rename folder…** and **Move folder…** in their right-click menu.
+Folders have **Rename folder…** and **Move folder…** in their right-click menu. Whole folders move only within the same drive or volume and are never merged. Individual photos can also move across volumes.
 
-These commands work on Windows only for now. On macOS and Linux the Library says they are not available yet and leaves your files untouched.
+These commands work on Windows and macOS. Linux still reports that they are not available and leaves your files untouched. Mac deletion requires a same-volume Trash and reliable file identities; removable filesystems without those safeguards are refused. If interrupted work appears in **Activity**, review **Needs attention** before trying again. A photo already present after an uncertain deletion is left alone, even if that means asking you to retry deliberately. Mac Undo restores attached virtual copies with their photo; separately selected copy removals remain a separate Undo step.
 
 ## Export from the Library
 

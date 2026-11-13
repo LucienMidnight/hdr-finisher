@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
@@ -7,7 +8,7 @@ from test_library_file_commands import setup, Stop
 from hdr_finisher.library_file_commands import FileCommands, FileRequest
 from hdr_finisher.library_marks import MarkChange
 
-pytestmark = pytest.mark.skipif(os.name != 'nt', reason='Library file commands are Windows-only in this version.')
+pytestmark = pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.')
 
 
 def command(c,old,destination=None,name=None):

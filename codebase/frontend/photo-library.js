@@ -145,11 +145,11 @@
   async function filesChanged(result) {
     culling.setUndo(result.undo_available); $("library-undo").hidden = !result.undo_available;
     for(const change of result.changes || []) {
-      if (["Recycle Bin", "Gone for good"].includes(change.new)) continue;
+      if (["Recycle Bin", "Trash", "Gone for good"].includes(change.new)) continue;
       const remap = p => p === change.old || p.startsWith(change.old + "\\") || p.startsWith(change.old + "/") ? change.new + p.slice(change.old.length) : p;
       state.path = remap(state.path); if(state.lastFolder) state.lastFolder=remap(state.lastFolder);
     }
-    const deleted = new Set((result.changes || []).filter(change => ["Recycle Bin", "Gone for good"].includes(change.new)).map(change => change.old));
+    const deleted = new Set((result.changes || []).filter(change => ["Recycle Bin", "Trash", "Gone for good"].includes(change.new)).map(change => change.old));
     for (const path of result.removed_copies || []) deleted.add(path);
     if (deleted.size) {
       // Keep the old visible order until applyQuery chooses a surviving neighbour.

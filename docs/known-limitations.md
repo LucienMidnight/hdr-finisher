@@ -243,7 +243,7 @@ The four targeted checks for Claude's logo, Film panel, Navigate and RAW-toggle 
 - The Windows setup and portable packages are unsigned technical previews; Windows may show an unrecognized-app warning. macOS packages are not notarized.
 - Flatpak updates are store-managed; other desktop packages provide a GitHub release check rather than an in-place automatic updater.
 - Linux packages are x86_64 only. There are no AppImage or arm64 builds.
-- On macOS and Linux, the Library cannot yet rename, move or delete photos and folders. It says so and leaves the files untouched.
+- Linux Library original-file rename/move/delete remains unavailable. macOS now supports these commands with checked native Trash receipts and session-local deletion Undo; unavailable or unreliable Trash volumes are refused, never permanently deleted. Whole folders still move only within one volume on Windows and Mac. Native Mac process-crash/cross-volume APFS checks are covered; physical removable/FAT/exFAT, power-loss and packaged-Mac qualification remain open (Library module PRD, November 14).
 - Native encoder redistribution may vary by platform and license requirements.
 - The desktop sidecar uses authenticated loopback requests and path grants, but it is not designed or hardened for network exposure.
 - There is no stable versioned external API guarantee.

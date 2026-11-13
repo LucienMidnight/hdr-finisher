@@ -4,6 +4,25 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
+for (const recycleLabel of ['Recycle Bin','Trash']) {
+  test(`Delete uses the backend's ${recycleLabel} destination without changing its confirmation route`, async () => {
+    const dialogs = [], requests = [];
+    const context = vm.createContext({performance, setTimeout, clearTimeout,
+      HDRLibraryDialogs: {ask:async options => {dialogs.push(options);return false;}},
+    });
+    context.window = context;
+    vm.runInContext(fs.readFileSync(path.join(__dirname,'../frontend/library-file-commands.js'),'utf8'),context);
+    const commands = context.HDRLibraryFileCommands.create({status:() => {},
+      api:async (route,body) => {requests.push(body);return {count:1,attached_copies:0,recycle:1,recycle_label:recycleLabel,warnings:[]};},
+    });
+    await commands.remove([{path:'/temporary/photo.png'}]);
+    assert.equal(dialogs[0].confirm,`Move to ${recycleLabel}`);
+    assert.ok(dialogs[0].message.includes(`go to the ${recycleLabel}`));
+    assert.equal(requests.length,1);
+    assert.equal(requests[0].action,'delete');
+  });
+}
+
 test('Delete shows waiting status before planning and logs a cancelled confirmation', async () => {
   const events = [], listeners = {}, statuses = [], requests = [];
   let release;

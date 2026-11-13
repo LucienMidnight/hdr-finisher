@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 import pytest
@@ -8,7 +9,7 @@ from hdr_finisher.library_index import LibraryIndex
 from hdr_finisher.media_browser import MediaBrowserStore
 from hdr_finisher.library_file_commands import FileCommands, FileRequest
 
-pytestmark = pytest.mark.skipif(os.name != 'nt', reason='Library file commands are Windows-only in this version.')
+pytestmark = pytest.mark.skipif(os.name != 'nt' and sys.platform != 'darwin', reason='Library file commands require Windows or macOS.')
 
 
 class Stop(BaseException): pass

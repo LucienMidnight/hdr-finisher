@@ -85,16 +85,17 @@
    const action=rejected?'delete_rejected':'delete',plan=await command({action,paths:photos.map(p=>p.path)});
    if(!plan.count && !plan.copy_paths?.length){options.status(plan.warnings.join(' ')||'Nothing to delete.');return;}
    const parts=[];
+   const recycleLabel=plan.recycle_label||'Recycle Bin';
    if(rejected)parts.push('All rejected items in this folder or album are included, even when hidden by the current filters.');
    if(plan.count)parts.push(`${plan.count} photos, with their settings, grades and ${plan.attached_copies} attached virtual copies, will be deleted.`);
-   if(plan.recycle)parts.push(`${plan.recycle} photos and their settings go to the Recycle Bin. Restore both entries there to bring their marks, grades and copies back.`);
-   if(plan.permanent)parts.push(`There is no Recycle Bin for ${plan.permanent} photos here. Those photos and their settings will be gone for good.`);
+   if(plan.recycle)parts.push(`${plan.recycle} photos and their settings go to the ${recycleLabel}. Restore both entries there to bring their marks, grades and copies back.`);
+   if(plan.permanent)parts.push(`There is no ${recycleLabel} for ${plan.permanent} photos here. Those photos and their settings will be gone for good.`);
    if(plan.copy_paths?.length)parts.push(`${plan.copy_paths.length} separately selected virtual copies will be removed. Their original photos stay on disk.`);
    if(plan.warnings.length)parts.push(plan.warnings.join(' '));
    const confirmation=plan.permanent?'permanent':'recycle';
-   if(!await confirm({title:rejected?'Delete all rejected':'Delete photos',message:parts.join(' '),confirm:plan.permanent?'Delete permanently':plan.count?'Move to Recycle Bin':'Remove copies',danger:true}))return;
+   if(!await confirm({title:rejected?'Delete all rejected':'Delete photos',message:parts.join(' '),confirm:plan.permanent?'Delete permanently':plan.count?`Move to ${recycleLabel}`:'Remove copies',danger:true}))return;
    const result=await command({action,paths:[],token:plan.token,confirmation});await options.changed(result);
-   options.status(`${result.count} photos deleted.${result.settings_pending?` ${result.settings_pending} photos removed; settings still need attention.`:''}${result.copies_count?` ${result.copies_count} separate virtual copies removed.`:''} ${result.warnings.join(' ')}${plan.recycle?' Restore photos and settings together from the Recycle Bin to bring them back.':''}`);
+   options.status(`${result.count} photos deleted.${result.settings_pending?` ${result.settings_pending} photos removed; settings still need attention.`:''}${result.copies_count?` ${result.copies_count} separate virtual copies removed.`:''} ${result.warnings.join(' ')}${plan.recycle?` Restore photos and settings together from the ${recycleLabel} to bring them back.`:''}`);
   }
   return Object.freeze({rename,move,folder,remove,destination,clash});
  }
