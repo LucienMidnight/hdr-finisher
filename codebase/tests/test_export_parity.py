@@ -219,8 +219,7 @@ def test_export_correctness_flags_wrong_dimensions_and_peak(tmp_path: Path) -> N
     assert failed == {"decoded_dimensions", "peak_within_ceiling"}
 
 
-def test_export_correctness_records_proof_scale_ceiling_overshoot(tmp_path: Path) -> None:
-    """A proof-sized encode records its overshoot; a delivery-scale one asserts."""
+def test_export_correctness_rejects_proof_scale_ceiling_overshoot(tmp_path: Path) -> None:
     path = _write_gain_map_stub(tmp_path / "stub.jpg")
     hdr = np.full((2, 2, 3), 1.49, dtype=np.float32)
     sdr = np.full((2, 2, 3), 0.18, dtype=np.float32)
@@ -231,8 +230,8 @@ def test_export_correctness_records_proof_scale_ceiling_overshoot(tmp_path: Path
         {"ceiling_nits": 1000.0, "ceiling_active": True, "encode_scale": "proof"},
         hdr, sdr, metadata, 203,
     )
-    assert proof_scale["ok"] is True
-    assert proof_scale["ceiling"]["rule"].startswith("recorded")
+    assert proof_scale["ok"] is False
+    assert proof_scale["ceiling"]["rule"] == "strict"
     assert proof_scale["ceiling"]["peak_nits"] > 1000.0
     assert proof_scale["ceiling"]["exceed_count"] == 4
 
@@ -245,6 +244,20 @@ def test_export_correctness_records_proof_scale_ceiling_overshoot(tmp_path: Path
     failed = {check["name"] for check in delivery_scale["checks"] if not check["ok"]}
     assert failed == {"peak_within_ceiling"}
     assert delivery_scale["ceiling"]["strict_ok"] is False
+
+
+@pytest.mark.parametrize("encode_scale", ["proof", "delivery"])
+def test_ceiling_uses_the_brightest_channel_not_luminance(tmp_path: Path, encode_scale: str) -> None:
+    from hdr_finisher.color import linear_bt2020_to_acescg
+    path = _write_gain_map_stub(tmp_path / "red.jpg")
+    red = np.array([[[1500 * 0.18 / 203, 0.0, 0.0]]], dtype=np.float32)
+    hdr = linear_bt2020_to_acescg(red)
+    result = epc.export_correctness(path, "jpeg_ultrahdr",
+        {"ceiling_nits": 1000.0, "ceiling_active": True, "encode_scale": encode_scale},
+        hdr, np.full_like(hdr, 0.18), _synthetic_jpeg_metadata(4.0), 203)
+    assert not result["ok"]
+    assert result["ceiling"]["peak_nits"] == pytest.approx(1500, abs=0.01)
+    assert result["ceiling"]["allowed_nits"] == 1000
 
 
 def test_export_correctness_requires_the_gain_map_container(tmp_path: Path) -> None:
@@ -304,7 +317,7 @@ def test_real_ultrahdr_export_agrees_with_declared_settings(tmp_path: Path, deli
     )
     assert correctness["ok"], [check for check in correctness["checks"] if not check["ok"]]
     assert correctness["decodedPeakNits"] > 0.0
-    assert correctness["decodedPeakNits"] <= 1011.0
+    assert correctness["decodedPeakNits"] <= 1000.0
     assert metadata["decoder_reference_white_nits"] == 203.0
 
 

@@ -1,10 +1,9 @@
-"""Optional decoded HDR target check and local correction.
+"""Decoded HDR target enforcement and local correction.
 
 Lossy codecs and gain-map reconstruction can overshoot at bright edges and
-in saturated highlights. The optional preset check aims for the highlight
-compression target, without an upward allowance. With Highlights off it
-uses the codec limit. Pictures well below their ceiling skip decoding;
-files still over target after local correction are delivered with a note.
+in saturated highlights. Enabled Highlight Compression always enforces its
+target after encoding, without an upward allowance. With Highlights off the
+optional preset check uses the codec limit. Uncorrectable files are rejected.
 
 Only the neighbourhood of an overshoot is lowered, by the amount it
 overshot plus a small margin, and the change fades out smoothly. The rest
@@ -30,16 +29,10 @@ BLOCK = 16
 STRENGTH = 2.0
 MARGINS = (0.003, 0.006, 0.012, 0.025, 0.05, 0.1)
 CODEC_LIMIT_NITS = 10000.0
-CHECK_HEADROOM = 1.25
 
 
 class CeilingError(ValueError):
     pass
-
-
-def ceiling_note(peak: float, ceiling: float) -> str:
-    return (f"HDR peak is {peak:.0f} nits, {peak - ceiling:.0f} above the {ceiling:.0f}-nit target "
-            "after correction; the file was exported anyway.")
 
 
 def delivery_ceiling_nits(adjustments) -> float:
@@ -116,9 +109,8 @@ def encode_within_ceiling(
 
     ``encode`` turns a finished HDR image into a delivery; ``decode`` returns
     that delivery's per-pixel brightest channel in nits at the same size.
-    Without ``ceiling_nits`` the delivery is encoded once and not checked. A delivery that
-    still overshoots after every correction is returned anyway, with a note
-    in ``notes`` saying how far over it is (Steve: export, then explain).
+    Without ``ceiling_nits`` the delivery is encoded once and not checked.
+    An overshooting or invalid delivery is never returned as successful.
     """
     current = hdr_image
     delivery = encode(current)
@@ -127,21 +119,21 @@ def encode_within_ceiling(
     ceiling = min(float(ceiling_nits), CODEC_LIMIT_NITS)
     if ceiling <= 0.0:
         return delivery
-    # Steve's October 18 policy: skip decoding when the finished picture
-    # has at least 20% headroom below its target.
-    if float(np.max(channel_nits(hdr_image, reference_white_nits))) * CHECK_HEADROOM <= ceiling:
-        return delivery
-    for margin in MARGINS:
+    for attempt in range(len(MARGINS) + 1):
         decoded = decode(delivery)
         if decoded.shape != current.shape[:2]:
             raise CeilingError("The decoded HDR file does not match the exported size.")
-        ratio = decoded / np.float32(ceiling)
-        if float(np.max(ratio)) <= 1.0:
+        if not decoded.size or not np.all(np.isfinite(decoded)):
+            raise CeilingError("The HDR file decoded to empty or non-finite pixels.")
+        peak = float(np.max(decoded))
+        if peak <= ceiling:
             return delivery
+        if attempt == len(MARGINS):
+            raise CeilingError(
+                f"HDR peak remains {peak:.3f} nits, above the {ceiling:g}-nit target after local correction; "
+                "no file was delivered."
+            )
+        ratio = decoded / np.float32(ceiling)
         current = current.copy()
-        current[..., :3] *= _correction(ratio, margin)[..., None]
+        current[..., :3] *= _correction(ratio, MARGINS[attempt])[..., None]
         delivery = encode(current)
-    peak = float(np.max(decode(delivery)))
-    if peak > ceiling and notes is not None:
-        notes.append(ceiling_note(peak, ceiling))
-    return delivery

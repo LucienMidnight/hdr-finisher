@@ -44,6 +44,7 @@ if str(BACKEND) not in sys.path:
 
 from hdr_finisher.avif_info import inspect_avif  # noqa: E402
 from hdr_finisher.color import acescg_to_linear_bt2020  # noqa: E402
+from hdr_finisher.hdr_ceiling import channel_nits  # noqa: E402
 from hdr_finisher.color_context import (  # noqa: E402
     AUTHORING_ANCHOR,
     CHROMIUM_CANVAS_REFERENCE_WHITE_NITS,
@@ -128,10 +129,8 @@ def decoder_scale_to_project(image: np.ndarray, reference_white_nits: int) -> np
 
 
 def peak_nits(image: np.ndarray, reference_white_nits: int) -> float:
-    """The proof store's own peak definition: BT.2020 luma in nits."""
-    bt2020 = np.clip(acescg_to_linear_bt2020(np.asarray(image, dtype=np.float32)[..., :3]), 0.0, None)
-    luma = 0.2627 * bt2020[..., 0] + 0.6780 * bt2020[..., 1] + 0.0593 * bt2020[..., 2]
-    return float(np.max(scene_linear_to_nits(luma, reference_white_nits), initial=0.0))
+    """The delivery ceiling's brightest BT.2020 channel, in nits."""
+    return float(np.max(channel_nits(image, reference_white_nits), initial=0.0))
 
 
 def decode_delivered(path: Path, format_name: str) -> tuple[np.ndarray, np.ndarray | None, dict[str, Any]]:
@@ -189,10 +188,8 @@ def export_correctness(
     encode_scale = str(settings.get("encode_scale") or "delivery")
     ceiling_evidence: dict[str, Any] = {"active": bool(ceiling_active), "nits": ceiling, "encode_scale": encode_scale}
     if ceiling_active and ceiling:
-        allowed = float(ceiling) * 1.01 + 1.0
-        bt2020 = np.clip(acescg_to_linear_bt2020(np.asarray(hdr, dtype=np.float32)[..., :3]), 0.0, None)
-        luma = 0.2627 * bt2020[..., 0] + 0.6780 * bt2020[..., 1] + 0.0593 * bt2020[..., 2]
-        nits = scene_linear_to_nits(luma, reference_white_nits)
+        allowed = float(ceiling)
+        nits = channel_nits(hdr, reference_white_nits)
         exceed = nits > allowed
         exceed_count = int(np.count_nonzero(exceed))
         ceiling_evidence.update(
@@ -205,16 +202,9 @@ def export_correctness(
                 "exceed_fraction": round(exceed_count / max(1, int(nits.size)), 8),
             }
         )
-        # A delivery-scale encode must respect the delivery spec. A proof-sized
-        # encode can overshoot it at sub-Nyquist speculars, where the smoothed
-        # gain map crosses a sharp base edge; that is recorded rather than
-        # asserted, and the delivery-scale run carries the strict rule.
-        if encode_scale == "delivery":
-            ceiling_evidence["rule"] = "strict"
-            ceiling_evidence["strict_ok"] = decoded_peak <= allowed
-            checks.append(_check("peak_within_ceiling", decoded_peak <= allowed, dict(ceiling_evidence)))
-        else:
-            ceiling_evidence["rule"] = "recorded (proof-scale encode)"
+        ceiling_evidence["rule"] = "strict"
+        ceiling_evidence["strict_ok"] = decoded_peak <= allowed
+        checks.append(_check("peak_within_ceiling", decoded_peak <= allowed, dict(ceiling_evidence)))
 
     if format_name == "jpeg_ultrahdr":
         checks.append(_check("gain_map_container", is_ultrahdr_jpeg(path), {"is_ultrahdr_jpeg": True}))
