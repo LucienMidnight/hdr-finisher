@@ -102,6 +102,28 @@ def audited(operation, *, milestone=False):
     return decorate
 
 
+_lock_samples = {}
+
+
+def _log_lock_timing(operation, wait_ms, hold_ms):
+    # Preserve every slow lock; summarize cheap hot-path acquisitions per minute.
+    now = time.monotonic()
+    with _lock:
+        sample = _lock_samples.setdefault(operation, dict(since=now, count=0, max_wait_ms=0, max_hold_ms=0))
+        sample["count"] += 1
+        sample["max_wait_ms"] = max(sample["max_wait_ms"], wait_ms)
+        sample["max_hold_ms"] = max(sample["max_hold_ms"], hold_ms)
+        summary = None
+        if now-sample["since"] >= 60:
+            summary = dict(sample)
+            summary["interval_seconds"] = now-summary.pop("since")
+            del _lock_samples[operation]
+    if wait_ms >= 10 or hold_ms >= 10:
+        log("lock_timing", operation=operation, wait_ms=wait_ms, hold_ms=hold_ms)
+    if summary:
+        log("lock_timing_summary", operation=operation, **summary)
+
+
 @contextmanager
 def timed_lock(lock, operation):
     """Measure the existing lock scope without changing lock ownership/order."""
@@ -113,7 +135,7 @@ def timed_lock(lock, operation):
     finally:
         held = time.monotonic() - acquired
         lock.release()
-        log("lock_timing", operation=operation,
+        _log_lock_timing(operation,
             wait_ms=round((acquired-started)*1000, 3), hold_ms=round(held*1000, 3))
 
 

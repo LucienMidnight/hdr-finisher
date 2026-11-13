@@ -9,6 +9,12 @@ paths and Open Logs remain unchanged; .1 and .2 sit alongside them. Packaged
 builds include the writer through lib/**/*.js. Disk allowance proposal is in
 memory-and-caches.md; historical diagnostics beyond retention are discarded.
 
+Noise reduction: full app_memory snapshots once per minute, plus pressure-level
+changes and trims; memory sampling/reclamation still run at their original rate.
+Cheap lock timings are grouped per operation per minute with counts and maxima;
+every wait/hold of at least 10 ms still logs individually. helper_hold logs only
+actual ownership changes, retaining pause/resume and all scheduler grant records.
+
 
 - **Owner:** Steve
 - **Master PRD:** [PRD](../PRD.md)
@@ -585,3 +591,15 @@ Final logs: `codebase/output/w21-packaged-final.log`, `w21-unpackaged.log`,
 `w21-node.log`, `w21-desktop.log`, `w21-python.log` and `w21-pack.log`.
 Output starts/ends at 45.9 GB, below 100 GB. Owned smoke scratch was removed;
 the retained failure screenshot and logs are disposable after review.
+
+November 13 installed v0.9.2 investigation (read-only final 200 MB): backend.log
+was 3,219,500,801 bytes. Sample spans 14.17 wall-clock hours including a long
+inactive gap: 14.1 MB/hour overall, not a representative active-use rate.
+Recent complete active clock-hour bins contain 33.1-58.6 MB. Across the
+sample: lock_timing 58.48 MB/516,870 records; helper_hold 27.46 MB/93,033;
+grant asked/granted/finished combined 74.23 MB/about 43,200 each; app_memory
+8.99 MB/2,400. In one complete active hour grants each fired 20,894 times
+(5.8/s), helper_hold 39,252 (10.9/s), app_memory 654 (every 5.5 s).
+Event-loop lag and Grade-return records were small (0.071/0.013 MB).
+This is historical observed usage, not a controlled benchmark or a claim
+about post-change growth. Grant records remain intact for admission tracing.

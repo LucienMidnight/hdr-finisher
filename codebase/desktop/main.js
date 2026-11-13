@@ -1390,7 +1390,7 @@ if (!gotLock) {
       registerIpc();
       // One non-overlapping observer counts Electron (including GPU host RAM),
       // Python and late helpers together, before the hard four-GB limit.
-      let memorySampling = false, memoryLastLog = 0;
+      let memorySampling = false, memoryLastLog = 0, memoryLastLevel = null;
       const memoryPressureRelay = require('./memory-pressure.cjs');
       const memoryTrimGate = memoryPressureRelay.pressureGate();
       const memoryTimer = setInterval(async () => {
@@ -1409,8 +1409,9 @@ if (!gotLock) {
           value.reclaimLevel = trimLevel || "none";
           if (trimLevel) libraryStage("memory_trim", {level:trimLevel, totalBytes:value.totalBytes,
             targetBytes:value.targetBytes, ceilingBytes:value.ceilingBytes, pressure:value.pressure, waiting:value.waiting});
-          if (Date.now()-memoryLastLog > 5000) {
+          if (Date.now()-memoryLastLog > 60000 || value.level !== memoryLastLevel || trimLevel) {
             memoryLastLog = Date.now();
+            memoryLastLevel = value.level;
             libraryStage("app_memory", {...value, main:process.memoryUsage(),
               electron:app.getAppMetrics().map(item=>({pid:item.pid,type:item.type,bytes:item.memory.workingSetSize*1024,
                 role:item.pid===mainWindow?.webContents.getOSProcessId() ? "main-window" :

@@ -258,11 +258,13 @@ class LibraryWorker:
     def pause(self, reason: str, paused: bool, *, action: str = "hold changed") -> None:
         with self._lock:
             was_paused = bool(self._paused)
+            owner_was_paused = reason in self._paused
             if paused:
                 self._paused.add(reason)
             else:
                 self._paused.discard(reason)
-            log("helper_hold", owner=reason, action=action, acquired=paused, owners=sorted(self._paused))
+            if owner_was_paused != paused:
+                log("helper_hold", owner=reason, action=action, acquired=paused, owners=sorted(self._paused))
             if bool(self._paused) != was_paused:
                 log("helper_pause" if self._paused else "helper_resume", reason="Grade/import/export" if reason != "manual" else "manual", owner=reason, owners=sorted(self._paused), action=action)
             if paused:
