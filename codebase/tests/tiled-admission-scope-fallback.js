@@ -127,7 +127,11 @@ function assert(condition, message) {
       `The low budget did not force the real admission planner to Tiled: ${JSON.stringify(result)}`);
     assert(result.accepted?.execution === "tiled" && result.accepted?.transport === "WebGPU",
       `The accepted presentation does not identify tiled execution: ${JSON.stringify(result)}`);
-    assert(result.tiledMetrics?.submissions === 2
+    const metrics = result.tiledMetrics;
+    assert(metrics?.tileCount > 0 && metrics.tileBatchSize > 0
+      && metrics.submissions === Math.ceil(metrics.tileCount / metrics.tileBatchSize) + 1
+      && metrics.cancelled === false
+      && metrics.processedPixels === metrics.width * metrics.height
       && result.tiledMetrics?.presentableGeneration === result.accepted?.generation,
       `The admitted tiled generation was not atomic: ${JSON.stringify(result)}`);
     assert(result.scopeSourcePresent === false,
