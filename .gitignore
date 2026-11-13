@@ -42,6 +42,7 @@ codebase/.electron-builder-cache/
 codebase/.pyinstaller-cache/
 codebase/build/
 codebase/desktop/node_modules/
+codebase/node_modules/
 
 # Locally built platform-native encoder tools
 codebase/bin/avifenc

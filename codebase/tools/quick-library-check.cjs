@@ -113,6 +113,11 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     for(const [file,hidden] of hiddenFiles)if(fs.existsSync(hidden))fs.renameSync(hidden,file);
     for(const [file,original] of sidecars){if(original)fs.writeFileSync(file,original);else if(fs.existsSync(file))fs.unlinkSync(file);}
     if(keepProfile!==null&&!dropProfile)return;
+    if(process.platform!=='win32'){
+      const target=path.resolve(profile),base=path.resolve(os.tmpdir());
+      if(!target.startsWith(base+path.sep)||!path.basename(target).startsWith('hdr-finisher-test-quick-'))throw Error('Unsafe cleanup target');
+      fs.rmSync(target,{recursive:true,force:true});return;
+    }
     // Native PowerShell avoids Windows' extended-path removal failures.
     const script = '$target=[IO.Path]::GetFullPath($env:HDR_QUICK_PROFILE); $base=[IO.Path]::GetFullPath($env:HDR_QUICK_OUTPUT); if(!$target.StartsWith($base+[IO.Path]::DirectorySeparatorChar) -or !(Split-Path -Leaf $target).StartsWith("hdr-finisher-test-quick-")){throw "Unsafe cleanup target"}; if(Test-Path -LiteralPath $target){Remove-Item -LiteralPath $target -Recurse -Force -ErrorAction Stop}';
     execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{env:{...process.env,HDR_QUICK_PROFILE:profile,HDR_QUICK_OUTPUT:os.tmpdir()},windowsHide:true,stdio:'ignore',timeout:10000});

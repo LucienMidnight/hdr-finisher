@@ -1,6 +1,7 @@
 """Permanent mixed Library test folder (library-mixed-v1).
 
-The folder lives outside the repository, beside the film data sheets:
+The folder lives outside the repository, beside the film data sheets, in
+`test-fixtures/library-mixed-v1` next to the repository folder ("ai"), e.g.
     D:\\AI\\AI Projects\\HDR Finisher Tool\\test-fixtures\\library-mixed-v1
 Its photos are read-only. The manifest committed beside this script
 (`library-mixed-v1.manifest.json`) records every file's size and SHA-256.
@@ -17,8 +18,9 @@ D:\\Photos is never written.
 import hashlib, json, os, shutil, stat, sys
 from pathlib import Path
 
-FIXTURE = Path(r"D:\AI\AI Projects\HDR Finisher Tool\test-fixtures\library-mixed-v1")
 CODEBASE = Path(__file__).resolve().parents[1]
+# Beside the repository folder ("ai"), on every machine.
+FIXTURE = CODEBASE.parents[1] / "test-fixtures" / "library-mixed-v1"
 MANIFEST = Path(__file__).with_name("library-mixed-v1.manifest.json")
 RUN = CODEBASE / "output" / "test-photos" / "library-mixed-v1-run"
 
