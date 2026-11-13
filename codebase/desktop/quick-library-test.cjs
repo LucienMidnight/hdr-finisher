@@ -1,5 +1,11 @@
 // Loaded by main.js only when the explicit quick-check switch is present.
 const fs = require('node:fs'), path = require('node:path');
+function observeVisibility(window) {
+  const result = {hidden: !window.isVisible() || window.isMinimized()};
+  const hide = () => {result.hidden = true;};
+  window.on('hide', hide);window.on('minimize', hide);
+  return {result, stop() {window.removeListener('hide', hide);window.removeListener('minimize', hide);}};
+}
 async function run({app, window, backend, configPath = process.env.HDR_FINISHER_QUICK_LIBRARY_CONFIG}) {
   if (!configPath) return;
   const profile = app.getPath('userData');
@@ -32,7 +38,12 @@ async function run({app, window, backend, configPath = process.env.HDR_FINISHER_
     if(config.pixelCapture){await require('./library-pixel-test.cjs').run({frame,config,stage});stage('done');return;}
     if(config.batch5c){const result=await require('./library-wait-check.cjs').run({window,frame,config,stage});result.appStartToScenarioDoneMs=Date.now()-config.appStartedAt;fs.writeFileSync(resultPath,JSON.stringify(result));stage('done');return;}
     const source = fs.readFileSync(path.join(__dirname, '../tools/quick-library-scenario.js'), 'utf8');
-    const result = config.gradeHandoffPixels ? await require('./library-grade-picture-check.cjs').run({window,frame,config,stage}) : await frame.executeJavaScript(`(${source})(${JSON.stringify(config)})`);
+    const visibility = observeVisibility(window);
+    let result;
+    try {
+      result = config.gradeHandoffPixels ? await require('./library-grade-picture-check.cjs').run({window,frame,config,stage}) : await frame.executeJavaScript(`(${source})(${JSON.stringify(config)})`);
+      if(result.probe)result.probe.native_hidden=visibility.result.hidden;
+    } finally {visibility.stop();}
     if(config.gradeHandoffPopout&&!config.gradeHandoffPixels&&result.grade_handoff&&result.stage==='done'){
       stage('handoff: pop out Library');
       await frame.executeJavaScript(`document.getElementById('popout-library').click()`);
@@ -62,4 +73,4 @@ async function run({app, window, backend, configPath = process.env.HDR_FINISHER_
     stage('failed');
   }
 }
-module.exports = {run};
+module.exports = {run, observeVisibility};

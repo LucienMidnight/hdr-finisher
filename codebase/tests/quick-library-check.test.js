@@ -91,8 +91,26 @@ test('same-named photos in different folders are counted separately',()=>{
 });
 test('hidden windows and absent frame evidence invalidate drawing-gap measurements',()=>{
  const {visibility}=require('../tools/library-quick-metrics.cjs');
- assert.equal(visibility({hidden:true,frames:300}).valid,false);
- assert.equal(visibility({hidden:false,frames:0}).valid,false);
- assert.equal(visibility({hidden:false,frames:300}).valid,true);
+ assert.equal(visibility({hidden:true,native_hidden:false,frames:300}).valid,false);
+ assert.equal(visibility({hidden:false,native_hidden:false,frames:0}).valid,false);
+ assert.equal(visibility({hidden:false,native_hidden:false,frames:300}).valid,true);
+ assert.equal(visibility({hidden:false,native_hidden:true,frames:300}).valid,false);
+ assert.equal(visibility({hidden:false,frames:300}).valid,false);
  assert.equal(visibility().valid,false);
+});
+test('native hide and minimize events stay recorded even after the window returns',()=>{
+ const {EventEmitter}=require('node:events');
+ const {observeVisibility}=require('../desktop/quick-library-test.cjs');
+ for(const event of ['hide','minimize']){
+  const window=Object.assign(new EventEmitter(),{isVisible:()=>true,isMinimized:()=>false});
+  const observer=observeVisibility(window);
+  assert.equal(observer.result.hidden,false);
+  window.emit(event);window.emit('show');window.emit('restore');
+  assert.equal(observer.result.hidden,true);
+  observer.stop();assert.equal(window.listenerCount(event),0);
+ }
+ for(const state of [{visible:false,minimized:false},{visible:true,minimized:true}]){
+  const window=Object.assign(new EventEmitter(),{isVisible:()=>state.visible,isMinimized:()=>state.minimized});
+  const observer=observeVisibility(window);assert.equal(observer.result.hidden,true);observer.stop();
+ }
 });

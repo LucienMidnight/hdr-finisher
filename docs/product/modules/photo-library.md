@@ -53,8 +53,10 @@ The quick Library check now counts every eligible photo by full path, lists
 missing photos, and fails ordinary whole-folder acceptance when coverage is
 incomplete. Same-named photos in different folders remain separate. Hidden
 windows or missing animation-frame evidence invalidate drawing-gap results.
+The desktop observer also records native hide/minimise events for the whole
+scenario, even when Chromium continues to report the document visible.
 
-Validation: 939 JavaScript checks passed, one skipped. A locked real-GPU check
+Validation: 940 JavaScript checks passed, one skipped. A locked real-GPU check
 on the MacBook verified one asynchronous compilation, zero synchronous
 duplicates and an unchanged displayed picture during preparation. The visible
 90-second mixed-folder check covered only 2/33 eligible photos and now correctly

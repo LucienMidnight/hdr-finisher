@@ -15,6 +15,6 @@ function coverage(files,shown){
  return {eligible:eligible.length,pictured:eligible.length-missing.length,complete:eligible.length>0&&missing.length===0,missing};
 }
 function visibility(probe){
- return {valid:probe?.hidden===false&&probe.frames>0,hidden:probe?.hidden??null,frames:probe?.frames??0};
+ return {valid:probe?.hidden===false&&probe.native_hidden===false&&probe.frames>0,hidden:probe?.hidden??null,native_hidden:probe?.native_hidden??null,frames:probe?.frames??0};
 }
 module.exports={pictures,coverage,visibility};
