@@ -114,8 +114,10 @@ photo to it. Initialization failure still disables the GPU everywhere.
 
 ## 5. Open work, in order
 
-1. Serve GPU delivery: give export, Proof and Library pictures a hidden
-   renderer that reuses this one (brief in Export and Proof).
+1. **Completed; stale entry reconciled November 13:** export, Proof and
+   Library pictures share the hidden GPU delivery renderer. Verified
+   `desktop/main.js` creates the hidden `gpu-delivery.html` window; delivery
+   implementation and qualification are recorded in Export and Proof.
 2. Measure Crop and Rotate cost if Steve finds them slow.
 3. Preview settling, as its own piece of work.
 4. Linux HDR gradient dithering.

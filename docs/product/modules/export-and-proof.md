@@ -88,7 +88,7 @@ Final rebase onto local main `db41e0f9`: Node 917 passed; Python 3,244 passed,
 55 skipped. Output started and ended at 42.7 GB; temporary ceiling JPEGs
 were recycled, with metrics and logs retained. No push.
 
-## November 11: repeatability investigation (W5, unresolved)
+## November 11: repeatability investigation (W5, not reproduced)
 
 No rendering fix is claimed. The saved DSC07060 grade at 4000 x 2671,
 Ultra HDR JPEG 95, 4:4:4, full gain map and no output sharpening produced
@@ -717,7 +717,11 @@ Both renderers pass before encoding and miss finished JPEG limits; Steve
 accepts the slight visual differences for v1. Preserve measurements and
 unchanged tolerances for v2 encoding-quality work. The full-size RAW Proof
 HDR mismatch was fixed November 8 (Proof now shares the export's render); the
-underlying GPU run-to-run HDR difference it exposed still needs diagnosis.
+independent November 11 GPU exports and full-size Proofs were byte-identical,
+including different admission caps (`tests/gpu-delivery-repeat.js`, recorded
+above). Run-to-run difference is no longer a reproduced open defect. The
+historical November 8 discrepancy has no confirmed cause; retain that evidence
+and the existing release regression, without claiming a rendering fix.
 No pixel change.
 
 0. **GPU export speed, end to end** (Steve, October 20: before the live

@@ -8286,7 +8286,14 @@ graded-photo exclusion should change.
 Timing conditions and limitations: [performance table](../../technical/performance-table.md#november-10-exposure-overlay-investigation-no-app-changes).
 
 
-## November 10: deletion interface audit (open work)
+## November 10: deletion interface audit (superseded)
+
+November 13 P1-D reconciliation: the album/pin refresh findings below were
+fixed in the later November 10 deletion and sidebar fixes entry. Verified
+`library-albums.js`: refresh replies check their revision; successful deletion
+removes the row and closes the active collection before refreshing. The audit
+below is historical, not a remaining manual-album deletion task. Separate
+physical-file deletion findings retain their own status.
 
 Steve reported an album remaining in the sidebar after deletion. Controlled
 frontend execution reproduced two manual-album defects: an older list response
