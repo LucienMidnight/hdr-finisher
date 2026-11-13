@@ -1640,7 +1640,7 @@ body[data-active-lane="sdr"] .lane-dot {
   border: 0;
   border-left: 1px solid var(--border);
   border-radius: 0;
-  background: var(--hf-chassis);
+  background: var(--hf-panel);
   scrollbar-color: var(--border) var(--panel);
   /* Stack rows are inserted above the focused toolbar. Browser scroll
      anchoring must not move the surrounding control panel when that happens;
