@@ -8,6 +8,44 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 14: Mac tiled scope harness correction
+
+The unchanged base `87b91385` renders the admission-fallback fixture completely
+and accepts the correct generation on the Mac. The failure was the driver's
+hard-coded two-submission assertion, not a partially presented image: six
+512-pixel tiles, batches of four, and a final presentation need three
+submissions. The assertion now checks the batch-derived submission count,
+complete processed area, non-cancellation and matching accepted/presentable
+generations. It still exercises the real low-budget planner and requires
+Tiled/WebGPU, no stale Direct scope texture, no GPU scope attempt, and a
+fresh CPU scope. The final Mac check passes all of these. No renderer,
+scheduler, batch size, memory budget or output changed.
+
+This is a portable harness assumption, not proof of a Metal atomicity defect.
+It can fail on a PC with the same tile/batch geometry; current PC hardware was
+not available. The old evidence used four tiles, and the two-submission pin
+dates from October 3, before the current six-tile observation. The current
+release known-failure list does not enumerate this failure.
+
+The lens driver also cancels setup preview timers/follow-ups before its
+explicit comparison frame, avoiding Fit-versus-requested-size captures on
+the smaller Mac window. Stable lens captures still miss the unchanged byte
+gate; see the [Film Look follow-up](film-look.md). No shared shader or
+export/delivery code was edited. The Film panel Enter/Space helper passes on
+unchanged base and final code; its reported failure remains unconfirmed.
+
+MacBook Neo, Apple A18 Pro, 8 GB, 1408x794-point window setting; all GPU checks are serial
+through `tools/gpu-run-lock.py`. Evidence:
+`codebase/output/macparity-base-scope.log` and
+`codebase/output/macparity-final-scope.log`.
+
+The default 90-second plain-Electron Library smoke also ran on this final
+test-only change: six of 33 pictures, incomplete-coverage failure, no memory
+or responsiveness-limit violation. This matches the previously recorded Mac
+stall class, not a demonstrated regression from these driver changes; it was
+not investigated or rerun. Evidence:
+`codebase/output/quick-library-check/macparity/report.json`.
+
 ## November 13–14: P1-C Library GPU recovery safety
 
 Library development now permits at most one device-loss recovery for the same

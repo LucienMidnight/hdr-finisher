@@ -1,5 +1,26 @@
 # Performance table
 
+November 14 Mac GPU parity diagnostics (`fix/mac-gpu-parity`, commit containing
+this record, base `87b91385`): **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM,
+6 cores, 1408x794-point window setting, unpackaged Electron, shared GPU lock. Test-only changes;
+no performance improvement is claimed. Fast suites and other agents' CPU work
+overlapped portions of the captures, so these are not controlled baselines and
+are not compared with PC numbers or judged against the 5% timing tolerance.
+
+| Diagnostic action | Observed range | Conditions / result |
+| --- | --- | --- |
+| Lens matrix, 1520-pixel explicit GPU render / CPU reference | 0.292–4.991 s / 0.481–1.863 s | 64 cases, full matrix; stages only, not action-to-screen; includes different lens reaches and cold pipeline work |
+| Lens matrix, 2400-pixel explicit GPU render / CPU reference | 0.219–3.336 s / 1.730–4.158 s | 64 cases, full matrix; same caveats; 68/128 strict parity passes overall, unchanged from supplied base |
+| Strongest-glow quick matrix, 1520-pixel GPU render / CPU reference | 2.172–3.464 s / 0.400–1.693 s | Eight cases; 0/8 strict byte gates; not a speed comparison with full-matrix cases |
+| Tiled admission fixture, explicit GPU render | 0.033 s | Six tiles, four per batch, three submissions; correct complete generation and CPU scope; renderer stage only, scope wait not timed |
+| Default Library, first picture / coverage after 90 s | 0.5 s / six of 33 | Same Mac and final test-only change; ten pictures never reached; no memory or responsiveness-limit violation; existing incomplete-coverage failure, not a controlled speed comparison |
+
+Evidence: `codebase/output/macparity-final-full.log`,
+`macparity-final-quick.log`, `macparity-final-scope.log`, and
+`codebase/output/quick-library-check/macparity/report.json`. Whole action-to-screen
+timings were not measured in the parity diagnostics; the Library first-picture
+time is the separate plain-Electron smoke observation.
+
 November 14 macOS file-command smoke (working tree based on `696a3fd6`,
 `p1/mac-file-commands`; MacBook Neo, A18 Pro, 8 GB, 6 cores; 1408x794 points;
 unpackaged plain Electron under the shared GPU lock; disposable synthetic

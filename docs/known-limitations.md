@@ -1,5 +1,42 @@
 # Known Limitations and Support Status
 
+## November 14: Mac GPU parity follow-up
+
+This is a test-only correction on `fix/mac-gpu-parity`, base `87b91385`.
+No production rendering, export/Proof, tolerance, limit or budget changed.
+
+- **Tiled scope admission: fixed harness.** Six tiles in batches of four
+  plus presentation require three submissions, not the pinned two. The
+  complete frame, accepted generation and CPU scope were already correct.
+  The corrected final check passes without weakening any image requirement.
+- **Lens parity: strict failure retained.** The quick matrix remains 0/8
+  and the full matrix remains 68/128, matching the supplied base, against
+  the 0.1-level mean gate. Stable captures rule out the additional
+  Fit/requested-size race fixed in the driver. Full finished SDR-presented
+  pixels pass the existing perceptual 1/3 limits (Delta E 2000 mean at most
+  0.238, p99.9 at most 1.120); this does not qualify HDR delivery peaks.
+- **SDR Velvia chain: unchanged strict failure.** Added mean 0.104330 versus
+  0.1; finished Delta E 2000 mean 0.119114 / p99.9 1.044660. Spatial
+  half-float filtering is implicated; an instruction-level Metal cause is
+  not proved. No precision route, output change or looser gate was shipped.
+- **Film panel keyboard: not reproduced.** The full helper passes on both
+  unchanged base and final code, including Enter and Space. No app or helper
+  keyboard behavior changed.
+
+**Decisions for Steve:** authorize the already agreed perceptual criterion
+for these perceptually small lens/Velvia byte-gate misses, or leave them open for
+separately qualified preview-only precision work. Safest overnight option:
+keep the strict failures and all delivery/PC pixels unchanged. Current PC
+reruns of lens quick/full, the scope fallback and panel helper are still
+needed; the registered extreme HDR Neutral film failure is a separate case.
+Details and local evidence are in the Film Look and Preview/GPU module PRDs.
+Fast validation passes: JavaScript 951 passed / one skipped; Python 3,311
+passed / 145 skipped / one expected failure now passing. All five focused
+film/lens native-encoder Proof/export identity cases pass without skips.
+The default plain-Electron Library smoke still fails on incomplete coverage:
+six of 33 pictures after 90 seconds, consistent with the existing Mac stall;
+no memory or responsiveness-limit violation. Not investigated or rerun here.
+
 ## November 13: POSIX cache-location fallback (reported; unchanged)
 
 The standalone Python backend falls back to its runtime directory when
