@@ -346,3 +346,5 @@ Fullscreen return restores the exact grid scroll position when the displayed pho
 is unchanged. If you navigate to another photo in fullscreen, the grid returns
 with that photo centered (as far as the first/last rows allow). Selected tiles
 have a clear outline; the current photo also has an inner picture outline.
+
+The shared status and shortcuts bar sits directly above the Library footer. It shows Ready when idle, export progress with Pause/Resume and Cancel icons during an export, and the finished file count afterwards. Activity keeps its detailed export controls and per-photo results; its button no longer repeats export progress.

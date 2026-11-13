@@ -8910,3 +8910,5 @@ All 921 fast Node checks pass after rebasing onto local main. Backend unchanged;
 Python not rerun. Evidence: `codebase/output/w14-scroll-cache/` (driver and
 Node logs, compact diagnosis). Output remains below 0.1 GB in this worktree;
 disposable app profiles are removed by the harness.
+
+November 13, 2026 - Steve: one shared status and shortcuts bar on every page, directly above the Library footer with space reserved above it. It shows Ready when idle, export progress with Pause/Resume and Cancel icons, then completion. The Activity button no longer prefixes export progress; the panel retains export controls and results. Implementation is in the working tree, awaiting commit and visual approval.

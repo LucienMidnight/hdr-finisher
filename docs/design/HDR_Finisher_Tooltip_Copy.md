@@ -71,3 +71,5 @@ Trigger delay: 2 seconds on the PREVIEW WINDOW title hover. The same tooltip app
 | `library.hdr` | HDR | Show HDR pictures on an HDR display; switch off for SDR previews · H |
 | `library.detail` | 100% | 100% detail is available in Single photo view · Z |
 
+
+Shared export status buttons: "Pause the current export", "Resume the current export" (while paused), and "Cancel the current export". Accessible labels match these tooltips.

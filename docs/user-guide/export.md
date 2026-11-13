@@ -249,3 +249,5 @@ replaces SDR with HDR. Partial headroom may blend both. Keep the text large;
 a full-resolution gain map gives sharper letters. Recompression can strip the
 map, leaving SDR. This diagnoses which rendition is decoded, not whether the
 screen itself is HDR. JPEG XL HDR always says HDR and is not a gain-map test.
+
+The shared status bar shows export progress on every page. After the progress bar, use the Pause icon (Resume while paused) or Cancel icon. When the job ends, the icons disappear and the bar briefly shows the finished file count. In Export it sits above the Export Batch footer, which also shows the selected photo count when the selection is not empty.

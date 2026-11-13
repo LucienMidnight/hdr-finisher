@@ -43,7 +43,7 @@ button, input, select, textarea, output { font-family: var(--font-body); font-va
 :root .viewer-status-dock { grid-row: 3; display: flex; align-items: center; gap: 12px; height: var(--status-bar-h); min-height: var(--status-bar-h); padding: 0 12px; background: var(--panel); border-top: 1px solid var(--hairline); pointer-events: auto; }
 :root .application-status-entries { flex: 1; min-width: 0; max-height: var(--status-bar-h); overflow: auto; }
 :root .application-status-entry { background: var(--panel); box-shadow: none; font-size: var(--font-size-sm); }
-.slider-key-legend { flex-shrink: 0; max-width: 62%; overflow: hidden; white-space: nowrap; opacity: .45; font: var(--font-weight-regular) var(--font-size-min) var(--font-body); letter-spacing: var(--tracking-none); text-transform: none; color: var(--muted); transition: opacity 120ms ease; }
+.slider-key-legend { flex: 0 1 auto; min-width: 0; max-width: 62%; overflow: hidden; white-space: nowrap; opacity: .45; font: var(--font-weight-regular) var(--font-size-min) var(--font-body); letter-spacing: var(--tracking-none); text-transform: none; color: var(--muted); transition: opacity 120ms ease; }
 .slider-key-legend b { color: var(--body); font-weight: var(--font-weight-semibold); }
 body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root :is(.control-mode-switch.proof-preview-switch, .control-mode-switch) { min-height: var(--tab-row-h); margin-top: 0; }
@@ -137,7 +137,18 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 /* Shared status entries fit the lower status bar. */
 :root .viewer-status-dock :is(.application-status-entries, .status-entry) { height: var(--status-bar-h); min-height: 0; }
 :root .viewer-status-dock .status-entry { padding: 2px 0; border-bottom: 0; font: var(--font-weight-regular) var(--font-size-sm) var(--font-body); }
-:root .viewer-status-dock .status-entry-actions button { min-height: 24px; }
+:root .viewer-status-dock .status-entry-actions button { min-height: var(--panel-collapse-button-size); }
+:root .viewer-status-dock .status-entry-icon { width: var(--panel-control-h); height: var(--panel-collapse-button-size); padding: 0; display: grid; place-items: center; border-radius: var(--radius-plate); }
+:root .status-entry-icon::before { content: ""; width: var(--bypass-icon-size); height: var(--bypass-icon-size); background: currentColor; mask: var(--status-action-icon) center/contain no-repeat; }
+:root .status-entry-icon[data-icon="player-pause"] { --status-action-icon: url('assets/icons/tabler/player-pause.svg'); }
+:root .status-entry-icon[data-icon="player-play"] { --status-action-icon: url('assets/icons/tabler/player-play.svg'); }
+:root .status-entry-icon[data-icon="ban"] { --status-action-icon: url('assets/icons/tabler/ban.svg'); }
+:root .viewer-status-dock:has([data-status-id="batch-export"]) .application-status-entries { min-width: min-content; overflow: hidden; }
+:root .viewer-status-dock [data-status-id="batch-export"] { flex: 0 0 auto; }
+:root .viewer-status-dock [data-status-id="batch-export"] .status-entry-progress { flex: 0 0 calc(var(--panel-control-h) * 3); min-width: calc(var(--panel-control-h) * 3); }
+:root .viewer-status-dock [data-status-id="batch-export"] .status-entry-copy { flex-shrink: 0; }
+:root body[data-workflow="import"] #viewer-status-dock.library-status-dock { display: flex; position: fixed; box-sizing: border-box; }
+:root body.library-review #viewer-status-dock.library-status-dock { display: none; }
 :root .hsl-wheel [data-hsl-handle]:focus { filter: none; outline: 2px solid var(--text); outline-offset: 2px; }
 
 /* Keep every shell action visible alongside the existing workflow tabs. */
@@ -181,11 +192,11 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 
 /* The preview already has a toolbar; batch controls must not bleed below it. */
 :root body[data-workflow="export"] .batch-preview .batch-header { display: none; }
-:root body[data-workflow="export"] .batch-preview { top: calc(var(--window-chrome-h, 0px) + var(--top-h) + var(--panel-header-h)); bottom: var(--status-bar-h); border: 0; box-shadow: none; }
+:root body[data-workflow="export"] .batch-preview { top: calc(var(--window-chrome-h, 0px) + var(--top-h) + var(--panel-header-h)); bottom: 0; border: 0; box-shadow: none; }
 :root .batch-preview-grid-toggle { width: 30px; min-width: 30px; padding: 0; }
 :root .batch-preview-grid-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
 :root body:not([data-workflow="export"]) .batch-preview-grid-toggle { display: none; }
-:root body[data-workflow="export"] #viewer-status-dock { display: flex; }
+:root body[data-workflow="export"] #viewer-status-dock { display: flex; flex-shrink: 0; margin-top: auto; }
 :root .viewer-status-dock { border-top: 0; box-shadow: none; }
 :root .viewer-status-dock .status-entry { border: 0; box-shadow: none; }
 :root .viewer-status-dock .status-entry-copy { flex: 0 1 auto; }
@@ -521,7 +532,7 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 :root .batch-statusbar { display: flex; align-items: center; flex-shrink: 0; min-width: 0; height: var(--status-bar-h); padding: 0 12px; border-top: 1px solid var(--hairline); background: var(--panel); color: var(--muted); }
 :root .batch-statusbar .batch-heading { gap: 8px; min-width: 0; overflow: hidden; white-space: nowrap; }
 :root .batch-statusbar .helper { font-size: var(--font-size-xs); line-height: var(--line-height-none); }
-:root .batch-preview .batch-statusbar { display: none; }
+:root .batch-preview .batch-statusbar { pointer-events: auto; }
 
 /* November 7: Library sidebar is the "Pinned" panel; Folders, Albums and Smart Albums are its sections. */
 :root .library-nav > .library-panel-heading { padding-left: 12px; }

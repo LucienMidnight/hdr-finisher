@@ -40,6 +40,8 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-folder-row .expand-folder { display: grid; place-items: center; flex: 0 0 var(--panel-collapse-button-size); width: var(--panel-collapse-button-size); padding: 0; }
 .expand-folder::before { content: ""; width: var(--panel-collapse-button-icon-size); height: var(--panel-collapse-button-icon-size); background: currentColor; mask: var(--group-chevron-shape) center / contain no-repeat; }
 .expand-folder[aria-expanded="true"]::before { transform: rotate(90deg); }
+.library-centre:has(.shared-status-row:not([hidden])) { grid-template-rows: auto auto minmax(0,1fr) auto auto; }
+.library-centre:has(.shared-status-row:not([hidden])) .library-activity { bottom: calc(100% + var(--status-bar-h) + 4px); }
 .library-centre { display: grid; grid-template-rows: auto auto minmax(0,1fr) auto; min-width: 0; min-height: 0; background: var(--viewer); }
 .library-toolbar { display: grid; grid-template-columns: minmax(60px, 1fr) auto minmax(max-content, 1fr); align-items: center; gap: 12px; min-height: var(--panel-header-h); padding: 0 12px 0 16px; background: var(--panel); border-bottom: 1px solid var(--hairline); }
 .library-bar-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }

@@ -1,5 +1,8 @@
 # Performance table
 
+November 13 status-bar UI smoke (working tree, parent `8d5706ec`, 2560x1440 plain Electron, default mixed Library, sequential validation): first/ten/twenty pictures 1.2/4.2/8.0 s; 29 of 33 shown by 90 s. No application errors, memory violations or responsiveness-limit failures. This UI smoke is not a controlled speed comparison. Evidence: `codebase/output/quick-library-check/status-bar/report.json`.
+
+
 November 12 watermark/Library polish smoke (parent `b2ce850d`, branch
 `feat/watermark-and-library-polish`, 2560x1440 plain Electron, default mixed
 Library, concurrent full Python suite): first/ten/twenty pictures 4.4/5.0/25.8 s;

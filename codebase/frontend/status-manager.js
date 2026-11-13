@@ -20,7 +20,7 @@
       const width = container.clientWidth;
       const capacity = width > 0 ? Math.max(1, Math.floor(width / MIN_ENTRY_WIDTH_PX)) : records.length;
       const kept = new Set([...records]
-        .sort((a, b) => SEVERITY_RANK[a.entry.severity] - SEVERITY_RANK[b.entry.severity] || b.sequence - a.sequence)
+        .sort((a, b) => (b.entry.id === "batch-export") - (a.entry.id === "batch-export") || SEVERITY_RANK[a.entry.severity] - SEVERITY_RANK[b.entry.severity] || b.sequence - a.sequence)
         .slice(0, capacity));
       const folded = records.filter((record) => !kept.has(record));
       records.forEach((record) => record.node.classList.toggle("status-entry-folded", !kept.has(record)));
@@ -104,6 +104,8 @@
       if (!entry?.id) throw new Error("Status entries need an id/channel.");
       const severity = SEVERITIES.has(entry.severity) ? entry.severity : "info";
       const normalized = { ...entry, id: String(entry.id), severity, message: String(entry.message || "") };
+      const previous = entries.get(normalized.id);
+      const focusedAction = previous?.node.contains(document.activeElement) ? document.activeElement.dataset.statusAction : null;
       clear(normalized.id, { syncEmpty: false });
       emptyNode?.remove();
       emptyNode = null;
@@ -138,12 +140,18 @@
       if (actions.length || severity === "error" || normalized.dismissible) {
         const controls = document.createElement("span");
         controls.className = "status-entry-actions";
-        actions.forEach((action) => {
+        actions.forEach((action, index) => {
           const button = document.createElement("button");
           if (action.id) button.id = action.id;
           button.type = "button";
+          button.dataset.statusAction = String(index);
           button.className = "button-secondary";
-          button.textContent = action.label;
+          button.setAttribute("aria-label", action.label);
+          if (action.icon) {
+            button.className = "button-secondary tooltip-trigger status-entry-icon";
+            button.dataset.tooltip = action.label;
+            button.dataset.icon = action.icon;
+          } else button.textContent = action.label;
           button.addEventListener("click", () => action.run?.());
           controls.append(button);
         });
@@ -162,6 +170,7 @@
       const record = { entry: normalized, node, timer: 0, remaining: successTimeoutMs, deadline: 0, sequence: ++sequence };
       entries.set(normalized.id, record);
       container.append(node);
+      if (focusedAction != null) node.querySelector(`[data-status-action="${focusedAction}"]`)?.focus({ preventScroll: true });
       node.addEventListener("mouseenter", () => pauseDismiss(record));
       node.addEventListener("mouseleave", () => resumeDismiss(record));
       node.addEventListener("focusin", () => pauseDismiss(record));

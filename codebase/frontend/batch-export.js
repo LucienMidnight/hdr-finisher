@@ -107,7 +107,7 @@
     $("batch-summary").textContent=`Each uses its last saved grade.${model.photos.some(p=>p.unsaved)?" Unsaved changes in Grade are not exported.":""}${model.photos.some(p=>hdrSkipped(p))?" HDR versions are skipped for SDR-only photos.":""}${model.photos.some(p=>p.hdr_compatibility==="unknown")?" HDR compatibility will be checked during export.":""}`;
     $("batch-footer-count").hidden=true;
     const files=model.photos.reduce((n,p)=>n+fileCount(p),0);
-    $("batch-count").textContent=`${model.photos.length} ${model.photos.length===1?"photo":"photos"} · ${model.draft.versions.length} ${model.draft.versions.length===1?"version":"versions"} · ${files} ${files===1?"file":"files"}`;
+    $("batch-count").textContent=`${model.photos.length} ${model.photos.length===1?"photo":"photos"} · ${model.draft.versions.length} ${model.draft.versions.length===1?"version":"versions"} · ${files} ${files===1?"file":"files"}${model.selected.size?` · ${model.selected.size} selected`:""}`;
     const flagged=model.photos.filter(p=>p.unsaved||hdrSkipped(p)).length;
     $("batch-notice").hidden=!flagged;
     $("batch-notice").textContent=`${flagged} ${flagged===1?"photo needs":"photos need"} a look before exporting. Details are on each photo below.`;
@@ -123,6 +123,7 @@
     if(event.shiftKey){if(!event.ctrlKey&&!event.metaKey)model.selected.clear();for(let i=Math.min(model.anchor,index);i<=Math.max(model.anchor,index);i++)model.selected.add(model.photos[i].path);}
     else {if(!event.ctrlKey&&!event.metaKey)model.selected.clear();if(model.selected.has(photo.path))model.selected.delete(photo.path);else model.selected.add(photo.path);model.anchor=index;}
     for(const tile of $("batch-grid").children)tile.setAttribute("aria-selected",String(model.selected.has(tile.dataset.path)));
+    example();
   }
   function renderGrid(){
     const grid=$("batch-grid");if(!grid)return;
@@ -167,7 +168,9 @@
   // The shared status bar shows export progress from any page.
   function appStatus(j,done,counts){
     const bar=window.HDRStatus;if(!bar)return;
-    if(!done){bar.post({id:"batch-export",severity:"progress",message:`${j.state==="paused"?"Export paused":"Exporting"} ${Math.min(j.completed+1,j.total)} of ${j.total}`,progress:100*j.completed/Math.max(1,j.total),progressLabel:"Overall export progress"});return;}
+    if(!done){bar.post({id:"batch-export",severity:"progress",message:`${j.state==="paused"?"Export paused":"Exporting"} ${Math.min(j.completed+1,j.total)} of ${j.total}`,progress:100*j.completed/Math.max(1,j.total),progressLabel:"Overall export progress",actions:[
+      {label:j.state==="paused"?"Resume the current export":"Pause the current export",icon:j.state==="paused"?"player-play":"player-pause",run:()=>control(j.state==="paused"?"resume":"pause").catch(report)},
+      {label:"Cancel the current export",icon:"ban",run:()=>control("cancel").catch(report)}]});return;}
     if(bar.get("batch-export")?.severity!=="progress")return;
     const written=counts.exported+counts.renamed;
     bar.post({id:"batch-export",severity:counts.failed||j.state==="failed"?"attention":"success",message:`${j.state==="cancelled"?"Export cancelled":"Export finished"} · ${written} ${written===1?"file":"files"}${counts.failed?` · ${counts.failed} failed`:""}`,dismissible:!!counts.failed});
@@ -308,12 +311,56 @@
     const line=node("div","","batch-run-line"),progress=node("strong"),eta=node("span","","helper"),actions=node("div","","batch-tools");progress.id="batch-progress";progress.setAttribute("aria-live","polite");eta.id="batch-eta";
     for(const [id,label,fn] of [["pause","Pause",()=>control(model.job?.state==="paused"?"resume":"pause")],["cancel","Cancel",()=>control("cancel")],["reveal","Show in Explorer",()=>desktop?.revealPath?.(model.job?.results.find(r=>r.output_path)?.output_path)],["close","Close",()=>{model.closedJob=model.job?.id;renderJob();}]]){const b=button(label,fn);b.id="batch-"+id;actions.append(b);}
     line.append(progress,eta,actions);const meter=node("progress","","status-entry-progress");meter.id="batch-meter";meter.setAttribute("aria-label","Overall export progress");const results=node("ul");results.id="batch-results";strip.append(line,meter,results);scroll.append(strip);panel.append(header,notice,grid,empty,statusbar);document.body.append(panel);view(true);
-    $("export-sheet").addEventListener("change",()=>capture());$("export-sheet").addEventListener("input",()=>capture());await loadPresets();}
+    $("export-sheet").addEventListener("change",()=>capture());$("export-sheet").addEventListener("input",()=>capture());placeStatusDock();await loadPresets();}
+  // Keep one live dock. Library reserves its row inside the iframe; the parent
+  // overlays that row so status actions and tooltips stay in their owning document.
+  const statusDock = $("viewer-status-dock");
+  const statusDockSlot = document.createComment("viewer status dock slot");
+  statusDock.before(statusDockSlot);
+  const libraryFrame = $("library-frame");
+  const libraryHost = $("library-host");
+  let libraryStatusRow = null;
+  const libraryStatusObserver = new ResizeObserver(()=>placeStatusDock());
+  libraryStatusObserver.observe(libraryHost);
+  function prepareLibraryStatus(){
+    const doc = libraryFrame.contentDocument;
+    const footer = doc?.querySelector(".library-footer");
+    if(!footer)return;
+    libraryStatusRow = doc.createElement("div");
+    libraryStatusRow.className = "shared-status-row";
+    libraryStatusRow.style.cssText = "height:var(--status-bar-h);flex:0 0 var(--status-bar-h)";
+    libraryStatusRow.hidden = true;
+    footer.before(libraryStatusRow);
+    libraryStatusObserver.observe(footer);
+    libraryStatusObserver.observe(libraryStatusRow);
+    placeStatusDock();
+  }
+  libraryFrame.addEventListener("load",prepareLibraryStatus);
+  if(libraryFrame.contentDocument?.readyState==="complete")prepareLibraryStatus();
+  function placeStatusDock(){
+    const inLibrary = document.body.dataset.workflow==="import";
+    if(libraryStatusRow)libraryStatusRow.hidden=!inLibrary || document.body.classList.contains("library-review");
+    statusDock.classList.toggle("library-status-dock",inLibrary);
+    const panel = $("batch-grid-panel");
+    if(inLibrary && libraryStatusRow){
+      if(statusDock.parentElement!==libraryHost)libraryHost.append(statusDock);
+      const rect=libraryStatusRow.getBoundingClientRect(),frame=libraryFrame.getBoundingClientRect();
+      statusDock.style.left=`${frame.left+rect.left}px`;
+      statusDock.style.top=`${frame.top+rect.top}px`;
+      statusDock.style.width=`${rect.width}px`;
+      return;
+    }
+    statusDock.style.left=statusDock.style.top=statusDock.style.width="";
+    if(document.body.dataset.workflow==="export" && panel) panel.insertBefore(statusDock,panel.querySelector(".batch-statusbar"));
+    else statusDockSlot.after(statusDock);
+  }
   new MutationObserver(()=>{
+    placeStatusDock();
     for(const [row,job] of tileJobs){
       if(document.body.dataset.workflow!=="export"){job.visible=false;job.controller?.abort();job.controller=null;}
       else {observer.unobserve(row);observer.observe(row);}
     }
     if(document.body.dataset.workflow==="export")init().then(async()=>{if(!model.paths.length&&window.HDRGradeSaving?.item()){await setPhotos([window.HDRGradeSaving.item()]);view(false);}}).catch(report);}).observe(document.body,{attributes:true,attributeFilter:["data-workflow"]});
+  new MutationObserver(placeStatusDock).observe(document.body,{attributes:true,attributeFilter:["class"]});
   window.batchExport={open,quick,reveal:path=>desktop?.revealPath?.(path),activity:()=>model.job,add:paths=>setPhotos([...model.paths,...paths]),control};
 })();

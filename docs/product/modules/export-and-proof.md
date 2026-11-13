@@ -979,3 +979,5 @@ never called these routes; the sole store round-trip unit test was removed
 with the store. Old `delivery-proof-evidence.json` records are no longer
 consumed; no saved photo or test projects are affected. Encoded Proof,
 reconstruction, file serving and export pixels/files are unchanged.
+
+November 13, 2026 - Steve: one shared status and shortcuts bar on every page. Export and Library place it above their own footer. Export progress includes Pause/Resume and Cancel icons after the progress bar, using the existing export controls. Export Batch also shows a non-empty selection count. Implementation is in the working tree, awaiting commit and visual approval.
