@@ -17,8 +17,6 @@ env/
 .DS_Store
 Thumbs.db
 
-# Local Codex repository instructions
-AGENTS.md
 design-qa.md
 docs/testing/*
 !docs/testing/Exporter_Capability_Table.md
