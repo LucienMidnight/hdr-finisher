@@ -316,6 +316,13 @@
       }
     },
     {
+      "path": "desktop/tests/platform-panels.js",
+      "areas": ["ui"],
+      "tier": "area",
+      "protects": "Updates Releases action and Linux HDR warning photo-open lifecycle.",
+      "launch": {"method": "native"}
+    },
+    {
       "path": "desktop/tests/confirmation-focus.js",
       "areas": [
         "ui"

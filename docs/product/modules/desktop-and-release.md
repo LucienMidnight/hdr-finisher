@@ -1,5 +1,38 @@
 # Module PRD: Desktop and release
 
+## November 13: Phase 1 platform panels (P1-D)
+
+The Linux non-authoritative-preview warning now waits for an open photo and
+hides again on close. Settings > Updates has a GitHub Releases button,
+available independently of update checking; it uses the existing secondary
+button styling and the project-only external-link handler. No new design
+tokens or rendering changes are involved. The 0.9.1 Flatpak metainfo entry
+was verified already present, so no packaging edit was necessary.
+
+On the MacBook, the focused `desktop/tests/platform-panels.js` check passes
+through the shared GPU lock at 1408x794: the real Updates button dispatches
+the correct external URL, fits its panel with the existing font, and the
+Linux-state warning is hidden/open/hidden across a photo's lifetime. This
+simulates Linux capability state, not physical Linux HDR qualification. The
+first diagnostic launch selected the short-lived splash; the driver now waits
+for the visible main window before attaching. Its disposable profile is
+removed on success or failure. The driver is in the release inventory.
+
+Validation: full fast Node suite 935 passed, one skipped; all 13 new JXL
+process/fallback regressions pass. Full Python suite: 3,176 passed, 176
+skipped, one unexpected pass and 26 failures in untouched Retouch tests.
+Twenty-four refused native repair publication for insufficient available
+memory; two cancellation tests did not reach their awaited event within five
+seconds. Other agents were running on this 8 GB Mac. These failures were
+recorded without reruns or changes to Retouch tests, admission or budgets.
+Scratch output remained below 100 GB (5.9 GB at start, 6.0 GB at finish).
+
+Windows follow-up: exercise the bundled native JXL helper and the Updates
+button. A physical Linux empty/open/close warning check remains; macOS/Linux
+JXL helper builds are Phase 2, not this change. Decisions for Steve: the new
+helper deadline defaults to five seconds (reason in Import and RAW); no
+existing output tolerance, memory allowance or GPU budget was changed.
+
 ## November 13: page shortcut hints (approved by Steve, built)
 
 The shared bar uses page-specific hints on Library, Export and Proof; Grade
@@ -129,13 +162,16 @@ investigation; the test remains failing.
 
 **Open**
 
-- **Linux HDR warning** ("Non-authoritative SDR preview") shows on the
-  empty launch screen. It should wait until a photo is open
-  (`info-panels.js`).
+- **Linux HDR warning:** P1-D gates the warning on an open photo; it clears
+  again when the photo closes (`info-panels.js`). Local validation is recorded
+  in the November 13 platform panels entry below.
 - Linux KDE taskbar icon: the setup is in place (`desktopName`), but no
   hands-on result is recorded.
-- The Updates panel has no link to the GitHub Releases page.
-- The Flatpak metainfo has no 0.9.1 release entry.
+- The Updates panel now has a GitHub Releases button using the existing
+  secondary-button tokens and project-only external-link handler.
+- The Flatpak 0.9.1 release entry is present (dated October 16, 2026) in
+  `packaging/flatpak/io.github.LucienMidnight.hdr-finisher.metainfo.xml`;
+  the earlier missing-entry task is stale.
 - October 19: the window shows Starting… while the backend starts, then
   loads the app when it is ready. Measured visible in 0.424 s from launch
   (limit 1.5 s); remembered bounds and the Library window use the same shell.
@@ -144,15 +180,15 @@ investigation; the test remains failing.
 
 ## 5. Open work, in order
 
-**V1 scope (Steve, October 26, 2026):** items 1–3 (Linux HDR warning, the
-Flatpak release entry, the Releases link) are after v1. Before v1 comes the
+**V1 scope (Steve, October 26, 2026; status reconciled November 13):**
+items 1–3 are now implemented. Before v1 comes the
 repair of the broken release checks (reviewed plan:
 `docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md`), then the
 installer and a methodical bug hunt.
 
-1. Linux: show the HDR warning only once a photo is open.
-2. Add the 0.9.1 Flatpak release entry at the next release.
-3. Releases link in the Updates panel.
+1. Linux warning lifecycle: implemented in P1-D; physical Linux trial remains.
+2. Flatpak 0.9.1 entry: verified present; no packaging change needed.
+3. Updates Releases link: implemented in P1-D.
 5. Explicit interfaces between frontend feature files, if Steve wants it.
 
 ## 6. Detail and history

@@ -1,0 +1,30 @@
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+test("Linux HDR warning waits for a photo and clears when it closes", () => {
+  const source = fs.readFileSync(path.join(__dirname, "../frontend/info-panels.js"), "utf8");
+  let hidden;
+  const warning = { classList: { toggle: (_, value) => { hidden = value; } } };
+  const state = { session: null, desktopEnvironment: { platform: "linux" } };
+  const context = vm.createContext({ state, els: { hdrPresentationWarning: warning, hdrPresentationWarningCopy: {} } });
+  vm.runInContext(source, context);
+  vm.runInContext("presentationCapabilityState = () => ({ qualified: false, reasons: ['test'] })", context);
+  vm.runInContext("renderPresentationCapability()", context);
+  assert.equal(hidden, true);
+  state.session = {};
+  vm.runInContext("renderPresentationCapability()", context);
+  assert.equal(hidden, false);
+  state.session = null;
+  vm.runInContext("renderPresentationCapability()", context);
+  assert.equal(hidden, true);
+  state.session = {};
+  state.desktopEnvironment.platform = "darwin";
+  vm.runInContext("renderPresentationCapability()", context);
+  assert.equal(hidden, true);
+  state.desktopEnvironment.platform = "linux";
+  vm.runInContext("presentationCapabilityState = () => ({ qualified: true, reasons: [] }); renderPresentationCapability()", context);
+  assert.equal(hidden, true);
+});

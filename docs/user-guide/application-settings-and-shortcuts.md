@@ -101,6 +101,9 @@ The right end of the status bar lists useful keys. On Library, Export and Proof 
 
 The desktop app can check the public GitHub Releases feed at startup or on demand. It compares the installed version with the latest release tag and shows a dismissible notice when a newer release exists. It does not download or install updates automatically, and an offline or failed check does not interrupt editing.
 
+In **Settings > Updates**, **GitHub Releases** opens the project's release
+page in your browser, whether or not an update check has found a newer version.
+
 On Windows and Linux, open the application menus with the ≡ button beside
 HDRF (or Alt/F10). Recent projects is in File. On macOS, use the system menu
 bar and File → Open recent. Drag empty space in the top toolbar to move the

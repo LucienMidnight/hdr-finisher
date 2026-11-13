@@ -263,7 +263,7 @@ function presentationCapabilityState() {
 function renderPresentationCapability() {
   state.presentationCapability = presentationCapabilityState();
   if (!els.hdrPresentationWarning) return;
-  const show = state.desktopEnvironment?.platform === "linux" && !state.presentationCapability.qualified;
+  const show = Boolean(state.session) && state.desktopEnvironment?.platform === "linux" && !state.presentationCapability.qualified;
   els.hdrPresentationWarning.classList.toggle("hidden", !show);
   if (show) {
     const reason = state.presentationCapability.reasons.join("; ");

@@ -1121,6 +1121,7 @@
       if (event.key === "Escape" && !byId("frame-popover").classList.contains("hidden")) closeFramePopover();
     });
     byId("settings-check-updates").addEventListener("click", () => checkForUpdates({ force: true, manual: true }));
+    byId("settings-open-releases").addEventListener("click", () => openProjectWebsite(`${PROJECT_URL}/releases`));
     byId("update-notice-open").addEventListener("click", () => openProjectWebsite(byId("update-notice").dataset.url));
     byId("update-notice-dismiss").addEventListener("click", () => {
       shell.preferences.updates.dismissedVersion = byId("update-notice").dataset.version || "";
