@@ -1574,11 +1574,11 @@ existing budget. Further memory diagnosis remains open; do not increase the
 budget to make the driver pass.
 
 
-### November 13: proposed desktop log disk allowance
+### November 13: approved desktop log disk allowance
 
-Pending Steve's approval: implemented guardrail of 20 MiB per active log,
-with two rotated files per log (60 MiB each, 120 MiB total for backend.log
-and desktop.log). Existing oversized logs are reduced to their last 20 MiB
+Approved by Steve on November 13, 2026: 20 MiB per file. backend.log keeps
+7 backups (8 files, 160 MiB); desktop.log keeps 1 backup (2 files, 40 MiB).
+Total allowance: 200 MiB, retaining more backend history for previous-day issues. Existing oversized logs are reduced to their last 20 MiB
 when the new writer first opens them. These are diagnostics, not photo caches.
 
 ### November 8: CPU draw-before-store job release

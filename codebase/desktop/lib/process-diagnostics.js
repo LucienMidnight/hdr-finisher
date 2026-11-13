@@ -6,7 +6,7 @@ function installProcessDiagnostics({ app, crashReporter, dialog, shell, isShutti
   let log;
   function record(event, details = {}) {
     try {
-      log ||= require("./rotating-log").create(logPath);
+      log ||= require("./rotating-log").create(logPath, {backups:1});
       log.append(`${JSON.stringify({
         timestamp: new Date().toISOString(),
         pid: process.pid,

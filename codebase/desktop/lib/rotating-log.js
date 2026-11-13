@@ -8,6 +8,13 @@ const BACKUPS = 2;
 function create(logPath, {maxBytes = MAX_BYTES, backups = BACKUPS} = {}) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || !Number.isSafeInteger(backups) || backups < 0) throw Error('Invalid log bounds');
   fs.mkdirSync(path.dirname(logPath), {recursive:true});
+  // Remove surplus numbered backups when a log's allowance is reduced.
+  for (const name of fs.readdirSync(path.dirname(logPath))) {
+    const prefix = path.basename(logPath) + '.';
+    const suffix = name.startsWith(prefix) ? name.slice(prefix.length) : '';
+    if (/^[1-9][0-9]*$/.test(suffix) && Number(suffix) > backups)
+      fs.rmSync(path.join(path.dirname(logPath), name), {force:true});
+  }
   // Bound pre-existing logs too, reading only their tail (never a multi-GB file).
   for (let i = 0; i <= backups; i++) {
     const file = i ? `${logPath}.${i}` : logPath;

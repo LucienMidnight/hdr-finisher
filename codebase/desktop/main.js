@@ -309,7 +309,7 @@ let backendLogWriter;
 function getBackendLogWriter() {
   if (!backendLogWriter) {
     const logPath = path.join(app.getPath("userData"), "logs", "backend.log");
-    const log = require("./lib/rotating-log").create(logPath).stream;
+    const log = require("./lib/rotating-log").create(logPath, {backups:7}).stream;
     backendLogWriter = {log, write:require("./lib/backend-log").create(log)};
   }
   return backendLogWriter;

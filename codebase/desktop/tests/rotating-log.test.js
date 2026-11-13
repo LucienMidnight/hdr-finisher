@@ -43,3 +43,21 @@ test('stream serializes backend and main-process records across rotations', asyn
   assert.equal(fs.readFileSync(file+'.2','utf8'),'0123456789');
  } finally {fs.rmSync(dir,{recursive:true,force:true});}
 });
+
+test('seven-backup startup trim, growth from two backups and reduced allowance', () => {
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-log-seven-'));
+ try {
+  const file=path.join(dir,'backend.log');
+  for (let i=0;i<=2;i++) fs.writeFileSync(i ? file+'.'+i : file,'old'.repeat(20));
+  const log=create(file,{maxBytes:10,backups:7});
+  for (let i=0;i<=2;i++) assert.equal(fs.statSync(i ? file+'.'+i : file).size,10);
+  for (let i=0;i<10;i++) log.append(String(i).repeat(10));
+  assert.equal(fs.readdirSync(dir).length,8);
+  for (let i=1;i<=7;i++) assert.equal(fs.readFileSync(file+'.'+i,'utf8'),String(9-i).repeat(10));
+  fs.writeFileSync(file+'.7','tail'.repeat(30));
+  create(file,{maxBytes:10,backups:7});
+  assert.equal(fs.readFileSync(file+'.7','utf8'),'iltailtail');
+  create(file,{maxBytes:10,backups:1});
+  assert.deepEqual(fs.readdirSync(dir).sort(),['backend.log','backend.log.1']);
+ } finally {fs.rmSync(dir,{recursive:true,force:true});}
+});

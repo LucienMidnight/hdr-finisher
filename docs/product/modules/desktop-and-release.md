@@ -5,8 +5,10 @@
 Electron owns backend.log (backend stdout/stderr and main-process Library
 events) and desktop.log (crash/lifecycle records). Both now use one rotating
 writer per file, closing append handles before rotation on Windows. Current
-paths and Open Logs remain unchanged; .1 and .2 sit alongside them. Packaged
-builds include the writer through lib/**/*.js. Disk allowance proposal is in
+paths and Open Logs remain unchanged. backend.log keeps 7 backups and
+desktop.log keeps 1, each file capped at 20 MiB (200 MiB total, approved by
+Steve November 13, 2026). Surplus old backups are removed on startup. Packaged
+builds include the writer through lib/**/*.js. Approved disk allowance is in
 memory-and-caches.md; historical diagnostics beyond retention are discarded.
 
 Noise reduction: full app_memory snapshots once per minute, plus pressure-level
