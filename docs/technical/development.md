@@ -128,7 +128,8 @@ holders, and acquires the parent `gpu-run.lock` even if `lockFolder` is changed.
 The existing parent wrapper therefore interoperates during handover. No tracked
 `gpu-lock.cjs` remains on this branch; do not restore a separate lock. Dead
 owners may be recovered after 60 minutes; a live owner is never broken merely
-because it is old. Timeouts/interruption stop the entire owned process tree;
+because it is old. The owner heartbeat also prevents the old wrapper from
+aging out a live in-repo holder. Timeouts/interruption stop the entire owned process tree;
 failed shutdown retains the lock. Do not remove another agent's live lock.
 
 Fast checks do not need the GPU lock:

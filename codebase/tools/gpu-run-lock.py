@@ -42,10 +42,22 @@ def old_lock_held(folder):
 def recover_stale(lock):
     # Stale breakers serialize and re-read ownership, so an earlier observation
     # cannot delete a new holder that acquired between two stale-break attempts.
-    guard = lock.with_name('gpu-run.reap')
+    # OS-owned byte/file lock is released on process death, so an interrupted
+    # stale recovery cannot leave a second stale directory blocking recovery.
+    guard = lock.with_name('gpu-run.reap').open('a+b')
     try:
-        guard.mkdir()
-    except FileExistsError:
+        if os.name == 'nt':
+            import msvcrt
+            if os.fstat(guard.fileno()).st_size == 0:
+                guard.write(b'0')
+                guard.flush()
+            guard.seek(0)
+            msvcrt.locking(guard.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(guard.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        guard.close()
         return False
     try:
         record = lock / 'owner.txt'
@@ -70,7 +82,7 @@ def recover_stale(lock):
             pass
         return False
     finally:
-        guard.rmdir()
+        guard.close()
 
 
 def acquire(folder, owner):
@@ -186,7 +198,15 @@ def main():
             rows = process_rows()
             if child.pid in rows:
                 tracked[child.pid] = rows[child.pid][1]
+        heartbeat = 0
         while child.poll() is None:
+            if time.monotonic() >= heartbeat:
+                for lock in locks:
+                    record = lock / 'owner.txt'
+                    if record.read_text(encoding='utf-8') != owner:
+                        raise RuntimeError('GPU lock ownership changed; stopping this process tree')
+                    os.utime(record, None)
+                heartbeat = time.monotonic() + 10
             if os.name != 'nt':
                 descendants(process_rows(), tracked)
             if time.monotonic() >= deadline:

@@ -3826,7 +3826,7 @@
       "protects": "param([int]$RootProcessId)",
       "launch": {
         "method": "powershell",
-        "requires": "Provide the owned test process RootProcessId; sampler runs until that process exits."
+        "requires": "Provide the owned test process RootProcessId; sampler runs until that process exits. On POSIX the runner uses tools/sample-process-memory.py and HDR_FINISHER_ELECTRON_MAIN_PID."
       }
     },
     {

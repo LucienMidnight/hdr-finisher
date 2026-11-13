@@ -660,3 +660,21 @@ while its helper was being edited; the clean rerun and fresh-worktree
 Library/GPU/plan checks are pending below. No workflow, application image maths,
 tolerance, budget or shader was changed. The four Desktop release platform
 jobs were read; their existing install/build/test commands remain supported.
+
+
+### P1-E fresh-worktree checks (November 13, continued)
+
+The clean full Python suite passes: 3,182 passed, 176 skipped, one xpassed
+(platform/native capability skips are reported by pytest). Setup succeeded in a
+fresh detached worktree with spaces in its path, using only the setup command;
+its native tools were reused and private media was linked. Release planning
+selects 102 drivers conservatively from changes since v0.9.2; fresh worktrees
+have no run history, so the runner correctly calls the time estimate incomplete.
+
+Fresh-worktree hash verification exposed an existing callback bug: Array.map
+passed its numeric index as the photo-root argument. The runner now maps each
+path explicitly; a behavior check covers all three hashes and three mapped
+arguments, and still detects a changed project. The explicit memory-sampler
+diagnostic now chooses Python on POSIX instead of PowerShell. The lock refreshes
+its owner timestamp for interoperability with the old wrapper during long runs,
+and stale recovery uses an automatically released OS mutex to serialize breakers.

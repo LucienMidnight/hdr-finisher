@@ -299,3 +299,20 @@ test('timeout kills a sleeping fake driver and its descendant', async t => {
   assert.equal(r.results[0].timedOut,true);
   assert.throws(()=>process.kill(pid,0),{code:'ESRCH'});
 });
+
+
+test('all three protected project hashes and driver arguments map the photo root without array indices', t => {
+  const folder=scratch(t), prior=process.env.HDR_FINISHER_PHOTOS_ROOT;
+  process.env.HDR_FINISHER_PHOTOS_ROOT=folder;
+  t.after(()=>{if(prior===undefined)delete process.env.HDR_FINISHER_PHOTOS_ROOT;else process.env.HDR_FINISHER_PHOTOS_ROOT=prior;});
+  const files=['first','second','third'].map(name=>path.join(folder,name+'.hdrfinisher'));
+  files.forEach((file,i)=>fs.writeFileSync(file,'original '+i));
+  const projects=[...files.slice(0,2),'D:/Photos/third.hdrfinisher'];
+  const hashes=runner.hashProjects(projects);
+  assert.deepEqual(hashes.map(row=>row.file),files);
+  runner.checkProjects(hashes);
+  const invocation=runner.command({path:'tests/example.js',launch:{method:'node',args:['D:/Photos/first.hdrfinisher','D:/Photos/second.hdrfinisher','D:/Photos/third.hdrfinisher']}},folder,{protectedProjects:projects});
+  assert.deepEqual(invocation.args.slice(1),files);
+  fs.writeFileSync(files[2],'changed');
+  assert.throws(()=>runner.checkProjects(hashes),/protected project changed/);
+});
