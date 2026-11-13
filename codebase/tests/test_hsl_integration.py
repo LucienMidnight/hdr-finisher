@@ -11,6 +11,47 @@ from hdr_finisher.sdr_match import _semantic_sdr_translation, _translate_local_g
 
 
 @pytest.mark.parametrize("lane", list(PreviewKind))
+def test_global_stage_cache_reuses_only_the_upstream_recipe(lane):
+    from hdr_finisher.hsl_sampling import capture_stage_input
+    image = np.random.default_rng(12).uniform(0, 2, (12, 18, 3)).astype(np.float32)
+    cache = SessionRenderCache(image, None)
+    grade = AdjustmentState()
+    branch = getattr(grade, lane.value)
+    original = cache.hsl_stage_input(grade, 1000, lane)
+    branch.hsl.channels[0].recipe.hue = 40
+    branch.film_look.grain_amount = 30
+    branch.red_curve = [[0, 0], [.5, .8], [1, 1]]
+    assert cache.hsl_stage_input(grade, 1000, lane) is original
+    getattr(grade, 'hdr' if lane == PreviewKind.SDR else 'sdr').exposure = 2
+    assert cache.hsl_stage_input(grade, 1000, lane) is original
+    branch.exposure = .5
+    changed = cache.hsl_stage_input(grade, 1000, lane)
+    assert changed is not original
+    np.testing.assert_array_equal(changed, capture_stage_input(image, grade, lane))
+    assert cache.hsl_stage_input(grade, 800, lane) is not changed
+    grade.shared.geometry.rotation = 90
+    rotated = cache.hsl_stage_input(grade, 1000, lane)
+    assert rotated.shape[:2] == image.shape[1::-1]
+    cache.replace_source(image * .5, None)
+    assert cache.hsl_stage_input(grade, 1000, lane) is not rotated
+    cache.trim_memory(0)
+    assert not cache._hsl_inputs
+    assert cache._retained_bytes_locked() == 0
+
+
+def test_global_sdr_cache_invalidates_authored_reference_and_highlights():
+    image = np.full((12, 18, 3), [.4, .1, .03], np.float32)
+    cache = SessionRenderCache(image, image * .5)
+    grade = AdjustmentState()
+    original = cache.hsl_stage_input(grade, 1000, PreviewKind.SDR)
+    grade.sdr.use_authored_base = False
+    generated = cache.hsl_stage_input(grade, 1000, PreviewKind.SDR)
+    assert generated is not original
+    grade.sdr.highlight_compression_start_percent = 30
+    assert cache.hsl_stage_input(grade, 1000, PreviewKind.SDR) is not generated
+
+
+@pytest.mark.parametrize("lane", list(PreviewKind))
 def test_neutral_and_bypass_are_exact_through_global_and_local_pipelines(lane):
     image = np.random.default_rng(3).uniform(-.01, 4, (8, 12, 3)).astype(np.float32)
     grade = AdjustmentState()

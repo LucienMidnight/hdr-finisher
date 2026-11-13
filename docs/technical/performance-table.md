@@ -1,5 +1,23 @@
 # Performance table
 
+## November 14: P1-B Grade, paired MacBook checks
+
+MacBook Neo, Apple A18 Pro, 8 GB unified RAM; 1408x794-point unpackaged
+Electron under the shared GPU lock; no overlapping suites. Baseline
+`87b91385`, implementation committed with these entries. Reusable synthetic
+`codebase/output/test-photos/grade-24mp.tiff`, not a real RAW. Grade timing
+tolerance: 10% (proposal); PC results remain separate. Show selection includes
+request, overlay decode and two animation frames. Evidence:
+`codebase/output/performance/p1b/{before,after}.json`; diagnostic trace is
+separate from paired timings.
+
+| Action | Before | After | Conditions / result |
+| --- | --- | --- | --- |
+| SDR Show selection, warm Fit | 0.684–0.700 s | 0.674–0.699 s | MacBook; three warm show/hide cycles; <1 s passes; within timing tolerance, no speed claim |
+| SDR Show selection, warm 100% | 0.766–0.799 s | 0.749–0.801 s | MacBook; same bounded 1600-pixel CPU overlay; <1 s passes; within timing tolerance |
+| SDR selection range edit, Fit / 100% | 0.746 / 0.765 s | 0.731 / 0.763 s | MacBook; edge feather edit, pre-HSL pixels reused; within timing tolerance |
+| SDR first show, Fit / 100% | 1.235 / 1.049 s | 1.217 / 1.132 s | MacBook; first call at each zoom, not the warm acceptance; within timing tolerance |
+
 November 14 macOS file-command smoke (working tree based on `696a3fd6`,
 `p1/mac-file-commands`; MacBook Neo, A18 Pro, 8 GB, 6 cores; 1408x794 points;
 unpackaged plain Electron under the shared GPU lock; disposable synthetic

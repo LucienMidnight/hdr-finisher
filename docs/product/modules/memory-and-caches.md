@@ -1,5 +1,13 @@
 # Module PRD: Memory and caches
 
+### November 14: P1-B HSL stage ownership
+
+Global HSL Show selection/picking keeps at most one pre-HSL CPU array per
+rendition in `SessionRenderCache._hsl_inputs`. These arrays participate in the
+same retained-byte accounting, LRU and pressure trimming as the other Grade
+arrays, inside the unchanged 600 MB cap, not beside it. Source replacement
+clears both entries. No new allowance or whole-app ceiling is introduced.
+
 ### November 13: 8 GB Mac native preflight and failed-photo admission
 
 macOS large-file preflight reads total RAM from `hw.memsize`. The overnight

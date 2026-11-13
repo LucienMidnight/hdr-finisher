@@ -1,5 +1,33 @@
 # Module PRD: Grade
 
+## November 14: P1-B bounded Show selection stage
+
+Global HSL sampling now retains the pre-HSL CPU pixels, at most one entry per
+rendition, in the existing aggregate Grade array LRU. The 600 MB array cap is
+unchanged. Source replacement, geometry, processing scale, colour context and
+upstream controls invalidate it; HSL ranges, Show selection visibility, curves,
+Film Look and other downstream controls do not. HDR and SDR never share an
+entry. SDR authored-reference selection and its upstream highlight controls
+are included. Local picking keeps its existing stage-specific route.
+
+MacBook Neo, A18 Pro / 8 GB, 1408x794 points, reusable synthetic 24 MP TIFF,
+unpackaged Electron, shared GPU lock, no concurrent suites: warm SDR Show
+selection is 0.674–0.699 s at Fit and 0.749–0.801 s at 100%, inside the <1 s
+target. Against the paired 0.684–0.700 / 0.766–0.799 s baseline, this is within
+the agreed 10% timing tolerance, not a claimed visible speed gain. Range edits
+are 0.731 / 0.763 s. No GPU-overlay step is justified by this Mac result.
+The bounded cache removes repeated upstream evaluation without changing the
+selection engine or any preview, Proof or export processing.
+
+Validation: upstream/lane/reference/geometry/source-replacement/trim behavior
+tests; real GPU HSL selection-engine parity and reuse; real-RAW overlay
+containment and pan/zoom/section/workflow cleanup. The overlay driver now uses
+visible interface probes rather than PC-only coordinates, accepts the number
+of thumbnails the viewport actually admits, and reuses its single RAW copy.
+PC whole-wait confirmation and Steve's visual review remain open. Timings are
+in the performance table; overlay review captures are in
+`codebase/output/hsl-smooth/`. No PC baseline is replaced.
+
 ## November 13–14: P1-C Edge-colour rejection safety
 
 The shared Edge-colour kernel now rejects a bad input scan immediately,

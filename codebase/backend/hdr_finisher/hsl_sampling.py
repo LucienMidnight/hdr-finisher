@@ -53,6 +53,18 @@ def capture_stage_input(source, adjustments, kind, *, reference=None, color_cont
     raise ValueError("The HSL stage could not be captured")
 
 
+def stage_input_signature(adjustments, lane):
+    branch = getattr(adjustments, lane.value).model_dump(mode="json")
+    downstream = {"hsl", "hsl_section_enabled", "curves_section_enabled", "luma_curve", "red_curve",
+                  "green_curve", "blue_curve", "detail", "detail_section_enabled", "film_look",
+                  "film_look_section_enabled", "vignette", "vignette_section_enabled",
+                  "color_grading", "color_grading_section_enabled"}
+    if lane == PreviewKind.HDR:
+        downstream.add("highlight_section_enabled")
+        downstream.update(key for key in branch if key.startswith("highlight_compression_"))
+    return {key: value for key, value in branch.items() if key not in downstream}
+
+
 def sample_stage(cache, request):
     from .adjustments import apply_adjustments
     from .color import acescg_to_linear_srgb
@@ -70,6 +82,8 @@ def sample_stage(cache, request):
     token = _target.set(("stage", request.local_id))
     try:
         try:
+            if request.local_id is None:
+                raise _Captured(cache.hsl_stage_input(request.adjustments, request.long_edge, request.lane), request.lane)
             apply_adjustments(source, request.adjustments, request.lane,
                               sdr_reference_image=reference, local_adjustments=locals_,
                               color_context=cache.color_context,
