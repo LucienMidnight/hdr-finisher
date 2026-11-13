@@ -2172,3 +2172,8 @@ the open modules. Adjustments are unchanged.
 
 Built: expanded module headers use the panel surface and shared divider-below
 token above the raised controls. Disclosure buttons retain visible keyboard focus.
+
+## November 13: Film Look list order
+
+Built: Portra 400 Natural is first in the built-in Looks. Preset identity and
+recipes are unchanged; opening or resetting Film Look still starts Neutral.

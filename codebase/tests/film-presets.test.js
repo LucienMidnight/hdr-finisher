@@ -51,3 +51,8 @@ test('measured push inherits pushed grain without pinning it into the Look',()=>
  assert.equal(f.push_pull,1); assert.equal(f.grain_film_format,'super16');
  assert.equal(C.sparse(f).grain_amount,undefined);
 });
+
+test('Portra leads the list while a new Film Look remains Neutral',()=>{
+ assert.equal(looks[0].id,'portra-400-natural');
+ assert.equal(defaultFilmLook().film_stock,'none');
+});

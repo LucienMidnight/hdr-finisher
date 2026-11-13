@@ -167,3 +167,6 @@ Later colour tools can still add colour on purpose, such as Color Grading wheels
 ## Credit
 
 Film and paper data come from Andrea Volpato's [spektrafilm](https://github.com/andreavolpato/spektrafilm), licensed CC BY-SA 4.0. HDR Finisher runs its own engine. See `THIRD_PARTY_NOTICES.md` for the full notice.
+
+Portra 400 Natural is first in the built-in Looks list. This list order does
+not apply a Look automatically: new and reset Film Look settings remain Neutral.
