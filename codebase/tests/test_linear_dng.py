@@ -286,6 +286,7 @@ def test_dng_cancellation_is_transactional(
 
 @pytest.mark.parametrize('compression',[None,'jpegxl','jpegxl_lossy'])
 @pytest.mark.parametrize('bits',[10,12,16])
+@pytest.mark.usefixtures("ample_preflight_memory")
 def test_table_dng_matches_expanded_neutral_dng_and_selects_cpu(tmp_path,compression,bits):
     from hdr_finisher.library_estimates import gpu_metadata
     from hdr_finisher.library_dng import decoded

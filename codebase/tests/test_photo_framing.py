@@ -168,6 +168,7 @@ def test_hdr_picker_white_is_reference_white_and_respects_ceiling():
     assert np.max(acescg_to_linear_bt2020(limited))*203/.18 <= 100.0001
 
 
+@pytest.mark.usefixtures("ample_preflight_memory")
 def test_delivery_inclusion_proof_reduction_and_serialized_settings():
     session = SimpleNamespace(image=np.zeros((80, 120, 3), np.float32), framing=PhotoFraming(enabled=True))
     settings = ExportSettings(output_path="unused.png", format="sdr_png")
@@ -193,6 +194,7 @@ def test_impossible_canvas_rejected_before_allocation(monkeypatch):
         delivery_layout(session, ExportSettings(output_path="unused.png"), AdjustmentState())
 
 
+@pytest.mark.usefixtures("ample_preflight_memory")
 def test_saved_versions_export_framed_and_unframed_from_one_photo(tmp_path):
     from hdr_finisher.export_presets import ExportPreset, ExportVersion, ExportPresets
     from hdr_finisher.batch_export import export_photo
@@ -239,6 +241,7 @@ def test_proof_cache_tracks_authored_frame_only_when_included():
     assert key(first) == key(second)
 
 
+@pytest.mark.usefixtures("ample_preflight_memory")
 def test_small_source_with_large_frame_has_honest_reduced_proof(tmp_path):
     from hdr_finisher.proofing import ProofArtifactStore
     from hdr_finisher.capabilities import probe_capabilities

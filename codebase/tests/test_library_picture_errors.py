@@ -419,3 +419,67 @@ def test_new_source_route_reconsiders_old_failure_without_changing_photo(tmp_pat
     monkeypatch.setattr(module, "_READER", current)
     assert errors.get(path) is None
     assert sidecar.read_bytes() == original
+
+
+@pytest.mark.parametrize("reason", [
+    "System memory could not be measured. Large-file safety cannot be confirmed for this 8,000 x 6,000 Experimental DNG.",
+    "Opening this 8,000 x 6,000 Experimental DNG is estimated to require 1.2 GiB of additional memory; only 0.5 GiB is safely available.",
+    "1 validation error for saved settings: memory limit is invalid",
+    "cannot identify image file memory.png",
+])
+def test_deterministic_refusal_runs_once_releases_grant_and_allows_explicit_retry(tmp_path, monkeypatch, reason):
+    import asyncio
+    from types import SimpleNamespace
+    from hdr_finisher import library_grants
+    from hdr_finisher.library_scheduler import Scheduler
+    errors = PictureErrors(LibraryMarks(tmp_path / "app"))
+    path = tmp_path / "photo.png"
+    Image.new("RGB", (8, 4)).save(path)
+    scheduler = Scheduler(2_500_000_000)
+    monkeypatch.setattr(library_grants, "scheduler", scheduler)
+    calls = []
+    @errors.guard
+    async def prepare(command):
+        async with library_grants.backend_grant(command.path):
+            calls.append(command.path)
+            raise ValueError(reason)
+    command = SimpleNamespace(path=str(path))
+    for _ in range(4):
+        assert asyncio.run(prepare(command)).status_code == 422
+        assert not scheduler.jobs
+    assert len(calls) == 1
+    errors.clear(path)  # Existing folder refresh / user retry action.
+    assert asyncio.run(prepare(command)).status_code == 422
+    assert len(calls) == 2
+    path.write_bytes(path.read_bytes() + b"changed")
+    assert asyncio.run(prepare(command)).status_code == 422
+    assert len(calls) == 3
+    assert not scheduler.jobs
+
+
+def test_helper_preflight_refusal_is_returned_once_through_live_scene_api(tmp_path):
+    from concurrent.futures import Future
+    from hdr_finisher.media_browser import MediaBrowserError
+    class RefusedHelper(Helper):
+        def submit_library(self, *args, **kwargs):
+            self.calls.append((args, kwargs))
+            future = Future()
+            future.set_exception(MediaBrowserError("Opening this Experimental DNG is estimated to require 1.63 GiB of additional memory; only 0.00 GiB is safely available."))
+            return "refused-job", future
+        def cancel(self, job):
+            pass
+        def prioritize(self, job, priority):
+            pass
+    path = tmp_path / "photo.png"
+    Image.new("RGB", (8, 4)).save(path)
+    helper = RefusedHelper()
+    api = client(tmp_path / "app", helper)
+    for _ in range(3):
+        result = api.post("/api/library/live-scene", json={"path": str(path), "gpu": False})
+        assert result.status_code == 422, result.text
+        assert "safely available" in result.json()["library_error"]["details"]
+    assert len(helper.calls) == 1
+    record = result.json()["library_error"]
+    assert api.post("/api/library/picture-error", json={"path": str(path), "revision": record["revision"], "action": "retry"}).status_code == 200
+    assert api.post("/api/library/live-scene", json={"path": str(path), "gpu": False}).status_code == 422
+    assert len(helper.calls) == 2

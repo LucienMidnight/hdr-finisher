@@ -64,6 +64,7 @@ def test_bridge_demosaics_but_defers_ordered_gain_and_warp_to_gpu(monkeypatch,tm
     assert header["dng_gain_maps"][0]["gains"]==[2.0]
 
 
+@pytest.mark.usefixtures("ample_preflight_memory")
 def test_linear_bridge_preserves_samples_and_defers_colour(monkeypatch,tmp_path):
     from test_linear_dng import _write_linear
     from hdr_finisher import dng_color
@@ -96,6 +97,7 @@ def test_native_embedded_sdr_keeps_cpu_fallback(tmp_path):
         linear(tmp_path/"unused.dng",{},source,edge=100000)
 
 
+@pytest.mark.usefixtures("ample_preflight_memory")
 def test_linear_embedded_reference_survives_publication(tmp_path):
     import tifffile
     from test_linear_dng import _write_linear

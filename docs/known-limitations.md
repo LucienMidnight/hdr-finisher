@@ -12,6 +12,19 @@ This tooling task isolates pytest before collection and does not move any real
 app cache or change allowances. Choosing a new app cache location remains
 Steve's decision in the memory-and-caches module.
 
+## November 13: minimum-hardware Mac validation
+
+macOS available-memory detection and deterministic DNG refusal loops are fixed;
+no allowance or output tolerance changed. The 90-second MacBook mixed Library
+check shows 2/33 photos, blocked before development by the real system reserve
+(about 2.0–2.5 GB available, protecting 2 GB). This is not 8 GB feature/speed
+acceptance. [Memory and caches](product/modules/memory-and-caches.md) records
+headroom, evidence, test results and the next decision.
+The SDR Velvia synthetic test remains at 0.104330 levels against 0.1, while
+finished-pixel Delta E 2000 is 0.119114 mean / 1.044661 p99.9 (within existing
+perceptual limits). No shader or test tolerance was changed; see
+[Film Look](product/modules/film-look.md) for isolation and limits.
+
 
 ## November 12: watermark and Library polish validation
 
