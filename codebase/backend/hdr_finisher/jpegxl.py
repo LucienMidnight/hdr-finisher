@@ -20,6 +20,7 @@ class JPEGXLError(RuntimeError):
 
 _APP_BOX_TYPE = b"hfmd"
 _APP_METADATA_VERSION = 3
+_INFO_HELPER_TIMEOUT_SECONDS = 5.0
 _JPEGXL_PRECISIONS: dict[str, tuple[int, str, Any]] = {
     "uint10": (10, "integer", np.uint16),
     "uint12": (12, "integer", np.uint16),
@@ -497,14 +498,41 @@ def _probe_basic_info(payload: bytes) -> dict[str, Any]:
     try:
         result = subprocess.run(
             [str(helper)], input=payload, capture_output=True, check=True,
+            timeout=_INFO_HELPER_TIMEOUT_SECONDS,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         info = json.loads(result.stdout)
-        if not isinstance(info, dict) or info.get("schema_version") != 1:
+        if not _valid_helper_info(info):
             return _parse_codestream_basic_info(payload)
         return info
-    except (OSError, subprocess.SubprocessError, ValueError):
+    except (OSError, subprocess.SubprocessError, ValueError, RecursionError):
         return _parse_codestream_basic_info(payload)
+
+
+def _valid_helper_info(info: Any) -> bool:
+    if not isinstance(info, dict) or type(info.get("schema_version")) is not int or info["schema_version"] != 1:
+        return False
+    for field, minimum, maximum in (
+        ("width", 1, 2**32 - 1), ("height", 1, 2**32 - 1),
+        ("bits_per_sample", 1, 32), ("exponent_bits_per_sample", 0, 8),
+    ):
+        value = info.get(field)
+        if type(value) is not int or not minimum <= value <= maximum:
+            return False
+    for field in ("data_color_encoding", "original_color_encoding"):
+        if field not in info:
+            return False
+        profile = info[field]
+        if profile is None:
+            continue
+        if not isinstance(profile, dict):
+            return False
+        if any(type(profile.get(key)) is not int for key in ("color_space", "white_point", "primaries", "transfer_function")):
+            return False
+        gamma = profile.get("gamma")
+        if type(gamma) not in (int, float) or (type(gamma) is float and not math.isfinite(gamma)):
+            return False
+    return True
 
 
 class _JXLBitReader:

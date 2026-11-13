@@ -1,3 +1,19 @@
+### November 13: bounded JPEG XL metadata helper (P1-D)
+
+The metadata helper has a five-second subprocess deadline. Missing,
+unlaunchable, failed, timed-out or malformed helpers use the existing real
+codestream header reader; sample precision remains available and third-party
+colour stays manual. Valid standard helper metadata and HDR Finisher markers
+keep their existing interpretation. The deadline bounds metadata inspection,
+not image decoding. Five seconds is a conservative failure ceiling for a
+header-only helper, not a new import-speed target; Steve can revise it later.
+macOS/Linux helper builds remain Phase 2.
+
+Thirteen focused regressions run real child processes (including a sleeping
+helper), decode a real synthetic 12-bit JXL through the fallback and compare
+its samples exactly with the missing-helper result. No colour maths, output
+pixels, existing tolerance or memory budget changed.
+
 ### November 12: integer SDR ICC transfer detection
 
 Integer sources tagged Display P3/P3D65 or sRGB/Rec.709 now fall back to
@@ -151,9 +167,10 @@ route reproduces the defect; this is not a colour acceptance pass. Nine
 focused JPEG XL checks pass, but they do not cover this missing primaries
 case. Evidence: `codebase/output/review/apple-validation/cpu-jxl.json`.
 
-Open work: preserve explicitly selected primaries when decoding PQ, add an
-independent P3/PQ regression and qualify the CPU/GPU result. HLG has the same
-hard-coded BT.2020 dispatch and needs a separate explicit-primaries audit.
+Superseded by the November 10 JXL metadata and explicit HDR primaries repair
+above (commit `aa9b6128`): CPU PQ/HLG dispatch in `color.py` uses
+`hdr_source_colourspace`, independent primaries regressions and real GPU
+qualification are recorded there. This is no longer open implementation work.
 No colour maths, expected pixels or tolerances were changed in this testing
 pass. Newer-iPhone sample qualification remains deferred at Steve's request.
 
