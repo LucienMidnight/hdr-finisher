@@ -60,7 +60,7 @@ function select(list, mode, value, changed = []) {
   return { rows, ...mapping };
 }
 function command(row, out, list) {
-  const vars = { output: out, root: ROOT, project: photosPath(list.protectedProjects[2]), electron: path.join(ROOT, 'desktop/node_modules/electron/dist/electron.exe') };
+  const vars = { output: out, root: ROOT, project: photosPath(list.protectedProjects[2]), get electron() { return require('../../tools/lib/platform.cjs').electronExecutable(); } };
   const expand = text => String(text).replace(/\{(output|root|project|electron)\}/g, (_, key) => vars[key]);
   const method = row.launch.method;
   const args = ['node', 'python', 'powershell'].includes(method) ? [] : [method === 'native' ? 'tests/run-native-electron.js' : 'tests/run-in-electron.js'];
@@ -69,7 +69,7 @@ function command(row, out, list) {
   args.push(row.path);
   if (method === 'packaged') args.push('--packaged');
   args.push(...(row.launch.args || []).map(expand).map(photosPath));
-  return { executable: method === 'python' ? path.join(ROOT, '.venv/Scripts/python.exe') : method === 'powershell' ? 'powershell.exe' : process.execPath, args, env: Object.fromEntries(Object.entries(row.launch.env || {}).map(([key, value]) => [key, expand(value)])) };
+  return { executable: method === 'python' ? require('../../tools/lib/platform.cjs').pythonExecutable() : method === 'powershell' ? 'powershell.exe' : process.execPath, args, env: Object.fromEntries(Object.entries(row.launch.env || {}).map(([key, value]) => [key, expand(value)])) };
 }
 // Historical results supply estimates only; never count them as current passes.
 function history(output = OUTPUT, root = ROOT) {
@@ -185,7 +185,7 @@ async function runInvocations(invocation, variants, fd, hooks, deadline, attempt
       results.push({ exitCode: null, timedOut: true }); break;
     }
     const result = await new Promise((resolve, reject) => {
-      const child = spawn(invocation.executable, variant, { cwd: ROOT, env: { ...process.env, ...invocation.env, HDR_FINISHER_ELECTRON_WINDOW_SIZE: '2560x1440' }, stdio: ['ignore', fd, fd], windowsHide: true, detached: process.platform !== 'win32' });
+      const child = spawn(invocation.executable, variant, { cwd: ROOT, env: { ...process.env, ...invocation.env, HDR_FINISHER_ELECTRON_WINDOW_SIZE: require('../../tools/lib/platform.cjs').machineSettings().windowSize }, stdio: ['ignore', fd, fd], windowsHide: true, detached: process.platform !== 'win32' });
       hooks.child(child);
       let launchError, timedOut = false, cleanupError;
       const expires = Math.min(deadline, attemptDeadline);

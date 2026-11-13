@@ -5,6 +5,21 @@ from pathlib import Path
 import sys
 
 import pytest
+import tempfile
+
+_TEST_STATE = tempfile.TemporaryDirectory(prefix="hdr-finisher-test-pytest-")
+_TEST_ENV = {key: os.environ.get(key) for key in ("HDR_FINISHER_APP_DATA_DIR", "LOCALAPPDATA", "HDR_FINISHER_SOURCE_CACHE_DIR")}
+os.environ["HDR_FINISHER_APP_DATA_DIR"] = str(Path(_TEST_STATE.name) / "profile")
+os.environ["LOCALAPPDATA"] = str(Path(_TEST_STATE.name) / "local")
+os.environ["HDR_FINISHER_SOURCE_CACHE_DIR"] = str(Path(_TEST_STATE.name) / "source-mips")
+
+def pytest_unconfigure(config):
+    for key, value in _TEST_ENV.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+    _TEST_STATE.cleanup()
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"

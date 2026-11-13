@@ -22,6 +22,17 @@ For how the application works (data flow, session lifecycle, preview
 scheduling) see [architecture](architecture.md). For testing rules see
 `AGENTS.md` at the repository root.
 
+## Shared development tooling (November 13, 2026)
+
+`codebase/tools/lib/machine-settings.cjs` and `machine_settings.py` read the same
+machine JSON beside the main checkout (found through Git's common directory,
+including agent worktrees). `platform.cjs` resolves Python and Electron and
+provides process cleanup/sampling. `tools/gpu-run-lock.py` owns the shared
+`gpu-run.lock`, interoperates with the parent wrapper, and stops descendants
+before releasing it. `tests/conftest.py` isolates pytest state before collection.
+`tests/test_machine_tooling.py` checks settings agreement, locking and cleanup
+without starting Electron. See [development](development.md) for setup and use.
+
 ## The three parts
 
 | Part | Folder | Job |

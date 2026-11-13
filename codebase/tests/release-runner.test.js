@@ -92,6 +92,8 @@ function isolatedRunner(t) {
   fs.copyFileSync(path.join(__dirname,'release/process-tree.cjs'),path.join(root,'tests/release/process-tree.cjs'));
   fs.mkdirSync(path.join(root,'tests/helpers'),{recursive:true});
   fs.copyFileSync(path.join(__dirname,'helpers/photos-root.cjs'),path.join(root,'tests/helpers/photos-root.cjs'));
+  fs.mkdirSync(path.join(root,'tools/lib'),{recursive:true});
+  for (const name of ['platform.cjs','machine-settings.cjs']) fs.copyFileSync(path.join(__dirname,'../tools/lib',name),path.join(root,'tools/lib',name));
   const projects=[0,1,2].map(i=>{const file=path.join(root,`fixture-${i}.hdrfinisher`);fs.writeFileSync(file,'protected');return file;});
   const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',windowsHide:true});
   git('init','--quiet');git('config','user.name','Release runner test');git('config','user.email','runner@example.invalid');

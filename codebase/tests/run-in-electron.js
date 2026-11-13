@@ -38,11 +38,10 @@ const { stopProcessTree } = require("./release/process-tree.cjs");
 const { assertDisposableProfile } = require("./test-profile.cjs");
 const { reportShutdown } = require("./launcher-shutdown.cjs");
 const playwright = require("playwright");
+process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE ||= require("../tools/lib/platform.cjs").machineSettings().windowSize;
 
 const DESKTOP_DIRECTORY = path.resolve(__dirname, "..", "desktop");
-const DEFAULT_PACKAGED_EXECUTABLE = path.resolve(
-  __dirname, "..", "dist-electron", "win-unpacked", "HDR Finisher.exe",
-);
+const DEFAULT_PACKAGED_EXECUTABLE = require("../tools/lib/platform.cjs").packagedExecutable();
 
 function electronExecutable() {
   // The `electron` package exports the path to its own binary when required

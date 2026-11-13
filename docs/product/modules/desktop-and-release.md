@@ -624,3 +624,19 @@ grant asked/granted/finished combined 74.23 MB/about 43,200 each; app_memory
 Event-loop lag and Grade-return records were small (0.071/0.013 MB).
 This is historical observed usage, not a controlled benchmark or a claim
 about post-change growth. Grant records remain intact for admission tracing.
+
+
+## November 13: two-machine tooling, shared foundations (P1-E)
+
+Test tooling reads one machine JSON outside agent worktrees, discovered through
+Git's common directory. Shared helpers select the platform's Python/Electron and
+window size; pytest state is isolated before collection. The in-repo Python GPU
+lock acquires the existing parent `gpu-run.lock` too, waits for legacy file-lock
+holders, and stops POSIX groups plus detached descendants before releasing it.
+Stale holders are recovered after 60 minutes only when their owner is dead.
+The old `gpu-lock.cjs` is absent from this branch; no second lock is introduced.
+
+Five isolated tooling checks pass (settings agreement, inherited window/exit
+status, old-wrapper exclusion, stale dead-owner recovery and detached child
+cleanup). Setup and fresh-worktree app validation are the remaining P1-E work.
+No application cache location, cache size or rendering behavior changed.

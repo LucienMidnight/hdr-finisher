@@ -7,6 +7,7 @@ const path = require('node:path');
 const { stopProcessTree } = require('./release/process-tree.cjs');
 const { assertDisposableProfile } = require('./test-profile.cjs');
 const { reportShutdown } = require('./launcher-shutdown.cjs');
+process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE ||= require('../tools/lib/platform.cjs').machineSettings().windowSize;
 const [driver, ...args] = process.argv.slice(2);
 if (!driver) throw Error('usage: node tests/run-native-electron.js <driver.js> [arguments]');
 const desktop = path.resolve(__dirname, '../desktop');

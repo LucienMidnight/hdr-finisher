@@ -13,12 +13,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const PC_ROOT = /^D:[\\/]+Photos(?=[\\/]|$)/i;
-const BESIDE_REPOSITORY = path.resolve(__dirname, '..', '..', '..', '..', 'Photos');
+const { machineSettings } = require('../../tools/lib/machine-settings.cjs');
 
 function photosRoot() {
-  if (process.env.HDR_FINISHER_PHOTOS_ROOT) return process.env.HDR_FINISHER_PHOTOS_ROOT;
-  if (process.platform !== 'win32' && fs.existsSync(BESIDE_REPOSITORY)) return BESIDE_REPOSITORY;
-  return null;
+  return machineSettings().photosRoot;
 }
 
 /** The local path for a D:/Photos path (either slash direction). */
