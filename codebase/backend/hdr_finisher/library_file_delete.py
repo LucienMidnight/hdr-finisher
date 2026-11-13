@@ -115,6 +115,7 @@ def run(service,record,item,recovery=False):
         service.checkpoint(record,item,'settings_deleted')
     elif side.exists(): raise ValueError('Unexpected settings appeared. They were left alone.')
     with service.marks._lock:
-        retarget(service.marks,item,delete=True);pictures(service.browser.root,item,delete=True)
+        retarget(service.marks,item,delete=True)
         service.retired.add(item['old'])
+    pictures(service.browser.root,item,delete=True)
     service.checkpoint(record,item,'indexed')

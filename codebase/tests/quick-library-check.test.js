@@ -71,6 +71,46 @@ test('picture progress uses page time, ignores pre-browse events and duplicate d
   {stage:'picture_shown',path:'D:/copy/a.jpg',at:250},
   {stage:'picture_shown',path:'D:/copy/a.jpg',at:900},
   {stage:'picture_camera_preview_decoded',path:'D:/copy/a.jpg',at:200}],100);
- assert.equal(result.shown.get('a.jpg'),.15);assert.equal(result.preview.get('a.jpg'),.1);
+ assert.equal(result.shown.get('D:/copy/a.jpg'),.15);assert.equal(result.preview.get('D:/copy/a.jpg'),.1);
  assert.equal(result.shown.size,1);
+});
+test('photo coverage includes every eligible photo, not just the pictured subset',()=>{
+ const {coverage}=require('../tools/library-quick-metrics.cjs');
+ const files=Array.from({length:33},(_,index)=>`/photos/${index}.jpg`);
+ const shown=new Map(files.slice(0,29).map(file=>[file,1]));
+ assert.deepEqual(coverage(files,shown),{eligible:33,pictured:29,complete:false,missing:files.slice(29)});
+ for(const file of files)shown.set(file,1);
+ assert.equal(coverage(files,shown).complete,true);
+ assert.equal(coverage([],shown).complete,false);
+});
+test('same-named photos in different folders are counted separately',()=>{
+ const {pictures,coverage}=require('../tools/library-quick-metrics.cjs');
+ const files=['D:/one/a.jpg','D:/two/a.jpg'];
+ const shown=pictures([{stage:'picture_shown',path:files[0],at:200}],100).shown;
+ assert.deepEqual(coverage(files,shown),{eligible:2,pictured:1,complete:false,missing:[files[1]]});
+});
+test('hidden windows and absent frame evidence invalidate drawing-gap measurements',()=>{
+ const {visibility}=require('../tools/library-quick-metrics.cjs');
+ assert.equal(visibility({hidden:true,native_hidden:false,frames:300}).valid,false);
+ assert.equal(visibility({hidden:false,native_hidden:false,frames:0}).valid,false);
+ assert.equal(visibility({hidden:false,native_hidden:false,frames:300}).valid,true);
+ assert.equal(visibility({hidden:false,native_hidden:true,frames:300}).valid,false);
+ assert.equal(visibility({hidden:false,frames:300}).valid,false);
+ assert.equal(visibility().valid,false);
+});
+test('native hide and minimize events stay recorded even after the window returns',()=>{
+ const {EventEmitter}=require('node:events');
+ const {observeVisibility}=require('../desktop/quick-library-test.cjs');
+ for(const event of ['hide','minimize']){
+  const window=Object.assign(new EventEmitter(),{isVisible:()=>true,isMinimized:()=>false});
+  const observer=observeVisibility(window);
+  assert.equal(observer.result.hidden,false);
+  window.emit(event);window.emit('show');window.emit('restore');
+  assert.equal(observer.result.hidden,true);
+  observer.stop();assert.equal(window.listenerCount(event),0);
+ }
+ for(const state of [{visible:false,minimized:false},{visible:true,minimized:true}]){
+  const window=Object.assign(new EventEmitter(),{isVisible:()=>state.visible,isMinimized:()=>state.minimized});
+  const observer=observeVisibility(window);assert.equal(observer.result.hidden,true);observer.stop();
+ }
 });

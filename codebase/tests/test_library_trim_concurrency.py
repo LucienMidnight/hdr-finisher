@@ -19,7 +19,7 @@ def test_pending_spill_allows_store_document_and_memory_reads(tmp_path, monkeypa
     body = BytesIO()
     np.savez(body, pixels=np.zeros((8, 8, 3), np.float16), metadata=np.asarray(json.dumps({})))
     cache.transient[key] = body.getvalue()
-    cache.pending_stores[key] = (str(source), 640, "quick", None, None)
+    cache.pending_stores[key] = (str(source), 640, "quick", None, None, cache.managed.publication_epoch(source))
     # An already delivered disposable copy must disappear first.
     cache.transient["delivered"] = b"discard me"
     entered, release = Event(), Event()

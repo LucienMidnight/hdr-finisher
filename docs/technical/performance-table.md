@@ -42,6 +42,39 @@ Evidence: `codebase/output/quick-library-check/fixmem/report.json`,
 `backend.log`, `memory.jsonl`; full fast suites and the exact-pixel Retouch
 interaction check pass (logs in the same folder).
 
+November 14 P1-A unrelated-mark acceptance (`p1a/library`, same MacBook
+conditions as the quick-check observation below; other agents running):
+deterministic backend tests hold rename hashing or cache work behind an event
+while the actual settings writer runs. In both cases the unrelated rating is
+acknowledged within 250 ms and its sidecar contains the new rating within
+1 s, before the blocked file work is released. These are threshold assertions,
+not a native macOS or physical slow-storage timing baseline. Real Mac
+rename/move/delete remain refused by the existing Windows-only safety guard;
+their whole-command completion time is unqualified. PC native/recovery and
+slow-storage qualification remains required. No tolerance was relaxed.
+
+November 14 P1-A drawing/cache work (working tree based on `10eb390d`,
+`p1a/library`; MacBook, Apple A18 Pro, 8 GB; other agents running;
+1408x794 points; locked plain Electron; existing reserve and allowances):
+the initial 90-second quick check showed 2/33 photos, first picture 0.8 s,
+maximum recorded frame gap 117 ms, no timer block, app peak 0.818 GB and no
+memory violation. That old harness exited successfully despite incomplete
+coverage and had no explicit visibility evidence: not gap qualification.
+After the changes, the two 90-second observations gave first picture
+0.3–0.5 s, still only 2/33 photos; 5,400 animation frames, no recorded frame
+gap of 50 ms or more, no timer block, app peak 0.779–0.792 GB and no memory
+violation. The latest run (`3c6033e1` plus native visibility instrumentation)
+confirms both document visibility and no native hide/minimise events throughout;
+the corrected harness exits unsuccessfully for incomplete coverage. In the
+earlier observation both 48 MP DJI DNGs reported insufficient safely available
+memory; the latest leaves developments waiting without a photo-error result.
+No admission limits were changed. No controlled speed comparison is claimed;
+the PC's 1–3 s gap was not reproduced on the Mac; confirm on the PC at the
+release point. The unchanged drawing-gap tolerance is 250 ms; incomplete
+coverage prevents whole-folder acceptance. Local evidence retained:
+`codebase/output/quick-library-check/p1a-before/report.json` and
+`codebase/output/quick-library-check/p1a-after/report.json`.
+
 
 November 13 P1-E fresh-worktree tooling smoke (`98a88b2a`; MacBook Neo,
 Apple A18 Pro, 8 GB, 6 cores; 1408x794 points; setup-only worktree with spaces

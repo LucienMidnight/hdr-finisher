@@ -152,7 +152,7 @@ def run(service,record,item):
         for p,value in zip(settings_files(service),read_settings(service)):
             adjusted=follows(value,str(old),str(new))
             if adjusted!=value: durable(p,adjusted)
-        retarget(service.marks,item);pictures(service.browser.root,item)
+        retarget(service.marks,item)
         for child in item['children']:
             service.retired.add(child['old']);service.retired.discard(child['new'])
             if child['payload']:
@@ -163,4 +163,5 @@ def run(service,record,item):
                 db.execute('UPDATE photos SET pending=0 WHERE path=?',(child['new'],))
                 db.execute('DELETE FROM settings_writes WHERE path=?',(child['new'],))
             db.close()
+    pictures(service.browser.root,item)
     service.checkpoint(record,item,'indexed')

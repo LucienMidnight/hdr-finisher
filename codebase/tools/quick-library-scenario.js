@@ -10,7 +10,9 @@ async function scenario(config) {
     memoryDiagnostic.push({label,at:performance.now(),snapshot:await (await fetch('/api/library/memory')).json()});
   };
   const frame = () => new Promise(resolve => requestAnimationFrame(resolve));
-  const probe = {started, frame_gaps:[], main_blocks:[], long_tasks:[]};
+  const probe = {started, frame_gaps:[], main_blocks:[], long_tasks:[], frames:0, hidden:document.hidden};
+  const onVisibility=()=>{if(document.hidden)probe.hidden=true;};
+  document.addEventListener('visibilitychange',onVisibility);
   const gridProgress=[], gridSeen=new Set();let gridAt=started;
   const gridTimer=setInterval(()=>{
     for(const c of document.querySelectorAll('#grid-space canvas[data-picture-key]'))if(!c.hidden&&c.dataset.picturePath)gridSeen.add(c.dataset.picturePath);
@@ -19,6 +21,7 @@ async function scenario(config) {
   let frameAt = performance.now(), timerAt = frameAt;
   function tick(now) {
     if (stopped) return;
+    probe.frames++;
     if (now-frameAt >= 50) probe.frame_gaps.push({from_ms:Math.round(frameAt), ms:Math.round(now-frameAt)});
     frameAt=now; requestAnimationFrame(tick);
   }
@@ -363,6 +366,7 @@ async function scenario(config) {
   } catch(error) {
     return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,virtual_copy:config.virtualCopyResult,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_frame:config.gradeHandoff?parent.HDRGradeLibraryPictures?.getSnapshot():null,handoff_state:config.gradeHandoff?window.HDRLibraryGradeHandoffSnapshot?.():null,grade_return:config.gradeReturnResult,events,errors:[...errors,String(error.stack||error)],stage};
   } finally {
+    document.removeEventListener('visibilitychange',onVisibility);
     stopped=true;clearInterval(timer);clearInterval(gridTimer);observer?.disconnect();window.HDRLibraryStopwatch=inherited;
     window.removeEventListener('error',onError);window.removeEventListener('unhandledrejection',onError);
   }

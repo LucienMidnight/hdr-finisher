@@ -1,3 +1,70 @@
+## November 14: P1-A source-cache index and per-photo file-command fences
+
+Rename/move/delete cache work now looks up only the affected photo or folder
+in the existing disposable cache ledger, instead of opening every saved scene.
+Publication and eviction maintain source, file-stamp and generation metadata;
+there is no new pixel cache, cache share, allowance or memory-reserve change.
+Full-size scenes, thumbnails, overlays and cached starting documents use the
+same source ownership. Equivalent canonical paths share one lookup identity.
+
+Planning and execution fence affected originals, folder children and virtual
+copies while releasing the global marks/settings-writer locks during hashes,
+file I/O and cache compression. Cache publication uses a durable per-source
+generation shared with helper processes, rejecting work prepared before a
+rename/move/delete. Controlled cache retargeting keeps the existing pixel
+arrays. A filesystem replacement and SQLite commit are not one crash-atomic
+operation: missing or stale cache metadata is a miss, not trusted content.
+Background reconciliation rebuilds disposable scene mappings from archive
+metadata, never authored marks or grades. Cached starting documents with stale
+ownership are regenerated through normal development, not restored as edits.
+
+Validation includes a 5,475-unrelated-row cache with directory walking
+forbidden; related thumbnail/full-size retarget and deletion; byte-identical
+unrelated scenes; crash/replacement drift, corrupt metadata and eviction;
+helper-process generations; folder-prefix isolation including Unicode; and
+stale direct pixel reads. With the real sidecar writer and deliberately blocked
+rename planning/cache work, an unrelated mark meets the unchanged 250 ms
+acknowledgement / 1 s sidecar limits. This is a deterministic backend lock test,
+not a physical slow-storage benchmark or native macOS file-command approval.
+The final full Python suite passes 3,205 checks, with 176 platform/fixture skips
+and one existing xpass. The initial regressions in deferred CPU-scene transport
+and equivalent `/var`/`/private/var` cache paths were corrected before that run.
+
+**Open acceptance / Decisions for Steve:** the existing production platform
+guard still refuses original rename/move/delete on macOS. A real Mac app check
+confirmed all three refuse before touching a disposable photo. Windows-only
+ownership-guarded removal and no-replace folder primitives were not replaced
+with unsafe POSIX substitutes overnight. Completing native Mac qualification
+therefore requires the Phase 2 native-file-operations port (or an explicitly
+approved change in its priority). Keep that guard meanwhile. At the PC release
+point, run the photo/delete/folder file-command drivers and recovery/slow-storage
+checks, plus the visible drawing-gap confirmation. P1-A is not fully accepted
+on both platforms until these gaps and mixed-folder coverage are resolved.
+
+## November 14: P1-A drawing preparation and honest smoke coverage
+
+Library drawing awaits the existing asynchronous GPU-program preparation,
+including foreground/background requests for the same program, before changing
+the display surface. It no longer creates a synchronous duplicate while that
+program is pending. The previous picture remains visible meanwhile; shaders,
+rendered pixels and the 250 ms drawing-gap limit are unchanged.
+
+The quick Library check now counts every eligible photo by full path, lists
+missing photos, and fails ordinary whole-folder acceptance when coverage is
+incomplete. Same-named photos in different folders remain separate. Hidden
+windows or missing animation-frame evidence invalidate drawing-gap results.
+The desktop observer also records native hide/minimise events for the whole
+scenario, even when Chromium continues to report the document visible.
+
+Validation: 940 JavaScript checks passed, one skipped. A locked real-GPU check
+on the MacBook verified one asynchronous compilation, zero synchronous
+duplicates and an unchanged displayed picture during preparation. The visible
+90-second mixed-folder check covered only 2/33 eligible photos and now correctly
+fails coverage; memory admission remains outside this change. The PC's 1–3 s
+gap was not reproduced on the Mac; confirm on the PC at the release point.
+These checks do not establish full-folder responsiveness or a speed gain.
+Details and local report paths are in the performance table.
+
 ## November 13: deterministic memory refusals stop repeating
 
 Large-DNG preflight refusals and validation failures now use the existing

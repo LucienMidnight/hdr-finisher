@@ -98,7 +98,7 @@ class LibraryPictureCache:
             if pending is None:
                 self.transient.pop(key, None)
         if pending and body is not None:
-            source, edge, quality, default, owner_check = pending
+            source, edge, quality, default, owner_check, epoch = pending
             if owner_check:
                 owner_check()
             if picture_key(source, edge, quality) != key:
@@ -115,10 +115,9 @@ class LibraryPictureCache:
                     owner_check()
                 if picture_key(source, edge, quality) != key:
                     raise ValueError("Photo changed before saving preview data.")
-                os.replace(temporary, destination)
-                self.managed.record(destination)
+                self.managed.publish(temporary, destination, source, epoch)
                 if default is not None:
-                    self.keep_default_document(source, default)
+                    self.keep_default_document(source, default, epoch=epoch)
                 self.trim()
                 with self.transient_lock:
                     if self.transient.get(key) is body and self.pending_stores.get(key) is pending:
@@ -206,14 +205,19 @@ class LibraryPictureCache:
     def default_document(self, path):
         """Grade's starting document kept by a thumbnail development, if the photo is unchanged."""
         try:
-            return json.loads((self.root / (default_document_key(path) + ".json")).read_text(encoding="utf-8"))
+            file = self.root / (default_document_key(path) + ".json")
+            if not self.managed.source_valid(file, path):
+                return None
+            return json.loads(file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
 
-    def keep_default_document(self, path, document):
+    def keep_default_document(self, path, document, epoch=None):
         if not self.managed.preferences()['enabled']:
             return
         self.managed.prepare()
+        if epoch is None:
+            epoch = self.managed.publication_epoch(path)
         destination = self.root / (default_document_key(path) + ".json")
         if not destination.parent.is_dir():
             destination.parent.mkdir(parents=True, exist_ok=True)
@@ -222,8 +226,7 @@ class LibraryPictureCache:
             with NamedTemporaryFile("w", encoding="utf-8", dir=destination.parent, suffix=".tmp", delete=False) as handle:
                 temporary = Path(handle.name)
                 json.dump(document, handle)
-            os.replace(temporary, destination)
-            self.managed.record(destination)
+            self.managed.publish(temporary, destination, path, epoch)
         finally:
             if temporary:
                 temporary.unlink(missing_ok=True)
@@ -255,11 +258,13 @@ class LibraryPictureCache:
                     break
         if not destination.is_file():
             return None
+        if not self.managed.source_valid(destination, path):
+            return None
         try:
             with np.load(destination, allow_pickle=False) as stored:
                 result = json.loads(str(stored["metadata"]))
             os.utime(destination, None)
-            self.managed.record(destination)
+            self.managed.record(destination, source=result['path'])
             return result | {"key": key, "quality": quality, "cache_hit": True, "stored_bytes": destination.stat().st_size}
         except (OSError, ValueError, EOFError) as error:
             problem("cache_corrupt", destination, error, "damaged entry removed; picture rebuilt")
@@ -268,8 +273,9 @@ class LibraryPictureCache:
             return None
 
     @audited("picture_cache_build")
-    def build(self, path, edge, quality="quick", cancelled=None, decoded=None, defer_store=False, persist=False, store_validate=None):
+    def build(self, path, edge, quality="quick", cancelled=None, decoded=None, defer_store=False, persist=False, store_validate=None, cache_epoch=None):
         path = Path(path).resolve(strict=True)
+        epoch = self.managed.publication_epoch(path) if cache_epoch is None else cache_epoch
         if not is_photo_name(path.name):
             raise ValueError("Unsupported library file type.")
         key = picture_key(path, edge, quality)
@@ -294,7 +300,7 @@ class LibraryPictureCache:
                 raise ValueError("Photo changed while its library picture was being read.")
             default_document = metadata.pop("default_document", None)
             if default_document is not None and not defer_store:
-                self.keep_default_document(path, default_document)
+                self.keep_default_document(path, default_document, epoch=epoch)
             look_started = perf_counter()
             starting_look = metadata.pop("starting_look", None)
             grade = validate_saved(AdjustmentState, starting_look) if starting_look else default_look(
@@ -322,7 +328,7 @@ class LibraryPictureCache:
                     check_cancelled(cancelled)
                     if picture_key(path, edge, quality) != key:
                         raise ValueError("Photo changed before publishing preview data.")
-                pending = (str(path), edge, quality, default_document, store_validate)
+                pending = (str(path), edge, quality, default_document, store_validate, epoch)
                 return self.transient_result(key, arrays, metadata, validate_memory, pending, portable=False)
             destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
             if not self.managed.preferences()['enabled']:
@@ -338,8 +344,7 @@ class LibraryPictureCache:
                     save = np.savez if edge >= 1280 else np.savez_compressed
                     save(handle, **arrays)
                 check_cancelled(cancelled)
-                os.replace(temporary, destination)
-                self.managed.record(destination)
+                self.managed.publish(temporary, destination, path, epoch)
             finally:
                 if temporary:
                     temporary.unlink(missing_ok=True)
@@ -358,7 +363,7 @@ class LibraryPictureCache:
                 body = self.transient.get(key)
             if pending is None or body is None:
                 continue
-            source, edge, quality, default, owner_check = pending
+            source, edge, quality, default, owner_check, epoch = pending
             def checkpoint():
                 if owner_check:
                     owner_check()
@@ -375,7 +380,7 @@ class LibraryPictureCache:
                 metadata["starting_look"] = metadata["adjustments"]
                 if default is not None:
                     metadata["default_document"] = default
-                self.build(source, edge, quality, checkpoint, (pixels, reference, metadata), persist=True)
+                self.build(source, edge, quality, checkpoint, (pixels, reference, metadata), persist=True, cache_epoch=epoch)
             finally:
                 with self.transient_lock:
                     if self.pending_stores.get(key) is pending:
@@ -516,11 +521,14 @@ class LibraryPictureCache:
     def pixels(self, key, lane="hdr"):
         path = self.file(key)
         with np.load(self.open(key, path), allow_pickle=False) as stored:
+            source = json.loads(str(stored['metadata'])).get('path')
+            if path.exists() and not self.managed.source_valid(path, source):
+                raise FileNotFoundError('The cached source index is stale; request this picture again.')
             reference = lane == "sdr" and "reference" in stored
             pixels = stored["reference" if reference else "pixels"].astype(np.float32)
         if path.exists():
             os.utime(path, None)
-            self.managed.record(path)
+            self.managed.record(path, source=source)
         body, stride = encode_rgba_proxy_rows(pixels, 0, pixels.shape[0], prefer_half=True, pixel_format="rgba16float")
         self.delivered(key)
         return body, pixels.shape[1], pixels.shape[0], stride, "linear-srgb" if reference else "acescg"

@@ -308,13 +308,16 @@ class OverlayMaps:
     def cached(self,path,kind,quality="half"):
         key=map_key(path,kind,quality);file=self.file(key)
         try:
+            if file.exists() and not self.cache.managed.source_valid(file,path):return None
             with np.load(self.cache.open(key,file),allow_pickle=False) as data: meta=json.loads(str(data['metadata']))
-            if file.exists(): os.utime(file,None)
+            if file.exists():
+                os.utime(file,None);self.cache.managed.record(file,source=path)
             return meta|{"key":key,"cache_hit":True,"stored_bytes":file.stat().st_size if file.exists() else 0}
         except FileNotFoundError:return None
         except (OSError,ValueError,EOFError):
             file.unlink(missing_ok=True);self.cache.managed.record(file);return None
     def build(self,path,kind="exposure",quality="half",cancelled=None):
+        epoch=self.cache.managed.publication_epoch(path)
         existing=self.cached(path,kind,quality)
         if existing:return existing
         start=perf_counter();key=map_key(path,kind,quality);check_cancelled(cancelled)
@@ -367,14 +370,16 @@ class OverlayMaps:
         try:
             check_cancelled(cancelled)
             if map_key(path,kind,quality)!=key:raise ValueError("The source photo changed; overlay was not published.")
-            os.replace(temp,self.file(key))
-            self.cache.managed.record(self.file(key))
+            self.cache.managed.publish(temp,self.file(key),path,epoch)
         finally:temp.unlink(missing_ok=True)
         self.cache.trim();log("overlay_map_saved",**meta)
         return meta|{"key":key,"cache_hit":False,"stored_bytes":self.file(key).stat().st_size}
     def png(self,key):
         with np.load(self.cache.open(key,self.file(key)),allow_pickle=False) as stored:
-            data=stored['values'];meta=json.loads(str(stored['metadata']))
+            meta=json.loads(str(stored['metadata']))
+            if self.file(key).exists() and not self.cache.managed.source_valid(self.file(key),meta['path']):
+                raise FileNotFoundError('The cached source index is stale; request this overlay again.')
+            data=stored['values']
         if map_key(meta['path'],meta['kind'],meta['quality'])!=key:
             raise ValueError("The source photo changed; request its current overlay map.")
         if data.ndim!=3 or data.shape[2] not in (1,2):raise ValueError("Overlay map could not be read.")

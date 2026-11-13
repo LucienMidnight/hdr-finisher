@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 from hashlib import sha256
+from zipfile import BadZipFile
 
 TABLES = {'photos':'path','photo_tags':'path','album_photos':'path','files':'path',
           'settings_writes':'path','photo_grades':'path','library_copies':'source'}
@@ -82,14 +83,18 @@ def pictures(root, item, delete=False):
     from .library_overlays import VERSION as MAP_VERSION
     from .library_cache import LibraryCache
     managed=LibraryCache(root)
-    root=managed.directory('library-pictures')
-    if not root.exists(): return
     old,new=item['old'],item.get('new','')
-    for file in list(root.glob('*.npz')):
+    for file in managed.source_files(old,folder=item.get('folder',False),retarget=True):
         try:
+            if file.suffix != '.npz':
+                file.unlink(missing_ok=True);managed.record(file);continue
             with np.load(file,allow_pickle=False) as data:
-                meta=json.loads(str(data['metadata'])); p=meta.get('path','')
-                if mapped(p,old,new)==p: continue
+                meta=json.loads(str(data['metadata']))
+                if not isinstance(meta,dict) or not isinstance(meta.get('path'),str):
+                    raise ValueError('Invalid cached source metadata.')
+                p=meta['path']
+                if mapped(p,old,new)==p:
+                    managed.forget_source(file);continue
                 if not delete: arrays={k:data[k] for k in data.files}
             if delete:
                 file.unlink(missing_ok=True);managed.record(file);continue
@@ -98,9 +103,13 @@ def pictures(root, item, delete=False):
                 key=sha256(f"{MAP_VERSION}:{Path(target).resolve()}:{s.st_size}:{s.st_mtime_ns}:{meta['kind']}:{meta['quality']}".encode()).hexdigest();suffix='.map.npz'
             else:
                 key=sha256(f"{PICTURE_VERSION}:{Path(target).resolve()}:{s.st_mtime_ns}:{s.st_size}:{meta['edge']}:{meta['quality']}".encode()).hexdigest();suffix='.npz'
-            arrays['metadata']=np.asarray(json.dumps(meta));temporary=root/(key+'.file-command.tmp')
-            with temporary.open('wb') as f: np.savez_compressed(f,**arrays)
-            destination=root/(key+suffix)
-            os.replace(temporary,destination);managed.record(destination)
+            arrays['metadata']=np.asarray(json.dumps(meta));temporary=file.parent/(key+'.file-command.tmp')
+            try:
+                with temporary.open('wb') as f: np.savez_compressed(f,**arrays)
+                destination=file.parent/(key+suffix)
+                managed.publish(temporary,destination,target,None,retarget=True)
+            finally:
+                temporary.unlink(missing_ok=True)
             file.unlink(missing_ok=True);managed.record(file)
-        except (OSError,ValueError,KeyError): continue
+        except (OSError,ValueError,KeyError,EOFError,BadZipFile):
+            managed.forget_source(file)

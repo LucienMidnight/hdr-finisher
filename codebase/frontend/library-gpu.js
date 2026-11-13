@@ -150,7 +150,10 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
       result = {};
       for (const [name,token] of Object.entries(staged)) Object.defineProperty(result,name,{
         enumerable:true,get:()=>{
-          if(!token.pipeline){token.pipeline=this.device.createRenderPipeline(token.descriptor);HDRLibraryStopwatch("picture_pipeline_demand",{name,format,path:this.libraryMeta?.path});}
+          if(!token.pipeline){
+            if(token.pending)throw Error('Library pipeline must finish preparation before drawing.');
+            token.pipeline=this.device.createRenderPipeline(token.descriptor);HDRLibraryStopwatch("picture_pipeline_demand",{name,format,path:this.libraryMeta?.path});
+          }
           return token.pipeline;
         }
       });
@@ -158,6 +161,18 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
     }
     HDRLibraryStopwatch("picture_pipeline", { ...window.HDRLibraryPictureLog?.(this.libraryMeta), duration_ms: performance.now() - started });
     return result;
+  }
+  async prepareLibraryDraw() {
+    for (const format of new Set([navigator.gpu.getPreferredCanvasFormat(),'rgba16float']))
+      await this.prepareLibraryPipelines(format);
+  }
+  async renderTo(...args) {
+    await this.prepareLibraryDraw();
+    return super.renderTo(...args);
+  }
+  async renderTiledTo(...args) {
+    await this.prepareLibraryDraw();
+    return super.renderTiledTo(...args);
   }
   async prepareLibraryPipelines(format, names, beforeNext = async()=>{}) {
     const pipelines=this.pipelineFor(format);
