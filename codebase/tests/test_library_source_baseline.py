@@ -1,5 +1,6 @@
 """Exercise the measurement driver against real stored scenes in a disposable profile."""
 import importlib
+import os
 from pathlib import Path
 
 import sys
@@ -10,7 +11,8 @@ from PIL import Image
 
 # The overlapping-tier check assumes both tiers run at once; on the 3-core
 # macOS CI runner they ran one after the other (two correct preparations).
-@pytest.mark.skipif(sys.platform == "darwin", reason="Overlap timing assumption does not hold on the macOS CI runner (0.9.2 follow-up).")
+# It passes on a 6-core MacBook (November 13, 2026), so only CI skips it.
+@pytest.mark.skipif(sys.platform == "darwin" and bool(os.environ.get("CI")), reason="Overlap timing assumption does not hold on the macOS CI runner (0.9.2 follow-up).")
 def test_source_baseline_counts_preparations_without_touching_source_or_sidecar(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(Path(__file__).parent / "performance"))
     driver = importlib.import_module("library-source-baseline")
