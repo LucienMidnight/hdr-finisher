@@ -105,6 +105,9 @@
     try {
       const transport=[];for(let k=0;k<3;k++)transport.push(await op(planes,`out[i]=${dot(toBT,k)};`));
       const input=await scan(transport,"if(bad(v)){atomicAdd(&n,1u);}else{atomicMax(&m,bitcast<u32>(max(max(abs(v.x),abs(v.y)),abs(v.z))));}");
+      const bound=32*Math.max(input.largest,1e-6);
+      if(input.rejected>0 || !(Math.fround(bound)<Infinity))
+        throw Object.assign(Error(`GPU edge colour read invalid pixels (${input.rejected} rejected, input magnitude ${input.largest}); using the CPU.`),{gpuUnavailable:true,gpuInvalidPixels:true});
       const luma=await op(transport,"out[i]=max(.2627*a[i]+.678*b[i]+.0593*c[i],0.);");
       const total=await op(transport,"out[i]=max(a[i]+b[i]+c[i],1e-12);");
       const clip=await op([ratio],"out[i]=ss(.92,1.,a[i]);");
@@ -195,15 +198,9 @@
       // magnitude; fromBT adds under 5%. 32x leaves ample room for rounding,
       // so anything beyond it, or non-finite, is corrupted memory. Throwing
       // sends Grade and Library to their existing CPU fallback.
-      // Corrupted input near the f32 maximum makes 32x overflow to Infinity,
-      // which no range check can use (and WGSL cannot compile). Reject it as
-      // invalid pixels, like corrupted output, rather than widen the check.
-      const bound=32*Math.max(input.largest,1e-6);
-      if(!(Math.fround(bound)<Infinity))
-        throw Object.assign(Error(`GPU edge colour read invalid pixels (input magnitude ${input.largest}); using the CPU.`),{gpuUnavailable:true,gpuInvalidPixels:true});
       const limit=f(bound);
       const output=await scan(result,`if(bad(v)||any(abs(v)>vec3<f32>(${limit}))){atomicAdd(&n,1u);}`);
-      if(input.rejected===0&&output.rejected>0)
+      if(output.rejected>0)
         throw Object.assign(Error(`GPU edge colour produced ${output.rejected} invalid pixels; using the CPU.`),{gpuUnavailable:true,gpuInvalidPixels:true});
       for(const b of result)owned.delete(b);
       return {planes:result,applied:true,clip_luminance:median,clipped_pixel_fraction:count/(w*h)};

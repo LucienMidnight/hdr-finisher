@@ -1,5 +1,23 @@
 # Performance table
 
+November 13 P1-C safety validation (base `10eb390d` plus Edge/Library safety
+changes; MacBook Neo, A18 Pro, 8 GB unified RAM, 6 cores; 1408x794 points;
+unpackaged Electron under the shared GPU lock; other agents' fast suites
+running, uncontrolled headroom). Observations only, not a speed comparison:
+
+| Action | Observed | Conditions / result |
+| --- | --- | --- |
+| Synthetic Edge-colour GPU kernel, 400x400 | 0.147–0.508 s | Expand 0, 0.5, 3; existing parity passes; kernel time only, not action-to-screen |
+| DSC00264.ARW Grade first frame, CPU / GPU | 21.300 / 24.567 s | One observation each; GPU Edge reconstruction clean; concurrent work, no speed claim |
+| DSC00264.ARW Library GPU scene | 9.667 s | Clean Edge-colour result; existing source development route |
+| IMG_3129.CR2 Grade first frame, CPU / GPU | 11.173 / 9.337 s | One observation each; GPU Edge reconstruction clean; concurrent work, no speed claim |
+| IMG_3129.CR2 Library GPU scene | 22.117 s | Clean Edge-colour result; existing source development route |
+| Both RAWs, export / Proof | Pass, not timed separately | GPU full-source admission refuses 3.41 / 1.60 GiB with 0.00 GiB safely available; CPU fallback finishes; existing perceptual, byte-identity and decoded-ceiling checks pass |
+
+Evidence: `codebase/output/p1c-edge-kernel.log`,
+`codebase/output/p1c-edge-delivery.log`. PC values elsewhere remain separate
+baselines; these runs do not judge a timing regression.
+
 November 13 P1-E fresh-worktree tooling smoke (`98a88b2a`; MacBook Neo,
 Apple A18 Pro, 8 GB, 6 cores; 1408x794 points; setup-only worktree with spaces
 in its path; plain Electron through the in-repo lock; fast suites finished):

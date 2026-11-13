@@ -1,5 +1,37 @@
 # Module PRD: Grade
 
+## November 13: P1-C Edge-colour rejection safety
+
+The shared Edge-colour kernel now rejects a bad input scan immediately,
+before reconstruction or the no-clipping return. Non-finite input and input
+whose existing 32x range allowance overflows float32 go straight to the CPU;
+they cannot hide a finite-but-wrong output. Output rejection is unconditional.
+The backend independently applies the same conservative 32x allowance to
+the trusted CPU source magnitude and ACEScg-to-BT.2020 matrix gain, rejecting
+implausible finite output as well as NaN and infinity. Good input is neither
+clamped nor processed differently; shader maths and parity limits are unchanged.
+
+MacBook Neo comparison (A18 Pro, 8 GB, 1408x794 points): the three hardware
+kernel cases pass their existing CPU parity check. Deliberate NaN, infinity
+and impossible-magnitude input each report CPU fallback, without a second GPU
+attempt. Real DSC00264.ARW and IMG_3129.CR2 Edge colour also complete cleanly
+on the GPU in both Grade and Library, unlike the PC rejections recorded below.
+The strict real-RAW driver passes existing finished SDR/HDR perceptual checks,
+including bright regions, byte-identical Proof/export and decoded HDR ceilings.
+GPU delivery encounters host-memory admission refusals (3.41 / 1.60 GiB needed,
+0.00 GiB safely available); both deliveries finish through the accepted CPU
+fallback. This qualifies that fallback, not full-source GPU delivery on this
+Mac. No long graphics-card diagnosis and no budget relaxation.
+
+Behavioural tests exercise early input refusal, returned-pixel plausibility,
+unchanged valid output, one submission and released resources. Checks:
+`gpu-edge-colour.js` and `edge-colour-raw.js` pass; the focused Edge/Library
+Python group has 51 passes. The combined fast Node suite has 942 passes and
+one skip; Python has 3,171 passes, 176 skips, one xpass and 25 unrelated Retouch
+failures (24 memory refusals and one cancellation-wait assertion). These were
+not repaired or rerun. Repeat the strict checks on the PC before release. Logs:
+`codebase/output/p1c-edge-kernel.log`, `codebase/output/p1c-edge-delivery.log`.
+
 ## November 11: W11 HSL / Match speed investigation
 
 Post-W9 three-trial checks still miss the one-second bar in SDR. Built-in Red

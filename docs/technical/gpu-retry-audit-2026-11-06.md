@@ -1,6 +1,27 @@
 ﻿# GPU retry audit — November 6, 2026
 
-Report only. No code changes, commits, tests, GPU work or Electron runs. Read AGENTS.md, master PRD philosophy 3 and the code map. Locations below are relative to `codebase/`. This is a static audit: confirmed control-flow findings are separated from safety questions requiring fault injection. It does not certify every GPU route or prove pixel safety.
+The original November 6 report was a static audit, without code changes or
+test runs. Locations below are relative to `codebase/`. Dated follow-ups record
+implemented fixes separately; the historical findings are not a current
+certification of every GPU route or proof of pixel safety.
+
+## November 13 follow-up: P1-C Edge colour
+
+`highlight-edge-colour.js` now refuses a rejected input scan immediately,
+including an unrepresentable existing 32x float32 range allowance. Rejection
+does not depend on whether the eventual output happens to be finite, and the
+output scan no longer has an input-error bypass. `highlight_edge_gpu.py`
+independently rejects returned finite magnitudes beyond that allowance derived
+from the trusted source and colour matrix. Neither route retries rejection;
+good-pixel reconstruction and existing numerical limits are unchanged.
+
+Fault-injection tests check one submission, no accepted bad result, CPU
+selection and cleanup. On the MacBook Neo, hardware kernel parity and three
+injected corrupt inputs pass; both real clipped RAWs have clean Grade/Library
+GPU reconstruction and pass finished-pixel comparisons. Host-memory admission
+refuses GPU delivery; accepted CPU fallback passes Proof/export byte identity
+and decoded HDR ceilings (Grade PRD and `output/p1c-edge-delivery.log`).
+Export/Proof, DNG, retouch and Denoise optional recovery remain as Steve chose.
 
 ## Status (November 6, after Steve's decision)
 

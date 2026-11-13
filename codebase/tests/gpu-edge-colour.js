@@ -11,8 +11,9 @@ const meta=JSON.parse(execFileSync(python,[helper,folder],{encoding:'utf8'}));
   const page=await browser.newPage();await page.goto(process.env.HDR_FINISHER_URL);
   const frame=page.frame({url:/\/library(?:\?|$)/})||page.mainFrame();
   await frame.waitForFunction(()=>window.HDREdgeColour&&window.HDRLibraryGpuRaw);
-  for(const expand of [0,.5,3]){
-  const result=await frame.evaluate(async({meta,base64,expand})=>{
+  for(const {expand,fault} of [{expand:0},{expand:.5},{expand:3},
+    ...['nan','infinity','impossible'].map(fault=>({expand:.5,fault}))]){
+  const result=await frame.evaluate(async({meta,base64,expand,fault})=>{
    const {device}=await HDRLibraryGpuRaw.shared.gpu(),owned=new Set();let live=0,peak=0;
    const make=size=>{const b=device.createBuffer({size,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC|GPUBufferUsage.COPY_DST});owned.add(b);live+=size;peak=Math.max(peak,live);return b;};
    const release=b=>{if(owned.delete(b)){live-=b.size;b.destroy();}};
@@ -22,14 +23,18 @@ const meta=JSON.parse(execFileSync(python,[helper,folder],{encoding:'utf8'}));
    device.pushErrorScope('validation');device.pushErrorScope('out-of-memory');
    try{
     const data=Uint8Array.from(atob(base64),c=>c.charCodeAt(0)),bytes=meta.width*meta.height*4,inputs=[];
+    if(fault)new Float32Array(data.buffer)[0]=fault==='nan' ? NaN : fault==='infinity' ? Infinity : 1e38;
     for(let k=0;k<4;k++){const b=make(bytes);device.queue.writeBuffer(b,0,data,k*bytes,bytes);inputs.push(b);}
-    const start=performance.now(),out=await HDREdgeColour.reconstruct({device,planes:inputs.slice(0,3),ratio:inputs[3],...meta,expand,make,release,read});
+    const start=performance.now();let out;
+    try{out=await HDREdgeColour.reconstruct({device,planes:inputs.slice(0,3),ratio:inputs[3],...meta,expand,make,release,read});}
+    catch(error){if(fault)return {rejected:!!error.gpuInvalidPixels,cpuFallback:!!error.gpuUnavailable};throw error;}
     const buffers=[];for(const b of out.planes)buffers.push(new Uint8Array(await read(b,bytes)));
     delete out.planes;let binary='';for(const bytes of buffers)for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
     return {base64:btoa(binary),diagnostics:out,peak,ms:performance.now()-start};
    }finally{await device.queue.onSubmittedWorkDone();for(const b of owned)release(b);
     const oom=await device.popErrorScope(),validation=await device.popErrorScope();if(oom||validation)throw Error((oom||validation).message);}
-  },{meta,expand,base64:fs.readFileSync(path.join(folder,'input.bin')).toString('base64')});
+  },{meta,expand,fault,base64:fs.readFileSync(path.join(folder,'input.bin')).toString('base64')});
+  if(fault){assert.equal(result.rejected,true,fault);assert.equal(result.cpuFallback,true,fault);console.log(JSON.stringify({fault,...result}));continue;}
   fs.writeFileSync(path.join(folder,`gpu-${expand}.bin`),Buffer.from(result.base64,'base64'));delete result.base64;
   assert.equal(result.diagnostics.applied,true);
   assert.ok(result.peak<=meta.width*meta.height*44+64*1024*1024,'Scratch stays inside the existing RAW reservation');

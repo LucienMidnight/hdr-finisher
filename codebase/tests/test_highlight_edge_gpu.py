@@ -21,7 +21,9 @@ def test_unavailable_gpu_reports_fallback_without_mutating_input(monkeypatch, tm
     assert np.all(image == .5)
 
 
-def test_edge_turn_round_trips_planes_and_cancelled_turn_releases_memory(monkeypatch, tmp_path):
+@pytest.mark.parametrize("sample,renderer", [(.75, "gpu"), (-.25, "gpu"), (8, "gpu"),
+    (1e38, "cpu"), (-1e38, "cpu"), (np.nan, "cpu"), (np.inf, "cpu")])
+def test_edge_turn_round_trips_planes_and_cancelled_turn_releases_memory(monkeypatch, tmp_path, sample, renderer):
     monkeypatch.setattr(delivery, "PREFERENCES_PATH", tmp_path / "policy.json")
     monkeypatch.delenv(delivery.FORCE_CPU_ENV, raising=False)
     monkeypatch.setattr(gpu_delivery, "_clients", {})
@@ -47,10 +49,17 @@ def test_edge_turn_round_trips_planes_and_cancelled_turn_releases_memory(monkeyp
         np.testing.assert_array_equal(packed[3], ratio)
         assert client.post(url + "/pixels/hdr", content=b"bad").status_code == 400
         output = np.full((3, 12, 16), .75, "<f4")
+        output[0, 0, 0] = sample
         assert client.post(url + "/pixels/edge", content=output.tobytes()).status_code == 204
         client.post(url + "/complete", json={"edge_diagnostics": {"applied": True}})
         result, diagnostics = future.result(timeout=5)
-        assert np.all(result == .75) and diagnostics["renderer"] == "gpu"
+        assert diagnostics["renderer"] == renderer
+        if renderer == "gpu":
+            np.testing.assert_array_equal(result, output.transpose(1, 2, 0))
+        else:
+            assert result is None and diagnostics["fallback_reason"] == "GPU edge colour returned invalid pixels."
+        np.testing.assert_array_equal(image, np.full_like(image, .5))
+        assert client.get("/api/delivery/gpu/next").json() is None
         assert not list(Path(gpu_delivery.os.environ[gpu_delivery.ROOT_ENV]).glob("delivery-*"))
         with pytest.raises(CancelledError):
             highlight_edge_gpu.reconstruct(image, ratio, .5, lambda: True)

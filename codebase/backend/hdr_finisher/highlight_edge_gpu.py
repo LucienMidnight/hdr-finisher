@@ -81,7 +81,11 @@ def reconstruct(image, ratio, expand, cancelled=None):
         if not isinstance(reply.get("edge_diagnostics"), dict):
             raise RuntimeError("GPU edge colour returned an incomplete result.")
         result = np.ascontiguousarray(memory.attach(output).transpose(1, 2, 0))
-        if not np.isfinite(result).all():
+        input_peak = max(abs(float(image.min())), abs(float(image.max())))
+        transport_gain = float(np.abs(_ACESCG_TO_LINEAR_BT2020).sum(axis=0).max())
+        bound = 32 * max(input_peak * transport_gain, 1e-6)
+        result_peak = max(abs(float(result.min())), abs(float(result.max())))
+        if not np.isfinite(result).all() or not np.isfinite(bound) or result_peak > bound:
             raise ValueError("GPU edge colour returned invalid pixels.")
         diagnostics = dict(reply["edge_diagnostics"], renderer="gpu", fallback_reason=None,
             total_ms=round((time.perf_counter() - started) * 1000, 1))
