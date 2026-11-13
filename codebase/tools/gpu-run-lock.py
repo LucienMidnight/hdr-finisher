@@ -198,7 +198,7 @@ def main():
             rows = process_rows()
             if child.pid in rows:
                 tracked[child.pid] = rows[child.pid][1]
-        heartbeat = 0
+        heartbeat = scan = 0
         while child.poll() is None:
             if time.monotonic() >= heartbeat:
                 for lock in locks:
@@ -207,8 +207,11 @@ def main():
                         raise RuntimeError('GPU lock ownership changed; stopping this process tree')
                     os.utime(record, None)
                 heartbeat = time.monotonic() + 10
-            if os.name != 'nt':
+            # Listing every process costs CPU the measured check needs (8 GB,
+            # 6-core minimum Mac), so look for new descendants once a second.
+            if os.name != 'nt' and time.monotonic() >= scan:
                 descendants(process_rows(), tracked)
+                scan = time.monotonic() + 1
             if time.monotonic() >= deadline:
                 print('[gpu-run-lock] time limit reached; stopping process tree', flush=True)
                 code = 124

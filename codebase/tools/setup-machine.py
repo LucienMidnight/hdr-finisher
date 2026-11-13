@@ -124,8 +124,8 @@ def report(config):
 
 
 def main():
-    if sys.version_info[:2] != (3, 12):
-        raise RuntimeError('Setup requires Python 3.12 (set HDR_FINISHER_SETUP_PYTHON to its executable)')
+    if sys.version_info[:2] < (3, 12):
+        raise RuntimeError('Setup requires Python 3.12 or newer (set HDR_FINISHER_SETUP_PYTHON to its executable)')
     if len(sys.argv) > 1:
         raise RuntimeError('Usage: setup.sh / setup.ps1 (no arguments)')
     for command in ('git', 'node', 'npm'):
@@ -145,7 +145,7 @@ def main():
     python = Path(python_executable())
     if not python.exists():
         run([sys.executable, '-m', 'venv', CODEBASE / '.venv'])
-    run([python, '-c', 'import sys; assert sys.version_info[:2] == (3, 12), "Recreate .venv with Python 3.12"'])
+    run([python, '-c', 'import sys; assert sys.version_info[:2] >= (3, 12), "Recreate .venv with Python 3.12 or newer"'])
     run([python, '-m', 'pip', 'install', '-r', CODEBASE / 'requirements-dev.txt'])
     npm = shutil.which('npm')
     # npm.cmd needs cmd.exe on Windows; no shell interpretation of user paths.
