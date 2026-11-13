@@ -162,6 +162,13 @@ adjustment module (Retouch: Inpaint, Heal and Clone; CPU first), and hue
 selection as a local-adjustment mask. Both are required for v1. Hue selection is built. Inpaint, Heal and Clone
 are implemented on the GPU with CPU fallback; Retouch acceptance remains open. Details belong to the [Grade PRD](modules/grade.md).
 
+**Minimum hardware (Steve, November 13, 2026):** the MacBook Neo (Apple
+A18 Pro, 8 GB unified memory, 6 cores, built-in 2408×1506 Retina screen)
+is the minimum supported machine. Every feature must work on it, and
+performance work optimises for this class of machine as well as the
+Windows PC. Development and testing happen on both machines, which hand
+work to each other through GitHub.
+
 **Out of scope (decided):** compositing and layers, pixel painting and
 retouching beyond the v1 Retouch brush, AI-based selection or generation,
 stacks for bursts, face
