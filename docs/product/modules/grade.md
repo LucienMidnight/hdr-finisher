@@ -2161,3 +2161,9 @@ approved sentence-case section/subsection fonts and ending hairlines.
 Keyboard handlers, tooltips, changed dots and saved grades are unchanged.
 Grouped validation and the small two-theme review are in Desktop and release.
 
+
+## November 13: fresh-photo disclosures
+
+Built: opening a photo from Library, import, a project or recent files closes
+Grade modules and RAW settings. Background reloads of the current photo preserve
+the open modules. Adjustments are unchanged.

@@ -180,3 +180,6 @@ Color wheels shows one range at a time. Choose Shadows, Midtones or Highlights
 above the wheel; each keeps its own Hue, Saturation and Luminance. A dot marks
 a changed range. Double-click the wheel to reset only the selected range.
 
+
+Opening a photo starts with Grade modules and RAW settings closed. Open the
+modules you need; background reloads of that photo keep your modules open.

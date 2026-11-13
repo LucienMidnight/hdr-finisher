@@ -101,6 +101,15 @@ function initializeControlPanel() {
   });
 }
 
+// A newly opened photo starts with every Grade module and the RAW settings closed.
+function collapseGradeModules() {
+  document.querySelectorAll(".control-group:not(.collapsed)").forEach(group => {
+    group.classList.add("collapsed");
+    group.querySelector(":scope > .control-group-header > .group-toggle")?.setAttribute("aria-expanded", "false");
+  });
+  state.rawSettingsOpen = false;
+}
+
 function placeGradeFolderTabs(mode) {
   const row = document.querySelector(".grade-folder-tabs");
   const folder = document.querySelector(mode === "local" ? ".local-lane-folder" : ".lane-folder-shell");

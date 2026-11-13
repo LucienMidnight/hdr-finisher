@@ -263,6 +263,7 @@ async function openStagedDesktopSource(selection) {
 // stayOnTab: a background reload of the open photo (paste, outside change) keeps the current page.
 async function activateDesktopSession(session, projectPath, openGeneration = null, { stayOnTab = false } = {}) {
   retireActiveSession();
+  if (!stayOnTab) collapseGradeModules();
   state.session = session;
   state.renderCoordinator?.noteSource(session.session_id);
   state.importInProgress = false;

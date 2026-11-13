@@ -59,6 +59,7 @@ async function uploadFile(file, { confirmedDocument = documentTransitionToken(),
       return false;
     }
     retireActiveSession();
+    collapseGradeModules();
     state.session = payload.session;
     state.renderCoordinator?.noteSource(payload.session.session_id);
     if (els.rawSettingsPanel) delete els.rawSettingsPanel.dataset.initialized;
