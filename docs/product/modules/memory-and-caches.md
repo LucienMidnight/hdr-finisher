@@ -1,5 +1,32 @@
 # Module PRD: Memory and caches
 
+### November 13: 8 GB Mac native preflight and failed-photo admission
+
+macOS large-file preflight now reads total RAM from `hw.memsize` and
+available RAM from Mach VM page counts (free minus speculative plus inactive,
+the conservative psutil macOS definition). Linux uses the kernel's
+`MemTotal` / `MemAvailable`. Neither needs an optional dependency. Windows
+keeps its existing readers. The standalone DNG probe uses the same reader;
+all other shipped available-memory consumers already call preflight. The
+separate app-memory reader already supports macOS total RAM, process physical
+footprint and OS pressure; it did not have this missing-available-memory bug.
+
+A deterministic DNG safety refusal or validation error is remembered against
+the source/settings revision, rather than being classified as temporary just
+because its text includes "memory". Unreadable filenames containing "memory"
+also no longer defeat the failed-photo record. Existing explicit retry and
+source/settings changes clear it. Backend grants release on refusal before
+the next request; temporary waits, interruptions and GPU fallback rules stay.
+Focused regression checks: 64 passed, including the running platform without
+psutil, kernel available-memory selection, repeated refusal, released grants,
+explicit retry and changed files.
+
+No ceiling, share, estimate, reserve, budget or rendering output changes.
+Timing interpretation uses 5% against the earlier Mac whole waits (ordinary
+run-to-run variation); the existing responsiveness and memory limits stay.
+Real-app observations and remaining decisions are recorded below after the
+focused Mac checks. This is not full 8 GB feature acceptance.
+
 ### November 6: CPU Edge colour working memory
 
 The CPU Edge colour reconstruction (Grade import fallback and the Library CPU

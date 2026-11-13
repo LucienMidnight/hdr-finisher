@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import ctypes
 from dataclasses import asdict, dataclass
 import json
 import os
 from pathlib import Path
 import struct
+import sys
 from typing import Any
 
 
@@ -269,40 +269,11 @@ def build_bounded_preview(path: Path, output: Path, *, max_long_edge: int = 2400
 
 
 def detect_memory_resources() -> ResourceSnapshot:
-    try:
-        import psutil
-
-        memory = psutil.virtual_memory()
-        return ResourceSnapshot(int(memory.total), int(memory.available), "psutil")
-    except (ImportError, OSError, RuntimeError):
-        pass
-
-    if os.name == "nt":
-        class MemoryStatusEx(ctypes.Structure):
-            _fields_ = [
-                ("dwLength", ctypes.c_ulong),
-                ("dwMemoryLoad", ctypes.c_ulong),
-                ("ullTotalPhys", ctypes.c_ulonglong),
-                ("ullAvailPhys", ctypes.c_ulonglong),
-                ("ullTotalPageFile", ctypes.c_ulonglong),
-                ("ullAvailPageFile", ctypes.c_ulonglong),
-                ("ullTotalVirtual", ctypes.c_ulonglong),
-                ("ullAvailVirtual", ctypes.c_ulonglong),
-                ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-            ]
-
-        status = MemoryStatusEx()
-        status.dwLength = ctypes.sizeof(status)
-        if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
-            return ResourceSnapshot(int(status.ullTotalPhys), int(status.ullAvailPhys), "GlobalMemoryStatusEx")
-
-    try:
-        page_size = int(os.sysconf("SC_PAGE_SIZE"))
-        total = page_size * int(os.sysconf("SC_PHYS_PAGES"))
-        available = page_size * int(os.sysconf("SC_AVPHYS_PAGES"))
-        return ResourceSnapshot(total, available, "sysconf")
-    except (AttributeError, OSError, TypeError, ValueError):
-        return ResourceSnapshot(None, None, "unavailable")
+    # Use the app's native readers so diagnostic preflight agrees with import.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+    from hdr_finisher.resource_preflight import detect_memory_resources as detect
+    resources = detect()
+    return ResourceSnapshot(resources.total_ram_bytes, resources.available_ram_bytes, resources.source)
 
 
 def estimate_memory(

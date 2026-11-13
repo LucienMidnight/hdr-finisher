@@ -45,8 +45,14 @@ def _listed(path):
 
 def temporary_development_failure(details):
     text = str(details).lower()
+    # A safety refusal is a result, not a stalled allocation. Remember it
+    # until refresh/retry or a source/settings change, including across helpers
+    # where only the error text survives transport.
+    if any(word in text for word in ("large-file safety cannot be confirmed",
+            "is safely available", "dng resource preflight failed", "validation error")):
+        return False
     return any(word in text for word in ("timeout", "timed out", "took too long", "cancelled", "canceled",
-        "aborted", "memory", "busy", "in progress", "changed during", "changed while", "expired",
+        "aborted", "out of memory", "insufficient memory", "memoryerror", "memory pressure", "waiting for memory", "busy", "in progress", "changed during", "changed while", "expired",
         "invalidated", "helper stopped", "time limit exceeded", "stall", "yielding", "waiting for", "fetch failed", "failed to fetch", "network"))
 
 

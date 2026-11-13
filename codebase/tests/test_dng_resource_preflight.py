@@ -152,3 +152,23 @@ def test_hard_request_dimension_bound_still_rejects() -> None:
     )
     assert oversized.allowed is False
     assert "request limit" in oversized.reason
+
+
+def test_running_platform_reports_real_memory_without_optional_psutil(monkeypatch):
+    import sys
+    from hdr_finisher.resource_preflight import detect_memory_resources
+    monkeypatch.setitem(sys.modules, "psutil", None)
+    resources = detect_memory_resources()
+    assert resources.total_ram_bytes is not None and resources.total_ram_bytes >= 512 * 1024**2
+    assert resources.available_ram_bytes is not None
+    assert 0 <= resources.available_ram_bytes <= resources.total_ram_bytes
+    assert resources.source != "unavailable"
+
+
+def test_linux_uses_kernel_reclaimable_available_memory(monkeypatch):
+    from hdr_finisher import resource_preflight as preflight
+    monkeypatch.setattr(preflight.sys, "platform", "linux")
+    monkeypatch.setattr(preflight.Path, "read_text", lambda self: "MemTotal: 8388608 kB\nMemFree: 100 kB\nMemAvailable: 3145728 kB\n")
+    resources = preflight.detect_memory_resources()
+    assert resources.total_ram_bytes == 8 * GIB
+    assert resources.available_ram_bytes == 3 * GIB

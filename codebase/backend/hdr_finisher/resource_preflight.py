@@ -4,6 +4,8 @@ import ctypes
 from dataclasses import dataclass
 from enum import Enum
 import os
+from pathlib import Path
+import sys
 
 
 GIB = 1024**3
@@ -105,7 +107,47 @@ class PreviewResourceEstimate:
     decides_gpu_viability: bool = False
 
 
+def _native_memory_resources() -> ResourceSnapshot:
+    if sys.platform == "darwin":
+        libc = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+        total = ctypes.c_uint64()
+        size = ctypes.c_size_t(ctypes.sizeof(total))
+        if libc.sysctlbyname(b"hw.memsize", ctypes.byref(total), ctypes.byref(size), None, 0):
+            raise OSError("hw.memsize failed")
+        # HOST_VM_INFO's fixed ABI is fifteen natural_t (uint32) fields.
+        # Only current page counts are used, not its truncated lifetime counters.
+        pages = (ctypes.c_uint32 * 15)()
+        count = ctypes.c_uint32(len(pages))
+        page_size = ctypes.c_uint32()
+        host = libc.mach_host_self()
+        try:
+            if libc.host_page_size(host, ctypes.byref(page_size)) or libc.host_statistics(
+                host, 2, pages, ctypes.byref(count)
+            ) or count.value < len(pages):
+                raise OSError("host VM statistics failed")
+        finally:
+            libc.mach_port_deallocate(ctypes.c_uint32.in_dll(libc, "mach_task_self_").value, host)
+        # Match the conservative free + inactive definition used by psutil on
+        # macOS. Speculative pages are already in free_count; exclude them.
+        # Do not count compressed, swap or purgeable pages a second time.
+        available = (pages[0] + pages[2] - pages[14]) * page_size.value
+        return ResourceSnapshot(total.value, min(total.value, max(0, available)), "mach/sysctl")
+    if sys.platform.startswith("linux"):
+        memory = {}
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            key, value = line.split(":", 1)
+            memory[key] = int(value.split()[0]) * 1024
+        # The kernel's reclaim-aware value, rather than only unused pages.
+        return ResourceSnapshot(memory["MemTotal"], memory["MemAvailable"], "proc/meminfo")
+    raise OSError("No native memory reader for this platform")
+
+
 def detect_memory_resources() -> ResourceSnapshot:
+    if sys.platform == "darwin" or sys.platform.startswith("linux"):
+        try:
+            return _native_memory_resources()
+        except (AttributeError, OSError, KeyError, TypeError, ValueError):
+            pass
     try:
         import psutil
 

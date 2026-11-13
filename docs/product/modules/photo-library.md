@@ -1,3 +1,14 @@
+## November 13: deterministic memory refusals stop repeating
+
+Large-DNG preflight refusals and validation failures now use the existing
+source/settings-versioned picture error, even when their message contains
+"memory". Unreadable filenames containing that word are handled the same
+way. A repeated request returns the failure without redoing development or
+holding a grant. Explicit retry and source/settings changes permit new work.
+Temporary memory waits and the November 6 GPU retry/fallback rules remain.
+Focused behavior checks pass; the 8 GB Mac measurement and limits are in
+[memory and caches](memory-and-caches.md).
+
 ## November 13: compact grant diagnostics
 
 Library jobs emit library_grant_completed on completion, failure or cancellation,
