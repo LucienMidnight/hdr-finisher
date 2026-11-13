@@ -10,9 +10,11 @@ When you have no folders yet, the Library shows **Add a folder to start browsing
 
 1. Pick a folder in the list. Ctrl-click or Shift-click to pick several. Double-click a folder to look inside it.
 2. Use **Up**, the path box and **Go** to move around. Switch between **List** and **Grid** to see photo previews.
-3. Choose **Pin folder**.
+3. Choose **Pin folder**. The window closes and the folder appears, selected, in the **Folders** list. You can also right-click a folder and choose **Pin folder to Library**.
 
 A pinned folder stays in the **Folders** list and its photos are part of your Library. Photos stay where they are. Pinning a folder never moves or copies anything.
+
+The **Locations** column on the left of the window holds your drives, standard folders such as Pictures, and your own shortcuts. To add a shortcut, right-click a folder and choose **Pin as a location**; right-click it again and choose **Remove from locations** to take it away. A location only makes browsing quicker: it does not add the folder to your Library. The same locations appear when you open an image or choose an export folder.
 
 To stop showing a folder, right-click it and choose **Unpin folder**. Nothing is deleted from disk. Photos that are also in an album stay in the Library. If unpinning fails, your folder view and selection are restored.
 

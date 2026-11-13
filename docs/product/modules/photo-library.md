@@ -1,3 +1,22 @@
+## November 13: Add folder Locations are separate from Library pins
+
+Decision (Steve, November 13, 2026): make it clear where a pin goes. The
+left column of the Add folder window is labelled **Locations**: drives,
+standard folders and saved locations. Right-click a folder there or in the
+list and choose **Pin as a location** to save a browsing shortcut;
+**Remove from locations** takes it away. A location never adds a folder to
+the Library. **Pin folder** (the button, or **Pin folder to Library** on
+right-click) pins to the Library's Folders list; the button closes the
+window and selects the new pin there, scrolled into view.
+
+Built: saved locations are their own list (`browser-locations.json`,
+`/api/media-browser/locations`). Previously the Add folder window and the
+Grade file browser listed Library pins as shortcuts, and the Grade browser's
+Pin folder button wrote to the Library's pinned folders without updating
+Library membership. The Grade browser now uses the same saved locations
+(button **Pin as a location**). Library pins no longer appear as browser
+shortcuts; they are not migrated into locations (pre-1.0, no migration).
+
 ## November 11: JPEG XL admission no longer launches metadata processes
 
 ## November 12: selection and fullscreen return

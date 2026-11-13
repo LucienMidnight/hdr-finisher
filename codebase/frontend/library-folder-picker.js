@@ -3,7 +3,7 @@
   "use strict";
   const $ = id => document.getElementById(id);
   const VIEW_KEY = "hdr-finisher:folder-picker-view";
-  function create({ api, sleep, bindFolderMenu, closeFolderMenu }) {
+  function create({ api, sleep, bindFolderMenu, bindLocationMenu, closeFolderMenu }) {
     const list = $("picker-list"), pane = $("picker-preview-pane");
     const requests = HDRLibraryRequestQueue.create(2);
     let view = "grid", observer = null, previewObserver = null, preview = null, stopped = false;
@@ -11,7 +11,23 @@
     const tiles = new Map(), previewPictures = new Map();
     try { if (localStorage.getItem(VIEW_KEY) === "list") view = "list"; } catch {}
     const session = { selection: new Set(), scrollPositions: new Map(), current: "", entries: [], anchor: -1,
-      browse, setView, clearPreview, stop };
+      drives: [], standard: [], saved: [], browse, setView, clearPreview, stop, refreshLocations };
+    // Locations are browsing shortcuts only: drives, standard folders and
+    // saved locations. Library pinned folders live in the Library's own list.
+    function renderLocations() {
+      $("picker-locations").replaceChildren(...[...session.drives, ...session.standard, ...session.saved].map(place => {
+        const button = document.createElement("button"); button.type = "button";
+        button.textContent = place.available === false ? `${place.name} · unavailable` : place.name;
+        button.title = place.path; button.dataset.path = place.path;
+        button.addEventListener("click", () => browse(place.path));
+        bindLocationMenu(button, place.path, !!place.saved);
+        return button;
+      }));
+    }
+    async function refreshLocations(saved) {
+      session.saved = saved ?? (await api("/api/media-browser/locations")).saved_locations;
+      if (!stopped) renderLocations();
+    }
     function release(item) {
       item.controller?.abort(); item.controller = null;
       if (item.url) URL.revokeObjectURL(item.url);
@@ -138,7 +154,7 @@
         const selected = session.selection.has(index) || (index === focused && session.entries[index].kind !== "directory");
         button.setAttribute("aria-selected", String(selected)); button.classList.toggle("selected", selected);
       });
-      $("picker-status").textContent = session.selection.size ? `${session.selection.size} folder${session.selection.size === 1 ? "" : "s"} selected` : "Pin this folder, or select folders below.";
+      $("picker-status").textContent = session.selection.size ? `${session.selection.size} folder${session.selection.size === 1 ? "" : "s"} selected` : "Pin this folder to the Library, or select folders below.";
     }
     function select(index, event) {
       const entry = session.entries[index]; focused = index;
@@ -222,10 +238,8 @@
         if (stopped || controller.signal.aborted) return;
         Object.assign(session, { current: result.current, parent: result.parent, displayed: result.current, entries: result.entries, anchor: -1 });
         $("picker-path").value = result.current; $("picker-up").disabled = !result.parent;
-        $("picker-places").replaceChildren(...[...result.drives, ...result.locations, ...result.pinned].map(place => {
-          const button = document.createElement("button"); button.type = "button"; button.textContent = place.name; button.title = place.path;
-          button.addEventListener("click", () => browse(place.path)); return button;
-        }));
+        Object.assign(session, { drives: result.drives, standard: result.locations, saved: result.saved_locations });
+        renderLocations();
         render(); list.scrollTop = session.scrollPositions.get(result.current) || 0;
         const index = session.entries.findIndex(entry => entry.path === returnPath);
         if (index >= 0) { select(index, {}); list.children[index].scrollIntoView({ block: "nearest" }); }

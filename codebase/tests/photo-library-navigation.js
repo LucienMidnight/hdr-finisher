@@ -107,10 +107,24 @@ async function eventually(check) {
     await library.locator('#picker-up').click();
     await library.waitForFunction(() => document.querySelector('#picker-list .directory[aria-selected="true"]')?.textContent.includes('folder-080'));
 
-    await target.click({ button: 'right' });
-    await library.locator('#library-folder-menu button').click();
-    await library.waitForFunction(child => [...document.querySelectorAll('#folders .library-folder-row')].some(row => row.dataset.path === child), child);
-    await library.locator('#picker-cancel').click();
+    // Locations are browsing shortcuts only; they never add a Library folder (Steve, November 13, 2026).
+    assert.equal(await library.locator('#picker-places > strong').textContent(), 'Locations');
+    const sibling = path.join(folder, 'folder-081');
+    await library.locator('#picker-list .directory').filter({ hasText: 'folder-081' }).click({ button: 'right' });
+    await library.getByRole('menuitem', { name: 'Pin as a location', exact: true }).click();
+    await library.waitForFunction(place => [...document.querySelectorAll('#picker-locations button')].some(button => button.dataset.path === place), sibling);
+    assert.equal(await library.locator('#folders .library-folder-row').count(), 0);
+    await library.locator('#picker-locations button').filter({ hasText: 'folder-081' }).click({ button: 'right' });
+    await library.getByRole('menuitem', { name: 'Remove from locations', exact: true }).click();
+    await library.waitForFunction(place => ![...document.querySelectorAll('#picker-locations button')].some(button => button.dataset.path === place), sibling);
+    await library.locator('#picker-list .directory').filter({ hasText: 'folder-082' }).click({ button: 'right' });
+    assert.equal(await library.getByRole('menuitem', { name: 'Pin folder to Library', exact: true }).count(), 1);
+    await main.keyboard.press('Escape');
+    // The Pin folder button pins to the Library, closes the window and selects the new pin in Folders.
+    await target.click();
+    await library.locator('#picker-pin').click();
+    await library.waitForFunction(child => !document.querySelector('#folder-picker').open
+      && [...document.querySelectorAll('#folders .library-folder-row')].some(row => row.dataset.path === child && row.getAttribute('aria-selected') === 'true'), child);
     await library.locator('#add-folder').click();
     await library.waitForFunction(() => document.querySelector('#folder-picker').dataset.view === 'grid' && !document.querySelector('#picker-pin').disabled);
     await library.locator('#picker-cancel').click();

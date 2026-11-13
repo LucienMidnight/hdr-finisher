@@ -1832,7 +1832,7 @@
     const key = value => /^[a-z]:|^\\\\/i.test(value) ? value.toLowerCase() : value;
     if (path && !state.folderSelection.has(path)) { state.folderSelection = new Set([path]); paintFolderSelection(); }
     const pinned = state.pins.find(pin => key(pin.path) === key(path));
-    const actions = path ? [{ label: pinned ? "Unpin folder" : "Pin folder", run: async () => {
+    const actions = path ? [{ label: pinned ? "Unpin folder" : state.picker ? "Pin folder to Library" : "Pin folder", run: async () => {
       if (pinned) {
         const impact = await api("/api/library/pins/impact", { path: pinned.path });
         const message = `${impact.leaving.toLocaleString()} photos leave the library. ${impact.kept ? `${impact.kept.toLocaleString()} stay because they are in albums. ` : ""}Nothing is deleted from disk.`;
@@ -1862,7 +1862,9 @@
       updateDetails(); void albums.refresh().catch(error => status(error.message)); void tagWindow.refresh().catch(error => status(error.message));
       if (!leaving && (state.collection || state.path)) void reopen();
       status(pinned ? "Folder unpinned. Photos stay where they are." : "Folder pinned.");
+      if (state.picker) $("picker-status").textContent = pinned ? "Unpinned from the Library." : "Pinned to the Library.";
     }}] : [{ label: "Add folder…", run: openPicker }];
+    if (path && state.picker) actions.unshift(locationAction(path), { separator: true });
     if (path && !state.picker) {
       const selection = [...state.folderSelection];
       const control = async (action, name = "") => {
@@ -1895,9 +1897,36 @@
     if (event.defaultPrevented || event.target.closest(".library-folder-row")) return;
     showMenu(event, [showAllAction()], { label: "Library options" });
   });
+  // Saved locations are Add folder shortcuts only; they never change what the
+  // Library shows. Library pins use "Pin folder" / "Pin folder to Library".
+  function locationAction(path) {
+    const plain = value => value.replaceAll("\\", "/").replace(/\/$/, "").toLowerCase();
+    const saved = state.picker?.saved.some(place => plain(place.path) === plain(path));
+    return { label: saved ? "Remove from locations" : "Pin as a location", run: async () => {
+      const result = await api(saved ? "/api/media-browser/locations/remove" : "/api/media-browser/locations", { path });
+      await state.picker?.refreshLocations(result.saved_locations);
+      $("picker-status").textContent = saved ? "Removed from locations." : "Pinned as a location.";
+    } };
+  }
+  function bindLocationMenu(element, path, saved) {
+    if (!saved) return;
+    const open = event => showMenu(event, [locationAction(path)], { label: "Location actions",
+      onError: error => { $("picker-status").textContent = error.message; } });
+    element.addEventListener("contextmenu", open);
+    element.addEventListener("keydown", event => { if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) open(event); });
+  }
+  function revealPinned(paths) {
+    const plain = value => value.replaceAll("\\", "/").replace(/\/$/, "").toLowerCase();
+    const wanted = new Set(paths.map(plain));
+    const rows = [...$("folders").querySelectorAll(".library-folder-row")].filter(row => wanted.has(plain(row.dataset.path)));
+    if (!rows.length) return;
+    if ($("folders").hidden) document.querySelector('.library-nav-section[data-section="folders"] .section-toggle')?.click();
+    state.folderSelection = new Set(rows.map(row => row.dataset.path)); state.folderAnchor = rows[0].dataset.path;
+    paintFolderSelection(); rows[0].scrollIntoView({ block: "nearest" });
+  }
   function pickerBrowse(path = "", returnPath = "") { return state.picker?.browse(path, returnPath); }
   function openPicker() {
-    state.picker = HDRLibraryFolderPicker.create({ api, sleep, bindFolderMenu, closeFolderMenu });
+    state.picker = HDRLibraryFolderPicker.create({ api, sleep, bindFolderMenu, bindLocationMenu, closeFolderMenu });
     $("folder-picker").showModal(); pickerBrowse(state.path);
   }
   ["list", "grid"].forEach(view => $(`picker-view-${view}`).addEventListener("click", () => state.picker?.setView(view)));
@@ -1905,7 +1934,12 @@
     const picker = state.picker; if (!picker?.current) return;
     const paths = picker.selection.size ? [...picker.selection].map((index) => picker.entries[index].path) : [picker.current];
     $("picker-pin").disabled = true;
-    try { const result = await api("/api/library/pins", { paths }); $("folder-picker").close(); await refreshPins(); await browse(paths[0]); if (result.skipped) status(`${state.photos.length.toLocaleString()} photos · ${result.skipped} already pinned folders skipped`); }
+    try {
+      const result = await api("/api/library/pins", { paths }); $("folder-picker").close(); await refreshPins();
+      // Show where the pin went: select it in the Folders list and bring it into view.
+      revealPinned(paths); await browse(paths[0]); revealPinned(paths);
+      status(result.skipped ? `${state.photos.length.toLocaleString()} photos · ${result.skipped} already pinned folders skipped` : `Pinned to the Library: ${paths.length === 1 ? paths[0] : `${paths.length} folders`}`);
+    }
     catch (error) { $("picker-status").textContent = error.message; }
     finally { $("picker-pin").disabled = false; }
   });

@@ -2580,22 +2580,25 @@ async def media_browser_thumbnail(request: Request, path: str = Query(), size: i
     return FileResponse(thumbnail, media_type="image/jpeg", headers={"Cache-Control": "private, no-cache"})
 
 
-@app.get("/api/media-browser/pinned")
-def media_browser_pinned() -> dict[str, object]:
-    return {"pinned": media_browser_store.pinned()}
+# Saved browser locations are shortcuts in the file browsers only. Library
+# pinned folders change through /api/library/pins, which also updates the
+# Library's photo membership.
+@app.get("/api/media-browser/locations")
+def media_browser_saved_locations() -> dict[str, object]:
+    return {"saved_locations": media_browser_store.saved_locations()}
 
 
-@app.post("/api/media-browser/pinned")
-def add_media_browser_pin(request: FavoritePathRequest) -> dict[str, object]:
+@app.post("/api/media-browser/locations")
+def add_media_browser_location(request: FavoritePathRequest) -> dict[str, object]:
     try:
-        return {"pinned": media_browser_store.add_pin(request.path)}
+        return {"saved_locations": media_browser_store.add_location(request.path)}
     except MediaBrowserError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.delete("/api/media-browser/pinned")
-def remove_media_browser_pin(path: str = Query()) -> dict[str, object]:
-    return {"pinned": media_browser_store.remove_pin(path)}
+@app.post("/api/media-browser/locations/remove")
+def remove_media_browser_location(request: FavoritePathRequest) -> dict[str, object]:
+    return {"saved_locations": media_browser_store.remove_location(request.path)}
 
 
 @app.post("/api/media-browser/recents")

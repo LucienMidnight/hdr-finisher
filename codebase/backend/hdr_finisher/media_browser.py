@@ -80,7 +80,11 @@ def _visible(path: Path) -> bool:
 class MediaBrowserStore:
     def __init__(self, root: Path | None = None, *, thumbnail_worker=None) -> None:
         self.root = (root or APP_DATA_DIR).resolve()
+        # Library pinned folders (what the Library shows). Browser shortcuts
+        # live separately in saved locations so pinning a shortcut never adds
+        # a folder to the Library.
         self.pinned_path = self.root / "pinned-folders.json"
+        self.locations_path = self.root / "browser-locations.json"
         self.recents_path = self.root / "recent-folders.json"
         self.thumbnail_root = self.root / "thumbnails"
         self._lock = RLock()
@@ -108,7 +112,7 @@ class MediaBrowserStore:
             "parent": None if current.parent == current else str(current.parent),
             "drives": self.drives(),
             "locations": self.locations(),
-            "pinned": self.pinned(),
+            "saved_locations": self.saved_locations(),
             "recents": self.recents(),
             "entries": entries,
         }
@@ -175,6 +179,33 @@ class MediaBrowserStore:
             values = [item for item in self._read_paths(self.pinned_path) if item != normalized]
             self._write_paths(self.pinned_path, values)
         return self.pinned()
+
+    def saved_locations(self) -> list[dict[str, Any]]:
+        with self._lock:
+            values = self._read_paths(self.locations_path)
+        return [
+            {"name": Path(value).name or value, "path": value, "available": Path(value).is_dir(), "saved": True}
+            for value in values
+        ]
+
+    def add_location(self, value: str) -> list[dict[str, Any]]:
+        resolved = Path(value).expanduser().resolve(strict=False)
+        if not resolved.is_dir():
+            raise MediaBrowserError(f"Folder is not available: {resolved}")
+        normalized = str(resolved)
+        with self._lock:
+            values = self._read_paths(self.locations_path)
+            if normalized not in values:
+                values.append(normalized)
+                self._write_paths(self.locations_path, values)
+        return self.saved_locations()
+
+    def remove_location(self, value: str) -> list[dict[str, Any]]:
+        normalized = str(Path(value).expanduser().resolve(strict=False))
+        with self._lock:
+            values = [item for item in self._read_paths(self.locations_path) if item != normalized]
+            self._write_paths(self.locations_path, values)
+        return self.saved_locations()
 
     def recents(self) -> list[dict[str, Any]]:
         with self._lock:

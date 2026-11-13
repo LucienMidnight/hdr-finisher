@@ -142,7 +142,6 @@ def test_expanded_controls_use_nested_tiles_and_export_copy_is_clean() -> None:
     assert 'id="directory-browser-select"' in html
     assert 'id="directory-browser-filename"' in html
     assert '<strong>Recent</strong><ul id="directory-browser-recents"></ul>' in html
-    assert '<strong>Pinned</strong><ul id="directory-browser-pinned"></ul>' in html
     assert '<strong>Locations</strong><ul id="directory-browser-locations"></ul>' in html
     for key, column in (("name", "Name"), ("size", "Size"), ("kind", "Kind"), ("date", "Date Added")):
         assert f'data-media-browser-sort="{key}">{column}</button>' in html

@@ -8,8 +8,10 @@ second visual system.
 
 ## Layout and behavior
 
-- The left rail contains platform places and locally pinned favorites. Unavailable favorites remain
-  visible so users can understand and remove stale paths.
+- The left rail, **Locations**, contains drives, platform places and saved locations (browsing
+  shortcuts added with **Pin as a location**). Unavailable saved locations remain visible so users
+  can understand and remove stale paths. Saved locations are separate from the Library's pinned
+  folders and never add a folder to the Library (Steve, November 13, 2026).
 - The center list shows directories first, then files. In source mode only supported images are
   selectable; in export mode files remain visible as destination context.
 - The right pane shows an SDR thumbnail and selected-file details. The grid/list thumbnail remains

@@ -38,7 +38,6 @@ window.HDRMediaBrowser = Object.freeze({
       directoryBrowserSortButtons: [...root.querySelectorAll("[data-media-browser-sort]")],
       directoryBrowserColumnResizers: [...root.querySelectorAll("[data-media-browser-resize]")],
       directoryBrowserRecents: root.querySelector("#directory-browser-recents"),
-      directoryBrowserPinned: root.querySelector("#directory-browser-pinned"),
       directoryBrowserLocations: root.querySelector("#directory-browser-locations"),
       directoryBrowserPreview: root.querySelector("#directory-browser-preview"),
       directoryBrowserPreviewFrame: root.querySelector(".media-browser-preview-image-frame"),
@@ -437,7 +436,7 @@ async function loadMediaDirectory(path) {
     delete els.directoryBrowser.dataset.selectedPath;
     renderMediaBrowserNavigation(
       payload.recents || [],
-      payload.pinned || [],
+      payload.saved_locations || [],
       payload.locations || [],
       payload.drives || [],
     );
@@ -457,8 +456,10 @@ async function loadMediaDirectory(path) {
   }
 }
 
-function renderMediaBrowserNavigation(recents, pinned, locations, drives) {
-  const render = (container, entries, removable) => {
+// Saved locations are browsing shortcuts shared with the Library's Add folder
+// window. They never add a folder to the Library.
+function renderMediaBrowserNavigation(recents, saved, locations, drives) {
+  const render = (container, entries) => {
     container.replaceChildren();
     for (const entry of entries) {
       const item = document.createElement("li");
@@ -468,15 +469,19 @@ function renderMediaBrowserNavigation(recents, pinned, locations, drives) {
       button.disabled = !entry.available;
       button.addEventListener("click", () => loadMediaDirectory(entry.path));
       item.append(button);
-      if (removable) {
-        button.title = entry.available ? "Open pinned folder" : "This pinned folder is currently unavailable";
+      if (entry.saved) {
+        button.title = entry.available ? entry.path : "This saved location is currently unavailable";
         const remove = document.createElement("button");
         remove.type = "button";
         remove.className = "media-browser-pinned-remove";
         remove.textContent = "Remove";
-        remove.setAttribute("aria-label", `Remove ${entry.name} from pinned folders`);
+        remove.setAttribute("aria-label", `Remove ${entry.name} from locations`);
         remove.addEventListener("click", async () => {
-          await fetch(`/api/media-browser/pinned?path=${encodeURIComponent(entry.path)}`, { method: "DELETE" });
+          await fetch("/api/media-browser/locations/remove", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: entry.path }),
+          });
           await loadMediaDirectory(els.directoryBrowserPath.value);
         });
         item.append(remove);
@@ -485,14 +490,13 @@ function renderMediaBrowserNavigation(recents, pinned, locations, drives) {
     }
   };
   const seenLocations = new Set();
-  const allLocations = [...locations, ...drives].filter((entry) => {
+  const allLocations = [...locations, ...drives, ...saved].filter((entry) => {
     if (seenLocations.has(entry.path)) return false;
     seenLocations.add(entry.path);
     return true;
   });
-  render(els.directoryBrowserRecents, recents, false);
-  render(els.directoryBrowserPinned, pinned, true);
-  render(els.directoryBrowserLocations, allLocations, false);
+  render(els.directoryBrowserRecents, recents);
+  render(els.directoryBrowserLocations, allLocations);
 }
 
 function selectMediaBrowserEntry(button) {
@@ -622,14 +626,14 @@ async function previewMediaBrowserFile(entry, button) {
 async function pinCurrentMediaFolder() {
   const path = els.directoryBrowserPath.value.trim();
   if (!path) return;
-  const response = await fetch("/api/media-browser/pinned", {
+  const response = await fetch("/api/media-browser/locations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path }),
   });
   const payload = await safeJson(response);
   if (!response.ok) {
-    els.directoryBrowserStatus.textContent = responseErrorMessage(payload, "Could not pin that folder.");
+    els.directoryBrowserStatus.textContent = responseErrorMessage(payload, "Could not pin that folder as a location.");
     return;
   }
   await loadMediaDirectory(path);
