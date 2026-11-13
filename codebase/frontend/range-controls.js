@@ -603,7 +603,21 @@ function renderSliderModifierMarkings(control, requestedMode) {
     tick.style.left = `${pos}%`; scale.append(tick);
     if (mode === "snap") {
       const label = document.createElement("span"); label.className = "slider-tick-label"; label.style.left = `${pos}%`;
-      label.textContent = Number(value.toFixed(2)); scale.append(label);
+      label.textContent = Math.abs(value) >= 1000 ? `${Number((value/1000).toFixed(1))}k` : Number(value.toFixed(2)); scale.append(label);
+      label.dataset.priority = Math.abs(value-home)<1e-8 ? 0 : (i === 0 || i === positions.length-1) ? 1 : 2;
     }
+  });
+  hideOverlappingSliderTickLabels(scale);
+}
+// Crowded snap profiles (Temperature's 2000/2500/3200 K) keep the home and end
+// labels, then any label that fits beside them; the ticks themselves all stay.
+function hideOverlappingSliderTickLabels(scale) {
+  const labels = [...scale.querySelectorAll(".slider-tick-label")]
+    .map((el,order) => ({el, order, priority:Number(el.dataset.priority), rect:el.getBoundingClientRect()}));
+  if (labels.some(label => !label.rect.width)) return;
+  const kept = [];
+  labels.sort((a,b) => a.priority-b.priority || a.order-b.order).forEach(label => {
+    const fits = kept.every(other => label.rect.right+4 <= other.rect.left || other.rect.right+4 <= label.rect.left);
+    if (fits) kept.push(label); else label.el.style.visibility = "hidden";
   });
 }
