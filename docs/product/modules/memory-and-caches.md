@@ -2,14 +2,74 @@
 
 ### November 13: 8 GB Mac native preflight and failed-photo admission
 
-macOS large-file preflight now reads total RAM from `hw.memsize` and
-available RAM from Mach VM page counts (free minus speculative plus inactive,
-the conservative psutil macOS definition). Linux uses the kernel's
+macOS large-file preflight reads total RAM from `hw.memsize`. The overnight
+November 14 correction uses `kern.memorystatus_level` percent of that total
+only while `kern.memorystatus_vm_pressure_level` reports normal pressure (1).
+Warning, critical, unknown pressure, missing sysctls, invalid sizes or an
+out-of-range percentage retain the Mach free minus speculative plus inactive
+fallback. A valid zero percent remains zero, not a missing reading. Linux uses the kernel's
 `MemTotal` / `MemAvailable`. Neither needs an optional dependency. Windows
 keeps its existing readers. The standalone DNG probe uses the same reader;
 all other shipped available-memory consumers already call preflight. The
 separate app-memory reader already supports macOS total RAM, process physical
 footprint and OS pressure; it did not have this missing-available-memory bug.
+
+**Why the percentage needs a pressure guard.** Apple's XNU
+[`vm_pressure_response`](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/vm/vm_pageout.c)
+calculates the percentage from available pages / total pages. On non-Jetsam
+macOS, [`VM_CHECK_MEMORYSTATUS`](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/vm/vm_page.h)
+counts active, inactive, free and speculative pages: pageable active memory
+is included, not just Windows-like standby cache. It is therefore a
+pressure-system estimate, **not guaranteed allocation headroom**, and must
+not be used unconditionally. No compressed or swapped bytes are added.
+The per-process `memorystatus_available_memory` API in
+[`kern_memorystatus.c`](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/kern/kern_memorystatus.c)
+returns zero on macOS processes without a configured process limit, so it
+does not supply the required system-wide replacement. Sources inspected
+November 14; existing app-wide pressure handling and all reserves stay intact.
+
+Behavior tests now default to a deterministic 16 GiB total / 8 GiB available
+snapshot, including the captured imports in DNG, main/API and Library grants.
+Reader tests explicitly opt into `native_preflight_memory`; safety tests
+still override with low/unknown snapshots. Retouch checks assert refusal
+preserves the document and pixels, and allowed/unknown readings produce
+exactly the same repaired pixels as the ample-memory case.
+
+**Decisions for Steve:** retain this normal-pressure-only kernel estimate?
+It unblocks ordinary work without changing a reserve, but active pageable
+memory is not the same as free RAM. The safest overnight qualification is
+the conservative fallback at any non-normal or unreadable pressure level;
+no new allowance or pressure threshold is approved by this change.
+
+**Overnight correction checks (November 14, parent `10eb390d` plus this fix).**
+On the 8 GB MacBook with other agents running, the full JavaScript suite
+passes (934 passed, 1 skipped); the full Python suite passes (3206 passed,
+176 skipped, 1 expected failure now passing). There are no host-memory-dependent
+test failures. The locked real-app
+`tests/retouch-interaction.js` passes: repair click/stroke publication,
+undo/redo, retry, enable/remove and cancellation, with exact pixel agreement
+between bounded source refresh and a full source reload. The new Python
+checks also require exact repaired-array equality across admitted readings.
+
+The locked plain-Electron `--label=fixmem` Library check shows **6/33 by
+90 s**, first picture at 0.6 s; ten never arrives. **Both DJI_0071.DNG and
+DJI_0072.DNG develop**, with no photo-work errors. This is not a clean Library
+acceptance: the unchanged system-reserve check fails in 22/386 samples
+(1.192–1.770 GB available versus the 2 GB reserve). The normal-pressure
+percentage is not used for those conservative fallback readings. The existing
+quick-check scenario explicitly selects a 4 GB app ceiling after launch,
+so this does not validate the default 2.5 GB setting. Independent app peak
+is 3.618 GB; the longest frame gap is 167 ms, within the existing 250 ms
+limit. The Python suite overlapped this check and other agents were running;
+these changed load/ceiling conditions do not establish a speedup over the
+earlier Mac run. No gate is loosened or extra run made to chase a pass.
+
+Evidence: `codebase/output/quick-library-check/fixmem/` (`report.json`,
+`backend.log`, `memory.jsonl`, `python-tests.log`, `node-tests.log`,
+`retouch.log`) and the small before/after screenshots in
+`codebase/output/retouch-interaction/`. The latter can be removed after
+review. Default-ceiling Library acceptance and Steve's judgment of the
+guarded kernel definition remain open.
 
 A deterministic DNG safety refusal or validation error is remembered against
 the source/settings revision, rather than being classified as temporary just

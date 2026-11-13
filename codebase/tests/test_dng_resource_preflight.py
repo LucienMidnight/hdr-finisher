@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import ctypes
+
+import pytest
+
 from hdr_finisher.resource_preflight import (
     GIB,
     ResourceDecision,
@@ -154,6 +158,7 @@ def test_hard_request_dimension_bound_still_rejects() -> None:
     assert "request limit" in oversized.reason
 
 
+@pytest.mark.usefixtures("native_preflight_memory")
 def test_running_platform_reports_real_memory_without_optional_psutil(monkeypatch):
     import sys
     from hdr_finisher.resource_preflight import detect_memory_resources
@@ -165,6 +170,7 @@ def test_running_platform_reports_real_memory_without_optional_psutil(monkeypatc
     assert resources.source != "unavailable"
 
 
+@pytest.mark.usefixtures("native_preflight_memory")
 def test_linux_uses_kernel_reclaimable_available_memory(monkeypatch):
     from hdr_finisher import resource_preflight as preflight
     monkeypatch.setattr(preflight.sys, "platform", "linux")
@@ -172,3 +178,88 @@ def test_linux_uses_kernel_reclaimable_available_memory(monkeypatch):
     resources = preflight.detect_memory_resources()
     assert resources.total_ram_bytes == 8 * GIB
     assert resources.available_ram_bytes == 3 * GIB
+
+
+class MacMemoryReader:
+    def __init__(self, level=51, pressure=1, missing=(), invalid_sizes=()):
+        self.values = {
+            b"hw.memsize": 8 * GIB,
+            b"kern.memorystatus_level": level,
+            b"kern.memorystatus_vm_pressure_level": pressure,
+        }
+        self.missing = missing
+        self.invalid_sizes = invalid_sizes
+        self.vm_reads = 0
+        self.released = []
+
+    def sysctlbyname(self, name, value, size, new_value, new_size):
+        if name in self.missing:
+            return -1
+        value._obj.value = self.values[name]
+        if name in self.invalid_sizes:
+            size._obj.value = 1
+        return 0
+
+    def mach_host_self(self):
+        return 42
+
+    def host_page_size(self, host, size):
+        size._obj.value = 16_384
+        return 0
+
+    def host_statistics(self, host, flavor, pages, count):
+        self.vm_reads += 1
+        pages[0], pages[2], pages[14] = 2_000, 130_072, 1_000
+        return 0
+
+    def mach_port_deallocate(self, task, host):
+        self.released.append((task, host))
+        return 0
+
+
+@pytest.fixture
+def mac_memory_reader(monkeypatch, native_preflight_memory):
+    from hdr_finisher import resource_preflight as preflight
+    monkeypatch.setattr(preflight.sys, "platform", "darwin")
+    monkeypatch.setattr(ctypes.c_uint32, "in_dll", lambda library, name: ctypes.c_uint32(7))
+
+    def read(**kwargs):
+        native = MacMemoryReader(**kwargs)
+        monkeypatch.setattr(preflight.ctypes, "CDLL", lambda path: native)
+        return native, preflight.detect_memory_resources()
+
+    return read
+
+
+@pytest.mark.parametrize("level", [0, 1, 51, 100])
+def test_mac_normal_pressure_uses_kernel_percentage(mac_memory_reader, level):
+    native, resources = mac_memory_reader(level=level)
+    assert resources == ResourceSnapshot(8 * GIB, 8 * GIB * level // 100, "sysctl/memorystatus")
+    assert native.vm_reads == 0
+    estimate = estimate_resources(
+        width=8_000, height=6_000, samples=3, bytes_per_sample=2, resources=resources
+    )
+    assert estimate.import_decision is (ResourceDecision.PASS if level >= 51 else ResourceDecision.REJECT)
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"missing": (b"kern.memorystatus_level",)},
+    {"missing": (b"kern.memorystatus_vm_pressure_level",)},
+    {"invalid_sizes": (b"kern.memorystatus_level",)},
+    {"invalid_sizes": (b"kern.memorystatus_vm_pressure_level",)},
+    {"level": -1},
+    {"level": 101},
+    {"pressure": 0},
+    {"pressure": 2},
+    {"pressure": 4},
+    {"pressure": 99},
+])
+def test_mac_pressure_or_unusable_sysctl_keeps_conservative_fallback(mac_memory_reader, kwargs):
+    native, resources = mac_memory_reader(**kwargs)
+    assert resources == ResourceSnapshot(8 * GIB, 2 * GIB, "mach/sysctl")
+    assert native.vm_reads == 1
+    assert native.released == [(7, 42)]
+    estimate = estimate_resources(
+        width=8_000, height=6_000, samples=3, bytes_per_sample=2, resources=resources
+    )
+    assert estimate.import_decision is ResourceDecision.REJECT

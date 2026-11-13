@@ -114,6 +114,26 @@ def _native_memory_resources() -> ResourceSnapshot:
         size = ctypes.c_size_t(ctypes.sizeof(total))
         if libc.sysctlbyname(b"hw.memsize", ctypes.byref(total), ctypes.byref(size), None, 0):
             raise OSError("hw.memsize failed")
+        level = ctypes.c_int()
+        level_size = ctypes.c_size_t(ctypes.sizeof(level))
+        pressure = ctypes.c_int()
+        pressure_size = ctypes.c_size_t(ctypes.sizeof(pressure))
+        if (
+            libc.sysctlbyname(
+                b"kern.memorystatus_level", ctypes.byref(level), ctypes.byref(level_size), None, 0
+            ) == 0
+            and level_size.value == ctypes.sizeof(level)
+            and 0 <= level.value <= 100
+            and libc.sysctlbyname(
+                b"kern.memorystatus_vm_pressure_level",
+                ctypes.byref(pressure), ctypes.byref(pressure_size), None, 0
+            ) == 0
+            and pressure_size.value == ctypes.sizeof(pressure)
+            and pressure.value == 1
+        ):
+            return ResourceSnapshot(
+                total.value, total.value * level.value // 100, "sysctl/memorystatus"
+            )
         # HOST_VM_INFO's fixed ABI is fifteen natural_t (uint32) fields.
         # Only current page counts are used, not its truncated lifetime counters.
         pages = (ctypes.c_uint32 * 15)()

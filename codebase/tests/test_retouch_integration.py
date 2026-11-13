@@ -40,6 +40,30 @@ def edit(store, session, kind="set_repairs", records=None, **payload):
         expected_revision=session.edit_revision, command_type=kind, payload=payload)])
 
 
+def test_memory_refusal_preserves_repair_pixels_and_document(photo, monkeypatch):
+    from hdr_finisher import resource_preflight
+    store, session = photo
+    before = session.image.copy()
+    monkeypatch.setattr(resource_preflight, "detect_memory_resources", lambda:
+        resource_preflight.ResourceSnapshot(8 * resource_preflight.GIB, 2 * resource_preflight.GIB, "test"))
+    with pytest.raises(ValueError, match="Not enough memory to publish this repair"):
+        edit(store, session, records=[record()])
+    np.testing.assert_array_equal(session.image, before)
+    assert session.repairs == [] and session.edit_revision == 0
+    assert session.undo_history == []
+
+
+@pytest.mark.parametrize("available", [None, 8 * 1024**3 * 51 // 100])
+def test_memory_admission_does_not_change_repair_pixels(photo, monkeypatch, available):
+    from hdr_finisher import resource_preflight, retouch_source
+    _, session = photo
+    expected = retouch_source.build_repaired_source(session, [record()])
+    monkeypatch.setattr(resource_preflight, "detect_memory_resources", lambda:
+        resource_preflight.ResourceSnapshot(8 * resource_preflight.GIB, available, "test"))
+    actual = retouch_source.build_repaired_source(session, [record()])
+    np.testing.assert_array_equal(actual, expected)
+
+
 def test_native_publication_history_masks_and_seeded_project_replay(photo, tmp_path):
     store, session = photo
     before = session.image.copy()

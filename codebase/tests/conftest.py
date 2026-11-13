@@ -71,13 +71,20 @@ def fixture_path(name: str) -> Path:
 
 
 @pytest.fixture
-def ample_preflight_memory(monkeypatch):
+def native_preflight_memory():
+    """Opt memory-reader tests into the actual platform reader."""
+
+
+@pytest.fixture(autouse=True)
+def ample_preflight_memory(monkeypatch, request):
     """Pixel/route fixtures exercise their intended path regardless of host load.
 
     Resource-safety tests use explicit low/unknown snapshots or the real reader
     instead; no production allowance or expected output is changed here.
     """
-    from hdr_finisher import linear_dng, resource_preflight
+    if "native_preflight_memory" in request.fixturenames:
+        return
+    from hdr_finisher import library_grants, linear_dng, main, resource_preflight
     resources = resource_preflight.ResourceSnapshot(16 * 1024**3, 8 * 1024**3, "test")
-    monkeypatch.setattr(resource_preflight, "detect_memory_resources", lambda: resources)
-    monkeypatch.setattr(linear_dng, "detect_memory_resources", lambda: resources)
+    for module in (resource_preflight, linear_dng, main, library_grants):
+        monkeypatch.setattr(module, "detect_memory_resources", lambda: resources)
