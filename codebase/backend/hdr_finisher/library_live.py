@@ -252,11 +252,11 @@ def develop_cpu(root, path, document, edge, cancelled=None, progress=None, draw_
             scenes = []
             with cache.transient_lock:
                 pending = list(cache.pending_stores.items())
-            for _store_key, (source, size, source_quality, default, _) in pending:
+            for _store_key, (source, size, source_quality, default, _, epoch) in pending:
                 if source == str(Path(path).resolve()):
                     item = cache.cached(source, size, source_quality)
                     if item:
-                        scenes.append(dict(item, _default_document=default))
+                        scenes.append(dict(item, _default_document=default, _cache_epoch=epoch))
             result["_pending_scenes"] = scenes
         return result
     finally:

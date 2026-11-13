@@ -1,5 +1,16 @@
 # Performance table
 
+November 14 P1-A unrelated-mark acceptance (`p1a/library`, same MacBook
+conditions as the quick-check observation below; other agents running):
+deterministic backend tests hold rename hashing or cache work behind an event
+while the actual settings writer runs. In both cases the unrelated rating is
+acknowledged within 250 ms and its sidecar contains the new rating within
+1 s, before the blocked file work is released. These are threshold assertions,
+not a native macOS or physical slow-storage timing baseline. Real Mac
+rename/move/delete remain refused by the existing Windows-only safety guard;
+their whole-command completion time is unqualified. PC native/recovery and
+slow-storage qualification remains required. No tolerance was relaxed.
+
 November 14 P1-A drawing/cache work (working tree based on `10eb390d`,
 `p1a/library`; MacBook, Apple A18 Pro, 8 GB; other agents running;
 1408x794 points; locked plain Electron; existing reserve and allowances):

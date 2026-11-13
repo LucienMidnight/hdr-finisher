@@ -6,6 +6,8 @@ from threading import RLock
 import sqlite3
 from tempfile import NamedTemporaryFile
 import time
+from zipfile import BadZipFile
+from contextlib import contextmanager
 
 DIRECTORIES = ('library-pictures', 'library-full-pictures', 'library-raw-thumbnails', 'library-thumbnails')
 ALLOWANCES = {'thumbnail': 2, 'full_size': 10, 'saved_grade': 2}
@@ -97,9 +99,14 @@ class LibraryCache:
                 CREATE TABLE IF NOT EXISTS totals(category TEXT PRIMARY KEY, size INTEGER);
                 CREATE TABLE IF NOT EXISTS ages(path TEXT PRIMARY KEY, stamp INTEGER);
                 CREATE INDEX IF NOT EXISTS cache_age ON ages(stamp);
+                CREATE TABLE IF NOT EXISTS sources(path TEXT PRIMARY KEY, source TEXT, size INTEGER, stamp INTEGER);
+                CREATE INDEX IF NOT EXISTS cache_source ON sources(source);
+                CREATE TABLE IF NOT EXISTS source_generations(path TEXT PRIMARY KEY, epoch INTEGER);
+                CREATE TABLE IF NOT EXISTS source_mutations(source TEXT PRIMARY KEY, epoch INTEGER, owner TEXT);
             """)
             _LEDGERS[key] = db
             try:
+                self._recover_mutations(db)
                 if reconcile or new_ledger:
                     self._reconcile(db)
             except BaseException:
@@ -122,6 +129,8 @@ class LibraryCache:
                            [(str(file), self.allowance(file), size) for _, size, file in entries])
             db.executemany('INSERT INTO ages VALUES (?, ?)', [(str(file), stamp) for stamp, _, file in entries])
             db.execute('INSERT INTO totals SELECT category, SUM(size) FROM files GROUP BY category')
+            db.execute('DELETE FROM sources WHERE path NOT IN (SELECT path FROM files)')
+            db.execute('DELETE FROM source_generations WHERE path NOT IN (SELECT path FROM sources)')
             db.commit()
         except BaseException:
             db.rollback()
@@ -164,6 +173,8 @@ class LibraryCache:
         from .library_diagnostics import startup_phase
         root = self.prepare()
         with startup_phase("cache_reconciliation"):
+            with _LOCK:
+                self._recover_mutations(self._ledger())
             for name in DIRECTORIES:
                 directory = self.directory(name)
                 for file in directory.glob('*'):
@@ -171,6 +182,16 @@ class LibraryCache:
                     if file.is_symlink() or not file.is_file() or file.suffix == '.tmp' or file.name.startswith('kept-'):
                         continue
                     self.record(file)
+                    if file.suffix == '.npz' and not self._source_current(file):
+                        try:
+                            import numpy as np
+                            with np.load(file, allow_pickle=False) as stored:
+                                metadata = json.loads(str(stored['metadata']))
+                            source = metadata.get('path') if isinstance(metadata, dict) else None
+                            if isinstance(source, str) and source:
+                                self.record(file, source=source)
+                        except (OSError, ValueError, KeyError, EOFError, BadZipFile):
+                            pass
             # Missing files are not in the directory walk. Page the saved keys
             # too, checking each file under the short publication lock.
             after = ""
@@ -185,32 +206,156 @@ class LibraryCache:
                     self.record(filename)
                 after = rows[-1][0]
 
-    def record(self, file):
+    @staticmethod
+    def _recover_mutations(db):
+        with db:
+            for source, owner in db.execute("SELECT source, owner FROM source_mutations WHERE owner<>''").fetchall():
+                if not Path(owner).exists():
+                    db.execute("UPDATE source_mutations SET owner='' WHERE source=? AND owner=?", (source, owner))
+
+    def record(self, file, source=None):
         """Record a final publication/replacement or removal in constant time."""
         file = Path(file)
         with _LOCK:
             db = self._ledger()
             db.execute('BEGIN IMMEDIATE')
             try:
-                old = db.execute('SELECT category, size FROM files WHERE path=?', (str(file),)).fetchone()
-                if old:
-                    db.execute('UPDATE totals SET size=size-? WHERE category=?', (old[1], old[0]))
-                db.execute('DELETE FROM files WHERE path=?', (str(file),))
-                db.execute('DELETE FROM ages WHERE path=?', (str(file),))
-                try:
-                    stat = file.stat()
-                    size = stat.st_size
-                except FileNotFoundError:
-                    size = None
-                if size is not None:
-                    category = self.allowance(file)
-                    db.execute('INSERT INTO files VALUES (?, ?, ?)', (str(file), category, size))
-                    db.execute('INSERT INTO ages VALUES (?, ?)', (str(file), stat.st_mtime_ns))
-                    db.execute('INSERT INTO totals VALUES (?, ?) ON CONFLICT(category) DO UPDATE SET size=size+excluded.size', (category, size))
+                self._record(db, file, source)
                 db.commit()
             except BaseException:
                 db.rollback()
                 raise
+
+    def _record(self, db, file, source=None, retarget=False):
+        old = db.execute('SELECT category, size FROM files WHERE path=?', (str(file),)).fetchone()
+        if old:
+            db.execute('UPDATE totals SET size=size-? WHERE category=?', (old[1], old[0]))
+        db.execute('DELETE FROM files WHERE path=?', (str(file),))
+        db.execute('DELETE FROM ages WHERE path=?', (str(file),))
+        try:
+            stat = file.stat()
+        except FileNotFoundError:
+            stat = None
+        if stat is not None:
+            category = self.allowance(file)
+            db.execute('INSERT INTO files VALUES (?, ?, ?)', (str(file), category, stat.st_size))
+            db.execute('INSERT INTO ages VALUES (?, ?)', (str(file), stat.st_mtime_ns))
+            db.execute('INSERT INTO totals VALUES (?, ?) ON CONFLICT(category) DO UPDATE SET size=size+excluded.size', (category, stat.st_size))
+            if source is not None:
+                source = os.path.normcase(str(Path(source).resolve()))
+                epoch, active = self._source_state(db, source)
+                if retarget or not active:
+                    db.execute('INSERT OR REPLACE INTO sources VALUES (?, ?, ?, ?)',
+                               (str(file), str(source), stat.st_size, stat.st_mtime_ns))
+                    db.execute('INSERT OR REPLACE INTO source_generations VALUES (?, ?)', (str(file), epoch))
+                else:
+                    db.execute('DELETE FROM sources WHERE path=?', (str(file),))
+            else:
+                db.execute('DELETE FROM sources WHERE path=? AND (size<>? OR stamp<>?)',
+                           (str(file), stat.st_size, stat.st_mtime_ns))
+        else:
+            db.execute('DELETE FROM sources WHERE path=?', (str(file),))
+        db.execute('DELETE FROM source_generations WHERE path=? AND NOT EXISTS (SELECT 1 FROM sources WHERE path=?)', (str(file), str(file)))
+
+    @staticmethod
+    def _source_state(db, source):
+        source = Path(str(source).split('|copy|', 1)[0]).resolve()
+        keys = [os.path.normcase(str(path)) for path in (source, *source.parents)]
+        return db.execute('SELECT COALESCE(MAX(epoch),0), COALESCE(MAX(owner<>\'\'),0) FROM source_mutations WHERE source IN (' +
+                          ','.join('?' for _ in keys) + ')', keys).fetchone()
+
+    def publication_epoch(self, source):
+        with _LOCK:
+            epoch, active = self._source_state(self._ledger(), source)
+        if active:
+            raise ValueError('A file command owns this photo; cached pixels were not published.')
+        return epoch
+
+    def publish(self, temporary, destination, source, epoch, retarget=False):
+        with _LOCK:
+            db = self._ledger()
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                current, active = self._source_state(db, source)
+                if not retarget and (epoch != current or active):
+                    raise ValueError('Photo moved or was deleted before cached pixels could be published.')
+                os.replace(temporary, destination)
+                self._record(db, Path(destination), source, retarget=retarget)
+                db.commit()
+            except BaseException:
+                db.rollback()
+                raise
+
+    @contextmanager
+    def mutation(self, sources, owner):
+        keys = {os.path.normcase(str(Path(source).resolve())) for source in sources if source}
+        with _LOCK:
+            db = self._ledger()
+            with db:
+                db.execute('BEGIN IMMEDIATE')
+                epoch = db.execute('SELECT COALESCE(MAX(epoch),0)+1 FROM source_mutations').fetchone()[0]
+                db.executemany('INSERT OR REPLACE INTO source_mutations VALUES (?, ?, ?)',
+                               [(source, epoch, str(owner)) for source in keys])
+        try:
+            yield
+        finally:
+            with _LOCK:
+                db = self._ledger()
+                with db:
+                    db.executemany("UPDATE source_mutations SET owner='' WHERE source=? AND owner=?",
+                                   [(source, str(owner)) for source in keys])
+
+    def _source_current(self, file):
+        with _LOCK:
+            db = self._ledger()
+            row = db.execute('SELECT size, stamp, source, epoch FROM sources JOIN source_generations USING(path) WHERE path=?', (str(file),)).fetchone()
+            if row is None:
+                return False
+            epoch, active = self._source_state(db, row[2])
+        try:
+            stat = Path(file).stat()
+            return not active and row[:2] == (stat.st_size, stat.st_mtime_ns) and row[3] == epoch
+        except OSError:
+            return False
+
+    def source_valid(self, file, source):
+        if not isinstance(source, (str, Path)) or not source:
+            return False
+        source = os.path.normcase(str(Path(source).resolve()))
+        with _LOCK:
+            db = self._ledger()
+            row = db.execute('SELECT source, epoch FROM sources JOIN source_generations USING(path) WHERE path=?', (str(file),)).fetchone()
+            epoch, active = self._source_state(db, source)
+        return not active and row == (str(source), epoch) and self._source_current(file)
+
+    def source_files(self, source, folder=False, retarget=False):
+        source = os.path.normcase(str(Path(source).resolve()))
+        prefix = source + os.sep
+        with _LOCK:
+            db = self._ledger()
+            rows = db.execute('SELECT path, size, stamp, source FROM sources WHERE source=?' +
+                              (' OR (source>=? AND source<?)' if folder else ''),
+                              (source, prefix, prefix[:-1] + chr(ord(prefix[-1]) + 1)) if folder else (source,)).fetchall()
+        directories = {self.directory(name) for name in DIRECTORIES}
+        for filename, size, stamp, recorded_source in rows:
+            file = Path(filename)
+            try:
+                safe = (file.parent in directories and not file.is_symlink() and not file.parent.is_symlink()
+                        and not file.name.startswith('kept-') and file.suffix in ('.npz', '.json'))
+                stat = file.stat() if safe else None
+                if stat is not None and (stat.st_size, stat.st_mtime_ns) == (size, stamp) and (retarget or self.source_valid(file, recorded_source)):
+                    yield file
+                    continue
+            except OSError:
+                pass
+            self.forget_source(file)
+
+    def forget_source(self, file):
+        with _LOCK:
+            db = self._ledger()
+            with db:
+                db.execute('DELETE FROM sources WHERE path=?', (str(file),))
+                db.execute('DELETE FROM source_generations WHERE path=?', (str(file),))
 
     def _used(self, db):
         return {**{name: 0 for name in ALLOWANCES}, **dict(db.execute('SELECT category, size FROM totals'))}

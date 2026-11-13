@@ -148,6 +148,7 @@ def test_stored_scenes_follow_without_new_identity(setup):
     photo,destination,c,doc=setup;cache=LibraryPictureCache(c.browser.root);cache.managed.prepare();cache.root.mkdir()
     old_key=picture_key(photo,512,'quick');meta={'path':str(photo),'edge':512,'quality':'quick'}
     with cache.file(old_key).open('wb') as f:np.savez_compressed(f,pixels=np.zeros((2,2,3)),metadata=np.asarray(json.dumps(meta)))
+    cache.managed.record(cache.file(old_key),source=photo)
     perform(c,photo,destination);new=destination/photo.name
     assert cache.file(picture_key(new,512,'quick')).exists() and not cache.file(old_key).exists()
 
@@ -250,7 +251,7 @@ def test_file_cache_changes_update_running_accounting(setup, delete):
     meta = {'path': str(photo), 'edge': 512, 'quality': 'quick'}
     with old.open('wb') as stream:
         np.savez_compressed(stream, pixels=np.zeros((2, 2, 3)), metadata=np.asarray(json.dumps(meta)))
-    cache.managed.record(old)
+    cache.managed.record(old,source=photo)
     new = destination/photo.name
     photo.rename(new)
     pictures(c.browser.root, {'old': str(photo), 'new': str(new)}, delete=delete)

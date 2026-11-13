@@ -396,6 +396,7 @@ def test_stored_scene_survives_materialised_defaults(tmp_path, lens_mode):
     canonical_key=picture_key(path,640,quality(document))
     if canonical_key != stored['key']:
         copyfile(cache.file(stored['key']),cache.file(canonical_key))
+        cache.managed.record(cache.file(canonical_key), source=path)
     canonical=cache.cached(path,640,quality(document))
     after=service.describe(path,canonical)
     assert before['key']==after['key']

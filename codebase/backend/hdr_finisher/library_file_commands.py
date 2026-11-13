@@ -4,7 +4,8 @@ import json
 import os
 from pathlib import Path
 import shutil
-from threading import Event, RLock, Thread
+from threading import Event, RLock, Thread, get_ident
+from contextlib import contextmanager
 from uuid import uuid4
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict
@@ -63,6 +64,7 @@ class FileCommands:
         self.marks,self.browser,self.index,self.worker,self.store=marks,browser,index,worker,store
         self.root=Path(browser.root)/'library-file-commands'; self.root.mkdir(parents=True,exist_ok=True)
         self._lane=RLock(); self._stop=Event(); self._thread=None
+        self._fences={}
         self.epoch=0; self.retired=set(); self.plans={}; self.jobs={}; self.events=[];self.changes=[];self.removed_copies=[]
         self.hook=lambda stage,item: None
         self.cross_drive=lambda a,b: Path(a).stat().st_dev != Path(b).parent.stat().st_dev
@@ -73,8 +75,28 @@ class FileCommands:
 
     def blocked(self,path):
         path=str(self.marks.source_path(path))
+        if any(owner!=get_ident() and any(mapped(path,source,'@')!=path for source in paths)
+               for owner,paths in tuple(self._fences.values())): return True
         return any(mapped(path,i['old'],'@')!=path or mapped(path,i.get('new',''),'@')!=path
-                   for r in self.records.values() for i in r['items'] if not i.get('done'))
+                   for r in tuple(self.records.values()) for i in r['items'] if not i.get('done'))
+
+    @contextmanager
+    def fence(self,paths):
+        paths=tuple(str(Path(str(path).split('|copy|',1)[0]).resolve()) for path in paths if path)
+        token=object()
+        with self.marks.writer._lane, self.marks._lock:
+            self._fences[token]=(get_ident(),paths)
+        try:
+            yield
+        finally:
+            with self.marks._lock:
+                self._fences.pop(token)
+            self.marks.writer.wake()
+
+    def planned_paths(self,token):
+        record=self.plans.get(token)
+        if record is None: raise ValueError('The command preview expired. Open it again; nothing was changed.')
+        return [path for item in record['items'] for path in (item['old'],item.get('new',''))] + record.get('copy_paths',[])
 
     def protected(self,path,folder=False):
         current=getattr(self.store,'_current',None)
@@ -103,10 +125,10 @@ class FileCommands:
         if request.action in {'delete','delete_rejected'}:
             # Hashes and Windows Recycle Bin probing can block for seconds.
             # The delete planner captures its settings snapshot in a short scope.
-            with timed_lock(self._lane, "file_command_lane"), timed_lock(self.marks.writer._lane, "file_command_writer"):
+            with timed_lock(self._lane, "file_command_lane"), self.fence(request.paths):
                 from .library_file_delete import plan
                 return plan(self,request)
-        with timed_lock(self._lane, "file_command_lane"), timed_lock(self.marks.writer._lane, "file_command_writer"), timed_lock(self.marks._lock, "file_command_marks"):
+        with timed_lock(self._lane, "file_command_lane"), self.fence(request.paths):
             if request.action in {'folder_rename','folder_move'}:
                 from .library_file_folders import plan
                 return plan(self,request)
@@ -175,7 +197,7 @@ class FileCommands:
 
     @file_event("confirmation")
     def execute(self,token,confirmation=''):
-        with timed_lock(self._lane, "file_command_lane"), timed_lock(self.marks.writer._lane, "file_command_writer"), timed_lock(self.marks._lock, "file_command_marks"):
+        with timed_lock(self._lane, "file_command_lane"), self.fence(self.planned_paths(token)):
             record=self.plans.get(token)
             if record is None: raise ValueError('The command preview expired. Open it again; nothing was changed.')
             if record['action'] in {'delete','delete_rejected'}:
@@ -272,7 +294,7 @@ class FileCommands:
                 db.execute('UPDATE photos SET pending=0 WHERE path=?',(item['new'],))
                 db.execute('DELETE FROM settings_writes WHERE path=?',(item['new'],))
             db.close()
-            pictures(self.browser.root,item)
+        pictures(self.browser.root,item)
         self.checkpoint(record,item,'indexed')
 
     def settings(self,record,item):
@@ -336,7 +358,9 @@ class FileCommands:
                     with self.store._lock: self.store.file_command_sources.difference_update(paths)
 
     def _run_reserved(self,record,recovery=False):
-        with self.marks.writer._lane:
+        from .library_cache import LibraryCache
+        paths=[path for item in record['items'] for path in (item['old'],item.get('new','')) if path and path not in ('Recycle Bin','Gone for good')]
+        with self.fence(paths + record.get('copy_paths',[])), LibraryCache(self.browser.root).mutation(paths,self.root/(record['id']+'.json')):
             if record.get('copy_paths'): record.setdefault('copies_done',False)
             for item in record['items']:
                 if item.get('done'): continue
@@ -432,13 +456,12 @@ class FileCommands:
                         copies.commit_many(plans)
                         return {'photos':[copies.row(p,i) for p,_,i in entries],'copies_changed':True}
                 with self.marks._lock: self.marks._undo.append({'command':restore,'copy_record':record['id']})
-            # _attempt uses the normal protected, revision-checked sidecar writer.
-            # We already own its lane: drain() here would deadlock.
             sources={p.split('|copy|',1)[0] for p in record['copy_paths'] if p not in record.get('copies_skipped',[])}
             for source in sources:
                 writer=self.marks.writer
                 if writer._paused or writer._busy(): raise ValueError('Copy removal is waiting for the settings writer.')
-                writer._attempt(source)
+                with writer._lane:
+                    writer._attempt(source)
                 if writer._snapshot(source) is not None:
                     raise ValueError('Copy removal is waiting for durable settings.')
                 doc=self.marks._document(Path(source)) or {}

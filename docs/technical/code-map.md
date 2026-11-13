@@ -456,6 +456,14 @@ Library slices 5/6 commands:
 
 Whole-folder original Rename/Move: `library_file_folders.py`, using the durable `library_file_commands.py` record, `library_file_io.py` exclusive renames and `library_file_state.py` path retargeting. User controls are in `library-file-commands.js`; the focused driver is `library-folder-file-commands.js`.
 
+P1-A cache retargeting uses the rebuildable source-to-file index in
+`library_cache.py`, maintained by picture/overlay publication and eviction.
+Source generations fence helper-process publication across file commands;
+`library_file_commands.py` fences affected marks while cache/hashing work runs
+outside the global marks/settings-writer locks. Stale mappings are cache misses
+rebuilt in background, never a source of authored marks or grades. Production
+original file operations remain Windows-only pending their native platform port.
+
 
 Original Delete and Delete all rejected: `library_file_delete.py` owns counted
 preview, route confirmation, pending settings, restored-photo and interruption

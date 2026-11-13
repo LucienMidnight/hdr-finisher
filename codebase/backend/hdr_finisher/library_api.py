@@ -748,7 +748,8 @@ def create_library_router(worker, browser, store=None):
                             raise ValueError("Source settings changed before saving preview data.")
                     for scene in result.pop("_pending_scenes", []):
                         default = scene.pop("_default_document", None)
-                        pending = (path, scene["edge"], source_quality, default, validate_cpu_store) if scene.get("_transient") else None
+                        epoch = scene.pop("_cache_epoch")
+                        pending = (path, scene["edge"], source_quality, default, validate_cpu_store, epoch) if scene.get("_transient") else None
                         await run_in_threadpool(live.cache.accept_transient, scene, pending)
                     await run_in_threadpool(live.cache.accept_transient, result)
                     return await run_in_threadpool(live.describe, command.path, result)
