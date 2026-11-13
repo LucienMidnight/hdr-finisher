@@ -180,7 +180,8 @@ class FolderChecks:
                     time.sleep(.001)
                 if settings_changed:
                     self.index.marks.conflicts.scan(list(new))
-                waiting = [p["path"] for p in result["photos"] if p["path"] in added | changed and not p.get("indexed")]
+                fresh = added | changed
+                waiting = [p["path"] for p in result["photos"] if p["path"] in fresh and not p.get("indexed")]
                 for start in range(0, len(waiting), 32):
                     records = self._job("metadata", paths=waiting[start:start + 32])["photos"]
                     self.index.remember_facts(records, epoch=epoch)
