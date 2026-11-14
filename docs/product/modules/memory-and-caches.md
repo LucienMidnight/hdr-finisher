@@ -20,11 +20,19 @@ exclusions and all rates are unchanged. No simulated free RAM or allowance
 bypass is used. Final minimum-Mac qualification is recorded in the Library PRD
 and performance table; a system-reserve breach still fails acceptance. The idle
 helper-result transport now releases its completed future/message before
-waiting. Mixed-folder admission still fails: native summaries show retained
+waiting. Earlier mixed-folder admission failed: native summaries show retained
 empty allocator regions outside live Python/NumPy buffers (about 1.4 GiB in the
 backend plus 604 MiB in the helper, partly swapped). A collection/pressure-
 relief trial was removed after it did not materially clear those waits.
-Further native release work is open; no allowance or reserve changed.
+The macOS backend now sets `MallocSpaceEfficient=1`, inherited by helpers,
+so freed native image allocations return promptly. Matched v1 survey app peak
+falls from 4.772 to 3.214 GB, coverage 35/50 to 48/50; all memory gates pass
+in the quieter run. A busier repeat remains 48/50 but fails physical reserve
+because other work consumes RAM. Two GPU source reservations remain waiting;
+full mixed-folder acceptance is open. The allocator policy changes no cache,
+ceiling, physical reserve, estimate, concurrency or pixel rule. See the
+performance table for machine/load conditions and the rejected CPU experiment.
+No allowance or reserve changed.
 
 # Module PRD: Memory and caches
 

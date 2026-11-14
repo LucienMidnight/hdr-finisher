@@ -330,6 +330,9 @@ async function startBackend() {
     cwd: command.cwd,
     env: {
       ...process.env,
+      // Return freed native image allocations promptly on unified-memory Macs.
+      // This changes allocator reuse policy, not any application memory budget.
+      ...(process.platform === "darwin" ? { MallocSpaceEfficient: "1" } : {}),
       HDR_FINISHER_MEMORY_BYTES: applicationPreferences.appMemoryBytes == null ? "" : String(applicationPreferences.appMemoryBytes),
       HDR_FINISHER_DESKTOP_SECRET: authoringSecret,
       HDR_FINISHER_DESKTOP_PID: String(process.pid),

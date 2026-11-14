@@ -1,6 +1,110 @@
 # Performance table
 
-## November 14: minimum-Mac Library, before and after
+## November 14: native allocator release on the minimum Mac
+
+Code: requested merge `82758935` plus this commit's backend allocator policy.
+MacBook Neo, Apple A18 Pro, 8 GB unified memory, six cores, 1408x794 points;
+shared GPU lock, same v1 fixture, fresh **4 GB app profiles**, unchanged **2 GB
+system reserve**, all original budgets/rates/accuracy gates. Electron's allocator
+was held at mode 0 in both captures; only backend/helpers changed from mode 0
+to `MallocSpaceEfficient=1`. Other agents remained active. CPU is whole-machine
+busy percentage; load is the one-minute range. Existing 5% timing tolerance and
+250 ms frame-gap limit apply. Coverage, rather than an isolated speed ratio,
+is the result: different external load prevents a precise speedup claim.
+
+| Capture | Pictures | First / ten / forty | Peak app / minimum available RAM | Frame gap | Conditions: MacBook Neo CPU / load |
+| --- | --- | --- | --- | --- | --- |
+| Before allocator, viewport | 6/6 requested, 6/33 folder | 0.4 s / — / — | 4.219 / 1.216 GB | 66 ms | 18.7% / 2.00–3.13; reserve fails |
+| After allocator, viewport | 6/6 requested, 6/33 folder | 0.4 s / — / — | 2.674 / 4.209 GB | 67 ms | 20.4% / 1.94–3.44; all smoke gates pass |
+| Before allocator, scrolling | 35/50 | 0.5 / 1.0 / absent | 4.772 / 1.013 GB | 51 ms | 35.4% / 2.32–3.58; reserve/settling/coverage fail |
+| After allocator, scrolling | 48/50 | 0.5 / 1.0 / 46.6 s | 3.214 / 3.350 GB | <50 ms | 32.3% / 2.78–4.76; all memory gates pass, coverage fails |
+| After repeat, busier scrolling | 48/50 | 0.7 / 1.4 / 54.0 s | 3.026 / 1.371 GB | <50 ms | 55.1% / 5.43–7.45; reserve/coverage fail under competing workload |
+
+The unchanged default viewport asks for only six photos at this window and
+thumbnail size; the other 27 normal-filter rows are unvisited. Scrolling with
+`--survey --all-files` separately requests all 50 physical v1 photos. Times
+below are browse/scroll action to each first picture, among pictures produced.
+Unpictured jobs remain in denominators. Grant totals include retries and later
+work, not just first pictures. UnGranted includes cancelled/waiting/refused
+requests; it does not mean decode failure. No per-photo decode failures were
+reported in these two captures.
+
+| Type | Before: pictured; seconds | After: pictured; seconds | Grants granted/ungranted; longest wait seconds, before → after |
+| --- | --- | --- | --- |
+| ARW | 9/12; 0.71–85.67 | 12/12; 0.68–23.05 | 9/6; 49.09 → 12/0; 18.40 |
+| AVIF | 2/3; 7.63–38.84 | 2/3; 6.82–7.53 | 2/1; 51.09 → 2/1; 2.95 |
+| CR2 | 2/2; 0.59–30.73 | 2/2; 0.35–0.58 | 2/1; 0.71 → 2/0; 0.00 |
+| CR3 | 1/1; 30.83–30.83 | 1/1; 0.36–0.36 | 1/1; 0.65 → 1/0; 0.00 |
+| DNG | 4/6; 0.97–38.70 | 6/6; 0.95–17.85 | 9/6; 52.32 → 9/1; 10.50 |
+| EXR | 0/2; — | 1/2; 24.98–24.98 | 0/3; 51.09 → 1/1; 26.72 |
+| HDR | 0/1; — | 1/1; 23.71–23.71 | 0/1; 51.09 → 1/0; 17.48 |
+| HEIC | 1/2; 87.38–87.38 | 2/2; 7.37–19.41 | 1/1; 52.31 → 2/0; 13.33 |
+| JPEG | 4/5; 0.54–36.58 | 5/5; 0.55–34.92 | 6/2; 52.30 → 6/0; 31.05 |
+| JXL | 2/2; 13.26–43.50 | 2/2; 19.93–27.39 | 6/1; 7.30 → 6/0; 3.72 |
+| NEF | 2/2; 30.82–31.16 | 2/2; 0.45–0.55 | 2/2; 0.56 → 2/0; 0.00 |
+| ORF | 2/2; 30.95–30.96 | 2/2; 0.45–0.51 | 2/2; 0.53 → 2/0; 0.00 |
+| PFM | 0/1; — | 1/1; 26.53–26.53 | 0/1; 51.09 → 1/0; 20.29 |
+| PNG | 2/3; 6.06–31.56 | 3/3; 0.67–30.52 | 2/3; 51.09 → 3/1; 22.71 |
+| RAF | 1/1; 30.52–30.52 | 1/1; 0.28–0.28 | 1/1; 0.75 → 1/0; 0.00 |
+| RW2 | 1/1; 31.03–31.03 | 1/1; 0.48–0.48 | 1/1; 0.49 → 1/0; 0.00 |
+| TIFF | 2/4; 33.40–33.89 | 4/4; 1.83–22.17 | 2/6; 51.09 → 4/1; 16.89 |
+
+Routes before → after: embedded JPEG **19 → 19**, developed RAW **2 → 4**,
+saved grade **1 → 5**, decoded HDR **6 → 13**, decoded SDR **7 → 7**.
+Per-photo type, route, action time, full grant lifecycle/bytes/waits/refusals,
+and failures are in each capture's `photos.json`; `memory.jsonl` records
+machine load and process memory, `report.json` records every failed gate.
+
+Native summaries previously found empty large-allocation regions of about
+1.4 GiB backend and 604 MiB helper, partly swapped. In the bounded allocator
+probe, mode 0 retained 588 MB after freeing 579 MB; mode 1 returned to 7.5 MB.
+Public malloc pressure relief released zero in both cases. MacBook Neo load
+endpoints 2.83/2.83; 0.034/0.036 s diagnostic subprocesses, not app timings.
+The backend launch now sets Apple's space-efficient allocation mode; child
+helpers inherit it. No cache or app memory number changes. Late live backend/
+helper charge after the successful survey is approximately 127/71 MB.
+
+Remaining missing photos are `DSC01287.exr` and
+`LR-classic-hdr-source-test-1.avif`. EXR's unified source/GPU grant is
+2.947 GB (1.336 GB GPU); it waits 26.7 s before scrolling cancels it.
+AVIF asks for 3.439 GB (1.330 GB GPU). One AVIF wait snapshot has 4.381 GB
+physical headroom before the protected reserve, hence 2.381 GB available
+for admission: short **1.058 GB**. A 0.5 GB reserve cut buys at most 0.5 GB
+and would not admit it there. Existing CPU estimates are about 1.06 GB EXR /
+2.11 GB AVIF, suggesting route work before changing reserve; no CPU-route
+qualification is claimed. The attempted admission-triggered CPU fallback was
+removed after its 90-second survey produced only 40/50 and breached reserve
+(4.216 GB sampled peak; CPU 61.8%, load 5.92–11.19). The heavy external load
+prevents attributing that regression solely to the experiment.
+
+Final allocator-only pixel check: `library-rgb-source.js --precision
+--picture-only`, MacBook Neo, shared lock, disposable 4 GB profile, 1920-long-
+edge photographic input: **14/14 pass**, unchanged mean <1 / p99.9 <=3;
+worst mean 0.081594, worst p99.9 0.393557. Harness 24.13 s including fixture
+generation; sampled CPU 73.9%, load 4.01–4.90; preparation 0.267–0.889 s is a
+diagnostic, not browse latency. Full native/preemption qualification remains
+open; its assertions were not relaxed. Final retained code's fast suites:
+Node 985 pass/1 skip; Python 3,411 pass/144 skip/one existing xpass.
+The rejected CPU fallback was removed byte-for-byte to the tested version.
+
+PC note (no extra run): the 85bba832 first/ten 5.6/7.6 s versus earlier isolated
+0.8–1.2 s can plausibly involve the stale visibility snapshot and camera work
+waiting behind heavy admission. Both existed in that code and both have fixes
+on this branch. The larger PC viewport requests more concurrent pictures.
+The supplied PC aggregate log lacks per-photo admission/visibility evidence;
+this is a plausible explanation, not a confirmed cause or measured PC fix.
+The allocator change applies only on macOS.
+
+Evidence: `codebase/output/quick-library-check/8gb-allocator-{before,after}-survey/`,
+`8gb-allocator-{before,after}-viewport/`, `8gb-allocator-repeat-survey/`,
+`8gb-allocator-cpu-survey/`; `codebase/output/8gb-allocator-policy.log`,
+`8gb-allocator-accuracy.log`, `8gb-allocator-accuracy-load.json`,
+`8gb-allocator-{node,python}-tests.log`. Approximately 11 of Steve's additional
+15 locked minutes used; no further slow checks started. Six GB usable RAM
+supports 48/50 here, but complete mixed-folder acceptance remains open.
+
+
+## November 14: earlier Library measurements before allocator release
 
 Code: baseline `2a0c70e7`; final production `126a93b1`; focused pixel mode
 `f1bd02f1`. **Every row below uses the MacBook Neo, A18 Pro, 8 GB unified RAM,

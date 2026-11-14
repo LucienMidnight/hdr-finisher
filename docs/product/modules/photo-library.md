@@ -47,48 +47,40 @@ are unaffected. Timings use the existing 5% tolerance and 250 ms frame-gap limit
 The shared v1 fixture remains the before/after input; the new curated photos
 and v2 fixture are outside this comparison.
 
-Locked before/after uses the same v1 fixture and existing 4 GB smoke setting,
-with the unchanged 2 GB reserve on the MacBook Neo. All 19 ungraded camera
-pictures now appear in 0.286–1.114 s after their browse/scroll action, compared
-with 0.523–4.065 s in the quieter baseline; the five corrected header formats
-have zero grant wait. The final viewport shows 6/6 requested rows (six of 33
-folder rows) by 15 s; the scrolling survey stays at 40/50, with the 40th picture
-at 55.5 s versus 73.3 s before. CPU means were 33.4%/32.8% for the surveys,
-but external load still varied; no isolated percentage-speed claim is made.
-The final frame gaps are 200 ms viewport and 50 ms survey, inside 250 ms.
+The retained native allocation issue is fixed on macOS by starting the
+backend/helpers with `MallocSpaceEfficient=1`. Freed native regions return to
+the OS promptly; no app ceiling, reserve, cache size, estimate rate, concurrency
+or image tolerance changed. The matched v1 scrolling survey improves **35/50
+to 48/50** at 90 seconds. App peak falls **4.772 to 3.214 GB**; minimum available
+RAM rises **1.013 to 3.350 GB**. The default six-request viewport passes all
+smoke gates at 2.674 GB peak. It still shows six of 33 folder rows because
+only six are requested. MacBook Neo A18 Pro/8 GB/six cores, 1408x794, shared
+lock, fresh 4 GB profiles, unchanged 2 GB reserve. CPU/load: before 35.4% /
+2.32–3.58, after 32.3% / 2.78–4.76. Both first/ten: 0.5/1.0 s; 40th after
+46.6 s; frame gap 51 ms before, <50 ms after (gate 250 ms).
 
-**Acceptance is still open.** Both mixed runs breach the physical reserve;
-the final survey peaks at 4.430 GB against its unchanged 4.4 GB absolute
-allowance. The single huge linear DNG does work alone: 9.5 s, 1.445 GB whole-app
-peak, all smoke gates pass. Mixed browsing retains 2.601 GB after jobs finish,
-leaving too little app-side room for its 2.110 GB source/GPU admission.
-Diagnostics identify freed native allocator regions: about 1.4 GiB in the
-backend and 604 MiB in its helper, partly swapped; about 27 MB of allocations remain live in the backend trace (which starts
-when the memory module imports, so excludes earlier imports). This is not evidence
-for reducing the reserve. Native allocator reclamation and mixed-folder
-completion remain Open work; the removed garbage-collection/pressure-relief
-trial did not materially solve them. See the performance table for load,
-by-type times, failures and the headroom arithmetic.
+A busier repeat still shows 48/50, app peak 3.026 GB, CPU 55.1% / load
+5.43–7.45, first/ten/40th 0.7/1.4/54.0 s, frame gap <50 ms. It fails the
+reserve gate at 1.371 GB available due to whole-machine contention. **Full
+minimum-Mac acceptance remains open.** The two remaining files, DSC01287.exr
+and LR-classic-hdr-source-test-1.avif, wait for GPU-backed host grants of
+2.947/3.439 GB. A sampled AVIF shortage is 1.058 GB; cutting reserve by 0.5 GB
+would not cover it. Existing CPU estimates are smaller (1.06/2.11 GB), but an
+experimental route switch was removed after an unsuccessful loaded run.
+No reserve change is proposed. Native/Grade/export safety remains unchanged.
 
-Finished-picture checks pass all seven cases/14 HDR-SDR comparisons at the
-existing perceptual mean <1 / p99.9 <=3 limits (worst 0.0816/0.3936). The new
-`--picture-only` mode qualifies finished 640-edge pixels against the CPU export
-renderer; default native transport/preemption checks retain their assertions.
-The full native driver was blocked by native admission/cache requirements and
-is not qualified by this work. No output arithmetic or HDR ceiling changed.
-Further native allocator release and mixed-folder validation remain open. The
-completed app captures and focused checks approach the roughly 30-minute slow-
-test allowance; another diagnosis/fix/capture group needs about 15 more minutes
-of locked checks and Steve's agreement under AGENTS.md Stop and ask.
+Final retained code: Node 985 pass/1 skip; Python 3,411 pass/144 skip/one
+existing xpass. Finished pictures pass 14/14 HDR-SDR comparisons at unchanged
+mean <1 / p99.9 <=3, worst 0.081594/0.393557. MacBook Neo accuracy harness
+24.13 s, CPU 73.9%, load 4.01–4.90; no full native/preemption qualification
+is claimed. Per-photo grants/routes/failures and by-type before/after are in
+the performance table and linked capture JSON. Steve's additional 15-minute
+locked allowance was respected; further mixed-folder route work remains open.
 
-Fast suites: Node 964 passed/one skipped; Python 3,343 passed/145 skipped/one
-existing xpass. No read-only project was saved over; no push or merge.
+PC first-picture delay: visibility-race and priority fixes plausibly address
+it, but the PC aggregate report does not establish its cause. No PC speedup
+is claimed; the allocator change is Mac-only.
 
-Per-photo `photos.json` records browse/scroll-to-picture time, route, granted/
-waiting/refused memory and errors; `host.json` and `memory.jsonl` retain machine
-load. The observer retries one complete process census after a disappearing
-child and reports any unrecovered failure, rather than silently stopping early.
-Full fast-suite and final measured outcomes will replace this pending status.
 ## November 14: curated test-photo corpus
 
 Steve approved one identical 50-file `HDR Test Images` corpus on PC and Mac.
