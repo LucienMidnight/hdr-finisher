@@ -1,3 +1,4 @@
+if(process.platform!=='win32'){console.log('Skipped: PC-only personal-library / very-large-file check (see docs/technical/test-photos.md).');process.exit(0);}
 const assert=require('node:assert/strict'), fs=require('node:fs'), path=require('node:path');
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'), output=path.join(root,'output/library-fullscreen-raw');

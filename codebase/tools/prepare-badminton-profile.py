@@ -3,6 +3,11 @@
 No RAW copies, cache links, original cache touches/publication, or photo writes.
 The runner may mutate only the disposable copies. Its owner removes the profile.
 """
+
+import sys
+if sys.platform != 'win32':
+    print('Skipped: PC-only personal-library / very-large-file check (see docs/technical/test-photos.md).')
+    sys.exit(0)
 import sys as _tool_sys
 from pathlib import Path as _ToolPath
 _tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[1] / 'tools'))

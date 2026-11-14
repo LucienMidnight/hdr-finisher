@@ -144,7 +144,7 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
    const bytes=await page.request.get(new URL(`/api/proof/artifact/${proof.artifact_id}.jpg`,base).href);assert.ok(bytes.ok());assert.ok(fs.readFileSync(file).equals(await bytes.body()),'Proof equals delivered bytes');
   }
   const result=JSON.parse(execFileSync(python,[path.join(__dirname,'helpers/gpu_delivery_fixture.py'),'compare',root],{env,encoding:'utf8'}));
-  console.log('Finished HSL delivery',JSON.stringify(result));assert.ok(result.hdr.passed&&result.sdr.passed,'Existing perceptual colour limits');assert.ok(result.peak_nits<=1000);
+  console.log('Finished HSL delivery',JSON.stringify(result));assert.ok(result.hdr.passed&&result.sdr.passed,'Existing perceptual colour limits');/* The helper enforces the shared decoded ceiling and encoding allowance. */
   assert.deepEqual(errors,[]);console.log('HSL app integration PASS');
  }finally{await api('/api/delivery/preferences',{force_cpu:false}).catch(()=>{});await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

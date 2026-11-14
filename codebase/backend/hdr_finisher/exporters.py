@@ -37,7 +37,7 @@ from .jpegxl import (
     validate_sdr_jpegxl,
 )
 from .test_pattern import build_hdr_test_pattern
-from .hdr_ceiling import decoded_channel_nits, delivery_ceiling_nits, encode_within_ceiling
+from .hdr_ceiling import ENCODING_ALLOWANCE, decoded_channel_nits, delivery_ceiling_nits, encode_within_ceiling
 
 
 SDR_WHITE_NITS = 203.0
@@ -420,17 +420,18 @@ class SDRJPEGXLExportBackend(ExportBackend):
         )
 
 
-def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None, ceiling_nits=None, notes=None):
+def write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None, ceiling_nits=None, encoding_allowance=0.0, notes=None):
     """Encode finished renditions; also used by Library pictures. No rendering.
 
-    The decoded file never exceeds ``ceiling_nits`` (hdr_ceiling).
+    The decoded peak is checked with the selected encoding allowance (hdr_ceiling).
     """
     def encode(hdr):
         _write_avif_gainmap_once(staged_output, hdr, sdr_image, settings, reference_white_nits,
             gainmaputil=gainmaputil, timings_ms=timings_ms)
         return Path(staged_output)
     encode_within_ceiling(hdr_image, reference_white_nits, encode,
-        lambda written: decoded_channel_nits(written, "avif_gain_map"), ceiling_nits, notes)
+        lambda written: decoded_channel_nits(written, "avif_gain_map"), ceiling_nits, notes,
+        encoding_allowance=encoding_allowance)
 
 
 def _write_avif_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, gainmaputil=None, timings_ms=None):
@@ -471,10 +472,10 @@ def _write_avif_gainmap_once(staged_output, hdr_image, sdr_image, settings, refe
         )
         timings_ms["encode"] = round((perf_counter() - started) * 1000.0, 3)
 
-def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, ceiling_nits=None, notes=None, photo_rect=None):
+def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, ceiling_nits=None, encoding_allowance=0.0, notes=None, photo_rect=None):
     """Encode finished renditions with the same writer as JPEG export.
 
-    The decoded file never exceeds ``ceiling_nits`` (hdr_ceiling).
+    The decoded peak is checked with the selected encoding allowance (hdr_ceiling).
     """
     if photo_rect is not None and (settings.jpeg_gain_map_scale != "full" or settings.jpeg_gain_map_quality != 100):
         settings = settings.model_copy(update={"jpeg_gain_map_scale": "full", "jpeg_gain_map_quality": 100})
@@ -485,7 +486,8 @@ def write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
             ultrahdr_app=ultrahdr_app, exif_payload=exif_payload, photo_rect=photo_rect)
         return Path(staged_output)
     encode_within_ceiling(hdr_image, reference_white_nits, encode,
-        lambda written: decoded_channel_nits(written, "jpeg_ultrahdr"), ceiling_nits, notes)
+        lambda written: decoded_channel_nits(written, "jpeg_ultrahdr"), ceiling_nits, notes,
+        encoding_allowance=encoding_allowance)
 
 
 def _write_jpeg_gainmap_once(staged_output, hdr_image, sdr_image, settings, reference_white_nits=203, *, ultrahdr_app=None, exif_payload=None, photo_rect=None):
@@ -569,7 +571,8 @@ class AVIFGainMapExportBackend(ExportBackend):
                 write_avif_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203),
                     gainmaputil=gainmaputil, timings_ms=timings_ms,
-                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments), notes=notes)
+                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
+                    encoding_allowance=_peak_allowance(finishing_adjustments), notes=notes)
 
             def validate(staged_output: Path) -> str | None:
                 started = perf_counter()
@@ -635,7 +638,8 @@ class JPEGUltraHDRExportBackend(ExportBackend):
                 write_jpeg_gainmap_renditions(staged_output, hdr_image, sdr_image, settings,
                     getattr(session, "hdr_reference_white_nits", 203), ultrahdr_app=ultrahdr_app,
                     exif_payload=None,
-                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments), notes=notes, photo_rect=photo_rect)
+                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
+                    encoding_allowance=_peak_allowance(finishing_adjustments), notes=notes, photo_rect=photo_rect)
 
             return _PreparedExport(
                 ".ultrahdr.tmp.jpg",
@@ -678,6 +682,7 @@ class JPEGXLHDRExportBackend(ExportBackend):
                 _decoded_jpegxl_channel_nits,
                 _peak_ceiling(settings, finishing_adjustments),
                 notes,
+                encoding_allowance=_peak_allowance(finishing_adjustments),
             )
             shape = hdr_image.shape[:2]
             return _PreparedExport(
@@ -704,9 +709,13 @@ class ExportProcessError(RuntimeError):
     """Raised when an external export command fails."""
 
 
+def _peak_allowance(adjustments: AdjustmentState) -> float:
+    return ENCODING_ALLOWANCE if adjustments.hdr.highlight_section_enabled else 0.0
+
+
 def _peak_ceiling(settings: ExportSettings, adjustments: AdjustmentState) -> float | None:
-    """Check decoded HDR peaks only when this preset version asks for it."""
-    return delivery_ceiling_nits(adjustments) if settings.guarantee_hdr_peak else None
+    """Enforce an active target even when the optional codec-limit check is off."""
+    return delivery_ceiling_nits(adjustments) if adjustments.hdr.highlight_section_enabled or settings.guarantee_hdr_peak else None
 
 
 def _decoded_jpegxl_channel_nits(payload: bytes) -> np.ndarray:

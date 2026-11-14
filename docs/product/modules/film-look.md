@@ -1,5 +1,64 @@
 # Module PRD: Film Look
 
+### November 14: fixed perceptual drift guards (Steve, 2026-11-14)
+
+| Decision | Date |
+| --- | --- |
+| Replace only the measured failing byte-mean gates with tight, fixed perceptual caps. Use the worst of three measurements + 0.005 mean / + 0.020 p99.9 ΔE, rounded upward to 0.001. The same caps and exact case list apply on PC and Mac. No automatic expansion when a different case fails. | Steve, 2026-11-14 |
+
+| Check / editing lane | Cases | Worst mean ΔE | Worst p99.9 ΔE | New mean cap | New p99.9 cap |
+| --- | --- | --- | --- | --- | --- |
+| Lens: HDR editing lane | 28 | 0.155865 | 1.134869 | 0.161 | 1.155 |
+| Lens: SDR editing lane | 32 | 0.242057 | 1.181764 | 0.248 | 1.202 |
+| Velvia physical chain: SDR | 1 | 0.119114 | 1.044660 | 0.125 | 1.065 |
+
+All three measurements give identical mean and p99.9 for every affected case:
+**zero observed run-to-run spread**. The lens uses three independent Electron
+processes; Velvia uses three complete repeats in one process, followed by a
+fresh-process final check. Machine: MacBook Neo, Apple A18 Pro / native Metal,
+8 GB unified RAM, 6 cores, 1408x794 points. First lens run: all 128 cases;
+next two: only its 60 misses. The quick set is eight of those same cases, measured three times.
+The SDR Velvia physical chain is measured three times; its HDR counterpart
+continues to pass strictly.
+
+These are **finished SDR presentations in both editing lanes**, compared with
+full-image ΔE 2000 via the existing `delivery_colour.compare_finished_pixels`.
+There is no sampling, error-based pixel exclusion or baseline subtraction in
+that metric. HDR ΔE ITP must use actual HDR pixels; this decision does not
+relax HDR delivery, Proof/export or the exact highlight ceiling.
+
+The 60 lens misses are all at strength 2: 28 HDR-lane and 32 SDR-lane cases,
+across Glimmerglass, Black Pro-Mist, Pro-Mist and Cinebloom. The exact
+edge/lane/filter/size/format keys and frozen caps are in
+`codebase/tests/helpers/film-parity-limits.cjs`. All 64 strength-0.125 cases
+and the four strictly passing strength-2 HDR cases keep the original
+0.1-level added-byte mean. The two-level added-byte p99.9 gate stays strict
+everywhere (measured p99.9 is one or two levels). Matching requested dimensions,
+complete opaque frames, native GPU availability and film-stock allocation
+also stay strict. Extreme HDR, real-file diagnostics, isolated Velvia
+variants and all other checks do not inherit these exceptions.
+
+The misses are in the byte **mean**, not a hard per-pixel maximum. Lens
+processing accumulates 27 components through half-float GPU textures, while
+the CPU uses the bounded FFT mixture. The measured finished-pixel gaps are
+below the agreed invisible-difference criteria. No instruction-level Metal
+cause is proved, and no rendering or shader precision is changed. Failure
+messages now name the exact case, metric, value, cap and excess; comparisons
+use full precision. The unrelated HDR Neutral release-failure signature is
+preserved.
+
+The first run deliberately yielded after its complete matrix for the priority
+100% hang checks; six unused partial-repeat observations were discarded.
+All GPU/Electron runs use the shared lock, released between subsequent drivers.
+The third lens run overlapped low-priority Python tests, so these diagnostic
+durations are not controlled speed baselines. Pixel scratch and generated
+fixtures are removed; no read-only project is saved.
+
+Evidence: `codebase/output/parity-limits/lens-three.json`, `film-three.json`,
+`lens-baseline-{1,2,3}.log` and `film-three.log`. Final gate/check results are
+recorded in `docs/known-limitations.md` and `docs/technical/performance-table.md`.
+PC GPU confirmation is listed in AGENTS.md; the caps are not platform-specific.
+
 ### November 14: Mac lens parity follow-up (test-only)
 
 Base `87b91385`, `fix/mac-gpu-parity`, MacBook Neo/A18 Pro/Metal, 8 GB,
@@ -49,9 +108,9 @@ shortcut change was used to hide it. Current PC hardware confirmation remains
 needed; the release known-failure list contains only the separate extreme HDR
 Neutral film case, not these lens/SDR or keyboard failures.
 
-**Decisions for Steve:** may these perceptually small lens/Velvia byte-gate misses be
-judged by the already agreed perceptual criterion? Until approved, preserve
-the strict failures rather than change pixels, limits or budgets.
+**Resolved by Steve, 2026-11-14:** the fixed limits and exact scope above
+replace these normal-driver mean-gate misses. The measurements below record
+the earlier strict-gate state; no production pixels were changed.
 
 Evidence: `codebase/output/macparity-final-quick.log`,
 `macparity-final-velvia.log`, `macparity-perceptual-results.json`, and
@@ -64,6 +123,154 @@ film/lens full-size Proof/export byte-identity cases also pass without skips
 (`codebase/output/macparity-film-proof.log`). This is CPU delivery coverage;
 it does not assert a new GPU-delivery qualification. The separate export
 agent owns that work.
+### November 14: P1-B preview acceleration — partial target
+
+Decision 3 is implemented for the direct preview: one grain sample while an
+interaction is active, the original supersampled grain on release. Presentation
+records explicitly mark approximate grain, even at the selected resolution,
+so it cannot satisfy the settled-frame requirement. Film interactions use the
+existing paced scheduler instead of repeatedly superseding unfinished frames.
+CPU rendering, settled shader maths, Proof and export quality are unchanged.
+
+Direct preview lens Strength edits reuse the exact 27-component summed glow.
+The key excludes only Strength; source/Denoise identity, lane, dimensions,
+source scale, SDR highlight anchor, geometry, recipe and locals still matter.
+Measurement/delivery passes use the original route and do not overwrite or
+invalidate the separate preview sum. Resize/reset destroys it. The optional
+half-float texture is included in existing GPU admission and resident-byte
+accounting; no allowance was increased (see Memory and caches).
+
+MacBook Neo / A18 Pro / 8 GB, 1408x794-point unpackaged Electron, shared GPU
+lock, synthetic 24 MP TIFF, no concurrent suites: whole input-to-screen
+presentation throughput improved from 1.80 to 17.28 frames/s for Stock Color,
+0.25 to 8.35 for Print Contrast, 1.80 to 17.40 for Grain Amount and 0.86 to
+13.12 for lens Strength. These count displayed frames during 150 programmed
+input events, not GPU-only time or a native pointer drag. All four released
+frames were exact. A separate diagnostic reproduces the new rates within
+10%; scope readbacks and queue/scheduler overhead remain significant.
+**The 20 frames/s target is not met; P1-B remains open.** Detailed conditions
+and paired results are in the performance table.
+
+November 14 strict follow-up tests production `f542c0a8` against local base
+`87b91385` (`feat/watermark-and-library-polish`) in a separately prepared
+worktree on the same MacBook. All GPU runs are serial under the shared lock,
+1408x794 points, with a 30-minute per-run limit. No production code, shader,
+image tolerance, memory allowance or saved-project contract changed.
+
+Two test-harness repairs unblock the original gaps: the native launcher selects
+the real app window rather than its disposable splash (with behavioral unit
+coverage), and the direct lens parity capture cancels presentation follow-ups
+and calls the existing renderer at the requested dimensions, rather than
+allowing Fit catch-up to replace the capture. The same repairs were applied to
+base. Native Film also removes its disposable profile after the run.
+
+The full stock matrix's 66 case reports and full-precision failure metrics
+match base exactly: HDR Neutral maximum paper gain remains mean 2.5536274305598763
+/ p99.9 249 levels; SDR Velvia physical chain remains mean 0.1043302083332462
+/ p99.9 1 (unchanged 0.1 mean limit). The full direct lens matrix's 128 case
+reports and 60 existing failures, and all eight quick-lens failures, likewise
+match base exactly. These are baseline failures, not passing output qualification.
+
+The full tiled lens matrix passes all 128 cases byte-exact. Its additional
+final-code checks pass at HDR and SDR edges 1520 and 2400: approximate grain
+cannot count as settled, release restores exact bytes, and Strength-only
+cached glow equals fresh glow byte for byte. **All tiled preview, Proof and
+export passes retain their original exact grain.**
+
+### P1-B covering-driver ledger (November 14, MacBook)
+
+Paths below are under `codebase/`. “Not needed” means the branch passed; base
+was run for every stopped or failed check. Coverage starts with the release
+inventory's Film/lens and HSL drivers, then shared shader, presentation,
+delivery and cache-lifetime checks. Unrelated retouch, geometry, encoder-format,
+Library RAW-development and desktop-menu sweeps are not substitutes for these
+checks. `tools/hsl-performance.js` and `tools/hsl-seam-repro.js` are historical
+manual diagnostics, not additional acceptance gates; current HSL whole-wait,
+containment, parity and delivery coverage is listed here.
+
+| Driver / mode | Branch | Base | Verdict |
+| --- | --- | --- | --- |
+| `tests/performance/film-look-interaction.js` (native) | Pass after launcher repair | Pass, original and repaired | Launcher race repaired, no production fix |
+| `tests/film-stock-parity.js` | 64/66 pass | Identical cases and failures | Two unchanged known failures |
+| `tests/film-stock-parity.js --stock-character-only --ui-only --panel-ui --presets-ui` | Character/presets pass; panel Enter fold fails | Same | Existing panel keyboard failure |
+| `tests/film-character-ui-check.js`, `tests/film-presets-ui-check.js` (helpers above) | Pass | Pass | Covered through stock UI run |
+| `tests/film-panel-ui-check.js` (helper above) | Enter fold: false, expected true | Same | Pre-existing, not weakened |
+| `tests/lens-filter-parity.js` (full) | 68/128 pass | Identical cases and failures | Capture-size repair; 60 baseline misses |
+| `tests/lens-filter-quick-parity.js` | 0/8 pass | Identical cases and failures | Eight baseline misses |
+| `tests/lens-filter-tiled-parity.js --verify-speed` | 128/128 plus exact release/reuse checks pass | Not needed | Final direct/tiled settlement qualified |
+| `tests/grain-parity.js` | 12/12 pass | Not needed | Pass |
+| `tests/tiled-film-parity.js` | Pass | Not needed | Pass |
+| `tests/hsl-selection-engine.js` (native) | Pass | Not needed | Engine parity/reuse pass |
+| `tests/hsl-prototype-gpu.js` (native) | Pass | Not needed | Pass |
+| `tests/hsl-overlay-review.js` | Pass | Not needed | Containment and cleanup pass; visual review open |
+| `tests/hsl-integration.js` | Pass | Not needed | Pass |
+| `tests/hsl-selection-delivery.js` (global and `--local`) | Both pass | Not needed | GPU/CPU full-size Proof bytes and ceilings pass |
+| `tests/performance/film-grain-size-diagnostic.js` / `film-grain-size-reference.py` | Pass | Not needed | GPU/reference grain sizes pass |
+| `tests/performance/tier-film-consistency.js` (default EXR) | Missing input; stopped | Same missing input | Original fixture unqualified |
+| Same driver, `--input output/test-photos/grade-24mp.tiff` | Pass | Not needed | Supplemental synthetic tier coverage |
+| `tests/performance/halation-map-zoom.js` (default EXR) | Missing input | Same | Original fixture unqualified |
+| Same driver, synthetic TIFF | Pass | Not needed | Supplemental synthetic zoom/glow coverage |
+| `desktop/tests/overlay-feedback.js` (native) | Pass | Not needed | Pass |
+| `tests/webgpu-shader-compilation.js` | Pass | Not needed | Pass |
+| `tests/tiled-direct-parity.js` | Pass | Not needed | Pass |
+| `tests/tiled-admission-scope-fallback.js` | Admitted-generation atomicity fails | Same assertion and CPU-scope fallback | Existing Mac failure |
+| `tests/device-loss-fallback.js` | Pass | Not needed | Pass |
+| `tests/session-replacement-interaction.js` | Pass | Not needed | Cache/session retirement passes |
+| `tests/gpu-delivery-smoke.js` | Worker unavailable; CPU instead of GPU | Same | Existing startup failure; no retry added |
+| `tests/gpu-delivery-repeat.js --cpu` | Missing original saved grade | Same | Original delivery case unqualified |
+| `tests/gpu-delivery-ceiling.js` | Missing original saved grade | Same | Original ceiling case unqualified |
+| `tests/proof-size-interaction.js` | Pass | Not needed | Pass |
+| `tests/performance/export-parity.js` | Diagnostic completes, records proof-scale ceiling overshoots | Same encoded-file hashes and ceiling metrics, all six scenarios | Not a ceiling pass; existing issue |
+| `tests/performance/grade-speed.js --skip-denoise` | Completes; exact Film releases, speed misses below | Earlier paired baseline retained | No timing rerun to chase misses |
+| `tools/quick-library-check.cjs` (default 90 s) | Incomplete: 6/33 pictured | Same 6/33 coverage failure | Existing Mac Library gap; no memory violation on either |
+
+Evidence: `codebase/output/performance/p1bv/` contains per-run logs,
+`results.jsonl`, exact matrix comparison `base-comparison.json`, and
+`export-baseline-comparison.json`. The export diagnostic records 1038–1437-nit
+proof-scale peaks for a 1000-nit target, identically encoded on both branches;
+its zero exit status is not HDR-ceiling acceptance. Real-RAW HSL full-size
+delivery checks do pass the existing decoded ceiling checks. No new universal
+export/Proof correctness claim is made.
+
+Missing originals (do not substitute a differently edited sidecar):
+`local-test-media/inputs/Affinity_DSC06898_DisplayP3_Linear_32f.exr`,
+`local-test-media/inputs/Darktable-highlight-reconstruction_DSC06451.exr`, and
+`output/test-photos/saved-grades/DSC07060.ARW.hdrf`.
+
+Final clean timing pass: Stock 16.96, Print 7.41, Grain 16.85 and lens Strength
+12.42 displayed frames/s, with exact release for each. All remain below 20.
+Print is more than 10% slower than the earlier 8.35 result; final HSL timings
+also exceed the earlier timing band (Grade PRD). These unexplained movements
+are recorded for Steve to try, not chased with more runs. See the performance
+table for the complete final timings and conditions.
+
+Final fast suites: Node **958 passed / one skipped**; Python **3314 passed /
+145 skipped / one existing xpass**, no failures. The three read-only project
+hashes are unchanged. No check reached the 30-minute cap; missing-input runs
+were stopped after their explicit file error rather than left idle. The
+temporary base worktree, task-created profiles/spools and intermediate grain/
+float renders were removed. Output started at 6.0 GB and finishes at **6.2 GB**
+(below 100 GB). The small retained logs, numeric summaries and review captures
+are in `codebase/output/performance/p1bv/` and `codebase/output/hsl-smooth/`;
+the review folders can be removed after Steve has reviewed them. No release
+check, push, merge, packaging or installer build was run.
+
+**Open work / Decisions for Steve:**
+- Try the direct Fit drags and judge whether the improvement feels worthwhile;
+  the minimum-machine 20 frames/s acceptance still needs work.
+- Try Print Contrast and HSL Show selection before any more timing runs;
+  final Print and HSL exceed the agreed 10% timing band, and one warm 100%
+  Show selection takes 1.079 s. No speed acceptance is claimed.
+- Transfer the three original fixtures above for the unqualified cases.
+  Existing stock/lens output-limit failures remain failures; only Steve can
+  approve a changed requirement, never a test relaxation just to pass.
+- Tiled interactive grain needs a viewport-aware settlement check before it
+  can be enabled. Until then, native/tiled drags keep full quality and may be slower.
+- PC follow-up at the release point: native Film drags, direct/tiled lens and
+  stock parity, and export/Proof checks; keep PC timings separate.
+- No P1-B-specific pixel regression was found against base. This is relative
+  regression evidence, not an all-green release or unconditional merge sign-off;
+  keep P1-B partial pending the speed review and original-fixture qualification.
 
 ### November 13: MacBook Velvia precision diagnostic
 

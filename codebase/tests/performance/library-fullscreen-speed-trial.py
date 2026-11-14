@@ -13,6 +13,12 @@ normal priority before the launcher was aligned; it is a separate stage probe.
 OS file cache is uncontrolled; 'cold' means a fresh picture/session cache.
 """
 from __future__ import annotations
+
+import sys
+if sys.platform != 'win32':
+    print('Skipped: PC-only personal-library / very-large-file check (see docs/technical/test-photos.md).')
+    sys.exit(0)
+
 import os
 for n in ('OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS'):
     os.environ[n]='1'

@@ -1,7 +1,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
-const { waitForInitialLoad } = require("./electron-initial-load");
+const { waitForInitialLoad, waitForMainWindow } = require("./electron-initial-load");
 
 function fixture(loading) {
   const contents = Object.assign(new EventEmitter(), {
@@ -27,6 +27,25 @@ test("an already loaded window needs no future notification", async () => {
   const f = fixture(false);
   await waitForInitialLoad(f.app, f.page, { timeout: 1000 });
   assert.equal(f.contents.eventNames().length, 0);
+});
+
+test("native launch follows the app when the splash closes before it loads", async () => {
+  const splash = { url: () => "file:///app/splash/splash.html" };
+  const worker = { url: () => "http://127.0.0.1/gpu-delivery.html" };
+  const main = { url: () => "http://127.0.0.1/" };
+  let pages = [splash, worker];
+  const pending = waitForMainWindow({ windows: () => pages }, { timeout: 1000 });
+  setImmediate(() => { pages = [worker, main]; });
+  assert.equal(await pending, main);
+});
+
+test("native launch reports a missing app window within its deadline", async () => {
+  await assert.rejects(waitForMainWindow({ windows: () => [] }, { timeout: 20 }), /did not appear/);
+});
+
+test("native launch also supports isolated file-based GPU tools", async () => {
+  const page = { url: () => "file:///tools/hsl-prototype/index.html" };
+  assert.equal(await waitForMainWindow({ windows: () => [page] }), page);
 });
 
 test("initial loading failure is reported and listeners are removed", async () => {

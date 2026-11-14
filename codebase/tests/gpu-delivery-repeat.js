@@ -8,14 +8,14 @@ const os=require("node:os");
 const output=path.resolve(__dirname,"../output/gpu-delivery-repeat");
 fs.mkdirSync(output,{recursive:true});
 let scratch;
-const original=process.env.HDR_CEILING_RAW||reusePhoto.source("DSC07060.ARW");
+const original=process.env.HDR_CEILING_RAW||reusePhoto.source("DSC04375.ARW");
 const source=reusePhoto(original,path.join(path.resolve(__dirname,"../output/gpu-delivery-ceiling"),path.basename(original)));
 const python=require('../tools/lib/platform.cjs').pythonExecutable();
 const pythonEnv={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
 const document=JSON.parse(execFileSync(python,["-c",
   "import sys,json;from pathlib import Path;from hdr_finisher.projects import validate_saved_document;print(validate_saved_document(json.loads(Path(sys.argv[1]).read_text())['grade']).model_dump_json())",
   process.env.HDR_CEILING_RAW?reusePhoto.source(original+".hdrf")
-    :reusePhoto.savedGrade("DSC07060.ARW.hdrf","gpu-delivery-repeat")],{env:pythonEnv,encoding:"utf8"}));
+    :reusePhoto.savedGrade("DSC04375.ARW.hdrf","gpu-delivery-repeat")],{env:pythonEnv,encoding:"utf8"}));
 document.source.durable_path=source;
 assert.equal(document.global_adjustments.hdr.highlight_section_enabled,true);
 const target=document.global_adjustments.hdr.highlight_compression_target_nits;
@@ -67,10 +67,10 @@ const harness=global.HDRFinisherElectronTestHarness;
       fs.writeFileSync(proofFile,Buffer.from(await response.arrayBuffer()));
       const byteIdentical=fs.readFileSync(file).equals(fs.readFileSync(proofFile));
       const decoded=await execute(python,["-c",
-        "import sys,json;from pathlib import Path;from hdr_finisher.hdr_delivery import decoded_hdr_peak_nits;print(json.dumps([decoded_hdr_peak_nits(Path(p),'jpeg_ultrahdr') for p in sys.argv[1:]]))",
-        file,proofFile],{env:pythonEnv,encoding:"utf8"});
+        "import sys,json;from pathlib import Path;from hdr_finisher.hdr_delivery import check_decoded_hdr_ceiling;print(json.dumps([check_decoded_hdr_ceiling(Path(p),'jpeg_ultrahdr',float(sys.argv[1])) for p in sys.argv[2:]]))",
+        String(target),file,proofFile],{env:pythonEnv,encoding:"utf8"});
       const peaks=JSON.parse(decoded.stdout);
-      assert.ok(peaks.every(peak=>peak<=target),JSON.stringify({renderer,target,peaks}));
+      // The read-only decoder check above enforces the shared encoding allowance.
       results.push({renderer,budget,target,peaks,byteIdentical,seconds:(Date.now()-start)/1000,exported,proof});
       clearInterval(pressure);
       console.log(JSON.stringify({renderer,budget,target,peaks,byteIdentical}));

@@ -25,12 +25,10 @@ Advanced Export Settings starts collapsed and remains keyboard-operable. Within 
 
 ### Guarantee HDR peak
 
-An advanced option for each preset version, shown for HDR formats only, and off by default. The encoder can push a few highlights above the highlight compression target after saving. Ultra HDR is the most prone to this, AVIF less so, and JPEG XL rarely. Most overshoots are small (up to 73 nits over a 1000-nit target on test RAWs), but one photo reached 1213 nits against an 800-nit target.
+Enabled Highlight Compression checks every encoded HDR export and reduced or full-size Proof, whether rendered on the CPU or GPU. The file is decoded and its brightest channel is checked against your target. Encoding may land up to **1% above the target** (1010 nits for a 1000-nit target); those files are accepted unchanged, without a note. Larger overshoots are corrected locally and re-encoded, aiming at or just below the target, usually within 3% below it. The SDR rendition is not changed. If all correction rounds still leave the file above the 1% allowance, delivery fails without replacing an existing destination. Full-size Proof shows the file export will deliver with the same settings; reduced Proof is checked at its own size. Library pictures do not receive this post-encoding check.
+The advanced **Guarantee HDR peak** option is still shown for HDR formats only and remains off by default. When Highlight Compression is bypassed, this option additionally checks the 10,000-nit codec ceiling. Turning it off never disables an active Highlight Compression target. Every checked file is decoded, even when the input picture is well below its ceiling: lossy encoding can create new peaks.
 
-- **Off:** each file is encoded once and not checked afterwards. This is the fastest choice. A file can exceed its target.
-- **On:** a file whose highlights come near the target is decoded, measured and, if needed, corrected locally and re-encoded. Files well below their target (more than 20% under) skip the check. A file still over target after correction is delivered anyway, with a note giving how many nits over.
-
-Measured cost (October 19, 2026; three 42 MP badminton RAWs, Ultra HDR at 1000 nits, 4000 px long edge, GPU export, photo already open):
+Historical cost before mandatory target checking (October 19, 2026; Windows PC, three 42 MP badminton RAWs, Ultra HDR at 1000 nits, 4000 px long edge, GPU export, photo already open; the Off case is no longer available with Highlight Compression enabled):
 
 | Case | Seconds per photo |
 |---|---|

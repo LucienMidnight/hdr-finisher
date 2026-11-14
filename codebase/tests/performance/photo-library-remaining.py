@@ -58,15 +58,19 @@ def write(name, data):
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / name).write_text(json.dumps(data, indent=2), encoding="utf-8")
 
+sys.path.insert(0, str(ROOT / 'tools'))
+from lib.test_photos import photo_root
+
 def selected():
     corpus = json.loads((ROOT / "output/library-measurements/corpus.json").read_text())
-    names = ("DJI_0071-2.DNG", "DSC02767.ARW", "DSC06615.ARW",
-        "DSC00264_DxO-optical-corr-only.dng", "2L1B8631.CR2",
-        "Fujifilm_X-E2S_DSCF6495.RAF", "Nikon_D7500_DSC_3931.NEF")
+    assert Path(corpus['source']).resolve() == photo_root().resolve(), 'Rebuild corpus.json from HDR Test Images'
+    names = ("DJI_0071-2.DNG", "DSC01212.ARW", "DSC06615.ARW",
+        "DSC04375_DxO-optical-corr-only.dng", "IMG_0114.CR2",
+        "DSCF6495.RAF", "DSC_3931.NEF")
     paths = [Path(next(row["path"] for row in corpus["rows"] if Path(row["path"]).name == name))
         for name in names]
-    paths += [Path(corpus["source"]) / "DJI Samples/DJI_0071.JPG",
-        Path(corpus["source"]) / "Test Suite Images/iphone_16_pro_IMG_3324.HEIC",
+    paths += [Path(corpus["source"]) / "DJI_0071-2.JPG",
+        Path(corpus["source"]) / "iphone_16_pro_IMG_3324.HEIC",
         Path(corpus["source"]) / "DSC04375_DxO_clipped_target.tif"]
     return paths
 
@@ -140,9 +144,12 @@ def bulk(args):
     paths = selected()
     if args.count == 30 and not args.cached:
         corpus = json.loads((ROOT / "output/library-measurements/corpus.json").read_text())
+        assert Path(corpus['source']).resolve() == photo_root().resolve(), 'Rebuild corpus.json from HDR Test Images'
         extra = [Path(row["path"]) for row in corpus["rows"] if row.get("sensor_size")
             and not row.get("error") and not row.get("excluded") and Path(row["path"]) not in paths]
-        paths += extra[:20]
+        extra += [file for file in sorted(photo_root().iterdir())
+            if file.suffix.lower() in (".jpg", ".jpeg", ".png", ".heic", ".avif") and file not in paths]
+        paths += extra[:30 - len(paths)]
         assert len(paths) == len(set(paths)) == 30, "Screen trial requires 30 distinct originals"
     cached = {}
     preparation_ms = 0
@@ -284,6 +291,7 @@ def index(args):
             "version":subprocess.check_output([str(exe), "-ver"], text=True,
                 env={**os.environ, "LC_ALL":"C", "LC_CTYPE":"C", "LANG":"C"}).strip()}
     corpus = json.loads((ROOT / "output/library-measurements/corpus.json").read_text())
+    assert Path(corpus['source']).resolve() == photo_root().resolve(), 'Rebuild corpus.json from HDR Test Images'
     paths = [Path(r["path"]) for r in corpus["rows"] if not r.get("excluded")]
     paths += selected()[-3:]
     reads = []

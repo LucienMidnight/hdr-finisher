@@ -186,6 +186,18 @@ coming back to him.
   pixels must not fail a check. This covers GPU against CPU, Proof against
   export (Proof on the GPU with export falling back to the CPU is accepted),
   and Library pictures against export.
+- **Steve, 2026-11-14: fixed film/lens drift guards.** Only the 60 listed
+  lens cases (including the eight quick cases) and the SDR Velvia physical
+  chain use the caps in `codebase/tests/helpers/film-parity-limits.cjs`.
+  Lens HDR-editing-lane mean ≤ 0.161, p99.9 ≤ 1.155; lens SDR mean
+  ≤ 0.248, p99.9 ≤ 1.202; SDR Velvia physical chain mean ≤ 0.125,
+  p99.9 ≤ 1.065.
+  Both editing lanes are SDR presentations in these drivers: use ΔE 2000.
+  Caps are worst of three + 0.005 mean / + 0.020 p99.9, rounded up to 0.001,
+  identical on both machines. The 68 strictly passing lens cases keep the
+  original byte-mean gate; the two-level byte p99.9 and structural/coverage
+  checks remain strict everywhere. No other check, HDR ΔE ITP requirement
+  or delivery ceiling is relaxed. Measurements: Film Look module PRD.
 - The one exact image requirement: HDR output never exceeds the highlight
   compression target (a 1000-nit target means no finished pixel above 1000
   nits), on every render path and after encoding, allowing only encoder
@@ -295,17 +307,23 @@ GitHub. This file is tracked in Git so both always have the same rules.
   performance-table row. Mac and PC numbers are separate baselines and are
   never compared with each other; judge a change by before and after on
   the same machine.
-- **Photos on the Mac** (November 13): every D:/Photos file the release
-  drivers use is copied except the two below. Setup lists missing
-  dependencies (including one-off measurement tools); name gaps rather than
-  skipping silently.
+- **One test-photo folder** (Steve, November 14): all photographic test inputs
+  come from `<photosRoot>/HDR Test Images`, identical on PC and Mac. Steve
+  approved the curated 50-file set in `docs/technical/test-photos.md`; setup
+  checks every name, byte size and SHA-256 against
+  `codebase/tests/test-photos.manifest.json` and reports missing, different or
+  extra files. Never use Desktop, Downloads, old partial copies or Play_Raw.
+  Generated deterministic fixtures remain in Git; disposable derivatives stay
+  under output. `library-mixed-v1` and its quick-check defaults stay frozen
+  during `fix/library-8gb` measurements; v2 is opt-in until that comparison ends.
+  Personal-folder and dropped giant-file measurements are PC-only; see the
+  complete exception list and missing specialty coverage in the photo document.
   - **PC-only by Steve's choice:** the `2026/20261017 badminton` folder is
     too large for the Mac, so `library-fullscreen-raw.js`,
     `library-scroll-cache.js`, `library-stored-screen-preview.js` and
     `library-live-picture.js` run on the PC only.
-  - **Asked for:** `HDR Test Images/e053a5bf16a9398eaa3da890-900x1200.jxl`
-    (`jxl-source-colour.js`; that driver also needs the JPEG XL helper,
-    which is Windows-only until Phase 2).
+  - The JPEG XL sample is now present. `jxl-source-colour.js` still needs the
+    JPEG XL helper, which is Windows-only until Phase 2.
 
 ### Waiting on the other machine
 
@@ -315,22 +333,19 @@ item here once it is done (and commits that change with the work).
 
 **On the PC, after the first pull of the Mac work (November 14):**
 
-1. Run the setup command above (`setup.ps1`) once from the Git root. It
-   creates `hdr-finisher-machine.json` beside the checkout and checks the
-   tools; then re-run it after any pull that changes dependencies. Steve has
-   already moved the PC's old untracked `AGENTS.md` aside.
-2. Check the shared GPU lock: two `gpu-run-lock.py` checks started together
-   must run one after the other, never overlapped.
-3. Library rename, move and delete on Windows, including an exFAT drive:
-   Recycle Bin, Undo and receipts still work after the macOS Trash change.
-4. Library: confirm the drawing gap the PC showed before is gone (P1-A
-   prepares GPU programs once; the gap never reproduced on the Mac).
-5. GPU safety (P1-C): Edge colour with real RAWs, and the Library's
-   one-recovery-then-CPU path after a lost GPU device.
-6. Export and Proof: HDR files land at or just below the Highlight
-   Compression target (the November 14 ceiling work), on the PC's GPU.
-7. Timings at 2560x1440 for the Phase 1 rows in
-   `docs/technical/performance-table.md`, compared only with earlier PC rows.
+Checked November 14 on the PC; setup and the 50 test photos, lock, file commands, drawing gap, Library
+GPU recovery, HDR ceiling and film/lens parity passed and are removed.
+Do not rebuild `library-mixed-v1` or switch its defaults until the Library
+speed comparison is finished. Still open:
+
+1. Edge colour with real RAWs on the PC GPU: `edge-colour-raw.js` fails twice
+   with 55 and 54 invalid GPU pixels in Library development; the safety check
+   rejects them and uses the CPU. Matches Steve's November 13 decision 7 (PC
+   card suspected); keep until he decides.
+2. HSL picker timing on the PC: `tests/performance/hsl-picker-speed.js`
+   cannot run because its same-volume hardlinks fail on the exFAT D: drive
+   (`EISDIR` on `link`). Needs a tooling fix that still avoids per-run RAW
+   copies.
 
 ## Disk space and test output
 
@@ -458,6 +473,8 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 - `docs/technical/performance-table.md`: how long every action takes,
   against its target. Update it with every new timing.
 - `docs/technical/development.md`: contributor guide (build, run, test).
+- `docs/technical/test-photos.md`: approved shared photo corpus, manifest,
+  replacement inventory, PC-only exceptions and v2 fixture hand-over.
 - `docs/technical/archive/slice-3-stage-reports-2026-10-11.md`: Library slice 3
   stage reports (history).
 - `docs/technical/archive/legacy-sdr-match-removal-next-thread-prompt-2026-10-06.md`:

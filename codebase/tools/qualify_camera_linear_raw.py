@@ -9,6 +9,12 @@ comparable, and comparisons use bounded strips plus a deterministic sample.
 
 from __future__ import annotations
 
+import sys
+if sys.platform != 'win32':
+    print('Skipped: PC-only personal-library / very-large-file check (see docs/technical/test-photos.md).')
+    sys.exit(0)
+
+
 import argparse
 import hashlib
 import json

@@ -1,3 +1,4 @@
+if(process.platform!=='win32'){console.log('Skipped: PC-only personal-library / very-large-file check (see docs/technical/test-photos.md).');process.exit(0);}
 // Phase 3a: reuse the one line-scan copy; leave no profile or decoded copies.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require('playwright');

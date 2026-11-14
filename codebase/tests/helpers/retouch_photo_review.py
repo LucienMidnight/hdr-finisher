@@ -16,7 +16,9 @@ from hdr_finisher.delivery_colour import compare_finished_pixels
 from PIL import Image
 from io import BytesIO
 folder=Path(sys.argv[2]);folder.mkdir(parents=True,exist_ok=True)
-photo=Path('output/test-photos/DSC04375.ARW')
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'tools'))
+from lib.test_photos import photo_root
+photo=photo_root()/'DSC04375.ARW'
 saved=json.loads(photo.with_name(photo.name+'.hdrf').read_text())['grade']
 if sys.argv[1]=='prepare':
     base,*_=load_image(photo,raw_import_settings=RawImportSettings.model_validate(saved['source']['raw_import_settings']))

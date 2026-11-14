@@ -49,8 +49,10 @@ may not contradict these.
 
 1. **HDR first, and rigour where HDR matters.** Peak and highlight handling
    keep the tightest limits. The one exact image rule is that a finished
-   HDR pixel never exceeds the highlight compression target (rounding
-   down: 990 nits passes a 1000-nit target, 1010 fails).
+   HDR pixel is limited to the highlight compression target before encoding.
+   Export and Proof are decoded and checked with a 1% encoding allowance
+   (Steve, November 14, 2026); larger overshoots are corrected locally toward
+   the target or, as a last resort, refused. See the Export and Proof module.
 2. **Two authored renditions.** HDR and SDR are graded as independent,
    equally good pictures of the same photo. The SDR side is never just a
    by-product. HDR should win with brightness and range, not with stronger
@@ -322,6 +324,17 @@ section 3; the October 18 list below is kept as history.
 5. **V1 local adjustments** (Steve, October 21, 2026): add a healing brush
    and a hue-selection mask. Hue selection is built October 27; complete Retouch remains open. See
    [grade](modules/grade.md).
+
+### Next performance round: heavy Film looks with Denoise (Steve, November 14, 2026)
+
+The focus of the next round of performance work. On the MacBook Neo
+(minimum hardware), editing works with many Film look adjustments stacked
+together with Denoise, but it is slow. In Steve's November 14 manual test,
+Tone changes took about 2–3.7 s at 100% zoom; Fit was faster but still
+sluggish. Steve expected some slowness here, but this case is the next
+target: heavy Film stacks plus Denoise at Fit and 100%, measured on the
+Mac first. See [film-look](modules/film-look.md) and
+[grade](modules/grade.md).
 
 ### To do: briefs to write (November 8, 2026)
 

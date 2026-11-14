@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 from frontend_source import frontend_declaration, frontend_scripts
 
@@ -23,17 +24,11 @@ def test_interaction_holds_the_selected_tier_once_it_has_produced_a_result() -> 
 
 
 def test_accepted_presentation_records_what_it_actually_is() -> None:
-    accept = frontend_declaration("acceptPresentation")
-
-    # Exactness is a fact about the resolution the frame was processed at,
-    # not about the size of the picture that came out. Geometry trims the
-    # frame: a straighten at the 4K tier processes at 4096 and presents
-    # 4011, and that is still an exact 4K result.
-    assert "const processedEdge = Number(processedLongEdge) > 0 ? Number(processedLongEdge) : longEdge;" in accept
-    # Equality, not "at least". A frame processed above the selected tier is
-    # not that tier either -- a resident Full frame satisfying ">=" reported
-    # "Ready - 1K" over it and told the scheduler there was nothing to do.
-    assert "const exact = longEdge > 0 && processedEdge === requiredProcessingLongEdge();" in accept
+    subprocess.run(
+        ["node", "--test", "--test-name-pattern=presentation records processing",
+         str(ROOT / "tests" / "grade-speed.test.js")],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    )
 
 
 def test_stale_overlay_remains_continuously_visible_until_replacement_arrives() -> None:

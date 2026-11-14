@@ -12,7 +12,7 @@ const MIN=11;
  await page.evaluate(async folder=>{const lib=document.querySelector('#library-frame').contentWindow;
  await lib.fetch('/api/library/pins',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[folder]})});await lib.HDRLibrary.refreshPins();
  const key='hdr-finisher:library-show-all-files';lib.localStorage.setItem(key,'true');lib.dispatchEvent(new lib.StorageEvent('storage',{key,newValue:'true'}));await lib.HDRLibrary.browse(folder);
- },path.resolve(__dirname,'../output/test-photos/v1-visual-sources'));
+ },require('./lib/visual-test-photos.cjs')());
  const lib=page.frameLocator('#library-frame');
  await lib.locator('.library-cell[data-path]').first().waitFor({timeout:30000});await lib.locator('.library-cell[data-path]').first().click();
  await page.waitForTimeout(1500);

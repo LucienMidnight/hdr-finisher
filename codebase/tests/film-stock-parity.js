@@ -12,12 +12,32 @@
 // --diagnostic-output <folder> saves finished CPU/GPU RGBA for perceptual analysis.
 // --input runs the same cases on a real file instead, and reports rather than
 // fails.
+//
+// Strict cases use the original added-byte mean/p99.9. Only the fixed cases
+// in helpers/film-parity-limits.cjs use full finished-pixel Delta E 2000;
+// both editing lanes in this driver are SDR presentations. No HDR-delivery
+// Delta E ITP or peak-ceiling gate changes here.
+// --measure-parity --repeat 3 --parity-report <file> records calibration;
+// the normal gate is still applied during measurement.
 
 const { chromium } = require("playwright");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
+
+const { createColourComparator } = require('./helpers/parity-colour.cjs');
+const { STRICT_BYTE_LIMITS, limitsFor, assessParity } = require('./helpers/film-parity-limits.cjs');
+const measureParity = process.argv.includes('--measure-parity');
+const repeatIndex = process.argv.indexOf('--repeat');
+const repeats = repeatIndex < 0 ? 1 : Number(process.argv[repeatIndex + 1]);
+if (!Number.isInteger(repeats) || repeats < 1 || repeats > 3) throw new Error('--repeat must be 1, 2 or 3');
+const reportIndex = process.argv.indexOf('--parity-report');
+const parityReport = reportIndex < 0 ? null : path.resolve(process.argv[reportIndex + 1]);
+const records = [];
+const started = Date.now();
+let colourComparator, gpuAdapter;
+const compareColour = result => (colourComparator ||= createColourComparator()).compare(result);
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 const LONG_EDGE = 1200;
@@ -33,8 +53,8 @@ const caseIndex = process.argv.indexOf("--case");
 const selectedCase = caseIndex >= 0 ? process.argv[caseIndex + 1] : null;
 if (selectedCase && !selectedCase.trim()) throw new Error("--case requires a label");
 const LANES = selectedLane ? [selectedLane] : ["hdr", "sdr"];
-const MAX_MEAN_DIFFERENCE = 0.1 / 255;
-const MAX_P999_DIFFERENCE = 2 / 255;
+const MAX_MEAN_DIFFERENCE = STRICT_BYTE_LIMITS.mean / 255;
+const MAX_P999_DIFFERENCE = STRICT_BYTE_LIMITS.p999 / 255;
 
 const NEUTRAL = {
   film_stock: "none", stock_color: 100, stock_tone: 100, stock_exposure: 0, stock_separation: 0,
@@ -145,12 +165,21 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.waitForFunction(() => state.gpuPreview?.detail !== "WebGPU has not been initialized");
     if (!await page.evaluate(() => state.gpuPreview?.available)) throw new Error(`WebGPU is unavailable: ${await page.evaluate(() => state.gpuPreview?.detail)}`);
+    gpuAdapter = await page.evaluate(() => {
+      const info = state.gpuPreview.adapterInfo;
+      return info && { vendor: info.vendor, architecture: info.architecture, device: info.device,
+        description: info.description, fallback: info.fallback };
+    });
+    if (!gpuAdapter || gpuAdapter.fallback) throw new Error('Parity requires a native GPU, not a software fallback');
+    console.log(`GPU adapter: ${JSON.stringify(gpuAdapter)}`);
     const sessionResponse = await page.request.post(`${baseUrl}/api/session`, {
       multipart: { file: { name: path.basename(fixturePath), mimeType: "application/octet-stream", buffer: fs.readFileSync(fixturePath) } },
     });
     if (!sessionResponse.ok()) throw new Error(`Fixture session failed with HTTP ${sessionResponse.status()}.`);
     const { session } = await sessionResponse.json();
     await page.evaluate((loadedSession) => activateDesktopSession(loadedSession, ""), session);
+    await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight);
+    await page.evaluate(() => stopPreviewWatchdog());
     if (stockCharacterOnly) {
       await require("./film-character-ui-check.js")(page);
       if (process.argv.includes("--presets-ui")) await require("./film-presets-ui-check.js")(page);
@@ -170,7 +199,7 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       }
       return compareOnce(...args);
     };
-    const compareOnce = async (lane, stock, lookStrength) => page.evaluate(async ({ lane, stock, lookStrength, longEdge, extremeHdr, capture }) => {
+    const compareOnce = async (lane, stock, lookStrength, needColour = false) => page.evaluate(async ({ lane, stock, lookStrength, longEdge, extremeHdr, capture, synthetic }) => {
       if (state.currentView !== lane) await switchLane(lane);
       state.previewScheduler?.cancel();
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
@@ -191,6 +220,10 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         await new Promise(resolve => setTimeout(resolve, 20));
       state.previewScheduler?.cancel();
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
+      window.clearTimeout(state.refreshTimer);
+      window.clearTimeout(state.settleTimer);
+      state.renderCoordinator?.cancelCatchUp(lane);
+      state.renderCoordinator?.cancelPan(lane);
       if (!await renderGpuDraft(lane, { longEdge })) return { error: "GPU render failed" };
       await state.gpuPreview.device.queue.onSubmittedWorkDone();
       let textureStats=null;
@@ -246,6 +279,12 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       const cpu = new Uint8ClampedArray(await response.arrayBuffer());
       const size = [surface.width, surface.height, Number(response.headers.get("X-Image-Width")), Number(response.headers.get("X-Image-Height"))];
       if (size[0] !== size[2] || size[1] !== size[3]) return { error: `GPU ${size[0]}x${size[1]} vs CPU ${size[2]}x${size[3]}` };
+      if (synthetic && (size[0] !== longEdge || size[1] !== Math.round(longEdge * 2 / 3)))
+        throw Error(`Parity fixture expected ${longEdge}x${Math.round(longEdge * 2 / 3)}, got ${size[0]}x${size[1]}`);
+      if (!surface.width || !surface.height || gpu.length !== surface.width * surface.height * 4 || cpu.length !== gpu.length)
+        throw Error("Incomplete GPU/CPU parity frame");
+      for (let index = 3; index < cpu.length; index += 4)
+        if (gpu[index] !== 255 || cpu[index] !== 255) throw Error("Parity frame has incomplete opaque coverage");
       const differences = [];
       let raw = 0;
       for (let index = 0; index < cpu.length; index += 4) {
@@ -268,7 +307,7 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         return btoa(binary);
       };
       return { size, differences, raw, worst, textureStats, captured: capture ? {gpu:encode(gpu), cpu:encode(cpu)} : null, slot: state.gpuPreview && window.HDRFilmStocks.slot(stock.film_stock, stock) };
-    }, { lane, stock, lookStrength, longEdge: LONG_EDGE, extremeHdr, capture:!!diagnosticOutput });
+    }, { lane, stock, lookStrength, longEdge: LONG_EDGE, extremeHdr, capture:!!diagnosticOutput || needColour, synthetic:!inputPath });
 
     const capture = (lane, label, result) => {
       if (!diagnosticOutput || !result.captured) return;
@@ -279,14 +318,15 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       delete result.captured;
     };
     const failures = [];
+    for (let run = 1; run <= repeats; run++) {
     for (const lane of LANES) {
       const off = await compare(lane, NEUTRAL, 100);
       if (off.error) throw new Error(`${lane} off: ${off.error}`);
       capture(lane,"off",off);
       for (const { label, stock, look_strength: lookStrength = 100 } of CASES.filter(c => !selectedCase || c.label === selectedCase)) {
-        const on = await compare(lane, { ...NEUTRAL, ...stock }, lookStrength);
+        const limits = limitsFor('film', LONG_EDGE, lane, label, { extremeHdr, inputPath });
+        const on = await compare(lane, { ...NEUTRAL, ...stock }, lookStrength, measureParity || !!limits);
         if (on.error) throw new Error(`${lane} ${label}: ${on.error}`);
-        capture(lane,label,on);
         if (stockCharacterOnly && stock.film_stock === "none") {
           if (on.slot) throw new Error(`${lane} ${label}: Neutral default should bypass stock allocation`);
         } else if (!on.slot) throw new Error(`${lane} ${label}: the stock never reached the GPU`);
@@ -302,8 +342,22 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         const sorted = [...added].sort((left, right) => left - right);
         const p999 = sorted[Math.floor(sorted.length * 0.999)];
         const maximum = sorted[sorted.length - 1];
-        const passed = mean <= MAX_MEAN_DIFFERENCE && p999 <= MAX_P999_DIFFERENCE;
-        if (!passed) failures.push({ lane, label, mean: mean * 255, p999: p999 * 255, worst:on.worst });
+        const strictPassed = mean <= MAX_MEAN_DIFFERENCE && p999 <= MAX_P999_DIFFERENCE;
+        const colour = limits || (measureParity && !strictPassed) ? await compareColour(on) : null;
+        const context = `${LONG_EDGE}px ${lane} ${label}`;
+        const { passed, message } = assessParity({ context, mean: mean * 255, p999: p999 * 255, colour, limits });
+        records.push({ run, edge: LONG_EDGE, lane, label, strictPassed, mean: mean * 255, p999: p999 * 255, colour, passed,
+          ...(on.renderMs !== undefined ? { renderMs: on.renderMs, cpuMs: on.cpuMs } : {}) });
+        if (colour) console.log(`Perceptual ${context} (finished SDR presentation): ${JSON.stringify(colour)}`);
+        if (message) {
+          // Keep the strict failure payload unchanged: the release runner pins
+          // the unrelated HDR Neutral failure's complete numeric signature.
+          failures.push(limits ? { lane, label, colour, limits, message }
+            : { lane, label, mean: mean * 255, p999: p999 * 255, worst: on.worst });
+          console.error(message);
+        }
+        capture(lane,label,on);
+        delete on.captured;
         console.log(
           `${lane} ${label.padEnd(20)} ${on.size[0]}x${on.size[1]}  `
           + `added GPU/CPU difference: mean ${(mean * 255).toFixed(3)} levels, p99.9 ${(p999 * 255).toFixed(1)}, max ${(maximum * 255).toFixed(0)}  `
@@ -311,6 +365,7 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         );
       }
     }
+    } // repeated complete matrix
     if (failures.length && inputPath) {
       console.log(`Report only for --input: ${failures.length} case(s) above the synthetic-fixture tolerance.`);
       return;
@@ -318,6 +373,11 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
     if (failures.length) throw new Error(`Film stock preview and export disagree: ${JSON.stringify(failures)}`);
     console.log("Film stock matches between the WebGPU preview and the CPU export.");
   } finally {
+    colourComparator?.close();
+    if (parityReport) {
+      fs.mkdirSync(path.dirname(parityReport), { recursive: true });
+      fs.writeFileSync(parityReport, JSON.stringify({ seconds: (Date.now() - started) / 1000, gpuAdapter, records }, null, 2));
+    }
     await browser.close();
     if (!inputPath) fs.rmSync(path.dirname(fixturePath), { recursive: true, force: true });
   }

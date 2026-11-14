@@ -160,7 +160,7 @@ function applyPreviewResolution(value, { schedule = true } = {}) {
   renderViewerStatus();
 }
 
-function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null, processedLongEdge = null, scopePeak = null, coarse = false) {
+function acceptPresentation(lane, schedulerTier, width, height, transport, fallbackReason = "", sourceSerial = null, generation = state.previewGeneration[lane], execution = null, processedLongEdge = null, scopePeak = null, coarse = false, approximate = false) {
   const longEdge = Math.max(Number(width) || 0, Number(height) || 0);
   const requestedTier = state.previewResolutionOverride === false ? "display" : normalizedPreviewResolution();
   // Exactness is a fact about the resolution this frame was processed at, not
@@ -182,7 +182,7 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
   // happened when it did not is the same lie in the other direction. If a
   // render ever does overshoot, this reports Preparing and the scheduler
   // renders the tier properly, which self-heals instead of misreporting.
-  const exact = longEdge > 0 && processedEdge === requiredProcessingLongEdge();
+  const exact = !approximate && longEdge > 0 && processedEdge === requiredProcessingLongEdge();
   // The size a Fit view was last processed at: the mask bitmaps of that size
   // are the ones every zoom level reuses (see maskOverviewLongEdge).
   if (state.zoomMode === "fit" && exact) state.fitProcessingLongEdge = processedEdge;
@@ -194,6 +194,7 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
     tier: exact ? (requestedTier === "display" ? "display"
       : processedEdge === previewTargetLongEdge(requestedTier) ? requestedTier : "native-region") : null,
     exact,
+    approximate: Boolean(approximate),
     coarse: Boolean(coarse) && !exact,
     processedLongEdge: processedEdge,
     schedulerTier,

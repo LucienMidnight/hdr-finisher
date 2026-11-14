@@ -14,7 +14,7 @@
   "protectedProjects": [
     "local-test-media/viewport/DSC00264-four-masks.hdrfinisher",
     "local-test-media/viewport/DSC00264-fifty-locals.hdrfinisher",
-    "D:/Photos/Play_Raw/Fantastic light over village - AdamFromCanada/DSC00950.hdrfinisher"
+    "D:/Photos/HDR Test Images/Projects/DSC00950.hdrfinisher"
   ],
   "sourceAreas": [
     {"pattern":"^codebase/frontend/key-hints\\.js$","areas":["ui"]},
@@ -268,6 +268,8 @@
     }
   ],
   "drivers": [
+    {"path":"tests/hdr-ceiling-delivery.js","areas":["export-proof"],"tier":"core","protects":"Bounded 1600px real-photo fixture: all-codec CPU/GPU exports and reduced/full-size Proof decoded targets with encoding allowance, full-size Proof identity and mandatory checking with checkbox off. --native-source keeps the original source for a separate native-size diagnostic.","launch":{"method":"electron"}},
+    {"path":"tests/performance/hdr-ceiling-cost.py","areas":["export-proof"],"tier":"diagnostic","protects":"Real read-only photo CPU export and reduced/full Proof decoded ceilings, full Proof identity, and paired CPU or Electron GPU full-export cost with/without post-encode decoding.","launch":{"method":"python","requires":"Pass existing source photo paths; --gpu measures Electron request timing. Run under gpu-run-lock.py for isolated timings."}},
     {"path":"tests/library-grid-stability.js","areas":["library","ui"],"tier":"area","protects":"Scrollbar appearance cannot trigger repeated thumbnail resizing; control reproduces the 37-photo feedback loop.","launch":{"method":"native"}},
     {"path":"tools/ui-polish-round5-review.cjs","areas":["ui"],"tier":"diagnostic","protects":"Numbered workflow badge geometry, navigation, ARIA and three-theme toolbar captures at full and narrow widths.","launch":{"method":"electron"}},
     {"path":"tools/ui-polish-round6-review.cjs","areas":["ui"],"tier":"diagnostic","protects":"Vertical menu keyboard and hover, neutral view sliders, sidebar controls and single-row toolbars in three themes at full and minimum width.","launch":{"method":"electron"}},
@@ -293,6 +295,8 @@
     {"path":"tests/tone-zones-delivery.js","areas":["preview","export-proof"],"tier":"area","protects":"Tone sliders (Blacks, Shadows, Midtones, Highlights): GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling.","launch":{"method":"electron"}},
     {"path":"tests/color-desat-delivery.js","areas":["preview","export-proof","ui"],"tier":"area","protects":"Color desaturation active GPU preview, CPU/GPU finished output, Proof/export agreement and HDR ceiling.","launch":{"method":"electron"}},
     {"path":"tests/hsl-overlay-review.js","areas":["masks","ui"],"tier":"area","protects":"Real-photo selection containment, zoom alignment, disclosure cleanup and Library grid pixels.","launch":{"method":"electron"}},
+    {"path":"tests/performance/grade-speed.js","areas":["preview","film","lens","ui"],"tier":"diagnostic","protects":"MacBook whole-wait Show selection, Film/lens input-to-present throughput and Exposure after Denoise; exact settlement after drags.","launch":{"method":"electron","args":["--output","output/performance/p1b/current.json"],"requires":"Reusable output/test-photos/grade-24mp.tiff; --input accepts another source. Pair before/after on the same machine."}},
+    {"path":"tests/performance/hsl-picker-speed.js","areas":["preview","masks","ui"],"tier":"diagnostic","protects":"HSL picker input scoping and Retina coordinates; HDR/SDR Fit/100% Show selection whole-wait and backend stage timings on plain and optional stacked grades.","launch":{"method":"electron","requires":"--input RAW path; --stacked accepts a read-only .hdrf copy. Temporary same-volume hardlinks reuse output/test-photos bytes. --observe re-registers the picker from --picker-ref (default HEAD) and disables viewport cropping; it does not roll back backend code."}},
     {"path":"tests/hue-mask-delivery.js","areas":["masks","export-proof","ui"],"tier":"area","protects":"Sampled fixed-source hue mask GPU preview and GPU/CPU Proof/export agreement and ceiling.","launch":{"method":"electron"}},
     {"path":"tests/workspace-panel-alignment.js","areas":["ui","library"],"tier":"area","protects":"Aligned workflow panel headers and pointer/keyboard panel resizing.","launch":{"method":"electron"}},
     {"path":"tests/retouch-transfer-interaction.js","areas":["masks","preview","ui"],"tier":"area","protects":"Clone and Heal source picking, source editing, opacity, history, native preview and optional saved-grade RAW comparison.","launch":{"method":"electron"}},
@@ -449,6 +453,13 @@
       "launch": {
         "method": "native"
       }
+    },
+    {
+      "path": "tests/grade-zoom-responsive.js",
+      "areas": ["preview", "detail", "film"],
+      "tier": "full",
+      "protects": "Real RAW stacked Film grade: native Exposure with HSL Pick armed at Fit and 100%, latest edits during Denoise, current exact presentation and changed visible pixels.",
+      "launch": {"method": "electron"}
     },
     {
       "path": "tests/brush-feather-reference.js",
@@ -3983,7 +3994,7 @@
         "export-proof"
       ],
       "tier": "core",
-      "protects": "Saved DSC07060 RAW export and full-size Proof remain under the enabled HDR target on GPU and forced CPU, with the optional codec check off.",
+      "protects": "Saved DSC04375 RAW export and full-size Proof remain under the enabled HDR target on GPU and forced CPU, with the optional codec check off.",
       "launch": {
         "method": "electron"
       }

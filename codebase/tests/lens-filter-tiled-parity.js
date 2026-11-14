@@ -1,4 +1,5 @@
 // Physical lens filters: exact Direct/Tiled bytes at Fit and native.
+const assert = require("node:assert/strict");
 const fs = require("fs");
 const { importTestPattern } = require("./helpers/import-test-pattern");
 const path = require("path");
@@ -37,7 +38,8 @@ tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
 
 (async () => {
   const url = argument("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000");
-  const input = argument("--input", null) || writeFixture();
+  const suppliedInput = argument("--input", null);
+  const input = suppliedInput || writeFixture();
 
   const browser = await chromium.launch({
     headless: true,
@@ -254,10 +256,42 @@ tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
       return results[results.length - 1];
     };
 
+    const verifySpeedCaches = async () => {
+      await page.evaluate(() => state.gpuPreview.setInstrumentationEnabled(true));
+      await configure({ film_stock: 'kodak_portra_400', grain_amount: 45, lens_filter: 'black_pro_mist',
+        lens_strength: .125, lens_size: 1, halation_amount: 10 });
+      await page.evaluate(() => { state.previewScheduler.cancel(); state.renderCoordinator?.cancelFollowUps(state.currentView); });
+      const reference = await renderDirect();
+      const moving = await page.evaluate(async () => {
+        const rendered = await renderGpuDraft(state.currentView, { longEdge: window.__lensEdge, tier: 'interactive' });
+        await state.gpuPreview.device.queue.onSubmittedWorkDone();
+        return { rendered, ...state.acceptedPresentation };
+      });
+      assert.ok(moving.rendered && moving.approximate && !moving.exact, 'Drag grain is never settled');
+      const released = await renderDirect();
+      assert.equal((await compare(reference, released)).maxDelta, 0, 'Release restores exact grain bytes');
+      await page.evaluate(async () => {
+        state.adjustments[state.currentView].film_look.lens_strength = 2;
+        state.globalEditDirty = true;
+        if (!await syncGlobalEditState()) throw Error('Strength sync failed');
+        invalidatePreview(state.currentView);
+      });
+      await page.evaluate(() => { state.previewScheduler.cancel(); state.renderCoordinator?.cancelFollowUps(state.currentView); });
+      const cached = await renderDirect();
+      assert.equal(await page.evaluate(() => state.gpuPreview.diagnosticsSnapshot().stages
+        .filter(entry => entry.stage === 'lens-glow').at(-1)?.reused), true, 'Strength change reuses summed glow');
+      await page.evaluate(() => { state.gpuPreview.intermediates.get(els.previewCanvas).lensGlowKey = null; });
+      const fresh = await renderDirect();
+      assert.equal((await compare(cached, fresh)).maxDelta, 0, 'Strength-only cached glow is byte-exact with fresh glow');
+      console.log('PASS: direct grain settlement and Strength-only cached glow', moving.lane, await page.evaluate(() => window.__lensEdge));
+      await page.evaluate(() => { window.__parityRawFrames.length = 0; });
+    };
+
     for (const edge of (argument("--edge") ? [Number(argument("--edge"))] : [1520,2400])) {
       await page.evaluate(value=>window.__lensEdge=value,edge);
       for (const lane of (argument("--lane") ? [argument("--lane")] : ["hdr","sdr"])) {
         await page.evaluate(async value=>{if(state.currentView!==value) await switchLane(value);},lane);
+        if (process.argv.includes('--verify-speed')) await verifySpeedCaches();
         for (const family of ["glimmerglass","black_pro_mist","pro_mist","cinebloom"])
         for (const strength of [.125,2]) for (const size of [.25,4]) for (const format of ["35mm","super8"]) {
           if(argument("--case") && argument("--case")!==`${family} ${strength} ${size} ${format}`) continue;
@@ -270,5 +304,8 @@ tifffile.imwrite(sys.argv[1], rgb, photometric="rgb")
     if(results.some(result=>!result.passed)) throw Error("Lens Direct/Tiled differences: "+JSON.stringify(results.filter(result=>!result.passed).map(({label,maxDelta,differing})=>({label,maxDelta,differing}))));
     if(pageErrors.length) throw Error(pageErrors.join(" | "));
     console.log("All lens filters are byte-exact between Direct and Tiled.");
-  } finally { await browser.close(); }
+  } finally {
+    await browser.close();
+    if (!suppliedInput) fs.rmSync(path.dirname(input), { recursive: true, force: true });
+  }
 })().catch(error=>{console.error(error);process.exitCode=1;});

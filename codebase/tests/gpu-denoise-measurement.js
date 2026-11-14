@@ -42,7 +42,7 @@ const env={...process.env,PYTHONPATH:[path.resolve(__dirname,"../backend"),path.
     if(rows.length)execFileSync(python,[helper,"compare",root],{env,stdio:"inherit"});
     console.log("Results",path.join(root,"result.json"));
     if(!process.argv.includes("--case")&&!process.argv.includes("--library-only")){
-      const original=process.env.HDR_DENOISE_RAW||reusePhoto.source("DSC07060.ARW");
+      const original=process.env.HDR_DENOISE_RAW||reusePhoto.source("DSC00264.ARW");
       const copy=reusePhoto(original,path.join(root,path.basename(original)));
       const grant=await page.evaluate(file=>window.hdrFinisherDesktop.grantSourcePath(file),copy);
       const opened=await page.request.post(api("/api/desktop/session"),{data:{grant:grant.grant},timeout:240000});
@@ -62,7 +62,7 @@ const env={...process.env,PYTHONPATH:[path.resolve(__dirname,"../backend"),path.
       fs.writeFileSync(path.join(root,"grade-42mp.json"),JSON.stringify(timing,null,2));console.log("Grade 42 MP",JSON.stringify(timing));
     }
     if(process.argv.includes("--library-only")){
-      const original=process.env.HDR_DENOISE_RAW||reusePhoto.source("DSC07060.ARW");
+      const original=process.env.HDR_DENOISE_RAW||reusePhoto.source("DSC00264.ARW");
       const copy=reusePhoto(original,path.join(root,path.basename(original)));
       execFileSync(python,["-c",`import sys,json
 from pathlib import Path

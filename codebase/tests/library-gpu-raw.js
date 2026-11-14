@@ -2,7 +2,7 @@
  * CPU development of the same photos (finished SDR and HDR pictures, agreed
  * perceptual limits). Photos are copied first; originals are only read.
  * Samples: HDR_FINISHER_GPU_RAW_SAMPLES (semicolon-separated paths), else a
- * few of Steve's Play Raw photos; skipped when none exist on this machine. */
+ * the approved shared camera RAW samples. */
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -12,14 +12,14 @@ const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..'), out = path.join(root, 'output', 'library-gpu-raw');
 const python = require('../tools/lib/platform.cjs').pythonExecutable();
 const defaults = [
-  require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Hawai\'ian Fire Dancers - Challenge the Darkside - LaurentFromSF/IMG_0790.CR2'),
-  require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/An alley at Seoul - lucas faco/2025_0730_1331_3.arw'),
-  require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Lakeland landscape in dry Summer/A7R00619.ARW'),
-  require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Zebras Crossing - thekman/DSC_3931.NEF'),
-  require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Foggy morning at Dunn Lake/IMG_7723.CR3'),
+  require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/IMG_0790.CR2'),
+  require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/2025_0730_1331_3.arw'),
+  require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/A7R00619.ARW'),
+  require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/DSC_3931.NEF'),
+  require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/IMG_7723.CR3'),
 ];
-const samples = (process.env.HDR_FINISHER_GPU_RAW_SAMPLES ? process.env.HDR_FINISHER_GPU_RAW_SAMPLES.split(';') : defaults).filter(p => fs.existsSync(p));
-if (!samples.length) { console.log(JSON.stringify({ skipped: 'No sample camera RAWs on this machine.' })); process.exit(0); }
+const samples = process.env.HDR_FINISHER_GPU_RAW_SAMPLES ? process.env.HDR_FINISHER_GPU_RAW_SAMPLES.split(';') : defaults;
+for(const sample of samples)assert.ok(fs.existsSync(sample),'Missing curated RAW sample: '+sample);
 fs.mkdirSync(out, { recursive: true });
 const folder = fs.mkdtempSync(path.join(out, 'photos-'));
 const permanent = path.join(root, 'output', 'test-photos', 'gpu-raw');

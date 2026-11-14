@@ -419,8 +419,12 @@ def test_real_gainmap_avif_preserves_reconstructed_and_encoded_reference_samples
     assert reference['bytes']==header['mosaic_bytes']
     assert sum(len(p) for p in parts)==header['mosaic_bytes']+reference['bytes']
     assert hashlib.sha256(path.read_bytes()).hexdigest()==before
-    heif=root/'local-test-media/inputs/iphone-12-pro-HDR.heic'
-    if heif.exists():
+    import sys
+    sys.path.insert(0, str(root / 'tools'))
+    from lib.test_photos import photo_root
+    heif=photo_root()/'iphone_16_pro_IMG_3324.HEIC'
+    assert heif.is_file(), f'Missing curated gain-map HEIC: {heif}'
+    if heif.is_file():
         from hdr_finisher import loader
         expected, metadata = loader._load_heif(heif)
         header, parts = library_rgb.decoded(heif, recipe(None))

@@ -2,7 +2,7 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require('playwright'),{execFileSync,spawn}=require('node:child_process');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/grade-dng',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
-const originals=[process.env.HDR_DNG_LEICA||require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/Leica-X2-L1021324.DNG'),process.env.HDR_DNG_DJI||require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/DJI Samples/DJI_0071-2.DNG')];
+const originals=[process.env.HDR_DNG_LEICA||require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/Leica-X2-L1021324.DNG'),process.env.HDR_DNG_DJI||require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/DJI_0071-2.DNG')];
 const fixture=require('./fixtures/dng-real-samples.json').leica_x2;
 const originalHash=require('node:crypto').createHash('sha256').update(fs.readFileSync(originals[0])).digest('hex');assert.equal(originalHash,fixture.sha256,'Leica fixture identity');
 const photos=originals.map(src=>{const dest=path.join(folder,path.basename(src));fs.copyFileSync(src,dest);return dest;});

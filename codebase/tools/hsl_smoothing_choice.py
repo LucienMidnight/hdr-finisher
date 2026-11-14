@@ -18,7 +18,7 @@ from hdr_finisher import hsl
 from hdr_finisher.hue_mask import select_hue
 
 OUT=ROOT/'output/hsl-smoothing-choice'; OUT.mkdir(parents=True,exist_ok=True)
-SOURCE=Path(photos_path(r'D:\Photos\Play_Raw\Balanced Rock in Arches Nat Park - LaurentFromSF\IMG_0114.CR2'))
+SOURCE=Path(photos_path(r'D:\Photos\HDR Test Images\IMG_0114.CR2'))
 STRENGTHS={'light':4,'medium':8,'strong':16}
 LABELS={'off':'HSL off (reference)','now':'Now in the app','light':'Light','medium':'Medium','strong':'Strong'}
 original_selection=hsl.selection

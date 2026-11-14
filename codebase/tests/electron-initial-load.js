@@ -34,4 +34,16 @@ async function waitForInitialLoad(app, page, { timeout = 180000 } = {}) {
     while (window && !window.isDestroyed() && !window.isVisible() && Date.now() < shownBy) await new Promise(resolve => setTimeout(resolve, 25));
   }, timeout);
 }
-module.exports = { waitForInitialLoad };
+async function waitForMainWindow(app, { timeout = 180000 } = {}) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    const page = app.windows().find(candidate => /^(https?|file):/.test(candidate.url())
+      && !candidate.url().includes("gpu-delivery.html")
+      && !candidate.url().includes("/splash/splash.html"));
+    if (page) return page;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  throw new Error(`Initial app window did not appear within ${timeout} ms.`);
+}
+
+module.exports = { waitForInitialLoad, waitForMainWindow };

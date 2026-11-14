@@ -46,6 +46,8 @@ A full-size proof does not include the export's **Resize** or **Output Sharpenin
 
 Changing the size marks the proof stale. Rebuild to see the new size.
 
+With Highlight Compression on, reduced and full-size encoded Proof receive the same decoded peak check as export, on CPU and GPU. Initial encoding peaks up to 1% above the compression target are accepted unchanged; larger overshoots are corrected locally toward the target. A file still above that allowance after all rounds is refused. The target below simulates a display and does not replace your Highlight Compression target.
+
 ## Target display peak
 
 | Target | Good use |

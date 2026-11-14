@@ -30,10 +30,14 @@ CORPUS = json.loads((ROOT / 'output/library-measurements/corpus.json').read_text
 ROWS = [r for r in CORPUS['rows'] if not r.get('error') and not r.get('excluded')]
 PATHS = [Path(r['path']) for r in ROWS]
 CAMERA = [i for i,r in enumerate(ROWS) if r.get('mosaiced')]
-assert len(PATHS)==29 and len(CAMERA)==19
-NAMES = ['DJI_0071-2.DNG','DSC02767.ARW','DSC06615.ARW','DSC00264_DxO-optical-corr-only.dng','2L1B8631.CR2','Fujifilm_X-E2S_DSCF6495.RAF','Nikon_D7500_DSC_3931.NEF']
+sys.path.insert(0, str(ROOT / 'tools'))
+from lib.test_photos import photo_root
+assert Path(CORPUS['source']).resolve() == photo_root().resolve(), 'Rebuild corpus.json from HDR Test Images'
+assert len(PATHS) == 18 and len(CAMERA) == 17, 'Rebuild the complete curated corpus: 18 RAWs, 17 mosaiced'
+RAW_COUNT = len(PATHS)
+NAMES = ['DJI_0071-2.DNG','DSC01212.ARW','DSC06615.ARW','DSC04375_DxO-optical-corr-only.dng','IMG_0114.CR2','DSCF6495.RAF','DSC_3931.NEF']
 TEN = [PATHS.index(next(p for p in PATHS if p.name==n)) for n in NAMES]
-for extra in ['DJI Samples/DJI_0071.JPG','Test Suite Images/iphone_16_pro_IMG_3324.HEIC','DSC04375_DxO_clipped_target.tif']:
+for extra in ['DJI_0071-2.JPG','iphone_16_pro_IMG_3324.HEIC','DSC04375_DxO_clipped_target.tif']:
     TEN.append(len(PATHS)); PATHS.append(Path(CORPUS['source']) / extra)
 PREPARED = {}
 POOL = None
@@ -73,7 +77,7 @@ def reduced_jpeg(path,edge):
         return np.asarray(image.convert('RGB'),dtype=np.float32)/255,{'color_space':'sRGB','transfer_function':'sRGB'}
 
 def open_quick(index,edge=1600,kind='quick'):
-    path=PATHS[index]; stages={}; started=time.perf_counter(); raw_input=index<29
+    path=PATHS[index]; stages={}; started=time.perf_counter(); raw_input=index<RAW_COUNT
     matrix=None; eotf=False; reference_image=None
     if raw_input and (kind=='embedded' or not ROWS[index].get('mosaiced')):
         pixels,stages['decode_ms']=timed(lambda:embedded(path,edge))
@@ -168,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             url=urlparse(self.path); q=parse_qs(url.query)
             if url.path=='/health':return self.respond({'ready':True})
-            if url.path=='/paths':return self.respond({'paths':list(map(str,PATHS)),'camera':CAMERA,'all':list(range(29)),'ten':TEN,'grid':list(range(29))+[29]})
+            if url.path=='/paths':return self.respond({'paths':list(map(str,PATHS)),'camera':CAMERA,'all':list(range(RAW_COUNT)),'ten':TEN,'grid':list(range(RAW_COUNT))+[RAW_COUNT]})
             p=PREPARED[q['key'][0]]
             is_reference=q.get('lane',['hdr'])[0]=='sdr' and p.get('has_reference')
             self.respond(p['body_sdr'] if is_reference else p['body'],{'X-Image-Width':p['width'],'X-Image-Height':p['height'],'X-Bytes-Per-Row':p['stride'],

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .hdr_ceiling import ENCODING_ALLOWANCE
 from .color import acescg_to_linear_bt2020
 from .color_context import scene_linear_to_nits
 
@@ -12,8 +13,7 @@ def decoded_hdr_peak_nits(path: Path, format_name: str) -> float:
     """Read maximum BT.2020 channel nits, not the metadata content peak.
 
     All three import decoders normalize linear ACEScg to 0.18 == 203 nits.
-    This deliberately uses the decoder's observed value with zero upward
-    allowance: any rounding is absorbed by downward encoder headroom.
+    Return the observed value without subtracting the encoding allowance.
     """
     if format_name == "jpeg_ultrahdr":
         from .gainmap_decoders import decode_ultrahdr_jpeg
@@ -37,7 +37,7 @@ def decoded_hdr_peak_nits(path: Path, format_name: str) -> float:
 
 
 def check_decoded_hdr_ceiling(path: Path, format_name: str, target_nits: float) -> float:
-    """Reject any decoded over-target pixel; upward rounding allowance is zero.
+    """Reject decoded pixels above the target plus its encoding allowance.
 
     This read-only check does not correct encoders or alter delivered pixels.
     The per-channel check also bounds BT.2020 luminance.
@@ -45,6 +45,6 @@ def check_decoded_hdr_ceiling(path: Path, format_name: str, target_nits: float) 
     if not np.isfinite(target_nits) or target_nits <= 0:
         raise ValueError("HDR delivery target must be finite and positive.")
     peak = decoded_hdr_peak_nits(path, format_name)
-    if peak > target_nits:
+    if peak > target_nits * (1 + ENCODING_ALLOWANCE):
         raise ValueError(f"Decoded HDR peak {peak:.3f} nits exceeds {target_nits:g} nits.")
     return peak

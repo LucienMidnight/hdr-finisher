@@ -212,6 +212,16 @@ and helper together; the tool README pins versions and build flags.
 ## Which checks cover what
 
 All in `codebase/tests/`. Rules for how much to run are in `AGENTS.md`.
+
+Film/lens parity drivers support `--measure-parity --repeat 3 --parity-report <file>`
+for calibration without changing their selected gates. After a full lens baseline,
+`--measure-cases-from <baseline.json>` with `--measure-parity` repeats only
+the identified misses. Prefer separate invocations/locks for long repeats when
+other agents are queued. `tests/helpers/parity-colour.cjs`
+streams full finished sRGB captures through `parity_colour.py` and the existing
+`delivery_colour.compare_finished_pixels`; both editing lanes here use SDR
+presentation and ΔE 2000. Pixel scratch is reused and removed after each case.
+`film-parity-limits.cjs` owns the fixed case selection and failure diagnostics.
 Desktop checks live in `codebase/desktop/tests/`; their smoke test reads the
 scripts loaded by the page so feature moves keep its assertions intact.
 
@@ -671,3 +681,14 @@ not an export-agreement or automatic release gate.
 The companion `codebase/tools/grade_sweep_summary.py` overwrites the compact JSON and CSV observation ledgers; coverage gaps never count as passes.
 
 Grade sweep launch ownership: `codebase/tools/run_grade_batch.py` acquires the shared lock through atomic `os.mkdir`, monitors the owner token, runs one Electron driver and releases only its own folder.
+
+November 14 HDR encoding allowance: `hdr_ceiling.ENCODING_ALLOWANCE` owns the
+1% initial-encode allowance used only by enabled Highlight Compression delivery.
+`exporters.py` passes it through all three HDR codecs; Proof shares those
+backends. Library cache writers omit the ceiling. `tests/hdr-ceiling-delivery.js`
+covers all codecs on 1600px real-photo ACEScg EXR pixels derived read-only from
+a RAW, CPU/GPU and both Proof sizes (`--native-source` keeps the original);
+`tests/performance/hdr-ceiling-cost.py` compares whole exports with/without
+post-encode decoding (CPU, or `--gpu` for real Electron request timing on the bounded real-photo fixtures) and
+records real-photo correction rounds. Both run
+serially under `tools/gpu-run-lock.py` for qualification.

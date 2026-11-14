@@ -1,5 +1,6 @@
 // Reuse shared RAWs in a fresh Electron profile; never copy or alter originals.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),{chromium}=require('playwright');
+if(process.platform!=='win32'){console.log('Skipped: PC-only badminton RAW culling check.');process.exit(0);}
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output','test-photos','badminton-42mp');
 const pace=process.argv.includes('--paced')?1000:0;
 const focus=process.argv.includes('--focus'),label=process.env.EXPOSURE_CULLING_LABEL||'exposure-culling';
