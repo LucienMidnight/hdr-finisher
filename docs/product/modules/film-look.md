@@ -1,5 +1,70 @@
 # Module PRD: Film Look
 
+### November 14: Mac lens parity follow-up (test-only)
+
+Base `87b91385`, `fix/mac-gpu-parity`, MacBook Neo/A18 Pro/Metal, 8 GB,
+1408x794-point window setting, unpackaged Electron, shared GPU lock. No application, shader,
+CPU rendering, export/Proof, numerical limit or memory budget changed.
+
+The strongest-glow quick lens matrix still fails all eight unchanged byte
+gates: HDR added mean 0.105–0.136 levels, SDR 0.189–0.258, p99.9 one level
+(limits 0.1 and two). The lens driver also exposed an unrelated capture race:
+automatic setup work could replace the explicitly requested 1520-pixel frame
+with a 1287-pixel Fit frame. It now waits for the initial ready frame, stops
+the watchdog, clears pending preview timers and cancels pan/catch-up before
+the measured request. The shape check stays strict; no resampling was added.
+Optional `--diagnostic-output <folder>` captures compact finished RGBA just
+like the film driver; ordinary pass/fail calculations are unchanged.
+The final full 128-case matrix is 68 passed / 60 failed, matching the supplied
+unchanged-base result; all requested dimensions now remain comparable.
+`codebase/output/macparity-final-full.log` records the complete matrix.
+The parity drivers request a 1280x800 content viewport, which macOS may
+constrain; comparison uses exact backing pixels, not CSS-sized screenshots.
+
+Full, unsampled finished standard-range sRGB captures of the eight quick
+cases pass the existing perceptual acceptance: Delta E 2000 means
+0.109–0.238, p99.9 1.087–1.120 (existing limits mean below one, p99.9 at most
+three). HDR-lane captures here are **SDR presentations**, not decoded HDR
+delivery or a peak-ceiling qualification. There is no baseline subtraction
+or pixel exclusion in that perceptual comparison. The final SDR Velvia chain
+reproduces added mean 0.104330 / p99.9 one; finished Delta E 2000
+0.119114 / 1.044660, matching the earlier diagnostic. These strict byte gates
+remain failed; the perceptual results do not silently replace them.
+
+The GPU accumulates 27 lens components through half-float render targets;
+the CPU uses the bounded FFT mixture and float32 results. Together with the
+previous effect isolation, the evidence supports spatial precision as the
+remaining cause, not Retina resampling or a different requested frame. A
+specific Metal arithmetic instruction has **not** been isolated. The supplied
+base's passing 128/128 Direct/Tiled comparison checks the two GPU routes against
+each other, not against the CPU. Their agreement cannot clear these misses.
+Changing the shared spatial chain would also reach PC and delivery pixels;
+no such change or unapproved extra-precision allocation was made. A separate
+preview-only precision route is not proved impossible, but is not qualified.
+
+The panel helper (including Enter, Space, all five folds, presets and narrow
+layout) passes on both unchanged base and final code. The reported keyboard
+failure was not reproduced, so no synthetic keyboard dispatch or application
+shortcut change was used to hide it. Current PC hardware confirmation remains
+needed; the release known-failure list contains only the separate extreme HDR
+Neutral film case, not these lens/SDR or keyboard failures.
+
+**Decisions for Steve:** may these perceptually small lens/Velvia byte-gate misses be
+judged by the already agreed perceptual criterion? Until approved, preserve
+the strict failures rather than change pixels, limits or budgets.
+
+Evidence: `codebase/output/macparity-final-quick.log`,
+`macparity-final-velvia.log`, `macparity-perceptual-results.json`, and
+`macparity-base-film-ui.log` / `macparity-final-panel.log` in the same folder.
+Diagnostic pixel buffers, unused panel screenshots and failed-run profiles
+are removed after analysis; no source photo or read-only project is changed.
+Fast suites: 951 JavaScript passes / one skip; 3,311 Python passes / 145
+skips / one existing expected failure now passing. The five native-encoder
+film/lens full-size Proof/export byte-identity cases also pass without skips
+(`codebase/output/macparity-film-proof.log`). This is CPU delivery coverage;
+it does not assert a new GPU-delivery qualification. The separate export
+agent owns that work.
+
 ### November 13: MacBook Velvia precision diagnostic
 
 On Apple A18 Pro/Metal, the SDR synthetic Velvia physical chain reproduces

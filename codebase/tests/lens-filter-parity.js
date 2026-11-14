@@ -1,4 +1,4 @@
-// Film stock: the WebGPU preview matches the CPU export.
+// Lens filters: the WebGPU preview matches the CPU export.
 //
 // A generated picture with every hue across it and brightness from deep
 // shadow to HDR highlights down it, rendered through both renderers in each
@@ -6,7 +6,7 @@
 // their disagreement: the difference with the stock on, less the difference
 // with it off (the rest of the graph's own GPU/CPU gap).
 //
-//   node tests/run-in-electron.js tests/film-stock-parity.js [--input photo.heic]
+//   node tests/run-in-electron.js tests/lens-filter-parity.js [--input photo.heic]
 //
 // --input runs the same cases on a real file instead, and reports rather than
 // fails.
@@ -18,6 +18,8 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
+const diagnosticIndex = process.argv.indexOf("--diagnostic-output");
+const diagnosticOutput = diagnosticIndex < 0 ? null : path.resolve(process.argv[diagnosticIndex + 1]);
 let LONG_EDGE = 1520;
 const extremeHdr = process.argv.includes("--extreme-hdr");
 const laneIndex = process.argv.indexOf("--lane");
@@ -101,6 +103,8 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
     if (!sessionResponse.ok()) throw new Error(`Fixture session failed with HTTP ${sessionResponse.status()}.`);
     const { session } = await sessionResponse.json();
     await page.evaluate((loadedSession) => activateDesktopSession(loadedSession, ""), session);
+    await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight);
+    await page.evaluate(() => stopPreviewWatchdog());
     const loaded = await page.evaluate(async (ids) => {
       await Promise.all(ids.map((id) => window.HDRFilmStocks.request(id)));
       return window.HDRFilmStocks.loadedIds();
@@ -114,7 +118,7 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       }
       return compareOnce(...args);
     };
-    const compareOnce = async (lane, stock, lookStrength) => page.evaluate(async ({ lane, stock, lookStrength, longEdge, extremeHdr }) => {
+    const compareOnce = async (lane, stock, lookStrength) => page.evaluate(async ({ lane, stock, lookStrength, longEdge, extremeHdr, capture }) => {
       if (state.currentView !== lane) await switchLane(lane);
       state.previewScheduler?.cancel();
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
@@ -135,6 +139,10 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         await new Promise(resolve => setTimeout(resolve, 20));
       state.previewScheduler?.cancel();
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
+      window.clearTimeout(state.refreshTimer);
+      window.clearTimeout(state.settleTimer);
+      state.renderCoordinator?.cancelCatchUp(lane);
+      state.renderCoordinator?.cancelPan(lane);
       const renderStarted=performance.now();
       if (!await renderGpuDraft(lane, { longEdge })) return { error: "GPU render failed" };
       await state.gpuPreview.device.queue.onSubmittedWorkDone();
@@ -216,9 +224,24 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
       if(isBaseline) window.__lensBaseline=baseline;
       let cumulative=0,p999=0;
       for(let level=0;level<256;level++) {cumulative+=histogram[level];if(cumulative>Math.floor(count*.999)){p999=level;break;}}
-      return {size,mean:sum/count,p999,maximum,raw,worst,renderMs,cpuMs:performance.now()-cpuStarted};
+      const encode = values => {
+        let binary = "";
+        for (let offset=0;offset<values.length;offset+=32768) binary += String.fromCharCode(...values.subarray(offset,offset+32768));
+        return btoa(binary);
+      };
+      return {size,mean:sum/count,p999,maximum,raw,worst,renderMs,cpuMs:performance.now()-cpuStarted,
+        captured:capture ? {gpu:encode(gpu),cpu:encode(cpu)} : null};
 
-    }, { lane, stock, lookStrength, longEdge: LONG_EDGE, extremeHdr });
+    }, { lane, stock, lookStrength, longEdge: LONG_EDGE, extremeHdr, capture:!!diagnosticOutput });
+
+    const capture = (lane, label, result) => {
+      if (!diagnosticOutput || !result.captured) return;
+      fs.mkdirSync(diagnosticOutput,{recursive:true});
+      const name = `${LONG_EDGE}-${lane}-${label.replaceAll(/[^a-z0-9]+/gi,"-")}`;
+      for (const kind of ["gpu","cpu"]) fs.writeFileSync(path.join(diagnosticOutput,`${name}-${kind}.rgba`),Buffer.from(result.captured[kind],"base64"));
+      fs.writeFileSync(path.join(diagnosticOutput,`${name}.json`),JSON.stringify({width:result.size[0],height:result.size[1]}));
+      delete result.captured;
+    };
 
     if(process.argv.includes("--inspect")) {
       await page.evaluate(()=>stopPreviewWatchdog());
@@ -248,9 +271,11 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
     for (const lane of LANES) {
       const off = await compare(lane, NEUTRAL, 100);
       if (off.error) throw new Error(`${lane} off: ${off.error}`);
+      capture(lane,"off",off);
       for (const { label, stock, look_strength: lookStrength = 100 } of CASES.filter(c => (!selectedCase || c.label === selectedCase) && (!quick || QUICK_CASES.includes(c.label)))) {
         const on = await compare(lane, { ...NEUTRAL, ...stock }, lookStrength);
         if (on.error) throw new Error(`${lane} ${label}: ${on.error}`);
+        capture(lane,label,on);
 
         const mean=on.mean/255,p999=on.p999/255,maximum=on.maximum/255;
         const passed=mean<=MAX_MEAN_DIFFERENCE && p999<=MAX_P999_DIFFERENCE;
