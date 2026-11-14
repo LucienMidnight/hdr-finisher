@@ -1,5 +1,121 @@
 # Module PRD: Grade
 
+## November 14: Mac HSL picker input
+
+The armed picker used the entire photograph's bounding rectangle, even where
+zoom and pan put it behind the controls. Its document-level pointer handler
+could therefore swallow a slider press and sample an invisible part of the
+photo instead. This is present in plain base as well as P1-B; it is not a
+Retina coordinate-doubling error. The fix admits presses only on the visible
+main preview, excluding controls, while retaining full-photo normalized
+coordinates. Behavioural regressions cover 1x/2x, pan, control exclusion and
+application of the returned hue. Final Node fast suite: 966 pass / one skip;
+Python fast suite: 3,354 pass / 145 skip / one expected failure now passing.
+The Python command used its own shell as `HDR_FINISHER_DESKTOP_PID`, so the
+app-memory checks counted that test's process tree, not sibling T3 agents.
+No budget was changed. Native tests now confirm the trap at 100% in HDR and
+SDR, with both plain and exact Steve-stacked grades, and no interception after
+the fix. Normal image clicks sample and apply the returned colour at 2x;
+there is no doubled-coordinate or broken-response explanation. The separate
+Exposure investigation also reproduces the native trap on plain base
+`9d1ac847` and confirms that programmed edits still render. No speculative
+backend, Denoise or scheduler fix was added here.
+
+### Visible-area selection
+
+Global Show selection can now request just the visible part of the existing
+1600-pixel CPU stage. The working crop includes the selection engine's full
+neighbourhood, grow/shrink and feather reach, with its coarse grid anchored
+to the original frame. Returned coverage is positioned in full-photo
+coordinates and refreshed after pan/zoom. The previous overlay stays in place
+until its replacement has decoded; panning coalesces behind an in-flight
+selection instead of launching overlapping viewport jobs. Fit and Local retain the whole-frame
+route. Lossless lower-compression PNG encoding also avoids unnecessary work
+at Fit. Global sampling no longer looks up a proxy before checking its
+existing bounded stage cache. No new cache or memory allowance, shader,
+finished preview processing, Proof or export change is introduced. Exact
+decoded overlay-pixel comparisons
+cover cropped versus whole-frame coverage, including non-default edge controls
+and frame borders. Native whole-wait tests on the MacBook Neo meet the existing
+<1 s warm Show selection target at Fit and 100% in HDR and SDR for both grades.
+At 100%, medians improve 85–91% for HDR and 45–53% for SDR. Full-frame mask
+preparation and PNG encoding were the avoidable work; the remaining SDR stage
+input still takes about half a second. First shows can still exceed 1 s.
+The performance table holds the conditions and paired numbers. Steve's
+original sidecar hash is unchanged. Shared HSL GPU/CPU selection-engine and
+native real-RAW overlay checks pass, including pan/zoom, panel/scope pixels,
+disclosure, mode and workflow cleanup. A regression caught and fixed an
+overlay replacement gap during viewport refresh. Coverage/temporary-output
+results are in `codebase/output/hsl-selection-engine/result.json` and
+`codebase/output/hsl-smooth/`. The default 90 s Library smoke remains an
+unrelated failure (6/33 pictures; system-reserve memory flag), recorded in
+Known limitations without a rerun or budget change. No output tolerance is relaxed.
+
+## November 14: P1-B bounded Show selection stage
+
+This checkpoint predates the picker/visible-area fix above. Its synthetic
+timings remain history; the newer RAW measurements supersede the HSL speed
+open item, not the remaining Film work.
+
+Global HSL sampling now retains the pre-HSL CPU pixels, at most one entry per
+rendition, in the existing aggregate Grade array LRU. The 600 MB array cap is
+unchanged. Source replacement, geometry, processing scale, colour context and
+upstream controls invalidate it; HSL ranges, Show selection visibility, curves,
+Film Look and other downstream controls do not. HDR and SDR never share an
+entry. SDR authored-reference selection and its upstream highlight controls
+are included. Local picking keeps its existing stage-specific route.
+
+MacBook Neo, A18 Pro / 8 GB, 1408x794 points, reusable synthetic 24 MP TIFF,
+unpackaged Electron, shared GPU lock, no concurrent suites: the original paired
+warm SDR Show selection is 0.674–0.699 s at Fit and 0.749–0.801 s at 100%,
+against 0.684–0.700 / 0.766–0.799 s on base. The final-code clean pass on
+November 14 (`f542c0a8` plus test-harness repairs) is 0.783–0.798 s at Fit and
+0.899–1.079 s at 100%; range edits are 0.863 / 0.934 s, first shows
+1.455 / 1.465 s. This exceeds the agreed 10% timing band and one warm 100%
+show misses the <1 s target. The cause is not established; Steve should try
+it before another timing run. No visible speed gain or final HSL speed
+acceptance is claimed, and no speculative GPU-overlay route was added.
+The bounded cache removes repeated upstream evaluation without changing the
+selection engine or any preview, Proof or export processing.
+
+Validation: upstream/lane/reference/geometry/source-replacement/trim behavior
+tests; real GPU HSL selection-engine parity and reuse; real-RAW overlay
+containment and pan/zoom/section/workflow cleanup. The overlay driver now uses
+visible interface probes rather than PC-only coordinates, accepts the number
+of thumbnails the viewport actually admits, and reuses its single RAW copy.
+The final native selection engine, prototype, integration and real-RAW overlay
+checks pass. Global and local HSL GPU/forced-CPU full-size delivery also pass
+their existing perceptual allowances, encoded HDR ceilings and exact
+Proof/export byte identity. The full covering-driver/base-comparison ledger is
+in the Film Look PRD; the baseline worktree was separately prepared on this Mac.
+PC whole-wait confirmation and Steve's visual review remain open. Timings are
+in the performance table; final capture is
+`codebase/output/performance/p1bv/final-timing.json`, overlay review captures
+are in `codebase/output/hsl-smooth/`. No PC baseline is replaced.
+
+### P1-B Exposure after Denoise — not reproduced
+
+The existing anchor-needed/presentation listeners already queue exact highlight
+measurement in the background once the current Denoise frame has settled.
+This task makes no Denoise or anchor-scheduling production change. On the
+isolated MacBook synthetic 24 MP scene, the first Exposure result after Denoise
+took 27.7–36.1 ms before and 35.5–44.6 ms after the grouped preview changes.
+The driver waits for pending anchor work to finish before issuing Exposure,
+so these are idle-after-Denoise observations, not a check of an edit racing
+the background measurement. The reported extra anchor wait was not reproduced
+or ruled out. The difference exceeds the
+10% Grade timing tolerance and is unexplained. Per the responsiveness rule,
+do not chase another timing run before Steve tries the app.
+
+**Decisions for Steve:** try Exposure immediately after Denoise on a real RAW;
+if the pause is visible, capture that case before changing the existing
+background scheduler. Confirm the original PC case at the release point.
+Also try Show selection at 100% and Print Contrast after the unexplained
+final-pass timing changes above; do not rerun simply to get a nicer number.
+P1-B is not closed: Film remains below 20 frames/s, final HSL speed acceptance
+is incomplete, and original-fixture/output-limit gaps are listed in the Film
+Look module. No memory allowance or image tolerance changed.
+
 ## November 13–14: P1-C Edge-colour rejection safety
 
 The shared Edge-colour kernel now rejects a bad input scan immediately,

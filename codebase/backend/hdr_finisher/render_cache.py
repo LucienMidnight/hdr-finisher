@@ -779,6 +779,7 @@ class SessionRenderCache:
 
     def __post_init__(self, eager_peak_candidates: bool) -> None:
         self._hue_stages: OrderedDict = OrderedDict()
+        self._hsl_inputs: OrderedDict = OrderedDict()
         self._ram_lru = OrderedDict()
         self._ram_key = 'grade-session-' + str(id(self))
         app_memory.register(self._ram_key, 'working', self.trim_memory)
@@ -836,6 +837,7 @@ class SessionRenderCache:
                     self.mip_store.discard_memory(self.sdr_identity)
             self.image = image
             self._hue_stages.clear()
+            self._hsl_inputs.clear()
             self.sdr_reference_image = sdr_reference_image
             self.source_identity = identity
             self.sdr_identity = sdr_identity
@@ -1110,6 +1112,34 @@ class SessionRenderCache:
                 self._geometry_maps.popitem(last=False)
             self._rebalance_locked()
         return result
+
+    def hsl_stage_input(self, adjustments: AdjustmentState, edge: int, lane: PreviewKind):
+        from .hsl_sampling import capture_stage_input, stage_input_signature
+        lane = PreviewKind(lane)
+        with self._lock:
+            epoch = self._source_epoch
+            context = self.color_context
+            key = (epoch, edge, lane.value, repr(context.cache_key),
+                   adjustments.shared.geometry.model_dump_json(),
+                   json.dumps(stage_input_signature(adjustments, lane), separators=(",", ":")))
+            cached = self._hsl_inputs.get(key)
+            if cached is not None:
+                self._touch_ram_locked('_hsl_inputs', key)
+                return cached
+            source, reference = self._proxies_locked(edge)
+            scale = min(1.0, edge / max(self.image.shape[:2]))
+        pixels = capture_stage_input(source, adjustments, lane, reference=reference,
+                                     color_context=context, source_pixel_scale=scale)
+        pixels.setflags(write=False)
+        with self._lock:
+            if epoch == self._source_epoch:
+                for previous in list(self._hsl_inputs):
+                    if previous[2] == lane.value:
+                        del self._hsl_inputs[previous]
+                self._hsl_inputs[key] = pixels
+                self._touch_ram_locked('_hsl_inputs', key)
+                self._rebalance_locked()
+        return pixels
 
     def _hue_stage(self, adjustments: AdjustmentState, edge: int, lane: PreviewKind):
         """Shared selection prepared from the lane's HSL stage input at ``edge``,
@@ -1785,7 +1815,7 @@ class SessionRenderCache:
     @staticmethod
     def _ram_collections():
         return ('_source_proxies', '_sdr_proxies', '_frames', '_scopes',
-                '_masks', '_geometry_maps', '_hue_stages', '_peak_candidates', '_source_ranges')
+                '_masks', '_geometry_maps', '_hue_stages', '_hsl_inputs', '_peak_candidates', '_source_ranges')
 
     def _rebalance_locked(self, target=None):
         live = {(name, key) for name in self._ram_collections() for key in getattr(self, name)}

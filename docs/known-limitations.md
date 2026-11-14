@@ -155,6 +155,28 @@ Scratch output began at 6.1 GB and ends at 6.3 GB, below the 100 GB limit.
 Float readbacks, redundant captures, base archives and finished disposable
 Electron profiles were removed; compact logs/JSON and reduced encoded Proof
 files remain. Shared source photos and protected projects were not changed.
+## November 14: HSL Mac picker and 100% selection
+
+An armed HSL picker can intercept controls underneath the offscreen part of
+the zoomed photograph. Reproduced against both plain-base and P1-B picker
+code and native app; 2x normalized coordinates and returned-colour application
+themselves work. Input is now scoped to the visible main preview. Native
+before/after checks cover plain and exact Steve-stacked DSC00264 grades,
+both renditions, and real on-photo picks. Global Show selection now uses a
+visible-area CPU crop with the full selection halo and lossless fast PNG;
+decoded cropped overlay pixels equal the original whole-frame coverage.
+All warm Fit/100% cases meet the existing <1 s bar on the MacBook Neo.
+Remaining limits: the first plain HDR Fit show is about 1.6 s; first SDR
+100% shows can exceed 1 s, and upstream SDR stage work still costs about
+half a second. These are not claimed fixed by the warm selection change.
+Export, Proof, selection maths, image tolerances and memory limits are unchanged.
+
+Final validation: Node 966 pass / one skip; Python 3,354 pass / 145 skip /
+one expected failure now passing. Native HSL selection-engine GPU/CPU agreement
+and real-RAW overlay/pan/zoom/cleanup checks pass. The required plain-Electron
+90 s Library check still fails separately: 6/33 eligible pictures and the
+system-reserve memory flag. It was not investigated or rerun for this HSL
+change; `codebase/output/quick-library-check/hsl-mac/report.json` records it.
 
 ## November 14: Mac GPU parity follow-up
 ## November 14: Mac preview parity (closed with fixed drift guards)
@@ -198,6 +220,41 @@ without test or budget changes. Final live lens quick set passes 8/8 and Velvia 
 a new full render). The default 90-second Library smoke remains incomplete (6/33
 photos), with a system-reserve warning; this separate Library limitation was not
 investigated or rerun. No curated-photo path needed retargeting.
+**Decisions for Steve:** authorize the already agreed perceptual criterion
+for these perceptually small lens/Velvia byte-gate misses, or leave them open for
+separately qualified preview-only precision work. Safest overnight option:
+keep the strict failures and all delivery/PC pixels unchanged. Current PC
+reruns of lens quick/full, the scope fallback and panel helper are still
+needed; the registered extreme HDR Neutral film failure is a separate case.
+Details and local evidence are in the Film Look and Preview/GPU module PRDs.
+Fast validation passes: JavaScript 951 passed / one skipped; Python 3,311
+passed / 145 skipped / one expected failure now passing. All five focused
+film/lens native-encoder Proof/export identity cases pass without skips.
+The default plain-Electron Library smoke still fails on incomplete coverage:
+six of 33 pictures after 90 seconds, consistent with the existing Mac stall;
+no memory or responsiveness-limit violation. Not investigated or rerun here.
+## November 14: P1-B strict Mac validation
+
+No P1-B-specific output regression was found against `87b91385`; full direct
+lens/stock failure metrics and all six export-diagnostic encoded-file hashes
+match base. Existing failures remain failures: two stock cases, 60/128 direct
+lens cases, 8/8 quick-lens cases, Film panel keyboard fold, tiled admission/
+CPU-scope atomicity, and delivery-smoke worker startup. The non-gating
+`performance/export-parity.js` diagnostic records proof-scale peaks of
+1038–1437 nits for a 1000-nit target on both branches; a zero driver exit is
+not ceiling qualification. Full-size real-RAW HSL GPU/CPU delivery, exact Proof
+bytes and ceilings pass. Two original EXRs and the original DSC07060 saved
+grade are missing on this Mac; supplemental synthetic Film/halation tests do
+not qualify those originals. No tolerance or production shader was changed.
+The [Film Look PRD](product/modules/film-look.md) lists every covering driver,
+base verdict, exact missing filename and retained evidence. Final Film is
+still below 20 fps; Print and HSL timings moved outside 10%, with one warm
+100% Show selection at 1.079 s. Steve should try them before further timing
+runs. This is relative regression evidence, not unconditional merge/release
+or minimum-machine speed acceptance.
+The default 90-second quick Library check also fails identically on coverage
+(6/33 pictured on branch and base; no memory violation). Fast suites pass:
+958 Node tests (one skip), 3314 Python tests (145 skips, one existing xpass).
 
 ## November 13: POSIX cache-location fallback (reported; unchanged)
 

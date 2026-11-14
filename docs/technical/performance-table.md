@@ -147,6 +147,110 @@ Evidence: `codebase/output/macparity-final-full.log`,
 `codebase/output/quick-library-check/macparity/report.json`. Whole action-to-screen
 timings were not measured in the parity diagnostics; the Library first-picture
 time is the separate plain-Electron smoke observation.
+## November 14: Mac HSL picker and visible-area selection
+
+MacBook Neo, Apple A18 Pro, 8 GB; built-in Retina display, 1408x794-point
+unpackaged Electron, measured devicePixelRatio 2, exclusive shared GPU lock.
+CPU suites run separately from these measurements. Same cached DSC00264.ARW
+and machine before/after; plain grade and Steve's exact saved stacked grade
+(Film and Denoise equality guards; saved Denoise is off in both renditions).
+Ordinary source opening uses temporary same-volume hardlinks and copied
+settings, never per-run RAW copies or writes to Steve's files.
+
+Base is `bbd6978d` plus the isolated picker fix `e7b5fae9`. The Before run
+re-registers the old `bbd6978d` picker and disables viewport cropping; its
+backend still uses the full-frame P1-B CPU selection/PNG route. After is the
+visible-area implementation in this commit, including lossless fast PNG
+compression and avoiding a redundant Global proxy lookup. All 40 selection
+recipes match between runs. Existing 10% timing band and <1 s warm target
+are unchanged. Each value below is the median of three warm toggles,
+including request, image decode and two animation frames, not GPU kernel time.
+
+| Grade / rendition / zoom | Before | After | Result |
+| --- | --- | --- | --- |
+| Plain / HDR / Fit | 0.372 s | 0.271 s | <1 s passes |
+| Plain / HDR / 100% | 0.470 s | 0.071 s | 85% faster; <1 s passes |
+| Plain / SDR / Fit | 0.936 s | 0.731 s | <1 s passes |
+| Plain / SDR / 100% | 1.006 s | 0.549 s | 45% faster; <1 s passes |
+| Steve stacked / HDR / Fit | 0.512 s | 0.289 s | <1 s passes |
+| Steve stacked / HDR / 100% | 0.636 s | 0.056 s | 91% faster; <1 s passes |
+| Steve stacked / SDR / Fit | 1.024 s | 0.786 s | <1 s passes |
+| Steve stacked / SDR / 100% | 1.201 s | 0.568 s | 53% faster; <1 s passes |
+
+Every warm After toggle is below 1 s, not just its median. Warm 100% mask
+preparation + selection + PNG drops from 0.363–0.575 s to 0.009–0.024 s.
+The old path worked on all 1068x1600 proxy pixels even at 100%; the new
+overlay is about 330x176 pixels plus the full working halo. No GPU readback
+or full-native-size HSL mask is involved. Remaining SDR stage-input work is
+about 0.48–0.61 s; it is not removed or replaced with approximate pixels.
+The separate range edit at 100% drops from 0.468–0.665 s to 0.049 s in HDR,
+and 0.984–1.062 s to 0.501–0.614 s in SDR (plain/stacked cases).
+
+First shows are not the warm acceptance test: plain HDR Fit still takes
+1.615 s; first SDR 100% shows take 1.076–1.187 s. These are first toggles
+in the driver, not cold-OS or cold-disk measurements. No instant-first-show
+claim is made. All native on-photo picks apply the returned hue and their
+requests match the actual pointer's normalized CSS coordinates at 2x. The
+old picker traps native control presses at 100% in both grades/renditions;
+the fixed picker traps none. Evidence:
+`codebase/output/performance/hsl-mac/{before,after}.json`, produced by
+`codebase/tests/performance/hsl-picker-speed.js`.
+
+Required Library smoke, same MacBook Neo, November 14, working tree on
+`e7b5fae9`, 1408x794 points, plain Electron without CDP, exclusive GPU lock,
+33-file mixed fixture, 90 s: first picture 0.5 s; 6/33 eligible pictures
+shown. Failure retained: incomplete coverage and the system-reserve memory
+flag (app-sampled peak 3.507 GB). This is not a Library speed-gain or complete
+minimum-machine qualification claim; no unrelated rerun or memory-limit
+change. Evidence: `codebase/output/quick-library-check/hsl-mac/report.json`.
+
+## November 14: P1-B Grade, paired MacBook checks
+
+MacBook Neo, Apple A18 Pro, 8 GB unified RAM; 1408x794-point unpackaged
+Electron under the shared GPU lock; no overlapping suites. Baseline
+`87b91385`, production `f542c0a8`; November 14 strict follow-up has test-only
+launcher/capture repairs and no production edits. Reusable synthetic
+`codebase/output/test-photos/grade-24mp.tiff`, not a real RAW. Grade timing
+tolerance: 10% (proposal); PC results remain separate. Show selection includes
+request, overlay decode and two animation frames. Evidence:
+`codebase/output/performance/p1b/{before,after}.json`; final clean pass
+`codebase/output/performance/p1bv/final-timing.json`. Diagnostic trace is
+separate from paired timings; the After column now records final code.
+
+| Action | Before | After | Conditions / result |
+| --- | --- | --- | --- |
+| SDR Show selection, warm Fit | 0.684–0.700 s | 0.783–0.798 s | MacBook; three warm show/hide cycles; <1 s passes, outside prior 10% band; Steve to try |
+| SDR Show selection, warm 100% | 0.766–0.799 s | 0.899–1.079 s | MacBook; same bounded 1600-pixel CPU overlay; one of three misses <1 s; outside prior 10% band |
+| SDR selection range edit, Fit / 100% | 0.746 / 0.765 s | 0.863 / 0.934 s | MacBook; edge feather edit, pre-HSL pixels reused; outside prior 10% band |
+| SDR first show, Fit / 100% | 1.235 / 1.049 s | 1.455 / 1.465 s | MacBook; first call at each zoom, not the warm acceptance; outside prior 10% band |
+| Film Stock Color drag | 1.80 frames/s | 16.96 frames/s | MacBook; SDR Fit; displayed frames during 150 programmed input events; exact release; below 20 frames/s |
+| Film Print Contrast drag | 0.25 frames/s | 7.41 frames/s | MacBook; SDR Fit; exact release; below 20 frames/s; >10% below earlier 8.35, unexplained; Steve to try |
+| Film Grain Amount drag | 1.80 frames/s | 16.85 frames/s | MacBook; SDR Fit; same driver; exact release; below 20 frames/s |
+| Film lens Strength drag | 0.86 frames/s | 12.42 frames/s | MacBook; SDR Fit; same driver; exact release; below 20 frames/s |
+| First Exposure after idle Denoise | 27.7–36.1 ms | 35.5–44.6 ms | MacBook; synthetic scene, three observations after anchor work finishes; does not exercise an edit racing the anchor; unexplained change exceeds 10%, Steve to try before another run |
+
+Film rows measure the whole event-to-presentation throughput, not GPU kernel
+time or native pointer input. Earlier paired implementation rates were 17.28 /
+8.35 / 17.40 / 13.12 frames/s; diagnostic-only trace rates were 17.55 / 8.42 /
+17.05 / 13.66. Final Stock, Grain and lens are within the agreed 10% of their
+paired implementation values, so no investigation is warranted. Final Print
+and HSL are outside it, unexplained; no repeat timing run was made, per the
+responsiveness rule. The final pass follows the conservative withdrawal of
+tiled approximation and preview-glow lifetime fixes. Denoise was explicitly
+excluded (`--skip-denoise`) to avoid chasing its already-recorded unexplained
+movement before Steve tries the app. No Denoise scheduler change was made.
+P1-B stays partial: no 20 fps or final HSL speed acceptance. The Grade and Film
+Look PRDs hold the validation ledger and Decisions for Steve.
+
+November 14 P1-B validation's default 90 s quick Library check: **MacBook**
+Neo / A18 Pro / 8 GB, 1408x794-point plain unpackaged Electron, GPU lock,
+default mixed 33-photo fixture, no overlapping tests. Branch `f542c0a8` plus
+test-only validation repairs: first picture 2.0 s, 6/33 by 90 s, ten never.
+Base `87b91385`: first 2.8 s, same 6/33 by 90 s, ten never. Both exit for
+incomplete coverage; neither reports a memory violation. This is an existing
+minimum-machine Library qualification gap, not a P1-B speed or complete
+Library pass. Evidence: `codebase/output/performance/p1bv/quick-library.json`
+and `quick-library-base.json`; no speed-gain claim from these single observations.
 
 November 14 macOS file-command smoke (working tree based on `696a3fd6`,
 `p1/mac-file-commands`; MacBook Neo, A18 Pro, 8 GB, 6 cores; 1408x794 points;

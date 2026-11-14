@@ -874,6 +874,7 @@
           intermediate.filmTexture?.destroy();
           intermediate.spatialATexture?.destroy();
           intermediate.spatialBTexture?.destroy();
+          intermediate.lensGlowTexture?.destroy();
           intermediate.localTexture?.destroy();
           intermediate.detailATexture?.destroy();
           intermediate.detailBTexture?.destroy();
@@ -1038,7 +1039,7 @@
       const gradingSpatialBytes = intermediateEntries.reduce((sum, entry) => {
         if (!entry.spatialATexture || !entry.spatialBTexture) return sum;
         const grid = spatialGridScale(entry.width, entry.height);
-        return sum + Math.ceil(entry.width / grid) * Math.ceil(entry.height / grid) * 8 * 2;
+        return sum + Math.ceil(entry.width / grid) * Math.ceil(entry.height / grid) * 8 * (2 + (entry.lensGlowTexture ? 1 : 0));
       }, 0);
       const gradingDetailBytes = intermediateEntries.reduce((sum, entry) => (
         sum + (entry.detailATexture && entry.detailBTexture ? entry.width * entry.height * 8 * 2 : 0)
@@ -1121,6 +1122,7 @@
         ? directPreviewMemoryModel(planningEntry.width, planningEntry.height, {
           detailActive: Boolean(planningEntry.detailATexture && planningEntry.detailBTexture),
           spatialActive: Boolean(planningEntry.spatialATexture && planningEntry.spatialBTexture),
+          lensGlowCache: Boolean(planningEntry.lensGlowTexture),
           denoiseLevels: this.denoiseSourceSelector?.cache?.levels?.length || 0,
           retainedPresentationOverlapBytes,
         })
@@ -1196,7 +1198,7 @@
             const spatialWidth = Math.max(1, Math.ceil(entry.width / grid));
             const spatialHeight = Math.max(1, Math.ceil(entry.height / grid));
             const spatialBytes = entry.spatialATexture && entry.spatialBTexture
-              ? spatialWidth * spatialHeight * 8 * 2
+              ? spatialWidth * spatialHeight * 8 * (2 + (entry.lensGlowTexture ? 1 : 0))
               : 0;
             const detailBytes = entry.detailATexture && entry.detailBTexture
               ? entry.width * entry.height * 8 * 2
@@ -4911,6 +4913,7 @@
       let proxyPin = null;
       let draftPresentation = null;
       let draftReturned = false;
+      let lensGlowKey = null;
       try {
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
@@ -4988,6 +4991,12 @@
       // parameter slots, so the surface-format rebuild below cannot change
       // them.
       const { spatialActive, detailActive } = this.graphActivity(params);
+      const retainedIntermediate = this.intermediates.get(canvas);
+      const lensGlowCache = Boolean((retainedIntermediate?.width === proxy.width
+          && retainedIntermediate?.height === proxy.height && retainedIntermediate?.lensGlowTexture)
+        || (!sourceOptions?.delivery && !sourceOptions?.measureOnly
+          && params[GPU_PARAMS.FILM_RESPONSE_ENABLED] >= 0.5 && params[GPU_PARAMS.FILM_LOOK_STRENGTH] > 0
+          && params[GPU_PARAMS.LENS_FILTER] > 0.5 && params[GPU_PARAMS.LENS_SCATTER] > 0));
       const localDetailActive = activeLocals.some((local) => gpuLocalDetailActive(local[`${lane}_grade`]));
       // Admission runs against the graph this render is about to build, so the
       // plan and the decision describe real work rather than a generic guess.
@@ -5001,6 +5010,7 @@
         pendingSourceBytes: proxy.region ? proxy.width * proxy.height * (proxy.pixelFormat === "rgba16float" ? 8 : 16) : 0,
         detailActive: detailActive || localDetailActive,
         spatialActive,
+        lensGlowCache,
         // Without this the tiled model sizes its working set to a bare tile
         // while the encoder builds one tile plus its halo, and admission would
         // be decided against a working set nobody allocates. A spatial graph
@@ -5223,6 +5233,7 @@
         proxy.height,
         spatialActive,
         detailActive || localDetailActive,
+        lensGlowCache,
       );
       if (!intermediate) {
         // An allocation failed and the backoff is recorded. Abandon this render
@@ -5494,9 +5505,14 @@
           localPass.end();
           localSource = target;
         }
-        this.encodeFilmChain(encoder, pipelines, intermediate, localSource.createView(),
+        lensGlowKey = lensGlowCache && !sourceOptions?.delivery && !sourceOptions?.measureOnly
+          ? this.lensGlowCacheKey(sourceProxy, lane, adjustments, localAdjustments, params) : null;
+        const glowEncoded = this.encodeFilmChain(encoder, pipelines, intermediate, localSource.createView(),
           (source, spatial, original) => makeBindGroup(source, spatial, this.paramBuffer, original),
-          params, proxy.width, proxy.height);
+          params, proxy.width, proxy.height,
+          { interactive: sourceOptions?.tier === "interactive" && !sourceOptions?.delivery && !sourceOptions?.measureOnly,
+            lensGlowKey });
+        if (!glowEncoded) lensGlowKey = null;
       }
       if (sourceOptions?.delivery) {
         encoder.copyTextureToTexture({texture:intermediate.finishTexture},
@@ -5555,6 +5571,7 @@
         encoder.copyBufferToBuffer(gpuTiming.resolveBuffer, 0, gpuTiming.readBuffer, 0, 16);
       }
       this.device.queue.submit([encoder.finish()]);
+      if (lensGlowKey) intermediate.lensGlowKey = lensGlowKey;
       sourceOptions?.onPresented?.(context.getCurrentTexture());
       if (hslSelection) {
         hslEngine.commit(hslSelection.token);
@@ -5645,6 +5662,8 @@
       }
       draftReturned = true;
       return {
+        approximate: Boolean(sourceOptions?.tier === "interactive" && !sourceOptions?.delivery && !sourceOptions?.measureOnly
+          && params[GPU_PARAMS.GRAIN_ENABLED] > 0.5 && params[GPU_PARAMS.GRAIN_AMOUNT] > 0),
         presentationTexture: draftPresentation,
         presentationFormat: surface.format,
         width: proxy.width,
@@ -6815,12 +6834,21 @@
       });
     }
 
-    encodeFilmChain(encoder, pipelines, graph, originalView, bind, params, width, height) {
+    lensGlowCacheKey(proxy, lane, adjustments, locals, params) {
+      const film = { ...adjustments[lane].film_look };
+      delete film.lens_strength;
+      const recipe = { ...adjustments, [lane]: { ...adjustments[lane], film_look: film } };
+      return JSON.stringify([proxy.identity, this.highlightSourceToken(proxy), lane, proxy.width, proxy.height,
+        params[GPU_PARAMS.SOURCE_PIXEL_SCALE], lane === "sdr" ? params[GPU_PARAMS.HIGHLIGHT_ANCHOR] : null, recipe, locals]);
+    }
+
+    encodeFilmChain(encoder, pipelines, graph, originalView, bind, params, width, height, options = {}) {
       const filmView = graph.filmTexture.createView();
       const finishView = graph.finishTexture.createView();
       const fallback = originalView;
       const a = graph.spatialATexture?.createView() || fallback;
       const b = graph.spatialBTexture?.createView() || fallback;
+      const glow = options.lensGlowKey && graph.lensGlowTexture?.createView();
       const pass = (view, pipeline, group, w = width, h = height, instance = 0, accumulate = false) => {
         const render = encoder.beginRenderPass({ colorAttachments: [{
           view, clearValue: { r: 0, g: 0, b: 0, a: 0 }, loadOp: accumulate ? "load" : "clear", storeOp: "store",
@@ -6848,17 +6876,22 @@
         if (bloom) {
           const grid = graph.spatialGrid || spatialGridScale(width,height);
           const sw = Math.ceil(width/grid), sh = Math.ceil(height/grid);
-          pass(finishView,pipelines.lensExtract,bind(filmView,fallback,originalView),sw,sh);
-          for(let component=0;component<27;component++) {
-            pass(a,pipelines.lensHorizontal,bind(filmView,finishView,originalView),sw,sh,component);
-            pass(b,pipelines.lensVertical,bind(filmView,a,originalView),sw,sh,component,component>0);
-          }
+          if (!glow || graph.lensGlowKey !== options.lensGlowKey) {
+            if (glow) graph.lensGlowKey = null;
+            pass(finishView,pipelines.lensExtract,bind(filmView,fallback,originalView),sw,sh);
+            for(let component=0;component<27;component++) {
+              pass(a,pipelines.lensHorizontal,bind(filmView,finishView,originalView),sw,sh,component);
+              pass(b,pipelines.lensVertical,bind(filmView,a,originalView),sw,sh,component,component>0);
+            }
+            if (glow) encoder.copyTextureToTexture({ texture: graph.spatialBTexture }, { texture: graph.lensGlowTexture }, [sw, sh]);
+            this.recordStage("lens-glow", { reused: false, width, height });
+          } else this.recordStage("lens-glow", { reused: true, width, height });
         }
-        pass(finishView, pipelines.lens, bind(filmView, b, originalView));
+        pass(finishView, pipelines.lens, bind(filmView, glow || b, originalView));
         pass(filmView, pipelines.scatter, bind(finishView, a, originalView));
       }
       if (halation) spatial();
-      pass(finishView, pipelines.finish, bind(filmView, a, originalView));
+      pass(finishView, options.interactive ? pipelines.finishInteractive : pipelines.finish, bind(filmView, a, originalView));
       const structure = params[GPU_PARAMS.STRUCTURE_ENABLED] > 0.5
         && (Math.abs(params[GPU_PARAMS.STRUCTURE_SOFTNESS]) > 0.000001 || Math.abs(params[GPU_PARAMS.STRUCTURE_MICROCONTRAST]) > 0.000001);
       const map = active && ((halation && params[GPU_PARAMS.HALATION_VIEW_MAP] > 0.5)
@@ -6869,6 +6902,7 @@
       } else {
         pass(finishView, pipelines.response, bind(filmView, fallback, originalView));
       }
+      return Boolean(bloom && glow);
     }
 
     pipelineFor(format, factory = null) {
@@ -6987,6 +7021,12 @@
         fragment: { module: this.module, entryPoint: "finishFragmentMain", targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
+      const finishInteractive = create({
+        layout: this.pipelineLayout,
+        vertex: { module: this.module, entryPoint: "vertexMain" },
+        fragment: { module: this.module, entryPoint: "finishFragmentMain", constants: { interactiveGrain: true }, targets: [{ format: "rgba16float" }] },
+        primitive: { topology: "triangle-list" },
+      });
       const composite = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
@@ -7052,6 +7092,7 @@
         hslFields,
         hslMask,
         finish,
+        finishInteractive,
         scopePeakTile,
         local,
         localCandidate,
@@ -7098,7 +7139,7 @@
         Object.fromEntries(Object.entries(staged).map(([name, token]) => [name, compiled.get(token)])));
     }
 
-    ensureIntermediate(canvas, width, height, spatialActive = false, detailActive = false) {
+    ensureIntermediate(canvas, width, height, spatialActive = false, detailActive = false, lensGlowCache = false) {
       const current = this.intermediates.get(canvas);
       const spatialGrid = spatialGridScale(width, height);
       const spatialWidth = Math.max(1, Math.ceil(width / spatialGrid));
@@ -7106,7 +7147,7 @@
       const createSpatialTexture = () => this.device.createTexture({
         size: { width: spatialWidth, height: spatialHeight },
         format: "rgba16float",
-        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
       });
       const createTexture = () => this.device.createTexture({
         size: { width, height },
@@ -7125,6 +7166,11 @@
         }
       };
       if (current?.width === width && current?.height === height) {
+        if (lensGlowCache && !current.lensGlowTexture) {
+          try { current.lensGlowTexture = guard(createSpatialTexture, "lens-glow"); }
+          catch { return null; }
+          this.recordAllocation("lens-glow", spatialWidth * spatialHeight * 8, { width, height });
+        }
         if (spatialActive && (!current.spatialATexture || !current.spatialBTexture)) {
           try {
             current.spatialATexture = guard(createSpatialTexture, "spatial-a");
@@ -7158,6 +7204,7 @@
       current?.finishTexture?.destroy();
       current?.spatialATexture?.destroy();
       current?.spatialBTexture?.destroy();
+      current?.lensGlowTexture?.destroy();
       current?.localTexture?.destroy();
       current?.detailATexture?.destroy();
       current?.detailBTexture?.destroy();
@@ -7176,6 +7223,7 @@
           detailBTexture: detailActive ? guard(createTexture, "grading-detail-b") : null,
           spatialATexture: spatialActive ? guard(createSpatialTexture, "spatial-a") : null,
           spatialBTexture: spatialActive ? guard(createSpatialTexture, "spatial-b") : null,
+          lensGlowTexture: lensGlowCache ? guard(createSpatialTexture, "lens-glow") : null,
           spatialActive,
           width,
           height,
@@ -7188,7 +7236,8 @@
       this.intermediates.set(canvas, intermediate);
       this.recordAllocation(
         "grading-intermediates",
-        width * height * 8 * (4 + (detailActive ? 2 : 0)) + (spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0),
+        width * height * 8 * (4 + (detailActive ? 2 : 0)) + (spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0)
+          + (lensGlowCache ? spatialWidth * spatialHeight * 8 : 0),
         { width, height, spatialWidth: spatialActive ? spatialWidth : 0, spatialHeight: spatialActive ? spatialHeight : 0 },
       );
       return intermediate;

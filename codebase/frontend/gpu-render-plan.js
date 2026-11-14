@@ -231,10 +231,11 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
     const spatialWidth = Math.ceil(normalizedWidth / spatialGrid);
     const spatialHeight = Math.ceil(normalizedHeight / spatialGrid);
     const spatialBytes = spatialActive ? spatialWidth * spatialHeight * 8 * 2 : 0;
+    const lensGlowBytes = options.lensGlowCache ? spatialWidth * spatialHeight * 8 : 0;
     const denoise = denoiseLevels > 0
       ? denoiseLogicalBytes(normalizedWidth, normalizedHeight, denoiseLevels)
       : { evidenceBytes: 0, reconstructionScratchBytes: 0, resolvedBytes: 0, totalBytes: 0 };
-    const residentBytes = sourceBytes + gradingBytes + detailBytes + spatialBytes
+    const residentBytes = sourceBytes + gradingBytes + detailBytes + spatialBytes + lensGlowBytes
       + denoise.evidenceBytes + denoise.resolvedBytes;
     const transientBytes = denoise.reconstructionScratchBytes;
     const retainedPresentationOverlapBytes = Math.max(0, Math.floor(Number(options.retainedPresentationOverlapBytes) || 0));
@@ -248,6 +249,7 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
         gradingBytes,
         detailBytes,
         spatialBytes,
+        lensGlowBytes,
         denoiseEvidenceBytes: denoise.evidenceBytes,
         denoiseResolvedBytes: denoise.resolvedBytes,
         denoiseReconstructionScratchBytes: denoise.reconstructionScratchBytes,
@@ -592,6 +594,7 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
     add("grading-core", "grading", "resident", pixels * 8 * 4, { textures: 4 });
     if (detailActive) add("grading-detail", "detail", "resident", pixels * 8 * 2, { textures: 2 });
     if (spatialActive) add("spatial-film", "spatial", "resident", spatialPixels * 8 * 2, { textures: 2 });
+    if (options.lensGlowCache) add("lens-glow", "spatial", "resident", spatialPixels * 8, { textures: 1 });
     add("hsl-selection", "hsl-selection", "resident", pixels * hslSelectionBytesPerPixel(options.hslSelectionChannels),
       { channels: options.hslSelectionChannels || 0 });
 
