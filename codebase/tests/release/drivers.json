@@ -37,7 +37,7 @@
       "areas": []
     },
     {
-      "pattern": "^codebase/(frontend|backend/hdr_finisher)/[^/]*(export|proof)",
+      "pattern": "^codebase/(frontend|backend/hdr_finisher)/[^/]*(export|proof|watermark)",
       "areas": [
         "export-proof"
       ]
