@@ -31,8 +31,12 @@ The lens driver also cancels setup preview timers/follow-ups before its
 explicit comparison frame, avoiding Fit-versus-requested-size captures on
 the smaller Mac window. Stable lens captures still miss the unchanged byte
 gate; see the [Film Look follow-up](film-look.md). No shared shader or
-export/delivery code was edited. The Film panel Enter/Space helper passes on
-unchanged base and final code; its reported failure remains unconfirmed.
+export/delivery code was edited. The standalone Film panel helper passed on
+unchanged base and final code. The subsequent release run identified the
+combined-helper cause: the presets helper changed the collapsed class without
+updating the disclosure button state. It now opens the real disclosure button;
+the complete character/presets/panel UI follow-up passes. The separate extreme
+HDR numerical case still fails on current code and v0.9.2.
 
 MacBook Neo, Apple A18 Pro, 8 GB, 1408x794-point window setting; all GPU checks are serial
 through `tools/gpu-run-lock.py`. Evidence:

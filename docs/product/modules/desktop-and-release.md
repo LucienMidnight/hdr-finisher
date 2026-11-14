@@ -855,5 +855,6 @@ conflict is reported instead of holding the runner open. The framing click
 regression and its fix are recorded in Grade. Limits remain strict.
 
 ISO AVIF diagnostics explicitly publish their large source before the disk-plane
-reference comparison, as they already do for the small/native sources. This
-removes a missing-file race; the same pixel and source-plane comparisons remain.
+reference comparison, as they already do for the small/native sources. The recheck still fails to locate the disk-plane `.npz` reference; this is
+not a successful accuracy qualification. The pixel and source-plane assertions
+remain unchanged.

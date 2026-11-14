@@ -9175,3 +9175,9 @@ Library iframe, preserving its reserved row. Otherwise the parent overlay
 intercepts clicks on the expanded Paste Grade dialog at the MacBook window
 size, even though the dialog is modal inside its own document. The existing
 grade-paste driver exercises real clicks, saved grades, redraw and Undo.
+
+The post-fix paste driver passes the runner's single retry, including the
+three-target transaction, saved grades, live redraw and Undo. The first
+post-fix attempt observed stale scene metadata (0.25 instead of 0.75), so
+qualification remains explicitly flaky rather than a clean pass. v0.9.2
+passes this driver with the same portable Mac harness.

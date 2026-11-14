@@ -1,5 +1,139 @@
 # Known Limitations and Support Status
 
+## Focused 0.9.3 release check on the minimum Mac (November 14)
+
+**NOT READY.** All 105 drivers from the fresh focused selection were attempted,
+using the runner's unfinished-work continuation after source-relinking held the
+first run open. Latest results across the committed revisions: **78 runner
+passes, three flaky, 24 failures, zero unattempted**. Four of the 78 passes are
+explicit PC-only skips, not Mac coverage (`library-exposure-culling.js`,
+`library-focus-camera.js`, `library-scroll-cache.js`, `library-live-picture.js`).
+There is no claim that all 105 passed, or ran together at the final revision.
+Desktop smoke also skips layouts taller than the Mac's available 794 points.
+
+Machine: MacBook Neo, Apple A18 Pro, 8 GB, 1408x794 points. All GPU work used the
+shared `tools/gpu-run-lock.py`; no overlapping GPU jobs. The coordinator approved
+180 minutes total slow work. No tolerance, budget, retry count or protected
+project was relaxed. The three protected project hashes remain unchanged.
+
+Same-Mac comparisons use v0.9.2 application code (`1eae2dcb`) in a temporary
+worktree with the current portable test harness and validated native tools.
+`git diff v0.9.2 -- codebase/frontend codebase/backend codebase/desktop/main.js`
+is empty there. This isolates application changes, but is not packaged-tag
+certification. Stage A's tag-only UI assertion expects its old hidden status
+bar; every later assertion is unchanged. Comparisons run once per selected
+case; current qualification uses the release runner's one retry.
+
+Categories: **a** new compared with v0.9.2; **b** reproduces on v0.9.2 on this
+Mac (does not establish that the PC is unaffected); **c** missing input or
+platform/test tooling coverage; **d** passed the runner's one retry. Category b
+is a real minimum-machine failure, not a waiver. The extreme Film case was
+already documented on the PC too.
+
+Paths below are relative to `codebase`; `tests/` is omitted from short driver
+names except for desktop drivers. Every still-failing selected driver is listed.
+
+| Driver | Category and evidence | Action / remaining qualification |
+| --- | --- | --- |
+| `retouch-gpu-kernels.js` | b — same `Bounded job differs from whole-photo GPU input` on tag and current | Kept exact equality; PC confirmation required. |
+| `performance/retouch-latency.js` | b — both exceed the 1-second spot-removal guard on this Mac; fresh current Fit 1.513–1.773 s | Recorded in performance table; no budget change. |
+| `desktop/tests/proof-grade-diagnostic.js` | c — `source_relink_required` for protected DSC00950 project | Its saved source is `D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.ARW`; project unchanged. A valid source grant/relinked disposable copy is needed. |
+| `gpu-denoise-measurement.js` | c — missing noise-free linear EXR render >=540x540 in HDR Test Images | Cleanup now closes Electron on fixture failure; two prompt errors replace the old 15-minute hang. Steve must supply the render. |
+| `denoise-adaptive-parity.js` | b — `The GPU result could not be read back` on both versions | Replaced oversized JSON transport with identical float bytes; no accuracy pass is claimed. |
+| `denoise-zoomed-region.js` | a — tag passes; current fails both fresh comparison attempts, needs 3.41 GiB host work, only 1.20 GiB safely available | Current native Mac memory detection differs from the tag; headroom is a confound, not evidence of a leak. Full reference remains unavailable; no safe small fix or limit change made. |
+| `film-stock-parity.js` | b — same extreme HDR Neutral maximum-paper-gain numerical failure on tag | Full current matrix still fails. Preset disclosure harness repaired; complete character/presets/panel follow-up now passes separately. |
+| `gpu-highlight-compression-parity.js` | b — same generated-SDR linear-sRGB peak-reduction divergence on tag | No numerical guard changed. Separate encoded HDR ceiling/Proof matrix passes. |
+| `library-grade-saving.js` | b — both versions leave the unsaved-changes dialog open after Escape while Metadata is open | Save/reopen phase passes. Bounded assertion exposes the old Escape conflict instead of hanging. |
+| `performance/preview-export-compare.js` | c — same protected-project source linkage unavailable | Helper now reports the missing source promptly; no native relink dialog wait, project rewrite or pixel waiver. |
+| `performance/tier-film-consistency.js` | a — tag completes in 55.9 s; current reaches the 15-minute deadline twice with Full requested and accepted 4096 | New comparative completion failure; cause unresolved. No Full pixel comparison obtained and no scheduler/shader workaround added. |
+| `photo-library-stage-a.js` | b — both reach the same 60-second real-format drawing timeout at line 170 | Portable status-bar and Command-key setup repaired; synthetic stages pass. RAW/DNG/HEIC stage remains unqualified. |
+| `photo-library-stage-c.js` | b — same filter-clear wait for 12 drawing canvases on both versions | Recorded without weakening the drawing assertion. |
+| `gpu-delivery-repeat.js` | a — tag passes; current 3 GiB GPU cap succeeds, 2 GiB case falls back to CPU after host refusal (needs 3.41 GiB, latest safely available 3.12) | CPU fallback works, but required GPU repeatability qualification fails. Kept memory safeguards. |
+| `library-gpu-raw-single.js` | b — both refuse full-size detail for insufficient memory | Native detail is not qualified; PC confirmation required. |
+| `library-temporary-recovery.js` | b — same `Every forced-fault scenario must recover` on tag | No recovery retry added. |
+| `library-live-grid.js` | b — same 120-second live drawing wait on tag | No timing/coverage relaxation. |
+| `library-live-native.js` | b — both reach `100% unavailable · Not enough memory for full-size detail` | Canonical path helper repaired; native development still unavailable. |
+| `library-export-live-tiles.js` | a — current Sony export falls back to CPU after host refusal; tag successfully GPU-exports DSC00264 and DSC04375 before its whole seven-export comparison is capped at three minutes | Specific admission difference established, not a complete passing tag timing run. No 5% allowance or memory change. |
+| `library-iso-source.js` | c — both versions fail `library_rgb_compare.py:55` locating the reference source `.npz` (`StopIteration`) | Native executable name and explicit large-source publication repaired; the remaining reference lookup is unresolved. No finished-pixel accuracy pass. |
+| `grade-dng.js` | c — standalone Node driver requires absent `/Applications/Microsoft Edge.app/...` | Not installed and not silently skipped; multi-page browser/backend harness remains to port. |
+| `library-dng-warp.js` | b/c — tag also cannot prepare the same DxO DNG (`System memory could not be measured`); current reaches the unchanged grant refusal. Tag full-matrix comparison was capped in its first CPU case; restricted DxO GPU comparison establishes unavailability, not an identical budget failure | Current passes 59 geometry probes and DJI CPU/GPU, then DxO GPU preparation refuses ~3.1 GB against the default ~2.5 GB grant. Budget unchanged. |
+| `library-precision-source.js` | b — tag and current refuse ~3.0 GB against the default ~2.5 GB grant | No budget increase; full precision source preparation remains unqualified. |
+| `jxl-source-colour.js` | c — missing native oracle metadata, `KeyError: data_color_encoding` | JPEG XL sample exists; structured native oracle remains Windows-only until Phase 2. |
+
+Flaky results (d), retained explicitly:
+
+- `library-codec-source.js`: first attempt refused full-size detail; runner retry
+  passed. No extra confirmation retry.
+- `local-adjustments-interaction.js`: first comparison attempt lost the 2D
+  gradient mask after hiding the gizmo; runner retry completed all four tools.
+  Same driver passes on the tag. No mask threshold changed.
+- `library-grade-paste.js`: a real new shared-status-bar overlay blocked the
+  dialog's Paste button; tag passes. Parent overlay is now hidden while an
+  iframe modal is open. Post-fix first attempt read stale scene metadata
+  (0.25 vs 0.75); runner retry passed saved contents, three targets including
+  a virtual copy, live redraw and Undo. No extra retry or weaker assertion.
+
+Other repaired failures: compact Metadata closed on pointerdown and moved the
+framing button before pointerup, swallowing its first click. It now closes after
+the target click and preserves explicit opening clicks. Full framing/delivery
+passes, including CPU/GPU formats and Proof. The corresponding tag UI steps
+passed before a missing local encoder stopped that first comparison. Overlay
+backlog now uses macOS physical footprint rather than unavailable Windows private
+bytes, retaining the 2 GiB guard; its release recheck passes. Color/Desat hidden
+window readiness, native Mac theme menus, file-command preview expectations,
+canonical shared-photo paths, native Command shortcuts, startup defaults and
+isolated fixture-helper app data were repaired and their focused checks pass.
+
+**Release recommendation: block 0.9.3 qualification.** In particular, exact Full
+Denoise and Film/Lens completion regress against the same-Mac tag, and required
+GPU delivery repeatability/live-tile routes are not qualified. Retouch exact
+input equality and supported-Mac reliability remain real failures even where
+pre-existing. Missing protected-project/denoise reference coverage also prevents
+claiming the required real-project accuracy checks passed. PC confirmation is
+listed in AGENTS.md; a PC pass alone does not qualify the minimum Mac. The
+coordinator must also obtain the required all-platform packaged workflow pass
+on main before tagging; no push, merge, tag or workflow dispatch was done here.
+
+Evidence retained under `codebase/output/release-checks/`:
+
+- `2026-11-14T09-20-34-322Z-2955fd5c575d41a6432e`: fresh 105 selection,
+  42 passed / 13 new / 50 unfinished, 60.6 min; interrupted source-relink wait.
+- `2026-11-14T10-23-53-045Z-521397fc61c08eb4f9e9`: unfinished selection plus
+  harness rechecks, 30 passed / 1 flaky / 22 new / 2 unfinished, 70.0 min.
+  The two unfinished were rechecks; original selection fully attempted.
+- `2026-11-14T11-51-21-174Z-e61ce69d7ce7a8802a9f`: 15 post-fix drivers,
+  4 passed / 11 new / 0 unfinished, 9.4 min.
+- Later single-driver states/logs and `final-targets.json`: framing and startup
+  pass; ISO reference lookup still fails. `2026-11-14T12-38-25-165Z-011bcf946274542912c8`:
+  zero clean passes / one flaky / two new / zero unfinished, 3.1 min.
+- `2026-11-14T12-42-50-452Z-0e307dce4e3729e2653f`: paste post-fix,
+  `PASS WITH FLAKY CHECKS`; zero clean passes / one flaky / zero failures /
+  zero unfinished, 1.2 min.
+- `latest-consolidated.json`: latest completed result per original driver,
+  with revision-specific run and attempt-log paths; not one final-revision sweep.
+- `v092-comparisons/results.json` and driver logs: same-Mac tag comparisons,
+  including bounded incomplete comparisons and restricted cases where stated.
+- `final-ui/film-ui.log`: full combined UI follow-up pass. Final plain-Electron
+  Library smoke is retained at `final-ui/library-smoke-fixed.log` and
+  `output/quick-library-check/release093-final-memory/report.json`.
+
+The default 90-second plain-Electron Library viewport check passes after a
+second small macOS census repair: `ps` state identifies zombie children, whose
+libproc footprint query can return EPERM after exit. They have no resident
+memory; unreadable live children and the root still fail. Both behavior cases
+pass in the 28-test app-memory suite. The final smoke draws all six requested
+viewport rows (six of 33 folder rows), with no observer/memory/responsiveness
+failure. This is viewport coverage, not whole-folder acceptance. The earlier
+observer failure and final result are retained, not erased or called a flake.
+
+Recorded slow work stays below 170 minutes even counting lock waits
+conservatively, including all tag comparisons and final smoke recheck; the
+approved total is 180 minutes. Unreferenced worktree renders/profiles and the
+temporary tag worktree are removed; shared test-photo copies are retained.
+Final fast suites run on the committed tree, with logs at
+`output/release-checks/fast-node.log` and `fast-python.log`. Their totals and
+final SHA are included in the coordinator report.
+
 ## November 14: minimum-Mac Library — allocator release built, 48/50 pictured
 
 The retained native allocation issue is fixed on macOS by starting the

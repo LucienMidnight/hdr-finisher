@@ -1,3 +1,22 @@
+## November 14: focused 0.9.3 release on the minimum Mac
+
+| Action | Existing guard | Mac result | Conditions / evidence |
+| --- | --- | --- | --- |
+| Remove a Retouch spot, action to accepted picture | <= 1 second | Failed: 1.513–1.773 s at Fit in the fresh release retry | MacBook Neo A18 Pro, 8 GB, 1408x794 points; `1a8e1605`; `output/release-checks/2026-11-14T09-20-34-322Z-2955fd5c575d41a6432e`. Same driver also exceeds 1 second on v0.9.2 on this Mac. PC timings are a separate baseline. |
+| Film/Lens 4K to exact Full | Driver's existing 15-minute attempt deadline | Current: two 15-minute timeouts; v0.9.2: full driver passes in 55.9 s | Same Mac and A7R00619.exr, portable current test harness and native helpers; application code at tag unchanged. Current stays at accepted 4096 with Full requested. Cause and numerical comparison remain unresolved; no time limit or memory budget changed. |
+
+The final 90-second default Library viewport smoke at `257c17ae` passes:
+first picture 0.3 s, all six requested rows drawn, independent process-tree
+peak 2.725 GB, no memory violation or frame-gap failure. Conditions: same
+MacBook Neo A18 Pro / 8 GB, 1408x794 points, frozen v1 normal-filter fixture,
+plain Electron, no DevTools, shared GPU lock. This is six of 33 folder rows,
+not a whole-folder survey and not a speedup comparison. Evidence:
+`codebase/output/quick-library-check/release093-final-memory/report.json`.
+
+Other measurements in release logs are diagnostic, not new performance targets.
+The release failure inventory and limits on comparison evidence are in
+`docs/known-limitations.md` under the focused 0.9.3 Mac release record.
+
 # Performance table
 
 ## November 14: native allocator release on the minimum Mac

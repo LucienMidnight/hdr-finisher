@@ -347,6 +347,40 @@ speed comparison is finished. Still open:
    (`EISDIR` on `link`). Needs a tooling fix that still avoids per-run RAW
    copies.
 
+**PC confirmation from the 0.9.3 focused Mac release check (November 14):**
+
+The Mac remains NOT READY; these are follow-ups, not waivers. Full inventory,
+same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
+“Focused 0.9.3 release check on the minimum Mac”. Do not loosen guards.
+
+3. Confirm Retouch bounded/whole-photo input equality and removal under one
+   second; adaptive Denoise readback; generated-SDR peak reduction; and the
+   extreme HDR Film case. Each reproduces on v0.9.2 on this Mac.
+4. Confirm zoomed Denoise, Film/Lens 4K-to-Full, repeated GPU delivery and live
+   Export tiles. v0.9.2 passes the first three on this Mac; current Full/GPU
+   admission or completion fails. Live tiles reach the failing Sony export
+   successfully on the tag, but its complete timing comparison was capped.
+5. Confirm Grade Escape with Metadata open, Library Stage A real-format drawing,
+   Stage C filter-clear drawing, native RAW Single, temporary recovery, live
+   grid/native and precision-source preparation. Same-Mac tag comparisons
+   reproduce these failures; see the separate DNG comparison qualification.
+6. Supply a noise-free linear EXR render >=540x540 for Denoise; provide usable
+   source linkage for protected DSC00950.hdrfinisher without overwriting it.
+   Proof/Grade and preview/export comparison are blocked by its saved Windows
+   source URI. DSC07060.ARW.hdrf remains a separately known missing private
+   fixture, not the fixture selected by these two drivers.
+7. Confirm ISO AVIF disk-plane reference lookup, Grade DNG's standalone browser
+   launch and JPEG XL colour metadata helper on PC. Mac ISO fails its reference
+   `.npz` lookup on both versions; Grade DNG requires absent Microsoft Edge;
+   the native JPEG XL oracle remains Windows-only. DNG warp GPU preparation
+   also needs confirmation at the unchanged app memory limit.
+8. Check the two UI fixes (compact Metadata first click and shared status bar
+   over an iframe modal), Mac physical-footprint overlay sampling, and the
+   portable test harness changes, including exited-child memory census handling.
+   The final 90-second Library viewport smoke passes. Framing passes; grade paste passes only the
+   runner retry (stale metadata on the first post-fix attempt). Local adjustment
+   overlay and codec-source checks also have explicit flaky results.
+
 ## Disk space and test output
 
 Steve, October 28, 2026, after test and measurement output filled drive D
