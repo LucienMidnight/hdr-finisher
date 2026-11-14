@@ -16,12 +16,7 @@ admitted reduced source. The previously approved >=100 MP root-page,
 operation-free linear-DNG reduced path uses its own source/GPU admission rather
 than inheriting a full-native import refusal; actual reduction beyond 10240 is
 required. Native/Grade/import/export preflight, opcodes, lookup/reference
-exclusions and all rates are unchanged. An explicit scheduler shortage also
-collects unreachable Python objects and asks macOS's allocator to release only
-its free pages; it never pages out or discards a live array. Ordinary moderate
-and critical cache trimming do not add this collection. This addresses resident
-allocator/garbage ownership outside the small reported caches, without changing
-admission, allowances or caches. No simulated free RAM or allowance
+exclusions and all rates are unchanged. No simulated free RAM or allowance
 bypass is used. Final minimum-Mac qualification is recorded in the Library PRD
 and performance table; a system-reserve breach still fails acceptance.
 

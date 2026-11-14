@@ -138,17 +138,6 @@ def cache_snapshot():
                 for share,cap in LIMITS.items()}
 
 
-def collect_unused():
-    """Release unreachable objects and allocator-owned free pages, never live data."""
-    import gc
-    gc.collect()
-    if sys.platform == 'darwin':
-        allocator = ctypes.CDLL('/usr/lib/libSystem.B.dylib')
-        allocator.malloc_zone_pressure_relief.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
-        allocator.malloc_zone_pressure_relief.restype = ctypes.c_size_t
-        allocator.malloc_zone_pressure_relief(None, 0)
-
-
 def reclaim(level='moderate', needed=None):
     if needed is None:
         return reclaim_all(level)
@@ -164,7 +153,6 @@ def reclaim(level='moderate', needed=None):
         callback(max(0, before-remaining))
         with _lock: after = _caches.get(key, {}).get('bytes', 0)
         remaining -= max(0, before-after)
-    if level == 'shortage': collect_unused()
     return max(0, int(needed)-remaining)
 
 
@@ -175,7 +163,6 @@ def reclaim_all(level='moderate'):
                    (level != 'shortage' or v['share'] in ('raw','handoff','working'))]
     for callback,target in callbacks:
         if callback: callback(target)
-    if level == 'shortage': collect_unused()
 
 
 _mac_pressure='none'
