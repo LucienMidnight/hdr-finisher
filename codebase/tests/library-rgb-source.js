@@ -130,6 +130,7 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
     lanes[lane]=w.btoa(binary);canvas.remove();
    }
    await meta.directScene?.store();
+   await large.directScene?.store();
    rows.push({photo,meta,large,native,prepareMs,lanes,pictureOnly});
   }
   gpu.renderTo=original;w.fetch=originalFetch;if(!yielded&&!cpuScene&&!isoRoute&&!pictureOnly)throw Error("Preemption was not exercised");

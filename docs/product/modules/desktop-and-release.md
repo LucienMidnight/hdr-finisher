@@ -853,3 +853,7 @@ arrives after that fallback; the planted 4000-nit preference must not survive. P
 folder. The sidecar Escape assertion is bounded so a compact Metadata/modal
 conflict is reported instead of holding the runner open. The framing click
 regression and its fix are recorded in Grade. Limits remain strict.
+
+ISO AVIF diagnostics explicitly publish their large source before the disk-plane
+reference comparison, as they already do for the small/native sources. This
+removes a missing-file race; the same pixel and source-plane comparisons remain.
