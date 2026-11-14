@@ -658,3 +658,14 @@ not an export-agreement or automatic release gate.
 The companion `codebase/tools/grade_sweep_summary.py` overwrites the compact JSON and CSV observation ledgers; coverage gaps never count as passes.
 
 Grade sweep launch ownership: `codebase/tools/run_grade_batch.py` acquires the shared lock through atomic `os.mkdir`, monitors the owner token, runs one Electron driver and releases only its own folder.
+
+November 14 HDR encoding allowance: `hdr_ceiling.ENCODING_ALLOWANCE` owns the
+1% initial-encode allowance used only by enabled Highlight Compression delivery.
+`exporters.py` passes it through all three HDR codecs; Proof shares those
+backends. Library cache writers omit the ceiling. `tests/hdr-ceiling-delivery.js`
+covers all codecs on 1600px real-photo ACEScg EXR pixels derived read-only from
+a RAW, CPU/GPU and both Proof sizes (`--native-source` keeps the original);
+`tests/performance/hdr-ceiling-cost.py` compares whole exports with/without
+post-encode decoding (CPU, or `--gpu` for real Electron request timing on the bounded real-photo fixtures) and
+records real-photo correction rounds. Both run
+serially under `tools/gpu-run-lock.py` for qualification.

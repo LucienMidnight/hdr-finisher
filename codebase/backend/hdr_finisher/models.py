@@ -1446,8 +1446,7 @@ class ExportSettings(_EncodingSettings):
                 raise ValueError("Metadata tokens are {filename}, {capture_date} and {sequence}.")
         return value
 
-    # Optional decoded HDR peak check and local correction, per preset version.
-    # Off by default: encode once without checking the decoded peak.
+    # Additional codec-limit check when Highlight Compression is bypassed.
     guarantee_hdr_peak: bool = False
     output_path: str | None = None
     path_grant: str | None = None

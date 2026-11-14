@@ -1,5 +1,161 @@
 # Known Limitations and Support Status
 
+## November 14: encoding allowance follow-up
+
+Steve's November 14 decision replaces the October 18–19 ceiling policy and
+the earlier zero-allowance interpretation. Every Highlight Compression HDR
+export and reduced/full-size Proof is decoded, CPU and GPU. Initial peaks up
+to target + 1% are accepted unchanged, without a note. Larger overshoots use
+the existing local correction toward the target; only after all rounds may
+the allowance be used again. Files still above it are refused without replacing
+the destination. Highlights-off optional strict codec checking is unchanged.
+Library pictures are not checked after encoding.
+
+**Mac validation completed on the commit containing this record**, following
+implementation `7d41e7a7` and the pause/resume WIP `46b84c38`:
+
+- Read-only IMG_0114.CR2 and DSC00264.ARW real-photo CPU fixtures cover all
+  three HDR codecs and both Proof sizes. Corrected peaks are
+  **971.983–999.368 nits against 1000** across those fixtures and the real-app
+  checks. Initial files up to **1007.448 nits** stay unchanged within the
+  allowance. No real file is refused; existing correction margins are retained.
+- The real-app matrix passes all six codec/renderer pairs (JPEG, AVIF,
+  JPEG XL; GPU and CPU), with 800px reduced and 1600px full-size Proof.
+  Its 18 finished-file readings are 989.558–1007.448 nits. Every full-size
+  Proof is byte-identical to its export. The checkbox is off throughout,
+  proving active Highlight Compression remains mandatory.
+- The six-case reduced JPEG Proof matrix passes (977.461–994.067 nits).
+  GPU/CPU delivery smoke, watermarked Proof identity, framing and Proof-size
+  interaction also pass. The smoke's pre-existing stricter HDR p99.9 miss
+  remains 3.377 against 3; its agreed Denoise p99 criterion passes.
+- Native DSC00264 (7968×5320) could not obtain the GPU host reservation:
+  estimated 3.41 GiB additional working memory, safely available 0.00 GiB.
+  One GPU attempt fell back to the CPU and exported successfully (69.35 s
+  backend total), then the driver failed its GPU-renderer assertion.
+  Native 42MP GPU delivery is therefore **not qualified** on this run.
+  The all-codec GPU checks and timing use 1600px linear-ACEScg EXRs prepared
+  from the real photos before import. The portable driver prepares that
+  bounded fixture by default; `--native-source` retains the original for
+  a separate diagnostic. No memory budget, shader or encoder was changed.
+- Same-Mac, same-file paired GPU export measurements: about **0.48 s extra**
+  when checking without correction; **2.09–3.53 s extra** when correction
+  needs three/four encode-and-decode rounds. These are warm 1600px JPEG
+  quality-90 exports, excluding source preparation/import. The dim unchecked
+  control varies more than the agreed 5% noise allowance (0.384–0.434 s),
+  so its added cost is approximate (0.44–0.53 s). No timing rerun was made;
+  Steve should try exports before further timing work. Native RAW and larger
+  output costs are not established by this bounded measurement.
+
+Node passes: 951 tests, one skipped. The resumed focused Python ceiling/parity
+selection passes all 62 cases. The earlier full-suite attempts total 3,331
+passes, 145 skips and one xpass, with two unchanged Library failures and one
+stalled test; the full Python suite is **not** a pass:
+`test_library_gpu_raw.py::test_native_chunk_owner_admits_before_allocation_and_survives_trim`,
+`test_library_gpu_raw.py::test_abandoned_native_upload_releases_owner_without_expiring_replacement`
+(native upload admission returns false), and
+`test_library_live.py::test_xtrans_api_reuses_measured_cpu_grant_and_existing_cancellable_helper[False]`
+(API wait; ten-minute stack, stopped after 12.5 minutes). The remaining
+1,356 tests passed separately. These Library files/checks were not repaired.
+
+The resumed 90-second Library smoke remains unqualified: six of 33 pictures,
+1.2 s first picture, system-reserve memory failure. This is left to the
+Library/memory follow-up, without a rerun or changed limit. Older fixture
+blocks and unqualified native/Windows checks below remain open; this is not
+full release qualification. All checks were serialized through the shared
+GPU lock at 1408×794 points. The three protected project hashes are unchanged.
+No curated HDR Test Images path broke or needed retargeting in these runs.
+
+Compact evidence and logs: `codebase/output/ceiling-followup/` (delivery,
+cost, parity, CPU matrix, fast-suite logs); Library report:
+`codebase/output/quick-library-check/ceiling-followup/report.json`.
+Generated EXRs, exports, decoded copies and temporary profiles are removed.
+Scratch output started at 6.3 GB and ended at 6.5 GB, below 100 GB. No push, merge into
+main, installer build, or new HDR-policy decision is needed here. Windows GPU
+qualification and the separate Library/memory failures remain open.
+
+The following earlier report is historical; its zero-allowance statement is
+superseded by the rule above.
+
+## November 14: Mac encoded HDR ceiling and GPU delivery
+
+Baseline investigation confirms that the 1038–1437-nit parity readings are
+real encoded reduced Proof files against a 1000-nit target. The diagnostic
+previously excused reduced Proof overshoots. Default synthetic JPEG and
+JPEG XL export can overshoot too; this is not only a diagnostic error.
+
+Enabled Highlight Compression now always checks the decoded brightest
+BT.2020 channel and uses the existing local correction. Uncorrectable files
+are rejected without replacing the destination. The diagnostic uses the
+same exact ceiling at both scales, without its old 1% + 1-nit allowance.
+No shader, budget, codec formula or tolerance is relaxed. Already-compliant
+files and SDR pixels are unchanged; correcting an actual PC-path violation
+is intentional under this brief. Windows hardware checks remain pending.
+
+The Mac's GPU worker works on the unchanged base and final code. A broker
+regression establishes a startup race: a request before the worker heartbeat
+could cache CPU-only delivery indefinitely for unchanged settings. That
+pre-submission unavailability is no longer cached. Actual failed GPU jobs
+still fall back once and are not retried. The previously reported smoke
+failure is not evidence of unsupported Mac hardware; it did not reproduce
+in the unchanged-base real-app smoke. The existing stricter HDR perceptual
+p99.9 miss (3.377 against 3) does reproduce and is unchanged.
+
+Final code `9bfea9e5`: Node 951 passed / one skipped; Python 3,323 passed /
+145 skipped / one xpassed. All 22 non-helper export/Proof catalog entries
+were attempted, plus local HSL: 23 invocations, 12 passed, eight failed or
+fixture-blocked, three stopped/time-limited. Every non-pass has an
+unchanged-base attempt with the same failure or bounded non-completion.
+The five catalog helpers are covered only through their parent drivers; an
+incomplete parent does not qualify its helpers. The protected project
+hashes are unchanged.
+
+Ceiling results: six reduced JPEG Proof cases are 977.461–994.067 nits,
+zero above 1000. Full-size real-RAW HSL GPU/CPU deliveries and full-size
+Proof identity pass (neutral/global/local decoded peaks 941.168–987.561
+nits); HSL integration passes at 989.669 nits. Real JPEG, AVIF and JPEG XL
+unit regressions cover default-option enforcement, reduced/full-size Proof,
+unchanged compliant bytes and refusal to replace a destination with an
+uncorrectable file. No sampled final delivered file exceeds its target.
+
+Unchanged-base blockers/non-passes (not repaired in this task):
+- `gpu-delivery-ceiling.js` and `gpu-delivery-repeat.js` lack
+  `output/test-photos/saved-grades/DSC07060.ARW.hdrf` on both trees.
+- `proof_export_identity.py` and `proof-grade-diagnostic.js` cannot resolve
+  the protected project's stored Windows source path on this Mac. The
+  project and its source were not rewritten.
+- `retouch-delivery.js` expects GPU Retouch but receives CPU; the Tone Zones
+  and Color/Desat delivery drivers fail their hidden-renderer assertion.
+  The same failures occur before the fix. The actual GPU/CPU delivery smoke,
+  HSL and framing checks do work on this Mac.
+- `batch-export-ui.js` times out waiting for `#bounded-help-tooltip` on both
+  trees, before delivery qualification.
+- `gpu-denoise-measurement.js` lacks
+  `local-test-media/inputs/Affinity_DSC06898_DisplayP3_Linear_32f.exr` on both
+  trees and hangs after reporting that error. Final run interrupted; base
+  run bounded after reproducing the same error. Neither is a pass.
+- `preview-export-compare.js` does not finish within the same 86-second
+  cap on base or final. `edge-colour-raw.js` does not finish within the
+  remaining 52–54-second caps. These are incomplete checks, not established
+  output regressions. Longer follow-up requires Steve's approval under the
+  overnight slow-test allowance; nothing was relaxed.
+
+The default locked 90-second Library smoke shows 6/33 photos and a 399 ms
+frame gap against 250 ms; it is not accepted. No sustained memory violation
+is reported. Incomplete mixed-folder coverage already exists in the Mac
+baseline notes; the new gap was not investigated or re-run. Steve should try
+Library before more timing work.
+
+Decisions for Steve: transfer the two named private fixtures, approve a
+separate read-only fixture/source-path repair and longer incomplete checks,
+then run Windows export/Proof qualification. Safest overnight choice was to
+leave unrelated routes, protected projects and limits alone. Logs, base
+comparisons and compact ceiling evidence:
+`codebase/output/mac-export/validation-summary.json` and adjacent logs.
+Scratch output began at 6.1 GB and ends at 6.3 GB, below the 100 GB limit.
+Float readbacks, redundant captures, base archives and finished disposable
+Electron profiles were removed; compact logs/JSON and reduced encoded Proof
+files remain. Shared source photos and protected projects were not changed.
+
 ## November 14: Mac GPU parity follow-up
 
 This is a test-only correction on `fix/mac-gpu-parity`, base `87b91385`.
