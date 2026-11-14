@@ -32,6 +32,10 @@ Implemented in this change, pending the final locked hardware capture:
   tables, an SDR reference, other structural refusals and native/full-source
   work retain their existing gates. Its approved source/GPU grants remain.
 
+The helper result reader releases its completed future, message and exception
+before waiting again. Delivered scene ownership stays with its consumer and
+managed caches; the idle transport thread cannot retain the last result.
+
 Native visibility notifications now take precedence over an older asynchronous
 startup snapshot, so a shown window cannot be left at hidden-window priority
 by that race. Grant snapshots expose the effective visibility for diagnosis.

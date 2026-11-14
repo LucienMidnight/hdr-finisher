@@ -386,6 +386,9 @@ class LibraryWorker:
         ready = False
         try:
             while not self._stop.is_set():
+                # The consumer now owns the completed future. An idle result
+                # reader must not keep its last full portable scene or traceback.
+                message = future = exception = None
                 self._check_deadlines()
                 if not connection.poll(.25):
                     if not self._process.is_alive():

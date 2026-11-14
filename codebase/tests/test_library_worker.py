@@ -264,3 +264,42 @@ def test_jpegxl_cpu_scene_in_helper_preserves_decoded_pixels(worker, tmp_path):
         np.testing.assert_array_equal(stored["pixels"], expected.astype(np.float16))
     assert worker.status()["restarts"] == 0
     assert path.read_bytes() == before
+
+
+def test_idle_result_reader_does_not_retain_delivered_scene(tmp_path):
+    from concurrent.futures import Future
+    from threading import Thread
+    from types import SimpleNamespace
+    import weakref
+    class Pixels:
+        pass
+    idle, release = Event(), Event()
+    class Pipe:
+        delivered = False
+        reference = None
+        def poll(self, timeout):
+            if not self.delivered:
+                return True
+            idle.set()
+            release.wait(2)
+            return False
+        def recv(self):
+            self.delivered = True
+            pixels = Pixels()
+            self.reference = weakref.ref(pixels)
+            return {'id': 'scene', 'result': pixels}
+    helper = LibraryWorker(tmp_path / 'cache')
+    helper._pending['scene'] = Future()
+    helper._process = SimpleNamespace(pid=0, is_alive=lambda: True)
+    helper._check_deadlines = lambda: None
+    pipe = Pipe()
+    reader = Thread(target=helper._read_results, args=(pipe,))
+    reader.start()
+    try:
+        assert idle.wait(2)
+        assert pipe.reference() is None
+    finally:
+        helper._stop.set()
+        release.set()
+        reader.join(2)
+    assert not reader.is_alive()
