@@ -11,7 +11,7 @@ if(process.argv.includes('--graphs-only')) {
  const contained=async(selector)=>page.locator(selector).evaluate(e=>{
  const p=e.getBoundingClientRect();const children=[...e.querySelectorAll('button,input[type=range]')].filter(x=>x.getClientRects().length&&!x.closest('[hidden],.workflow-side-panel')).map(x=>{const r=x.getBoundingClientRect();return {id:x.id,left:r.left,right:r.right,top:r.top,bottom:r.bottom}});
  return children.every(r=>r.left>=p.left-1&&r.right<=p.right+1&&r.top>=p.top-1&&r.bottom<=p.bottom+1)&&children.every((a,i)=>children.slice(i+1).every(b=>Math.min(a.right,b.right)-Math.max(a.left,b.left)<1||Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top)<1));});
- for(const theme of ['default-dark','default-light']) {
+ for(const theme of ['modern-dark','default-light']) {
  await page.evaluate(t=>{HDRApplicationShell.openSettings('appearance');document.querySelector(`[data-theme-option="${t}"]`).click();},theme);await page.locator('#settings-close').click();
  for(const [size,width,appWidth] of [['minimum',336,1100],['normal',380,2560]]) {
  await cdp.send('Emulation.setDeviceMetricsOverride',{width:appWidth,height:1440,deviceScaleFactor:1,mobile:false});
@@ -46,12 +46,12 @@ if(process.argv.includes('--graphs-only')) {
  fs.writeFileSync(path.join(out,'graph-checks.json'),JSON.stringify({checks,errors},null,2));
  const review=path.join(out,'index.html');let html=fs.existsSync(review)?fs.readFileSync(review,'utf8'): '<!doctype html><meta charset="utf-8"><title>Component review</title>';
  html=html.replace(/<section id="graph-followup">[\s\S]*?<\/section>/,'');
- html+='<section id="graph-followup"><h2>Grade graph follow-up</h2><p>336 px minimum (previously 320); 380 px normal. Default Dark and Default Light. Minimum-width toolbar at 1100 px. Transparent axis gutters, original Curves zone bands.</p>'+shots.map(f=>`<figure><figcaption>${f}</figcaption><img src="${f}"></figure>`).join('')+'</section>';
+ html+='<section id="graph-followup"><h2>Grade graph follow-up</h2><p>336 px minimum (previously 320); 380 px normal. Modern Dark and Default Light. Minimum-width toolbar at 1100 px. Transparent axis gutters, original Curves zone bands.</p>'+shots.map(f=>`<figure><figcaption>${f}</figcaption><img src="${f}"></figure>`).join('')+'</section>';
  fs.writeFileSync(review,html);console.log('Graph follow-up passed',checks);return;
 }
 const crop=async(name,loc)=>{await loc.scrollIntoViewIfNeeded();await loc.screenshot({path:path.join(out,name+'.png')});};
-for(const theme of ['default-dark','modern-dark','default-light','studio-gray']){
-await page.evaluate(t=>{HDRApplicationShell.openSettings('appearance');document.querySelector(`[data-theme-option="${t}"]`).click();},theme);await page.locator('#settings-close').click();await page.evaluate(()=>{activateWorkflowTab('grade');setGradeMode('global');});const keep=['default-dark','default-light'].includes(theme);
+for(const theme of ['modern-dark','default-light','studio-gray']){
+await page.evaluate(t=>{HDRApplicationShell.openSettings('appearance');document.querySelector(`[data-theme-option="${t}"]`).click();},theme);await page.locator('#settings-close').click();await page.evaluate(()=>{activateWorkflowTab('grade');setGradeMode('global');});const keep=['modern-dark','default-light'].includes(theme);
 if(keep){await crop(theme+'-workflow',page.locator('.workflow-tabs'));await crop(theme+'-tabs',page.locator('#grade-workflow-panel > .grade-header'));}
 assert.notEqual(await page.locator('.control-mode-switch > button').first().evaluate(e=>getComputedStyle(e).boxShadow),'none');
 for(const group of ['geometry','vignette','curves','hdr-equalizer','hdr-highlights','film-look']){const loc=page.locator(`[data-group="${group}"]`).first();assert.equal(await loc.count(),1,group);await loc.evaluate(e=>e.classList.remove('collapsed'));await loc.scrollIntoViewIfNeeded();await page.evaluate(()=>{drawCurveEditor();drawToneEqualizerEditor();renderHighlightCompressionControls();});if(keep)await crop(theme+'-'+group,loc);

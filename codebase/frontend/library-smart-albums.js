@@ -31,6 +31,7 @@
     // No drop handler: membership is determined only by the saved rules.
     row.append(name);return row;
    }));
+   if(!albums.length)root.append(make("p","library-nav-empty","No smart albums yet. Use + to make one."));
   }
   async function refresh() {const request=++revision;const result=await options.api("/api/library/smart-albums");if(request===revision){albums=result.albums;render();}return albums;}
   async function mutate(body) {++revision;try{return await options.run("/api/library/smart-albums",body);}finally{++revision;}}

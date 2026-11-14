@@ -1,5 +1,28 @@
 # Module PRD: Grade
 
+## November 14: round 2 fixed chrome and joined dividers
+
+Steve's review confirmed that the compact open metadata rail covered the
+left of the viewer, status and scopes headers; zoomed-photo scrolling itself
+was already contained. Opening metadata now reserves the rail width, so all
+three rows remain visible at Fit and 119% even after panning. Its chevron flips
+directly between left/right rather than rotating through a corner-shaped
+intermediate state. Scope controls leave their rightmost collapse action clear;
+the folded header still exposes the reopen action. The chart fits its remaining
+height while long numerical readings scroll separately. No scope maths changes.
+Modern Dark (unchanged original palette) and Default Light replace the retired
+Default Dark review pair; round 2 captures live in
+`codebase/output/ui-polish-1114/round2/` with one-CSS-pixel containment checks.
+
+The source rail retains its outer edge when collapsed or displayed as the
+compact open panel. Its title, identity and disclosure dividers reach both
+edges. The scopes status/readings boundary now meets the toolbar and graph
+boundary without inset gaps; the right control-panel edge remains shared
+with its splitter. The first round's Default themes have open/collapsed captures at
+1408×794 in `codebase/output/ui-polish-1114/`. Joined-edge rounding allowance
+is one CSS pixel, recorded in the design guideline. No preview, shader,
+adjustment, scope calculation or saved state changes; visual sign-off pending.
+
 ## November 14: Mac HSL picker input
 
 The armed picker used the entire photograph's bounding rectangle, even where

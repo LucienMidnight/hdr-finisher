@@ -1,5 +1,29 @@
 # Module PRD: Export and Proof
 
+## November 14: Export Settings disclosure styling
+
+Steve's round 2 review: Export's scopes use the shared Grade/Proof header and
+right-aligned collapse/reopen button. Its fixed status/footer now has reserved
+space below the dock, so neither the folded button nor the chart's bottom-axis
+labels sit behind it. Narrow headers hide secondary text labels, keeping
+accessible dropdown names and all controls separate. Numerical readings scroll
+independently without forcing the chart too tall. Both themes (Modern Dark,
+unchanged original palette, and Default Light), open/folded scopes and Proof
+are captured at 1408×794 under `codebase/output/ui-polish-1114/round2/`;
+2560×1440 containment is also checked. Only presentation changes; delivery,
+encoding and Proof pixels remain untouched.
+
+Steve requested Grade-style section headers, chevrons and full-width dividers.
+Output version, Format & quality, Size & sharpening, Text watermark and File
+naming are now native disclosures, initially open. Advanced settings retains
+its initially folded state. The whole Output version header keeps its existing
+help text and keyboard focus. Folding changes only visibility for this page
+session, never output-version values, capture, naming or delivered files.
+Destination and the Export action remain visible outside the scrollable
+sections. Both Default themes are captured at 1408×794, including a folded
+example, in `codebase/output/ui-polish-1114/`. Proof has review captures only;
+its rendering and delivery paths are untouched. Visual sign-off pending.
+
 ## November 14: encoded HDR target and delivery startup recovery
 
 **Steve, 2026-11-14; supersedes the October 18–19 ceiling decisions.**

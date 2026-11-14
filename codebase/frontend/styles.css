@@ -9059,9 +9059,15 @@ img:not([src]), img[src=""] { visibility:hidden; }
 /* Export uses the shared panel titles, fields, switches and disclosure tokens. */
 body.batch-export-ready[data-workflow="export"] #export-sheet { display:flex; flex-direction:column; padding:0; overflow:hidden; scrollbar-gutter:auto; }
 .batch-export-ready #export-sheet .sheet-header { position:static; flex:none; }
-.batch-settings-scroll { flex:1; min-height:0; overflow:auto; padding:0 14px; scrollbar-gutter:stable; }
-.batch-settings-section { margin:0; padding:16px 0; border-bottom:var(--group-divider-width) solid var(--group-divider); }
-.batch-settings-section > .export-section-title { margin-bottom:10px; }
+.batch-settings-scroll { flex:1; min-height:0; overflow:auto; padding:0; scrollbar-gutter:stable; }
+.batch-settings-section { margin:0; padding:0; border-bottom:var(--group-divider-width) solid var(--group-divider); }
+.batch-settings-section > summary { display:flex; align-items:center; gap:var(--group-chevron-gap); min-height:var(--control-group-header-h); padding:0 12px; list-style:none; cursor:pointer; color:var(--group-title-color); font:var(--group-title-font-weight) var(--group-title-font-size)/var(--line-height-tight) var(--group-title-font-family); }
+.batch-settings-section > summary::-webkit-details-marker { display:none; }
+.batch-settings-section > summary::before { content:""; flex:none; width:var(--group-chevron-size); height:var(--group-chevron-size); background:var(--group-chevron-color); mask:var(--group-chevron-shape) center / contain no-repeat; }
+.batch-settings-section[open] > summary::before { transform:rotate(90deg); }
+.batch-settings-section > summary .export-section-title { margin:0; font:inherit; color:inherit; }
+.batch-settings-section > summary:focus-visible { outline:1px solid var(--accent); outline-offset:-1px; }
+.batch-settings-body { padding:0 14px 14px; }
 .batch-settings-section .helper { margin:6px 0 0; }
 .batch-settings-section :is(input,select) { min-width:0; max-width:100%; }
 .batch-settings-section .batch-setting-row { display:grid !important; grid-template-columns:minmax(0,1fr) minmax(0,1.25fr); align-items:center; gap:10px; margin:6px 0 6px 10px; color:var(--body); font:var(--font-size-xs) var(--font-body); letter-spacing:var(--tracking-none); text-transform:none; }
@@ -9086,11 +9092,11 @@ body.batch-export-ready[data-workflow="export"] #export-sheet { display:flex; fl
 .batch-settings-section .export-quality-row { margin:10px 0 0 10px; }
 .batch-settings-section #batch-example { margin-left:10px; }
 .batch-export-ready #jpeg-advanced-settings { grid-area:auto; background:transparent; border:0; border-radius:0; border-bottom:var(--group-divider-width) solid var(--group-divider); }
-.batch-export-ready #jpeg-advanced-settings > summary { justify-content:flex-start; gap:var(--group-chevron-gap); padding:0; min-height:var(--control-group-header-h); color:var(--group-title-color); font-family:var(--group-title-font-family); font-size:var(--group-title-font-size); font-weight:var(--group-title-font-weight); letter-spacing:var(--group-title-letter-spacing); }
+.batch-export-ready #jpeg-advanced-settings > summary { justify-content:flex-start; gap:var(--group-chevron-gap); padding:0 12px; min-height:var(--control-group-header-h); color:var(--group-title-color); font-family:var(--group-title-font-family); font-size:var(--group-title-font-size); font-weight:var(--group-title-font-weight); letter-spacing:var(--group-title-letter-spacing); }
 .batch-export-ready #jpeg-advanced-settings > summary::after { content:none; }
 .batch-export-ready #jpeg-advanced-settings > summary::before, .batch-advanced-group > summary::before { content:""; flex:none; width:var(--group-chevron-size); height:var(--group-chevron-size); background:var(--group-chevron-color); mask:var(--group-chevron-shape) center / contain no-repeat; transition:transform var(--group-chevron-transition); }
 .batch-export-ready #jpeg-advanced-settings[open] > summary::before, .batch-advanced-group[open] > summary::before { transform:rotate(90deg); }
-.batch-export-ready #jpeg-advanced-settings .advanced-settings-body { display:block; padding:0 0 4px 10px; }
+.batch-export-ready #jpeg-advanced-settings .advanced-settings-body { display:block; padding:0 14px 14px; }
 .batch-advanced-group > summary { display:flex; align-items:center; gap:var(--group-chevron-gap); min-height:30px; list-style:none; cursor:pointer; color:var(--body); font:var(--font-size-xs) var(--font-body); }
 .batch-advanced-group > summary::-webkit-details-marker { display:none; }
 .batch-advanced-group > summary:focus-visible { outline:1px solid var(--accent); }

@@ -10,7 +10,7 @@ const out=path.resolve(__dirname,'../output/review/ui-polish/round-4');fs.mkdirS
  const cdp=await page.context().newCDPSession(page);
  const shot=async(name,loc)=>{await page.evaluate(()=>document.fonts.ready);await loc.screenshot({path:path.join(out,name+'.png')});};
  const font=async loc=>assert.match(await loc.evaluate(e=>getComputedStyle(e).fontFamily),/Sofia Sans Semi Condensed/);
- const themes=['default-dark','default-light','studio-gray'];
+ const themes=['modern-dark','default-light','studio-gray'];
  for(const size of [{width:2560,height:1440},{width:1100,height:720}]){
  await cdp.send('Emulation.setDeviceMetricsOverride',{...size,deviceScaleFactor:1,mobile:false});
  for(const theme of themes){

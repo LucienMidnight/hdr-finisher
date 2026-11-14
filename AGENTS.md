@@ -558,7 +558,7 @@ Completed UI polish round 5 (pending visual sign-off):
 - `docs/design/HDR_Finisher_Design_Guidelines.md`: UI design guidelines
   (living). Read it with the component sheet below.
 - `docs/design/component-sheet.html`: the component sheet. Every
-  component drawn from the tokens, with its HTML and CSS, in all four themes.
+  component drawn from the tokens, with its HTML and CSS, in all three themes.
   Match it when building or fixing UI. Items marked Proposed need Steve's
   approval.
 - `docs/design/HDR_Finisher_Tooltip_Copy.md`: tooltip text registry. Copy

@@ -1,5 +1,5 @@
-/* The splash uses the app's tokens with no data-theme, which is Default Dark:
-   it is always black, whatever theme the app uses, because it shows before
+/* The splash uses the app's tokens with no data-theme, which is Modern Dark:
+   it keeps that dark palette, whatever theme the app uses, because it shows before
    preferences load. */
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--app); }
 body { -webkit-app-region: drag; user-select: none; cursor: default; }

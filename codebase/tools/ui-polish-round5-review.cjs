@@ -6,7 +6,7 @@ const out=path.resolve(__dirname,'../output/review/ui-polish/round-5');fs.mkdirS
  const cdp=await page.context().newCDPSession(page);
  for(const size of [{width:2560,height:1440},{width:1100,height:720}]){
  await cdp.send('Emulation.setDeviceMetricsOverride',{...size,deviceScaleFactor:1,mobile:false});
- for(const theme of ['default-dark','default-light','studio-gray']){
+ for(const theme of ['modern-dark','default-light','studio-gray']){
  await page.evaluate(t=>{HDRApplicationShell.openSettings('appearance');document.querySelector(`[data-theme-option="${t}"]`).click();},theme);await page.locator('#settings-close').click();
  for(const [i,workflow] of ['import','grade','proof','export'].entries()){
  await page.locator(`[data-workflow-tab="${workflow}"]`).click();

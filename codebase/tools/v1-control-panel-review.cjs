@@ -13,7 +13,7 @@ const out=path.resolve(__dirname,"../output/v1-control-panel-fixes");fs.mkdirSyn
  await page.evaluate(async()=>{const r=await fetch("/api/proof/test-pattern");await importByteFile(new File([await r.blob()],"panel-review.tiff",{type:"image/tiff"}));});
  await page.waitForFunction(()=>state.session&&document.body.dataset.workflow==="grade");
  const shot=async name=>{await page.evaluate(()=>document.fonts.ready);await page.waitForTimeout(200);await page.screenshot({path:path.join(out,name+".png")});};
- for(const theme of ["default-dark","default-light","studio-gray"]){
+ for(const theme of ["modern-dark","default-light","studio-gray"]){
   await page.evaluate(()=>HDRApplicationShell.openSettings("appearance"));await page.locator(`[data-theme-option="${theme}"]`).click();await page.locator("#settings-close").click();
   await page.evaluate(async()=>{setGradeMode("global");await switchLane("hdr");});
   assert.equal(await page.locator("#sdr-match-entire-actions:visible").count(),0);

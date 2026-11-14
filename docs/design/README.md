@@ -4,6 +4,11 @@ This directory contains non-code design reviews, layout explorations, and durabl
 
 ## Current material
 
+November 14, Steve: Default Dark is deprecated. Runtime tokens and the component
+sheet use Modern Dark (unchanged), Default Light and Studio Gray. Default Dark
+entries in the v1 reference token files are deprecated historical material;
+they are not used by the application. Current guidelines supersede them.
+
 - [HDR Finisher design guidelines](HDR_Finisher_Design_Guidelines.md) — the living visual, interaction, copy, and startup-state standard for the shipped app.
 - [v1 visual refinement](v1-visual-refinement/HDR_Finisher_v1_Visual_Refinement.md) — approved v1 direction (November 2, 2026): Afacad, true-neutral greys, burnt-orange accent with a Settings picker, soft plate buttons and toggles, satin slider thumbs, one chevron, and the new Control Panel structure; with `tokens.json`, `tokens.css` and `components.css`. Supersedes the guidelines where they conflict until those are updated.
 - [Repository cleanup and code audit plan](Repo_Cleanup_and_Code_Audit_Plan_2026-09-27.md) — draft plan to tidy the repository and clean up AI-slop in the code before it grows further; nothing changes without approval.

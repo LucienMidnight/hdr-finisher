@@ -17,7 +17,7 @@ const out=path.resolve(__dirname,'../output/review/ui-polish/round-6');fs.mkdirS
 
  for(const width of (process.argv.includes("--tooltip-only")?[]:[1100,1200,1201,1300,1500])){
  await cdp.send('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:false});
- for(const theme of ['default-dark','default-light','studio-gray']){
+ for(const theme of ['modern-dark','default-light','studio-gray']){
  await page.evaluate(t=>{HDRApplicationShell.openSettings('appearance');document.querySelector(`[data-theme-option="${t}"]`).click();},theme);await page.locator('#settings-close').click();
  for(const closed of [false,true]){
  const pre=theme+'-'+width+'-'+(closed?'closed':'open');

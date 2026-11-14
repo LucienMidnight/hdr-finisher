@@ -120,6 +120,10 @@
   .hf-tabs > button:last-child { border-radius: 0 calc(var(--radius-plate) - 1px) calc(var(--radius-plate) - 1px) 0; }
   .hf-tabs > button:hover:not([aria-selected="true"]) { background: var(--plate-up-hover); color: var(--text); }
   .hf-tabs > button[aria-selected="true"] { background: var(--plate-down); box-shadow: var(--plate-press); color: var(--accent-strong); }
+  .hf-page-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; box-shadow: var(--divider-below); }
+  .hf-page-tabs > button { display: flex; align-items: center; justify-content: center; min-width: 0; height: var(--top-h); padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; box-shadow: none; color: var(--body); font: var(--font-weight-regular) var(--page-title-font-size)/var(--line-height-none) var(--font-title); text-transform: uppercase; cursor: pointer; }
+  .hf-page-tabs > button:hover { color: var(--text); }
+  .hf-page-tabs > button[aria-selected="true"] { border-bottom-color: var(--accent-strong); color: var(--accent-strong); }
   /* A tab plate always keeps the same inset from the dividers around it. */
   .hf-tab-bar { padding: var(--tab-plate-inset); box-shadow: var(--divider-below); }
 
@@ -243,6 +247,9 @@
   .hf-list-row:hover { background: var(--plate-up-hover); }
   /* Selected is neutral: the row is pushed in like a selected tab; only the 2px edge carries the accent. */
   .hf-list-row[aria-selected="true"] { background: var(--accent-bed); box-shadow: var(--plate-press), inset 2px 0 var(--accent); }
+  .hf-library-row { position: relative; display: flex; align-items: center; min-height: var(--library-row-h); padding: 0 12px; color: var(--body); font-size: var(--font-size-md); }
+  .hf-library-row[aria-selected="true"] { background: var(--deep); }
+  .hf-library-row[aria-selected="true"]::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 2px; background: var(--accent); }
   .hf-list-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hf-list-row .meta { color: var(--muted); font-weight: var(--font-weight-regular); white-space: nowrap; }
   .hf-list-empty { display: grid; place-items: center; height: 100%; padding: 0 16px; color: var(--muted); font-size: var(--font-size-sm); text-align: center; }
@@ -291,7 +298,6 @@
   <h1>Components</h1>
   <p>The visual reference for HDR Finisher. Rules and reasons: <code>HDR_Finisher_Design_Guidelines.md</code>. Tokens: <code>visual-tokens.css</code>.</p>
   <div class="sheet-themes" role="group" aria-label="Theme">
-    <button type="button" data-theme-choice="">Default Dark</button>
     <button type="button" data-theme-choice="modern-dark">Modern Dark</button>
     <button type="button" data-theme-choice="studio-gray">Studio Gray</button>
     <button type="button" data-theme-choice="default-light">Default Light</button>
@@ -314,7 +320,7 @@
 <main>
 <section id="foundations">
   <h2>Foundations</h2>
-  <p>Everything on this page is drawn from <code>visual-tokens.css</code>. Switch theme at the left to check all four.</p>
+  <p>Everything on this page is drawn from <code>visual-tokens.css</code>. November 14: Default Dark is deprecated; Modern Dark is the unchanged default dark palette. Switch theme at the left to check all three.</p>
   <h3 class="hf-subsection-title">Surfaces</h3>
   <div class="swatches" data-swatches="app panel raised input viewer plate-up plate-up-hover plate-down"></div>
   <h3 class="hf-subsection-title">Ink and lines</h3>
@@ -333,7 +339,7 @@
   </div>
   <h3 class="hf-subsection-title">Geometry</h3>
   <ul class="rules">
-    <li>Work in whole pixels. Where a control sits inside a bar, the space left over is even, so it splits equally above and below: top bar 44 px with a 34 px plate, panel headers 40 px with 30 px buttons, 5 px each side.</li>
+    <li>Work in whole pixels. Where a control sits inside a bar, the space left over is even: top bar 44 px with a centred 34 px button plate; panel headers 40 px with 30 px buttons. Flat workflow tabs instead fill the top bar and meet its bottom divider.</li>
     <li>Bar dividers are drawn inside the bar (<code>--divider-below</code>) so they take no height.</li>
     <li>Corners: buttons, tab plates and tooltips <code>--radius-plate</code> (5 px); fields, dropdowns, lists and row highlights <code>--radius-1</code> (3 px); panels and menus are square.</li>
     <li>A tab plate keeps <code>--tab-plate-inset</code> (10 px) from the dividers around it.</li>
@@ -361,7 +367,7 @@
 <section id="buttons">
   <h2>Buttons</h2>
   <ul class="rules">
-    <li>Every button is a plate: raised face, plate edge and lift. Hover lifts the face to the hover plate; pressed or on is pushed in with accent-strong ink.</li>
+    <li>Action buttons are plates: raised face, plate edge and lift. Hover lifts the face to the hover plate; pressed or on is pushed in with accent-strong ink. Workflow page tabs are flat navigation, not button plates.</li>
     <li>Tools are icon-only plates, 40 × 34 px, named by a tooltip on hover and keyboard focus: the Local and Retouch tools, Crop and Rotate. No label under the icon.</li>
     <li>One primary button per area, in the accent plate. Disabled primary falls back to the neutral plate with muted ink at full opacity.</li>
     <li>Small actions inside headers (preset, bypass) are ghost icons: no plate, muted ink.</li>
@@ -398,12 +404,19 @@
 
 <section id="tabs">
   <h2>Tabs</h2>
+  <p>Steve, November 14, round 2: Library / Grade / Proof / Export are flat page tabs. Only the active lower eyebrow carries accent colour and touches the header divider. Titles stay neutral: full-strength active text, muted inactive text. No raised or inset plate. The joined plates below apply only inside panels.</p>
   <ul class="rules">
-    <li>Tabs are one joined plate with a 1 px edge between segments. Each segment carries its own depth: unselected segments are raised with the lift shadow; the selected one is pushed in with only the pressed shadow, so no drop shadow shows under it. Its ink is accent-strong. The same applies to the workflow tabs.</li>
+    <li>In-panel tabs are one joined plate with a 1 px edge between segments. Each segment carries its own depth: unselected segments are raised with the lift shadow; the selected one is pushed in with only the pressed shadow. Its ink is accent-strong. Workflow tabs use the flat baseline style instead.</li>
     <li>Labels are centred. Every segment is as wide as the widest label plus its padding, so no label touches an edge (Luma, Red, Green, Blue are equal).</li>
     <li>A tab plate sits <code>--tab-plate-inset</code> (10 px) from the dividers above and below it. It never touches a divider.</li>
   </ul>
   <div class="specimens">
+    <div class="specimen" style="grid-column:1/-1"><h3>Workflow page tabs <small>November 14</small></h3>
+      <div class="demo" data-css="hf-page-tabs" style="padding:0">
+        <div class="hf-page-tabs" role="tablist" aria-label="Workflow pages">
+          <button type="button" role="tab" aria-selected="false">Library</button><button type="button" role="tab" aria-selected="true">Grade</button><button type="button" role="tab" aria-selected="false">Proof</button><button type="button" role="tab" aria-selected="false">Export</button>
+        </div>
+      </div></div>
     <div class="specimen"><h3>Mode tabs in a panel</h3>
       <div class="demo" data-css="hf-tabs hf-tab-bar hf-panel-header" style="padding:0">
         <div class="mock-panel" style="width:100%;border:0">
@@ -545,11 +558,13 @@
       <div class="demo" data-css="hf-section hf-section-title" style="padding:0">
         <div class="mock-panel" style="width:100%;border:0">
           <div class="hf-panel-header"><h4 class="hf-panel-title">Pinned</h4></div>
-          <section class="hf-section"><h5 class="hf-section-title">Folders</h5><div class="note">HDR Test Images</div></section>
+          <section class="hf-section" style="padding-bottom:0"><h5 class="hf-section-title">Folders</h5></section>
+          <div class="hf-library-row" aria-selected="true">HDR Test Images</div>
           <section class="hf-section"><h5 class="hf-section-title">Albums</h5><div class="note">Portfolio</div></section>
         </div>
       </div></div>
-    <div class="specimen"><h3>Disclosure groups <small>Control Panel</small></h3>
+    <div class="specimen"><h3>Disclosure groups <small>Control Panel / Export Settings</small></h3>
+      <p>Export uses the same header, chevron and full-width section dividers. Its five ordinary sections start open; Advanced settings starts folded. Destination stays visible. Folding never changes settings.</p>
       <div class="demo" data-css="hf-group hf-group-header hf-group-toggle hf-group-reset hf-group-body" style="padding:0">
         <div class="hf-group">
           <div class="hf-group-header">
@@ -629,7 +644,8 @@
 
   // Theme switch.
   const setTheme = (t) => {
-    if (t) root.dataset.theme = t; else delete root.dataset.theme;
+    t = ["modern-dark", "default-light", "studio-gray"].includes(t) ? t : "modern-dark";
+    root.dataset.theme = t;
     document.querySelectorAll("[data-theme-choice]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.themeChoice === t)));
     try { localStorage.setItem("hf-sheet-theme", t); } catch {}
   };
@@ -643,7 +659,7 @@
   });
 
   // Tabs and switches behave.
-  document.querySelectorAll(".hf-tabs").forEach(tabs => tabs.addEventListener("click", e => {
+  document.querySelectorAll(".hf-tabs, .hf-page-tabs").forEach(tabs => tabs.addEventListener("click", e => {
     const b = e.target.closest("button"); if (!b) return;
     tabs.querySelectorAll("button").forEach(x => x.setAttribute("aria-selected", String(x === b)));
   }));

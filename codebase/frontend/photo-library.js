@@ -22,7 +22,7 @@
   const standalone = parent === window, libraryDesktop = standalone ? window.hdrFinisherDesktop : null;
   const navigation = HDRLibraryNavigation.create({ root: document.querySelector(".library-nav"), refresh: () => refreshPins() });
   const applyDevelopedBadge = value => { document.documentElement.dataset.developedBadge = value === "always" ? "always" : "hover"; };
-  const applyTheme = theme => { document.documentElement.dataset.theme = ["default-dark", "modern-dark", "default-light", "studio-gray"].includes(theme) ? theme : "default-dark"; };
+  const applyTheme = theme => { document.documentElement.dataset.theme = ["modern-dark", "default-light", "studio-gray"].includes(theme) ? theme : "modern-dark"; };
   try { applyTheme(libraryDesktop?.startupTheme || JSON.parse(localStorage.getItem("hdr-finisher:application-preferences:v1") || "{}").theme); } catch {}
   if (!standalone) { applyTheme(parent.document.documentElement.dataset.theme); applyDevelopedBadge(parent.document.documentElement.dataset.developedBadge); }
   try { if (!libraryDesktop && standalone) applyDevelopedBadge(JSON.parse(localStorage.getItem("hdr-finisher:application-preferences:v1") || "{}").developedBadge); } catch {}
@@ -1806,6 +1806,7 @@
     const key = path => path.replaceAll("\\", "/").replace(/\/$/, "").toLowerCase();
     for (const pin of state.pins) if ([...offlineSources].some(path => key(path).startsWith(key(pin.path) + "/"))) pin.available = false;
     $("folders").replaceChildren(...state.pins.map((pin) => folderRow(pin))); paintGrid();
+    if (!state.pins.length) $("folders").append(make("p", "library-nav-empty", "No folders yet. Use + to add one."));
   }
   function paintFolderSelection() {
     for (const row of $("folders").querySelectorAll(".library-folder-row")) {

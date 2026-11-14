@@ -49,7 +49,7 @@ for(let i=0;i<6;i++) fs.copyFileSync(path.join(root,'tests/fixtures/library_phot
   await lib.evaluate(folder=>HDRLibrary.browse(folder),folder); await lib.waitForSelector('#grid-space canvas[data-picture-key]'); await lib.locator('.library-cell').first().click();
   assert.deepEqual((await lib.locator('#details .library-kicker').allTextContents()).slice(0,2),['File','Marks']);
   assert.equal(await lib.locator('#details .library-file-name').count(),1);
-  for(const theme of ['default-dark','modern-dark','default-light','studio-gray']) {
+  for(const theme of ['modern-dark','default-light','studio-gray']) {
    await page.evaluate(t=>document.documentElement.dataset.theme=t,theme); await lib.waitForFunction(t=>document.documentElement.dataset.theme===t,theme);
    console.log(theme,await lib.evaluate(()=>({panel:getComputedStyle(document.documentElement).getPropertyValue('--panel').trim(),scrollbar:getComputedStyle(document.querySelector('#library-grid')).scrollbarColor})));
    await page.screenshot({path:path.join(out,theme+'.png')});

@@ -24,7 +24,7 @@
     executionOverride: "auto",
     roiPreview: "fit",
     navigationWindow: "auto",
-    theme: "default-dark",
+    theme: "modern-dark",
     accent: { preset: "burnt-orange", color: "#d0612a" },
     viewerFrame: { preset: "theme", customColor: "#000000" },
     folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
@@ -57,12 +57,6 @@
     ["Mod+W", "closing the active window"],
   ]);
   const THEMES = [
-    {
-      id: "default-dark",
-      name: "Default Dark",
-      description: "Deep black surround with crisp text, distinct controls and clear panel edges.",
-      preview: "/static/assets/theme-previews/default-dark.png",
-    },
     {
       id: "modern-dark",
       name: "Modern Dark",
@@ -98,7 +92,7 @@
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
     const startupTheme = window.hdrFinisherDesktop?.startupTheme || stored.theme;
-    if (THEME_IDS.includes(startupTheme)) document.documentElement.dataset.theme = startupTheme;
+    document.documentElement.dataset.theme = THEME_IDS.includes(startupTheme) ? startupTheme : "modern-dark";
     if (stored.viewerFrame) document.documentElement.style.setProperty("--frame-color", resolveFrameColor(stored.viewerFrame));
   } catch {}
   const FOLDER_FIELDS = [
@@ -186,7 +180,7 @@
     executionOverride: EXECUTION_OVERRIDES.has(value.executionOverride) ? value.executionOverride : "auto",
     roiPreview: ROI_PREVIEW_MODES.has(value.roiPreview) ? value.roiPreview : "fit",
     navigationWindow: ["auto", "always", "off"].includes(value.navigationWindow) ? value.navigationWindow : "auto",
-    theme: THEME_IDS.includes(value.theme) ? value.theme : "default-dark",
+    theme: THEME_IDS.includes(value.theme) ? value.theme : "modern-dark",
     accent: window.HDRAppearance.normalize(value.accent),
     viewerFrame: {
       preset: FRAME_PRESET_IDS.includes(value.viewerFrame?.preset) ? value.viewerFrame.preset : "theme",
@@ -415,7 +409,7 @@
   }
 
   function applyTheme(themeId) {
-    document.documentElement.dataset.theme = THEME_IDS.includes(themeId) ? themeId : "default-dark";
+    document.documentElement.dataset.theme = THEME_IDS.includes(themeId) ? themeId : "modern-dark";
   }
 
   function renderAccentOptions() {

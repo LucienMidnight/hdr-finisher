@@ -117,7 +117,8 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root .control-row[data-control-path$=".tint"], :root .instrument-slider-control:has(input[data-local-grade="tint"]) { --color-rail-spectrum: linear-gradient(90deg, #b45aa8, #e4e4e4, #5aa76a); }
 :root .library { --library-left-w: var(--rail-w); }
 :root .library-folder-row { min-height: var(--library-row-h); height: var(--library-row-h); font-size: var(--font-size-md); }
-:root .library-folder-row.active { box-shadow: inset 2px 0 var(--accent); }
+:root .library-folder-row:is(.active, [aria-selected="true"]) { box-shadow: none; }
+:root .library-folder-row:is(.active, [aria-selected="true"])::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 2px; background: var(--accent); }
 :root .library-count { color: var(--muted); font: var(--font-weight-medium) var(--font-size-sm) var(--font-body); }
 :root .library-nav-empty { color: var(--muted); }
 :root .library-albums-heading { min-height: 30px; height: 30px; }
@@ -227,7 +228,7 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
  border-bottom-width: 0; box-shadow: var(--divider-below);
 }
 :root .grade-header { box-shadow: var(--divider-below), var(--plate-lift); }
-:root .source-rail.collapsed .rail-title-row { box-shadow: none; }
+:root .source-rail.collapsed .rail-title-row { box-shadow: var(--divider-below); }
 :root .top-bar { border-bottom-width: 0; box-shadow: var(--divider-below); }
 :root .workflow-rail-header .panel-title { margin-block: 0; }
 :root :is(.batch-header, .batch-heading, .batch-header .batch-tools, .library-toolbar .library-tools) { flex-wrap: nowrap; }
@@ -258,6 +259,7 @@ html.native-application-menu :is(.window-controls, .unified-menu-button) { displ
 /* One neutral panel divider; splitters own the full-height shared edges. */
 :root { --panel-border-external-width: 1px; --panel-border-external: var(--hairline); }
 :root :is(.source-rail, .grade-rail, .viewer-panel, .analysis-dock, .viewport-frame) { border-left: 0; border-right: 0; }
+:root .source-rail.collapsed, :root .compact-workspace.source-overlay-open .source-rail { border-right: 1px solid var(--hairline); }
 :root .control-group:not(.collapsed) { border-top-color: var(--hairline); border-bottom-color: var(--hairline); }
 :root :is(.viewer-bar, .viewer-status-dock, .dock-bar, .scope-panel) { border-color: var(--hairline); }
 :root .splitter-vertical::after { top: 0; bottom: 0; background: var(--hairline); }
@@ -425,23 +427,19 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 /* Zoom and thumbnail size are neutral view controls, even away from home. */
 :root :is(.zoom-control, .library-size) .range-shell .slider-fill { background: var(--fill-neutral); box-shadow: none; }
 
-/* Workflow pages share one joined plate, like the in-panel tabs. */
 :root .workflow-tabs {
- align-self: center; gap: 1px; height: var(--workflow-plate-h); padding: 0;
- border: 1px solid var(--plate-edge); border-radius: var(--radius-plate);
- background: var(--plate-edge); box-shadow: var(--plate-lift);
+ align-self: stretch; align-items: stretch; gap: 2px; height: var(--top-h); padding: 0;
+ border: 0; border-radius: 0; background: transparent; box-shadow: none;
 }
 :root .workflow-tab {
- position: relative; min-width: 0; height: calc(var(--workflow-plate-h) - 2px); min-height: calc(var(--workflow-plate-h) - 2px); padding-inline: 8px; gap: 6px;
- border: 0; border-radius: 0; background: var(--plate-up); box-shadow: none; color: var(--body);
+ position: relative; min-width: 0; height: var(--top-h); min-height: var(--top-h); padding-inline: 12px; gap: 6px;
+ border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; box-shadow: none; color: var(--muted);
  font: var(--font-weight-regular) var(--page-title-font-size)/var(--line-height-none) var(--font-title);
  letter-spacing: var(--tracking-slight); text-transform: uppercase; white-space: nowrap;
  text-box: trim-both cap alphabetic;
 }
-:root .workflow-tab:first-child { border-radius: calc(var(--radius-plate) - 1px) 0 0 calc(var(--radius-plate) - 1px); }
-:root .workflow-tab:last-child { border-radius: 0 calc(var(--radius-plate) - 1px) calc(var(--radius-plate) - 1px) 0; }
-:root .workflow-tab:hover:not(.active) { background: var(--plate-up-hover); color: var(--text); }
-:root .workflow-tab.active { background: var(--plate-down); box-shadow: var(--plate-press); color: var(--accent-strong); }
+:root .workflow-tab:hover:not(.active) { background: transparent; color: var(--text); }
+:root .workflow-tab.active { border-bottom-color: var(--accent-strong); background: transparent; box-shadow: none; color: var(--text); }
 
 /* One fixed-size grip for pinned folders and every sidebar section. */
 :root .library-drag-handle { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 28px; min-height: 28px; padding: 0; font: var(--font-size-xl)/var(--line-height-none) var(--font-body); color: var(--muted); }
@@ -611,11 +609,12 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"] { padding-l
 html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checked="true"]::before { left: 10px; }
 
 /* Approved component-sheet materials: depth belongs to each segment. */
-:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs, .workflow-tabs) { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; box-shadow: none; }
-:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs, .workflow-tabs) > button { flex: 1 1 0; min-width: max-content; display: flex; align-items: center; justify-content: center; box-shadow: var(--plate-lift); }
-:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs, .workflow-tabs) > button:is(.active, [aria-selected="true"], [aria-pressed="true"]) { box-shadow: var(--plate-press); }
+:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs) { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; box-shadow: none; }
+:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs) > button { flex: 1 1 0; min-width: max-content; display: flex; align-items: center; justify-content: center; box-shadow: var(--plate-lift); }
+:root :is(.lane-switch, .local-lane-switch, .control-mode-switch, .proof-preview-switch, .channel-tabs, .dock-tabs, .wheel-range-tabs) > button:is(.active, [aria-selected="true"], [aria-pressed="true"]) { box-shadow: var(--plate-press); }
 :root .channel-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
 :root .workflow-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+:root .workflow-tabs > button { display: flex; align-items: center; justify-content: center; }
 :root #grade-workflow-panel .grade-header { padding-bottom: var(--tab-plate-inset); }
 :root #grade-workflow-panel .grade-header > .control-mode-switch { margin-bottom: 0; }
 :root :is(input[type="text"], input[type="number"], input[type="search"], textarea) { border: 1px solid var(--plate-edge); border-radius: var(--radius-1); background: var(--input); box-shadow: var(--plate-press); }
@@ -649,6 +648,14 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 :root :is(input[type="text"], input[type="number"], input[type="search"]) { min-height: var(--panel-control-h); }
 :root :is(#sdr-tone-equalizer-editor) { background: transparent; }
 :root .source-rail :is(.source-summary, .disclosure-panel) { border-bottom: 1px solid var(--hairline); }
+:root .source-rail:not(.collapsed) { padding-inline: 0; }
+:root .source-rail:not(.collapsed) > :is(.rail-title-row, .source-file-identity, .source-summary, .disclosure-panel) { margin-inline: 0; padding-inline: var(--workspace-leading); }
+:root .compact-workspace.source-overlay-open { grid-template-columns: var(--rail-w) 0 minmax(0, 1fr) var(--splitter-size) var(--grade-w); }
+:root .panel-collapse-button::before { transition: color var(--group-chevron-transition); }
+:root .dock-content.scope-layout { padding: 0; gap: 0; grid-template-rows: minmax(0, 1fr); }
+:root .scope-visual { padding: 10px; }
+:root .scope-readings { padding: 0 10px 10px; min-height: 0; overflow: auto; }
+:root .scope-reading-status { margin-inline: -10px; padding: 10px; }
 
 :root :is(.batch-preset[aria-pressed="true"], .library-tags-tools [aria-pressed="true"], .library-tag-row[aria-selected="true"]) { box-shadow: var(--plate-press); }
 
@@ -656,15 +663,24 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 :root .tone-equalizer-actions > * { white-space: nowrap; flex-shrink: 0; }
 
 /* The Scopes bar matches the preview bar: same height, 30px controls centred, room between dropdowns. */
-:root .analysis-dock { grid-template-rows: var(--panel-header-h) minmax(0, 1fr); }
-:root .analysis-dock.collapsed { grid-template-rows: var(--panel-header-h) 0; }
+:root .analysis-dock { container-type: inline-size; grid-template-rows: var(--panel-header-h) minmax(0, 1fr); }
+:root .analysis-dock.collapsed { min-height: 0; grid-template-rows: var(--panel-header-h) 0; }
 :root .workspace-main:has(.analysis-dock.collapsed) { grid-template-rows: minmax(320px, 1fr) var(--splitter-size) var(--panel-header-h); }
+:root body[data-workflow="export"] .workspace-main { margin-bottom: calc(var(--status-bar-h) + var(--status-bar-h)); }
+:root body[data-workflow="export"] .viewer-panel { grid-template-rows: var(--panel-header-h) minmax(0, 1fr); }
+:root .dock-bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; }
+:root .scope-header-controls { overflow-x: auto; scrollbar-width: none; }
+:root .scope-header-controls > * { flex-shrink: 0; }
+:root #histogram { min-height: 0; }
 :root .scope-header-controls, :root .compact-workspace .scope-header-controls { gap: 12px; }
 :root :is(.scope-zoom-control, .scope-detail-control) { gap: 8px; }
 :root .scope-header-controls .scope-mode-select { height: var(--panel-control-h); min-height: var(--panel-control-h); }
+@container (max-width: 900px) {
+ :root :is(.scope-zoom-control, .scope-detail-control) > span { display: none; }
+}
 /* The label row sizes to its text so a slider handle never rides up into the label. */
 :root :is(.instrument-slider-control, .local-grade-controls .instrument-slider-control, .local-brush-control.instrument-slider-control, .local-adjustment-opacity.instrument-slider-control) { grid-template-rows: auto var(--instrument-slider-hit-h); }
 :root .instrument-slider-control > .range-shell { margin-bottom: 0; align-self: start; }
 
 /* Selection on a button is the pressed plate and accent ink, never an accent outline or border (Steve, November 11, 2026). Photo and folder tiles keep their selection frame. */
-:root :is(button, [role="button"], [role="tab"]):is(.active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):not(.batch-photo, .directory-browser-entry, .hsl-channel, .accent-option, .group-toggle, .disclosure-trigger) { border-color: var(--plate-edge) !important; outline: none; }
+:root :is(button, [role="button"], [role="tab"]):is(.active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):not(.workflow-tab, .batch-photo, .directory-browser-entry, .hsl-channel, .accent-option, .group-toggle, .disclosure-trigger) { border-color: var(--plate-edge) !important; outline: none; }

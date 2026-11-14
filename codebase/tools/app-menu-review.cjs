@@ -9,7 +9,7 @@ const out=path.resolve(__dirname,'../output/review/app-menu');fs.mkdirSync(out,{
  await page.waitForFunction(()=>document.querySelector('[data-desktop-command="open-source"]')?.dataset.shortcut);
  const box=sel=>page.locator(sel).first().evaluate(e=>{const r=e.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};});
  const centre=async sel=>{const b=await box(sel);return [(b.left+b.right)/2,(b.top+b.bottom)/2];};
- for(const theme of ['default-dark','modern-dark','studio-gray','default-light']){
+ for(const theme of ['modern-dark','studio-gray','default-light']){
   await page.evaluate(t=>{HDRApplicationShell.openSettings('appearance');document.querySelector(`[data-theme-option="${t}"]`).click();},theme);
   await page.locator('#settings-close').click();await page.mouse.move(900,700);
   await page.locator('.unified-menu-button').click();
@@ -37,7 +37,7 @@ const out=path.resolve(__dirname,'../output/review/app-menu');fs.mkdirSync(out,{
   await page.keyboard.press('Escape');await page.keyboard.press('Escape');
   checks.push(theme+': square panels, rounded rows, aligned panels, shortcut labels, submenu gap');
  }
- await page.evaluate(()=>{HDRApplicationShell.openSettings('appearance');document.querySelector('[data-theme-option="default-dark"]').click();});
+ await page.evaluate(()=>{HDRApplicationShell.openSettings('appearance');document.querySelector('[data-theme-option="modern-dark"]').click();});
  await page.locator('#settings-close').click();
  assert.deepEqual(errors,[]);
  fs.writeFileSync(path.join(out,'index.html'),'<!doctype html><meta charset="utf-8"><title>Application menu review</title><style>body{background:#292929;color:#eee;font:16px system-ui}img{max-width:100%;height:auto}figure{margin:16px}</style><h1>Application menu review</h1>'+fs.readdirSync(out).filter(f=>f.endsWith('.png')).map(f=>`<figure><figcaption>${f}</figcaption><img src="${f}"></figure>`).join(''));

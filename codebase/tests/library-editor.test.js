@@ -11,7 +11,7 @@ function host() {
     HDRGradeSaving: { item: () => "photo|copy|2", leave: async label => { gates.push(label); return false; }, refresh: async () => {} },
     batchExport: { quick: async paths => exports.push(paths), open: async paths => exports.push(paths) } };
   const document = { getElementById: () => frame, createElement: () => ({ querySelector: () => ({ addEventListener() {} }) }),
-    querySelectorAll: selector => selector === "[data-desktop-command]" ? buttons : [], documentElement: { dataset: { theme: "default-dark" } } };
+    querySelectorAll: selector => selector === "[data-desktop-command]" ? buttons : [], documentElement: { dataset: { theme: "modern-dark" } } };
   const state = { activeWorkflow: "import" };
   const requests = [];
   const context = { window, document, state, desktop: null, fetch: async (url, options) => {

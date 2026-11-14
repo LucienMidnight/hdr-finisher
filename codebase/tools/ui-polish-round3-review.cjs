@@ -6,7 +6,7 @@ await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'domcontentloaded'});
 await page.evaluate(async()=>{const r=await fetch('/api/proof/test-pattern');await importByteFile(new File([await r.blob()],'round3.tiff',{type:'image/tiff'}));});
 await page.waitForFunction(()=>state.session&&document.body.dataset.workflow==='grade');
 const crop=async(name,loc)=>{await loc.scrollIntoViewIfNeeded();await loc.screenshot({path:path.join(out,name+'.png')});};
-for(const theme of ['default-dark','default-light','studio-gray']){
+for(const theme of ['modern-dark','default-light','studio-gray']){
 await page.evaluate(t=>{HDRApplicationShell.openSettings('appearance');document.querySelector(`[data-theme-option="${t}"]`).click();},theme);await page.locator('#settings-close').click();
 await page.evaluate(()=>{activateWorkflowTab('grade');setGradeMode('global');revealSourceRail();const g=document.querySelector('[data-group="color-grading"]');if(g.classList.contains('collapsed'))g.querySelector('.group-toggle').click();});
 await crop(theme+'-mode-and-rendition',page.locator('#grade-workflow-panel > .grade-header'));

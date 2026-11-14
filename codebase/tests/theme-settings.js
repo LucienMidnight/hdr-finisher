@@ -11,7 +11,7 @@ fs.mkdirSync(out, {recursive:true});
   await page.waitForFunction(() => document.body.dataset.ready === 'true');
   await page.evaluate(() => document.fonts.ready);
   const palettes = {};
-  for (const theme of ['default-dark','modern-dark','default-light','studio-gray']) {
+  for (const theme of ['modern-dark','default-light','studio-gray']) {
    await page.evaluate(() => HDRApplicationShell.openSettings('appearance'));
    await page.locator(`[data-theme-option="${theme}"]`).click();
    await page.waitForFunction(t => document.querySelector('#library-frame').contentDocument.documentElement.dataset.theme === t, theme);
@@ -19,33 +19,11 @@ fs.mkdirSync(out, {recursive:true});
     const style = getComputedStyle(document.documentElement);
     return Object.fromEntries(['--panel','--text','--muted','--border'].map(k => [k,style.getPropertyValue(k).trim()]));
    });
-   if (theme === 'default-dark') {
-    const ratios = await page.evaluate(() => {
-     const style = getComputedStyle(document.documentElement);
-     const token = k => style.getPropertyValue(k).trim();
-     const luminance = hex => {
-      const rgb = hex.match(/[0-9a-f]{2}/gi).map(v => parseInt(v,16)/255).map(v => v <= .04045 ? v/12.92 : ((v+.055)/1.055)**2.4);
-      return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;
-     };
-     // Every text role on every flat surface; on button plates, the text roles
-     // the controls actually use (labels are --body at rest and --text on hover).
-     const flat = ['--app','--panel','--raised','--input','--tooltip'];
-     const pairs = [...flat.flatMap(s => ['--text','--body','--muted'].map(role => [role,s])),
-      ['--body','--plate-up'],['--text','--plate-up'],['--text','--plate-up-hover'],['--text','--plate-down'],['--body','--plate-down']];
-     return pairs.flatMap(([role,surface]) => token(surface).match(/#[0-9a-f]{6}/gi).map(bg => {
-      const a=luminance(token(role)), b=luminance(bg);
-      return {role,surface,bg,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)};
-     }));
-    });
-    for (const pair of ratios) assert.ok(pair.ratio >= 7, JSON.stringify(pair));
-    console.log('Default Dark neutral text minimum contrast:',Math.min(...ratios.map(p => p.ratio)).toFixed(2)+':1');
-   }
-   assert.equal(await page.locator('.theme-option').count(),4);
+   assert.equal(await page.locator('.theme-option').count(),3);
    await page.locator('#settings-dialog').screenshot({path:path.join(out,theme+'-settings.png')});
    await page.locator('#settings-close').click();
-   if (theme === 'default-dark' && process.argv.includes('--update-preview')) await page.screenshot({path:path.join(out,'default-dark-app.png')});
+   if (theme === 'modern-dark' && process.argv.includes('--update-preview')) await page.screenshot({path:path.join(out,'modern-dark-app.png')});
   }
-  assert.notEqual(palettes['default-dark']['--panel'],palettes['modern-dark']['--panel']);
   assert.equal(palettes['modern-dark']['--panel'],'#121212');
   await page.evaluate(() => HDRApplicationShell.openSettings('appearance'));
   await page.locator('[data-theme-option="modern-dark"]').click();
@@ -75,6 +53,6 @@ fs.mkdirSync(out, {recursive:true});
   assert.equal(await page.locator('.window-menu-popover').first().evaluate(e=>getComputedStyle(e).borderLeftWidth),'2px');
   await page.screenshot({path:path.join(out,'menu.png'),clip:{x:0,y:0,width:600,height:550}});
   await page.keyboard.press('Escape');
-  console.log('PASS four themes, Library sync, reload persistence, Settings type and menu alignment/borders');
+  console.log('PASS three themes, Library sync, reload persistence, Settings type and menu alignment/borders');
  } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
