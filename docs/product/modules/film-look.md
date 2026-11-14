@@ -1,5 +1,64 @@
 # Module PRD: Film Look
 
+### November 14: fixed perceptual drift guards (Steve, 2026-11-14)
+
+| Decision | Date |
+| --- | --- |
+| Replace only the measured failing byte-mean gates with tight, fixed perceptual caps. Use the worst of three measurements + 0.005 mean / + 0.020 p99.9 ΔE, rounded upward to 0.001. The same caps and exact case list apply on PC and Mac. No automatic expansion when a different case fails. | Steve, 2026-11-14 |
+
+| Check / editing lane | Cases | Worst mean ΔE | Worst p99.9 ΔE | New mean cap | New p99.9 cap |
+| --- | --- | --- | --- | --- | --- |
+| Lens: HDR editing lane | 28 | 0.155865 | 1.134869 | 0.161 | 1.155 |
+| Lens: SDR editing lane | 32 | 0.242057 | 1.181764 | 0.248 | 1.202 |
+| Velvia physical chain: SDR | 1 | 0.119114 | 1.044660 | 0.125 | 1.065 |
+
+All three measurements give identical mean and p99.9 for every affected case:
+**zero observed run-to-run spread**. The lens uses three independent Electron
+processes; Velvia uses three complete repeats in one process, followed by a
+fresh-process final check. Machine: MacBook Neo, Apple A18 Pro / native Metal,
+8 GB unified RAM, 6 cores, 1408x794 points. First lens run: all 128 cases;
+next two: only its 60 misses. The quick set is eight of those same cases, measured three times.
+The SDR Velvia physical chain is measured three times; its HDR counterpart
+continues to pass strictly.
+
+These are **finished SDR presentations in both editing lanes**, compared with
+full-image ΔE 2000 via the existing `delivery_colour.compare_finished_pixels`.
+There is no sampling, error-based pixel exclusion or baseline subtraction in
+that metric. HDR ΔE ITP must use actual HDR pixels; this decision does not
+relax HDR delivery, Proof/export or the exact highlight ceiling.
+
+The 60 lens misses are all at strength 2: 28 HDR-lane and 32 SDR-lane cases,
+across Glimmerglass, Black Pro-Mist, Pro-Mist and Cinebloom. The exact
+edge/lane/filter/size/format keys and frozen caps are in
+`codebase/tests/helpers/film-parity-limits.cjs`. All 64 strength-0.125 cases
+and the four strictly passing strength-2 HDR cases keep the original
+0.1-level added-byte mean. The two-level added-byte p99.9 gate stays strict
+everywhere (measured p99.9 is one or two levels). Matching requested dimensions,
+complete opaque frames, native GPU availability and film-stock allocation
+also stay strict. Extreme HDR, real-file diagnostics, isolated Velvia
+variants and all other checks do not inherit these exceptions.
+
+The misses are in the byte **mean**, not a hard per-pixel maximum. Lens
+processing accumulates 27 components through half-float GPU textures, while
+the CPU uses the bounded FFT mixture. The measured finished-pixel gaps are
+below the agreed invisible-difference criteria. No instruction-level Metal
+cause is proved, and no rendering or shader precision is changed. Failure
+messages now name the exact case, metric, value, cap and excess; comparisons
+use full precision. The unrelated HDR Neutral release-failure signature is
+preserved.
+
+The first run deliberately yielded after its complete matrix for the priority
+100% hang checks; six unused partial-repeat observations were discarded.
+All GPU/Electron runs use the shared lock, released between subsequent drivers.
+The third lens run overlapped low-priority Python tests, so these diagnostic
+durations are not controlled speed baselines. Pixel scratch and generated
+fixtures are removed; no read-only project is saved.
+
+Evidence: `codebase/output/parity-limits/lens-three.json`, `film-three.json`,
+`lens-baseline-{1,2,3}.log` and `film-three.log`. Final gate/check results are
+recorded in `docs/known-limitations.md` and `docs/technical/performance-table.md`.
+PC GPU confirmation is listed in AGENTS.md; the caps are not platform-specific.
+
 ### November 14: Mac lens parity follow-up (test-only)
 
 Base `87b91385`, `fix/mac-gpu-parity`, MacBook Neo/A18 Pro/Metal, 8 GB,
@@ -49,9 +108,9 @@ shortcut change was used to hide it. Current PC hardware confirmation remains
 needed; the release known-failure list contains only the separate extreme HDR
 Neutral film case, not these lens/SDR or keyboard failures.
 
-**Decisions for Steve:** may these perceptually small lens/Velvia byte-gate misses be
-judged by the already agreed perceptual criterion? Until approved, preserve
-the strict failures rather than change pixels, limits or budgets.
+**Resolved by Steve, 2026-11-14:** the fixed limits and exact scope above
+replace these normal-driver mean-gate misses. The measurements below record
+the earlier strict-gate state; no production pixels were changed.
 
 Evidence: `codebase/output/macparity-final-quick.log`,
 `macparity-final-velvia.log`, `macparity-perceptual-results.json`, and

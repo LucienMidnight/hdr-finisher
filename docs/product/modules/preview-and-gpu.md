@@ -140,6 +140,7 @@ the delivery renderer for export, Proof and Library pictures (see
 
 | Decision | Date |
 | --- | --- |
+| Only the 60 measured lens cases and SDR Velvia physical chain replace the byte-mean gate with fixed perceptual caps shared by PC and Mac. Lens HDR-editing-lane mean ≤ 0.161, p99.9 ≤ 1.155; lens SDR mean ≤ 0.248, p99.9 ≤ 1.202; SDR Velvia physical chain mean ≤ 0.125, p99.9 ≤ 1.065. Three-repeat worst + 0.005 mean / + 0.020 p99.9, rounded upward to 0.001; 68 strictly passing lens cases, two-level byte p99.9 and structural/coverage checks stay strict. Both editing lanes here are SDR presentations (ΔE 2000); true HDR ΔE ITP and delivery ceilings are unchanged. See Film Look for measurements. | Steve, 2026-11-14 |
 | Viewport-bounded preview: masks independent of resolution, small preview-against-export differences accepted, interactive work on the GPU. | Steve, 2026-10-01 |
 | Stage tolerances (for example a painted-mask feather may differ by 2 of 255 levels) stay in force. Whole-image perceptual limits (ΔE 2000 / ΔE ITP, mean < 1.0, p99.9 ≤ 3.0) apply on top for delivery. | 2026-10-01, 2026-10-18 |
 | GPU first for everything, including export. Superseded November 2 (next row). | Steve, 2026-10-18 |

@@ -79,6 +79,43 @@ not a before/after speed comparison or timing qualification:
 Evidence: `codebase/output/mac-export/final/` and
 `codebase/output/quick-library-check/mac-export-ceiling/report.json`.
 No new speed claim, tolerance or budget is introduced.
+November 14 fixed preview-parity drift guards (`fix/gpu-parity-limit`, commit
+containing this record; base `3f232e0b`): **MacBook Neo**, Apple A18 Pro,
+8 GB unified RAM, 6 cores, native Apple Metal, 1408x794-point window,
+unpackaged Electron; shared GPU lock for every Electron run. Steve approved
+three measurements and worst + 0.005 mean / + 0.020 p99.9 ΔE, rounded upward
+to 0.001. All 63 affected cases have zero observed spread across three
+measurements each: independent processes for lens, repeated complete captures
+in one process for Velvia (plus a fresh-process final check). The driver presents SDR in both editing lanes, so
+these are full finished-pixel ΔE 2000 measurements, not HDR ΔE ITP or peak
+qualification. No production rendering or performance improvement is claimed.
+
+| Calibration / check | Driver duration | Result / conditions |
+| --- | --- | --- |
+| Full lens baseline, 128 cases | 835.3 s | MacBook Neo; 68 strict passes / 60 mean-gate misses. Duration includes six unused partial-repeat cases before intentionally yielding to critical 100% checks; only the complete first matrix is retained. |
+| Two further lens measurements, 60 affected cases each | 447.5–494.6 s each | MacBook Neo; identical per-case metrics across all three runs. Third run overlaps low-priority Python tests; diagnostic duration, not a controlled speed baseline. |
+| Velvia physical chain, three repeats in both lanes | 117.0 s total | MacBook Neo; HDR added-byte mean 0.073473 stays strict; SDR 0.104330 misses 0.1. SDR finished mean/p99.9 0.119114/1.044660, identical across three runs. |
+| Final gates applied to saved measurements | Not a render timing | MacBook Neo data; 254/254 pass: 248 lens comparisons plus six film comparisons. Explicit replay, not a fresh full-matrix render. |
+| Lens caps, HDR editing lane / SDR editing lane | Accuracy result | MacBook Neo calibration; worst mean/p99.9 0.155865/1.134869 and 0.242057/1.181764; caps 0.161/1.155 and 0.248/1.202. Byte p99.9 remains ≤ 2 levels; the 68 strictly passing lens cases retain mean ≤ 0.1 levels. |
+| 1520-pixel GPU render / CPU reference stages | 0.291–5.054 s / 0.338–2.470 s | MacBook Neo; pooled full baseline and affected repeats, differing lens reaches and cold/warm work; not action-to-screen or a speed comparison. |
+| 2400-pixel GPU render / CPU reference stages | 0.217–3.873 s / 1.172–8.798 s | MacBook Neo; pooled full baseline and affected repeats, differing lens reaches and cold/warm work; not action-to-screen or a speed comparison. |
+| SDR Velvia caps | Accuracy result | MacBook Neo calibration; mean ≤ 0.125 / p99.9 ≤ 1.065. Same fixed caps on PC and Mac; PC confirmation is pending in AGENTS.md. |
+| Final live quick lens set | 40.2 s | MacBook Neo; 8/8 pass the fixed caps with native Apple Metal, requested dimensions and opaque coverage; same eight cases also measured three times in calibration. |
+| Final live Velvia case | 51.8 s | MacBook Neo; 2/2 pass: HDR remains on its byte gate; SDR uses the fixed full-pixel caps. Native Apple Metal, no software fallback. |
+| Default Library first picture / coverage at 90 s | 0.6 s / 6 of 33 | MacBook Neo; same current branch, plain Electron, shared lock; system-reserve warning and incomplete coverage. Separate existing Library limitation, not parity acceptance; no investigation or rerun. |
+| Final Node fast suite | 13.5 s | MacBook Neo; 957 passed, one skipped, no failures; includes full-pixel comparator, exact case selection and numeric caps. |
+| Final Python fast suite, quiet full rerun | 219.4 s | MacBook Neo; 3,313 passed, 145 skipped, one xpassed; GPU lock excludes competing GPU memory. |
+
+The first two lens measurements were followed by a hold for the priority
+Exposure/Denoise and HSL checks; long repeats do not hold one lock across
+multiple drivers. The first concurrent Python run hit 11 native-Library
+memory-admission failures under GPU pressure; no test or memory budget was
+changed. The quiet full rerun, protected from concurrent GPU work with the same shared lock, passes all 3,313 tests (145 skipped, one xpassed) in 219.4 s; the initial contention run took 362.7 s.
+Evidence: `codebase/output/parity-limits/` (`lens-three.json`, `film-three.json`,
+`gate-replay.json`, per-run logs and final validation reports). Scratch output ends at 6.2 GB (100 GB limit). All generated
+pixel scratch is removed; the reports are small. Initial preparation checks
+also passed (Node 955/one skipped, Python 3,305/153 skipped/one xpassed,
+13.6 s and 298.1 s respectively, before private-media links were ready).
 
 November 14 Mac GPU parity diagnostics (`fix/mac-gpu-parity`, commit containing
 this record, base `87b91385`): **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM,
