@@ -121,3 +121,23 @@ def test_shared_media_link_is_repeatable_and_keeps_one_copy(tmp_path):
     assert (source / 'photo').samefile(target / 'photo')
     (target / 'photo').write_text('same original')
     assert (source / 'photo').read_text() == 'same original'
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS physical-footprint diagnostic')
+def test_memory_sampler_keeps_native_footprint():
+    child = subprocess.Popen([sys.executable, str(TOOLS / 'sample-process-memory.py'), str(os.getpid())],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        time.sleep(1.5)
+        child.terminate()
+        output, errors = child.communicate(timeout=10)
+        assert output, errors
+        rows = json.loads(output.splitlines()[0])['processes']
+        own = next(row for row in rows if row['id'] == os.getpid())
+        assert own['chargedBytes'] > 0
+        assert own['workingSetBytes'] > 0
+        assert own['privateBytes'] is None
+    finally:
+        if child.poll() is None:
+            child.kill()
+            child.communicate(timeout=10)

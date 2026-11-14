@@ -823,3 +823,13 @@ Desktop release Windows/macOS/Linux/Flatpak jobs remain unchanged.
    stops the full tree before lock release. Verify Python/Electron selection.
 4. Run release `--plan` and verify the three protected-project hashes. Keep the
    full focused release check and packaged GitHub builds at release points.
+
+## November 14: minimum-Mac release harness
+
+The 0.9.3 release check uses native macOS physical-footprint samples when
+Windows private bytes are unavailable in the overlay backlog guard. Its 2 GiB
+growth cap stays unchanged. Denoise corpus preparation now runs inside the
+browser cleanup block, so a missing private reference fails promptly instead
+of leaving Electron alive until the attempt deadline. Rendering, numerical
+guards and the runner's single retry are unchanged. Final qualification is
+recorded in `docs/known-limitations.md`.

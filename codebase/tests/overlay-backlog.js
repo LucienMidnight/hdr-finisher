@@ -77,7 +77,7 @@ const c = require('./performance/heavy-project-review-common');
       return health.ok && library.ok && state.gpuPreview.available;
     });
     assert(recovered, 'Editor/Library did not recover after drag');
-    const samples = memory.rows.map(row => row.processes.filter(p => /python|backend/i.test(p.name)).reduce((n,p)=>n+p.privateBytes,0)).filter(Boolean);
+    const samples = memory.rows.map(row => row.processes.filter(p => /python|backend/i.test(p.name)).reduce((n,p)=>n+(p.privateBytes ?? p.chargedBytes ?? 0),0)).filter(Boolean);
     assert(samples.length >= 5, 'Backend process memory samples missing');
     const growth = Math.max(...samples)-samples[0];
     assert(growth <= 2*1024**3, `Backend growth exceeded 2 GiB: ${growth}`);

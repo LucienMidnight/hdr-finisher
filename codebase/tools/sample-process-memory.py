@@ -13,5 +13,6 @@ while True:
     print(json.dumps(dict(capturedAt=time.time() * 1000, boardSample=None,
                           processes=[dict(id=r['pid'], name=r.get('name', ''),
                                           workingSetBytes=r['workingSetBytes'],
-                                          privateBytes=r.get('privateBytes'), cpuSeconds=None) for r in rows])), flush=True)
+                                          privateBytes=r.get('privateBytes'),
+                                          chargedBytes=r.get('chargedBytes'), cpuSeconds=None) for r in rows])), flush=True)
     time.sleep(1)

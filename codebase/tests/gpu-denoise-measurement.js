@@ -6,10 +6,10 @@ const root=path.resolve(__dirname,"../output/gpu-denoise-measurement",String(Dat
 const python=require('../tools/lib/platform.cjs').pythonExecutable(),helper=path.join(__dirname,"helpers/denoise_measurement_fixture.py");
 const env={...process.env,PYTHONPATH:[path.resolve(__dirname,"../backend"),path.resolve(__dirname,"..")].join(path.delimiter)};
 (async()=>{
-  execFileSync(python,[helper,"make",root],{env,stdio:"inherit"});
   const browser=await chromium.launch(),page=await browser.newPage(),base=process.env.HDR_FINISHER_URL;
   const api=route=>new URL(route,base).href,rows=[];
   try{
+    execFileSync(python,[helper,"make",root],{env,stdio:"inherit"});
     await page.goto(base,{waitUntil:"networkidle"});
     await page.waitForFunction(()=>state.gpuPreview?.available,{timeout:120000});
     await page.evaluate(()=>{
