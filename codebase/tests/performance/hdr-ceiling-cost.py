@@ -1,7 +1,9 @@
-"""Real-photo CPU export/Proof peaks and paired cost of mandatory decoding.
+"""Real-photo export/Proof peaks and paired cost of mandatory decoding.
 
 Run under tools/gpu-run-lock.py for an uncontended machine. Sources are read
-only, loaded once; each export includes CPU rendering, encoding and validation.
+only, loaded once; CPU exports include native rendering, encoding and validation.
+The --gpu check uses 1600px real-photo EXR fixtures to isolate delivery on the
+8 GB minimum machine; preparing/importing those sources is outside the wait.
 The baseline bypasses only the post-encode check, as the old unchecked option
 did. No production switch is added. Temporary files are removed on failure too.
 """
@@ -58,6 +60,22 @@ if os.environ.get('HDR_CEILING_BENCHMARK_MODE'):
 """
 
 
+def prepare_photo(source, destination, long_edge=1600):
+    """Bound the real-photo fixture for the minimum 8 GB machine, before timing."""
+    from PIL import Image
+    import OpenEXR
+    image = load_image(source, analyze_hdr=False)[0]
+    h, w = image.shape[:2]
+    scale = min(1, long_edge / max(h, w))
+    if scale < 1:
+        size = (round(w * scale), round(h * scale))
+        image = np.stack([np.asarray(Image.fromarray(image[..., c]).resize(size, Image.Resampling.LANCZOS))
+                          for c in range(3)], -1).astype(np.float32)
+    with OpenEXR.File({'colorInteropID':'lin_ap1_scene'}, {'RGB':image}) as output:
+        output.write(str(destination))
+    return image.shape[:2]
+
+
 def measure_gpu(args):
     root = Path(__file__).resolve().parents[2]
     records = []
@@ -66,9 +84,15 @@ def measure_gpu(args):
         with TemporaryDirectory(prefix='hdr-ceiling-benchmark-') as folder:
             folder = Path(folder)
             (folder / 'sitecustomize.py').write_text(GPU_INSTRUMENT)
-            cases = [(args.photos[0], -6), *[(photo, 3) for photo in args.photos]]
-            for index, (photo, exposure) in enumerate(cases):
-                row = {'photo': str(photo), 'exposure':exposure, 'format':'jpeg_ultrahdr', 'policies':[]}
+            prepared = []
+            for index, photo in enumerate(args.photos):
+                fixture = folder / f'photo-{index}.exr'
+                prepare_photo(photo, fixture)
+                prepared.append((photo, fixture))
+            cases = [(prepared[0], -6), *[(photo, 3) for photo in prepared]]
+            for index, ((photo, fixture), exposure) in enumerate(cases):
+                row = {'photo': str(photo), 'source_long_edge':1600, 'exposure':exposure,
+                       'format':'jpeg_ultrahdr', 'policies':[]}
                 records.append(row)
                 # Alternate phase order between photos.
                 for checked in ([False,True] if index%2==0 else [True,False]):
@@ -77,10 +101,10 @@ def measure_gpu(args):
                     calls.unlink(missing_ok=True)
                     env = dict(os.environ, HDR_FINISHER_FORCE_CPU_DELIVERY='0',
                         PYTHONPATH=os.pathsep.join([str(folder),str(root/'backend')]),
-                        HDR_CEILING_SOURCE=str(photo.resolve()), HDR_CEILING_EXPOSURE=str(exposure),
+                        HDR_CEILING_SOURCE=str(fixture.resolve()), HDR_CEILING_EXPOSURE=str(exposure),
                         HDR_CEILING_RESULT=str(result),
                         HDR_CEILING_BENCHMARK_MODE=mode, HDR_CEILING_BENCHMARK_CALLS=str(calls))
-                    subprocess.run(['node','tests/run-in-electron.js','tests/hdr-ceiling-delivery.js','--benchmark'],
+                    subprocess.run(['node','tests/run-in-electron.js','tests/hdr-ceiling-delivery.js','--benchmark','--native-source'],
                         cwd=root, env=env, check=True)
                     runs=json.loads(result.read_text())
                     observed=[json.loads(line) for line in calls.read_text().splitlines()]
@@ -99,8 +123,12 @@ def main():
     parser.add_argument('--repeats', type=int, default=2)
     parser.add_argument('--formats', nargs='+', default=['jpeg_ultrahdr', 'avif_gain_map', 'jpegxl_hdr'])
     parser.add_argument('--skip-proofs', action='store_true')
+    parser.add_argument('--prepare-output', type=Path, help='Write one bounded ACEScg EXR fixture and exit.')
     parser.add_argument('--gpu', action='store_true', help='Time real Electron GPU exports, JPEG 1600px, one warm-up then two runs per policy.')
     args = parser.parse_args()
+    if args.prepare_output:
+        assert len(args.photos) == 1
+        return prepare_photo(args.photos[0], args.prepare_output, args.long_edge)
     if args.gpu:
         return measure_gpu(args)
     backends = exporters.build_export_backends(probe_capabilities())

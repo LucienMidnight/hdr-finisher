@@ -2,49 +2,76 @@
 
 ## November 14: encoding allowance follow-up
 
-**Paused at Steve's request.** Implementation is committed as `7d41e7a7`;
-the WIP follow-up adds a clean-file GPU timing control. The queued GPU batch
-was cancelled. As the manual lock was released, its first Electron launcher
-briefly started, then was stopped through the lock wrapper (exit 130). No
-GPU driver result or isolated GPU timing was obtained. The queue and all of
-this task's test/Electron/lock/build processes were verified stopped.
-Next: rerun `output/ceiling-followup/run-focused.py` under the existing
-per-check GPU wrappers, inspect the all-codec CPU/GPU Proof peaks and paired
-GPU timing, update this report/performance table, and commit the results.
-The unchanged Python Library failures/stall below remain unqualified.
-
 Steve's November 14 decision replaces the October 18–19 ceiling policy and
-this morning's zero-allowance interpretation. Every Highlight Compression
-HDR export and reduced/full-size Proof is decoded, CPU and GPU. Initial peaks
-up to target + 1% are accepted unchanged, without a note. Larger overshoots
-use the existing local correction toward the target; only after all rounds
-may the 1% allowance be used again. Anything still above it is refused without
-replacing the destination. The optional strict codec-limit check with
-Highlights off is unchanged. Library pictures are not checked after encoding.
+the earlier zero-allowance interpretation. Every Highlight Compression HDR
+export and reduced/full-size Proof is decoded, CPU and GPU. Initial peaks up
+to target + 1% are accepted unchanged, without a note. Larger overshoots use
+the existing local correction toward the target; only after all rounds may
+the allowance be used again. Files still above it are refused without replacing
+the destination. Highlights-off optional strict codec checking is unchanged.
+Library pictures are not checked after encoding.
 
-Code and documentation are ready; app validation is paused. Preliminary CPU
-checks on read-only IMG_0114.CR2 and DSC00264.ARW pixels at 1600 px cover all
-three HDR codecs and both Proof sizes. Corrected peaks are 971.983–998.931
-nits against 1000; initial JPEG XL files up to 1007.348 nits are accepted
-unchanged. Full-size Proof is byte-identical to export. No real case was
-refused, and no correction-margin change was needed. GPU qualification and
-isolated before/after GPU export timings are pending until work resumes; these CPU results do not qualify native RAW GPU delivery.
+**Mac validation completed on the commit containing this record**, following
+implementation `7d41e7a7` and the pause/resume WIP `46b84c38`:
 
-Node: 951 passed, one skipped. Python: 3,331 passed across the interrupted
-full run, its unattempted remainder and six newly added focused cases;
-145 skipped, one xpassed, two unrelated failures and one stalled test.
-The focused ceiling suite passes all 35 cases. The two unchanged
-`test_library_gpu_raw.py` failures are
-`test_native_chunk_owner_admits_before_allocation_and_survives_trim` and
-`test_abandoned_native_upload_releases_owner_without_expiring_replacement`:
-ordinary native upload admission returns false. The full run then stalled
-in `test_library_live.py::test_xtrans_api_reuses_measured_cpu_grant_and_existing_cancellable_helper[False]`;
-the ten-minute stack shows the API request waiting, and the run was stopped
-after 12.5 minutes. The remaining 1,356 tests passed in a separate process.
-These Library files and checks were not changed or repaired here. Thus the
-full Python suite is not qualified as a pass. Logs and compact CPU evidence:
-`codebase/output/ceiling-followup/`. Protected project hashes match the prior
-baseline; output started at 6.3 GB, below 100 GB. No push or merge to main.
+- Read-only IMG_0114.CR2 and DSC00264.ARW real-photo CPU fixtures cover all
+  three HDR codecs and both Proof sizes. Corrected peaks are
+  **971.983–999.368 nits against 1000** across those fixtures and the real-app
+  checks. Initial files up to **1007.448 nits** stay unchanged within the
+  allowance. No real file is refused; existing correction margins are retained.
+- The real-app matrix passes all six codec/renderer pairs (JPEG, AVIF,
+  JPEG XL; GPU and CPU), with 800px reduced and 1600px full-size Proof.
+  Its 18 finished-file readings are 989.558–1007.448 nits. Every full-size
+  Proof is byte-identical to its export. The checkbox is off throughout,
+  proving active Highlight Compression remains mandatory.
+- The six-case reduced JPEG Proof matrix passes (977.461–994.067 nits).
+  GPU/CPU delivery smoke, watermarked Proof identity, framing and Proof-size
+  interaction also pass. The smoke's pre-existing stricter HDR p99.9 miss
+  remains 3.377 against 3; its agreed Denoise p99 criterion passes.
+- Native DSC00264 (7968×5320) could not obtain the GPU host reservation:
+  estimated 3.41 GiB additional working memory, safely available 0.00 GiB.
+  One GPU attempt fell back to the CPU and exported successfully (69.35 s
+  backend total), then the driver failed its GPU-renderer assertion.
+  Native 42MP GPU delivery is therefore **not qualified** on this run.
+  The all-codec GPU checks and timing use 1600px linear-ACEScg EXRs prepared
+  from the real photos before import. The portable driver prepares that
+  bounded fixture by default; `--native-source` retains the original for
+  a separate diagnostic. No memory budget, shader or encoder was changed.
+- Same-Mac, same-file paired GPU export measurements: about **0.48 s extra**
+  when checking without correction; **2.09–3.53 s extra** when correction
+  needs three/four encode-and-decode rounds. These are warm 1600px JPEG
+  quality-90 exports, excluding source preparation/import. The dim unchecked
+  control varies more than the agreed 5% noise allowance (0.384–0.434 s),
+  so its added cost is approximate (0.44–0.53 s). No timing rerun was made;
+  Steve should try exports before further timing work. Native RAW and larger
+  output costs are not established by this bounded measurement.
+
+Node passes: 951 tests, one skipped. The resumed focused Python ceiling/parity
+selection passes all 62 cases. The earlier full-suite attempts total 3,331
+passes, 145 skips and one xpass, with two unchanged Library failures and one
+stalled test; the full Python suite is **not** a pass:
+`test_library_gpu_raw.py::test_native_chunk_owner_admits_before_allocation_and_survives_trim`,
+`test_library_gpu_raw.py::test_abandoned_native_upload_releases_owner_without_expiring_replacement`
+(native upload admission returns false), and
+`test_library_live.py::test_xtrans_api_reuses_measured_cpu_grant_and_existing_cancellable_helper[False]`
+(API wait; ten-minute stack, stopped after 12.5 minutes). The remaining
+1,356 tests passed separately. These Library files/checks were not repaired.
+
+The resumed 90-second Library smoke remains unqualified: six of 33 pictures,
+1.2 s first picture, system-reserve memory failure. This is left to the
+Library/memory follow-up, without a rerun or changed limit. Older fixture
+blocks and unqualified native/Windows checks below remain open; this is not
+full release qualification. All checks were serialized through the shared
+GPU lock at 1408×794 points. The three protected project hashes are unchanged.
+No curated HDR Test Images path broke or needed retargeting in these runs.
+
+Compact evidence and logs: `codebase/output/ceiling-followup/` (delivery,
+cost, parity, CPU matrix, fast-suite logs); Library report:
+`codebase/output/quick-library-check/ceiling-followup/report.json`.
+Generated EXRs, exports, decoded copies and temporary profiles are removed.
+Scratch output started at 6.3 GB and ended at 6.5 GB, below 100 GB. No push, merge into
+main, installer build, or new HDR-policy decision is needed here. Windows GPU
+qualification and the separate Library/memory failures remain open.
 
 The following earlier report is historical; its zero-allowance statement is
 superseded by the rule above.

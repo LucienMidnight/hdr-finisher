@@ -19,23 +19,33 @@ writers are called without a ceiling; their shared pre-encode limiter stays.
 Full-size Proof and export share rendering and encoding settings; a reduced
 Proof is checked at its own encoded resolution.
 
-Timing qualification uses a 5% noise allowance on this MacBook Neo, comparing
-complete already-open-photo exports of the same files with only the decoded
-check enabled/disabled. Source import is outside that wait. Results below
-are historical until the follow-up validation record is committed.
+Current validation (commit containing this record): all three HDR codecs pass
+CPU and GPU export plus reduced/full-size Proof on 1600px real-photo fixtures.
+The real-app readings are 989.558–1007.448 nits against 1000; initial peaks
+within the allowance stay unchanged. Across both real photos and both CPU/app
+matrices, corrected peaks are 971.983–999.368 nits. No real file was refused,
+and every full-size Proof matches export bytes. Existing correction margins
+are retained. The six-case reduced JPEG Proof check, delivery/watermark smoke,
+framing and Proof-size checks also pass.
 
-Follow-up CPU validation: two real-photo fixtures (IMG_0114.CR2 and
-DSC00264.ARW), all three HDR codecs and reduced/full Proof, at 1600 px.
-Corrected peaks land at 971.983–998.931 nits against 1000; initial JPEG XL
-files up to 1007.348 nits stay unchanged within the allowance. No real file
-is refused; full-size Proof matches export bytes. Existing correction margins
-are retained because these real encodes already land within the 3% aim.
-Node passes (951, one skipped); the 35 focused ceiling cases pass. The full
-Python suite has two unrelated unchanged Library admission failures and an
-X-Trans API stall; remaining cases pass. Current GPU checks and isolated
-GPU export-cost measurements are paused at Steve's request; no queue remains
-running. Details
-and exact blockers are in `docs/known-limitations.md`.
+On the MacBook Neo, warm 1600px GPU JPEG exports add about 0.48 s for a check
+without correction, or 2.09–3.53 s when correction needs three/four encodes.
+Same files and settings are compared with only the decoded check enabled or
+bypassed in a disposable diagnostic; one warm-up then two measured exports.
+Source preparation/import is outside the wait. Timing noise allowance is 5%;
+the dim unchecked control exceeds it, so its cost is approximate. Full results
+and conditions are in the performance table.
+
+Native 42MP DSC00264 GPU preparation hit the existing host-memory admission
+limit and successfully fell back to the CPU; that native GPU route remains
+unqualified in this run. The portable ceiling driver now prepares a bounded
+1600px ACEScg EXR from the read-only RAW, or keeps the original with
+`--native-source`. No budget, shader, gain-map formula or encoder changed.
+Node passes (951, one skipped); the focused Python selection passes 62 cases.
+The full Python run has two unchanged Library admission failures and an
+X-Trans API stall, and the Library smoke remains incomplete with a system
+reserve failure. Those are separate open checks, not passes. Exact failures,
+fixture gaps, Windows qualification and evidence are in known limitations.
 
 The reported 1038–1437-nit readings were real decoded, reduced Proof files,
 not a readback-scale mistake. The old diagnostic deliberately excused them,

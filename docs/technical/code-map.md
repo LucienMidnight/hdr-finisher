@@ -663,8 +663,9 @@ November 14 HDR encoding allowance: `hdr_ceiling.ENCODING_ALLOWANCE` owns the
 1% initial-encode allowance used only by enabled Highlight Compression delivery.
 `exporters.py` passes it through all three HDR codecs; Proof shares those
 backends. Library cache writers omit the ceiling. `tests/hdr-ceiling-delivery.js`
-covers all codecs on a real RAW, CPU/GPU and both Proof sizes;
+covers all codecs on 1600px real-photo ACEScg EXR pixels derived read-only from
+a RAW, CPU/GPU and both Proof sizes (`--native-source` keeps the original);
 `tests/performance/hdr-ceiling-cost.py` compares whole exports with/without
-post-encode decoding (CPU, or `--gpu` for real Electron request timing) and
+post-encode decoding (CPU, or `--gpu` for real Electron request timing on the bounded real-photo fixtures) and
 records real-photo correction rounds. Both run
 serially under `tools/gpu-run-lock.py` for qualification.

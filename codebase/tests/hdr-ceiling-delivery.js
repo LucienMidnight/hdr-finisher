@@ -1,4 +1,4 @@
-// All three HDR codecs, real RAW, CPU/GPU, export and reduced/full Proof.
+// All three HDR codecs, bounded real-photo pixels, CPU/GPU, both Proof sizes.
 // Source and its sidecar are restored; no saved project is written.
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
@@ -7,15 +7,25 @@ const execute = promisify(require('node:child_process').execFile);
 const {chromium} = require('playwright');
 const python = require('../tools/lib/platform.cjs').pythonExecutable();
 const benchmark = process.argv.includes('--benchmark');
-const source = path.resolve(process.env.HDR_CEILING_SOURCE || 'output/test-photos/DSC00264.ARW');
-const sidecar = source + '.hdrf';
-const originalSidecar = fs.existsSync(sidecar) ? fs.readFileSync(sidecar) : null;
+let source = path.resolve(process.env.HDR_CEILING_SOURCE || 'output/test-photos/DSC00264.ARW');
 const output = path.resolve(process.env.HDR_CEILING_RESULT || 'output/ceiling-followup/delivery.json');
 const env = {...process.env, PYTHONPATH: path.resolve('backend')};
 const harness = global.HDRFinisherElectronTestHarness;
 (async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hdr-ceiling-delivery-'));
-  const browser = await chromium.launch(), page = await browser.newPage();
+  if (!process.argv.includes('--native-source')) {
+    const fixture = path.join(root, 'source.exr');
+    try {
+      await execute(python, ['tests/performance/hdr-ceiling-cost.py',source,'--prepare-output',fixture], {env});
+      source = fixture;
+    } catch (error) {
+      fs.rmSync(root, {recursive:true,force:true});
+      throw error;
+    }
+  }
+  const sidecar = source + '.hdrf';
+  const originalSidecar = fs.existsSync(sidecar) ? fs.readFileSync(sidecar) : null;
+  let browser, page;
   const results = [];
   const api = async (route, data, method = 'POST') => {
     const response = await harness.fetch(route, {method, headers: {'Content-Type':'application/json'},
@@ -24,6 +34,8 @@ const harness = global.HDRFinisherElectronTestHarness;
     return response.json();
   };
   try {
+    browser = await chromium.launch();
+    page = await browser.newPage();
     await page.goto(process.env.HDR_FINISHER_URL);
     const grant = await page.evaluate(file => window.hdrFinisherDesktop.grantSourcePath(file), source);
     const opened = await api('/api/desktop/session', {grant:grant.grant});
@@ -68,6 +80,8 @@ const harness = global.HDRFinisherElectronTestHarness;
         for (const full_size of [false,true]) {
           const proof = await api(`/api/session/${id}/proof/artifact`, {...settings, full_size, long_edge:800});
           assert.equal(proof.renderer, renderer);
+          assert.equal(proof.full_size, full_size);
+          assert.equal(Math.max(proof.width, proof.height), full_size ? 1600 : 800);
           const response = await harness.fetch(`/api/proof/artifact/${proof.artifact_id}.${ext}`);
           assert.ok(response.ok);
           const proofFile = path.join(root, `${renderer}-${full_size}.${ext}`);
@@ -90,9 +104,12 @@ const harness = global.HDRFinisherElectronTestHarness;
     fs.mkdirSync(path.dirname(output), {recursive:true});
     fs.writeFileSync(output, JSON.stringify(results, null, 2));
     await api('/api/delivery/preferences', {force_cpu:false}).catch(()=>{});
-    await browser.close();
-    fs.rmSync(root, {recursive:true, force:true});
-    if (originalSidecar === null) fs.rmSync(sidecar, {force:true});
-    else fs.writeFileSync(sidecar, originalSidecar);
+    try {
+      await browser?.close();
+    } finally {
+      fs.rmSync(root, {recursive:true, force:true});
+      if (originalSidecar === null) fs.rmSync(sidecar, {force:true});
+      else if (!fs.existsSync(sidecar) || !fs.readFileSync(sidecar).equals(originalSidecar)) fs.writeFileSync(sidecar, originalSidecar);
+    }
   }
 })().catch(error => {console.error(error); process.exitCode=1;});

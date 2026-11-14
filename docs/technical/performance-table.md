@@ -1,5 +1,44 @@
 # Performance table
 
+November 14 mandatory HDR check, paired GPU cost (commit containing this
+record): **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM, 6 cores,
+1408×794-point unpackaged Electron; shared GPU lock. IMG_0114.CR2 and
+DSC00264.ARW are prepared as 1600px linear-ACEScg EXRs before import. JPEG
+Ultra HDR quality 90/default 4:2:0 and gain-map settings, no output sharpening,
+Highlight Compression enabled at 1000 nits. Measure export request to response
+(render/cache lookup, encode, check/correction, validation and publication);
+source preparation/import and file-dialog time are excluded. The diagnostic
+bypasses only the post-encode check for its baseline; that unchecked switch
+is not available to users with Highlight Compression on. One warm-up, then
+two measured exports per policy; policy order alternates. Other agents may
+use CPU/RAM, but GPU/Electron checks never overlap.
+
+| Case | Unchecked diagnostic mean | Checked delivery mean | Added whole wait |
+| --- | --- | --- | --- |
+| IMG_0114 dim control (−6 EV), no correction | 0.409 s | 0.891 s | about 0.482 s; one encode/decode, decoded peak 14.147 nits |
+| IMG_0114 (+3 EV), correction needed | 0.706 s | 2.796 s | 2.090 s; three encodes/decodes, 1400.631 → 1028.661 → 993.623 nits |
+| DSC00264 (+3 EV), correction needed | 0.686 s | 4.216 s | 3.530 s; four encodes/decodes, 1302.686 → 1008.395 → 1008.395 → 999.368 nits |
+
+The decode itself takes 0.373–0.378 s for the clean control. The agreed
+5% timing-noise allowance applies to whole waits. The dim unchecked control
+varies 6.1% around its mean (0.384–0.434 s), beyond it; its added cost is
+therefore approximate, 0.44–0.53 s. Other pairs stay within 5% of their mean.
+No additional run was made; Steve should try exports before further timing
+work. These are bounded warm-photo measurements, not native RAW throughput
+or costs at larger export sizes. Evidence: `codebase/output/ceiling-followup/cost.json`.
+
+Other observations from the same Mac checks (no renderer speed comparison):
+
+| Action | Observed | Conditions / qualification |
+| --- | --- | --- |
+| Real-photo all-codec export/Proof matrix | GPU export requests 1.37–16.41 s; CPU 1.96–12.21 s | 1600px DSC00264-derived EXR, quality 90, +3 EV, 1000-nit target; different codecs, one request each. All six pairs and 800px/1600px Proof pass; full Proof equals export. |
+| Native 42MP GPU request falling back to CPU | 69.35 s backend export total | DSC00264.ARW 7968×5320, output JPEG 1600px; GPU host estimate 3.41 GiB with safely available 0.00 GiB. One attempt then accepted CPU export; native GPU route not qualified. |
+| Library 90-second smoke | First picture 1.2 s; six of 33 pictured | Same Mac/window, shared lock, mixed private fixture folder; fails system reserve and coverage. Not investigated or rerun here. |
+
+The six-case encoded Proof check also passes the new 1% ceiling rule, with
+977.461–994.067-nit peaks. Logs/results: `codebase/output/ceiling-followup/`,
+Library report `codebase/output/quick-library-check/ceiling-followup/report.json`.
+
 November 14 encoding-allowance follow-up (commit containing this record),
 **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM, 6 cores. Preliminary CPU
 codec/correction diagnostic: IMG_0114.CR2 and DSC00264.ARW loaded once and
@@ -21,8 +60,8 @@ for the isolated follow-up is 5%.
 A separate native-source probe (DSC00264.ARW, 7968×5320, ordinary CPU render
 then JPEG resize to 1600 px, same grade, concurrent Python suite/manual app)
 took 42.45 s for one export. No native-source CPU before/after claim follows
-from that single observation. GPU request timing under the shared lock is
-pending. Compact preliminary evidence:
+from that single observation. The isolated bounded GPU request timing is recorded above.
+Compact preliminary evidence:
 `codebase/output/ceiling-followup/cpu-small-matrix.json`.
 
 November 14 Mac export-ceiling fix (`9bfea9e5`; MacBook Neo, Apple A18
