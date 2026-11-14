@@ -455,6 +455,13 @@
       }
     },
     {
+      "path": "tests/grade-zoom-responsive.js",
+      "areas": ["preview", "detail", "film"],
+      "tier": "full",
+      "protects": "Real RAW stacked Film grade: native Exposure with HSL Pick armed at Fit and 100%, latest edits during Denoise, current exact presentation and changed visible pixels.",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/brush-feather-reference.js",
       "areas": [
         "masks"
