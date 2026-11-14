@@ -3,7 +3,9 @@
 | Action | Existing guard | Mac result | Conditions / evidence |
 | --- | --- | --- | --- |
 | Remove a Retouch spot, action to accepted picture | <= 1 second | Failed: 1.513–1.773 s at Fit in the fresh release retry | MacBook Neo A18 Pro, 8 GB, 1408x794 points; `1a8e1605`; `output/release-checks/2026-11-14T09-20-34-322Z-2955fd5c575d41a6432e`. Same driver also exceeds 1 second on v0.9.2 on this Mac. PC timings are a separate baseline. |
-| Film/Lens 4K to exact Full | Driver's existing 15-minute attempt deadline | Current: two 15-minute timeouts; v0.9.2: full driver passes in 55.9 s | Same Mac and A7R00619.exr, portable current test harness and native helpers; application code at tag unchanged. Current stays at accepted 4096 with Full requested. Cause and numerical comparison remain unresolved; no time limit or memory budget changed. |
+| Film/Lens 4K to exact Full | Driver's existing 15-minute attempt deadline | Release check: two timeouts; tag: 55.9 s. Memory follow-up: pre-fix quieter run passes in about 55.1 s, fixed run passes in about 55.6 s | November 14, MacBook Neo A18 Pro / 8 GB / 1408x794, A7R00619.exr, parent `6c68faa1` plus this commit. Follow-up times are Electron process creation to driver shutdown, not isolated tier-switch latency. Whole matrix passes unchanged; live same-snapshot diagnostics show old Full admission would refuse some uploads. Load-dependent admission, not a speedup; no deadline or budget changed. `output/mac-memory-regression/{trace,after}-film.log`. |
+| Repeated independent GPU export plus full-size Proof | Original 3 / 2 GiB test caps, exact repeats and Proof identity, existing encoded ceiling | Both GPU; 14.975 / 15.039 s per export/Proof/decode pair | November 14, same Mac/window, parent `6c68faa1` plus native-source-stream correction; DSC04375 saved 1000-nit grade, 4000px JPEG. Before: Full host refusal, CPU fallback. `output/gpu-delivery-repeat/result.json`; no CPU timing comparison. |
+| Library export, Export page closed / open | Open-page average <= closed + 5% | 35.339 / 33.614 s per photo; passes | November 14, same Mac/window, shared GPU lock, parent `6c68faa1` plus this commit; DSC00264/DSC04375/DSC06615, unchanged full GPU JPEG export settings, one warmup then three closed and three open exports. All GPU, including Sony; live tiles draw. `output/mac-memory-regression/live-tiles.log`. |
 
 The final 90-second default Library viewport smoke at `257c17ae` passes:
 first picture 0.3 s, all six requested rows drawn, independent process-tree
@@ -12,6 +14,22 @@ MacBook Neo A18 Pro / 8 GB, 1408x794 points, frozen v1 normal-filter fixture,
 plain Electron, no DevTools, shared GPU lock. This is six of 33 folder rows,
 not a whole-folder survey and not a speedup comparison. Evidence:
 `codebase/output/quick-library-check/release093-final-memory/report.json`.
+
+The memory-admission follow-up in this commit also passes the 90-second
+viewport smoke: six of six requested pictures, both DJI DNGs developed,
+first picture 0.9 s, peak app footprint 3.063 GB, minimum available 5.068 GB,
+longest drawing gap 50 ms. The separate frozen-v1 `--survey --all-files`
+run pictures 47/50 (not the earlier 48/50): first/ten/forty 0.4/1.5/39.9 s,
+app peak 2.582 GB, minimum available 4.724 GB, no memory violation or
+photo-work error. DSC01287.exr, LR-classic-hdr-source-test-1.avif and
+pano_192mp.jpg remain unpictured; no full-folder pass is claimed. Same MacBook
+Neo / 8 GB / 1408x794, fresh default 4 GB profiles, unchanged reserve,
+shared lock, plain Electron. CPU/load: viewport 33.8% / 2.91–3.67; survey
+42.1% / 2.40–3.48. External load differs from the allocator comparison;
+these are regression/coverage checks, not a new speed comparison. Retained
+allocator memory improvement is supported; exact 48-photo coverage is not
+reconfirmed. Evidence: `output/quick-library-check/mac-memory-regression/`
+and `mac-memory-regression-survey/`.
 
 Other measurements in release logs are diagnostic, not new performance targets.
 The release failure inventory and limits on comparison evidence are in

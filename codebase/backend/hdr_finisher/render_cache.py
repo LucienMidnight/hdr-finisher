@@ -896,6 +896,22 @@ class SessionRenderCache:
             fixed = limit_geometry_overshoot(proxy, geometry, fixed)
         return downsample_image(fixed, edge), working_space, signature
 
+    def native_source_stream(
+        self,
+        kind: PreviewKind,
+        long_edge: int,
+        adjustments: AdjustmentState,
+    ) -> tuple[np.ndarray, str, str] | None:
+        """Borrow native identity pixels only when no conversion or geometry allocates."""
+        geometry = adjustments.shared.geometry
+        if geometry != GeometryAdjustments():
+            return None
+        authored = kind == PreviewKind.SDR and self.sdr_reference_image is not None and adjustments.sdr.use_authored_base
+        source = self.sdr_reference_image if authored else self.image
+        if source.dtype != np.float32 or int(long_edge) < max(source.shape[:2]):
+            return None
+        return source, "linear-srgb" if authored else "acescg", geometry.model_dump_json()
+
     @property
     def source_epoch(self) -> int:
         """Identity of the decoded source and its colour interpretation.

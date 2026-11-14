@@ -218,6 +218,38 @@ def estimate_preview_resources(
     max_dimension: int,
     resources: ResourceSnapshot,
 ) -> PreviewResourceEstimate:
+    return _estimate_preview_resources(
+        width=width, height=height, max_dimension=max_dimension, resources=resources,
+        bytes_per_pixel=FULL_PREVIEW_BYTES_PER_PIXEL, transport_bytes=0,
+    )
+
+
+def estimate_native_source_stream_resources(
+    *,
+    width: int,
+    height: int,
+    max_dimension: int,
+    resources: ResourceSnapshot,
+    chunk_bytes: int,
+) -> PreviewResourceEstimate:
+    """Charge packed rows and their bytes copy, not an already-resident source."""
+    if chunk_bytes <= 0:
+        raise ValueError("Source stream chunk size must be positive.")
+    return _estimate_preview_resources(
+        width=width, height=height, max_dimension=max_dimension, resources=resources,
+        bytes_per_pixel=0, transport_bytes=2 * chunk_bytes,
+    )
+
+
+def _estimate_preview_resources(
+    *,
+    width: int,
+    height: int,
+    max_dimension: int,
+    resources: ResourceSnapshot,
+    bytes_per_pixel: int,
+    transport_bytes: int,
+) -> PreviewResourceEstimate:
     if min(width, height, max_dimension) <= 0:
         raise ValueError("Preview dimensions must be positive.")
     requested = int(max_dimension)
@@ -225,7 +257,7 @@ def estimate_preview_resources(
     preview_width = max(1, int(round(width * scale)))
     preview_height = max(1, int(round(height * scale)))
     pixels = preview_width * preview_height
-    estimated = FULL_PREVIEW_FIXED_OVERHEAD_BYTES + pixels * FULL_PREVIEW_BYTES_PER_PIXEL
+    estimated = FULL_PREVIEW_FIXED_OVERHEAD_BYTES + pixels * bytes_per_pixel + transport_bytes
 
     reserve = None
     safely_available = None

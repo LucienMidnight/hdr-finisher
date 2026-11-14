@@ -101,6 +101,7 @@ from .projects import ProjectError, ProjectSourceRelinkRequired, open_project, s
 from .resource_preflight import (
     FULL_PREVIEW_BASELINE_DIMENSION,
     detect_memory_resources,
+    estimate_native_source_stream_resources,
     estimate_preview_resources,
 )
 from .sdr_match_remote import bridge_for, close_bridge, open_bridge
@@ -1491,10 +1492,20 @@ def webgpu_proxy_stream(
     except RevisionConflictError as exc:
         raise _revision_conflict(exc) from exc
     adjustments = _perspective_draft_base(session, long_edge) if perspective_draft_base else session.adjustments
-    _guard_preview_resources(session, long_edge)
+    native_stream = session.render_cache.native_source_stream(kind, long_edge, adjustments)
+    if native_stream is None:
+        _guard_preview_resources(session, long_edge)
+    elif long_edge > FULL_PREVIEW_BASELINE_DIMENSION:
+        source = native_stream[0]
+        estimate = estimate_native_source_stream_resources(
+            width=source.shape[1], height=source.shape[0], max_dimension=long_edge,
+            resources=detect_memory_resources(), chunk_bytes=PROXY_STREAM_CHUNK_BYTES,
+        )
+        if not estimate.allowed:
+            raise HTTPException(status_code=507, detail=estimate.reason)
     revision = session.edit_revision
     try:
-        proxy, working_space, authoritative_geometry_signature = session.render_cache.geometry_source_proxy(
+        proxy, working_space, authoritative_geometry_signature = native_stream or session.render_cache.geometry_source_proxy(
             kind,
             long_edge,
             adjustments,
@@ -1536,7 +1547,7 @@ def webgpu_proxy_stream(
             )
             yield body
 
-    source_state = session.render_cache.source_level_state(long_edge)
+    source_state = "native" if native_stream is not None else session.render_cache.source_level_state(long_edge)
     return StreamingResponse(
         row_strips(),
         media_type="application/octet-stream",

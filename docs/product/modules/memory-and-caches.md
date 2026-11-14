@@ -1,3 +1,38 @@
+### November 14: native source-stream admission correction
+
+The commit containing this record corrects Full-preview admission for a GPU
+source upload that borrows an already-decoded, native-size float32 image with
+identity geometry. It charges the existing 256 MiB fixed overhead plus the
+two live 16 MiB encoding-strip copies (288 MiB), not the full CPU-preview
+working estimate. The stream directly borrows that image; it does not build a
+second source, resize, transform, grade or retain a new cache entry. Authored
+SDR borrows its own existing source and preserves its working colour space.
+Any resize, geometry change or dtype conversion keeps the full host preflight.
+The normal dimension guard and the same measured-memory reserve still apply.
+
+**Cause isolated on the minimum Mac.** `2202eddd` added a working macOS memory
+reader, activating the pre-existing whole-preview gate on source-only uploads.
+On this installation v0.9.2 has no psutil and its sysconf fallback cannot read
+available pages, so its reading is unknown and Full is allowed with an advisory.
+For the same live 7968x5320 request, all versions estimate 3,659,616,256 bytes:
+the tag allows unknown headroom, `2202eddd` reports too little memory, and
+`03af5471` increases the reading but still refuses. Current safe headroom in
+the Denoise trace is 0.72–0.96 GiB. The GPU-repeat refusal uses exactly the same
+source-stream gate, not a second GPU/Library reservation. A quieter pre-fix
+Film run passes; post-fix Film also passes while same-snapshot diagnostics show
+the old full-preview estimate would refuse its native upload.
+
+No macOS reader, pressure rule, allocator policy, 2 GiB preflight reserve,
+2 GB Library reserve, app/cache/GPU budget, generic 80-byte/pixel estimate,
+retry count, DNG import/export guard or Retouch publication guard changes.
+Tests compare exact source/stream bytes, prove source-object reuse, refuse
+one byte below the unchanged reserve plus actual strip work, and keep
+transformed/downsampled/non-float32 sources out of the borrowed route.
+Real-app results and remaining Library coverage are in the November 14
+memory-admission follow-up in `docs/known-limitations.md` and the performance
+table. This correction needs no new reserve or budget decision from Steve;
+it does not settle the separate earlier question about the macOS pressure reader.
+
 ### November 14: Library discovery and correctly described embedded previews
 
 The 8 GB Library investigation changes ordering and route selection, not any

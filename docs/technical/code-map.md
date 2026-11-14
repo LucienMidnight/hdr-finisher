@@ -1,5 +1,14 @@
 # Code map
 
+## November 14: native source-stream admission
+
+`render_cache.SessionRenderCache.native_source_stream` proves when a GPU upload
+can borrow an existing native float32 lane without resizing or geometry work.
+`main.webgpu_proxy_stream` then uses `resource_preflight`'s bounded-strip host
+estimate; all other sources retain full host preflight. No new cache is added.
+`tests/test_native_source_stream.py` covers exact bytes, source reuse, reserve
+refusal and exclusion of allocating paths.
+
 ## November 13: compact grant diagnostics
 
 Library jobs emit library_grant_completed on completion, failure or cancellation,

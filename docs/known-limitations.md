@@ -1,5 +1,55 @@
 # Known Limitations and Support Status
 
+## November 14: minimum-Mac memory-admission follow-up
+
+The three newly regressing drivers identified below now pass on the MacBook
+Neo (A18 Pro, 8 GB, 1408x794), in the commit containing this record. This is a
+focused correction, not a rerun or reclassification of all 105 release drivers.
+The other release failures and missing coverage below remain open.
+
+- `denoise-zoomed-region.js`: reproduced before the correction at 3.41 GiB
+  requested versus 0.72–0.96 GiB safe; now passes, with exact bypass/restore,
+  zero-level region/whole-frame difference and region drawing after straighten.
+- `performance/tier-film-consistency.js`: now passes the unchanged complete
+  matrix. The fresh, quieter pre-fix comparison also passes, unlike the earlier
+  release timeouts. Same-snapshot post-fix diagnostics prove the generic Full
+  gate would still reject native uploads; this is not claimed as a speedup.
+- `gpu-delivery-repeat.js`: reproduced forced-GPU falling back to CPU before
+  the correction (3.41 GiB requested, 3.12 GiB safe); now both independent
+  renders use GPU at the original 3/2 GiB test caps. Repeats and each full-size
+  Proof/export pair are byte-identical; decoded peaks are 1003.917 nits against
+  the unchanged 1000-nit target plus 1% encoding allowance.
+- `library-export-live-tiles.js`: complete seven-export run passes, all GPU
+  including Sony, live drawing with Export open and closed, unchanged 5%
+  open-page timing guard. The former Sony refusal is gone.
+
+Cause: `2202eddd` enabled previously unavailable Mac memory readings, exposing
+the old full-CPU-preview estimate on a source-only stream. `03af5471` improved
+headroom rather than causing the restriction. The fix borrows only proven
+native identity float32 sources and charges bounded encoding work; it changes
+no reader, reserve, budget, generic full-preview estimate or pixel calculation.
+Detailed mechanism and safety boundaries: Memory and caches module PRD.
+
+The locked 90-second Library viewport smoke passes, all six requested pictures
+drawn, both DJI DNGs developed and no memory/observer/drawing failure. The
+separate frozen-v1 50-photo scrolling survey retains the allocator memory gain
+(2.582 GB app peak, versus the earlier 4.772 GB before allocator / 3.214 GB
+after allocator), with no memory violation or photo-work error. It pictures
+**47/50, not the earlier 48/50**: DSC01287.exr, LR-classic-hdr-source-test-1.avif
+and pano_192mp.jpg remain unpictured at 90 seconds. Therefore full-folder
+acceptance, and an exact reproduction of 48-photo coverage, are not claimed.
+No reserve or coverage gate is relaxed and this unrelated incomplete survey
+is not rerun. Timing/load conditions are in the performance table.
+
+Evidence: `codebase/output/mac-memory-regression/` holds the before/after driver
+logs and same-request reader JSONL; `output/quick-library-check/` holds the
+`mac-memory-regression` and `mac-memory-regression-survey` reports. Diagnostic
+instrumentation is disposable, not part of the app. All three protected project
+hashes remain unchanged. Retouch interaction and the focused DNG/Retouch Python
+checks pass. Fast suites: Node 987 passed, one skipped; Python 3,430 passed,
+144 skipped, one unexpected pass, no failures. The existing FastAPI/httpx
+deprecation warning remains. No push or merge is part of this correction.
+
 ## Focused 0.9.3 release check on the minimum Mac (November 14)
 
 **NOT READY.** All 105 drivers from the fresh focused selection were attempted,
