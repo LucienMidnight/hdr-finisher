@@ -1,5 +1,18 @@
 # Performance table
 
+November 14 parity-limit calibration preparation (`fix/gpu-parity-limit`, commit
+containing this record; base `3f232e0b`): **MacBook Neo**, Apple A18 Pro,
+8 GB unified RAM, 6 cores. No rendering or accuracy limit changed yet. Slow
+GPU calibration is pending approval under AGENTS.md's 30-minute rule; planned
+margin is worst of three repeats + 0.005 mean / + 0.020 p99.9 ΔE, rounded up
+to 0.001. These are test-suite durations, not application speed baselines.
+
+| Check | Duration | Result / conditions |
+| --- | --- | --- |
+| Node fast suite | 13.6 s | 955 passed, one skipped; includes finished-pixel comparator and drift-gate behavior; concurrent Python suite / setup |
+| Python fast suite | 298.1 s | 3,305 passed, 153 skipped, one xpassed; concurrent Node suite / setup; private media linked after collection |
+
+
 November 14 Mac GPU parity diagnostics (`fix/mac-gpu-parity`, commit containing
 this record, base `87b91385`): **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM,
 6 cores, 1408x794-point window setting, unpackaged Electron, shared GPU lock. Test-only changes;
