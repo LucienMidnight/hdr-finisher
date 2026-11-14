@@ -248,9 +248,12 @@ def mac_process_tree(root):
     lib=ctypes.CDLL('/usr/lib/libproc.dylib',use_errno=True)
     lib.proc_pid_rusage.argtypes=[ctypes.c_int,ctypes.c_int,ctypes.c_void_p]
     rows={}
-    for line in subprocess.check_output(['/bin/ps','-axo','pid=,ppid=,comm='],text=True).splitlines():
-        fields=line.split(None,2)
-        if len(fields)==3:rows[int(fields[0])]=(int(fields[1]),fields[2])
+    zombies=set()
+    for line in subprocess.check_output(['/bin/ps','-axo','pid=,ppid=,stat=,comm='],text=True).splitlines():
+        fields=line.split(None,3)
+        if len(fields)==4:
+            pid=int(fields[0]);rows[pid]=(int(fields[1]),fields[3])
+            if fields[2].startswith('Z'):zombies.add(pid)
     owned={root}
     while True:
         added={pid for pid,(parent,_) in rows.items() if parent in owned}-owned
@@ -258,6 +261,9 @@ def mac_process_tree(root):
         owned.update(added)
     result=[]
     for pid in owned:
+        # An unreaped child has exited and owns no resident/footprint memory.
+        # libproc may report EPERM rather than ESRCH for these on macOS.
+        if pid!=root and pid in zombies:continue
         usage=Usage()
         if lib.proc_pid_rusage(pid,0,ctypes.byref(usage)):
             error=ctypes.get_errno()

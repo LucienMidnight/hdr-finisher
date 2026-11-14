@@ -1835,3 +1835,12 @@ LibRaw ljpeg_start sampling rules informed this correction.
 Admission/release and measured-memory gating remain under the shared broker;
 exposure_reservation resolves both bytes and kind once per backend grant.
 Exact source warnings, pooling and camera alignment remain unchanged.
+
+### November 14: exited macOS children in the memory census
+
+The process census reads `ps` process state and skips only zombie children.
+They have exited, own no resident footprint and can return EPERM from libproc
+until reaped. An unreadable live child or app root still fails the census.
+This repairs the independent quick-Library observer without changing a
+reserve, budget, cache or live-process charge. Behavior tests cover both the
+exited child and an unreadable live helper.

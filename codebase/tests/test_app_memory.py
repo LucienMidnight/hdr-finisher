@@ -506,3 +506,34 @@ def test_memory_controller_and_scheduler_do_not_wait_for_album_marks_lock(tmp_pa
         finally:
             release.set()
         owner.result()
+
+
+@pytest.mark.parametrize("unreadable_live", [False, True])
+def test_mac_sampler_skips_exited_children_but_rejects_unreadable_live(monkeypatch, unreadable_live):
+    import ctypes
+    import errno
+    import subprocess
+    from types import SimpleNamespace
+    # A zombie can return EPERM from libproc, while still listed by ps.
+    rows = "100 1 S app\n101 100 Z <defunct>\n102 100 S helper with spaces\n"
+    monkeypatch.setattr(subprocess, "check_output", lambda *args, **kwargs: rows)
+    queried = []
+    def rusage(pid, flavor, pointer):
+        queried.append(pid)
+        assert pid != 101, "An exited child must not invalidate the census"
+        if pid == 102 and unreadable_live:
+            ctypes.set_errno(errno.EPERM)
+            return -1
+        pointer._obj.resident = 10
+        pointer._obj.footprint = 20
+        return 0
+    monkeypatch.setattr(ctypes, "CDLL", lambda *args, **kwargs: SimpleNamespace(proc_pid_rusage=rusage))
+    if unreadable_live:
+        with pytest.raises(OSError, match="memory gate unavailable"):
+            app_memory.mac_process_tree(100)
+    else:
+        result = app_memory.mac_process_tree(100)
+        assert {row["pid"] for row in result} == {100, 102}
+        assert sum(row["chargedBytes"] for row in result) == 40
+        assert next(row for row in result if row["pid"] == 102)["name"] == "helper with spaces"
+    assert 101 not in queried
