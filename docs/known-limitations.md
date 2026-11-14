@@ -1,41 +1,46 @@
 # Known Limitations and Support Status
 
-## November 14: Mac GPU parity follow-up
+## November 14: Mac preview parity (closed with fixed drift guards)
 
-This is a test-only correction on `fix/mac-gpu-parity`, base `87b91385`.
-No production rendering, export/Proof, tolerance, limit or budget changed.
+Steve, 2026-11-14: the measured invisible lens/Velvia byte-mean misses now use
+fixed, narrow perceptual caps, shared by PC and Mac. Rendering, shaders,
+Proof/export and the HDR ceiling are unchanged.
 
-- **Tiled scope admission: fixed harness.** Six tiles in batches of four
-  plus presentation require three submissions, not the pinned two. The
-  complete frame, accepted generation and CPU scope were already correct.
-  The corrected final check passes without weakening any image requirement.
-- **Lens parity: strict failure retained.** The quick matrix remains 0/8
-  and the full matrix remains 68/128, matching the supplied base, against
-  the 0.1-level mean gate. Stable captures rule out the additional
-  Fit/requested-size race fixed in the driver. Full finished SDR-presented
-  pixels pass the existing perceptual 1/3 limits (Delta E 2000 mean at most
-  0.238, p99.9 at most 1.120); this does not qualify HDR delivery peaks.
-- **SDR Velvia chain: unchanged strict failure.** Added mean 0.104330 versus
-  0.1; finished Delta E 2000 mean 0.119114 / p99.9 1.044660. Spatial
-  half-float filtering is implicated; an instruction-level Metal cause is
-  not proved. No precision route, output change or looser gate was shipped.
-- **Film panel keyboard: not reproduced.** The full helper passes on both
-  unchanged base and final code, including Enter and Space. No app or helper
-  keyboard behavior changed.
+| Check / editing lane | Cases | Worst mean ΔE | Worst p99.9 ΔE | New mean cap | New p99.9 cap |
+| --- | --- | --- | --- | --- | --- |
+| Lens: HDR editing lane | 28 | 0.155865 | 1.134869 | 0.161 | 1.155 |
+| Lens: SDR editing lane | 32 | 0.242057 | 1.181764 | 0.248 | 1.202 |
+| Velvia physical chain: SDR | 1 | 0.119114 | 1.044660 | 0.125 | 1.065 |
 
-**Decisions for Steve:** authorize the already agreed perceptual criterion
-for these perceptually small lens/Velvia byte-gate misses, or leave them open for
-separately qualified preview-only precision work. Safest overnight option:
-keep the strict failures and all delivery/PC pixels unchanged. Current PC
-reruns of lens quick/full, the scope fallback and panel helper are still
-needed; the registered extreme HDR Neutral film failure is a separate case.
-Details and local evidence are in the Film Look and Preview/GPU module PRDs.
-Fast validation passes: JavaScript 951 passed / one skipped; Python 3,311
-passed / 145 skipped / one expected failure now passing. All five focused
-film/lens native-encoder Proof/export identity cases pass without skips.
-The default plain-Electron Library smoke still fails on incomplete coverage:
-six of 33 pictures after 90 seconds, consistent with the existing Mac stall;
-no memory or responsiveness-limit violation. Not investigated or rerun here.
+Three MacBook Neo / A18 Pro native-Metal measurements per affected case give
+zero observed spread in mean or p99.9. Lens uses independent processes;
+Velvia repeats in one process and then passes a fresh-process final check. The full lens baseline is
+68 strict passes / 60 byte-mean misses; only those 60 and the SDR Velvia
+physical chain receive exceptions. The eight quick cases are a subset of
+those 60. HDR Velvia and all 68 strictly passing lens cases remain strict;
+the two-level byte p99.9 and complete-frame/dimension checks remain strict.
+Each cap is the three-repeat worst + 0.005 mean / + 0.020 p99.9, rounded up
+to 0.001, not the general 1/3 criterion. Failure messages identify the case,
+metric and excess. Numeric caps and the exact exception set have regression
+checks; a new failing case cannot opt itself in.
+
+Both editing lanes in these drivers are **SDR presentations**, so the correct
+metric is ΔE 2000. This does not qualify actual HDR pixels or relax ΔE ITP,
+Proof/export agreement, the highlight ceiling, the separate HDR Neutral known
+failure, or diagnostic-only Velvia variants. PC confirmation remains in
+AGENTS.md. Detailed measurements and the decision are in the Film Look and
+Preview/GPU module PRDs; compact evidence is in
+`codebase/output/parity-limits/`.
+
+The earlier tiled-scope submission-count harness correction remains fixed;
+Film-panel keyboard failure remains unreproduced. Fast suites pass: Node 957 passed /
+one skipped; Python 3,313 passed / 145 skipped / one xpassed. The initial concurrent
+Python run hit 11 Library memory-admission failures; the quiet full rerun passes
+without test or budget changes. Final live lens quick set passes 8/8 and Velvia passes
+2/2. All 254 saved calibration comparisons pass a replay through the fixed gates (not
+a new full render). The default 90-second Library smoke remains incomplete (6/33
+photos), with a system-reserve warning; this separate Library limitation was not
+investigated or rerun. No curated-photo path needed retargeting.
 
 ## November 13: POSIX cache-location fallback (reported; unchanged)
 
@@ -57,10 +62,9 @@ check shows 2/33 photos, blocked before development by the real system reserve
 (about 2.0–2.5 GB available, protecting 2 GB). This is not 8 GB feature/speed
 acceptance. [Memory and caches](product/modules/memory-and-caches.md) records
 headroom, evidence, test results and the next decision.
-The SDR Velvia synthetic test remains at 0.104330 levels against 0.1, while
-finished-pixel Delta E 2000 is 0.119114 mean / 1.044661 p99.9 (within existing
-perceptual limits). No shader or test tolerance was changed; see
-[Film Look](product/modules/film-look.md) for isolation and limits.
+The earlier SDR Velvia byte-gate miss is closed by the fixed November 14
+caps above. The historical diagnostic and isolation remain in
+[Film Look](product/modules/film-look.md); no shader was changed.
 
 
 ## November 12: watermark and Library polish validation

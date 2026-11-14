@@ -214,7 +214,10 @@ and helper together; the tool README pins versions and build flags.
 All in `codebase/tests/`. Rules for how much to run are in `AGENTS.md`.
 
 Film/lens parity drivers support `--measure-parity --repeat 3 --parity-report <file>`
-for calibration without changing their selected gates. `tests/helpers/parity-colour.cjs`
+for calibration without changing their selected gates. After a full lens baseline,
+`--measure-cases-from <baseline.json>` with `--measure-parity` repeats only
+the identified misses. Prefer separate invocations/locks for long repeats when
+other agents are queued. `tests/helpers/parity-colour.cjs`
 streams full finished sRGB captures through `parity_colour.py` and the existing
 `delivery_colour.compare_finished_pixels`; both editing lanes here use SDR
 presentation and ΔE 2000. Pixel scratch is reused and removed after each case.

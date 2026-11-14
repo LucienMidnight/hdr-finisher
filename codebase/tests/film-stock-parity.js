@@ -12,6 +12,13 @@
 // --diagnostic-output <folder> saves finished CPU/GPU RGBA for perceptual analysis.
 // --input runs the same cases on a real file instead, and reports rather than
 // fails.
+//
+// Strict cases use the original added-byte mean/p99.9. Only the fixed cases
+// in helpers/film-parity-limits.cjs use full finished-pixel Delta E 2000;
+// both editing lanes in this driver are SDR presentations. No HDR-delivery
+// Delta E ITP or peak-ceiling gate changes here.
+// --measure-parity --repeat 3 --parity-report <file> records calibration;
+// the normal gate is still applied during measurement.
 
 const { chromium } = require("playwright");
 const fs = require("fs");
@@ -20,7 +27,7 @@ const path = require("path");
 const { execFileSync } = require("child_process");
 
 const { createColourComparator } = require('./helpers/parity-colour.cjs');
-const { limitsFor, assessParity } = require('./helpers/film-parity-limits.cjs');
+const { STRICT_BYTE_LIMITS, limitsFor, assessParity } = require('./helpers/film-parity-limits.cjs');
 const measureParity = process.argv.includes('--measure-parity');
 const repeatIndex = process.argv.indexOf('--repeat');
 const repeats = repeatIndex < 0 ? 1 : Number(process.argv[repeatIndex + 1]);
@@ -29,7 +36,7 @@ const reportIndex = process.argv.indexOf('--parity-report');
 const parityReport = reportIndex < 0 ? null : path.resolve(process.argv[reportIndex + 1]);
 const records = [];
 const started = Date.now();
-let colourComparator;
+let colourComparator, gpuAdapter;
 const compareColour = result => (colourComparator ||= createColourComparator()).compare(result);
 
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
@@ -46,8 +53,8 @@ const caseIndex = process.argv.indexOf("--case");
 const selectedCase = caseIndex >= 0 ? process.argv[caseIndex + 1] : null;
 if (selectedCase && !selectedCase.trim()) throw new Error("--case requires a label");
 const LANES = selectedLane ? [selectedLane] : ["hdr", "sdr"];
-const MAX_MEAN_DIFFERENCE = 0.1 / 255;
-const MAX_P999_DIFFERENCE = 2 / 255;
+const MAX_MEAN_DIFFERENCE = STRICT_BYTE_LIMITS.mean / 255;
+const MAX_P999_DIFFERENCE = STRICT_BYTE_LIMITS.p999 / 255;
 
 const NEUTRAL = {
   film_stock: "none", stock_color: 100, stock_tone: 100, stock_exposure: 0, stock_separation: 0,
@@ -158,12 +165,21 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.waitForFunction(() => state.gpuPreview?.detail !== "WebGPU has not been initialized");
     if (!await page.evaluate(() => state.gpuPreview?.available)) throw new Error(`WebGPU is unavailable: ${await page.evaluate(() => state.gpuPreview?.detail)}`);
+    gpuAdapter = await page.evaluate(() => {
+      const info = state.gpuPreview.adapterInfo;
+      return info && { vendor: info.vendor, architecture: info.architecture, device: info.device,
+        description: info.description, fallback: info.fallback };
+    });
+    if (!gpuAdapter || gpuAdapter.fallback) throw new Error('Parity requires a native GPU, not a software fallback');
+    console.log(`GPU adapter: ${JSON.stringify(gpuAdapter)}`);
     const sessionResponse = await page.request.post(`${baseUrl}/api/session`, {
       multipart: { file: { name: path.basename(fixturePath), mimeType: "application/octet-stream", buffer: fs.readFileSync(fixturePath) } },
     });
     if (!sessionResponse.ok()) throw new Error(`Fixture session failed with HTTP ${sessionResponse.status()}.`);
     const { session } = await sessionResponse.json();
     await page.evaluate((loadedSession) => activateDesktopSession(loadedSession, ""), session);
+    await page.waitForFunction(() => viewerState().status === "ready" && !state.gpuDraftInFlight);
+    await page.evaluate(() => stopPreviewWatchdog());
     if (stockCharacterOnly) {
       await require("./film-character-ui-check.js")(page);
       if (process.argv.includes("--presets-ui")) await require("./film-presets-ui-check.js")(page);
@@ -204,6 +220,10 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         await new Promise(resolve => setTimeout(resolve, 20));
       state.previewScheduler?.cancel();
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
+      window.clearTimeout(state.refreshTimer);
+      window.clearTimeout(state.settleTimer);
+      state.renderCoordinator?.cancelCatchUp(lane);
+      state.renderCoordinator?.cancelPan(lane);
       if (!await renderGpuDraft(lane, { longEdge })) return { error: "GPU render failed" };
       await state.gpuPreview.device.queue.onSubmittedWorkDone();
       let textureStats=null;
@@ -329,7 +349,13 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
         records.push({ run, edge: LONG_EDGE, lane, label, strictPassed, mean: mean * 255, p999: p999 * 255, colour, passed,
           ...(on.renderMs !== undefined ? { renderMs: on.renderMs, cpuMs: on.cpuMs } : {}) });
         if (colour) console.log(`Perceptual ${context} (finished SDR presentation): ${JSON.stringify(colour)}`);
-        if (message) { failures.push(message); console.error(message); }
+        if (message) {
+          // Keep the strict failure payload unchanged: the release runner pins
+          // the unrelated HDR Neutral failure's complete numeric signature.
+          failures.push(limits ? { lane, label, colour, limits, message }
+            : { lane, label, mean: mean * 255, p999: p999 * 255, worst: on.worst });
+          console.error(message);
+        }
         capture(lane,label,on);
         delete on.captured;
         console.log(
@@ -350,7 +376,7 @@ const inputPath = inputIndex >= 0 ? path.resolve(process.argv[inputIndex + 1]) :
     colourComparator?.close();
     if (parityReport) {
       fs.mkdirSync(path.dirname(parityReport), { recursive: true });
-      fs.writeFileSync(parityReport, JSON.stringify({ seconds: (Date.now() - started) / 1000, records }, null, 2));
+      fs.writeFileSync(parityReport, JSON.stringify({ seconds: (Date.now() - started) / 1000, gpuAdapter, records }, null, 2));
     }
     await browser.close();
     if (!inputPath) fs.rmSync(path.dirname(fixturePath), { recursive: true, force: true });

@@ -186,6 +186,18 @@ coming back to him.
   pixels must not fail a check. This covers GPU against CPU, Proof against
   export (Proof on the GPU with export falling back to the CPU is accepted),
   and Library pictures against export.
+- **Steve, 2026-11-14: fixed film/lens drift guards.** Only the 60 listed
+  lens cases (including the eight quick cases) and the SDR Velvia physical
+  chain use the caps in `codebase/tests/helpers/film-parity-limits.cjs`.
+  Lens HDR-editing-lane mean ≤ 0.161, p99.9 ≤ 1.155; lens SDR mean
+  ≤ 0.248, p99.9 ≤ 1.202; SDR Velvia physical chain mean ≤ 0.125,
+  p99.9 ≤ 1.065.
+  Both editing lanes are SDR presentations in these drivers: use ΔE 2000.
+  Caps are worst of three + 0.005 mean / + 0.020 p99.9, rounded up to 0.001,
+  identical on both machines. The 68 strictly passing lens cases keep the
+  original byte-mean gate; the two-level byte p99.9 and structural/coverage
+  checks remain strict everywhere. No other check, HDR ΔE ITP requirement
+  or delivery ceiling is relaxed. Measurements: Film Look module PRD.
 - The one exact image requirement: HDR output never exceeds the highlight
   compression target (a 1000-nit target means no finished pixel above 1000
   nits), on every render path and after encoding, allowing only encoder
@@ -331,6 +343,11 @@ item here once it is done (and commits that change with the work).
    Compression target (the November 14 ceiling work), on the PC's GPU.
 7. Timings at 2560x1440 for the Phase 1 rows in
    `docs/technical/performance-table.md`, compared only with earlier PC rows.
+8. Film/lens parity (Steve, November 14): run `lens-filter-parity.js`,
+   `lens-filter-quick-parity.js`, and `film-stock-parity.js --case "Velvia physical chain"`
+   on the PC GPU through the shared lock. Confirm the fixed perceptual limits
+   in `tests/helpers/film-parity-limits.cjs` pass, and strictly passing cases
+   still pass their original byte gates. Same limits on both machines.
 
 ## Disk space and test output
 
