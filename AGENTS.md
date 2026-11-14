@@ -307,6 +307,31 @@ GitHub. This file is tracked in Git so both always have the same rules.
     (`jxl-source-colour.js`; that driver also needs the JPEG XL helper,
     which is Windows-only until Phase 2).
 
+### Waiting on the other machine
+
+Work one machine left for the other. An agent starting on that machine
+reminds Steve of its list at the start of the session, then removes each
+item here once it is done (and commits that change with the work).
+
+**On the PC, after the first pull of the Mac work (November 14):**
+
+1. Run the setup command above (`setup.ps1`) once from the Git root. It
+   creates `hdr-finisher-machine.json` beside the checkout and checks the
+   tools; then re-run it after any pull that changes dependencies. Steve has
+   already moved the PC's old untracked `AGENTS.md` aside.
+2. Check the shared GPU lock: two `gpu-run-lock.py` checks started together
+   must run one after the other, never overlapped.
+3. Library rename, move and delete on Windows, including an exFAT drive:
+   Recycle Bin, Undo and receipts still work after the macOS Trash change.
+4. Library: confirm the drawing gap the PC showed before is gone (P1-A
+   prepares GPU programs once; the gap never reproduced on the Mac).
+5. GPU safety (P1-C): Edge colour with real RAWs, and the Library's
+   one-recovery-then-CPU path after a lost GPU device.
+6. Export and Proof: HDR files land at or just below the Highlight
+   Compression target (the November 14 ceiling work), on the PC's GPU.
+7. Timings at 2560x1440 for the Phase 1 rows in
+   `docs/technical/performance-table.md`, compared only with earlier PC rows.
+
 ## Disk space and test output
 
 Steve, October 28, 2026, after test and measurement output filled drive D
