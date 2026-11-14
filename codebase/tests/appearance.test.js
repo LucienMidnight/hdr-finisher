@@ -39,8 +39,23 @@ test("theme redraw waits for editor state and elements, then redraws loaded grap
  changed();assert.equal(draws,1);
 });
 
-test("all four themes survive saved preference sanitization",()=>{
- for(const theme of ["default-dark","modern-dark","default-light","studio-gray"])
+test("supported themes survive sanitization and retired or missing themes use Modern Dark",()=>{
+ for(const theme of ["modern-dark","default-light","studio-gray"])
   assert.equal(sanitizeApplicationPreferences({theme}).theme,theme);
- assert.equal(sanitizeApplicationPreferences({theme:"unknown"}).theme,"default-dark");
+ for(const theme of ["default-dark","unknown",null,undefined,""])
+  assert.equal(sanitizeApplicationPreferences({theme}).theme,"modern-dark");
+});
+
+test("first paint normalizes retired and missing themes in the app and embedded Library",()=>{
+ const vm=require('node:vm'),fs=require('node:fs');
+ const source=fs.readFileSync(require.resolve('../frontend/theme-startup.js'),'utf8');
+ for(const theme of ['default-dark',undefined,'modern-dark','default-light','studio-gray']){
+  const expected=['default-light','studio-gray'].includes(theme)?theme:'modern-dark';
+  for(const embedded of [false,true]){
+   const document={documentElement:{dataset:{}}},window={};
+   const parent=embedded?{document:{documentElement:{dataset:{theme}}}}:window;
+   vm.runInNewContext(source,{window,parent,document,localStorage:{getItem:()=>JSON.stringify({theme})}});
+   assert.equal(document.documentElement.dataset.theme,expected);
+  }
+ }
 });

@@ -18,7 +18,7 @@ const out=path.resolve(__dirname,"../output/v1-visual-refinement");fs.mkdirSync(
  await lib.HDRLibrary.browse(folder);},fixture);
  assert.equal(await page.evaluate(()=>document.fonts.check('14px "Afacad"')),true);
  const report={themes:[],errors};
- for(const theme of ["default-dark","default-light","studio-gray"]){
+ for(const theme of ["modern-dark","default-light","studio-gray"]){
   await page.evaluate(theme=>HDRApplicationShell.openSettings("appearance"),theme);
   await page.locator(`[data-theme-option="${theme}"]`).click();
   for(const preset of ["burnt-orange","blue-gray","coating-blue"]){await page.locator(`[data-accent-preset="${preset}"]`).click();await shot(`${theme}-settings-${preset}`);}
@@ -49,7 +49,7 @@ const out=path.resolve(__dirname,"../output/v1-visual-refinement");fs.mkdirSync(
  assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue("--accent")),"#4c9377");
  assert.equal(await page.evaluate(()=>{const f=document.querySelector("#library-frame");return f.contentDocument.documentElement.style.getPropertyValue("--accent");}),"#4c9377");
  await page.evaluate(()=>HDRApplicationShell.openSettings("appearance"));
- await page.locator('[data-accent-preset="burnt-orange"]').click();await page.locator('[data-theme-option="default-dark"]').click();await page.locator("#settings-close").click();
+ await page.locator('[data-accent-preset="burnt-orange"]').click();await page.locator('[data-theme-option="modern-dark"]').click();await page.locator("#settings-close").click();
  report.customPersistence="passed in main window and embedded Library after reload";
  assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,"review.json"),JSON.stringify(report,null,2));console.log("Visual review checks passed");
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

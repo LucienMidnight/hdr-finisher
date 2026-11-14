@@ -18,7 +18,7 @@ const out=path.resolve(__dirname,'../output/review/ui-polish');fs.mkdirSync(out,
    const key='hdr-finisher:library-show-all-files';lib.localStorage.setItem(key,'true');lib.dispatchEvent(new lib.StorageEvent('storage',{key,newValue:'true'}));await lib.HDRLibrary.browse(folder);
   },require('./lib/visual-test-photos.cjs')());
  }
- for(const theme of (process.argv.includes('--checks-only')?[]:['default-dark','default-light','studio-gray'])){
+ for(const theme of (process.argv.includes('--checks-only')?[]:['modern-dark','default-light','studio-gray'])){
   await page.evaluate(()=>HDRApplicationShell.openSettings('appearance'));await page.locator(`[data-theme-option="${theme}"]`).click();await page.locator('#settings-close').click();
   if(!process.argv.includes('--wheel-only'))for(const workflow of ['import','grade','export']){await page.evaluate(w=>activateWorkflowTab(w),workflow);await shot(`${theme}-${workflow}`);}
   if(!after)continue;

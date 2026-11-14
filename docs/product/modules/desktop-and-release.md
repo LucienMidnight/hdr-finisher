@@ -1,17 +1,23 @@
 # Module PRD: Desktop and release
 
-## November 14: 0.9.3 UI polish (Steve's visual sign-off pending)
+## November 14: 0.9.3 UI polish and round 2 review
 
 Workflow pages return to flat navigation, guided by the original underline
 switcher in `095b83fc`: the active accent eyebrow meets the header divider,
-with accent text and no raised/pressed plate. In-panel tabs keep their plates.
-Default Dark's existing background, surface, plate-face and neutral-text tokens
-rise together so black shadows read; other palettes are unchanged. Required
-neutral text still passes the existing 7:1 floor (minimum 7.43:1).
+with no raised/pressed plate. Steve approved the flat tabs, then requested
+neutral titles even on the active page: full-strength active text, muted
+inactive text, accent only on the lower eyebrow. In-panel tabs keep their plates.
+Steve subsequently deprecated Default Dark rather than keeping its lifted
+palette. Modern Dark becomes the default dark appearance with every original
+palette/material value unchanged; Default Light and Studio Gray are unchanged.
+Saved `default-dark`, invalid and missing themes resolve to Modern Dark in
+desktop preferences, first paint and the Library. The unused runtime palette
+and preview image are removed. Historical v1 design tokens are marked deprecated.
 
 The design guideline and component sheet record Steve's November 14 choices.
 Library, Grade and Export details are in their module entries. No processing,
-export/Proof pixels, preferences, budgets or tolerances change. Export folding
+export/Proof pixels, budgets or tolerances change. Only the requested theme
+fallback changes persisted preference interpretation. Export folding
 is session-only. Both-theme review is at 1408×794 on the MacBook Neo through
 the shared GPU lock, with the Library photos fully loaded. Baseline captures
 serve the original frontend assets from `85bba832` without changing the working
@@ -19,7 +25,34 @@ tree; final captures use the edited assets. Review:
 `codebase/output/ui-polish-1114/{before,after}/`. Grade and Proof use the same
 generated colour pattern in both sets; Library uses six shared curated copies.
 
-Validation for this commit: fast Node suite 972 passed / one skipped; venv
+Round 2 captures use the shared curated `IMG_0790_finished.jpg` in Grade,
+Proof and Export, Modern Dark and Default Light, with loaded scope graphs.
+The compact source rail now reserves width rather than covering fixed chrome;
+Export leaves space above its status/footer for the scopes dock. The scope
+toggle stays visible when folded, narrow headers avoid dropdown overlap, and
+chart labels fit the dock. Source chevrons flip directly rather than rotating
+through a corner. Review: `codebase/output/ui-polish-1114/round2/`, added to
+the existing `index.html` gallery. Tests retain the one-CSS-pixel geometry
+allowance and check Fit, 119% with panning, and 2560×1440 containment.
+The Default Dark-only 7:1 test is removed with the retired theme; no threshold
+is relaxed and no claim is made that the unchanged Modern Dark meets it.
+
+Round 2 validation: fast Node suite 973 passed / one skipped; venv Python
+suite 3,381 passed / 144 skipped / one unexpected pass. The focused check
+passes both themes, neutral active/inactive tab ink with an accent-only eyebrow,
+retired-theme fallback, reachable scope collapse/reopen controls, chart labels,
+and fixed Grade chrome at Fit and 119% after panning. Eighteen final screenshots
+include Library and open/collapsed panels; the 2560×1440 captures are viewport
+emulation on the Mac, not a PC hardware qualification. Early capture attempts
+waited on a scope tier or compared against a dock resized by an intervening
+collapse; the driver now checks rendered scope availability and compares Fit
+against zoom before independently exercising collapse/reopen.
+The mandatory Library smoke still pictures only six of 33 photos and also
+reports insufficient system memory reserve; neither unrelated failure is
+relaxed, investigated or rerun. See the performance table for that observation.
+Scratch output finishes at 6.4 GB, below 100 GB. Visual sign-off remains Steve's.
+
+Round 1 validation (`44c4d87d`): fast Node suite 972 passed / one skipped; venv
 Python suite 3,381 passed / 144 skipped / one unexpected pass. The focused
 both-theme disclosure, unchanged-settings, selection, contrast and joined-edge
 checks pass. The wider batch Export UI driver passes those selection, help,

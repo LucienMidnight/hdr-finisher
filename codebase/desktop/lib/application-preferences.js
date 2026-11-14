@@ -1,6 +1,6 @@
 const DEFAULT_APPLICATION_PREFERENCES = Object.freeze({
   schemaVersion: 3,
-  theme: "default-dark",
+  theme: "modern-dark",
   accent: { preset: "burnt-orange", color: "#d0612a" },
   defaultReferenceWhiteNits: 203,
   renderingMode: "auto",
@@ -47,7 +47,7 @@ function sanitizeApplicationPreferences(value = {}) {
       return {preset:"burnt-orange", color:presets["burnt-orange"]};
     })(),
     schemaVersion: 3,
-    theme: ["default-dark", "modern-dark", "default-light", "studio-gray"].includes(value.theme) ? value.theme : "default-dark",
+    theme: ["modern-dark", "default-light", "studio-gray"].includes(value.theme) ? value.theme : "modern-dark",
     defaultReferenceWhiteNits: Number(value.defaultReferenceWhiteNits) === 100 ? 100 : 203,
     renderingMode: ["auto", "gpu", "cpu"].includes(value.renderingMode) ? value.renderingMode : "auto",
     previewResolution: tiers.includes(String(value.previewResolution)) ? String(value.previewResolution) : "auto",

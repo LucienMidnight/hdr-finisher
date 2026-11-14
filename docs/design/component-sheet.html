@@ -298,7 +298,6 @@
   <h1>Components</h1>
   <p>The visual reference for HDR Finisher. Rules and reasons: <code>HDR_Finisher_Design_Guidelines.md</code>. Tokens: <code>visual-tokens.css</code>.</p>
   <div class="sheet-themes" role="group" aria-label="Theme">
-    <button type="button" data-theme-choice="">Default Dark</button>
     <button type="button" data-theme-choice="modern-dark">Modern Dark</button>
     <button type="button" data-theme-choice="studio-gray">Studio Gray</button>
     <button type="button" data-theme-choice="default-light">Default Light</button>
@@ -321,7 +320,7 @@
 <main>
 <section id="foundations">
   <h2>Foundations</h2>
-  <p>Everything on this page is drawn from <code>visual-tokens.css</code>. Switch theme at the left to check all four.</p>
+  <p>Everything on this page is drawn from <code>visual-tokens.css</code>. November 14: Default Dark is deprecated; Modern Dark is the unchanged default dark palette. Switch theme at the left to check all three.</p>
   <h3 class="hf-subsection-title">Surfaces</h3>
   <div class="swatches" data-swatches="app panel raised input viewer plate-up plate-up-hover plate-down"></div>
   <h3 class="hf-subsection-title">Ink and lines</h3>
@@ -405,7 +404,7 @@
 
 <section id="tabs">
   <h2>Tabs</h2>
-  <p>Steve, November 14: Library / Grade / Proof / Export are flat page tabs. Their active lower eyebrow touches the header divider; accent text marks the current page. No raised or inset plate. The joined plates below apply only inside panels.</p>
+  <p>Steve, November 14, round 2: Library / Grade / Proof / Export are flat page tabs. Only the active lower eyebrow carries accent colour and touches the header divider. Titles stay neutral: full-strength active text, muted inactive text. No raised or inset plate. The joined plates below apply only inside panels.</p>
   <ul class="rules">
     <li>In-panel tabs are one joined plate with a 1 px edge between segments. Each segment carries its own depth: unselected segments are raised with the lift shadow; the selected one is pushed in with only the pressed shadow. Its ink is accent-strong. Workflow tabs use the flat baseline style instead.</li>
     <li>Labels are centred. Every segment is as wide as the widest label plus its padding, so no label touches an edge (Luma, Red, Green, Blue are equal).</li>
@@ -645,7 +644,8 @@
 
   // Theme switch.
   const setTheme = (t) => {
-    if (t) root.dataset.theme = t; else delete root.dataset.theme;
+    t = ["modern-dark", "default-light", "studio-gray"].includes(t) ? t : "modern-dark";
+    root.dataset.theme = t;
     document.querySelectorAll("[data-theme-choice]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.themeChoice === t)));
     try { localStorage.setItem("hf-sheet-theme", t); } catch {}
   };

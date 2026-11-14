@@ -6,17 +6,19 @@ Last updated: 2026-11-14
 
 This guideline is authoritative for current UI behavior and supersedes persistence language in older product and sprint documents.
 
-The component sheet, `docs/design/component-sheet.html`, is its visual companion: every component (icons, buttons, tabs, fields, dropdowns, switches, sliders, panels and sections, lists and scrollbars, graphs, tooltips) drawn from `codebase/frontend/visual-tokens.css`, with the HTML and CSS for each. Open it in a browser and switch between the four themes. This document holds the rules and the reasons; the sheet shows how they look and how to build them. Where the two disagree, ask Steve. All component-sheet proposals were approved by Steve on November 10.
+The component sheet, `docs/design/component-sheet.html`, is its visual companion: every component (icons, buttons, tabs, fields, dropdowns, switches, sliders, panels and sections, lists and scrollbars, graphs, tooltips) drawn from `codebase/frontend/visual-tokens.css`, with the HTML and CSS for each. Open it in a browser and switch between the three themes. This document holds the rules and the reasons; the sheet shows how they look and how to build them. Where the two disagree, ask Steve. All component-sheet proposals were approved by Steve on November 10.
 
 ## November 14: Steve's 0.9.3 polish decisions
 
-- Workflow pages use flat tabs with a lower accent eyebrow touching the header's bottom divider, guided by the original underline switcher. Keep accent text for the active page; no raised or pressed plate. In-panel mode and rendition tabs retain their joined plates.
-- Lift Default Dark's neutral background and related surfaces together so the existing black plate shadows remain visible. Keep required neutral text at the existing 7:1 contrast floor. Modern Dark and Default Light retain their palettes.
+- Workflow pages use flat tabs with a lower accent eyebrow touching the header's bottom divider, guided by the original underline switcher. Steve approved the flat shape. Round 2: all tab titles stay neutral; the active title uses full-strength text, inactive titles use muted text. Only the active eyebrow carries accent colour. No raised or pressed plate. In-panel mode and rendition tabs retain their joined plates.
+- Round 2 supersedes the earlier background lift: Steve deprecated Default Dark. Modern Dark is the default dark theme, with its original palette unchanged. Default Light and Studio Gray are unchanged. Saved `default-dark`, missing and invalid theme choices resolve to Modern Dark before first paint, including the embedded Library. Remove the retired runtime palette and preview; v1 reference token files retain deprecated values only as historical design material.
 - Export Settings uses native collapsible sections with the Grade panel's shared chevron, header typography and edge-to-edge neutral dividers. Existing visible sections start open; Advanced settings starts folded. Folding is session-only and never changes settings or output. Destination and Export files remain outside the folding area.
 - Selected Library thumbnails have only their coloured outer outline, with no inner picture-frame outline or pressed shadow. Selected folders and albums use a flat deep-surface fill, no inset shadow, and no empty padding between the row and its surrounding section dividers.
 - Details sections have one full-width separator per boundary. Grade's source rail keeps a continuous edge when open or folded; header, panel and scope separators meet without inset gaps.
+- Round 2: opening Grade's metadata rail reserves its width rather than covering the fixed viewer/status/scopes chrome. Fit, above-Fit and panning affect only the image. The horizontal chevron changes direction immediately, without rotating through a corner-shaped intermediate glyph.
+- Export reserves space for its status/footer below the analysis dock. Grade, Proof and Export keep the same reachable right-aligned scopes toggle, including when folded. Scope controls never overlap it; secondary labels hide in narrow docks while the dropdowns retain accessible names. The chart fits the remaining dock height so its bottom-axis labels remain visible; long numerical readings scroll independently.
 
-These decisions supersede the earlier workflow-plate, near-black Default Dark and pressed Library-selection descriptions. Geometry checks allow at most one CSS pixel of rounding at joined borders; no rendering, delivery or numerical limits change. Both themes require Steve's visual sign-off at 1408×794.
+These decisions supersede the earlier workflow-plate, Default Dark and pressed Library-selection descriptions. Geometry checks allow at most one CSS pixel of rounding at joined borders and containment boundaries; no rendering, delivery or numerical limits change. Round 2 review uses Modern Dark and Default Light at 1408×794, with dock containment also checked at 2560×1440.
 
 ## Product character
 
@@ -107,18 +109,17 @@ The visible Reset action and accessible state supply meaning alongside the dot.
 
 ## Color system
 
-The v1 reference [tokens.json](v1-visual-refinement/tokens.json) and runtime `frontend/visual-tokens.css` own the four neutral palettes and material faces. `visual-controls.css` applies those tokens to the existing app structure. Do not add literal interface colours in component styles.
+Runtime `frontend/visual-tokens.css` owns the three current neutral palettes and material faces. The v1 reference [tokens.json](v1-visual-refinement/tokens.json) retains the deprecated Default Dark column as history, not a current theme. `visual-controls.css` applies runtime tokens to the existing app structure. Do not add literal interface colours in component styles.
 
-| Role | Default Dark | Modern Dark | Default Light | Studio Gray |
-|---|---|---|---|---|
-| Viewer | `#141414` | `#080808` | `#dcdcdc` | `#383838` |
-| Panel | `#202020` | `#121212` | `#f1f1f1` | `#333333` |
-| Raised | `#282828` | `#191919` | `#fafafa` | `#3a3a3a` |
-| Text | `#e4e4e4` | `#f2f2f2` | `#1c1c1c` | `#f2f2f2` |
+| Role | Modern Dark | Default Light | Studio Gray |
+|---|---|---|---|
+| Viewer | `#080808` | `#dcdcdc` | `#383838` |
+| Panel | `#121212` | `#f1f1f1` | `#333333` |
+| Raised | `#191919` | `#fafafa` | `#3a3a3a` |
+| Text | `#f2f2f2` | `#1c1c1c` | `#f2f2f2` |
 
-November 14: Default Dark uses a lifted neutral app/viewer background,
-coordinated panels and brighter neutral text so plate shadows read without
-losing contrast. Modern Dark preserves its previous palette. Settings uses existing lg (16px) text and
+November 14 round 2: Default Dark and its lift are retired; Modern Dark
+preserves its original palette and is the fallback. Settings uses existing lg (16px) text and
 controls, md (14.5px) supporting copy and 2xl headings. Application menus
 use a solid raised surface, a 2px muted-ink border and the existing popover
 shadow. The root menu aligns with the left edge of the hamburger glyph.
@@ -473,7 +474,7 @@ the full panel width less a fixed 10px inset (`--tab-plate-inset`) from the
 dividers around them. HDR grade and SDR grade carry one-line tooltips after
 600ms.
 
-November 10 follow-up: Default Dark neutral text is softened to text #d8d8d8,
+Historical November 10 follow-up (Default Dark deprecated November 14): Default Dark neutral text is softened to text #d8d8d8,
 body #c8c8c8 and muted #aaaaaa. Neutral text uses WCAG 2.2 SC 1.4.6's
 7:1 normal-text contrast target on neutral surfaces, including hover plates.
 Buttons use #161616 to #101010 faces, #303030 edges and a subdued top light;
@@ -484,11 +485,10 @@ of full-app WCAG AAA conformance; accent formulas remain as specified above.
 ## November 10: approved component sheet
 
 These rules supersede earlier material, selection, title and graph rules above.
-The November 14 revision lifts Default Dark to app #181818, panel #202020,
-raised/tooltip #282828, input #1c1c1c and viewer #141414. Existing black lift
-and press shadows remain; plate faces and neutral text rise consistently.
-Other palettes stay unchanged. The previous November 10 near-black values
-are superseded.
+The November 14 round 2 decision retires Default Dark and removes its earlier
+lift. Modern Dark, Default Light and Studio Gray retain their original values.
+The Default Dark-specific contrast test is retired with that theme, not
+applied to Modern Dark by changing its palette or weakening a threshold.
 
 Each joined tab segment owns its shadow: raised when unselected, pressed when
 selected. The container has no drop shadow. Labels are centred and segments

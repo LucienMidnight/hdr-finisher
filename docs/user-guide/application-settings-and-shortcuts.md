@@ -120,9 +120,10 @@ On Windows and Linux, click the menu button for the vertical File, Edit, View, W
 
 ### Appearance themes
 
-**Default Dark** uses a black background with brighter text and clear control
-edges. **Modern Dark** is the previous softer dark appearance. **Default Light**
-and **Studio Gray** remain available. Choose a theme in Settings > Appearance;
+**Modern Dark** is the default dark appearance, with its original palette.
+**Default Light** and **Studio Gray** remain available. Default Dark was retired
+on November 14; saved Default Dark choices now open in Modern Dark.
+Choose a theme in Settings > Appearance;
 it also applies to the Library.
 
 The shared status and shortcuts bar appears on Grade, Proof, Export and Library. Library and Export keep their own footer below it. Export progress and its Pause/Resume and Cancel icons stay on the left while key hints remain on the right; hints shorten when space is tight.

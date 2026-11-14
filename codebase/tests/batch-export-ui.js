@@ -22,7 +22,7 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
       document.body.append(cell);
       const original=document.documentElement.dataset.theme,results=[];
       const accent=document.createElement('span');accent.style.color='var(--accent-strong)';cell.append(accent);
-      for(const theme of ["default-dark","modern-dark","studio-gray","default-light"]){
+      for(const theme of ["modern-dark","studio-gray","default-light"]){
         document.documentElement.dataset.theme=theme;
         const picture=getComputedStyle(cell.firstChild),tile=getComputedStyle(cell);
         results.push({theme,color:tile.outlineColor,accent:getComputedStyle(accent).color,width:tile.outlineWidth,style:tile.outlineStyle,inner:picture.outlineStyle,shadow:tile.boxShadow});

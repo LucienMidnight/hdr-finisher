@@ -16,7 +16,7 @@ const out=path.resolve(__dirname,'../output/review/ui-polish/round-6');fs.mkdirS
  const check=async(loc,label)=>{const g=await contained(loc);assert.ok(g.children.every(r=>r.left>=g.parent.left-1&&r.right<=g.parent.right+1&&r.top>=g.parent.top-1&&r.bottom<=g.parent.bottom+1),label+JSON.stringify(g));};
  for(const size of [{width:2560,height:1440},{width:1100,height:720}]){
  await cdp.send('Emulation.setDeviceMetricsOverride',{...size,deviceScaleFactor:1,mobile:false});
- for(const theme of ['default-dark','default-light','studio-gray']){
+ for(const theme of ['modern-dark','default-light','studio-gray']){
  const pre=theme+'-'+size.width;
  await page.evaluate(t=>{HDRApplicationShell.openSettings('appearance');document.querySelector(`[data-theme-option="${t}"]`).click();},theme);await page.locator('#settings-close').click();
  await page.evaluate(()=>activateWorkflowTab('import'));

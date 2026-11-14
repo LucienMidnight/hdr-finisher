@@ -19,7 +19,7 @@ try{for(const dpr of [1,2]){
  assert.deepEqual(await page.evaluate(()=>state.adjustments.hdr.color_grading),{shadows:{hue:0,saturation:0,luminance_ev:0},midtones:{hue:0,saturation:0,luminance_ev:0},highlights:{hue:0,saturation:0,luminance_ev:0},blending:50,balance:0});
  assert.equal(await page.locator('.color-grading-group').evaluate(e=>e.classList.contains('modified')),false);
  const crop=async(name,loc,margin=6)=>{const b=await loc.boundingBox();assert.ok(b,name);await page.screenshot({path:path.join(out,`${name}-${dpr}x.png`),clip:{x:Math.max(0,b.x-margin),y:Math.max(0,b.y-margin),width:Math.min(b.width+margin*2,2560-Math.max(0,b.x-margin)),height:Math.min(b.height+margin*2,1440-Math.max(0,b.y-margin))}});};
- for(const theme of ['default-dark','default-light','studio-gray']){
+ for(const theme of ['modern-dark','default-light','studio-gray']){
   await page.evaluate(t=>{HDRApplicationShell.openSettings('appearance');document.querySelector(`[data-theme-option="${t}"]`).click();},theme);
   const select=page.locator('#settings-developed-badge');assert.equal(await select.inputValue(),'hover');
   await select.selectOption('always');await page.waitForFunction(()=>document.querySelector('#library-frame').contentDocument.documentElement.dataset.developedBadge==='always');

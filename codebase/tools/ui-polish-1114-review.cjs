@@ -5,13 +5,15 @@ const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 
 const phase = process.argv.includes('--after') ? 'after' : 'before';
-const output = path.resolve('output/ui-polish-1114', phase);
+const round2 = process.argv.includes('--round2');
+const output = path.resolve('output/ui-polish-1114', round2 ? 'round2' : phase);
 fs.mkdirSync(output, { recursive: true });
 
 (async () => {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1408, height: 794 } });
+    if (round2) await page.addInitScript(() => localStorage.setItem('hdr-finisher:application-preferences:v1', JSON.stringify({theme:'default-dark'})));
     const baseline = process.argv.find(argument => argument.startsWith('--baseline-ref='))?.split('=')[1];
     if (phase === 'before' && baseline) {
       const assets = new Map(['batch-export.js', 'library-smart-albums.js', 'photo-library.js', 'photo-library.css', 'styles.css', 'visual-controls.css', 'visual-tokens.css'].map(name => [name, execFileSync('git', ['show', `${baseline}:codebase/frontend/${name}`], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 })]));
@@ -26,6 +28,14 @@ fs.mkdirSync(output, { recursive: true });
     await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: 'domcontentloaded' });
     const library = page.frameLocator('#library-frame');
     await library.locator('#single-view').waitFor();
+    if (round2) {
+      assert.equal(await page.locator('html').getAttribute('data-theme'), 'modern-dark');
+      assert.equal(await library.locator('html').getAttribute('data-theme'), 'modern-dark');
+      await page.evaluate(() => HDRApplicationShell.openSettings('appearance'));
+      assert.equal(await page.locator('[data-theme-option]').count(), 3);
+      assert.equal(await page.locator('[data-theme-option="default-dark"]').count(), 0);
+      await page.locator('#settings-close').click();
+    }
     assert.deepEqual(await page.evaluate(() => [innerWidth, innerHeight]), [1408, 794]);
     const shot = async name => {
       await page.evaluate(() => document.fonts.ready);
@@ -35,13 +45,17 @@ fs.mkdirSync(output, { recursive: true });
     const checkTabs = async () => {
       const tabs = await page.locator('.workflow-tabs').evaluate(element => {
         const header = document.querySelector('.top-bar').getBoundingClientRect();
+        const reference = document.createElement('span'); element.append(reference);
+        const tokenColor = token => { reference.style.color = `var(${token})`; return getComputedStyle(reference).color; };
+        const neutral = tokenColor('--text'), muted = tokenColor('--muted'), accent = tokenColor('--accent-strong'); reference.remove();
         return [...element.children].map(tab => {
           const style = getComputedStyle(tab);
-          return { gap: Math.abs(tab.getBoundingClientRect().bottom - header.bottom), shadow: style.boxShadow, face: style.backgroundImage, edge: parseFloat(style.borderBottomWidth), active: tab.classList.contains('active'), accent: style.borderBottomColor === style.color };
+          return { gap: Math.abs(tab.getBoundingClientRect().bottom - header.bottom), shadow: style.boxShadow, face: style.backgroundImage, edge: parseFloat(style.borderBottomWidth), active: tab.classList.contains('active'), neutral: style.color === neutral, muted: style.color === muted, accent: style.borderBottomColor === accent, color: style.color };
         });
       });
       assert(tabs.every(tab => tab.gap <= 1 && tab.shadow === 'none' && tab.face === 'none' && tab.edge === 2), JSON.stringify(tabs));
-      assert.equal(tabs.filter(tab => tab.active && tab.accent).length, 1, JSON.stringify(tabs));
+      assert.equal(tabs.filter(tab => tab.active && tab.neutral && tab.accent).length, 1, JSON.stringify(tabs));
+      assert(tabs.filter(tab => !tab.active).every(tab => tab.muted && !tab.accent), JSON.stringify(tabs));
     };
     const theme = async value => {
       await page.evaluate(value => {
@@ -53,26 +67,9 @@ fs.mkdirSync(output, { recursive: true });
         const ready = () => element.dataset.theme === value ? resolve() : requestAnimationFrame(ready);
         ready();
       }), value);
-      if (phase === 'after' && value === 'default-dark') {
-        const ratios = await page.evaluate(() => {
-          const style = getComputedStyle(document.documentElement);
-          const token = name => style.getPropertyValue(name).trim();
-          const luminance = hex => {
-            const channels = hex.match(/[0-9a-f]{2}/gi).map(channel => parseInt(channel, 16) / 255).map(channel => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
-            return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
-          };
-          const surfaces = ['--app', '--panel', '--raised', '--input', '--tooltip'];
-          const pairs = [...surfaces.flatMap(surface => ['--text', '--body', '--muted'].map(role => [role, surface])), ['--body', '--plate-up'], ['--text', '--plate-up'], ['--text', '--plate-up-hover'], ['--text', '--plate-down'], ['--body', '--plate-down']];
-          return pairs.flatMap(([role, surface]) => token(surface).match(/#[0-9a-f]{6}/gi).map(background => {
-            const foregroundLight = luminance(token(role)), backgroundLight = luminance(background);
-            return { role, surface, ratio: (Math.max(foregroundLight, backgroundLight) + 0.05) / (Math.min(foregroundLight, backgroundLight) + 0.05) };
-          }));
-        });
-        assert(ratios.every(pair => pair.ratio >= 7), JSON.stringify(ratios.filter(pair => pair.ratio < 7)));
-        checks.push(`Default Dark minimum neutral contrast ${Math.min(...ratios.map(pair => pair.ratio)).toFixed(2)}:1 (required 7:1)`);
-      }
+
     };
-    for (const value of ['default-dark', 'default-light']) {
+    for (const value of round2 ? [] : ['modern-dark', 'default-light']) {
       await theme(value);
       await shot(`${value}-library-empty`);
       if (phase === 'after') {
@@ -97,12 +94,99 @@ fs.mkdirSync(output, { recursive: true });
     await library.locator('.library-cell').first().click();
     await library.locator('.library-file-name').waitFor();
     await page.waitForFunction(() => !document.querySelector('#library-frame').contentDocument.querySelector('.library-cell.loading'), null, { timeout: 90000 });
-    await page.evaluate(async () => {
+    if (round2) await library.locator('.library-cell').filter({ hasText: 'IMG_0790_finished.jpg' }).dblclick();
+    else await page.evaluate(async () => {
       const response = await fetch('/api/proof/test-pattern');
       await importByteFile(new File([await response.blob()], 'ui-polish.tiff', { type: 'image/tiff' }));
     });
     await page.waitForFunction(() => state.session && !state.importInProgress && document.body.dataset.workflow === 'grade');
-    for (const value of ['default-dark', 'default-light']) {
+    if (round2) {
+      await page.waitForFunction(() => HDRGradeSaving.ready() && state.lastScope && els.scopeFreshness.textContent === 'Settled', null, { timeout: 90000 });
+      const geometry = async () => page.evaluate(() => {
+        const box = selector => { const bounds = document.querySelector(selector).getBoundingClientRect(); return {left:bounds.left,right:bounds.right,top:bounds.top,bottom:bounds.bottom,width:bounds.width,height:bounds.height}; };
+        const selectors = ['.workspace-main','.dock-panel-title','#scope-mode','#scope-channel-mode','#scope-detail','#scope-zoom','#dock-collapse','#histogram','#scope-view','#viewer-status-dock','.source-rail','#dropzone','#preview-stage'];
+        return Object.fromEntries(selectors.map(selector => [selector,box(selector)]));
+      });
+      const checkDock = async collapsed => {
+        const bounds = await geometry();
+        const viewportHeight = await page.evaluate(() => innerHeight);
+        const main = bounds['.workspace-main'], toggle = bounds['#dock-collapse'];
+        const controls = ['.dock-panel-title','#scope-mode','#scope-channel-mode','#scope-detail','#scope-zoom','#dock-collapse'].map(selector => bounds[selector]);
+        for (const control of controls) assert(control.left >= main.left - 1 && control.right <= main.right + 1 && control.bottom <= viewportHeight + 1, JSON.stringify(bounds));
+        for (let index = 1; index < controls.length; index++) assert(controls[index].left >= controls[index - 1].right - 1, JSON.stringify(bounds));
+        assert(await page.locator('#dock-collapse').isVisible());
+        assert.equal(await page.locator('#dock-collapse').getAttribute('aria-expanded'), String(!collapsed));
+        assert(await page.locator('#dock-collapse').evaluate(element => element.contains(document.elementFromPoint(element.getBoundingClientRect().left + element.clientWidth / 2, element.getBoundingClientRect().top + element.clientHeight / 2))));
+        if (!collapsed) {
+          const plot = bounds['#histogram'], scope = bounds['#scope-view'];
+          assert(plot.top >= scope.top - 1 && plot.bottom <= scope.bottom + 1 && plot.height > 50, JSON.stringify(bounds));
+          const footerTop = await page.evaluate(() => document.body.dataset.workflow === 'export' ? document.querySelector('#viewer-status-dock').getBoundingClientRect().top : innerHeight);
+          assert(scope.bottom <= footerTop + 1, JSON.stringify(bounds));
+        }
+        assert(toggle.bottom <= main.bottom + 1, JSON.stringify(bounds));
+        return bounds;
+      };
+      for (const value of ['modern-dark', 'default-light']) {
+        await theme(value);
+        await page.evaluate(() => activateWorkflowTab('import'));
+        await checkTabs();
+        await shot(`${value}-library`);
+        await page.evaluate(() => { activateWorkflowTab('grade'); if (state.dockCollapsed) toggleAnalysisDock(); state.compactSourceOpen = true; state.wideSourceCollapsed = false; applyResponsiveWorkspaceState(); setZoomMode('fit'); });
+        await page.waitForFunction(() => els.scopeFreshness.textContent === 'Settled');
+        const fit = await checkDock(false);
+        assert(fit['.workspace-main'].left >= fit['.source-rail'].right - 1, JSON.stringify(fit));
+        const chevron = await page.locator('#source-rail-expand').evaluate(element => { const style = getComputedStyle(element,'::before'); return {transform:style.transform, transition:style.transitionProperty, mask:style.maskImage}; });
+        assert.equal(chevron.transform, 'matrix(-1, 0, 0, -1, 0, 0)');
+        assert.equal(chevron.transition, 'color');
+        assert.match(chevron.mask, /chevron-right/);
+        await shot(`${value}-grade-fit`);
+        await page.evaluate(() => setCustomZoom(119));
+        await page.waitForFunction(() => state.lastScope?.channels?.length && !els.scopeFreshness.classList.contains('updating'));
+        await page.locator('#dropzone').evaluate(element => { element.scrollLeft = element.scrollWidth; element.scrollTop = element.scrollHeight; });
+        const zoomed = await checkDock(false);
+        for (const selector of ['.dock-panel-title','#scope-mode','#dock-collapse','#viewer-status-dock']) {
+          for (const edge of ['left','right','top','bottom']) assert(Math.abs(fit[selector][edge] - zoomed[selector][edge]) <= 1, `${selector}: chrome moved with photo`);
+        }
+        assert(zoomed['#preview-stage'].width > zoomed['#dropzone'].width, '119% must really exceed Fit');
+        await shot(`${value}-grade-119`);
+        await page.locator('#source-rail-expand').click();
+        await checkDock(false);
+        await shot(`${value}-grade-collapsed`);
+        await page.locator('#dock-collapse').click();
+        await checkDock(true);
+        await page.locator('#dock-collapse').click();
+        await checkDock(false);
+        for (const workflow of ['proof','export']) {
+          await page.evaluate(workflow => activateWorkflowTab(workflow), workflow);
+          if (workflow === 'export') {
+            await page.waitForFunction(() => document.querySelector('#batch-count').textContent.startsWith('1 photo'));
+            if (await page.locator('#batch-view-preview').isVisible()) await page.locator('#batch-view-preview').click();
+          }
+          await page.evaluate(() => setZoomMode('fit'));
+          await page.waitForFunction(() => els.scopeFreshness.textContent === 'Settled');
+          await checkDock(false);
+          await shot(`${value}-${workflow}-scopes-open`);
+          await page.locator('#dock-collapse').click();
+          await checkDock(true);
+          await shot(`${value}-${workflow}-scopes-collapsed`);
+          await page.locator('#dock-collapse').click();
+          await checkDock(false);
+        }
+        checks.push(`${value}: neutral tabs, fixed chrome at Fit/119%, source chevron, reachable scope toggle and contained chart labels`);
+        const session = await page.context().newCDPSession(page);
+        await session.send('Emulation.setDeviceMetricsOverride',{width:2560,height:1440,deviceScaleFactor:1,mobile:false});
+        await page.evaluate(() => setZoomMode('fit'));
+        await checkDock(false);
+        await shot(`${value}-export-2560`);
+        await session.send('Emulation.clearDeviceMetricsOverride');
+        await session.detach();
+      }
+      assert.deepEqual(errors, []);
+      fs.writeFileSync(path.join(output,'checks.json'),JSON.stringify({checks,errors,geometryToleranceCssPixels:1},null,2));
+      console.log('PASS round 2: both themes, 1408x794 captures and 2560x1440 containment');
+      return;
+    }
+    for (const value of ['modern-dark', 'default-light']) {
       await theme(value);
       await page.evaluate(() => activateWorkflowTab('import'));
       if (phase === 'after') {

@@ -368,30 +368,6 @@
   --group-chevron-gap: var(--group-disclosure-gap); --group-chevron-color: var(--muted);
 }
 
-/* Default Dark: lifted neutral surfaces with clear control and panel boundaries.
-   Modern Dark retains the original palette and materials above. */
-:root:not([data-theme]), [data-theme="default-dark"] {
-  --viewer: #141414;
-  --app: #181818;
-  --panel: #202020;
-  --raised: #282828;
-  --input: #1c1c1c;
-  --deep: #101010;
-  --hairline: rgba(255, 255, 255, 0.18);
-  --border: #505050;
-  --tooltip: #282828;
-  --text: #e4e4e4;
-  --body: #d8d8d8;
-  --muted: #b8b8b8;
-  --quiet: #989898;
-  --plate-up: linear-gradient(180deg, #3c3c3c 0%, #2c2c2c 100%);
-  --plate-up-hover: linear-gradient(180deg, #444444 0%, #343434 100%);
-  --plate-down: linear-gradient(180deg, #141414 0%, #1a1a1a 100%);
-  --plate-edge: #101010;
-  --plate-lift: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 2px 3px rgba(0, 0, 0, 0.95), 0 1px 0 1px rgba(255, 255, 255, 0.05);
-  --plate-press: inset 0 3px 4px rgba(0, 0, 0, 0.95), inset 0 0 0 1px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
 :root {
   --section-title-font: var(--font-weight-medium) var(--font-size-lg)/var(--line-height-tight) var(--font-body);
   --subsection-title-font: var(--font-weight-medium) var(--font-size-md)/var(--line-height-tight) var(--font-body);

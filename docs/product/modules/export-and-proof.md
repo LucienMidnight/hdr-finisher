@@ -2,6 +2,17 @@
 
 ## November 14: Export Settings disclosure styling
 
+Steve's round 2 review: Export's scopes use the shared Grade/Proof header and
+right-aligned collapse/reopen button. Its fixed status/footer now has reserved
+space below the dock, so neither the folded button nor the chart's bottom-axis
+labels sit behind it. Narrow headers hide secondary text labels, keeping
+accessible dropdown names and all controls separate. Numerical readings scroll
+independently without forcing the chart too tall. Both themes (Modern Dark,
+unchanged original palette, and Default Light), open/folded scopes and Proof
+are captured at 1408×794 under `codebase/output/ui-polish-1114/round2/`;
+2560×1440 containment is also checked. Only presentation changes; delivery,
+encoding and Proof pixels remain untouched.
+
 Steve requested Grade-style section headers, chevrons and full-width dividers.
 Output version, Format & quality, Size & sharpening, Text watermark and File
 naming are now native disclosures, initially open. Advanced settings retains

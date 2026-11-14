@@ -1,5 +1,15 @@
 # Performance table
 
+November 14 UI-polish round 2 mandatory Library smoke (commit containing this
+record): **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM, 1408×794-point
+unpackaged Electron, plain quick-check launcher through the shared GPU lock,
+frozen mixed v1 fixture, 90 seconds. First picture 0.5 s; six of 33 eligible
+photos pictured; ten never reached. It repeats the documented incomplete
+coverage and additionally reports the existing system-reserve guard (available
+memory below 2 GB). Fast suites had finished. No throughput acceptance claim,
+limit change, rerun or Library investigation for this presentation-only work.
+Evidence: `codebase/output/quick-library-check/ui-polish-r2/report.json`.
+
 November 14 UI-polish mandatory Library smoke (commit containing this record):
 **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM, 1408×794-point unpackaged
 Electron, plain quick-check launcher under the shared GPU lock, frozen mixed
