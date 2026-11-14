@@ -5,10 +5,11 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'output/library-grade
 const photos=path.join(root,'output/test-photos'),folder=path.join(photos,'test-memory-4d');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 fs.mkdirSync(out,{recursive:true});fs.mkdirSync(folder,{recursive:true});
-const sources=[['library-mixed-v1-run','DSC03819.ARW'],['library-mixed-v1-run','DSC00264.ARW'],['batch5-edited','20250412_0039.ARW'],['batch5-edited','20250412_0039.ARW.hdrf'],['batch5-edited','DSC04375_DxO_clipped_-1.5EV.tif']];
-for(const [dir,name]of sources){const target=path.join(folder,name);if(!fs.existsSync(target)){fs.copyFileSync(path.join(photos,dir,name),target);}}
+const source=path.join(require('../tests/helpers/photos-root.cjs').photosRoot(),'HDR Test Images');
+const sources=['DSC04375.ARW','DSC00264.ARW','DSC06615.ARW','DSC06615.ARW.hdrf','DSC04375_DxO_clipped_target.tif'];
+for(const name of sources){const target=path.join(folder,name);if(!fs.existsSync(target)){fs.copyFileSync(path.join(source,name),target);}}
 const profile=fs.mkdtempSync(path.join(os.tmpdir(),'hdr-finisher-test-4d-'));
-const config={batch4d:true,folder:folder.replaceAll('\\','/'),photoA:path.join(folder,'DSC03819.ARW').replaceAll('\\','/'),photoB:path.join(folder,'DSC00264.ARW').replaceAll('\\','/'),out};
+const config={batch4d:true,folder:folder.replaceAll('\\','/'),photoA:path.join(folder,'DSC04375.ARW').replaceAll('\\','/'),photoB:path.join(folder,'DSC00264.ARW').replaceAll('\\','/'),out};
 const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
 fs.writeFileSync(path.join(profile,'window-state.json'),JSON.stringify({x:0,y:0,...Object.fromEntries(['width','height'].map((k,i)=>[k,Number(require('./lib/platform.cjs').machineSettings().windowSize.split('x')[i])]))}));
 const env={...process.env,HDR_FINISHER_USER_DATA_DIR:profile,HDR_FINISHER_QUICK_LIBRARY_CONFIG:configPath};delete env.ELECTRON_RUN_AS_NODE;

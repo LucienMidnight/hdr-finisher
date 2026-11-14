@@ -9,7 +9,7 @@ const c = require('./performance/heavy-project-review-common');
     const page = await browser.newPage();
     page.on('console',m=>{if(m.text().startsWith('Library'))console.log(m.text());});
     await page.goto(process.env.HDR_FINISHER_URL || 'http://127.0.0.1:8000');
-    const photo = path.resolve(__dirname, '../local-test-media/inputs/iphone-12-pro-HDR.heic');
+    const photo = require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/iphone_16_pro_IMG_3324.HEIC');
     await page.locator('#file-input').setInputFiles(photo);
     await page.waitForFunction(() => state.session && state.gpuPreview?.available && viewerState().status === 'ready');
     await page.evaluate(async () => {

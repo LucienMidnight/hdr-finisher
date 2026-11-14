@@ -1,3 +1,4 @@
+if(process.platform!=='win32'){console.log('Skipped: PC-only personal-library / very-large-file check (see docs/technical/test-photos.md).');process.exit(0);}
 /* Short read-only scroll reproduction. Uses the runner's disposable profile. */
 const fs=require('node:fs'),path=require('node:path'),{spawn}=require('node:child_process');
 const {chromium}=require('playwright');

@@ -5,7 +5,8 @@ const root=path.resolve(__dirname,'..'),label=process.argv.includes('--baseline'
 const both=process.argv.includes('--both-invalid');
 const invalidInput=process.argv.includes('--invalid-input');
 const output=path.join(root,'output/batch3g',invalidInput?'input-invalid':both?'both-invalid':label);fs.mkdirSync(output,{recursive:true});
-const photos=['DSC03819','DSC00264'].map(n=>path.join(root,'output/test-photos/library-mixed-v1-run',n+'.ARW'));
+const reusePhoto=require('./helpers/reuse-test-photo.cjs');
+const photos=['DSC04375','DSC00264'].map(name=>reusePhoto(reusePhoto.source(name+'.ARW'),path.join(output,name+'.ARW')));
 for(const photo of photos)assert.ok(fs.existsSync(photo),photo);
 const {execFileSync}=require('node:child_process');
 const recipe=JSON.parse(execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`import json,sys

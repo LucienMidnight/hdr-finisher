@@ -14,7 +14,7 @@
   "protectedProjects": [
     "local-test-media/viewport/DSC00264-four-masks.hdrfinisher",
     "local-test-media/viewport/DSC00264-fifty-locals.hdrfinisher",
-    "D:/Photos/Play_Raw/Fantastic light over village - AdamFromCanada/DSC00950.hdrfinisher"
+    "D:/Photos/HDR Test Images/Projects/DSC00950.hdrfinisher"
   ],
   "sourceAreas": [
     {"pattern":"^codebase/frontend/key-hints\\.js$","areas":["ui"]},
@@ -3983,7 +3983,7 @@
         "export-proof"
       ],
       "tier": "core",
-      "protects": "Saved DSC07060 RAW export and full-size Proof remain under the enabled HDR target on GPU and forced CPU, with the optional codec check off.",
+      "protects": "Saved DSC04375 RAW export and full-size Proof remain under the enabled HDR target on GPU and forced CPU, with the optional codec check off.",
       "launch": {
         "method": "electron"
       }

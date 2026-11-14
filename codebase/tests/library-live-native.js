@@ -4,7 +4,7 @@ const {execFileSync}=require('node:child_process'),{chromium}=require('playwrigh
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-live-native',String(Date.now()));
 fs.mkdirSync(folder,{recursive:true});
 const reusePhoto=require('./helpers/reuse-test-photo.cjs');
-const raw=reusePhoto(reusePhoto.source('DSC07072.ARW'),path.join(folder,'DSC07072.ARW'));
+const raw=reusePhoto(reusePhoto.source('DSC06615.ARW'),path.join(folder,'DSC06615.ARW'));
 const edited=path.join(path.dirname(raw),'edited.png');
 const cleanupEdited=()=>{for(const file of [edited,edited+'.hdrf'])fs.rmSync(file,{force:true});};
 process.once('exit',cleanupEdited);

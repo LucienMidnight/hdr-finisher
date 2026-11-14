@@ -1,8 +1,10 @@
 """Exact 42 MP before/after source, measurements, candidates and proxy check."""
 from pathlib import Path
-import json, os, shutil, sys
+import hashlib, json, os, shutil, sys
 import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tools'))
+from lib.machine_settings import photos_path
 OUT = ROOT / 'output/library-grade-open/identity'
 OUT.mkdir(parents=True, exist_ok=True)
 # The backend reads HDR_FINISHER_APP_DATA_DIR; without it this used the real profile.
@@ -12,8 +14,12 @@ from hdr_finisher.sessions import SessionStore
 from hdr_finisher.projects import open_document
 from hdr_finisher.models import PreviewKind
 photo = OUT / 'identity.ARW'
-if not photo.exists():
-    shutil.copyfile(ROOT / 'output/library-slow-spots/development-final-photos-ZHfVZM/DSC07060.ARW', photo)
+original=Path(photos_path('D:/Photos/HDR Test Images/DSC00264.ARW'))
+def digest(path):
+    with path.open('rb') as stream:
+        return hashlib.file_digest(stream,'sha256').hexdigest()
+if not photo.exists() or digest(photo)!=digest(original):
+    shutil.copyfile(original, photo)
 before = '--before' in sys.argv
 store = SessionStore(grade_import_parallel=True)
 for kind in ('new', 'saved'):

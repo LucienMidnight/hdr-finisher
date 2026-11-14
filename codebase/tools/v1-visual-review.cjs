@@ -10,7 +10,7 @@ const out=path.resolve(__dirname,"../output/v1-visual-refinement");fs.mkdirSync(
  await page.waitForFunction(()=>state.session && document.body.dataset.workflow==="grade");
  await page.evaluate(()=>document.fonts.ready);
  // Reuse six small generated review specimens; enable the existing Show all files choice.
- const fixture=path.resolve(__dirname,"../output/test-photos/v1-visual-sources");
+ const fixture=require('./lib/visual-test-photos.cjs')();
  if(fs.existsSync(fixture)) await page.evaluate(async folder=>{const frame=document.querySelector("#library-frame");const lib=frame.contentWindow;
  await lib.fetch("/api/library/pins",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths:[folder]})});
  await lib.HDRLibrary.refreshPins();

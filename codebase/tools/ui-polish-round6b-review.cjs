@@ -7,7 +7,7 @@ const out=path.resolve(__dirname,'../output/review/ui-polish/round-6');fs.mkdirS
  await page.evaluate(async folder=>{const lib=document.querySelector('#library-frame').contentWindow;
  await lib.fetch('/api/library/pins',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[folder]})});await lib.HDRLibrary.refreshPins();
  const key='hdr-finisher:library-show-all-files';lib.localStorage.setItem(key,'true');lib.dispatchEvent(new lib.StorageEvent('storage',{key,newValue:'true'}));await lib.HDRLibrary.browse(folder);
- },path.resolve(__dirname,'../output/test-photos/v1-visual-sources'));
+ },require('./lib/visual-test-photos.cjs')());
  await page.evaluate(async()=>{const r=await fetch('/api/proof/test-pattern');await importByteFile(new File([await r.blob()],'round6.tiff',{type:'image/tiff'}));});
  await page.waitForFunction(()=>state.session&&document.body.dataset.workflow==='grade');
  const cdp=await page.context().newCDPSession(page);

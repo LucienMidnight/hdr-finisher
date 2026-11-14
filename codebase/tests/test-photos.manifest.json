@@ -1,0 +1,256 @@
+{
+  "schemaVersion": 1,
+  "approved": "2026-11-14",
+  "files": [
+    {
+      "name": "-4_stops_exposure_PQ_Rec_2020_DSC08883_03.avif",
+      "bytes": 2144025,
+      "sha256": "cd09d470bd2ec0833db9d17b9dc67c4a508d975ef64178b62d2f9016e0b3033d"
+    },
+    {
+      "name": "2025_0730_1331_3.arw",
+      "bytes": 85644288,
+      "sha256": "b535ad9faff1e6f1492b0651244b837e00f9e952739ed968aff2f446bd3c052d"
+    },
+    {
+      "name": "5M071612_finished.avif",
+      "bytes": 501142,
+      "sha256": "1b73a8813230e5b8b612e7e14a2c5f46676004cae23363acc12409216203163d"
+    },
+    {
+      "name": "A7R00619.ARW",
+      "bytes": 43461120,
+      "sha256": "929742dc25c34b8fd371e7d82f86585a14e47d7391959d8e39c9746df7181ae1"
+    },
+    {
+      "name": "A7R00619.exr",
+      "bytes": 499042410,
+      "sha256": "089e5f4378002a60a9accb873179c7429dd926c38127dd8a8fe9acfb534a88ce"
+    },
+    {
+      "name": "DJI_0071-2.DNG",
+      "bytes": 96563671,
+      "sha256": "af173be2e7b9bde28b1124c2b2b06fa9586508f2c250ac6c9037d671ea799dd2"
+    },
+    {
+      "name": "DJI_0071-2.JPG",
+      "bytes": 14010696,
+      "sha256": "53fa914ced7e504badbeedbf9980c401f9f3f8f6755d26a741491e4ff6cfc884"
+    },
+    {
+      "name": "DSC00264.ARW",
+      "bytes": 85615616,
+      "sha256": "e646d44a86cef88ff73af27ed60a683bf8ce2f7f62110ea042f84fedc56a4e00"
+    },
+    {
+      "name": "DSC00264.ARW.hdrf",
+      "bytes": 50356,
+      "sha256": "5757b930b89a03055232070e82eec88b8c99e95f5ef49f5a2fbcea927d5b7ccf"
+    },
+    {
+      "name": "DSC00950.ARW",
+      "bytes": 36667392,
+      "sha256": "91762691cba4b6653848eef8deebf30d956bab9b7c44192272fc008ba9e4b5e4"
+    },
+    {
+      "name": "DSC00950.ARW.hdrf",
+      "bytes": 312,
+      "sha256": "2a8f044d278088c64cf4a05eb8bbd91962bb8ae184241f552e83ff6571e12aee"
+    },
+    {
+      "name": "DSC01212.ARW",
+      "bytes": 85771264,
+      "sha256": "2555627afa01de70c1999b535067497b64cd39e8d3274da145a2c41d6e539322"
+    },
+    {
+      "name": "DSC01302.jxl",
+      "bytes": 93608442,
+      "sha256": "7d439c38900d909cce24f4a2683a380acecfe5b4d708de15791363f57ed3991c"
+    },
+    {
+      "name": "DSC04375.ARW",
+      "bytes": 85533696,
+      "sha256": "1604ad3c0645b8c26ed8167dab23452a97ed784e577ed8c6b90f99312abd3cf3"
+    },
+    {
+      "name": "DSC04375.ARW.hdrf",
+      "bytes": 56362,
+      "sha256": "6bee360bc715c6e059dc5bd164828c49829857a88043224d9e278aaf9c1233c7"
+    },
+    {
+      "name": "DSC04375_DxO-optical-corr-only.dng",
+      "bytes": 141539424,
+      "sha256": "957b5384ed3cdd3e400ba818fb200a249019ad5c54c740981fa22723ee64846d"
+    },
+    {
+      "name": "DSC04375_DxO_clipped_target.tif",
+      "bytes": 253253558,
+      "sha256": "ca4c17d91ec75939cc1e59f98288849e6af47ddc07e552b9738e395a13ad23f1"
+    },
+    {
+      "name": "DSC06615.ARW",
+      "bytes": 43477504,
+      "sha256": "216e27bccb5ff99cb3aed4199f30397abbf44d49794a005d3eb9b341ac2c2432"
+    },
+    {
+      "name": "DSC06615.ARW.hdrf",
+      "bytes": 78662,
+      "sha256": "82fea6bfd0044bf82ec6a9b8d916247ea086d8034adf242754909e0de838a6e2"
+    },
+    {
+      "name": "DSC08883.avif",
+      "bytes": 3848386,
+      "sha256": "37703a9918affd6a386047608b30b82d67b94153a63791ea2e1150cd7a70e8cf"
+    },
+    {
+      "name": "DSCF6495.RAF",
+      "bytes": 33737348,
+      "sha256": "6f30ba88da509926b1fc0c3f57686f7d687ce113c4d6ce1df04b8ee94f945128"
+    },
+    {
+      "name": "DSC_3931.NEF",
+      "bytes": 25015229,
+      "sha256": "3a1bc9e4e07005e05105dc03e86ca15d68448e7ed81cf4252d6f59a705f54253"
+    },
+    {
+      "name": "DSC_3931.NEF.hdrf",
+      "bytes": 302,
+      "sha256": "9403c8fce11bed5d19c75d24ed9939919d32c73bb8b9f91cf9adb2d12dd5a006"
+    },
+    {
+      "name": "DSC_3931_01.jpg",
+      "bytes": 714454,
+      "sha256": "25eb72beb39548c70aa1f071167292d7d851c611e6c35b8977f80874eb255155"
+    },
+    {
+      "name": "IMG_0114.CR2",
+      "bytes": 25703444,
+      "sha256": "70b1ed64a38dc0c52fb01fbce39b88596c614741ac1b474c2eafa7c748ba9ca1"
+    },
+    {
+      "name": "IMG_0114.CR2.hdrf",
+      "bytes": 817177,
+      "sha256": "2fa1652d0c3e0b5fc7e0f92ad338046bfd4ab63f1bec6d90e4f0fe9f0aedb10c"
+    },
+    {
+      "name": "IMG_0790.CR2",
+      "bytes": 24381533,
+      "sha256": "e63a0f80fc60eb9be4cc7504982b9653414b39b0c21ed623966a4500e8d8ded5"
+    },
+    {
+      "name": "IMG_0790_finished.jpg",
+      "bytes": 11608370,
+      "sha256": "1d97a252cff2c11971fcac33c30f391a7baa6506ea53178d5285ff2ffaa5fa27"
+    },
+    {
+      "name": "IMG_3129.CR2",
+      "bytes": 21043305,
+      "sha256": "fdebb5ead856732b8f57ee2814b7fe45d4703c06f188d7576066141deff0f95b"
+    },
+    {
+      "name": "IMG_6705.HEIC",
+      "bytes": 1692213,
+      "sha256": "7b94757be83a5473422b1887ea8f886e35e1742841cf0c6c98ee4e63a36957cf"
+    },
+    {
+      "name": "IMG_6717.PNG",
+      "bytes": 2204477,
+      "sha256": "7b7fb976b1d57777004028f4b81aa355c480e3e58841f819a996bdeac4916b28"
+    },
+    {
+      "name": "IMG_7723.CR3",
+      "bytes": 28431292,
+      "sha256": "483202682a22fc9b3879950b74c5aa1478367810f8f01bddb4a86e9a7eef60ef"
+    },
+    {
+      "name": "LR-classic-hdr-source-test-1.avif",
+      "bytes": 25538842,
+      "sha256": "dd3c5bcac25573ac6344d59d58466b24708e57ec048acda1e377890bba256bce"
+    },
+    {
+      "name": "Leica-X2-L1021324.DNG",
+      "bytes": 24453726,
+      "sha256": "a67eca6271afb10510ffc9cf998b641d0e8a0ebfa4c779a7bc0bfed5d28b62dd"
+    },
+    {
+      "name": "P1010004.ORF",
+      "bytes": 14367563,
+      "sha256": "62755a0f8bf1b009e92d8c34a1a567fc58569419d14412dbe4a1bcf8fe8851e3"
+    },
+    {
+      "name": "P1150601.RW2",
+      "bytes": 24188928,
+      "sha256": "ac1c95573033cab13927eb4d800a97bab9ec2ffa13e8c7d7840118e63c5b7b68"
+    },
+    {
+      "name": "Projects/DSC00950.hdrfinisher",
+      "bytes": 11560,
+      "sha256": "246ba308dcba22c5483c32ed4c31f5c81a2804504cd01dec2482b6d5be307d56"
+    },
+    {
+      "name": "VKNS0418.JPEG",
+      "bytes": 13886061,
+      "sha256": "f643d5dbe0be20a4765f7f9e6d28c7eaf71a327a2482dc9e3a48d501e2f65eef"
+    },
+    {
+      "name": "_DSC6328.jpg",
+      "bytes": 35025192,
+      "sha256": "fd752c9cebf100cbda1605f96094948a8e87ecfaed75a7bb5f92440c0be6a101"
+    },
+    {
+      "name": "_DSC6510-1.png",
+      "bytes": 223274840,
+      "sha256": "03aae6a086dfe163be325c076774dfdffb962feed73b2cbd5434e9a53a2fc6c0"
+    },
+    {
+      "name": "e053a5bf16a9398eaa3da890-900x1200.jxl",
+      "bytes": 195689,
+      "sha256": "650738e044cd62a593fb77bdb139f7bd85ef2d455632f58641022d26df5852df"
+    },
+    {
+      "name": "iphone_16_pro_IMG_3324.HEIC",
+      "bytes": 3247539,
+      "sha256": "56402d9d9399ccd8dc2e866c278a53d8dd1355f6ed07ca809f385208a21d2000"
+    },
+    {
+      "name": "jpeg_xl_16_bit_p3_color.jxl",
+      "bytes": 759421,
+      "sha256": "21ef4b87587a2b79e386c72a8f3b8305b9b5e52cd79e68a677ec19d9677e60a4"
+    },
+    {
+      "name": "pano_192mp.jpg",
+      "bytes": 3403053,
+      "sha256": "297a5c4528831318845cb5bac561b8f0439954863cf700966993c647f7ead2a7"
+    },
+    {
+      "name": "pano_192mp.png",
+      "bytes": 9320889,
+      "sha256": "3ec6aeb653d83807b0c6627d84c4e17c8a3774fcface51d5a2cf30a728a9aec1"
+    },
+    {
+      "name": "pano_192mp.tif",
+      "bytes": 10439518,
+      "sha256": "a5b41acfcfd131408fda4a6f862668b7c7680f11a5d44b689d18c3c70b087c6c"
+    },
+    {
+      "name": "pano_192mp.tif.hdrf",
+      "bytes": 33368,
+      "sha256": "c64158dad3002077acb673bf7077a45ee31acda097911315b205e0f6c136a403"
+    },
+    {
+      "name": "possibly-cat-prints-texture-v001.exr",
+      "bytes": 14321900,
+      "sha256": "f6ae4c79f581a6fed145b56e5a5c1b7a72467fc49a3458025512c473f97a4962"
+    },
+    {
+      "name": "synthetic_24mp.hdr",
+      "bytes": 82394649,
+      "sha256": "b5a47c9cbb6f795816c4a7cf770684589edd040df3f72533c451aa84f43be609"
+    },
+    {
+      "name": "synthetic_24mp.pfm",
+      "bytes": 288000018,
+      "sha256": "8a6006a6eceb06fa927982534e86355d9d7c0d84e3aea812527186afa4ee29c5"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 Machine-consumed automated test fixtures live here.
 
-Fixtures in this directory must be deterministic, small enough to commit, and directly exercised by the automated test suite. Keep human-run procedures in local maintainer QA notes, private or large photographs and working media in `codebase/local-test-media/inputs/`, and generated reports or exports in `codebase/output/`.
+Fixtures in this directory must be deterministic, small enough to commit, and directly exercised by the automated test suite. Keep human-run procedures in local maintainer QA notes, private photographs in `<photosRoot>/HDR Test Images` (identical on both machines; approved inventory in `docs/technical/test-photos.md` and hashes in `codebase/tests/test-photos.manifest.json`), and generated reports or exports in `codebase/output/`.
 
 Current checked-in fixtures:
 

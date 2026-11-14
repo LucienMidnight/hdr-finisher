@@ -6,10 +6,12 @@ from hdr_finisher.projects import validate_saved_document
 from hdr_finisher.models import EditDocument
 from hdr_finisher.retouch_recipe import InpaintRecipe
 root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(root / 'tools'))
+from lib.machine_settings import photos_path
 folder = Path(sys.argv[1]).resolve()
 assert folder.is_relative_to(root / 'output')
 folder.mkdir(parents=True, exist_ok=True)
-shared = root / 'output/test-photos/DSC00264.ARW'
+shared = Path(photos_path('D:/Photos/HDR Test Images/DSC00264.ARW'))
 assert shared.exists()
 manifest = []
 copies = []

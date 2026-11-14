@@ -1,11 +1,10 @@
 // Run through tests/run-in-electron.js at 2560x1440 with a fresh disposable
-// profile. Only output/test-photos/20260214 is opened; copy originals there
-// once for this task, then remove those copies and the test profile afterwards.
+// profile. Read only the approved photographic JPEG in HDR Test Images.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
 const root=path.resolve(__dirname,'..'),out=path.join(root,'output/jpeg-loop');
-const photos=path.join(root,'output/test-photos/20260214').replaceAll('\\','/');
+const photos=require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images').replaceAll('\\','/');
 (async()=>{
  fs.mkdirSync(out,{recursive:true});
  const before=hashProjects(require('../tests/release/drivers.json').protectedProjects);
@@ -24,7 +23,7 @@ const photos=path.join(root,'output/test-photos/20260214').replaceAll('\\','/');
    try{const meta=await HDRLibraryScenes.load(photo,640,controller.signal,0);result={key:meta.key,edge:meta.edge};await meta.directScene?.store();}catch(e){error=e.message;}
    finally{clearTimeout(timer);}
    return {events,errors,result,error};
-  },{photo:photos+'/darktable_exported/DSC01910.jpg',baseline});
+  },{photo:photos+'/DSC_3931_01.jpg',baseline});
   console.log(JSON.stringify(report,null,2));
   fs.writeFileSync(path.join(out,baseline?'baseline.json':'focused.json'),JSON.stringify(report,null,2));
   if(!baseline)assert.ok(report.result,report.error);

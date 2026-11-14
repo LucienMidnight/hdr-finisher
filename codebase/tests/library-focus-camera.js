@@ -2,6 +2,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..');
+if(process.platform!=='win32'){console.log('Skipped: PC-only badminton RAW focus-culling check.');process.exit(0);}
 const folder=process.env.LIBRARY_FOCUS_CAMERA_FOLDER||path.join(root,'output','test-photos','badminton-42mp');
 assert.ok(fs.existsSync(folder),'Reuse badminton-42mp, or set LIBRARY_FOCUS_CAMERA_FOLDER; this driver never copies RAWs.');
 (async()=>{const browser=await chromium.launch({headless:true});try{

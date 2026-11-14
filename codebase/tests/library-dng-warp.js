@@ -2,17 +2,16 @@
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-dng-warp',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
-// Locate private fixture without depending on its containing subfolder.
-function locate(dir,name){for(const entry of fs.readdirSync(dir,{withFileTypes:true})){const file=path.join(dir,entry.name);if(entry.isDirectory()){const found=locate(file,name);if(found)return found;}else if(entry.name===name)return file;}}
+const photoRoot=path.join(require('./helpers/photos-root.cjs').photosRoot(),'HDR Test Images');
 const runs=[];
 const repeats=process.argv.includes('--measure')?3:1;
 const selected=process.argv.find(arg=>arg.startsWith('--sample='))?.slice(9);
 const source=process.argv.find(arg=>arg.startsWith('--source='))?.slice(9);
 const modes=process.argv.includes('--baseline')?['baseline']:process.argv.includes('--gpu-only')?['gpu']:null;
-const samples=process.argv.includes('--geometry-only')?[]:selected?[selected]:['DJI_0071.DNG','DSC06885_DxO-neutral.dng','DJI_0071-2-HDR.dng'];
+const samples=process.argv.includes('--geometry-only')?[]:selected?[selected]:['DJI_0071-2.DNG','DSC04375_DxO-optical-corr-only.dng','Leica-X2-L1021324.DNG'];
 for(const sample of samples)for(let repeat=0;repeat<repeats;repeat++)for(const mode of (modes||(repeat%2?['gpu','cpu']:['cpu','gpu']))){
  const dir=path.join(folder,`${sample}-${repeat}-${mode}`);fs.mkdirSync(dir);
- for(const [name,src] of [[sample,source||locate(path.join(root,'local-test-media/inputs/linear-dng'),sample)],['small.png',path.join(root,'tests/fixtures/library_photo.png')]])fs.copyFileSync(src,path.join(dir,name));
+ for(const [name,src] of [[sample,source||path.join(photoRoot,sample)],['small.png',path.join(root,'tests/fixtures/library_photo.png')]])fs.copyFileSync(src,path.join(dir,name));
  runs.push({dir,mode,repeat,sample});
 }
 (async()=>{const browser=await chromium.launch({channel:'msedge',headless:true,args:['--enable-unsafe-webgpu']});let page;try{

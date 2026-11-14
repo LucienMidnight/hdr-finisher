@@ -144,7 +144,11 @@ def main(args):
             result = child_probe(args)
         print(json.dumps(result, ensure_ascii=True))
         return
-    source = Path(args.source).resolve()
+    sys.path.insert(0, str(ROOT / 'tools'))
+    from lib.test_photos import photo_root
+    source = Path(args.source or photo_root()).resolve()
+    if source != photo_root().resolve():
+        raise ValueError('Use the curated HDR Test Images folder; personal folder-scale probes have separate PC-only tools.')
     output = Path(args.output).resolve()
     if not source.is_dir():
         raise ValueError("Source must be a camera-image directory.")
@@ -204,8 +208,7 @@ if __name__ == "__main__":
     parser.add_argument("--child")
     parser.add_argument("--mode", choices=("metadata", "half", "full"), default="metadata")
     args = parser.parse_args()
-    if not args.child and not args.source:
-        parser.error("--source is required")
+
     if min(args.samples, args.max_file_mb, args.max_megapixels) < 1:
         parser.error("sample count and file/pixel limits must be positive")
     main(args)

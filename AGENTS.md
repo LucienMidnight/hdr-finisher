@@ -295,17 +295,23 @@ GitHub. This file is tracked in Git so both always have the same rules.
   performance-table row. Mac and PC numbers are separate baselines and are
   never compared with each other; judge a change by before and after on
   the same machine.
-- **Photos on the Mac** (November 14): the `HDR Test Images` and `Play_Raw`
-  folders are copied. Setup lists every missing photo dependency
-  (including one-off measurement tools); name gaps rather than skipping
-  silently, and ask Steve to copy what a driver needs.
+- **One test-photo folder** (Steve, November 14): all photographic test inputs
+  come from `<photosRoot>/HDR Test Images`, identical on PC and Mac. Steve
+  approved the curated 50-file set in `docs/technical/test-photos.md`; setup
+  checks every name, byte size and SHA-256 against
+  `codebase/tests/test-photos.manifest.json` and reports missing, different or
+  extra files. Never use Desktop, Downloads, old partial copies or Play_Raw.
+  Generated deterministic fixtures remain in Git; disposable derivatives stay
+  under output. `library-mixed-v1` and its quick-check defaults stay frozen
+  during `fix/library-8gb` measurements; v2 is opt-in until that comparison ends.
+  Personal-folder and dropped giant-file measurements are PC-only; see the
+  complete exception list and missing specialty coverage in the photo document.
   - **PC-only by Steve's choice:** the `2026/20261017 badminton` folder is
     too large for the Mac, so `library-fullscreen-raw.js`,
     `library-scroll-cache.js`, `library-stored-screen-preview.js` and
     `library-live-picture.js` run on the PC only.
-  - **Asked for:** `HDR Test Images/e053a5bf16a9398eaa3da890-900x1200.jxl`
-    (`jxl-source-colour.js`; that driver also needs the JPEG XL helper,
-    which is Windows-only until Phase 2).
+  - The JPEG XL sample is now present. `jxl-source-colour.js` still needs the
+    JPEG XL helper, which is Windows-only until Phase 2.
 
 ### Waiting on the other machine
 
@@ -318,7 +324,10 @@ item here once it is done (and commits that change with the work).
 1. Run the setup command above (`setup.ps1`) once from the Git root. It
    creates `hdr-finisher-machine.json` beside the checkout and checks the
    tools; then re-run it after any pull that changes dependencies. Steve has
-   already moved the PC's old untracked `AGENTS.md` aside.
+   already moved the PC's old untracked `AGENTS.md` aside. After pulling the
+   test-photo manifest, run setup again to confirm the curated PC folder has
+   the same 50 names, sizes and SHA-256 hashes as the Mac. Do not rebuild v1
+   or switch its defaults until the Library speed comparison is finished.
 2. Check the shared GPU lock: two `gpu-run-lock.py` checks started together
    must run one after the other, never overlapped.
 3. Library rename, move and delete on Windows, including an exFAT drive:
@@ -458,6 +467,8 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 - `docs/technical/performance-table.md`: how long every action takes,
   against its target. Update it with every new timing.
 - `docs/technical/development.md`: contributor guide (build, run, test).
+- `docs/technical/test-photos.md`: approved shared photo corpus, manifest,
+  replacement inventory, PC-only exceptions and v2 fixture hand-over.
 - `docs/technical/archive/slice-3-stage-reports-2026-10-11.md`: Library slice 3
   stage reports (history).
 - `docs/technical/archive/legacy-sdr-match-removal-next-thread-prompt-2026-10-06.md`:

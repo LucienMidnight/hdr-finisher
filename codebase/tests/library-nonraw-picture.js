@@ -3,7 +3,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('n
 const {chromium}=require('playwright');
 const out=path.resolve(__dirname,'../output/library-nonraw-picture');fs.mkdirSync(out,{recursive:true});
 const folder=fs.mkdtempSync(path.join(out,'photos-'));
-fs.copyFileSync(require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/HDR exercise on urbanscape/5M071612_finished.avif'),path.join(folder,'slow.avif'));
+fs.copyFileSync(require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/5M071612_finished.avif'),path.join(folder,'slow.avif'));
 (async()=>{
  const browser=await chromium.launch({headless:true});
  try {
@@ -35,5 +35,5 @@ fs.copyFileSync(require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_
   await page.unroute('**/api/library/picture');
   assert.deepEqual(errors,[]);
   console.log('PASS: real slow AVIF replaces grid seed in Single, survives pause while selected, and displays full size in fullscreen.');
- }finally{await browser.close();}
+ }finally{await browser.close();fs.rmSync(folder,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -6,11 +6,16 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const {execFileSync}=require('node:child_process');
 module.exports=async({page,folder})=>{
  const root=path.resolve(__dirname,'../..'),reports=[];
- const source=process.env.HDR_FINISHER_FILM_PHOTOS || require('./photos-root.cjs').photosPath('D:/Photos/2026/20261017 badminton');
- const photos=['DSC07202','DSC07217','DSC07178'].map(name=>{
+ const source=process.env.HDR_FINISHER_FILM_PHOTOS || require('./photos-root.cjs').photosPath('D:/Photos/HDR Test Images');
+ const photos=['DSC00264','DSC04375','DSC06615'].map(name=>{
   const file=path.join(folder,name+'.ARW');
   for(const suffix of ['', '.hdrf'])fs.copyFileSync(path.join(source,name+'.ARW'+suffix),file+suffix);
-  const grade=JSON.parse(fs.readFileSync(file+'.hdrf','utf8')).grade;
+  const sidecar=JSON.parse(fs.readFileSync(file+'.hdrf','utf8')),grade=sidecar.grade;
+  for(const lane of ['sdr','hdr']){
+   const branch=grade.global_adjustments[lane];branch.film_look_section_enabled=true;
+   Object.assign(branch.film_look,{film_stock:'kodak_portra_400',grain_amount:24,grain_size:30,halation_enabled:true,halation_amount:25});
+  }
+  fs.writeFileSync(file+'.hdrf',JSON.stringify(sidecar));
   for(const lane of ['sdr','hdr']){
    const branch=grade.global_adjustments[lane],film=branch.film_look;
    assert.notEqual(branch.film_look_section_enabled,false);

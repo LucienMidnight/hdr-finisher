@@ -11,7 +11,7 @@ test('persistent test copies reuse pixels and restore disposable sidecars on suc
   const file=reuse(source,target);assert.equal(fs.readFileSync(file,'utf8'),'original');
   fs.writeFileSync(file+'.hdrf','disposable');reuse.cleanup();assert.equal(fs.existsSync(file+'.hdrf'),false);
   fs.writeFileSync(file+'.hdrf','saved');fs.writeFileSync(source,'changed');
-  assert.equal(reuse(source,target),file);assert.equal(fs.readFileSync(file,'utf8'),'original');
+  assert.equal(reuse(source,target),file);assert.equal(fs.readFileSync(file,'utf8'),'changed');
   assert.equal(fs.existsSync(file+'.hdrf'),false);
   try {fs.writeFileSync(file+'.hdrf','failed run');throw Error('failure');} catch {} finally {reuse.cleanup();}
   assert.equal(fs.readFileSync(file+'.hdrf','utf8'),'saved');

@@ -3,15 +3,16 @@
 // Set LIBRARY_RAW_OVERLAY_REVIEW=1 to write the review page crops.
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
-const root=path.resolve(__dirname,'..'),photos=path.join(root,'output','test-photos');
+const root=path.resolve(__dirname,'..'),photos=path.join(root,'output/test-photos/library-raw-overlays');
+const reusePhoto=require('./helpers/reuse-test-photo.cjs');
 const review=process.env.LIBRARY_RAW_OVERLAY_REVIEW==='1'?path.join(root,'output','review','library-raw-overlays'):null;
-const names=['DSC07060.ARW','IMG_0114.CR2','IMG_3129.CR2'];  // Sony landscape, Canon portrait, Canon landscape.
-for(const name of names){assert.ok(fs.existsSync(path.join(photos,name)),`missing test photo ${name}`);assert.ok(!fs.existsSync(path.join(photos,name+'.hdrf')),`${name} is graded`);}
+const names=['A7R00619.ARW','IMG_0114.CR2','IMG_3129.CR2'];  // Sony landscape, Canon portrait, Canon landscape.
+for(const name of names){reusePhoto(reusePhoto.source(name),path.join(root,'output/library-raw-overlays',name));assert.ok(fs.existsSync(path.join(photos,name)),`missing test photo ${name}`);assert.ok(!fs.existsSync(path.join(photos,name+'.hdrf')),`${name} is graded`);}
 const folders=[];
 function link(prefix,files){const folder=fs.mkdtempSync(path.join(root,'output',prefix));folders.push(folder);
   for(const [name,as] of files){try{fs.linkSync(path.join(photos,name),path.join(folder,as));}catch{fs.copyFileSync(path.join(photos,name),path.join(folder,as));}}return folder;}
 (async()=>{const browser=await chromium.launch({headless:true});try{
-  const a=link('raw-overlays-a-',names.map(n=>[n,n])),b=link('raw-overlays-b-',[['DSC07060.ARW','B07060.ARW'],['IMG_3129.CR2','B3129.CR2']]);
+  const a=link('raw-overlays-a-',names.map(n=>[n,n])),b=link('raw-overlays-b-',[['A7R00619.ARW','B07060.ARW'],['IMG_3129.CR2','B3129.CR2']]);
   const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});await page.evaluate(()=>activateWorkflowTab('import'));
   const host=page.locator('#library-frame'),frame=page.frameLocator('#library-frame');
   const snapshot=()=>host.evaluate(e=>e.contentWindow.HDRLibrary.getSnapshot());

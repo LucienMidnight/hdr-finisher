@@ -1,3 +1,4 @@
+if(process.platform!=='win32'){console.log('Skipped: PC-only personal-library / very-large-file check (see docs/technical/test-photos.md).');process.exit(0);}
 /* Finished live cells survive a trip beyond the one-screen retention buffer. */
 const {chromium} = require('playwright');
 const assert = require('node:assert/strict');

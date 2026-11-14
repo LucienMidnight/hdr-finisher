@@ -4,7 +4,7 @@ const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/test-photos/library-live-grid'),resultFolder=path.join(root,'output/library-live-grid');
 fs.mkdirSync(resultFolder,{recursive:true});
 fs.mkdirSync(folder,{recursive:true});
-const sources=['DSC07060','DSC07061','DSC07072'].map(n=>'D:/test-photos-delete-later/'+n+'.ARW');
+const sources=['DSC00264','DSC04375','DSC06615'].map(n=>require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/'+n+'.ARW'));
 for(const source of [...sources,path.join(root,'tests/fixtures/sdr_gradient.png')])if(!fs.existsSync(path.join(folder,path.basename(source))))fs.copyFileSync(source,path.join(folder,path.basename(source)));
 // The Library lists photos of at least 1 KB (file gate, October 30). The
 // 111-byte gradient fixture keeps its pixels: trailing bytes after IEND make
@@ -47,14 +47,14 @@ let cacheSettingsPath,originalCacheSettings;
     const large=await w.HDRLibraryScenes.load(source,2560,undefined,10,null,{develop:true});
     return {starts,detachedResult,active,returnedEdge:returned.edge,smallCached:small.cache_hit,largeCached:large.cache_hit};
    }finally{w.HDRLibraryGpuRaw=original;}
-  },path.join(folder,'DSC07060.ARW'));
+  },path.join(folder,'DSC00264.ARW'));
   assert.equal(detached.detachedResult,'AbortError');assert.equal(detached.active,1);
   assert.equal(detached.starts,2,'Different resolutions develop independently; matching demand reuses preparation');
   assert.equal(detached.returnedEdge,2560);assert.ok(detached.smallCached&&detached.largeCached,'Each requested resolution is stored and reused');
   // Original files/camera pictures stay undeveloped until the explicit command.
   await library.evaluate(async(element,folder)=>{
     const w=element.contentWindow;
-    for(const name of ['DSC07061.ARW','DSC07072.ARW','sdr_gradient.png'])await w.HDRLibraryScenes.load(folder+'/'+name,640,undefined,10,null,{develop:true});
+    for(const name of ['DSC04375.ARW','DSC06615.ARW','sdr_gradient.png'])await w.HDRLibraryScenes.load(folder+'/'+name,640,undefined,10,null,{develop:true});
   },folder);
   const start=Date.now();
   await library.evaluate((element,folder)=>element.contentWindow.HDRLibrary.browse(folder),folder);
@@ -107,18 +107,18 @@ let cacheSettingsPath,originalCacheSettings;
   const singleStarted=Date.now();
   await library.evaluate(element=>{
    const d=element.contentWindow.document;
-   [...d.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path.endsWith('DSC07061.ARW')).click();
+   [...d.querySelectorAll('#grid-space .library-cell')].find(c=>c.dataset.path.endsWith('DSC04375.ARW')).click();
    d.getElementById('single-view').click();
   });
   await page.waitForFunction(()=>{
    const c=document.querySelector('#library-frame').contentWindow.document.getElementById('single-picture');
-   return c.dataset.picturePath?.endsWith('DSC07061.ARW')&&Number(c.dataset.pictureEdge)===2560;
+   return c.dataset.picturePath?.endsWith('DSC04375.ARW')&&Number(c.dataset.pictureEdge)===2560;
   },null,{timeout:60000});
   report.singleMs=Date.now()-singleStarted;
   // Single develops only the selected photo; neighbour read-ahead was removed.
   const stepStarted=Date.now();
-  await library.evaluate(element=>[...element.contentWindow.document.querySelectorAll('#film-space .library-cell')].find(c=>c.dataset.path.endsWith('DSC07072.ARW')).click());
-  await page.waitForFunction(()=>{const c=document.querySelector('#library-frame').contentWindow.document.getElementById('single-picture');return c.dataset.picturePath?.endsWith('DSC07072.ARW')&&Number(c.dataset.pictureEdge)===2560;},null,{timeout:60000});
+  await library.evaluate(element=>[...element.contentWindow.document.querySelectorAll('#film-space .library-cell')].find(c=>c.dataset.path.endsWith('DSC06615.ARW')).click());
+  await page.waitForFunction(()=>{const c=document.querySelector('#library-frame').contentWindow.document.getElementById('single-picture');return c.dataset.picturePath?.endsWith('DSC06615.ARW')&&Number(c.dataset.pictureEdge)===2560;},null,{timeout:60000});
   report.neighbourStepMs=Date.now()-stepStarted;
   await library.evaluate(element=>element.contentWindow.document.getElementById('grid-view').click());
   await new Promise(resolve=>setTimeout(resolve,1000));

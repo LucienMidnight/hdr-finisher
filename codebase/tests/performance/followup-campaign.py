@@ -16,8 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
 from lib.machine_settings import settings
 OUT = ROOT / 'output/performance/review/followup-2026-10-01-attempt-3'
-PROJECT = Path(photos_path(r'D:\Photos\Play_Raw\Fantastic light over village - AdamFromCanada\DSC00950.hdrfinisher'))
-RAW = PROJECT.with_suffix('.ARW')
+PROJECT = Path(photos_path(r'D:\Photos\HDR Test Images\Projects\DSC00950.hdrfinisher'))
+RAW = Path(photos_path('D:/Photos/HDR Test Images/DSC00950.ARW'))
 PYTHON = sys.executable
 OUT.mkdir(parents=True, exist_ok=True)
 

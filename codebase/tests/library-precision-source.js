@@ -6,9 +6,11 @@ fs.mkdirSync(folder,{recursive:true});
 const reusePhoto=require('./helpers/reuse-test-photo.cjs');
 // Matched protocol: the same real EXR and float TIFF, three fresh-scene
 // repeats per route, alternating order, warm processes and uncontrolled OS cache.
+const floatTiff=path.join(folder,'curated-float.tif');
+execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tests/helpers/library_float_tiff.py'),floatTiff],{cwd:root});
 const sources=[
- require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Lakeland landscape in dry Summer/darktable_exported/A7R00619.exr'),
- path.join(root,'local-test-media/inputs/linear-dng/lightroom-hdr/DJI_0072-Lightroom-reference.tif')
+ require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/A7R00619.exr'),
+ floatTiff
 ];
 const photos=sources.map((source,i)=>{const file=path.join(folder,'photo'+i+path.extname(source));return reusePhoto(source,file);});
 const comparisons=[];

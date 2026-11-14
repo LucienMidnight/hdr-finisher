@@ -3,14 +3,14 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/test-photos',path.basename(process.argv[1],'.js'));
 fs.mkdirSync(folder,{recursive:true});
-const photographic=require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Zebras Crossing - thekman/darktable_exported/DSC_3931_01.jpg');
+const photographic=require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/DSC_3931_01.jpg');
 const jpeg=path.join(folder,'photo.jpg'),png=path.join(folder,'photo.png');
 if(!fs.existsSync(jpeg))fs.copyFileSync(photographic,jpeg);
 execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',"from PIL import Image;import sys;Image.open(sys.argv[1]).save(sys.argv[2])",jpeg,png]);
 let sources=[jpeg,png];const photos=[...sources];
 if(process.argv.includes('--ultrahdr')){
  const hdr=path.join(folder,'ultrahdr.jpg');
- if(!fs.existsSync(hdr))fs.copyFileSync(require('./helpers/photos-root.cjs').photosPath("D:/Photos/Play_Raw/Hawai'ian Fire Dancers - Challenge the Darkside - LaurentFromSF/IMG_0790_finished.jpg"),hdr);
+ if(!fs.existsSync(hdr))fs.copyFileSync(require('./helpers/photos-root.cjs').photosPath("D:/Photos/HDR Test Images/IMG_0790_finished.jpg"),hdr);
  sources=process.argv.includes('--measure')?[hdr]:[];photos.splice(0,photos.length,hdr);
 }
 if(process.argv.includes('--codecs')){
@@ -21,7 +21,7 @@ const isoRoute=process.argv.includes('--iso-avif');
 if(isoRoute){
  photos.length=0;sources=[];
  for(const [name,original] of [['reference.avif',path.join(root,'samples/hdr_reference.avif')],
-   ['urbanscape.avif',require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/HDR exercise on urbanscape/5M071612_finished.avif')]]){
+   ['urbanscape.avif',require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/5M071612_finished.avif')]]){
   const target=path.join(folder,name);if(!fs.existsSync(target))fs.copyFileSync(original,target);photos.push(target);
  }
  const reversed=path.join(folder,'hdr-base.avif');

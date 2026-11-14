@@ -13,7 +13,7 @@ from hdr_finisher.library_pictures import decode_picture
 from PIL import Image
 
 if __name__=='__main__':
-    files=[photos_path(r'D:\Photos\HDR Test Images\DSC00264.ARW'),photos_path(r'D:\Photos\HDR Test Images\DSC01212.ARW'),photos_path(r'D:\Photos\HDR Test Images\Test Suite Images\noisy_canon_IMG_0790.CR2')]
+    files=[photos_path(r'D:\Photos\HDR Test Images\DSC00264.ARW'),photos_path(r'D:\Photos\HDR Test Images\DSC01212.ARW'),photos_path(r'D:\Photos\HDR Test Images\IMG_0790.CR2')]
     output=Path('output/focus-trial');output.mkdir(exist_ok=True);rows=[]
     for file in files:
         for quality in ['quick','native']:

@@ -16,7 +16,7 @@ const out=path.resolve(__dirname,'../output/review/ui-polish');fs.mkdirSync(out,
   await page.evaluate(async folder=>{const lib=document.querySelector('#library-frame').contentWindow;
    await lib.fetch('/api/library/pins',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[folder]})});await lib.HDRLibrary.refreshPins();
    const key='hdr-finisher:library-show-all-files';lib.localStorage.setItem(key,'true');lib.dispatchEvent(new lib.StorageEvent('storage',{key,newValue:'true'}));await lib.HDRLibrary.browse(folder);
-  },path.resolve(__dirname,'../output/test-photos/v1-visual-sources'));
+  },require('./lib/visual-test-photos.cjs')());
  }
  for(const theme of (process.argv.includes('--checks-only')?[]:['default-dark','default-light','studio-gray'])){
   await page.evaluate(()=>HDRApplicationShell.openSettings('appearance'));await page.locator(`[data-theme-option="${theme}"]`).click();await page.locator('#settings-close').click();
@@ -42,7 +42,7 @@ const out=path.resolve(__dirname,'../output/review/ui-polish');fs.mkdirSync(out,
   await page.setViewportSize({width:2560,height:1440});
  }
  if(after&&!process.argv.includes('--wheel-only')){
-  await page.evaluate(async folder=>{await batchExport.open([folder+'/Review-1.png']);},path.resolve(__dirname,'../output/test-photos/v1-visual-sources'));
+  await page.evaluate(async folder=>{await batchExport.open([folder+'/IMG_6717.PNG']);},require('./lib/visual-test-photos.cjs')());
   await page.waitForFunction(()=>document.querySelector('#batch-count').textContent.startsWith('1 photo '));
   assert.ok(!(await page.locator('#batch-summary').textContent()).includes('1 photos'));
   await shot('export-one-photo');

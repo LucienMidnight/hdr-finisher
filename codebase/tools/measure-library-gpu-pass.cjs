@@ -6,7 +6,7 @@ const fs = require('node:fs'), path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const { chromium } = require(path.join(root, 'node_modules/playwright'));
 const arg = (name, fallback) => process.argv.find(x => x.startsWith(`--${name}=`))?.split('=')[1] ?? fallback;
-const folder = path.join(root, 'output/test-photos/phase0');
+const folder = require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images');
 const file = arg('file', '_DSC6510-1.png');
 const out = path.join(root, 'output/library-gpu-pass');
 fs.mkdirSync(out, { recursive: true });

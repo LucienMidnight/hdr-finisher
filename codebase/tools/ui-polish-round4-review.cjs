@@ -6,7 +6,7 @@ const out=path.resolve(__dirname,'../output/review/ui-polish/round-4');fs.mkdirS
  await page.evaluate(async folder=>{const lib=document.querySelector('#library-frame').contentWindow;
  await lib.fetch('/api/library/pins',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:[folder]})});await lib.HDRLibrary.refreshPins();
  const key='hdr-finisher:library-show-all-files';lib.localStorage.setItem(key,'true');lib.dispatchEvent(new lib.StorageEvent('storage',{key,newValue:'true'}));await lib.HDRLibrary.browse(folder);
- },path.resolve(__dirname,'../output/test-photos/v1-visual-sources'));
+ },require('./lib/visual-test-photos.cjs')());
  const cdp=await page.context().newCDPSession(page);
  const shot=async(name,loc)=>{await page.evaluate(()=>document.fonts.ready);await loc.screenshot({path:path.join(out,name+'.png')});};
  const font=async loc=>assert.match(await loc.evaluate(e=>getComputedStyle(e).fontFamily),/Sofia Sans Semi Condensed/);
@@ -67,7 +67,7 @@ const out=path.resolve(__dirname,'../output/review/ui-polish/round-4');fs.mkdirS
  await font(page.locator('.control-mode-switch > button').first());
  assert.match(await page.locator('.group-toggle').first().evaluate(e=>getComputedStyle(e).fontFamily),/Afacad/);
  const clipped=await page.locator('.panel-title:visible, .control-mode-switch > button:visible, .workflow-tab:visible').evaluateAll(es=>es.filter(e=>{const r=e.getBoundingClientRect();return e.scrollWidth>e.clientWidth+1||r.left<0||r.right>innerWidth;}).map(e=>e.textContent));assert.deepEqual(clipped,[]);
- await page.evaluate(async photo=>batchExport.open([photo]),path.resolve(__dirname,'../output/test-photos/v1-visual-sources/Review-1.png'));
+ await page.evaluate(async photo=>batchExport.open([photo]),path.join(require('./lib/visual-test-photos.cjs')(),'IMG_6717.PNG'));
  await page.waitForFunction(()=>!document.querySelector('#batch-run').disabled);
  await shot(theme+'-'+size.width+'-export-enabled',page.locator('.batch-export-footer'));
  }

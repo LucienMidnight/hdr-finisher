@@ -1,3 +1,4 @@
+if(process.platform!=='win32'){console.log('Skipped: PC-only personal-library / very-large-file check (see docs/technical/test-photos.md).');process.exit(0);}
 /* Whole-folder throughput: camera RAW grid thumbnails through the GPU route
  * and through Grade's CPU route, four at a time as the grid requests them.
  * Run in the app: node tests/run-in-electron.js tools/gpu_raw_prototype/folder_speed.js

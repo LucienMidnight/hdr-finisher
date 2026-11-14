@@ -13,7 +13,7 @@ from hdr_finisher.loader import load_image
 from hdr_finisher.preview import downsample_image, encode_processed_preview_bytes
 from hdr_finisher.models import RawImportSettings
 out=ROOT/'output/hue-mask-smooth';out.mkdir(parents=True,exist_ok=True)
-source=Path(photos_path(r'D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2'))
+source=Path(photos_path(r'D:/Photos/HDR Test Images/IMG_0114.CR2'))
 cache=out/'scene.npy'
 if not cache.exists():
  scene,*_=load_image(source,raw_import_settings=RawImportSettings())
