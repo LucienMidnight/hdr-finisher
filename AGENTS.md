@@ -333,19 +333,16 @@ item here once it is done (and commits that change with the work).
 
 **On the PC, after the first pull of the Mac work (November 14):**
 
-Checked November 14 on the PC; lock, file commands, drawing gap, Library
+Checked November 14 on the PC; setup and the 50 test photos, lock, file commands, drawing gap, Library
 GPU recovery, HDR ceiling and film/lens parity passed and are removed.
-Still open:
+Do not rebuild `library-mixed-v1` or switch its defaults until the Library
+speed comparison is finished. Still open:
 
-1. Test photos: all 50 match the manifest, but setup reports an extra
-   `D:/Photos/HDR Test Images/manifest.json` (a copy of the manifest dropped
-   there on November 14). Steve removes it, then re-run setup. Do not rebuild
-   v1 or switch its defaults until the Library speed comparison is finished.
-2. Edge colour with real RAWs on the PC GPU: `edge-colour-raw.js` fails twice
+1. Edge colour with real RAWs on the PC GPU: `edge-colour-raw.js` fails twice
    with 55 and 54 invalid GPU pixels in Library development; the safety check
    rejects them and uses the CPU. Matches Steve's November 13 decision 7 (PC
    card suspected); keep until he decides.
-3. HSL picker timing on the PC: `tests/performance/hsl-picker-speed.js`
+2. HSL picker timing on the PC: `tests/performance/hsl-picker-speed.js`
    cannot run because its same-volume hardlinks fail on the exFAT D: drive
    (`EISDIR` on `link`). Needs a tooling fix that still avoids per-run RAW
    copies.
