@@ -41,6 +41,11 @@ fs.mkdirSync(out, {recursive:true});
    await page.locator('#settings-dialog').screenshot({path:path.join(out,tab+'.png')});
   }
   await page.locator('#settings-close').click();
+  if(process.platform==='darwin'){
+   assert.equal(await page.locator('.unified-menu-button').isVisible(),false,'macOS uses its native menu, covered by desktop electron-smoke');
+   console.log('PASS three themes, Library sync, reload persistence and Settings type; native Mac menu covered by desktop smoke');
+   return;
+  }
   await page.locator('.unified-menu-button').click();
   const rect = await page.locator('.window-menu-bar').evaluate(e => {
    const r=e.getBoundingClientRect(), b=document.querySelector('.unified-menu-button').getBoundingClientRect(), s=getComputedStyle(e);

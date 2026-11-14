@@ -36,8 +36,10 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
    for(const lane of ['hdr','sdr']){await switchLane(lane);invalidatePreview(lane);await settlePreview(lane,{});state.previewScheduler?.cancel();while(state.gpuDraftInFlight)await state.gpuDraftInFlight.catch(()=>null);if(!await renderGpuDraft(lane,{longEdge:256}))throw Error('GPU preview failed: '+JSON.stringify({refusal:state.lastGpuDraftRefusal,detail:state.gpuPreview.detail}));}
    state.previewScheduler?.cancel();while(state.gpuDraftInFlight)await state.gpuDraftInFlight.catch(()=>null);
  });
-  const delivery=page.context().pages().find(p=>p.url().includes('gpu-delivery.html'));
+  let delivery;const deliveryDeadline=Date.now()+30000;
+  while(!(delivery=page.context().pages().find(p=>p.url().includes('gpu-delivery.html')))&&Date.now()<deliveryDeadline)await page.waitForTimeout(50);
   assert.ok(delivery,'Hidden GPU delivery renderer');
+  await delivery.waitForFunction(()=>typeof HDRGpuDeliveryFinishing!=='undefined',null,{timeout:30000});
   await delivery.evaluate(()=>{
     window.__finished=[];const read=HDRGpuDeliveryFinishing.prototype.read;
     HDRGpuDeliveryFinishing.prototype.read=async function(texture){const pixels=await read.call(this,texture);window.__finished.push(Array.from(pixels));return pixels;};
@@ -71,5 +73,5 @@ for i,lane in enumerate(['hdr','sdr']):
   const result=JSON.parse(execFileSync(python,[path.join(__dirname,'helpers/gpu_delivery_fixture.py'),'compare',root],{env,encoding:'utf8'}));
   console.log('Finished Color desaturation delivery',JSON.stringify(result));/* JPEG differences are accepted for v1; the float rendering verdict above is strict. *//* The helper enforces the shared decoded ceiling and encoding allowance. */
   assert.deepEqual(errors,[]);console.log('Color desaturation integration PASS');
- }finally{await api('/api/delivery/preferences',{force_cpu:false}).catch(()=>{});await browser.close();}
+ }finally{await api('/api/delivery/preferences',{force_cpu:false}).catch(()=>{});await browser.close();fs.rmSync(root,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

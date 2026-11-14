@@ -22,12 +22,12 @@ module.exports = async function(page) {
    }
   };
   try {
-   group.classList.remove('collapsed');
+   if(group.classList.contains('collapsed'))group.querySelector(':scope > .control-group-header .group-toggle').click();
    await activateDesktopSession(state.session, state.projectPath, null, {stayOnTab:true});
    check(!group.classList.contains('collapsed'), 'background reload closed module');
    await activateDesktopSession(state.session, state.projectPath);
    check([...document.querySelectorAll('.control-group')].every(item => item.classList.contains('collapsed')), 'new photo left modules open');
-   group.classList.remove('collapsed');
+   if(group.classList.contains('collapsed'))group.querySelector(':scope > .control-group-header .group-toggle').click();
    const probe=document.createElement('div');probe.style.background='var(--panel)';document.body.append(probe);
    check(getComputedStyle(group.querySelector('.control-group-header')).backgroundColor === getComputedStyle(probe).backgroundColor, 'open header panel surface');probe.remove();
    await openGroupPresetDialog(group);

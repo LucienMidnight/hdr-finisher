@@ -833,3 +833,14 @@ browser cleanup block, so a missing private reference fails promptly instead
 of leaving Electron alive until the attempt deadline. Rendering, numerical
 guards and the runner's single retry are unchanged. Final qualification is
 recorded in `docs/known-limitations.md`.
+
+The fresh 105-driver Mac run also exposed test-only setup gaps. Delivery
+instrumentation now waits for the delayed hidden window and its script;
+Denoise parity transports identical float bytes instead of large JSON arrays;
+Film preset setup uses the actual disclosure button; sidecar saving opens the
+compact Metadata rail; theme checks use the platform's menu model (native Mac
+menu actions are covered by desktop smoke); and pipeline preparation expects
+Mac file-command previews, without executing them. The shared project review
+helper reports an unavailable source directly instead of waiting for a native
+relink picker. The remaining selection continues through the release runner's
+unfinished-work mode. No application code, threshold or protected project changed.

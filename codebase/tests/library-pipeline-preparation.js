@@ -61,7 +61,10 @@ const {chromium}=require('playwright');
       }
       return result;
     },photo);
-    if(process.platform!=='win32')for(const result of files){assert.equal(result.status,400);assert.match(result.body.detail,/Windows only/);}
+    for(const result of files){
+      if(['win32','darwin'].includes(process.platform)){assert.equal(result.status,200);assert.equal(typeof result.body.token,'string','File commands are previews, never executed here');}
+      else {assert.equal(result.status,400);assert.match(result.body.detail,/Windows and macOS only/);}
+    }
     assert.deepEqual(fs.readFileSync(photo),original);
     assert.deepEqual(fs.readdirSync(folder),['photo.png']);
     console.log(JSON.stringify({pipeline:prepared,retainedPicture:true,adapter:setup.adapter,fileCommands:files}));

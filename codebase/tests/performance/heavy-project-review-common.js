@@ -51,7 +51,12 @@ async function open(page, project, manual = false) {
       return result;
     };
   });
-  await page.evaluate(async target => { await openProjectFromPath(await desktop.grantProjectPath(target, 'project-open')); }, project);
+  await page.evaluate(async target => {
+    const selection=await desktop.grantProjectPath(target,'project-open');
+    const {response,payload}=await projectIo.openDesktopProject(fetch,{projectGrant:selection.grant});
+    if(!response.ok)throw Error(`Project fixture could not open: ${JSON.stringify(payload)}`);
+    await activateDesktopSession(payload.session,selection.path);
+  }, project);
   await stable(page);
   if (manual) for (const lane of ['hdr', 'sdr']) {
     await page.evaluate(x => switchLane(x), lane); await stable(page);

@@ -104,6 +104,12 @@ function halfToFloat(bits) {
     const context = await page.evaluate(async () => {
       const selector = state.gpuPreview.denoiseSourceSelector;
       const region = await state.gpuPreview.readDenoiseResolvedRegion(selector.original.width, selector.original.height, 0, 0);
+      let gpu=null;
+      if(region){
+        const bytes=new Uint8Array(region.values.buffer,region.values.byteOffset,region.values.byteLength);
+        let binary='';for(let offset=0;offset<bytes.length;offset+=32768)binary+=String.fromCharCode(...bytes.subarray(offset,offset+32768));
+        gpu=btoa(binary);
+      }
       return {
         sessionId: state.session.session_id,
         lane: state.currentView,
@@ -114,31 +120,28 @@ function halfToFloat(bits) {
         algorithm: selector.cache.algorithmVersion,
         model: selector.cache.model,
         controls: selector.controls,
-        gpu: region ? Array.from(region.values) : null,
+        gpu,
       };
     });
     assert(context.algorithm === "adaptive-atrous-v1", `The GPU ran ${context.algorithm}.`);
-    assert(context.gpu && context.gpu.length === context.width * context.height * 4, "The GPU result could not be read back.");
+    assert(context.gpu, "The GPU result could not be read back.");
+    const gpuBytes=Buffer.from(context.gpu,'base64');delete context.gpu;
+    const gpuPixels=new Float32Array(gpuBytes.buffer,gpuBytes.byteOffset,gpuBytes.byteLength/4);
+    assert(gpuPixels.length===context.width*context.height*4,"The GPU result has the wrong size.");
 
     // The exact proxy the GPU denoised, as the half floats it loaded.
-    const proxy = await page.evaluate(async (c) => {
-      const longEdge = Math.max(c.width, c.height);
-      const response = await fetch(`/api/session/${c.sessionId}/proxy/${c.lane}?long_edge=${longEdge}&format=rgba16f`
-        + `&edit_revision=${c.editRevision}&geometry_signature=${encodeURIComponent(c.geometry)}`);
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      return {
-        width: Number(response.headers.get("X-Image-Width")),
-        height: Number(response.headers.get("X-Image-Height")),
-        bytesPerRow: Number(response.headers.get("X-Bytes-Per-Row")),
-        format: response.headers.get("X-Pixel-Format"),
-        bytes: Array.from(bytes),
-      };
-    }, context);
+    const proxyUrl=new URL(`/api/session/${context.sessionId}/proxy/${context.lane}?long_edge=${Math.max(context.width,context.height)}&format=rgba16f`
+      +`&edit_revision=${context.editRevision}&geometry_signature=${encodeURIComponent(context.geometry)}`,url);
+    const response=await page.request.get(proxyUrl.href);
+    assert(response.ok(),`Proxy fetch failed: ${response.status()}`);
+    const headers=response.headers();
+    const proxy={width:Number(headers['x-image-width']),height:Number(headers['x-image-height']),
+      bytesPerRow:Number(headers['x-bytes-per-row']),format:headers['x-pixel-format']};
+    const raw=await response.body();
     assert(proxy.width === context.width && proxy.height === context.height,
       `The fetched proxy is ${proxy.width}x${proxy.height}, the GPU denoised ${context.width}x${context.height}.`);
     assert(proxy.format === "rgba16float", `Expected a half-float proxy, got ${proxy.format}.`);
 
-    const raw = Buffer.from(proxy.bytes);
     const pixels = new Float32Array(context.width * context.height * 4);
     for (let y = 0; y < context.height; y += 1) {
       for (let x = 0; x < context.width * 4; x += 1) {
@@ -171,7 +174,7 @@ da.resolve_adaptive(image, model, controls).astype(np.float32).tofile(${JSON.str
     for (let index = 0; index < reference.length; index += 4) {
       for (let channel = 0; channel < 3; channel += 1) {
         const expected = reference[index + channel];
-        const produced = context.gpu[index + channel];
+        const produced = gpuPixels[index + channel];
         const error = Math.abs(produced - expected);
         // Half precision rounds at about 1e-3 of the value.
         const allowance = 2e-3 * Math.abs(expected) + 1e-4;
