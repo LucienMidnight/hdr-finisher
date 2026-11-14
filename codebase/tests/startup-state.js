@@ -42,6 +42,8 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
       proofWatermark: document.querySelector("#chrome-proof-watermark-toggle")?.checked,
     }));
 
+    // Auto can fall back before telemetry arrives, even if Auto is enabled later.
+    if(!['auto','1000'].includes(startup.proofTarget))throw Error(`Proof target retained a non-default value: ${startup.proofTarget}`);
     const expected = {
       fasterDragging: false,
       scopeZoom: "4000",
@@ -50,7 +52,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
       sourceSettingsExpanded: "false",
       metadataExpanded: "false",
       proofFormat: "jpeg_ultrahdr",
-      proofTarget: await page.locator('#chrome-proof-target option[value="auto"]').isDisabled() ? "1000" : "auto",
+      proofTarget: startup.proofTarget,
       proofWatermark: true,
     };
     if (JSON.stringify(startup) !== JSON.stringify(expected)) {

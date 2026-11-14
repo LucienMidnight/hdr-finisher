@@ -848,8 +848,8 @@ unfinished-work mode. No application code, threshold or protected project change
 Later release diagnostics canonicalize shared test-photo paths to the same
 identity the backend returns, use Command for native Mac selection/clipboard
 shortcuts, and expect the approved shared Library status bar. Startup checks
-allow the existing 1000-nit Proof fallback only when Auto is disabled by missing
-display telemetry. Python fixture helpers inherit a disposable `test-` app-data
+require fresh Auto or its documented 1000-nit fallback, including when telemetry
+arrives after that fallback; the planted 4000-nit preference must not survive. Python fixture helpers inherit a disposable `test-` app-data
 folder. The sidecar Escape assertion is bounded so a compact Metadata/modal
 conflict is reported instead of holding the runner open. The framing click
 regression and its fix are recorded in Grade. Limits remain strict.

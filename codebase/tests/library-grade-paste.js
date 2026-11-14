@@ -52,7 +52,7 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     await frame.locator('#library-status').filter({hasText:'Grade copied from copied.png'}).waitFor();
     // Text shortcuts remain native; a paste into a text control cannot open a grade dialog.
     const text=frame.locator('#library-tag-input');await text.fill('normal text');await text.selectText();
-    await text.press(`${process.platform === "darwin" ? "Meta" : "Control"}+c`);await text.press('End');await text.press(`${process.platform === "darwin" ? "Meta" : "Control"}+v`);
+    await text.press(`${process.platform === "darwin" ? "Meta" : "Control"}+c`);await text.press('ArrowRight');await text.press(`${process.platform === "darwin" ? "Meta" : "Control"}+v`);
     assert.equal(await text.inputValue(),'normal textnormal text');
     assert.equal(await frame.locator('dialog[open]').count(),0);
     await physical('target.png').click();await frame.locator('#library-grid').press(`${process.platform === "darwin" ? "Meta" : "Control"}+v`);

@@ -2449,4 +2449,5 @@ The reserved Metadata rail now dismisses after an outside target receives its
 click. Dismissing on pointer-down moved the framing/toolbar button before
 pointer-up and swallowed the first click on the minimum Mac. The same framing
 UI steps succeed on v0.9.2 before its missing local encoder stops delivery.
-No grade, rendering, framing dimensions or delivery settings change.
+Clicks that open Metadata keep it open; the pre-click open state is captured
+before dismissal. No grade, rendering, framing dimensions or delivery settings change.

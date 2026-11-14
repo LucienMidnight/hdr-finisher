@@ -25,7 +25,7 @@ if(isoRoute){
   const target=path.join(folder,name);if(!fs.existsSync(target))fs.copyFileSync(original,target);photos.push(target);
  }
  const reversed=path.join(folder,'hdr-base.avif');
- execFileSync(path.join(root,'bin/avifgainmaputil.exe'),['swapbase',photos[0],reversed,'-q','100','--qgain-map','100','-s','10']);
+ execFileSync(path.join(root,'bin','avifgainmaputil'+(process.platform==='win32'?'.exe':'')),['swapbase',photos[0],reversed,'-q','100','--qgain-map','100','-s','10']);
  photos.push(reversed);
 }
 const edited=path.join(folder,isoRoute?'edited.avif':'edited.png');fs.copyFileSync(isoRoute?photos[1]:png,edited);photos.push(edited);

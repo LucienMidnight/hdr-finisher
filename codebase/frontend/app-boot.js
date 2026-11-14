@@ -1045,10 +1045,14 @@ function bindEvents() {
   els.overlayClose.addEventListener("click", closeOverlayPopover);
   // Dismiss after the target's click: closing the reserved rail on pointerdown
   // moves toolbar controls before pointerup and swallows their first click.
+  let dismissCompactSourceAfterClick = false;
   document.addEventListener("click", (event) => {
-    if (state.compactSourceOpen && !event.target.closest(".source-rail")) closeCompactSourceRail();
+    const dismiss = dismissCompactSourceAfterClick;
+    dismissCompactSourceAfterClick = false;
+    if (dismiss && state.compactSourceOpen && !event.target.closest(".source-rail,#manual-interpretation")) closeCompactSourceRail();
   });
   document.addEventListener("pointerdown", (event) => {
+    dismissCompactSourceAfterClick = state.compactSourceOpen && !event.target.closest(".source-rail,#manual-interpretation");
     if (!els.overlayPopover.classList.contains("hidden") && !event.target.closest("#overlay-popover, #overlay-toggle")) closeOverlayPopover({ restoreFocus: false });
   });
   document.addEventListener("keydown", (event) => {
