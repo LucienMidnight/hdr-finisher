@@ -325,6 +325,17 @@ section 3; the October 18 list below is kept as history.
    and a hue-selection mask. Hue selection is built October 27; complete Retouch remains open. See
    [grade](modules/grade.md).
 
+### Next performance round: heavy Film looks with Denoise (Steve, November 14, 2026)
+
+The focus of the next round of performance work. On the MacBook Neo
+(minimum hardware), editing works with many Film look adjustments stacked
+together with Denoise, but it is slow. In Steve's November 14 manual test,
+Tone changes took about 2–3.7 s at 100% zoom; Fit was faster but still
+sluggish. Steve expected some slowness here, but this case is the next
+target: heavy Film stacks plus Denoise at Fit and 100%, measured on the
+Mac first. See [film-look](modules/film-look.md) and
+[grade](modules/grade.md).
+
 ### To do: briefs to write (November 8, 2026)
 
 Found during the November 8 release check. Each needs a brief before work starts.
