@@ -95,3 +95,31 @@ def test_backend_request_holds_cancelled_mezzanine_until_exit(monkeypatch):
         assert first.id not in s.jobs
 
     asyncio.run(run())
+
+
+def test_independent_census_retries_a_complete_walk_and_keeps_observing(tmp_path, monkeypatch, capsys):
+    import os
+    import runpy
+    import sys
+    import time
+    from types import SimpleNamespace
+    from hdr_finisher import app_memory, resource_preflight
+
+    row = dict(pid=12, parentPid=11, name='app', chargedBytes=123, workingSetBytes=456)
+    outcomes = iter([PermissionError('child exited'), [row], [row], []])
+    def census(root):
+        value = next(outcomes)
+        if isinstance(value, Exception):
+            raise value
+        return value
+    monkeypatch.setattr(app_memory, 'process_tree', census)
+    monkeypatch.setattr(resource_preflight, 'detect_memory_resources', lambda: SimpleNamespace(available_ram_bytes=4_000_000_000, total_ram_bytes=8_000_000_000))
+    monkeypatch.setattr(time, 'sleep', lambda delay: None)
+    monkeypatch.setattr(sys, 'argv', ['measure-library-processes.py', '11', '.25'])
+    runpy.run_path(str(Path(__file__).resolve().parents[1] / 'tools/measure-library-processes.py'))
+    import json
+    output = capsys.readouterr()
+    samples = [json.loads(line) for line in output.out.splitlines()]
+    assert [sample['censusRetries'] for sample in samples] == [1, 0]
+    assert all(sample['totalBytes'] == 123 for sample in samples)
+    assert not output.err

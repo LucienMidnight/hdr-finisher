@@ -1,3 +1,36 @@
+November 14 minimum-Mac Library investigation (final qualification pending;
+WIP `2a0c70e7`, then this fix). **MacBook Neo, A18 Pro, 8 GB unified RAM, six
+cores; 1408x794 points; plain Electron; v1's same 50 read-only photos, fresh
+profiles, 4 GB app setting selected by the unchanged scenario, 2 GB system
+reserve; shared GPU lock; four other agents active; no own fast suite during
+captures.** CPU mean is whole-machine busy percentage; load is the one-minute
+OS load range. The default viewport requests six of 33 normal-filter rows.
+The separate survey uses the normal minimum thumbnail control and scrolls;
+its complete folder denominator is 50. Timing tolerance 5%, frame-gap limit
+250 ms, all pixel and memory gates unchanged.
+
+| Capture | Pictures / folder rows | First picture | Longest recorded gap | CPU mean / load range | Census duration |
+| --- | --- | --- | --- | --- | --- |
+| Initial loaded viewport | 6/33 | 2.5 s | 67 ms | 54.8% / 13.77–15.79 | 17.3 s observed |
+| Initial loaded all-file survey | 40/50 | 0.5 s | 434 ms | 34.5% / 3.78–6.82 | 62.1 s observed |
+| Repeated viewport | 5/33 | 0.8 s | 83 ms | 33.9% / 4.02–8.11 | 94.0 s observed |
+| Repeated all-file survey | 40/50 | 0.5 s | 50 ms | 32.8% / 3.52–5.74 | 92.5 s observed |
+| Discarded broad-barrier survey | 37/50 | 0.5 s | 100 ms | 39.4% / 1.73–3.42 | 92.6 s observed |
+
+The first two independent censuses ended early (17.3/62.1 s including startup),
+so their CPU/peak samples do not qualify the whole 90 seconds. The corrected
+observer retries one complete OS walk, continues after a failure and reports
+any early exit; the repeats cover the entire scenario. Every listed run failed
+the unchanged physical reserve. First-picture differences in these changing
+loads are observations, not isolated code speedups. The broad barrier delayed
+heavy pictures and was narrowed to camera discovery before final capture.
+The repeated survey's five RAF/CR3/ORF/RW2 previews waited 1.2–3.5 s for memory;
+their selected JPEGs require the approved 64 MB quick lane, rather than the
+0.37–0.59 GB source-derived requests. Three huge quick requests (4.416/6.828 GB)
+never reached their reduced source route. Per-photo routes/grants and load:
+`codebase/output/quick-library-check/{8gb-before,8gb-survey-before,
+8gb-before-quieter,8gb-survey-before-quieter,8gb-survey-after}/`.
+
 # Performance table
 
 November 14 Mac GPU parity diagnostics (`fix/mac-gpu-parity`, commit containing

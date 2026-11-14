@@ -291,3 +291,13 @@ def test_direct_jxl_does_not_flatten_hdr_or_assume_unknown_colour(tmp_path, monk
     from hdr_finisher.library_pictures import original_preview
     monkeypatch.setattr(jpegxl, "decode_jpegxl", lambda *args, **kw: (np.zeros((4, 8, 3), dtype=np.float32), metadata))
     assert original_preview(tmp_path / "image.jxl", 640) is None
+
+
+@pytest.mark.parametrize('gain_map,transfer,expected', [(True, None, False), (False, 16, False), (False, 18, False), (False, 1, True)])
+def test_original_candidate_uses_avif_headers_without_pixels(tmp_path, monkeypatch, gain_map, transfer, expected):
+    from hdr_finisher import avif_info
+    from hdr_finisher.library_pictures import original_preview_candidate
+    path = tmp_path / 'picture.avif'
+    monkeypatch.setattr(avif_info, 'inspect_avif', lambda path: {'gain_map_present': gain_map, 'transfer_char': transfer})
+    monkeypatch.setattr(Image.Image, 'load', lambda *a, **k: pytest.fail('Pixels read during discovery'))
+    assert original_preview_candidate(path) is expected

@@ -18,12 +18,33 @@ window.HDRLibraryScenes = (() => {
   // next admission; only abandoned viewport work may be cancelled.
   // Draw scheduling is independent of source ownership.
   const cpuLanes = Math.max(1, Math.floor(Math.sqrt(globalThis.navigator?.hardwareConcurrency || 1)));
+  const discoveries = new Set(), discoveryWaiters = new Set();
+  const pendingDiscovery = job => [...discoveries].some(d=>d.priority<=job.priority);
+  function wakeDiscoveries(){
+    for(const waiter of [...discoveryWaiters])if(!pendingDiscovery(waiter.job)){
+      discoveryWaiters.delete(waiter);waiter.detach();waiter.resolve();
+    }
+  }
+  function finishDiscovery(discovery){discoveries.delete(discovery);wakeDiscoveries();}
+  function waitForDiscoveries(job){
+    if(!pendingDiscovery(job))return null;
+    return new Promise((resolve,reject)=>{
+      const signal=job.controller.signal;
+      const waiter={job,resolve,detach:()=>signal.removeEventListener("abort",stop)};
+      const stop=()=>{discoveryWaiters.delete(waiter);waiter.detach();reject(new DOMException("Cancelled","AbortError"));};
+      discoveryWaiters.add(waiter);signal.addEventListener("abort",stop,{once:true});
+      if(signal.aborted)stop();
+    });
+  }
   const probes = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {onChange:changed});
   // Explicit preparations finish their cache even if the immediate waiter
   // detaches. Grid and filmstrip demand use viewport ownership.
   const sources = HDRLibrarySceneScheduler.create(cpuLanes, undefined, {
     heavyLimit:cpuLanes,onChange:changed,fifo:true,
     admit:async job=>{
+      // Finish visible camera/original checks before admitting full developments.
+      // No grant or decode place is held while discovery is pending.
+      const discovered=waitForDiscoveries(job);if(discovered)await discovered;
       const gpu=!job.cpuRoute&&HDRLibraryGpuRaw.enabled()&&HDRLibraryGpuRaw.preflight ? await HDRLibraryGpuRaw.preflight(job.gpuMeta,job.edge,job.controller.signal) : {bytes:0,unified:false};
       job.grant=await HDRLibraryGrants.acquire(job.path,!job.cpuRoute&&HDRLibraryGpuRaw.enabled()?"source":"cpu",job.controller.signal,job.priority,job.edge,gpu.bytes,gpu.unified,!!job.front);
       return true;
@@ -44,6 +65,9 @@ window.HDRLibraryScenes = (() => {
     return error;
   }
   async function prepared(path, edge, signal, priority, identity, trace = null, options = {}) {
+    const discovery={path,priority:typeof priority==="function"?priority():priority,viewport:!!options.viewportDemand};
+    discoveries.add(discovery);
+    try {
     const checked = performance.now();
     const generation=generations.get(path)||0;
     const plan = await probes.submit(path+"|"+edge+"|"+generation, async shared => {
@@ -52,7 +76,7 @@ window.HDRLibraryScenes = (() => {
       const result = await response.json();
       if (!response.ok) throw failure(result);
       return result;
-    }, signal, priority, {path,edge,viewport:!!options.viewportDemand,background:!!options.cachedOnly,log_view:trace?.view,stage:edge <= 640 ? "Checking thumbnail cache" : edge === 100000 ? "Checking detail preview cache" : "Checking screen preview cache"});
+    }, signal, priority, {path,edge,cost:window.HDRLibraryQuery?.rawTypes?.has(path.split("|copy|",1)[0].split(".").at(-1).toUpperCase())?0:1,viewport:!!options.viewportDemand,background:!!options.cachedOnly,log_view:trace?.view,stage:edge <= 640 ? "Checking thumbnail cache" : edge === 100000 ? "Checking detail preview cache" : "Checking screen preview cache"});
     window.HDRLibraryTrace?.mark(trace,"picture_cache_check",checked,{cache_hit:!!plan.cached});
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     if (generation!==(generations.get(path)||0)) throw new DOMException("Invalidated", "AbortError");
@@ -72,13 +96,26 @@ window.HDRLibraryScenes = (() => {
     // the disk cache; it is the fastest reuse and reports as a cache hit.
     if (direct) { options.onSourceDemand?.(); return display(direct.cache_hit ? direct : {...direct, cache_hit:true}); }
     if (plan.cached) { options.onSourceDemand?.(); return display(plan.cached); }
+    // Non-RAW quick decodes may themselves be large. They keep their own
+    // grants, but cannot hold camera-picture discovery or source admission.
+    if(!plan.unedited_raw)finishDiscovery(discovery);
     if ((plan.unedited_raw || plan.original_file) && edge !== 100000 && !options.develop) {
-      const response = await HDRLibraryGrants.preview({path,edge:edge <= 640 ? 640 : 2560,quick_draw:true},signal);
-      if (response.status === 200) {
+      let response;
+      try {response = await HDRLibraryGrants.preview({path,edge:edge <= 640 ? 640 : 2560,quick_draw:true},signal,{},urgency);}
+      catch(error){
+        // A full-file quick estimate can exceed the ceiling even when the
+        // existing reduced development fits. Let that route request its own
+        // unchanged grant; never turn a quick refusal into a broken photo.
+        if(!error.needsMemory)throw error;
+        window.HDRLibraryStopwatch?.("picture_preview_skipped",{path,reason:error.message});
+      }
+      if (response?.status === 200) {
         const camera = await response.json();
         if (plan.original_file || camera.camera_long_edge >= 1024) return {...camera,path,edge,bitmap:true,key:"original:"+sourceVersion.split(":")[0],cache_hit:true,picture_source:plan.original_file ? "original file" : "camera picture"};
       }
     }
+    finishDiscovery(discovery);
+    if (plan.development_error) throw failure({detail:plan.development_error.reason,library_error:plan.development_error});
     if (options.cachedOnly) return null;
     if (edge === 100000 && plan.detail_memory && !plan.detail_memory.available) {
       const error = Error("Not enough memory for full-size detail. Open this photo in Grade.");
@@ -131,6 +168,7 @@ window.HDRLibraryScenes = (() => {
       if(own.cached)return {...own.cached,unedited_raw:!!own.unedited_raw};
     }
     return display(result);
+    } finally {finishDiscovery(discovery);}
   }
   // Selected work follows at most the single sharp draw already in flight.
   // Quick draws use thumbnails and their own renderer and priority queue.
@@ -269,11 +307,11 @@ window.HDRLibraryScenes = (() => {
       }
     }).catch(error=>{window.HDRLibraryTrace?.mark(meta.trace,"picture_store",started,{key:meta.key,success:false,reason:error.message});});
   }
-  return Object.freeze({load,lease,save,review:path=>{HDRLibraryGpuRaw.selectDirect?.(Array.isArray(path)?path[0]:path);reviewPath=Array.isArray(path)?path[0]:path;reviewPaths=new Set((Array.isArray(path)?path:[path]).filter(Boolean));sources.reprioritize(rank);probes.reprioritize(rank);},
+  return Object.freeze({load,lease,save,review:path=>{HDRLibraryGpuRaw.selectDirect?.(Array.isArray(path)?path[0]:path);reviewPath=Array.isArray(path)?path[0]:path;reviewPaths=new Set((Array.isArray(path)?path:[path]).filter(Boolean));sources.reprioritize(rank);probes.reprioritize(rank);for(const d of discoveries)if(d.viewport)d.priority=rank(d.path);wakeDiscoveries();},
     onReclaim:handler=>{reclaim=handler;},
     reclaim:(bytes,required=false)=>reclaim(bytes,required),
-    promote:(path,priority)=>{window.HDRLibraryGrants?.promote(path,priority);probes.promote(path,priority);sources.promote(path,priority);draws.promote(path,priority);quickDraws.promote(path,priority);},
-    viewport:(shown,around)=>{visible=new Set(shown);nearby=new Set(around);window.HDRLibraryGrants?.viewport?.([...shown,...around]);sources.reprioritize(rank);probes.reprioritize(rank);},
+    promote:(path,priority)=>{for(const d of discoveries)if(d.path===path)d.priority=Math.min(d.priority,priority);window.HDRLibraryGrants?.promote(path,priority);probes.promote(path,priority);sources.promote(path,priority);draws.promote(path,priority);quickDraws.promote(path,priority);wakeDiscoveries();},
+    viewport:(shown,around)=>{visible=new Set(shown);nearby=new Set(around);for(const d of discoveries)if(d.viewport)d.priority=rank(d.path);window.HDRLibraryGrants?.viewport?.([...shown,...around]);sources.reprioritize(rank);probes.reprioritize(rank);wakeDiscoveries();},
     invalidate:(paths,{finishingOnly=false}={})=>{const targets=new Set(paths);for(const path of targets){generations.set(path,(generations.get(path)||0)+1);HDRLibraryGpuRaw.forgetDirect?.(path);}if(!finishingOnly)sources.invalidate(path=>targets.has(path));probes.invalidate(path=>targets.has(path));},
     stage:(path,stage,waiting=false)=>sources.stage(path,stage,waiting),
     draw:(task,signal,priority=10,path="Photo",labels={})=>draws.submit(crypto.randomUUID(),task,signal,priority,{path,...labels,stage:`Drawing ${labels.edge === 100000 ? "detail preview" : labels.edge <= 640 ? "thumbnail" : "screen preview"}`}),

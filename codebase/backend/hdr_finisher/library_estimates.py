@@ -146,6 +146,10 @@ def embedded_jpeg_header(path):
     are not camera pictures. A larger bitmap preview keeps the old estimate.
     No strip, JPEG body or source pixels are read here.
     """
+    from .library_embedded_jpeg import camera_jpeg_header
+    camera = camera_jpeg_header(path)
+    if camera:
+        return camera
     import tifffile
     try:
         with tifffile.TiffFile(path) as source:
@@ -267,8 +271,9 @@ def reduced_rate(path):
     if suffix in {".tif", ".tiff"}:
         return 6
     if suffix == ".dng":
-        from .linear_dng import inspect_dng, DngRoute
-        inspection = inspect_dng(Path(path))
+        from .linear_dng import DngRoute
+        from .library_dng import inspect_source
+        inspection = inspect_source(path,2560)
         if (inspection.route == DngRoute.LINEAR_DNG and inspection.primary_page_index is not None
                 and not (inspection.required_opcodes or inspection.optional_opcodes)
                 and inspection.metadata.get("sdr_preview_series_index") is None):
@@ -303,10 +308,10 @@ def gpu_metadata(path, document=None, edge=2560):
         meta = dict(width=width, height=height, flip=flip,
                     raw_import_settings=inputs['raw_import_settings'], repairs=inputs.get('repairs'))
         if suffix == '.dng':
-            from .linear_dng import inspect_dng, DngRoute
-            from .library_dng import geometry, plan
+            from .linear_dng import DngRoute
+            from .library_dng import geometry, plan, inspect_source
             from .library_gpu_raw import NotEligible
-            inspection = inspect_dng(Path(path))
+            inspection = inspect_source(path,edge)
             if inspection.route is DngRoute.UNSUPPORTED_DNG:
                 return {'cpu_route':'unsupported-gpu'}
             if inspection.route is DngRoute.LINEAR_DNG and (inspection.required_opcodes or inspection.optional_opcodes

@@ -535,3 +535,83 @@ test('known unsupported GPU route skips preflight and respects background-only C
   assert.equal(cpu,explicit?1:0);assert.equal(result?.key,explicit?'cpu-result':undefined);
  }
 });
+
+test('visible embedded pictures finish before a full development takes its grant',async()=>{
+ const preview=gate(),started=[],admitted=[];
+ const {scenes,context}=setup({heavy:{bytes:80e6,revision:'h'},raw:{bytes:80e6,revision:'r',unedited_raw:true}},async(path,edge)=>{started.push(path);return {edge,key:path};},6);
+ context.HDRLibraryGrants.acquire=async(path)=>{admitted.push(path);return {id:'test'};};
+ context.HDRLibraryGrants.preview=async()=>{await preview.promise;return {status:200,json:async()=>({edge:640,width:640,height:400,camera_long_edge:4000})};};
+ const heavy=scenes.load('heavy',640),raw=scenes.load('raw',640);
+ await tick();assert.deepEqual(admitted,[]);assert.deepEqual(started,[]);
+ preview.resolve();assert.equal((await raw).bitmap,true);
+ await heavy;assert.deepEqual(admitted,['heavy']);assert.deepEqual(started,['heavy']);
+});
+
+test('a refused full-file quick preview still tries the existing reduced development once',async()=>{
+ const started=[];
+ const {scenes,context}=setup({giant:{bytes:100e6,revision:'g',original_file:true}},async(path,edge)=>{started.push(path);return {edge,key:'reduced'};});
+ context.HDRLibraryGrants.preview=async()=>{throw Object.assign(Error('Quick estimate exceeds the ceiling'),{needsMemory:true});};
+ assert.equal((await scenes.load('giant',640)).key,'reduced');
+ assert.deepEqual(started,['giant']);
+ // A quick-cache-only request still cannot create a source.
+ assert.equal(await scenes.load('giant',640,null,10,null,{cachedOnly:true}),null);
+ assert.deepEqual(started,['giant']);
+});
+
+test('a cancelled preview releases discovery and cannot hold a later development',async()=>{
+ const {scenes,context}=setup({raw:{bytes:80e6,revision:'r',unedited_raw:true},heavy:{bytes:80e6,revision:'h'}},async(path,edge)=>({edge,key:path}));
+ context.HDRLibraryGrants.preview=(_body,signal)=>new Promise((_resolve,reject)=>signal.addEventListener('abort',()=>reject(new DOMException('Cancelled','AbortError')),{once:true}));
+ const controller=new AbortController(),raw=scenes.load('raw',640,controller.signal),rejection=assert.rejects(raw,{name:'AbortError'});
+ const heavy=scenes.load('heavy',640);await tick();controller.abort();await rejection;
+ assert.equal((await heavy).key,'heavy');
+});
+
+test('selected development does not wait for a lower-priority preview',async()=>{
+ const preview=gate();
+ const {scenes,context}=setup({raw:{bytes:80e6,revision:'r',unedited_raw:true},selected:{bytes:80e6,revision:'s'}},async(path,edge)=>({edge,key:path}));
+ context.HDRLibraryGrants.preview=async()=>{await preview.promise;return {status:204};};
+ const raw=scenes.load('raw',640,null,80,null,{cachedOnly:true});
+ await tick();assert.equal((await scenes.load('selected',640,null,0)).key,'selected');
+ preview.resolve();await raw;
+});
+
+test('a remembered refusal allows a usable camera picture without another source grant',async()=>{
+ const record={path:'raw',reason:'Not enough safely available memory',revision:'r'};
+ const started=[],{scenes,context}=setup({raw:{bytes:80e6,revision:'r',unedited_raw:true,development_error:record}},async(path,edge)=>{started.push(path);return {edge};});
+ context.HDRLibraryGrants.acquire=async()=>assert.fail('Refused development took a new grant');
+ context.HDRLibraryGrants.preview=async()=>({status:200,json:async()=>({edge:640,width:512,height:300,camera_long_edge:512})});
+ await assert.rejects(scenes.load('raw',640),error=>error.libraryError===record);
+ context.HDRLibraryGrants.preview=async()=>({status:200,json:async()=>({edge:640,width:640,height:400,camera_long_edge:4000})});
+ assert.equal((await scenes.load('raw',640)).bitmap,true);assert.deepEqual(started,[]);
+});
+
+test('camera header probes precede queued non-RAW probes at the same priority',async()=>{
+ const block=gate(),checked=[],{scenes,context}=setup({},()=>assert.fail('No source should start'));
+ context.window.HDRLibraryQuery={rawTypes:new Set(['ARW'])};
+ context.fetch=async(_url,options)=>{
+  const path=JSON.parse(options.body).path;checked.push(path);
+  if(path==='a.exr'||path==='b.exr')await block.promise;
+  return {ok:true,json:async()=>({cached:{edge:640,key:path}})};
+ };
+ const a=scenes.load('a.exr',640),b=scenes.load('b.exr',640);await tick();
+ const slow=scenes.load('slow.exr',640),raw=scenes.load('camera.ARW',640);await tick();
+ block.resolve();await Promise.all([a,b,slow,raw]);
+ assert.deepEqual(checked,['a.exr','b.exr','camera.ARW','slow.exr']);
+});
+
+test('a slow original-file preview cannot hold another source behind camera discovery',async()=>{
+ const preview=gate(),{scenes,context}=setup({original:{bytes:100e6,revision:'o',original_file:true},heavy:{bytes:80e6,revision:'h'}},async(path,edge)=>({edge,key:path}));
+ context.HDRLibraryGrants.preview=async()=>{await preview.promise;return {status:204};};
+ const original=scenes.load('original',640,null,10,null,{cachedOnly:true});await tick();
+ try {assert.equal((await scenes.load('heavy',640)).key,'heavy');}
+ finally {preview.resolve();await original;}
+});
+
+test('promoting a waiting source releases lower-priority discovery immediately',async()=>{
+ const preview=gate(),started=[],{scenes,context}=setup({raw:{bytes:80e6,revision:'r',unedited_raw:true},heavy:{bytes:80e6,revision:'h'}},async(path,edge)=>{started.push(path);return {edge,key:path};});
+ context.HDRLibraryGrants.preview=async()=>{await preview.promise;return {status:204};};
+ const raw=scenes.load('raw',640,null,80,null,{cachedOnly:true}),heavy=scenes.load('heavy',640,null,80);await tick();
+ assert.deepEqual(started,[]);scenes.promote('heavy',0);await tick();
+ try {assert.deepEqual(started,['heavy']);}
+ finally {preview.resolve();await Promise.all([raw,heavy]);}
+});

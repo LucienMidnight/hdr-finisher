@@ -1,3 +1,21 @@
+## November 14: minimum-Mac Library fixes awaiting final hardware capture
+
+The ordinary 90-second check visits six pictures on this Mac, while reporting
+33 normal-filter eligible rows. The unvisited 27 are now distinguished from
+missing visible pictures; the all-file scrolling survey covers all 50 v1 photos.
+The survey's genuine admission/coverage failures remain failures. The first
+whole-run repeat showed 40/50 and a physical-reserve breach; this is not 8 GB
+acceptance. No reserve, ceiling, estimate rate or pixel tolerance was relaxed.
+
+Prepared fixes use actual embedded-JPEG headers, protect camera discovery,
+skip ineligible original-picture grants, allow independently admitted reduced
+fallbacks and retain remembered refusals without another source request. The
+existing bounded linear-DNG Library route no longer inherits native import's
+full-size resource refusal; its approved admission and structural exclusions
+remain. Native import, Grade, export and Proof retain full-size safety.
+Fast validation: Node 962 passed / one skipped; Python 3,342 passed / 145 skipped /
+one existing xpass. Final capture and limits will replace this pending status.
+
 # Known Limitations and Support Status
 
 ## November 14: Mac GPU parity follow-up

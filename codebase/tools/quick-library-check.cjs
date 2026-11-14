@@ -167,6 +167,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     const memory=new MemoryMonitor(4e9),memoryPath=path.join(out,'memory.jsonl');fs.writeFileSync(memoryPath,'');
     let pending='',observerError=null,sampleCount=0,lastSampleAt;const sampleIntervals=[];
     observer=spawn(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'measure-library-processes.py'),String(app.pid),'.25'],{windowsHide:true});
+    observer.on('exit',(code,signal)=>{if(!done)observerError='Memory observer exited before scenario completion: '+(signal||code);});
     observer.on('error',e=>{observerError=String(e);});observer.stderr.on('data',chunk=>{observerError=String(chunk);});
     observer.stdout.on('data',chunk=>{
       pending+=chunk;let end;
@@ -204,7 +205,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
       try{saved_grade=!!JSON.parse(fs.readFileSync(file+'.hdrf','utf8')).grade;}catch(error){if(error.code!=='ENOENT')sidecar_error=String(error);}
       return [file.replaceAll('\\','/'),{saved_grade,...(sidecar_error?{sidecar_error}:{})}];
     }));
-    const diagnostics=require('./library-quick-metrics.cjs').photoDiagnostics(result.visible_files||[],result.events,result.opened_ms,text,result.grant_snapshot,result.work_snapshot,photoFacts);
+    const diagnostics=require('./library-quick-metrics.cjs').photoDiagnostics(result.visible_files||[],result.events,result.opened_ms,text,result.grant_snapshot,result.work_snapshot,photoFacts,result.viewport_actions);
     fs.writeFileSync(path.join(out,'photos.json'),JSON.stringify(diagnostics,null,1));
     fs.writeFileSync(path.join(out,'host.json'),JSON.stringify({before:hostBefore,after:hostWorkload()},null,1));
     if(gradeReturnMode){
@@ -265,10 +266,16 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
       // standard 90-second stopwatch observer.
       for(const key of ['shown_by','time_to','longest_picture_gap_s','camera_previews','not_shown'])delete report[key];
     }
-    if(report.photo_coverage&&!report.photo_coverage.complete){
-      report.acceptance_scope+='; incomplete photo coverage';
+    if(report.photo_coverage){
+      const metrics=require('./library-quick-metrics.cjs');
+      report.viewport_coverage=metrics.viewportCoverage(result.visible_files||[],result.viewport_seen,metrics.pictures(result.events,result.opened_ms).shown);
+      report.acceptance_scope=survey?'Library scrolling survey':'Library viewport quick check';
+    }
+    const expected=survey?report.photo_coverage:report.viewport_coverage;
+    if(expected&&!expected.complete){
+      report.acceptance_scope+='; incomplete '+(survey?'folder':'viewport')+' coverage';
       if(!singleMode&&!retentionMode&&!config.thumbnailMemory&&!config.batch4d&&!config.batch5c&&!config.gradeHandoffPixels&&!gradeHandoffMode)
-        errors.push(`Photo coverage: ${report.photo_coverage.pictured} of ${report.photo_coverage.eligible} eligible photos pictured`);
+        errors.push(`${survey?"Folder":"Viewport"} coverage: ${expected.pictured} of ${expected.eligible} expected photos pictured`);
     }
     fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,1));
     console.log(JSON.stringify(report,null,1));

@@ -264,7 +264,7 @@ def mac_process_tree(root):
             # A child that exited since ps listed it (ps itself is one) holds no
             # memory. Only an unreadable live process, or the app itself, fails.
             if pid not in rows or (pid!=root and error==errno.ESRCH):continue
-            raise OSError(error,'proc_pid_rusage failed; memory gate unavailable')
+            raise OSError(error,f'proc_pid_rusage failed for {pid} ({rows[pid][1]}); memory gate unavailable')
         result.append(dict(pid=pid,parentPid=rows.get(pid,(0,''))[0],name=rows.get(pid,(0,''))[1],
             workingSetBytes=usage.resident,chargedBytes=usage.footprint))
     return result

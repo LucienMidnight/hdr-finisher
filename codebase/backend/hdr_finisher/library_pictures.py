@@ -554,26 +554,35 @@ def check_cancelled(cancelled):
         raise CancelledError("Library picture was cancelled.")
 
 
-def original_preview(path, edge):
-    """Decode a plain SDR file for display, without developing or saving a grade."""
+def original_preview_candidate(path):
+    """Rule out known HDR sources from headers before asking for quick RAM."""
     path = Path(path)
     suffix = path.suffix.lower()
     if suffix in {".exr", ".pfm", ".hdr"}:
-        return None
+        return False
     if suffix in {".tif", ".tiff"}:
         from .library_metadata import mezzanine_tiff
         stat = path.stat()
-        if mezzanine_tiff(str(path), stat.st_size, stat.st_mtime_ns): return None
-    if suffix in {".jpg", ".jpeg"} and loader.is_ultrahdr_jpeg(path): return None
+        if mezzanine_tiff(str(path), stat.st_size, stat.st_mtime_ns): return False
+    if suffix in {".jpg", ".jpeg"} and loader.is_ultrahdr_jpeg(path): return False
     if suffix == ".avif":
         from .avif_info import inspect_avif
         info = inspect_avif(path)
-        if info.get("gain_map_present") or info.get("transfer_char") in {16, 18, "PQ", "HLG"}: return None
+        if info.get("gain_map_present") or info.get("transfer_char") in {16, 18, "PQ", "HLG"}: return False
     if suffix in {".heic", ".heif"}:
         from pillow_heif import open_heif
         image_file = open_heif(path, convert_hdr_to_8bit=False)
         info = image_file[image_file.primary_index].info
-        if info.get("aux") or loader._heif_transfer_from_info(info) in {"PQ", "HLG"}: return None
+        if info.get("aux") or loader._heif_transfer_from_info(info) in {"PQ", "HLG"}: return False
+    return True
+
+
+def original_preview(path, edge):
+    """Decode a plain SDR file for display, without developing or saving a grade."""
+    path = Path(path)
+    suffix = path.suffix.lower()
+    if not original_preview_candidate(path): return None
+    if suffix in {".heic", ".heif"}:
         from pillow_heif import register_heif_opener
         register_heif_opener()
     if suffix == ".jxl":

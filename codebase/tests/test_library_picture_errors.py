@@ -483,3 +483,18 @@ def test_helper_preflight_refusal_is_returned_once_through_live_scene_api(tmp_pa
     assert api.post("/api/library/picture-error", json={"path": str(path), "revision": record["revision"], "action": "retry"}).status_code == 200
     assert api.post("/api/library/live-scene", json={"path": str(path), "gpu": False}).status_code == 422
     assert len(helper.calls) == 2
+
+
+def test_cache_probe_reports_the_refusal_without_hiding_an_original_picture(tmp_path):
+    path = tmp_path / 'photo.png'
+    Image.new('RGB', (64, 32), (100, 120, 80)).save(path)
+    helper = Helper()
+    with client(tmp_path / 'app', helper) as api:
+        plan = api.post('/api/library/live-plan', json={'path': str(path), 'edge': 640}).json()
+        record = api.post('/api/library/development-error', json={'path': str(path), 'source_identity': plan['source_identity'], 'reason': 'Opening this DNG is estimated to require 1.63 GiB; only 1.52 GiB is safely available.'}).json()['error']
+        for _ in range(2):
+            result = api.post('/api/library/live-plan', json={'path': str(path), 'edge': 640})
+            assert result.status_code == 200
+            assert result.json()['original_file'] is True
+            assert result.json()['development_error']['revision'] == record['revision']
+    assert not helper.calls

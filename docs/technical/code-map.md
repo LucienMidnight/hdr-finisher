@@ -519,6 +519,19 @@ runs every job in a separate async frame before signaling idle; the polling
 frame no longer retains photo buffers. `tests/gpu-delivery-lifetime.test.js`
 checks reachability across all five routes on success, failure and cancellation.
 
+November 14 minimum-Mac Library: `library-scenes.js` protects transient camera
+discovery before source admission and prioritises RAW header probes. Header
+qualification in `library_embedded_jpeg.py` covers RAF, CR3 image tracks and
+Olympus/Panasonic preview IFDs; `library_estimates.py` retains approved rates.
+`library_dng.inspect_source` scopes the already-qualified reduced linear-DNG
+reader away from full-native preflight. `library_picture_errors.py` returns a
+remembered refusal with an otherwise usable camera/original plan, preventing
+another source grant for the same refusal. `quick-library-check.cjs --survey
+--all-files` adds ordinary scrolling to the minimum thumbnail size, full-folder
+coverage, per-photo routes/grants, exact input-action clocks and host load. The
+default check requires the visited viewport and records unvisited rows separately.
+The independent census cannot silently exit before the scenario completes.
+
 ### Selected native Library GPU owner (November 5)
 
 `library-gpu-raw.js` transfers the selected development's GPU grant and owns

@@ -59,11 +59,34 @@ def geometry(metadata, width, height):
     return output.shape[1],output.shape[0],list(map(int,ax)),list(map(int,ay))
 
 
+def inspect_source(path, edge=100000):
+    """Keep full-source safety separate from the qualified bounded Library read.
+
+    Only the existing >=100 MP, operation-free root-page linear subset can
+    use this route. Its scheduler grant still uses the approved reduced rate,
+    physical reserve and GPU estimate; native/Grade/import keep full preflight.
+    """
+    from dataclasses import replace
+    from .linear_dng import inspect_dng, DngRoute, LINEAR_RAW
+    inspection = inspect_dng(Path(path))
+    if (edge <= 2560 and inspection.route is DngRoute.UNSUPPORTED_DNG
+            and inspection.rejection is not None
+            and inspection.rejection.code == "unsafe_resources"
+            and inspection.metadata.get("photometric") == LINEAR_RAW
+            and inspection.width * inspection.height >= 100_000_000
+            and max(inspection.width, inspection.height) > 10240
+            and inspection.primary_page_index is not None
+            and not (inspection.required_opcodes or inspection.optional_opcodes)
+            and inspection.metadata.get("linearization_table") is None
+            and inspection.metadata.get("sdr_preview_series_index") is None):
+        return replace(inspection, route=DngRoute.LINEAR_DNG, rejection=None)
+    return inspection
+
+
 def decoded(path, inputs, progress=None, cancelled=None, edge=640, max_storage_bytes=None):
-    from .linear_dng import inspect_dng
     from .import_defaults import RAW_CALIBRATION_EV
     path=Path(path).resolve(strict=True);identity=_identity(path);start=perf_counter()
-    inspection=inspect_dng(path)
+    inspection=inspect_source(path,edge)
     from .linear_dng import DngRoute
     if inspection.route is DngRoute.LINEAR_DNG:
         from .library_dng_linear import decoded as linear

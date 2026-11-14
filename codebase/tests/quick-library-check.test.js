@@ -148,3 +148,14 @@ test('native hide and minimize events stay recorded even after the window return
   const observer=observeVisibility(window);assert.equal(observer.result.hidden,true);observer.stop();
  }
 });
+
+
+test('picture wait includes browse/scroll time before the probe was queued',()=>{
+ const {photoDiagnostics}=require('../tools/library-quick-metrics.cjs');
+ const files=['/photos/a.arw','/photos/b.arw'];
+ const events=[{stage:'picture_work_waiting',path:files[0],at:200},{stage:'picture_work_waiting',path:files[1],at:1500},
+  {stage:'picture_shown',path:files[0],at:2000,reason:'camera picture'},{stage:'picture_shown',path:files[1],at:2000,reason:'camera picture'}];
+ const rows=photoDiagnostics(files,events,100,'',{}, {}, {},[{at:100},{at:1300}]).photos;
+ assert.equal(rows[0].action_to_picture_s,1.9);assert.equal(rows[1].action_to_picture_s,.7);
+ assert.equal(rows[1].request_to_picture_s,.5);
+});

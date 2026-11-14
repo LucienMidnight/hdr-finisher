@@ -635,8 +635,17 @@ def create_library_router(worker, browser, store=None):
         if gpu_meta and gpu_meta.get("cpu_route"):
             cpu_route = gpu_meta["cpu_route"]
             gpu_meta = None
+        original_file = not is_edited(command.path) and Path(path).suffix.lower() not in library_raw_types
+        if original_file and not is_cloud_placeholder(stat):
+            from .library_pictures import original_preview_candidate
+            try:
+                original_file = original_preview_candidate(path)
+            except (OSError, ValueError):
+                # The source loader still handles supported files whose
+                # extension differs from their contents, and decode errors.
+                original_file = False
         return {"unedited_raw": not is_edited(command.path) and Path(path).suffix.lower() in library_raw_types,
-                "original_file": not is_edited(command.path) and Path(path).suffix.lower() not in library_raw_types | {".exr", ".pfm", ".hdr"},
+                "original_file": original_file,
                 "edited": is_edited(command.path),
                 "cpu_route": cpu_route,
                 "gpu_meta": gpu_meta,

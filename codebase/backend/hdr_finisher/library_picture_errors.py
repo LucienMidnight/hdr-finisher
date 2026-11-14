@@ -191,6 +191,11 @@ class PictureErrors:
                 if cache_probe:
                     result = await run_in_threadpool(handler, command, *args, **kwargs)
                     if isinstance(result, dict) and (result.get("cached") or result.get("unedited_raw") or result.get("original_file")):
+                        # A usable camera/original picture can still be shown,
+                        # but a too-small/missing preview must not take another
+                        # source grant just to retrieve this same refusal.
+                        if not result.get("cached"):
+                            result["development_error"] = cached
                         return result
                 return self.response(cached)
             revision = await run_in_threadpool(self.revision, path)

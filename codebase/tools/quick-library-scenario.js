@@ -47,6 +47,7 @@ async function scenario(config) {
   };
   const visible = e => e && !e.hidden && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden' && e.getBoundingClientRect().width > 0;
   const nameOf = p => String(p).replaceAll('\\','/').split('/').pop();
+  const viewportActions=[];
   let openedAt, single=null, redisplay=null, retention=null, detail=null;
   try {
     mark('memory setting');
@@ -66,7 +67,7 @@ async function scenario(config) {
         return originalFetch(url,options);
       };
     }
-    mark('browse');openedAt=performance.now();gridAt=openedAt;
+    mark('browse');openedAt=performance.now();gridAt=openedAt;viewportActions.push({at:openedAt,scroll_top:0});
     void HDRLibrary.browse(config.folder).catch(e=>errors.push(String(e)));
     if(config.virtualCopy){
       mark('virtual copy');
@@ -163,6 +164,7 @@ async function scenario(config) {
       const pages=Math.max(1,Math.ceil(grid.scrollHeight/grid.clientHeight));
       for(let page=1;page<pages;page++){
         await sleep(Math.max(0,config.seconds*1000*page/pages-(performance.now()-openedAt)));
+        viewportActions.push({at:performance.now(),scroll_top:page*grid.clientHeight});
         grid.scrollTop=page*grid.clientHeight;grid.dispatchEvent(new Event('scroll'));
       }
     }
@@ -376,7 +378,7 @@ async function scenario(config) {
       record.app_trace_starts_after_input_ms=app?Math.round(app.at-app.duration_ms-record.started_ms):null;
       record.app_event_after_presentation_ms=app?Math.round(app.at-record.presented_ms):null;
     }
-    return {visible_files:HDRLibrary.getSnapshot().paths,opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,virtual_copy:config.virtualCopyResult,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_return:config.gradeReturnResult,viewport_seen:[...viewportSeen].map(([path,at])=>({path,at})),work_snapshot:HDRLibraryScenes.snapshot(),grant_snapshot:HDRLibraryGrants.snapshot(),finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
+    return {visible_files:HDRLibrary.getSnapshot().paths,opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,virtual_copy:config.virtualCopyResult,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_return:config.gradeReturnResult,viewport_actions:viewportActions,viewport_seen:[...viewportSeen].map(([path,at])=>({path,at})),work_snapshot:HDRLibraryScenes.snapshot(),grant_snapshot:HDRLibraryGrants.snapshot(),finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
   } catch(error) {
     return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,virtual_copy:config.virtualCopyResult,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_frame:config.gradeHandoff?parent.HDRGradeLibraryPictures?.getSnapshot():null,handoff_state:config.gradeHandoff?window.HDRLibraryGradeHandoffSnapshot?.():null,grade_return:config.gradeReturnResult,events,errors:[...errors,String(error.stack||error)],stage};
   } finally {

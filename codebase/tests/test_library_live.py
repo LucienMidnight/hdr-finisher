@@ -738,3 +738,26 @@ def test_cpu_library_fallback_uses_multiple_pixel_workers(tmp_path, monkeypatch)
     result = develop_cpu(tmp_path / "profile", photo(tmp_path), None, 640)
     assert result["edge"] == 640
     assert len(threads) >= 2
+
+
+@pytest.mark.parametrize('dtype,original', [('uint8', True), ('float32', False)])
+def test_live_plan_rules_out_hdr_tiff_before_requesting_quick_ram(tmp_path, monkeypatch, dtype, original):
+    import tifffile
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from hdr_finisher.library_api import create_library_router
+    from hdr_finisher.media_browser import MediaBrowserStore
+
+    class NoPreparation:
+        def submit_library(self, *args, **kwargs):
+            pytest.fail('Header discovery cannot decode a photo')
+
+    path = tmp_path / 'picture.tif'
+    tifffile.imwrite(path, np.zeros((60, 80, 3), dtype=dtype), photometric='rgb')
+    monkeypatch.setattr(tifffile.TiffPage, 'asarray', lambda *a, **k: pytest.fail('Pixels read during discovery'))
+    app = FastAPI()
+    app.include_router(create_library_router(NoPreparation(), MediaBrowserStore(tmp_path / 'profile')))
+    with TestClient(app) as client:
+        result = client.post('/api/library/live-plan', json={'path': str(path), 'edge': 640})
+    assert result.status_code == 200
+    assert result.json()['original_file'] is original

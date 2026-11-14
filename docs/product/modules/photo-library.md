@@ -1,35 +1,49 @@
-## November 14: 8 GB Library investigation (in progress)
+## November 14: 8 GB Library investigation (final GPU qualification pending)
 
-Measure on the MacBook Neo (A18 Pro, 8 GB unified RAM, six cores) under the
-shared GPU lock, with no own fast suite running during captures. Keep the
-2 GB system reserve, app ceiling, cache shares, per-route rates and GPU
-budgets unchanged. Use the existing 250 ms frame-gap limit and 5% timing
-tolerance, so ordinary run-to-run noise is not treated as a regression.
-Separate folder eligibility, actual viewport demand, first presentation,
-embedded/original/developed routes and admission waits. The ordinary check
-never scrolls; a separate scrolling survey must exercise the remaining types.
-No whole-folder speed or 8 GB acceptance claim follows from unrequested rows.
+The ordinary quick check shows only the current viewport. On the MacBook's
+1408x794-point window with 300-point thumbnails, it requests six of the 33
+normal-filter rows. The v1 fixture contains 50 physical photos; Show all files
+also includes its SDR, AVIF, JPEG XL and HEIC examples. Six pictured rows alone
+are not evidence that the other 27 are stalled. Whole-folder acceptance now
+uses the separate `--survey --all-files` scrolling scenario, while the default
+requires every visited visible row and still records full-folder coverage.
 
-**Paused at Steve's request, November 14.** WIP diagnostics only; no production
-scheduling, pixel route or budget change. Setup completed. The focused quick
-metrics tests pass (15); full fast suites and fresh GPU captures have not run.
-The queued `library-8gb-baselines` wrapper was stopped before acquiring the
-manual-test lock; it launched no Electron child. No test/build/setup process
-from this work remains running.
+The investigation found real waits too: full-sensor estimates were being used
+for RAF/CR3/ORF/RW2 embedded JPEGs, and oversized quick requests prevented
+already-qualified reduced sources from being tried. Three hundred-megapixel
+linear-DNG Library work also inherited a full-resolution import refusal.
 
-Read-only review of the earlier `fixmem/scenario.json` finds six requested
-photos, all six shown, and 27 off-screen rows never requested. The normal
-filter excludes the fixture's SDR/AVIF/JXL/HEIC formats: 50 physical photos,
-33 default-filter rows. This explains the denominator, not full performance.
+Implemented in this change, pending the final locked hardware capture:
 
-Resume: run locked default and `--survey --all-files` baselines using the new
-per-photo/host diagnostics. The survey uses minimum thumbnail size and ordinary
-scrolling. Inspect `photos.json`, `host.json`, `memory.jsonl` and snapshots before
-choosing an app fix. `viewportCoverage` and its regression exist but are not yet
-wired into harness acceptance; the old whole-folder failure remains. Then make
-any measured fix within existing budgets, compare matching captures, run both
-full fast suites, update the performance table/known limitations and this status,
-and commit locally. Do not push or merge.
+- Camera headers get priority over queued non-RAW header probes. Camera
+  discovery finishes before new full developments acquire memory; slow
+  original-file decodes do not hold that gate. Cancellation and selection
+  promotion release it immediately. Development/save concurrency is unchanged.
+- Header-only RAF, CR3 image-track, Olympus and Panasonic readers describe the
+  JPEG LibRaw actually extracts. The approved DCT scaling, 23 bytes per decoded
+  preview pixel, 64 MB minimum and four-place fast lane stay unchanged.
+- Known HDR TIFF/AVIF/HEIF/JPEG sources skip pointless original-picture grants.
+  A refused quick request may reach its existing separately admitted reduced
+  source. A remembered development refusal still permits a usable camera
+  picture, but cannot take a new source grant to return the same error.
+- The existing operation-free root-page linear-DNG reduced reader can be used
+  after a full-source resource refusal only at Library 640/2560, at >=100 MP
+  with an actual reduction beyond 10240. Required/optional operations, lookup
+  tables, an SDR reference, other structural refusals and native/full-source
+  work retain their existing gates. Its approved source/GPU grants remain.
+
+No shader, processing arithmetic, finished-pixel tolerance, preview-quality
+threshold, reserve, app ceiling, cache share or disk allowance changes. Native
+import, Grade, export and Proof retain full-source DNG safety. Existing projects
+are unaffected. Timings use the existing 5% tolerance and 250 ms frame-gap limit.
+The shared v1 fixture remains the before/after input; the new curated photos
+and v2 fixture are outside this comparison.
+
+Per-photo `photos.json` records browse/scroll-to-picture time, route, granted/
+waiting/refused memory and errors; `host.json` and `memory.jsonl` retain machine
+load. The observer retries one complete process census after a disappearing
+child and reports any unrecovered failure, rather than silently stopping early.
+Full fast-suite and final measured outcomes will replace this pending status.
 
 ## November 14: native macOS file commands
 

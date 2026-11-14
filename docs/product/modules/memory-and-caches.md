@@ -1,3 +1,25 @@
+### November 14: Library discovery and correctly described embedded previews
+
+The 8 GB Library investigation changes ordering and route selection, not any
+approved number. `library_embedded_jpeg.py` reads RAF/CR3/Olympus/Panasonic JPEG
+headers without decoding pixels; LibRaw-selected dimensions feed the existing
+DCT-scaled quick estimate (23 bytes/pixel, 64 MB minimum). Unknown, ambiguous,
+non-rendered and malformed headers retain conservative admission. Real v1
+samples match LibRaw's extracted JPEG dimensions. All four fast-lane places,
+two developments, two saves, the 2 GB physical reserve and app/cache/GPU limits
+remain unchanged.
+
+Camera discovery owns no source grant while waiting. Slow original-file quick
+decodes retain their own admission and cannot hold camera discovery. A quick
+request that exceeds the ceiling can fall through to its existing independently
+admitted reduced source. The previously approved >=100 MP root-page,
+operation-free linear-DNG reduced path uses its own source/GPU admission rather
+than inheriting a full-native import refusal; actual reduction beyond 10240 is
+required. Native/Grade/import/export preflight, opcodes, lookup/reference
+exclusions and all rates are unchanged. No simulated free RAM or allowance
+bypass is used. Final minimum-Mac qualification is recorded in the Library PRD
+and performance table; a system-reserve breach still fails acceptance.
+
 # Module PRD: Memory and caches
 
 ### November 13: 8 GB Mac native preflight and failed-photo admission

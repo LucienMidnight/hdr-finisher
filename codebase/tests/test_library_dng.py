@@ -142,3 +142,37 @@ def test_oversized_linear_source_is_rejected_before_reading_pixels(monkeypatch,t
     from hdr_finisher.library_gpu_raw import MemoryPending
     with pytest.raises(MemoryPending,match="storage binding limit"):
         linear(path,recipe(None),source,max_storage_bytes=24*32*12-1)
+
+
+@pytest.mark.parametrize('blocked', [None, 'native', 'mosaic', 'opcode', 'lookup', 'reference', 'no_root', 'small', 'square', 'structural'])
+def test_bounded_linear_inspection_does_not_apply_full_source_preflight(tmp_path, monkeypatch, blocked):
+    from test_linear_dng import _write_linear
+    from hdr_finisher import linear_dng
+    from hdr_finisher.linear_dng import DngRejection, LINEAR_RAW
+    from hdr_finisher.library_dng import inspect_source
+    from hdr_finisher.library_estimates import reduced_rate
+    path = tmp_path / 'linear.dng'
+    _write_linear(path, np.full((24, 32, 3), 32768, np.uint16))
+    actual = linear_dng.inspect_dng(path)
+    metadata = dict(actual.metadata, photometric=LINEAR_RAW, linearization_table=None, sdr_preview_series_index=None)
+    value = replace(actual, route=DngRoute.UNSUPPORTED_DNG, width=24000, height=6000,
+                    rejection=DngRejection('unsafe_resources', 'Full source does not fit'), metadata=metadata)
+    edge = 640
+    if blocked == 'native': edge = 100000
+    elif blocked == 'mosaic': value.metadata['photometric'] = 32803
+    elif blocked == 'opcode': value = replace(value, optional_opcodes=(object(),))
+    elif blocked == 'lookup': value.metadata['linearization_table'] = [0, 1]
+    elif blocked == 'reference': value.metadata['sdr_preview_series_index'] = 1
+    elif blocked == 'no_root': value = replace(value, primary_page_index=None)
+    elif blocked == 'small': value = replace(value, width=12000, height=6000)
+    elif blocked == 'square': value = replace(value, width=10000, height=10000)
+    elif blocked == 'structural': value = replace(value, rejection=DngRejection('unsupported_layout', 'Unsupported layout'))
+    monkeypatch.setattr(linear_dng, 'inspect_dng', lambda path: value)
+    result = inspect_source(path, edge)
+    if blocked:
+        assert result is value
+    else:
+        assert result.route is DngRoute.LINEAR_DNG and result.rejection is None
+        assert result.resource_estimate is value.resource_estimate
+        assert inspect_source(path, 100000) is value
+        assert reduced_rate(path) == 6
