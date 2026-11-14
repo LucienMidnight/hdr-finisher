@@ -18,7 +18,13 @@ than inheriting a full-native import refusal; actual reduction beyond 10240 is
 required. Native/Grade/import/export preflight, opcodes, lookup/reference
 exclusions and all rates are unchanged. No simulated free RAM or allowance
 bypass is used. Final minimum-Mac qualification is recorded in the Library PRD
-and performance table; a system-reserve breach still fails acceptance.
+and performance table; a system-reserve breach still fails acceptance. The idle
+helper-result transport now releases its completed future/message before
+waiting. Mixed-folder admission still fails: native summaries show retained
+empty allocator regions outside live Python/NumPy buffers (about 1.4 GiB in the
+backend plus 604 MiB in the helper, partly swapped). A collection/pressure-
+relief trial was removed after it did not materially clear those waits.
+Further native release work is open; no allowance or reserve changed.
 
 # Module PRD: Memory and caches
 

@@ -1,37 +1,124 @@
-November 14 minimum-Mac Library investigation (final qualification pending;
-WIP `2a0c70e7`, then this fix). **MacBook Neo, A18 Pro, 8 GB unified RAM, six
-cores; 1408x794 points; plain Electron; v1's same 50 read-only photos, fresh
-profiles, 4 GB app setting selected by the unchanged scenario, 2 GB system
-reserve; shared GPU lock; four other agents active; no own fast suite during
-captures.** CPU mean is whole-machine busy percentage; load is the one-minute
-OS load range. The default viewport requests six of 33 normal-filter rows.
-The separate survey uses the normal minimum thumbnail control and scrolls;
-its complete folder denominator is 50. Timing tolerance 5%, frame-gap limit
-250 ms, all pixel and memory gates unchanged.
-
-| Capture | Pictures / folder rows | First picture | Longest recorded gap | CPU mean / load range | Census duration |
-| --- | --- | --- | --- | --- | --- |
-| Initial loaded viewport | 6/33 | 2.5 s | 67 ms | 54.8% / 13.77–15.79 | 17.3 s observed |
-| Initial loaded all-file survey | 40/50 | 0.5 s | 434 ms | 34.5% / 3.78–6.82 | 62.1 s observed |
-| Repeated viewport | 5/33 | 0.8 s | 83 ms | 33.9% / 4.02–8.11 | 94.0 s observed |
-| Repeated all-file survey | 40/50 | 0.5 s | 50 ms | 32.8% / 3.52–5.74 | 92.5 s observed |
-| Discarded broad-barrier survey | 37/50 | 0.5 s | 100 ms | 39.4% / 1.73–3.42 | 92.6 s observed |
-
-The first two independent censuses ended early (17.3/62.1 s including startup),
-so their CPU/peak samples do not qualify the whole 90 seconds. The corrected
-observer retries one complete OS walk, continues after a failure and reports
-any early exit; the repeats cover the entire scenario. Every listed run failed
-the unchanged physical reserve. First-picture differences in these changing
-loads are observations, not isolated code speedups. The broad barrier delayed
-heavy pictures and was narrowed to camera discovery before final capture.
-The repeated survey's five RAF/CR3/ORF/RW2 previews waited 1.2–3.5 s for memory;
-their selected JPEGs require the approved 64 MB quick lane, rather than the
-0.37–0.59 GB source-derived requests. Three huge quick requests (4.416/6.828 GB)
-never reached their reduced source route. Per-photo routes/grants and load:
-`codebase/output/quick-library-check/{8gb-before,8gb-survey-before,
-8gb-before-quieter,8gb-survey-before-quieter,8gb-survey-after}/`.
-
 # Performance table
+
+## November 14: minimum-Mac Library, before and after
+
+Code: baseline `2a0c70e7`; final production `126a93b1`; focused pixel mode
+`f1bd02f1`. **Every row below uses the MacBook Neo, A18 Pro, 8 GB unified RAM,
+six cores, 1408x794 points, plain Electron, shared GPU lock, unchanged v1
+photos and fresh profiles.** The unchanged smoke selects the existing **4 GB
+app setting**, rather than the 2.5 GB startup default; the physical reserve
+remains 2 GB. Four other agents were active; no own fast suite overlapped the
+qualified captures. CPU is whole-machine busy percentage; load is the OS
+one-minute range. Timing tolerance 5%; frame-gap limit 250 ms. No budget,
+rate, cache share, processing arithmetic or image tolerance changed.
+
+The ordinary 300-point grid requests six of 33 normal-filter rows. Whole-folder
+coverage is measured separately by `--survey --all-files`, using the normal
+minimum thumbnail control and scrolling through the same 50 physical photos.
+Unvisited rows are recorded separately from missing requested pictures.
+
+| Capture/action | Pictures | Whole action-to-picture timing | Frame gap | Conditions: machine, CPU mean / load range |
+| --- | --- | --- | --- | --- |
+| Loaded before viewport | 6/6 visited; 6/33 folder | first 2.5 s | 67 ms | MacBook Neo; 54.8% / 13.77–15.79; census stopped after 17.3 s |
+| Loaded before survey | 40/50 | first 0.5 s; 40th 79.2 s | 434 ms | MacBook Neo; 34.5% / 3.78–6.82; census stopped after 62.1 s |
+| Quieter before viewport | 5/6 visited; 5/33 folder | first 0.8 s; sixth absent at 90 s | 83 ms | MacBook Neo; 33.9% / 4.02–8.11; complete 94.0 s census |
+| Quieter before survey | 40/50 | first 0.5 s; 40th 73.3 s | 50 ms | MacBook Neo; 32.8% / 3.52–5.74; complete 92.5 s census |
+| Final viewport | 6/6 visited; 6/33 folder | first 0.4 s; all six by 15 s | 200 ms | MacBook Neo; 25.4% / 1.93–2.89; complete 92.4 s census |
+| Final survey | 40/50 | first 0.5 s; ten 0.9 s; 40th 55.5 s | 50 ms | MacBook Neo; 33.4% / 2.25–3.40; complete 92.6 s census |
+| Large linear DNG alone | 1/1 | 9.5 s to first picture | none >=50 ms | MacBook Neo; 29.7% / 2.42–3.05; 30 s scenario, 33.2 s census; hard link to unchanged v1 source |
+
+The early two censuses ended prematurely and cannot qualify a full run. The
+observer now retries a disappearing-child census once, continues observing,
+and reports early termination. The quieter repeats are the before comparison;
+changing external load prevents an isolated percentage-speed claim.
+
+The final two mixed runs still fail the physical reserve (minimum available
+1.057/1.089 GB). Their peaks are 4.229/4.430 GB; the survey also exceeds the
+unchanged 4.4 GB absolute allowance by about 30 MB. The loaded before survey
+already reached 4.679 GB. These are failures, not minimum-Mac acceptance.
+The isolated DNG passes all smoke gates, peaks at 1.445 GB and has at least
+5.068 GB available: its mixed-folder failure is admission/retention, not an
+inherent inability to display it.
+
+### By type: quieter before → final survey
+
+Times below are browse/scroll action to each first picture, among pictures
+that appeared; absent pictures remain in the counts. The grant wait includes
+unfinished and cancelled work, not just successful decodes. No broken-photo
+decode failures were reported in either survey. Per-photo production paths,
+all grants/waits/refusals and failures are in each capture's `photos.json`.
+
+| Type | Pictured before → after | Action to first picture, seconds: before → after | Longest after grant wait |
+| --- | --- | --- | --- |
+| ARW | 11/12 → 12/12 | 1.00–43.33 → 0.59–26.69 | 22.5 s |
+| AVIF | 2/3 → 2/3 | 3.51–10.79 → 7.57–9.12 | 4.3 s |
+| CR2 | 2/2 → 2/2 | 0.52–0.72 → 0.39–0.52 | 0.0 s |
+| CR3 | 1/1 → 1/1 | 4.07 → 0.43 | 0.0 s |
+| DNG | 5/6 → 5/6 | 1.41–25.29 → 0.85–23.92 | 52.0 s |
+| EXR | 0/2 → 0/2 | — → — | 26.9 s |
+| HDR | 1/1 → 0/1 | 39.70 → — | 21.0 s |
+| HEIC | 1/2 → 1/2 | 19.86 → 25.52 | 48.1 s |
+| JPEG | 4/5 → 4/5 | 0.48–1.51 → 0.47–2.50 | 55.0 s |
+| JXL | 2/2 → 2/2 | 4.51–11.77 → 11.49–13.30 | 5.7 s |
+| NEF | 2/2 → 2/2 | 0.81–1.22 → 0.47–0.61 | 0.0 s |
+| ORF | 2/2 → 2/2 | 2.35–2.60 → 0.49–0.54 | 0.0 s |
+| PFM | 0/1 → 0/1 | — → — | 21.0 s |
+| PNG | 2/3 → 2/3 | 2.18–6.96 → 0.78–6.18 | 21.0 s |
+| RAF | 1/1 → 1/1 | 2.03 → 0.29 | 0.0 s |
+| RW2 | 1/1 → 1/1 | 2.90 → 0.51 | 0.0 s |
+| TIFF | 3/4 → 3/4 | 3.14–32.18 → 1.86–29.95 | 25.4 s |
+
+All 19 ungraded camera pictures use embedded JPEGs: 0.523–4.065 s before,
+0.286–1.114 s after. RAF/CR3/ORF/RW2 now request their approved 64 MB instead
+of 0.37–0.59 GB derived from sensor dimensions; those five final previews have
+zero grant wait. Saved grades pictured increase from three to four, with
+8.283–43.326 s before and 5.491–26.693 s after. Developed RAWs remain three;
+finished HDR files fall from eight to seven within this 90-second visit.
+The Radiance HDR file is the lost case; overall folder completion has not
+improved beyond 40/50. Slow saved-grade/decode work and later heavy admission
+remain open, even though the camera lane is prompt.
+
+At the final survey's end, charged app memory is still 2.601 GB, including
+backend 1.357 GB and helper 0.655 GB. A waiting reduced linear-DNG request is
+2.110 GB including GPU, making 4.711 GB together, above 4.4 GB. The large JPEG
+request is 2.654 GB, making 5.255 GB together. Lowering the system reserve by
+0.5 GB buys at most 0.5 GB of physical headroom; it changes neither app-side
+shortfall, and would not cover the observed approximately 0.94 GB physical
+reserve shortfall. No reserve change is proposed or made.
+
+Two focused diagnostics are excluded from the timing comparison:
+
+- Allocation tracing: MacBook Neo, CPU 32.3%, load 2.19–3.31, 93.9 s harness.
+  Backend charged memory 1.688 GB with 26.9 MB of traced live Python/NumPy
+  allocations (tracking begins when the memory module imports); reported caches total about 85 MB across the app.
+- Native memory summary: MacBook Neo, CPU 27.1%, load 2.03–3.05, 93.1 s
+  harness, `vmmap -summary` sampled at about 65 s. The backend has a 1.4 GiB
+  **empty** large-allocation region (368.8 MiB resident, about 1.0 GiB swapped),
+  plus fragmented small zones; the helper has 604.2 MiB of empty large regions
+  (488.9 MiB resident). These are retained freed allocator regions, not live
+  Python photos. Swapped sizes are not additional physical RAM. A shortage-only
+  Python collection/native pressure-relief experiment did not materially
+  unblock the folder and was removed; further native-release work is open.
+
+Focused finished-picture qualification: `library-rgb-source.js --precision
+--picture-only`, MacBook Neo, shared lock, 4 GB disposable profile, photographic
+input bounded to 1920 long edge; CPU 41.1%, load endpoints 1.94/2.55, 15.6 s
+including fixture generation. Seven cases/14 HDR-SDR comparisons pass the
+unchanged perceptual mean <1 / p99.9 <=3 gates; worst mean 0.0816, worst p99.9
+0.3936. Paired picture preparation is 0.176–0.579 s in this diagnostic driver,
+not a Library browsing benchmark. The full native/preemption driver remains
+separate: earlier attempts stopped on native memory refusal or a missing
+stored native scene, before finished-pixel comparison. Its assertions stay
+intact; no native qualification is claimed here.
+
+Evidence under `codebase/output/quick-library-check/`: `8gb-before`,
+`8gb-survey-before`, `8gb-before-quieter`, `8gb-survey-before-quieter`,
+`8gb-reader-final`, `8gb-survey-reader-final`, `8gb-line-scan-reader-final`,
+`8gb-allocation-diagnostic`, `8gb-native-memory-diagnostic`. Each normal capture
+retains `report.json`, `photos.json`, `host.json`, `memory.jsonl` and backend
+logs. Native summaries are in the last diagnostic directory. Pixel evidence:
+`codebase/output/8gb-picture-accuracy.log` and `8gb-accuracy-host.json`.
+
 
 November 14 Mac GPU parity diagnostics (`fix/mac-gpu-parity`, commit containing
 this record, base `87b91385`): **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM,

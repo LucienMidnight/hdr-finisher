@@ -1,4 +1,4 @@
-## November 14: 8 GB Library investigation (final GPU qualification pending)
+## November 14: 8 GB Library fixes built; full acceptance remains open
 
 The ordinary quick check shows only the current viewport. On the MacBook's
 1408x794-point window with 300-point thumbnails, it requests six of the 33
@@ -13,7 +13,7 @@ for RAF/CR3/ORF/RW2 embedded JPEGs, and oversized quick requests prevented
 already-qualified reduced sources from being tried. Three hundred-megapixel
 linear-DNG Library work also inherited a full-resolution import refusal.
 
-Implemented in this change, pending the final locked hardware capture:
+Built through `126a93b1`, with focused pixel tooling in `f1bd02f1`:
 
 - Camera headers get priority over queued non-RAW header probes. Camera
   discovery finishes before new full developments acquire memory; slow
@@ -46,6 +46,43 @@ import, Grade, export and Proof retain full-source DNG safety. Existing projects
 are unaffected. Timings use the existing 5% tolerance and 250 ms frame-gap limit.
 The shared v1 fixture remains the before/after input; the new curated photos
 and v2 fixture are outside this comparison.
+
+Locked before/after uses the same v1 fixture and existing 4 GB smoke setting,
+with the unchanged 2 GB reserve on the MacBook Neo. All 19 ungraded camera
+pictures now appear in 0.286–1.114 s after their browse/scroll action, compared
+with 0.523–4.065 s in the quieter baseline; the five corrected header formats
+have zero grant wait. The final viewport shows 6/6 requested rows (six of 33
+folder rows) by 15 s; the scrolling survey stays at 40/50, with the 40th picture
+at 55.5 s versus 73.3 s before. CPU means were 33.4%/32.8% for the surveys,
+but external load still varied; no isolated percentage-speed claim is made.
+The final frame gaps are 200 ms viewport and 50 ms survey, inside 250 ms.
+
+**Acceptance is still open.** Both mixed runs breach the physical reserve;
+the final survey peaks at 4.430 GB against its unchanged 4.4 GB absolute
+allowance. The single huge linear DNG does work alone: 9.5 s, 1.445 GB whole-app
+peak, all smoke gates pass. Mixed browsing retains 2.601 GB after jobs finish,
+leaving too little app-side room for its 2.110 GB source/GPU admission.
+Diagnostics identify freed native allocator regions: about 1.4 GiB in the
+backend and 604 MiB in its helper, partly swapped; about 27 MB of allocations remain live in the backend trace (which starts
+when the memory module imports, so excludes earlier imports). This is not evidence
+for reducing the reserve. Native allocator reclamation and mixed-folder
+completion remain Open work; the removed garbage-collection/pressure-relief
+trial did not materially solve them. See the performance table for load,
+by-type times, failures and the headroom arithmetic.
+
+Finished-picture checks pass all seven cases/14 HDR-SDR comparisons at the
+existing perceptual mean <1 / p99.9 <=3 limits (worst 0.0816/0.3936). The new
+`--picture-only` mode qualifies finished 640-edge pixels against the CPU export
+renderer; default native transport/preemption checks retain their assertions.
+The full native driver was blocked by native admission/cache requirements and
+is not qualified by this work. No output arithmetic or HDR ceiling changed.
+Further native allocator release and mixed-folder validation remain open. The
+completed app captures and focused checks approach the roughly 30-minute slow-
+test allowance; another diagnosis/fix/capture group needs about 15 more minutes
+of locked checks and Steve's agreement under AGENTS.md Stop and ask.
+
+Fast suites: Node 964 passed/one skipped; Python 3,343 passed/145 skipped/one
+existing xpass. No read-only project was saved over; no push or merge.
 
 Per-photo `photos.json` records browse/scroll-to-picture time, route, granted/
 waiting/refused memory and errors; `host.json` and `memory.jsonl` retain machine

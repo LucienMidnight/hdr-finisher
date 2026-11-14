@@ -1,22 +1,43 @@
-## November 14: minimum-Mac Library fixes awaiting final hardware capture
-
-The ordinary 90-second check visits six pictures on this Mac, while reporting
-33 normal-filter eligible rows. The unvisited 27 are now distinguished from
-missing visible pictures; the all-file scrolling survey covers all 50 v1 photos.
-The survey's genuine admission/coverage failures remain failures. The first
-whole-run repeat showed 40/50 and a physical-reserve breach; this is not 8 GB
-acceptance. No reserve, ceiling, estimate rate or pixel tolerance was relaxed.
-
-Prepared fixes use actual embedded-JPEG headers, protect camera discovery,
-skip ineligible original-picture grants, allow independently admitted reduced
-fallbacks and retain remembered refusals without another source request. The
-existing bounded linear-DNG Library route no longer inherits native import's
-full-size resource refusal; its approved admission and structural exclusions
-remain. Native import, Grade, export and Proof retain full-size safety.
-Fast validation: Node 962 passed / one skipped; Python 3,342 passed / 145 skipped /
-one existing xpass. Final capture and limits will replace this pending status.
-
 # Known Limitations and Support Status
+
+## November 14: minimum-Mac Library — camera waits improved, memory acceptance open
+
+The default 90-second check requests six visible pictures from 33 normal-filter
+rows; the other 27 were unvisited. The v1 all-file scrolling comparison covers
+50 physical photos. On the MacBook Neo, all 19 ungraded RAW embedded JPEGs now
+appear in 0.286–1.114 s, with no memory wait for RAF/CR3/ORF/RW2 after correcting
+their preview-header dimensions. Camera discovery gets priority, known HDR
+sources skip pointless original-picture grants, reduced routes retain their
+own admission after quick refusal, and remembered failures avoid duplicate
+source work. Native visibility startup snapshots cannot override newer events;
+idle result transport drops completed futures/messages. No memory budget,
+reserve, estimate rate, shader, pixel tolerance or export/Proof behavior changed.
+
+The final viewport shows 6/6 requested pictures by 15 s; the survey remains
+40/50, with its 40th picture at 55.5 s versus 73.3 s before. The frame gaps
+are 200/50 ms, inside the unchanged 250 ms gate. **Neither mixed run passes
+memory acceptance:** minimum available RAM is 1.057/1.089 GB against the 2 GB
+reserve; survey peak is 4.430 GB against its 4.4 GB absolute allowance. The
+large linear DNG passes alone (9.5 s, 1.445 GB peak), but waits in the mixed
+folder. EXR/PFM, large panoramas/HEIC/AVIF, and unfinished HDR work remain open.
+
+Native memory summaries identify retained freed allocator regions, about
+1.4 GiB in the backend plus 604 MiB in the helper, partly swapped. A traced
+backend has about 27 MB of traced live Python/NumPy allocations while charged
+1.69 GB; tracing starts at memory-module import and excludes earlier imports. Python collection/native pressure-relief did not materially clear the
+stall and that experiment was removed. Releasing these empty native regions
+is the next investigation; no reserve change is justified by this result.
+A 0.5 GB reserve cut would not fix the app-side admission shortfalls and is
+smaller than the observed physical reserve shortfall. This remains a genuine
+minimum-Mac issue, not acceptance under a different fixture or looser limits.
+
+Fast suites pass: Node 964/one skipped; Python 3,343/145 skipped/one existing
+xpass. Focused finished-picture accuracy passes 14/14 HDR-SDR comparisons,
+mean <1 / p99.9 <=3 unchanged, worst 0.0816/0.3936. The full native precision
+driver stopped on native-memory/cache requirements before that comparison;
+no full native qualification is claimed. See the Library PRD and performance
+table for conditions, by-type results, routes and per-photo grant evidence.
+
 
 ## November 14: Mac GPU parity follow-up
 
