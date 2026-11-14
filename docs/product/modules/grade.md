@@ -1,5 +1,21 @@
 # Module PRD: Grade
 
+## November 14: Mac HSL picker input
+
+The armed picker used the entire photograph's bounding rectangle, even where
+zoom and pan put it behind the controls. Its document-level pointer handler
+could therefore swallow a slider press and sample an invisible part of the
+photo instead. This is present in plain base as well as P1-B; it is not a
+Retina coordinate-doubling error. The fix admits presses only on the visible
+main preview, excluding controls, while retaining full-photo normalized
+coordinates. Behavioural regressions cover 1x/2x, pan, control exclusion and
+application of the returned hue. Node fast suite: 964 pass / one skip;
+Python fast suite: 3,354 pass / 145 skip / one expected failure now passing.
+The Python command used its own shell as `HDR_FINISHER_DESKTOP_PID`, so the
+app-memory checks counted that test's process tree, not sibling T3 agents.
+No budget was changed. Native confirmation remains pending the shared GPU
+queue; this entry does not claim the entire reported render hang is fixed.
+
 ## November 14: P1-B bounded Show selection stage
 
 Global HSL sampling now retains the pre-HSL CPU pixels, at most one entry per

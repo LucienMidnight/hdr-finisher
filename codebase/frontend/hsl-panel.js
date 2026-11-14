@@ -232,8 +232,13 @@ function hslBindWheel(ui){
   });
 }
 
-function hslPoint(event){const preview=activePreviewElement();if(!preview)return null;const r=preview.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)return null;return{x:HDRHSL.clamp((event.clientX-r.left)/r.width),y:HDRHSL.clamp((event.clientY-r.top)/r.height)};}
-function hslPickStart(event){if(!hslUI.picker||event.button!==0||!state.session)return;const point=hslPoint(event);if(!point)return;event.preventDefault();event.stopImmediatePropagation();hslUI.stroke={ui:hslUI.picker,points:[point],lane:state.currentView,session:state.session.session_id,localId:hslUI.picker.scope==='local'?selectedLocal()?.id:null};}
+function hslPoint(event){
+  const preview=activePreviewElement();if(!preview)return null;
+  const r=preview.getBoundingClientRect(),pane=els.previewPrimaryPane.getBoundingClientRect(),viewport=els.dropzone.getBoundingClientRect();
+  if(!(r.width>0&&r.height>0)||event.clientX<Math.max(r.left,pane.left,viewport.left)||event.clientX>=Math.min(r.right,pane.right,viewport.right)||event.clientY<Math.max(r.top,pane.top,viewport.top)||event.clientY>=Math.min(r.bottom,pane.bottom,viewport.bottom))return null;
+  return{x:HDRHSL.clamp((event.clientX-r.left)/r.width),y:HDRHSL.clamp((event.clientY-r.top)/r.height)};
+}
+function hslPickStart(event){if(!hslUI.picker||event.button!==0||!state.session||!els.previewPrimaryPane.contains(event.target)||event.target.closest('button,input,select,textarea,a,[role="button"]'))return;const point=hslPoint(event);if(!point)return;event.preventDefault();event.stopImmediatePropagation();hslUI.stroke={ui:hslUI.picker,points:[point],lane:state.currentView,session:state.session.session_id,localId:hslUI.picker.scope==='local'?selectedLocal()?.id:null};}
 function hslPickMove(event){const s=hslUI.stroke;if(!s)return;event.preventDefault();event.stopImmediatePropagation();const p=hslPoint(event),last=s.points.at(-1);if(p&&s.points.length<512&&Math.hypot(p.x-last.x,p.y-last.y)>.003)s.points.push(p);}
 function hslPickEnd(event){if(!hslUI.stroke)return;event.preventDefault();event.stopImmediatePropagation();const s=hslUI.stroke;hslUI.stroke=null;void hslPickSamples(s);}
 async function hslFetchStage(ui,points,extra={}){
