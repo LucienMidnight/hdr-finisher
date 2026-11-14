@@ -33,7 +33,8 @@ are retained because these real encodes already land within the 3% aim.
 Node passes (951, one skipped); the 35 focused ceiling cases pass. The full
 Python suite has two unrelated unchanged Library admission failures and an
 X-Trans API stall; remaining cases pass. Current GPU checks and isolated
-GPU export-cost measurements are queued behind the manual app lock. Details
+GPU export-cost measurements are paused at Steve's request; no queue remains
+running. Details
 and exact blockers are in `docs/known-limitations.md`.
 
 The reported 1038–1437-nit readings were real decoded, reduced Proof files,

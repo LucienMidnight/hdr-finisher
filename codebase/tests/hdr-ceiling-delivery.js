@@ -30,7 +30,7 @@ const harness = global.HDRFinisherElectronTestHarness;
     const id = opened.session.session_id;
     const edit = await api(`/api/session/${id}/edit-state`, undefined, 'GET');
     Object.assign(edit.document.global_adjustments.hdr, {
-      exposure:3, highlight_section_enabled:true, highlight_compression_target_nits:1000,
+      exposure:Number(process.env.HDR_CEILING_EXPOSURE || 3), highlight_section_enabled:true, highlight_compression_target_nits:1000,
     });
     await api(`/api/session/${id}/edit-state?expected_revision=${edit.revision}`, edit.document, 'PUT');
     if (benchmark) {

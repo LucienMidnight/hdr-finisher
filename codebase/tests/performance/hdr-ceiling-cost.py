@@ -66,8 +66,9 @@ def measure_gpu(args):
         with TemporaryDirectory(prefix='hdr-ceiling-benchmark-') as folder:
             folder = Path(folder)
             (folder / 'sitecustomize.py').write_text(GPU_INSTRUMENT)
-            for index, photo in enumerate(args.photos):
-                row = {'photo': str(photo), 'format':'jpeg_ultrahdr', 'policies':[]}
+            cases = [(args.photos[0], -6), *[(photo, 3) for photo in args.photos]]
+            for index, (photo, exposure) in enumerate(cases):
+                row = {'photo': str(photo), 'exposure':exposure, 'format':'jpeg_ultrahdr', 'policies':[]}
                 records.append(row)
                 # Alternate phase order between photos.
                 for checked in ([False,True] if index%2==0 else [True,False]):
@@ -76,7 +77,8 @@ def measure_gpu(args):
                     calls.unlink(missing_ok=True)
                     env = dict(os.environ, HDR_FINISHER_FORCE_CPU_DELIVERY='0',
                         PYTHONPATH=os.pathsep.join([str(folder),str(root/'backend')]),
-                        HDR_CEILING_SOURCE=str(photo.resolve()), HDR_CEILING_RESULT=str(result),
+                        HDR_CEILING_SOURCE=str(photo.resolve()), HDR_CEILING_EXPOSURE=str(exposure),
+                        HDR_CEILING_RESULT=str(result),
                         HDR_CEILING_BENCHMARK_MODE=mode, HDR_CEILING_BENCHMARK_CALLS=str(calls))
                     subprocess.run(['node','tests/run-in-electron.js','tests/hdr-ceiling-delivery.js','--benchmark'],
                         cwd=root, env=env, check=True)

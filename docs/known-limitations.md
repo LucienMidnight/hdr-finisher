@@ -2,6 +2,17 @@
 
 ## November 14: encoding allowance follow-up
 
+**Paused at Steve's request.** Implementation is committed as `7d41e7a7`;
+the WIP follow-up adds a clean-file GPU timing control. The queued GPU batch
+was cancelled. As the manual lock was released, its first Electron launcher
+briefly started, then was stopped through the lock wrapper (exit 130). No
+GPU driver result or isolated GPU timing was obtained. The queue and all of
+this task's test/Electron/lock/build processes were verified stopped.
+Next: rerun `output/ceiling-followup/run-focused.py` under the existing
+per-check GPU wrappers, inspect the all-codec CPU/GPU Proof peaks and paired
+GPU timing, update this report/performance table, and commit the results.
+The unchanged Python Library failures/stall below remain unqualified.
+
 Steve's November 14 decision replaces the October 18–19 ceiling policy and
 this morning's zero-allowance interpretation. Every Highlight Compression
 HDR export and reduced/full-size Proof is decoded, CPU and GPU. Initial peaks
@@ -11,14 +22,13 @@ may the 1% allowance be used again. Anything still above it is refused without
 replacing the destination. The optional strict codec-limit check with
 Highlights off is unchanged. Library pictures are not checked after encoding.
 
-Code and documentation are ready for the shared GPU lock. Preliminary CPU
+Code and documentation are ready; app validation is paused. Preliminary CPU
 checks on read-only IMG_0114.CR2 and DSC00264.ARW pixels at 1600 px cover all
 three HDR codecs and both Proof sizes. Corrected peaks are 971.983–998.931
 nits against 1000; initial JPEG XL files up to 1007.348 nits are accepted
 unchanged. Full-size Proof is byte-identical to export. No real case was
 refused, and no correction-margin change was needed. GPU qualification and
-isolated before/after GPU export timings are pending behind Steve's manual
-app lock; these CPU results do not qualify native RAW GPU delivery.
+isolated before/after GPU export timings are pending until work resumes; these CPU results do not qualify native RAW GPU delivery.
 
 Node: 951 passed, one skipped. Python: 3,331 passed across the interrupted
 full run, its unattempted remainder and six newly added focused cases;
