@@ -249,12 +249,12 @@
     const modified=node("p","","helper");modified.id="batch-modified";modified.setAttribute("aria-live","polite");rail.append(railHead,list,name,modified);document.body.append(rail);
     const sheet=$("export-sheet"),scroll=node("div","","batch-settings-scroll");sheet.querySelector(".panel-title").textContent="Export Settings";
     sheet.append(scroll);
-    const section=(title,id)=>{const e=node("section","","batch-settings-section");if(id)e.id=id;e.append(node("h2",title,"export-section-title"));scroll.append(e);return e;};
+    const section=(title,id)=>{const e=node("details","","batch-settings-section");if(id)e.id=id;e.open=true;const summary=node("summary"),body=node("div","","batch-settings-body");summary.append(node("h2",title,"export-section-title"));e.append(summary,body);scroll.append(e);return body;};
     const field=(label,control)=>{const l=node("label","","batch-setting-row");l.append(node("span",label),control);return l;};
     const editor=section("Output version","batch-preset-editor"),tabs=node("div","","batch-version-row");tabs.id="batch-versions";
     const select=node("select");select.id="batch-version-select";select.setAttribute("aria-label","Output version");select.onchange=()=>{capture();model.version=Number(select.value);applyVersion();};
     const versionName=node("input");versionName.id="batch-version-name";versionName.hidden=true;
-    help(editor.querySelector("h2"),"Each output version creates a separate file from the same saved photo edits, with its own export settings (format, size and naming). Changes here affect only the selected version. Export creates all versions.");
+    help(editor.parentElement.querySelector("summary"),"Each output version creates a separate file from the same saved photo edits, with its own export settings (format, size and naming). Changes here affect only the selected version. Export creates all versions.");
     tabs.append(select,menuButton("Output version actions",versionActions));editor.append(tabs,versionName);
     const formatSection=els.exportFormat.closest("section"),profileSection=els.exportPreset.closest("section");
     const format=section("Format & quality");format.append(field("Format",els.exportFormat),field("Quality profile",els.exportPreset),els.exportQualityRow,els.exportFormatNote);formatSection.remove();profileSection.remove();

@@ -1,5 +1,15 @@
 # Performance table
 
+November 14 UI-polish mandatory Library smoke (commit containing this record):
+**MacBook Neo**, Apple A18 Pro, 8 GB unified RAM, 1408×794-point unpackaged
+Electron, plain quick-check launcher under the shared GPU lock, frozen mixed
+v1 fixture, 90 seconds. First picture 0.4 s; six of 33 eligible photos pictured
+by the end; ten never reached. This repeats the existing incomplete-coverage
+failure, not a UI speed comparison or a new throughput qualification. No
+memory/responsiveness acceptance error was reported. No rerun or scheduler
+investigation for this presentation-only change. Evidence:
+`codebase/output/quick-library-check/ui-polish-1114/report.json`.
+
 November 14 mandatory HDR check, paired GPU cost (commit containing this
 record): **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM, 6 cores,
 1408×794-point unpackaged Electron; shared GPU lock. IMG_0114.CR2 and

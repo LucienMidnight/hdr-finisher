@@ -1,5 +1,18 @@
 # Module PRD: Export and Proof
 
+## November 14: Export Settings disclosure styling
+
+Steve requested Grade-style section headers, chevrons and full-width dividers.
+Output version, Format & quality, Size & sharpening, Text watermark and File
+naming are now native disclosures, initially open. Advanced settings retains
+its initially folded state. The whole Output version header keeps its existing
+help text and keyboard focus. Folding changes only visibility for this page
+session, never output-version values, capture, naming or delivered files.
+Destination and the Export action remain visible outside the scrollable
+sections. Both Default themes are captured at 1408×794, including a folded
+example, in `codebase/output/ui-polish-1114/`. Proof has review captures only;
+its rendering and delivery paths are untouched. Visual sign-off pending.
+
 ## November 14: encoded HDR target and delivery startup recovery
 
 **Steve, 2026-11-14; supersedes the October 18–19 ceiling decisions.**

@@ -1,5 +1,16 @@
 # Module PRD: Grade
 
+## November 14: joined panel dividers
+
+The source rail retains its outer edge when collapsed or displayed as the
+compact open panel. Its title, identity and disclosure dividers reach both
+edges. The scopes status/readings boundary now meets the toolbar and graph
+boundary without inset gaps; the right control-panel edge remains shared
+with its splitter. Both Default themes have open/collapsed captures at
+1408×794 in `codebase/output/ui-polish-1114/`. Joined-edge rounding allowance
+is one CSS pixel, recorded in the design guideline. No preview, shader,
+adjustment, scope calculation or saved state changes; visual sign-off pending.
+
 ## November 14: Mac HSL picker input
 
 The armed picker used the entire photograph's bounding rectangle, even where

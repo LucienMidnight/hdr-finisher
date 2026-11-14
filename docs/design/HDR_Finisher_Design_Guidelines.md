@@ -2,11 +2,21 @@
 
 Status: living guideline for the shipped application
 
-Last updated: 2026-11-11
+Last updated: 2026-11-14
 
 This guideline is authoritative for current UI behavior and supersedes persistence language in older product and sprint documents.
 
 The component sheet, `docs/design/component-sheet.html`, is its visual companion: every component (icons, buttons, tabs, fields, dropdowns, switches, sliders, panels and sections, lists and scrollbars, graphs, tooltips) drawn from `codebase/frontend/visual-tokens.css`, with the HTML and CSS for each. Open it in a browser and switch between the four themes. This document holds the rules and the reasons; the sheet shows how they look and how to build them. Where the two disagree, ask Steve. All component-sheet proposals were approved by Steve on November 10.
+
+## November 14: Steve's 0.9.3 polish decisions
+
+- Workflow pages use flat tabs with a lower accent eyebrow touching the header's bottom divider, guided by the original underline switcher. Keep accent text for the active page; no raised or pressed plate. In-panel mode and rendition tabs retain their joined plates.
+- Lift Default Dark's neutral background and related surfaces together so the existing black plate shadows remain visible. Keep required neutral text at the existing 7:1 contrast floor. Modern Dark and Default Light retain their palettes.
+- Export Settings uses native collapsible sections with the Grade panel's shared chevron, header typography and edge-to-edge neutral dividers. Existing visible sections start open; Advanced settings starts folded. Folding is session-only and never changes settings or output. Destination and Export files remain outside the folding area.
+- Selected Library thumbnails have only their coloured outer outline, with no inner picture-frame outline or pressed shadow. Selected folders and albums use a flat deep-surface fill, no inset shadow, and no empty padding between the row and its surrounding section dividers.
+- Details sections have one full-width separator per boundary. Grade's source rail keeps a continuous edge when open or folded; header, panel and scope separators meet without inset gaps.
+
+These decisions supersede the earlier workflow-plate, near-black Default Dark and pressed Library-selection descriptions. Geometry checks allow at most one CSS pixel of rounding at joined borders; no rendering, delivery or numerical limits change. Both themes require Steve's visual sign-off at 1408×794.
 
 ## Product character
 
@@ -101,14 +111,14 @@ The v1 reference [tokens.json](v1-visual-refinement/tokens.json) and runtime `fr
 
 | Role | Default Dark | Modern Dark | Default Light | Studio Gray |
 |---|---|---|---|---|
-| Viewer | `#000000` | `#080808` | `#dcdcdc` | `#383838` |
-| Panel | `#050505` | `#121212` | `#f1f1f1` | `#333333` |
-| Raised | `#141414` | `#191919` | `#fafafa` | `#3a3a3a` |
-| Text | `#d8d8d8` | `#f2f2f2` | `#1c1c1c` | `#f2f2f2` |
+| Viewer | `#141414` | `#080808` | `#dcdcdc` | `#383838` |
+| Panel | `#202020` | `#121212` | `#f1f1f1` | `#333333` |
+| Raised | `#282828` | `#191919` | `#fafafa` | `#3a3a3a` |
+| Text | `#e4e4e4` | `#f2f2f2` | `#1c1c1c` | `#f2f2f2` |
 
-November 10: Default Dark uses a pure-black app/viewer background, near-black
-panels, brighter text and distinct control edges. Modern Dark preserves the
-previous Default Dark palette. Settings uses existing lg (16px) text and
+November 14: Default Dark uses a lifted neutral app/viewer background,
+coordinated panels and brighter neutral text so plate shadows read without
+losing contrast. Modern Dark preserves its previous palette. Settings uses existing lg (16px) text and
 controls, md (14.5px) supporting copy and 2xl headings. Application menus
 use a solid raised surface, a 2px muted-ink border and the existing popover
 shadow. The root menu aligns with the left edge of the hamburger glyph.
@@ -382,10 +392,11 @@ in File. Empty toolbar space drags; double-click maximizes/restores.
 In-panel tab sets use joined plates: raised unselected segments, pressed
 selected segments with accent-strong text, and the existing plate edge, lift
 and press tokens. Mode tabs are tallest, rendition/subsets smaller, and wheel
-ranges smallest and inset. Workflow tabs (November 7) are one joined plate of
-the same kind, 36px high, with the page names in Bebas Neue capitals at 24px;
-there are no step numbers or connectors. The selected page is pressed with
-accent-strong text. The toolbar height and navigation behaviour stay unchanged.
+ranges smallest and inset. Workflow tabs (revised November 14) are flat,
+full-header-height navigation with a lower accent eyebrow touching the divider
+and accent-strong active text. They keep the current page-title font and size;
+there are no step numbers, connectors or button plates.
+The toolbar height and navigation behaviour stay unchanged.
 Keep existing tab locations, changed dots, keyboard and ARIA behaviour.
 
 
@@ -473,9 +484,11 @@ of full-app WCAG AAA conformance; accent formulas remain as specified above.
 ## November 10: approved component sheet
 
 These rules supersede earlier material, selection, title and graph rules above.
-Default Dark uses app #050505, panel #080808, raised/tooltip #101010 and input
-#0a0a0a, with the approved stronger plate gradient, black edge, lift and press
-shadows. Other palettes stay unchanged. Viewer colour remains unchanged.
+The November 14 revision lifts Default Dark to app #181818, panel #202020,
+raised/tooltip #282828, input #1c1c1c and viewer #141414. Existing black lift
+and press shadows remain; plate faces and neutral text rise consistently.
+Other palettes stay unchanged. The previous November 10 near-black values
+are superseded.
 
 Each joined tab segment owns its shadow: raised when unselected, pressed when
 selected. The container has no drop shadow. Labels are centred and segments
@@ -493,7 +506,9 @@ list-row-h (34px) rows, no pills, and a permanently visible raised-colour rail
 with a pill thumb (scrollbar-w, 10px). Empty lists keep that well and rail with
 one centred muted line. Accent-bed is plate-down in every theme and is never
 derived from the accent. Selected rows and cells use plate-press; existing
-accent text and edges remain.
+accent text and edges remain. Library selections are the November 14 exception:
+folder/album rows use a flat deep fill from divider to divider, and thumbnails
+use only the outer accent outline, with no inner frame or pressed shadow.
 
 Section titles use section-title-font (Afacad medium, lg); subordinate titles
 use subsection-title-font (Afacad medium, md), sentence case. Small capitals

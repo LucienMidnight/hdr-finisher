@@ -1806,6 +1806,7 @@
     const key = path => path.replaceAll("\\", "/").replace(/\/$/, "").toLowerCase();
     for (const pin of state.pins) if ([...offlineSources].some(path => key(path).startsWith(key(pin.path) + "/"))) pin.available = false;
     $("folders").replaceChildren(...state.pins.map((pin) => folderRow(pin))); paintGrid();
+    if (!state.pins.length) $("folders").append(make("p", "library-nav-empty", "No folders yet. Use + to add one."));
   }
   function paintFolderSelection() {
     for (const row of $("folders").querySelectorAll(".library-folder-row")) {

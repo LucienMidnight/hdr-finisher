@@ -23,18 +23,18 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-left-closed .library-nav .library-heading > :not(.library-collapse), .library-left-closed #folders,
 .library-right-closed .library-details .library-heading > :not(.library-collapse), .library-right-closed #details { display: none; }
 .library-left-closed .library-nav .library-heading, .library-right-closed .library-details .library-heading { padding: 4px; }
-#folders { flex: 0 1 auto; min-height: 64px; overflow: auto; padding: 6px 0; }
-#albums { flex: 0 1 auto; max-height: 40%; overflow: auto; padding: 6px 0; }
+#folders { flex: 0 1 auto; min-height: 0; overflow: auto; padding: 0; }
+#albums { flex: 0 1 auto; max-height: 40%; overflow: auto; padding: 0; }
 .library-albums-heading { border-top: 1px solid var(--hairline); }
 .library-left-closed .library-albums-heading, .library-left-closed #albums { display: none; }
 .library-folder-row.library-album-row .folder-name { padding-left: calc(var(--panel-collapse-button-size) + 6px); }
 .library-album-row.drop { background: var(--accent-bed); box-shadow: var(--plate-lift); }
 .library-count { flex: 0 0 auto; padding: 0 8px; color: var(--muted); font-size: var(--font-size-min); font-variant-numeric: tabular-nums; }
 .library-nav-empty { margin: 4px 8px; color: var(--muted); font-size: var(--font-size-xs); }
-.library-folder-row { display: flex; align-items: center; min-height: 32px; }
+.library-folder-row { display: flex; align-items: center; min-height: 32px; position: relative; }
 .library-folder-row button { border: 0; background: transparent; color: var(--body); text-align: left; }
 .library-folder-row button.folder-name { padding-left: 6px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.library-folder-row.active { background: var(--accent-bed); }
+.library-folder-row.active { background: var(--deep); }
 .library-folder-row.active button { color: var(--text); }
 .library-folder-row.unavailable { opacity: .5; }
 .library-folder-row .expand-folder { display: grid; place-items: center; flex: 0 0 var(--panel-collapse-button-size); width: var(--panel-collapse-button-size); padding: 0; }
@@ -70,12 +70,12 @@ body { margin: 0; color: var(--body); background: var(--app); }
 /* Each photo sits on its own tile, a step lighter than the surround. No lines: the gap between tiles is the grid. */
 .library-cell { position: absolute; display: flex; flex-direction: column; padding: 7px 7px 0; cursor: default; border-radius: var(--radius); overflow: hidden; background: var(--panel); }
 .library-cell:hover { background: var(--raised); }
-.library-cell.active { background: var(--accent-bed); box-shadow: var(--plate-press); }
-.library-cell.active { outline: 2px solid var(--text); outline-offset: -2px; }
+.library-cell.active { background: var(--panel); box-shadow: none; }
+.library-cell.active { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
 .library-cell.active .name { color: var(--text); }
-.library-cell.lead { box-shadow: var(--plate-press); }
+.library-cell.lead { box-shadow: none; }
 .library-cell.lead.active { outline-color: var(--accent-strong); }
-.library-cell.lead.active .picture-frame { outline: 2px solid var(--text); outline-offset: 2px; }
+.library-cell.lead.active .picture-frame { outline: none; }
 .library-cell .picture-frame { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; aspect-ratio: 4 / 3; min-height: 0; overflow: hidden; width: 100%; }
 .library-cell canvas, .library-cell img { width: 100%; height: 100%; object-fit: contain; }
 .library-cell .library-marks { order: 1; }
@@ -228,7 +228,7 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-tags-note { min-height: 18px; margin: 8px 18px 0; font-size: var(--font-size-xs); }
 .library-spacer { flex: 1; }
 
-.library-folder-row[aria-selected="true"] { background: var(--accent-bed); outline: 1px solid var(--hairline); }
+.library-folder-row[aria-selected="true"] { background: var(--deep); outline: none; }
 
 /* Library compare is independent of Grade's viewer and shaders. */
 #library-compare { grid-row:1; min-height:0; overflow:hidden; }
@@ -268,7 +268,7 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-smart-folders { border: 0; padding: 0; margin-top: 16px; display: grid; gap: 6px; }
 .library-smart-folders label { display: flex; align-items: center; gap: 8px; }
 .library-smart-count { color: var(--body); }
-#smart-albums { flex: 0 1 auto; min-height: 0; overflow-y: auto; padding: 6px 0; }
+#smart-albums { flex: 0 1 auto; min-height: 0; overflow-y: auto; padding: 0; }
 .library-left-closed #smart-albums { display: none; }
 
 /* Scrollable library surfaces use the same themed colours as Grade's rail. */
@@ -366,8 +366,9 @@ img:not([src]), img[src=""] { visibility:hidden; }
 .library-nav-section { border-bottom: 1px solid var(--hairline); }
 .library-nav-section + .library-nav-section { border-top: 0; }
 :root .library-kicker { font: var(--section-title-font); letter-spacing: var(--tracking-none); text-transform: none; }
-#details > .library-facts { border-top: 0; border-bottom: 1px solid var(--hairline); margin-inline: -12px; padding: 0 12px 12px; }
+#details > .library-facts { border-top: 1px solid var(--hairline); border-bottom: 0; margin-inline: -12px; padding: 12px 12px 0; }
 #details > .library-kicker { border-top: 1px solid var(--hairline); margin-inline: -12px; padding: 12px 12px 0; }
-:root :is(.library-folder-row.active, .library-folder-row[aria-selected="true"], .library-tag-row[aria-selected="true"], .library-filterbar button[aria-pressed="true"], .library-toolbar #filter-button[aria-pressed="true"]) { box-shadow: var(--plate-press); }
+#library-facts > .library-kicker:not(:first-child) { border-top: 1px solid var(--hairline); margin-inline: -12px; padding: 12px 12px 0; }
+:root :is(.library-tag-row[aria-selected="true"], .library-filterbar button[aria-pressed="true"], .library-toolbar #filter-button[aria-pressed="true"]) { box-shadow: var(--plate-press); }
 
 :root .library-tags-heading { font: var(--subsection-title-font); border-top: 1px solid var(--hairline); margin-inline: -12px; padding: 12px 12px 0; }

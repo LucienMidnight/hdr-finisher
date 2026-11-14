@@ -16,25 +16,22 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
     await page.goto(process.env.HDR_FINISHER_URL||'http://127.0.0.1:8000',{waitUntil:'networkidle'});
     const library=await (await page.locator("#library-frame").elementHandle()).contentFrame();
     assert(library,"Library frame exists");
-    const contrasts=await library.evaluate(()=>{
+    const selections=await library.evaluate(()=>{
       const cell=document.createElement("div");cell.className="library-cell active lead";
       cell.innerHTML='<div class="picture-frame"></div><span class="name">Selected</span>';
       document.body.append(cell);
       const original=document.documentElement.dataset.theme,results=[];
-      const luminance=color=>{
-        const rgb=color.match(/[\d.]+/g).slice(0,3).map(Number).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;});
-        return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;
-      };
+      const accent=document.createElement('span');accent.style.color='var(--accent-strong)';cell.append(accent);
       for(const theme of ["default-dark","modern-dark","studio-gray","default-light"]){
         document.documentElement.dataset.theme=theme;
-        const ink=getComputedStyle(cell.firstChild),face=getComputedStyle(cell),a=luminance(ink.outlineColor),backgrounds=face.backgroundImage.match(/rgb\([^)]+\)/g)||[face.backgroundColor];
-        results.push({theme,contrast:Math.min(...backgrounds.map(color=>{const b=luminance(color);return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);})),width:ink.outlineWidth,style:ink.outlineStyle});
+        const picture=getComputedStyle(cell.firstChild),tile=getComputedStyle(cell);
+        results.push({theme,color:tile.outlineColor,accent:getComputedStyle(accent).color,width:tile.outlineWidth,style:tile.outlineStyle,inner:picture.outlineStyle,shadow:tile.boxShadow});
       }
       if(original===undefined)delete document.documentElement.dataset.theme;else document.documentElement.dataset.theme=original;
       cell.remove();return results;
     });
-    for(const result of contrasts){assert.equal(result.width,"2px");assert.equal(result.style,"solid");assert(result.contrast>=7,JSON.stringify(result));}
-    console.log("Selected-photo contrast",JSON.stringify(contrasts));
+    for(const result of selections){assert.equal(result.width,"2px");assert.equal(result.style,"solid");assert.equal(result.color,result.accent);assert.equal(result.inner,'none');assert.equal(result.shadow,'none');}
+    console.log("Selected-photo outer accent only",JSON.stringify(selections));
     for(const workflow of ['grade','proof','export','import']){
       await page.locator(`[data-workflow-tab="${workflow}"]`).click();
       assert.equal(await page.evaluate(()=>document.body.dataset.workflow),workflow);
@@ -111,8 +108,10 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
     assert.ok(Math.abs(exportLayout.tokens.width-exportLayout.pattern.width)<2,'naming controls use the full field width');
     assert.equal(await page.locator('#export-framing-note').isVisible(),false);
     assert.equal(await page.locator('#batch-example').isVisible(),false);
-    for(const trigger of ['#batch-preset-editor h2','#export-with-frame','#batch-pattern-help']){
+    for(const trigger of ['#batch-preset-editor > summary','#export-with-frame','#batch-pattern-help']){
       const target=trigger==='#export-with-frame'?page.locator('#export-with-frame').locator('..').locator('span'):page.locator(trigger);
+      await target.scrollIntoViewIfNeeded();
+      await page.mouse.move(0,0);
       await target.hover();
       await page.locator('#bounded-help-tooltip').waitFor({state:'visible'});
       assert((await page.locator('#bounded-help-tooltip').innerText()).length>20,'help appears on label hover');
@@ -188,7 +187,7 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
     // The export log sits in Export Settings under Advanced settings, and the
     // shared status bar says the app is exporting (November 8).
     assert.ok(await page.locator('#export-sheet #batch-run-strip').count()===1,'export log lives in the settings panel');
-    assert.ok(await page.evaluate(()=>{const a=document.querySelector('#export-sheet details.batch-settings-section');return !!(a.compareDocumentPosition(document.getElementById('batch-run-strip'))&Node.DOCUMENT_POSITION_FOLLOWING);}),'export log follows Advanced settings');
+    assert.ok(await page.evaluate(()=>{const advanced=document.querySelector('#jpeg-advanced-settings');return !!(advanced.compareDocumentPosition(document.getElementById('batch-run-strip'))&Node.DOCUMENT_POSITION_FOLLOWING);}),'export log follows Advanced settings');
     assert.match(await page.locator('#application-status-entries [data-status-id="batch-export"]').innerText(),/Export(ing| paused) \d+ of \d+/);
     // The preset has no HDR version, so an SDR-only photo loses nothing and is not flagged.
     assert.equal(await page.locator('.batch-flag').count(),0);

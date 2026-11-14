@@ -1,5 +1,35 @@
 # Module PRD: Desktop and release
 
+## November 14: 0.9.3 UI polish (Steve's visual sign-off pending)
+
+Workflow pages return to flat navigation, guided by the original underline
+switcher in `095b83fc`: the active accent eyebrow meets the header divider,
+with accent text and no raised/pressed plate. In-panel tabs keep their plates.
+Default Dark's existing background, surface, plate-face and neutral-text tokens
+rise together so black shadows read; other palettes are unchanged. Required
+neutral text still passes the existing 7:1 floor (minimum 7.43:1).
+
+The design guideline and component sheet record Steve's November 14 choices.
+Library, Grade and Export details are in their module entries. No processing,
+export/Proof pixels, preferences, budgets or tolerances change. Export folding
+is session-only. Both-theme review is at 1408×794 on the MacBook Neo through
+the shared GPU lock, with the Library photos fully loaded. Baseline captures
+serve the original frontend assets from `85bba832` without changing the working
+tree; final captures use the edited assets. Review:
+`codebase/output/ui-polish-1114/{before,after}/`. Grade and Proof use the same
+generated colour pattern in both sets; Library uses six shared curated copies.
+
+Validation for this commit: fast Node suite 972 passed / one skipped; venv
+Python suite 3,381 passed / 144 skipped / one unexpected pass. The focused
+both-theme disclosure, unchanged-settings, selection, contrast and joined-edge
+checks pass. The wider batch Export UI driver passes those selection, help,
+preset and layout checks but stops at its unchanged Control-click selection
+assertion on macOS (three selected instead of the expected two); it assumes
+the Windows modifier and was not changed or rerun to investigate selection.
+The required 90-second Library smoke repeats the documented incomplete
+coverage result: six of 33 photos pictured. Neither unrelated failure was
+relaxed or repaired. Scratch output finishes at 6.3 GB, below 100 GB.
+
 ## November 13: Phase 1 platform panels (P1-D)
 
 The Linux non-authoritative-preview warning now waits for an open photo and

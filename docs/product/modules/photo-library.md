@@ -1,3 +1,18 @@
+## November 14: small Library presentation polish
+
+Steve's requested empty-state lines now appear in Smart Albums and Folders,
+matching Albums. Details has one full-width divider between File, Marks,
+Tags and Camera, and between the additional Show all sections. Thumbnail
+selection has only its outer accent outline, with no inner picture-frame
+outline or pressed shadow. Folder and album selection uses a flat deep fill;
+list padding no longer leaves a gap between the selected row and its section
+dividers. Navigation, marks, grades and file operations are unchanged.
+Both Default themes are captured in `codebase/output/ui-polish-1114/`;
+Steve's visual sign-off remains pending. The selection contract now checks
+the requested outer accent and absence of the removed inner outline, rather
+than the obsolete inner-outline contrast requirement. Neutral-text contrast
+checks and all numerical/rendering gates remain unchanged.
+
 ## November 14: curated test-photo corpus
 
 Steve approved one identical 50-file `HDR Test Images` corpus on PC and Mac.
