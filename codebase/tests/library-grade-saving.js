@@ -63,7 +63,10 @@ const read = photo => JSON.parse(fs.readFileSync(photo + ".hdrf", "utf8"));
     await page.locator("#app-dialog[open]").waitFor();
     assert.equal(await page.locator("#app-dialog-title").textContent(), "Unsaved changes");
     assert.equal(await page.locator("#app-dialog-message").textContent(), "Save changes to first.png before opening next.png?");
-    await page.keyboard.press("Escape"); await transition;
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.getElementById("app-dialog").open, null, {timeout:10000})
+      .catch(() => {throw Error("Escape did not close the unsaved-changes dialog while Metadata was open");});
+    await transition;
     assert.equal(await page.evaluate(() => state.session.source.filename), "first.png");
     await open(photos[0]); // Same photo does not ask.
     assert.equal(await page.locator("#app-dialog[open]").count(), 0);

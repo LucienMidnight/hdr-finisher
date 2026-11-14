@@ -1043,8 +1043,12 @@ function bindEvents() {
   });
   els.overlayToggle.addEventListener("click", toggleOverlayPopover);
   els.overlayClose.addEventListener("click", closeOverlayPopover);
-  document.addEventListener("pointerdown", (event) => {
+  // Dismiss after the target's click: closing the reserved rail on pointerdown
+  // moves toolbar controls before pointerup and swallows their first click.
+  document.addEventListener("click", (event) => {
     if (state.compactSourceOpen && !event.target.closest(".source-rail")) closeCompactSourceRail();
+  });
+  document.addEventListener("pointerdown", (event) => {
     if (!els.overlayPopover.classList.contains("hidden") && !event.target.closest("#overlay-popover, #overlay-toggle")) closeOverlayPopover({ restoreFocus: false });
   });
   document.addEventListener("keydown", (event) => {

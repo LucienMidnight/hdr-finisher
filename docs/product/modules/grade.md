@@ -2442,3 +2442,11 @@ and its range anchor. Applying, renaming and deleting remain separate actions.
 Built: crop mode shades only outside the frame. The cutout uses the same
 normalized bounds as the frame on entry, drag, resize and aspect changes,
 including a rotated image. Crop processing and exported pixels are unchanged.
+
+## November 14: compact Metadata dismissal
+
+The reserved Metadata rail now dismisses after an outside target receives its
+click. Dismissing on pointer-down moved the framing/toolbar button before
+pointer-up and swallowed the first click on the minimum Mac. The same framing
+UI steps succeed on v0.9.2 before its missing local encoder stops delivery.
+No grade, rendering, framing dimensions or delivery settings change.

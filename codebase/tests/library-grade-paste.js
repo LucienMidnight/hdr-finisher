@@ -48,14 +48,14 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     const copyCell=cell('target.png · Paste target');await copyCell.waitFor();await written(photos[1]);
     const copy=(await savedWhen(photos[1],saved=>saved.virtual_copies?.some(copy=>copy.name==='Paste target'))).virtual_copies.find(copy=>copy.name==='Paste target');
     const copyPath=photos[1]+'|copy|'+copy.photo_id, targets=[photos[1],photos[2],copyPath];
-    await physical('copied.png').click();await frame.locator('#library-grid').press('Control+c');
+    await physical('copied.png').click();await frame.locator('#library-grid').press(`${process.platform === "darwin" ? "Meta" : "Control"}+c`);
     await frame.locator('#library-status').filter({hasText:'Grade copied from copied.png'}).waitFor();
     // Text shortcuts remain native; a paste into a text control cannot open a grade dialog.
     const text=frame.locator('#library-tag-input');await text.fill('normal text');await text.selectText();
-    await text.press('Control+c');await text.press('End');await text.press('Control+v');
+    await text.press(`${process.platform === "darwin" ? "Meta" : "Control"}+c`);await text.press('End');await text.press(`${process.platform === "darwin" ? "Meta" : "Control"}+v`);
     assert.equal(await text.inputValue(),'normal textnormal text');
     assert.equal(await frame.locator('dialog[open]').count(),0);
-    await physical('target.png').click();await frame.locator('#library-grid').press('Control+v');
+    await physical('target.png').click();await frame.locator('#library-grid').press(`${process.platform === "darwin" ? "Meta" : "Control"}+v`);
     const dialog=frame.getByRole('dialog',{name:'Paste Grade From copied.png',exact:true});await dialog.waitFor();
     assert.match(await dialog.innerText(),/1 photo will change/);
     const choose=dialog.getByRole('button',{name:'Choose what to paste',exact:true});
@@ -68,7 +68,7 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     await dialog.getByRole('button',{name:'Paste grade',exact:true}).click();assert.equal((await firstPaste).status(),200);await written(photos[1]);
     // Undo the single confirmation before the bulk transaction.
     const firstUndo=page.waitForResponse(response=>response.url().endsWith('/api/library/undo'));
-    await frame.locator('#library-grid').press('Control+z');assert.equal((await firstUndo).status(),200);await written(photos[1]);
+    await frame.locator('#library-grid').press(`${process.platform === "darwin" ? "Meta" : "Control"}+z`);assert.equal((await firstUndo).status(),200);await written(photos[1]);
     const describe=await api('grade-copy');
     assert.deepEqual(describe.selection.settings,['global_adjustments.hdr.exposure']);
     const scene=target=>iframe.evaluate((el,target)=>el.contentWindow.HDRLibraryScenes.load(target,640),target);
@@ -81,9 +81,9 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     const oldScenes={},oldKeys={};
     for(const target of targets){oldScenes[target]=await scene(target);oldKeys[target]=oldScenes[target].key;}
     await drawn(oldKeys);
-    await physical('target.png').click();await physical('other.png').click({modifiers:['Control']});await copyCell.click({modifiers:['Control']});
+    await physical('target.png').click();await physical('other.png').click({modifiers:[process.platform === 'darwin' ? 'Meta' : 'Control']});await copyCell.click({modifiers:[process.platform === 'darwin' ? 'Meta' : 'Control']});
     assert.equal((await iframe.evaluate(el=>el.contentWindow.HDRLibraryCommands.selection())).length,3);
-    await frame.locator('#library-grid').press('Control+Shift+v');await dialog.waitFor();
+    await frame.locator('#library-grid').press(`${process.platform === "darwin" ? "Meta" : "Control"}+Shift+v`);await dialog.waitFor();
     assert.equal(await choose.getAttribute('aria-expanded'),'true');
     await exposure.evaluate(el=>el.closest('details').open=true);assert.equal(await exposure.isChecked(),true);
     assert.equal(await dialog.locator('input[data-setting="global_adjustments.sdr.exposure"]').isChecked(),false);
@@ -107,7 +107,7 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     let saved=JSON.parse(fs.readFileSync(photos[1]+'.hdrf','utf8'));assert.equal(saved.grade.global_adjustments.hdr.exposure,.75);assert.equal(saved.virtual_copies.find(copy=>copy.name==='Paste target').grade.global_adjustments.hdr.exposure,.75);
     assert.equal(JSON.parse(fs.readFileSync(photos[2]+'.hdrf','utf8')).grade.global_adjustments.hdr.exposure,.75);
     const undo=page.waitForResponse(response=>response.url().endsWith('/api/library/undo'));
-    await frame.locator('#library-grid').press('Control+z');const restored=await(await undo).json();assert.equal(restored.grade_changed,true);
+    await frame.locator('#library-grid').press(`${process.platform === "darwin" ? "Meta" : "Control"}+z`);const restored=await(await undo).json();assert.equal(restored.grade_changed,true);
     await savedWhen(photos[1],saved=>saved.grade.global_adjustments.hdr.exposure===.25&&saved.virtual_copies?.find(copy=>copy.name==='Paste target')?.grade.global_adjustments.hdr.exposure===.25);
     await savedWhen(photos[2],saved=>saved.grade.global_adjustments.hdr.exposure===.25);
     for(const target of targets){const picture=await scene(target);assert.equal(picture.key,oldKeys[target]);assert.equal(picture.source_key,oldScenes[target].source_key);assert.equal(picture.adjustments.hdr.exposure,.25);}

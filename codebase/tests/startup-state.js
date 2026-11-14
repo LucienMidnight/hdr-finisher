@@ -50,7 +50,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000";
       sourceSettingsExpanded: "false",
       metadataExpanded: "false",
       proofFormat: "jpeg_ultrahdr",
-      proofTarget: "auto",
+      proofTarget: await page.locator('#chrome-proof-target option[value="auto"]').isDisabled() ? "1000" : "auto",
       proofWatermark: true,
     };
     if (JSON.stringify(startup) !== JSON.stringify(expected)) {

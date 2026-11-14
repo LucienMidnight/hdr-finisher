@@ -156,7 +156,7 @@ for(const photo of photos)fs.copyFileSync(path.join(root,'tests','fixtures','lib
     await page.locator('.batch-photo').nth(0).click();
     await page.locator('.batch-photo').nth(2).click({modifiers:['Shift']});
     assert.equal(await page.locator('.batch-photo[aria-selected="true"]').count(),3);
-    await page.locator('.batch-photo').nth(1).click({modifiers:['Control']});
+    await page.locator('.batch-photo').nth(1).click({modifiers:[process.platform === 'darwin' ? 'Meta' : 'Control']});
     assert.equal(await page.locator('.batch-photo[aria-selected="true"]').count(),2);
     const visualPhotos=[...photos];
     for(let n=4;n<=24;n++){const photo=path.join(folder,`photo-${String(n).padStart(2,'0')}.png`);fs.copyFileSync(photos[(n-1)%3],photo);visualPhotos.push(photo);}

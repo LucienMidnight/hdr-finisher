@@ -13,7 +13,7 @@ function source(file) {
   const candidates=[path.basename(file)===file?path.join(require('./photos-root.cjs').photosRoot(),'HDR Test Images',file):file];
   const found=candidates.find(p=>fs.existsSync(p)&&fs.statSync(p).isFile());
   if(!found)throw Error('Missing reusable test photo: '+file);
-  return path.resolve(found);
+  return fs.realpathSync(found);
 }
 function reusePhoto(original,target) {
   const relative=path.relative(path.resolve(__dirname,'../../output'),target).split(path.sep);
@@ -31,7 +31,7 @@ function reusePhoto(original,target) {
     sidecars.set(sidecar,fs.existsSync(sidecar)?fs.readFileSync(sidecar):null);
     fs.rmSync(sidecar,{force:true});
   }
-  return file;
+  return fs.realpathSync(file);
 }
 // Original saved grades restored for the checks (read-only; never write them).
 // Fresh working copy of an original saved grade in the check's own photo
@@ -46,7 +46,7 @@ function savedGrade(name,check) {
   if(fs.existsSync(copy)){fs.chmodSync(copy,0o666);fs.rmSync(copy);}
   fs.copyFileSync(original,copy);
   fs.chmodSync(copy,0o666);
-  return copy;
+  return fs.realpathSync(copy);
 }
 function cleanup() {
   for(const [file,bytes] of sidecars) {

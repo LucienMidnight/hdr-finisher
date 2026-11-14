@@ -87,6 +87,8 @@ let startupTimer;
   // The app gives a profile its own Library cache only when its path holds
   // "test-"; any other profile shares the owner's real cache.
   assertDisposableProfile(userDataDirectory, "HDR_FINISHER_ELECTRON_TEST_USER_DATA");
+  // Fixture/reference Python children must never use the owner's cache.
+  process.env.HDR_FINISHER_APP_DATA_DIR = path.join(userDataDirectory, "test-driver-helpers");
 
   // The §8 reference setup names a 2560x1440 viewport. The app restores its
   // window bounds from `window-state.json` in userData and a runtime resize
