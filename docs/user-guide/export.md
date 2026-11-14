@@ -25,8 +25,7 @@ Advanced Export Settings starts collapsed and remains keyboard-operable. Within 
 
 ### Guarantee HDR peak
 
-Enabled Highlight Compression always enforces its target in the encoded HDR file, including reduced and full-size Proof. The file is decoded and its brightest BT.2020 channel is checked; any overshoot is corrected locally and re-encoded. The SDR rendition is not changed. If correction cannot meet the target, delivery fails without replacing an existing destination file.
-
+Enabled Highlight Compression checks every encoded HDR export and reduced or full-size Proof, whether rendered on the CPU or GPU. The file is decoded and its brightest channel is checked against your target. Encoding may land up to **1% above the target** (1010 nits for a 1000-nit target); those files are accepted unchanged, without a note. Larger overshoots are corrected locally and re-encoded, aiming at or just below the target, usually within 3% below it. The SDR rendition is not changed. If all correction rounds still leave the file above the 1% allowance, delivery fails without replacing an existing destination. Full-size Proof shows the file export will deliver with the same settings; reduced Proof is checked at its own size. Library pictures do not receive this post-encoding check.
 The advanced **Guarantee HDR peak** option is still shown for HDR formats only and remains off by default. When Highlight Compression is bypassed, this option additionally checks the 10,000-nit codec ceiling. Turning it off never disables an active Highlight Compression target. Every checked file is decoded, even when the input picture is well below its ceiling: lossy encoding can create new peaks.
 
 Historical cost before mandatory target checking (October 19, 2026; Windows PC, three 42 MP badminton RAWs, Ultra HDR at 1000 nits, 4000 px long edge, GPU export, photo already open; the Off case is no longer available with Highlight Compression enabled):

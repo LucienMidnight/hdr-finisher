@@ -1,5 +1,44 @@
 # Known Limitations and Support Status
 
+## November 14: encoding allowance follow-up
+
+Steve's November 14 decision replaces the October 18–19 ceiling policy and
+this morning's zero-allowance interpretation. Every Highlight Compression
+HDR export and reduced/full-size Proof is decoded, CPU and GPU. Initial peaks
+up to target + 1% are accepted unchanged, without a note. Larger overshoots
+use the existing local correction toward the target; only after all rounds
+may the 1% allowance be used again. Anything still above it is refused without
+replacing the destination. The optional strict codec-limit check with
+Highlights off is unchanged. Library pictures are not checked after encoding.
+
+Code and documentation are ready for the shared GPU lock. Preliminary CPU
+checks on read-only IMG_0114.CR2 and DSC00264.ARW pixels at 1600 px cover all
+three HDR codecs and both Proof sizes. Corrected peaks are 971.983–998.931
+nits against 1000; initial JPEG XL files up to 1007.348 nits are accepted
+unchanged. Full-size Proof is byte-identical to export. No real case was
+refused, and no correction-margin change was needed. GPU qualification and
+isolated before/after GPU export timings are pending behind Steve's manual
+app lock; these CPU results do not qualify native RAW GPU delivery.
+
+Node: 951 passed, one skipped. Python: 3,331 passed across the interrupted
+full run, its unattempted remainder and six newly added focused cases;
+145 skipped, one xpassed, two unrelated failures and one stalled test.
+The focused ceiling suite passes all 35 cases. The two unchanged
+`test_library_gpu_raw.py` failures are
+`test_native_chunk_owner_admits_before_allocation_and_survives_trim` and
+`test_abandoned_native_upload_releases_owner_without_expiring_replacement`:
+ordinary native upload admission returns false. The full run then stalled
+in `test_library_live.py::test_xtrans_api_reuses_measured_cpu_grant_and_existing_cancellable_helper[False]`;
+the ten-minute stack shows the API request waiting, and the run was stopped
+after 12.5 minutes. The remaining 1,356 tests passed in a separate process.
+These Library files and checks were not changed or repaired here. Thus the
+full Python suite is not qualified as a pass. Logs and compact CPU evidence:
+`codebase/output/ceiling-followup/`. Protected project hashes match the prior
+baseline; output started at 6.3 GB, below 100 GB. No push or merge to main.
+
+The following earlier report is historical; its zero-allowance statement is
+superseded by the rule above.
+
 ## November 14: Mac encoded HDR ceiling and GPU delivery
 
 Baseline investigation confirms that the 1038–1437-nit parity readings are

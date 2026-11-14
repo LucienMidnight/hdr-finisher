@@ -44,7 +44,7 @@ if str(BACKEND) not in sys.path:
 
 from hdr_finisher.avif_info import inspect_avif  # noqa: E402
 from hdr_finisher.color import acescg_to_linear_bt2020  # noqa: E402
-from hdr_finisher.hdr_ceiling import channel_nits  # noqa: E402
+from hdr_finisher.hdr_ceiling import ENCODING_ALLOWANCE, channel_nits  # noqa: E402
 from hdr_finisher.color_context import (  # noqa: E402
     AUTHORING_ANCHOR,
     CHROMIUM_CANVAS_REFERENCE_WHITE_NITS,
@@ -188,7 +188,7 @@ def export_correctness(
     encode_scale = str(settings.get("encode_scale") or "delivery")
     ceiling_evidence: dict[str, Any] = {"active": bool(ceiling_active), "nits": ceiling, "encode_scale": encode_scale}
     if ceiling_active and ceiling:
-        allowed = float(ceiling)
+        allowed = float(ceiling) * (1 + ENCODING_ALLOWANCE)
         nits = channel_nits(hdr, reference_white_nits)
         exceed = nits > allowed
         exceed_count = int(np.count_nonzero(exceed))

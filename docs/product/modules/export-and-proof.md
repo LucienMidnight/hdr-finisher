@@ -2,22 +2,45 @@
 
 ## November 14: encoded HDR target and delivery startup recovery
 
-The November 14 Mac export brief makes an enabled Highlight Compression
-target mandatory after encoding, for export and reduced/full-size Proof on
-both CPU and GPU. This supersedes the October 18–19 optional-check and
-export-with-a-note decisions below. Every checked file is decoded and its
-brightest BT.2020 channel must be at or below the target. The former 20%
-input-headroom shortcut cannot establish that, so it is removed. Existing
-local correction, encoder settings and correction margins are unchanged;
-an uncorrectable or non-finite result fails delivery and never replaces an
-existing destination. SDR pixels and already-compliant encoded bytes stay
-unchanged. With Highlight Compression bypassed, the existing optional
-Guarantee HDR peak setting still enables the 10,000-nit codec-limit check.
+**Steve, 2026-11-14; supersedes the October 18–19 ceiling decisions.**
+With Highlight Compression enabled, every HDR export and reduced/full-size
+Proof is decoded after encoding on CPU and GPU. The brightest BT.2020 channel
+may be up to **1% above the user's target** due to encoding; that initial file
+is accepted unchanged, without a note. `ENCODING_ALLOWANCE` in `hdr_ceiling.py`
+is the single named allowance. Above it, correction lowers only the affected
+neighbourhoods and aims at or just below the target (about 97–100%, without
+unnecessary dimming), then checks the encoded result again. A file still above
+target + 1% after all correction rounds is refused without replacing an
+existing file. Accurate delivery is the goal; refusal is the last resort.
+SDR pixels and already-compliant encoded bytes stay unchanged. With Highlights
+off, the optional Guarantee HDR peak check retains its strict 10,000-nit
+codec limit. Library pictures do **not** run the post-encode check: their
+writers are called without a ceiling; their shared pre-encode limiter stays.
+Full-size Proof and export share rendering and encoding settings; a reduced
+Proof is checked at its own encoded resolution.
+
+Timing qualification uses a 5% noise allowance on this MacBook Neo, comparing
+complete already-open-photo exports of the same files with only the decoded
+check enabled/disabled. Source import is outside that wait. Results below
+are historical until the follow-up validation record is committed.
+
+Follow-up CPU validation: two real-photo fixtures (IMG_0114.CR2 and
+DSC00264.ARW), all three HDR codecs and reduced/full Proof, at 1600 px.
+Corrected peaks land at 971.983–998.931 nits against 1000; initial JPEG XL
+files up to 1007.348 nits stay unchanged within the allowance. No real file
+is refused; full-size Proof matches export bytes. Existing correction margins
+are retained because these real encodes already land within the 3% aim.
+Node passes (951, one skipped); the 35 focused ceiling cases pass. The full
+Python suite has two unrelated unchanged Library admission failures and an
+X-Trans API stall; remaining cases pass. Current GPU checks and isolated
+GPU export-cost measurements are queued behind the manual app lock. Details
+and exact blockers are in `docs/known-limitations.md`.
 
 The reported 1038–1437-nit readings were real decoded, reduced Proof files,
 not a readback-scale mistake. The old diagnostic deliberately excused them,
 measured luminance instead of the brightest channel, and allowed 1% + 1 nit.
-It now enforces the exact channel ceiling at both scales. On this MacBook,
+The first fix enforced an exact channel ceiling at both scales; the current
+Steve decision above adds the encoding allowance. On this MacBook,
 the six-case JPEG Proof matrix lands below 1000 nits with no exceptions.
 The base's synthetic default JPEG and JPEG XL exports also exceeded their
 target. Thus this is a correction of a real output violation, including on
@@ -539,8 +562,7 @@ Settings rules (from v1.2 section 5, still in force):
 | **Approved GPU architecture:** a hidden Electron renderer reuses Grade's renderer and shaders. Export resize and output sharpening join the shared GPU graph, after the creative look and before the final highlight limiter. Preset versions that share rendering reuse the same finished lanes. | Steve, 2026-10-18 |
 | **Scheduling:** Grade first, then visible Library pictures (top-left first), then background export. GPU work yields between bounded submissions and shares one memory budget. Closing the last visible window cancels a batch cleanly; finished files stay. | Steve, 2026-10-18 |
 | **Perceptual limits** for GPU against CPU, Proof against export, and Library picture against export: SDR ΔE 2000 and HDR ΔE ITP (BT.2124), per image and per lane, mean below 1.0, 99.9th percentile at or below 3.0. No per-pixel maximum. Include grain and local adjustments. | Steve, 2026-10-18 |
-| **HDR ceiling:** enabled Highlight Compression always enforces its target after encoding, on CPU/GPU export and reduced/full Proof. Decode every checked file, correct locally and reject an uncorrectable result. The optional checkbox additionally checks the codec ceiling with Highlights bypassed. Supersedes October 18–19 opt-in/note policy. | Mac export brief, 2026-11-14 |
-| Enabled highlight targets are mandatory after encoding for export, Proof and saved Library pictures. Decode every file, correct local overshoots, reject any file still over target. With Highlights off, the optional per-version codec check enforces 10,000 nits. This supersedes the optional-target and deliver-anyway decision. | November 14 Mac export brief, 2026-11-14 |
+| **HDR ceiling:** decode every Highlight Compression HDR export and reduced/full Proof, CPU and GPU. Accept initial peaks up to target + 1% unchanged and without a note; above that correct locally toward 97–100% of target. Refuse any file still above target + 1% after all rounds, preserving the existing destination. Library pictures are not checked after encoding. With Highlights off, the optional strict codec-limit check is unchanged. Supersedes the October 18–19 ceiling decisions. | Steve, 2026-11-14 |
 | Each export result records which renderer made it and any fallback reason. | Steve, 2026-10-18 |
 | GPU failure rule: each GPU route makes one attempt, then uses its CPU fallback. A second GPU try only for a temporary failure outside the work (preemption, memory held by other work, device lost or renderer restarting, contention timeout). A result that fails a validity or range check, a compile or validation error, a job too large for the card, or no GPU goes straight to the CPU. Master PRD philosophy 3, "When a GPU attempt fails". | Steve, 2026-11-06 |
 | The Export page stays and grows. Two routes: the Export page and Quick export… with a preset. It must leave room for print settings and watermarks. | Steve, 2026-10-11 |
@@ -574,11 +596,13 @@ Settings rules (from v1.2 section 5, still in force):
 - Proof: reduced size (1,200 px) or full size, through the export pipeline.
 - Highlight Compression's target is mandatory after encoding on every HDR
   export and Proof path. The decoded brightest channel is checked even when
-  the source is well below the target; uncorrectable overshoots fail without
-  replacing an existing file. Guarantee HDR peak remains in Advanced
+  the source is well below the target. Initial peaks up to 1% above target
+  are accepted unchanged; local correction aims at or just below the target.
+  Results still over the allowance fail without replacing an existing file.
+  Guarantee HDR peak remains in Advanced
   settings, off by default, and additionally checks the 10,000-nit codec
-  ceiling when Highlights are bypassed (November 14 brief).
-  Library pictures never run this check; cache v7 refreshes checked pictures.
+  ceiling when Highlights are bypassed (Steve, November 14).
+  Library pictures never run this post-encode check.
   Proof carries the same option and includes it in its cache identity; changing
   it invalidates the current Proof. No encoder or gain-map maths changed.
 - The perceptual comparison helper (`delivery_colour.py`), with tests.
@@ -659,7 +683,7 @@ Settings rules (from v1.2 section 5, still in force):
   `codebase/output/gpu-raw-followups/HDR-screen-pairs/compare.html`.
   Fast checks: 540 Node / 2311 Python passed (3 skipped); GPU and forced-CPU
   export/Proof smoke passed.
-- October 19, delivered HDR ceiling repair: DSC07060 input is exactly 800
+- Historical October 19 ceiling repair (policy superseded November 14): DSC07060 input is exactly 800
   nits, but gain-map reconstruction reached 1213.147. Independent direct
   libultrahdr decode and gamut conversion confirmed the measurement; the
   old default bypassed correction. The initial change made targets mandatory;
@@ -675,7 +699,7 @@ Settings rules (from v1.2 section 5, still in force):
   asynchronous inspection, the connection error did not repeat. No production
   retry or hardware guard. The HDR comparison page includes the ceiling pair.
 
-- October 19, optional HDR peak cost, measured on disposable DSC07060,
+- Historical October 19 optional HDR peak cost (policy superseded November 14), measured on disposable DSC07060,
   DSC07061 and DSC07072 copies at a 1000-nit target, reference white 203:
   Ultra HDR JPEG quality 95, 4:4:4, gain map 95/full, 4000 px long edge,
   no output sharpening. GPU delivery, already-open RAW sessions, one warm-up
@@ -692,7 +716,7 @@ Settings rules (from v1.2 section 5, still in force):
   skip took **5.44 seconds**, versus 5.07 off: one encode, zero decodes.
   Its extra 0.38 seconds is the input-peak scan (measured 0.365 seconds),
   not unexplained timing drift. Decode and re-encode work dominate the
-  option's extra cost; turning it off removes them.
+  option's extra cost; at that time turning it off removed them.
   Count/timing instrumentation was temporary and restored after measurement;
   no production counters, retries, encoder changes or hardware guards.
   The first setup assumed every sidecar contained a grade; DSC07061 has

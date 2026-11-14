@@ -2,7 +2,7 @@
 
 Lossy codecs and gain-map reconstruction can overshoot at bright edges and
 in saturated highlights. Enabled Highlight Compression always enforces its
-target after encoding, without an upward allowance. With Highlights off the
+target after encoding, with a 1% encoding allowance. With Highlights off the
 optional preset check uses the codec limit. Uncorrectable files are rejected.
 
 Only the neighbourhood of an overshoot is lowered, by the amount it
@@ -29,6 +29,8 @@ BLOCK = 16
 STRENGTH = 2.0
 MARGINS = (0.003, 0.006, 0.012, 0.025, 0.05, 0.1)
 CODEC_LIMIT_NITS = 10000.0
+# Steve, 2026-11-14: accept initial encodes within this allowance unchanged.
+ENCODING_ALLOWANCE = 0.01
 
 
 class CeilingError(ValueError):
@@ -104,13 +106,17 @@ def encode_within_ceiling(
     decode: Callable[[T], np.ndarray],
     ceiling_nits: float | None = None,
     notes: list[str] | None = None,
+    *,
+    encoding_allowance: float = 0.0,
 ) -> T:
     """Encode, check every decoded pixel, and correct only where it overshot.
 
     ``encode`` turns a finished HDR image into a delivery; ``decode`` returns
     that delivery's per-pixel brightest channel in nits at the same size.
     Without ``ceiling_nits`` the delivery is encoded once and not checked.
-    An overshooting or invalid delivery is never returned as successful.
+    Initial encodes within ``encoding_allowance`` are unchanged. Corrections
+    aim at the target itself; only the final round may use the allowance.
+    An over-allowance or invalid delivery is never returned as successful.
     """
     current = hdr_image
     delivery = encode(current)
@@ -126,7 +132,8 @@ def encode_within_ceiling(
         if not decoded.size or not np.all(np.isfinite(decoded)):
             raise CeilingError("The HDR file decoded to empty or non-finite pixels.")
         peak = float(np.max(decoded))
-        if peak <= ceiling:
+        allowed = ceiling * (1.0 + encoding_allowance)
+        if peak <= ceiling or (attempt in (0, len(MARGINS)) and peak <= allowed):
             return delivery
         if attempt == len(MARGINS):
             raise CeilingError(

@@ -1,5 +1,30 @@
 # Performance table
 
+November 14 encoding-allowance follow-up (commit containing this record),
+**MacBook Neo**, Apple A18 Pro, 8 GB unified RAM, 6 cores. Preliminary CPU
+codec/correction diagnostic: IMG_0114.CR2 and DSC00264.ARW loaded once and
+reduced to 1600 px **before** creating the session, +3 EV, 1000-nit target,
+quality 90/default codec settings. One warm-up pair then one measured pair
+per photo, alternating policy order. Whole in-process CPU exports include
+rendering, encode, checking/correction and ordinary validation; import and
+independent audit decodes are outside the wait. Other CPU tests and Steve's
+app overlapped: these observations are **not** an isolated before/after
+qualification, nor native-RAW export timings. Agreed timing noise allowance
+for the isolated follow-up is 5%.
+
+| Codec | Check bypassed (diagnostic only) | Check and correction enabled |
+| --- | --- | --- |
+| jpeg_ultrahdr | 0.91–1.27 s | 2.65–3.49 s |
+| avif_gain_map | 2.73–2.92 s | 13.93–15.83 s |
+| jpegxl_hdr | 1.23–1.59 s | 1.70–1.86 s |
+
+A separate native-source probe (DSC00264.ARW, 7968×5320, ordinary CPU render
+then JPEG resize to 1600 px, same grade, concurrent Python suite/manual app)
+took 42.45 s for one export. No native-source CPU before/after claim follows
+from that single observation. GPU request timing under the shared lock is
+pending. Compact preliminary evidence:
+`codebase/output/ceiling-followup/cpu-small-matrix.json`.
+
 November 14 Mac export-ceiling fix (`9bfea9e5`; MacBook Neo, Apple A18
 Pro, 8 GB, 6 cores; 1408x794 points; unpackaged Electron, shared GPU lock;
 other agents active, uncontrolled available memory). These are observations,

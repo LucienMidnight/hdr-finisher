@@ -49,8 +49,10 @@ may not contradict these.
 
 1. **HDR first, and rigour where HDR matters.** Peak and highlight handling
    keep the tightest limits. The one exact image rule is that a finished
-   HDR pixel never exceeds the highlight compression target (rounding
-   down: 990 nits passes a 1000-nit target, 1010 fails).
+   HDR pixel is limited to the highlight compression target before encoding.
+   Export and Proof are decoded and checked with a 1% encoding allowance
+   (Steve, November 14, 2026); larger overshoots are corrected locally toward
+   the target or, as a last resort, refused. See the Export and Proof module.
 2. **Two authored renditions.** HDR and SDR are graded as independent,
    equally good pictures of the same photo. The SDR side is never just a
    by-product. HDR should win with brightness and range, not with stronger

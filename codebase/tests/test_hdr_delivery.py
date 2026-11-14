@@ -15,7 +15,7 @@ from hdr_finisher.exporters import build_export_backends
     ("avif_gain_map", "gainmap_decoders", "decode_avif"),
     ("jpegxl_hdr", "jpegxl", "decode_jpegxl"),
 ])
-def test_decoded_ceiling_accepts_990_but_rejects_one_1010_pixel(
+def test_decoded_ceiling_accepts_rounding_but_rejects_one_over_allowance_pixel(
     monkeypatch, tmp_path, format_name, decoder_module, decoder_name,
 ):
     import importlib
@@ -26,7 +26,9 @@ def test_decoded_ceiling_accepts_990_but_rejects_one_1010_pixel(
     monkeypatch.setattr(module, decoder_name, decode)
     path = tmp_path / "fixture"
     assert hdr_delivery.check_decoded_hdr_ceiling(path, format_name, 1000) == pytest.approx(990, abs=.01)
-    image[0, 0] = 1010 * .18 / 203
+    image[0, 0] = 1009 * .18 / 203
+    assert hdr_delivery.check_decoded_hdr_ceiling(path, format_name, 1000) == pytest.approx(1009, abs=.01)
+    image[0, 0] = 1011 * .18 / 203
     with pytest.raises(ValueError, match="exceeds"):
         hdr_delivery.check_decoded_hdr_ceiling(path, format_name, 1000)
     image[0, 0] = np.nan

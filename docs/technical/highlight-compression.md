@@ -123,17 +123,25 @@ The curve must remain continuous and monotonic. Highlight Detail retains positiv
 
 Target Peak is an exact transfer-curve endpoint for the measured final-grade signal, and every mode is followed by an unconditional ceiling at Target Peak in the delivery primaries. The shoulder shapes the picture; the ceiling makes the target a delivery guarantee. That separation matters because the shoulder anchors on a measured peak, and sharpening ringing, grain, and output finishing all leave individual samples above the picture the shoulder was fitted to. A Standard or otherwise downsampled preview can filter away the exact maximum sample, so its measured peak can land below Target Peak; it can never land above.
 
-The encoded-delivery guarantee also checks the decoded brightest BT.2020
-channel after every HDR encode with Highlight Compression enabled, including
-reduced Proof. Lossy encoding can overshoot even when the pre-encode samples
-have headroom. `hdr_ceiling.py` applies the existing bounded local corrections
-without changing SDR pixels; if they cannot meet the target, no file is
-delivered. Disabling the optional codec-limit checkbox does not disable an
-active Highlight Compression target (November 14, 2026 Mac export brief).
+The encoded-delivery rule (Steve, 2026-11-14, superseding October 18–19)
+checks the decoded brightest BT.2020 channel after every HDR encode with
+Highlight Compression enabled: CPU/GPU export and reduced/full-size Proof.
+Lossy encoding can overshoot even when pre-encode samples have headroom.
+`ENCODING_ALLOWANCE = 0.01` in `hdr_ceiling.py` accepts an initial decoded
+peak up to target + 1% unchanged and without a note. Larger overshoots get
+bounded local correction, aiming at or just below the target (about 97–100%),
+without changing SDR pixels or dimming the whole picture. Every corrected
+encode is checked again; a final peak above target + 1% refuses delivery and
+preserves any existing destination. Refusal is a last resort, not a substitute
+for accurate files. Full-size Proof uses the export pipeline; reduced Proof
+checks its own encoded pixels. Library pictures are not decoded/checked by
+this rule. Disabling the optional codec-limit checkbox never disables an
+active Highlight Compression target. With Highlights off, the optional strict
+10,000-nit codec-limit check is unchanged.
 
 ## Clip
 
-Clip converts the finished HDR grade to linear BT.2020, clamps every channel to Target Peak, and converts back to ACEScg. It is the deterministic mastering option when no encoded channel may exceed the selected ceiling. Unlike Peak Fit and Soft Ceiling, it intentionally creates a flat clipped endpoint and can alter hue in saturated clipped colors.
+Clip converts the finished HDR grade to linear BT.2020, clamps every channel to Target Peak, and converts back to ACEScg. It is the deterministic pre-encode clamp; the encoded file still follows the shared 1% encoding-allowance rule. Unlike Peak Fit and Soft Ceiling, it intentionally creates a flat clipped endpoint and can alter hue in saturated clipped colors.
 
 The default Highlight Detail is `35%`. This is intentional: it retains visible shape and local contrast in bright fixtures and reflections. `0%` is available when a flatter, fuller shoulder is preferred, but it is not the neutral technical default and can make peak regions feel plateaued.
 
