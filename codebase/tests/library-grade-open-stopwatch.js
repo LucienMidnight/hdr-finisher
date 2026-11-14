@@ -9,7 +9,7 @@ const mode = (process.argv.includes('--bands') ? 'bands-' : '') + `${label}-${pa
 fs.mkdirSync(output, { recursive: true });
 const profile = fs.mkdtempSync(path.join(output, 'test-' + mode + '-profile-'));
 const folder = fs.mkdtempSync(path.join(output, mode + '-photos-'));
-const original = path.join(root, 'output/library-slow-spots/development-final-photos-ZHfVZM/DSC07060.ARW');
+const original = require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/DSC00264.ARW');
 const names = ['saved.ARW', 'new-1.ARW', 'new-2.ARW', 'new-3.ARW'];
 for (const name of names) fs.copyFileSync(original, path.join(folder, name));
 const digest = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');

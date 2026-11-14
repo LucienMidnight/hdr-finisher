@@ -8,6 +8,7 @@ const {chromium}=require('playwright');
 const {hashProjects,checkProjects}=require('../tests/release/runner.cjs');
 const root=path.resolve(__dirname,'..'),jpeg=process.argv.includes('--jpeg'),probe=process.argv.includes('--probe'),aceh=process.argv.includes('--aceh'),phase0=process.argv.includes('--phase0');
 const scrollDiagnose=process.argv.includes('--scroll-diagnose'),hdrTest=process.argv.includes('--hdr-test');
+if(process.platform!=='win32'&&!hdrTest){console.log('Skipped: PC-only folder-scale / legacy very-large-file measurement; use --hdr-test for the shared curated folder.');process.exit(0);}
 const memoryLimit=Number(process.argv.find(x=>x.startsWith('--memory-gb='))?.split('=')[1]||4)*1e9;
 const singleFile=process.argv.find(x=>x.startsWith('--single-file='))?.slice(14);
 const allFolder=process.argv.find(x=>x.startsWith('--all-folder='))?.slice(13);

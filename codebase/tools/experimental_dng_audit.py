@@ -13,7 +13,9 @@ from hdr_finisher.models import RawImportSettings
 from hdr_finisher.raw_import import decode_raw
 
 
-CORPUS = Path("local-test-media/inputs/linear-dng")
+from lib.test_photos import photo_root
+
+CORPUS = photo_root()
 
 
 def _inspection_payload(path: Path) -> tuple[Any, dict[str, Any]]:

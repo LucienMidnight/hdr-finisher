@@ -3,7 +3,7 @@ const reusePhoto=require('./helpers/reuse-test-photo.cjs');
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path');
 const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-export-live-tiles',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
-const photos=['DSC07060','DSC07061','DSC07072'].map(n=>{const p=path.join(folder,n+'.ARW');return reusePhoto(reusePhoto.source(n+'.ARW'),p);});
+const photos=['DSC00264','DSC04375','DSC06615'].map(n=>{const p=path.join(folder,n+'.ARW');return reusePhoto(reusePhoto.source(n+'.ARW'),p);});
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});

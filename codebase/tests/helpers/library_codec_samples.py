@@ -1,11 +1,11 @@
-"""Disposable Batch 3 inputs; photographic fixtures stay in ignored local media.
+"""Disposable Batch 3 inputs; photos come only from the curated HDR Test Images.
 Run from codebase with an output directory. No original sidecars are read.
 """
 import sys as _tool_sys
 from pathlib import Path as _ToolPath
 _tool_sys.path.insert(0, str(_ToolPath(__file__).resolve().parents[2] / 'tools'))
 from lib.machine_settings import photos_path
-import hashlib, json, shutil, sys, urllib.request
+import json, shutil, sys
 from pathlib import Path
 import numpy as np
 from PIL import Image
@@ -41,31 +41,19 @@ def sidecar(path, override=None, white=203, edited=False):
         "photo_id":"codec-test","marks":{},"albums":[],"grade":grade,"grade_default":default}),encoding="utf8")
 
 
-# Pinned official photographic examples, downloaded only for this slow driver.
 REAL_SAMPLES = {
-    "example.heic": ("https://raw.githubusercontent.com/strukturag/libheif/364905fc9841bdda229e0ae2c5fda13b5fc98d1a/examples/example.heic", "7f8b363e4936c0666a25f64f3a92fda10bd8e5453be4592530b65a55dd98f3f2"),
-    "cosmos.avif": ("https://raw.githubusercontent.com/AOMediaCodec/libavif/b1e4d339c1ff5b547664c85f1713279f4997d694/tests/data/io/cosmos1650_yuv444_10bpc_p3pq.avif", "1c3db1867051ae23ba61ed217f6b7372a4248e6322d76a239feab14bc4c55ab5"),
-    "kodim.avif": ("https://raw.githubusercontent.com/AOMediaCodec/libavif/b1e4d339c1ff5b547664c85f1713279f4997d694/tests/data/io/kodim03_yuv420_8bpc.avif", "e69c973a3ddf635412c9a0c6cda66798102d0030303614873b337f658983ef5d"),
+    "example.heic": "IMG_6705.HEIC",
+    "cosmos.avif": "-4_stops_exposure_PQ_Rec_2020_DSC08883_03.avif",
+    "kodim.avif": "DSC08883.avif",
 }
 
 
 def generate(folder):
     folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
-    root=Path(__file__).resolve().parents[2]
-    media=root/"local-test-media/inputs/library-batch3"
-    media.mkdir(parents=True,exist_ok=True)
-    for name,(url,digest) in REAL_SAMPLES.items():
-        target=media/name
-        if not target.exists():
-            payload=urllib.request.urlopen(url,timeout=30).read()
-            if hashlib.sha256(payload).hexdigest()!=digest:raise ValueError("Fixture hash mismatch: "+name)
-            target.write_bytes(payload)
-        if hashlib.sha256(target.read_bytes()).hexdigest()!=digest:raise ValueError("Fixture changed: "+name)
-    # Official photographic examples: libheif example.heic; libavif cosmos/kodim.
     photos=[]
-    for name in ("example.heic","cosmos.avif","kodim.avif"):
-        target=folder/name;shutil.copyfile(media/name,target);photos.append(str(target))
-    photographic=Path(photos_path("D:/Photos/Play_Raw/Zebras Crossing - thekman/darktable_exported/DSC_3931_01.jpg"))
+    for name,source in REAL_SAMPLES.items():
+        target=folder/name;shutil.copyfile(photos_path('D:/Photos/HDR Test Images/'+source),target);photos.append(str(target))
+    photographic=Path(photos_path("D:/Photos/HDR Test Images/DSC_3931_01.jpg"))
     image=np.asarray(Image.open(photographic)).astype(np.float32)/255
     sdr=folder/"photo.jxl";sdr.write_bytes(jpegxl.encode_sdr_jpegxl(image,100));photos.append(str(sdr))
     hdr=folder/"pq12.jxl";hdr.write_bytes(jpegxl.encode_hdr_jpegxl(image*2,100,"uint12"));sidecar(hdr,white=100,edited=True);photos.append(str(hdr))

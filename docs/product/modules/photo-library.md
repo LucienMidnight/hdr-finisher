@@ -1,3 +1,17 @@
+## November 14: curated test-photo corpus
+
+Steve approved one identical 50-file `HDR Test Images` corpus on PC and Mac.
+Setup checks every name, size and SHA-256 against the committed manifest.
+Test inputs and disposable grade fixtures use that corpus; personal-folder and
+dropped giant-file probes are explicitly PC-only. No production pixels,
+processing code, tolerances or budgets change. The new `library-mixed-v2`
+fixture is built and verified on Mac, but v1 and quick-check defaults stay
+frozen for the `fix/library-8gb` before/after measurements.
+
+Replacement details, missing specialty samples, protected-project source paths,
+and validation results are in `docs/technical/test-photos.md`. Switching to v2
+needs a separate coordinated default change and new per-machine baselines.
+
 ## November 14: native macOS file commands
 
 Original photo rename and move, same-volume folder rename/move, and confirmed

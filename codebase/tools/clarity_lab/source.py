@@ -1,9 +1,9 @@
-"""The lab's picture: the DSC06898 beach frame, box-downsampled 2x.
+"""The lab's picture: the curated A7R00619 landscape, box-downsampled 2x.
 
 Clarity's radius is a fraction of the frame diagonal and the shader's sample
 spacing is a fixed fraction of that radius, so the staircase has the same shape
-at any resolution. Half size keeps the true-Gaussian reference quick. The frame
-has smooth sky against hard dark edges, which is where clarity bands.
+at any resolution. Half size keeps the true-Gaussian reference quick. The earlier beach-specific review is not reproduced by this landscape;
+new visual results must be judged independently.
 """
 
 from __future__ import annotations
@@ -14,9 +14,11 @@ import sys
 import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SOURCE = ROOT / "local-test-media" / "inputs" / "Affinity_DSC06898_DisplayP3_Linear_32f.exr"
+sys.path.insert(0, str(ROOT / 'tools'))
+from lib.test_photos import photo_root
+SOURCE = photo_root() / 'A7R00619.exr'
 OUT = ROOT / "output" / "clarity_lab"
-CACHE = OUT / "source-half.npy"
+CACHE = OUT / "A7R00619-half.npy"
 
 
 def load() -> np.ndarray:

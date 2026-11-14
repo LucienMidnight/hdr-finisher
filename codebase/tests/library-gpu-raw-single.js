@@ -7,9 +7,9 @@ const root=path.resolve(__dirname,'..'),folder=path.join(root,'output/library-gp
 fs.mkdirSync(folder,{recursive:true});
 const photoFolder=path.join(root,'output/test-photos/library-live-grid');
 fs.mkdirSync(photoFolder,{recursive:true});
-const photos=['DSC07060','DSC07061','DSC07072'].map(name=>{
+const photos=['DSC00264','DSC04375','DSC06615'].map(name=>{
  const file=path.join(photoFolder,name+'.ARW');
- if(!fs.existsSync(file))fs.copyFileSync('D:/test-photos-delete-later/'+name+'.ARW',file);
+ if(!fs.existsSync(file))fs.copyFileSync(require('./helpers/reuse-test-photo.cjs').source(name+'.ARW'),file);
  return file;
 });
 const {spawn}=require('node:child_process');

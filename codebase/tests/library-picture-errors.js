@@ -3,7 +3,8 @@ const fs=require("node:fs"),path=require("node:path"),assert=require("node:asser
 const {execFileSync}=require("node:child_process"),{chromium}=require("playwright");
 const root=path.resolve(__dirname,".."),folder=path.join(root,"output/test-photos/graceful-grades");
 const review=path.join(root,"output/graceful-grades"),photo=path.join(folder,"photo.jpg"),sidecar=photo+".hdrf";
-if(!fs.existsSync(photo))throw Error("Place a small reusable real-photo copy at "+photo);
+const reusePhoto=require('./helpers/reuse-test-photo.cjs');
+reusePhoto(reusePhoto.source('DSC_3931_01.jpg'),path.join(root,'output/graceful-grades/photo.jpg'));
 fs.mkdirSync(review,{recursive:true});
 const original=fs.readFileSync(photo);
 execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),["-c",`

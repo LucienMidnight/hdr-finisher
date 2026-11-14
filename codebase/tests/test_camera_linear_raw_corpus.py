@@ -13,8 +13,8 @@ CORPUS_ROOT = os.environ.get("HDR_FINISHER_RAW_TEST_SUITE")
 
 
 @pytest.mark.skipif(
-    not CORPUS_ROOT,
-    reason="set HDR_FINISHER_RAW_TEST_SUITE for the private camera-RAW qualification corpus",
+    sys.platform != 'win32' or not CORPUS_ROOT,
+    reason="PC-only historical qualification: dropped 1.7 GB line-scan DNG and clipped Canon sample; set HDR_FINISHER_RAW_TEST_SUITE on PC",
 )
 def test_private_camera_linear_raw_corpus(tmp_path: Path) -> None:
     output = tmp_path / "qualification.json"

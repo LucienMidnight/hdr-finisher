@@ -156,8 +156,8 @@ fs.writeFileSync(path.join(folder, "ignored.hdrf"), "sidecar stays untouched");
     // Local real-photo check: copy samples to output, never write to originals.
     const rawSources = [
       photosPath("D:/Photos/HDR Test Images/DSC00264.ARW"),
-      photosPath("D:/Photos/HDR Test Images/DJI Samples/DSC00264_DxO-optical-corr-only.dng"),
-      photosPath("D:/Photos/HDR Test Images/Test Suite Images/iphone_16_pro_IMG_3324.HEIC"),
+      photosPath("D:/Photos/HDR Test Images/DSC04375_DxO-optical-corr-only.dng"),
+      photosPath("D:/Photos/HDR Test Images/iphone_16_pro_IMG_3324.HEIC"),
     ];
     if (rawSources.every(source => fs.existsSync(source))) {
       rawFolder = fs.mkdtempSync(path.join(output, "formats-"));

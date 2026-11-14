@@ -1,3 +1,4 @@
+if(process.platform!=='win32'){console.log('Skipped: PC-only personal-library / very-large-file check (see docs/technical/test-photos.md).');process.exit(0);}
 /* M7/M8 measurement only; run through tests/run-in-electron.js at 2560x1440.
  * GPU completion + two RAFs denotes a compositor opportunity, not scanout.
  */

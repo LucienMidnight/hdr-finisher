@@ -19,7 +19,7 @@ function argument(name, fallback = null) {
 (async () => {
   const url = argument("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000");
   const input = path.resolve(argument("--input",
-    "local-test-media/inputs/Affinity_DSC06898_DisplayP3_Linear_32f.exr"));
+    require('../helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/A7R00619.exr')));
   if (!fs.existsSync(input)) throw new Error(`Input does not exist: ${input}`);
 
   const browser = await chromium.launch({

@@ -2,7 +2,7 @@ const reusePhoto=require('./helpers/reuse-test-photo.cjs');
 // Paste preflight reuses the development a RAW thumbnail already performed.
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const {chromium}=require('playwright');
-const original=process.env.HDR_PASTE_RAW||reusePhoto.source('DSC07072.ARW');
+const original=process.env.HDR_PASTE_RAW||reusePhoto.source('DSC06615.ARW');
 const folder=path.resolve(__dirname,'../output/library-gpu-raw-paste',String(Date.now()));
 fs.mkdirSync(folder,{recursive:true});
 const before=reusePhoto(original,path.join(folder,'before.ARW')),after=reusePhoto(original,path.join(folder,'after.ARW'));

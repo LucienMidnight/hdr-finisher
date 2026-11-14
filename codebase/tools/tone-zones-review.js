@@ -3,8 +3,8 @@
 const {chromium}=require('playwright'),fs=require('fs'),path=require('path');
 const out=path.resolve('output/tone-zones');fs.mkdirSync(out,{recursive:true});
 const PHOTOS=[
- ['balanced-rock',require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2')],
- ['contre-jour',require('../tests/helpers/photos-root.cjs').photosPath("D:/Photos/Play_Raw/Contre-jourin Hawai'i/IMG_1193.CR2")],
+ ['balanced-rock',require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/IMG_0114.CR2')],
+ ['contre-jour',require('../tests/helpers/photos-root.cjs').photosPath("D:/Photos/HDR Test Images/IMG_0114.CR2")],
 ];
 const STATES=[
  ['neutral',{}],

@@ -8,7 +8,7 @@ const raw=path.join(folder,codecs?'photo.jxl':'photo.jpg'),edited=path.join(fold
 if(codecs){
  execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tests/helpers/library_codec_native.py'),folder],{cwd:root});
 }else{
-execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',"from PIL import Image;import sys;Image.open(sys.argv[1]).resize((3200,1869)).save(sys.argv[2],quality=95)",require('./helpers/photos-root.cjs').photosPath('D:/Photos/Play_Raw/Zebras Crossing - thekman/darktable_exported/DSC_3931_01.jpg'),raw]);
+execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',"from PIL import Image;import sys;Image.open(sys.argv[1]).resize((3200,1869)).save(sys.argv[2],quality=95)",require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/DSC_3931_01.jpg'),raw]);
 execFileSync(require('../tools/lib/platform.cjs').pythonExecutable(),['-c',`
 import sys,json
 from pathlib import Path

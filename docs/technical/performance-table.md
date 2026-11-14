@@ -116,6 +116,16 @@ Evidence: `codebase/output/parity-limits/` (`lens-three.json`, `film-three.json`
 pixel scratch is removed; the reports are small. Initial preparation checks
 also passed (Node 955/one skipped, Python 3,305/153 skipped/one xpassed,
 13.6 s and 298.1 s respectively, before private-media links were ready).
+November 14 curated-photo input verification (`tests/one-photo-folder`, commit
+containing this record): **MacBook Neo**, A18 Pro, 8 GB unified memory,
+1408x794-point window, unpackaged Electron, shared GPU lock. The retargeted
+`library-gpu-raw-paste.js` uses `DSC06615.ARW` instead of `DSC07072.ARW`.
+Cold CPU preparation was **7.405 s**, GPU-prepared source reuse **0.027 s**
+(three concurrent requests; unchanged paste wrote no sidecar). This is a
+single diagnostic run with a different photo, not a new controlled speed
+baseline or a comparison with PC timings. No performance change is claimed.
+Result: `codebase/output/library-gpu-raw-paste/1794632531948/result.json`.
+
 
 November 14 Mac GPU parity diagnostics (`fix/mac-gpu-parity`, commit containing
 this record, base `87b91385`): **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM,

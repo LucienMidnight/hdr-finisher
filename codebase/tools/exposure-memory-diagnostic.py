@@ -1,4 +1,8 @@
-# Windows-only RSS diagnostic; set EXPOSURE_MEMORY_PHOTO relative to output/test-photos.
+# Windows-only RSS diagnostic; EXPOSURE_MEMORY_PHOTO is a curated basename.
+import sys
+if sys.platform != 'win32':
+    print('Skipped: Windows-only RSS diagnostic on curated test photos.')
+    raise SystemExit(0)
 from pathlib import Path
 from threading import Thread,Event
 import json,ctypes,rawpy,cv2,numpy as np
@@ -24,7 +28,11 @@ def sample():
 thread=Thread(target=sample);thread.start()
 try:
  import os
- path=Path('output/test-photos')/os.environ['EXPOSURE_MEMORY_PHOTO'];probe={}
+ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'tools'))
+ from lib.test_photos import photo_root
+ name=os.environ.get('EXPOSURE_MEMORY_PHOTO','DSC00264.ARW')
+ assert Path(name).name == name, 'Choose a flat curated photo name'
+ path=photo_root()/name;probe={}
  blown,blocked=exposure_source(path,probe=probe);pixels=blown.size
  maps=np.stack([pool_max(blown),pool_max(blocked)],axis=2).astype(np.uint8)*255
  placement=camera_frame(path,probe['luminance'])

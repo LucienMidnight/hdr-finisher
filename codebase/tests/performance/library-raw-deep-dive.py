@@ -3,6 +3,9 @@ Cold = CreateFile(FILE_FLAG_NO_BUFFERING|SEQUENTIAL_SCAN), sector-aligned reads.
 This bypasses Windows file cache, not enclosure/drive firmware cache.
 """
 import os,sys
+if sys.platform != 'win32':
+    print('SKIP: Windows-only unbuffered personal-library disk experiment.')
+    raise SystemExit(0)
 THREADS=int(os.environ.get('M9_THREADS','12'))
 for k in ('OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS'):os.environ[k]=str(THREADS)
 from pathlib import Path
@@ -37,7 +40,7 @@ def cold(path):
  finally:K.CloseHandle(h);K.VirtualFree(p,0,0x8000)
 def paths():return [Path(p) for p in json.loads((OUT/'manifest.json').read_text())['paths']]
 def init():
- corpus=json.loads((ROOT/'output/library-measurements/corpus.json').read_text());names=['DSC02767.ARW','DSC06615.ARW','2L1B8631.CR2','Fujifilm_X-E2S_DSCF6495.RAF','Nikon_D7500_DSC_3931.NEF','DJI_0071-2.DNG']
+ corpus=json.loads((ROOT/'output/library-measurements/corpus.json').read_text());names=['DSC01212.ARW','DSC06615.ARW','IMG_0114.CR2','DSCF6495.RAF','DSC_3931.NEF','DJI_0071-2.DNG']
  originals=[Path(next(r['path'] for r in corpus['rows'] if Path(r['path']).name==n)) for n in names]
  # Corpus tops out at 48 MP and contains no additional camera brand.
  extra=[Path(r['path']) for r in corpus['rows'] if Path(r['path']).suffix.lower() in ('.arw','.cr2','.nef','.raf') and not r.get('error') and Path(r['path']) not in originals]

@@ -4,7 +4,7 @@
  * Run through the disposable-profile Electron harness:
  *
  *   node tests/run-in-electron.js tests/performance/heavy-project-baseline.js \
- *     --project "D:\\Photos\\Play_Raw\\Fantastic light over village - AdamFromCanada\\DSC00950.hdrfinisher"
+ *     --project "D:\\Photos\\HDR Test Images\\Projects\\DSC00950.hdrfinisher"
  *
  * The driver opens the project through the desktop grant path and never saves
  * it. The Electron harness discards the in-memory document when it terminates.

@@ -11,6 +11,6 @@ const fs=require('fs');
   const meta=await HDRLibraryScenes.load(path,640,undefined,0);
   await meta.directScene?.store();HDRLibraryGpuRaw.forgetDirect();
   return {peakBytes:meta.gpu_memory_peak_bytes,events:events.filter(e=>/picture_development$/.test(e.name)),admissionCalls:requests.length,maxAdmissionMs:Math.max(...requests)};
- },process.argv[2] || require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos/2024/02/_DSC3289_DxO.jpg'));
+ },process.argv[2] || require('../tests/helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/_DSC6328.jpg'));
  fs.writeFileSync('output/big-folder/'+(process.argv[2]?'raw':'jpeg')+'-isolated.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));
  }finally{await browser.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

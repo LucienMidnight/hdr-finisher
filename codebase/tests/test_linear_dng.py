@@ -163,20 +163,20 @@ def test_changed_file_fingerprint_rejects_before_decode(tmp_path: Path) -> None:
 
 
 def test_real_local_corpus_routes_when_present() -> None:
-    root = Path("local-test-media/inputs/linear-dng")
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+    from lib.test_photos import photo_root
+    root = photo_root()
     if not root.exists():
-        pytest.skip("Ignored private Linear DNG corpus is not present.")
+        pytest.skip("Shared HDR Test Images corpus is not present.")
     expected = {
-        "2018-05-26-11-35-40_NECTA0000_fbcb8f8f1d37db8bf93c0d46fb748355c01b7f8b.dng": DngRoute.LINEAR_DNG,
-        "DSC06885_DxO.dng": DngRoute.LINEAR_DNG,
-        "DSC06885_DxO-neutral.dng": DngRoute.LINEAR_DNG,
-        "lightroom-classic-DNG-test-1.dng": DngRoute.MOSAICED_RAW_DNG,
-        "DSC01204_ACR_Linear.dng": DngRoute.LINEAR_DNG,
-        "DJI_0071-2-HDR.dng": DngRoute.LINEAR_DNG,
-        "DJI_0071.DNG": DngRoute.MOSAICED_RAW_DNG,
-        "DJI_0072.DNG": DngRoute.MOSAICED_RAW_DNG,
+        "DSC04375_DxO-optical-corr-only.dng": DngRoute.LINEAR_DNG,
+        "DJI_0071-2.DNG": DngRoute.MOSAICED_RAW_DNG,
+        "Leica-X2-L1021324.DNG": DngRoute.MOSAICED_RAW_DNG,
     }
-    for path in root.rglob("*.[dD][nN][gG]"):
+    for name in expected:
+        path = root / name
+        assert path.is_file(), f'Missing curated DNG: {path}'
         inspection = inspect_dng(path, resource_snapshot=RESOURCES)
         assert inspection.route is expected[path.name], (path, inspection.rejection)
 

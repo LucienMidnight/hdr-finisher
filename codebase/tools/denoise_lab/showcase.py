@@ -19,10 +19,10 @@ from .methods import AtrousWiener, NlmReference
 from .run import SWEEPS
 
 OUT = corpus.ROOT / "output" / "denoise_lab" / "showcase"
-SHOWCASE = (("taipei-signs", "processed-strong"), ("beach-sky-tree", "raw-high-iso"), ("taipei-street", "processed-mild"))
-# The real, un-synthesised crop from the Show noise mockup (DSC06898 at 1:1),
+SHOWCASE = (("landscape-right", "processed-strong"), ("landscape-upper", "raw-high-iso"), ("landscape-left", "processed-mild"))
+# Curated landscape crop; not the historical DSC06898 Show noise mockup.
 # at the mockup's +1.5 EV view and the shipping controls at Amount 100%.
-REAL_CROP = ("Affinity_DSC06898_DisplayP3_Linear_32f.exr", 4080, 2400, 800, 1200)
+REAL_CROP = ("A7R00619.exr", 4080, 2400, 800, 1200)
 REAL_EXPOSURE = 2 ** 1.5
 NOISE_VIEW_GAIN = 6.0
 CROP = 320  # a 1:1 window from the middle of each case

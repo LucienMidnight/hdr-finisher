@@ -1,19 +1,19 @@
 const reusePhoto=require('./helpers/reuse-test-photo.cjs');
-// Real saved RAW: opting in corrects DSC07060 for export and Proof.
+// Real saved RAW: opting in corrects DSC04375 for export and Proof.
 const {chromium}=require("playwright");
 const fs=require("node:fs"),path=require("node:path"),assert=require("node:assert/strict");
 const {execFileSync,execFile}=require("node:child_process");
 const execute=require("node:util").promisify(execFile);
 const output=path.resolve(__dirname,"../output/gpu-delivery-ceiling",String(Date.now()));
 fs.mkdirSync(output,{recursive:true});
-const original=process.env.HDR_CEILING_RAW||reusePhoto.source("DSC07060.ARW");
+const original=process.env.HDR_CEILING_RAW||reusePhoto.source("DSC04375.ARW");
 const source=reusePhoto(original,path.join(output,path.basename(original)));
 const python=require('../tools/lib/platform.cjs').pythonExecutable();
 const pythonEnv={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
 const document=JSON.parse(execFileSync(python,["-c",
   "import sys,json;from pathlib import Path;from hdr_finisher.projects import validate_saved_document;print(validate_saved_document(json.loads(Path(sys.argv[1]).read_text())['grade']).model_dump_json())",
   process.env.HDR_CEILING_RAW?reusePhoto.source(original+".hdrf")
-    :reusePhoto.savedGrade("DSC07060.ARW.hdrf","gpu-delivery-ceiling")],{env:pythonEnv,encoding:"utf8"}));
+    :reusePhoto.savedGrade("DSC04375.ARW.hdrf","gpu-delivery-ceiling")],{env:pythonEnv,encoding:"utf8"}));
 document.source.durable_path=source;
 assert.equal(document.global_adjustments.hdr.highlight_section_enabled,true);
 const target=document.global_adjustments.hdr.highlight_compression_target_nits;

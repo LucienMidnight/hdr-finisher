@@ -18,7 +18,7 @@ function argument(name, fallback = null) {
 
 (async () => {
   const url = argument("--url", process.env.HDR_FINISHER_URL || "http://127.0.0.1:8000");
-  const input = path.resolve(argument("--input", "local-test-media/inputs/Darktable-highlight-reconstruction_DSC06451.exr"));
+  const input = path.resolve(argument("--input", require('../helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/A7R00619.exr')));
   const zooms = argument("--zooms", "fit,50,100,200").split(",");
   const outputDirectory = path.resolve(argument("--output", "output/halation-map-zoom"));
   fs.mkdirSync(outputDirectory, { recursive: true });

@@ -4,9 +4,10 @@ const root=path.resolve(__dirname,'..'),out=path.join(root,'output/batch5a');fs.
 const phase=process.env.HDR_BATCH5A_PHASE||'after';
 const profile=process.env.HDR_FINISHER_ELECTRON_TEST_USER_DATA;
 if(profile && !/[\\/]test-[^\\/]+$/.test(profile))throw Error('Use a disposable test- profile (also isolates the Library cache).');
-const photos=['library-live-grid/DSC07060.ARW','library-mixed-v1-run/Nikon_D7500_DSC_3931.NEF','hdr-test/DSC04375_DxO_clipped_target.tif'].map(p=>path.join(root,'output/test-photos',p)).filter(p=>!process.env.HDR_BATCH5A_PHOTO || p.endsWith(process.env.HDR_BATCH5A_PHOTO));
+const reusePhoto=require('./helpers/reuse-test-photo.cjs');
+const photos=['DSC00264.ARW','DSC_3931.NEF','DSC04375_DxO_clipped_target.tif'].map(name=>reusePhoto(reusePhoto.source(name),path.join(out,name))).filter(p=>!process.env.HDR_BATCH5A_PHOTO || p.endsWith(process.env.HDR_BATCH5A_PHOTO));
 (async()=>{const backups=new Map();let browser;try{
- const template=JSON.parse(fs.readFileSync(path.join(root,'output/test-photos/library-live-grid/DSC07060.ARW.hdrf'),'utf8'));
+ const template=JSON.parse(fs.readFileSync(reusePhoto.source('DSC00264.ARW.hdrf'),'utf8'));
  for(const photo of photos.filter(p=>/\.(ARW|NEF)$/.test(p))){
   const sidecar=photo+'.hdrf',bytes=fs.existsSync(sidecar)?fs.readFileSync(sidecar):null;backups.set(sidecar,bytes);
   const document=bytes?JSON.parse(bytes):{...template,source:{filename:path.basename(photo)}};

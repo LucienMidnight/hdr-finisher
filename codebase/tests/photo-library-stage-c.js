@@ -118,7 +118,7 @@ fs.mkdirSync(path.join(folder, "z-subfolder"));
   await library.waitForFunction(() => document.querySelector("#picker-list .directory-browser-entry"));
   assert.ok(await library.locator("#picker-list .directory-browser-entry").first().evaluate(element => element.classList.contains("directory")), "Subfolders appear before files");
   await library.locator("#picker-cancel").click();
-  const samples = [require('./helpers/photos-root.cjs').photosPath("D:/Photos/HDR Test Images/DSC00264.ARW"), require('./helpers/photos-root.cjs').photosPath("D:/Photos/HDR Test Images/DJI Samples/DSC00264_DxO-optical-corr-only.dng"), require('./helpers/photos-root.cjs').photosPath("D:/Photos/HDR Test Images/Test Suite Images/iphone_16_pro_IMG_3324.HEIC")].map(file => photosPath(file));
+  const samples = [require('./helpers/photos-root.cjs').photosPath("D:/Photos/HDR Test Images/DSC00264.ARW"), require('./helpers/photos-root.cjs').photosPath("D:/Photos/HDR Test Images/DSC04375_DxO-optical-corr-only.dng"), require('./helpers/photos-root.cjs').photosPath("D:/Photos/HDR Test Images/iphone_16_pro_IMG_3324.HEIC")].map(file => photosPath(file));
   if (samples.every(source => fs.existsSync(source))) {
    const copied = path.join(root,"output","test-photos","stage-c");
    const reusable = copied;

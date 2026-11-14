@@ -26,19 +26,22 @@ from dataclasses import dataclass
 import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-MEDIA = ROOT / "local-test-media" / "inputs"
-CACHE = ROOT / "output" / "denoise_lab" / "corpus"
+import sys
+sys.path.insert(0, str(ROOT / 'tools'))
+from lib.test_photos import photo_root
+MEDIA = photo_root()
+CACHE = ROOT / "output" / "denoise_lab" / "curated-corpus"
 LUMA = np.array([0.2722287, 0.6740818, 0.0536895], dtype=np.float32)
 
 # (name, source file, y0, x0, size in source pixels, downsample factor)
 # 8x box downsampling cuts the source's own grain by 8, which keeps it well
 # below the added noise; ``reference_grain_ratio`` checks that per case.
 CROPS = (
-    ("beach-sand-plant", "Affinity_DSC06898_DisplayP3_Linear_32f.exr", 2848, 0, 5120, 8),
-    ("beach-sky-tree", "Affinity_DSC06898_DisplayP3_Linear_32f.exr", 0, 200, 5120, 8),
-    ("taipei-signs", "Darktable-highlight-reconstruction_DSC06451.exr", 0, 2860, 5120, 8),
-    ("taipei-street", "Darktable-highlight-reconstruction_DSC06451.exr", 200, 0, 5120, 8),
-    ("blender-render", "Blender_5.2_TestScene_LinearRec709_32f.exr", 14, 14, 512, 1),
+    ("landscape-lower", "A7R00619.exr", 180, 0, 5120, 8),
+    ("landscape-upper", "A7R00619.exr", 0, 200, 5120, 8),
+    ("landscape-right", "A7R00619.exr", 0, 2800, 5120, 8),
+    ("landscape-left", "A7R00619.exr", 180, 0, 5120, 8),
+    ("blender-render", None, 14, 14, 512, 1),
 )
 
 
@@ -75,6 +78,8 @@ def clean_references() -> dict[str, np.ndarray]:
     result: dict[str, np.ndarray] = {}
     sources: dict[str, np.ndarray] = {}
     for name, filename, y0, x0, size, factor in CROPS:
+        if filename is None:
+            raise FileNotFoundError('Steve to supply: a noise-free linear EXR render, at least 540 x 540, in HDR Test Images; denoise render-reference coverage is unavailable.')
         path = CACHE / f"clean-{name}.npy"
         if not path.exists():
             if filename not in sources:

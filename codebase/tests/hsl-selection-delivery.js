@@ -13,7 +13,7 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
  &&state.acceptedPresentation.generation===state.previewGeneration[state.currentView]&&viewerState().status==='ready';
 (async()=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'hsl-selection-delivery-'));
- const original=photosPath('D:/Photos/Play_Raw/Balanced Rock in Arches Nat Park - LaurentFromSF/IMG_0114.CR2');
+ const original=photosPath('D:/Photos/HDR Test Images/IMG_0114.CR2');
  const photos=path.resolve('output/test-photos');fs.mkdirSync(photos,{recursive:true});
  const photo=path.join(photos,'IMG_0114.CR2');if(!fs.existsSync(photo))fs.copyFileSync(original,photo);
  const browser=await chromium.launch(),page=await browser.newPage(),base=process.env.HDR_FINISHER_URL||'http://127.0.0.1:8765';

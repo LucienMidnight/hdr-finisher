@@ -4,6 +4,7 @@
  * HDR_FINISHER_ELECTRON_TEST_USER_DATA to output/big-folder/measurement-profile
  * (an absolute path). No deletion is confirmed.
  * Stop on the owner's 4 GB / approximately one-second validation gate. */
+if(process.platform!=='win32'){console.log('Skipped: PC-only whole-personal-library folder-scale measurement.');process.exit(0);}
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os');
 const {spawn} = require('node:child_process');
 const {chromium} = require('playwright');

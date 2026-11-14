@@ -33,7 +33,10 @@ ai/
     product/                Sprint plans and completion records
 ```
 
-Keep automated tests under `codebase/tests/`, private test media under `codebase/local-test-media/`, and generated evidence under `codebase/output/`.
+Keep automated tests under `codebase/tests/`, real test photos in the shared
+`<photosRoot>/HDR Test Images` folder, and generated evidence under
+`codebase/output/`. `local-test-media/` retains protected projects and historical
+non-photo assets, not new photographic inputs.
 
 Frontend scripts use the existing shared page scope and fixed script order.
 Register each new file in `frontend/index.html`. Update the [code map](code-map.md)
@@ -176,7 +179,18 @@ Do not use screenshots alone to approve color math. Conversely, numerical equali
 ## Manual media and generated evidence
 
 - Small deterministic machine fixtures: `codebase/tests/fixtures/`
-- Private photographs/large EXRs: `codebase/local-test-media/inputs/`
+- Private photographs/large EXRs: `<photosRoot>/HDR Test Images`; see
+  [the approved corpus](test-photos.md). Setup verifies all 50 files against
+  `codebase/tests/test-photos.manifest.json` (names, bytes and SHA-256).
+  From `codebase`, run `.venv/bin/python tools/check-test-photos.py` on Mac
+  or `.venv/Scripts/python.exe tools/check-test-photos.py` on Windows.
+- `library-mixed-v1` remains the default for quick Library checks while
+  `fix/library-8gb` measures it. Build/verify/run-copy v2 with
+  `python tools/library-mixed-fixture.py <command> --version=v2`; opt in with
+  `node tools/quick-library-check.cjs --folder=library-mixed-v2-run --label=<name>`.
+  Do not change defaults until the v1 before/after comparison is finished.
+- Personal-folder and dropped giant-file probes skip on Mac with an explicit
+  PC-only message. Protected projects are never rewritten to fix their paths.
 - Generated screenshots, exports, and reports: `codebase/output/`
 
 Generated output is disposable and must not be the only copy of a conclusion.

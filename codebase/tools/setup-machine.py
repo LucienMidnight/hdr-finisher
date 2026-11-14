@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 from lib.machine_settings import CODEBASE, settings, python_executable, photos_path
+from lib.test_photos import photo_root, verify_photos
 
 TOOLS = ('avifenc', 'avifdec', 'avifgainmaputil', 'ultrahdr_app')
 
@@ -81,7 +82,7 @@ def native_tools(config):
 
 
 def report(config):
-    missing = []
+    missing = verify_photos(photo_root(config))
     for key in ('photosRoot', 'testFixturesRoot', 'sharedTestPhotos', 'sharedLocalTestMedia'):
         if not Path(config[key]).exists():
             missing.append(f'{key}: {config[key]}')
@@ -112,6 +113,11 @@ def report(config):
                 if isinstance(node, ast.Constant) and isinstance(node.value, str) and re.match(r'D:[/\\]+Photos(?:[/\\]|$)', node.value, re.I):
                     references.add(re.sub(r'\\+', '/', node.value))
     for value in sorted(references):
+        if not value.startswith('D:/Photos/HDR Test Images'):
+            if value.rstrip('/') == 'D:/Photos':
+                continue
+            if os.name != 'nt' and value.startswith(('D:/Photos/2026/20261017 badminton', 'D:/Photos/2017/Aceh-Wedding/Pesta', 'D:/Photos/2023/11')):
+                continue
         file = Path(photos_path(value))
         if not file.exists():
             missing.append(f'Photo dependency: {value}')
