@@ -333,6 +333,11 @@
     footer.before(libraryStatusRow);
     libraryStatusObserver.observe(footer);
     libraryStatusObserver.observe(libraryStatusRow);
+    // A modal in the iframe cannot cover an overlay in its parent document.
+    // Keep the reserved row, but remove that overlay until the modal closes.
+    new MutationObserver(placeStatusDock).observe(doc.body, {
+      attributes: true, attributeFilter: ["open"], childList: true, subtree: true,
+    });
     placeStatusDock();
   }
   libraryFrame.addEventListener("load",prepareLibraryStatus);
@@ -341,6 +346,8 @@
     const inLibrary = document.body.dataset.workflow==="import";
     if(libraryStatusRow)libraryStatusRow.hidden=!inLibrary || document.body.classList.contains("library-review");
     statusDock.classList.toggle("library-status-dock",inLibrary);
+    statusDock.style.visibility = inLibrary && libraryFrame.contentDocument?.querySelector("dialog:modal")
+      ? "hidden" : "";
     const panel = $("batch-grid-panel");
     if(inLibrary && libraryStatusRow){
       if(statusDock.parentElement!==libraryHost)libraryHost.append(statusDock);

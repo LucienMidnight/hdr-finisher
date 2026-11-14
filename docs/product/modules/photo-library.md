@@ -9167,3 +9167,11 @@ Node logs, compact diagnosis). Output remains below 0.1 GB in this worktree;
 disposable app profiles are removed by the harness.
 
 November 13, 2026 - Steve: one shared status and shortcuts bar on every page, directly above the Library footer with space reserved above it. It shows Ready when idle, export progress with Pause/Resume and Cancel icons, then completion. The Activity button no longer prefixes export progress; the panel retains export controls and results. Implementation is in the working tree, awaiting commit and visual approval.
+
+## November 14: Library modal actions and shared status bar
+
+The parent-page shared status bar is hidden while a modal is open inside the
+Library iframe, preserving its reserved row. Otherwise the parent overlay
+intercepts clicks on the expanded Paste Grade dialog at the MacBook window
+size, even though the dialog is modal inside its own document. The existing
+grade-paste driver exercises real clicks, saved grades, redraw and Undo.
