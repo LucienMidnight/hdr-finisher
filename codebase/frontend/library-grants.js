@@ -69,7 +69,7 @@
         }
       }
     }
-    function snapshot(){return {grade,jobs:[...jobs.values()].map(j=>({...j.status,path:j.path,state:j.granted?"running":"waiting",stage:j.granted?"Developing photo":waitingText(j.status)}))};}
+    function snapshot(){return {visible,grade,jobs:[...jobs.values()].map(j=>({...j.status,path:j.path,state:j.granted?"running":"waiting",stage:j.granted?"Developing photo":waitingText(j.status)}))};}
     return {acquire,finish,run,snapshot,gpuLost(){for(const j of [...jobs.values()])if(j.gpu_bytes&&j.started){j.connection.abort();finish(j,"cancelled");}},gpuDone(id){const j=jobs.get(id);if(!j)return Promise.reject(cancelled());return new Promise((resolve,reject)=>{j.saveResolve=resolve;j.saveReject=reject;send({type:"gpu-done",id});});},visibility(value){visible=!!value;send({type:"visibility",visible});},viewport(paths){screenOrder=new Map(paths.map((p,i)=>[p,i]));for(const j of jobs.values())send({type:"priority",id:j.id,priority:j.priority,order:j.front?-1:screenOrder.get(j.path)});},release(id){const job=jobs.get(id);if(job)finish(job);},wait(id,signal){return new Promise((resolve,reject)=>{const stop=()=>{signal?.removeEventListener("abort",stop);reject(cancelled());};signal?.addEventListener("abort",stop,{once:true});if(signal?.aborted)stop();});},promote(path,priority,edge=null){for(const j of jobs.values())if(j.path===path&&(edge===null||j.edge===edge)&&j.priority!==priority){j.priority=priority;send({type:"priority",id:j.id,priority});}},close(){closed=true;clearTimeout(reconnect);clearInterval(heartbeat);for(const j of [...jobs.values()]){finish(j,"cancelled");j.connection.abort();j.reject(cancelled());}channel?.close();}};
   }
   function waitingText(value){
@@ -91,8 +91,10 @@
     const visibility=()=>root.HDRLibraryGrants.visibility(nativeVisible&&root.document.visibilityState!=="hidden");
     const desktop=root.hdrFinisherDesktop||root.parent?.hdrFinisherDesktop;
     const nativeState=value=>{nativeVisible=value.visible!==false;visibility();};
-    desktop?.onWindowStateChanged?.(nativeState);
-    desktop?.getWindowState?.().then(nativeState).catch(()=>{});
+    let nativeEvents=0;
+    desktop?.onWindowStateChanged?.(value=>{nativeEvents++;nativeState(value);});
+    const requestedAt=nativeEvents;
+    desktop?.getWindowState?.().then(value=>{if(nativeEvents===requestedAt)nativeState(value);}).catch(()=>{});
     if(root.document.visibilityState==="hidden")visibility();
     root.document.addEventListener("visibilitychange",visibility);
     root.addEventListener("pagehide",()=>root.HDRLibraryGrants.close());

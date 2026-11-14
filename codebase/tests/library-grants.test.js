@@ -217,3 +217,17 @@ test('quick admission uses the requested camera-picture edge',async()=>{
  assert.equal(ask.edge,640);assert.equal(ask.kind,'quick');
  sockets[0].receive({type:'granted',id:ask.id});assert.equal(await work,true);grants.close();
 });
+
+for(const visible of [true,false])test(`new native visibility ${visible} wins over a stale startup snapshot`,async()=>{
+ const vm=require('node:vm'),fs=require('node:fs'),path=require('node:path');
+ let native,resolveSnapshot;
+ const root={document:{visibilityState:'visible',addEventListener:()=>{}},crypto:require('node:crypto').webcrypto,
+  dispatchEvent:()=>{},addEventListener:()=>{},hdrFinisherDesktop:{onWindowStateChanged:fn=>native=fn,
+   getWindowState:()=>new Promise(resolve=>resolveSnapshot=resolve)}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../frontend/library-grants.js'),'utf8'),{
+  window:root,location:{origin:'http://local'},DOMException,AbortController,Event,
+  setTimeout,clearTimeout,setInterval:()=>null,clearInterval});
+ native({visible});resolveSnapshot({visible:!visible});await tick();
+ assert.equal(root.HDRLibraryGrants.snapshot().visible,visible);
+ root.HDRLibraryGrants.close();
+});

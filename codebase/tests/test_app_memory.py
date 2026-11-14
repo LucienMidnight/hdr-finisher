@@ -506,3 +506,39 @@ def test_memory_controller_and_scheduler_do_not_wait_for_album_marks_lock(tmp_pa
         finally:
             release.set()
         owner.result()
+
+
+def test_shortage_collects_unreachable_cycles_without_touching_live_pixels():
+    import gc
+    import weakref
+    import numpy as np
+    class Cycle:
+        pass
+    enabled = gc.isenabled()
+    gc.disable()
+    try:
+        live = np.arange(4096, dtype=np.float32).reshape(64, 64)
+        expected = live.copy()
+        dead = Cycle()
+        dead.self = dead
+        dead.pixels = np.empty((64, 64), dtype=np.float32)
+        reference = weakref.ref(dead)
+        del dead
+        assert reference() is not None
+        app_memory.collect_unused()
+        assert reference() is None
+        np.testing.assert_array_equal(live, expected)
+    finally:
+        if enabled:
+            gc.enable()
+
+
+def test_native_collection_is_reserved_for_explicit_shortage(monkeypatch):
+    calls = []
+    monkeypatch.setattr(app_memory, 'collect_unused', lambda: calls.append(True))
+    app_memory.reclaim('moderate', 0)
+    app_memory.reclaim_all('critical')
+    assert not calls
+    app_memory.reclaim('shortage', 0)
+    app_memory.reclaim_all('shortage')
+    assert len(calls) == 2

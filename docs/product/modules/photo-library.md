@@ -32,6 +32,10 @@ Implemented in this change, pending the final locked hardware capture:
   tables, an SDR reference, other structural refusals and native/full-source
   work retain their existing gates. Its approved source/GPU grants remain.
 
+Native visibility notifications now take precedence over an older asynchronous
+startup snapshot, so a shown window cannot be left at hidden-window priority
+by that race. Grant snapshots expose the effective visibility for diagnosis.
+
 No shader, processing arithmetic, finished-pixel tolerance, preview-quality
 threshold, reserve, app ceiling, cache share or disk allowance changes. Native
 import, Grade, export and Proof retain full-source DNG safety. Existing projects
