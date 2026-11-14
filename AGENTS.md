@@ -295,10 +295,10 @@ GitHub. This file is tracked in Git so both always have the same rules.
   performance-table row. Mac and PC numbers are separate baselines and are
   never compared with each other; judge a change by before and after on
   the same machine.
-- **Photos on the Mac** (November 13): every D:/Photos file the release
-  drivers use is copied except the two below. Setup lists missing
-  dependencies (including one-off measurement tools); name gaps rather than
-  skipping silently.
+- **Photos on the Mac** (November 14): the `HDR Test Images` and `Play_Raw`
+  folders are copied. Setup lists every missing photo dependency
+  (including one-off measurement tools); name gaps rather than skipping
+  silently, and ask Steve to copy what a driver needs.
   - **PC-only by Steve's choice:** the `2026/20261017 badminton` folder is
     too large for the Mac, so `library-fullscreen-raw.js`,
     `library-scroll-cache.js`, `library-stored-screen-preview.js` and
