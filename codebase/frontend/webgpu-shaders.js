@@ -424,6 +424,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     `vec4f(${[sigma,...weights].map(value=>Number(value).toPrecision(12)).join(",")})`).join(",\n");
 
   const SHADER_SOURCE = String.raw`
+    override interactiveGrain: bool = false;
     @group(0) @binding(0) var sourceTexture: texture_2d<f32>;
     @group(0) @binding(1) var<storage, read> p: array<f32>;
     @group(0) @binding(2) var<storage, read> curveLuts: array<f32>;
@@ -1863,6 +1864,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
     fn filmGrainStops(rgb: vec3f, coordinate: vec2i, master: f32) -> vec3f {
       let scale = clamp(p[${GPU_PARAMS.SOURCE_PIXEL_SCALE}], 0.05, 1.0);
+      if (interactiveGrain) { return filmGrainSample(rgb, coordinate, master, vec2f(0.0), scale); }
       if (scale >= 1.0) { return filmGrainSample(rgb, coordinate, master, vec2f(0.0), 1.0); }
       let count = min(4u, u32(ceil(1.0 / scale)));
       var sum = vec3f(0.0);

@@ -36,6 +36,28 @@ film/lens native-encoder Proof/export identity cases pass without skips.
 The default plain-Electron Library smoke still fails on incomplete coverage:
 six of 33 pictures after 90 seconds, consistent with the existing Mac stall;
 no memory or responsiveness-limit violation. Not investigated or rerun here.
+## November 14: P1-B strict Mac validation
+
+No P1-B-specific output regression was found against `87b91385`; full direct
+lens/stock failure metrics and all six export-diagnostic encoded-file hashes
+match base. Existing failures remain failures: two stock cases, 60/128 direct
+lens cases, 8/8 quick-lens cases, Film panel keyboard fold, tiled admission/
+CPU-scope atomicity, and delivery-smoke worker startup. The non-gating
+`performance/export-parity.js` diagnostic records proof-scale peaks of
+1038–1437 nits for a 1000-nit target on both branches; a zero driver exit is
+not ceiling qualification. Full-size real-RAW HSL GPU/CPU delivery, exact Proof
+bytes and ceilings pass. Two original EXRs and the original DSC07060 saved
+grade are missing on this Mac; supplemental synthetic Film/halation tests do
+not qualify those originals. No tolerance or production shader was changed.
+The [Film Look PRD](product/modules/film-look.md) lists every covering driver,
+base verdict, exact missing filename and retained evidence. Final Film is
+still below 20 fps; Print and HSL timings moved outside 10%, with one warm
+100% Show selection at 1.079 s. Steve should try them before further timing
+runs. This is relative regression evidence, not unconditional merge/release
+or minimum-machine speed acceptance.
+The default 90-second quick Library check also fails identically on coverage
+(6/33 pictured on branch and base; no memory violation). Fast suites pass:
+958 Node tests (one skip), 3314 Python tests (145 skips, one existing xpass).
 
 ## November 13: POSIX cache-location fallback (reported; unchanged)
 

@@ -1,5 +1,66 @@
 # Module PRD: Grade
 
+## November 14: P1-B bounded Show selection stage
+
+Global HSL sampling now retains the pre-HSL CPU pixels, at most one entry per
+rendition, in the existing aggregate Grade array LRU. The 600 MB array cap is
+unchanged. Source replacement, geometry, processing scale, colour context and
+upstream controls invalidate it; HSL ranges, Show selection visibility, curves,
+Film Look and other downstream controls do not. HDR and SDR never share an
+entry. SDR authored-reference selection and its upstream highlight controls
+are included. Local picking keeps its existing stage-specific route.
+
+MacBook Neo, A18 Pro / 8 GB, 1408x794 points, reusable synthetic 24 MP TIFF,
+unpackaged Electron, shared GPU lock, no concurrent suites: the original paired
+warm SDR Show selection is 0.674–0.699 s at Fit and 0.749–0.801 s at 100%,
+against 0.684–0.700 / 0.766–0.799 s on base. The final-code clean pass on
+November 14 (`f542c0a8` plus test-harness repairs) is 0.783–0.798 s at Fit and
+0.899–1.079 s at 100%; range edits are 0.863 / 0.934 s, first shows
+1.455 / 1.465 s. This exceeds the agreed 10% timing band and one warm 100%
+show misses the <1 s target. The cause is not established; Steve should try
+it before another timing run. No visible speed gain or final HSL speed
+acceptance is claimed, and no speculative GPU-overlay route was added.
+The bounded cache removes repeated upstream evaluation without changing the
+selection engine or any preview, Proof or export processing.
+
+Validation: upstream/lane/reference/geometry/source-replacement/trim behavior
+tests; real GPU HSL selection-engine parity and reuse; real-RAW overlay
+containment and pan/zoom/section/workflow cleanup. The overlay driver now uses
+visible interface probes rather than PC-only coordinates, accepts the number
+of thumbnails the viewport actually admits, and reuses its single RAW copy.
+The final native selection engine, prototype, integration and real-RAW overlay
+checks pass. Global and local HSL GPU/forced-CPU full-size delivery also pass
+their existing perceptual allowances, encoded HDR ceilings and exact
+Proof/export byte identity. The full covering-driver/base-comparison ledger is
+in the Film Look PRD; the baseline worktree was separately prepared on this Mac.
+PC whole-wait confirmation and Steve's visual review remain open. Timings are
+in the performance table; final capture is
+`codebase/output/performance/p1bv/final-timing.json`, overlay review captures
+are in `codebase/output/hsl-smooth/`. No PC baseline is replaced.
+
+### P1-B Exposure after Denoise — not reproduced
+
+The existing anchor-needed/presentation listeners already queue exact highlight
+measurement in the background once the current Denoise frame has settled.
+This task makes no Denoise or anchor-scheduling production change. On the
+isolated MacBook synthetic 24 MP scene, the first Exposure result after Denoise
+took 27.7–36.1 ms before and 35.5–44.6 ms after the grouped preview changes.
+The driver waits for pending anchor work to finish before issuing Exposure,
+so these are idle-after-Denoise observations, not a check of an edit racing
+the background measurement. The reported extra anchor wait was not reproduced
+or ruled out. The difference exceeds the
+10% Grade timing tolerance and is unexplained. Per the responsiveness rule,
+do not chase another timing run before Steve tries the app.
+
+**Decisions for Steve:** try Exposure immediately after Denoise on a real RAW;
+if the pause is visible, capture that case before changing the existing
+background scheduler. Confirm the original PC case at the release point.
+Also try Show selection at 100% and Print Contrast after the unexplained
+final-pass timing changes above; do not rerun simply to get a nicer number.
+P1-B is not closed: Film remains below 20 frames/s, final HSL speed acceptance
+is incomplete, and original-fixture/output-limit gaps are listed in the Film
+Look module. No memory allowance or image tolerance changed.
+
 ## November 13–14: P1-C Edge-colour rejection safety
 
 The shared Edge-colour kernel now rejects a bad input scan immediately,

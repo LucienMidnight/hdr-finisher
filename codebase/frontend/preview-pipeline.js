@@ -5,6 +5,9 @@ function pacedPreviewInteraction(lane) {
   if (!state.previewScheduler?.interacting) return false;
   if (state.denoise?.[lane]?.enabled) return true;
   const branch = state.adjustments?.[lane];
+  const film = branch?.film_look;
+  if (film && branch.film_look_section_enabled !== false && (film.look_strength ?? 100) > 0
+    && (film.film_stock !== "none" || film.grain_amount > 0 || film.lens_filter !== "none")) return true;
   if (branch?.hsl_section_enabled !== false
     && branch?.hsl?.channels?.some(channel => HDRHSL.active(channel.recipe))) return true;
   return state.adjustments?.shared?.local_adjustments_enabled !== false
@@ -736,6 +739,7 @@ async function renderGpuDraftInner(
       result.processedLongEdge || longEdge,
       null,
       request.coarse,
+      result.approximate,
     );
     const exactEdge = refinementProxyLongEdge();
     const visibleEdge = Math.min(exactEdge, Math.max(1, displayedLongEdge()));

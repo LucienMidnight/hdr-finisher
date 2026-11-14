@@ -125,6 +125,7 @@ async function main() {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } finally {
     await app.close();
+    fs.rmSync(userDataPath, { recursive: true, force: true });
   }
 }
 
