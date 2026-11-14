@@ -349,7 +349,8 @@ speed comparison is finished. Still open:
 
 **PC confirmation from the 0.9.3 focused Mac release check (November 14):**
 
-The Mac remains NOT READY; these are follow-ups, not waivers. Full inventory,
+0.9.3 was released after the three Mac memory regressions in item 4 were fixed
+(`703e7e58`); the rest are follow-ups, not waivers. Full inventory,
 same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
 “Focused 0.9.3 release check on the minimum Mac”. Do not loosen guards.
 
@@ -357,9 +358,7 @@ same-Mac v0.9.2 comparisons and exact errors: `docs/known-limitations.md`,
    second; adaptive Denoise readback; generated-SDR peak reduction; and the
    extreme HDR Film case. Each reproduces on v0.9.2 on this Mac.
 4. Confirm zoomed Denoise, Film/Lens 4K-to-Full, repeated GPU delivery and live
-   Export tiles. v0.9.2 passes the first three on this Mac; current Full/GPU
-   admission or completion fails. Live tiles reach the failing Sony export
-   successfully on the tag, but its complete timing comparison was capped.
+   Export tiles on the PC. On the Mac these were fixed by `703e7e58` and pass.
 5. Confirm Grade Escape with Metadata open, Library Stage A real-format drawing,
    Stage C filter-clear drawing, native RAW Single, temporary recovery, live
    grid/native and precision-source preparation. Same-Mac tag comparisons

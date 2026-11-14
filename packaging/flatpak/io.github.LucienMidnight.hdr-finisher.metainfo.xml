@@ -31,6 +31,12 @@
   </categories>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.3" date="2026-11-14">
+      <description>
+        <p>Fixes problems found on 8 GB MacBooks, now the minimum supported machine: misread free memory, Full previews and graphics-card exports refused for lack of memory, and Grade controls blocked by the HSL picker.</p>
+        <p>Keeps HDR exports and Proof at or just below the Highlight Compression target, makes the Library faster and steadier on 8 GB machines, tidies panel borders and page tabs, and retires the Default Dark theme in favour of Modern Dark.</p>
+      </description>
+    </release>
     <release version="0.9.2" date="2026-11-11">
       <description>
         <p>Moves export and Proof onto the graphics card with a CPU fallback, adds Retouch Heal and Clone, hue-selection masks and preset management, and speeds up Library browsing, rename, move and delete.</p>

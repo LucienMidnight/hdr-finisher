@@ -52,7 +52,7 @@ deprecation warning remains. No push or merge is part of this correction.
 
 ## Focused 0.9.3 release check on the minimum Mac (November 14)
 
-**NOT READY.** All 105 drivers from the fresh focused selection were attempted,
+**Superseded for the three memory regressions** (fixed above; the remaining failures also occur on v0.9.2 or are fixture/tooling gaps). Original verdict: NOT READY. All 105 drivers from the fresh focused selection were attempted,
 using the runner's unfinished-work continuation after source-relinking held the
 first run open. Latest results across the committed revisions: **78 runner
 passes, three flaky, 24 failures, zero unattempted**. Four of the 78 passes are
