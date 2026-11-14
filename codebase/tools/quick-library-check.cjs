@@ -16,6 +16,7 @@ const gradeHandoffMode=process.argv.includes("--grade-handoff");
 const memoryDiagnostic=process.argv.includes('--memory-diagnostic');
 const gradeReturnMode=process.argv.includes('--grade-return')||memoryDiagnostic;
 const retentionMode=process.argv.includes('--retention')||gradeReturnMode;
+const survey=process.argv.includes('--survey');
 const singleMode=process.argv.includes('--single'),singleSteps=Number(arg('steps',10)),singlePace=Number(arg('pace',1500));
 // --back steps back over the same photos (same-session reopening); --hdr
 // switches the Library to its HDR rendition before Single opens.
@@ -102,6 +103,10 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     return [name,{files,entries}];
   }));
   const cacheBefore=cacheInventory();
+  const hostWorkload=()=>({at:new Date().toISOString(),loadAverage:os.loadavg(),cpus:os.cpus().length,processes:process.platform==='win32'?null:execFileSync('ps',process.platform==='darwin'?['-Ao','pid,ppid,%cpu,%mem,comm','-r']:['-Ao','pid,ppid,%cpu,%mem,comm','--sort=-pcpu'],{encoding:'utf8'}).split('\n').slice(0,21)});
+  const hostBefore=hostWorkload();
+  const cpuTimes=()=>os.cpus().reduce((sum,cpu)=>({idle:sum.idle+cpu.times.idle,total:sum.total+Object.values(cpu.times).reduce((a,b)=>a+b,0)}),{idle:0,total:0});
+  let previousCpu=cpuTimes();
   const logPath=path.join(profile,'logs/backend.log');
   let app,observer,stage='fixture',done=false;
   // Grade close writes a sidecar through its normal save gate. Restore copies too.
@@ -147,7 +152,7 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
         fs.renameSync(file,hidden);hiddenFiles.push([file,hidden]);
       }
     }
-    const config={virtualCopy:process.argv.includes("--virtual-copy"),detail:process.argv.includes("--detail"),thumbnailMemory:process.argv.includes("--thumbnail-memory"),timingOnly:process.argv.includes("--timing-only"),appStartedAt:Date.now(),warmupFolder:path.join(root,'output/test-photos/library-live-grid').replaceAll('\\','/'),startupWarm:process.argv.includes("--startup-warm"),noStartupWarm:process.argv.includes("--no-startup-warm"),coldPipelines:process.argv.includes("--cold-pipelines"),gradeNativeMemory:process.argv.includes("--grade-native-memory"),batch5c:process.argv.includes("--batch5c"),popout:process.argv.includes("--popout"),idle:process.argv.includes('--idle'),loseReservation:process.argv.includes('--lose-reservation'),fullscreen:process.argv.includes('--fullscreen'),busy:process.argv.includes('--busy'),pixelReviewOut:out,gradeHandoffSdr:process.argv.includes("--grade-handoff-sdr"),gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,back:process.argv.includes('--back'),hdr:process.argv.includes('--hdr'),redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
+    const config={survey,allFiles:process.argv.includes('--all-files'),virtualCopy:process.argv.includes("--virtual-copy"),detail:process.argv.includes("--detail"),thumbnailMemory:process.argv.includes("--thumbnail-memory"),timingOnly:process.argv.includes("--timing-only"),appStartedAt:Date.now(),warmupFolder:path.join(root,'output/test-photos/library-live-grid').replaceAll('\\','/'),startupWarm:process.argv.includes("--startup-warm"),noStartupWarm:process.argv.includes("--no-startup-warm"),coldPipelines:process.argv.includes("--cold-pipelines"),gradeNativeMemory:process.argv.includes("--grade-native-memory"),batch5c:process.argv.includes("--batch5c"),popout:process.argv.includes("--popout"),idle:process.argv.includes('--idle'),loseReservation:process.argv.includes('--lose-reservation'),fullscreen:process.argv.includes('--fullscreen'),busy:process.argv.includes('--busy'),pixelReviewOut:out,gradeHandoffSdr:process.argv.includes("--grade-handoff-sdr"),gradeHandoffPixels:process.argv.includes("--grade-handoff-pixels"),gradeHandoffPopout:process.argv.includes("--grade-handoff-popout"),gradeHandoff:gradeHandoffMode,memoryDiagnostic,gradeReturn:gradeReturnMode,retention:retentionMode,retentionFolder:path.join(root,"output/test-photos/library-live-grid").replaceAll("\\","/"),folder:folder.replaceAll('\\','/'),seconds,singleMode,steps:singleSteps,pace:singlePace,back:process.argv.includes('--back'),hdr:process.argv.includes('--hdr'),redisplay:process.argv.includes('--redisplay'),warm:process.argv.includes('--warm'),trace:process.env.HDR_FINISHER_QUICK_TRACE==='1',memoryProbe:process.argv.includes('--memory-probe'),diagnosticPhoto:process.env.HDR_FINISHER_QUICK_PHOTO||null};
     require('../tests/test-profile.cjs').assertDisposableProfile(profile,'quick-library-check');
     const configPath=path.join(profile,'quick-config.json');fs.writeFileSync(configPath,JSON.stringify(config));
     const [width,height]=(require('./lib/platform.cjs').machineSettings().windowSize).split('x').map(Number);
@@ -166,8 +171,8 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     observer.stdout.on('data',chunk=>{
       pending+=chunk;let end;
       while((end=pending.indexOf('\n'))>=0){const line=pending.slice(0,end);pending=pending.slice(end+1);if(!line)continue;
-        try{const sample=JSON.parse(line);sampleCount++;if(lastSampleAt!==undefined)sampleIntervals.push(sample.at-lastSampleAt);lastSampleAt=sample.at;
-          memory.sample(sample);fs.appendFileSync(memoryPath,line+'\n');}catch(error){observerError=String(error);}
+        try{const sample=JSON.parse(line);const cpu=cpuTimes(),elapsed=cpu.total-previousCpu.total;sample.cpuBusyPercent=elapsed>0?100*(1-(cpu.idle-previousCpu.idle)/elapsed):null;previousCpu=cpu;sampleCount++;if(lastSampleAt!==undefined)sampleIntervals.push(sample.at-lastSampleAt);lastSampleAt=sample.at;
+          memory.sample(sample);fs.appendFileSync(memoryPath,JSON.stringify(sample)+'\n');}catch(error){observerError=String(error);}
       }
     });
     const resultPath=path.join(profile,'quick-result.json');
@@ -194,6 +199,14 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     if(result.pixelReview&&result.pixelReview!==out)for(const name of fs.readdirSync(result.pixelReview))fs.copyFileSync(path.join(result.pixelReview,name),path.join(out,name));
     const text=fs.existsSync(logPath)?fs.readFileSync(logPath,'utf8'):'';fs.writeFileSync(path.join(out,'backend.log'),text);
     const freezes=freezeSummary(result.probe),failures=[];
+    const photoFacts=Object.fromEntries((result.visible_files||[]).map(file=>{
+      let saved_grade=false,sidecar_error;
+      try{saved_grade=!!JSON.parse(fs.readFileSync(file+'.hdrf','utf8')).grade;}catch(error){if(error.code!=='ENOENT')sidecar_error=String(error);}
+      return [file.replaceAll('\\','/'),{saved_grade,...(sidecar_error?{sidecar_error}:{})}];
+    }));
+    const diagnostics=require('./library-quick-metrics.cjs').photoDiagnostics(result.visible_files||[],result.events,result.opened_ms,text,result.grant_snapshot,result.work_snapshot,photoFacts);
+    fs.writeFileSync(path.join(out,'photos.json'),JSON.stringify(diagnostics,null,1));
+    fs.writeFileSync(path.join(out,'host.json'),JSON.stringify({before:hostBefore,after:hostWorkload()},null,1));
     if(gradeReturnMode){
       if(!result.grade_return||result.stage!=='done')result.errors.push('Grade return sequence did not complete');
       else {
@@ -228,8 +241,8 @@ function analyse(text, openedAt, events, openedPageAt, visibleFiles) {
     try{channels=JSON.parse(execFileSync(require('./lib/platform.cjs').pythonExecutable(),[path.join(__dirname,'library-channel-audit.py'),path.join(profile,'Cache')],{timeout:60000}).toString());}
     catch(error){channels={error:String(error.message||error)};}
     if(channels.one_channel_zero?.length||channels.all_channels_zero?.length)errors.push(`Zeroed colour channels in ${channels.one_channel_zero.length+channels.all_channels_zero.length} stored pictures`);
-    const report={label,acceptance_scope:config.gradeHandoffPixels?'42 MP visible-pixel hand-off':retentionMode?'whole-app retention (cadence recorded separately)':'Library quick check',folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
-      ...(config.gradeHandoffPixels?{}:analyse(text,result.opened_epoch_ms,result.events,result.opened_ms,result.visible_files)),grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,memory_diagnostic:result.memory_diagnostic,grade_handoff:result.grade_handoff,grade_return:result.grade_return,grade_return_saves:result.grade_return_saves,
+    const report={label,survey,acceptance_scope:config.gradeHandoffPixels?'42 MP visible-pixel hand-off':retentionMode?'whole-app retention (cadence recorded separately)':'Library quick check',folder:folderName??'library-mixed-v1-run',gpu_developments:process.env.HDR_FINISHER_LIBRARY_GPU_DEVELOPMENTS==='1'?1:2,stored_channels:channels,commit:execFileSync('git',['rev-parse','--short','HEAD'],{cwd:root}).toString().trim(),seconds,single_mode:singleMode,errors,
+      ...(config.gradeHandoffPixels?{}:analyse(text,result.opened_epoch_ms,result.events,result.opened_ms,result.visible_files)),by_type:diagnostics.by_type,grid_progress:result.grid_progress,redisplay:result.redisplay,freezes:{...freezes,failure:failures},single:result.single,memory_diagnostic:result.memory_diagnostic,grade_handoff:result.grade_handoff,grade_return:result.grade_return,grade_return_saves:result.grade_return_saves,
       visibility,
       independent_memory:{...memory.report(),samples:sampleCount,lastBytes:memory.last?.totalBytes,sampleIntervalMs:{requested:250,median:sampleIntervals[Math.floor(sampleIntervals.length/2)],maximum:sampleIntervals.at(-1)},grants_note:'External process census; no DevTools WebSocket instrumentation.'},observerError,
       picture_timing_clock:'Library performance.now()',stage:result.stage,scenario_ms:result.scenario_ms,harness_total_ms:Date.now()-harnessAt,harness_outside_scenario_ms:Date.now()-harnessAt-result.scenario_ms,cdp_attached:false};

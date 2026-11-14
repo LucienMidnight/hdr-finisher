@@ -1,5 +1,6 @@
 """Independent observer: stays alive even if the backend request thread stalls."""
 import json
+import os
 from pathlib import Path
 import sys
 import time
@@ -13,6 +14,6 @@ while True:
         rows=process_tree(root)
         if not rows:break
         memory=detect_memory_resources()
-        print(json.dumps(dict(availableBytes=memory.available_ram_bytes,totalRamBytes=memory.total_ram_bytes,systemReserveBytes=max(2_000_000_000,(memory.total_ram_bytes or 0)//10),at=time.time()*1000,processes=rows,totalBytes=sum(r['chargedBytes'] for r in rows),workingSetBytes=sum(r['workingSetBytes'] for r in rows))),flush=True)
+        print(json.dumps(dict(loadAverage=list(os.getloadavg()) if hasattr(os,"getloadavg") else None,availableBytes=memory.available_ram_bytes,totalRamBytes=memory.total_ram_bytes,systemReserveBytes=max(2_000_000_000,(memory.total_ram_bytes or 0)//10),at=time.time()*1000,processes=rows,totalBytes=sum(r['chargedBytes'] for r in rows),workingSetBytes=sum(r['workingSetBytes'] for r in rows))),flush=True)
         time.sleep(max(0, float(sys.argv[2])-(time.monotonic()-started)) if len(sys.argv) > 2 else .5)
     except (ProcessLookupError,PermissionError):break

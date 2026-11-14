@@ -1,3 +1,36 @@
+## November 14: 8 GB Library investigation (in progress)
+
+Measure on the MacBook Neo (A18 Pro, 8 GB unified RAM, six cores) under the
+shared GPU lock, with no own fast suite running during captures. Keep the
+2 GB system reserve, app ceiling, cache shares, per-route rates and GPU
+budgets unchanged. Use the existing 250 ms frame-gap limit and 5% timing
+tolerance, so ordinary run-to-run noise is not treated as a regression.
+Separate folder eligibility, actual viewport demand, first presentation,
+embedded/original/developed routes and admission waits. The ordinary check
+never scrolls; a separate scrolling survey must exercise the remaining types.
+No whole-folder speed or 8 GB acceptance claim follows from unrequested rows.
+
+**Paused at Steve's request, November 14.** WIP diagnostics only; no production
+scheduling, pixel route or budget change. Setup completed. The focused quick
+metrics tests pass (15); full fast suites and fresh GPU captures have not run.
+The queued `library-8gb-baselines` wrapper was stopped before acquiring the
+manual-test lock; it launched no Electron child. No test/build/setup process
+from this work remains running.
+
+Read-only review of the earlier `fixmem/scenario.json` finds six requested
+photos, all six shown, and 27 off-screen rows never requested. The normal
+filter excludes the fixture's SDR/AVIF/JXL/HEIC formats: 50 physical photos,
+33 default-filter rows. This explains the denominator, not full performance.
+
+Resume: run locked default and `--survey --all-files` baselines using the new
+per-photo/host diagnostics. The survey uses minimum thumbnail size and ordinary
+scrolling. Inspect `photos.json`, `host.json`, `memory.jsonl` and snapshots before
+choosing an app fix. `viewportCoverage` and its regression exist but are not yet
+wired into harness acceptance; the old whole-folder failure remains. Then make
+any measured fix within existing budgets, compare matching captures, run both
+full fast suites, update the performance table/known limitations and this status,
+and commit locally. Do not push or merge.
+
 ## November 14: native macOS file commands
 
 Original photo rename and move, same-volume folder rename/move, and confirmed

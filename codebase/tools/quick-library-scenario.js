@@ -13,9 +13,11 @@ async function scenario(config) {
   const probe = {started, frame_gaps:[], main_blocks:[], long_tasks:[], frames:0, hidden:document.hidden};
   const onVisibility=()=>{if(document.hidden)probe.hidden=true;};
   document.addEventListener('visibilitychange',onVisibility);
-  const gridProgress=[], gridSeen=new Set();let gridAt=started;
+  const gridProgress=[], gridSeen=new Set(),viewportSeen=new Map();let gridAt=started;
   const gridTimer=setInterval(()=>{
     for(const c of document.querySelectorAll('#grid-space canvas[data-picture-key]'))if(!c.hidden&&c.dataset.picturePath)gridSeen.add(c.dataset.picturePath);
+    const grid=document.getElementById('library-grid'),bounds=grid.getBoundingClientRect();
+    for(const cell of document.querySelectorAll('#grid-space .library-cell')){const r=cell.getBoundingClientRect();if(r.bottom>bounds.top&&r.top<bounds.bottom&&cell.dataset.path&&!viewportSeen.has(cell.dataset.path))viewportSeen.set(cell.dataset.path,performance.now());}
     gridProgress.push({at_ms:performance.now()-gridAt,shown:gridSeen.size,total:HDRLibrary.getSnapshot().total});
   },1000);
   let frameAt = performance.now(), timerAt = frameAt;
@@ -50,7 +52,8 @@ async function scenario(config) {
     mark('memory setting');
     const set=await fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:4e9})});
     if(!set.ok)throw Error('memory-setting: '+set.status);
-    const size=document.getElementById('thumbnail-size');if(size){size.value=300;size.dispatchEvent(new Event('input'));}
+    const size=document.getElementById('thumbnail-size');if(size){size.value=config.survey?size.min:300;size.dispatchEvent(new Event('input'));}
+    if(config.allFiles){localStorage.setItem('hdr-finisher:library-show-all-files','true');window.dispatchEvent(new StorageEvent('storage',{key:'hdr-finisher:library-show-all-files',newValue:'true'}));}
     // Opening a folder restores its own sort; selecting before browse is overwritten.
     localStorage.setItem('hdr-finisher:library-source-sorts',JSON.stringify({['folder:'+config.folder.replaceAll('\\','/').replace(/\/$/,'').toLowerCase()]:{sort:'name',descending:false}}));
     if(config.loseReservation){
@@ -152,6 +155,17 @@ async function scenario(config) {
         timing_note:'Library performance.now(): input dispatch to matching 2560 canvas update plus the next animation frame. No CDP. This measures compositor opportunity, not physical display scanout.'};
     }
     mark('observe');
+    if(config.survey){
+      // Visit every row through ordinary scrolling, without requesting hidden
+      // sources or changing the production viewport/cancellation rules.
+      await wait(()=>HDRLibrary.getSnapshot().total>0,10000);
+      const grid=document.getElementById('library-grid');
+      const pages=Math.max(1,Math.ceil(grid.scrollHeight/grid.clientHeight));
+      for(let page=1;page<pages;page++){
+        await sleep(Math.max(0,config.seconds*1000*page/pages-(performance.now()-openedAt)));
+        grid.scrollTop=page*grid.clientHeight;grid.dispatchEvent(new Event('scroll'));
+      }
+    }
     await sleep(Math.max(0,config.seconds*1000-(performance.now()-openedAt)));
     await frame();
     if(config.gradeHandoff){
@@ -362,7 +376,7 @@ async function scenario(config) {
       record.app_trace_starts_after_input_ms=app?Math.round(app.at-app.duration_ms-record.started_ms):null;
       record.app_event_after_presentation_ms=app?Math.round(app.at-record.presented_ms):null;
     }
-    return {visible_files:HDRLibrary.getSnapshot().paths,opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,virtual_copy:config.virtualCopyResult,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_return:config.gradeReturnResult,finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
+    return {visible_files:HDRLibrary.getSnapshot().paths,opened_ms:openedAt,opened_epoch_ms:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,browse_ms:performance.now()-openedAt,probe,grid_progress:gridProgress,virtual_copy:config.virtualCopyResult,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_return:config.gradeReturnResult,viewport_seen:[...viewportSeen].map(([path,at])=>({path,at})),work_snapshot:HDRLibraryScenes.snapshot(),grant_snapshot:HDRLibraryGrants.snapshot(),finished_snapshot:window.HDRLibraryFinishedThumbnails?.snapshot(),events,errors,stage:'done'};
   } catch(error) {
     return {opened_epoch_ms:openedAt===undefined?null:performance.timeOrigin+openedAt,scenario_ms:performance.now()-started,probe,grid_progress:gridProgress,virtual_copy:config.virtualCopyResult,single,redisplay,retention,memory_diagnostic:memoryDiagnostic,grade_handoff:config.gradeHandoffResult,grade_frame:config.gradeHandoff?parent.HDRGradeLibraryPictures?.getSnapshot():null,handoff_state:config.gradeHandoff?window.HDRLibraryGradeHandoffSnapshot?.():null,grade_return:config.gradeReturnResult,events,errors:[...errors,String(error.stack||error)],stage};
   } finally {

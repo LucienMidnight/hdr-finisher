@@ -639,7 +639,7 @@ class Scheduler:
     def _log(self, job, event, **extra):
         now = self.clock()
         fields = dict(request=job.id, owner=job.owner, path=job.path,
-            priority_class=job.cls, estimate_bytes=job.estimate, gpu_estimate_bytes=job.gpu_bytes, gpu_unified=job.gpu_unified, saving=job.saving,
+            kind=job.kind, priority_class=job.cls, estimate_bytes=job.estimate, gpu_estimate_bytes=job.gpu_bytes, gpu_unified=job.gpu_unified, saving=job.saving,
             alone=job.alone, floor=job.floor, measured_total_bytes=self.total,
             unmeasured_grant_bytes=sum(self._outstanding(j) for j in self.jobs.values() if j.granted is not None),
             measured_peak_bytes=job.peak, peak_scope="whole-app-increment",

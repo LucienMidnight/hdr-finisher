@@ -83,11 +83,45 @@ test('photo coverage includes every eligible photo, not just the pictured subset
  assert.equal(coverage(files,shown).complete,true);
  assert.equal(coverage([],shown).complete,false);
 });
+test('per-photo diagnostics separate unrequested files, memory waits and decode failures',()=>{
+ const {photoDiagnostics}=require('../tools/library-quick-metrics.cjs');
+ const files=['/camera/a.ARW','/camera/b.exr','/camera/c.raf','/camera/d.dng'];
+ const events=[{stage:'picture_work_waiting',path:files[0],at:200},
+  {stage:'picture_shown',path:files[0],at:700,reason:'camera picture'},
+  {stage:'picture_shown',path:files[0],at:1700,reason:'camera picture'},
+  {stage:'picture_work_waiting',path:files[1],at:200},
+  {stage:'picture_work_failed',path:files[1],at:500,reason:'decode failed'},
+  {stage:'picture_work_waiting',path:files[3],at:300}];
+ const log=[{request:'a',path:files[0],granted_at:1,wait_ms:20},
+  {request:'d',path:files[3],granted_at:null,wait_ms:60000,reason:'system reserve'}]
+  .map(d=>'[library] library_grant_completed '+JSON.stringify(d)).join('\n');
+ const result=photoDiagnostics(files,events,100,log,{jobs:[{path:files[3],reason:'system reserve'}]},{});
+ assert.equal(result.photos[0].first_picture_s,.6);
+ assert.equal(result.photos[0].request_to_picture_s,.5);
+ assert.equal(result.by_type.ARW.granted,1);
+ assert.equal(result.by_type.EXR.failures,1);
+ assert.equal(result.by_type.RAF.requested,0);
+ assert.equal(result.by_type.DNG.ungranted,1);
+ assert.deepEqual(result.by_type.DNG.wait_reasons,['system reserve']);
+ assert.equal(result.photos[3].pending_grants[0].reason,'system reserve');
+});
 test('same-named photos in different folders are counted separately',()=>{
  const {pictures,coverage}=require('../tools/library-quick-metrics.cjs');
  const files=['D:/one/a.jpg','D:/two/a.jpg'];
  const shown=pictures([{stage:'picture_shown',path:files[0],at:200}],100).shown;
  assert.deepEqual(coverage(files,shown),{eligible:2,pictured:1,complete:false,missing:[files[1]]});
+});
+test('viewport coverage excludes unvisited rows but still catches a visible photo never requested',()=>{
+ const {viewportCoverage}=require('../tools/library-quick-metrics.cjs');
+ const files=Array.from({length:33},(_,i)=>`/photos/${i}.arw`);
+ const seen=files.slice(0,6).map(path=>({path}));
+ const shown=new Map(files.slice(0,6).map(path=>[path,1]));
+ const result=viewportCoverage(files,seen,shown);
+ assert.equal(result.complete,true);assert.equal(result.eligible,6);
+ assert.equal(result.unvisited.length,27);
+ shown.delete(files[5]);
+ assert.deepEqual(viewportCoverage(files,seen,shown).missing,[files[5]]);
+ assert.equal(viewportCoverage(files,[],shown).complete,false);
 });
 test('hidden windows and absent frame evidence invalidate drawing-gap measurements',()=>{
  const {visibility}=require('../tools/library-quick-metrics.cjs');
