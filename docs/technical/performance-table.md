@@ -1,5 +1,23 @@
 # Performance table
 
+November 14 PC check after the Mac Phase 1 work (`85bba832`; **Windows PC**,
+dedicated GPU; 2560x1440 unpackaged Electron; shared GPU lock, checks run one
+at a time, no concurrent suites). First PC run of the Phase 1 drivers, so the
+Grade rows are a new PC baseline, not a comparison.
+
+| Action | Observed | Conditions / result |
+| --- | --- | --- |
+| Mixed Library 90-second smoke | First/ten pictures 5.6/7.6 s; 29/33 pictured; longest frame gap 236 ms | Drawing gap inside the 250 ms limit (earlier PC runs 649–1,758 ms). First picture well above the earlier isolated PC 0.8–1.2 s, unexplained; Steve to try Library. Same four photos not pictured as before. Peak 1.65 GB |
+| SDR Show selection, Fit cold / warm / range edit | 2.432 s / 0.370–0.388 s / 0.559 s | `grade-speed.js`, grade-24mp.tiff; warm passes <1 s |
+| SDR Show selection, 100% cold / warm / range edit | 0.086 s / 0.072–0.073 s / 0.071 s | Same driver |
+| Film Stock Color / Print Contrast / Grain Amount / lens Strength drag | 33.2 / 15.0 / 35.0 / 35.1 frames/s | SDR Fit; Print Contrast below the 20 frames/s target |
+| First Exposure after idle Denoise | 13.7–14.5 ms | Same driver, three observations |
+| GPU delivery ceiling, DSC04375 full export GPU / forced CPU | 29.1 / 103.7 s | `gpu-delivery-ceiling.js`; decoded peaks 1003.9 / 1009.3 nits, inside the 1% encoding allowance |
+| Library CPU fallback after GPU loss | 0.240 s | `library-gpu-recovery.js`; one recovery, then CPU |
+
+Evidence: `codebase/output/quick-library-check/pc-waiting-list/report.json`,
+`codebase/output/performance/p1b/pc.json`.
+
 November 14 mandatory HDR check, paired GPU cost (commit containing this
 record): **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM, 6 cores,
 1408×794-point unpackaged Electron; shared GPU lock. IMG_0114.CR2 and
@@ -99,7 +117,7 @@ qualification. No production rendering or performance improvement is claimed.
 | Lens caps, HDR editing lane / SDR editing lane | Accuracy result | MacBook Neo calibration; worst mean/p99.9 0.155865/1.134869 and 0.242057/1.181764; caps 0.161/1.155 and 0.248/1.202. Byte p99.9 remains ≤ 2 levels; the 68 strictly passing lens cases retain mean ≤ 0.1 levels. |
 | 1520-pixel GPU render / CPU reference stages | 0.291–5.054 s / 0.338–2.470 s | MacBook Neo; pooled full baseline and affected repeats, differing lens reaches and cold/warm work; not action-to-screen or a speed comparison. |
 | 2400-pixel GPU render / CPU reference stages | 0.217–3.873 s / 1.172–8.798 s | MacBook Neo; pooled full baseline and affected repeats, differing lens reaches and cold/warm work; not action-to-screen or a speed comparison. |
-| SDR Velvia caps | Accuracy result | MacBook Neo calibration; mean ≤ 0.125 / p99.9 ≤ 1.065. Same fixed caps on PC and Mac; PC confirmation is pending in AGENTS.md. |
+| SDR Velvia caps | Accuracy result | MacBook Neo calibration; mean ≤ 0.125 / p99.9 ≤ 1.065. Same fixed caps on PC and Mac; PC confirmed November 14 (Velvia mean 0.074 / p99.9 0.989; all 128 full lens and 8 quick cases pass). |
 | Final live quick lens set | 40.2 s | MacBook Neo; 8/8 pass the fixed caps with native Apple Metal, requested dimensions and opaque coverage; same eight cases also measured three times in calibration. |
 | Final live Velvia case | 51.8 s | MacBook Neo; 2/2 pass: HDR remains on its byte gate; SDR uses the fixed full-pixel caps. Native Apple Metal, no software fallback. |
 | Default Library first picture / coverage at 90 s | 0.6 s / 6 of 33 | MacBook Neo; same current branch, plain Electron, shared lock; system-reserve warning and incomplete coverage. Separate existing Library limitation, not parity acceptance; no investigation or rerun. |

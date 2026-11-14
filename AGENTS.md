@@ -333,30 +333,22 @@ item here once it is done (and commits that change with the work).
 
 **On the PC, after the first pull of the Mac work (November 14):**
 
-1. Run the setup command above (`setup.ps1`) once from the Git root. It
-   creates `hdr-finisher-machine.json` beside the checkout and checks the
-   tools; then re-run it after any pull that changes dependencies. Steve has
-   already moved the PC's old untracked `AGENTS.md` aside. After pulling the
-   test-photo manifest, run setup again to confirm the curated PC folder has
-   the same 50 names, sizes and SHA-256 hashes as the Mac. Do not rebuild v1
-   or switch its defaults until the Library speed comparison is finished.
-2. Check the shared GPU lock: two `gpu-run-lock.py` checks started together
-   must run one after the other, never overlapped.
-3. Library rename, move and delete on Windows, including an exFAT drive:
-   Recycle Bin, Undo and receipts still work after the macOS Trash change.
-4. Library: confirm the drawing gap the PC showed before is gone (P1-A
-   prepares GPU programs once; the gap never reproduced on the Mac).
-5. GPU safety (P1-C): Edge colour with real RAWs, and the Library's
-   one-recovery-then-CPU path after a lost GPU device.
-6. Export and Proof: HDR files land at or just below the Highlight
-   Compression target (the November 14 ceiling work), on the PC's GPU.
-7. Timings at 2560x1440 for the Phase 1 rows in
-   `docs/technical/performance-table.md`, compared only with earlier PC rows.
-8. Film/lens parity (Steve, November 14): run `lens-filter-parity.js`,
-   `lens-filter-quick-parity.js`, and `film-stock-parity.js --case "Velvia physical chain"`
-   on the PC GPU through the shared lock. Confirm the fixed perceptual limits
-   in `tests/helpers/film-parity-limits.cjs` pass, and strictly passing cases
-   still pass their original byte gates. Same limits on both machines.
+Checked November 14 on the PC; lock, file commands, drawing gap, Library
+GPU recovery, HDR ceiling and film/lens parity passed and are removed.
+Still open:
+
+1. Test photos: all 50 match the manifest, but setup reports an extra
+   `D:/Photos/HDR Test Images/manifest.json` (a copy of the manifest dropped
+   there on November 14). Steve removes it, then re-run setup. Do not rebuild
+   v1 or switch its defaults until the Library speed comparison is finished.
+2. Edge colour with real RAWs on the PC GPU: `edge-colour-raw.js` fails twice
+   with 55 and 54 invalid GPU pixels in Library development; the safety check
+   rejects them and uses the CPU. Matches Steve's November 13 decision 7 (PC
+   card suspected); keep until he decides.
+3. HSL picker timing on the PC: `tests/performance/hsl-picker-speed.js`
+   cannot run because its same-volume hardlinks fail on the exFAT D: drive
+   (`EISDIR` on `link`). Needs a tooling fix that still avoids per-run RAW
+   copies.
 
 ## Disk space and test output
 
