@@ -38,7 +38,9 @@ for row in data["rows"]:
             source_size=[session.image.shape[1], session.image.shape[0]],
             library_source_size=[meta.get("source_width"), meta.get("source_height")])
     sampled=None
-    for product in (row["large"],row["native"]):
+    if row.get("pictureOnly"):
+        assert row["native"] is None
+    for product in (() if row.get("pictureOnly") else (row["large"],row["native"])):
         if product is None:
             assert row.get('nativeMemoryRefusal') is True
             continue

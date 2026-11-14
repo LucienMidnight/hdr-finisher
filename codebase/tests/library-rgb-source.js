@@ -68,6 +68,10 @@ p.with_name(p.name+'.hdrf').write_text(json.dumps({'format':'HDR Finisher Photo'
 `,target],{cwd:root});
 const only=process.argv.includes('--only')?process.argv[process.argv.indexOf('--only')+1]:null;
 const cpuScene=process.argv.includes('--cpu-reference');
+// Finished 640-edge HDR/SDR pixels only; the default still covers native
+// transport, preemption and route timing as separate responsibilities.
+const pictureOnly=process.argv.includes('--picture-only');
+if(pictureOnly)sources=[];
 if(only){photos.splice(0,photos.length,...photos.filter(photo=>path.basename(photo)===only));sources=[];}
 // Protocol chosen before comparisons: matched photographic source set,
 // three cold-scene repeats per route, alternating order; OS cache uncontrolled.
@@ -78,7 +82,7 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
 }
 (async()=>{const browser=await chromium.launch();try{
  const page=await browser.newPage();page.on('console',m=>{if(m.type()==='warning'||m.type()==='error')console.log(m.text());});await page.goto(process.env.HDR_FINISHER_URL);await page.evaluate(()=>activateWorkflowTab('import'));
- const result=await page.locator('#library-frame').evaluate(async(element,{photos,cpuScene,isoRoute})=>{
+ const result=await page.locator('#library-frame').evaluate(async(element,{photos,cpuScene,isoRoute,pictureOnly})=>{
   const w=element.contentWindow,gpu=await w.HDRLibraryPictures.initialize(),original=gpu.renderTo,rows=[];
   if(cpuScene)w.localStorage.setItem("library-gpu-raw","off");
   let captured;
@@ -88,7 +92,7 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
   w.fetch=async(url,options)=>{
    const response=await originalFetch(url,options);
    if(isoRoute&&response.status===204&&String(url).includes('/api/library/live-scene'))fallbackReasons.push(response.headers.get('X-Library-Fallback'));
-   if(String(url).includes('/api/delivery/gpu/raw-budget/')&&options?.method==='POST'&&!JSON.parse(options.body).release&&++leases===15){
+   if(!pictureOnly&&String(url).includes('/api/delivery/gpu/raw-budget/')&&options?.method==='POST'&&!JSON.parse(options.body).release&&++leases===15){
     yielded=true;const value=await response.json();return new w.Response(JSON.stringify({...value,preempt:true}),{status:200,headers:{'Content-Type':'application/json'}});
    }
    return response;
@@ -105,8 +109,9 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
    // This numerical check reads stored native planes, rather than owning a viewer.
    // Use the existing diagnostic stored-scene route; selected native GPU retention
    // and hand-over are covered by library-live-native.
+   let native=null;
+   if(!pictureOnly){
    w.HDRLibraryProfileLegacy=true;
-   let native;
    try{native=await w.HDRLibraryScenes.load(photo,100000);}
    finally{w.HDRLibraryProfileLegacy=false;}
    const again=await w.HDRLibraryScenes.load(photo,100000);
@@ -115,6 +120,7 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
    // These direct API calls must do the same before starting a CPU reference.
    await native.directScene?.store();
    w.HDRLibraryGpuRaw.releaseNative();
+   }
    if(meta.gpu_memory_peak_bytes>meta.source_width*meta.source_height*44+64*1024*1024)throw Error('Memory reservation exceeded');
    for(const lane of ['hdr','sdr']){
     const canvas=w.document.createElement('canvas');w.document.body.append(canvas);
@@ -124,14 +130,14 @@ for(let repeat=0;repeat<3;repeat++)for(const source of sources)for(const mode of
     lanes[lane]=w.btoa(binary);canvas.remove();
    }
    await meta.directScene?.store();
-   rows.push({photo,meta,large,native,prepareMs,lanes});
+   rows.push({photo,meta,large,native,prepareMs,lanes,pictureOnly});
   }
-  gpu.renderTo=original;w.fetch=originalFetch;if(!yielded&&!cpuScene&&!isoRoute)throw Error("Preemption was not exercised");
+  gpu.renderTo=original;w.fetch=originalFetch;if(!yielded&&!cpuScene&&!isoRoute&&!pictureOnly)throw Error("Preemption was not exercised");
   // ca9740fb / Library PRD October 24: CPU reconstruction, GPU colour preparation.
   return {location,rows,yielded,fallbackReasons};
- },{photos,cpuScene,isoRoute});
+ },{photos,cpuScene,isoRoute,pictureOnly});
  if(isoRoute)console.log("ISO gain maps reconstruct on CPU, then use GPU colour preparation and finished drawing.");
- if(!cpuScene&&!isoRoute)console.log("RGB source preemption yielded and resumed without CPU fallback.");
+ if(!cpuScene&&!isoRoute&&!pictureOnly)console.log("RGB source preemption yielded and resumed without CPU fallback.");
  const timing=await page.locator('#library-frame').evaluate(async(element,cases)=>{
   const w=element.contentWindow,rows=[];
   for(const item of cases){
