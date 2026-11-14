@@ -49,6 +49,14 @@ test('HSL picker ignores a floating control over the visible picture', () => {
   assert.equal(pointer.stopped, undefined);
 });
 
+test('oversized photo and pane rectangles are both clipped by the scrolling dropzone', () => {
+  const { context, event } = setup();
+  context.els.previewPrimaryPane.getBoundingClientRect = () => context.activePreviewElement().getBoundingClientRect();
+  context.els.dropzone = { getBoundingClientRect: () => ({ left: 300, top: 100, right: 1100, bottom: 700 }) };
+  assert.equal(context.hslPoint(event(1200, 350)), null);
+  assert.equal(context.hslPoint(event(900, 600)).x, .5);
+});
+
 test('2x picker sends normalized coordinates and applies the returned colour to the selected channel', async () => {
   const { context, event } = setup();
   const recipe = HDRHSL.newRecipe();

@@ -23,25 +23,32 @@ const samples=await page.evaluate(()=>[document.querySelector('[data-group="hsl"
 assert.ok(samples.length>=2,'Visible interface probes outside the photo');
 const sample=()=>Promise.all(samples.map(p=>page.screenshot({clip:{...p,width:1,height:1}})));
 const show=()=>page.evaluate(async()=>{const ui=hslUI.panels[0];ui.host.querySelector('[data-hsl-selection]').setAttribute('aria-pressed','true');await hslSelection(ui);});
+const overlayReady=()=>page.waitForFunction(()=>{
+ const image=document.getElementById('hsl-selection-overlay');if(!image?.naturalWidth)return false;
+ const region=image.hslRegion,visible=typeof hslVisibleRect==='function'?hslVisibleRect():null;
+ return !region||!visible||region.x<=visible.x&&region.y<=visible.y&&region.x+region.width>=visible.x+visible.width&&region.y+region.height>=visible.y+visible.height;
+},null,{timeout:120000});
+const alignment=()=>page.evaluate(()=>{const image=document.getElementById('hsl-selection-overlay'),a=activePreviewElement().getBoundingClientRect(),b=image.getBoundingClientRect(),region=image.hslRegion||{x:0,y:0,width:1,height:1};return[Math.abs(a.left+region.x*a.width-b.left),Math.abs(a.top+region.y*a.height-b.top),Math.abs(region.width*a.width-b.width),Math.abs(region.height*a.height-b.height)];});
 for(const zoom of [113,'fit',100,75,125,'fit']){
  await page.evaluate(zoom=>{if(zoom==='fit')setZoomMode('fit');else setCustomZoom(zoom);},zoom);
  await page.waitForFunction(()=>state.acceptedPresentation?.exact&&viewerState().status==='ready',null,{timeout:120000});
  if(!await page.locator('#hsl-selection-overlay').count())await show();
+ await overlayReady();
  await page.evaluate(()=>document.getElementById('hsl-selection-overlay').style.visibility='hidden');const off=await sample();
  await page.evaluate(()=>document.getElementById('hsl-selection-overlay').style.visibility='');
  await page.waitForFunction(()=>document.getElementById('hsl-selection-overlay')?.naturalWidth>0,null,{timeout:120000});
  if(tag==='after')assert.deepEqual(await sample(),off,'Panels, toolbar and scopes are unchanged');
  await page.screenshot({path:path.join(out,`${tag}-overlay-${zoom}.png`)});
  if(tag==='after'){
-  const boxes=await page.evaluate(()=>{const a=activePreviewElement().getBoundingClientRect(),b=document.getElementById('hsl-selection-overlay').getBoundingClientRect();return ['left','top','width','height'].map(k=>Math.abs(a[k]-b[k]));});
+  const boxes=await alignment();
   assert.ok(boxes.every(v=>v<1),'Overlay follows the photo');
  }
  console.log('OVERLAY',zoom,await page.evaluate(()=>{const r=e=>{const b=e.getBoundingClientRect();return{x:b.x,y:b.y,width:b.width,height:b.height}};return {photo:r(activePreviewElement()),overlay:r(document.getElementById('hsl-selection-overlay'))};}));
 }
 if(tag==='after'){
  await page.evaluate(()=>{setCustomZoom(100);els.dropzone.scrollLeft+=137;els.dropzone.scrollTop+=181;});
- await page.waitForTimeout(100);
- const pan=await page.evaluate(()=>{const a=activePreviewElement().getBoundingClientRect(),b=document.getElementById('hsl-selection-overlay').getBoundingClientRect();return ['left','top','width','height'].map(k=>Math.abs(a[k]-b[k]));});assert.ok(pan.every(v=>v<1),'Active overlay follows pan');
+ await overlayReady();
+ const pan=await alignment();assert.ok(pan.every(v=>v<1),'Active overlay follows pan');
  await page.evaluate(async()=>{await switchLane('sdr');setZoomMode('fit');});await show();
  await page.waitForFunction(()=>document.getElementById('hsl-selection-overlay')?.naturalWidth>0);
  await page.screenshot({path:path.join(out,'after-sdr-fit.png')});

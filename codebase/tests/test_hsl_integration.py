@@ -10,6 +10,50 @@ from hdr_finisher.render_cache import SessionRenderCache
 from hdr_finisher.sdr_match import _semantic_sdr_translation, _translate_local_grade
 
 
+@pytest.mark.parametrize("scale", [.05, .2, .5, 1])
+@pytest.mark.parametrize("edge,feather", [(0, 0), (8, 16), (-8, 16)])
+@pytest.mark.parametrize("position", [(0, 0), (.31, .27), (.8, .8)])
+def test_selection_viewport_keeps_whole_frame_coverage(scale, edge, feather, position):
+    from hdr_finisher.hsl_sampling import HSLSelectionRect, selection_crop
+    from hdr_finisher.hsl_selection import prepare, select
+    pixels = np.random.default_rng(41).uniform(.001, 1, (180, 240, 3)).astype(np.float32)
+    recipe = HSLRecipe(ranges=[HSLRange(center=75, width=60, feather=20),
+                               HSLRange(center=110, width=12, feather=8, subtract=True)],
+                       edge=edge, edge_feather=feather, edge_detail=75)
+    rect = HSLSelectionRect(x=position[0], y=position[1], width=.2, height=.2)
+    (left, top, right, bottom), (start_x, start_y, end_x, end_y) = selection_crop(pixels.shape, rect, recipe, scale)
+    options = dict(edge=edge, edge_feather=feather, edge_detail=75)
+    whole = select(prepare(pixels, scale), recipe.ranges, **options)
+    cropped = select(prepare(pixels[start_y:end_y, start_x:end_x], scale, (start_x, start_y)), recipe.ranges, **options)
+    actual = cropped[top-start_y:bottom-start_y, left-start_x:right-start_x]
+    np.testing.assert_array_equal(np.rint(actual * 115).astype(np.uint8),
+                                  np.rint(whole[top:bottom, left:right] * 115).astype(np.uint8))
+
+
+@pytest.mark.parametrize("lane", list(PreviewKind))
+def test_viewport_overlay_decodes_to_the_original_overlay_pixels(lane):
+    import base64
+    from io import BytesIO
+    from PIL import Image
+    from hdr_finisher.hsl_sampling import HSLSelectionRect
+    image = np.random.default_rng(15).uniform(.01, 2, (150, 210, 3)).astype(np.float32)
+    cache = SessionRenderCache(image, None)
+    grade = AdjustmentState()
+    recipe = HSLRecipe(ranges=[HSLRange(center=75, width=60)], edge=3, edge_feather=8)
+    request = HSLSampleRequest(lane=lane, adjustments=grade, points=[{"x": .5, "y": .5}],
+                               edit_revision=0, selection_recipe=recipe)
+    def decode(result):
+        return np.asarray(Image.open(BytesIO(base64.b64decode(result['selection_overlay'].split(',')[1]))))
+    whole = decode(sample_stage(cache, request))
+    request.selection_rect = HSLSelectionRect(x=.3, y=.25, width=.2, height=.2)
+    result = sample_stage(cache, request)
+    region = result['selection_region']
+    left, top = round(region['x'] * whole.shape[1]), round(region['y'] * whole.shape[0])
+    actual = decode(result)
+    np.testing.assert_array_equal(actual, whole[top:top+actual.shape[0], left:left+actual.shape[1]])
+    assert actual.size < whole.size / 4
+
+
 @pytest.mark.parametrize("lane", list(PreviewKind))
 def test_global_stage_cache_reuses_only_the_upstream_recipe(lane):
     from hdr_finisher.hsl_sampling import capture_stage_input

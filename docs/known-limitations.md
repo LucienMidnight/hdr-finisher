@@ -1,5 +1,28 @@
 # Known Limitations and Support Status
 
+## November 14: HSL Mac picker and 100% selection
+
+An armed HSL picker can intercept controls underneath the offscreen part of
+the zoomed photograph. Reproduced against both plain-base and P1-B picker
+code and native app; 2x normalized coordinates and returned-colour application
+themselves work. Input is now scoped to the visible main preview. Native
+before/after checks cover plain and exact Steve-stacked DSC00264 grades,
+both renditions, and real on-photo picks. Global Show selection now uses a
+visible-area CPU crop with the full selection halo and lossless fast PNG;
+decoded cropped overlay pixels equal the original whole-frame coverage.
+All warm Fit/100% cases meet the existing <1 s bar on the MacBook Neo.
+Remaining limits: the first plain HDR Fit show is about 1.6 s; first SDR
+100% shows can exceed 1 s, and upstream SDR stage work still costs about
+half a second. These are not claimed fixed by the warm selection change.
+Export, Proof, selection maths, image tolerances and memory limits are unchanged.
+
+Final validation: Node 966 pass / one skip; Python 3,354 pass / 145 skip /
+one expected failure now passing. Native HSL selection-engine GPU/CPU agreement
+and real-RAW overlay/pan/zoom/cleanup checks pass. The required plain-Electron
+90 s Library check still fails separately: 6/33 eligible pictures and the
+system-reserve memory flag. It was not investigated or rerun for this HSL
+change; `codebase/output/quick-library-check/hsl-mac/report.json` records it.
+
 ## November 14: Mac GPU parity follow-up
 
 This is a test-only correction on `fix/mac-gpu-parity`, base `87b91385`.
