@@ -9,12 +9,78 @@ photo instead. This is present in plain base as well as P1-B; it is not a
 Retina coordinate-doubling error. The fix admits presses only on the visible
 main preview, excluding controls, while retaining full-photo normalized
 coordinates. Behavioural regressions cover 1x/2x, pan, control exclusion and
-application of the returned hue. Node fast suite: 964 pass / one skip;
-Python fast suite: 3,354 pass / 145 skip / one expected failure now passing.
-The Python command used its own shell as `HDR_FINISHER_DESKTOP_PID`, so the
-app-memory checks counted that test's process tree, not sibling T3 agents.
-No budget was changed. Native confirmation remains pending the shared GPU
-queue; this entry does not claim the entire reported render hang is fixed.
+application of the returned hue. The isolated picker fix from `e7b5fae9` is
+included locally as `18f826e8`; selection-speed work is not included. Grouped
+validation is recorded with the stacked-grade investigation below. The Python
+command uses its own shell as `HDR_FINISHER_DESKTOP_PID`, so app-memory checks
+count that test's process tree, not sibling T3 agents. No budget was changed.
+Native Exposure confirmation with Pick armed now passes on the exact saved
+stacked grade, including the previously intercepted 100% control position.
+
+## November 14: stacked-grade 100% edit investigation
+
+Steve's saved `DSC00264.ARW` grade includes stock/print adjustments and a
+Black Pro-Mist lens filter (strength 0.5, size 1.53); Denoise is off in the
+captured sidecar. The Desktop and Photos RAW copies have the same SHA-256.
+The original files, sidecars and Library entry are not changed by this work.
+
+Fresh plain base `3cee977b` accepts Exposure edits with this exact grade at
+Fit and at 100%, including a moderate Chromium pressure notification during
+the run. This does not establish safety under every OS-pressure condition,
+but the captured case is not evidence of an endless memory-grant wait or a
+backend deadlock. HSL's separate investigation reproduces an input trap on
+both `87b91385` and `bbd6978d`: while Pick is armed, the oversized 100% canvas
+rectangle extends over controls outside the visible photo. Some pointer
+events become colour samples instead of edits. That code is unchanged by
+P1-B. This branch includes that isolated input-scoping fix and its
+old-behaviour regressions, not a speculative scheduler fix.
+
+`tests/grade-zoom-responsive.js` covers the separate rendering question with
+the real RAW, native Exposure dragging at Fit/100%, changed visible photo
+pixels, exact current-generation acceptance, and latest-wins edits issued
+during Denoise setup. It reuses one shared test RAW and an isolated profile.
+`--grade` reads a copied sidecar beside a temporary hard link to the test RAW;
+without it, the driver builds representative stacked Film settings. The link
+shares the one stored photo's bytes, creates no second RAW copy and is removed
+with its sidecar after the run. It never writes an existing photo's sidecar.
+The driver is registered for focused release selection.
+The existing proposed 10% Grade timing band applies; watchdogs detect a
+missing result, not a new responsiveness allowance. Timings and final
+validation outcomes are recorded below and in the performance table.
+
+Final native comparison: plain base `9d1ac847` (only a test-photo document
+added since `3cee977b`, identical production code) swallows the 100% Exposure
+drag with Pick armed. Exposure stays at -0.5 instead of 0.5 and the visible
+photo does not change; the same native drag works at Fit. With `18f826e8`,
+both native drags change Exposure and visible pixels, and current exact
+Direct/Fit and Tiled/100% frames are accepted. The pane itself shares the
+oversized canvas rectangle on this layout; the dropzone is the actual clip,
+so checking the pane rectangle alone would not establish the regression.
+
+The subsequent Denoise toggle with three newer Exposure edits finishes on
+both base and fixed code. The final value is 0.75, Denoise is Ready and 135
+tiles actually reconstruct; neither run uses a CPU preview fallback. This
+rules out a Denoise/backend deadlock in this reproduction, not every possible
+backend fault. No renderer, scheduler, shader, GPU retry, memory allowance,
+Proof or export change is needed for this input bug. Film-heavy 100% work
+still takes seconds; this fix does not promise faster image processing.
+
+Validation on this branch: Node 963 passed / one skipped; Python 3,316 passed /
+145 skipped / one expected failure now passing. The initial Python launch
+counted sibling T3 processes and had 13 memory-dependent failures; the
+isolated-shell launch passes without mocking memory or changing a limit.
+The default 90-second Library smoke still fails system reserve and pictures
+only six of 33 eligible photos. That separate minimum-Mac Library issue is
+retained, reported to its investigation and not rerun or repaired here.
+Evidence: `codebase/output/denoise-100-repro/{base-final,p1b}.json`, the
+corresponding backend logs and `codebase/output/quick-library-check/denoise-100/report.json`.
+The self-contained release fixture also passes without Steve's private grade
+file; its representative Film controls and latest-wins Denoise case are
+checked in `codebase/output/denoise-100-repro/default.json`.
+
+**Steve to try:** the original photo at 100% with Pick still armed, then
+Exposure and Denoise. Controls should now receive the input; judge the
+remaining Film-processing wait by hand before further speed work.
 
 ## November 14: P1-B bounded Show selection stage
 

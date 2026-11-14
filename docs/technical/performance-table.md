@@ -1,5 +1,48 @@
 # Performance table
 
+## November 14: stacked RAW 100% edit investigation
+
+Machine: **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM, 6 cores,
+1408x794-point unpackaged Electron, shared GPU lock. Source is the reusable
+42 MP Sony `DSC00264.ARW` test copy, with Steve's saved stacked Film grade
+from the 10:11 sidecar. Final baseline is plain base `9d1ac847` (only a
+test-photo document added since `3cee977b`, no production change). Fixed code
+is P1-B `bbd6978d` plus the picker-only fix `18f826e8`; neither this fix nor
+the driver changes image processing. Existing proposed Grade timing
+variation is 10%. These are diagnostic observations, not a claimed speed
+improvement or a new timing allowance. No rerun was made to chase a number.
+
+| Action | Observed wait | Conditions / result |
+| --- | --- | --- |
+| Base Exposure at Fit | 0.032–0.985 s | MacBook Neo; two programmed input/change edits to exact frame acceptance; first exploratory driver, not native input or a compositor stopwatch |
+| Base Exposure at 100% | 1.849–2.175 s | MacBook Neo; same edits, exact current-generation Tiled/WebGPU acceptance; no hang; moderate Chromium pressure notification during run |
+
+The final registered driver includes native input, a visible-photo pixel
+check and two animation frames before ending each wait. Both final runs
+retain the exact copied Film settings. Times include the programmed native
+drag itself, not just its release. They must not be compared with the
+exploratory acceptance-only clock above as a speedup.
+
+| Action | Plain base | Fixed P1-B | Conditions / result |
+| --- | --- | --- | --- |
+| Native Exposure, Fit, Pick armed | 0.988 s | 0.454 s | MacBook Neo; six-step native pointer drag; actual Exposure and visible photo change; subsequent programmed Fit edit 0.054 / 0.066 s |
+| Native Exposure, 100%, Pick armed | Input swallowed; no edit or photo change | 3.709 s | MacBook Neo; control is inside oversized canvas/pane bounds but outside dropzone clip; base's 0.274 s failure observation is not a render completion |
+| Programmed Exposure, 100%, fixed code | Not repeated in final base run | 2.031 s | MacBook Neo; bypasses native input interception; earlier base programmed edits above already complete |
+| Denoise enabled at 100%, then three newer Exposure edits | 3.351 s | 2.885 s | MacBook Neo; latest value 0.75, Ready, 135 reconstructed tiles, current exact frame, no CPU preview fallback |
+| Self-contained release fixture: native Fit / native 100% / programmed 100% / Denoise plus newer edits | Not a paired baseline | 0.418 / 2.846 / 1.938 / 2.515 s | MacBook Neo; same representative Film settings, default RAW import rather than the copied saved grade; programmed Fit 0.055 s; all checks pass |
+
+Native failures are attributed to the inherited picker trap, not to the GPU
+or a memory wait. Film-heavy 100% rendering still takes seconds and Steve
+should judge that remaining wait before more speed work. No own fast suite
+overlapped the final native runs; other agents were active on the machine.
+The default 90-second Library smoke remains unrelated and failing: first
+picture 0.5 s, six of 33 pictures and system-reserve refusal (not a new timing
+baseline).
+
+Evidence: `codebase/output/denoise-100-repro/{base,base-final,p1b,default}.json` and
+their backend/run logs; original log/grade excerpts in that folder;
+`codebase/output/quick-library-check/denoise-100/report.json`.
+
 November 14 Mac GPU parity diagnostics (`fix/mac-gpu-parity`, commit containing
 this record, base `87b91385`): **MacBook Neo**, Apple A18 Pro, 8 GB unified RAM,
 6 cores, 1408x794-point window setting, unpackaged Electron, shared GPU lock. Test-only changes;

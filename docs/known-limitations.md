@@ -1,5 +1,37 @@
 # Known Limitations and Support Status
 
+## November 14: 100% Exposure/Denoise investigation
+
+The exact saved stacked Film grade renders and accepts programmed Exposure
+edits on fresh plain base `3cee977b`, at both Fit and 100%. A moderate
+Chromium pressure notification during this run does not strand its renders.
+This is not a blanket OS-memory-pressure qualification. No backend deadlock
+or P1-B-specific rendering failure is established from this capture.
+
+The separate HSL investigation reproduces the 100% control-input trap on
+both base and P1-B: armed Pick uses the oversized canvas bounds and can take
+control clicks outside the visible photo. Its isolated input-scoping fix and
+old-behaviour regressions are included as `18f826e8` (from `e7b5fae9`), without
+the HSL selection-speed work. No production renderer, Denoise, retry rule, shader,
+memory budget, Proof or export path changes here. The Grade module and
+performance table hold the stacked-RAW coverage and results.
+
+Native reproduction is now complete: plain base `9d1ac847` (production code
+unchanged from `3cee977b`) leaves Exposure and the photo unchanged after the
+armed 100% drag; fixed code accepts that drag and changes visible pixels.
+Fit works in both. Denoise with newer Exposure edits completes in both, so
+no Denoise/backend deadlock is reproduced. The registered real-RAW driver
+passes on fixed code and intentionally fails that old native-input case.
+The exact copied Film settings are checked after opening, preventing a
+default-grade setup from being mistaken for Steve's reproduction.
+
+Both fast suites pass (Node 963; Python 3,316, with the normal skips/xpass).
+Python uses `HDR_FINISHER_DESKTOP_PID` set to its test-launch shell's PID;
+that shell stays alive until pytest finishes, rather than treating sibling
+apps as its own memory. No budgets or checks are relaxed. The default Library
+smoke remains a real, separate failure: system-reserve refusal and only six
+of 33 pictures after 90 seconds. It was reported, not investigated or rerun.
+
 ## November 14: Mac GPU parity follow-up
 
 This is a test-only correction on `fix/mac-gpu-parity`, base `87b91385`.
