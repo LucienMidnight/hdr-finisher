@@ -1,3 +1,21 @@
+## November 15: W6 Export progress alignment
+
+The progress message, finished count and result rows now use Destination's
+14px horizontal inset. The progress strip no longer draws a bottom divider;
+the last result omits its divider, leaving Destination's single boundary.
+Pointer-clicked Export fields remain without focus rings while typing; Tab
+navigation retains the keyboard indicator. Only interface presentation changes,
+with no export/Proof processing or delivered-photo output change.
+
+MacBook Neo / 8 GB real Electron: all three themes pass at 1408×794 and
+1100×720. Equal insets, zero strip/last-row bottom borders and pointer/Tab
+focus are asserted. Export screenshots use illustrative completed-result text
+in the real panel, not a claim that files were exported. Review:
+`codebase/output/review/w6-interface/`. Node fast suite: 1,008 passed / one
+skipped. Python: 3,452 passed / 144 skipped / one unexpected pass; unrelated
+grain-reference and cache-publication failures belong to concurrent W1 work.
+No new tokens; visual sign-off pending.
+
 ## November 15: left-panel collapse alignment
 
 Export Presets keeps its collapse button separate from the 30 px menu action. Its shared collapse control uses its natural width and the Grade header end inset. Grade and Proof are unchanged.

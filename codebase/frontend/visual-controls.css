@@ -183,7 +183,7 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) var(--compact-action-size) 0 var(--compact-action-size); column-gap: 3px; padding-inline: 12px 8px; }
 :root .control-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) var(--compact-action-size) 38px var(--compact-action-size); }
 :root .control-group-header > :is(.group-toggle, .group-preset, .group-reset, .section-bypass) { grid-row: 1; }
-:root .control-group:not(.modified) .group-reset { display: none; }
+:root .control-group:not(.modified) .group-reset:not(.perspective-reset-retry) { display: none; }
 :root :is(.section-bypass, .local-adjustment-bypass) { font-size: 0; line-height: 0; color: var(--bypass-icon-visible); width: var(--compact-action-size); min-width: var(--compact-action-size); height: var(--compact-action-size); min-height: var(--compact-action-size); padding: 0; --bypass-icon-shape: url("./assets/icons/tabler/eye.svg"); }
 :root :is(.section-bypass, .local-adjustment-bypass).bypassed { color: var(--bypass-icon-hidden); }
 
@@ -688,3 +688,14 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 
 /* Compact actions share a square target; panel-header menus retain 30px. */
 :root :is(.batch-preset-row, .batch-version-row, .batch-version-tabs) .top-icon-button { width: var(--compact-action-size); min-width: var(--compact-action-size); height: var(--compact-action-size); min-height: var(--compact-action-size); flex-basis: var(--compact-action-size); }
+
+/* W6: header DOM and visual order agree: name, changed Reset, Presets, eye. */
+:root .control-group-header:has(.group-preset),
+:root .control-group.modified > .control-group-header:has(.group-preset),
+:root .color-grading-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0,max-content) auto 1fr var(--compact-action-size); }
+:root .control-group-header:has(.group-preset) .group-reset { grid-column: 2; order: 2; }
+:root .control-group-header:has(.group-preset) .group-preset { grid-column: 3; order: 3; opacity: 1; justify-self: end; }
+:root .control-group:not(.modified) .group-reset:not(.perspective-reset-retry) { display: none; }
+:root .control-group.modified .group-reset::after { content: none; }
+:root .control-group.modified .group-reset::before { content: ""; display: inline-block; vertical-align: middle; margin-right: 4px; width: 5px; height: 5px; border-radius: var(--radius-pill); background: var(--muted); }
+:root :is(.window-menu-popover button, .window-menu-trigger, .unified-menu-button):hover:not(:disabled) { background: var(--plate-up-hover); }

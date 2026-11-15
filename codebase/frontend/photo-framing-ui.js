@@ -30,8 +30,15 @@ window.HDRPhotoFramingUI = (() => {
       field.setAttribute("aria-label",`${name==="frame"?"Frame":"Border"} thickness in ${layer.unit==="percent"?"percent of cropped photo shorter side":"cropped source pixels"}`);
     }
   }
+  function place(){
+    if(panel.classList.contains("hidden"))return;
+    const anchor=button.getBoundingClientRect(),box=panel.getBoundingClientRect();
+    panel.style.left=`${Math.max(8,Math.min(anchor.right-box.width,innerWidth-box.width-8))}px`;
+    panel.style.top=`${Math.max(8,Math.min(anchor.bottom+6,innerHeight-box.height-8))}px`;
+  }
+  window.addEventListener("resize",place);
   function close(focus=true){panel.classList.add("hidden");button.setAttribute("aria-expanded","false");if(focus)button.focus();}
-  button.addEventListener("click",()=>{const open=panel.classList.toggle("hidden")===false;button.setAttribute("aria-expanded",String(open));if(open){render();$("photo-framing-enabled").focus();}});
+  button.addEventListener("click",()=>{const open=panel.classList.toggle("hidden")===false;button.setAttribute("aria-expanded",String(open));if(open){render();place();$("photo-framing-enabled").focus();}});
   $("photo-frame-close").addEventListener("click",()=>close());
   document.addEventListener("pointerdown",event=>{if(!panel.classList.contains("hidden")&&!event.target.closest("#photo-frame-popover,#photo-frame-toggle"))close(false);});
   document.addEventListener("keydown",event=>{if(event.key==="Escape"&&!panel.classList.contains("hidden")){event.preventDefault();close();}});

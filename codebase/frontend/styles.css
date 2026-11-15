@@ -8999,7 +8999,7 @@ body:not([data-workflow="export"]) .batch-grid-panel { display:none; }
 .batch-photo-progress { position:absolute; bottom:0; left:0; width:100%; max-width:none; margin:0; flex:none; }
 .batch-grid-panel progress::-webkit-progress-value { transition:none; }
 /* The export log sits at the bottom of Export Settings, under Advanced settings. */
-.batch-run-strip { padding:16px 0; display:flex; flex-direction:column; gap:10px; border-bottom:var(--group-divider-width) solid var(--group-divider); font-size:var(--font-size-xs); }
+.batch-run-strip { padding:16px 14px; display:flex; flex-direction:column; gap:10px; font-size:var(--font-size-xs); }
 .batch-run-strip[hidden] { display:none; }
 .batch-run-line { display:flex; align-items:center; gap:12px; flex-wrap:wrap; flex-shrink:0; }
 .batch-run-line .batch-tools { margin-left:auto; }
@@ -9010,6 +9010,7 @@ body:not([data-workflow="export"]) .batch-grid-panel { display:none; }
 .batch-outcome-failed { color:var(--blocking); }
 #batch-results { margin:0; padding:0; max-height:320px; overflow:auto; list-style:none; }
 .batch-result { display:grid; gap:2px; padding:6px 0; border-bottom:1px solid var(--hairline); overflow-wrap:anywhere; }
+.batch-result:last-child { border-bottom:0; }
 .batch-result span:nth-child(2) { color:var(--muted); }
 .batch-empty { padding:14px; text-align:center; margin:auto; }
 body[data-workflow="export"].batch-export-grid .workspace-main { visibility:hidden; }
@@ -9078,7 +9079,7 @@ body.batch-export-ready[data-workflow="export"] #export-sheet { display:flex; fl
 .batch-unit-field { display:flex; align-items:center; gap:4px; min-width:0; min-height:34px; padding:0 10px; border:1px solid var(--border); border-radius:var(--radius-1); background:var(--segment-channel-background); box-shadow: var(--plate-lift); color:var(--muted); }
 .batch-unit-field input[type="number"] { width:7ch; min-width:3ch; padding:0; border:0; background:transparent; box-shadow:none; appearance:textfield; color:var(--text); font:var(--font-size-xs) var(--font-body); }
 .batch-unit-field input::-webkit-inner-spin-button, .batch-unit-field input::-webkit-outer-spin-button { appearance:none; margin:0; }
-.batch-unit-field:focus-within { outline:1px solid var(--accent); outline-offset:1px; }
+.batch-unit-field:has(:focus-visible) { outline:1px solid var(--accent); outline-offset:1px; }
 .batch-unit-field input:focus-visible { outline:none; }
 .batch-version-row { display:flex; gap:6px; align-items:center; min-width:0; }
 .batch-pattern-row { display:grid; gap:6px; min-width:0; margin-left:10px; }
@@ -9186,3 +9187,20 @@ body[data-workflow="export"].batch-presets-collapsed .batch-grid-panel { left:44
 /* The empty batch message owns the free space below the batch header. */
 .batch-grid-panel:has(> .batch-empty:not([hidden])) > #batch-grid { display: none; }
 .batch-grid-panel > .batch-empty { flex: 1; display: grid; place-items: center; margin: 0; }
+
+/* Pointer focus stays quiet even for Export's ID-specific field rules. */
+:root[data-input-modality="pointer"] :is(input, select, textarea, button, summary, [tabindex]):is(:focus, :focus-visible),
+:root[data-input-modality="pointer"] .batch-unit-field:focus-within { outline: none !important; }
+/* Both framing layers stay open; compact rows leave room for the photo. */
+#photo-frame-popover { width: 440px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); position: fixed; position-anchor: auto; transform: none; }
+#photo-frame-popover > .checkbox-row { padding: 4px 0; border: 0; }
+#photo-frame-popover > .helper { margin: 6px 0; }
+#photo-frame-popover .photo-frame-layer { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); align-items: center; gap: 6px 12px; margin: 8px 0; padding: 6px 10px 10px; }
+#photo-frame-popover .photo-frame-layer > .checkbox-row { padding: 4px 0; border: 0; }
+#photo-frame-popover .frame-custom-row { margin: 0; }
+#photo-frame-popover .photo-frame-thickness { grid-column: 1 / -1; margin: 0; }
+#photo-frame-popover .photo-frame-thickness label { flex: 1; }
+#photo-frame-popover .photo-frame-thickness :is(input,select) { width: 100%; min-width: 0; }
+#photo-frame-popover .photo-frame-layer > input[type="range"] { grid-column: 1 / -1; }
+
+#photo-frame-popover .photo-frame-layer > .range-shell { grid-column: 1 / -1; width: 100%; }

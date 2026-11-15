@@ -35,17 +35,18 @@ function setGroupPresetPathValue(context, path, value) {
 
 function initializeGroupPresetControls() {
   document.querySelectorAll(".control-group[data-group]").forEach((groupElement) => {
+    const header = groupElement.querySelector(":scope > .control-group-header");
+    const reset = header?.querySelector(".group-reset"), bypass = header?.querySelector(".section-bypass");
+    if (reset && bypass) header.insertBefore(reset, bypass);
     if (!groupPresetContextForElement(groupElement)) return;
     const button = document.createElement("button");
     button.type = "button";
     button.className = "group-preset text-button";
-    button.textContent = "Preset";
-    button.setAttribute("aria-label", "Preset");
+    button.textContent = "Presets";
+    button.setAttribute("aria-label", "Presets");
     button.setAttribute("aria-haspopup", "dialog");
     button.addEventListener("click", () => openGroupPresetDialog(groupElement));
-    const header = groupElement.querySelector(":scope > .control-group-header");
-    const reset = header?.querySelector(".group-reset");
-    if (header) header.insertBefore(button, reset || header.querySelector(".section-bypass"));
+    if (header) header.insertBefore(button, bypass);
   });
   initializeFilmStagePresets();
   document.getElementById("group-preset-import")?.addEventListener("click", () => void groupPresetAction(importGroupPresetFile));

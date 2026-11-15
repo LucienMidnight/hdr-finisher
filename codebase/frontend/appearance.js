@@ -42,7 +42,7 @@
       root.document.documentElement.dataset.inputModality = "pointer";
     }, true);
     root.document.addEventListener("keydown", event => {
-      if (!["Shift", "Control", "Alt", "Meta"].includes(event.key)) {
+      if (["Tab", "F6"].includes(event.key)) {
         root.document.documentElement.dataset.inputModality = "keyboard";
       }
     }, true);

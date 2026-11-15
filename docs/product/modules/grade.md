@@ -1,3 +1,22 @@
+## November 15: W6 focus, module actions and compact Frame menu
+
+Module headers now follow the same DOM/Tab and visual order: name, changed
+dot + Reset, Presets, eye. Reset sits beside the name and stays hidden when
+unchanged (the existing Perspective retry exception remains); Presets is always
+visible beside the eye. Pointer-clicked fields stay without a focus ring while
+typing; Tab/F6 navigation restores keyboard rings, including Export's fields.
+Frame and Border remain expanded in a compact two-column Frame menu with
+full-width thickness sliders; opening/resizing clamps it inside the viewport.
+No grade, framing calculation, photo pixels or saved settings changed.
+
+Real Electron on MacBook Neo / 8 GB: all three themes pass at 1408×794 and
+1100×720; Frame fits without scrolling, header DOM/visual order agrees and
+pointer typing / keyboard focus behave as intended. Captures and assertions:
+`codebase/output/review/w6-interface/` and `tools/w6-interface-review.cjs`.
+Node fast suite: 1,008 passed, one skipped. Python: 3,452 passed / 144 skipped /
+one unexpected pass; grain-reference and cache-publication failures are outside
+W6 in concurrent W1 work. Visual sign-off pending; no new tokens.
+
 # Module PRD: Grade
 
 ## November 15: SDR Detail highlight headroom
