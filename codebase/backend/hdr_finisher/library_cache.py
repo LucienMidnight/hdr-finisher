@@ -189,11 +189,11 @@ class LibraryCache:
                         try:
                             with file.open('rb') as handle:
                                 owner = json.loads(handle.readline())['identity']['path']
-                            if not self.has_source_record(file):
+                            if not self._source_current(file):
                                 self.record(file, source=owner)
                         except (OSError, ValueError, KeyError, TypeError):
                             pass
-                    if file.suffix == '.npz' and not self.has_source_record(file):
+                    if file.suffix == '.npz' and not self._source_current(file):
                         try:
                             import numpy as np
                             with np.load(file, allow_pickle=False) as stored:
