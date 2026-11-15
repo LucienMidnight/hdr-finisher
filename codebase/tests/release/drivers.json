@@ -17,6 +17,7 @@
     "D:/Photos/HDR Test Images/Projects/DSC00950.hdrfinisher"
   ],
   "sourceAreas": [
+    {"pattern":"^codebase/(backend/hdr_finisher/tone\\.py|frontend/tone-engine\\.js)$","areas":["preview","export-proof","library"]},
     {"pattern":"^codebase/frontend/key-hints\\.js$","areas":["ui"]},
     {"pattern":"^codebase/backend/hdr_finisher/(app_memory|cpu_budget|file_gate|instrument_work)\\.py$","areas":["export-proof","film","lens","library","masks","detail","geometry","preview","ui"]},
     {"pattern":"^codebase/backend/hdr_finisher/(delivery(?:_[^/]*)?|hdr_ceiling|hdr_delivery)\\.py$","areas":["export-proof","library","preview"]},
@@ -295,7 +296,7 @@
     {"path":"tools/hsl-seam-repro.js","areas":["preview","masks","ui"],"tier":"diagnostic","protects":"Balanced Rock copy at 423%: non-default selection edges and a review page for both luminance directions with Show selection.","launch":{"method":"electron","args":["--review"]}},
     {"path":"tests/hsl-selection-engine.js","areas":["preview","masks"],"tier":"area","protects":"Shared Light colour selection: real GPU against CPU coverage at full and reduced scale, halo tile equals the whole frame, fringe/neutral rejection, Global/Local equality and preparation reuse.","launch":{"method":"native"}},
     {"path":"tests/hsl-selection-delivery.js","areas":["preview","export-proof","masks"],"tier":"area","protects":"Balanced Rock copy with shared HSL selection: full-size GPU and forced-CPU export add no GPU/CPU difference beyond the photo's neutral gap, 1000-nit ceiling on every file, full-size Proof equals the export.","launch":{"method":"electron","followupArgs":[["--local"]]}},
-    {"path":"tests/tone-zones-delivery.js","areas":["preview","export-proof"],"tier":"area","protects":"Tone sliders (Blacks, Shadows, Midtones, Highlights): GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling.","launch":{"method":"electron"}},
+    {"path":"tests/tone-zones-delivery.js","areas":["preview","export-proof"],"tier":"area","protects":"Frozen five-control Tone (Blacks, Shadows, Midtones, Highlights, Whites): GPU finished output equals CPU within perceptual limits, Proof equals export, HDR ceiling.","launch":{"method":"electron"}},
     {"path":"tests/color-desat-delivery.js","areas":["preview","export-proof","ui"],"tier":"area","protects":"Color desaturation active GPU preview, CPU/GPU finished output, Proof/export agreement and HDR ceiling.","launch":{"method":"electron"}},
     {"path":"tests/hsl-overlay-review.js","areas":["masks","ui"],"tier":"area","protects":"Real-photo selection containment, zoom alignment, disclosure cleanup and Library grid pixels.","launch":{"method":"electron"}},
     {"path":"tests/performance/grade-speed.js","areas":["preview","film","lens","ui"],"tier":"diagnostic","protects":"MacBook whole-wait Show selection, Film/lens input-to-present throughput and Exposure after Denoise; exact settlement after drags.","launch":{"method":"electron","args":["--output","output/performance/p1b/current.json"],"requires":"Reusable output/test-photos/grade-24mp.tiff; --input accepts another source. Pair before/after on the same machine."}},

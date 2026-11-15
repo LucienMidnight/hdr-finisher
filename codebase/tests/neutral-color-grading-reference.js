@@ -14,6 +14,7 @@ import numpy as np
 from backend.hdr_finisher.color import map_negative_acescg
 from backend.hdr_finisher.adjustments import _apply_color_grading, _apply_luminance_section_controls, apply_sdr_output_highlight_compression
 from backend.hdr_finisher.models import ColorGradingAdjustments, PreviewKind, AdjustmentState
+from backend.hdr_finisher.tone import apply_tone, parameters, reference_grey
 pixels = np.array([[[-.00028979886,-.00048077852,.00236804318],[-.00001202161,-.00023974421,.001966723], [0,0,0],[-.001,-.001,-.001], [1e-8,2e-8,3e-8],[.1,.2,.3],[1,2,4],[-.01,.2,.3]]],dtype=np.float32)
 cases=[]
 for kind in [PreviewKind.HDR,PreviewKind.SDR]:
@@ -40,7 +41,22 @@ for contrast in [-.5,1e-6,.5]:
     z=AdjustmentState();z.sdr.contrast=contrast
     expected=_apply_luminance_section_controls(pixels,z.sdr,PreviewKind.SDR,apply_primaries=False)
     cases.append(dict(lane='sdr',name=f'contrast/{contrast}',operation=1,contrast=contrast,pivot=z.sdr.contrast_pivot,grading=ColorGradingAdjustments().model_dump(),source=pixels.reshape(-1).tolist(),expected=expected.reshape(-1).tolist()))
-expected=apply_sdr_output_highlight_compression(pixels,AdjustmentState())
+for kind in [PreviewKind.HDR,PreviewKind.SDR]:
+    hdr=kind==PreviewKind.HDR
+    grey=reference_grey(hdr)
+    ramp=np.repeat((grey*np.exp2(np.array([-7,-3,-1,0,1,2,3,5],np.float32)))[None,:,None],3,-1)
+    for balance in [-100,0,100]:
+        for blending in [0,50,100]:
+            grading=ColorGradingAdjustments(balance=balance,blending=blending,shadows=dict(luminance_ev=.7),midtones=dict(luminance_ev=-.4),highlights=dict(luminance_ev=.9))
+            expected=_apply_color_grading(ramp,grading,kind)
+            cases.append(dict(lane=kind.value,name=f'anchored/{balance}/{blending}',grading=grading.model_dump(),enabled=True,source=ramp.reshape(-1).tolist(),expected=expected.reshape(-1).tolist()))
+    for strength in [-100,0,100]:
+        state=AdjustmentState();branch=state.hdr if hdr else state.sdr
+        branch.blacks=strength;branch.whites=strength;branch.shadows=strength;branch.midtones=-strength;branch.highlights=strength
+        expected=apply_tone(ramp,branch,hdr)
+        cases.append(dict(lane=kind.value,name=f'tone/{strength}',operation=3,grading=ColorGradingAdjustments().model_dump(),tone=branch.model_dump(),amounts=parameters(branch,hdr),grey=grey,peak=branch.highlight_compression_target_nits*.18/203 if hdr else 1,source=ramp.reshape(-1).tolist(),expected=expected.reshape(-1).tolist()))
+state=AdjustmentState();state.sdr.highlight_section_enabled=False
+expected=apply_sdr_output_highlight_compression(pixels,state)
 cases.append(dict(lane='sdr',name='final-gamut',operation=2,grading=ColorGradingAdjustments().model_dump(),source=pixels.reshape(-1).tolist(),expected=expected.reshape(-1).tolist()))
 print(json.dumps(cases))
 `], {cwd:root,encoding:'utf8'}));
@@ -61,6 +77,7 @@ print(json.dumps(cases))
           if(p[194]>0.5){graded=renderHdrBase(source);}
           if(p[195]==1.0){graded=sdrContrast(source);}
           if(p[195]==2.0){graded=applyOutputHighlights(source);}
+          if(p[195]==3.0){graded=toneZones(source,max(select(lumaSrgb(source),lumaAces(source),p[0]>0.5),0.0));}
           return vec4f(graded, 1.0);
         }
       `});
@@ -74,6 +91,12 @@ print(json.dumps(cases))
 
         params[194]=fixture.base?1:0; params[195]=fixture.operation||0;
         params[8]=fixture.contrast||0;params[9]=fixture.pivot||.1845;
+        if(fixture.tone){
+          const layout=HDRGpuParamLayout.indices;
+          params[layout.BLACKS]=fixture.tone.blacks/100;params[layout.WHITES]=fixture.tone.whites/100;
+          params[layout.TONE_LIMITER]=fixture.amounts[3];params[layout.TONE_KNEE]=fixture.amounts[4];params[layout.TONE_GREY]=fixture.grey;params[layout.TONE_PEAK]=fixture.peak;
+          ['shadows','midtones','highlights'].forEach((zone,index)=>{params[layout[zone.toUpperCase()]]=fixture.amounts[index];params[layout[`${zone.toUpperCase()}_CENTER`]]=fixture.tone[`${zone}_center`];params[layout[`${zone.toUpperCase()}_WIDTH`]]=fixture.tone[`${zone}_width`];});
+        }
         params[112]=.55+3.45*fixture.grading.blending/100;params[113]=-fixture.grading.balance/50;
         ['shadows','midtones','highlights'].forEach((name,i)=>{const wheel=fixture.grading[name];params[114+i*3]=wheel.hue;params[115+i*3]=wheel.saturation/400;params[116+i*3]=wheel.luminance_ev;});
         const buffer=device.createBuffer({size:params.byteLength,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
@@ -88,13 +111,13 @@ print(json.dumps(cases))
           await read.mapAsync(GPUMapMode.READ); const values=new Float32Array(read.getMappedRange());
           const actual=[];for(let i=0;i<8;i++)actual.push(...values.slice(i*4,i*4+3));read.unmap();
           const maxError=Math.max(...actual.map((v,i)=>Math.abs(v-fixture.expected[i])));
-          results.push({lane:fixture.lane,name:fixture.name,pixels:8,maxError,firstPixel:actual.slice(0,3)});
+          results.push({lane:fixture.lane,name:fixture.name,pixels:8,maxError,identity:fixture.operation===3&&fixture.name==='tone/0'?actual.every((value,index)=>Object.is(value,fixture.source[index])):null,firstPixel:actual.slice(0,3)});
         } finally {[source,target,buffer,read].forEach(r=>r.destroy());}
       }
       dummy.destroy();return results;
     },cases);
     fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,JSON.stringify({results},null,2)+'\n');
-    for(const result of results) assert.ok(result.maxError<=.000002,JSON.stringify(result));
+    for(const result of results){assert.ok(result.maxError<=.000002,JSON.stringify(result));if(result.identity!==null)assert.equal(result.identity,true,JSON.stringify(result));}
     console.log(`Colour grading/HDR base CPU/GPU: ${results.length} cases, ${results.length*8} pixels pass.`);
   } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

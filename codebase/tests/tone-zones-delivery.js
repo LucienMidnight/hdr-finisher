@@ -1,4 +1,4 @@
-// Real app/device: Tone sliders (Blacks, Shadows, Midtones, Highlights) in GPU
+// Real app/device: five-control frozen-guide Tone in GPU
 // preview and finished GPU/CPU delivery, Proof equality and the HDR ceiling.
 // Also exercise headroom through contrast, colour wheels and Film Look (W3).
 const assert=require('node:assert/strict');
@@ -28,10 +28,28 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
  const uploaded=await page.request.post(new URL('/api/session',base).href,{multipart:{file:{name:'hues.tiff',mimeType:'image/tiff',buffer:fs.readFileSync(path.join(root,'hues.tiff'))}}});
  assert.ok(uploaded.ok(),await uploaded.text());const {session}=await uploaded.json();
  await page.evaluate(s=>activateDesktopSession(s,''),session);
+ if(process.argv.includes('--layout')){
+  const review=path.resolve(__dirname,'../output/n2-validation');fs.mkdirSync(review,{recursive:true});
+  for(const [width,height] of [[1408,794],[1100,720]]){
+   await browser.newPage({viewport:{width,height}});
+   for(const lane of ['hdr','sdr']){
+    await page.evaluate(async lane=>{await switchLane(lane);const group=document.querySelector(`[data-group="${lane}-tone"]`);if(group.classList.contains('collapsed'))group.querySelector('.group-toggle').click();},lane);
+    const controls=await page.evaluate(lane=>Array.from(document.querySelectorAll(`[data-group="${lane}-tone"] input[data-path]`)).map(input=>({path:input.dataset.path,inside:input.closest('[data-group]').dataset.group})),lane);
+    assert.deepEqual(controls.filter(control=>['blacks','shadows','midtones','highlights','whites'].includes(control.path.split('.')[1])).map(control=>control.path),['blacks','shadows','midtones','highlights','whites'].map(name=>`${lane}.${name}`));
+    assert.ok(controls.every(control=>control.inside===`${lane}-tone`));
+    for(const endpoint of ['blacks','whites']){
+     const control=page.locator(`[data-path="${lane}.${endpoint}"]`);await control.scrollIntoViewIfNeeded();
+     const box=await control.boundingBox();assert.ok(box&&box.width>0&&box.x>=0&&box.x+box.width<=width);
+     await page.screenshot({path:path.join(review,`tone-${lane}-${width}x${height}-${endpoint}.png`)});
+    }
+   }
+  }
+  await browser.newPage({viewport:{width:1408,height:794}});
+ }
  await page.evaluate(async (highlightMode)=>{
    await syncGlobalEditState();
    for(const lane of ['hdr','sdr']){
-    Object.assign(state.adjustments[lane],{blacks:30,shadows:70,midtones:-40,highlights:40,shadows_width:3.5,contrast:.2});
+    Object.assign(state.adjustments[lane],{blacks:30,whites:65,shadows:70,midtones:-40,highlights:40,shadows_width:3.5,contrast:.2});
     Object.assign(state.adjustments[lane].color_grading,{balance:35,blending:80,shadows:{hue:210,saturation:15,luminance_ev:.1},highlights:{hue:120,saturation:20,luminance_ev:.2}});
     Object.assign(state.adjustments[lane].film_look,{film_stock:"none",print_exposure:.5,look_strength:50,grain_enabled:false,halation_enabled:false});
    }
