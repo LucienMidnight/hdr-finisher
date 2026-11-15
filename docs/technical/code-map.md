@@ -1,5 +1,14 @@
 # Code map
 
+## November 15: button tier review
+
+`codebase/tools/button-tiers-review.cjs` runs through the Electron harness and
+shared GPU lock, measuring 30px panel / 26px compact actions in all three
+themes at 2560x1440. Crops and geometry overwrite
+`codebase/output/review/button-tiers/`; it uses a generated disposable image
+and never saves changes to a real project.
+
+
 ## November 14: native source-stream admission
 
 `render_cache.SessionRenderCache.native_source_stream` proves when a GPU upload

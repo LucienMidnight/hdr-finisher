@@ -9111,7 +9111,8 @@ body.batch-export-ready[data-workflow="export"] #export-sheet { display:flex; fl
 #batch-summary { font-size:var(--font-size-min); }
 #batch-run { width:100%; }
 .batch-preset-row { position:relative; display:flex; align-items:stretch; border-radius:var(--radius); }
-.batch-preset-row .batch-preset { padding-right:calc(var(--compact-action-size) + 10px); border-color:transparent; background:transparent; }
+.batch-preset-row .batch-preset { min-width:0; padding-right:calc(var(--compact-action-size) + 10px); border-color:transparent; background:transparent; }
+.batch-preset-row .batch-preset strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .batch-preset-row .batch-preset[aria-pressed="true"] { border-color:var(--accent-strong); background:var(--accent-bed); }
 .batch-preset-row .top-icon-button { font:inherit; position:absolute; right:4px; top:calc(11px + (1lh - var(--compact-action-size)) / 2); }
 #batch-modified { margin:0; padding:6px 16px; color:var(--muted); }
