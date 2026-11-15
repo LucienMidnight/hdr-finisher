@@ -139,10 +139,12 @@ class SourceJobs:
             job.update(cancel=cancel, promote=promote)
             promote(job['priority'])
 
-    def invalidate(self):
+    def invalidate(self, paths=None):
+        from .library_copies import source
+        families = None if paths is None else {source(path) for path in paths}
         with self.lock:
-            for job in self.jobs.values():
+            jobs = [job for job in self.jobs.values()
+                    if families is None or source(job['path']) in families]
+            for job in jobs:
                 if job.get('cancel'): job['cancel']()
-            for preparation in self.preparations.values(): preparation["state"] = "stopping"
-            for job in self.jobs.values(): self.released(job["token"])
-            self.jobs.clear()
+                self.release(job['token'])

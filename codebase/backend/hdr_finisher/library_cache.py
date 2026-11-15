@@ -187,20 +187,22 @@ class LibraryCache:
                     self.record(file)
                     if file.suffix == '.surface':
                         try:
+                            stamp = file.stat()
                             with file.open('rb') as handle:
-                                owner = json.loads(handle.readline())['identity']['path']
+                                identity = json.loads(handle.readline())['identity']
                             if not self._source_current(file):
-                                self.record(file, source=owner)
+                                self._recover_source(file, identity['path'], identity.get('cache_epoch', 0), stamp)
                         except (OSError, ValueError, KeyError, TypeError):
                             pass
                     if file.suffix == '.npz' and not self._source_current(file):
                         try:
                             import numpy as np
+                            stamp = file.stat()
                             with np.load(file, allow_pickle=False) as stored:
                                 metadata = json.loads(str(stored['metadata']))
                             source = metadata.get('path') if isinstance(metadata, dict) else None
                             if isinstance(source, str) and source:
-                                self.record(file, source=source)
+                                self._recover_source(file, source, metadata.get('cache_epoch', 0), stamp)
                         except (OSError, ValueError, KeyError, EOFError, BadZipFile):
                             pass
             # Missing files are not in the directory walk. Page the saved keys
@@ -216,6 +218,28 @@ class LibraryCache:
                     wait()
                     self.record(filename)
                 after = rows[-1][0]
+
+    def _recover_source(self, file, source, epoch, stamp):
+        """Inventory may recover ownership, but cannot renew obsolete pixels.
+
+        Metadata is read outside the publication lock. Recheck that exact file
+        under the same process/SQLite locks used by publication and deletion.
+        """
+        source = os.path.normcase(str(Path(source).resolve()))
+        with _LOCK:
+            db = self._ledger()
+            db.execute('BEGIN IMMEDIATE')
+            try:
+                current, active = self._source_state(db, source)
+                pending = db.execute('SELECT 1 FROM pending_deletes WHERE path=?', (str(file),)).fetchone()
+                latest = file.stat()
+                if (not active and not pending and epoch == current
+                        and (stamp.st_size, stamp.st_mtime_ns) == (latest.st_size, latest.st_mtime_ns)):
+                    self._record(db, file, source)
+                db.commit()
+            except BaseException:
+                db.rollback()
+                raise
 
     @staticmethod
     def _recover_mutations(db):
@@ -291,6 +315,8 @@ class LibraryCache:
                 if not retarget and (epoch != current or active):
                     raise ValueError('Photo moved or was deleted before cached pixels could be published.')
                 os.replace(temporary, destination)
+                # This publication replaces the exact file queued for deletion.
+                db.execute('DELETE FROM pending_deletes WHERE path=?', (str(destination),))
                 if accounted:
                     self._record(db, Path(destination), source, retarget=retarget)
                 db.commit()
@@ -325,7 +351,7 @@ class LibraryCache:
         with _LOCK:
             db = self._ledger()
             row = db.execute('SELECT size, stamp, source, epoch FROM sources JOIN source_generations USING(path) WHERE path=?', (str(file),)).fetchone()
-            if row is None:
+            if row is None or db.execute('SELECT 1 FROM pending_deletes WHERE path=?', (str(file),)).fetchone():
                 return False
             epoch, active = self._source_state(db, row[2])
         try:
@@ -383,22 +409,30 @@ class LibraryCache:
         file = Path(file)
         with _LOCK:
             db = self._ledger()
+            db.execute('BEGIN IMMEDIATE')
             try:
-                stat = file.stat()
-                file.unlink()
-            except FileNotFoundError:
-                pass
-            except PermissionError:
-                with db:
-                    db.execute('INSERT OR REPLACE INTO pending_deletes VALUES (?,?,?)',
-                        (str(file), stat.st_size, stat.st_mtime_ns))
-                return False
-            if file.parent.name in DIRECTORIES:
-                self.record(file)
-            with db:
-                db.execute('DELETE FROM pending_deletes WHERE path=?', (str(file),))
-                db.execute('DELETE FROM refresh_files WHERE path=?', (str(file),))
-            return True
+                removed = self._remove_disposable(db, file)
+                db.commit()
+                return removed
+            except BaseException:
+                db.rollback()
+                raise
+
+    def _remove_disposable(self, db, file):
+        try:
+            stat = file.stat()
+            file.unlink()
+        except FileNotFoundError:
+            pass
+        except PermissionError:
+            db.execute('INSERT OR REPLACE INTO pending_deletes VALUES (?,?,?)',
+                       (str(file), stat.st_size, stat.st_mtime_ns))
+            return False
+        if file.parent.name in DIRECTORIES:
+            self._record(db, file)
+        db.execute('DELETE FROM pending_deletes WHERE path=?', (str(file),))
+        db.execute('DELETE FROM refresh_files WHERE path=?', (str(file),))
+        return True
 
     def cleanup_pending(self):
         with _LOCK:
@@ -406,15 +440,26 @@ class LibraryCache:
             rows = db.execute('SELECT path,size,stamp FROM pending_deletes').fetchall()
         for filename, size, stamp in rows:
             file = Path(filename)
-            try:
-                stat = file.stat()
-                if (stat.st_size, stat.st_mtime_ns) == (size, stamp):
-                    if not self.remove_disposable(file):
-                        continue
-            except FileNotFoundError:
-                pass
-            with _LOCK, db:
-                db.execute('DELETE FROM pending_deletes WHERE path=?', (filename,))
+            with _LOCK:
+                db.execute('BEGIN IMMEDIATE')
+                try:
+                    # A replacement (including one from a helper process) cannot
+                    # publish between this comparison and the physical removal.
+                    pending = db.execute('SELECT size,stamp FROM pending_deletes WHERE path=?', (filename,)).fetchone()
+                    if pending == (size, stamp):
+                        try:
+                            current = file.stat()
+                            matches = (current.st_size, current.st_mtime_ns) == (size, stamp)
+                        except FileNotFoundError:
+                            matches = True
+                        if matches:
+                            self._remove_disposable(db, file)
+                        else:
+                            db.execute('DELETE FROM pending_deletes WHERE path=?', (filename,))
+                    db.commit()
+                except BaseException:
+                    db.rollback()
+                    raise
 
     def forget_source(self, file):
         with _LOCK:

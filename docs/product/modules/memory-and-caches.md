@@ -1,3 +1,21 @@
+### November 15: W1 cache generation and deferred-deletion repair (R2/R5/R6)
+
+Background inventory now recovers a source mapping only when the file's own
+saved epoch matches the current source generation, no deletion is pending and
+the exact file stamp still matches under the publication lock. It cannot renew
+an invalidated scene or finished surface. Deferred cleanup compares the pending
+receipt and file stamp, then removes the file inside that same process lock and
+SQLite write transaction; helper-process publication cannot replace it between
+comparison and removal. A new publication retires the old pending-delete receipt
+immediately. Locked bytes keep counting against their original allowance.
+
+Refresh advances only selected source-family generations and cancels only those
+families' source jobs, leaving the global file-command epoch unchanged. Tests
+cover old scenes/surfaces surviving Refresh, missing ownership recovery, pending
+files, the compare/publish interleaving, fresh replacement readability, virtual
+families and unrelated work completing. The final W1 focused Python group has
+66 passes. No cache, concurrency, reserve, memory or disk allowance changes.
+
 ### November 15, 2026: Refresh invalidation and locked disposable files
 
 Refresh reuses the existing source-generation ledger and adds indexed screen

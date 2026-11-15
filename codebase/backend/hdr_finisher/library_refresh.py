@@ -13,10 +13,10 @@ def refresh(live, screen_previews, paths):
     scenes = {file for path in wanted for file in managed.source_files(path, retarget=True)
               if file.suffix in ('.npz', '.surface')}
     indexed = {filename: kind for path in wanted for filename, kind in managed.refresh_files(path)}
-    commands = getattr(getattr(live, 'marks', None), 'file_commands', None)
-    if commands is not None:
-        commands.epoch += 1
     with managed.mutation({source(path) for path in paths}, ''):
+        jobs = getattr(live, 'source_jobs', None)
+        if jobs is not None:
+            jobs.invalidate(paths)
         with live.cache.transient_lock:
             for key, pending in list(live.cache.pending_stores.items()):
                 if pending[0] in wanted:

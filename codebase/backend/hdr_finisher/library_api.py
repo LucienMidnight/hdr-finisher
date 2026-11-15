@@ -547,6 +547,7 @@ def create_library_router(worker, browser, store=None):
     from .library_source_jobs import SourceJobs
     source_foreground = getattr(worker, "foreground_source", lambda token, active: None)
     source_jobs = SourceJobs(released=lambda token: source_foreground(token, False))
+    live.source_jobs = source_jobs
 
     @router.post("/live-source/{token}")
     def touch_live_source(token: str):

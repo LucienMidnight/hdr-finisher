@@ -135,3 +135,139 @@ def test_pending_delete_does_not_remove_new_replacement(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, 'unlink', original)
     cache.managed.cleanup_pending()
     assert file.read_bytes() == b'new picture with a different identity'
+
+
+def test_inventory_never_revives_invalidated_or_pending_pixels(tmp_path, monkeypatch):
+    from pathlib import Path
+    for extension in ('.npz', '.surface'):
+        photo = tmp_path / ('photo' + extension + '.tif')
+        photo.write_bytes(b'original')
+        cache = LibraryPictureCache(tmp_path / ('test-profile' + extension))
+        cache.managed.prepare()
+        if extension == '.npz':
+            file = scene(cache.root, 'a'*64, photo)
+        else:
+            folder = cache.managed.directory('library-thumbnails')
+            folder.mkdir()
+            file = folder / ('a'*64 + extension)
+            file.write_bytes(json.dumps({'identity': {'path': str(photo), 'cache_epoch': 0}}).encode() + b'\npixels')
+        cache.managed.record(file, source=photo)
+        original = Path.unlink
+        with monkeypatch.context() as patch:
+            def locked(path, *args, **kwargs):
+                if path == file: raise PermissionError(32, 'File in use')
+                return original(path, *args, **kwargs)
+            patch.setattr(Path, 'unlink', locked)
+            refresh(SimpleNamespace(cache=cache), None, [str(photo)])
+            cache.managed.reconcile_background(lambda: None)
+            assert not cache.managed.source_valid(file, photo)
+            # Even a lost source-index entry must not make old metadata current.
+            cache.managed.forget_source(file)
+            cache.managed.reconcile_background(lambda: None)
+            assert not cache.managed.has_source_record(file)
+        # Obsolete generation stays invalid even without a pending-delete row.
+        with cache.managed._ledger() as db:
+            db.execute('DELETE FROM pending_deletes')
+        cache.managed.reconcile_background(lambda: None)
+        assert not cache.managed.source_valid(file, photo)
+
+
+def test_inventory_recovers_current_source_without_renewing_pending_delete(tmp_path):
+    cache = LibraryPictureCache(tmp_path / 'test-profile')
+    cache.managed.prepare()
+    photo = tmp_path / 'photo.tif'
+    file = scene(cache.root, 'a'*64, photo)
+    cache.managed.reconcile_background(lambda: None)
+    assert cache.managed.source_valid(file, photo)
+    cache.managed.forget_source(file)
+    stat = file.stat()
+    with cache.managed._ledger() as db:
+        db.execute('INSERT INTO pending_deletes VALUES (?,?,?)', (str(file), stat.st_size, stat.st_mtime_ns))
+    cache.managed.reconcile_background(lambda: None)
+    assert not cache.managed.source_valid(file, photo)
+
+
+def test_cleanup_and_publication_interleaving_preserves_replacement(tmp_path, monkeypatch):
+    from pathlib import Path
+    from threading import Event, Thread
+    cache = LibraryPictureCache(tmp_path / 'test-profile')
+    cache.managed.prepare()
+    photo = tmp_path / 'photo.tif'
+    file = scene(cache.root, 'a'*64, photo)
+    stat = file.stat()
+    with cache.managed._ledger() as db:
+        db.execute('INSERT INTO pending_deletes VALUES (?,?,?)', (str(file), stat.st_size, stat.st_mtime_ns))
+    temporary = file.with_suffix('.tmp')
+    temporary.write_bytes(b'fresh replacement')
+    comparing, attempting, published = Event(), Event(), Event()
+    errors = []
+    def publish():
+        try:
+            assert comparing.wait(3)
+            attempting.set()
+            cache.managed.publish(temporary, file, photo, 0)
+            published.set()
+        except BaseException as error: errors.append(error)
+    original = Path.stat
+    def interleave(path, *args, **kwargs):
+        value = original(path, *args, **kwargs)
+        if path == file and not comparing.is_set():
+            comparing.set()
+            assert attempting.wait(3)
+            # The old implementation let publication finish here and then
+            # deleted the replacement. The corrected one serializes both.
+            published.wait(.1)
+        return value
+    monkeypatch.setattr(Path, 'stat', interleave)
+    worker = Thread(target=publish)
+    worker.start()
+    try:
+        cache.managed.cleanup_pending()
+    finally:
+        worker.join(3)
+    assert not worker.is_alive() and not errors and published.is_set()
+    assert file.read_bytes() == b'fresh replacement'
+    assert cache.managed.source_valid(file, photo)
+
+
+def test_refresh_fences_its_family_but_other_source_work_completes(tmp_path):
+    from hdr_finisher.library_source_jobs import SourceJobs
+    photo, other = tmp_path / 'a.tif', tmp_path / 'b.tif'
+    for path in (photo, other): path.write_bytes(b'original')
+    cache = LibraryPictureCache(tmp_path / 'test-profile')
+    cache.managed.prepare()
+    jobs = SourceJobs()
+    commands = SimpleNamespace(epoch=7)
+    selected = jobs.claim(str(photo), 'quality', 640, 10, commands.epoch)
+    unaffected = jobs.claim(str(other), 'quality', 640, 10, commands.epoch)
+    old_a, old_b = [cache.managed.publication_epoch(p) for p in (photo, other)]
+    refresh(SimpleNamespace(cache=cache, source_jobs=jobs, marks=SimpleNamespace(file_commands=commands)), None,
+            [str(photo)+'|copy|copy-id'])
+    import pytest
+    with pytest.raises(ValueError): jobs.check(selected, commands.epoch)
+    assert jobs.check(unaffected, commands.epoch)['path'] == str(other)
+    temporary = cache.root / 'b.tmp'
+    temporary.parent.mkdir(exist_ok=True)
+    temporary.write_bytes(b'completed unrelated work')
+    target = temporary.with_suffix('.npz')
+    cache.managed.publish(temporary, target, other, old_b)
+    assert cache.managed.source_valid(target, other)
+    assert cache.managed.publication_epoch(photo) != old_a
+    assert commands.epoch == 7
+
+
+
+def test_new_publication_retires_old_pending_delete_immediately(tmp_path):
+    cache = LibraryPictureCache(tmp_path / 'test-profile')
+    cache.managed.prepare()
+    photo = tmp_path / 'photo.tif'
+    file = scene(cache.root, 'a'*64, photo)
+    stat = file.stat()
+    with cache.managed._ledger() as db:
+        db.execute('INSERT INTO pending_deletes VALUES (?,?,?)', (str(file), stat.st_size, stat.st_mtime_ns))
+    temporary = file.with_suffix('.tmp')
+    temporary.write_bytes(b'fresh current pixels')
+    cache.managed.publish(temporary, file, photo, 0)
+    assert cache.managed.source_valid(file, photo)
+    cache.managed.cleanup_pending()
+    assert file.read_bytes() == b'fresh current pixels'

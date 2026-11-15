@@ -1,3 +1,16 @@
+### November 15: W1 Refresh and cache ownership (R2/R5/R6)
+
+Startup reconciliation preserves the epoch recorded inside each scene/surface;
+it cannot make invalidated or pending-delete pixels current again. Refresh now
+cancels only the selected photo families' source preparation and advances only
+their cache generations, so unrelated photo work can complete. Deferred cleanup
+compares and deletes under the publication lock and SQLite write transaction,
+keeping a concurrently published replacement safe and immediately readable.
+The existing locked-file accounting and protected Build previews policy stay.
+Regression tests cover both stored formats, family scoping, unrelated completion
+and replacement interleaving; all 66 W1 focused Python checks pass. No picture
+maths, authored grades, originals, limits or budgets change in this commit.
+
 ### November 15: W1 finished-picture invalidation (R4)
 
 The commit containing this note intentionally rebuilds finished thumbnails
