@@ -119,6 +119,20 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | N5 | X2 "Start HDR from SDR". | N4 |
 | N6 | Final review, fixes, brief/PRD updates, push. | all |
 
+### N4 acceptance agreed before measurement (November 16)
+
+Local Match fits the difference between mapped finished HDR with the parent
+on and neutralised, added to finished SDR with that parent neutralised; SDR
+globals and other locals stay fixed. Acceptance uses whole-Match body metrics
+restricted to effective mask coverage: median/P95 absolute luma ≤ .010/.050,
+median/P95 OKLab distance ≤ .015/.040, plus mean/P95 ΔE2000 ≤ 1/3 on that
+region, because the promise is a perceptually small error in this local change,
+not a new global grade. Empty/disabled/negligible support makes no edit;
+failure retains the old SDR local. No existing whole-Match gate changes.
+Non-body covered pixels must also pass mean/P95 ΔE2000 ≤ 1/3; highlight
+compression is not permission to accept a bad local fit. Synthetic overlap,
+Film/cap and two shared RAWs (gradient/brush and hue) qualify the action.
+
 ### N3a result (November 16, MacBook Neo / A18 Pro / 8 GB)
 
 **Partial: Local Tone built; HDR→SDR colour shifts are not fixed across
