@@ -578,6 +578,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
 - `docs/technical/briefs/sprint-0-9-3-feedback-2026-11-15.md`: the current
   sprint. Steve's 0.9.3 notes, review findings on the November 15 PC
   changes, status board, decisions and work packages W1–W7.
+- `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
+  five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
+  Highlight Compression cap) with open decisions T1-b to T1-f.
 Completed 0.9.2 release sprint: `docs/technical/archive/briefs/release-0-9-2-sprint-2026-11-11.md`
 (November 11: audit, cleanup, Grade control review, release check outcome in `docs/known-limitations.md`).
 Completed component-sheet pass (pending visual sign-off):

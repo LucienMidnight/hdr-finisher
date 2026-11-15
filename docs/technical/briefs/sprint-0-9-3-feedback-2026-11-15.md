@@ -37,8 +37,8 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | R6 | Deferred delete can remove a fresh replacement | W1 | built — compare/delete share the publication transaction; concurrent replacement survives |
 | R7 | Failed clean-up request hides a successful paste | W1 | built — best-effort cleanup bounded to one second; rejected/hung cleanup preserves successful result |
 | R8 | Exact grain test fails on the Mac | W1 | built — exact same-run old/new grain comparison replaces Windows-generated arrays; no tolerance change |
-| P1 | Paste Grade shows it has started immediately | W2 | built — feedback 11–13 ms on Neo; cancel/failure/no-change, virtual-copy redraw and Undo checked |
-| P2 | Edited thumbnail appears fast after leaving Grade | W2 | to do |
+| P1 | Paste Grade shows it has started immediately | W2 | built — final feedback 10–12 ms on Neo; cancel/failure/no-change, virtual-copy redraw and Undo checked |
+| P2 | Edited thumbnail appears fast after leaving Grade | W2 | built — ready return 100–224 ms, pixels checked; current-format-first publication; 500 ms whole-handoff qualification remains variable (403/696 ms) |
 | P3 | Opening Grade during background work is fast | W2 | built — pause spans first picture, including cached-only windows; Neo whole-wait contention passes without excluding release wait |
 | P4 | Library Denoise setup reused when nothing changed | W2 | built — exact-source scratch and control-only pixels checked in Library; timings noisy; existing Grade readback/geometry checks remain limited |
 | P5 | Lensfun: measure, then decide | W2 | measured — full RAW stage timings recorded; no-go for strip-fused rewrite for now; no pixel/cache changes |
@@ -76,6 +76,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | Nov 15 | Purple `#9b7bff` is the default accent. Orange stays a choice in Settings. Saved choices are kept. |
 | Nov 15 | Add a Whites slider beside Blacks. Blacks and Whites are simple endpoint controls that feel the same in HDR and SDR and overlap little with Shadows/Highlights. Shadows/Midtones/Highlights cover broader, customisable ranges, closer to lift/gamma/gain. Exact design waits for the T1 research. |
 | Nov 15 | Steve opened the slow RAW (over 30 s) in **Grade**, while a paste was running. |
+| Nov 15 | T1-a: the Tone block stays **early**, before Film Look (users set tone, then add a look, like a LUT workflow). Highlight Compression stays **last** as the cap that guarantees the delivery peak. The backend may differ internally where that is more intuitive or gives better results, but the user-facing order is tone → look → cap. The research proposal's after-compression placement is rejected; the design is being revised for this order. |
 | Nov 15 | Fix the SDR clipping bug (M1a) now, in W3 with the colour wheel fixes. Verify on the shared test RAWs (any saturated blue should show it); the jeans were only a recent example. |
 
 **Recommended defaults, adopted unless Steve overrides**
@@ -191,10 +192,12 @@ Whites slider.
 - Size **L**. All saved non-zero tone edits and stored Match recipes render
   differently (pre-1.0: no migration renderer).
 
-Open decisions for Steve (one at a time): T1-a tone block after highlight
-compression (and after Film Look)? T1-b is narrow Whites travel enough?
-T1-c Local Tone in the same change? T1-d clipping/range preview first and
-Auto later?
+T1-a decided Nov 15: tone first, then Film Look, Highlight Compression last as
+the cap (see Decisions). The revised design is in
+`tone-endpoints-design-2026-11-15.md` (size XL with Local Tone and Match).
+Open, in order: T1-e fixed cap vs Peak Fit; T1-f SDR shoulder moved last;
+HDR Center 0 anchor; T1-b Whites travel; T1-c Local Tone together; T1-d
+preview first, Auto later. No build until Steve answers.
 
 ### W5: HDR to SDR Match colour (M1), research first
 
