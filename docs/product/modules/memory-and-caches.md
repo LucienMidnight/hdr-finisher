@@ -1,3 +1,16 @@
+### November 15: W2 P4 reuse the existing Denoise scratch owner
+
+Library adaptive setup reuses its one existing selector/scratch for exact source,
+lane, scale, geometry, algorithm and model identity. A finishing-only transport
+key reset may retain that same owner while releasing old resolved pixels and
+source references; it is revalidated before use. New source/geometry/model,
+explicit eviction and empty reset retain normal destruction. Snapshot accounting
+still reads the live selector. This adds no second pixel cache, entry, byte
+allowance, model-LRU size, cache share or budget. Exact-repeat and changed-control
+pixels pass in the focused real Library check, including a real renderer reset.
+The separate Grade parity/readback and geometry-settle limitations are recorded
+in the Library module; none is waived by this ownership change.
+
 ### November 15: W2 P3 first-picture priority lifetime
 
 Grade import priority now lasts until a real current-frame GPU/CPU picture is

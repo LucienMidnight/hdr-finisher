@@ -67,6 +67,7 @@ fn main(@builtin(global_invocation_id) g:vec3<u32>){
   textureStore(packedOutput,vec2<i32>(g.xy),vec4<f32>(sum/max(total,1e-20),1));
 }`;
 class HDRLibraryGPU extends HDRWebGPUPreview {
+  reuseDenoiseSetup = true;
   async requestPreviewDevice() {
     try { return (await HDRLibraryGpuRaw.shared.gpu()).device; }
     catch(error) { this.libraryInitializationError=error; throw error; }
@@ -105,11 +106,29 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
     if (proxy && this.rawPictures?.owns(proxy.texture)) { this.rawPictures.release(proxy.texture); return; }
     super.evictGpuCacheEntry(kind,key);
   }
+  denoiseSetupIdentity(lane, edge, geometry) {
+    return this.libraryMeta?.source_key
+      ? JSON.stringify([this.libraryMeta.source_key,lane,edge,geometry]) : null;
+  }
   resetSession(sessionId = null) {
+    const source=sessionId && this.libraryMeta?.source_key;
+    const keep=source && source===this.libraryDenoiseSource && this.denoiseSourceSelector?.cache?.adaptiveScratch
+      ? this.denoiseSourceSelector : null;
+    // A finishing-only grade key changes transport URLs, not source noise.
+    // Keep the one existing scratch owner; full resolved pixels and source
+    // references still retire with the old render session.
+    if(keep) {
+      this.denoiseSourceSelector=null;
+      const resolved=keep.resolved;
+      this.destroyAfterActiveRenders(()=>resolved?.texture?.destroy());
+      keep.original=null;keep.resolved=null;keep.resolvedFor=null;
+    }
     // Retained Library scenes have their own bounded owner. Detach references
     // before Grade's unchanged reset clears its per-picture working resources.
     for (const [key, proxy] of this.proxies) if (this.rawPictures?.owns(proxy.texture)) this.proxies.delete(key);
     super.resetSession(sessionId);
+    if(keep)this.denoiseSourceSelector=keep;
+    this.libraryDenoiseSource=source || null;
   }
   async ensureDenoiseResolved(...args) {
     const started = performance.now();

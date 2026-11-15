@@ -5899,10 +5899,25 @@
         this.recordStage("denoise-analysis", { state: "stale", generation });
         return false;
       }
+      const previous = this.denoiseSourceSelector;
+      const setupIdentity=this.denoiseSetupIdentity?.(lane,longEdge,geometrySignature) || frame.identity;
+      if (this.reuseDenoiseSetup && previous?.setupIdentity === setupIdentity
+          && previous.cache?.algorithmVersion === ADAPTIVE_DENOISE_ALGORITHM_VERSION
+          && JSON.stringify(previous.cache.model) === JSON.stringify(model)) {
+        // Identity includes source, rendition, scale and geometry. Controls
+        // change reconstruction, never the source measurement or scratch.
+        previous.identity = frame.identity;
+        previous.cache.identity = `${frame.identity}|${ADAPTIVE_DENOISE_ALGORITHM_VERSION}|${JSON.stringify(model)}`;
+        previous.original = this.proxies.get(frame.identity) || null;
+        previous.generation = generation;
+        previous.selected = "resolved";
+        this.setDenoiseControls(controls);
+        this.recordStage("denoise-analysis", { state: "reused", generation, durationMs: performance.now() - startedAt });
+        return true;
+      }
       await this.ensureAdaptiveDenoisePipelines();
       const settings = { name: "Adaptive", algorithm: ADAPTIVE_DENOISE_ALGORITHM_VERSION, levels: 1 };
       const scratch = this.createAdaptiveDenoiseScratch();
-      const previous = this.denoiseSourceSelector;
       const cache = {
         algorithmVersion: ADAPTIVE_DENOISE_ALGORITHM_VERSION,
         settings,
@@ -5917,6 +5932,7 @@
       };
       this.denoiseSourceSelector = {
         identity: frame.identity,
+        setupIdentity,
         // Adopted by the first Direct render of this frame; a tiled render
         // never needs it.
         original: this.proxies.get(frame.identity) || null,

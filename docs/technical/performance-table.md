@@ -1,3 +1,9 @@
+## November 15: W2 Library Denoise redraw (MacBook Neo)
+
+| Action | Rule | Before → after | Conditions / evidence |
+| --- | --- | --- | --- |
+| Warm unchanged 640px Library Denoise draw, whole request to completed GPU draw | Exact setup identity and identical repeat pixels; existing 5% timing noise rule, no speed gate | Before setup replacement 28.8 / 37.2 ms; reuse 12.4 / 50.2 ms. Control-only draw 69.3 / 71.5 ms | Neo A18 Pro / 8 GB / 1408×794, shared GPU lock, published generated noisy 1500×1000 TIFF, same-process warm comparison by toggling the production reuse flag. Both runs prove same selector/scratch, exact unchanged pixels and changed control output; final also resets through another finishing transport key, retaining scratch but retiring resolved pixels. Concurrent agents; final fast Python suite overlaps the short draw. Timing spread is noise-dominated and not a felt-speedup claim. `codebase/output/w2-denoise/library-redraw.json`, `w2-p4-{library-final,exact-source}.log`. Existing Grade parity readback fails; tile-cache stalls at 2° geometry and is stopped after about nine minutes (`w2-p4-tile-state.json`). All limits unchanged. Commit containing this note. |
+
 ## November 15: W2 Grade opening priority (MacBook Neo)
 
 | Action | Existing target | Before → after | Conditions / evidence |

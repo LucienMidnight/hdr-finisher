@@ -40,7 +40,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | P1 | Paste Grade shows it has started immediately | W2 | built — feedback 11–13 ms on Neo; cancel/failure/no-change, virtual-copy redraw and Undo checked |
 | P2 | Edited thumbnail appears fast after leaving Grade | W2 | to do |
 | P3 | Opening Grade during background work is fast | W2 | built — pause spans first picture, including cached-only windows; Neo whole-wait contention passes without excluding release wait |
-| P4 | Library Denoise setup reused when nothing changed | W2 | to do |
+| P4 | Library Denoise setup reused when nothing changed | W2 | built — exact-source scratch and control-only pixels checked in Library; timings noisy; existing Grade readback/geometry checks remain limited |
 | P5 | Lensfun: measure, then decide | W2 | measured — full RAW stage timings recorded; no-go for strip-fused rewrite for now; no pixel/cache changes |
 | C1 | Colour wheels: tiny move changes highlights | W3 | built — CPU/GPU retain headroom; continuity and unchanged-range checks pass |
 | C2 | Colour wheels: Balance direction | W3 | built — positive favours Highlights globally/locally; Match translates local wheel hues too |

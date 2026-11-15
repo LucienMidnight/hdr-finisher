@@ -2694,6 +2694,13 @@
       }
     },
     {
+      "path": "tests/library-denoise-reuse.js",
+      "areas": ["library","detail"],
+      "tier": "diagnostic",
+      "protects": "Exact Library Denoise setup reuse, identical redraw pixels and control-only reconstruction.",
+      "launch": {"method":"electron"}
+    },
+    {
       "path": "tests/performance/grade-open-contention.js",
       "areas": ["library", "preview"],
       "tier": "diagnostic",

@@ -1,3 +1,29 @@
+### November 15: W2 P4 exact Library Denoise setup reuse
+
+Library drawing keeps its one adaptive Denoise selector/scratch when developed
+source, rendition, scale, geometry, algorithm and fetched model match exactly.
+Finishing-only grade URL changes do not become false source changes: reset
+retires resolved pixels and old source references but can keep that same scratch
+owner; the next analysis still verifies lane/scale/geometry/model. Controls
+update reconstruction correctly. A changed source, model or geometry replaces
+setup, and explicit eviction/empty reset releases it. No new cache, entry count,
+size, allowance or pixel math. Grade does not opt into this Library reuse.
+
+Nine focused state/ownership checks pass. The real Library GPU check uses a
+published noisy 1500×1000 TIFF scene at 640px: unchanged redraw pixels are exact,
+control changes alter the output, and a finishing-key reset preserves scratch
+without retaining resolved pixels. Both real runs pass. Warm whole redraws:
+before reuse 28.8/37.2 ms; after 12.4/50.2 ms under differing concurrent load.
+These short waits are noise-dominated; no felt speedup is claimed. The removal
+of repeated scratch allocations and exact reuse are the qualified result.
+
+The requested existing Grade checks are not green: adaptive parity stops at
+its known minimum-Mac resolved-result readback failure; tile-cache reaches the
+2° straighten step then stays “updating: scale” despite a ready Denoise/exact
+accepted frame. It was stopped after about nine minutes, before the slow-test
+budget was exceeded. No timeout or pixel guard was loosened; retained state is
+`codebase/output/w2-p4-tile-state.json`. Both remain qualification limits.
+
 ### November 15: W2 P3 pause Library through Grade's first picture
 
 A Grade import now holds priority from its request through its first presented
