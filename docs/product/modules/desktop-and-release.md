@@ -1,5 +1,19 @@
 # Module PRD: Desktop and release
 
+## November 15: icon action tiers
+
+Panel-header collapse actions use the existing 30px `--panel-control-h`,
+with unchanged 14px chevron glyphs and matching Metadata grid tracks.
+Compact Export card/version menus, Grade preset/eye and Local/Retouch row
+actions use Steve-approved `--compact-action-size` (26px). The shared 24px
+disclosure/status token stays unchanged. Implementation awaits app review
+in three themes, with all four pages expanded and collapsed; Electron
+and GPU checks are deferred while Steve exports.
+
+Fast checks: Node 1,003 passed / one skipped; Python 3,510 passed / 86
+skipped, with the known Windows path-separator failure in
+`test_machine_tooling.py::test_js_python_settings_agree`. No test changes.
+
 ## November 14: 0.9.3 UI polish and round 2 review
 
 Workflow pages return to flat navigation, guided by the original underline

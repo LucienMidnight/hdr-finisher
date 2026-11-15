@@ -80,7 +80,7 @@
   }
   .hf-button.primary:active:not(:disabled) { box-shadow: var(--plate-press); color: var(--on-accent); }
   .hf-button.primary:disabled { background: var(--plate-up); border-color: var(--plate-edge); color: var(--muted); opacity: 1; }
-  /* Icon plate: a square 30px target. */
+  /* Tier 1: panel-header actions use the 30px --panel-control-h target; chevrons keep their glyph size. */
   .hf-button.icon { width: var(--panel-control-h); padding: 0; }
   /* Tool: an icon-only plate, named by its tooltip (Local and Retouch tools, Crop, Rotate). */
   .hf-button.tool { position: relative; width: 40px; height: 34px; padding: 0; }
@@ -90,9 +90,9 @@
     color: var(--text); font: var(--font-weight-regular) var(--font-size-sm)/var(--line-height-tight) var(--font-body);
   }
   .hf-tool-strip { display: flex; flex-wrap: wrap; gap: 6px; }
-  /* Ghost icon: no plate, for header actions (preset, bypass). */
+  /* Tier 2: --compact-action-size is 26px for row/card/section actions (preset, bypass, more). */
   .hf-ghost {
-    display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0;
+    display: inline-grid; place-items: center; width: var(--compact-action-size); height: var(--compact-action-size); padding: 0;
     border: 0; border-radius: var(--radius-1); background: transparent; color: var(--muted); cursor: pointer;
   }
   .hf-ghost:hover { color: var(--text); }
@@ -370,7 +370,7 @@
     <li>Action buttons are plates: raised face, plate edge and lift. Hover lifts the face to the hover plate; pressed or on is pushed in with accent-strong ink. Workflow page tabs are flat navigation, not button plates.</li>
     <li>Tools are icon-only plates, 40 × 34 px, named by a tooltip on hover and keyboard focus: the Local and Retouch tools, Crop and Rotate. No label under the icon.</li>
     <li>One primary button per area, in the accent plate. Disabled primary falls back to the neutral plate with muted ink at full opacity.</li>
-    <li>Small actions inside headers (preset, bypass) are ghost icons: no plate, muted ink.</li>
+    <li>Panel-header icon actions use 30?30px targets (<code>--panel-control-h</code>), with unchanged 14px chevrons. Compact row/card/section actions use 26?26px targets (<code>--compact-action-size</code>); preset and bypass actions are ghost icons: no plate, muted ink.</li>
   </ul>
   <div class="specimens">
     <div class="specimen"><h3>Plate button <small>rest · on · disabled</small></h3>

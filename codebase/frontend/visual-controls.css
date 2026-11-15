@@ -65,9 +65,7 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
  background: var(--muted); clip-path: none; -webkit-mask: var(--group-chevron-shape) center/contain no-repeat; mask: var(--group-chevron-shape) center/contain no-repeat; transition: transform 120ms ease;
 }
 :root .control-foldout[open] > summary::before { transform: rotate(90deg); }
-:root .panel-collapse-button { width: 26px; height: 24px; min-height: 24px; padding: 0; }
-:root .source-rail:not(.collapsed) .rail-title-row { grid-template-columns: minmax(0, 1fr) auto; } /* fit the 26 px button, not the 24 px token */
-:root .section-bypass { min-width: 26px; padding: 0; }
+:root .section-bypass { min-width: var(--compact-action-size); padding: 0; }
 :root .local-tool-strip { display: flex; gap: 6px; flex-wrap: wrap; }
 :root .local-tool-strip > button { width: 40px; height: 34px; min-height: 34px; min-width: 40px; flex: 0 0 40px; padding: 0; background: var(--plate-up); border: 1px solid var(--plate-edge); border-radius: var(--radius-plate); box-shadow: var(--plate-lift); color: var(--body); }
 :root .local-tool-strip > button:is(.active, [aria-pressed="true"]) { background: var(--plate-down); box-shadow: var(--plate-press); color: var(--accent-strong); }
@@ -165,7 +163,7 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root .top-actions { gap: 8px; }
 :root .top-actions .text-button { padding-inline: 5px; white-space: nowrap; }
 :root #batch-run { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 86%, white), color-mix(in srgb, var(--accent) 90%, black)); border-color: var(--accent-low); color: var(--on-accent); }
-:root .group-preset { width: 26px; padding: 0; font-size: 0; }
+:root .group-preset { height: var(--compact-action-size); width: var(--compact-action-size); padding: 0; font-size: 0; }
 :root .group-preset::before { content: ''; display: block; width: 15px; height: 15px; background: currentColor; mask: url('assets/icons/tabler/adjustments-horizontal.svg') center/contain no-repeat; }
 :root .status-entry.status-attention { color: var(--attention); }
 /* The same chevron shape uses theme ink in selects, which cannot host a mask. */
@@ -180,11 +178,11 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root .zoom-control > .zoom-value { --zoom-value-width: 64px; padding: 0 6px; }
 :root .zoom-control .range-shell { width: 90px; min-width: 70px; flex: 0 1 90px; }
 :root :is(.zoom-control, .library-size) :is(.slider-scale, .slider-origin) { display: none; }
-:root .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 0 26px; column-gap: 3px; padding-inline: 12px 8px; }
-:root .control-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 38px 26px; }
+:root .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) var(--compact-action-size) 0 var(--compact-action-size); column-gap: 3px; padding-inline: 12px 8px; }
+:root .control-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) var(--compact-action-size) 38px var(--compact-action-size); }
 :root .control-group-header > :is(.group-toggle, .group-preset, .group-reset, .section-bypass) { grid-row: 1; }
 :root .control-group:not(.modified) .group-reset { display: none; }
-:root :is(.section-bypass, .local-adjustment-bypass) { font-size: 0; line-height: 0; color: var(--bypass-icon-visible); width: 26px; min-width: 26px; height: 26px; min-height: 26px; padding: 0; --bypass-icon-shape: url("./assets/icons/tabler/eye.svg"); }
+:root :is(.section-bypass, .local-adjustment-bypass) { font-size: 0; line-height: 0; color: var(--bypass-icon-visible); width: var(--compact-action-size); min-width: var(--compact-action-size); height: var(--compact-action-size); min-height: var(--compact-action-size); padding: 0; --bypass-icon-shape: url("./assets/icons/tabler/eye.svg"); }
 :root :is(.section-bypass, .local-adjustment-bypass).bypassed { color: var(--bypass-icon-hidden); }
 
 /* Pointer editing has no focus frame; keyboard/assistive focus keeps neutral ink. */
@@ -289,8 +287,8 @@ html.native-application-menu :is(.window-controls, .unified-menu-button) { displ
 :root { --bypass-icon-visible: var(--muted); --bypass-icon-hidden: var(--text); }
 :root .control-group.modified > .control-group-header > .group-toggle::after { content: none; }
 :root .control-group.modified .group-reset::after { content: ""; display: inline-block; vertical-align: middle; margin-left: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
-:root .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 0 26px; }
-:root .control-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 48px 26px; }
+:root .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) var(--compact-action-size) 0 var(--compact-action-size); }
+:root .control-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) var(--compact-action-size) 48px var(--compact-action-size); }
 :root .grade-autosave i { background: var(--ready); }
 :root .grade-autosave[aria-pressed="false"] i { background: transparent; }
 :root :is(.checkbox-row, .film-module-toggle, .proof-enable-row, .gradient-luma-toggle) > input[type="checkbox"]:checked { background: var(--accent); }
@@ -375,7 +373,7 @@ body:is([data-workflow="proof"], [data-workflow="export"]) .app-shell > .splitte
 :root .media-browser-preview-resizer::after { right: 0; }
 
 /* Reserve enough room for Reset plus its changed dot in Color wheels. */
-:root .color-grading-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) 26px 68px 26px; }
+:root .color-grading-group.modified > .control-group-header:has(.group-preset) { grid-template-columns: minmax(0, 1fr) var(--compact-action-size) 68px var(--compact-action-size); }
 
 /* The colour ring alone is filled. The polar grid has a transparent centre.
    The ring starts at 300deg so each colour sits where color-wheels.js puts that hue. */
@@ -541,7 +539,6 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 
 /* November 7: Library sidebar is the "Pinned" panel; Folders, Albums and Smart Albums are its sections. */
 :root .library-nav > .library-panel-heading { padding-inline: var(--workspace-leading); }
-:root :is(.library-nav, .batch-preset-rail) .panel-collapse-button { flex-basis: auto; }
 :root .library-left-closed .library-nav > .library-panel-heading { padding-inline: 0; justify-content: center; }
 :root .library-section-title { flex: 1; min-width: 0; color: var(--text); white-space: nowrap; font: var(--group-title-font-weight) var(--group-title-font-size) var(--group-title-font-family); letter-spacing: var(--group-title-letter-spacing); }
 
@@ -686,3 +683,6 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 
 /* Selection on a button is the pressed plate and accent ink, never an accent outline or border (Steve, November 11, 2026). Photo and folder tiles keep their selection frame. */
 :root :is(button, [role="button"], [role="tab"]):is(.active, [aria-pressed="true"], [aria-selected="true"], [aria-expanded="true"]):not(.workflow-tab, .batch-photo, .directory-browser-entry, .hsl-channel, .accent-option, .group-toggle, .disclosure-trigger) { border-color: var(--plate-edge) !important; outline: none; }
+
+/* Compact actions share a square target; panel-header menus retain 30px. */
+:root :is(.batch-preset-row, .batch-version-row, .batch-version-tabs) .top-icon-button { width: var(--compact-action-size); min-width: var(--compact-action-size); height: var(--compact-action-size); min-height: var(--compact-action-size); flex-basis: var(--compact-action-size); }

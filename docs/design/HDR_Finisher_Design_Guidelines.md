@@ -346,7 +346,7 @@ Use the runtime tokens and existing component rhythm as the baseline:
 - Hairlines separate dense regions. All panel edges and section dividers use one 1 px neutral hairline. Shared edges have one owner; full-height splitters keep the preview, status and scopes edges continuous. Buttons, inputs and pop-ups keep their own outlines.
 - Keep hit targets comfortably larger than their visible glyphs.
 
-Panel header geometry is shared in `visual-controls.css` through `--panel-header-h` (40px), including Library, Grade, Proof and Export side and centre bars. The height includes the bottom divider; headers have no vertical padding and do not grow around toolbar contents. Header tool buttons are 30px high, with text and icons centred; panel title margins must not shift the shared label baseline.
+Panel header geometry is shared in `visual-controls.css` through `--panel-header-h` (40px), including Library, Grade, Proof and Export side and centre bars. The height includes the bottom divider; headers have no vertical padding and do not grow around toolbar contents. Panel-header icon actions (including collapse and Export Presets menus) are 30?30px via `--panel-control-h`; chevron glyphs remain `--chevron-size` (14px). Compact row/card/section icon actions use `--compact-action-size` (26?26px): Export card and output-version menus, Grade preset/bypass, Local and Retouch row actions. Header tool buttons are 30px high, with text and icons centred; panel title margins must not shift the shared label baseline.
 
 Resizable regions may change during the current session, but return to these defaults on reload.
 
