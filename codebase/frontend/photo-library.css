@@ -391,3 +391,12 @@ img:not([src]), img[src=""] { visibility:hidden; }
 .grade-paste-dialog details > .library-ask-body { gap: 0; max-height: none; overflow: visible; }
 .grade-paste-dialog details > .library-ask-body > .checkbox-row + .checkbox-row { border-top: 1px solid var(--plate-edge); }
 .grade-paste-dialog .grade-paste-footer { flex-shrink: 0; }
+/* Paste picks settings from a list: plain checkboxes (with a partly-ticked
+   group state) read better here than the instrument switches. */
+:root .grade-paste-dialog .checkbox-row > input[type="checkbox"],
+:root .grade-paste-dialog .checkbox-row > input[type="checkbox"]:checked { appearance: auto; width: auto; height: auto; margin: 0; border: 0; border-radius: 0; background: none; box-shadow: none; accent-color: var(--accent-strong); }
+:root .grade-paste-dialog .checkbox-row > input[type="checkbox"]::before,
+:root .grade-paste-dialog .checkbox-row > input[type="checkbox"]::after,
+:root .grade-paste-dialog .checkbox-row > input[type="checkbox"]:checked::after { content: none; }
+:root .grade-paste-dialog .checkbox-row > input[type="checkbox"]:focus-visible { outline: revert; }
+.grade-paste-dialog .grade-paste-mod { margin-left: 8px; color: var(--muted); font: var(--font-weight-regular) var(--font-size-min)/var(--line-height-normal) var(--font-body); letter-spacing: var(--tracking-none); }

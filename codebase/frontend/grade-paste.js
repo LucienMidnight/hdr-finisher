@@ -131,11 +131,11 @@
           tick.input.setAttribute('aria-label', `${group.lane || ''} ${group.label}`.trim());
           // Keep disclosure keyboard behaviour separate from the checkbox.
           tick.row.addEventListener('click', event => event.stopPropagation());
-          label.append(tick.row); if (group.modified) label.append(make('small', 'library-kicker', 'Mod')); details.append(label);
+          label.append(tick.row); if (group.modified) label.append(make('small', 'grade-paste-mod', 'Mod')); details.append(label);
           const rows = make('div', 'library-ask-body');
           for (const setting of group.settings) {
             const child = checkbox(setting.label, model.has(setting.id), checked => model.toggle(setting.id, checked));
-            child.input.dataset.setting = setting.id; if (setting.modified) child.row.append(make('small', 'library-kicker', 'Mod'));
+            child.input.dataset.setting = setting.id; if (setting.modified) child.row.append(make('small', 'grade-paste-mod', 'Mod'));
             rows.append(child.row); checks.push({setting, group, ...child});
           }
           details.append(rows); sections.get(group.section).append(details); checks.push({group, ...tick});

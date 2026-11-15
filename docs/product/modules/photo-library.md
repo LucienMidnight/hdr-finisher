@@ -38,7 +38,9 @@ running app was left open; its next normal restart loads the fix. No push.
 The commit containing this note gives Paste Grade a settings summary, a raised
 secondary Choose what to paste button, and a separate status area above the
 actions. The expanded picker uses compact, divided setting rows and the shared
-switches and buttons. The summary names extra groups directly instead of
+buttons. Steve, November 15, 2026: the picker uses plain checkboxes, not the
+instrument switches, so a group with only some settings chosen shows a
+partly-ticked box; "Mod" labels are small and muted. The summary names extra groups directly instead of
 "Outside the grade groups". Preparation shows progress, a cancellation
 explanation and Cancel with initial keyboard focus.
 
