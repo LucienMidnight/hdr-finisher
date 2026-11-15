@@ -246,8 +246,8 @@ def _refine_image_highlights(
         best_growth = growth(candidate)
         best_start = authored
         if best_growth > .01:
-            for offset in (-5., -10.):
-                sdr.highlight_compression_start_percent = max(1., authored + offset)
+            for offset in (-5., -10., 10., 5.):
+                sdr.highlight_compression_start_percent = float(np.clip(authored + offset, 1., 100.))
                 trial = _render_candidate(source, adjustments, local_adjustments, source_pixel_scale)
                 trial_quality = _quality_metrics(target, trial, body)
                 trial_growth = growth(trial)
@@ -513,7 +513,7 @@ def _materialize_sdr_match_impl(
         )
         timing["candidate_label"] = "luma_recovery"
     luma_recovery_started = perf_counter()
-    if quality.p95_luma_error > 0.05 or quality.p95_oklab_error > 0.05:
+    if quality.median_luma_error > 0.01 or quality.p95_luma_error > 0.05 or quality.p95_oklab_error > 0.05:
         # A few conservative luma-only corrections are permitted before
         # rejecting. Final-stage HDR compression can make the captured shoulder
         # broader than one Exposure Bands merge can represent. Each proposal is
@@ -525,7 +525,8 @@ def _materialize_sdr_match_impl(
                 candidate, quality, gain=0.45,
             )
             if quality == previous_quality or (
-                quality.p95_luma_error <= 0.05 and quality.p95_oklab_error <= 0.05
+                quality.median_luma_error <= 0.01
+                and quality.p95_luma_error <= 0.05 and quality.p95_oklab_error <= 0.05
             ):
                 break
 
@@ -548,6 +549,23 @@ def _materialize_sdr_match_impl(
             explored = quality
             candidate = render_match_candidate(source, result_adjustments, result_locals, source_pixel_scale)
             quality = _quality_metrics(target, candidate, body)
+            if quality.p95_oklab_error > 0.04:
+                if timing is not None:
+                    timing["cpu_pre_refinement_quality"] = quality.model_dump(mode="json")
+                previous_curves = {
+                    name: getattr(result_adjustments.sdr, name)
+                    for name in ("red_curve", "green_curve", "blue_curve")
+                }
+                for name, channel_index in (("red_curve", 0), ("green_curve", 1), ("blue_curve", 2)):
+                    correction = _fit_image_curve(candidate[..., channel_index], target[..., channel_index], body)
+                    setattr(result_adjustments.sdr, name, _compose_curve(previous_curves[name], correction))
+                trial = render_match_candidate(source, result_adjustments, result_locals, source_pixel_scale)
+                trial_quality = _quality_metrics(target, trial, body)
+                if _refinement_improves(quality, trial_quality):
+                    candidate, quality = trial, trial_quality
+                else:
+                    for name, curve in previous_curves.items():
+                        setattr(result_adjustments.sdr, name, curve)
         if timing is not None:
             timing["gpu_explored_quality"] = explored.model_dump(mode="json")
             timing["cpu_certified_quality"] = quality.model_dump(mode="json")

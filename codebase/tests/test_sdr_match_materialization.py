@@ -320,8 +320,9 @@ def test_color_grading_wheels_are_translated_into_sdr_primaries() -> None:
         y = (np.sqrt(3.0) / 2.0) * (green - blue)
         return float(np.degrees(np.arctan2(y, x))) % 360.0
 
-    sdr_grey = np.full((8, 8, 3), 0.18, dtype=np.float32)
-    hdr_grey = linear_srgb_to_acescg(sdr_grey.copy())
+    sdr_grey = np.full((8, 8, 3), 0.18 * 100.0 / 203.0, dtype=np.float32)
+    hdr_grey = linear_srgb_to_acescg(np.full_like(sdr_grey, 0.18 * 0.18))
+    hdr_neutral = acescg_to_linear_srgb(hdr_grey)
 
     for wheel_name in ("shadows", "midtones", "highlights"):
         for hue in (0.0, 90.0, 120.0, 210.0, 300.0):
@@ -333,7 +334,7 @@ def test_color_grading_wheels_are_translated_into_sdr_primaries() -> None:
             reference = acescg_to_linear_srgb(
                 _apply_color_grading(hdr_grey.copy(), authored, PreviewKind.HDR)
             )
-            reference_hue = hue_of(reference.mean(axis=(0, 1)) - sdr_grey.mean(axis=(0, 1)))
+            reference_hue = hue_of(reference.mean(axis=(0, 1)) - hdr_neutral.mean(axis=(0, 1)))
 
             translated = authored.model_copy(deep=True)
             _translate_color_grading_wheels(translated, authored)

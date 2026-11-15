@@ -177,6 +177,9 @@ def test_page_rendered_candidates_give_a_cpu_certified_recipe() -> None:
     assert result.quality == _quality_metrics(build_sdr_match_target(settled), exported, body)
     assert result.quality.model_dump() == timing["cpu_certified_quality"]
     assert timing["gpu_explored_quality"] != timing["cpu_certified_quality"]
+    assert result.quality.p95_oklab_error < timing["cpu_pre_refinement_quality"]["p95_oklab_error"]
+    assert result.quality.p95_oklab_error <= 0.05
+    assert result.quality.median_luma_error <= 0.01
     # A small rendering difference must not move the result far from the CPU fit.
     assert abs(result.adjustments.sdr.exposure - baseline.adjustments.sdr.exposure) <= 0.1001
     assert abs(result.quality.p95_luma_error - baseline.quality.p95_luma_error) < 0.01
