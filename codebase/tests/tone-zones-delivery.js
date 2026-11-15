@@ -48,6 +48,7 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
   while(!(delivery=page.context().pages().find(p=>p.url().includes('gpu-delivery.html'))) && Date.now()<deliveryDeadline)
     await new Promise(resolve=>setTimeout(resolve,50));
   assert.ok(delivery,'Hidden GPU delivery renderer');
+  await delivery.waitForFunction(()=>typeof HDRGpuDeliveryFinishing==='function');
   await delivery.evaluate(()=>{
     window.__finished=[];const read=HDRGpuDeliveryFinishing.prototype.read;
     HDRGpuDeliveryFinishing.prototype.read=async function(texture){const pixels=await read.call(this,texture);window.__finished.push(Array.from(pixels));return pixels;};

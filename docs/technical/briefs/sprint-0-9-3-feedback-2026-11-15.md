@@ -29,6 +29,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 
 | ID | Item | Package | Status |
 | --- | --- | --- | --- |
+| N1 | Fixed cap and final SDR Highlight Compression | Overnight | built and checked — fourth mode added, existing curves/settings/defaults retained; CPU/GPU finishing, all 33 SDR Film cases, Proof/export and isolated Library pass; M1 mixed results/new refusals remain for N3a |
 | H1 | HSL picker, Local hue selection and gizmos | Follow-up | built, scoped — pre-sprint Local save/sample race and late HSL cancellation fixed; HDR/SDR real-RAW picking, wheel/sampling-gizmo gestures and CPU/GPU hue delivery pass; general idle failure not reproduced, Steve's original sequence still needs confirmation |
 | R1 | SDR local Detail: CPU clips, GPU keeps headroom | W1 | built — CPU local Detail retains headroom; Portra/Velvia GPU preview against CPU export passes |
 | R2 | Startup reconciliation brings back invalidated scenes | W1 | built — reconciliation checks saved epoch and pending deletion; scene/surface regressions pass |
@@ -114,6 +115,104 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | N4 | X1 local "Match SDR". | N3a |
 | N5 | X2 "Start HDR from SDR". | N4 |
 | N6 | Final review, fixes, brief/PRD updates, push. | all |
+
+### N1 result (November 15–16, MacBook Neo / 8 GB)
+
+Commits: `9c2232d3` (additive Fixed cap and final SDR order), `4bb115f4`
+(Match/finishing adaptation and expectation updates). Committed locally;
+coordinator pushes. N2's Tone block/Whites/range alignment is not built here.
+
+Fixed cap uses the proposed linear-light exponential: identity below Start,
+unit slope at the join, positive non-expanding derivative above it, common
+RGB gain driven by positive maximum BT.2020/sRGB channel, no peak reduction.
+Peak Fit, Soft Ceiling and Clip retain their curves/settings/defaults. SDR HC
+now follows Film Look, grain, resize and output sharpening, before the final
+unconditional gamut mapper. Signed/above-white values survive the removed early
+boundaries, including neutral/extended Curves. SDR sharpening's guide is
+extended above white and a zero limited correction is exact identity. Existing
+scaled half-float storage/reduction covers extreme SDR neutral-paper gains;
+no memory cap, cache size, tolerance, gate or HDR target is relaxed.
+
+New Match/Rematch recipes use existing Soft Ceiling (ordinary new SDR still
+uses Peak Fit). Its final knee avoids Peak Fit's image-dependent body squeeze;
+the bounded Start refinement keeps the existing body and +0.5 EV editability
+gates. The approximate Local Tone proposal basis remains for N3a; every
+candidate is certified through the real final tail. No hidden shoulder or
+Match-only render stage is added. See `docs/technical/sdr-match.md`.
+
+Final fast checks: **1,057 Node passed / one skipped; 3,526 Python passed /
+144 skipped / one unexpected pass**, 235.80 s. Focused Match materialization,
+state, input reuse and remote candidates: **38 passed**. Focused finishing:
+**40 passed**. The full Python run passes with the original HSL cache/native
+admission tests unchanged; intermediate runs under memory pressure failed
+those identity/admission checks. Intentional expectation updates isolate
+Curves/grain before the moved cap, compare gamut hue at its post-shoulder input,
+expect Soft Ceiling in newly generated Match recipes, and replace obsolete
+shader-order wording pins with pixel/device coverage. No numerical tolerance
+was edited. One new test proves flat above-white pixels survive sharpening
+when other pixels contain detail.
+
+Sequential Electron/GPU checks, all through venv `tools/gpu-run-lock.py` at
+1408x794: Highlight Compression/anchor parity; four `tone-zones-delivery.js`
+variants (Peak Fit, Fixed cap, Soft Ceiling, Clip) with real resize and standard
+sharpening; `gpu-delivery-smoke.js`; all 33 SDR `film-stock-parity.js` cases
+(32 passed in the matrix; maximum-paper-gain fixed, then passes separately);
+Fixed cap reduced and full-size Proof; and isolated default 90-second Library.
+Finished SDR mean/p99.9 Delta E00 across the four modes is **0.00752–0.00891 /
+0.03553–0.07618**; HDR Delta ITP **0.02642–0.03003 / 0.10344–0.11656**.
+Velvia physical chain is **0.064951 / 1.024302** Delta E00, within its unchanged
+0.125 / 1.065 limits. CPU/GPU Proof use the intended renderer; full-size bytes
+agree with export. Fixed cap also checks the reduced Proof route. The delivery
+fixture decodes to **988.707 nits** at Fixed cap's 1000-nit target. Peak Fit's
+1002.616 nits is within the pre-existing 1% encoding allowance; no ceiling rule
+changes. Encoded-HDR perceptual diagnostics still exceed their report-only
+percentile caps; these remain diagnostics, not redefined passes.
+
+The first Library run pictured all nine requested rows but failed the system
+reserve while CPU tests were active. After CPU work released memory, the same
+90-second check passes: **9/9 viewport pictures**, no errors or memory violation,
+first picture **0.4 s**, independent process-tree peak **3.053 GB**, below the
+unchanged 4 GB setting. This is viewport coverage, not a 33-file survey. Driver
+startup now waits for the delivery window and its script before instrumenting
+it; two cold-start setup attempts failed before rendering while this readiness
+wait was being corrected. Product rendering and tolerances are unchanged by
+that harness wait.
+
+M1 was remeasured from baseline `2875c6a5`, using copied research scripts in
+scratch outside the repo, both 176/224-cell populations and all five retained
+<=512px RAWs, Film off and Portra 400 at 50%. **Mixed, not fixed:** 176-cell
+Film-off residual P95 **13.577 → 8.229**, Portra **12.741 → 13.484** Delta E00.
+224-cell green +2 stops / 75% saturation improves **23.189 → 2.079**, but
+A7R00619 Film-off whole-frame P95 worsens **1.610 → 7.865**. New refusals:
+224-cell Portra and IMG_0790 Film off; IMG_7723 Portra remains refused. RAW fits
+accepted: **9/10 before, 8/10 after**. All gates unchanged. Full methodology,
+per-family CSVs and before/after tables are appended to
+`docs/technical/reports/m1-colour-follow-up-2026-11-15.md`; this is reduced CPU
+research, not native-size or encoded-export colour qualification. N3a must
+address the complete highlight-colour/Film-exposure fit.
+
+Output changes: SDR grades with HC enabled; grades with above-white/signed
+SDR colour formerly clipped by early gamut/Curves or output sharpening; saved
+materialized SDR Match recipes through the new order. Derived fixture outputs
+change for `hdr_match_scene.tiff`, `stock_hues.tiff`, the HC test pattern,
+Tone delivery `hues.tiff`, and A7R00619 / DSC00264 / IMG_3129 / IMG_0790 /
+IMG_7723 reduced sources. Finished Library thumbnail/screen versions advance;
+source development and frozen `library-mixed-v1` files do not. No protected
+project or source photo was written.
+
+Not run to keep the directly covering overnight slow subset bounded: full
+release/all-driver sweep, all-codec/native-size `hdr-ceiling-delivery.js`,
+`gpu-delivery-repeat.js`, standalone `proof-size-interaction.js`, full HDR
+Film/lens/tiled matrices, performance/endurance sweeps, or PC confirmation.
+`sdr-match-gpu-interaction.js` was not rerun (known pre-Match fixture failure).
+The actual real-device Match browser interaction remains N3a validation;
+remote-candidate/CPU certification is covered by the 38 Python cases.
+
+Evidence: `codebase/output/review/n1-highlight-compression/` (small CSVs,
+scripts, manifests and final logs); isolated Library report at
+`codebase/output/quick-library-check/n1-isolated/report.json`. Initial/final
+output usage **13.0 GB**, below the unchanged 100 GB limit. Disposable baseline
+code, reduced-source copies, render arrays and research scratch are removed.
 
 **Recommended defaults, adopted unless Steve overrides**
 

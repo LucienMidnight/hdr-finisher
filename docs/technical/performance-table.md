@@ -1,3 +1,11 @@
+## November 15–16: N1 validation on MacBook Neo
+
+| Action | Existing guard | Observation | Conditions / evidence |
+| --- | --- | --- | --- |
+| Library viewport quick check, first picture / run | Default 90 s, existing 4 GB setting and system reserve; viewport coverage | Isolated pass: first 0.4 s, 9/9 requested pictures, external tree peak 3.053 GB, 92.513 s including launch. Initial concurrent-CPU run first 0.5 s / 9/9 but system-reserve failure. | Neo A18 Pro / 8 GB / 1408x794, fresh plain Electron, frozen v1, venv shared GPU lock; `9c2232d3` + N1 follow-up. Not a speed comparison or whole-folder survey. `output/quick-library-check/n1-isolated/report.json` and `n1-final/report.json`. |
+| CPU Match materialization, reduced research RAWs | Existing Match colour/luma/editability gates; no new timing gate | Accepted-case range before 1.249–5.980 s, after 1.019–6.043 s; refusals excluded from this range | Same Neo; five retained <=512px source arrays, Film off / Portra 400 50%, 2875c6a5 before vs N1 follow-up after. Research CPU work, source already decoded, under varying validation load; not UI whole-wait timing or a speedup claim. `output/review/n1-highlight-compression/raw-{before,after}/raw_states.json`; raw logs include refusals. |
+| Four-mode delivery correctness driver | Existing perceptual/ceiling/Proof gates; no new time limit | Final invocations 5.671–6.284 s including launch, one at a time | Same Neo/window/lock, 192px synthetic hue input →128px with standard sharpening; Fixed cap / Peak Fit / Soft Ceiling / Clip, GPU and CPU export/Proof. Driver runtime, not user export latency. `output/review/n1-highlight-compression/gpu-finishing-final.json`. |
+
 ## November 15: H1 HSL investigation diagnostic (MacBook Neo)
 
 | Action | Existing rule | Observed before H1 fixes | Conditions / evidence |

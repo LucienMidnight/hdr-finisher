@@ -524,3 +524,70 @@ are not substituted for full-resolution or encoded-export validation. Existing
 tolerances, budgets, shader pins and protected projects remain untouched.
 Slow validation is well below the roughly 30-minute stop boundary. Output
 usage is 12.9 GB, below the unchanged 100 GB limit.
+
+## N1 remeasurement: final SDR compression
+
+November 15–16, MacBook Neo / A18 Pro / 8 GB. Before is `2875c6a5`, the
+clean sprint branch at N1 start; after is the N1 renderer and minimal Match
+adaptation. Scripts copied to scratch outside the repo from the evidence
+above, then run with the venv Python. Both versions share the original
+reduced RAW arrays and synthetic sources; neither source development nor
+tolerances change. This is CPU finished-pixel research, not encoded delivery.
+Reference/grade, three saturations, -4..+3 stops, Film off and Portra 400 at
+50%, no grain/halation/locals match the preceding report. The retained scripts,
+CSVs, recipes/statuses and logs are in `codebase/output/review/n1-highlight-compression/`.
+
+**N1 is not a general Match colour fix.** Some synthetic bright-colour errors
+improve, some photographic residuals worsen, and the unchanged quality gates
+refuse additional difficult fits. N3a must fit through the real complete tail,
+including highlight colour and equal Film input exposure. No gate is relaxed
+and no output is invented for a refused fit.
+
+For the 176-cell sRGB-only population (168 coloured cells, eight greys),
+residual Delta E00 **median / P95**, before → after. Bright means +1..+3 stops.
+
+| Film | Seven colours, all stops | Seven colours, bright stops |
+| --- | ---: | ---: |
+| none | 0.132 / 13.577 → 0.118 / 8.229 | 8.762 / 22.559 → 2.363 / 10.751 |
+| kodak_portra_400 | 1.741 / 12.741 → 1.734 / 13.484 | 6.393 / 19.580 → 4.370 / 15.150 |
+
+These distributions are descriptive, not new acceptance gates. Hue is not
+meaningful below normalized chroma 5; near-neutral hue/chroma ratios in CSVs
+must not be read as physical rotations.
+
+The original 224-cell population is also remeasured, fitting with its 48
+BT.2020 controls included. Film-off seven-colour P95 falls **13.737 → 8.229**;
+bright-stop median/P95 falls **8.762/22.559 → 2.363/10.751**. At +2 stops and
+75% saturation: green **23.189 → 2.079**, cyan **9.274 → 5.093**, indigo
+**9.041 → 1.227**, denim **6.335 → 3.755** Delta E00. Portra's new 224-cell fit
+is **refused** (P95 luma 0.027 / OKLab 0.068, unchanged OKLab refusal gate
+0.050); its accepted 176-cell fit must not be substituted into that population.
+
+Five shared RAWs, finished residual **P95 Delta E00**, before → after:
+
+| RAW | Film off, whole | Film off, highlights | Portra 50%, whole | Portra 50%, highlights |
+| --- | ---: | ---: | ---: | ---: |
+| A7R00619.ARW | 1.610 → 7.865 | 2.559 → 8.930 | 4.135 → 6.277 | 4.553 → 7.734 |
+| DSC00264.ARW | 1.582 → 4.644 | 16.227 → 10.913 | 2.695 → 4.831 | 11.689 → 13.058 |
+| IMG_3129.CR2 | 0.468 → 0.282 | 10.896 → 12.150 | 1.786 → 1.815 | 10.981 → 14.772 |
+| IMG_0790.CR2 | 4.724 → refused | 11.217 → refused | 2.906 → 2.862 | 11.225 → 13.383 |
+| IMG_7723.CR3 | 0.744 → 7.063 | 2.056 → 8.314 | refused → refused | refused → refused |
+
+DSC00264 Film-off green P95 improves **11.928 → 6.837**, but whole-frame and
+blue residuals worsen; Portra green worsens **10.171 → 12.043**. A7R00619's
+Film-off whole-frame P95 worsens **1.610 → 7.865**. Highlight reproduction is
+therefore still material open work even when a body's recipe says `matched`.
+IMG_0790 Film off is newly refused (P95 luma 0.003 / OKLab 0.124);
+IMG_7723 Portra remains refused (before P95 luma 0.061, after about 0.060 but
+above the unchanged 0.060 gate before rounding). Nine of ten RAW/stock fits
+were accepted before, eight after. See raw logs for exact refusal messages.
+
+Output affected: existing SDR grades with HC enabled, and SDR grades whose
+above-white/signed colours previously met an early gamut/curve boundary or
+output-sharpening clamp. Existing materialized Match recipes render through
+this new order; Rematch creates an editable Soft Ceiling recipe. Protected
+projects are never saved over. Fixtures whose derived pixels change include
+`hdr_match_scene.tiff`, Film stock `stock_hues.tiff`, HC `importTestPattern`,
+Tone delivery `hues.tiff`, the five shared reduced RAWs above, and cached
+finished Library thumbnails/screens. The frozen Library v1 sources/fixture
+and retained source-development versions are unchanged.
