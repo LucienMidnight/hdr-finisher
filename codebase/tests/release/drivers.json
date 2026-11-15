@@ -2694,6 +2694,13 @@
       }
     },
     {
+      "path": "tests/performance/library-grade-return.js",
+      "areas": ["library"],
+      "tier": "diagnostic",
+      "protects": "Immediate ready-thumbnail return using the native handoff scenario; optional committed-frontend comparison.",
+      "launch": {"method":"electron"}
+    },
+    {
       "path": "tests/library-denoise-reuse.js",
       "areas": ["library","detail"],
       "tier": "diagnostic",

@@ -455,6 +455,7 @@
   let restoring = 0;
   function setActive(active) {
     state.active = active;
+    if(active)for(const entry of gradeHandoffs.values())entry.returnedAt=Date.now();
     // Runs after this paint (queued work), on every return path.
     if (active) replaceDeferredGradeThumbnails();
     // Docking sends the saved place and then activates; the restore opens and
@@ -2281,7 +2282,10 @@
     for(const entry of gradeHandoffs.values()) {
       const packet=entry.deferred;
       if(!packet)continue;
-      entry.queue=entry.queue.catch(()=>{}).then(async()=>{
+      if (entry.installing) continue;
+      // Installation has its own short flight. It must never sit behind a
+      // missing rendition or a 2560px screen draw in the publication queue.
+      entry.installing=Promise.resolve().then(async()=>{
         if(entry.deferred!==packet||!state.active)return;
         const started=performance.now();let replaced=false;
         try{replaced=state.active&&await replaceGradeThumbnail(packet);}
@@ -2293,7 +2297,9 @@
         }
         if(replaced)HDRLibraryStopwatch("grade_picture_shown_on_return",{path:packet.path,request:packet.id,
           grade_identity:packet.grade_identity,duration_ms:performance.now()-started,view:logView()});
-      });
+      }).catch(error=>{
+        if (!aborted(error)) { console.debug("Grade thumbnail installation:",error.message); entry.finished=true; entry.deferred=null; checkSettingsNow(); }
+      }).finally(()=>{entry.installing=null;});
     }
   }
   gradePictureChannel.onmessage=event=>{
@@ -2321,7 +2327,7 @@
         // hand-off work, never idle, neighbour or ahead development.
         for(const rendition of [lane,lane==="hdr"?"sdr":"hdr"]) {
           if(rendition===packet.captured_lane)continue;
-          for(const scene of packet.scenes) {
+          for(const scene of packet.scenes.filter(scene=>scene.edge===640)) {
             if(!current())return;
             const canvas=document.createElement("canvas");
             try {await HDRLibraryPictures.show({...scene,handoff:true,draw_priority:10},canvas,entry.controller.signal,current,rendition==="hdr");}
@@ -2330,6 +2336,24 @@
           }
         }
         if(!current())return;
+        // Give visible thumbnail installation a presentation opportunity before
+        // doing optional screen/other-rendition work. Hidden Library screens
+        // wait for return; this carries metadata only, not another pixel cache.
+        void (async()=>{
+          while(current()&&!state.active)await sleep(50,entry.controller.signal);
+          if(!current())return;
+          await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
+          if(entry.installing)await entry.installing;
+          for(const rendition of [lane,lane==="hdr"?"sdr":"hdr"]) {
+            if(rendition===packet.captured_lane)continue;
+            for(const scene of packet.scenes.filter(scene=>scene.edge!==640)) {
+              if(!current())return;
+              const canvas=document.createElement("canvas");
+              try{await HDRLibraryPictures.show({...scene,handoff:true,draw_priority:80},canvas,entry.controller.signal,current,rendition==="hdr");}
+              finally{canvas.getContext("webgpu")?.unconfigure();canvas.width=canvas.height=0;}
+            }
+          }
+        })().catch(error=>{if(!aborted(error))console.debug("Grade screen handoff:",error.message);});
         entry.finished=true;
         if(!entry.reported&&(entry.reported=true))HDRLibraryStopwatch("grade_picture_handoff",{path:packet.path,request:packet.id,grade_identity:packet.grade_identity,
           lanes:["hdr","sdr"],route:packet.captured_lane?"Grade picture + finishing redraw":"finishing redraw",reason:packet.reason,
@@ -2383,7 +2407,7 @@
             // A hand-off that finished without replacing the tile, or stopped
             // answering, no longer holds it: the tile is redrawn as Library work.
             const handoff = gradeHandoffs.get(photo.path);
-            if (handoff?.grade_identity===row.grade_identity && (handoff.deferred || (!handoff.finished && Date.now()-handoff.received<30000))) continue;
+            if (handoff?.grade_identity===row.grade_identity && (handoff.deferred || (!handoff.finished && Date.now()-(handoff.returnedAt||handoff.received)<500))) continue;
             invalidateGradePictures([photo.path]);
             Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity });
             changed = true;

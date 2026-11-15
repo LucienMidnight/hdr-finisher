@@ -80,3 +80,21 @@ test('a failed handoff cannot leave the old filmstrip tile under updated photo m
  run.context.state.cells.clear();run.context.state.filmCells.set('photo',run.cell);
  await run.context.poll();assert.deepEqual(run.invalidated,['photo']);assert.equal(run.cell.controller.signal.aborted,true);
 });
+
+test('ready Grade thumbnail installs on return while the extra-work queue is blocked',async()=>{
+ const packet={path:'photo',id:'saved'},entry={deferred:packet,queue:new Promise(()=>{})};
+ const installs=[],shown=[];
+ const context={gradeHandoffs:new Map([['photo',entry]]),state:{active:true},performance,
+  replaceGradeThumbnail:async p=>{installs.push(p);return true;},
+  HDRLibraryStopwatch:(name)=>shown.push(name),logView:()=> 'grid',aborted:()=>false,checkSettingsNow(){throw Error('unexpected fallback');}};
+ const start=source.indexOf('  function replaceDeferredGradeThumbnails()'),end=source.indexOf('  gradePictureChannel.onmessage',start);
+ vm.runInNewContext(source.slice(start,end)+';replaceDeferredGradeThumbnails();',context);
+ await entry.installing;
+ assert.equal(installs.length,1);assert.equal(installs[0],packet);assert.equal(entry.deferred,null);
+ assert.deepEqual(shown,['grade_picture_shown_on_return']);
+});
+
+test('a stalled Grade publication falls back after the clean handoff window',async()=>{
+ const run=settingsPoll({handoff:{grade_identity:'new',received:Date.now()-501}});
+ await run.context.poll();assert.deepEqual(run.invalidated,['photo']);
+});

@@ -4,15 +4,15 @@ async function run({window,frame,config,stage}) {
  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
  const main=code=>window.webContents.executeJavaScript(code);
  const lib=code=>frame.executeJavaScript(code);
- const wait=async(fn,label,ms=45000)=>{stage(label);const end=Date.now()+ms;while(!await fn()){if(Date.now()>end)throw Error('Timed out: '+label+' '+JSON.stringify(await lib('HDRLibrary.getSnapshot()')));await sleep(40);}};
+ const wait=async(fn,label,ms=45000)=>{stage(label);const end=Date.now()+ms;while(!await fn()){if(Date.now()>end)throw Error('Timed out: '+label+' '+JSON.stringify(await lib('({snapshot:HDRLibrary.getSnapshot(),handoffs:HDRLibraryGradeHandoffSnapshot(),cells:[...document.querySelectorAll("canvas[data-picture-key]")].map(c=>({path:c.dataset.picturePath,key:c.dataset.pictureKey,handoff:c.dataset.gradeHandoff,hidden:c.hidden}))})')));await sleep(40);}};
  // Keep the real API's two selected fixture rows, without duplicating RAW files.
- const filter=`(()=>{const original=window.fetch;window.fetch=async(url,options)=>{const response=await original(url,options);if(!String(url).endsWith('/api/library/folder-stream'))return response;let pending='';const newline=String.fromCharCode(10);const body=response.body.pipeThrough(new TextDecoderStream()).pipeThrough(new TransformStream({transform(chunk,controller){const lines=(pending+chunk).split(newline);pending=lines.pop();for(const line of lines){if(!line)continue;const packet=JSON.parse(line);if(packet.columns){packet.photos=packet.values.map(values=>Object.fromEntries(packet.columns.map((key,i)=>[key,values[i]])));delete packet.columns;delete packet.values;}if(packet.photos)packet.photos=packet.photos.filter(p=>['DSC03819.ARW','DSC00264.ARW'].some(name=>p.path.toUpperCase().endsWith(name)));packet.ordered=false;controller.enqueue(JSON.stringify(packet)+newline);}}})).pipeThrough(new TextEncoderStream());return new Response(body,{status:response.status,headers:response.headers});};})()`;
+ const filter=`(()=>{const original=window.fetch;window.fetch=async(url,options)=>{const response=await original(url,options);if(!String(url).endsWith('/api/library/folder-stream'))return response;let pending='';const newline=String.fromCharCode(10);const body=response.body.pipeThrough(new TextDecoderStream()).pipeThrough(new TransformStream({transform(chunk,controller){const lines=(pending+chunk).split(newline);pending=lines.pop();for(const line of lines){if(!line)continue;const packet=JSON.parse(line);if(packet.columns){packet.photos=packet.values.map(values=>Object.fromEntries(packet.columns.map((key,i)=>[key,values[i]])));delete packet.columns;delete packet.values;}if(packet.photos)packet.photos=packet.photos.filter(p=>['DSC04375.ARW','DSC00264.ARW'].some(name=>p.path.toUpperCase().endsWith(name)));packet.ordered=false;controller.enqueue(JSON.stringify(packet)+newline);}}})).pipeThrough(new TextEncoderStream());return new Response(body,{status:response.status,headers:response.headers});};})()`;
  await lib(filter);
  const out=config.pixelReviewOut;fs.mkdirSync(out,{recursive:true});
  await lib(`document.getElementById('thumbnail-size').value=180;document.getElementById('thumbnail-size').dispatchEvent(new Event('input'));window.handoffEvents=[];const original=HDRLibraryStopwatch;window.HDRLibraryStopwatch=(s,f)=>{if(s==='grade_picture_handoff')handoffEvents.push(f);original(s,f);};void HDRLibrary.browse(${JSON.stringify(config.folder)})`);
- await wait(()=>lib(`HDRLibrary.getSnapshot().paths.some(p=>/DSC03819.ARW$/i.test(p))&&HDRLibrary.getSnapshot().paths.some(p=>/DSC00264.ARW$/i.test(p))&&[...document.querySelectorAll('#grid-space .library-cell')].filter(c=>/DSC03819|DSC00264/.test(c.dataset.path)).every(c=>c.querySelector('canvas[data-picture-key]:not([hidden])'))`),'initial grid');
- const photos=await lib(`HDRLibrary.getSnapshot().paths.filter(p=>[${JSON.stringify(config.folder+'/DSC03819.ARW')},${JSON.stringify(config.folder+'/DSC00264.ARW')}].some(q=>q.toLowerCase()===p.replaceAll(String.fromCharCode(92),'/').toLowerCase())).sort().reverse()`);
- if(photos.length!==2)throw Error('Requires reusable DSC03819 and DSC00264 copies');
+ await wait(()=>lib(`HDRLibrary.getSnapshot().paths.some(p=>/DSC04375.ARW$/i.test(p))&&HDRLibrary.getSnapshot().paths.some(p=>/DSC00264.ARW$/i.test(p))&&[...document.querySelectorAll('#grid-space .library-cell')].filter(c=>/DSC04375|DSC00264/.test(c.dataset.path)).every(c=>c.querySelector('canvas[data-picture-key]:not([hidden])'))`),'initial grid');
+ const photos=await lib(`HDRLibrary.getSnapshot().paths.filter(p=>[${JSON.stringify(config.folder+'/DSC04375.ARW')},${JSON.stringify(config.folder+'/DSC00264.ARW')}].some(q=>q.toLowerCase()===p.replaceAll(String.fromCharCode(92),'/').toLowerCase())).sort().reverse()`);
+ if(photos.length!==2)throw Error('Requires reusable DSC04375 and DSC00264 copies');
  await lib(`if(HDRLibrary.getSnapshot().hdr!==${!config.gradeHandoffSdr})document.getElementById('hdr-button').click();true`);
  const lane=config.gradeHandoffSdr?'sdr':'hdr';
  const rows=[];
@@ -46,6 +46,16 @@ async function run({window,frame,config,stage}) {
   const grade=await main(`({width:state.session.source.width,height:state.session.source.height,execution:state.gpuPreview.lastPresentedFrame.execution,zoom:state.zoomMode,snapshot:HDRGradeLibraryPictures.getSnapshot()})`);
   const count=await evaluate('handoffEvents.length');
   await main(`(()=>{const c=document.getElementById('${lane}-exposure');c.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:991}));c.value=String(Number(c.value)+1);c.dispatchEvent(new Event('input',{bubbles:true}));c.dispatchEvent(new Event('change',{bubbles:true}));c.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:991}));})()`);
+  let returnedAt=null,returnToPictureMs=null;
+  if(config.gradeHandoffImmediate){
+    const revision=await main(`(async()=>{await HDRGradeSaving.save();return state.editRevision;})()`);
+    // Return as soon as the 640px picture is ready, without waiting for the
+    // publication queue's other rendition or screen-preview work to finish.
+    await wait(()=>evaluate(`HDRLibraryGradeHandoffSnapshot().some(e=>e.path===${JSON.stringify(photo)}&&e.revision===${revision}&&e.deferred)`),label+' ready hidden thumbnail',60000);
+    returnedAt=Date.now();await main(`activateWorkflowTab('import')`);
+    await wait(()=>evaluate(`[...document.querySelectorAll('canvas[data-grade-handoff]')].some(c=>c.dataset.picturePath===${JSON.stringify(photo)}&&!c.hidden)`),label+' immediate edited thumbnail',3000);
+    returnToPictureMs=Date.now()-returnedAt;
+  }
   await wait(()=>evaluate(`handoffEvents.length>${count}`),label+' publication');
   const handoff=await evaluate('handoffEvents.at(-1)');grade.after=await main(`({execution:state.gpuPreview.lastPresentedFrame?.execution,previewResolution:state.previewResolution,override:state.gpuPreview.executionOverride,snapshot:HDRGradeLibraryPictures.getSnapshot()})`);
   await main(`activateWorkflowTab('import')`);
@@ -58,7 +68,7 @@ async function run({window,frame,config,stage}) {
   const after=await capture(photo,label+'-after');
   let filmChanged=0;for(let i=0;i<Math.min(filmBefore.length,filmAfter.length);i+=4)if(Math.abs(filmBefore[i]-filmAfter[i])+Math.abs(filmBefore[i+1]-filmAfter[i+1])+Math.abs(filmBefore[i+2]-filmAfter[i+2])>9)filmChanged++;
   let changed=0,total=0;for(let i=0;i<Math.min(before.length,after.length);i+=4){for(let j=0;j<3;j++)total+=Math.abs(before[i+j]-after[i+j]);if(Math.abs(before[i]-after[i])+Math.abs(before[i+1]-after[i+1])+Math.abs(before[i+2]-after[i+2])>9)changed++;}
-  rows.push({label,photo,grade,handoff,stored,screen_pixels:screenBefore.length/4,screen_changed_pixels:screenChanged,film_pixels:filmBefore.length/4,film_changed_pixels:filmChanged,pixels:before.length/4,changed_pixels:changed,mean_channel_change:total/(before.length/4*3)});fs.writeFileSync(path.join(out,'pixels.json'),JSON.stringify(rows,null,2));
+  rows.push({label,photo,grade,handoff,returnedAt,return_to_picture_ms:returnToPictureMs,stored,screen_pixels:screenBefore.length/4,screen_changed_pixels:screenChanged,film_pixels:filmBefore.length/4,film_changed_pixels:filmChanged,pixels:before.length/4,changed_pixels:changed,mean_channel_change:total/(before.length/4*3)});fs.writeFileSync(path.join(out,'pixels.json'),JSON.stringify(rows,null,2));
  }
  if(!config.gradeHandoffPopout){await edit(photos[0],'first');await edit(photos[1],'second');}
  let videoMemory=null;
@@ -73,7 +83,7 @@ async function run({window,frame,config,stage}) {
  videoMemory=await evaluate('hdrFinisherDesktop.videoMemory()');
  await edit(photos[1],'popout',true);
  }
- const errors=rows.flatMap(r=>[...(r.screen_changed_pixels>r.screen_pixels*.05?[]:[r.label+': stored screen pixels did not change']),...(r.film_changed_pixels>r.film_pixels*.05?[]:[r.label+': filmstrip pixels did not change']),...(r.changed_pixels>r.pixels*.05?[]:[r.label+': visible pixels did not change']),...(r.grade.after.execution==='tiled'?[]:[r.label+': Grade did not use tiled Fit']),...(r.handoff.route.startsWith('Grade picture')?[]:[r.label+': '+r.handoff.route]),...(r.handoff.available_to_picture_ms!==null&&r.handoff.available_to_picture_ms<=500?[]:[r.label+': missed 500 ms'])]);
+ const errors=rows.flatMap(r=>[...(config.gradeHandoffImmediate&&r.return_to_picture_ms>500?[r.label+': immediate return missed 500 ms ('+r.return_to_picture_ms+')']:[]),...(r.screen_changed_pixels>r.screen_pixels*.05?[]:[r.label+': stored screen pixels did not change']),...(r.film_changed_pixels>r.film_pixels*.05?[]:[r.label+': filmstrip pixels did not change']),...(r.changed_pixels>r.pixels*.05?[]:[r.label+': visible pixels did not change']),...(r.grade.after.execution==='tiled'?[]:[r.label+': Grade did not use tiled Fit']),...(r.handoff.route.startsWith('Grade picture')?[]:[r.label+': '+r.handoff.route]),...(r.handoff.available_to_picture_ms!==null&&r.handoff.available_to_picture_ms<=500?[]:[r.label+': missed 500 ms'])]);
  return {stage:'done',visible_files:photos,scenario_ms:Date.now()-started,grade_handoff:{rows,videoMemory},errors,events:[],probe:{},pixelReview:out};
 }
 module.exports={run};

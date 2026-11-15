@@ -113,7 +113,9 @@
     },
     store:async(packet,lane,pixels,signal)=>{
       const query=new URLSearchParams({grade:packet.grade_identity,revision:packet.revision,lane,
-        width:pixels.width,height:pixels.height,stride:pixels.stride});
+        width:pixels.width,height:pixels.height,stride:pixels.stride,
+        thumbnail_format:lane==="hdr"&&window.matchMedia?.('(dynamic-range: high)').matches
+          ? "rgba16float" : navigator.gpu.getPreferredCanvasFormat()});
       const response=await HDRLibraryUpload.send("/api/library/grade-picture/"+packet.sessionId+"?"+query,{body:pixels.body,signal});
       return response.ok;
     },

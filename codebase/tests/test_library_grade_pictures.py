@@ -196,7 +196,7 @@ def test_deferred_screen_retains_upload_slot_and_releases_on_every_outcome(setup
         calls.append("screen")
         if outcome == "error": raise OSError("disk unavailable")
         return outcome
-    def write(self, *args):
+    def write(self, *args, thumbnail_format=None):
         args[-1](screen)
         return {"source": "Grade picture"}
     monkeypatch.setattr(GradePictures, "write", write)
@@ -217,3 +217,26 @@ def test_deferred_screen_retains_upload_slot_and_releases_on_every_outcome(setup
         assert slots.acquire(blocking=False)
         slots.release()
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('format', ['bgra8unorm', 'rgba8unorm', 'rgba16float'])
+def test_current_display_thumbnail_is_ready_before_other_formats_or_screen(setup, format):
+    photo, store, session, marks, grades = setup
+    cache = service(setup)
+    edit(store, session)
+    ticket = grades.save(str(session.session_id))['picture']
+    image = pixels()
+    later = []
+    cache.write(str(session.session_id), ticket['grade_identity'], ticket['revision'], 'hdr',
+        image.tobytes(), 32, 16, 256, later.append, format)
+    first = cache.thumbnails.read(str(photo), 'hdr', format)
+    assert first is not None
+    for other in {'rgba16float','rgba8unorm','bgra8unorm'}-{format}:
+        assert cache.thumbnails.read(str(photo), 'hdr', other) is None
+    assert cache.screens.read(cache.screens.identity(str(photo), 2560, 2560, 'hdr')) is None
+    assert len(later) == 1
+    later[0]()
+    assert cache.thumbnails.read(str(photo), 'hdr', format) == first
+    for other in {'rgba16float','rgba8unorm','bgra8unorm'}:
+        assert cache.thumbnails.read(str(photo), 'hdr', other) is not None
+    assert cache.screens.read(cache.screens.identity(str(photo), 2560, 2560, 'hdr')) is not None

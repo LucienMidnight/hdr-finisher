@@ -1,3 +1,10 @@
+## November 15: W2 ready Grade thumbnail return (MacBook Neo)
+
+| Action | Target | Before → after / latest | Conditions / evidence |
+| --- | --- | --- | --- |
+| Return as soon as current edited 640px thumbnail is ready, action to shown picture | Existing 500ms clean-handoff goal; do not wait for other lane/screens | Committed-frontend diagnostic before 153–295 ms; after 161–404 ms (no isolated speedup). Native after 101–137 ms, current-revision confirmation 102–103 ms, final format-first 100–224 ms | Neo A18 Pro / 8 GB / 1408×794, shared lock, reusable DSC04375/DSC00264 copies, existing 4 GB setting, tiled Grade Fit, both photos. Native `desktop/library-grade-picture-check.cjs` checks changed Grid/filmstrip/stored-screen pixels; last mode explicitly flushes/saves and matches the new revision before immediate return. Committed `97078dba` frontend comparison served without altering checkout, through more intrusive Electron/Playwright instrumentation. Do not compare its absolute whole waits with plain native results. `codebase/output/quick-library-check/w2-p2-{final,current,format-first}/report.json`, `output/w2-p2-{before-ready,after-ready}/result.json`. |
+| Saved-grade availability to edited picture, including capture and publication | ≤500 ms, unchanged; **not consistently qualified** | Intrusive before 6.12–8.06 s / after 1.41–4.70 s, noise-dominated. Native initial after 396–444 ms; explicit current save before format-first 542/603 ms; final 403/696 ms. Final capture 93/124 ms, store 219/324 ms | Same native conditions. Concurrent agents; native initial load 3.76–5.81, explicit-current 3.26–4.52, final 2.33–4.36. No further rerun to chase the spread. Generic quick drawing-gap qualification is invalid because this special diagnostic returns no animation probe; it does not show the app hid. One initial after run fails the unchanged physical reserve gate (peak 3.76 GB); later current/final memory gates pass at 3.45/3.72 GB. No memory waiver or relaxed timing. Commit containing this note. |
+
 ## November 15: W2 Library Denoise redraw (MacBook Neo)
 
 | Action | Rule | Before → after | Conditions / evidence |
@@ -27,7 +34,7 @@
 
 | Action | Target | Before → after | Conditions / evidence |
 | --- | --- | --- | --- |
-| Confirm Paste to old pixels hidden and preparation feedback painted | About 100 ms | Old pixels 214–410 ms, no preparation message → both 11–13 ms | MacBook Neo A18 Pro / 8 GB, 1408×794 points, shared GPU lock, real Electron, deterministic PNG targets including a virtual copy. Same driver serves `97078dba` frontend for before without altering checkout; query-suffixed asset interception was corrected before the retained baseline. Confirmation-event to next qualifying animation frame; full preparation/transaction/redraw/Undo still checked. Concurrent agents; before one-minute load 4.21, after 2.65. Load differs, so no precise speedup ratio is claimed. `codebase/output/library-grade-paste/{before,after}.json`, `output/w2-p1-{before,after}.log`. Commit containing this note. |
+| Confirm Paste to old pixels hidden and preparation feedback painted | About 100 ms | Old pixels 214–410 ms, no preparation message → both 10–12 ms (final rerun) | MacBook Neo A18 Pro / 8 GB, 1408×794 points, shared GPU lock, real Electron, deterministic PNG targets including a virtual copy. Same driver serves `97078dba` frontend for before without altering checkout; query-suffixed asset interception was corrected before the retained baseline. Confirmation-event to next qualifying animation frame; full preparation/transaction/redraw/Undo still checked. Concurrent agents; before one-minute load 4.21, after 2.65. Load differs, so no precise speedup ratio is claimed. `codebase/output/library-grade-paste/{before,after}.json`, `output/w2-p1-{before,final}.log`. Commit containing this note. |
 
 ## November 15: W6 photo context menu (MacBook Neo)
 

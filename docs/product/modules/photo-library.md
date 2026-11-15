@@ -1,3 +1,43 @@
+### November 15: W2 P2 ready thumbnail return; whole-handoff target still variable
+
+A hidden Library installs its ready 640px edited thumbnail on an independent
+short flight. It does not wait behind the publication queue's other rendition
+or 2560px screen work. Thumbnails in both lanes precede optional screens; those
+screens defer while the Library is hidden and allow a presentation on return.
+A stalled pending handoff falls back after the existing 500ms clean-handoff
+window instead of suppressing ordinary redraw for 30 seconds. Grade publication
+writes the current display's existing format first, then the remaining formats
+and screen in the same held upload slot. All pixel conversions, source/grade
+validation, formats, cache sizes, reservations and memory gates are unchanged.
+
+The native two-RAW check now returns as soon as the current revision's thumbnail
+is ready, not after all extra work. Saved-current identity and changed Grid,
+filmstrip and screen pixels pass. Ready return: 100–224 ms in the final pair;
+whole save-availability to picture: 403 / 696 ms. The earlier native pair was
+101–137 ms / 396–444 ms; forcing the current save gave 102–103 ms / 542–603 ms
+before format-first publication. **The 500ms whole-handoff goal is not
+consistently qualified.** No number was relaxed and no more timing runs chase
+these variable results. Independent state tests prove installation completes
+while the extra-work queue never resolves and stale pending work falls back.
+
+The native diagnostic supplies no animation probe, so the generic quick wrapper
+marks its drawing-gap qualification invalid; it is not a full viewport-smoke
+pass. One earlier concurrent-load pair also failed physical system reserve;
+current-revision and format-first pairs pass memory gates (peaks 3.45/3.72 GB
+under the existing 4 GB setting). The intrusive committed-frontend comparison
+is slower/noisier and is retained as diagnostic, not a clean speedup ratio.
+Timings and load are in the performance table. Backend handoff/priority group:
+101 passed, including each format being readable before all other formats or
+the screen, exact selected-format retention, and upload-slot release on errors.
+Final Node: 1,030 passed / one skipped. Final full Python: 3,484 passed / 144 skipped / one xpass. The previous in-flight run had collected the old callback test double before its optional-format argument was corrected; the fixed full rerun and the 101-test focused group pass.
+
+P1's final locked clipboard/paste/virtual-copy/Undo rerun also passes: confirmation
+to old pixels hidden and feedback is 10–12 ms. No image-processing output change.
+Owned failed-run captures, temporary profiles, decoded/noisy fixtures and empty
+scratch SQLite were removed. Output starts 12.8 GB and finishes about 12.9 GB,
+mostly the shared reusable test photos; no source photo, authored sidecar or
+other worker's edits were removed. No installer, push or L3 dialog work.
+
 ### November 15: W2 P4 exact Library Denoise setup reuse
 
 Library drawing keeps its one adaptive Denoise selector/scratch when developed

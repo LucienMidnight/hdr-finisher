@@ -47,7 +47,7 @@ class GradePictures:
             source_width=session.source.width, source_height=session.source.height,
             adjustments=document["global_adjustments"]), document=document)
 
-    def write(self, session_id, grade, revision, lane, body, width, height, stride, defer_screen=None):
+    def write(self, session_id, grade, revision, lane, body, width, height, stride, defer_screen=None, thumbnail_format=None):
         path, document, session = self.owner(session_id, grade, revision)
         if identity(session.edit_document().model_dump(mode="json")) != grade:
             raise HTTPException(409, "Captured picture does not match the saved grade.")
@@ -72,8 +72,14 @@ class GradePictures:
         # The response task keeps the existing upload slot until it finishes,
         # bounding body ownership without a new queue or cache allowance.
         if defer_screen is not None:
-            self.write_thumbnails(path, document, session, lane, pixels[..., :3], cache_epoch=current["cache_epoch"])
-            defer_screen(save_screen)
+            self.write_thumbnails(path, document, session, lane, pixels[..., :3], cache_epoch=current["cache_epoch"],
+                requested_formats={thumbnail_format} if thumbnail_format else None)
+            def finish_pictures():
+                if thumbnail_format:
+                    self.write_thumbnails(path, document, session, lane, pixels[..., :3], cache_epoch=current["cache_epoch"],
+                        requested_formats={"rgba16float", "rgba8unorm", "bgra8unorm"}-{thumbnail_format})
+                return save_screen()
+            defer_screen(finish_pictures)
         else:
             with ThreadPoolExecutor(max_workers=1) as encoding:
                 screen = encoding.submit(save_screen)
@@ -83,7 +89,7 @@ class GradePictures:
         if not valid(): raise HTTPException(409, "The Library has a newer grade.")
         return dict(path=path, grade_identity=grade, lane=lane, source="Grade picture")
 
-    def write_thumbnails(self, path, document, session, lane, pixels, cache_epoch=None):
+    def write_thumbnails(self, path, document, session, lane, pixels, cache_epoch=None, requested_formats=None):
         if cache_epoch is None:
             cache_epoch = self.thumbnails.cache.publication_epoch(source(path))
         from .color import acescg_to_linear_bt2020, acescg_to_linear_srgb
@@ -113,6 +119,7 @@ class GradePictures:
         meta["cache_epoch"] = cache_epoch
         validation = {}
         for format, rgb in formats.items():
+            if requested_formats is not None and format not in requested_formats: continue
             h, w = rgb.shape[:2]
             stride = ((w*4*rgb.dtype.itemsize+255)//256)*256
             rows = np.zeros((h, stride//rgb.dtype.itemsize), dtype=rgb.dtype)
@@ -144,9 +151,13 @@ def add_grade_picture_routes(router, live, store, slots):
 
     @router.post("/grade-picture/{session_id}")
     async def write(session_id: str, request: Request, background_tasks: BackgroundTasks, grade: str, revision: int,
-                    lane: str, width: int, height: int, stride: int):
+                    lane: str, width: int, height: int, stride: int, thumbnail_format: str | None = None):
         if lane not in ("hdr", "sdr") or not 1 <= width <= 2560 or not 1 <= height <= 2560 or stride != ((width*8+255)//256)*256:
             raise HTTPException(400, "Invalid Grade picture dimensions.")
+        if thumbnail_format not in (None, "rgba16float", "rgba8unorm", "bgra8unorm"):
+            raise HTTPException(400, "Invalid thumbnail format.")
+        if lane == "sdr" and thumbnail_format == "rgba16float":
+            raise HTTPException(400, "SDR thumbnails use an eight-bit surface.")
         if not slots.acquire(blocking=False): return Response(status_code=503)
         transferred = False
         def finish(screen):
@@ -163,7 +174,7 @@ def add_grade_picture_routes(router, live, store, slots):
             body = await request.body()
             if len(body) != stride*height: raise HTTPException(400, "Invalid Grade picture byte count.")
             screens = []
-            result = await run_in_threadpool(pictures.write, session_id, grade, revision, lane, body, width, height, stride, screens.append)
+            result = await run_in_threadpool(pictures.write, session_id, grade, revision, lane, body, width, height, stride, screens.append, thumbnail_format=thumbnail_format)
             background_tasks.add_task(finish, screens[0])
             transferred = True
             return result

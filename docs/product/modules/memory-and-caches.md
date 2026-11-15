@@ -1,3 +1,16 @@
+### November 15: W2 P2 format-first publication within the same upload slot
+
+The current display's existing finished-thumbnail format is published before
+the acknowledgement. Other existing formats and the compressed screen finish
+in that same response task, retaining the same admitted upload slot/body until
+completion. No additional queue, retained picture, slot, format, byte allowance
+or cache size is added. Identity/epoch validation still gates every publication.
+Backend tests hold the deferred task, read the selected format first, then
+verify all remaining formats and unchanged selected bytes, plus slot release
+on success, refusal and encoder failure. Native timing checks retain the real
+system-reserve gate; an earlier concurrent-load failure remains recorded rather
+than being waived. Current-revision and format-first pairs stay below 4 GB.
+
 ### November 15: W2 P4 reuse the existing Denoise scratch owner
 
 Library adaptive setup reuses its one existing selector/scratch for exact source,
