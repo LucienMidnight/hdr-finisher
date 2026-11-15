@@ -12,6 +12,7 @@ const harness = global.HDRFinisherElectronTestHarness;
 
 (async () => {
   fs.mkdirSync(output, { recursive: true });
+  const deliveryOutput = fs.mkdtempSync(path.join(output, "delivery-"));
   const measurementPath = path.join(output, "driver-measurements.json");
   execFileSync(python, ["tools/measure-hdr-from-sdr.py", "--synthetic-only", "--output", measurementPath],
     { env: pythonEnv, stdio: "pipe" });
@@ -73,7 +74,7 @@ const harness = global.HDRFinisherElectronTestHarness;
       for (const forceCpu of [false, true]) {
         const renderer = forceCpu ? "cpu" : "gpu";
         await api("/api/delivery/preferences", { force_cpu: forceCpu });
-        const file = path.join(output, `${proposal.stock}-${renderer}.jpg`);
+        const file = path.join(deliveryOutput, `${proposal.stock}-${renderer}.jpg`);
         await harness.selectExportPath(file);
         const destination = await page.evaluate(() => window.hdrFinisherDesktop.chooseExportPath({
           extension: "jpg", suggestedName: "n5-research.jpg",
@@ -94,7 +95,7 @@ const harness = global.HDRFinisherElectronTestHarness;
         const peak = JSON.parse(execFileSync(python, ["-c",
           "import json,sys;from pathlib import Path;from hdr_finisher.hdr_delivery import check_decoded_hdr_ceiling;print(json.dumps(check_decoded_hdr_ceiling(Path(sys.argv[1]),'jpeg_ultrahdr',float(sys.argv[2]))))",
           file, String(proposal.recipe.highlight_compression_target_nits)], { env: pythonEnv, encoding: "utf8" }));
-        results.push({ stock: proposal.stock, renderer, peak, proofByteIdentical: true, bodyAccepted: false });
+        results.push({ stock: proposal.stock, renderer, peak, file, proofByteIdentical: true, bodyAccepted: false });
       }
       await page.evaluate(async () => { if (!await queueEditCommand("undo", {})) throw Error("Cleanup Undo failed"); });
       assert.deepEqual((await getState()).document, before.document);
