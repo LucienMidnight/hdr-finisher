@@ -1,3 +1,9 @@
+## November 15: W2 paste feedback (MacBook Neo)
+
+| Action | Target | Before → after | Conditions / evidence |
+| --- | --- | --- | --- |
+| Confirm Paste to old pixels hidden and preparation feedback painted | About 100 ms | Old pixels 214–410 ms, no preparation message → both 11–13 ms | MacBook Neo A18 Pro / 8 GB, 1408×794 points, shared GPU lock, real Electron, deterministic PNG targets including a virtual copy. Same driver serves `97078dba` frontend for before without altering checkout; query-suffixed asset interception was corrected before the retained baseline. Confirmation-event to next qualifying animation frame; full preparation/transaction/redraw/Undo still checked. Concurrent agents; before one-minute load 4.21, after 2.65. Load differs, so no precise speedup ratio is claimed. `codebase/output/library-grade-paste/{before,after}.json`, `output/w2-p1-{before,after}.log`. Commit containing this note. |
+
 ## November 15: W6 photo context menu (MacBook Neo)
 
 | Action | Target / comparison tolerance | Result | Conditions / revision |

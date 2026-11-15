@@ -194,3 +194,33 @@ for (const cleanup of ['rejected', 'hung']) test(`successful paste still publish
   await controller.copy('next-photo');
   assert.equal(requests.at(-1).body.path,'next-photo');
 });
+
+for (const outcome of ['success','failure','cancel','no-change']) test('immediate paste feedback restores targets after '+outcome, async()=>{
+  const phases=[];let release,entered;
+  const gate=new Promise(resolve=>{entered=resolve;});
+  const {nodes,timers,controller}=dialogHarness(async(url,body)=>{
+    if(url.endsWith('grade-copy'))return clipboard;
+    if(url.endsWith('grade-paste')&&body.preview)return {count:0,unchecked:2};
+    if(url.endsWith('grade-preparation'))return {token:'op'};
+    if(url.endsWith('grade-prepare')){entered();await new Promise(resolve=>{release=resolve;});if(outcome==='failure')throw Error('decode failed');}
+    if(url.endsWith('grade-paste'))return {count:outcome==='no-change'?0:2,photos:[],undo_available:outcome!=='no-change'};
+    return {};
+  },{progress:(paths,phase,result)=>phases.push({paths:[...paths],phase,result})});
+  const work=controller.paste(['target','target|copy|virtual']);
+  const caught=work.catch(error=>error);
+  await new Promise(resolve=>setImmediate(resolve));await [...timers.values()][0]();
+  nodes.find(n=>n.className==='button-primary').fire('click');
+  assert.deepEqual(phases.map(p=>p.phase),['preparing'],'feedback starts in the confirmation event');
+  await gate;
+  if(outcome==='cancel')nodes.filter(n=>n.textContent==='Cancel').at(-1).fire('click');
+  release(); // Subsequent stored targets complete without another artificial hold.
+  const targetNodes=nodes;
+  if(outcome==='success'||outcome==='no-change'){
+    // The second preparation uses the same fake: release it when entered.
+    for(let i=0;i<5;i++){await new Promise(resolve=>setImmediate(resolve));release();}
+  }
+  await caught;
+  assert.equal(phases.at(-1).phase,'settled');
+  assert.deepEqual(phases.at(-1).paths,['target','target|copy|virtual']);
+  assert.equal(phases.some(p=>p.phase==='updating'),outcome==='success'||outcome==='no-change');
+});

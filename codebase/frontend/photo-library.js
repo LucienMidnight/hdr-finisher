@@ -659,6 +659,12 @@
     const split = Math.max(1, photo.name.length - 12);
     name.append(make("span", "name-start", photo.name.slice(0, split)), make("span", "name-end", photo.name.slice(split)));
     element.append(frame, name); container.append(element);
+    if (pasteProgress.has(photo.path)) {
+      const note = make("span", "library-picture-status", pasteProgress.get(photo.path));
+      note.setAttribute("role", "status");
+      note.style.cssText = "color:var(--muted);font-size:var(--font-size-min);font-family:var(--font-body)";
+      frame.append(note);
+    }
     const cell = { element, canvas, controller: new AbortController(), photo, index, edge:thumbnailEdge(), identity:pictureIdentity(photo) };
     // Both views develop only cells on screen, behind the opened photo.
     const cellPriority = () => (container === space ? state.cells : state.filmCells).shown?.has(photo.path) ? 10 : 80;
@@ -678,7 +684,7 @@
       if (cell.fallback) { cell.fallback.getContext("webgpu")?.unconfigure(); cell.fallback.width = cell.fallback.height = 0; }
     }, {once:true});
     cell.start = () => {
-    if (cell.started) return;
+    if (cell.started || pasteProgress.get(photo.path) === "Preparing adjustments") return;
     cell.started = true;
     const started = performance.now();
     const owner = cell.controller;
@@ -702,7 +708,7 @@
         if(!current())return;
         if(finished){
           cell.meta=cell.scene=finished;cell.displayEpoch=state.displayEpoch;cell.elapsed=performance.now()-started;
-          fallback.hidden=false;canvas.hidden=true;element.classList.remove("loading");
+          fallback.hidden=false;canvas.hidden=true;element.classList.remove("loading"); frame.querySelector(".library-picture-status")?.remove();
           const badge=document.createElement("span");badge.className="library-colour-note";badge.style.color="var(--muted)";badge.style.borderColor="var(--border)";badge.textContent="Developed";badge.classList.add("is-developed");frame.append(badge);
           pictureErrors.paint(cell);
           HDRLibraryStopwatch("picture_shown",{reason:"HDR Finisher stored",path:photo.path,key:finished.key,route:finished.route,view:container===space?"grid":"filmstrip",duration_ms:cell.elapsed});
@@ -749,7 +755,7 @@
             if (!current()) return;
             cell.hasCameraPreview=!!meta.bitmap;
             cell.meta = cell.scene = meta; cell.displayEpoch = state.displayEpoch; cell.elapsed = performance.now() - started;
-            fallback.hidden = false; canvas.hidden = true; canvas.removeAttribute("src"); element.classList.remove("loading");
+            fallback.hidden = false; canvas.hidden = true; canvas.removeAttribute("src"); element.classList.remove("loading"); frame.querySelector(".library-picture-status")?.remove();
             pictureErrors.paint(cell);
             fallback.dataset.pictureKey=meta.key; fallback.dataset.picturePath=photo.path;
             refreshedShown(photo.path, container === space ? "grid" : "filmstrip");
@@ -768,7 +774,7 @@
               if (!current()) return;
               canvas.hidden=false; canvas.style.visibility=""; fallback.hidden=true;
               canvas.dataset.preview="false"; canvas.dataset.cpuFallback="true";
-              pictureMode(canvas,HDRLibraryQuery.displayHDR(photo,state.hdr)); element.classList.remove("loading");
+              pictureMode(canvas,HDRLibraryQuery.displayHDR(photo,state.hdr)); element.classList.remove("loading"); frame.querySelector(".library-picture-status")?.remove();
               window.HDRLibraryFolderPresented?.({view:container === space ? "grid" : "filmstrip",path:photo.path});
             cpuShown=true;
             }
@@ -1037,7 +1043,36 @@
       }
     }
   }
-  const pasteGrades = HDRGradePaste.create({api, status,
+  // Metadata only: no extra picture cache. Preparation cells cannot request
+  // or publish old pixels; cancellation rebuilds from the existing sources.
+  const pasteProgress = new Map();
+  function pasteFeedback(paths, phase, result) {
+    if (phase === "preparing") {
+      for (const path of paths) pasteProgress.set(path, "Preparing adjustments");
+      invalidateGradePictures(paths);
+      status("Preparing adjustments…");
+    } else if (phase === "updating") {
+      for (const path of paths) pasteProgress.set(path, "Updating preview");
+      for (const cell of [...state.cells.values(), ...state.filmCells.values()])
+        if (pasteProgress.has(cell.photo.path)) {
+          const note=cell.element.querySelector(".library-picture-status");
+          if(note)note.textContent="Updating preview";
+        }
+      status("Updating preview…");
+      return; // changed() installs current grades before any redraw starts.
+    } else {
+      for (const path of paths) pasteProgress.delete(path);
+      // Cancellation/failure restores the unchanged grade from existing sources.
+      // Success keeps its new cells and their Updating preview note until drawn.
+      if (!result) invalidateGradePictures(paths);
+    }
+    paintGrid(); paintFilm();
+    if (state.view === "single") {
+      if (phase === "preparing") { state.single?.abort(); $("single-picture").hidden = true; $("native-picture").hidden = true; }
+      else { state.singleIdentity = ""; void showSingle(); }
+    }
+  }
+  const pasteGrades = HDRGradePaste.create({api, status, progress: pasteFeedback,
     prepare: paths => standalone ? libraryDesktop?.prepareLibraryPaste?.(paths) ?? Promise.resolve(false) : parent.HDRLibraryHost.preparePaste(paths),
     changed: (_clipboard, result) => {
       commandState(); if (!result) return;

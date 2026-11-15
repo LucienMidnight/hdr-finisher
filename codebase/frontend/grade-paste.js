@@ -47,7 +47,7 @@
       : `${count} of ${total} ${total === 1 ? 'photo will' : 'photos will'} change${matching ? `; ${matching} already ${matching === 1 ? 'matches' : 'match'}` : ''}.`;
     return {state:'ready', disabled:false, label:pasteLabel, message};
   }
-  function create({api, prepare, changed, status}) {
+  function create({api, prepare, changed, status, progress}) {
     let copied = null, running = false;
     const notify = () => changed?.(copied);
     async function refresh() { copied = await api('/api/library/grade-copy'); notify(); return copied; }
@@ -61,14 +61,22 @@
     async function paste(paths, choose = false) {
       if (!paths.length || running) return;
       running = true;
+      let confirmed = false, result = null;
       try {
         await refresh(); if (!copied?.name) return;
-        const selection = await dialog(copied, paths, choose);
+        const selection = await dialog(copied, paths, choose, () => {
+          confirmed = true;
+          progress?.(paths, "preparing");
+        });
         if (!selection || !await prepare(paths)) return;
-        const result = await prepareAndPaste(paths, selection);
+        result = await prepareAndPaste(paths, selection);
         if (!result) return;
+        progress?.(paths, "updating", result);
         changed?.(copied, result);
-      } finally { running = false; }
+      } finally {
+        if (confirmed) progress?.(paths, "settled", result);
+        running = false;
+      }
     }
     async function prepareAndPaste(paths, selection) {
       const {make} = root.HDRLibraryDialogs;
@@ -125,7 +133,7 @@
         if (cancelled) status('Paste cancelled. No grades changed.');
       }
     }
-    function dialog(clipboard, paths, expanded) {
+    function dialog(clipboard, paths, expanded, confirmed) {
       const {make} = root.HDRLibraryDialogs;
       return new Promise(resolve => {
         const model = selectionModel(clipboard.groups, clipboard.selection, clipboard.same_sides);
@@ -250,7 +258,7 @@
         }
 
         cancel.addEventListener('click', () => dialog.close());
-        yes.addEventListener('click', () => { if (yes.disabled) return; answer = model.value(); dialog.close(); });
+        yes.addEventListener('click', () => { if (yes.disabled) return; answer = model.value(); confirmed?.(); dialog.close(); });
         dialog.addEventListener('close', () => { clearTimeout(timer); previewId++; dialog.remove(); resolve(answer); }, {once:true});
         update(); dialog.showModal(); cancel.focus();
       });

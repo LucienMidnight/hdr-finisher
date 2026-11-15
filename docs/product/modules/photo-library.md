@@ -1,3 +1,24 @@
+### November 15: W2 P1 immediate Paste Grade feedback
+
+Confirming Paste synchronously hides affected Grid/filmstrip pictures and shows
+“Preparing adjustments”, including virtual copies. Those cells cannot request
+old pixels during preparation. After the atomic transaction they show “Updating
+preview” until the current picture is drawn; only visible demand starts first.
+Cancel, failed preparation, a refused leave-photo gate and no-change targets
+restore the unchanged grade using existing sources. Whole-paste Undo stays.
+No extra pixel cache, allowance, output math or saved-document change.
+
+MacBook Neo A18 Pro / 8 GB, 1408×794, shared GPU lock: old pixels previously
+hid after 214–410 ms with no preparation message; feedback now appears in
+11–13 ms. Conditions and retained small results are in the performance table.
+The real clipboard/paste check passes selective and three-target virtual-copy
+paste, redraw and whole-paste Undo. Fifteen controller checks include immediate
+confirmation, cancel, failure, no-change and cleanup failures. Full Node passes
+1,027 / one skipped after the grouped W2 changes. Full Python: 3,474 passed,
+144 skipped / one xpass; the new grant notification expectation is corrected
+and its 85-test group passes; unrelated frontend inventory and SDR Match
+materialization failures belong to concurrent W7/W3 work. No guards loosened.
+
 ## November 15: W7 image-browser validation
 
 MacBook Neo / 8 GB: locked real Electron confirms single-photo selection,

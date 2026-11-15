@@ -17,6 +17,10 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     const page = await browser.newPage(), errors=[];
     page.on('pageerror', error=>errors.push(error.message)); page.setDefaultTimeout(30000);
     await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
+    if(process.env.HDR_W2_BEFORE==='1')for(const name of ['grade-paste.js','photo-library.js']) {
+      const body=require('node:child_process').execFileSync('git',['show','97078dba:codebase/frontend/'+name],{cwd:root,encoding:'utf8'});
+      await page.route('**/'+name+'*',route=>route.fulfill({body,contentType:'application/javascript'}));
+    }
     await page.goto(process.env.HDR_FINISHER_URL,{waitUntil:'networkidle'});
     const api = (route, body) => page.evaluate(async ({route,body}) => {
       const response=await fetch('/api/library/'+route,body===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -41,6 +45,21 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     await iframe.evaluate((el,folder)=>el.contentWindow.HDRLibrary.browse(folder),folder);
     const cell=key=>frame.locator('.library-cell').filter({has:frame.locator('.name').filter({hasText:key})});
     const physical=name=>cell(new RegExp('^'+name.replace('.','[.]')+'$'));
+    await iframe.evaluate(el => {
+      const w=el.contentWindow, d=w.document;
+      w.__pasteFeedback=[];
+      d.addEventListener('click',event=>{
+        if(!event.target.closest('.grade-paste-dialog .button-primary'))return;
+        const start=w.performance.now(), row={confirmedAt:start};w.__pasteFeedback.push(row);
+        const check=()=>{
+          const cells=[...d.querySelectorAll('.library-cell[aria-selected="true"]')];
+          const hidden=cells.length&&cells.every(c=>![...c.querySelectorAll('canvas[data-picture-key]')].some(n=>!n.hidden&&w.getComputedStyle(n).visibility!=='hidden'));
+          if(hidden&&row.oldPixelsHiddenMs===undefined)row.oldPixelsHiddenMs=w.performance.now()-start;
+          if(hidden&&d.body.textContent.includes('Preparing adjustments'))row.feedbackMs=w.performance.now()-start;
+          else if(w.performance.now()-start<1500)w.requestAnimationFrame(check);
+        };w.requestAnimationFrame(check);
+      },true);
+    });
     await physical('target.png').waitFor();
     await physical('target.png').click({button:'right'});
     await frame.getByRole('menuitem',{name:/^Create virtual copy/}).click();
@@ -169,6 +188,9 @@ assert.equal((await firstPaste).status(),200);await written(photos[1]);
     await drawn(oldKeys);
     saved=JSON.parse(fs.readFileSync(photos[1]+'.hdrf','utf8'));assert.equal(saved.grade.global_adjustments.hdr.exposure,.25);assert.equal(saved.virtual_copies.find(copy=>copy.name==='Paste target').grade.global_adjustments.hdr.exposure,.25);
     for(let i=0;i<photos.length;i++)assert.deepEqual(fs.readFileSync(photos[i]),originals[i]);
+    const feedback=await iframe.evaluate(el=>el.contentWindow.__pasteFeedback);
+    fs.writeFileSync(path.join(output,process.env.HDR_W2_BEFORE==='1'?'before.json':'after.json'),JSON.stringify({feedback,load:require('node:os').loadavg(),machine:'MacBook Neo A18 Pro / 8 GB'},null,2));
+    if(process.env.HDR_W2_BEFORE!=='1')assert.ok(feedback.filter(r=>r.feedbackMs!==undefined).length>=2&&feedback.every(r=>r.feedbackMs<=100),'confirmed paste hides old pixels with progress within 100 ms: '+JSON.stringify(feedback));
     assert.deepEqual(errors,[]);
     console.log(JSON.stringify({checks:'native text clipboard, single confirmation, expandable picker, remembered HDR exposure only, three targets including virtual copy, live redraw reuses stored scenes, single Undo restores saved grades and drawings',screenshots:output}));
   }finally{try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); }}

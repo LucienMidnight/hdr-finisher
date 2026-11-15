@@ -37,7 +37,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | R6 | Deferred delete can remove a fresh replacement | W1 | built — compare/delete share the publication transaction; concurrent replacement survives |
 | R7 | Failed clean-up request hides a successful paste | W1 | built — best-effort cleanup bounded to one second; rejected/hung cleanup preserves successful result |
 | R8 | Exact grain test fails on the Mac | W1 | built — exact same-run old/new grain comparison replaces Windows-generated arrays; no tolerance change |
-| P1 | Paste Grade shows it has started immediately | W2 | to do |
+| P1 | Paste Grade shows it has started immediately | W2 | built — feedback 11–13 ms on Neo; cancel/failure/no-change, virtual-copy redraw and Undo checked |
 | P2 | Edited thumbnail appears fast after leaving Grade | W2 | to do |
 | P3 | Opening Grade during background work is fast | W2 | to do |
 | P4 | Library Denoise setup reused when nothing changed | W2 | to do |
