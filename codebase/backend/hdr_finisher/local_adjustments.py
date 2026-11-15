@@ -94,7 +94,8 @@ def apply_local_stack(
                     hsl_stage_id=local.id,
                 )
                 tile[...] = tile + (candidate - tile) * influence[..., None]
-    return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+    # Local corrections precede Film Look; finishing owns the SDR white ceiling.
+    return np.maximum(result, 0.0).astype(np.float32)
 
 
 def _mask_needs_full_frame_evaluation(expression: MaskExpression) -> bool:
@@ -1542,4 +1543,5 @@ def _apply_local_grade(
     result = _apply_curve_set(result, grade, kind)
     result = _apply_color_grading(result, grade.color_grading, kind)
     result = apply_detail(result, grade.detail, kind, source_pixel_scale=source_pixel_scale)
-    return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+    # Local corrections precede Film Look; finishing owns the SDR white ceiling.
+    return np.maximum(result, 0.0).astype(np.float32)

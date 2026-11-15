@@ -1,3 +1,16 @@
+### November 15: W1 finished-picture invalidation (R4)
+
+The commit containing this note intentionally rebuilds finished thumbnails
+(`finished-thumbnail-v4`) and stored/built screen previews
+(`stored-screen-preview-jxl-v3`) after the Detail highlight correction.
+Protected Build previews files also reject the old finishing version; their
+Refresh protection never overrides a rendering-version change. Source scene
+keys and developments are retained, so this does not require a full RAW rebuild.
+Regression checks reject old finished files, publish their replacements and
+reuse an existing scene. The real GPU local-Detail/Film Look versus CPU export
+check passes for Portra and Velvia within the existing 1/3 Delta E 2000 limits;
+84 isolated Detail cases pass too. No cache size or allowance changes.
+
 ## November 15: W6 review, menus and navigation feedback
 
 Full-screen review now displays the existing rating, pick/reject and colour

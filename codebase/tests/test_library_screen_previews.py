@@ -104,3 +104,24 @@ def test_refresh_generation_rejects_late_screen_write_but_keeps_built_picture(tm
     current = cache.identity(str(photo), 2560, 1440, 'hdr')
     assert cache.read(current) is not None
     assert not cache.write(identity, pixels.tobytes(), 32, 8, 256)
+
+
+def test_pre_detail_fix_built_preview_is_rejected_but_source_scene_reused(tmp_path, monkeypatch):
+    from hdr_finisher import library_screen_previews as module
+    from hdr_finisher.library_pictures import LibraryPictureCache, PICTURE_VERSION
+    photo, document, cache = setup_cache(tmp_path)
+    scene_cache = LibraryPictureCache(cache.cache.profile)
+    scene = scene_cache.build(photo, 2560, decoded=(np.ones((8, 32, 3), np.float32), None, {}))
+    current_version = module.VERSION
+    with monkeypatch.context() as patch:
+        patch.setattr(module, 'VERSION', 'stored-screen-preview-jxl-v2:' + PICTURE_VERSION)
+        old = cache.identity(str(photo), 2560, 1440, 'sdr')
+        assert cache.write(old, np.ones((8, 32, 4), dtype='<f2').tobytes(), 32, 8, 256, protected=True)
+    identity = cache.identity(str(photo), 2560, 1440, 'sdr')
+    assert identity['version'] == current_version
+    assert cache.read(identity) is None
+    # Finished-picture invalidation never changes the source development key.
+    reused = scene_cache.cached(photo, 2560, "quick")
+    assert reused['cache_hit'] and reused['key'] == scene['key']
+    assert cache.write(identity, np.full((8, 32, 4), .5, dtype='<f2').tobytes(), 32, 8, 256, protected=True)
+    assert cache.read(identity) is not None

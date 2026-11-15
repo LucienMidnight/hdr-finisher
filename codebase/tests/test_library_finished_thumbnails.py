@@ -119,3 +119,16 @@ def test_refresh_rejects_late_finished_upload_and_rediscovers_new_picture(tmp_pa
     meta['cache_epoch'] = cache.cache.publication_epoch(photo)
     assert cache.write(str(photo), 'sdr', 'bgra8unorm', meta, body, 2, 2, 256)
     assert cache.read(str(photo), 'sdr', 'bgra8unorm')[1] == body
+
+
+def test_pre_detail_fix_thumbnail_rebuilds_without_redeveloping_source(tmp_path, monkeypatch):
+    from hdr_finisher import library_finished_thumbnails as module
+    from hdr_finisher.library_pictures import PICTURE_VERSION
+    source, marks, cache, meta = setup_cache(tmp_path)
+    with monkeypatch.context() as patch:
+        patch.setattr(module, 'VERSION', 'finished-thumbnail-v3:' + PICTURE_VERSION)
+        assert cache.write(str(source), 'sdr', 'bgra8unorm', meta, bytes(512), 2, 2, 256)
+    assert cache.read(str(source), 'sdr', 'bgra8unorm') is None
+    # The same developed source description can publish the corrected finish.
+    assert cache.write(str(source), 'sdr', 'bgra8unorm', meta, bytes([17])*512, 2, 2, 256)
+    assert cache.read(str(source), 'sdr', 'bgra8unorm')[1] == bytes([17])*512

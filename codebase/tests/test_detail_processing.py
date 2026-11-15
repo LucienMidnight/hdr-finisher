@@ -162,3 +162,20 @@ def test_sdr_detail_preserves_headroom_before_film_look() -> None:
     # Sharpen must also preserve this input range at native pixel scale.
     sharpened = apply_detail(image, DetailAdjustments(sharpen_amount=55), PreviewKind.SDR)
     assert np.percentile(sharpened, 95) > 1.0
+
+
+def test_sdr_local_detail_retains_headroom_through_mask_mix():
+    from backend.hdr_finisher.local_adjustments import apply_local_stack, _apply_local_grade
+    from backend.hdr_finisher.models import LocalAdjustment, LocalGrade, GeometryAdjustments
+    image = _detail_fixture(48) * np.float32(4.4)
+    local = LocalAdjustment(sdr_grade=LocalGrade(detail=DetailAdjustments(clarity_amount=21, sharpen_amount=55)))
+    local.mask.leaf.type = 'linear_gradient'
+    local.mask.leaf.start.x = 0
+    local.mask.leaf.end.x = 1
+    mask = np.full(image.shape[:2], 255, dtype=np.uint8)
+    mask[:, -1] = 0
+    result = apply_local_stack(image, image, [local], PreviewKind.SDR, GeometryAdjustments(), compiled_masks={local.id: mask})
+    assert result.max() > 1
+    # A zero-influence edge must not clip just because a local exists elsewhere.
+    np.testing.assert_array_equal(result[:, -1], image[:, -1])
+    assert _apply_local_grade(image, local.sdr_grade, PreviewKind.SDR).max() > 1

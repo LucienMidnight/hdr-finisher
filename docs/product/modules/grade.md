@@ -19,6 +19,28 @@ W6 in concurrent W1 work. Visual sign-off pending; no new tokens.
 
 # Module PRD: Grade
 
+## November 15: W1 local Detail CPU headroom correction (R1/R4)
+
+The earlier PC correction already retained headroom in the GPU's local Detail
+pass, but two CPU local-stage returns still clipped SDR to white. Both now
+retain nonnegative values above white after Detail and mask mixing, until Film
+Look and final finishing. This is an intentional output change for existing
+SDR grades using local Detail; HDR processing and agreed limits are unchanged.
+The existing pre-Detail curve boundary is shared by both renderers and is not
+changed here. Finished Library pictures also receive new finishing versions;
+source scene-development versions stay unchanged.
+
+On the MacBook Neo (A18 Pro, 8 GB, 1408x794), the locked end-to-end
+`local-detail-film-parity.js` compares the real SDR GPU preview with the CPU
+export branch, including a full-coverage local at Exposure +1 / Clarity +21 /
+Sharpen +55 before Film Look. Portra 400 and Velvia 100 pass the existing
+mean <1 / p99.9 <=3 Delta E 2000 limits (worst 0.231 / 0.742).
+The second locked driver passes all 84 isolated global/local Detail cases.
+The first new-driver attempt failed only in its Python reference import path;
+that helper was corrected before the passing run. CPU regressions cover Detail
+headroom and exact preservation outside a mask. No broad sweep or tolerance
+change; full-native real-RAW output remains outside this bounded qualification.
+
 ## November 15: SDR Detail highlight headroom
 
 Detail's Texture/Clarity/Sharpen stage precedes Film Look. Its CPU and global/
