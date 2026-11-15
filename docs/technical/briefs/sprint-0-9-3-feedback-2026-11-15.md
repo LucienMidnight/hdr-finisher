@@ -267,6 +267,24 @@ red/green/cyan/blue/magenta/highlight measurements across those stocks.
   gamut parity passes 1,245 vectors. The known browser Match fixture fails
   before Match; no retry, browser-Match or full-resolution export claim.
 
+**M1d print-stage follow-up (Nov 15; research only):** Steve's observation is
+reproduced numerically. Portra 50% denim/0-stop residual improves
+0.624 ->0.280 RMS Delta E00 with Warmth/Preflash alone; adding Print Exposure
+improves denim/+1 from 6.744 ->0.339. Ektar behaves similarly. A single
+whole-chart setting improves only 3.8%/4.5% for Portra/Ektar and worsens body
+colour medians beyond the usual matched gate. Velvia is a slide and bypasses
+all print controls. Match copies print settings verbatim, while its earlier
+SDR stages change the input to the negative; shared print tables/reference
+white are not wrong in one lane. Needed settings vary with stop, strength,
+HDR exposure and photo, not a universal stock offset. Equal-input complete
+modules have a separate lane-primary post-mix lower-bound difference
+(expanded control max 9.004 versus signed-kernel max 0.327); changing that
+boundary is also a design/output decision. Existing gates refuse all three
+100% synthetic charts; their final candidates are labelled diagnostic-only.
+No renderer/shader/recipe/gate/tolerance change. Film-input preservation,
+guarded print fitting and signed-colour handling remain options for Steve;
+[full report and per-hue/stop tables](../reports/m1-print-stage-2026-11-15.md).
+
 ### W6: Small interface fixes
 
 Design rules: `docs/design/HDR_Finisher_Design_Guidelines.md`. Check at the

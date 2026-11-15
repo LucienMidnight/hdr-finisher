@@ -1,5 +1,39 @@
 # Module PRD: Film Look
 
+## November 15: print-stage Match research (M1d; no rendering change)
+
+Steve's finding is reproduced: Print Warmth and Preflash alone reduce the
+Portra 50% denim/0-stop target residual from 0.624 to 0.280 RMS Delta E00;
+including Print Exposure reduces denim/+1 from 6.744 to 0.339. Ektar behaves
+similarly. Those settings fit a selected tone, not the whole photograph.
+The best single whole-chart print recipe improves RMS only 3.8% Portra and
+4.5% Ektar at 50%, and worsens body colour medians beyond the usual matched
+gate. Velvia bypasses printing, so none of these print controls changes it.
+
+Both lanes share the negative/print/scan tables, paper, filter/preflash
+formula and common-space white/middle-grey calibration. Match deep-copies
+print settings without solving them, but changes the earlier SDR exposure,
+shoulder/gamut and tone path. At +1 stop its Film input is about 22% lower
+for Portra/Ektar and 32% for Velvia; in shadows it can be higher instead.
+Independent per-stop solutions change print-EV sign. Two shared RAWs also
+prefer different corrections: Portra 50% print EV -0.15 for IMG_0790 versus
++0.14 for IMG_7723's refused diagnostic candidate. There is no demonstrated
+universal per-stock print offset or lane-specific wrong printer reference.
+
+Equal-input signed stock chains remain close (expanded paper/settings
+control maximum 0.327 Delta E00; not a new tolerance). Complete modules can
+still differ because their post-mix nonnegative clamp is in ACEScg for HDR
+and sRGB for SDR: expanded 100% control maximum 9.004. This separate
+signed-colour boundary is not a printer calibration error. Changing it or
+preserving HDR Film input changes ordinary processing policy and needs a
+design decision, not an incidental fix.
+
+No CPU/GPU, Match recipe, order, gate or tolerance changes. All three 100%
+synthetic Matches are refused by the existing gates; the report labels their
+last explored candidates diagnostic-only. Full chain references, 50/100%
+tables, per-hue/stop CSV, exposure/photo dependence and options are in the
+[print-stage investigation](../../technical/reports/m1-print-stage-2026-11-15.md).
+
 ## November 15: W1 exact grain check across machines (R8)
 
 The cancellation regression now executes the frozen grain kernel and density
