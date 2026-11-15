@@ -155,6 +155,7 @@ def add_routes(router, marks):
                 await socket.send_json(await outgoing.get())
         sender = asyncio.create_task(send())
         notify(dict(type="grade",name=scheduler.grade_name,bytes=scheduler.grade_bytes))
+        notify(dict(type="grade-opening",active=scheduler.opening))
         try:
             while True:
                 command = await asyncio.wait_for(socket.receive_json(),timeout=15)

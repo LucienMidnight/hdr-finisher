@@ -9,7 +9,8 @@ function harness() {
   const panels = [0, 1].map(() => ({ inert: false, setAttribute() {}, removeAttribute() {} }));
   const events = [];
   const c = {
-    performance, console, setTimeout, clearTimeout,
+    performance, console, setTimeout, clearTimeout, URLSearchParams,
+    addEventListener() {},
     state: { session: { session_id: 'old' }, editDocument: {}, documentDirty: true,
       importGeneration: 0, projectOpenGeneration: 0, byteUploadQueue: Promise.resolve(),
       activeWorkflow: 'import', gpuPreview: { resetSession() {} } },

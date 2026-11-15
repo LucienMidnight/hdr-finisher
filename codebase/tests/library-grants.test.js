@@ -226,8 +226,29 @@ for(const visible of [true,false])test(`new native visibility ${visible} wins ov
    getWindowState:()=>new Promise(resolve=>resolveSnapshot=resolve)}};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../frontend/library-grants.js'),'utf8'),{
   window:root,location:{origin:'http://local'},DOMException,AbortController,Event,
+  WebSocket:class {constructor(){this.readyState=0;}send(){}close(){}},
   setTimeout,clearTimeout,setInterval:()=>null,clearInterval});
  native({visible});resolveSnapshot({visible:!visible});await tick();
  assert.equal(root.HDRLibraryGrants.snapshot().visible,visible);
  root.HDRLibraryGrants.close();
+});
+
+test('Library draws wait through Grade backend readiness until picture release, with cancellation',async()=>{
+ const {grants,sockets,timers}=setup();const signal=new AbortController();
+ const pending=grants.acquire('photo','quick',signal.signal);sockets[0].open();
+ sockets[0].receive({type:'grade-opening',active:true});
+ let started=false;const draw=grants.waitForGrade(signal.signal).then(()=>{started=true;});
+ await tick();assert.equal(started,false);assert.equal(grants.snapshot().opening,true);
+ sockets[0].receive({type:'grade-opening',active:false});timers.shift()();await draw;
+ assert.equal(started,true);
+ sockets[0].receive({type:'grade-opening',active:true});const cancelled=grants.waitForGrade(signal.signal);
+ signal.abort();timers.shift()();await assert.rejects(cancelled,{name:'AbortError'});
+ await assert.rejects(pending,{name:'AbortError'});grants.close();
+});
+
+ test('a cached-only Library subscribes before drawing and waits for its initial priority state',async()=>{
+ const {grants,sockets,timers}=setup();grants.start();assert.equal(sockets.length,1);sockets[0].open();
+ let drew=false;const draw=grants.waitForGrade().then(()=>{drew=true;});await tick();assert.equal(drew,false);
+ sockets[0].receive({type:'grade-opening',active:true});timers.shift()();await tick();assert.equal(drew,false);
+ sockets[0].receive({type:'grade-opening',active:false});timers.shift()();await draw;assert.equal(drew,true);grants.close();
 });

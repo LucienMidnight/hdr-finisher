@@ -73,6 +73,7 @@ window.HDRLibraryFinishedThumbnails = (() => {
       console.debug('Finished thumbnail read:',error.message);return null;
     });
     if(!result)return null;
+    await window.HDRLibraryGrants?.waitForGrade(signal);
     const gpu=await HDRLibraryPictures.initialize().catch(error=>{if(error.gpuUnavailable)return null;throw error;});
     if(!gpu)return null;
     const {info,body}=result;

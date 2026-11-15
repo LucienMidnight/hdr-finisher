@@ -71,7 +71,12 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
     try { return (await HDRLibraryGpuRaw.shared.gpu()).device; }
     catch(error) { this.libraryInitializationError=error; throw error; }
   }
+  async warmDenoiseModel(...args) {
+    await window.HDRLibraryGrants?.waitForGrade(this.librarySignal);
+    return super.warmDenoiseModel(...args);
+  }
   async fetchDenoiseModel(url) {
+    await window.HDRLibraryGrants?.waitForGrade(this.librarySignal);
     return this.libraryMeta?.fullscreen ? libraryDenoiseModel(url,this.libraryMeta,()=>super.fetchDenoiseModel(url)) : super.fetchDenoiseModel(url);
   }
   async reportDeliveryActivity(active) {
@@ -179,6 +184,7 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
     const tokens = this.libraryPipelineTokens?.get(format);
     if (!tokens) return;
     for (const name of names || Object.keys(tokens)) {
+      await window.HDRLibraryGrants?.waitForGrade(this.librarySignal);
       await beforeNext();
       if(this.pipelines.get(format)!==pipelines)return;
       const token=tokens[name];
@@ -390,6 +396,8 @@ const HDRLibraryPictureFactory = (quick = false) => {
       signal = shared === originalSignal ? originalSignal : AbortSignal.any([originalSignal,shared]);
       isCurrent = () => !signal.aborted && originalCurrent();
       if (signal.aborted || !isCurrent()) return;
+      await window.HDRLibraryGrants?.waitForGrade(signal);
+      if (signal.aborted || !isCurrent()) return;
       HDRLibraryStopwatch("picture_draw_dispatched", { ...window.HDRLibraryPictureLog?.(meta), key: meta.key, queue_ms: performance.now() - queued });
       window.HDRLibraryTrace?.mark(meta.trace,"picture_queue_wait",Math.max(queued,meta.trace?.started || queued),{...window.HDRLibraryPictureLog?.(meta),key:meta.key});
       const gpu = await initialize();
@@ -555,6 +563,7 @@ const HDRLibraryPictureFactory = (quick = false) => {
     readyReports = report; return report;
   }
   async function prepareDenoise(meta, hdr, trace) {
+    await window.HDRLibraryGrants?.waitForGrade();
     hdr = Boolean(hdr && !meta.unedited_raw);
     const lane = hdr ? "hdr" : "sdr";
     if (!meta.denoise?.[lane]?.enabled) return;

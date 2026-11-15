@@ -93,6 +93,7 @@ class Scheduler:
         self.caches = 0
         self.grade_bytes = 0
         self.grade_name = ""
+        self.opening = False
         self.total = None
         self.available = None
         self.ram = None
@@ -317,7 +318,7 @@ class Scheduler:
     def valid(self, id, path, kind=None):
         with self.lock:
             job = self.jobs.get(id)
-            return bool(job and not job.finish_pending and job.path == str(path) and job.granted is not None
+            return bool(job and not getattr(job, "opening_preempted", False) and not job.finish_pending and job.path == str(path) and job.granted is not None
                         and (kind is None or job.kind == kind))
 
     def hold_decode(self, id):
@@ -456,7 +457,20 @@ class Scheduler:
             job.notify(dict(self._message(job, "needs-memory"), reason=job.reason))
 
     def _pump(self):
-        self._start_saves()
+        opening = any(j.kind == "grade-import" for j in self.jobs.values())
+        if opening != self.opening:
+            self.opening = opening
+            for notify in self.listeners:
+                notify(dict(type="grade-opening", active=opening))
+        if opening:
+            # Ask owners to unwind at their existing safe points. Their grants
+            # and decode holds stay charged until they acknowledge release.
+            for job in list(self.jobs.values()):
+                if job.cls != "Grade" and job.granted is not None and not getattr(job, "opening_preempted", False):
+                    job.opening_preempted = True
+                    if job.notify: job.notify(dict(type="gpu-preempt", id=job.id))
+        else:
+            self._start_saves()
         running = [j for j in self.jobs.values() if j.granted is not None]
         room = self.ceiling-STARTING-self.caches-self.grade_bytes
         total_without_grade = None if self.total is None else max(0, self.total-self.grade_bytes)
@@ -498,7 +512,9 @@ class Scheduler:
                 if block:
                     blocked_classes.add(CLASSES[job.cls])
                 continue
-            if job.kind == "paste-import":
+            if opening and job.cls != "Grade":
+                reason = "paused for Grade"
+            elif job.kind == "paste-import":
                 # Full imports have neither the visible-picture floor nor the
                 # protected-photo 110% allowance. Grade always takes precedence.
                 if any(j.cls == 'Grade' for j in self.jobs.values()):
@@ -512,8 +528,8 @@ class Scheduler:
                 elif headroom is not None and job.estimate > headroom:
                     reason = "system reserve"
             elif job.cls == "Grade":
-                if job.kind == "grade-import" and any(j.kind == 'paste-import' for j in running):
-                    reason = "waiting for paste release"
+                if job.kind == "grade-import" and any(j.cls != "Grade" for j in running):
+                    reason = "waiting for Library release"
             elif job.estimate > self.ceiling:
                 reason = "needs more memory"
             elif headroom is not None and job.estimate > headroom:

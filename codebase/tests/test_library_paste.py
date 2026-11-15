@@ -388,10 +388,39 @@ def test_real_grade_start_waits_for_paste_release(setup, monkeypatch, cancel_gra
                 assert grade_entered.wait(3)
                 assert len(attempts) == 1  # paste cannot restart ahead of Grade
             release_grade.set()
-            assert work.result(timeout=10)['ready']
             manager._executor.shutdown(wait=True)
+            if not cancel_grade:
+                assert job.payload()['state'] == 'ready'
+                assert local.opening  # Backend-ready is still before the first Grade picture.
+                assert len(attempts) == 1
+                assert not manager.presented('obsolete-session')
+                assert local.opening
+                assert manager.presented(job.session_id)
+            assert work.result(timeout=10)['ready']
             assert job.payload()['state'] == ('cancelled' if cancel_grade else 'ready')
             assert grade_entered.is_set() == (not cancel_grade)
             assert not local.jobs
     finally:
         release_paste.set(); release_grade.set(); manager.close()
+
+
+def test_redevelopment_same_session_releases_the_new_opening_not_an_old_ticket(setup, monkeypatch):
+    from hdr_finisher.import_jobs import ImportJobManager
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.models import RawImportSettings
+    from hdr_finisher.library_scheduler import Scheduler
+    import hdr_finisher.library_scheduler as module
+    photo, store, session, marks, grades = setup
+    local = Scheduler()
+    monkeypatch.setattr(module, 'scheduler', local)
+    manager = ImportJobManager(store, MediaBrowserStore(marks.database.parent))
+    try:
+        for _ in range(2):
+            job = manager.start(photo, RawImportSettings(), replace_session_id=str(session.session_id))
+            manager._executor.submit(lambda: None).result(timeout=5)
+            assert job.state == 'ready' and job.session_id == str(session.session_id)
+            assert local.opening and not job.presented
+            assert manager.presented(job.session_id)
+            assert job.presented and not local.opening and not local.jobs
+    finally:
+        manager.close()

@@ -2694,6 +2694,13 @@
       }
     },
     {
+      "path": "tests/performance/grade-open-contention.js",
+      "areas": ["library", "preview"],
+      "tier": "diagnostic",
+      "protects": "Grade first picture idle versus during real paste, native-release segment reported separately; unchanged memory gates.",
+      "launch": {"method":"electron", "args":["--raw","D:/Photos/HDR Test Images/DSC04375.ARW","--paste-raw","D:/Photos/HDR Test Images/DSC00264.ARW","--output","{output}/grade-open-contention.json"]}
+    },
+    {
       "path": "tests/performance/raw-import-baseline.js",
       "areas": [
         "preview"

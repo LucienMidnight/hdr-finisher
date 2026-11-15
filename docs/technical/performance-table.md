@@ -1,3 +1,9 @@
+## November 15: W2 Grade opening priority (MacBook Neo)
+
+| Action | Existing target | Before → after | Conditions / evidence |
+| --- | --- | --- | --- |
+| Same full RAW to first Grade picture, idle / while real paste prepares another RAW | Paste contention ≤max(250 ms, 10% of idle); full wait measured, no segment excluded | Before 8.170 / 7.932 s; initial busier after 8.810 / 8.971 s (+161 ms); final subscribed-window after 8.433 / 7.323 s (no added wait). Pass | Neo A18 Pro / 8 GB / 1408×794, shared lock, fresh Electron/backend per pair, existing 4 GB test setting and unchanged gates. DSC04375.ARW 7952×5304 redeveloped on every import; real IMG_0790.CR2 paste starts 150 ms before Grade. OS cache not flushed; later GPU pipelines warm. Before load 3.95–4.67; busier after 2.89–4.07 with fast Python/concurrent agents; final 3.30–4.14. Not a RAW speedup comparison. Final channel observation starts pause 22–24 ms after request and resumes 16–20 ms after first presentation; cached-only window receives both. Native/safe-point release wait before 194 ms, busier after 286 ms, final 227 ms; these are release waits, not isolated native-decode timings, and none is subtracted. `codebase/output/w2-p3-{before-qualified,after,qualified-final}.json`. Commit containing this note. |
+
 ## November 15: W2 RAW/Lensfun stages (MacBook Neo)
 
 | Action / stage | Comparison rule | Measured result | Conditions / evidence |

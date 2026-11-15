@@ -117,6 +117,21 @@ function gradeOpenStage(stage, fields = {}) {
   }).catch(() => {});
 }
 
+// Release only the import whose pixels were actually presented. Backend
+// readiness alone leaves Library work paused through upload and first draw.
+let gradePresentedSession = null, gradePresentedFlight = null;
+window.HDRGradeOpenPresented = sessionId => {
+  if (!sessionId || sessionId !== state.session?.session_id || gradePresentedSession === sessionId || gradePresentedFlight === sessionId) return;
+  gradePresentedFlight = sessionId;
+  void fetch("/api/import-jobs/presented?"+new URLSearchParams({session_id:sessionId}), {method:"POST"})
+    .then(response=>{if(response.ok)gradePresentedSession=sessionId;}).catch(()=>{})
+    .finally(()=>{if(gradePresentedFlight===sessionId)gradePresentedFlight=null;});
+};
+window.addEventListener("hdrfinisher:preview-presented", event => {
+  if(event.detail?.generation===state.previewGeneration?.[event.detail.lane] && event.detail.lane===state.currentView)
+    window.HDRGradeOpenPresented(event.detail.sessionId);
+});
+
 function finishGradeOpen() {
   state.gradeOpen = null;
   for (const panel of document.querySelectorAll(".source-rail, .grade-rail")) {
@@ -151,6 +166,7 @@ async function openStagedDesktopSource(selection) {
     status.post({ id: "import", severity: "progress", message: `Loading ${name}…`, progress: "indeterminate" });
     gradeOpenStage("grade_open_visible");
   }
+  let openingJobId = null, completed = false;
   try {
     if (state.activeImportJobId) {
       await projectIo.cancelImportJob(fetch, state.activeImportJobId).catch(() => null);
@@ -182,7 +198,7 @@ async function openStagedDesktopSource(selection) {
       setImportCancelVisible(false);
       throw new Error(job?.detail || "The source file could not be opened.");
     }
-    state.activeImportJobId = job.job_id;
+    openingJobId = state.activeImportJobId = job.job_id;
     const startedAt = performance.now();
     let firstPoll = true;
     while (generation === state.importGeneration && state.activeImportJobId === job.job_id) {
@@ -209,6 +225,7 @@ async function openStagedDesktopSource(selection) {
         await activateDesktopSession(gradeSession, retainedProjectPath, generation);
         if (generation !== state.importGeneration) return;
         gradeOpenStage("grade_open_controls");
+        completed = true;
         finishGradeOpen();
         if (!selection.replaceSessionId) await recordSuccessfulMediaImport(selection.path);
         if (generation !== state.importGeneration) return;
@@ -250,6 +267,7 @@ async function openStagedDesktopSource(selection) {
     if (selection.fromLibrary) activateWorkflowTab("import");
     showUploadError(error.message || `Could not open ${name}.`);
   } finally {
+    if (!completed && openingJobId) void projectIo.cancelImportJob(fetch, openingJobId).catch(()=>{});
     if (generation === state.importGeneration) {
       state.importInProgress = false;
       state.activeImportJobId = null;
@@ -262,6 +280,7 @@ async function openStagedDesktopSource(selection) {
 
 // stayOnTab: a background reload of the open photo (paste, outside change) keeps the current page.
 async function activateDesktopSession(session, projectPath, openGeneration = null, { stayOnTab = false } = {}) {
+  gradePresentedSession = null; gradePresentedFlight = null;
   retireActiveSession();
   if (!stayOnTab) collapseGradeModules();
   state.session = session;
@@ -286,10 +305,7 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
   if (!projectPath && !window.HDRGradeSaving?.hasGrade(session.session_id)) await applyNewSessionPreferences();
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
   state.gpuPreview?.resetSession(session.session_id);
-  if (state.denoise.hdr.enabled && state.gpuPreview?.warmDenoiseModel) {
-    const native = Math.max(session.source.width, session.source.height);
-    void state.gpuPreview.warmDenoiseModel(session.session_id, "hdr", native);
-  }
+  if(state.gpuPreview)state.gpuPreview.deferDenoiseWarm = true;
   invalidatePreview("hdr", { markDirty: false });
   invalidatePreview("sdr", { markDirty: false });
   activateWorkflowTab(stayOnTab ? state.activeWorkflow : "grade", { focus: false });
@@ -310,6 +326,15 @@ async function activateDesktopSession(session, projectPath, openGeneration = nul
   if (!gpuReady && !transientGpuRefusal()) await refreshPreview({ progressSteps: [36, 76, 92] });
   if (openGeneration !== null && openGeneration !== state.importGeneration) return;
   gradeOpenStage("grade_open_first_frame");
+  if(state.gpuPreview)state.gpuPreview.deferDenoiseWarm = false;
+  requestAnimationFrame(()=>{
+    if(state.session?.session_id!==session.session_id)return;
+    if(state.acceptedPresentation?.generation!==state.previewGeneration[state.currentView]
+        ||state.acceptedPresentation?.lane!==state.currentView)return;
+    const native = Math.max(session.source.width, session.source.height);
+    void state.gpuPreview?.warmDenoiseModel?.(session.session_id, "hdr", native);
+  });
+
   void Promise.all([
     refreshOverlay(),
     refreshScopes(scopeLongEdge("settled"), { tier: "settled" }),

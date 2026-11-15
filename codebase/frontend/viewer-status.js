@@ -207,6 +207,13 @@ function acceptPresentation(lane, schedulerTier, width, height, transport, fallb
     scopePeak: Number.isFinite(scopePeak) ? scopePeak : null,
     fallbackReason,
   };
+  if (transport !== "WebGPU" && lane === state.currentView && longEdge > 0) {
+    const sessionId=state.session?.session_id;
+    window.requestAnimationFrame?.(()=>{
+      if(state.session?.session_id===sessionId && state.previewGeneration[lane]===generation)
+        window.HDRGradeOpenPresented?.(sessionId);
+    });
+  }
   // Start the source's measurement once a picture is visible, before Denoise
   // is enabled or the first zoom asks for it. No source upload or reconstruction.
   if (transport === "WebGPU" && state.gpuPreview?.warmDenoiseModel) {

@@ -1,3 +1,17 @@
+### November 15: W2 P3 first-picture priority lifetime
+
+Grade import priority now lasts until a real current-frame GPU/CPU picture is
+presented, rather than ending at backend readiness. It stops all new Library
+admission and asks running owners to release at existing safe points. Native
+calls keep their grants/holds until they actually return; no allocated work is
+pretended released. The existing persistent window grant channel also starts
+for cached-only windows and broadcasts opening/resume, including initial state.
+Paste, redraw and native/Denoise warm-up resume on presentation; terminal,
+superseded and same-session re-development paths are checked. No ceiling,
+reserve, floor, estimate, cache share, count, upload slot or GPU budget changes.
+The final locked contention check passes on the 8 GB Neo without subtracting
+its 227 ms release wait; timings and load conditions are in the performance table.
+
 ### November 15: W1 Grade waits for paste's acknowledged release (R3)
 
 A Grade import publishes its priority immediately, but now waits on its

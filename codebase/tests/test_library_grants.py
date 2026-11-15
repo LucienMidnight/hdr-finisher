@@ -18,10 +18,12 @@ def test_channel_queues_once_promotes_finishes_and_cleans_up_two_windows(tmp_pat
     small=tmp_path/"small.jpg";Image.new("RGB",(20,20)).save(small)
     with TestClient(app) as client,client.websocket_connect("/grants") as first:
         assert first.receive_json()["name"]=="scan.dng"
+        assert first.receive_json()=={"type":"grade-opening", "active":False}
         first.send_json(dict(type="ask",id="large",path=str(damaged),priority=10))
         assert first.receive_json()["reason"]=="paused for Grade"
         with client.websocket_connect("/grants") as second:
             second.receive_json()
+            assert second.receive_json()=={"type":"grade-opening", "active":False}
             second.send_json(dict(type="ask",id="small",path=str(small),priority=10))
             assert second.receive_json()["type"]=="granted"
             assert scheduler.jobs["small"].floor

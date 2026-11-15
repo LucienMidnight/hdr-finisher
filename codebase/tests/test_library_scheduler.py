@@ -758,3 +758,25 @@ def test_normal_grant_writes_only_one_line(monkeypatch):
     assert len(records) == 1
     assert records[0]["event"] == "library_grant_completed"
     assert records[0]["outcome"] == "finished"
+
+
+def test_grade_opening_pauses_all_library_grants_until_picture_acknowledgement():
+    s = fresh(4*GB)
+    events = []
+    s.listeners.add(events.append)
+    released = []
+    active = s.ask('active', 'window', 'photo', 'quick', FAST_BYTES, notify=released.append)
+    grade = s.ask('opening', 'backend', 'raw', 'grade-import', 0, 'Grade')
+    assert s.opening and grade.granted is None
+    assert active.granted is not None  # still charged while its owner unwinds
+    assert not s.valid('active', 'photo')
+    assert released[-1] == {'type':'gpu-preempt', 'id':'active'}
+    queued = [s.ask(kind, 'window', kind, kind, FAST_BYTES) for kind in ('quick','source','upkeep','gpu')]
+    assert all(j.granted is None for j in queued)
+    s.finish(active.id)
+    assert grade.granted is not None
+    assert all(j.reason == 'paused for Grade' for j in queued)
+    s.finish(grade.id)  # same release called by ImportJobManager.presented
+    assert not s.opening
+    assert any(j.granted is not None for j in queued)
+    assert [e['active'] for e in events if e['type']=='grade-opening'] == [True,False]

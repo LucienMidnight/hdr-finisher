@@ -5818,6 +5818,7 @@
     }
 
     warmDenoiseModel(sessionId, lane, native) {
+      if (this.deferDenoiseWarm) return Promise.resolve(false);
       if (!(native >= 256 && native <= 16384)) return Promise.resolve(false);
       const key = `${sessionId}:${lane}:${native}`;
       if (this.denoiseModelWarm?.key === key) return this.denoiseModelWarm.promise;

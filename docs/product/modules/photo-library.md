@@ -1,3 +1,29 @@
+### November 15: W2 P3 pause Library through Grade's first picture
+
+A Grade import now holds priority from its request through its first presented
+picture, including the backend-ready/upload interval. All new Library grants,
+paste preparation, redraws and native/Denoise warm-up wait. Running Library
+owners unwind at existing safe points; native decode reservations stay charged
+until their owners acknowledge release. Cached-only Library windows subscribe
+to priority too and wait for the channel's initial state. First GPU or CPU
+presentation releases the opening; cancel, failure, supersession and close
+release it safely. Same-session RAW re-development acknowledges its new ticket.
+The current-frame generation prevents an obsolete presentation from resuming it.
+No cache size, reserve, concurrency, admission estimate or pixel math changes.
+
+The final locked real-app same-full-RAW check proves pause/start and resume after
+first presentation. MacBook Neo / 8 GB: idle first picture 8.433 s, during paste
+7.323 s; the whole difference passes max(250 ms, 10%) without excluding any
+segment. The observed native/safe-point release wait is 227 ms, reported as
+release wait rather than presumed native decoding. Earlier before values are
+8.170/7.932 s; a busier after pair is 8.810/8.971 s. First-use GPU work and load
+differ, so there is no speedup claim. The performance table has conditions.
+Real-manager tests cover blocked paste, cancellation and repeated re-development;
+scheduler/client checks cover every Library grant class and cached-only windows.
+Final Node: 1,028 passed / one skipped. The focused Python group includes the
+new format-first handoff checks; final full-suite limits are recorded below.
+Grade's own full RAW development remains separate open work.
+
 ### November 15: W2 P1 immediate Paste Grade feedback
 
 Confirming Paste synchronously hides affected Grid/filmstrip pictures and shows

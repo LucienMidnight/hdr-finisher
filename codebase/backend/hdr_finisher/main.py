@@ -579,6 +579,11 @@ def create_import_job(request: ImportJobRequest) -> dict[str, object]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/import-jobs/presented")
+def import_picture_presented(session_id: str) -> dict[str, bool]:
+    return {"released": import_jobs.presented(session_id)}
+
+
 @app.get("/api/import-jobs/{job_id}")
 def get_import_job(job_id: str) -> dict[str, object]:
     try:

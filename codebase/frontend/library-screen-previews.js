@@ -59,6 +59,7 @@ window.HDRLibraryScreenPreviews = (() => {
     stage("fetch",started);
     const setupStarted=performance.now();
     if(!current()||signal.aborted)throw new DOMException('Invalidated','AbortError');
+    await window.HDRLibraryGrants?.waitForGrade(signal);
     const gpu=await HDRLibraryPictures.initialize();
     await admit(meta);
     canvas.width=meta.width;canvas.height=meta.height;

@@ -29,6 +29,7 @@ class ImportJob:
     preview_path: Path | None = None
     session_id: str | None = None
     error: str | None = None
+    presented: bool = False
     phase_history: list[dict[str, object]] = field(default_factory=list)
     cancel_event: Event = field(default_factory=Event, repr=False)
     state_lock: RLock = field(default_factory=RLock, repr=False)
@@ -86,6 +87,8 @@ class ImportJobManager:
                 if previous is not None:
                     with previous.state_lock:
                         previous_terminal = previous.state in TERMINAL_IMPORT_STATES
+                    if previous_terminal:
+                        self._release_opening(previous)
                     if not previous_terminal:
                         previous.cancel_event.set()
                         self._set_phase(previous, "cancelled", "cancelled", "Superseded by a newer import")
@@ -95,8 +98,30 @@ class ImportJobManager:
         from .library_scheduler import scheduler
         grant = scheduler.ask('grade-import-'+job.job_id, 'backend', str(path), 'grade-import', 0, 'Grade')
         future = self._executor.submit(self._run, job, grant)
-        future.add_done_callback(lambda _: scheduler.finish('grade-import-'+job.job_id))
+        future.add_done_callback(lambda _: self._import_finished(job))
         return job
+
+    def _release_opening(self, job):
+        from .library_scheduler import scheduler
+        scheduler.finish('grade-import-'+job.job_id)
+
+    def _import_finished(self, job):
+        with job.state_lock:
+            if job.state != "ready" or job.presented or job.cancel_event.is_set():
+                self._release_opening(job)
+
+    def presented(self, session_id: str) -> bool:
+        # Import's priority survives backend readiness until real pixels have
+        # reached Grade. An obsolete session cannot release a newer opening.
+        with self._lock:
+            job = self._jobs.get(self._active_job_id)
+            if job is not None:
+                with job.state_lock:
+                    if job.session_id == session_id and job.state == "ready":
+                        job.presented = True
+                        self._release_opening(job)
+                        return True
+        return False
 
     def get(self, job_id: str) -> ImportJob:
         with self._lock:
@@ -113,6 +138,8 @@ class ImportJobManager:
                 terminal = job.state in TERMINAL_IMPORT_STATES
             if not terminal:
                 self._set_phase(job, "cancelled", "cancelled", "Import cancelled")
+            else:
+                self._release_opening(job)
         return job
 
     def close(self) -> None:
@@ -120,6 +147,7 @@ class ImportJobManager:
             jobs = list(self._jobs.values())
         for job in jobs:
             job.cancel_event.set()
+            if job.state == "ready": self._release_opening(job)
         self._executor.shutdown(wait=False, cancel_futures=True)
 
     def _run(self, job: ImportJob, grant) -> None:
@@ -128,7 +156,7 @@ class ImportJobManager:
                 if not self._is_current_locked(job):
                     return
                 if grant.granted is None:
-                    self._set_phase(job, "queued", "waiting_for_paste", "Waiting for paste preparation to release memory")
+                    self._set_phase(job, "queued", "waiting_for_library", "Waiting for Library work to release memory")
             while grant.granted is None:
                 if not self._is_current(job):
                     return

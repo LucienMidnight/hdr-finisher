@@ -899,7 +899,8 @@ def create_library_router(worker, browser, store=None):
     @router.get("/warmup-idle")
     def warmup_idle():
         status = worker.status()
-        return {"idle": not status["paused"] and not status["pending"], "paused": status["paused"]}
+        return {"idle": not status["paused"] and not status["pending"] and not scheduler.opening,
+                "paused": status["paused"] or scheduler.opening}
 
     @router.post('/denoise-warmup')
     def denoise_warmup():
