@@ -37,6 +37,26 @@ The release failure inventory and limits on comparison evidence are in
 
 # Performance table
 
+November 15 live hang investigation: **Windows PC**, installed **0.9.3**,
+2560x1440 machine setting; normal use of `20261114 Lucas 8 bday`, with bulk
+paste preparation and Grade work overlapping. Read-only inspection of
+`%APPDATA%/hdr-finisher-desktop/logs/backend.log`; no controlled timing run
+or before/after comparison. Checkout inspected: `89e6371a`; installed build
+commit not established.
+
+| Action | Observed | Conditions / result |
+| --- | --- | --- |
+| Open DSC07571.ARW in Grade during bulk paste | First frame 47.7 s; controls 49.1 s | Click 09:05:16 local; CPU paste preparation active. App memory reached 11.67 GB at 09:06:15 against the selected 4 GB ceiling, with no active Library grants reported. Paste preparation was still advancing at 09:12:39; this is overload evidence, not proof of a deadlock. |
+
+November 15 scheduled paste app check, **Windows PC**, unpackaged checkout
+working tree leading to `10559a2c` (November 15 preparation plan),
+2560x1440, shared GPU lock, disposable profile; Python suite running concurrently.
+`library-gpu-raw-paste.js`, DSC06615.ARW: cold full-import preparation **16.822 s**,
+three concurrent stored-start reuse requests **0.056 s**; unchanged paste wrote
+no sidecar. This is a functional smoke observation, not a speed comparison or a
+new timing limit. Result: `codebase/output/library-gpu-raw-paste/1794709619156/result.json`.
+The observed incident above has not been remeasured in normal use.
+
 ## November 14: native allocator release on the minimum Mac
 
 Code: requested merge `82758935` plus this commit's backend allocator policy.
