@@ -54,7 +54,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | M1 | HDR to SDR Match colour shifts (blue jeans) | W5 | not fixed across colours; N3a local renderer adaptation built, but approved equal-Film-input/highlight-colour rebuild stopped after failed unchanged-gate probes; all-hue/stock and five-RAW comparisons remain unchanged vs pre-N3a |
 | M1a | SDR contrast/Film Look clipping turns saturated colours | W3 | built, scoped clipping fix only — existing calibrated exposure/body guards pass; broader M1 follow-up finds bright green/cyan/indigo errors and DSC00264 highlight regression; no new pixel/gate change; GPU Match fixture still fails before Match |
 | X1 | Match SDR button for local adjustments and masks | N4 | built, scoped — per-parent same-change fit, independent SDR global grade, Undo, stale marker and overwrite consent; 16/18 proxy cases accepted, two safely refused; native sharp-highlight delivery qualification remains limited |
-| X2 | Reverse workflow: SDR grade applied to HDR automatically | — | design done, waiting on Steve |
+| X2 | Reverse workflow: SDR grade applied to HDR automatically | N5 | not exposed — bounded research fitter misses body/family acceptance; no user button or mutation endpoint; report and safe prototype retained, native/action qualification deferred |
 | U1 | Export panel padding and single divider | W6 | built — Export strip/results share Destination inset; one boundary; three-theme screenshots pass |
 | U2 | No selection borders after mouse use | W6 | built — pointer typing stays ring-free; Tab/F6 retain keyboard rings; Export checked |
 | U3 | Module header: dot + Reset left, Presets right | W6 | built — name, dot + Reset, Presets, eye in DOM/visual order; Presets always visible |
@@ -116,7 +116,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | N3a | **Partial:** Local Tone shares N2 curves and local Match proposals use the real renderer; equal-Film-input/highlight-colour rebuild stopped after failed unchanged-gate probes (M1/M1d open). See result below. | N2 |
 | N3b | **Built:** clipping and gated neutral-ray range preview (T1-d), Auto deferred. See result below. | N2 (parallel with N3a) |
 | N4 | **Built, scoped:** X1 per-parent local Match SDR; acceptance and N4 results below. M1/M1d remain open. | N3a |
-| N5 | X2 "Start HDR from SDR". | N4 |
+| N5 | **Not exposed:** X2 body/family fit misses acceptance; safe research prototype and measurement report only. | N4 |
 | N6 | Final review, fixes, brief/PRD updates, push. | all |
 
 ### N5 acceptance proposed before measurement (November 16)
@@ -154,6 +154,70 @@ Qualification is a ship gate, not permission to widen tolerances: if these
 cannot be met in this overnight step, retain only an unexposed prototype,
 with no user-visible button or public mutation endpoint. Native/encoded
 qualification and the two app layouts remain required before enabling it.
+
+### N5 result (November 16, MacBook Neo / A18 Pro / 8 GB)
+
+**X2 is not exposed.** On N4 `bd68ece2`, acceptance was committed before
+measurement (`2a136941`). The bounded research fitter preserves SDR/masks,
+seeds ordinary HDR creative controls, translates wheel tint vectors directly
+SDR→HDR, and fits ten visible tone/colour controls against a fixed physical
+body selection. It retains the HDR target and enabled HC mode/settings;
+bypassed HC seeds Fixed cap at Start 80% of the retained peak. That choice
+avoids dependence on a scene peak and uses a common RGB gain. Film is rendered
+normally once, not inverted. No new production rendering stage is added.
+
+**Eleven of twelve body/family cases fail** on synthetic scenes and the five
+named shared RAWs, Film off and Portra 400 50%. Synthetic Film-off median/P95
+luma is .033791/.103280 and OKLab .056670/.120644, beyond the unchanged
+.010/.030 and .015/.040 gates. IMG_7723 Portra passes aggregate metrics but
+fails the neutral-family gate. IMG_7723 Film-off alone passes body/family
+gates; its cyan ramp has ordering excursions down to -1.430511e-6, beyond
+the frozen 1e-6 roundoff allowance. The other eleven dense-ray probes pass.
+Thus no case qualifies the complete promise. No tolerance is widened.
+
+All twelve 1000-nit CPU candidate proxy ceilings pass (largest channel peak
+571.630 nits). Separate retained-mode probes at 600 nits detect 600.000061
+for Soft Ceiling and Clip; the research ceiling detector marks both as
+failures, without borrowing encoder allowance. These incumbent renderer
+rounding results remain unresolved, not silently corrected or excused.
+Four 128px synthetic Ultra HDR deliveries (two stocks/settings × CPU/GPU)
+stay below 1000 nits; decoded peaks are 303.824–342.659 nits. Full-size Proof
+is byte-identical to export within each renderer. This is delivery safety,
+not perceptual CPU/GPU parity or native photographic qualification.
+
+No button, tooltip, source-eligibility flow, overwrite confirmation, public
+mutation endpoint, revision guard or X2-specific Undo action was wired. The
+prototype is imported only by research tools/tests. Existing document-swap
+Undo/Redo and unchanged SDR were checked in a disposable app session; they
+do not establish the unbuilt X2 transaction. Existing screens at 1408×794
+and 1100×720 have no X2 button or horizontal overflow. No UI tokens change.
+All 1,080 forward wheel translations are exactly unchanged against N4.
+**M1/M1d remain open.**
+
+Validation: final Node fast suite **1,071 passed / 1 skipped / 0 failed**;
+final Python fast suite **3,577 passed / 144 skipped / 1 xpassed**, with one
+existing Starlette deprecation warning (240.48 s). Focused Python checks
+**62 passed**. The new Electron driver passes after an intermediate repeat
+correctly refused an existing export destination; fresh per-run directories
+fix the harness repeat without permitting overwrites. Every Electron/GPU
+run uses the venv Python GPU lock, one at a time. The 90-second Library check
+exits zero with no reported errors, two GPU developments and five readable
+stored pictures, but shows only **9/33 eligible pictures**: incomplete
+coverage, not an all-photo Library pass. Unrelated concurrent tone-preview
+edits were present during the final fast checks and are left untouched.
+
+Not run/built: native/full-resolution photo deliveries, other HDR formats
+and stocks, full photo coverage of every HC mode, perceptual CPU/GPU fit
+parity, integrated denoise/repairs/captured-match grain, native masks/detail,
+photo fits at HDR reference 100, X2 consent/eligibility/Undo, broad release
+sweep, installer or push. Failed body gates make further slow qualification
+premature. Output usage is **13.0 GB at start and end**, below 100 GB. Safe
+prototype commits: `919db5cd`, pivot-unit correction `0314c900`, repeatable
+driver destinations `e027a097`.
+
+Detailed measurements/limitations: [N5 report](../reports/n5-start-hdr-2026-11-16.md).
+Artifacts: `codebase/output/review/n5-start-hdr/measurements.json`,
+`app-check.json`, `unexposed-1408x794.png`, `unexposed-1100x720.png`.
 
 ### N4 acceptance agreed before measurement (November 16)
 
@@ -879,12 +943,13 @@ guarded print fitting and signed-colour handling remain options for Steve;
   out-of-date marker, never auto-rematches. Size M after the T1 Local Tone
   fitter exists, L standalone. Cheaper alternative: "Transfer HDR settings"
   (S, approximate).
-- **X2 proposal:** "Start HDR from SDR", not a true reverse Match (SDR lost
+- **X2 approved design, N5 research only:** "Start HDR from SDR", not a true reverse Match (SDR lost
   the highlight and gamut information). Keeps the SDR body's brightness and
   colour, takes HDR highlights from the original scene under the HC cap,
   replaces HDR in one undoable action. Size L; build after T1/M1.
 - Steve chose the fitted **same change** promise and X2 after the tone/colour
-  work. X1 is built; X2 remains the following work package, not part of N4.
+  work. X1 is built. N5 measured an X2 prototype but did not expose it after
+  the fixed body/family gates failed; see the N5 result and research report.
 
 ### W6: Small interface fixes
 

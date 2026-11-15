@@ -1,3 +1,22 @@
+## November 16: Start HDR from SDR (N5 / X2) not enabled
+
+An unexposed research fitter copies known SDR creative settings into ordinary
+HDR controls, translates wheel tint vectors in the reverse direction, captures
+the finished SDR target (including an authored base), and fits ten visible
+tone/colour controls in a physical, reference-white-aware comparison space.
+It preserves masks, SDR and the existing HDR peak. A bypassed HC seeds Fixed
+cap at 80% of that peak; an enabled mode/settings are retained. Film renders
+normally once in HDR; no inverse forward-shoulder attenuation is used.
+
+**This is not a built user action.** Eleven of twelve synthetic/five-RAW
+Film-off/Portra cases fail the frozen body/family gates. No button, mutation
+endpoint, feature flag, confirmation or eligibility flow exposes the fitter.
+The normal application cannot call it, and saved grades/output are unchanged.
+The bounded delivery check passes ceilings, not colour equivalence. Existing
+document-swap Undo was checked; an X2-specific Undo action remains unbuilt.
+See the [N5 research report](../../technical/reports/n5-start-hdr-2026-11-16.md).
+M1/M1d are still not solved.
+
 ## November 16: local Match SDR (N4 / X1)
 
 On the SDR side of a selected local adjustment, **Match SDR** names its

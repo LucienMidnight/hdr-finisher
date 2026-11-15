@@ -1,5 +1,57 @@
 # HDR-to-SDR Match
 
+## Start HDR from SDR: unexposed N5 research
+
+This is **not** a reverse Match: finished SDR has discarded scene highlight
+and gamut information. The proposed promise is to retain the finished SDR
+body's physical brightness and colour, while grading the original scene's
+highlights under the preserved HDR cap. No such action is currently exposed.
+
+`hdr_from_sdr.py` is imported only by research tooling/tests. It snapshots the
+SDR result once through the normal renderer, including an authored SDR base
+when selected. Both lanes are compared in linear sRGB, nits / 203:
+`HDR × R / (.18 × 203)` versus finished SDR pixels, without gamut clipping
+the HDR comparison. The target fixes the body mask and colour families for
+the entire fit; candidate changes cannot evade gates by changing selection.
+Film is retained and rendered normally once; stochastic grain is omitted
+only from analysis. The probe copies ordinary creative controls, HSL,
+curves, Film settings and locals with masks; wheels use the existing tint
+vector solver with the inverse primaries transform, never division by the
+forward shoulder attenuation. No captured pixel image or hidden rendering
+stage is stored in a recipe.
+
+The HDR seed compensates physical exposure by `log2(100/R)`, translates the
+contrast pivot, retains the HDR target and all enabled HC settings, or enables
+Fixed cap at Start = 80% of the retained peak when HC was bypassed. The fit
+changes only Exposure, Contrast, five Tone strengths, Saturation, Temperature
+and Tint, respecting section bypasses. Five bounded coordinate passes use
+the real HDR renderer. Research input is limited to 65,536 pixels; the RAW
+study uses <=256px proxies after <=512px decoding. This is not native delivery
+qualification, and independent denoise/repairs are not integrated into an action.
+
+Acceptance was committed before measuring. Of twelve synthetic/five-RAW
+Film-off/Portra cases, only IMG_7723 Film-off passes the overall and sufficiently
+sampled-family body gates; it fails the conservative ramp ordering probe by
+1.43e-6 common-luma. Eleven body failures cannot support the promised button.
+The other eleven ramp probes and all twelve 1000-nit CPU proxy ceilings pass.
+No tolerances were widened. Two additional retained-mode probes detect a
+600.000061-nit float maximum at a 600-nit target (Soft Ceiling and Clip), and
+the new diagnostic correctly refuses that excess rather than borrowing an
+encoder allowance. The incumbent renderer is not changed in N5.
+
+Future UI wording, **not implemented**: action “Start HDR from SDR…”;
+confirmation title “Replace HDR grade”; explain “Replaces the HDR global
+grade and HDR local settings. Keeps SDR and masks unchanged. Uses the
+original scene for HDR highlights. Undo restores the previous HDR grade.”
+When HC was bypassed, additionally say “Enables Fixed cap at [target] nits.”
+Planned tooltip: “Uses the finished SDR picture as a starting point for HDR.
+Original scene highlights stay limited by the HDR target.” Source eligibility,
+overwrite consent, revision guards, complete source processing and an X2 Undo
+transaction must be built and tested before exposing any of this copy.
+Existing document-swap Undo/Redo, unchanged SDR, both unexposed app layouts,
+and bounded CPU/GPU encoded ceiling/Proof identity were exercised separately.
+See the [measurement and validation record](reports/n5-start-hdr-2026-11-16.md).
+
 ## Local Match SDR (N4)
 
 The SDR local-grade area exposes one **Match SDR** action for the selected

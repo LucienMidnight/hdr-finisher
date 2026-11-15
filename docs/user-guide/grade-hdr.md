@@ -2,6 +2,15 @@
 
 The HDR branch defines the brightest intended rendition. It remains scene-linear in ACEScg while you grade it, then becomes BT.2020/PQ for HDR preview and export.
 
+## Starting with an SDR grade
+
+“Start HDR from SDR” is not available yet. Its research version did not retain
+brightness and colour closely enough across the test photos, so it has no
+button and cannot replace your HDR grade. SDR cannot restore highlights or
+colours already lost in an SDR image; a future version must use the original
+scene/HDR-capable source for those highlights. For now, grade HDR separately
+and enable Highlight Compression when you need a guaranteed delivery peak.
+
 ## A practical grading order
 
 1. Establish overall exposure and diffuse-white placement.
