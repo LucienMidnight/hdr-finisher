@@ -350,10 +350,18 @@ film-by-paper tables for Kodak 2383 and Fujifilm Crystal Archive.
    is still open.
 5. **Lens filter speed:** +47 ms (Black Pro-Mist) to +84 ms (worst
    CineBloom) per render. Steve was asked to try it.
-6. Known failures, recorded in [known limitations](../../known-limitations.md):
+6. **Later: CPU grain speed (Steve, November 15, 2026).** When the GPU
+   preview is not used, CPU film grain is very slow: an SDR switch on
+   DSC07752.ARW waited minutes while all 12 CPU workers built grain
+   (`film_grain.py` reduced previews take 4 x 4 samples, each rebuilding a
+   full grain field). The CPU is the fallback route, so consider making it
+   faster later, along with other very slow CPU steps. Grain output must not
+   change. Not started; first measure the whole wait (AGENTS.md, "Speed
+   where it is felt").
+7. Known failures, recorded in [known limitations](../../known-limitations.md):
    Black & White Direct/Tiled mismatch, uncompressed extreme HDR on
    Neutral.
-7. Optional, later: more papers (Supra, Ultra, Ektacolor Edge, 2393), Push/Pull
+8. Optional, later: more papers (Supra, Ultra, Ektacolor Edge, 2393), Push/Pull
    data for stocks other than Portra 800, bleach bypass, halo warmth, separate
    core/halo/bloom lens controls, black-and-white film stocks.
 
