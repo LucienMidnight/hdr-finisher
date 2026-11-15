@@ -133,8 +133,16 @@ def test_publication_started_before_a_command_cannot_recreate_old_cache_entries(
         cache.publish(temporary, file, source, before)
     assert not cache.source_valid(file, source)
     cache.reconcile_background(lambda: None)
+    # Inventory must not renew the obsolete generation (W1 R2).
+    assert not cache.source_valid(file, source)
+    current = cache.publication_epoch(source)
+    with temporary.open('wb') as stream:
+        np.savez_compressed(stream, pixels=np.zeros((2, 3, 3), np.float32),
+            metadata=np.asarray(json.dumps({'path': str(source), 'cache_epoch': current})))
+    cache.publish(temporary, file, source, current)
     assert cache.source_valid(file, source)
-    cache.publish(temporary, file, source, cache.publication_epoch(source))
+    cache.forget_source(file)
+    cache.reconcile_background(lambda: None)
     assert cache.source_valid(file, source)
 
 

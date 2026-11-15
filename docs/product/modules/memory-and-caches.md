@@ -14,7 +14,12 @@ families' source jobs, leaving the global file-command epoch unchanged. Tests
 cover old scenes/surfaces surviving Refresh, missing ownership recovery, pending
 files, the compare/publish interleaving, fresh replacement readability, virtual
 families and unrelated work completing. The final W1 focused Python group has
-66 passes. No cache, concurrency, reserve, memory or disk allowance changes.
+66 passes. The full fast suite exposed an old file-command test that expressly
+expected inventory to renew an invalidated generation. Its expectation now
+matches R2: the file stays invalid until fresh current-generation publication;
+that fresh ownership can be recovered afterward. This changes the intended
+cache contract, not an image tolerance. No cache, concurrency, reserve, memory
+or disk allowance changes.
 
 ### November 15, 2026: Refresh invalidation and locked disposable files
 
