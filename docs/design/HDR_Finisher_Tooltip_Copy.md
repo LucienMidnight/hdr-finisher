@@ -2,9 +2,15 @@
 
 This file is the reviewable copy registry for explanatory tooltips. Copy strings from here into application markup or script without rewriting them in place. Interaction rules live in `../product/archive/HDR_Finisher_PRD_v1.2.md` (archived; current requirements are in the module PRDs under `../product/modules/`).
 
+Every tooltip waits 2.5 seconds on hover or keyboard focus, in every window.
+Click, Escape, leave and blur dismiss immediately. Native title bubbles and CSS
+tooltips are replaced by one accessible, viewport-bounded top-layer controller.
+Every neighbour also waits; `NEIGHBOUR_WINDOW_MS = 0` is the single switch for
+the pending neighbour decision.
+
 ## Scope title tooltips
 
-Trigger delay: 2 seconds on title hover. The same tooltip appears when its title receives keyboard focus.
+Trigger delay: 2.5 seconds on title hover. The same tooltip appears when its title receives keyboard focus.
 
 | ID | Title / state | Copy-ready tooltip text |
 |---|---|---|
@@ -16,7 +22,7 @@ Trigger delay: 2 seconds on title hover. The same tooltip appears when its title
 
 ## Existing authored tooltips
 
-These strings predate the title-tooltip policy. They are recorded here for centralized copy review; their current triggers remain unchanged until those controls are revisited.
+These strings predate the title-tooltip policy. They are recorded here for centralized copy review; all use the shared 2.5-second controller.
 
 | ID | Trigger | Copy-ready tooltip text |
 |---|---|---|
@@ -37,7 +43,7 @@ These strings predate the title-tooltip policy. They are recorded here for centr
 
 ## Source identity tooltip
 
-Trigger delay: 2 seconds on hover, and available on keyboard focus, only when the file name exceeds its two-line display limit.
+Trigger delay: 2.5 seconds on hover, and available on keyboard focus, only when the file name exceeds its two-line display limit.
 
 | ID | Trigger | Copy-ready tooltip text |
 |---|---|---|
@@ -45,7 +51,7 @@ Trigger delay: 2 seconds on hover, and available on keyboard focus, only when th
 
 ## Preview title tooltip
 
-Trigger delay: 2 seconds on the PREVIEW WINDOW title hover. The same tooltip appears when the title receives keyboard focus. Copy changes with the active rendition.
+Trigger delay: 2.5 seconds on the PREVIEW WINDOW title hover. The same tooltip appears when the title receives keyboard focus. Copy changes with the active rendition.
 
 | ID | Title / state | Copy-ready tooltip text |
 |---|---|---|

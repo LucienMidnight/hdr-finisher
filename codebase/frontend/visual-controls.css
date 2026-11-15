@@ -517,17 +517,6 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
  :root .comparison-modes > button { width: 22px; min-width: 22px; flex-basis: 22px; }
  :root .viewer-tools { gap: 1px; }
 }
-/* Authored title text is also visible in captures and on keyboard focus. */
-:root :is(.library-tools, .viewer-view-group, .batch-header) button[title] { position: relative; }
-:root :is(.library-tools, .viewer-view-group, .batch-header) button[title]:is(:hover, :focus-visible)::after {
- content: attr(title); position: absolute; z-index: 1000; top: calc(100% + 7px); right: 0;
- width: max-content; max-width: 280px; white-space: normal; pointer-events: none;
- padding: 6px 9px; border: 1px solid var(--plate-edge); border-radius: var(--radius-plate);
- background: var(--panel); color: var(--text); font: var(--font-weight-regular) var(--font-size-sm)/var(--line-height-tight) var(--font-body); box-shadow: var(--plate-lift);
-}
-
-:root .library-tools #exposure-button[title]:is(:hover, :focus-visible)::after { content: "Exposure: " attr(title); }
-
 /* The place name and counts sit in the bottom bar; toolbars centre their tools. */
 :root .library-toolbar { grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr); }
 :root .library-footer .library-bar-title { flex: 0 1 auto; max-width: 45%; align-items: center; gap: 8px; }
@@ -700,3 +689,11 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
 :root .control-group.modified .group-reset::after { content: none; }
 :root .control-group.modified .group-reset::before { content: ""; display: inline-block; vertical-align: middle; margin-right: 4px; width: 5px; height: 5px; border-radius: var(--radius-pill); background: var(--muted); }
 :root :is(.window-menu-popover button, .window-menu-trigger, .unified-menu-button):hover:not(:disabled) { background: var(--plate-up-hover); }
+
+/* W7: only the shared, viewport-bounded top-layer controller paints help. */
+:root .title-tooltip { display: none !important; }
+:root :is(.toolbar-preview-resolution, .help-tip)::after { content: none !important; display: none !important; }
+:root .bounded-help-tooltip {
+ inset: auto; margin: 0; border-radius: var(--radius-plate);
+ transition: none; transform: none;
+}

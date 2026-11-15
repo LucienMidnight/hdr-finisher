@@ -1,3 +1,14 @@
+## November 15: W7 shared tooltips (L1)
+
+Main, embedded/pop-out Library and standalone media browser now load one
+controller: 2.5 seconds per hover or keyboard focus; click, Escape, leave, blur
+and window blur dismiss immediately. Dynamic native titles are transferred to
+custom help, retaining accessible names, so no native bubble doubles it.
+A manual top-layer popover sits above dialogs and clamps to the local viewport.
+The neighbour grace window is a single constant, disabled pending Steve.
+Validation: JavaScript syntax checks pass; grouped Electron timing, bounds and
+focus review follows with L2/L4. No photo output or processing change.
+
 ## November 15: W7 purple accent (L5)
 
 Purple `#9b7bff` is the default in runtime tokens, browser and desktop
