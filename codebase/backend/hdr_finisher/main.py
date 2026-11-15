@@ -968,7 +968,37 @@ def _strip_execution_conflict(exc: StripExecutionRefused) -> JSONResponse:
     )
 
 
+_preview_work = InstrumentWork(background=False)
+
+
+def _cancellable_preview(endpoint):
+    import inspect
+    from functools import wraps
+    @wraps(endpoint)
+    async def wrapped(*args, **kwargs):
+        http_request = kwargs.pop("http_request")
+        key = (kwargs["session_id"], kwargs["kind"], "preview")
+        try:
+            return await _preview_work.run(key, http_request, lambda current: endpoint(*args, **kwargs))
+        except StaleRender:
+            return JSONResponse(status_code=409, content={"detail": "Stale preview request dropped."})
+    signature = inspect.signature(endpoint)
+    wrapped.__signature__ = signature.replace(parameters=[*signature.parameters.values(),
+        inspect.Parameter("http_request", inspect.Parameter.KEYWORD_ONLY, annotation=Request)])
+    return wrapped
+
+
+def _log_cpu_preview(session, kind, edge, request):
+    from .library_diagnostics import log
+    h, w = session.image.shape[:2]
+    scale = min(1.0, edge / max(h, w))
+    log("grade_preview_cpu", path=str(session.source_path), lane=kind.value,
+        width=round(w * scale), height=round(h * scale), long_edge=edge,
+        reason=request.cpu_fallback_reason or "CPU preview requested without renderer reason")
+
+
 @app.post("/api/session/{session_id}/preview/{kind}")
+@_cancellable_preview
 def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
     if request.transient_adjustments and request.adjustments is None:
         raise HTTPException(status_code=422, detail="Transient preview adjustments are required.")
@@ -986,6 +1016,7 @@ def preview(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Resp
 
     preview_long_edge = request.long_edge or session.preview.long_edge
     _guard_preview_resources(session, preview_long_edge)
+    _log_cpu_preview(session, kind, preview_long_edge, request)
     token = store.next_preview_token(session_id, kind)
     try:
         processed, strip_report = _render_selected_execution(
@@ -1028,6 +1059,7 @@ def preview_preflight(
 
 
 @app.post("/api/session/{session_id}/preview-raw/{kind}")
+@_cancellable_preview
 def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> Response:
     """Render ordinary CPU fallback grading directly into a browser canvas."""
     try:
@@ -1039,6 +1071,7 @@ def preview_raw(session_id: str, kind: PreviewKind, request: PreviewRequest) -> 
 
     preview_long_edge = request.long_edge or (768 if kind == PreviewKind.SDR else 960)
     _guard_preview_resources(session, preview_long_edge)
+    _log_cpu_preview(session, kind, preview_long_edge, request)
     token = store.next_preview_token(session_id, kind)
     try:
         processed, strip_report = _render_selected_execution(

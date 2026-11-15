@@ -1164,6 +1164,7 @@ class ScopeRegion(BaseModel):
 
 
 class PreviewRequest(BaseModel):
+    cpu_fallback_reason: str | None = Field(default=None, max_length=1024)
     adjustments: AdjustmentState | None = None
     transient_adjustments: bool = False
     edit_revision: int | None = Field(default=None, ge=0)

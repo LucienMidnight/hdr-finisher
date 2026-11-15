@@ -1,0 +1,135 @@
+"""Cancellation and exact grain output from baseline 88775059."""
+import asyncio
+import threading
+from pathlib import Path
+from types import SimpleNamespace
+import numpy as np
+import pytest
+from hdr_finisher import film_grain
+from hdr_finisher.adjustments import _apply_density_grain, FrameWindow
+from hdr_finisher.models import FilmLookAdjustments, PreviewKind, PreviewRequest
+from hdr_finisher.grain_work import render_work, grain_allocation
+from hdr_finisher.render_cache import StaleRender
+from hdr_finisher.instrument_work import InstrumentWork
+
+
+def grain_cases(render=_apply_density_grain):
+    image = np.linspace(.002, .9, 133 * 17 * 3, dtype=np.float32).reshape(133, 17, 3)
+    for lane in PreviewKind:
+        for film in ("color_negative", "black_and_white"):
+            for scale in (1., .6, .2):
+                look = FilmLookAdjustments(grain_amount=70, grain_size=100, grain_chroma=40, grain_film_type=film)
+                yield f"{lane.value}_{film}_{scale}", render(image, look, lane, 271828, np.float32(1),
+                    frame_window=FrameWindow(1500, 2500, 5320, 7968), preview_scale=scale)
+
+
+def test_uncancelled_pixels_equal_pre_change_output():
+    with np.load(Path(__file__).parent / "fixtures/grain-before-88775059.npz") as before:
+        for key, pixels in grain_cases():
+            np.testing.assert_array_equal(pixels, before[key], err_msg=key)
+
+
+def test_cancel_during_grain_band(monkeypatch):
+    active = True
+    calls = []
+    original = film_grain._splat_band
+    def splat(*args, **kwargs):
+        nonlocal active
+        calls.append(1)
+        result = original(*args, **kwargs)
+        active = False
+        return result
+    monkeypatch.setattr(film_grain, "_splat_band", splat)
+    with render_work(lambda: active), pytest.raises(StaleRender): next(grain_cases())
+    assert len(calls) == 1
+
+
+def test_cancel_between_samples(monkeypatch):
+    calls = []
+    def noise(*args, **kwargs):
+        calls.append(kwargs["sample_offset"])
+        return np.ones((2, 2, 3), dtype=np.float32)
+    monkeypatch.setattr(film_grain, "grain_noise", noise)
+    with render_work(lambda: not calls), pytest.raises(StaleRender):
+        film_grain.preview_grain_noise(preview_scale=.2)
+    assert len(calls) == 1
+
+
+def test_cpu_log_reason_photo_lane_size(monkeypatch):
+    from hdr_finisher.main import _log_cpu_preview
+    from hdr_finisher import library_diagnostics
+    events = []
+    monkeypatch.setattr(library_diagnostics, "_sink", events.append)
+    session = SimpleNamespace(image=np.zeros((100, 200, 3)), source_path=Path("DSC07752.ARW"))
+    _log_cpu_preview(session, PreviewKind.SDR, 100, PreviewRequest(cpu_fallback_reason="budget-refused"))
+    assert len(events) == 1
+    event = events[0]
+    assert (event["event"], event["reason"], event["lane"], event["width"], event["height"]) == ("grade_preview_cpu", "budget-refused", "sdr", 100, 50)
+    assert event["path"] == "DSC07752.ARW"
+
+
+def test_abandoned_scope_cancels_inside_grain(monkeypatch):
+    async def scenario():
+        queue = InstrumentWork()
+        entered = threading.Event()
+        released = threading.Event()
+        class Request:
+            disconnected = False
+            async def is_disconnected(self): return self.disconnected
+        request = Request()
+        original = film_grain._splat_band
+        def splat(*args, **kwargs):
+            entered.set()
+            assert released.wait(2)
+            return original(*args, **kwargs)
+        monkeypatch.setattr(film_grain, "_splat_band", splat)
+        task = asyncio.create_task(queue.run(("old-session", "hdr", "scopes"), request, lambda current: next(grain_cases())))
+        while not entered.is_set(): await asyncio.sleep(.001)
+        request.disconnected = True
+        await asyncio.sleep(.1)
+        released.set()
+        result = await asyncio.gather(task, return_exceptions=True)
+        assert isinstance(result[0], StaleRender)
+        assert not queue.lanes
+    asyncio.run(scenario())
+
+
+def test_grain_allocation_foreground_priority():
+    from hdr_finisher import grain_work
+    order = []
+    errors = []
+    def run(label, background):
+        try:
+            with render_work(background=background), grain_allocation(): order.append(label)
+        except StaleRender: errors.append(label)
+    with grain_allocation():
+        back = threading.Thread(target=run, args=("scope", True))
+        front = threading.Thread(target=run, args=("preview", False))
+        back.start(); front.start()
+        import time
+        deadline = time.monotonic() + 2
+        while not grain_work._foreground_waiters and time.monotonic() < deadline: time.sleep(.001)
+        assert grain_work._foreground_waiters
+        assert not order
+    front.join(2); back.join(2)
+    assert order[0] == "preview"
+    assert sorted(order + errors) == ["preview", "scope"]
+
+def test_cpu_pool_dispatches_visible_before_queued_scope():
+    from hdr_finisher.cpu_budget import PriorityCpuPool
+    pool = PriorityCpuPool(1)
+    started = threading.Event()
+    released = threading.Event()
+    order = []
+    def hold():
+        started.set()
+        assert released.wait(2)
+    first = pool.submit(hold)
+    assert started.wait(2)
+    with render_work(background=True):
+        scope = pool.submit(lambda: order.append("scope"))
+    preview = pool.submit(lambda: order.append("preview"))
+    released.set()
+    first.result(2); preview.result(2); scope.result(2)
+    pool.pool.shutdown()
+    assert order == ["preview", "scope"]

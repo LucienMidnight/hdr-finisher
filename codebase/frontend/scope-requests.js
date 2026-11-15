@@ -1,5 +1,13 @@
 function suspendGradeInstruments() {
+  state.gradeWorkGeneration = (state.gradeWorkGeneration || 0) + 1;
   state.previewScheduler?.cancel();
+  state.cpuPreviewInflight?.clear();
+  window.clearTimeout(state.refreshTimer);
+  window.clearTimeout(state.settleTimer);
+  for (const [lane, controller] of Object.entries(state.previewControllers || {})) {
+    controller?.abort();
+    state.previewControllers[lane] = null;
+  }
   state.scopeGeneration += 1;
   state.scopeRequestInFlight?.controller?.abort();
   state.pendingScopeRequest?.resolve(false);
@@ -33,7 +41,8 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   if (state.globalEditDirty && !liveGpuScope) {
     // A deferred or rejected sync can leave edits dirty. Retrying it in a
     // resolved-Promise loop starves input and grows the heap until V8 OOMs.
-    return syncGlobalEditState().then((applied) => applied && !state.globalEditDirty
+    const workGeneration = state.gradeWorkGeneration;
+    return syncGlobalEditState().then((applied) => workGeneration === state.gradeWorkGeneration && applied && !state.globalEditDirty
       ? refreshScopes(longEdge, { tier, generation, lane })
       : false);
   }
@@ -312,7 +321,8 @@ function scopeFreshnessLabel(tier) {
 }
 
 async function runScopeRequest(request) {
-  if (["import", "export"].includes(state.activeWorkflow) || document.hidden) { request.resolve(false); return; }
+  if (["import", "export"].includes(state.activeWorkflow) || document.hidden
+    || request.sessionId !== state.session?.session_id || request.lane !== state.currentView) { request.resolve(false); return; }
   const controller = new AbortController();
   request.controller = controller;
   state.scopeRequestInFlight = request;

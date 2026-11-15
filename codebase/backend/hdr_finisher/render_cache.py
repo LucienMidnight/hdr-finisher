@@ -1373,16 +1373,18 @@ class SessionRenderCache:
                 edge,
                 source_epoch=source_epoch,
             )
-            processed = apply_adjustments(
-                source,
-                adjustments,
-                kind,
-                sdr_reference_image=sdr_reference,
-                local_adjustments=local_adjustments,
-                compiled_local_masks=compiled_masks,
-                color_context=self.color_context,
-                source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
-            )
+            from .grain_work import render_work
+            with render_work(is_current):
+                processed = apply_adjustments(
+                    source,
+                    adjustments,
+                    kind,
+                    sdr_reference_image=sdr_reference,
+                    local_adjustments=local_adjustments,
+                    compiled_local_masks=compiled_masks,
+                    color_context=self.color_context,
+                    source_pixel_scale=min(1.0, edge / max(self.image.shape[:2])),
+                )
             processed = downsample_image(processed, edge)
             if is_current is not None and not is_current():
                 with self._lock:

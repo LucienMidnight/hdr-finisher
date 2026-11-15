@@ -6,7 +6,8 @@ from .render_cache import StaleRender
 
 
 class InstrumentWork:
-    def __init__(self, capacity=2):
+    def __init__(self, capacity=2, *, background=True):
+        self.background = background
         self.slots = asyncio.Semaphore(capacity)
         self.lanes = {}
 
@@ -27,7 +28,11 @@ class InstrumentWork:
                 if not current():
                     raise StaleRender("Superseded instrument request.")
                 started = True
-                result = await run_in_threadpool(render, current)
+                def execute():
+                    from .grain_work import render_work
+                    with render_work(current, background=self.background):
+                        return render(current)
+                result = await run_in_threadpool(execute)
                 if not current():
                     raise StaleRender("Superseded instrument request.")
                 return result

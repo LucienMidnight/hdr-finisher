@@ -93,11 +93,13 @@ function transientGpuRefusal() {
 }
 
 async function settlePreview(lane = state.currentView, task = {}) {
+  const workGeneration = state.gradeWorkGeneration;
   // Rotate/Straighten is an explicit Apply/Cancel transaction. A scheduler
   // task left resident by an earlier grading gesture must never settle the
   // transient geometry on slider release.
   if (!state.session || state.rotateDraftGeometry || state.perspectiveMode) return false;
   await syncGlobalEditState();
+  if (workGeneration !== state.gradeWorkGeneration) return false;
   // A local slider's `change` handler persists its optimistic value through
   // the serialized edit queue. The scheduler's settle timer is independent of
   // that request and can otherwise snapshot the old revision while the new
@@ -107,6 +109,7 @@ async function settlePreview(lane = state.currentView, task = {}) {
   // pass always snapshots one coherent revision.
   const pendingEdits = state.editCommandQueue;
   if (pendingEdits && await pendingEdits === false) return false;
+  if (workGeneration !== state.gradeWorkGeneration) return false;
   if (!state.session || state.rotateDraftGeometry || state.perspectiveMode) return false;
   if (task.applicationGeneration !== undefined
     && task.applicationGeneration !== state.previewGeneration[lane]) return false;
@@ -220,7 +223,9 @@ async function renderPreviewForLane(
 ) {
   if (!state.session || geometryDraftActive()) return false;
   const sessionId = state.session.session_id;
-  if (await syncGlobalEditState() === false || state.session?.session_id !== sessionId) return false;
+  const workGeneration = state.gradeWorkGeneration;
+  if (await syncGlobalEditState() === false || state.session?.session_id !== sessionId
+    || workGeneration !== state.gradeWorkGeneration) return false;
   if (geometryDraftActive()) return false;
   const raw = options.raw ?? !state.gpuPreview?.available;
   const key = JSON.stringify([sessionId, state.editRevision, state.previewGeneration[lane],
@@ -242,6 +247,17 @@ async function renderPreviewForLane(
   }
 }
 
+function cpuPreviewReason(lane) {
+  if (state.renderingMode === "cpu") return "user-selected-cpu";
+  if (!state.gpuPreview?.available) return `gpu-unavailable: ${state.gpuPreview?.detail || "no adapter"}`.slice(0, 1024);
+  if (state.gpuFailurePolicy?.disabledFor?.(state.session?.session_id ?? null)) return "gpu-disabled-after-session-failure";
+  if (!state.gpuPreview.supportsLocalAdjustments(lane, localsBypassed() ? [] : localAdjustments())) return "unsupported-local-adjustments";
+  const refusal = state.lastGpuDraftRefusal;
+  return refusal?.lane === lane
+    ? `${refusal.reason}${refusal.detail ? `: ${refusal.detail}` : ""}`.slice(0, 1024)
+    : "backend-preview-requested";
+}
+
 const CPU_PREVIEW_MAX_LONG_EDGE = 16384;  // PreviewRequest.long_edge limit in models.py
 
 async function renderPreviewForLaneInner(
@@ -254,8 +270,9 @@ async function renderPreviewForLaneInner(
   // renders still contain the committed geometry, even when the controls reset.
   if (!state.session || geometryDraftActive()) return false;
   const sessionId = state.session.session_id;
+  const workGeneration = state.gradeWorkGeneration;
   if (await syncGlobalEditState() === false) return false;
-  if (geometryDraftActive() || state.session?.session_id !== sessionId) return false;
+  if (workGeneration !== state.gradeWorkGeneration || geometryDraftActive() || state.session?.session_id !== sessionId) return false;
   if (raw) return renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showProgress });
   const cached = state.previewCache[lane];
   const generation = state.previewGeneration[lane];
@@ -283,6 +300,7 @@ async function renderPreviewForLaneInner(
         : null,
       // The backend renders CPU previews up to 16384 px. For larger pictures
       // (line scans, panoramas) show that size scaled up rather than nothing.
+      cpu_fallback_reason: cpuPreviewReason(lane),
       long_edge: Math.min(longEdge, CPU_PREVIEW_MAX_LONG_EDGE),
       execution: previewExecutionForTier(),
       hdr_display: mediaQueryMatch("(dynamic-range: high)"),
@@ -393,6 +411,7 @@ async function renderRawPreviewForLane(lane, displayWhenReady, longEdge, { showP
     body: JSON.stringify({
       edit_revision: state.editRevision,
       include_locals: !localsBypassed(),
+      cpu_fallback_reason: cpuPreviewReason(lane),
       long_edge: Math.min(longEdge, CPU_PREVIEW_MAX_LONG_EDGE),
       generation,
       tier: "settled",
@@ -603,8 +622,8 @@ async function renderGpuDraftInner(
   const renderStartedAt = performance.now();
   // Record why a draft declined. A silent false is very hard to diagnose from
   // a failing browser test, and every one of these is a legitimate refusal.
-  const refuse = (reason) => {
-    state.lastGpuDraftRefusal = { reason, lane, tier, at: performance.now() };
+  const refuse = (reason, detail = null) => {
+    state.lastGpuDraftRefusal = { reason, detail, lane, tier, at: performance.now() };
     // Cumulative, because the interesting refusals arrive in bursts during a
     // drag and only the histogram distinguishes "superseded once" from the
     // repeated supersession that PERF-03 is about.
@@ -824,7 +843,7 @@ async function renderGpuDraftInner(
         return refuse(`gpu-retry-scheduled:${verdict.kind}`);
       }
       console.warn(`WebGPU authoring render failed (${verdict.kind}); using the CPU picture for this render${verdict.workDisabled ? " and for the rest of this photo" : ""}.`, error);
-      return refuse(`gpu-failed:${verdict.kind}`);
+      return refuse(`gpu-failed:${verdict.kind}`, verdict.detail);
     }
     console.warn("WebGPU authoring render failed permanently; using raw CPU preview.", error);
     state.gpuPreview.available = false;

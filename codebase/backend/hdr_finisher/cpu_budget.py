@@ -3,7 +3,7 @@ import os
 from math import isqrt
 from concurrent.futures import ThreadPoolExecutor, Future
 from contextlib import contextmanager
-from contextvars import ContextVar
+from contextvars import ContextVar, copy_context
 from threading import local, RLock
 from weakref import WeakSet
 
@@ -55,7 +55,43 @@ def raw_threads(count):
     runtime.omp_set_num_threads(max(1, int(count)))
 
 
-_cpu_pool = ThreadPoolExecutor(max_workers=logical_cpus(), thread_name_prefix="hdr-cpu")
+class PriorityCpuPool:
+    """Dispatch queued visible work before scopes, retaining all CPU workers."""
+    def __init__(self, workers):
+        from collections import deque
+        self.pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="hdr-cpu")
+        self.workers = workers
+        self.active = 0
+        self.lock = RLock()
+        self.queues = (deque(), deque())
+
+    def submit(self, function):
+        from .grain_work import background_work
+        future = Future()
+        context = copy_context()
+        with self.lock:
+            self.queues[int(background_work())].append((future, context, function))
+            if self.active < self.workers:
+                self.active += 1
+                self.pool.submit(self.drain)
+        return future
+
+    def drain(self):
+        while True:
+            with self.lock:
+                queue = self.queues[0] or self.queues[1]
+                if not queue:
+                    self.active -= 1
+                    return
+                future, context, function = queue.popleft()
+            if future.set_running_or_notify_cancel():
+                try:
+                    future.set_result(context.run(function))
+                except BaseException as error:
+                    future.set_exception(error)
+
+
+_cpu_pool = PriorityCpuPool(logical_cpus())
 _inside = local()
 # Library decodes opt in; Grade's own import keeps its separate bands.
 _library_bands = ContextVar("library_bands", default=False)
@@ -77,6 +113,8 @@ class CpuExecutor:
             previous = getattr(_inside, "active", False)
             _inside.active = True
             try:
+                from .grain_work import checkpoint
+                checkpoint()
                 return function(*args, **kwargs)
             finally:
                 _inside.active = previous

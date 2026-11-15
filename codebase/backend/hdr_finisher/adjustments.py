@@ -2394,7 +2394,7 @@ def _apply_density_grain(
     subject, still carrying the shadow/midtone/highlight qualification and the
     grain texture the image drives.
 
-    The frame is rendered in row chunks on a few threads. Grain is a fixed
+    The frame is rendered in row chunks with one grain allocation owner. Grain is a fixed
     field over the frame, so a chunk is exactly the same rows of a whole-frame
     render and the chunking never shows.
     """
@@ -2435,11 +2435,13 @@ def _apply_density_grain(
 
     bounds = list(range(0, region_height, GRAIN_CHUNK_ROWS)) + [region_height]
     spans = list(zip(bounds[:-1], bounds[1:]))
-    if len(spans) <= 1:
-        result = render(0, region_height)
-    else:
-        with CpuExecutor() as pool:
-            result = np.concatenate(list(pool.map(lambda span: render(*span), spans)), axis=0)
+    from .grain_work import grain_allocation, checkpoint
+    parts = []
+    for first, last in spans:
+        checkpoint()
+        with grain_allocation():
+            parts.append(render(first, last))
+    result = parts[0] if len(parts) == 1 else np.concatenate(parts, axis=0)
     if density_delta or not clip_output:
         return result.astype(np.float32)
     return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)

@@ -155,6 +155,7 @@ async function switchLane(lane) {
     renderLocalAdjustments();
     return;
   }
+  suspendGradeInstruments();
   state.currentView = lane;
   state.renderCoordinator?.noteActiveLane(lane);
   state.selectedCurvePoint = Math.min(state.selectedCurvePoint ?? 0, currentCurveValues().length - 1);

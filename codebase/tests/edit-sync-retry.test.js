@@ -53,7 +53,7 @@ for(const activeWorkflow of ["import","export"]){
 
 test("leaving Grade cancels queued and running instruments without clearing the photo",()=>{
   const calls=[];const session={session_id:"retained"};
-  const context=vm.createContext({state:{session,scopeGeneration:4,
+  const context=vm.createContext({window:{clearTimeout(){}},state:{session,scopeGeneration:4,
     previewScheduler:{cancel:()=>calls.push("scheduler")},
     scopeRequestInFlight:{controller:{abort:()=>calls.push("scope")}},
     pendingScopeRequest:{resolve:value=>calls.push(value)},

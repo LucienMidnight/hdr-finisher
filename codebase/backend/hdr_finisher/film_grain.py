@@ -26,6 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from .grain_work import checkpoint
 
 # Many faint grains per cell rather than a few opaque ones: what shows at a
 # pixel is a clump of tiny grains, which builds up as a soft cloud. A few
@@ -200,6 +201,7 @@ def layer_coverage(
     sample_offset: tuple[float, float] = (0.0, 0.0),
 ) -> np.ndarray:
     """Grain coverage over a region whose first pixel sits at (left, top) in the frame."""
+    checkpoint()
     height, width = signal.shape
     offset_x, offset_y = sample_offset
     seeded = seed_hash(seed, layer.salt)
@@ -217,6 +219,7 @@ def layer_coverage(
         np.arange(first_cx, last_cx + 1, dtype=np.int64),
         indexing="ij",
     )
+    checkpoint()
     hashed = cell_hash(cx.ravel(), cy.ravel(), seeded)
     count = np.searchsorted(POISSON_CDF, uniform(hashed, COUNT_KEY), side="left")
 
@@ -225,6 +228,7 @@ def layer_coverage(
     slots = np.arange(MAX_GRAINS_PER_CELL, dtype=np.int64)
     present = slots[None, :] < count[:, None]
     cell_index, slot = np.nonzero(present)
+    checkpoint()
     grain_hash = hashed[cell_index]
     base = slot * 8
     gx = cx.ravel()[cell_index] + _uniform_keyed(grain_hash, base + 1)
@@ -254,6 +258,7 @@ def layer_coverage(
     band = np.floor_divide(grain_cy, band_rows)
     bounds = np.flatnonzero(np.diff(band)) + 1
     for start, stop in zip(np.r_[0, bounds], np.r_[bounds, band.size]):
+        checkpoint()
         _splat_band(
             log_transmit, develop_flat, left, top, width, pitch, edge, kind.opacity,
             gx[start:stop], gy[start:stop], radius[start:stop], sensitivity[start:stop],
@@ -342,6 +347,7 @@ def grain_noise(
     mid_std = np.float32(coverage_statistics(np.float64(develop_level(np.float64(0.5))), kind, edge)[1])
     noises = []
     for layer in kind.layers:
+        checkpoint()
         signal = luma_signal if layer.channel is None else signals[..., layer.channel]
         signal = signal.astype(np.float32, copy=False)
         pitch = max(minimum_pitch, physical_pitch * layer.size)
@@ -375,6 +381,7 @@ def preview_grain_noise(*args, preview_scale: float = 1.0) -> np.ndarray:
     result = None
     for y in range(count):
         for x in range(count):
+            checkpoint()
             offset = ((x + 0.5) / count - 0.5 * scale, (y + 0.5) / count - 0.5 * scale)
             sample = grain_noise(*args, minimum_pitch=scale, sample_offset=offset)
             result = sample if result is None else result + sample

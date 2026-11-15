@@ -704,6 +704,7 @@ async function renderPerspectiveDraftPreview() {
       body: JSON.stringify({
         adjustments: state.adjustments,
         transient_adjustments: true,
+        cpu_fallback_reason: "perspective-draft-cpu",
         edit_revision: state.editRevision,
         include_locals: !localsBypassed(),
         local_adjustments: localsBypassed() ? [] : localAdjustments(),

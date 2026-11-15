@@ -674,6 +674,7 @@ function renderInterpretationGate() {
 }
 
 function retireActiveSession() {
+  suspendGradeInstruments();
   status.clear("match");
   status.clear("grade-save");
   state.scopeAwaitingPresentation = null;

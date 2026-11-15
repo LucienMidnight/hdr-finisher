@@ -8,6 +8,51 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 15: CPU preview diagnostics and grain cancellation
+
+Grade CPU preview requests now write `grade_preview_cpu` to the existing backend
+log, with source path, HDR/SDR lane, requested long edge and source-proportional
+width/height, plus the browser's reason. Reasons distinguish an explicit CPU
+setting, unavailable GPU (with renderer detail), a photo disabled by the existing
+failure policy, unsupported locals, and the renderer's refusal/validation/budget
+reason. No route eligibility, GPU retry rule, shader or tolerance changed.
+
+Leaving Grade, changing lane or retiring a session aborts preview and instrument
+requests and drops queued scopes. CPU previews now watch disconnects just as
+instruments already do. Cancellation reaches grain between reduced-preview
+samples, layers, field preparation stages and splat bands. The shared CPU pool
+starts queued foreground work before scopes and carries cancellation/priority
+into its workers. Already running NumPy calls finish their current operation.
+
+One existing 128-row grain chunk owns grain scratch at a time across requests;
+visible preview work takes precedence, and scopes abandon grain when a visible
+preview is waiting. Grain no longer fills the shared CPU pool with simultaneous
+large fields. This bounds overlapping grain allocations without changing the
+RAM setting; it is not a guarantee that the entire app stays below 4 GB. Seeds,
+chunk boundaries, all 4?16 preview samples and image maths are unchanged. Exact
+regression fixtures were generated from `88775059` before these changes: both
+lanes, both film types, native/2x2/4x4 sampling, and multiple row chunks.
+
+The November 15 DSC07752.ARW incident still needs Steve's reproduction with
+these diagnostics. RAW plus grain is supported on the GPU; the evidence proves
+that grain made the CPU fallback expensive, not why that fallback was chosen.
+The likely trigger is renderer refusal/failure or GPU eligibility state during
+the lane switch; no unsupported-grain rule was found. Grain speed optimisation
+remains separate Film Look open work 6.
+
+Validation on the Windows PC (2560x1440), November 15: Node fast suite
+995 passed / 1 skipped; Python fast suite 3543 passed / 43 skipped, with the
+known unrelated `test_js_python_settings_agree` Windows path-separator failure.
+The final CPU cancellation/priority/exact-pixel group passes 11 tests; browser
+cancellation/reason tests pass. `grain-parity.js` passes all 12 cases and
+`tiled-film-parity.js` passes, serially through the shared GPU lock. The first
+app launch was blocked by a temporary syntax error in concurrent Library work;
+backend import passed before the successful checks. No tolerance changed.
+Logs: `codebase/output/grain-node-fast-final.log`, `grain-python-fast.log`,
+`grain-behaviour-final.log`, `grain-gpu-parity.log`, `grain-gpu-tiled.log`.
+Scratch output remains 46.2 GB. Steve's running app was left open; restart it
+before reproducing so its backend and browser load these changes.
+
 ## November 14: Mac tiled scope harness correction
 
 The unchanged base `87b91385` renders the admission-fallback fixture completely
