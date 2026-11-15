@@ -8,6 +8,16 @@ This document explains the pipeline as it runs today, including the reasons behi
 
 When this document disagrees with running code or tests, code and tests win. Update this page in the same change. The repository's broader authority order is active code/tests, reproducible evidence, validation records, user documentation, then PRDs and design history.
 
+## November 15 N1: final cap and delivery finishing
+
+Both SDR paths retain signed/above-white headroom through creative controls
+and Film Look, then resize and sharpen before Highlight Compression and the
+unconditional gamut boundary. SDR output sharpening uses an extended sRGB
+signal rather than clipping its guide at white; pixels whose limited
+sharpening correction is zero retain their original RGB. CPU/GPU share this
+rule. Extreme neutral-paper output uses scaled half-float GPU storage, as HDR
+already did; no texture size or memory budget changes.
+
 ## November 15 W3: SDR headroom boundary
 
 Wheels edit their weighted ranges without limiting RGB. SDR contrast keeps

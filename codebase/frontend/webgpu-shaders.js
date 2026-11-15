@@ -2039,7 +2039,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
     fn storeFilm(rgb: vec3f) -> vec4f {
       var scale = 1.0;
-      if (p[${GPU_PARAMS.HDR_LANE}] > 0.5 && p[${GPU_PARAMS.FILM_STOCK_SLOT}] > 0.5) {
+      if (p[${GPU_PARAMS.FILM_STOCK_SLOT}] > 0.5) {
         let base = (u32(p[${GPU_PARAMS.FILM_STOCK_SLOT}]+0.5)-1u)*${FILM_STOCK.slotFloats}u;
         if (filmStock[base + ${STOCK.SCAN_FILM}u] == 2.0) {
           // Preserve extreme ideal-paper highlights before the output shoulder.

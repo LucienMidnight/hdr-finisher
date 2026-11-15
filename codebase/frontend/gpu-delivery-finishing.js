@@ -29,8 +29,8 @@ fn at(t:texture_2d<f32>,q:vec2i)->vec4f { return textureLoad(t,clamp(q,vec2i(0),
 fn order(v:f32)->u32 { let b=bitcast<u32>(v); return select(b^0x80000000u,~b,(b&0x80000000u)!=0u); }
 fn unorder(b:u32)->f32 { return bitcast<f32>(select(~b,b^0x80000000u,(b&0x80000000u)!=0u)); }
 fn luma(v:vec3f)->f32 { return dot(v,select(vec3f(.2126,.7152,.0722),vec3f(.2722287,.6740818,.0536895),p[3]>0.5)); }
-fn encode(v:f32)->f32 { let x=clamp(v,0.,1.); return select(1.055*pow(x,1./2.4)-.055,12.92*x,x<=.0031308); }
-fn decode(v:f32)->f32 { let x=clamp(v,0.,1.); return select(pow((x+.055)/1.055,2.4),x/12.92,x<=.04045); }
+fn encode(v:f32)->f32 { let x=max(v,0.); return select(1.055*pow(x,1./2.4)-.055,12.92*x,x<=.0031308); }
+fn decode(v:f32)->f32 { let x=max(v,0.); return select(pow((x+.055)/1.055,2.4),x/12.92,x<=.04045); }
 fn sinc(v:f32)->f32 { if(abs(v)<1e-7){return 1.;} let a=v*3.141592653589793; return sin(a)/a; }
 fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
 @compute @workgroup_size(8,8) fn main(@builtin(global_invocation_id) id:vec3u) {
@@ -65,7 +65,7 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
    for(var y=-1;y<=1;y++){for(var x=-1;x<=1;x++){let v=at(fine,q+vec2i(x,y)).r;low=min(low,v);high=max(high,v);}}
    let allowance=p[6]*(high-low);let sharpened=clamp(signal+detail,low-allowance,high+allowance);
    var targetY=decode(sharpened);if(p[3]>.5){targetY=.18*exp2(clamp(sharpened,-32.,16.));}
-   var gain=1.;let y=luma(rgb);if(y>1e-7 && abs(detail)>1e-7){gain=targetY/y;}
+   var gain=1.;let y=luma(rgb);if(y>1e-7 && abs(sharpened-signal)>1e-7){gain=targetY/y;}
    value=vec4f(max(rgb*gain,vec3f(0.)),1.);
  } else if(mode==6) {value=vec4f(at(src,q).r,at(fine,q).r,0.,1.);}
  // The shared output shader maps SDR hue into gamut after finishing.

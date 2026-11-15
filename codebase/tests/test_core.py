@@ -382,10 +382,10 @@ def test_sdr_curves_apply_only_to_sdr_branch() -> None:
         }
     )
 
-    sdr_output = apply_adjustments(image, adjustments, PreviewKind.SDR)
+    sdr_output = apply_adjustments(image, adjustments, PreviewKind.SDR, include_output_highlight_compression=False)
     baseline_sdr_adjustments = adjustments.model_copy(deep=True)
     baseline_sdr_adjustments.sdr.luma_curve = SDRAdjustments().luma_curve
-    baseline_sdr = apply_adjustments(image, baseline_sdr_adjustments, PreviewKind.SDR)
+    baseline_sdr = apply_adjustments(image, baseline_sdr_adjustments, PreviewKind.SDR, include_output_highlight_compression=False)
     hdr_output = apply_adjustments(image, adjustments, PreviewKind.HDR)
     baseline_hdr = apply_adjustments(image, AdjustmentState(), PreviewKind.HDR)
 

@@ -136,6 +136,11 @@ before the unconditional sRGB gamut mapper. No early SDR shoulder remains.
 Neutral Curves retain headroom; active curves extend their endpoint slopes.
 HDR retains its final target ceiling and encoded-delivery checks. Finished
 Library thumbnail/screen versions advance; retained scene developments are reused.
+SDR output sharpening also retains an extended above-white guide and exact
+flat-pixel identity on CPU/GPU; extreme neutral-paper GPU storage uses the
+existing scaled representation. New Match recipes use Soft Ceiling so the
+final knee does not depend on a measured peak; all acceptance/editability
+gates stay unchanged. Existing materialized recipes keep their saved modes.
 N2's five-control Tone block is not part of this change. M1 remains open for
 N3a's complete-target colour fit and Film-input exposure work.
 

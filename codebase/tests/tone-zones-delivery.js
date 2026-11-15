@@ -43,7 +43,10 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
    for(const lane of ['hdr','sdr']){await switchLane(lane);invalidatePreview(lane);await settlePreview(lane,{});state.previewScheduler?.cancel();while(state.gpuDraftInFlight)await state.gpuDraftInFlight.catch(()=>null);if(!await renderGpuDraft(lane,{longEdge:256}))throw Error('GPU preview failed: '+JSON.stringify({refusal:state.lastGpuDraftRefusal,detail:state.gpuPreview.detail}));}
    state.previewScheduler?.cancel();while(state.gpuDraftInFlight)await state.gpuDraftInFlight.catch(()=>null);
  },highlightMode);
-  const delivery=page.context().pages().find(p=>p.url().includes('gpu-delivery.html'));
+  let delivery;
+  const deliveryDeadline=Date.now()+20000;
+  while(!(delivery=page.context().pages().find(p=>p.url().includes('gpu-delivery.html'))) && Date.now()<deliveryDeadline)
+    await new Promise(resolve=>setTimeout(resolve,50));
   assert.ok(delivery,'Hidden GPU delivery renderer');
   await delivery.evaluate(()=>{
     window.__finished=[];const read=HDRGpuDeliveryFinishing.prototype.read;
@@ -56,8 +59,10 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
    const grant=await page.evaluate(()=>window.hdrFinisherDesktop.chooseExportPath({extension:'jpg',suggestedName:'tone-zones.jpg'}));
    const settings={format:'jpeg_ultrahdr',quality:95,jpeg_chroma_subsampling:'444',jpeg_gain_map_quality:95,jpeg_gain_map_scale:'full',dithering:'off',guarantee_hdr_peak:true,output_finishing:{resize_mode:'long_edge',long_edge:128,sharpening:'standard'}};
    const exported=await api(`/api/session/${session.session_id}/export`,{...settings,output_path:file,path_grant:grant.grant});assert.ok(exported.accepted);assert.equal(exported.renderer,forced?'cpu':'gpu');
-   const proof=await api(`/api/session/${session.session_id}/proof/artifact`,{...settings,full_size:true});assert.equal(proof.renderer,exported.renderer);
-   const bytes=await page.request.get(new URL(`/api/proof/artifact/${proof.artifact_id}.jpg`,base).href);assert.ok(bytes.ok());assert.ok(fs.readFileSync(file).equals(await bytes.body()),'Proof equals delivered bytes');
+   for(const full_size of [false,true]){
+    const proof=await api(`/api/session/${session.session_id}/proof/artifact`,{...settings,full_size});assert.equal(proof.renderer,exported.renderer);
+    const bytes=await page.request.get(new URL(`/api/proof/artifact/${proof.artifact_id}.jpg`,base).href);assert.ok(bytes.ok());assert.ok(fs.readFileSync(file).equals(await bytes.body()),`${full_size?'Full-size':'Reduced'} Proof equals delivered bytes`);
+   }
   }
   const floats=await delivery.evaluate(()=>window.__finished.slice(0,2));
   fs.writeFileSync(path.join(root,'finished.json'),JSON.stringify(floats));

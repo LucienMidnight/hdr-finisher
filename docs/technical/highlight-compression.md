@@ -28,7 +28,7 @@ linear = nits * 0.18 / R
 nits   = linear * R / 0.18
 ```
 
-Start, Target Peak, and measured/manual source peaks use this convention. Curve construction happens in `log2(linear)` space.
+Start, Target Peak, and measured/manual source peaks use this convention. Peak Fit curve construction happens in `log2(linear)` space; Fixed cap operates in linear light.
 
 SDR uses percentages of display white instead of nits. Its generated placement is fixed: scene-linear `0.18` maps to display-linear `100/203`, independent of the HDR reference-white selection. Its Peak Fit target is always normalized SDR white (`1.0` / `100%`).
 
@@ -213,20 +213,20 @@ The WebGPU implementation retains `hdrPeakFit` / `hdrSoftCeiling` / `fixedCap` f
 | `p[3]` | Softness percentage |
 | `p[53]` | Start in scene-linear units |
 | `p[73]` | Target Peak in scene-linear units |
-| `p[74]` | Legacy shader mode: `0` off, `1` Peak Fit, `2` Soft Ceiling |
+| `p[74]` | Shader mode: `0` bypass, `1` Peak Fit, `2` Soft Ceiling, `3` Clip, `4` Fixed cap |
 | `p[75]` | Tone-adjusted source peak in scene-linear units |
 | `p[76]` | Highlight Detail normalized to 0–1 |
 | `p[77]` | Compression Bias normalized and scaled to ±0.6 |
 | `p[110]` | Highlight Color: `0` Preserve color, `1` Neutralize peak, `2` Smooth color rolloff |
 | `p[159]` | SDR renderer contract: `1` Highlight Compression v2, `0` legacy Base Rendition compatibility |
 
-The authoring preview keeps active HDR and SDR output compression on WebGPU. Peak Fit, Soft Ceiling, and Clip are applied in the final composite after Film Look, spatial effects, vignette, and grain; Clip therefore remains a true output-boundary clamp without forcing a backend preview. Proof and export continue through the authoritative CPU path.
+The authoring preview keeps active HDR and SDR output compression on WebGPU. Peak Fit, Fixed cap, Soft Ceiling, and Clip are applied in the final composite after Film Look, spatial effects, vignette, and grain; Clip therefore remains a true output-boundary clamp without forcing a backend preview. Proof and export use the shared GPU delivery renderer with CPU fallback. Their Peak Fit reduction reads finished pixels after resize/sharpening. Settled direct SDR preview and Library reduce the finished texture too; interactive/tiled editing carries a bounded whole-picture estimate. Fixed cap requests no reduction. Extreme neutral-paper SDR uses the existing scaled half-float storage and float reduction, as HDR already did.
 
 ## UI, graph, and scopes
 
 The compact graph plots scalar input nits against scalar output nits. Its scalar is luminance for Preserve color, maximum ACEScg channel for Neutralize peak, and maximum BT.2020 channel for Smooth color rolloff. The summary must identify the active color trajectory.
 
-HDR histogram and waveform scopes can show composite RGB or Luma; SDR scopes use normalized display values. A composite channel peak above the target is valid in Preserve color but is a failure of the grouped/channel-wise mode when measured at full resolution after output compression. A preview-proxy peak below the target is expected when downsampling removes the exact source-peak sample. UI wording must distinguish these cases.
+HDR histogram and waveform scopes can show composite RGB or Luma; SDR scopes use normalized display values. A composite channel peak above the target after final HDR output compression is a failure in every mode, including Preserve color. A preview-proxy peak below the target is expected when downsampling removes the exact source-peak sample. UI wording must distinguish these cases.
 
 ## Required regression coverage
 
@@ -255,6 +255,6 @@ Private photographs remain manual corpus material under `codebase/local-test-med
 - Do not change the SDR `smooth_rolloff` working space away from linear sRGB without updating SDR measurement and CPU/WebGPU parity tests.
 - Preserve `legacy_base_v1` on projects saved before the SDR rendering-version marker; compatibility fields remain serialized but are not exposed in the current UI.
 - Do not introduce a local reference-white conversion; use the shared render color context.
-- Keep Peak Fit and Soft Ceiling distinct from Clip as *shoulder shapes*: Clip is the mode with no shoulder at all. All three end at the same unconditional Target Peak ceiling.
+- Keep Peak Fit and Soft Ceiling distinct from Clip as *shoulder shapes*: Clip is the mode with no shoulder at all. All four end at the same unconditional Target Peak ceiling.
 - Do not use display-referred gamut clipping as a substitute for scene-linear highlight compression.
 - Update this document whenever measurement, curve construction, stage order, GPU parameters, or endpoint guarantees change.

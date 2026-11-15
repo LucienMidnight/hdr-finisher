@@ -2515,7 +2515,7 @@
         beforeDeliverySubmit: sourceOptions?.beforeDeliverySubmit,
         tileBatchSize: sourceOptions?.tileBatchSize,
         analysisPatch: sourceOptions?.analysisPatch,
-        neutralPaperAnchor: highlightAnchorOnly && lane === "hdr" && adjustments.hdr.film_look.film_stock === "none",
+        neutralPaperAnchor: highlightAnchorOnly && adjustments[lane].film_look.film_stock === "none",
         analysisMasks: sourceOptions?.analysisMasks,
         analysisNativeLuma: sourceOptions?.analysisNativeLuma,
         claritySurround: sourceOptions?.claritySurround,

@@ -72,13 +72,8 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "return storeFilm(applyFilmLook(coordinate));" in shader
     assert shader.count("applyFilmLook(coordinate)") == 1
     assert "applyOutputHighlights(finishedAt(coordinate))" in shader
-    # The limiter is a single final-output stage: one shoulder call site per lane,
-    # each followed by the ceiling that makes the target a delivery guarantee.
-    assert shader.count("hdrPeakFit(hdrSoftCeiling(") == 1
-    assert shader.count("sdrPeakFit(sdrSoftCeiling(") == 2
-    assert "fn clipToOutputTarget(input: vec3f) -> vec3f" in shader
-    assert "if (p[0] > 0.5) { return clipToOutputTarget(hdrPeakFit(hdrSoftCeiling(input))); }" in shader
-    assert "p[159]" not in shader
+    # N1 order/shoulder behaviour is covered by the real-device Highlight
+    # Compression/finishing drivers and CPU pixel tests, not copied shader text.
     # Sharpening excursions must stay bounded, or the anchor above measures
     # ringing instead of picture.
     assert "const SHARPEN_HALO_ALLOWANCE_EV: f32 = 0.25;" in shader
@@ -89,7 +84,6 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert "if (value <= 0.18) { return 0.5 * pow(value / 0.18, 1.0 / log(100.0)); }" in shader
     assert "if (value <= 0.5) { return 0.18 * pow(2.0 * value, log(100.0)); }" in shader
     assert "log2(value / 0.18) / log2(100.0)" in shader
-    assert "let curveLuma = select(clamp(sourceLuma, 0.0, 1.0), curveEncodeChannel(sourceLuma), hdr)" in shader
     assert "let mappedLuma = select(mappedCurveLuma, curveDecodeChannel(mappedCurveLuma), hdr)" in shader
     assert "rgb = curveEncode(rgb, hdr)" in shader
     assert "let targetLevel = max(p[73], start + 0.0018)" in shader

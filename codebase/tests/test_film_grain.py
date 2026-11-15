@@ -159,8 +159,8 @@ def test_hdr_and_sdr_develop_the_same_grain() -> None:
         lane.film_look.grain_film_format = "super8"  # grain several pixels across
 
     def grain(kind: PreviewKind) -> np.ndarray:
-        clean = apply_adjustments(scene, state, kind, include_grain=False)
-        grained = apply_adjustments(scene, state, kind)
+        clean = apply_adjustments(scene, state, kind, include_grain=False, include_output_highlight_compression=False)
+        grained = apply_adjustments(scene, state, kind, include_output_highlight_compression=False)
         if kind == PreviewKind.HDR:
             clean, grained = acescg_to_linear_srgb(clean), acescg_to_linear_srgb(grained)
         luma = lambda image: np.maximum(image @ np.float32([0.2126, 0.7152, 0.0722]), 1e-5)  # noqa: E731

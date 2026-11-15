@@ -13,6 +13,32 @@ HDR Peak Fit, Soft Ceiling, or Clip remains part of the captured HDR grade; SDR 
 The automatic percentile `P` is measured after Highlight Compression and the rest of the captured HDR recipe. Peak Fit can therefore lower `P`, move the automatic Match knee upward, and produce a gentler SDR shoulder. The Peak Fit-shaped relationships remain visible in SDR; additional compression applies only where highlights still extend beyond the Match boundary.
 
 
+## November 15 N1: final SDR shoulder
+
+SDR compression now follows tone, locals, Film Look, grain and output
+finishing, immediately before the unconditional sRGB gamut mapper. Match
+candidates and CPU certification use that real order, without an early shoulder.
+New Match/Rematch recipes select the existing **Soft Ceiling**, Softness 100,
+then fit Start and body controls. A final measured Peak Fit would widen its
+knee according to the brightest sample and suppress body colours that the old
+fitter expected to adjust after compression. Ordinary new SDR grades still
+default to Peak Fit; existing saved modes/settings and their curves remain.
+
+The existing bounded highlight refinement now considers Start for this mode,
+retaining body-quality gates and the calibrated +0.5 EV white-area allowance.
+It does not author ineffective Peak Detail/Bias searches for Soft Ceiling.
+The old Local Tone translation remains a proposal basis; it inserts no render
+stage and every result is certified through the actual final tail. N3a replaces
+that approximation along with Local Tone and fits complete highlight colour
+and equal Film input exposure. N1 does **not** claim M1 is fixed: all-colour
+research includes regressions and additional safely refused fits, recorded in
+[the updated M1 report](reports/m1-colour-follow-up-2026-11-15.md#n1-remeasurement-final-sdr-compression).
+
+All acceptance, colour, exposure-editability and review thresholds stay unchanged.
+Tests that pinned Match's generated mode now expect Soft Ceiling; tests of
+ordinary SDR defaults still require Peak Fit. Existing materialized recipes
+render through the new order and can be Rematched; there is no migration renderer.
+
 ## November 15 W3: wheel translation and SDR headroom
 
 Positive wheel Balance favours Highlights in both lanes and in locals.
@@ -51,7 +77,7 @@ Film off / Portra / Ektar / Velvia at 50%. Five shared RAWs also have whole-
 image and per-family measurements. [Full tables and methodology](reports/m1-colour-follow-up-2026-11-15.md)
 distinguish HDR-to-target (inherent), target-to-SDR (residual), and total.
 
-Generated SDR still has an early gamut boundary after its shoulder, before
+At the pre-N1 revision, generated SDR still had an early gamut boundary after its shoulder, before
 Exposure Bands/contrast. Fitted lifts can raise those already-compressed
 colours past white; the final mapper must remove chroma again. Body quality
 metrics cover captured-HDR luminance <=0.9, not the highlight population.

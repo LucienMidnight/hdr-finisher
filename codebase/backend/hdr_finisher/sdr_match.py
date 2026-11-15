@@ -223,12 +223,40 @@ def _refine_image_highlights(
 ) -> tuple[np.ndarray, SDRMatchQualityMetrics]:
     """Fit the finished shoulder that the body-only neutral fit cannot see.
 
-    Exposure Bands and finishing can raise values past white after the SDR
-    shoulder. Fit Peak Detail against those finished highlights, without
+    Exposure Bands and finishing now feed the final SDR shoulder. Fit the
+    appropriate visible shoulder control against finished highlights, without
     sacrificing any body quality gate the original recipe already satisfies
     or creating more clipped white to make the highlight error look smaller.
     The result remains an ordinary, editable Highlight Compression control.
     """
+    if adjustments.sdr.highlight_compression_mode == "soft_ceiling":
+        # Start now acts after the look. Keep the existing half-stop trim
+        # guard when a stronger final knee also improves body colour.
+        sdr = adjustments.sdr
+        authored = float(sdr.highlight_compression_start_percent)
+        def growth(pixels):
+            before = float(np.mean(_linear_luma(pixels) >= .999))
+            exposure = sdr.exposure
+            try:
+                sdr.exposure = min(8., exposure + .5)
+                raised = _render_candidate(source, adjustments, local_adjustments, source_pixel_scale)
+            finally:
+                sdr.exposure = exposure
+            return float(np.mean(_linear_luma(raised) >= .999)) - before
+        best_growth = growth(candidate)
+        best_start = authored
+        if best_growth > .01:
+            for offset in (-5., -10.):
+                sdr.highlight_compression_start_percent = max(1., authored + offset)
+                trial = _render_candidate(source, adjustments, local_adjustments, source_pixel_scale)
+                trial_quality = _quality_metrics(target, trial, body)
+                trial_growth = growth(trial)
+                if trial_growth < best_growth and _refinement_improves(quality, trial_quality):
+                    best_start = sdr.highlight_compression_start_percent
+                    best_growth = trial_growth
+                    candidate, quality = trial, trial_quality
+        sdr.highlight_compression_start_percent = best_start
+        return candidate, quality
     highlights = ~body
     if not np.any(highlights):
         return candidate, quality
@@ -611,7 +639,11 @@ def _semantic_sdr_translation(adjustments: AdjustmentState, settled_hdr: np.ndar
     hdr = adjustments.hdr
     sdr = SDRAdjustments(use_authored_base=False)
     sdr.highlight_section_enabled = True
-    sdr.highlight_compression_mode = "peak_fit"
+    # The final shoulder must not squeeze the body according to the brightest
+    # image sample. The existing Soft Ceiling provides a luma-ratio cap with
+    # no peak dependency; new ordinary SDR grades still default to Peak Fit.
+    sdr.highlight_compression_mode = "soft_ceiling"
+    sdr.highlight_compression_softness = 100.
     sdr.highlight_compression_start_percent = 90.0
     # Match is reproducing an already rendered HDR target, whose shoulder is
     # luma-ratio preserving. Ordinary new SDR grades still default to Smooth
@@ -728,6 +760,9 @@ def _translate_local_grade(hdr_grade: LocalGrade, highlight_factor: float) -> Lo
     tonal.color_grading.midtones.saturation = 0.0
     tonal.color_grading.highlights.saturation = 0.0
     output = _apply_local_grade(ramp, tonal, PreviewKind.HDR)
+    # Legacy local-fit proposal basis only, not an early render stage. Every
+    # recipe is certified through the actual final SDR tail; N3a replaces this
+    # approximate local fit together with the new Local Tone curves.
     input_sdr = automatic_sdr_match_luma(scene_values)
     output_sdr = automatic_sdr_match_luma(np.maximum(_acescg_luma(output)[0], 0.0))
     _fit_local_tonal_controls(sdr_grade, input_sdr, output_sdr)
@@ -830,8 +865,8 @@ def _fit_neutral_tonal_response(
     trial.sdr.tone_equalizer_section_enabled = False
     for exposure in np.linspace(exposure_center - 2.0, exposure_center + 2.0, 9):
         for start_percent in (70.0, 80.0, 90.0, 95.0):
-            for detail in (0.0, 35.0, 70.0):
-                for bias in (-35.0, 0.0, 35.0):
+            for detail in ((0.0, 35.0, 70.0) if trial.sdr.highlight_compression_mode == "peak_fit" else (trial.sdr.highlight_compression_peak_detail,)):
+                for bias in ((-35.0, 0.0, 35.0) if trial.sdr.highlight_compression_mode == "peak_fit" else (trial.sdr.highlight_compression_bias,)):
                     trial.sdr.exposure = float(np.clip(exposure, -8.0, 8.0))
                     trial.sdr.highlight_compression_start_percent = start_percent
                     trial.sdr.highlight_compression_peak_detail = detail
@@ -956,10 +991,10 @@ def _render_remote_candidate(
 
 def _cpu_sdr_anchor(source: np.ndarray, adjustments: AdjustmentState) -> float | None:
     """The shoulder peak the CPU candidate measures on its own frame (diagnostic only)."""
-    from .adjustments import _sdr_pre_highlight, sdr_highlight_peak_signal
+    from .adjustments import sdr_highlight_stage_input, sdr_highlight_peak_signal
 
     signal = sdr_highlight_peak_signal(
-        _sdr_pre_highlight(apply_geometry(source, adjustments.shared.geometry), adjustments), adjustments.sdr
+        sdr_highlight_stage_input(apply_geometry(source, adjustments.shared.geometry), adjustments, authored_reference=False), adjustments.sdr
     )
     if signal is None or not signal.size:
         return None

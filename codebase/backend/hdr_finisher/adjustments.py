@@ -767,7 +767,7 @@ def _apply_sdr_adjustments(
 
 
 def _apply_sdr_color_stage(result: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
-    """Color on the authored-reference path, after the highlight stage.
+    """Color on the authored-reference path, after contrast.
 
     The generated path applies Color earlier, in scene-linear ACEScg inside
     ``_sdr_before_black_and_white``; the authored reference applies it here, in
@@ -795,7 +795,7 @@ def _apply_sdr_post_highlight_tail(
     color_after_tone_controls: bool,
     highlight_anchor: HighlightAnchor | None = None,
 ) -> np.ndarray:
-    """Every SDR stage after the highlight stage, in one explicit order.
+    """The shared display-linear SDR creative and final-output tail.
 
     Both SDR entry points share this tail so a stage or a fix lands once. The
     only branch difference inside it is where Color runs: the authored
@@ -853,11 +853,10 @@ def _apply_sdr_post_highlight_tail(
 
 
 def _sdr_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
-    """Render the scene up to the SDR highlight stage, in display-linear sRGB.
+    """Place the scene in display-linear sRGB, retaining uncompressed headroom.
 
-    Peak Fit measures the whole frame here, so the bounded strip path needs the
-    same picture the highlight stage sees. Sharing this prefix is what keeps the
-    measured anchor the anchor the render actually uses.
+    Tone, locals, Film Look and finishing follow this prefix. Peak Fit measures
+    their finished result at the final output stage.
     """
     sdr = adjustments.sdr
     result = _sdr_before_black_and_white(image.astype(np.float32, copy=True), adjustments)

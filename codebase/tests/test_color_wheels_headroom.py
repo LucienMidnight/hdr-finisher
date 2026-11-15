@@ -56,11 +56,13 @@ def test_sdr_finish_preserves_oklab_hue_and_respects_white_and_gamut():
         state.sdr.highlight_section_enabled = enabled
         result = a.apply_sdr_output_highlight_compression(pixels, state)
         assert np.isfinite(result).all() and result.min() >= 0 and result.max() <= 1
-        before, after = linear_srgb_to_oklab(pixels), linear_srgb_to_oklab(result)
+        mapper_input = a._compress_sdr_highlights(pixels, state.sdr) if enabled else pixels
+        before, after = linear_srgb_to_oklab(mapper_input), linear_srgb_to_oklab(result)
         before_hue = np.arctan2(before[..., 2], before[..., 1])
         after_hue = np.arctan2(after[..., 2], after[..., 1])
         np.testing.assert_allclose(after_hue[:, :2], before_hue[:, :2], atol=2e-4)
-        np.testing.assert_allclose(result[:, 2], 1)  # Beyond white, chroma reaches zero.
+        if not enabled:
+            np.testing.assert_allclose(result[:, 2], 1)  # The bypassed shoulder leaves this above white.
 
 
 @pytest.mark.parametrize('structure', [False, True])
@@ -78,6 +80,7 @@ def test_film_strength_mix_keeps_headroom_until_finish(structure):
     result = a._apply_film_look(pixels, state, PreviewKind.SDR, include_grain=False)
     assert result.max() > 2
     np.testing.assert_allclose(result, pixels, rtol=3e-6, atol=1e-7)
+    state.sdr.highlight_section_enabled = False
     np.testing.assert_allclose(a.apply_sdr_output_highlight_compression(result, state), compress_to_srgb_gamut(result))
 
 
@@ -103,3 +106,14 @@ def test_delivery_finishing_leaves_hue_and_headroom_to_final_mapper():
         np.testing.assert_array_equal(finished, pixels)
         delivered = a.apply_sdr_output_highlight_compression(finished, AdjustmentState())
         assert delivered.min() >= 0 and delivered.max() <= 1
+
+
+def test_output_sharpening_keeps_flat_above_white_pixels_when_other_pixels_have_detail():
+    from hdr_finisher.finishing import apply_output_finishing
+    from hdr_finisher.models import OutputFinishingSettings
+    pixels = np.full((32, 64, 3), .2, np.float32)
+    pixels[:, 32:] = [2., 4., 8.]
+    pixels[8:12, 8:12] = .3
+    result = apply_output_finishing(pixels, OutputFinishingSettings(sharpening='standard'), PreviewKind.SDR)
+    np.testing.assert_array_equal(result[:, 48:], pixels[:, 48:])
+    assert np.any(result[:, :24] != pixels[:, :24])

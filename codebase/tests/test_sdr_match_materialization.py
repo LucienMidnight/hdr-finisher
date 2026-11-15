@@ -126,7 +126,7 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
         assert result.quality.p95_oklab_error <= 0.04
     assert result.adjustments.sdr.use_authored_base is False
     assert result.adjustments.sdr.highlight_section_enabled is True
-    assert result.adjustments.sdr.highlight_compression_mode == "peak_fit"
+    assert result.adjustments.sdr.highlight_compression_mode == "soft_ceiling"
     assert result.adjustments.sdr.highlight_compression_color_handling == "preserve_color"
     assert _curve_is_identity(result.adjustments.sdr.luma_curve)
     assert any(abs(node.adjustment_ev) > 0.001 for node in result.adjustments.sdr.tone_equalizer_nodes)

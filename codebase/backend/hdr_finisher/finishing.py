@@ -896,7 +896,7 @@ def _edge_aware_multiscale_sharpen(image: np.ndarray, strength: str, kind: Previ
     if kind == PreviewKind.HDR:
         signal = np.log2(np.maximum(source_luma, 1e-7) / np.float32(0.18))
     else:
-        signal = _srgb_encode(np.clip(source_luma, 0.0, 1.0))
+        signal = _srgb_encode(np.maximum(source_luma, 0.0))
 
     fine_base = _box_blur(signal, 1)
     medium_base = _box_blur(fine_base, 2)
@@ -921,9 +921,12 @@ def _edge_aware_multiscale_sharpen(image: np.ndarray, strength: str, kind: Previ
     if kind == PreviewKind.HDR:
         target_luma = np.float32(0.18) * np.exp2(np.clip(sharpened, -32.0, 16.0))
     else:
-        target_luma = _srgb_decode(np.clip(sharpened, 0.0, 1.0))
+        target_luma = _srgb_decode(np.maximum(sharpened, 0.0))
     gain = np.ones_like(source_luma, dtype=np.float32)
-    np.divide(target_luma, source_luma, out=gain, where=source_luma > 1e-7)
+    # A flat pixel has no sharpening correction. Preserve its headroom even
+    # when other pixels do have detail (same per-pixel rule as GPU finishing).
+    np.divide(target_luma, source_luma, out=gain,
+              where=(source_luma > 1e-7) & (np.abs(sharpened - signal) > 1e-7))
     return (image.astype(np.float32, copy=False) * gain[..., None]).astype(np.float32)
 
 
@@ -960,10 +963,10 @@ def _local_extrema(signal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _srgb_encode(value: np.ndarray) -> np.ndarray:
-    clipped = np.clip(value, 0.0, 1.0)
+    clipped = np.maximum(value, 0.0)
     return np.where(clipped <= 0.0031308, clipped * 12.92, 1.055 * np.power(clipped, 1.0 / 2.4) - 0.055).astype(np.float32)
 
 
 def _srgb_decode(value: np.ndarray) -> np.ndarray:
-    clipped = np.clip(value, 0.0, 1.0)
+    clipped = np.maximum(value, 0.0)
     return np.where(clipped <= 0.04045, clipped / 12.92, np.power((clipped + 0.055) / 1.055, 2.4)).astype(np.float32)
