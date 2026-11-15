@@ -31,6 +31,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | --- | --- | --- | --- |
 | N1 | Fixed cap and final SDR Highlight Compression | Overnight | built and checked — fourth mode added, existing curves/settings/defaults retained; CPU/GPU finishing, all 33 SDR Film cases, Proof/export and isolated Library pass; M1 mixed results/new refusals remain for N3a |
 | N2 | Global five-control Tone and aligned wheel ranges | Overnight | built and checked — frozen Y/M guide, photographic-grey anchor, endpoint gates/combined limiter, Whites UI; four HC modes, CPU/GPU, Proof/export, both layouts and isolated Library pass; encoded-HDR diagnostics remain outside report-only caps |
+| N3b | Tone clipping and effective-range diagnostics (T1-d) | Overnight | built, preview-only — HDR/SDR/global/local gestures, endpoint-vs-cap-loss channel checks and Library pass; no Auto/new UI tokens; final photo/export qualification recorded in N3b result |
 | H1 | HSL picker, Local hue selection and gizmos | Follow-up | built, scoped — pre-sprint Local save/sample race and late HSL cancellation fixed; HDR/SDR real-RAW picking, wheel/sampling-gizmo gestures and CPU/GPU hue delivery pass; general idle failure not reproduced, Steve's original sequence still needs confirmation |
 | R1 | SDR local Detail: CPU clips, GPU keeps headroom | W1 | built — CPU local Detail retains headroom; Portra/Velvia GPU preview against CPU export passes |
 | R2 | Startup reconciliation brings back invalidated scenes | W1 | built — reconciliation checks saved epoch and pending deletion; scene/surface regressions pass |
@@ -113,10 +114,70 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | N1 | Highlight Compression: add the fixed cap mode beside Peak Fit, Soft Ceiling and Clip; move SDR HC after Film Look and finishing. | — |
 | N2 | **Built and checked:** global five-control Tone before Film Look, frozen guide, photographic-grey anchor, combined limiter, Whites UI; aligned colour wheel ranges (C4). See result below. | N1 |
 | N3a | Local Tone shares the curves; Match rebuilt to fit through the real renderer, including highlight colour and equal Film Look input exposure (M1, M1d). | N2 |
-| N3b | Clipping and tone-range preview (T1-d). | N2 (parallel with N3a) |
+| N3b | **Built:** clipping and gated neutral-ray range preview (T1-d), Auto deferred. See result below. | N2 (parallel with N3a) |
 | N4 | X1 local "Match SDR". | N3a |
 | N5 | X2 "Start HDR from SDR". | N4 |
 | N6 | Final review, fixes, brief/PRD updates, push. | all |
+
+### N3b result (November 16, MacBook Neo / 8 GB)
+
+Built beside N3a in the shared checkout after N2 `5bc997f3`. Preview-only
+files are separate from the grading/local/Match shaders and UI. Local Tone
+controls are recognized generically, including N3a's new Whites. No Auto,
+new UI token, export setting or saved-recipe change. Not pushed.
+
+Hover/drag shows the effective **pre-look neutral-ray** range, actual endpoint
+gates and combined limiter. Local range includes opacity but is explicitly
+before spatial mask; this is not a saturated-pixel or mask map. Alt/Option-drag
+Blacks/Whites shows the **finished post-look/post-cap** result: SDR black/white
+backgrounds, existing RGB channel tokens for measurable final-cap loss, pale
+endpoint-only marks and dashed new-endpoint marks against drag start. Reaching
+an endpoint is not automatically lost detail. HDR adds separate 100-nit SDR
+white, reported primary-display overrange and HC-target-guide marks. Unknown
+display telemetry is labelled unknown.
+
+The GPU diagnostic uses the existing accepted scope source, with a baseline
+and canvas limited to long-edge 640 (maximum 3.125 + 1.563 MiB plus parameter
+buffers), registered in the GPU allocator and released on exit. Existing
+tiled scope-proxy support is wired, not yet qualified; CPU preview retains
+the parameter-only range and reports clipping unavailable. No full-resolution
+cache or new CPU image renderer. Sampling can miss isolated clipped pixels;
+white contact uses 0.1% of P to accommodate half-float storage. No output
+tolerance was relaxed.
+
+Validation/evidence so far:
+
+- `node --test tests/*.test.js`: 1,063 passed, one skipped, zero failed.
+  Five dedicated model tests also pass. The initial run's two layout failures
+  were N3a's in-flight shared layout changes and disappeared after its update.
+- Real Electron/WebGPU, GPU lock, 1408×794 points: both lanes/all five controls
+  plus Center/Width; global and local Blacks/Whites; Alt release and workflow
+  cleanup pass. Tiny direct GPU fixtures verify contact versus actual cap loss,
+  channel identity and dashed new red/green/blue endpoints. Accepted finished
+  float pixels and recipe are exactly unchanged on the synthetic ramp.
+- Synthetic 512×256 fixture, 12 live inputs/lane on this Neo: HDR median 33.3 ms,
+  p95/max 47.3 ms; SDR median 33.1 ms, p95/max 39.5 ms, input to matching accepted
+  overlay at an animation frame. This is not a full-resolution speed sweep.
+  Existing Grade visible-slider budget remains p95 ≤50 ms.
+- Locked 90-second `quick-library-check.cjs --label=n3b-clipping`: exit 0,
+  zero errors/failures; viewport sample only (9/33 eligible photos pictured).
+- Latest full Python snapshot: 3,540 passed, 144 skipped, one xpassed, three
+  failures: two native-upload memory-admission tests while GPU/other validation
+  was active, and N3a's in-progress parent-target/reference Match translation.
+  Isolated rechecks and the real-photo/export result follow in the completion
+  note; no unrelated backend changes made by N3b.
+- Small viewer crops and bounded logs:
+  `codebase/output/review/n3b-clipping/{hdr,sdr}-{whites,blacks}.png`,
+  `result.json`, `gpu.log`, `library.log`, `node-final.log`, `pytest-final.log`.
+  Photographic follow-up writes `photo/` and `photo-gpu.log` there.
+
+Not run: broad GPU/driver sweeps, installer/release suite, PC checks, physical
+HDR-display telemetry validation, tiled stress, CPU clipping image fallback or
+full-source clipping certification. No additional colour approval needed;
+existing semantic scope RGB/luma, accent and attention tokens are used.
+Black/white are diagnostic data endpoints, not new interface colours.
+Output scratch started at 13.0 GB; final size and implementation SHA follow
+in the completion note. No protected project or grading output changed.
 
 ### N2 result (November 16, MacBook Neo / 8 GB)
 

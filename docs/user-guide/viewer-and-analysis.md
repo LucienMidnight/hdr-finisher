@@ -141,6 +141,41 @@ Use zebras to locate clipping risk or regions above a chosen delivery target. A 
 
 Zebras and false color follow your edits while you drag a slider. During the drag the overlay is drawn at a lower resolution and can trail the picture by a moment; when you release, it is redrawn for the final values at the settled preview size.
 
+## Tone range and clipping previews
+
+Hover or drag any of the five **Tone** controls, or their **Center/Width**
+controls, to show where the range acts. The small curve uses stops from
+photographic mid-grey and includes black/white protection and any combined
+limiter reduction. A lower curve means less influence. It is labelled
+**Pre-look neutral-ray range**: it describes qualification before the look,
+not the brightness of the finished photo. Saturated pixels also depend on
+their brightest channel. Local ranges include opacity, but not the shape of
+the spatial mask. The same trace is drawn on the histogram or waveform.
+
+Hold **Alt** (Windows) or **Option** (Mac) while dragging **Blacks** or
+**Whites**, globally or locally, to inspect the finished image after Film
+Look and the final cap:
+
+- Whites uses a black background; Blacks uses a white background.
+- Red, green and blue marks identify channels measurably clipped at the final
+  cap. Multiple channels alternate rather than creating a new warning colour.
+- Pale dots mean a channel only touches the endpoint; that alone is not proof
+  of lost detail. Dashed RGB means a channel newly reached the endpoint since
+  the gesture began, also not necessarily lost detail.
+- In HDR, accent stripes mean above **100-nit SDR white**; warning stripes
+  mean above the reported primary display's peak; pale marks show the
+  **Highlight Compression target guide**. Display headroom is labelled
+  **unknown** when telemetry is missing. This is not a screen measurement or
+  an additional cap; the target is only guaranteed with HC enabled.
+
+Release the modifier or mouse to return to the image. Escape, cancellation
+or leaving Grade also clears the diagnostic. These previews do not change
+the grade or export. Clipping uses a compact GPU image (up to 640 pixels on
+the long edge), so isolated pixels can be missed. Values within 0.1% of the
+white target count as touching to accommodate half-float precision. A CPU
+preview still shows the range, but reports clipping preview unavailable.
+Use full-size output/Proof for final delivery judgement.
+
 ## Scope accuracy and limits
 
 On supported WebGPU paths, histogram, waveform, and vectorscope are generated from a compact render of the same current GPU output used by the visible preview. Unsupported geometry, proof/comparison states, and WebGPU fallback use the CPU scope path. Both routes describe the processed authored rendition; they are deterministic numerical diagnostics, not instruments measuring the screen. With **Exact peak** enabled, the peak and clipping readouts are reduced over the pixels of the accepted selected-tier frame on both GPU and bounded CPU routes, independently of the compact distributions used to draw the scopes.

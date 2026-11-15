@@ -108,3 +108,10 @@ full text only when actually clipped; accessible names stay available.
 | `tone.whites` | Whites | Adjusts the top stop below Target Peak (display white in SDR). Positive values overdrive Film Look; final Highlight Compression still owns the delivery ceiling. |
 | `tone.center` | Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. |
 | `tone.width` | Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. |
+| `tone.range-preview` | All five Tone labels, Center and Width (global/local) | Hover or drag to see the effective, endpoint-protected range and limiter. |
+| `tone.clipping-preview` | Blacks and Whites labels (global/local), appended to range copy | Alt/Option-drag to inspect finished clipping. Pale dots mean endpoint only; RGB marks lost channels; dashed RGB marks channels newly reaching an endpoint. |
+
+The range key says **Pre-look neutral-ray range**, with **before spatial mask**
+and opacity for locals. The clipping key says **Finished, post-cap**. HDR adds
+100-nit SDR-white, primary-display overrange (or unknown), and HC-target-guide
+keys. Those two states must not be presented as the same measurement.

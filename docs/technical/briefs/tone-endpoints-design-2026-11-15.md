@@ -2,8 +2,8 @@
 
 **Status, November 16:** N1 and **global N2 + C4 built** on
 `feat/watermark-and-library-polish`. Steve's decisions are recorded in the sprint
-brief. Local Tone and the full Match rebuild remain N3a; clipping/range preview
-remains N3b. No Auto or compatibility renderer is included.
+brief. Local Tone and the full Match rebuild remain N3a; **N3b clipping/range
+diagnostics are built**. No Auto or compatibility renderer is included.
 
 ## Goals (Steve)
 
@@ -184,6 +184,37 @@ translation. This changes existing non-neutral wheel grades, including locals.
   the real renderer and certifies through the real SDR tail, Film Look, cap
   and gamut mapper. Keep every Match gate unchanged.
 
+## N3b affordances (November 16, preview only)
+
+- Hover/drag all five controls and Center/Width: draw the actual gated
+  neutral-ray weight × combined limiter, anchored on G, in the viewer key
+  and histogram/waveform. Local weights include opacity but explicitly
+  exclude the spatial mask. Label **Pre-look neutral-ray range**; saturated
+  pixels still qualify with their own Y/M. This is not a finished-pixel mask.
+- Alt/Option-drag Blacks/Whites: use the accepted finished Film Look texture
+  and the existing final HC/gamut tail, separately labelled **Finished,
+  post-cap**. SDR Whites black / Blacks white, with scope RGB channel marks.
+  Pale dots = endpoint-only; solid RGB = measurable loss at the final cap;
+  dashed RGB = newly reached endpoint against the drag-start snapshot, not
+  proof of lost detail. Earlier lost detail cannot be inferred from a final
+  value alone. White-endpoint tolerance is 0.1% of P for half-float storage;
+  black contact tolerance is 1e-6. Neither changes output pixels.
+- HDR: existing accent marks crossing 100-nit SDR white; existing attention
+  marks over reported primary-display peak; pale marks reaching the HC target
+  guide. Physical nits convert through project reference white; unknown
+  display telemetry stays unknown. HC bypass does not become a hidden cap.
+- A separate GPU section consumes existing renderer bindings, without edits
+  to the grading shader. Baseline rgba16float and diagnostic canvas are at
+  most 640×640 (3.125 + 1.563 MiB plus parameters), allocator-accounted and
+  released on exit. Tiled rendering reuses the bounded scope-proxy path;
+  CPU preview keeps the parameter range but no new CPU clipping renderer.
+  No full-resolution cache, recipe change, export change, new UI token or
+  Auto. Existing scope RGB/luma, accent and attention tokens only; black and
+  white are diagnostic data endpoints, not new interface colours.
+
+Coverage, timings, limitations and screenshot links are in the sprint N3b
+result. Compact sampling is not full-source clipping certification.
+
 ## Saved edits (pre-1.0, no migration renderer)
 
 N2 intentionally changes non-zero global Blacks/zones, their presets/default
@@ -208,7 +239,7 @@ sharpening and grain). GPU: `tone-zones-delivery.js`,
 
 All six decisions at the end of the original proposal are resolved: offer Fixed
 cap alongside Peak Fit; final SDR HC; photographic-grey anchor; narrow Whites;
-Local Tone next (N3a); clipping/range preview next (N3b), Auto later. N2 does not
+Local Tone next (N3a); clipping/range preview built in N3b, Auto later. N2 does not
 claim local/global Tone equivalence or the rebuilt Match solver. The temporary
 Match adaptation considers median-luma recovery, two additional bounded
 Start proposals and one composed RGB residual at CPU certification, with all

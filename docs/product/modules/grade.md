@@ -1,3 +1,30 @@
+## November 16: N3b Tone diagnostics (preview only)
+
+Hover or drag Blacks, Shadows, Midtones, Highlights, Whites, Center or Width
+to see a neutral-ray range trace in the viewer and histogram/waveform. It
+uses the photographic-grey anchor, actual endpoint gates and combined limiter;
+local traces include layer opacity but are explicitly **before spatial mask**.
+This is pre-look qualification, not a selection map on the finished photo:
+saturated pixels also depend on their brightest delivery-space channel.
+
+Alt/Option-drag global/local Blacks or Whites replaces the active image with
+a **finished, post-look/post-cap** clipping diagnostic. Whites uses black;
+Blacks uses white. Existing scope RGB tokens identify channels with measurable
+loss at the final cap; pale dots identify endpoint contact without evidence of
+loss. Dashed RGB identifies newly reached endpoints against a bounded
+drag-start snapshot, not proof of lost detail. HDR additionally distinguishes
+crossing 100-nit SDR white, reported primary-display overrange, and the HC
+target guide. Missing display telemetry is labelled unknown, not guessed.
+
+GPU-only clipping reads the existing accepted finished scope texture; tiled
+presentation uses the existing compact scope-proxy route. No grading/export
+shader or recipe changes, full-resolution cache, persistent image readback,
+new UI token or Auto. Diagnostics are at most 640 pixels on the long edge;
+the GPU allocator accounts for the baseline, canvas and parameters, released
+on exit. On a CPU preview, the range remains available and clipping is
+explicitly unavailable. Cancellation, Alt release and leaving Grade clear it.
+See the sprint brief N3b result for tests, evidence and unqualified paths.
+
 ## November 16: N2 global Tone and C4 wheel ranges
 
 Built the five-control global Tone block in HDR, generated SDR and authored SDR:
