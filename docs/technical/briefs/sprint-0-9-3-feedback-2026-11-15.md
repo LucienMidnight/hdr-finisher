@@ -64,7 +64,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | L1 | Tooltips appear after about 2.5 s | W7 | built — shared 2.5 s controller in every renderer; neighbour grace disabled; grouped app validation pending |
 | L2 | Tooltip pass: no redundant labels | W7 | built — visible labels suppress names; clipped values only; explanations retained; shortcut-only switch kept; app review pending |
 | L3 | "Choose what to paste" organised | W7 | to do |
-| L4 | Open image uses the Library grid browser | W7 | to do |
+| L4 | Open image uses the Library grid browser | W7 | built — shared grid/list in single-image mode; existing opening flow and other browse modes retained; app review pending |
 | L5 | Purple default accent, orange still offered | W7 | built — purple before first paint; saved accents retained; ten focused checks pass; grouped app review pending |
 
 ## Decisions

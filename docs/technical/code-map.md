@@ -710,3 +710,9 @@ a RAW, CPU/GPU and both Proof sizes (`--native-source` keeps the original);
 post-encode decoding (CPU, or `--gpu` for real Electron request timing on the bounded real-photo fixtures) and
 records real-photo correction rounds. Both run
 serially under `tools/gpu-run-lock.py` for qualification.
+
+W7 interface shared components (November 15): `frontend/tooltips.js` owns all
+renderer tooltip timing/copy conditions/bounds; `library-picker-view.js` and
+`library-picker.css` own the shared grid/list chooser, `library-folder-picker.js`
+its folder/source selection and temporary previews, and `image-picker.js` the
+single-source adapter used by `media-browser.js`.

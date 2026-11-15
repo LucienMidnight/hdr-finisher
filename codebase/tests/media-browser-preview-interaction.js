@@ -26,7 +26,7 @@ async function main() {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ current: "/mock", parent: "/", entries, recents: [], pinned: [], locations: [], drives: [] }),
+      body: JSON.stringify({ current: "/mock", parent: "/", entries, recents: [], pinned: [], locations: [], drives: [], saved_locations: [] }),
     });
   });
   await page.route("**/api/media-browser/thumbnail?*", async (route) => {
@@ -50,34 +50,34 @@ async function main() {
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await page.evaluate(() => openMediaBrowser("source", "/mock"));
-    await page.locator("#directory-browser").waitFor({ state: "visible" });
+    await page.locator("#folder-picker").waitFor({ state: "visible" });
 
     await page.locator(".directory-browser-entry", { hasText: "first.jpg" }).click();
-    await page.locator("#directory-browser-preview").waitFor({ state: "visible" });
+    await page.locator("#picker-preview").waitFor({ state: "visible" });
 
     await page.locator(".directory-browser-entry", { hasText: "target.avif" }).click();
-    assert(await page.locator("#directory-browser-preview").isHidden(), "The previous thumbnail remained visible while AVIF loaded.");
-    assert((await page.locator("#directory-browser-selection").textContent()) === "target.avif", "The selected filename did not update immediately.");
-    assert((await page.locator("#directory-browser-preview-note").textContent()).includes("Loading preview"), "The AVIF loading state was not shown.");
-    await page.locator("#directory-browser-preview").waitFor({ state: "visible" });
-    assert((await page.locator("#directory-browser-preview").getAttribute("alt")) === "Preview of target.avif", "The loaded AVIF thumbnail was not admitted.");
+    assert(await page.locator("#picker-preview").isHidden(), "The previous thumbnail remained visible while AVIF loaded.");
+    assert((await page.locator("#picker-preview-name").textContent()) === "target.avif", "The selected filename did not update immediately.");
+    assert((await page.locator("#picker-preview-note").textContent()).includes("Making a temporary preview"), "The AVIF loading state was not shown.");
+    await page.locator("#picker-preview").waitFor({ state: "visible" });
+    assert((await page.locator("#picker-preview").getAttribute("alt")) === "Preview of target.avif", "The loaded AVIF thumbnail was not admitted.");
 
     await page.locator(".directory-browser-entry", { hasText: "target.avif" }).click();
     await page.locator(".directory-browser-entry", { hasText: "first.jpg" }).click();
-    await page.locator("#directory-browser-preview").waitFor({ state: "visible" });
+    await page.locator("#picker-preview").waitFor({ state: "visible" });
     await page.waitForTimeout(350);
-    assert((await page.locator("#directory-browser-selection").textContent()) === "first.jpg", "A superseded AVIF selection replaced the current filename.");
-    assert((await page.locator("#directory-browser-preview").getAttribute("alt")) === "Preview of first.jpg", "A superseded AVIF thumbnail replaced the current preview.");
+    assert((await page.locator("#picker-preview-name").textContent()) === "first.jpg", "A superseded AVIF selection replaced the current filename.");
+    assert((await page.locator("#picker-preview").getAttribute("alt")) === "Preview of first.jpg", "A superseded AVIF thumbnail replaced the current preview.");
 
     await page.locator(".directory-browser-entry", { hasText: "broken.avif" }).click();
-    await page.waitForFunction(() => document.getElementById("directory-browser-preview-note")?.textContent?.includes("Preview unavailable"));
-    assert(await page.locator("#directory-browser-preview").isHidden(), "A failed AVIF preview left stale pixels visible.");
+    await page.waitForFunction(() => document.getElementById("picker-preview-note")?.textContent?.includes("Preview unavailable"));
+    assert(await page.locator("#picker-preview").isHidden(), "A failed AVIF preview left stale pixels visible.");
 
     await page.locator(".directory-browser-entry", { hasText: "ambiguous.tif" }).click();
-    await page.waitForFunction(() => document.querySelector(".media-browser-preview-image-frame")?.dataset.previewState === "interpretation-required");
-    assert((await page.locator("#directory-browser-preview-note").textContent()).includes("Color interpretation required"), "The ambiguity message was not shown.");
-    assert((await page.locator("#directory-browser-preview-note").textContent()).includes("Unknown Studio RGB"), "The detected ICC profile was not shown.");
-    assert(await page.locator("#directory-browser-select").isEnabled(), "Open Image was disabled for an ambiguous source.");
+    await page.waitForFunction(() => document.getElementById("picker-preview-note")?.textContent?.includes("Color interpretation required"));
+    assert((await page.locator("#picker-preview-note").textContent()).includes("Color interpretation required"), "The ambiguity message was not shown.");
+    assert((await page.locator("#picker-preview-note").textContent()).includes("Unknown Studio RGB"), "The detected ICC profile was not shown.");
+    assert(await page.locator("#picker-pin").isEnabled(), "Open Image was disabled for an ambiguous source.");
 
     console.log(JSON.stringify({ loadingState: true, staleResponseRejected: true, failureVisible: true, interpretationRequired: true }));
   } finally {

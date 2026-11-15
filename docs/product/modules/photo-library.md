@@ -1,3 +1,16 @@
+## November 15: W7 shared image/folder browser (L4)
+
+Open image now uses the same thumbnail grid/list view and temporary-picture
+controller as Add/Open folder. Source mode selects exactly one supported photo;
+folders still navigate, Enter/double-click opens, and the usual source grant
+and Grade open flow follow selection. Folder pinning keeps multi-selection.
+Project open/save and export destinations retain their existing browser modes.
+The shared view, styles and image adapter also serve the standalone media window;
+closing stops requests and releases temporary object URLs. No new cache or size.
+The existing preview-interaction regression now targets this view, including
+stale responses, decode failure and colour-interpretation reasons. Syntax and
+fast Node checks pass; grouped real-app validation is recorded after review.
+
 ### November 15: W1 completed validation (R1–R8)
 
 On the MacBook Neo (A18 Pro, 8 GB, 1408x794), the final fast suites pass:

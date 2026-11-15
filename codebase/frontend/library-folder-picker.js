@@ -3,15 +3,23 @@
   "use strict";
   const $ = id => document.getElementById(id);
   const VIEW_KEY = "hdr-finisher:folder-picker-view";
-  function create({ api, sleep, bindFolderMenu, bindLocationMenu, closeFolderMenu }) {
+  function create({ api, sleep, bindFolderMenu = () => {}, bindLocationMenu = () => {}, closeFolderMenu = () => {}, mode = "folder", onOpen = () => {} }) {
+    const sourceMode = mode === "source";
     const list = $("picker-list"), pane = $("picker-preview-pane");
     const requests = HDRLibraryRequestQueue.create(2);
     let view = "grid", observer = null, previewObserver = null, preview = null, stopped = false;
+    const lifetime = new AbortController();
     let focused = -1;
+    $("picker-title").textContent = sourceMode ? "Open image" : "Add folder";
+    $("folder-picker").querySelector('.application-dialog-header p').textContent = sourceMode
+      ? "Select one photo to open. Double-click a folder to look inside. Photos stay where they are."
+      : "Photos stay where they are. Ctrl-click or Shift-click to choose several folders. Double-click to look inside.";
+    list.setAttribute('aria-multiselectable', String(!sourceMode));
+    $("picker-pin").textContent = sourceMode ? "Open image" : "Pin folder";
     const tiles = new Map(), previewPictures = new Map();
     try { if (localStorage.getItem(VIEW_KEY) === "list") view = "list"; } catch {}
     const session = { selection: new Set(), scrollPositions: new Map(), current: "", entries: [], anchor: -1,
-      drives: [], standard: [], saved: [], browse, setView, clearPreview, stop, refreshLocations };
+      drives: [], standard: [], saved: [], browse, setView, clearPreview, stop, refreshLocations, selectedImage: () => sourceMode && session.selection.size ? session.entries[[...session.selection][0]] : null };
     // Locations are browsing shortcuts only: drives, standard folders and
     // saved locations. Library pinned folders live in the Library's own list.
     function renderLocations() {
@@ -42,7 +50,7 @@
         if (!response.ok) {
           if (response.status === 409) {
             const payload = await response.json();
-            if (payload.detail?.code === "interpretation_required") throw new Error("Open this photo in Grade to choose its colour interpretation.");
+            if (payload.detail?.code === "interpretation_required") throw new Error(`Color interpretation required. ${payload.detail.profile_name ? `Detected profile: ${payload.detail.profile_name}. ` : ""}Open this photo in Grade to choose its colour interpretation.`);
           }
           throw new Error("Preview unavailable.");
         }
@@ -68,7 +76,7 @@
       $("picker-preview-hint").textContent = "";
     }
     function stop() {
-      stopped = true; session.controller?.abort(); clearTiles(); clearPreview();
+      stopped = true; lifetime.abort(); session.controller?.abort(); clearTiles(); clearPreview();
     }
     async function showPreview(entry) {
       clearPreview();
@@ -154,11 +162,18 @@
         const selected = session.selection.has(index) || (index === focused && session.entries[index].kind !== "directory");
         button.setAttribute("aria-selected", String(selected)); button.classList.toggle("selected", selected);
       });
+      if (sourceMode) {
+        $("picker-pin").disabled = !session.selectedImage();
+        $("picker-status").textContent = session.selectedImage()?.name || "Select one supported image.";
+        return;
+      }
       $("picker-status").textContent = session.selection.size ? `${session.selection.size} folder${session.selection.size === 1 ? "" : "s"} selected` : "Pin this folder to the Library, or select folders below.";
     }
     function select(index, event) {
       const entry = session.entries[index]; focused = index;
-      if (entry.kind === "directory") {
+      if (sourceMode) {
+        session.selection = new Set(entry.kind !== "directory" && entry.supported ? [index] : []);
+      } else if (entry.kind === "directory") {
         if (event.shiftKey && session.anchor >= 0) {
           if (!event.ctrlKey && !event.metaKey) session.selection.clear();
           for (let i = Math.min(index, session.anchor); i <= Math.max(index, session.anchor); i++) {
@@ -214,12 +229,31 @@
         button.addEventListener("click", event => select(index, event));
         if (entry.kind === "directory") {
           button.addEventListener("dblclick", () => browse(entry.path)); bindFolderMenu(button, entry.path);
+        } else if (sourceMode && entry.supported) {
+          button.addEventListener("dblclick", () => { select(index, {}); onOpen(entry); });
         }
+        button.addEventListener("keydown", event => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            if (entry.kind === "directory") void browse(entry.path);
+            else if (sourceMode && entry.supported) { select(index, {}); onOpen(entry); }
+          }
+        });
         return button;
       });
       list.replaceChildren(...buttons); paintSelection();
       for (const button of tiles.keys()) observer.observe(button);
     }
+    list.addEventListener('keydown', event => {
+      if (!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)) return;
+      const index = [...list.children].indexOf(event.target.closest('.directory-browser-entry'));
+      if (index < 0) return;
+      event.preventDefault();
+      const columns = view === 'grid' ? getComputedStyle(list).gridTemplateColumns.split(' ').length : 1;
+      const step = {ArrowLeft:-1,ArrowRight:1,ArrowUp:-columns,ArrowDown:columns}[event.key] || 0;
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? session.entries.length-1 : Math.max(0,Math.min(session.entries.length-1,index+step));
+      select(next,event); list.children[next]?.focus();
+    }, {signal:lifetime.signal});
     function setView(value) {
       if (value === view) return;
       view = value;
@@ -234,7 +268,7 @@
       session.current = ""; session.selection.clear(); $("picker-pin").disabled = true;
       $("picker-status").textContent = "Reading folder…";
       try {
-        const result = await api(`/api/media-browser?mode=export_directory&path=${encodeURIComponent(path)}`, undefined, controller.signal);
+        const result = await api(`/api/media-browser?mode=${sourceMode ? "source" : "export_directory"}&path=${encodeURIComponent(path)}`, undefined, controller.signal);
         if (stopped || controller.signal.aborted) return;
         Object.assign(session, { current: result.current, parent: result.parent, displayed: result.current, entries: result.entries, anchor: -1 });
         $("picker-path").value = result.current; $("picker-up").disabled = !result.parent;
@@ -244,7 +278,7 @@
         const index = session.entries.findIndex(entry => entry.path === returnPath);
         if (index >= 0) { select(index, {}); list.children[index].scrollIntoView({ block: "nearest" }); }
       } catch (error) { if (!controller.signal.aborted && !stopped) $("picker-status").textContent = error.message; }
-      finally { if (!stopped && session.controller === controller) $("picker-pin").disabled = !session.current; }
+      finally { if (!stopped && session.controller === controller) $("picker-pin").disabled = sourceMode ? !session.selectedImage() : !session.current; }
     }
     return session;
   }

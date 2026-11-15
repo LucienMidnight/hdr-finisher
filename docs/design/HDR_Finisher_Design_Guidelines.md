@@ -523,3 +523,11 @@ Limits use graph-limit-line (attention),
 4-by-3 dashes and matching labels. Identity lines are solid curve-identity;
 Highlight Compression uses curve-neutral. Exposure Bands zero is strong grid
 grey and its influence wash is #ff7a1f1f orange. Selected points remain yellow.
+
+## November 15: source browsing
+
+Open image and Open folder share the same thumbnail grid/list browser and
+temporary preview pane. Image mode selects one supported image, with Enter or
+double-click to open; folder mode keeps multiple folder selection and pinning.
+Choosing a photo follows the existing Grade opening behaviour. Project open/save
+and export-destination browsing retain their established modes.

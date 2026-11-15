@@ -53,6 +53,17 @@ window.HDRMediaBrowser = Object.freeze({
     };
     let bound = false;
 async function openMediaBrowser(mode, path = "", options = {}) {
+  if (mode === "source" && window.HDRImagePicker) {
+    return window.HDRImagePicker.show({path, onCancel: () => callbacks.onClose?.(), onSelect: async selected => {
+      if (!callbacks.grantSourcePath) {
+        window.HDRImagePicker.close(); callbacks.pickSourceFile?.(); return;
+      }
+      const selection = await callbacks.grantSourcePath(selected);
+      if (closeOnSelect) window.HDRImagePicker.close();
+      try { await callbacks.onOpenSource({kind:"source", ...selection}); }
+      catch (error) { callbacks.onOpenError?.(error?.message || "Could not open that source image."); }
+    }});
+  }
   els.directoryBrowser.dataset.mode = mode;
   delete els.directoryBrowser.dataset.selectedPath;
   const projectMode = mode === "project_open" || mode === "project_save";
