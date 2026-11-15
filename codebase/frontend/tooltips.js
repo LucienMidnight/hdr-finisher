@@ -106,7 +106,9 @@
     }
     function schedule(trigger) {
       if (active === trigger || pending === trigger) return;
-      hide(); pending = trigger;
+      hide();
+      if (!textFor(trigger)) return;
+      pending = trigger;
       timer = setTimeout(() => {
         const text = textFor(trigger);
         if (!text || !trigger.isConnected || !trigger.getClientRects().length) return hide();
@@ -125,7 +127,7 @@
     document.addEventListener('pointerdown', hide, true);
     document.addEventListener('click', hide, true);
     document.addEventListener('keydown', event => {
-      if(event.key==='Escape' && (active || pending)) { event.preventDefault(); event.stopPropagation(); hide(); }
+      if(event.key==='Escape') { if(active && !tooltip.hidden) { event.preventDefault(); event.stopPropagation(); } hide(); }
       else if(event.key==='Enter' || event.key===' ') hide();
     }, true);
     window.addEventListener('blur', hide);
