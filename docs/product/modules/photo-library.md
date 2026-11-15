@@ -1,3 +1,53 @@
+### November 15, 2026: final-review ownership and publication repairs (P1–P3, L1)
+
+P3: a Grade opening is owned by its renderer's live, heartbeating connection
+until a picture is presented. Presentation acknowledgements retry after a
+temporary HTTP failure and identify the import ticket, including repeated
+RAW development of the same session. Renderer loss/heartbeat expiry, session
+retirement and terminal presentation failure retire that opening. Cancellation
+or loss during native import does not release its scheduler reservation until
+the import worker has actually unwound; no timeout frees live decode memory.
+
+P2: Undo, paste, revert and explicit picture invalidation cancel outstanding
+Grade handoffs and advance a per-photo mutation generation. A loaded saved
+thumbnail may publish only while that generation, source, display and actual
+cell/controller ownership still match. A removed tile cannot be reactivated,
+and a late handoff cannot overwrite the restored grade or edited marker.
+
+P1: preparation also fences Single, Compare, native detail and borrowed
+stand-ins. A resize or zoom cannot reveal the unchanged grade while a target
+is preparing. Settlement rebuilds from the new grade, or from the unchanged
+grade on cancellation/failure; old asynchronous draws remain invalidated.
+
+L1: Escape dismisses and consumes only a visible tooltip. While help is still
+pending it cancels the timer but reaches the dialog/normal key handler.
+Controls with empty help schedule no timer. The 2.5-second delay is unchanged.
+
+The full paste driver's former bulk-response/scene-read race predates this
+sprint: the HTTP result precedes preparation cleanup and frontend invalidation.
+The driver now waits for the actual paste-confirmed UI publication before
+reading scene results, and checks copied-grade state rather than a fleeting
+status message. No picture math, memory budget or timing tolerance changes.
+
+Validation on the MacBook Neo / 8 GB: the fast suites pass (1,057 Node tests,
+one skipped; 3,497 Python tests, 144 skipped, one non-strict xpass and the
+existing FastAPI/Starlette deprecation warning). Result-checking regressions
+cover failed HTTP/network acknowledgement retry, renderer disconnect and
+heartbeat expiry, retirement during live decode, late thumbnails after Undo,
+Single/Compare/native preparation, and pending/empty/visible tooltip Escape.
+The full paste driver, Grade-open contention check with a deliberately failed
+first acknowledgement, and quick Library check with ten Single steps all
+pass, sequentially through the GPU run lock. The contention check keeps its
+existing tolerance and confirms Library resumes after presentation.
+
+The cancellation comparison used the `55e8bb5f` frontend with the current
+backend, not a complete historical checkout. Holding that frontend's
+preparation cleanup after bulk HTTP success, then releasing it while a scene
+read was in flight, reproduced `AbortError: Cancelled`. The repaired driver
+waits for completed frontend publication; it does not suppress cancellation.
+Logs and the controlled historical reproduction are retained under
+`codebase/output/review/final-feedback-fixes/`.
+
 ### November 15, 2026: L3 organised Paste Grade choices
 
 This supersedes the earlier paired-lane dialog layout below. The header names
