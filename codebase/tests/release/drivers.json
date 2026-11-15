@@ -1507,7 +1507,7 @@
       "path": "tests/local-sdr-match.js",
       "areas": ["masks", "ui", "export-proof"],
       "tier": "area",
-      "protects": "Local Match parent selection, independent SDR state, Undo, stale marker and overwrite consent.",
+      "protects": "Local Match parent selection, independent SDR state, complete action/explanation layouts, Undo, stale marker, overwrite consent, CPU/GPU finished delivery and full-size Proof/export identity.",
       "launch": {"method": "electron"}
     },
     {

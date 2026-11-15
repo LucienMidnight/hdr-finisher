@@ -61,7 +61,8 @@ const baseline = process.argv.includes("--baseline");
     const before = await documentState();
     assert.equal(before.global_adjustments.sdr.exposure, -.15);
     const button = page.locator("#local-sdr-match");
-    await button.scrollIntoViewIfNeeded();
+    const actions = page.locator("#local-sdr-match-actions");
+    await actions.scrollIntoViewIfNeeded();
     assert.match(await button.getAttribute("aria-label"), /Window light/);
     const matching = page.waitForResponse(reply => reply.request().method() === "POST"
       && /\/local\/[^/]+\/sdr-match$/.test(new URL(reply.url()).pathname));
@@ -77,8 +78,8 @@ const baseline = process.argv.includes("--baseline");
     assert.deepEqual(withoutSdr(matched.local_adjustments[0]), withoutSdr(before.local_adjustments[0]));
     for (const [width, height] of headroom ? [] : [[1408, 794], [1100, 720]]) {
       await browser.newPage({ viewport: { width, height } });
-      await button.scrollIntoViewIfNeeded();
-      const box = await button.boundingBox();
+      await actions.scrollIntoViewIfNeeded();
+      const box = await actions.boundingBox();
       assert.ok(box.x >= 0 && box.x + box.width <= width && box.y >= 0 && box.y + box.height <= height);
       await page.screenshot({ path: path.join(output, `matched-${width}x${height}.png`) });
     }
@@ -126,7 +127,7 @@ const baseline = process.argv.includes("--baseline");
     assert.equal(delivery.sdr.passed, true, JSON.stringify(delivery));
     assert.equal(await page.evaluate(() => queueEditCommand("undo")), true);
     assert.deepEqual(await documentState(), before);
-    await button.scrollIntoViewIfNeeded();
+    await actions.scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, "undo-1100x720.png") });
     assert.equal(await page.evaluate(() => queueEditCommand("redo")), true);
     await page.evaluate(async () => {
@@ -135,7 +136,7 @@ const baseline = process.argv.includes("--baseline");
       await commitSelectedLocal();
     });
     await page.waitForFunction(() => selectedLocal()?.sdr_match?.out_of_date);
-    await button.scrollIntoViewIfNeeded();
+    await actions.scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, "out-of-date-1100x720.png") });
     await page.evaluate(() => setGradeMode("global"));
     const revision = await page.evaluate(() => state.editRevision);

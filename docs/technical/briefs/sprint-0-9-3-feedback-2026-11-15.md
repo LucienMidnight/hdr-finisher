@@ -187,7 +187,39 @@ fixed here; Proof/export byte identity still passes. The baseline run reports
 diagnostics only (exit zero is not colour acceptance). Reproduce with the
 same app driver plus `--headroom --baseline` or `--headroom`.
 
-Validation completion and precise omissions are recorded below before handoff.
+Validation: fast Node **1,069 passed / one skipped / zero failed**; fast
+Python **3,560 passed / 144 skipped / one xpassed / zero failed**. Focused
+`test_sdr_local_match.py`, `test_sdr_match_materialization.py`,
+`test_sdr_match_state.py`, `test_proof_export_identity.py`: **57 passed**.
+These include no-op/refusal history, fresh rematch, stale-fit revision conflict,
+saved-project roundtrip, mask/global/HDR/other-local/reference staleness and
+exact Undo. Six local frontend behavior checks include preserving newer
+strokes while merging status, parent targeting, overwrite cancellation and
+late-response rejection. UI, local GPU reference and default 90-second Library
+viewport check pass. Library covered 9/9 visible pictures (not the unvisited
+24), no app/photo/memory failures; longest drawing gap 50 ms, external peak
+3.137 GB. Fast suites overlap the Library run's tail, so this is not isolated
+timing evidence. Logs are retained beside the review JSON/screenshots; Library
+report is `codebase/output/quick-library-check/n4-local-match/report.json`.
+
+**Not run:** full-size shared-RAW Proof/export after an individual local fit;
+`hsl-selection-delivery.js --local`, `hue-mask-delivery.js`, the all-codec
+`hdr-ceiling-delivery.js` matrix, every Film stock/strength, broad 23-driver
+export/Proof selection, full release/endurance/performance sweeps, packaged
+builds or Windows/Linux checks. Kept to the directly covering subset under
+the overnight slow-test budget: export/Proof plan history already estimates
+11 minutes for only six of 23 drivers, with 17 unknown durations; no claim
+that its incomplete estimate proves the rest fits inside 30 minutes. Local
+grade output reference, smooth CPU/GPU delivery, encoded Proof identity and
+the two-RAW finished-proxy measurements ran instead. The sharp/highlight
+native failure above remains an explicit qualification limitation, not a pass.
+
+Both protected DSC00264 projects retain their starting SHA-256 hashes. The
+Windows-only DSC00950 source-linked project was not opened or overwritten.
+Output size starts/ends at **13.0 GB**, below 100 GB; failed-run disposable
+profiles and generated export scratch are removed, referenced review evidence
+is retained. Work is committed locally on `feat/watermark-and-library-polish`;
+no push. Implementation commit: `a167931b` (following acceptance `22c2d0f3`).
 
 ### N3a result (November 16, MacBook Neo / A18 Pro / 8 GB)
 
