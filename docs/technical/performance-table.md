@@ -1,3 +1,11 @@
+## November 15: Detail highlight fix validation (Windows PC)
+
+The default frozen-v1 Library viewport smoke did not finish observation before
+its unchanged 130-second harness deadline. Windows PC, 2560x1440, shared GPU
+lock, this commit (parent `620ad023`), disposable plain-Electron profile;
+`codebase/output/quick-library-check/detail-highlights/report.json`. This is a
+failed smoke check, not an action-latency baseline. No timing budget changed.
+
 ## November 15: Pin-folder command feedback (Windows PC)
 
 | Action | Target | Result | Conditions / revision |

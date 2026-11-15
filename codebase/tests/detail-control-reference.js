@@ -38,6 +38,10 @@ for lane in ['hdr','sdr']:
     candidate=apply_detail(rgb,DetailAdjustments(**detail),PreviewKind(lane))
     expected=rgb+(candidate-rgb)*mask[...,None] if route=='local' else candidate
     cases.append(dict(lane=lane,route=route,control=name,label=label,detail=detail,opacity=1,expected=encoded(expected)))
+  detail=dict(base,clarity_amount=21,sharpen_amount=55)
+  candidate=apply_detail(rgb,DetailAdjustments(**detail),PreviewKind(lane))
+  expected=rgb+(candidate-rgb)*mask[...,None] if route=='local' else candidate
+  cases.append(dict(lane=lane,route=route,control='highlight-headroom',label='saved-settings',detail=detail,opacity=1,expected=encoded(expected)))
   if route=='local':
    for label,opacity in [('low',0),('default',1),('maximum',1),('partial',.35)]:
     detail=dict(base,texture_amount=100,clarity_amount=100,clarity_radius_percent=3,sharpen_amount=200,sharpen_radius_px=3,sharpen_threshold=0)
