@@ -63,7 +63,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | U13 | Less rounding on the logo background | W6 | built — gentler smaller radius in five SVGs and PNG; portable Electron regeneration passes on Mac |
 | L1 | Tooltips appear after about 2.5 s | W7 | built and checked — shared 2.5 s hover/focus controller; main/Library iframe/pop-out, rendition, dialog layer and bounds pass; neighbour grace disabled |
 | L2 | Tooltip pass: no redundant labels | W7 | built and checked — names only for hidden/clipped labels; explanations retained; shortcut-only switch kept; responsive and metadata checks pass |
-| L3 | "Choose what to paste" organised | W7 | to do |
+| L3 | "Choose what to paste" organised | W7 | built — linked checklist, authored ordered sections and independent disclosures; four Neo layouts and focused paste/Undo pass; full driver stops on untouched live-scene AbortError; visual sign-off open |
 | L4 | Open image uses the Library grid browser | W7 | built and checked — shared grid/list single-image mode; JPEG opens into Grade; folder/project/destination modes and preview regression pass; 1408×794 and 1100×720 captures |
 | L5 | Purple default accent, orange still offered | W7 | built and checked — purple before first paint; saved orange retained; Settings passes all three themes and startup checks |
 

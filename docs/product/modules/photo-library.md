@@ -1,3 +1,61 @@
+### November 15, 2026: L3 organised Paste Grade choices
+
+This supersedes the earlier paired-lane dialog layout below. The header names
+the copied photo and target-photo count. Linked HDR/SDR choices now show one
+checklist, regardless of whether the two source grades have different values;
+each lane still pastes its own source values. Remembered asymmetric choices
+open separately rather than silently adding settings. HDR nits and the
+corresponding SDR percentage controls share their linked choice, not their
+numbers. Side-specific settings remain available in the single checklist.
+
+Shared sections come first: RAW development, lens and reconstruction;
+Crop & rotate / Perspective; and Local adjustments and masks. Each section
+has a three-state checkbox, followed by module checkboxes with individually
+collapsed parameters. Rendition modules follow the current edit-panel order:
+Denoise, Tone, Highlight compression, Exposure bands, Colour, HSL, Curves,
+Colour grading, Black & white, Detail, Film look, Vignette. The proposed T1
+processing-order redesign is not applied here. Opening an HDR module no longer
+opens its SDR partner. Parameter names are authored explicitly, and the broken
+middle-dot separator is corrected.
+
+The dialog is bounded to 820 px wide and 620 px high, with at least 100 px
+of available viewport height outside it; smaller windows reduce its height.
+Only the checklist scrolls. Lane headings remain visible through the rendition
+list, and the status, bounded warnings, Cancel and Paste stay outside that
+scroll. All / Modified only / None, remembered field choices, preview checks,
+warnings, single-transaction Undo and W2's immediate pending feedback remain.
+The exact pasteable field set is unchanged, and crop, perspective, lens
+corrections and local masks still require an explicit choice. No design tokens
+or image-processing paths were added or changed.
+
+Validation on MacBook Neo / 8 GB:
+
+- `node --test tests/*.test.js`: 1,033 passed, one skipped.
+- `.venv/bin/python -m pytest tests -q`: 3,485 passed, 144 skipped, one
+  xpass; one existing FastAPI/Starlette deprecation warning. The 29 focused
+  paste tests pass, including exact field coverage and safe defaults.
+- The locked `tests/library-grade-paste.js` run captured linked and separate
+  modes at 1408×794 and 1100×720. It checked independent disclosures, no
+  visible SDR checklist when linked, viewport bounds and fixed action positions.
+  It subsequently reached successful bulk confirmation, but the untouched
+  live-scene readback at line 183 stopped with `AbortError: Cancelled`;
+  this is not a full bulk-redraw/Undo pass and that area was not changed.
+- A final locked run with `HDR_L3_DIALOG_ONLY=1` passes the layout and
+  first-paste portion without rerunning that unrelated bulk readback: native
+  text clipboard, selective paste, remembered choices, checking/no-change
+  states, preparation feedback and single-paste Undo. Confirmation to pending
+  feedback was 13.6 ms on this Neo, within W2's existing 100 ms guard. Python
+  independently covers three-target/virtual-copy whole-paste Undo.
+
+Final real-app screenshots, including full-window context and scrolled module
+views, are in `codebase/output/review/paste-grade-redesign/`:
+`1408x794-linked-window.png`, `1408x794-separate-window.png`,
+`1100x720-linked-window.png`, `1100x720-separate-window.png`, and the matching
+`*-modules-window.png` captures. Logs are `codebase/output/l3-node-fast.log`,
+`l3-python-fast.log`, `l3-electron.log` and `l3-electron-layout.log`.
+Steve's visual sign-off and the full driver's live-scene qualification remain
+open. No push or installer build.
+
 ### November 15: W2 P2 ready thumbnail return; whole-handoff target still variable
 
 A hidden Library installs its ready 640px edited thumbnail on an independent

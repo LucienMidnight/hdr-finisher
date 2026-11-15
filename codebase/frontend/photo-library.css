@@ -362,29 +362,41 @@ img:not([src]), img[src=""] { visibility:hidden; }
 .grade-paste-dialog .grade-paste-mod { margin-left: 8px; color: var(--muted); font: var(--font-weight-regular) var(--font-size-min)/var(--line-height-normal) var(--font-body); letter-spacing: var(--tracking-none); }
 
 /* Paired paste lanes: only the choices scroll; title, status and actions stay visible. */
-.grade-paste-dialog { width: min(960px, calc(100vw - 40px)); max-height: calc(100dvh - 40px); }
-.grade-paste-dialog:has(.grade-paste-choices:not([hidden])) { height: calc(100dvh - 40px); }
+.grade-paste-dialog { width: min(820px, calc(100vw - 100px)); max-height: calc(100dvh - 100px); }
+.grade-paste-dialog:has(.grade-paste-choices:not([hidden])) { height: min(620px, calc(100dvh - 100px)); }
 .grade-paste-dialog > .library-ask-body:nth-child(2) { display: flex; flex-direction: column; overflow: hidden; flex: 1; }
 .grade-paste-dialog .grade-paste-choices { min-height: 0; overflow: auto; flex: 1; }
-.grade-paste-dialog .grade-paste-mode { width: max-content; max-width: 100%; margin-bottom: 8px; }
+:root .grade-paste-dialog .grade-paste-mode { width: max-content; max-width: 100%; flex-shrink: 0; }
 .grade-paste-dialog .grade-paste-shared { padding: 12px 0; }
 .grade-paste-dialog .grade-paste-lane-headers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); position: sticky; top: 0; z-index: 1; background: var(--raised); border-bottom: 1px solid var(--plate-edge); }
 .grade-paste-dialog .grade-paste-lane-header { padding: 8px 12px; }
 .grade-paste-dialog .grade-paste-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; border-bottom: 1px solid var(--plate-edge); }
+.grade-paste-dialog .grade-paste-pair[data-linked="true"] { grid-template-columns: minmax(0, 1fr); }
 .grade-paste-dialog .grade-paste-cell { min-width: 0; padding: 0 12px; }
-.grade-paste-dialog .grade-paste-cell:first-child, .grade-paste-dialog .grade-paste-lane-header:first-child { border-right: 1px solid var(--plate-edge); }
+.grade-paste-dialog .grade-paste-pair[data-linked="false"] .grade-paste-cell:first-child, .grade-paste-dialog .grade-paste-lane-header:first-child { border-right: 1px solid var(--plate-edge); }
 .grade-paste-dialog .grade-paste-subsettings { padding-left: 18px; }
-.grade-paste-dialog .grade-paste-subsettings .checkbox-row { min-height: 32px; }
+.grade-paste-dialog .grade-paste-subsettings .checkbox-row { min-height: var(--list-row-h); }
 .grade-paste-dialog .checkbox-row:has(input:disabled) { opacity: var(--disabled-opacity); }
-.grade-paste-dialog .group-preset-list { padding: 0; }
+.grade-paste-dialog .group-preset-list { padding: 0; gap: 0; }
 .grade-paste-dialog .grade-paste-footer { margin-top: 0; }
-.grade-paste-dialog .library-options[hidden] { display: none; }
+.grade-paste-dialog [hidden] { display: none !important; }
 
-.grade-paste-dialog .grade-paste-shared { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 0 12px; }
+.grade-paste-dialog .grade-paste-shared { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0 12px; }
 .grade-paste-dialog .grade-paste-shared > h3 { align-self: center; }
 .grade-paste-dialog .grade-paste-shared > .library-options { justify-content: flex-end; padding: 0 0 6px; }
 .grade-paste-dialog .grade-paste-shared > .grade-paste-cell { border-right: 0; }
-.grade-paste-dialog .grade-paste-mode > button { font: var(--font-weight-medium) var(--font-size-md)/var(--line-height-normal) var(--font-body); text-transform: none; }
+:root .grade-paste-dialog .grade-paste-mode > button { font: var(--font-weight-medium) var(--font-size-md)/var(--line-height-normal) var(--font-body); text-transform: none; }
+.grade-paste-dialog .grade-paste-overview { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.grade-paste-dialog .application-dialog-header p { overflow-wrap: anywhere; }
+.grade-paste-dialog .grade-paste-shared > .grade-paste-section { grid-column: 1 / -1; }
+.grade-paste-dialog .grade-paste-section { padding: 8px 0; border-bottom: 1px solid var(--plate-edge); }
+:root .grade-paste-dialog .grade-paste-section h3 .checkbox-row { font: var(--section-title-font); }
+.grade-paste-dialog .grade-paste-section .grade-paste-cell { padding-left: 24px; }
+.grade-paste-dialog .grade-paste-linked-header { padding: 0 12px; position: sticky; top: 0; z-index: 1; background: var(--raised); }
+.grade-paste-dialog .grade-paste-lane-header .grade-paste-section,
+.grade-paste-dialog .grade-paste-linked-header .grade-paste-section { border-bottom: 0; }
+.grade-paste-dialog .grade-paste-footer { min-height: 86px; }
+.grade-paste-dialog .grade-paste-warnings { max-height: 68px; overflow: auto; color: var(--attention); }
 
 /* Shared neutral hover and readable, viewport-bounded context commands. */
 .library-folder-row:hover, .library-folder-row:hover button { background: var(--plate-up-hover); }

@@ -1,12 +1,16 @@
 /* Reusable settings picker: selection is independent of the Library and future Looks UI. */
 (function (root) {
   'use strict';
-  function selectionModel(groups, saved, sameSides = false) {
+  function selectionModel(groups, saved, sameSides = true) {
     const ids = groups.flatMap(group => group.settings.map(setting => setting.id));
-    const settings = new Set((saved?.settings || ids.filter(id => !groups.some(group => ['geometry', 'lens-corrections', 'local-adjustments'].includes(group.id) && group.settings.some(setting => setting.id === id)))) .filter(id => ids.includes(id)));
+    const settings = new Set((saved?.settings || ids.filter(id => !groups.some(group => ['geometry', 'perspective', 'lens-corrections', 'local-adjustments'].includes(group.id) && group.settings.some(setting => setting.id === id)))) .filter(id => ids.includes(id)));
     const lanes = new Set(saved?.lanes || ['hdr', 'sdr']);
     let linked = sameSides;
-    const peer = id => id.replace(/\.(hdr|sdr)\./, (_, lane) => '.' + (lane === 'hdr' ? 'sdr' : 'hdr') + '.');
+    const peer = id => {
+      const other = id.replace(/\.(hdr|sdr)\./, (_, lane) => '.' + (lane === 'hdr' ? 'sdr' : 'hdr') + '.');
+      if (ids.includes(other)) return other;
+      return other.replace(/_(nits|percent)$/, (_, unit) => unit === 'nits' ? '_percent' : '_nits');
+    };
     if (saved && (lanes.has('hdr') !== lanes.has('sdr') || ids.some(id => ids.includes(peer(id)) && settings.has(id) !== settings.has(peer(id))))) linked = false;
     function toggle(id, checked) {
       checked ? settings.add(id) : settings.delete(id);
@@ -22,6 +26,7 @@
         }
       },
       has: id => settings.has(id), lane: id => lanes.has(id),
+      peer,
       toggle,
       toggleLane(id, checked) { for (const lane of linked ? ['hdr','sdr'] : [id]) checked ? lanes.add(lane) : lanes.delete(lane); },
       choose(choice, lane) {
@@ -136,18 +141,18 @@
     function dialog(clipboard, paths, expanded, confirmed) {
       const {make} = root.HDRLibraryDialogs;
       return new Promise(resolve => {
-        const model = selectionModel(clipboard.groups, clipboard.selection, clipboard.same_sides);
+        const model = selectionModel(clipboard.groups, clipboard.selection);
         const dialog = make('dialog', 'application-dialog library-ask library-smart-editor grade-paste-dialog');
         dialog.setAttribute('aria-label', `Paste Grade From ${clipboard.name}`);
         const header = make('div', 'application-dialog-header'), words = make('div');
-        const title = make('h2', '', `Paste Grade From ${clipboard.name}`), summary = make('p');
-        words.append(title); header.append(words);
-        const body = make('div', 'library-ask-body'), tools = make('div', 'library-options'), list = make('div', 'group-preset-list');
+        const title = make('h2', '', 'Paste grade'), summary = make('p');
+        words.append(title, make('p', 'grade-paste-help', `Source: ${clipboard.name} · ${paths.length} target ${paths.length === 1 ? 'photo' : 'photos'}`)); header.append(words);
+        const body = make('div', 'library-ask-body'), list = make('div', 'group-preset-list');
         const choose = make('button', 'button-secondary grade-paste-choose', 'Choose what to paste'); choose.type = 'button'; choose.setAttribute('aria-expanded', String(expanded));
         const choices = make('div', 'grade-paste-choices'); choices.id = 'grade-paste-choices'; choices.hidden = !expanded;
         choose.setAttribute('aria-controls', choices.id);
-        choose.addEventListener('click', () => { choices.hidden = !choices.hidden; choose.setAttribute('aria-expanded', String(!choices.hidden)); });
-        const checks = [], masters = [];
+        choose.addEventListener('click', () => { choices.hidden = !choices.hidden; choose.setAttribute('aria-expanded', String(!choices.hidden)); update(); });
+        const checks = [], masters = [], sections = [], pairs = [];
         function checkbox(label, checked, callback) {
           const row = make('label', 'checkbox-row'), input = make('input'); input.type = 'checkbox'; input.checked = checked;
           input.addEventListener('change', () => { callback(input.checked); update(); }); row.append(input, make('span', '', label));
@@ -169,28 +174,51 @@
           }
           return bar;
         }
-        function groupCell(group) {
+        function groupCell(group, partner) {
           if (!group) return make('div', 'grade-paste-cell');
           const details = make('details', 'grade-paste-cell'), label = make('summary');
           details.dataset.group = group.id;
-          const tick = checkbox(group.label, false, checked => { for (const setting of group.settings) model.toggle(setting.id, checked); });
+          const tick = checkbox(group.label, false, checked => {
+            for (const setting of model.linked() && partner ? [...group.settings, ...partner.settings] : group.settings) model.toggle(setting.id, checked);
+          });
           tick.input.setAttribute('aria-label', `${group.lane || ''} ${group.label}`.trim());
           tick.row.addEventListener('click', event => event.stopPropagation());
-          if (group.modified) tick.row.append(make('small', 'grade-paste-mod', 'Mod'));
+          const marker = make('small', 'grade-paste-mod', 'Mod');
+          tick.row.append(marker);
           label.append(tick.row); details.append(label);
           const rows = make('div', 'grade-paste-subsettings');
-          for (const setting of group.settings) {
+          const extra = group.lane === 'hdr' && partner ? partner.settings.filter(setting => !group.settings.some(other => other.id === model.peer(setting.id))) : [];
+          for (const setting of [...group.settings, ...extra]) {
             const child = checkbox(setting.label, model.has(setting.id), checked => model.toggle(setting.id, checked));
             child.input.dataset.setting = setting.id;
-            if (setting.modified) child.row.append(make('small', 'grade-paste-mod', 'Mod'));
-            rows.append(child.row); checks.push({setting, group, ...child});
+            const modified = make('small', 'grade-paste-mod', 'Mod'); child.row.append(modified);
+            rows.append(child.row); checks.push({setting, group, partner, linkedOnly:extra.includes(setting), marker:modified, ...child});
           }
-          details.append(rows); checks.push({group, ...tick}); return details;
+          details.append(rows); checks.push({group, partner, marker, ...tick}); return details;
+        }
+        function section(title, groups, lane) {
+          const container = make('section', 'grade-paste-section');
+          const heading = make('h3', 'group-preset-subheading');
+          const tick = checkbox(title, false, checked => {
+            for (const group of groups) for (const setting of group.settings) model.toggle(setting.id, checked);
+          });
+          tick.input.setAttribute('aria-label', `${lane ? lane.toUpperCase() + ' ' : ''}${title}`);
+          heading.append(tick.row); container.append(heading);
+          sections.push({groups, lane, ...tick});
+          return container;
         }
         const shared = make('section', 'grade-paste-shared');
         shared.append(make('h3', 'group-preset-subheading', 'Shared settings'), quickTools('shared'));
-        for (const group of clipboard.groups.filter(group => !group.lane)) shared.append(groupCell(group));
+        const sharedGroups = clipboard.groups.filter(group => !group.lane);
+        for (const title of [...new Set(sharedGroups.map(group => group.section))]) {
+          const groups = sharedGroups.filter(group => group.section === title), container = section(title, groups);
+          for (const group of groups) container.append(groupCell(group));
+          shared.append(container);
+        }
         const laneHeaders = make('div', 'grade-paste-lane-headers');
+        const linkedHeader = make('div', 'grade-paste-linked-header');
+        const linkedMaster = checkbox('HDR and SDR settings', true, checked => model.toggleLane('hdr', checked));
+        linkedHeader.append(linkedMaster.row); masters.push({lane:'hdr', ...linkedMaster});
         const linkedTools = quickTools('hdr'); linkedTools.className += ' grade-paste-linked-tools';
         const laneTools = [];
         for (const lane of ['hdr', 'sdr']) {
@@ -198,19 +226,24 @@
           const tick = checkbox(`${lane.toUpperCase()} side`, model.lane(lane), value => model.toggleLane(lane, value));
           const bar = quickTools(lane); column.append(tick.row, bar); laneHeaders.append(column);
           masters.push({lane, ...tick}); laneTools.push(bar);
+          column.append(section('Rendition settings', clipboard.groups.filter(group => group.lane === lane), lane));
         }
+        const linkedSection = section('Rendition settings', clipboard.groups.filter(group => group.lane), 'hdr');
+        linkedHeader.append(linkedSection);
         const keys = [...new Set(clipboard.groups.filter(g => g.lane).map(g => g.id.replace(/^(hdr|sdr)-/, '')))];
         for (const key of keys) {
           const pair = make('div', 'grade-paste-pair');
-          const cells = ['hdr','sdr'].map(lane => groupCell(clipboard.groups.find(g => g.id === lane + '-' + key)));
-          for (const cell of cells) cell.addEventListener('toggle', () => { for (const other of cells) if (other.open !== cell.open) other.open = cell.open; });
+          const groups = ['hdr','sdr'].map(lane => clipboard.groups.find(group => group.id === lane + '-' + key));
+          const cells = groups.map((group, index) => groupCell(group, groups[1-index]));
+          pairs.push({pair, cells});
           pair.append(...cells); list.append(pair);
         }
-        choices.append(mode, hint, shared, linkedTools, laneHeaders, list);
-        const notes = make('p', 'grade-paste-status'), warnings = make('p');
+        choices.append(shared, linkedTools, linkedHeader, laneHeaders, list);
+        const notes = make('p', 'grade-paste-status'), warnings = make('p', 'grade-paste-warnings');
         notes.setAttribute('role', 'status');
         warnings.hidden = true;
-        body.append(make('h3', 'group-preset-subheading', 'Settings to paste'), summary, choose, choices);
+        const overview = make('div', 'grade-paste-overview'); overview.append(summary, choose);
+        body.append(overview, mode, hint, choices);
         const footer = make('div', 'library-ask-body grade-paste-footer');
         footer.append(notes, warnings, make('p', 'grade-paste-help', 'Each photo keeps its previous grade. Ctrl+Z undoes the whole paste.'));
         const actions = make('div', 'app-dialog-actions'), cancel = make('button','button-secondary','Cancel'), yes = make('button','button-primary', paths.length > 1 ? `Paste onto ${paths.length} photos` : 'Paste grade');
@@ -219,7 +252,20 @@
         function update() {
           for (const {button, linked} of modeButtons) button.setAttribute('aria-pressed', String(model.linked() === linked));
           hint.textContent = model.linked() ? 'Checkbox choices are linked. Each side uses its own source values.' : 'Choose settings for each side independently.';
+          mode.hidden = hint.hidden = choices.hidden;
           linkedTools.hidden = !model.linked();
+          linkedHeader.hidden = !model.linked(); laneHeaders.hidden = model.linked();
+          linkedSection.hidden = !model.linked();
+          for (const {pair, cells} of pairs) {
+            pair.dataset.linked = String(model.linked());
+            cells[1].hidden = model.linked();
+          }
+          for (const row of sections) {
+            const settings = row.groups.flatMap(group => group.settings), count = settings.filter(setting => model.has(setting.id)).length;
+            row.input.checked = count === settings.length;
+            row.input.indeterminate = count > 0 && count < settings.length;
+            row.input.disabled = !!row.lane && !model.lane(row.lane);
+          }
           for (const bar of laneTools) bar.hidden = model.linked();
           for (const master of masters) {
             const settings = clipboard.groups.filter(g => g.lane === master.lane).flatMap(g => g.settings);
@@ -228,12 +274,14 @@
             master.input.indeterminate = model.lane(master.lane) && count > 0 && count < settings.length;
           }
           for (const row of checks) {
+            if (row.linkedOnly) row.row.hidden = !model.linked();
+            row.marker.hidden = !(row.setting ? row.setting.modified || model.linked() && row.partner?.settings.some(setting => setting.id === model.peer(row.setting.id) && setting.modified) : row.group.modified || model.linked() && row.partner?.modified);
             if (row.setting) { row.input.checked = model.has(row.setting.id); row.input.disabled = !!row.group.lane && !model.lane(row.group.lane); }
-            else { const count = row.group.settings.filter(setting => model.has(setting.id)).length; row.input.checked = count === row.group.settings.length; row.input.indeterminate = count > 0 && count < row.group.settings.length; row.input.disabled = !!row.group.lane && !model.lane(row.group.lane); }
+            else { const settings = model.linked() && row.partner ? [...row.group.settings, ...row.partner.settings] : row.group.settings; const count = settings.filter(setting => model.has(setting.id)).length; row.input.checked = count === settings.length; row.input.indeterminate = count > 0 && count < settings.length; row.input.disabled = !!row.group.lane && !model.lane(row.group.lane); }
           }
-          const active = model.active(), names = [...new Set(active.map(group => group.section === 'Outside the grade groups' ? group.label : group.section))];
+          const active = model.active(), modules = new Set(active.map(group => group.id.replace(/^(hdr|sdr)-/, '')));
           const sides = ['hdr','sdr'].filter(lane => active.some(g => g.lane === lane)).map(lane => lane.toUpperCase());
-          summary.textContent = `Paste ${names.length ? names.join(', ') + ' settings' : 'no settings'}${sides.length ? ' (' + sides.join(' and ') + ')' : ''}${paths.length > 1 ? ` onto ${paths.length} photos` : ''}.`;
+          summary.textContent = `${modules.size} ${modules.size === 1 ? 'module' : 'modules'} selected${sides.length ? ' (' + sides.join(' and ') + ')' : ''}.`;
           clearTimeout(timer); const id = ++previewId;
           function show(preview, error) {
             const result = previewState(paths.length, active.length, preview, error);

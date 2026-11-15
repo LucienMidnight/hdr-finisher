@@ -10,6 +10,35 @@ from hdr_finisher.sessions import SessionStore
 HDR='global_adjustments.hdr.exposure'
 
 
+def test_schema_order_authored_labels_and_safe_defaults(setup):
+    from hdr_finisher.library_paste import MODULE_ORDER, leaves, setting_label
+    photo,store,session,marks,grades=setup
+    paste=LibraryPaste(grades)
+    grade=session.edit_document().model_dump(mode='json')
+    groups=paste.schema(grade,grade)
+    assert [group['id'] for group in groups[:6]] == [
+        'raw-development','lens-corrections','highlight-reconstruction','geometry','perspective','local-adjustments']
+    assert [group['id'] for group in groups if group['lane']=='hdr'] == ['hdr-'+module for module in MODULE_ORDER]
+    expected={path for lane in ('hdr','sdr') for field,data in grade['global_adjustments'][lane].items()
+              if field not in ('highlight_compression_source_peak_nits','highlight_compression_source_peak_percent')
+              for path in leaves(data,'global_adjustments.'+lane+'.'+field)}
+    expected.update(leaves(grade['global_adjustments']['shared']['geometry'],'global_adjustments.shared.geometry'))
+    expected.update(leaves({key:data for key,data in grade['source']['raw_import_settings'].items() if key!='lens'},'source.raw_import_settings'))
+    expected.update('source.raw_import_settings.lens.'+key for key in ('mode','distortion','chromatic_aberration','vignetting'))
+    expected.update({'local_adjustments','global_adjustments.shared.local_adjustments_enabled','global_adjustments.shared.film_grain_seed'})
+    for lane in ('hdr','sdr'):
+        expected.add('denoise.'+lane+'.enabled')
+        expected.update(leaves(grade['denoise'][lane]['controls'],'denoise.'+lane+'.controls'))
+    assert {row['id'] for group in groups for row in group['settings']} == expected
+    colour=next(group for group in groups if group['id']=='hdr-color')
+    assert 'global_adjustments.hdr.highlight_desaturation' in {row['id'] for row in colour['settings']}
+    selected=set(paste.selection(groups)['settings'])
+    for group in groups:
+        assert all(row['label'] and 'Â' not in row['label'] and '_' not in row['label'] for row in group['settings'])
+        assert all((row['id'] in selected) == (group['id'] not in ('lens-corrections','geometry','perspective','local-adjustments')) for row in group['settings'])
+    assert setting_label('global_adjustments.hdr.color_grading.shadows.luminance_ev') == 'Shadows · Luminance (EV)'
+
+
 def test_three_targets_virtual_item_selective_paste_and_one_undo(setup):
     photo,store,session,marks,grades=setup
     copied=saved(setup); paste=LibraryPaste(grades); paste.copy(str(photo))

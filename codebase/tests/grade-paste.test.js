@@ -151,6 +151,7 @@ test('dialog summary and count requests follow the active side ticks', async () 
   const groups=['hdr','sdr'].map(lane=>({id:lane+'-denoise',label:'Denoise',section:'Detail',lane,settings:[{id:'denoise.'+lane+'.enabled',label:'Enabled',modified:true}]}));
   const answer=controller.dialog({name:'source',groups,selection:{lanes:['hdr','sdr'],settings:groups.flatMap(g=>g.settings.map(s=>s.id))}},['target'],true);
   assert.ok(nodes.some(n=>String(n.textContent).includes('(HDR and SDR)')));
+  nodes.find(node=>node.textContent==='Separately').fire('click');
   const master=nodes.find(n=>n.tag==='label' && n.children.some(c=>c.textContent==='HDR side'));
   master.children[0].checked=false;master.children[0].fire('change');
   await [...timers.values()].at(-1)();
@@ -158,6 +159,54 @@ test('dialog summary and count requests follow the active side ticks', async () 
   assert.ok(nodes.some(n=>String(n.textContent).includes('(SDR)')));
   assert.ok(nodes.some(n=>n.textContent==='1 of 1 photo will change.'));
   nodes.find(n=>n.textContent==='Cancel').fire('click'); await answer;
+});
+
+test('linked choices pair HDR nits with SDR percentages without copying source values', () => {
+  const groups = ['hdr','sdr'].map(lane => ({id:lane+'-highlights',lane,settings:[
+    {id:`global_adjustments.${lane}.highlight_compression_start_${lane === 'hdr' ? 'nits' : 'percent'}`,modified:lane === 'sdr'},
+  ]}));
+  const model = selectionModel(groups);
+  assert.equal(model.linked(),true);
+  model.choose('none'); model.choose('modified','hdr');
+  assert.deepEqual(model.value().settings,groups.flatMap(group=>group.settings.map(setting=>setting.id)));
+  model.toggle(groups[0].settings[0].id,false);
+  assert.equal(model.value().settings.length,0);
+  const saved = {lanes:['hdr','sdr'],settings:[groups[1].settings[0].id]};
+  assert.equal(selectionModel(groups,saved).linked(),false);
+});
+
+test('section checkboxes select modules and expose a partial selection', async () => {
+  const groups = ['tone','color'].map((module,index)=>({id:'hdr-'+module,label:module,section:'Rendition settings',lane:'hdr',settings:[{id:'global_adjustments.hdr.'+module,label:module,modified:!index}]}));
+  const {nodes,controller}=dialogHarness(async()=>({count:1}));
+  const answer=controller.dialog({name:'source',groups,selection:{lanes:['hdr'],settings:[groups[0].settings[0].id]}},['target'],true);
+  const section=nodes.find(node=>node.tag==='label' && node.children.some(child=>child.textContent==='Rendition settings'));
+  assert.equal(section.children[0].indeterminate,true);
+  section.children[0].checked=true; section.children[0].fire('change');
+  assert.equal(section.children[0].indeterminate,false);
+  assert.equal(section.children[0].checked,true);
+  nodes.find(node=>node.textContent==='Cancel').fire('click'); await answer;
+});
+
+test('linked checklist includes side-specific parameters and module toggles clear them', async () => {
+  const groups = [
+    {id:'hdr-color',label:'Colour',lane:'hdr',settings:[{id:'global_adjustments.hdr.saturation',label:'Saturation'}]},
+    {id:'sdr-color',label:'Colour',lane:'sdr',settings:[{id:'global_adjustments.sdr.saturation',label:'Saturation'},{id:'global_adjustments.sdr.use_authored_base',label:'Use authored SDR base'}]},
+  ];
+  const {nodes,timers,controller}=dialogHarness(async()=>({count:1}));
+  const answer=controller.dialog({name:'source',groups,same_sides:false},['target'],true);
+  const details=nodes.find(node=>node.dataset.group==='sdr-color');
+  assert.equal(details.hidden,true);
+  const extra=nodes.filter(node=>node.dataset.setting==='global_adjustments.sdr.use_authored_base');
+  assert.equal(extra.length,2);
+  const hdr=nodes.find(node=>node.dataset.group==='hdr-color');
+  const tick=hdr.children[0].children[0].children[0];
+  tick.checked=false;tick.fire('change');
+  assert.equal(extra[0].checked,false);
+  assert.equal(extra[1].checked,false);
+  assert.equal(timers.size,0);
+  nodes.find(node=>node.textContent==='Separately').fire('click');
+  assert.equal(details.hidden,false);
+  nodes.find(node=>node.textContent==='Cancel').fire('click'); await answer;
 });
 
 

@@ -41,11 +41,81 @@ def setting_label(path):
     elif parts[0]=='denoise': parts=parts[2:]
     elif parts[:2]==['source','raw_import_settings']: parts=parts[2:]
     if len(parts)>1 and parts[0] in ('controls','lens'): parts=parts[1:]
-    return ' Â· '.join(part.replace('_',' ').capitalize() for part in parts)
+    return ' · '.join(SETTING_LABELS[part] for part in parts)
+
+
+SETTING_LABELS = {
+    'enabled':'Enabled', 'tone_section_enabled':'Tone enabled',
+    'highlight_section_enabled':'Highlight compression enabled',
+    'tone_equalizer_section_enabled':'Exposure bands enabled',
+    'color_section_enabled':'Colour enabled', 'hsl_section_enabled':'HSL enabled',
+    'curves_section_enabled':'Curves enabled', 'detail_section_enabled':'Detail enabled',
+    'black_and_white_section_enabled':'Black & white enabled',
+    'film_look_section_enabled':'Film look enabled',
+    'color_grading_section_enabled':'Colour grading enabled', 'vignette_section_enabled':'Vignette enabled',
+    'hsl':'HSL', 'channels':'Colour channels', 'exposure':'Exposure', 'contrast':'Contrast',
+    'contrast_pivot':'Contrast pivot', 'blacks':'Blacks', 'shadows':'Shadows',
+    'midtones':'Midtones', 'highlights':'Highlights', 'shadows_center':'Shadows centre',
+    'shadows_width':'Shadows width', 'midtones_center':'Midtones centre',
+    'midtones_width':'Midtones width', 'highlights_center':'Highlights centre', 'highlights_width':'Highlights width',
+    'white_balance_kelvin':'Temperature', 'tint':'Tint', 'saturation':'Saturation', 'vibrance':'Vibrance',
+    'highlight_desaturation':'Highlight desaturation', 'highlight_desaturation_start':'Highlight desaturation start',
+    'shadow_desaturation':'Shadow desaturation', 'shadow_desaturation_start':'Shadow desaturation start',
+    'red_hue':'Red hue', 'red_purity':'Red purity', 'green_hue':'Green hue', 'green_purity':'Green purity',
+    'blue_hue':'Blue hue', 'blue_purity':'Blue purity', 'tint_hue':'Tint hue', 'tint_purity':'Tint purity',
+    'luma_curve':'Luminance curve', 'red_curve':'Red curve', 'green_curve':'Green curve', 'blue_curve':'Blue curve',
+    'highlight_compression_start_nits':'Compression start (nits)',
+    'highlight_compression_start_percent':'Compression start (%)',
+    'highlight_compression_target_nits':'Target peak (nits)',
+    'highlight_compression_manual_peak_nits':'Manual source peak (nits)',
+    'highlight_compression_manual_peak_percent':'Manual source peak (%)',
+    'highlight_compression_softness':'Softness', 'highlight_compression_mode':'Compression mode',
+    'highlight_compression_peak_measurement':'Peak measurement', 'highlight_compression_peak_detail':'Peak detail',
+    'highlight_compression_bias':'Compression bias', 'highlight_compression_color_handling':'Colour handling',
+    'highlight_compression_attenuation':'Colour attenuation',
+    'tone_equalizer_nodes':'Exposure bands', 'tone_equalizer_influence_radius':'Band influence',
+    'tone_equalizer_smoothing':'Band smoothing',
+    'look_strength':'Look strength', 'film_stock':'Film stock', 'stock_overrides':'Custom stock settings',
+    'stock_color':'Stock colour', 'stock_tone':'Stock tone', 'stock_exposure':'Stock exposure',
+    'stock_separation':'Colour separation', 'stock_print_warmth':'Print warmth', 'stock_print_tint':'Print tint',
+    'stock_preflash':'Preflash', 'push_pull':'Push / pull', 'print_paper':'Print paper',
+    'print_exposure':'Print exposure', 'shadow_contrast':'Shadow contrast', 'highlight_contrast':'Highlight contrast',
+    'scan_sharpening':'Scan sharpening', 'lab_levels':'Lab levels', 'print_contrast':'Print contrast',
+    'grain_enabled':'Grain enabled', 'grain_amount':'Grain amount', 'grain_size':'Grain size',
+    'grain_softness':'Grain softness', 'grain_chroma':'Grain colour', 'grain_film_format':'Film format',
+    'grain_capture_geometry':'Capture geometry', 'grain_film_type':'Film type',
+    'grain_custom_width_mm':'Film width (mm)', 'grain_custom_height_mm':'Film height (mm)',
+    'grain_shadow_response':'Grain in shadows', 'grain_midtone_response':'Grain in midtones',
+    'grain_highlight_response':'Grain in highlights', 'grain_view_map':'Grain map',
+    'film_resolution':'Film resolution', 'film_grain_seed':'Grain pattern',
+    'halation_enabled':'Halation enabled', 'halation_amount':'Halation amount', 'halation_radius':'Halation radius',
+    'halation_hue_offset':'Halation hue', 'halation_saturation':'Halation saturation', 'halation_view_map':'Halation map',
+    'lens_filter':'Lens filter', 'lens_strength':'Filter strength', 'lens_size':'Filter size',
+    'hue':'Hue', 'luminance_ev':'Luminance (EV)', 'blending':'Blending', 'balance':'Balance',
+    'amount':'Amount', 'midpoint':'Midpoint', 'roundness':'Roundness', 'feather':'Feather',
+    'highlight_protection':'Highlight protection', 'center_x':'Horizontal centre', 'center_y':'Vertical centre',
+    'scale_x':'Horizontal scale', 'scale_y':'Vertical scale', 'texture_amount':'Texture',
+    'clarity_amount':'Clarity', 'clarity_radius_percent':'Clarity radius (%)', 'sharpen_amount':'Sharpening',
+    'sharpen_radius_px':'Sharpening radius (px)', 'sharpen_threshold':'Sharpening threshold',
+    'softness':'Softness', 'microcontrast':'Microcontrast', 'use_authored_base':'Use authored SDR base',
+    'reds':'Reds', 'oranges':'Oranges', 'yellows':'Yellows', 'greens':'Greens', 'aquas':'Aquas',
+    'blues':'Blues', 'purples':'Purples', 'magentas':'Magentas',
+    'white_balance':'White balance', 'demosaic':'Demosaicing', 'highlight_reconstruction':'Highlight reconstruction',
+    'method':'Method', 'clipping_threshold':'Clipping threshold', 'edge_colour_expand_percent':'Edge colour expansion (%)',
+    'mode':'Lens correction mode', 'distortion':'Distortion', 'chromatic_aberration':'Chromatic aberration',
+    'vignetting':'Lens vignetting', 'rotation':'Rotation', 'flip_horizontal':'Flip horizontally',
+    'flip_vertical':'Flip vertically', 'straighten_angle':'Straighten', 'perspective_horizontal':'Horizontal perspective',
+    'perspective_vertical':'Vertical perspective', 'perspective_rotate':'Perspective rotation',
+    'crop':'Crop', 'x':'Left', 'y':'Top', 'width':'Width', 'height':'Height',
+    'ratio_mode':'Aspect ratio', 'custom_ratio':'Custom aspect ratio',
+    'local_adjustments':'Local adjustments and masks', 'local_adjustments_enabled':'Local adjustments enabled',
+    'luminance':'Luminance noise', 'color_noise':'Colour noise', 'detail_recovery':'Detail recovery',
+    'finest_noise':'Finest noise', 'fine_noise':'Fine noise', 'medium_noise':'Medium noise', 'coarse_noise':'Coarse noise',
+}
 
 
 def setting_group(field):
-    if field.startswith('highlight_'): return 'highlights'
+    if field.startswith('highlight_compression_') or field == 'highlight_section_enabled': return 'highlights'
     if field.startswith('tone_equalizer'): return 'equalizer'
     if field.endswith('_curve') or field == 'curves_section_enabled': return 'curves'
     for name in ('hsl','film_look','color_grading','vignette','detail','black_and_white'):
@@ -54,11 +124,13 @@ def setting_group(field):
     return 'color'
 
 
-SECTIONS = {'tone':'Tone','highlights':'Tone','equalizer':'Tone','curves':'Tone',
-    'color':'Colour','hsl':'Colour','color-grading':'Colour','black-and-white':'Colour',
-    'film-look':'Look','vignette':'Look','detail':'Detail','denoise':'Detail'}
-LABELS = {'hsl':'HSL','color':'Colour','color-grading':'Colour grading','black-and-white':'Black and white',
-    'film-look':'Film look','equalizer':'Exposure bands'}
+MODULE_ORDER = ('denoise','tone','highlights','equalizer','color','hsl','curves',
+                'color-grading','black-and-white','detail','film-look','vignette')
+LABELS = {'denoise':'Denoise','tone':'Tone','highlights':'Highlight compression',
+    'equalizer':'Exposure bands','color':'Colour','hsl':'HSL','curves':'Curves',
+    'color-grading':'Colour grading','black-and-white':'Black & white',
+    'detail':'Detail','film-look':'Film look','vignette':'Vignette'}
+SAFE_EXCLUSIONS = ('lens-corrections','geometry','perspective','local-adjustments')
 
 
 class LibraryPaste:
@@ -182,21 +254,26 @@ class LibraryPaste:
                 fields.setdefault(group,[]).extend(leaves(data,'global_adjustments.'+lane+'.'+field))
             for group,paths in fields.items():
                 if group=='film-look': paths=paths+['global_adjustments.shared.film_grain_seed']
-                add(lane+'-'+group,LABELS.get(group,group.capitalize()),SECTIONS[group],lane,paths)
-            add(lane+'-denoise','Denoise','Detail',lane,['denoise.'+lane+'.enabled']+leaves(grade['denoise'][lane]['controls'],'denoise.'+lane+'.controls'))
+                add(lane+'-'+group,LABELS[group],'Rendition settings',lane,paths)
+            add(lane+'-denoise','Denoise','Rendition settings',lane,['denoise.'+lane+'.enabled']+leaves(grade['denoise'][lane]['controls'],'denoise.'+lane+'.controls'))
         raw=grade['source']['raw_import_settings']
-        add('raw-development','RAW development','Outside the grade groups',None,
-            [p for key,data in raw.items() if key!='lens' for p in leaves(data,'source.raw_import_settings.'+key)])
-        add('lens-corrections','Lens corrections','Outside the grade groups',None,
+        add('raw-development','RAW development','RAW development, lens and reconstruction',None,
+            [p for key,data in raw.items() if key not in ('lens','highlight_reconstruction') for p in leaves(data,'source.raw_import_settings.'+key)])
+        add('lens-corrections','Lens corrections','RAW development, lens and reconstruction',None,
             ['source.raw_import_settings.lens.'+key for key in ('mode','distortion','chromatic_aberration','vignetting')])
-        add('geometry','Crop and geometry','Outside the grade groups',None,leaves(grade['global_adjustments']['shared']['geometry'],'global_adjustments.shared.geometry'))
-        add('local-adjustments','Local adjustments and masks','Outside the grade groups',None,['local_adjustments','global_adjustments.shared.local_adjustments_enabled'])
-        return list(groups.values())
+        add('highlight-reconstruction','Highlight reconstruction','RAW development, lens and reconstruction',None,
+            leaves(raw['highlight_reconstruction'],'source.raw_import_settings.highlight_reconstruction'))
+        geometry=leaves(grade['global_adjustments']['shared']['geometry'],'global_adjustments.shared.geometry')
+        add('geometry','Crop & rotate','Crop & rotate / Perspective',None,[path for path in geometry if '.perspective_' not in path])
+        add('perspective','Perspective','Crop & rotate / Perspective',None,[path for path in geometry if '.perspective_' in path])
+        add('local-adjustments','Local adjustments and masks','Local adjustments and masks',None,['local_adjustments','global_adjustments.shared.local_adjustments_enabled'])
+        return [group for group in groups.values() if not group['lane']] + [
+            groups[lane+'-'+module] for module in MODULE_ORDER for lane in ('hdr','sdr')]
 
     def selection(self, groups, selection=None):
         allowed={r['id'] for g in groups for r in g['settings']}
         if selection is None:
-            default={'lanes':['hdr','sdr'],'settings':[r['id'] for g in groups if g['id'] not in ('lens-corrections','geometry','local-adjustments') for r in g['settings']]}
+            default={'lanes':['hdr','sdr'],'settings':[r['id'] for g in groups if g['id'] not in SAFE_EXCLUSIONS for r in g['settings']]}
             try: saved=json.loads(self.preferences.read_text(encoding='utf-8'))
             except (OSError,ValueError): return default
             # Preferences are optional; only explicit requests require strict IDs.

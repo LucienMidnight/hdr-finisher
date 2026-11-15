@@ -87,7 +87,7 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     await dialog.screenshot({path:path.join(review,'normal.png')});
     async function capture(name) {
       const opened = await dialog.locator('details[open]').evaluateAll(nodes => { const ids=nodes.map(n=>n.dataset.group); for(const n of nodes)n.open=false; return ids; });
-      await dialog.locator('.grade-paste-choices').evaluate(el => { const header=el.querySelector('.grade-paste-lane-headers'); el.scrollTop=header.offsetTop-el.offsetTop; });
+      await dialog.locator('.grade-paste-choices').evaluate(el => { el.scrollTop=0; });
       await frame.locator('.grade-paste-dialog[open]:not([data-preview-state="checking"])').waitFor();
       await dialog.screenshot({path:path.join(review,name)});
       await dialog.locator('details').evaluateAll((nodes,ids)=>{for(const n of nodes)if(ids.includes(n.dataset.group))n.open=true;},opened);
@@ -98,6 +98,7 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     for (const button of await dialog.getByRole('button',{name:'None',exact:true}).all()) await button.click();
     const exposure=dialog.locator('input[data-setting="global_adjustments.hdr.exposure"]');
     await exposure.evaluate(el=>el.closest('details').open=true);await exposure.check();
+    assert.equal(await dialog.locator('details[data-group="sdr-tone"]').evaluate(el=>el.open),false);
     await dialog.locator('.button-primary:enabled').waitFor();
     await dialog.locator('.grade-paste-lane-headers').evaluate(el=>el.scrollIntoView({block:'start'}));
     await capture('normal.png');
@@ -112,14 +113,25 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     await dialog.getByRole('button',{name:'Separately',exact:true}).click();
     // Restore the selective HDR-only choice after the linked review.
     const sdrExposure=dialog.locator('input[data-setting="global_adjustments.sdr.exposure"]');
-    await sdrExposure.uncheck();
+    await sdrExposure.evaluate(el=>el.closest('details').open=true); await sdrExposure.uncheck();
     const originalSize=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
-    for(const size of [{width:1100,height:794},{width:1408,height:794}]) {
-      await page.setViewportSize(size);
-      const bounds=await dialog.boundingBox(); assert.ok(bounds.width<=size.width && bounds.height<=size.height);
-      await capture(size.width===1100?'narrow.png':'macbook.png');
+    for(const size of [{width:1100,height:720},{width:1408,height:794}]) {
+      await browser.newPage({viewport:size});
+      for (const linked of [true,false]) {
+        await dialog.getByRole('button',{name:linked?'Same on both sides':'Separately',exact:true}).click();
+        const bounds=await dialog.boundingBox(); assert.ok(bounds.width<=size.width-80 && bounds.height<=size.height-80);
+        assert.equal(await dialog.locator('details[data-group^="sdr-"]:visible').count(),linked?0:12);
+        const name=`${size.width}x${size.height}-${linked?'linked':'separate'}`;
+        await capture(name+'.png');
+        await page.screenshot({path:path.join(review,name+'-window.png')});
+        const before=await dialog.locator('.app-dialog-actions').boundingBox();
+        await dialog.locator('.grade-paste-choices').evaluate(el=>{el.scrollTop=el.scrollHeight;});
+        assert.deepEqual(await dialog.locator('.app-dialog-actions').boundingBox(),before);
+        await page.screenshot({path:path.join(review,name+'-modules-window.png')});
+      }
     }
-    await page.setViewportSize(originalSize);
+    await browser.newPage({viewport:originalSize});
+    await sdrExposure.evaluate(el=>el.closest('details').open=true); await sdrExposure.uncheck();
     await dialog.locator('.button-primary:enabled').waitFor();
     const firstPaste=page.waitForResponse(response=>response.url().endsWith('/api/library/grade-paste')&&!JSON.parse(response.request().postData()).preview);
     // Hold one genuine preparation request long enough to capture the progress box.
@@ -145,6 +157,12 @@ assert.equal((await firstPaste).status(),200);await written(photos[1]);
     await frame.locator('#library-grid').press(`${process.platform === "darwin" ? "Meta" : "Control"}+z`);assert.equal((await firstUndo).status(),200);await written(photos[1]);
     const describe=await api('grade-copy');
     assert.deepEqual(describe.selection.settings,['global_adjustments.hdr.exposure']);
+    if (process.env.HDR_L3_DIALOG_ONLY === '1') {
+      const feedback=await iframe.evaluate(el=>el.contentWindow.__pasteFeedback);
+      assert.ok(feedback.length && feedback.every(row=>row.feedbackMs<=100),JSON.stringify(feedback));
+      console.log(JSON.stringify({checks:'linked/separate layouts at 1100x720 and 1408x794, independent disclosures, fixed actions, selective paste, remembered choices, immediate pending feedback, no-change preview, Undo',screenshots:review,feedback}));
+      return;
+    }
     const scene=target=>iframe.evaluate((el,target)=>el.contentWindow.HDRLibraryScenes.load(target,640),target);
     const drawn=async keys=>page.waitForFunction(keys=>{
       const doc=document.querySelector('#library-frame').contentDocument;
