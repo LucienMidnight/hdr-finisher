@@ -5,6 +5,8 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..'), output = path.join(root, 'output', 'library-grade-paste');
 fs.mkdirSync(output, {recursive:true});
+const review = path.join(root,'output','review','grade-paste-dialog');
+fs.mkdirSync(review,{recursive:true});
 const folder = fs.mkdtempSync(path.join(output, 'photos-'));
 const photos = ['copied.png','target.png','other.png'].map(name => path.join(folder,name));
 for (const photo of photos) fs.copyFileSync(path.join(root,'tests','fixtures','library_photo.png'),photo);
@@ -62,14 +64,34 @@ const originals = photos.map(photo => fs.readFileSync(photo));
       const checked = await response.json();
       assert.equal(checked.count, 1); assert.equal(checked.unchecked, 0);
     });
+    await dialog.locator('.button-primary:enabled').waitFor();
+    await dialog.screenshot({path:path.join(review,'normal.png')});
     const choose=dialog.getByRole('button',{name:'Choose what to paste',exact:true});
     assert.equal(await choose.getAttribute('aria-expanded'),'false');await choose.click();
     await dialog.getByRole('button',{name:'None',exact:true}).click();
     const exposure=dialog.locator('input[data-setting="global_adjustments.hdr.exposure"]');
     await exposure.evaluate(el=>el.closest('details').open=true);await exposure.check();
-    await page.screenshot({path:path.join(output,'paste-settings.png')});
+    await dialog.locator('.button-primary:enabled').waitFor();
+    await dialog.screenshot({path:path.join(review,'choices-open.png')});
     const firstPaste=page.waitForResponse(response=>response.url().endsWith('/api/library/grade-paste')&&!JSON.parse(response.request().postData()).preview);
-    await dialog.getByRole('button',{name:'Paste grade',exact:true}).click();assert.equal((await firstPaste).status(),200);await written(photos[1]);
+    // Hold one genuine preparation request long enough to capture the progress box.
+    let releasePreparation;
+    const preparationGate=new Promise(resolve=>{releasePreparation=resolve;});
+    await page.route('**/api/library/grade-prepare',async route=>{await preparationGate;await route.continue();},{times:1});
+    await dialog.getByRole('button',{name:'Paste grade',exact:true}).click();
+    try {
+      const preparing=frame.getByRole('dialog',{name:'Preparing photos for paste',exact:true});
+      await preparing.waitFor();
+      await preparing.screenshot({path:path.join(review,'preparing.png')});
+    } finally { releasePreparation(); }
+assert.equal((await firstPaste).status(),200);await written(photos[1]);
+    await frame.locator('#library-grid').press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+v`);
+    await dialog.waitFor();
+    await dialog.locator('.button-primary:disabled').waitFor();
+    await frame.locator('dialog[data-preview-state="matching"]').waitFor();
+    assert.equal(await dialog.locator('.button-primary').isDisabled(),true);
+    await dialog.screenshot({path:path.join(review,'no-change.png')});
+    await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
     // Undo the single confirmation before the bulk transaction.
     const firstUndo=page.waitForResponse(response=>response.url().endsWith('/api/library/undo'));
     await frame.locator('#library-grid').press(`${process.platform === "darwin" ? "Meta" : "Control"}+z`);assert.equal((await firstUndo).status(),200);await written(photos[1]);
@@ -104,7 +126,7 @@ const originals = photos.map(photo => fs.readFileSync(photo));
       assert.notEqual(picture.key,oldKeys[target]);pastedKeys[target]=picture.key;
     }
     await drawn(pastedKeys);
-    await page.screenshot({path:path.join(output,'paste-live.png')});
+
     await savedWhen(photos[1],saved=>saved.grade.global_adjustments.hdr.exposure===.75&&saved.virtual_copies?.find(copy=>copy.name==='Paste target')?.grade.global_adjustments.hdr.exposure===.75);
     await savedWhen(photos[2],saved=>saved.grade.global_adjustments.hdr.exposure===.75);
     assert.deepEqual(await page.evaluate(()=>window.__pages.filter(page=>page!=='import')),[],'paste stays on the Library');

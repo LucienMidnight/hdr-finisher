@@ -14,6 +14,20 @@
       active: () => groups.filter(group => (!group.lane || lanes.has(group.lane)) && group.settings.some(setting => settings.has(setting.id))),
     };
   }
+  // Stored-grade checks never prepare cold photos; those remain eligible to paste.
+  function previewState(total, active, preview, error) {
+    const pasteLabel = total > 1 ? `Paste onto ${total} photos` : 'Paste grade';
+    if (!active) return {state:'empty', disabled:true, label:'Choose settings', message:'Choose at least one setting and a side to paste.'};
+    if (error) return {state:'error', disabled:true, label:'Check failed', message:'Could not check these photos. Change the choices to try again.'};
+    if (!preview) return {state:'checking', disabled:true, label:'Checking\u2026', message:'Checking stored grades\u2026'};
+    const {count, unchecked = 0} = preview;
+    const matching = total - count - unchecked;
+    if (!count && !unchecked) return {state:'matching', disabled:true, label:'Already matches', message:`${total === 1 ? 'This photo already has' : `These ${total} photos already have`} these settings. Choose other settings or other photos.`};
+    const message = unchecked
+      ? `${count} checked ${count === 1 ? 'photo will' : 'photos will'} change; ${unchecked} ${unchecked === 1 ? 'photo will be checked' : 'photos will be checked'} after you confirm.${matching ? ` ${matching} already ${matching === 1 ? 'matches' : 'match'}.` : ''}`
+      : `${count} of ${total} ${total === 1 ? 'photo will' : 'photos will'} change${matching ? `; ${matching} already ${matching === 1 ? 'matches' : 'match'}` : ''}.`;
+    return {state:'ready', disabled:false, label:pasteLabel, message};
+  }
   function create({api, prepare, changed, status}) {
     let copied = null, running = false;
     const notify = () => changed?.(copied);
@@ -39,12 +53,13 @@
     }
     async function prepareAndPaste(paths, selection) {
       const {make} = root.HDRLibraryDialogs;
-      const box = make('dialog', 'application-dialog library-ask');
+      const box = make('dialog', 'application-dialog library-ask grade-paste-preparing');
       box.setAttribute('aria-label', 'Preparing photos for paste');
       const header = make('div', 'application-dialog-header');
       header.append(make('h2', '', 'Preparing photos for paste'));
-      const body = make('div', 'library-ask-body'), message = make('p');
-      body.append(message);
+      const body = make('div', 'library-ask-body'), message = make('p', '', 'Starting preparation\u2026');
+      message.setAttribute('role', 'status');
+      body.append(message, make('p', 'grade-paste-help', 'Photos are prepared one at a time. You can cancel before the grade is applied.'));
       const actions = make('div', 'app-dialog-actions'), cancel = make('button', 'button-secondary', 'Cancel');
       cancel.type = 'button'; actions.append(cancel); box.append(header, body, actions);
       let token, cancelled = false, applying = false;
@@ -57,13 +72,13 @@
       cancel.addEventListener('click', stop);
       box.addEventListener('cancel', event => { event.preventDefault(); stop(); });
       root.addEventListener('pagehide', stop);
-      document.body.append(box); box.showModal();
+      document.body.append(box); box.showModal(); cancel.focus();
       try {
         // A body makes the Library api() helper send POST, as the route requires.
         ({token} = await api('/api/library/grade-preparation', {}));
         for (const [index, path] of paths.entries()) {
           if (cancelled) return null;
-          message.textContent = `Preparing ${index + 1} of ${paths.length} photos for paste… Waiting for memory or Grade if needed.`;
+          message.textContent = `Preparing ${index + 1} of ${paths.length} photos\u2026`;
           status(message.textContent);
           await api('/api/library/grade-prepare', {path, token});
         }
@@ -89,10 +104,11 @@
         dialog.setAttribute('aria-label', `Paste Grade From ${clipboard.name}`);
         const header = make('div', 'application-dialog-header'), words = make('div');
         const title = make('h2', '', `Paste Grade From ${clipboard.name}`), summary = make('p');
-        words.append(title, summary); header.append(words);
+        words.append(title); header.append(words);
         const body = make('div', 'library-ask-body'), tools = make('div', 'library-options'), list = make('div', 'group-preset-list');
-        const choose = make('button', 'text-button', 'Choose what to paste'); choose.type = 'button'; choose.setAttribute('aria-expanded', String(expanded));
-        const choices = make('div'); choices.hidden = !expanded;
+        const choose = make('button', 'button-secondary grade-paste-choose', 'Choose what to paste'); choose.type = 'button'; choose.setAttribute('aria-expanded', String(expanded));
+        const choices = make('div', 'grade-paste-choices'); choices.id = 'grade-paste-choices'; choices.hidden = !expanded;
+        choose.setAttribute('aria-controls', choices.id);
         choose.addEventListener('click', () => { choices.hidden = !choices.hidden; choose.setAttribute('aria-expanded', String(!choices.hidden)); });
         const checks = [], masters = [];
         function checkbox(label, checked, callback) {
@@ -104,7 +120,7 @@
           const tick = checkbox(`${lane.toUpperCase()} side`, model.lane(lane), value => model.toggleLane(lane, value)); tools.append(tick.row); masters.push({lane, ...tick});
         }
         for (const [value, label] of [['all','All'], ['modified','Modified only'], ['none','None']]) {
-          const button = make('button', 'text-button', label); button.type = 'button';
+          const button = make('button', 'button-secondary', label); button.type = 'button';
           button.addEventListener('click', () => { model.choose(value); update(); }); tools.append(button);
         }
         const sections = new Map();
@@ -125,9 +141,12 @@
           details.append(rows); sections.get(group.section).append(details); checks.push({group, ...tick});
         }
         choices.append(tools, list);
-        const notes = make('p'), warnings = make('p'); notes.textContent = 'Checking stored grades. Photos without a starting grade are checked after you confirm. Ctrl+Z undoes the whole paste.';
-        body.append(choose, choices);
-        const footer = make('div', 'library-ask-body'); footer.append(notes, warnings);
+        const notes = make('p', 'grade-paste-status'), warnings = make('p');
+        notes.setAttribute('role', 'status');
+        warnings.hidden = true;
+        body.append(make('h3', 'group-preset-subheading', 'Settings to paste'), summary, choose, choices);
+        const footer = make('div', 'library-ask-body grade-paste-footer');
+        footer.append(notes, warnings, make('p', 'grade-paste-help', 'Each photo keeps its previous grade. Ctrl+Z undoes the whole paste.'));
         const actions = make('div', 'app-dialog-actions'), cancel = make('button','button-secondary','Cancel'), yes = make('button','button-primary', paths.length > 1 ? `Paste onto ${paths.length} photos` : 'Paste grade');
         cancel.type = yes.type = 'button'; actions.append(cancel, yes); dialog.append(header, body, footer, actions); document.body.append(dialog);
         let answer = null, previewId = 0, timer;
@@ -136,24 +155,39 @@
             if (row.setting) { row.input.checked = model.has(row.setting.id); row.input.disabled = !!row.group.lane && !model.lane(row.group.lane); }
             else { const count = row.group.settings.filter(setting => model.has(setting.id)).length; row.input.checked = count === row.group.settings.length; row.input.indeterminate = count > 0 && count < row.group.settings.length; row.input.disabled = !!row.group.lane && !model.lane(row.group.lane); }
           }
-          const active = model.active(), names = [...new Set(active.map(group => group.section))];
+          const active = model.active(), names = [...new Set(active.map(group => group.section === 'Outside the grade groups' ? group.label : group.section))];
           summary.textContent = `Paste ${names.length ? names.join(', ') + ' settings' : 'no settings'}${paths.length > 1 ? ` onto ${paths.length} photos` : ''}.`;
-          // Paste is usable at once; the check below only refines the count and warnings.
-          yes.disabled = !active.length; clearTimeout(timer); const id = ++previewId;
+          clearTimeout(timer); const id = ++previewId;
+          function show(preview, error) {
+            const result = previewState(paths.length, active.length, preview, error);
+            dialog.dataset.previewState = result.state;
+            notes.textContent = result.message; yes.textContent = result.label; yes.disabled = result.disabled;
+            notes.setAttribute('aria-busy', String(result.state === 'checking'));
+          }
+          warnings.textContent = ''; warnings.hidden = true;
+          show();
           if (active.length) timer = setTimeout(async () => {
-            notes.textContent = 'Checking stored grades…';
-            try { const preview = await api('/api/library/grade-paste', {paths, selection: model.value(), preview:true}); if (id !== previewId || !dialog.isConnected) return; warnings.textContent = (preview.warnings || []).map(warning => typeof warning === 'string' ? warning : `${warning.path.split(/[\\/]/).at(-1)}: ${warning.message}`).join(' '); notes.textContent = `${preview.unchecked ? `${preview.unchecked} ${preview.unchecked === 1 ? 'photo is' : 'photos are'} checked after you confirm. ${preview.count} checked photos will change.` : `${preview.count} of ${paths.length} ${paths.length === 1 ? 'photo will' : 'photos will'} change.`} Each keeps its previous grade. Ctrl+Z undoes the whole paste.`; yes.disabled = !preview.count && !preview.unchecked; }
-            catch(error) { if (id === previewId && dialog.isConnected) { warnings.textContent = error.message; yes.disabled = true; } }
+            try {
+              const preview = await api('/api/library/grade-paste', {paths, selection: model.value(), preview:true});
+              if (id !== previewId || !dialog.isConnected) return;
+              warnings.textContent = (preview.warnings || []).map(warning => typeof warning === 'string' ? warning : `${warning.path.split(/[\\/]/).at(-1)}: ${warning.message}`).join(' ');
+              warnings.hidden = !warnings.textContent;
+              show(preview);
+            } catch(error) {
+              if (id !== previewId || !dialog.isConnected) return;
+              warnings.textContent = error.message; warnings.hidden = false; show(null, error);
+            }
           }, 120);
         }
+
         cancel.addEventListener('click', () => dialog.close());
-        yes.addEventListener('click', () => { answer = model.value(); dialog.close(); });
+        yes.addEventListener('click', () => { if (yes.disabled) return; answer = model.value(); dialog.close(); });
         dialog.addEventListener('close', () => { clearTimeout(timer); previewId++; dialog.remove(); resolve(answer); }, {once:true});
         update(); dialog.showModal(); cancel.focus();
       });
     }
     return Object.freeze({refresh, copy, paste, available: () => !!copied?.name, dialog});
   }
-  const exported = Object.freeze({selectionModel, create});
+  const exported = Object.freeze({selectionModel, previewState, create});
   if (typeof module !== 'undefined') module.exports = exported; else root.HDRGradePaste = exported;
 })(typeof window === 'undefined' ? globalThis : window);

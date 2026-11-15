@@ -1,3 +1,33 @@
+### November 15, 2026: Paste Grade dialog
+
+The commit containing this note gives Paste Grade a settings summary, a raised
+secondary Choose what to paste button, and a separate status area above the
+actions. The expanded picker uses compact, divided setting rows and the shared
+switches and buttons. The summary names extra groups directly instead of
+"Outside the grade groups". Preparation shows progress, a cancellation
+explanation and Cancel with initial keyboard focus.
+
+Stored-grade checking disables Paste immediately, including during the debounce
+and after a selection change. All-matching photos get an explicit explanation
+and an Already matches button; partial matches report both counts. Unchecked
+cold photos can still proceed to preparation after confirmation. Selection,
+HDR/SDR sides, modified badges, remembered choices, Escape, cancellation tokens
+and whole-paste Undo are unchanged. No processing or saved-grade format changes.
+
+Validation: JavaScript suite 999 passed / one skipped; paste Python selection
+24 passed. The locked Electron grade-paste driver passes: native text clipboard,
+selective and bulk paste including a virtual copy, live redraw and Undo, plus
+normal, expanded, matching and preparation dialog captures. Initial captures
+exposed oversized inherited label styles; the final layout uses compact plain
+rows. One later run timed out before opening the dialog, waiting for the Grade
+copied status message; no assertion or timeout was relaxed. The final capture retry
+passes with all four screenshots refreshed; the timeout log is retained as
+`codebase/output/grade-paste-app-copy-timeout.log`.
+Small review captures: `codebase/output/review/grade-paste-dialog/` (normal.png,
+choices-open.png, no-change.png, preparing.png). Logs: `codebase/output/grade-paste-`
+`{node,python,app}.log`. Output remains 46.2 GB, below the 100 GB limit. Steve's visual
+sign-off remains open; the existing app was left running. No push.
+
 ### November 15, 2026: immediate Pin / Unpin feedback
 
 The commit containing this note removes membership reconciliation from Pin,

@@ -71,22 +71,61 @@ test('closing the picker cancels pending checks; cold photos remain available to
 test('cancelling preparation stops the next photo and never applies grades', async () => {
   const requests=[];let release, entered;
   const preparing=new Promise(resolve=>{entered=resolve;});
-  const {nodes,controller}=dialogHarness(async (url,body)=>{
+  const {nodes,timers,controller}=dialogHarness(async (url,body)=>{
     requests.push({url,body});
     if(url.endsWith('grade-copy'))return clipboard;
+    if(url.endsWith('grade-paste') && body.preview)return {count:0,unchecked:2};
     if(url.endsWith('grade-preparation'))return {token:'operation'};
     if(url.endsWith('grade-prepare')){entered();return new Promise(resolve=>{release=resolve;});}
     return {};
   });
   const work=controller.paste(['one','two']);
   await new Promise(resolve=>setImmediate(resolve));
+  await [...timers.values()][0]();
   nodes.find(node=>node.className==='button-primary').fire('click');
   await preparing;
   nodes.filter(node=>node.textContent==='Cancel').at(-1).fire('click');
   release({ready:true});await work;
   assert.equal(requests.filter(row=>row.url.endsWith('grade-prepare')).length,1);
-  assert.equal(requests.filter(row=>row.url.endsWith('grade-paste')).length,0);
+  assert.equal(requests.filter(row=>row.url.endsWith('grade-paste')&&!row.body.preview).length,0);
   assert.ok(requests.some(row=>row.url.endsWith('grade-preparation-cancel')));
   // Library api() sends GET without a body; every preparation route is POST.
   for (const row of requests.filter(row=>row.url.includes('grade-prepar'))) assert.notEqual(row.body,undefined,row.url);
+});
+
+
+test('preview states distinguish matching, partial, unchecked, empty and failed results', () => {
+  const {previewState} = require('../frontend/grade-paste.js');
+  assert.equal(previewState(2,1).state,'checking');
+  assert.equal(previewState(2,1).disabled,true);
+  const matching = previewState(2,1,{count:0,unchecked:0});
+  assert.equal(matching.state,'matching'); assert.equal(matching.disabled,true);
+  const partial = previewState(2,1,{count:1,unchecked:0});
+  assert.equal(partial.state,'ready'); assert.equal(partial.disabled,false);
+  assert.notEqual(partial.message,previewState(2,1,{count:2}).message);
+  assert.notEqual(matching.label,partial.label);
+  assert.equal(previewState(2,1,{count:0,unchecked:2}).disabled,false);
+  assert.equal(previewState(2,0,{count:2}).state,'empty');
+  assert.equal(previewState(2,1,null,new Error('offline')).state,'error');
+});
+
+test('picker disables immediately while checking and ignores stale preview responses', async () => {
+  const pending=[];
+  const {nodes,timers,controller}=dialogHarness(()=>new Promise(resolve=>pending.push(resolve)));
+  const answer=controller.dialog(clipboard,['one','two'],false);
+  const yes=nodes.find(node=>node.className==='button-primary');
+  const dialog=nodes.find(node=>node.tag==='dialog');
+  assert.equal(yes.disabled,true); assert.equal(dialog.dataset.previewState,'checking');
+  const first=[...timers.values()][0]();
+  const all=nodes.find(node=>node.textContent==='All'); all.fire('click');
+  assert.equal(yes.disabled,true);
+  const second=[...timers.values()].at(-1)();
+  pending[1]({count:0,unchecked:0}); await second;
+  assert.equal(dialog.dataset.previewState,'matching'); assert.equal(yes.disabled,true);
+  pending[0]({count:2}); await first;
+  assert.equal(dialog.dataset.previewState,'matching');
+  all.fire('click'); assert.equal(dialog.dataset.previewState,'checking');
+  const third=[...timers.values()].at(-1)(); pending[2]({count:1}); await third;
+  assert.equal(yes.disabled,false); assert.equal(dialog.dataset.previewState,'ready');
+  nodes.find(node=>node.textContent==='Cancel').fire('click'); await answer;
 });
