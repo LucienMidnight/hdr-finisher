@@ -375,8 +375,10 @@ def full_import_estimate(path):
         full_float_intermediates=2).conservative_import_peak_bytes
     from .raw_import import RAW_EXTENSIONS
     if Path(path).suffix.lower() in RAW_EXTENSIONS:
-        # Lens correction holds a full-image coordinate map (six float32
-        # coordinates per pixel for chromatic correction) beside the input
-        # and output images; WORKING covers the separate remap scratch.
-        peak += width * height * 6 * 4 + app_memory.WORKING
+        # WORKING covers lens remap scratch. Measured November 15, 2026 on a
+        # 42 MP ARW: the whole cold import peaks 2.21 GB over the process
+        # baseline; this estimate gives 2.42 GB. A separate full-image
+        # coordinate map (+1.0 GB) was wrong and made such photos unpastable
+        # at the 4 GB memory setting.
+        peak += app_memory.WORKING
     return max(MINIMUM, peak)
