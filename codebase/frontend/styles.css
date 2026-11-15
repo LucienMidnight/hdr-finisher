@@ -9141,6 +9141,18 @@ body[data-workflow="export"] .app-shell .source-splitter { display: block; }
 
 /* Export presets collapse to the same narrow rail as source metadata. */
 .batch-preset-rail .workflow-rail-header .panel-title { flex:1; min-width:0; }
+/* Match component-sheet panel actions; override the legacy Metadata flex rule. */
+.batch-preset-rail .workflow-rail-header > button {
+  display: inline-grid !important;
+  place-items: center;
+  box-sizing: border-box;
+  flex: 0 0 var(--panel-control-h);
+  width: var(--panel-control-h);
+  min-width: var(--panel-control-h);
+  height: var(--panel-control-h);
+  min-height: var(--panel-control-h);
+  padding: 0;
+}
 body[data-workflow="export"].batch-presets-collapsed .batch-preset-rail { width:44px; }
 body[data-workflow="export"].batch-presets-collapsed .batch-preset-rail > :not(.workflow-rail-header),
 body[data-workflow="export"].batch-presets-collapsed .batch-preset-rail .workflow-rail-header > :not(#batch-presets-collapse) { display:none !important; }
