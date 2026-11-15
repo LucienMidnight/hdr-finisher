@@ -47,7 +47,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | C3 | Colour wheels: clicking a puck changes it | W3 | built — shared drawing/input radius and grab offset; stationary 40% stays 40% |
 | T1 | Blacks/Whites and Shadows/Midtones/Highlights redesign | W4 | research |
 | M1 | HDR to SDR Match colour shifts (blue jeans) | W5 | research done |
-| M1a | SDR contrast/Film Look clipping turns saturated colours | W3 | blocked — draft cuts denim 5.522 to 0.430 dE00; unchanged Match exposure guard fails (1.279pp > 1.000pp); no gate relaxed |
+| M1a | SDR contrast/Film Look clipping turns saturated colours | W3 | built — hue gains retained on denim and all three shared RAWs; finished-highlight fitting passes unchanged exposure guard (0.410pp <= 1.000pp) and normal colour gate (0.039884 <= 0.040); 38 Match tests pass; known browser fixture failure precedes Match |
 | U1 | Export panel padding and single divider | W6 | built — Export strip/results share Destination inset; one boundary; three-theme screenshots pass |
 | U2 | No selection borders after mouse use | W6 | built — pointer typing stays ring-free; Tab/F6 retain keyboard rings; Export checked |
 | U3 | Module header: dot + Reset left, Presets right | W6 | built — name, dot + Reset, Presets, eye in DOM/visual order; Presets always visible |

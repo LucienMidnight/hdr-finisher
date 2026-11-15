@@ -20,7 +20,7 @@ W6 in concurrent W1 work. Visual sign-off pending; no new tokens.
 # Module PRD: Grade
 
 
-## November 15: W3 wheels and SDR colour headroom (output change; M1a blocked)
+## November 15: W3 wheels and SDR colour headroom (output change; M1a built)
 
 C1–C3 are implemented together on CPU and WebGPU. Wheels no longer clamp the
 whole image when enabled: pixels outside an active wheel's range are exact
@@ -36,7 +36,7 @@ on a puck retains the grab offset; a stationary press/move produces no grade
 write. A puck at 40% stays at 40%, rather than jumping to 36%. No visual
 tokens, colours or saved fields are added.
 
-M1a is implemented as a **reviewable draft**, not signed off. SDR contrast
+M1a is implemented with its existing gates unchanged. SDR contrast
 retains RGB and luminance headroom and scales all channels together. Film
 Look's strength mix, structure, vignette and delivery finishing retain
 headroom until the existing adaptive OKLCh sRGB gamut mapper finishes the
@@ -63,24 +63,73 @@ selection above white. DSC00264.ARW's 6,203 blue pixels remain 0.475 at P95
 RGB. Blue selection: B > 1.2R, B > 1.05G, luma 0.02–0.9
 on Match's target. All measured final SDR ranges remain [0, 1].
 
-**Stop condition:** `test_calibrated_scene_materializes_into_normal_visible_modules`
-still fails its unchanged editable-exposure guard. A +0.5 EV SDR trim grows
-the >=0.999-luma fraction from 16.865% to 18.145% (1.279 percentage points;
-the existing allowance is 1.000). No tolerance or Match gate is relaxed.
-An in-memory alternative ceiling also fails the unchanged Match colour gate
-(OKLab P95 0.056 > 0.050); that alternative was not adopted. M1a remains
-open for the coordinator/Steve to resolve this conflict before release.
+**Stop condition resolved:** `test_calibrated_scene_materializes_into_normal_visible_modules`
+passes its unchanged editable-exposure guard. Match's neutral/body fit did not
+measure its finished highlights; Peak Detail stayed at zero while Exposure
+Bands and finishing could raise values above white after the early shoulder.
+A bounded final Peak Detail search now minimizes the finished highlights'
+mean luminance error against the same target. Trials retain each body quality
+gate the initial recipe satisfies and cannot increase the clipped-white area.
+The renderer, target and normal editable modules are unchanged by this fit.
+Existing materialized recipes keep their saved controls; use Rematch to obtain
+the revised highlight placement. There is no migration or hidden correction.
+
+On the calibrated scene, Peak Detail is 5 instead of 0. A +0.5 EV SDR trim
+now grows the >=0.999-luma fraction from 16.416% to 16.826%, or 0.410
+percentage points (draft: 16.865% to 18.145%, or 1.279; allowance: 1.000).
+This reduces the white area rather than passing by clipping more before the
+trim. Body P95 luma error improves 0.026266 -> 0.018561; OKLab P95 is
+0.038819 -> 0.039884, still inside the normal matched 0.040 gate and the
+unchanged review 0.050 gate. The result remains `matched`. Robust-body
+exposure response remains useful: P5 luminance increase 0.043655, median
+brightness ratio 1.466. No tolerance or Match acceptance gate is relaxed.
+The earlier alternative ceiling (OKLab P95 0.056) remains unadopted.
+
+Fresh measurements retain all fixed-recipe hue gains listed above, and
+rematching the three shared RAWs retains their blue P95 results exactly to
+six decimals: A7R00619 1.336329, DSC00264 0.475035, IMG_3129 0.091916
+Delta E 2000. Fresh synthetic Film-off denim is 0.013713 Delta E 2000;
+that is a newly fitted recipe, not the saved W5 recipe's 0.430484 comparison.
+All measured final SDR ranges remain [0, 1].
+
+Additional full-frame RAW +0.5 EV diagnostics are not a universal one-point
+gate: A7R00619 grows 11.594 points with both the draft and completed fitter
+(pre-W3 clipping: 5.482); DSC00264 improves 1.262 -> 1.082 and IMG_3129
+0.969 -> 0.606. M1a passes the existing calibrated-scene guard; it does not
+claim that every RAW can receive +0.5 EV without losing highlight area.
+Measurements and scripts: `/private/tmp/hdr-m1a/` (MacBook Neo, 8 GB).
+
+Completion validation on the same Mac, with no changed tolerances: all 38
+Match materialization/state/input-reuse/remote-candidate tests pass (including
+the unchanged exposure guard and three new highlight-fit safety cases).
+Node: 1,027 passed / one skipped. Full Python: 3,469 passed / 144 skipped /
+one unexpected pass / 11 unrelated failures, in frontend inventory, the two
+HSL stage-cache cases, Library native/GPU ownership and RAW reader admission;
+their exact names and failures are in `python-fast.log` in the scratch folder.
+
+One sequential GPU group through `tools/gpu-run-lock.py` passes gamut parity
+(1,245 vectors), tone/Film delivery, delivery smoke and the 90-second Library
+check. Finished SDR mean/p99.9 error is 0.009702/0.160948 Delta E 2000;
+finished HDR is 0.035002/0.126557 Delta ITP. Proof and export bytes agree;
+the decoded delivery peak is 986.059 nits below the unchanged 1000-nit cap.
+The existing encoded-HDR report-only percentile diagnostics still exceed
+their stricter diagnostic caps; no verdict is redefined. The known
+`sdr-match-gpu-interaction.js` failure still occurs while preparing its HDR
+fixture, before Match; real-browser Match interaction is not claimed as
+validated. Remote half-float candidate exploration/CPU certification passes
+in the focused Python tests. Current logs: `/private/tmp/hdr-m1a/`.
 
 Tests intentionally updated: Film strength is checked before the nonlinear
 final gamut mapper with its original 2e-6 tolerances; Match is judged by its
 finished pixels and original quality gates rather than requiring corrective
 RGB curves or rejection of a lens recipe that now reaches `needs_review`.
-The one-percentage-point exposure guard remains intact and failing. New CPU
+The one-percentage-point exposure guard remains intact and now passes. New CPU
 and Node checks cover wheel continuity, unchanged out-of-range pixels,
 Balance direction, local Match translation, stationary puck, above-white
 contrast hue, Film strength headroom, legal final gamut and delivery finishing.
 
-Validation on MacBook Neo / 8 GB / 1408x794: final Node suite 1,024 passed,
+Earlier draft validation before the final Match fit, MacBook Neo / 8 GB / 1408x794:
+Node suite 1,024 passed,
 one skipped. Full Python run: 3,466 passed / 144 skipped / one unexpected
 pass / 11 failed; three W3 expectations were subsequently updated as described
 above. Focused final CPU validation: 275 passed and the unchanged Match

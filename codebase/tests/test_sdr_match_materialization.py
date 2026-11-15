@@ -20,6 +20,8 @@ from hdr_finisher.sdr_match import (
     MATCH_REVIEW_P95_LUMA_LIMIT,
     SDRMatchMaterializationError,
     _materialize_local_grades,
+    _quality_metrics,
+    _refine_image_highlights,
     build_sdr_match_target,
     materialize_sdr_match,
 )
@@ -74,6 +76,29 @@ def test_input_reuse_preserves_the_complete_generated_recipe() -> None:
 def _curve_has_useful_slope(points: list[list[float]]) -> bool:
     values = np.asarray(points, dtype=np.float32)
     return bool(np.all(np.diff(values[:, 1]) / np.diff(values[:, 0]) >= 0.19))
+
+
+@pytest.mark.parametrize("failure", ["color", "white", "no_highlights"])
+def test_highlight_fit_does_not_trade_body_color_or_white_area_for_highlight_accuracy(monkeypatch, failure):
+    source = np.array([[[0.2, 0.2, 0.2], [0.95, 0.95, 0.95]]], dtype=np.float32)
+    target = source.copy()
+    target[0, 1] = 0.98
+    body = np.array([[True, failure == "no_highlights"]])
+    adjustments = AdjustmentState()
+    before = adjustments.model_dump()
+    quality = _quality_metrics(target, source, body)
+    trial = target.copy()
+    if failure == "color":
+        trial[0, 0] = [0.7, (0.2 - 0.2126 * 0.7 - 0.0722 * 0.16) / 0.7152, 0.16]
+    else:
+        trial[0, 1] = 1.0
+    monkeypatch.setattr("hdr_finisher.sdr_match._render_candidate", lambda *args: trial)
+    candidate, fitted_quality = _refine_image_highlights(
+        source, adjustments, [], 1.0, target, body, source, quality
+    )
+    np.testing.assert_array_equal(candidate, source)
+    assert fitted_quality == quality
+    assert adjustments.model_dump() == before
 
 
 def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:

@@ -211,6 +211,62 @@ def _refine_image_exposure(
     sdr.exposure = best_exposure
 
 
+def _refine_image_highlights(
+    source: np.ndarray,
+    adjustments: AdjustmentState,
+    local_adjustments: list[LocalAdjustment],
+    source_pixel_scale: float,
+    target: np.ndarray,
+    body: np.ndarray,
+    candidate: np.ndarray,
+    quality: SDRMatchQualityMetrics,
+) -> tuple[np.ndarray, SDRMatchQualityMetrics]:
+    """Fit the finished shoulder that the body-only neutral fit cannot see.
+
+    Exposure Bands and finishing can raise values past white after the SDR
+    shoulder. Fit Peak Detail against those finished highlights, without
+    sacrificing any body quality gate the original recipe already satisfies
+    or creating more clipped white to make the highlight error look smaller.
+    The result remains an ordinary, editable Highlight Compression control.
+    """
+    highlights = ~body
+    if not np.any(highlights):
+        return candidate, quality
+    target_luma = _linear_luma(target)[highlights]
+    candidate_luma = _linear_luma(candidate)
+    best_loss = float(np.mean(np.abs(candidate_luma[highlights] - target_luma)))
+    white_fraction = float(np.mean(candidate_luma >= 0.999))
+    luma_limit = min(MATCH_REVIEW_P95_LUMA_LIMIT, max(0.03, quality.p95_luma_error))
+    color_limit = min(0.05, max(0.04, quality.p95_oklab_error))
+    median_luma_limit = max(0.01, quality.median_luma_error)
+    median_color_limit = max(0.015, quality.median_oklab_error)
+    sdr = adjustments.sdr
+    authored = float(sdr.highlight_compression_peak_detail)
+    best_detail = authored
+    for offset in (-10.0, -5.0, 5.0, 10.0):
+        detail = float(np.clip(authored + offset, 0.0, 100.0))
+        if detail == authored:
+            continue
+        sdr.highlight_compression_peak_detail = detail
+        trial = _render_candidate(source, adjustments, local_adjustments, source_pixel_scale)
+        trial_luma = _linear_luma(trial)
+        loss = float(np.mean(np.abs(trial_luma[highlights] - target_luma)))
+        if loss + 1e-6 >= best_loss or float(np.mean(trial_luma >= 0.999)) > white_fraction:
+            continue
+        trial_quality = _quality_metrics(target, trial, body)
+        if (
+            trial_quality.p95_luma_error <= luma_limit
+            and trial_quality.p95_oklab_error <= color_limit
+            and trial_quality.median_luma_error <= median_luma_limit
+            and trial_quality.median_oklab_error <= median_color_limit
+        ):
+            best_loss = loss
+            best_detail = detail
+            candidate, quality = trial, trial_quality
+    sdr.highlight_compression_peak_detail = best_detail
+    return candidate, quality
+
+
 @reuse_match_render_inputs
 def materialize_sdr_match(
     source: np.ndarray,
@@ -450,6 +506,12 @@ def _materialize_sdr_match_impl(
             (perf_counter() - luma_recovery_started) * 1000.0, 3
         )
         timing["candidate_label"] = None
+
+    with _match_stage("highlight_refinement"):
+        candidate, quality = _refine_image_highlights(
+            source, result_adjustments, result_locals, source_pixel_scale, target, body,
+            candidate, quality,
+        )
 
     if _MATCH_REMOTE.get() is not None:
         # The fit explored GPU renders. What it reports, and whether it is
