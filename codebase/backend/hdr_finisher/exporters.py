@@ -202,7 +202,7 @@ def _render_unwatermarked_branch(
             color_context.hdr_reference_white_nits, delivery_ceiling_nits(adjustments)))
     lane = kind.value
     if lane in settings.editing_measurements:
-        from .adjustments import hdr_highlight_peak_signal, sdr_highlight_peak_signal, sdr_highlight_stage_input
+        from .adjustments import hdr_highlight_peak_signal, sdr_highlight_peak_signal
         from .finishing import apply_geometry
         if kind == PreviewKind.HDR:
             from .scopes import scope_peak_value
@@ -213,10 +213,7 @@ def _render_unwatermarked_branch(
         if kind == PreviewKind.HDR:
             signal = hdr_highlight_peak_signal(image, adjustments.hdr)
         else:
-            reference = getattr(session, "sdr_reference_image", None)
-            authored = reference is not None and adjustments.sdr.use_authored_base
-            stage = sdr_highlight_stage_input(apply_geometry(reference if authored else source, adjustments.shared.geometry), adjustments, authored_reference=authored)
-            signal = sdr_highlight_peak_signal(stage, adjustments.sdr)
+            signal = sdr_highlight_peak_signal(image, adjustments.sdr)
         if signal is not None:
             robust = getattr(adjustments, lane).highlight_compression_peak_measurement == "robust"
             measurement["anchor"] = float(np.quantile(signal, .9999) if robust else np.max(signal))

@@ -277,7 +277,7 @@
       params[BLACK_AND_WHITE_PARAM + 1 + index] = blackAndWhiteOn ? (Number(blackAndWhite[name]) || 0) / 100 : 0;
     });
     params[GPU_PARAMS.HIGHLIGHT_TARGET] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / projectReferenceWhite) : 1;
-    params[GPU_PARAMS.HIGHLIGHT_MODE] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : branch.highlight_compression_mode === "clip" ? 3 : 0) : 0;
+    params[GPU_PARAMS.HIGHLIGHT_MODE] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : branch.highlight_compression_mode === "clip" ? 3 : branch.highlight_compression_mode === "fixed_cap" ? 4 : 0) : 0;
     params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = lane === "hdr"
       ? toneAdjustedHighlightPeakLinear(branch, toneEnabled, projectReferenceWhite)
       : Math.max(0.01, (branch.highlight_compression_peak_measurement === "manual"

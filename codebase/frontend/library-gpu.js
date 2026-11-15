@@ -154,12 +154,8 @@ class HDRLibraryGPU extends HDRWebGPUPreview {
   }
   async resolveHighlightAnchor(...args) {
     const started = performance.now();
-    // These bounded scenes have no Grade scheduler to answer the canonical
-    // anchor event. Measure their SDR prefix just as CPU finishing does.
-    const [anchor,proxy,params,options] = args;
-    const result = this.liveMode && options?.lane === 'sdr'
-      ? await this.measureToneAdjustedPeak(proxy,params,anchor.measurement,anchor.key)
-      : await super.resolveHighlightAnchor(...args);
+    // Direct SDR scenes measure their finished texture before the final cap.
+    const result = await super.resolveHighlightAnchor(...args);
     HDRLibraryStopwatch("picture_highlight_analysis", { ...window.HDRLibraryPictureLog?.(this.libraryMeta), duration_ms: performance.now() - started });
     return result;
   }

@@ -5,6 +5,9 @@ const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {execFileSync}=require('node:child_process');
+const modeIndex=process.argv.indexOf('--highlight-mode');
+const highlightMode=modeIndex<0?'peak_fit':process.argv[modeIndex+1];
+assert.ok(['peak_fit','soft_ceiling','clip','fixed_cap'].includes(highlightMode));
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'tone-zones-'));
 const python=require('../tools/lib/platform.cjs').pythonExecutable();
 const env={...process.env,PYTHONPATH:path.resolve(__dirname,'../backend')};
@@ -25,7 +28,7 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
  const uploaded=await page.request.post(new URL('/api/session',base).href,{multipart:{file:{name:'hues.tiff',mimeType:'image/tiff',buffer:fs.readFileSync(path.join(root,'hues.tiff'))}}});
  assert.ok(uploaded.ok(),await uploaded.text());const {session}=await uploaded.json();
  await page.evaluate(s=>activateDesktopSession(s,''),session);
- await page.evaluate(async ()=>{
+ await page.evaluate(async (highlightMode)=>{
    await syncGlobalEditState();
    for(const lane of ['hdr','sdr']){
     Object.assign(state.adjustments[lane],{blacks:30,shadows:70,midtones:-40,highlights:40,shadows_width:3.5,contrast:.2});
@@ -33,13 +36,13 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
     Object.assign(state.adjustments[lane].film_look,{film_stock:"none",print_exposure:.5,look_strength:50,grain_enabled:false,halation_enabled:false});
    }
    for(const lane of ['hdr','sdr']){
-    const b=state.adjustments[lane];b.highlight_section_enabled=lane==='hdr';b.highlight_compression_mode='peak_fit';
+    const b=state.adjustments[lane];b.highlight_section_enabled=true;b.highlight_compression_mode=highlightMode;b.highlight_compression_softness=60;
     if(lane==='hdr'){b.highlight_compression_target_nits=1000;b.highlight_compression_start_nits=400;}
    }
    state.globalEditDirty=true;await syncGlobalEditState();
    for(const lane of ['hdr','sdr']){await switchLane(lane);invalidatePreview(lane);await settlePreview(lane,{});state.previewScheduler?.cancel();while(state.gpuDraftInFlight)await state.gpuDraftInFlight.catch(()=>null);if(!await renderGpuDraft(lane,{longEdge:256}))throw Error('GPU preview failed: '+JSON.stringify({refusal:state.lastGpuDraftRefusal,detail:state.gpuPreview.detail}));}
    state.previewScheduler?.cancel();while(state.gpuDraftInFlight)await state.gpuDraftInFlight.catch(()=>null);
- });
+ },highlightMode);
   const delivery=page.context().pages().find(p=>p.url().includes('gpu-delivery.html'));
   assert.ok(delivery,'Hidden GPU delivery renderer');
   await delivery.evaluate(()=>{
@@ -51,7 +54,7 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
    await api('/api/delivery/preferences',{force_cpu:forced});const file=path.join(root,forced?'cpu.jpg':'gpu.jpg');
    await global.HDRFinisherElectronTestHarness.selectExportPath(file);
    const grant=await page.evaluate(()=>window.hdrFinisherDesktop.chooseExportPath({extension:'jpg',suggestedName:'tone-zones.jpg'}));
-   const settings={format:'jpeg_ultrahdr',quality:95,jpeg_chroma_subsampling:'444',jpeg_gain_map_quality:95,jpeg_gain_map_scale:'full',dithering:'off',guarantee_hdr_peak:true,output_finishing:{resize_mode:'long_edge',long_edge:192,sharpening:'off'}};
+   const settings={format:'jpeg_ultrahdr',quality:95,jpeg_chroma_subsampling:'444',jpeg_gain_map_quality:95,jpeg_gain_map_scale:'full',dithering:'off',guarantee_hdr_peak:true,output_finishing:{resize_mode:'long_edge',long_edge:128,sharpening:'standard'}};
    const exported=await api(`/api/session/${session.session_id}/export`,{...settings,output_path:file,path_grant:grant.grant});assert.ok(exported.accepted);assert.equal(exported.renderer,forced?'cpu':'gpu');
    const proof=await api(`/api/session/${session.session_id}/proof/artifact`,{...settings,full_size:true});assert.equal(proof.renderer,exported.renderer);
    const bytes=await page.request.get(new URL(`/api/proof/artifact/${proof.artifact_id}.jpg`,base).href);assert.ok(bytes.ok());assert.ok(fs.readFileSync(file).equals(await bytes.body()),'Proof equals delivered bytes');
@@ -60,14 +63,17 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
   fs.writeFileSync(path.join(root,'finished.json'),JSON.stringify(floats));
   console.log(run(`import json,sys,numpy as np
 from pathlib import Path
-from hdr_finisher.models import EditDocument,PreviewKind
+from hdr_finisher.models import EditDocument,PreviewKind,OutputFinishingSettings
 from hdr_finisher.loader import load_image
-from hdr_finisher.adjustments import apply_adjustments
+from hdr_finisher.adjustments import apply_adjustments,apply_hdr_output_highlight_compression,apply_sdr_output_highlight_compression
+from hdr_finisher.finishing import apply_output_finishing
 from hdr_finisher.delivery_colour import compare_finished_pixels
 root=Path(sys.argv[1]);doc=EditDocument.model_validate_json((root/'document.json').read_text())
 source=load_image(root/'hues.tiff')[0];actual=json.loads((root/'finished.json').read_text())
 for i,lane in enumerate(['hdr','sdr']):
- expected=apply_adjustments(source,doc.global_adjustments,PreviewKind(lane),local_adjustments=doc.local_adjustments)
+ expected=apply_adjustments(source,doc.global_adjustments,PreviewKind(lane),local_adjustments=doc.local_adjustments,include_output_highlight_compression=False)
+ expected=apply_output_finishing(expected,OutputFinishingSettings(resize_mode="long_edge",long_edge=128,sharpening="standard"),PreviewKind(lane))
+ expected=(apply_hdr_output_highlight_compression if lane=="hdr" else apply_sdr_output_highlight_compression)(expected,doc.global_adjustments)
  gpu=np.array(actual[i],np.float32).reshape(*expected.shape[:2],4)[...,:3]
  result=compare_finished_pixels(gpu,expected,lane);print(lane,result)
  assert result.passed,(lane,result)

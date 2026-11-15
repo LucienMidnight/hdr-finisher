@@ -40,6 +40,8 @@ Highlights is a separate, independently bypassable output section. It runs after
 
 ### Highlight Compression
 
+**Fixed cap** leaves values below Start unchanged, then smoothly compresses brighter colours toward Target Peak using one hue-preserving RGB multiplier. It does not measure the photo's peak and uses only Start and Target Peak (SDR Target is fixed at display white). Peak Fit, Soft Ceiling and Clip keep their controls and defaults.
+
 Use **Peak Fit** for most HDR work. It measures the full-resolution finished highlight peak, constructs a smooth curve in stops, and anchors that peak exactly at **Target Peak**. Unlike a nearly flat ceiling, its **Highlight Detail** control can retain a positive slope at the brightest end, which helps rounded reflections and emissive objects keep visible shape.
 
 - **Start** protects tones below the shoulder. When an extreme source peak, low target, and high detail cannot all fit above Start without reversing the curve, Peak Fit automatically widens the shoulder below the requested value. The transfer graph shows the actual curve and its caption reports the effective start.
@@ -56,7 +58,7 @@ The Highlight Compression section starts bypassed, with Peak Fit and Smooth colo
 
 The implementation contract and CPU/GPU parameter mapping are documented in [Highlight Compression Technical Reference](../technical/highlight-compression.md).
 
-Peak Fit's Target Peak is the endpoint for the measured final-grade signal. Preserve color can still leave an individual saturated channel above a luminance-based target; use Smooth color rolloff or Clip when the channel ceiling itself matters.
+Peak Fit's Target Peak is the endpoint for the measured final-grade signal. Preserve color may leave a saturated channel above its luminance-based curve endpoint; the final delivery-primary ceiling still guarantees Target Peak for every mode.
 
 The source peak is measured at full resolution, but Standard preview scopes analyze a downsampled rendition. If the exact brightest sample is filtered away, the preview can read below Target Peak even though Peak Fit's full-resolution endpoint is correct. This is especially visible with nonzero Highlight Detail because nearby samples deliberately retain contrast below the endpoint. Use High-res Preview or a full-resolution export for the authoritative peak check.
 
@@ -160,7 +162,7 @@ The current HDR order is:
 7. Detail and local adjustments
 8. Film Look: lens diffusion, resolution scatter, halation, negative/development, density grain, print, scan, then Look Strength
 9. Detail Softness and Microcontrast
-10. Output Highlights: Peak Fit, Soft Ceiling, or Clip
+10. Output Highlights: Peak Fit, Fixed cap, Soft Ceiling, or Clip
 11. Clamp final negative values to zero
 
 Order matters. A curve sees the result of every preceding enabled section.

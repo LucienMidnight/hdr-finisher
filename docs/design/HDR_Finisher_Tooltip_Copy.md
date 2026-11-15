@@ -92,3 +92,10 @@ keep their names. Labelled controls with only shortcut information show the
 shortcut alone (`KEEP_SHORTCUT_ONLY`, pending Steve). Explanations, warnings
 and disabled reasons remain. Filename/metadata values and resize choices show
 full text only when actually clipped; accessible names stay available.
+
+## November 15 N1: Fixed cap
+
+| ID | Trigger | Copy-ready tooltip text |
+|---|---|---|
+| `hdr.highlight_compression.fixed_cap` | Mode: Fixed cap | Fixed cap leaves values below Start unchanged and smoothly compresses brighter colours toward Target Peak, preserving colour ratios without measuring the image peak. |
+| `sdr.highlight_compression.fixed_cap` | Mode: Fixed cap | Fixed cap leaves values below Start unchanged and smoothly compresses brighter colours toward display white, preserving colour ratios without measuring the image peak. |

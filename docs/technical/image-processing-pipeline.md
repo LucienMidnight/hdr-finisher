@@ -14,7 +14,7 @@ Wheels edit their weighted ranges without limiting RGB. SDR contrast keeps
 above-white RGB through its luminance-only gain. Film Look's final strength
 mix, structure and vignette also keep headroom. Finished SDR passes through
 the existing hue-preserving adaptive OKLCh sRGB gamut mapper, replacing
-independent channel clipping. The SDR shoulder stays before Exposure Bands.
+independent channel clipping. N1 moves the SDR shoulder after Film Look and all finishing, immediately before the final gamut mapper.
 Preview/scopes map after film/vignette; delivery defers the same mapping
 until after resize/sharpening. Bypassing the shoulder still produces legal
 SDR white and gamut. HDR's exact delivery ceiling is unchanged.
@@ -149,7 +149,6 @@ Implementation: [`finishing.apply_geometry`](../../codebase/backend/hdr_finisher
 | Order | Stage | Domain / reason |
 |---:|---|---|
 | 1 | Exposure, shadow/black lift, contrast/pivot | Scene-linear ACEScg tone foundation |
-| 2 | Highlight compression: soft ceiling and peak fit | Bounds extreme scene energy before downstream creative color; not a final output clamp |
 | 3 | White balance, ACEScg primaries/tint, saturation/vibrance | Scene-referred color |
 | 4 | Tone equalizer / Exposure Bands | Scene-EV bands |
 | 5 | Lift, gamma, gain | Global tonal shaping |
@@ -162,9 +161,9 @@ Implementation: [`finishing.apply_geometry`](../../codebase/backend/hdr_finisher
 | 12 | Negative/development and grain | Grain perturbs developed film density |
 | 13 | Paper and scan | Slides skip paper; Scan Sharpening and Lab Levels; one Look Strength mix |
 | 14 | Detail structure and Vignette | Independent finishing after Film Look |
-| 15 | Non-negative clip | Enforce the HDR working/output invariant |
+| 15 | Highlight Compression (Peak Fit, Fixed cap, Soft Ceiling or Clip), then delivery-primary ceiling | Final target after creative work and finishing |
 
-Highlight compression's configured peak is a stage-local target. Later color, locals, film effects, and grain may raise the final measured peak; do not treat it as a delivery hard clamp.
+With Highlight Compression enabled, the final HDR target is a delivery guarantee; the existing encoded-file ceiling checks remain unchanged.
 
 ### 5.2 Generated SDR lane
 
@@ -174,7 +173,7 @@ Generated SDR starts from the ACEScg HDR source:
 2. Independent SDR scene color adjustments.
 3. Apply the fixed SDR placement where scene-linear `0.18` maps to display-linear `100/203`.
 4. Convert with CAT02 to display-linear sRGB.
-5. Apply SDR Highlight Compression, then gamut-compress toward display luminance.
+5. Retain the placed linear-sRGB headroom; no early shoulder or gamut mapping.
 6. display-linear tone equalizer / Exposure Bands.
 7. contrast.
 8. lift, gamma, gain.
@@ -184,7 +183,7 @@ Generated SDR starts from the ACEScg HDR source:
 12. lens filter, film resolution, halation, negative and density grain, paper/scanner, one Look Strength mix.
 13. Detail structure and vignette.
 14. final grain dispatch (film density grain is already resolved).
-15. hue-preserving sRGB gamut mapping to `[0, 1]` (W3 boundary above).
+15. output resize/sharpening when delivering, then Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
 
 The scene-to-display conversion boundary is important. Moving a scene-linear control after it changes both its numerical meaning and its visual behavior.
 
@@ -194,18 +193,18 @@ When a source contains an authored SDR rendition, the branch begins from its ret
 
 1. apply geometry to the authored SDR source;
 2. exposure and shadow work;
-3. optionally apply SDR Highlight Compression (bypassed for newly imported authored bases);
+3. retain display-linear headroom (no early Highlight Compression);
 4. tone equalizer;
 5. contrast;
-6. temporarily convert sRGB to ACEScg for scene-color operations, then return and gamut-compress;
+6. temporarily convert sRGB to ACEScg for scene-color operations, then return with headroom retained;
 7. lift/gamma/gain, curves, and global color grading;
 8. ordered local layers;
 9. film response and spatial finishing;
 10. vignette;
 11. grain;
-12. hue-preserving sRGB gamut mapping to `[0, 1]` (W3 boundary above).
+12. output resize/sharpening when delivering, then optional Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
 
-Do not collapse this branch into generated SDR. The authored base is a distinct creative endpoint in a gain-map source. Legacy v4 projects without an SDR rendering-version marker continue through the retired Base Rendition/Highlight Recovery renderer so reopening a project does not alter its pixels.
+Do not collapse this branch into generated SDR. The authored base is a distinct creative endpoint in a gain-map source. Existing SDR grades intentionally render through the new final-shoulder order; there is no compatibility renderer.
 
 ### 5.4 Local-layer internal order
 

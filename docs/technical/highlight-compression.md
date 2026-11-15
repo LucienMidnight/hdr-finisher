@@ -8,9 +8,10 @@ DNG clipped-highlight color recovery is a separate import-stage operation. It re
 
 ## User intent and modes
 
-The section bypass is the sole on/off control. When enabled, it supports three compression modes:
+The section bypass is the sole on/off control. When enabled, it supports four compression modes:
 
 - **Peak Fit** measures or accepts the final-grade peak, builds a monotonic shoulder in log2 stops, and anchors that measured peak at Target Peak.
+- **Fixed cap** uses Start and Target only. It never measures the image peak; its common RGB gain preserves colour ratios.
 - **Soft Ceiling** is an asymptotic compressor controlled by Softness. It has no measured endpoint anchor.
 - **Clip** applies a strict per-channel ceiling in the HDR delivery primaries. It is intentionally hard and does not use Start, Softness, source-peak measurement, Highlight Detail, Bias, or Highlight Color.
 
@@ -44,7 +45,17 @@ The HDR global order relevant to this module is:
 
 Peak Fit measures the finished post-grain pixels, so later exposure, creative, finishing, or texture changes cannot invalidate the target.
 
-The SDR order is Exposure/Shadow, generated placement and sRGB conversion when needed, Highlight Compression, gamut compression, then Exposure Bands and later display-referred controls. SDR Peak Fit likewise includes Tone Exposure when predicting a manual source peak.
+The generated SDR order is Exposure/Shadow and scene Color, fixed placement
+and linear-sRGB conversion, then tone/creative controls, locals, Film Look,
+structure/vignette and output finishing. Authored SDR starts with its retained
+linear-sRGB base. Both apply Highlight Compression **last**, before the
+unconditional hue-preserving sRGB gamut mapper. No early shoulder or early
+gamut boundary remains. Neutral Curves retain signed/above-white headroom;
+active curves continue their endpoint slopes outside their editable range.
+SDR Peak Fit now measures the finished pre-cap picture (after resize/sharpening
+for delivery); manual source-peak settings and curve parameters are retained.
+This intentionally changes SDR grades with HC enabled. HDR's order is unchanged.
+
 
 [HDR-to-SDR Match](sdr-match.md) does not replace or bypass Peak Fit, Soft Ceiling, or Clip. The Match knee consumes the fully rendered, already-compressed HDR result.
 
@@ -147,6 +158,32 @@ The default Highlight Detail is `35%`. This is intentional: it retains visible s
 
 If the measured source peak is at or below Target Peak, Peak Fit is identity. This decision uses luminance in Preserve color, maximum BT.2020 channel in Smooth color rolloff, and maximum ACEScg channel in Neutralize peak.
 
+## Fixed cap (November 15 N1)
+
+Serialized mode: `fixed_cap`; GPU mode code: `4` (existing parameter layout is
+unchanged). Start is a fixed knee `k`; Target is `P` (SDR always `1.0`).
+For brightest positive delivery-space channel `x`, with `h = P-k`:
+
+```text
+C(x) = x                              x <= k
+C(x) = k + h * (1-exp(-(x-k)/h))        x > k
+RGB_out = RGB_in * C(x)/x
+```
+
+CPU uses `expm1` for accuracy near the knee. HDR measures `x` in linear BT.2020;
+SDR uses linear sRGB. The multiplier applies to every channel, including signed
+components. The join has slope 1; above it the derivative is positive and at
+most 1, approaching zero. Since `1-exp(-u) <= u`, the curve never expands its
+input and approaches Target from below. It needs no source-peak measurement,
+Softness, Detail, Bias, Attenuation or Highlight Color. These settings remain
+saved and become available again when switching back to an existing mode.
+
+The common gain preserves ratios; HDR's existing delivery-primary ceiling
+and encoded-output checks still follow it. SDR always finishes through the
+existing gamut mapper, including when compression is bypassed. Defaults remain
+Peak Fit, Start 400 nits / 50% and Detail 35%; choosing Fixed cap does not
+replace any mode or reset its settings.
+
 ## Soft Ceiling
 
 Soft Ceiling qualifies on ACEScg luminance and preserves RGB ratios. Softness `0` is exact identity. Higher values engage the shoulder earlier; the curve approaches Target Peak asymptotically. Soft Ceiling does not use Highlight Color and does not guarantee a per-channel maximum.
@@ -169,7 +206,7 @@ Important invariants:
 
 ## WebGPU implementation and parameter map
 
-The WebGPU implementation retains `hdrPeakFit` / `hdrSoftCeiling` for direct parity tests. Final-stage HDR compression runs on WebGPU: a `finishFragmentMain` pass resolves Film Look, Vignette and grain into `finishTexture`, and the composite pass applies the shoulder and ceiling to it. The preview anchors Peak Fit on a source-domain estimate carried through Tone and Color, measured before any pass is encoded; the CPU export anchors on the finished image. Closing that remaining difference requires the scheduler to request a refinement once a reduction over `finishTexture` lands, because a settled draft that awaits inside the render loses its race and the scheduler answers a failed draft with a full CPU preview. Relevant packed parameters are:
+The WebGPU implementation retains `hdrPeakFit` / `hdrSoftCeiling` / `fixedCap` for direct parity tests. Final-stage HDR compression runs on WebGPU: a `finishFragmentMain` pass resolves Film Look, Vignette and grain into `finishTexture`, and the composite pass applies the shoulder and ceiling to it. The preview anchors Peak Fit on a source-domain estimate carried through Tone and Color, measured before any pass is encoded; the CPU export anchors on the finished image. Closing that remaining difference requires the scheduler to request a refinement once a reduction over `finishTexture` lands, because a settled draft that awaits inside the render loses its race and the scheduler answers a failed draft with a full CPU preview. Relevant packed parameters are:
 
 | Index | Meaning |
 |---:|---|

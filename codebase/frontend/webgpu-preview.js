@@ -1363,20 +1363,6 @@
         // neighbourhood to select its hue response; adjacent atlas entries
         // come from unrelated source locations. Use the same bounded real-image
         // proxy as percentile measurement when that guide is active.
-        let sdrAnchor = null;
-        if (lane === "sdr" && anchor?.measurement === "maximum") {
-          let peakSource = {texture: source, width: side, height: side};
-          let peakParams = new Float32Array(params);
-          if (graphScaleContract().blackAndWhiteGuideReach(params) > 0) {
-            peakSource = await this.loadProxy(sessionId, lane, 1600, signature, revision, "source", {isCurrent});
-            if (!peakSource || !isCurrent()) return null;
-            peakParams = buildParams(lane, adjustments, peakSource.workingSpace, false, white,
-              this.sourcePixelScaleFor(peakSource, sourceSize));
-          }
-          peakParams[GPU_PARAMS.HIGHLIGHT_MODE] = 1;
-          sdrAnchor = await this.measureToneAdjustedPeak(peakSource, peakParams, "maximum", anchor.key);
-          if (!isCurrent()) return null;
-        }
         await read.mapAsync(GPUMapMode.READ);
         const values = new Uint16Array(read.getMappedRange());
         const ranked = evidence.samples.map((sample, i) => ({
@@ -1392,7 +1378,7 @@
           seen.add(key); patches.push({x, y, width: Math.min(128, evidence.width - x), height: Math.min(128, evidence.height - y)});
           if (patches.length === 16) break;
         }
-        return { ...evidence, samples: undefined, patches, anchor, sdrAnchor };
+        return { ...evidence, samples: undefined, patches, anchor };
       } finally {
         textures.forEach(item => item.destroy()); buffers.forEach(item => item.destroy());
       }
@@ -1407,24 +1393,18 @@
         const params = buildParams(lane, adjustments, proxy.workingSpace, lane === "hdr", white, this.sourcePixelScaleFor(proxy, sourceSize));
         const anchor = this.highlightAnchorRequest(lane, adjustments, proxy, params, locals);
         if (!anchor) return null;
-        let value;
-        if (lane === "sdr") {
-          value = await this.measureToneAdjustedPeak(proxy, params, "robust", anchor.key);
-        } else {
-          this.editingAnalysisCanvas ||= document.createElement("canvas");
-          const uncompressed = structuredClone(adjustments);
-          uncompressed.hdr.highlight_section_enabled = false;
-          const rendered = await this.renderTo(this.editingAnalysisCanvas, sessionId, lane, uncompressed, curveSampler, 1600, locals, revision, null, white, sourceSize, {isCurrent, measureOnly:true});
-          const finished = this.scopeSources.get(this.editingAnalysisCanvas);
-          if (!rendered?.width || !finished || !isCurrent()) return null;
-          const pipeline = await this.ensurePeakReductionPipeline(adjustments.hdr.film_look.film_stock === "none" ? "scaledFilmPeakReductionMain" : "finishedPeakReductionMain");
-          value = await this.runPeakReduction(pipeline, finished.filmTexture, finished.width, finished.height, params, "robust", anchor.key);
-        }
+        this.editingAnalysisCanvas ||= document.createElement("canvas");
+        const uncompressed = structuredClone(adjustments);
+        uncompressed[lane].highlight_section_enabled = false;
+        const rendered = await this.renderTo(this.editingAnalysisCanvas, sessionId, lane, uncompressed, curveSampler, 1600, locals, revision, null, white, sourceSize, {isCurrent, measureOnly:true});
+        const finished = this.scopeSources.get(this.editingAnalysisCanvas);
+        if (!rendered?.width || !finished || !isCurrent()) return null;
+        const pipeline = await this.ensurePeakReductionPipeline("scaledFilmPeakReductionMain");
+        const value = await this.runPeakReduction(pipeline, finished.filmTexture, finished.width, finished.height, params, "robust", anchor.key);
         return {highlightAnchor:{key:anchor.key, value}};
       }
       const ranked = await this.rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, isCurrent);
       if (!ranked || !isCurrent()) return null;
-      if (options.highlightAnchorOnly && lane === "sdr") return { highlightAnchor: ranked.anchor ? {key: ranked.anchor.key, value: ranked.sdrAnchor} : null };
       const signature = JSON.stringify(adjustments.shared?.geometry || {});
       const frame = {width: ranked.width, height: ranked.height,
         longEdge: Math.max(sourceSize.width, sourceSize.height), workingSpace: ranked.working_space};
@@ -1497,7 +1477,7 @@
         params[GPU_PARAMS.EXPOSURE], params[GPU_PARAMS.BLACKS], params[GPU_PARAMS.CONTRAST], params[GPU_PARAMS.CONTRAST_PIVOT], params[GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING],
         ...params.slice(10, 12), ...params.slice(61, 73),
         ...params.slice(BLACK_AND_WHITE_PARAM, BLACK_AND_WHITE_PARAM + 9),
-        lane === "hdr" ? [adjustments.hdr, locals] : null,
+        [adjustments[lane], locals],
       ]);
       return { measurement, key, cached: this.peakReductionCache.get(key) };
     }
@@ -5060,18 +5040,9 @@
       // Show noise never reaches the output mapping, so it has no peak to anchor.
       const noiseView = Boolean(sourceOptions?.noiseView);
       const anchor = noiseView ? null : this.highlightAnchorRequest(lane, adjustments, sourceProxy, params, localAdjustments);
-      if (anchor && sourceOptions?.frameAnchor) {
-        // Export's analysis frame anchors its shoulder on its own pixels. A
-        // frame rendered to be compared with one does the same, through the
-        // SDR prefix reduction, and leaves the editing anchor cache and its
-        // scheduler alone.
-        if (lane !== "sdr") return this.refuseRender("frame-anchor-unsupported-lane");
-        const key = `frame:${serial}:${anchor.key}`;
-        params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = await this.measureToneAdjustedPeak(sourceProxy, params, anchor.measurement, key);
-        this.peakReductionCache.delete(key);
-        if (resourceGeneration !== this.resourceGeneration || serial !== this.renderSerials.get(canvas)
-          || sourceOptions?.isCurrent?.() === false) return this.refuseRender("peak:superseded");
-      } else if (anchor) {
+      const finishedSdrAnchor = anchor && lane === "sdr" && plan.decision.mode !== "tiled"
+        && (sourceOptions?.tier !== "interactive" || sourceOptions?.frameAnchor || this.liveMode);
+      if (anchor && !finishedSdrAnchor) {
         const interactive = sourceOptions?.tier === "interactive";
         // An interactive frame that stopped for a whole-image reduction would
         // miss its deadline, so it carries the last measurement instead and
@@ -5288,7 +5259,7 @@
         intermediate.compositeParamBuffer,
         masks[overlayIndex]?.texture?.createView() || spatialAView,
       );
-      const encoder = this.device.createCommandEncoder();
+      let encoder = this.device.createCommandEncoder();
       // Global HSL's selection reads the HSL stage input over the whole frame,
       // and is reused while nothing above HSL changes.
       const hslEngine = noiseView ? null : this.hslSelectionEngine(canvas, "direct");
@@ -5513,6 +5484,19 @@
           { interactive: sourceOptions?.tier === "interactive" && !sourceOptions?.delivery && !sourceOptions?.measureOnly,
             lensGlowKey });
         if (!glowEncoded) lensGlowKey = null;
+      }
+      if (finishedSdrAnchor && !sourceOptions?.delivery) {
+        this.device.queue.submit([encoder.finish()]);
+        const pipeline = await this.ensurePeakReductionPipeline("scaledFilmPeakReductionMain");
+        const key = `frame:${serial}:${anchor.key}`;
+        params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = await this.runPeakReduction(pipeline,
+          intermediate.finishTexture, proxy.width, proxy.height, params, anchor.measurement, key);
+        this.peakReductionCache.delete(key);
+        this.noteHighlightMeasurement(lane, sourceProxy, params, params[GPU_PARAMS.HIGHLIGHT_ANCHOR]);
+        if (resourceGeneration !== this.resourceGeneration || serial !== this.renderSerials.get(canvas)
+          || sourceOptions?.isCurrent?.() === false) return this.refuseRender("peak:superseded");
+        this.device.queue.writeBuffer(this.paramBuffer, 0, params);
+        encoder = this.device.createCommandEncoder();
       }
       if (sourceOptions?.delivery) {
         encoder.copyTextureToTexture({texture:intermediate.finishTexture},

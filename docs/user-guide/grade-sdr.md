@@ -11,7 +11,7 @@ Preserve the subject, color relationships, and important highlight detail in a c
 Start with:
 
 1. Exposure and Shadow for overall placement.
-2. Highlight Compression for the bright-end shoulder and color rolloff.
+2. Set tone and colour, then Film Look; finish with Highlight Compression for the bright-end shoulder and color rolloff.
 3. Contrast/Pivot and Exposure Bands for tonal refinement.
 4. Match HDR colors, then refine the SDR color controls if needed.
 5. Lift/Gamma/Gain or Curves only when needed.
@@ -33,11 +33,13 @@ Adds or removes low-end brightness with a mask that fades toward midtones. Small
 
 ## Highlight Compression
 
-Generated SDR uses fixed placement: scene-linear `0.18` maps to approximately `0.493` (`100/203`) in display-linear SDR. This preserves the established fallback placement and does not change with the project's HDR Reference White. Highlight Compression then shapes only the bright end.
+Generated SDR uses fixed placement: scene-linear `0.18` maps to approximately `0.493` (`100/203`) in display-linear SDR. This preserves the established fallback placement and does not change with the project's HDR Reference White. Highlight Compression shapes the bright end after Film Look, grain and output finishing, just before the final sRGB gamut boundary. Film Look receives uncompressed placed SDR. This order intentionally changes existing SDR grades with compression enabled.
 
 **Peak Fit** measures the highlight signal and builds a monotonic shoulder whose measured endpoint lands at SDR white. The default **Smooth color rolloff** maps positive linear-sRGB channels through the same curve independently, so dominant highlight colors compress first and colored fringes fade continuously toward white. **Preserve color** retains RGB ratios; **Neutralize peak** deliberately converges the brightest endpoint to neutral white.
 
 **Start** chooses the requested shoulder onset. **Highlight Detail** retains more or less endpoint contrast. **Compression Bias** redistributes separation within the shoulder. The effective start may move lower when necessary to fit a smooth, monotonic curve between the requested start and a very high measured peak.
+
+**Fixed cap** leaves values below Start unchanged, then smoothly compresses brighter colours toward Target using one hue-preserving RGB multiplier. It does not measure the photo's peak and uses only Start and Target (SDR Target is fixed at display white). Peak Fit, Soft Ceiling and Clip keep their controls and defaults.
 
 **Soft Ceiling** is an optional luma-preserving asymptotic shoulder controlled by Softness. It does not anchor a measured endpoint.
 
@@ -45,9 +47,9 @@ For generated SDR, Highlight Compression is enabled by default with Peak Fit and
 
 ## Exposure Bands
 
-SDR Exposure Bands reshape the compressed, display-linear fallback by brightness while preserving RGB ratios. The graph is centered on 18% display-linear gray and marks the 100% SDR boundary. Positive adjustments above that boundary can clip at final SDR output, so confirm the result in the SDR histogram or waveform.
+SDR Exposure Bands reshape the uncompressed, placed display-linear fallback by brightness while preserving RGB ratios. The graph is centered on 18% display-linear gray and marks the 100% SDR boundary. Positive adjustments above that boundary can clip at final SDR output, so confirm the result in the SDR histogram or waveform.
 
-**Match HDR bands** is a one-shot starting point. It copies the HDR nodes, adjustments, influence, and smoothing into SDR, then leaves the two renditions independent. Because the SDR bands operate after tone mapping while HDR bands operate on scene-linear HDR, copied values preserve the authored curve shape but are not expected to produce pixel-identical tonal placement.
+**Match HDR bands** is a one-shot starting point. It copies the HDR nodes, adjustments, influence, and smoothing into SDR, then leaves the two renditions independent. Because the SDR bands operate after fixed placement while HDR bands operate on scene-linear HDR, copied values preserve the authored curve shape but are not expected to produce pixel-identical tonal placement.
 
 ## Match HDR colors
 
@@ -59,13 +61,13 @@ The SDR color controls operate through ACEScg for primary shaping, then convert 
 
 ## SDR gamut compression
 
-After fixed SDR placement, HDR Finisher converts ACEScg to linear sRGB and applies Highlight Compression. Colors still outside the normalized sRGB cube are then moved toward luma until all channels fit, preserving the luma anchor and broadly preserving hue direction.
+After fixed SDR placement, HDR Finisher retains linear-sRGB headroom through tone, colour, Film Look and finishing. Highlight Compression then shapes highlights, and the final hue-preserving adaptive OKLCh mapper brings colours into normalized sRGB. This final boundary also runs when Highlight Compression is bypassed.
 
 This is a simple global compression, not a perceptual appearance model. Strong wide-gamut colors can lose chroma. Inspect the SDR branch rather than assuming the HDR color grade will survive unchanged.
 
 ## Lift, Gamma, Gain and Curves
 
-SDR Lift/Gamma/Gain uses the same stop-relative zone concept as the HDR branch, but acts on the bounded display rendition. Range and Pivot still define where each zone operates.
+SDR Lift/Gamma/Gain uses the same stop-relative zone concept as the HDR branch, but acts on the placed display rendition before the final cap. Range and Pivot still define where each zone operates.
 
 SDR Curves work from 0 to 1 rather than the HDR logarithmic upper range. Luma changes brightness; RGB curves change channel balance. Curves are stored independently per branch.
 
@@ -82,7 +84,6 @@ For a scene-linear source without an authored SDR reference:
 1. SDR exposure and shadow
 2. Independent SDR color grade (optionally initialized from HDR with Match HDR colors), then Black & White when on
 3. Fixed `0.18` to `100/203` placement and conversion to display-linear sRGB
-4. Highlight Compression and sRGB gamut compression
 5. Exposure Bands
 6. Contrast and Lift/Gamma/Gain
 7. Curves
@@ -93,13 +94,12 @@ For an authored SDR reference such as supported Apple HDR HEIC:
 1. Begin with the authored display-linear sRGB rendition
 2. Exposure and shadow
 3. Black & White when on (before the highlight stage, although Color comes later on this path)
-4. Optional Highlight Compression (bypassed on import)
 5. Exposure Bands
 6. Contrast, then SDR color grade through ACEScg and back to sRGB
 7. Lift/Gamma/Gain and Curves
 8. Film Look: lens diffusion, resolution scatter, halation, negative/development, density grain, print, scan, then Look Strength; followed by Detail Softness and Microcontrast
 
-The final result is clipped to the normalized SDR range.
+Both paths finish with output resize/sharpening, Highlight Compression (bypassed by default for authored SDR), then unconditional hue-preserving sRGB gamut mapping to [0,1].
 
 ## Review checklist
 

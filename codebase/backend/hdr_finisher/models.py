@@ -414,7 +414,7 @@ class _BranchAdjustments(BaseModel):
     black_and_white: BlackAndWhiteAdjustments = Field(default_factory=BlackAndWhiteAdjustments)
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
     highlight_compression_softness: float = Field(default=0.0, ge=0.0, le=100.0)
-    highlight_compression_mode: Literal["peak_fit", "soft_ceiling", "clip"] = "peak_fit"
+    highlight_compression_mode: Literal["peak_fit", "soft_ceiling", "clip", "fixed_cap"] = "peak_fit"
     highlight_compression_peak_measurement: Literal["maximum", "robust", "manual"] = "maximum"
     highlight_compression_peak_detail: float = Field(default=35.0, ge=0.0, le=100.0)
     highlight_compression_bias: float = Field(default=0.0, ge=-100.0, le=100.0)

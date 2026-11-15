@@ -47,7 +47,7 @@ from .adjustments import (
     hdr_output_transport_signal,
     hdr_peak_nits_from_measured,
     sdr_highlight_peak_signal,
-    sdr_highlight_stage_input,
+    apply_sdr_output_highlight_compression,
 )
 from .color_context import RenderColorContext
 from .detail import detail_is_neutral
@@ -356,16 +356,6 @@ def render_in_strips(
     anchor: HighlightAnchor | None = None
 
     if kind == PreviewKind.SDR:
-        anchor = _measure_sdr_anchor(
-            image,
-            sdr_reference_image if authored_reference else None,
-            adjustments,
-            plan,
-            region,
-            check,
-            passes,
-            authored_reference=authored_reference,
-        )
         passes.append("render")
         for index, (top, bottom) in enumerate(plan.strips):
             check(index)
@@ -377,10 +367,27 @@ def render_in_strips(
                 fixed_sdr_reference=reference,
                 color_context=color_context,
                 source_pixel_scale=source_pixel_scale,
-                highlight_anchor=anchor,
+                include_output_highlight_compression=False,
                 frame_window=window(top),
             )
             report.strips_rendered += 1
+        sdr = adjustments.sdr
+        reducer = _PeakReducer(plan.width * plan.height, robust=sdr.highlight_compression_peak_measurement == "robust")
+        measured = False
+        if sdr.highlight_section_enabled:
+            for index, (top, bottom) in enumerate(plan.strips):
+                check(index)
+                signal = sdr_highlight_peak_signal(output[top:bottom], sdr)
+                if signal is not None:
+                    reducer.observe(signal)
+                    measured = True
+        anchor = HighlightAnchor(sdr_peak=reducer.value()) if measured else None
+        if measured:
+            passes.append("sdr-anchor")
+        for index, (top, bottom) in enumerate(plan.strips):
+            check(index)
+            output[top:bottom] = apply_sdr_output_highlight_compression(output[top:bottom], adjustments, anchor=anchor)
+        passes.append("sdr-output")
     else:
         anchor, passes_used = _render_hdr_strips(
             image, adjustments, plan, region, check, output, color_context, source_pixel_scale, report, window
@@ -404,48 +411,6 @@ def render_in_strips(
     report.anchor = anchor
     output.setflags(write=False)
     return output, report
-
-
-def _measure_sdr_anchor(
-    image: np.ndarray,
-    reference_image: np.ndarray | None,
-    adjustments: AdjustmentState,
-    plan: StripPlan,
-    region: Callable[[np.ndarray, int, int], np.ndarray],
-    check: Callable[[int], None],
-    passes: list[str],
-    *,
-    authored_reference: bool,
-) -> HighlightAnchor | None:
-    """Reduce the SDR Peak Fit anchor over the whole frame, in strips.
-
-    The SDR shoulder sits early in the chain, so this pass runs only the few
-    pointwise stages ahead of it rather than the whole graph.
-    """
-    sdr = adjustments.sdr
-    if not sdr.highlight_section_enabled:
-        return None
-    if str(getattr(sdr, "highlight_compression_mode", "peak_fit")) != "peak_fit":
-        return None
-    if str(getattr(sdr, "highlight_compression_peak_measurement", "maximum")) == "manual":
-        return None
-    robust = str(getattr(sdr, "highlight_compression_peak_measurement", "maximum")) == "robust"
-    probe_source = reference_image if authored_reference else image
-    reducer = _PeakReducer(plan.width * plan.height, robust=robust)
-    passes.append("sdr-anchor")
-    for index, (top, bottom) in enumerate(plan.strips):
-        check(index)
-        stage_input = sdr_highlight_stage_input(
-            region(probe_source, top, bottom), adjustments, authored_reference=authored_reference
-        )
-        signal = sdr_highlight_peak_signal(stage_input, sdr)
-        if signal is None:
-            # `sdr_highlight_peak_signal` already agreed above that this graph
-            # measures; disagreeing now would mean the two had drifted apart.
-            raise AssertionError("the SDR highlight stage stopped measuring mid-frame")
-        reducer.observe(signal)
-    peak = reducer.value()
-    return None if peak is None else HighlightAnchor(sdr_peak=peak)
 
 
 def _render_hdr_strips(

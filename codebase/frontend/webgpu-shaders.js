@@ -259,7 +259,7 @@ fn scaledFilmPeakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   let dimensions = textureDimensions(peakSource);
   if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
   let stored = textureLoad(peakSource, vec2i(id.xy), 0);
-  recordPeak(peakSignalOf(stored.rgb * stored.a, false));
+  recordPeak(peakSignalOf(stored.rgb * stored.a, peakParams[${GPU_PARAMS.HDR_LANE}] < 0.5));
 }`;
   const ADAPTIVE_DENOISE_SHADER_SOURCE = `
 // scratch: (originX, originY, width, height) in frame pixels
@@ -483,18 +483,18 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return 0.18 * exp2((value - 0.5) * 2.0 * log2(100.0));
     }
     fn curveEncode(rgb: vec3f, hdr: bool) -> vec3f {
-      if (!hdr) { return clamp(rgb, vec3f(0.0), vec3f(1.0)); }
+      if (!hdr) { return rgb; }
       return vec3f(curveEncodeChannel(rgb.r), curveEncodeChannel(rgb.g), curveEncodeChannel(rgb.b));
     }
     fn curveDecode(rgb: vec3f, hdr: bool) -> vec3f {
-      if (!hdr) { return clamp(rgb, vec3f(0.0), vec3f(1.0)); }
+      if (!hdr) { return rgb; }
       return vec3f(curveDecodeChannel(rgb.r), curveDecodeChannel(rgb.g), curveDecodeChannel(rgb.b));
     }
     fn applyCurves(input: vec3f, hdr: bool) -> vec3f {
       if (p[${GPU_PARAMS.CURVES_ENABLED}] < 0.5) { return input; }
-      var rgb = select(clamp(input, vec3f(0.0), vec3f(1.0)), input, hdr);
+      var rgb = input;
       let sourceLuma = select(lumaSrgb(rgb), lumaAces(rgb), hdr);
-      let curveLuma = select(clamp(sourceLuma, 0.0, 1.0), curveEncodeChannel(sourceLuma), hdr);
+      let curveLuma = select(sourceLuma, curveEncodeChannel(sourceLuma), hdr);
       let mappedCurveLuma = curveValue(0u, curveLuma);
       let mappedLuma = select(mappedCurveLuma, curveDecodeChannel(mappedCurveLuma), hdr);
       if (abs(sourceLuma) > 0.00001) { rgb *= mappedLuma / sourceLuma; }
@@ -506,10 +506,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return curveDecode(rgb, hdr);
     }
     fn applyCurvesOffset(input: vec3f, hdr: bool, channels: u32, offset: u32) -> vec3f {
-      var rgb = select(clamp(input, vec3f(0.0), vec3f(1.0)), input, hdr);
+      var rgb = input;
       if ((channels & 1u) != 0u) {
       let sourceLuma = select(lumaSrgb(rgb), lumaAces(rgb), hdr);
-      let curveLuma = select(clamp(sourceLuma, 0.0, 1.0), curveEncodeChannel(sourceLuma), hdr);
+      let curveLuma = select(sourceLuma, curveEncodeChannel(sourceLuma), hdr);
       let mappedCurveLuma = curveValueOffset(0u, curveLuma,offset);
       let mappedLuma = select(mappedCurveLuma, curveDecodeChannel(mappedCurveLuma), hdr);
       if (abs(sourceLuma) > 0.00001) { rgb *= mappedLuma / sourceLuma; }
@@ -1228,7 +1228,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
     fn sdrReferenceColor(input: vec3f) -> vec3f {
       if (p[${GPU_PARAMS.COLOR_ENABLED}] < 0.5) { return input; }
-      return compressSrgbGamut(acescgToSrgb(sceneColor(srgbToAcescg(input))));
+      return acescgToSrgb(sceneColor(srgbToAcescg(input)));
     }
     ${HSL_WGSL}
     fn renderHdrBase(source: vec3f) -> vec3f {
@@ -1275,7 +1275,6 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
           if (needsGuide) { guide = sdrReferencePrefix(blackAndWhiteGuideSource); }
           rgb = acescgToSrgb(blackAndWhite(srgbToAcescg(rgb), srgbToAcescg(guide)));
         }
-        rgb = sdrPeakFit(sdrSoftCeiling(rgb));
         rgb = toneEqualizer(rgb);
         rgb = sdrContrast(rgb);
         rgb = sdrReferenceColor(rgb);
@@ -1286,10 +1285,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         var guide = scene;
         if (needsGuide) { guide = sdrScenePrefix(blackAndWhiteGuideSource); }
         let grey = blackAndWhite(scene, guide);
-        // The SDR shoulder is the scene-to-display placement, not a final
-        // limiter: every stage below it is display-referred. Only the ceiling
-        // runs in applyOutputHighlights.
-        rgb = compressSrgbGamut(sdrPeakFit(sdrSoftCeiling(acescgToSrgb(grey) * ((100.0 / 203.0) / 0.18))));
+        // Fixed placement retains headroom through tone and Film Look.
+        rgb = acescgToSrgb(grey) * ((100.0 / 203.0) / 0.18);
         rgb = toneEqualizer(rgb);
         rgb = sdrContrast(rgb);
         rgb = sdrPrimaries(rgb);
@@ -1297,7 +1294,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
       // Contrast and wheels retain headroom for Detail, locals and Film Look.
       // The final output gamut mapper owns SDR white and gamut.
-      return max(rgb, vec3f(0.0));
+      return rgb;
     }
 
     fn filmLuma(rgb: vec3f) -> f32 {
@@ -1467,13 +1464,30 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // The shoulder shapes the picture and the ceiling guarantees the delivery
     // spec. A shoulder anchored on a measured peak cannot promise the target on
     // its own, because ringing and grain samples sit above the picture it fits.
+    fn fixedCap(input: vec3f, hdr: bool) -> vec3f {
+      let transport = select(input, acescgToBt2020(input), hdr);
+      let signal = max(max(max(transport.r, transport.g), transport.b), 0.0);
+      let knee = p[${GPU_PARAMS.HIGHLIGHT_START}];
+      if (signal <= knee) { return input; }
+      let capTarget = select(1.0, p[${GPU_PARAMS.HIGHLIGHT_TARGET}], hdr);
+      let span = capTarget - knee;
+      let mapped = min(knee + span * (1.0 - exp(-(signal-knee)/span)), capTarget);
+      return input * min(mapped/signal, 1.0);
+    }
     fn applyOutputHighlights(input: vec3f) -> vec3f {
-      // SDR always finishes inside white and gamut, even with its shoulder bypassed.
-      if (p[${GPU_PARAMS.HDR_LANE}] < 0.5) { return compressSrgbGamut(input); }
-      if (p[${GPU_PARAMS.HIGHLIGHT_MODE}] < 0.5) { return input; }
-      if (p[${GPU_PARAMS.HIGHLIGHT_MODE}] == 3.0) { return clipToOutputTarget(input); }
-      if (p[${GPU_PARAMS.HDR_LANE}] > 0.5) { return clipToOutputTarget(hdrPeakFit(hdrSoftCeiling(input))); }
-      return clipToOutputTarget(input);
+      let mode = p[${GPU_PARAMS.HIGHLIGHT_MODE}];
+      let hdr = p[${GPU_PARAMS.HDR_LANE}] > 0.5;
+      if (!hdr) {
+        var result = input;
+        if (mode == 4.0) { result = fixedCap(input, false); }
+        else if (mode == 3.0) { result = clamp(input, vec3f(0.0), vec3f(1.0)); }
+        else if (mode > 0.5) { result = sdrPeakFit(sdrSoftCeiling(input)); }
+        return compressSrgbGamut(result);
+      }
+      if (mode < 0.5) { return input; }
+      if (mode == 4.0) { return clipToOutputTarget(fixedCap(input, true)); }
+      if (mode == 3.0) { return clipToOutputTarget(input); }
+      return clipToOutputTarget(hdrPeakFit(hdrSoftCeiling(input)));
     }
     // The tile work texture is allocated once at the largest tile plus halo and
     // reused, so an edge tile's valid region is smaller than the texture it
@@ -2811,6 +2825,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return max(select(lumaSrgb(signal), lumaAces(rgb), p[${GPU_PARAMS.HDR_LANE}] > 0.5), 0.0);
     }
     fn highlightAnchorSignal(rgb: vec3f) -> f32 {
+      if (p[${GPU_PARAMS.HDR_LANE}] < 0.5) {
+        if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 0.5) { return max(max(max(rgb.r, rgb.g), rgb.b), 0.0); }
+        return max(lumaSrgb(rgb), 0.0);
+      }
       if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 1.5) {
         let transport = acescgToBt2020(rgb);
         return max(max(max(transport.r, transport.g), transport.b), 0.0);

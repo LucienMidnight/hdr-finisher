@@ -161,7 +161,7 @@ def test_strip_report_carries_the_exact_peak_of_the_pixels_it_presented(kind):
 
 
 @pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
-@pytest.mark.parametrize("mode", ["peak_fit", "soft_ceiling", "clip"])
+@pytest.mark.parametrize("mode", ["peak_fit", "soft_ceiling", "clip", "fixed_cap"])
 @pytest.mark.parametrize("measurement", ["maximum", "robust", "manual"])
 @pytest.mark.parametrize("color_handling", ["smooth_rolloff", "path_to_white", "luminance"])
 def test_every_highlight_configuration_is_exact(kind, mode, measurement, color_handling):

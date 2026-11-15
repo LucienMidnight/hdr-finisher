@@ -351,6 +351,8 @@ def compress_hdr_output_highlights(
     color_context = color_context or RenderColorContext()
     if source_peak_nits is None:
         source_peak_nits = anchor.hdr_source_peak_nits if anchor is not None else None
+    if source_peak_nits is None and hdr.highlight_compression_mode != "peak_fit":
+        source_peak_nits = hdr.highlight_compression_source_peak_nits
     if source_peak_nits is None:
         source_peak_nits = _tone_adjusted_source_peak_nits(
             image, hdr, tone_enabled=False, color_context=color_context
@@ -700,7 +702,7 @@ def hdr_highlight_peak_signal(tone_adjusted_image: np.ndarray, hdr: object) -> n
     path reduces, rather than a second copy of this selection that could drift.
     """
     measurement = str(getattr(hdr, "highlight_compression_peak_measurement", "maximum"))
-    if measurement == "manual":
+    if getattr(hdr, "highlight_compression_mode", "peak_fit") != "peak_fit" or measurement == "manual":
         return None
     color_handling = str(getattr(hdr, "highlight_compression_color_handling", "smooth_rolloff"))
     if color_handling in ("smooth_rolloff", "agx_attenuate"):
@@ -721,18 +723,16 @@ def hdr_peak_nits_from_measured(measured: float, context: RenderColorContext) ->
 def apply_sdr_output_highlight_compression(
     image: np.ndarray,
     adjustments: AdjustmentState,
+    *,
+    anchor: HighlightAnchor | None = None,
 ) -> np.ndarray:
-    """Bound the SDR lane at display white after finishing operations.
-
-    Unlike HDR, the SDR shoulder cannot move to the end of the lane: it is the
-    scene-to-display placement that fits the remaining scene headroom onto the
-    normalized canvas, and every stage after it — Exposure Bands, contrast,
-    curves, colour grading, Film Look — is display-referred. So the SDR shoulder
-    stays where the headroom still exists and only the ceiling runs last, which
-    is what output finishing and grain need bounding by.
-    """
-    # The shoulder can be bypassed; delivery still needs legal SDR colours.
-    return _compress_to_srgb_gamut(image)
+    """Apply the SDR shoulder after finishing, then the unconditional gamut boundary."""
+    result = image
+    if adjustments.sdr.highlight_section_enabled:
+        result = _compress_sdr_highlights(
+            result, adjustments.sdr, peak_override=None if anchor is None else anchor.sdr_peak
+        )
+    return _compress_to_srgb_gamut(result)
 
 
 def _apply_sdr_adjustments(
@@ -750,14 +750,6 @@ def _apply_sdr_adjustments(
 ) -> np.ndarray:
     sdr = adjustments.sdr
     result = _sdr_pre_highlight(image, adjustments)
-    # Neutral SDR placement: scene 0.18 is the 100-nit diffuse-white anchor
-    # on the normalized 203-nit SDR canvas. The explicit highlight stage is
-    # solely responsible for fitting the remaining scene headroom.
-    if sdr.highlight_section_enabled:
-        result = _compress_sdr_highlights(
-            result, sdr, peak_override=None if highlight_anchor is None else highlight_anchor.sdr_peak
-        )
-    result = _compress_to_srgb_gamut(result)
     return _apply_sdr_post_highlight_tail(
         result,
         image,
@@ -770,6 +762,7 @@ def _apply_sdr_adjustments(
         source_pixel_scale=source_pixel_scale,
         frame_window=frame_window,
         color_after_tone_controls=False,
+        highlight_anchor=highlight_anchor,
     )
 
 
@@ -784,7 +777,7 @@ def _apply_sdr_color_stage(result: np.ndarray, adjustments: AdjustmentState) -> 
         return result
     acescg = linear_srgb_to_acescg(result)
     graded = _apply_hdr_color(acescg, adjustments.sdr, PreviewKind.SDR)
-    return _compress_to_srgb_gamut(acescg_to_linear_srgb(graded))
+    return acescg_to_linear_srgb(graded)
 
 
 def _apply_sdr_post_highlight_tail(
@@ -800,6 +793,7 @@ def _apply_sdr_post_highlight_tail(
     source_pixel_scale: float,
     frame_window: FrameWindow | None,
     color_after_tone_controls: bool,
+    highlight_anchor: HighlightAnchor | None = None,
 ) -> np.ndarray:
     """Every SDR stage after the highlight stage, in one explicit order.
 
@@ -853,7 +847,7 @@ def _apply_sdr_post_highlight_tail(
     if sdr.vignette_section_enabled:
         result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR, frame_window=frame_window)
     if include_output_highlight_compression:
-        return apply_sdr_output_highlight_compression(result, adjustments)
+        return apply_sdr_output_highlight_compression(result, adjustments, anchor=highlight_anchor)
     # Delivery resizes/sharpens before applying the same final gamut boundary.
     return result.astype(np.float32, copy=False)
 
@@ -926,10 +920,9 @@ def _sdr_reference_pre_highlight(image: np.ndarray, adjustments: AdjustmentState
 def sdr_highlight_stage_input(
     image: np.ndarray, adjustments: AdjustmentState, *, authored_reference: bool
 ) -> np.ndarray:
-    """Return the picture the SDR highlight stage receives, for anchor measurement."""
-    if authored_reference:
-        return _sdr_reference_pre_highlight(image, adjustments)
-    return _sdr_pre_highlight(image, adjustments)
+    """Render the finished pre-cap SDR picture for diagnostics/measurement."""
+    render = _apply_sdr_adjustments_to_reference if authored_reference else _apply_sdr_adjustments
+    return render(image, adjustments, include_output_highlight_compression=False)
 
 
 def _apply_sdr_adjustments_to_reference(
@@ -947,10 +940,6 @@ def _apply_sdr_adjustments_to_reference(
 ) -> np.ndarray:
     sdr = adjustments.sdr
     result = _sdr_reference_pre_highlight(image, adjustments)
-    if sdr.highlight_section_enabled:
-        result = _compress_sdr_highlights(
-            result, sdr, peak_override=None if highlight_anchor is None else highlight_anchor.sdr_peak
-        )
     return _apply_sdr_post_highlight_tail(
         result,
         image,
@@ -963,6 +952,7 @@ def _apply_sdr_adjustments_to_reference(
         source_pixel_scale=source_pixel_scale,
         frame_window=frame_window,
         color_after_tone_controls=True,
+        highlight_anchor=highlight_anchor,
     )
 
 
@@ -1476,6 +1466,24 @@ def _soft_ceiling_activation(softness: float) -> np.float32:
     return activation * activation * (np.float32(3.0) - np.float32(2.0) * activation)
 
 
+def _fixed_cap(image: np.ndarray, start: float, target: float) -> np.ndarray:
+    """Fixed linear-light knee, C1 join, non-expanding common RGB gain.
+
+    C(x) = k + (P-k) * (1-exp(-(x-k)/(P-k))) above k; identity below.
+    The positive maximum channel is the signal; signed channels share its gain.
+    """
+    result = np.asarray(image, dtype=np.float32)
+    knee = np.float32(start)
+    ceiling = np.float32(target)
+    span = ceiling - knee
+    signal = np.maximum(np.max(result, axis=-1), np.float32(0.0))
+    delta = np.maximum(signal - knee, np.float32(0.0))
+    mapped = np.minimum(knee - span * np.expm1(-delta / span), ceiling)
+    gain = np.ones_like(signal)
+    np.divide(mapped, signal, out=gain, where=signal > knee)
+    return (result * gain[..., None]).astype(np.float32, copy=False)
+
+
 def _compress_sdr_highlights(
     image: np.ndarray, sdr: object, *, peak_override: float | None = None
 ) -> np.ndarray:
@@ -1494,6 +1502,8 @@ def _compress_sdr_highlights(
     result = image.astype(np.float32, copy=True)
     start = np.float32(np.clip(float(getattr(sdr, "highlight_compression_start_percent", 50.0)) / 100.0, 0.01, 0.99))
     target = np.float32(1.0)
+    if mode == "fixed_cap":
+        return _fixed_cap(result, start, target)
     if mode == "clip":
         return np.clip(result, 0.0, target).astype(np.float32, copy=False)
     luma = _linear_luma(result)
@@ -1639,6 +1649,17 @@ def _compress_scene_highlights(
     if mode == "soft_ceiling" and softness <= 0.0:
         return image
     result = image.astype(np.float32, copy=False)
+    if mode == "fixed_cap":
+        start = nits_to_scene_linear(max(start_nits, 1.0), reference_white_nits)
+        target = nits_to_scene_linear(max(target_nits, start_nits + 1.0), reference_white_nits)
+        transport = acescg_to_linear_bt2020(result)
+        capped = _fixed_cap(transport, start, target)
+        # Apply its gain in ACEScg too: exact identity below knee, no round trip.
+        signal = np.maximum(np.max(transport, axis=-1), np.float32(0.0))
+        mapped = np.max(capped, axis=-1)
+        gain = np.ones_like(signal)
+        np.divide(mapped, signal, out=gain, where=signal > start)
+        return (result * gain[..., None]).astype(np.float32, copy=False)
     luma = _acescg_luma(result)
     positive_luma = np.clip(luma, 0.0, None)
     if mode == "clip":
@@ -2503,18 +2524,11 @@ def _apply_curve_set(image: np.ndarray, curve_source: object, kind: PreviewKind)
     # gain after logarithmically encoding each HDR channel makes the subsequent
     # per-channel exponential decode change RGB ratios, which can turn a small
     # shadow adjustment into an extreme blue/cyan cast.
-    if kind == PreviewKind.SDR:
-        result = np.clip(result, 0.0, 1.0)
     if not _curve_is_neutral_points(luma_curve):
         luma_lut_x, luma_lut_y = _build_curve_lut(luma_curve)
         luma = _acescg_luma(result) if kind == PreviewKind.HDR else _linear_luma(result)
         curve_luma = _curve_domain_encode(luma, kind)
-        if kind == PreviewKind.HDR:
-            mapped_curve_luma = _sample_curve_extended(curve_luma, luma_curve, luma_lut_x, luma_lut_y)
-        else:
-            mapped_curve_luma = np.interp(
-                curve_luma, luma_lut_x, luma_lut_y, left=luma_curve[0, 1], right=luma_curve[-1, 1]
-            ).astype(np.float32)
+        mapped_curve_luma = _sample_curve_extended(curve_luma, luma_curve, luma_lut_x, luma_lut_y)
         mapped_luma = _curve_domain_decode(mapped_curve_luma, kind)
         luma_gain = np.ones_like(luma, dtype=np.float32)
         np.divide(mapped_luma, luma, out=luma_gain, where=np.abs(luma) > 1e-5)
@@ -2532,12 +2546,7 @@ def _apply_curve_set(image: np.ndarray, curve_source: object, kind: PreviewKind)
         curve = rgb_curves[channel_index]
         lut_x, lut_y = _build_curve_lut(curve)
         channel = working[..., channel_index]
-        if kind == PreviewKind.HDR:
-            working[..., channel_index] = _sample_curve_extended(channel, curve, lut_x, lut_y)
-        else:
-            working[..., channel_index] = np.interp(
-                np.clip(channel, 0.0, 1.0), lut_x, lut_y, left=curve[0, 1], right=curve[-1, 1]
-            ).astype(np.float32)
+        working[..., channel_index] = _sample_curve_extended(channel, curve, lut_x, lut_y)
 
     return _curve_domain_decode(working, kind)
 
@@ -2565,7 +2574,7 @@ def _curve_domain_encode(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
         )
         encoded = np.where(positive <= HDR_CURVE_REFERENCE_WHITE, below_white, above_white)
         return np.where(value >= 0.0, encoded, value / (np.float32(2.0) * HDR_CURVE_REFERENCE_WHITE))
-    return np.clip(image, 0.0, 1.0)
+    return image.astype(np.float32, copy=False)
 
 
 def _curve_domain_decode(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
@@ -2580,7 +2589,7 @@ def _curve_domain_decode(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
         )
         decoded = np.where(value <= np.float32(0.5), below_white, above_white)
         return np.where(value >= 0.0, decoded, value * np.float32(2.0) * HDR_CURVE_REFERENCE_WHITE)
-    return np.clip(image, 0.0, 1.0)
+    return image.astype(np.float32, copy=False)
 
 
 def _normalize_curve_points(points: list[list[float]]) -> np.ndarray:

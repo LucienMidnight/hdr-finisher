@@ -991,7 +991,7 @@
               </div>
               <select id="hdr-compression-mode" data-path="hdr.highlight_compression_mode">
                 <option value="peak_fit">Peak Fit</option>
-                <option value="soft_ceiling">Soft Ceiling</option>
+                <option value="fixed_cap">Fixed cap</option><option value="soft_ceiling">Soft Ceiling</option>
                 <option value="clip">Clip</option>
               </select>
             </div>
@@ -1197,7 +1197,7 @@
           <div class="control-group-body">
             <div class="control-row select-control" data-control-path="sdr.highlight_compression_mode">
               <div class="control-heading"><label id="sdr-highlight-compression-summary" class="tooltip-trigger" for="sdr-compression-mode" data-tooltip="Peak Fit anchors the measured source peak at display white while preserving a smooth highlight gradient.">Mode</label></div>
-              <select id="sdr-compression-mode" data-path="sdr.highlight_compression_mode"><option value="peak_fit">Peak Fit</option><option value="soft_ceiling">Soft Ceiling</option><option value="clip">Clip</option></select>
+              <select id="sdr-compression-mode" data-path="sdr.highlight_compression_mode"><option value="peak_fit">Peak Fit</option><option value="fixed_cap">Fixed cap</option><option value="soft_ceiling">Soft Ceiling</option><option value="clip">Clip</option></select>
             </div>
             <div class="control-row" data-control-path="sdr.highlight_compression_start_percent">
               <div class="control-heading"><label for="sdr-compression-start">Start</label><output data-value-path="sdr.highlight_compression_start_percent">50%</output></div>

@@ -17,7 +17,7 @@ function normalizeHighlightCompressionControls(changedPath) {
 
 function syncHighlightCompressionSourcePeak() {
   const hdr = state.adjustments.hdr;
-  if (!hdr) return;
+  if (!hdr || hdr.highlight_compression_mode === "fixed_cap") return;
   if (hdr.highlight_compression_peak_measurement === "manual") {
     hdr.highlight_compression_source_peak_nits = Number(hdr.highlight_compression_manual_peak_nits) || 1000;
     return;
@@ -84,6 +84,11 @@ function mapHighlightNits(inputNits, hdr) {
   const mode = hdr.highlight_compression_mode || "peak_fit";
   if (mode === "off") return inputNits;
   if (mode === "clip") return Math.min(inputNits, Number(hdr.highlight_compression_target_nits) || 1000);
+  if (mode === "fixed_cap") {
+    const knee = Number(hdr.highlight_compression_start_nits);
+    const target = Number(hdr.highlight_compression_target_nits);
+    return inputNits <= knee ? inputNits : knee - (target-knee)*Math.expm1(-(inputNits-knee)/(target-knee));
+  }
   if (mode === "soft_ceiling") {
     const softness = Number(hdr.highlight_compression_softness) || 0;
     if (softness <= 0) return inputNits;
@@ -128,9 +133,9 @@ function renderHighlightCompressionControls() {
   document.querySelector('[data-control-path="hdr.highlight_compression_color_handling"]')?.toggleAttribute("hidden", mode !== "peak_fit");
   document.querySelector('[data-control-path="hdr.highlight_compression_attenuation"]')?.toggleAttribute(
     "hidden", mode !== "peak_fit" || hdr.highlight_compression_color_handling !== "agx_attenuate");
-  document.querySelector('[data-control-path="hdr.highlight_compression_peak_measurement"]')?.toggleAttribute("hidden", mode === "clip");
+  document.querySelector('[data-control-path="hdr.highlight_compression_peak_measurement"]')?.toggleAttribute("hidden", mode === "clip" || mode === "fixed_cap");
   document.querySelector('[data-control-path="hdr.highlight_compression_bias"]')?.toggleAttribute("hidden", mode !== "peak_fit");
-  document.querySelector('[data-control-path="hdr.highlight_compression_manual_peak_nits"]')?.toggleAttribute("hidden", hdr.highlight_compression_peak_measurement !== "manual");
+  document.querySelector('[data-control-path="hdr.highlight_compression_manual_peak_nits"]')?.toggleAttribute("hidden", mode === "fixed_cap" || mode === "clip" || hdr.highlight_compression_peak_measurement !== "manual");
 
   const canvas = els.highlightCompressionGraph;
   const surface = resizeCanvasSurface(canvas);
@@ -188,6 +193,8 @@ function renderHighlightCompressionControls() {
   context.lineWidth = 1;
   if (mode === "off") {
     els.highlightCompressionSummary.dataset.tooltip = "Compression is off. The ultraviolet identity line leaves highlights unchanged.";
+  } else if (mode === "fixed_cap") {
+    els.highlightCompressionSummary.dataset.tooltip = "Fixed cap leaves values below Start unchanged and smoothly compresses brighter colours toward Target Peak, preserving colour ratios without measuring the image peak.";
   } else if (mode === "clip") {
     els.highlightCompressionSummary.dataset.tooltip = `Clip applies a hard final-output ceiling at ${Math.round(hdr.highlight_compression_target_nits)} nit.`;
   } else if (mode === "soft_ceiling") {
@@ -209,7 +216,7 @@ function renderHighlightCompressionControls() {
 
 function normalizeSdrHighlightCompressionControls(changedPath) {
   const sdr = state.adjustments.sdr;
-  if (!sdr) return;
+  if (!sdr || sdr.highlight_compression_mode === "fixed_cap") return;
   if (changedPath.endsWith("peak_measurement") || changedPath.endsWith("manual_peak_percent") || changedPath.endsWith("color_handling")) {
     syncSdrHighlightCompressionSourcePeak();
   }
@@ -217,7 +224,7 @@ function normalizeSdrHighlightCompressionControls(changedPath) {
 
 function syncSdrHighlightCompressionSourcePeak() {
   const sdr = state.adjustments.sdr;
-  if (!sdr) return;
+  if (!sdr || sdr.highlight_compression_mode === "fixed_cap") return;
   if (sdr.highlight_compression_peak_measurement === "manual") {
     sdr.highlight_compression_source_peak_percent = Number(sdr.highlight_compression_manual_peak_percent) || 100;
     return;
@@ -260,8 +267,10 @@ function renderSdrHighlightCompressionControls() {
   document.querySelector('[data-control-path="sdr.highlight_compression_color_handling"]')?.toggleAttribute("hidden", mode !== "peak_fit");
   document.querySelector('[data-control-path="sdr.highlight_compression_attenuation"]')?.toggleAttribute(
     "hidden", mode !== "peak_fit" || sdr.highlight_compression_color_handling !== "agx_attenuate");
-  document.querySelector('[data-control-path="sdr.highlight_compression_manual_peak_percent"]')?.toggleAttribute("hidden", sdr.highlight_compression_peak_measurement !== "manual");
+  document.querySelector('[data-control-path="sdr.highlight_compression_manual_peak_percent"]')?.toggleAttribute("hidden", mode === "fixed_cap" || mode === "clip" || sdr.highlight_compression_peak_measurement !== "manual");
 
+  document.querySelector('[data-control-path="sdr.highlight_compression_peak_measurement"]')?.toggleAttribute("hidden", mode === "fixed_cap" || mode === "clip");
+  document.querySelector('[data-control-path="sdr.highlight_compression_bias"]')?.toggleAttribute("hidden", mode !== "peak_fit");
   const curve = sdrHighlightCurveAdapter(sdr);
   const surface = resizeCanvasSurface(canvas);
   if (!surface) return;
@@ -317,7 +326,9 @@ function renderSdrHighlightCompressionControls() {
       : sdr.highlight_compression_color_handling === "preserve_color"
         ? " Color ratios are preserved."
         : " sRGB channels roll off independently for smooth color transitions.";
-    els.sdrHighlightCompressionSummary.dataset.tooltip = mode === "clip"
+    els.sdrHighlightCompressionSummary.dataset.tooltip = mode === "fixed_cap"
+      ? "Fixed cap leaves values below Start unchanged and smoothly compresses brighter colours toward display white, preserving colour ratios without measuring the image peak."
+      : mode === "clip"
       ? "Clip applies a hard ceiling at display white."
       : mode === "soft_ceiling"
         ? "Soft Ceiling approaches display white without a measured peak anchor."

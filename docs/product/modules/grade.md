@@ -126,6 +126,19 @@ as validated by the reduced CPU research. Evidence and logs are retained at
 `codebase/output/review/m1-all-colours/`; the committed report retains the
 complete original-population comparison tables.
 
+## November 15: N1 final Highlight Compression (output change)
+
+Built on CPU and WebGPU: Fixed cap is an additional mode using Start/Target
+only, with the approved fixed-knee exponential curve and common RGB gain.
+Peak Fit, Soft Ceiling and Clip retain their curves, saved settings and defaults.
+Generated and authored SDR now run HC after Film Look, grain and finishing,
+before the unconditional sRGB gamut mapper. No early SDR shoulder remains.
+Neutral Curves retain headroom; active curves extend their endpoint slopes.
+HDR retains its final target ceiling and encoded-delivery checks. Finished
+Library thumbnail/screen versions advance; retained scene developments are reused.
+N2's five-control Tone block is not part of this change. M1 remains open for
+N3a's complete-target colour fit and Film-input exposure work.
+
 ## November 15: W3 wheels and SDR colour headroom (output change; M1a built)
 
 C1–C3 are implemented together on CPU and WebGPU. Wheels no longer clamp the

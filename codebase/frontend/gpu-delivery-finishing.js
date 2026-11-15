@@ -128,10 +128,10 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
     params[P.TILE_ORIGIN_X]=0;params[P.TILE_ORIGIN_Y]=0;params[P.FRAME_WIDTH]=width;params[P.FRAME_HEIGHT]=height;
     // Re-measure the delivered film, including resize and sharpening, before
     // the shared limiter (Peak Fit must not use Grade's estimate).
-    if(hdr && params[P.HIGHLIGHT_MODE]===1 && job.adjustments.hdr.highlight_compression_peak_measurement!=="manual"){
+    if(params[P.HIGHLIGHT_MODE]===1 && job.adjustments[lane].highlight_compression_peak_measurement!=="manual"){
       const pipeline=await gpu.ensurePeakReductionPipeline("finishedPeakReductionMain");
       params[P.HIGHLIGHT_ANCHOR]=await gpu.runPeakReduction(pipeline,image,width,height,params,
-        job.adjustments.hdr.highlight_compression_peak_measurement,`${job.id}:${lane}:delivery`);
+        job.adjustments[lane].highlight_compression_peak_measurement,`${job.id}:${lane}:delivery`);
     }
     const finished=this.texture(width,height);
     const buffer=gpu.createStorageBuffer(params);this.device.queue.writeBuffer(buffer,0,params);

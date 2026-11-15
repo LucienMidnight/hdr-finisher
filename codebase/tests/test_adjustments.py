@@ -1927,3 +1927,62 @@ def test_neutral_film_module_preserves_unbounded_input(strength, enabled):
     image = np.array([[[1.4, .5, -.01]]], np.float32)
     output = adjustments_module._apply_film_look(image, state, PreviewKind.SDR)
     np.testing.assert_array_equal(output, image)
+
+
+@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
+def test_fixed_cap_is_peak_independent_monotonic_nonexpanding_and_hue_preserving(kind):
+    from hdr_finisher.adjustments import _fixed_cap
+    from hdr_finisher.color import linear_bt2020_to_acescg, acescg_to_linear_bt2020
+    knee, target = .8, 1.
+    values = np.concatenate([np.linspace(0, knee, 101), np.geomspace(knee + 1e-5, 1e5, 300)]).astype(np.float32)
+    transport = values[None, :, None] * np.array([1., .3, -.04], np.float32)
+    if kind == PreviewKind.SDR:
+        state = SDRAdjustments(highlight_compression_mode="fixed_cap", highlight_compression_start_percent=80)
+        output = _compress_sdr_highlights(transport, state)
+        state.highlight_compression_manual_peak_percent = 100000
+        state.highlight_compression_peak_measurement = "manual"
+        np.testing.assert_array_equal(output, _compress_sdr_highlights(transport, state))
+    else:
+        image = linear_bt2020_to_acescg(transport)
+        # Choose nits so the knee/target are .8/1 at the supported 203-nit white.
+        output_scene = _compress_scene_highlights(image, 800 * 203/180, 1000 * 203/180, mode="fixed_cap", reference_white_nits=203)
+        np.testing.assert_array_equal(output_scene, _compress_scene_highlights(image, 800 * 203/180, 1000 * 203/180, mode="fixed_cap", reference_white_nits=203, source_peak_nits=1e7, peak_detail=100, bias=100))
+        np.testing.assert_array_equal(output_scene[:, :100], image[:, :100])
+        output = acescg_to_linear_bt2020(output_scene)
+    assert np.isfinite(output).all()
+    assert np.all(np.diff(output[0, :, 0]) >= -2e-7)
+    assert float(output[..., 0].max()) <= target + 2e-7
+    np.testing.assert_allclose(output[..., 1], output[..., 0] * .3, atol=2e-7, rtol=2e-6)
+    np.testing.assert_allclose(output[..., 2], output[..., 0] * -.04, atol=2e-7, rtol=2e-6)
+    assert np.all(output[..., 0] <= transport[..., 0] + 2e-7)
+    # Adding a brighter pixel cannot move any existing pixel's shoulder.
+    np.testing.assert_array_equal(_fixed_cap(transport[:, :200], knee, target), _fixed_cap(transport, knee, target)[:, :200])
+
+
+@pytest.mark.parametrize("authored", [False, True])
+@pytest.mark.parametrize("mode", ["peak_fit", "soft_ceiling", "clip", "fixed_cap"])
+def test_sdr_compression_runs_only_after_film_and_finishing(authored, mode, monkeypatch):
+    state = AdjustmentState()
+    state.sdr.highlight_compression_mode = mode
+    state.sdr.highlight_compression_softness = 60
+    state.sdr.highlight_compression_start_percent = 80
+    state.sdr.film_look.film_stock = "kodak_portra_400"
+    image = np.repeat(np.linspace(.1, 3, 32, dtype=np.float32)[None, :, None], 3, axis=-1)
+    render = _apply_sdr_adjustments_to_reference if authored else _apply_sdr_adjustments
+    film_inputs = []
+    original = adjustments_module._apply_film_look
+    def film_probe(pixels, *args, **kwargs):
+        film_inputs.append(pixels.copy())
+        return original(pixels, *args, **kwargs)
+    monkeypatch.setattr(adjustments_module, "_apply_film_look", film_probe)
+    finished = render(image, state)
+    pre_cap = render(image, state, include_output_highlight_compression=False)
+    state.sdr.highlight_section_enabled = False
+    bypass = render(image, state, include_output_highlight_compression=False)
+    np.testing.assert_array_equal(pre_cap, bypass)
+    np.testing.assert_array_equal(film_inputs[0], film_inputs[2])
+    assert film_inputs[0].max() > 1
+    state.sdr.highlight_section_enabled = True
+    expected = adjustments_module.apply_sdr_output_highlight_compression(pre_cap, state)
+    np.testing.assert_array_equal(finished, expected)
+    assert np.isfinite(finished).all() and finished.min() >= 0 and finished.max() <= 1

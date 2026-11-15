@@ -17,7 +17,9 @@ function assert(condition, message) {
   try {
     await page.goto(baseUrl, { waitUntil: "networkidle" });
     await importTestPattern(page);
-    await page.waitForFunction(() => state.session?.session_id && state.gpuPreview?.available);
+    await page.waitForFunction(() => state.session?.session_id && state.gpuPreview?.available).catch(async error => {
+      console.error(await page.evaluate(() => ({session:state.session?.session_id,gpu:state.gpuPreview?.detail}))); throw error;
+    });
 
     const result = await page.evaluate(async () => {
       const renderer = state.gpuPreview;
@@ -87,37 +89,19 @@ function assert(condition, message) {
         ...toBt2020(toneRgb([0.1, 10, 0.1])),
         ...toBt2020(toneRgb([0.1, 0.1, 10])),
       );
-      const sdrParams = new Float32Array(160);
-      sdrParams[0] = 0;
-      sdrParams[1] = 0;
-      sdrParams[2] = 0.7;
-      sdrParams[110] = 2;
+      // N1: SDR Peak Fit measures finished display-linear pixels, after Film
+      // Look/finishing. Source-prefix reduction no longer defines its anchor.
+      const sdrParams = new Float32Array(window.HDRGpuParamLayout.count);
       sdrParams[159] = 1;
-      const measuredSdrGenerated = await renderer.measureToneAdjustedPeak(
-        { texture, width: 3, height: 1 },
-        sdrParams,
-        "maximum",
-        `sdr-generated-saturated-test-${performance.now()}`,
-      );
-      const toSrgb = ([r, g, b]) => [
-        1.7050509927 * r - 0.6217921207 * g - 0.0832588720 * b,
-        -0.1302564175 * r + 1.1408047366 * g - 0.0105483191 * b,
-        -0.0240033568 * r - 0.1289689761 * g + 1.1529723329 * b,
-      ];
-      const sdrScale = (100 / 203) / 0.18;
-      const expectedSdrGenerated = Math.max(
-        ...toSrgb([10 * 2 ** 0.7, 0.1 * 2 ** 0.7, 0.1 * 2 ** 0.7]).map((value) => value * sdrScale),
-        ...toSrgb([0.1 * 2 ** 0.7, 10 * 2 ** 0.7, 0.1 * 2 ** 0.7]).map((value) => value * sdrScale),
-        ...toSrgb([0.1 * 2 ** 0.7, 0.1 * 2 ** 0.7, 10 * 2 ** 0.7]).map((value) => value * sdrScale),
-      );
+      sdrParams[110] = 2;
+      const finishedPipeline = await renderer.ensurePeakReductionPipeline("finishedPeakReductionMain");
+      const measuredSdrGenerated = await renderer.runPeakReduction(finishedPipeline,
+        texture, 3, 1, sdrParams, "maximum", `sdr-finished-${performance.now()}`);
+      const expectedSdrGenerated = 10;
       sdrParams[1] = 1;
-      const measuredSdrAuthored = await renderer.measureToneAdjustedPeak(
-        { texture, width: 3, height: 1 },
-        sdrParams,
-        "maximum",
-        `sdr-authored-saturated-test-${performance.now()}`,
-      );
-      const expectedSdrAuthored = 10 * 2 ** 0.7;
+      const measuredSdrAuthored = await renderer.runPeakReduction(finishedPipeline,
+        texture, 3, 1, sdrParams, "maximum", `sdr-authored-finished-${performance.now()}`);
+      const expectedSdrAuthored = 10;
       texture.destroy();
 
       Object.assign(state.adjustments.hdr, {
