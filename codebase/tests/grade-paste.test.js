@@ -87,4 +87,6 @@ test('cancelling preparation stops the next photo and never applies grades', asy
   assert.equal(requests.filter(row=>row.url.endsWith('grade-prepare')).length,1);
   assert.equal(requests.filter(row=>row.url.endsWith('grade-paste')).length,0);
   assert.ok(requests.some(row=>row.url.endsWith('grade-preparation-cancel')));
+  // Library api() sends GET without a body; every preparation route is POST.
+  for (const row of requests.filter(row=>row.url.includes('grade-prepar'))) assert.notEqual(row.body,undefined,row.url);
 });

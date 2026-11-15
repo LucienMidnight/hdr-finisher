@@ -59,7 +59,8 @@
       root.addEventListener('pagehide', stop);
       document.body.append(box); box.showModal();
       try {
-        ({token} = await api('/api/library/grade-preparation'));
+        // A body makes the Library api() helper send POST, as the route requires.
+        ({token} = await api('/api/library/grade-preparation', {}));
         for (const [index, path] of paths.entries()) {
           if (cancelled) return null;
           message.textContent = `Preparing ${index + 1} of ${paths.length} photos for paste… Waiting for memory or Grade if needed.`;
