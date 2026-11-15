@@ -1,3 +1,29 @@
+## November 16: N2 global Tone and C4 wheel ranges
+
+Built the five-control global Tone block in HDR, generated SDR and authored SDR:
+Blacks, Shadows, Midtones, Highlights, Whites. It reads one frozen input guide
+(Y and brightest delivery-channel M), after foundation/Exposure Bands and before
+HSL, curves, wheels, locals and Film Look. No early Blacks or duplicate global
+zone pass remains. Narrow neutral-floor Blacks and top-stop Whites are gated
+away from broad zones; combined parameter-only interval bounds preserve tonal
+order. Zero settings bypass exactly. Whites alone at −100 gives .775P; +100
+gives one pre-look stop of overdrive. Enabled final HC still owns the ceiling.
+
+Coordinator's approved anchor is implemented: D_HDR=.18, G_HDR=.0324;
+D_SDR=100/203, G_SDR=.08866995074 (authored SDR shares these display units).
+Default Shadows Center/Width −1.5/5 EV; Midtones 0/4 EV; Highlights HDR
++2.25/4.5 EV, SDR +1.75/3.5 EV. Global/local wheel ranges now use the same
+photographic-grey anchor in CPU/GPU and Match's existing primaries translation.
+The October 27 global-tone decision is superseded by this approved design.
+
+Intentional pixel changes affect non-zero global Blacks/zones and non-neutral
+wheels, including local wheels; no pre-1.0 migration renderer. Finished Library
+cache identities advance. Match has only a bounded fitting adaptation; no gate
+or tolerance changes. Local Tone/Match rebuild remains N3a and range/clipping
+preview remains N3b. Existing tokens, controls, resets and clipboard categories
+are reused. See the [Tone design](../../technical/briefs/tone-endpoints-design-2026-11-15.md)
+for the overlap table and the sprint brief N2 result for validation evidence.
+
 ## November 15: W6 focus, module actions and compact Frame menu
 
 Module headers now follow the same DOM/Tab and visual order: name, changed

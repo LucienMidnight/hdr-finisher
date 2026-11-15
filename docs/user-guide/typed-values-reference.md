@@ -55,7 +55,9 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 | Exposure | -2 to 2 EV | **-8 to 8 EV** |  |
 | Contrast | -0.5 to 0.5 | **-2 to 2** |  |
 | Pivot | 0.02 to 0.5 | **0.0001 to 18** |  |
-| Shadow / Black | -0.2 to 0.2 | **-1 to 1** |  |
+| Blacks / Shadows / Midtones / Highlights / Whites | -100 to 100 | Same as slider | Global strengths; not EV. |
+| Shadows / Midtones / Highlights Center | -8 to 8 EV | **-12 to 12 EV** | From photographic mid-grey. |
+| Shadows / Midtones / Highlights Width | 0.5 to 12 EV | **0.5 to 24 EV** | Full zone width; endpoint gates still apply. |
 
 ### Highlight Compression (HDR)
 
@@ -76,7 +78,7 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 | Selected band | drag the band | -2 to +2 EV | Each band is also held so it cannot cross its neighbours. |
 | Curve smoothing | 0 to 1 | 0 to 1 |  |
 
-### Color and Lift, Gamma, Gain (HDR)
+### Color (HDR)
 
 | Control | Slider | Typed value | Notes |
 | --- | --- | --- | --- |
@@ -93,19 +95,9 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 | Tint Hue | -180 to 180 ° | -180 to 180 ° |  |
 | Tint Purity | 0 to 20 % | **0 to 99 %** |  |
 
-### Lift, Gamma, Gain (HDR)
+### Tone ranges (HDR)
 
-| Control | Slider | Typed value | Notes |
-| --- | --- | --- | --- |
-| Lift | -0.25 to 0.25 | **-1 to 1** |  |
-| Lift Range | 0.5 to 12 EV | **0.5 to 24 EV** |  |
-| Lift Pivot | -8 to 8 EV | **-12 to 12 EV** |  |
-| Gamma | -0.5 to 0.5 | **-2 to 2** |  |
-| Gamma Range | 0.5 to 12 EV | **0.5 to 24 EV** |  |
-| Gamma Pivot | -8 to 8 EV | **-12 to 12 EV** |  |
-| Gain | -0.25 to 0.25 | **-1 to 1** |  |
-| Gain Range | 0.5 to 12 EV | **0.5 to 24 EV** |  |
-| Gain Pivot | -8 to 8 EV | **-12 to 12 EV** |  |
+See the five-control Tone strength, Center and Width limits above.
 
 ### Tone (SDR)
 
@@ -114,7 +106,9 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 | Exposure | -2 to 2 EV | **-8 to 8 EV** |  |
 | Contrast | -0.5 to 0.5 | **-2 to 2** |  |
 | Pivot | 0.05 to 0.95 | **0.001 to 0.999** |  |
-| Shadow | -0.3 to 0.3 | **-2 to 2** |  |
+| Blacks / Shadows / Midtones / Highlights / Whites | -100 to 100 | Same as slider | Global strengths; not EV. |
+| Shadows / Midtones / Highlights Center | -8 to 8 EV | **-12 to 12 EV** | From photographic mid-grey. |
+| Shadows / Midtones / Highlights Width | 0.5 to 12 EV | **0.5 to 24 EV** | Full zone width; endpoint gates still apply. |
 
 ### Highlight Compression (SDR)
 
@@ -133,7 +127,7 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 | Influence | no slider | 0.25 to 12 EV |  |
 | Selected band | drag the band | -2 to +2 EV | Each band is also held so it cannot cross its neighbours. |
 
-### Color and Lift, Gamma, Gain (SDR)
+### Color (SDR)
 
 | Control | Slider | Typed value | Notes |
 | --- | --- | --- | --- |
@@ -150,19 +144,9 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 | Tint Hue | -180 to 180 ° | -180 to 180 ° |  |
 | Tint Purity | 0 to 20 % | **0 to 99 %** |  |
 
-### Lift, Gamma, Gain (SDR)
+### Tone ranges (SDR)
 
-| Control | Slider | Typed value | Notes |
-| --- | --- | --- | --- |
-| Lift | -0.25 to 0.25 | **-1 to 1** |  |
-| Lift Range | 0.5 to 12 EV | **0.5 to 24 EV** |  |
-| Lift Pivot | -8 to 8 EV | **-12 to 12 EV** |  |
-| Gamma | -0.5 to 0.5 | **-2 to 2** |  |
-| Gamma Range | 0.5 to 12 EV | **0.5 to 24 EV** |  |
-| Gamma Pivot | -8 to 8 EV | **-12 to 12 EV** |  |
-| Gain | -0.25 to 0.25 | **-1 to 1** |  |
-| Gain Range | 0.5 to 12 EV | **0.5 to 24 EV** |  |
-| Gain Pivot | -8 to 8 EV | **-12 to 12 EV** |  |
+See the five-control Tone strength, Center and Width limits above.
 
 ### Color Grading
 

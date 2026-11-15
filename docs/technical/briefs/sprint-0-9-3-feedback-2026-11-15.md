@@ -30,6 +30,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | ID | Item | Package | Status |
 | --- | --- | --- | --- |
 | N1 | Fixed cap and final SDR Highlight Compression | Overnight | built and checked — fourth mode added, existing curves/settings/defaults retained; CPU/GPU finishing, all 33 SDR Film cases, Proof/export and isolated Library pass; M1 mixed results/new refusals remain for N3a |
+| N2 | Global five-control Tone and aligned wheel ranges | Overnight | built and checked — frozen Y/M guide, photographic-grey anchor, endpoint gates/combined limiter, Whites UI; four HC modes, CPU/GPU, Proof/export, both layouts and isolated Library pass; encoded-HDR diagnostics remain outside report-only caps |
 | H1 | HSL picker, Local hue selection and gizmos | Follow-up | built, scoped — pre-sprint Local save/sample race and late HSL cancellation fixed; HDR/SDR real-RAW picking, wheel/sampling-gizmo gestures and CPU/GPU hue delivery pass; general idle failure not reproduced, Steve's original sequence still needs confirmation |
 | R1 | SDR local Detail: CPU clips, GPU keeps headroom | W1 | built — CPU local Detail retains headroom; Portra/Velvia GPU preview against CPU export passes |
 | R2 | Startup reconciliation brings back invalidated scenes | W1 | built — reconciliation checks saved epoch and pending deletion; scene/surface regressions pass |
@@ -47,7 +48,8 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | C1 | Colour wheels: tiny move changes highlights | W3 | built — CPU/GPU retain headroom; continuity and unchanged-range checks pass |
 | C2 | Colour wheels: Balance direction | W3 | built — positive favours Highlights globally/locally; Match translates local wheel hues too |
 | C3 | Colour wheels: clicking a puck changes it | W3 | built — shared drawing/input radius and grab offset; stationary 40% stays 40% |
-| T1 | Blacks/Whites and Shadows/Midtones/Highlights redesign | W4 | design done (`tone-endpoints-design-2026-11-15.md`), waiting on Steve |
+| C4 | HDR/SDR colour-wheel tonal ranges | N2 | built — same photographic-grey anchor globally/locally, CPU/GPU; Match retains primaries translation; existing active wheel looks intentionally change |
+| T1 | Blacks/Whites and Shadows/Midtones/Highlights redesign | W4 | global block built and checked in N2; approved Local Tone remains N3a, clipping/range preview N3b, Auto later |
 | M1 | HDR to SDR Match colour shifts (blue jeans) | W5 | broader research complete; not fixed across colours — all-hue/stock tables and five shared RAWs show remaining bright-colour errors/regressions; complete-target fitting and M1d need Steve's decision |
 | M1a | SDR contrast/Film Look clipping turns saturated colours | W3 | built, scoped clipping fix only — existing calibrated exposure/body guards pass; broader M1 follow-up finds bright green/cyan/indigo errors and DSC00264 highlight regression; no new pixel/gate change; GPU Match fixture still fails before Match |
 | X1 | Match SDR button for local adjustments and masks | — | design done, waiting on Steve |
@@ -109,12 +111,130 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | Step | Work | Depends on |
 | --- | --- | --- |
 | N1 | Highlight Compression: add the fixed cap mode beside Peak Fit, Soft Ceiling and Clip; move SDR HC after Film Look and finishing. | — |
-| N2 | Global five-control Tone block (Blacks, Shadows, Midtones, Highlights, Whites) before Film Look, frozen guide, anchor above, combined limiter, Whites slider in the UI; align colour wheel ranges (C4). | N1 |
+| N2 | **Built and checked:** global five-control Tone before Film Look, frozen guide, photographic-grey anchor, combined limiter, Whites UI; aligned colour wheel ranges (C4). See result below. | N1 |
 | N3a | Local Tone shares the curves; Match rebuilt to fit through the real renderer, including highlight colour and equal Film Look input exposure (M1, M1d). | N2 |
 | N3b | Clipping and tone-range preview (T1-d). | N2 (parallel with N3a) |
 | N4 | X1 local "Match SDR". | N3a |
 | N5 | X2 "Start HDR from SDR". | N4 |
 | N6 | Final review, fixes, brief/PRD updates, push. | all |
+
+### N2 result (November 16, MacBook Neo / 8 GB)
+
+Built locally on `feat/watermark-and-library-polish`, after N1 `5e4186e7`.
+Commits: `d41fb79c` (global Tone/UI/C4), `0b56f666` (minimal Match
+adaptation), `c943fe2d` (GPU qualification/inventory). Documentation is in the
+following N2 documentation commit. **Not pushed.**
+
+One global block now applies Blacks, Shadows, Midtones, Highlights and Whites
+to one frozen entry guide: Y in working primaries, M in delivery primaries.
+It follows Exposure Bands/foundation, before HSL/curves/wheels/locals/Film Look
+in HDR, generated SDR and authored SDR. Early Blacks and the old global zone
+pass are removed. Neutral-floor Blacks, top-stop Whites, endpoint-gated broad
+zones and a conservative parameter-only combined interval limiter share the
+CPU/GPU implementation. Zero is exact identity; negative Blacks may clip.
+Whites alone maps P to .775P at −100 or 2P at +100 before the look. Final HC
+still owns the delivery ceiling, including all four modes.
+
+**Verified reference units:** HDR diffuse/reference white D=.18 scene-linear,
+G=.18D=.0324 (36.54 nits at project reference 203; 18 nits at 100).
+Generated SDR places scene .18 at D=100/203=.4926108374 display-linear,
+G=.08866995074; authored SDR already uses these display-linear units and gets
+no second placement. Checked against `SDR_SCENE_TO_DISPLAY_SCALE`,
+`SDR_DISPLAY_REFERENCE_WHITE`, `GRAIN_DEVELOP_HDR_SCALE` and authored-SDR entry.
+HDR P=HC Target × .18 / project reference white, even with HC bypassed; SDR
+P=1. No monitor setting or photo statistics set these references.
+
+| Default | HDR Center / Width | SDR Center / Width |
+| --- | ---: | ---: |
+| Shadows | −1.5 / 5 EV | −1.5 / 5 EV |
+| Midtones | 0 / 4 EV | 0 / 4 EV |
+| Highlights | +2.25 / 4.5 EV | +1.75 / 3.5 EV |
+
+| Endpoint overlap (HDR Target 1000 / reference 203) | HDR | SDR |
+| --- | --- | --- |
+| Blacks ↔ broad, Y relative to D | 1.125–2.25% D; one stop | same |
+| Whites starts, M relative to G | +3.7744 EV | +2.4954 EV |
+| Broad ends, M relative to G | +4.2744 EV | +2.9954 EV |
+| Broad ↔ Whites | half a stop | half a stop |
+
+The design document includes the full neutral-ray overlap/weight table and
+strength calibration. C4 uses log2(Y/G) for global and local wheels in both
+renderers; identical Balance/Blending therefore selects the same relative
+range. Match keeps its primaries translation. Its minimal adaptation recovers
+median luma within the existing six-pass bound, adds two bounded Start
+proposals, and allows one existing-style composed RGB residual at CPU
+certification. The small remote-render offset fixture originally certified at
+P95 OKLab .050473 (correctly rejected); the correction reaches .041832 without
+moving any quality, white-growth, editability, normal/review or fallback gate.
+This is not the N3a Match rebuild or a claim that M1 is fixed.
+
+**Validation:** all Electron/GPU runs used venv Python `tools/gpu-run-lock.py`
+from `codebase`, sequentially at 1408×794. Logs and eight layout captures are
+under `codebase/output/n2-validation/`.
+
+- Fast Node: **1058 passed, 1 skipped**, 10.56 s (`node-final.log`).
+- Focused Match/Tone: **67 passed**, 3.80 s (`match-tone-final.log`).
+- Full Python: **3536 passed, 144 skipped, 1 xpassed**, 217.47 s
+  (`python-final.log`); no failures. The unexpected pass is reported, not hidden.
+- Final Tone/remote-Match rerun after descriptive interval-operand naming:
+  **34 passed**, 1.82 s (`final-focus.log`); no numerical behavior change.
+- `tone-zones-delivery.js`: **passes all four HC modes**, strict finished-float
+  perceptual agreement, full/reduced Proof matching each renderer's export,
+  and decoded HDR ceiling checks. Combined fixture includes active Whites,
+  broad zones, wheels and Film Look.
+- `gpu-highlight-compression-parity.js`: **pass**, including scope and anchor
+  refresh. `neutral-color-grading-reference.js`: **61 cases / 488 pixels pass**
+  at unchanged 2e−6 max error, anchored wheel ramps and HDR/SDR Tone ±100/zero;
+  exact zero GPU bypass rerun passes (`colour-reference-final.log`).
+- `gpu-delivery-smoke.js`: **pass**, native GPU/forced CPU and Proof/export.
+- UI: HDR and SDR five-control order/containment/reachability checked at
+  **1408×794 and 1100×720**, existing tokens/components only. Full-resolution
+  PNGs retained as `tone-{hdr,sdr}-{size}-{blacks,whites}.png`; Steve's visual
+  sign-off remains his morning check.
+- Isolated 90-second quick Library: **9/9 viewport pictures**, first **0.3 s**,
+  no errors/memory violation, independent process-tree peak **2.941 GB**, below
+  unchanged 4 GB. This is not a full survey of the 33 eligible photos.
+
+| HC mode | HDR float ΔEITP mean / P99.9 | SDR float ΔE00 mean / P99.9 | Decoded HDR peak (1000-nit target) |
+| --- | ---: | ---: | ---: |
+| Fixed cap | .030057 / .100160 | .008365 / .044137 | 990.547 nits |
+| Peak Fit | .025382 / .092788 | .006448 / .027817 | 986.782 nits |
+| Soft Ceiling | .028017 / .099818 | .007803 / .077390 | 983.404 nits |
+| Clip | .025477 / .099823 | .007740 / .100410 | 993.781 nits |
+
+**Not all encoded perceptual diagnostics pass.** As in N1, encoded-HDR
+report-only diagnostics exceed their percentile caps: Tone P99.9 ΔEITP is
+10.8806–10.9097 (mean .5382–.8755); delivery smoke also reports a failure.
+Finished-float comparisons, Proof identity and decoded ceilings pass. Those
+diagnostics were neither loosened nor relabelled as passes. SDR decoded
+perceptual checks pass. Optional SciPy/Matplotlib warnings and two resource
+409s did not fail the GPU checks.
+
+**Not run:** full focused-release/all-driver sweep, all-codec/native-size
+`hdr-ceiling-delivery.js`, `gpu-delivery-repeat.js`, standalone
+`proof-size-interaction.js`, the full 33-Film suite already run in N1, native
+GPU Match/research matrix, a full Library photo survey/Single run, Windows or
+packaged builds, native-size RAW/Film qualification, authored-SDR encoded
+end-to-end delivery. Authored SDR has CPU shared-block coverage and direct
+SDR shader references, not a separate encoded import/export qualification.
+The covering overnight GPU subset stays within the requested ~30-minute
+slow-test budget; no installer or push was requested.
+
+**Intentional output changes / affected fixtures:** any saved/preset grade
+with active global Blacks/zones or non-neutral global/local wheels; stored
+Match recipes using those controls; newly generated editable Match recipes.
+No migration renderer. `hdr_match_scene.tiff`, synthetic Tone `hues.tiff` and
+colour-reference ramps have changed expected rendered output, not source
+bytes. Protected `DSC00950.hdrfinisher` has active HDR/SDR wheel saturation and
+will render differently; its Windows source URI still prevents a normal Mac
+round-trip. Both protected DSC00264 projects have neutral affected global
+Tone/wheels and are not expected to change from N2 alone. All three SHA256s
+were rechecked unchanged against AGENTS.md; no project or source overwritten.
+Finished thumbnails v6 and screen previews v5 invalidate only derived output.
+
+Output scratch: **13.0 GB at start and end**, under 100 GB. Task scratch is
+cleaned; evidence logs/layout captures remain. N3a still owns Local Tone and
+the full colour/Film-exposure Match rebuild; N3b owns clipping/range preview.
 
 ### N1 result (November 15–16, MacBook Neo / 8 GB)
 

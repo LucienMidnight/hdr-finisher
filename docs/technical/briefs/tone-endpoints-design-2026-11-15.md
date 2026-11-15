@@ -1,12 +1,9 @@
 # Design proposal: five-control Tone block (T1), November 15, 2026
 
-**Status:** approved for building Nov 15 with Steve's answers (see the sprint brief's Decisions): T1-e offer both (fixed cap added, Peak Fit kept), T1-f SDR HC moved last, anchor = 18% of the lane's reference white (scene 0.18 = 203-nit reference white in this app; SDR reference = 100/203 display-linear), T1-b narrow, T1-c Local Tone together, T1-d preview first. Earlier status: proposal. Part of the 0.9.3 feedback
-sprint (`sprint-0-9-3-feedback-2026-11-15.md`, item T1). Decided: T1-a
-(user-facing order Tone → Film Look → Highlight Compression last as the cap).
-Open: T1-e, T1-f, anchor, T1-b, T1-c, T1-d (end of this file). Sources:
-two Codex `gpt-6.1-sol` research passes on November 15 (other apps' tone
-controls; revision for Steve's order). Size: **XL** if everything lands
-together; global Tone alone is L.
+**Status, November 16:** N1 and **global N2 + C4 built** on
+`feat/watermark-and-library-polish`. Steve's decisions are recorded in the sprint
+brief. Local Tone and the full Match rebuild remain N3a; clipping/range preview
+remains N3b. No Auto or compatibility renderer is included.
 
 ## Goals (Steve)
 
@@ -60,11 +57,18 @@ reducing values below the target (900 → 878.7, 1000 → 926.4 nits).
 ## References
 
 `P` = HC target (SDR: 1.0), also when HC is bypassed; never the monitor or
-the photo's own peak. `D` = reference white (SDR 1.0). `G = 0.18·D`.
+the photo's own peak. `D` = lane reference/diffuse white: HDR scene-linear `0.18`, SDR
+display-linear `100/203 = 0.4926108374`. `G = 0.18·D`.
 `K = min(G/8, P/16)`. Slider strength `s ∈ [−1, 1]`.
 
-Anchor change: today HDR zone Center 0 is 0.18 scene-linear = 203 nits;
-the proposal's `G` is 36.54 nits (about −2.47 stops). Needs approval.
+Implemented anchor: `G_HDR = 0.0324` scene-linear (36.54 nits at project
+reference white 203; 18 nits at reference white 100). `G_SDR = 0.08866995074`
+display-linear. HDR `P = target_nits * 0.18 / project_reference_white_nits`;
+SDR `P = 1`. Authored SDR already uses display-linear sRGB, so it shares the
+SDR anchor without another placement conversion. Verified against
+`SDR_DISPLAY_REFERENCE_WHITE`, `SDR_SCENE_TO_DISPLAY_SCALE` and
+`GRAIN_DEVELOP_HDR_SCALE` in `adjustments.py`. Monitor brightness and image
+statistics never enter these references. Exposure/Contrast/foundation run first.
 
 ## Curves
 
@@ -81,7 +85,8 @@ the proposal's `G` is 36.54 nits (about −2.47 stops). Needs approval.
   gates `g_B = S(log2(Y/(K/2)))`, `g_W = 1 − S(2·log2(M/(P/2)))`,
   `w_i = u_i·g_B·g_W`. Black/broad overlap ≤ 1 stop; white/broad ≤ ½ stop.
   Defaults: Shadows −1.5/5 EV, Midtones 0/4, Highlights +2.25/4.5 (HDR),
-  +1.25/2.5 (SDR).
+  +1.75/3.5 (SDR). The earlier SDR proposal assumed `D=1`; the
+  narrower display headroom under `D=100/203` is now explicit.
 - **Combined limiter:** candidate
   `I_raw = I·2^(Σ a_i w_i + Δ_W) + B·1`, output `I + λ(I_raw − I)`, with
   `λ = 1` if the minimum linear-light derivative `d ≥ 0.1`, else
@@ -103,18 +108,68 @@ the proposal's `G` is 36.54 nits (about −2.47 stops). Needs approval.
 SDR behaves identically in relative terms (Film Look's numbers differ by
 lane, as today).
 
-## Selection weights (SDR, % of linear white)
+## Built defaults and overlap
 
-| Value | Blacks | Shadows | Midtones | Highlights | Whites |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 1.125% | 0.250 | 0 | 0 | 0 | 0 |
-| 1.688% | 0.063 | 0.087 | 0 | 0 | 0 |
-| 9% | 0 | 0.896 | 0.500 | 0 | 0 |
-| 18% | 0 | 0.352 | 1.000 | 0 | 0 |
-| 36% | 0 | 0 | 0.500 | 0.896 | 0 |
-| 59.46% | 0 | 0 | 0.026 | 0.339 | 0.063 |
-| 70.71% | 0 | 0 | 0 | 0 | 0.250 |
-| 100% | 0 | 0 | 0 | 0 | 1.000 |
+| Zone | HDR Center / Width | SDR Center / Width | Nominal support in stops from G |
+| --- | ---: | ---: | --- |
+| Shadows | −1.5 / 5 EV | −1.5 / 5 EV | [−4, +1] |
+| Midtones | 0 / 4 EV | 0 / 4 EV | [−2, +2] |
+| Highlights | +2.25 / 4.5 EV | +1.75 / 3.5 EV | HDR [0, +4.5]; SDR [0, +3.5] |
+
+The upper gate truncates nominal support; it does not move the center.
+At HDR Target 1000 nits / project reference white 203:
+
+| Endpoint / overlap | HDR | SDR |
+| --- | --- | --- |
+| Blacks support | Y < 2.25% D | Y < 2.25% D |
+| Blacks ↔ broad | 1.125–2.25% D (one stop) | same |
+| Whites starts (M=P/2) | +3.7744 EV from G | +2.4954 EV from G |
+| Broad ends (M=P/√2) | +4.2744 EV from G | +2.9954 EV from G |
+| Broad ↔ Whites overlap | half a stop | half a stop |
+
+Neutral-ray weights below use **% of D**, not SDR display-white percentages;
+M=Y. Colourful pixels use frozen delivery-channel M independently.
+
+| % D | Blacks | Shadows | Midtones | HDR Highlights | SDR Highlights | HDR / SDR Whites |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1.125 | .250 | 0 | 0 | 0 | 0 | 0 / 0 |
+| 1.6875 | .0625 | .087 | 0 | 0 | 0 | 0 / 0 |
+| 9 | 0 | .896 | .500 | 0 | 0 | 0 / 0 |
+| 18 | 0 | .352 | 1.000 | 0 | 0 | 0 / 0 |
+| 36 | 0 | 0 | .500 | .417 | .606 | 0 / 0 |
+| 80 | 0 | 0 | 0 | .994 | .866 | 0 / 0 |
+| 100 | 0 | 0 | 0 | .972 | .628 | 0 / 0 |
+| 150 | 0 | 0 | 0 | .705 | 0 | 0 / .318 |
+
+### Limiter implementation
+
+`tone.py` and `tone-engine.js` compute matching parameter-only interval bounds.
+Intervals include every zone knot, black-gate knot and a 1/8-EV partition;
+the white gate is independently bounded in 16 cells. Smoothstep values and
+interior derivative extrema are bounded across each cell, not merely sampled.
+Independent Y/M ranges conservatively include every fixed-colour ray, including
+signed out-of-gamut input. The candidate's derivative includes the black floor,
+white exponent and all three broad controls together. No image scan, percentile,
+new GPU reduction or texture allocation is required; parameter caches hold 128
+entries. Convex mixing certifies a luminance slope of at least 0.1, except the
+intentional negative-Blacks clipping plateau.
+
+Each broad amount is `s * .9 / max(abs(weight_derivative_bound), 1.5/half_width)`.
+At the defaults, +100 pre-limiter EV coefficients are Shadows .287917,
+Midtones .282077, Highlights .285416 HDR / .277499 SDR; the combined limiter
+may reduce them further. These conservative, gated strengths replace the old
+fixed 1.5-EV interpretation. Whites alone retains λ=1 and its exact 0.775P/2P
+endpoint meanings. All five at zero returns the input exactly, including signed
+headroom. CPU/GPU tests evaluate eight fixed-colour rays, sign combinations,
+minimum/normal/maximum widths, endpoint gates and full-render ceilings.
+
+### C4 wheel ranges (built)
+
+Global and local wheels now both use `log2(Y/G)` in HDR and SDR, with the
+existing Balance/Blending formula unchanged. The same normalized neutral ray
+therefore receives the same weights relative to D in both lanes. Match's tint
+translation still converts primaries; Balance/Blending need no lane-specific
+translation. This changes existing non-neutral wheel grades, including locals.
 
 ## Film Look, Local Tone, Match
 
@@ -122,19 +177,21 @@ lane, as today).
   shoulder, Blacks changes the toe and grain exposure, halation responds to
   extra energy. No hidden normalisation or post-film Whites correction.
   Show pre-look qualification and the finished post-cap clipping separately.
-- Local Tone (recommended, T1-c): same curves per layer: local
+- Local Tone (approved, N3a not built in N2): same curves per layer: local
   Exposure/Contrast, freeze that layer's guide, five-control block, then
   local colour/HSL/curves/wheels/detail, then mask × opacity.
-- Match: replace the linear local-tone basis with a bounded fit that calls
+- Match (N3a): replace the linear local-tone basis with a bounded fit that calls
   the real renderer and certifies through the real SDR tail, Film Look, cap
   and gamut mapper. Keep every Match gate unchanged.
 
 ## Saved edits (pre-1.0, no migration renderer)
 
-Changes: non-zero global Blacks/zones and presets; all Local Tone edits and
-stored Match recipes (if T1-c); HDR Center/Width (if the anchor changes);
-**SDR grades with HC enabled even with Tone at zero** (shoulder moves); Peak
-Fit grades (if T1-e replaces it).
+N2 intentionally changes non-zero global Blacks/zones, their presets/default
+ranges, and non-neutral global/local wheels. Existing stored Match recipes with
+those controls can change. N1 already changed SDR grades with HC enabled even
+with Tone at zero. Peak Fit remains available. Local Tone's curves are unchanged
+until N3a; there is no migration renderer. The two protected DSC00264 projects
+have neutral affected global controls and wheels and are not rewritten.
 
 ## Tests
 
@@ -147,14 +204,13 @@ renderer fit, unchanged gates); delivery tests (cap after resize,
 sharpening and grain). GPU: `tone-zones-delivery.js`,
 `gpu-highlight-compression-parity.js`. No tolerance loosened.
 
-## Open decisions (in this order)
+## Decisions / remaining steps
 
-1. **T1-e:** fixed cap (recommended) vs keep Peak Fit vs offer both.
-2. **T1-f:** move the SDR shoulder last (recommended) vs keep an early SDR
-   placement compression plus a separately named final cap.
-3. **Anchor:** HDR Center 0 = 18% of reference white (recommended, 36.54
-   nits) vs today's 203 nits (redo HDR defaults).
-4. **T1-b:** narrow Whites (recommended: top stop, −100 → 77.5%, +1 stop
-   overdrive) vs wider (top two stops, −100 → 57.4%).
-5. **T1-c:** Local Tone in the same change (recommended) vs global first.
-6. **T1-d:** clipping/range preview first (recommended) vs Auto together.
+All six decisions at the end of the original proposal are resolved: offer Fixed
+cap alongside Peak Fit; final SDR HC; photographic-grey anchor; narrow Whites;
+Local Tone next (N3a); clipping/range preview next (N3b), Auto later. N2 does not
+claim local/global Tone equivalence or the rebuilt Match solver. The temporary
+Match adaptation considers median-luma recovery, two additional bounded
+Start proposals and one composed RGB residual at CPU certification, with all
+existing acceptance/quality/editability gates retained.
+Validation evidence and unrun checks are in the sprint brief's N2 result.

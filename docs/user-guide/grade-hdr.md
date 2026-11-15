@@ -8,7 +8,7 @@ The HDR branch defines the brightest intended rendition. It remains scene-linear
 2. Shape highlights without flattening the scene.
 3. Correct broad color.
 4. Use brightness-selective tools for local tonal populations.
-5. Finish with Lift/Gamma/Gain or Curves.
+5. Refine the five-control Tone block or Curves.
 6. Add the Film Look after the grade is stable.
 7. Check the waveform, lower-headroom proof targets, and SDR branch.
 
@@ -30,9 +30,36 @@ Contrast expands or compresses tonal separation around Pivot. The HDR pivot is a
 
 Changing contrast can also change apparent saturation and highlight placement. Recheck the scope after using it.
 
-### Shadow / Black
+### Blacks, Shadows, Midtones, Highlights and Whites
 
-Applies a luma-weighted change that is strongest in dark regions and fades toward brighter values. Use small adjustments to seat blacks or reveal low-level detail. It is not a local shadow-recovery algorithm and cannot restore clipped source data.
+These five controls form one operation after Exposure Bands/foundation, before
+HSL, curves, wheels, Local adjustments and Film Look. They all select from the
+same frozen input: changing one control cannot move another's selected range.
+All five at zero leaves pixels unchanged.
+
+- **Blacks** lifts a narrow neutral floor, or clips the deepest blacks with a
+  negative value. It stops affecting tones at 2.25% of reference white.
+- **Shadows / Midtones / Highlights** brighten or darken broad, smoothly fading
+  ranges. **Center** is stops from photographic mid-grey (18% of the lane's
+  reference white); **Width** is their full width in stops. Endpoint gates keep
+  these controls away from black and the brightest whites. Extreme overlapping
+  settings are reduced together to prevent tonal reversal; strength is not a
+  fixed exposure-stop amount.
+- **Whites** acts on the top stop below the HDR Target Peak, or SDR display
+  white. Alone, −100 makes a target-level input 77.5% of target, +100 gives one
+  stop of overdrive before Film Look. Final Highlight Compression still owns the
+  delivered peak; enable it to guarantee HDR Target Peak. Whites does not change
+  the target. Peak Fit can also reshape other highlights when the measured peak
+  rises; choose Fixed cap when you want a photo-independent cap.
+
+Defaults (Center / Width): Shadows −1.5 / 5 EV; Midtones 0 / 4 EV;
+Highlights HDR +2.25 / 4.5 EV, SDR +1.75 / 3.5 EV. Blacks/broad overlap is
+one stop; broad/Whites overlap is half a stop. The new curves intentionally
+change saved non-zero global Tone grades. Local Tone uses its existing curves
+until the next step; clipping/range preview is not yet part of this block.
+
+HDR mid-grey is scene-linear .0324: 36.54 nits with 203-nit project Reference
+White. Contrast Pivot retains its separate existing meaning; it is not Center 0.
 
 ## Highlights
 
@@ -100,17 +127,11 @@ Red, green, and blue **Hue** rotate each working primary in the ACEScg chromatic
 
 These are matrix-style global primary-shaping controls inspired by darktable-like primaries work. They are not HSL selections and do not isolate objects named “red,” “green,” or “blue.” Extreme purity can create negative or highly out-of-gamut intermediate values that later stages sanitize or compress.
 
-## Lift, Gamma, Gain
+## Global tonal shaping
 
-The three controls use overlapping luminance-zone masks defined in stops around diffuse white:
-
-- **Lift:** shadows, with a smooth falloff around its Pivot and Range.
-- **Gamma:** a bell-shaped midtone region centered on its Pivot.
-- **Gain:** highlights, with a smooth rise around its Pivot and Range.
-
-Range controls zone width; Pivot moves it through the scene. The scope influence preview helps reveal which brightness values are targeted.
-
-This is not the same formula as every video grading application. Judge the actual zone overlay and waveform rather than transferring numeric recipes from another tool.
+Use the five-control Tone block described above; the former Lift/Gamma/Gain
+interpretation no longer applies. Color wheels also measure their ranges from
+photographic mid-grey, equally relative to reference white in HDR and SDR.
 
 ## Curves
 
@@ -153,17 +174,15 @@ The filter's longest tails are shortened at the existing processing limit and re
 
 The current HDR order is:
 
-1. Tone: exposure, shadow/black, and contrast
-2. White balance, primary shaping, saturation, and vibrance
-3. Black & White (when on)
-4. Exposure Bands
-5. Lift/Gamma/Gain
-6. Curves
-7. Detail and local adjustments
-8. Film Look: lens diffusion, resolution scatter, halation, negative/development, density grain, print, scan, then Look Strength
-9. Detail Softness and Microcontrast
-10. Output Highlights: Peak Fit, Fixed cap, Soft Ceiling, or Clip
-11. Clamp final negative values to zero
+1. Exposure and Contrast/Pivot
+2. Color: white balance, primary shaping, saturation and vibrance; then Black & White when on
+3. Exposure Bands
+4. Five-control Tone: Blacks, Shadows, Midtones, Highlights and Whites
+5. HSL, Curves, color wheels and Detail
+6. Ordered local adjustments
+7. Film Look: lens diffusion, resolution scatter, halation, negative/development, density grain, print, scan, then Look Strength
+8. Detail structure and Vignette
+9. Output resize/sharpening, then Highlight Compression and the delivery-primary ceiling
 
 Order matters. A curve sees the result of every preceding enabled section.
 

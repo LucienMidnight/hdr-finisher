@@ -10,11 +10,11 @@ Preserve the subject, color relationships, and important highlight detail in a c
 
 Start with:
 
-1. Exposure and Shadow for overall placement.
+1. Exposure for overall placement.
 2. Set tone and colour, then Film Look; finish with Highlight Compression for the bright-end shoulder and color rolloff.
 3. Contrast/Pivot and Exposure Bands for tonal refinement.
 4. Match HDR colors, then refine the SDR color controls if needed.
-5. Lift/Gamma/Gain or Curves only when needed.
+5. Five-control Tone or Curves only when needed.
 6. Use **Match HDR film look** as a starting point, then refine for the SDR rendition.
 
 ## Tone
@@ -27,9 +27,39 @@ Moves the SDR rendition before/around its display mapping, depending on whether 
 
 Operate in the display-linear SDR domain. Pivot identifies the normalized value around which contrast expands or compresses.
 
-### Shadow
+### Blacks, Shadows, Midtones, Highlights and Whites
 
-Adds or removes low-end brightness with a mask that fades toward midtones. Small values are normally sufficient.
+These five controls form one operation after Exposure Bands/foundation, before
+HSL, curves, wheels, Local adjustments and Film Look. They all select from the
+same frozen input: changing one control cannot move another's selected range.
+All five at zero leaves pixels unchanged.
+
+- **Blacks** lifts a narrow neutral floor, or clips the deepest blacks with a
+  negative value. It stops affecting tones at 2.25% of reference white.
+- **Shadows / Midtones / Highlights** brighten or darken broad, smoothly fading
+  ranges. **Center** is stops from photographic mid-grey (18% of the lane's
+  reference white); **Width** is their full width in stops. Endpoint gates keep
+  these controls away from black and the brightest whites. Extreme overlapping
+  settings are reduced together to prevent tonal reversal; strength is not a
+  fixed exposure-stop amount.
+- **Whites** acts on the top stop below the HDR Target Peak, or SDR display
+  white. Alone, −100 makes a target-level input 77.5% of target, +100 gives one
+  stop of overdrive before Film Look. Final Highlight Compression still owns the
+  delivered peak; enable it to guarantee HDR Target Peak. Whites does not change
+  the target. Peak Fit can also reshape other highlights when the measured peak
+  rises; choose Fixed cap when you want a photo-independent cap.
+
+Defaults (Center / Width): Shadows −1.5 / 5 EV; Midtones 0 / 4 EV;
+Highlights HDR +2.25 / 4.5 EV, SDR +1.75 / 3.5 EV. Blacks/broad overlap is
+one stop; broad/Whites overlap is half a stop. The new curves intentionally
+change saved non-zero global Tone grades. Local Tone uses its existing curves
+until the next step; clipping/range preview is not yet part of this block.
+
+Generated SDR places scene .18 at display-linear 100/203. Center 0 is
+.18×100/203 = .08866995074 display-linear, not 18% of display white. An authored
+SDR base uses the same coordinates without another placement conversion.
+HDR and SDR color-wheel Balance/Blending now cover the same ranges relative to
+the lane's reference white, including local wheels.
 
 ## Highlight Compression
 
@@ -65,9 +95,10 @@ After fixed SDR placement, HDR Finisher retains linear-sRGB headroom through ton
 
 This is a simple global compression, not a perceptual appearance model. Strong wide-gamut colors can lose chroma. Inspect the SDR branch rather than assuming the HDR color grade will survive unchanged.
 
-## Lift, Gamma, Gain and Curves
+## Tone and Curves
 
-SDR Lift/Gamma/Gain uses the same stop-relative zone concept as the HDR branch, but acts on the placed display rendition before the final cap. Range and Pivot still define where each zone operates.
+The five-control Tone block uses the placed display rendition and the
+photographic-grey Center/Width anchor described above.
 
 SDR Curves work from 0 to 1 rather than the HDR logarithmic upper range. Luma changes brightness; RGB curves change channel balance. Curves are stored independently per branch.
 
@@ -81,23 +112,25 @@ Lens filters copy their physical family, commercial strength and size. Halation 
 
 For a scene-linear source without an authored SDR reference:
 
-1. SDR exposure and shadow
-2. Independent SDR color grade (optionally initialized from HDR with Match HDR colors), then Black & White when on
-3. Fixed `0.18` to `100/203` placement and conversion to display-linear sRGB
-5. Exposure Bands
-6. Contrast and Lift/Gamma/Gain
-7. Curves
-8. Film Look: lens diffusion, resolution scatter, halation, negative/development, density grain, print, scan, then Look Strength; followed by Detail Softness and Microcontrast
+1. SDR exposure
+2. Independent scene Color, then Black & White when on
+3. Fixed `.18 → 100/203` placement and conversion to display-linear sRGB
+4. Exposure Bands and Contrast/Pivot
+5. Five-control Tone
+6. HSL, Curves, color wheels, Detail and ordered locals
+7. Film Look: lens diffusion, resolution scatter, halation, negative/development, density grain, print, scan, then Look Strength
+8. Detail structure and Vignette
 
 For an authored SDR reference such as supported Apple HDR HEIC:
 
-1. Begin with the authored display-linear sRGB rendition
-2. Exposure and shadow
-3. Black & White when on (before the highlight stage, although Color comes later on this path)
-5. Exposure Bands
-6. Contrast, then SDR color grade through ACEScg and back to sRGB
-7. Lift/Gamma/Gain and Curves
-8. Film Look: lens diffusion, resolution scatter, halation, negative/development, density grain, print, scan, then Look Strength; followed by Detail Softness and Microcontrast
+1. Begin with the authored display-linear sRGB rendition (no placement conversion)
+2. Exposure and Black & White when on
+3. Exposure Bands and Contrast/Pivot
+4. Color through ACEScg and back to sRGB
+5. Five-control Tone
+6. HSL, Curves, color wheels, Detail and ordered locals
+7. Film Look and spatial finishing
+8. Detail structure and Vignette
 
 Both paths finish with output resize/sharpening, Highlight Compression (bypassed by default for authored SDR), then unconditional hue-preserving sRGB gamut mapping to [0,1].
 

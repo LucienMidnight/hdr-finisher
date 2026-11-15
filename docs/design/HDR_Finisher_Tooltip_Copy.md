@@ -99,3 +99,12 @@ full text only when actually clipped; accessible names stay available.
 |---|---|---|
 | `hdr.highlight_compression.fixed_cap` | Mode: Fixed cap | Fixed cap leaves values below Start unchanged and smoothly compresses brighter colours toward Target Peak, preserving colour ratios without measuring the image peak. |
 | `sdr.highlight_compression.fixed_cap` | Mode: Fixed cap | Fixed cap leaves values below Start unchanged and smoothly compresses brighter colours toward display white, preserving colour ratios without measuring the image peak. |
+
+## Five-control Tone (November 15, 2026)
+
+| ID | Trigger | Copy-ready tooltip text |
+|---|---|---|
+| `tone.blacks` | Blacks | Lifts or clips the narrow black floor. Tones above the floor are unchanged. Tone ranges are selected before any of the five controls. |
+| `tone.whites` | Whites | Adjusts the top stop below Target Peak (display white in SDR). Positive values overdrive Film Look; final Highlight Compression still owns the delivery ceiling. |
+| `tone.center` | Center | Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first. |
+| `tone.width` | Width | How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak. |

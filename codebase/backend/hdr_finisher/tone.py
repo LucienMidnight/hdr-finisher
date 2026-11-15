@@ -20,7 +20,7 @@ def _smooth(value):
 
 
 def _mul(left, right):
-    products = np.stack(np.broadcast_arrays(*(a * b for a in left for b in right)))
+    products = np.stack(np.broadcast_arrays(*(first * second for first in left for second in right)))
     return products.min(axis=0), products.max(axis=0)
 
 

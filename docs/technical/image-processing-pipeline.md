@@ -1,12 +1,34 @@
 # Image-Processing Pipeline: Technical Contract
 
 **Status:** Current implementation reference for contributors and AI coding agents.
-**Verified against:** `95060fa` (`feature/denoising` and `main`), August 25, 2026.
+**Verified tone/order changes:** November 16, 2026, `feat/watermark-and-library-polish` (N1/N2). Other historical sections retain their stated scope.
 **Scope:** Import, working representation, HDR/SDR grading, local adjustments, preview, scopes, proof, export, caching, and rules for adding image operations.
 
 This document explains the pipeline as it runs today, including the reasons behind its ordering and performance architecture. It is deliberately more implementation-oriented than the [color-pipeline specification](../concepts/color-pipeline.md) and more image-path-specific than the [system architecture](architecture.md).
 
 When this document disagrees with running code or tests, code and tests win. Update this page in the same change. The repository's broader authority order is active code/tests, reproducible evidence, validation records, user documentation, then PRDs and design history.
+
+## November 16 N2: global Tone and aligned wheel ranges
+
+Global Tone is now one frozen-guide operation: Blacks, Shadows, Midtones,
+Highlights and Whites, after Exposure Bands/foundation and before HSL, curves,
+wheels, locals and Film Look. Blacks no longer runs in the early exposure
+helpers. CPU, GPU preview, Library and delivery share the order and conservative
+parameter-only limiter; zero is an exact bypass. No texture/budget/tolerance
+changes. Finished Library thumbnail/screen-preview versions advance so old
+finished pixels are not reused.
+
+`D_HDR=.18`, `G_HDR=.0324`; `D_SDR=100/203`, `G_SDR=.18*100/203` in the
+lane's linear units. Authored SDR shares the latter without another placement.
+`P_HDR=target_nits*.18/project_reference_white_nits` even with HC bypassed;
+`P_SDR=1`. Center/Width defaults: Shadows −1.5/5 EV, Midtones 0/4 EV,
+Highlights HDR +2.25/4.5 EV, SDR +1.75/3.5 EV. Wheels use the same `log2(Y/G)`
+selection in both lanes, including locals and Match translation.
+
+This intentionally changes non-zero global Blacks/zones and non-neutral wheel
+grades. Local Tone curves and full Match rebuild are N3a; range preview is N3b.
+See [the built tone design](briefs/tone-endpoints-design-2026-11-15.md) for
+weights, endpoint overlap, calibration and limiter derivation.
 
 ## November 15 N1: final cap and delivery finishing
 
@@ -158,12 +180,12 @@ Implementation: [`finishing.apply_geometry`](../../codebase/backend/hdr_finisher
 
 | Order | Stage | Domain / reason |
 |---:|---|---|
-| 1 | Exposure, shadow/black lift, contrast/pivot | Scene-linear ACEScg tone foundation |
+| 1 | Exposure, contrast/pivot | Scene-linear ACEScg tone foundation |
 | 3 | White balance, ACEScg primaries/tint, saturation/vibrance | Scene-referred color |
 | 4 | Tone equalizer / Exposure Bands | Scene-EV bands |
-| 5 | Lift, gamma, gain | Global tonal shaping |
+| 5 | Frozen-guide five-control Tone, then HSL | Global endpoint and broad-zone shaping |
 | 6 | HDR curves | Global curves |
-| 7 | Global color grading | Final global creative grade before locals |
+| 7 | Global color grading and Detail | Global creative grade before locals |
 | 8 | Ordered local layers | Each layer grades and blends the running result using a stable source mask |
 | 9 | Lens Filter | Energy-conserving film-plane PSF, or None bypass |
 | 10 | Film Resolution | Fine-detail scatter before the negative |
@@ -179,16 +201,16 @@ With Highlight Compression enabled, the final HDR target is a delivery guarantee
 
 Generated SDR starts from the ACEScg HDR source:
 
-1. SDR exposure and shadow work in scene-linear ACEScg.
+1. SDR exposure in scene-linear ACEScg.
 2. Independent SDR scene color adjustments.
 3. Apply the fixed SDR placement where scene-linear `0.18` maps to display-linear `100/203`.
 4. Convert with CAT02 to display-linear sRGB.
 5. Retain the placed linear-sRGB headroom; no early shoulder or gamut mapping.
 6. display-linear tone equalizer / Exposure Bands.
 7. contrast.
-8. lift, gamma, gain.
+8. frozen-guide five-control Tone, then HSL.
 9. SDR curves.
-10. global color grading.
+10. global color grading and Detail.
 11. ordered local layers.
 12. lens filter, film resolution, halation, negative and density grain, paper/scanner, one Look Strength mix.
 13. Detail structure and vignette.
@@ -202,12 +224,12 @@ The scene-to-display conversion boundary is important. Moving a scene-linear con
 When a source contains an authored SDR rendition, the branch begins from its retained display-linear sRGB pixels:
 
 1. apply geometry to the authored SDR source;
-2. exposure and shadow work;
+2. exposure and B&W;
 3. retain display-linear headroom (no early Highlight Compression);
 4. tone equalizer;
 5. contrast;
 6. temporarily convert sRGB to ACEScg for scene-color operations, then return with headroom retained;
-7. lift/gamma/gain, curves, and global color grading;
+7. frozen-guide five-control Tone, HSL, curves, global color grading and Detail;
 8. ordered local layers;
 9. film response and spatial finishing;
 10. vignette;

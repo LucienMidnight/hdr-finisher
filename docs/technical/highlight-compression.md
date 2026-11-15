@@ -32,20 +32,26 @@ Start, Target Peak, and measured/manual source peaks use this convention. Peak F
 
 SDR uses percentages of display white instead of nits. Its generated placement is fixed: scene-linear `0.18` maps to display-linear `100/203`, independent of the HDR reference-white selection. Its Peak Fit target is always normalized SDR white (`1.0` / `100%`).
 
+Global Tone uses the selected HC target as P even when this section is
+bypassed; Whites never edits that target. Its +100 overdrive is pre-Film-Look
+light, not permission to exceed the enabled final HDR delivery cap. Broad zones
+and wheels use photographic grey: scene .0324 HDR; display-linear
+.18×100/203 SDR. See the [built Tone design](briefs/tone-endpoints-design-2026-11-15.md).
+
 ## Processing order
 
 The HDR global order relevant to this module is:
 
-1. Exposure
-2. Shadow / Black
-3. Contrast and Pivot
-4. Color, Exposure Bands, Primaries, Curves, Color Grading, Detail, local adjustments, Film Look, and Vignette
+1. Exposure, Contrast and Pivot
+2. Color / B&W and Exposure Bands
+3. Frozen-guide global Tone: Blacks, Shadows, Midtones, Highlights, Whites
+4. HSL, Curves, Color Grading, Detail, local adjustments, Film Look, and Vignette
 5. Final grain
 6. Output Highlight Compression
 
 Peak Fit measures the finished post-grain pixels, so later exposure, creative, finishing, or texture changes cannot invalidate the target.
 
-The generated SDR order is Exposure/Shadow and scene Color, fixed placement
+The generated SDR order is Exposure and scene Color/B&W, fixed placement
 and linear-sRGB conversion, then tone/creative controls, locals, Film Look,
 structure/vignette and output finishing. Authored SDR starts with its retained
 linear-sRGB base. Both apply Highlight Compression **last**, before the
@@ -54,7 +60,8 @@ gamut boundary remains. Neutral Curves retain signed/above-white headroom;
 active curves continue their endpoint slopes outside their editable range.
 SDR Peak Fit now measures the finished pre-cap picture (after resize/sharpening
 for delivery); manual source-peak settings and curve parameters are retained.
-This intentionally changes SDR grades with HC enabled. HDR's order is unchanged.
+N1 intentionally changed SDR grades with HC enabled. N2 adds the frozen-guide
+global Tone block in all three paths before the creative tail.
 
 
 [HDR-to-SDR Match](sdr-match.md) does not replace or bypass Peak Fit, Soft Ceiling, or Clip. The Match knee consumes the fully rendered, already-compressed HDR result.

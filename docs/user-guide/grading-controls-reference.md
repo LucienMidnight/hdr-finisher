@@ -24,7 +24,11 @@ The sliders intentionally cover the useful everyday range. Some slider ranges be
 | Highlight Color | Chooses the Peak Fit signal and color trajectory. | Smooth color rolloff (default) independently compresses linear BT.2020 channels for a gradual approach to white without lifting weak channels. Preserve color retains ACEScg ratios. Neutralize peak groups ACEScg channels and forces the endpoint to white. | Smooth color rolloff; Preserve color; Neutralize peak | Same choices |
 | Contrast | Separates or compresses tones around Pivot. | Scales scene-referred stop distance from Pivot; positive values spread stops apart. | Narrow -0.5 to +0.5; Medium -0.75 to +0.75; Wide -1 to +1 | **-2 to +2** |
 | Pivot | Chooses the brightness that Contrast works around. | Uses a scene-linear ACEScg value; `0.18` is the active project reference-white anchor. | 0.02 to 0.5, 0.75, or 1 depending on latitude | **0.0001 to 18**; the displayed nit value depends on project reference white |
-| Shadow / Black | Seats blacks or reveals dark detail without moving highlights as much. | Applies a luma-weighted multiplier strongest near black and fading toward brighter values. | Narrow -0.2 to +0.2; Medium -0.3 to +0.3; Wide -0.5 to +0.5 | **-1 to +1** |
+| Blacks | Lifts or clips only the deepest blacks. | Adds a neutral offset below K=min(G/8,P/16); no early exposure multiplier. | -100 to +100 | Same as slider |
+| Shadows / Midtones / Highlights | Shape broad selected ranges. | Frozen luminance guide, smooth Center/Width bumps and endpoint gates; combined limiter prevents reversal. | -100 to +100 | Same as slider |
+| Center | Moves a broad range relative to photographic mid-grey G. | log2(Y/G); G=.18×D, D=.18 HDR or 100/203 SDR. | -8 to +8 EV | **-12 to +12 EV** |
+| Width | Sets the full breadth of a zone. | Smooth bump; black/white gates remain active at any width. | 0.5 to 12 EV | **0.5 to 24 EV** |
+| Whites | Adjusts the top stop below target. | Frozen maximum delivery channel; −100 → .775P, +100 → 2P alone, before Film Look and final HC. | -100 to +100 | Same as slider |
 
 Start and Target Peak are kept at least 1 nit apart. If a typed edit would cross them, HDR Finisher moves the other value just enough to retain a valid shoulder.
 
@@ -144,21 +148,14 @@ Softness and Microcontrast moved to the Detail section:
 | Softness | Softens digital edge hardness across the whole picture, in colour. Runs after the completed film scan; follows Detail's on/off, not Film Look's Look Strength. | 0–100 |
 | Microcontrast | Lowers or raises fine local contrast across the whole picture, in colour. Works differently from Texture. Same placement as Softness. | -100 to +100 |
 
-## Lift, Gamma, Gain in HDR and SDR
+## Global Tone ranges in HDR and SDR
 
-These controls use the same ranges in each branch, but HDR works in the scene-referred rendition while SDR works on its bounded display rendition.
-
-| Control | Purpose in plain English | How it works | Normal slider range | Direct-entry range |
-|---|---|---|---|---|
-| Lift | Raises or lowers the shadow zone. | Adds a smooth, luma-targeted shadow adjustment. | Narrow -0.25 to +0.25; Medium -0.35 to +0.35; Wide -0.5 to +0.5 | **-1 to +1** |
-| Lift Range | Makes the shadow zone narrower or wider. | Sets the smooth transition width in stops around Lift Pivot. | 0.5 to 12 EV | **0.5 to 24 EV** |
-| Lift Pivot | Moves the shadow zone darker or brighter. | Positions the shadow mask in stops relative to the branch reference. | -8 to +8 EV | **-12 to +12 EV** |
-| Gamma | Raises or lowers the midtone zone. | Applies an overlapping bell-shaped midtone adjustment. | Narrow -0.5 to +0.5; Medium -0.75 to +0.75; Wide -1 to +1 | **-2 to +2** |
-| Gamma Range | Makes the midtone zone narrower or wider. | Sets the width of the Gaussian-like midtone mask in stops. | 0.5 to 12 EV | **0.5 to 24 EV** |
-| Gamma Pivot | Moves the midtone zone darker or brighter. | Positions the center of the midtone mask in stops. | -8 to +8 EV | **-12 to +12 EV** |
-| Gain | Raises or lowers the highlight zone. | Adds a smooth, luma-targeted highlight adjustment. | Narrow -0.25 to +0.25; Medium -0.35 to +0.35; Wide -0.5 to +0.5 | **-1 to +1** |
-| Gain Range | Makes the highlight zone narrower or wider. | Sets the smooth transition width in stops around Gain Pivot. | 0.5 to 12 EV | **0.5 to 24 EV** |
-| Gain Pivot | Moves the highlight zone darker or brighter. | Positions the highlight mask in stops relative to the branch reference. | -8 to +8 EV | **-12 to +12 EV** |
+The former Lift/Gamma/Gain controls are replaced by the five-control Tone block
+in the HDR table. All five strengths are −100…+100. Shadows/Midtones/Highlights
+use Center/Width targeting; Blacks/Whites are narrow fixed endpoints. Defaults
+are −1.5/5 EV, 0/4 EV, and Highlights +2.25/4.5 EV HDR or +1.75/3.5 EV SDR.
+Black/broad overlap is one stop; broad/Whites overlap is half a stop. The combined
+limiter may reduce extreme settings to keep the response monotonic.
 
 ## SDR Tone and Highlight Compression
 
@@ -167,7 +164,7 @@ These controls use the same ranges in each branch, but HDR works in the scene-re
 | Exposure | Makes the whole SDR fallback brighter or darker. | Multiplies light by `2^EV` before highlight compression. | Narrow -2 to +2 EV; Medium -3 to +3 EV; Wide -4 to +4 EV | **-8 to +8 EV** |
 | Contrast | Separates or compresses SDR tones around Pivot. | Changes the display-domain contrast slope while preserving the selected pivot. | Narrow -0.5 to +0.5; Medium -0.75 to +0.75; Wide -1 to +1 | **-2 to +2** |
 | Pivot | Chooses the normalized SDR brightness that Contrast works around. | Sets the fixed point of the display-domain contrast operation. | Narrow/Medium 0.05 to 0.95; Wide 0.02 to 0.98 | **0.001 to 0.999** |
-| Shadow | Seats SDR blacks or opens dark detail. | Adds a masked low-end offset that fades toward the midtones. | Narrow -0.3 to +0.3; Medium -0.5 to +0.5; Wide -1 to +1 | **-2 to +2** |
+| Five-control Tone / Center / Width | Same controls and ranges as HDR above, in placed display-linear SDR. | G=.18×100/203; P=1 even with HC bypassed. Authored SDR needs no additional placement. | See HDR table | See HDR table |
 | Mode | Chooses measured-peak, fixed-knee, asymptotic, or clipped compression. | Fixed cap uses a fixed Start knee and preserves RGB ratios without measuring a peak; Peak Fit anchors the measured finished peak at SDR white; Soft Ceiling approaches it without an endpoint promise; Clip clamps to SDR white. | Peak Fit, Fixed cap, Soft Ceiling, or Clip | Same choices |
 | Start | Chooses the requested shoulder onset. | Sets an SDR input percentage; Peak Fit can move the effective start lower to preserve a monotonic curve. | 1% to 99% | **1% to 99%** |
 | Softness | Controls how strongly Soft Ceiling bends highlights. | Zero is identity; higher values engage the luma-preserving asymptote earlier. | 0% to 100% | **0% to 100%** |
