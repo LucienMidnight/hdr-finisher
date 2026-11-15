@@ -228,6 +228,7 @@
 
   let restoreStandIn = () => {};
   function borrowStandIn(photo, stage, controller, current, trace) {
+    if (!current()) return null;
     const cell = HDRLibraryReadyWindow.standIn([...state.cells.values(), ...state.filmCells.values(), ...tilePool.values()],
       pictureIdentity(photo), state.displayEpoch, state.hdr);
     HDRLibraryTrace.mark(trace,"picture_quick_draw_lookup",performance.now(),{quick_draw:true,cache_hit:!!cell});
@@ -1030,6 +1031,11 @@
   // change keeps it and only redraws the finish.
   function invalidateGradePictures(paths, {source = false} = {}) {
     const targets = new Set(paths);
+    for (const path of targets) {
+      gradeMutations.set(path, (gradeMutations.get(path) || 0) + 1);
+      gradeHandoffs.get(path)?.controller.abort();
+      gradeHandoffs.delete(path);
+    }
     readyWindow.invalidate(photo=>targets.has(photo.path)); quickWindow.invalidate(photo=>targets.has(photo.path));
     for (const [key] of recentPictures) if (paths.some(path=>key.startsWith(path+"|"))) recentPictures.delete(key);
     HDRLibraryScenes.invalidate(paths,{finishingOnly:!source});
@@ -1038,6 +1044,7 @@
     for (const map of [state.cells, state.filmCells]) for (const [path, cell] of map) if (targets.has(path)) { cell.controller.abort(); cell.element.remove(); map.delete(path); }
     if (targets.has(selected()?.path)) {
       state.single?.abort(); state.fitMeta = null; state.nativeMeta = null;
+      state.native?.abort();
       if (source) {
         state.native?.abort(); state.nativeSource?.abort(); state.fullDetail = null;
         state.nativeLoading = false; $("native-picture").hidden = true;
@@ -1047,6 +1054,14 @@
   // Metadata only: no extra picture cache. Preparation cells cannot request
   // or publish old pixels; cancellation rebuilds from the existing sources.
   const pasteProgress = new Map();
+  const gradeMutations = new Map();
+  function publicationGuard(photo) {
+    const generation = gradeMutations.get(photo.path) || 0;
+    const identity = pictureIdentity(photo), epoch = state.displayEpoch, hdr = state.hdr;
+    return () => generation === (gradeMutations.get(photo.path) || 0)
+      && pasteProgress.get(photo.path) !== "Preparing adjustments"
+      && identity === pictureIdentity(photo) && epoch === state.displayEpoch && hdr === state.hdr;
+  }
   function pasteFeedback(paths, phase, result) {
     if (phase === "preparing") {
       for (const path of paths) pasteProgress.set(path, "Preparing adjustments");
@@ -1068,6 +1083,7 @@
       if (!result) invalidateGradePictures(paths);
     }
     paintGrid(); paintFilm();
+    if (compare.enabled()) { void compare.show(); return; }
     if (state.view === "single") {
       if (phase === "preparing") { state.single?.abort(); $("single-picture").hidden = true; $("native-picture").hidden = true; }
       else { state.singleIdentity = ""; void showSingle(); }
@@ -1162,6 +1178,7 @@
       { label: "Photo actions", onError: error => status(error.message) });
   }
   const compare = HDRLibraryCompare.create({api,status,load:(photo,edge,...args)=>loadAndShow(photo,2560,...args),
+    publicationGuard,
     prepareNative:prepareRawNative,draw:drawPicture,strip:culling.strip,
     selected,photos:()=>state.photos,allPhotos:()=>state.allPhotos,active:()=>state.active,
     choose:path=>select(state.photos.findIndex(p=>p.path===path)),setView,
@@ -1227,6 +1244,13 @@
   async function showSingle() {
     const requestedTrace = navigationTrace; navigationTrace = null;
     if (!state.active || state.view !== "single") return;
+    const requestedPhoto = selected();
+    if (requestedPhoto && pasteProgress.get(requestedPhoto.path) === "Preparing adjustments") {
+      state.single?.abort(); state.native?.abort(); restoreStandIn();
+      $("single-picture").hidden = true; $("native-picture").hidden = true;
+      if (compare.enabled()) void compare.show();
+      return;
+    }
     if (compare.enabled()) { restoreStandIn(); readyWindow.invalidate(); quickWindow.invalidate(); void compare.show(); return; }
     const photo = selected(), edge = singleEdge();
     const identity = photo ? `${photo.path}|${edge}|${state.hdr}|${state.displayEpoch}|${photo.grade_identity || ""}|${photo.bytes}|${photo.mtime_ns}|${JSON.stringify(HDRLibraryScreenPreviews.display())}` : "";
@@ -1258,7 +1282,8 @@
       if (!trace.sharpPresented) HDRLibraryTrace.mark(trace,"picture_navigation_cancelled",trace.started);
       HDRLibraryTrace.end(trace,"navigation moved");
     },{once:true});
-    const current = () => state.active && state.view === "single" && selected()?.path === photo.path && state.singleIdentity === identity && !controller.signal.aborted;
+    const publish = publicationGuard(photo);
+    const current = () => publish() && state.active && state.view === "single" && selected()?.path === photo.path && state.singleIdentity === identity && !controller.signal.aborted;
     // The fitted canvas survives Grid/Single switches. Never reveal its old
     // pixels while a different selection is waiting for source or GPU work.
     const canvas = $("single-picture");
@@ -1383,7 +1408,9 @@
       status(`${percent} · ${state.index + 1} of ${state.photos.length.toLocaleString()} · ${photo.name}`); return;
     }
     state.native?.abort(); const controller = new AbortController(); state.native = controller; state.nativeLoading = true;
-    const current = () => state.active && state.zoom && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
+    const publish = publicationGuard(photo);
+    if (!publish()) { state.nativeLoading = false; return; }
+    const current = () => publish() && state.active && state.zoom && state.view === "single" && selected()?.path === photo.path && !controller.signal.aborted;
     status(`Preparing detail preview · ${percent} · ${photo.name}…`);
     try {
       // Development belongs to the selected photo, not the zoom gesture. A
@@ -2200,8 +2227,11 @@
   window.addEventListener("pagehide",()=>gradePictureChannel.close());
   async function replaceGradeThumbnail(packet) {
     const entry=gradeHandoffs.get(packet.path);
-    const current=()=>gradeHandoffs.get(packet.path)===entry&&!entry.controller.signal.aborted;
     const photo=state.allPhotos.find(photo=>photo.path===packet.path);
+    const publish=photo?publicationGuard(photo):()=>false;
+    const initialIdentity=photo?pictureIdentity(photo):null;
+    const current=()=>!!entry&&gradeHandoffs.get(packet.path)===entry&&!entry.controller.signal.aborted&&publish()
+      &&pictureIdentity(state.allPhotos.find(photo=>photo.path===packet.path)||{})===initialIdentity;
     if(!photo||!current())return false;
     if(!state.active) {
       // A tile drawn while the Library is hidden comes back empty. Keep the
@@ -2226,16 +2256,20 @@
         if(candidate.photo.path===photo.path){pooled=tilePool.take(tileKey(map,candidate.identity));if(pooled)break;}
       }
       const target=cell||pooled;
-      if(target)targets.push({map,key,cell:target,pooled:!!pooled});
+      if(target)targets.push({map,key,cell:target,pooled:!!pooled,owner:target.controller,identity:target.identity});
     }
+    const owned=()=>state.active&&current()&&targets.every(target=>!target.owner.signal.aborted&&target.cell.controller===target.owner
+      &&target.cell.identity===target.identity&&(target.pooled?!target.map.has(photo.path):target.map.get(photo.path)===target.cell));
+    let installed=false;
     try {
       for(const target of targets) {
         const canvas=document.createElement("canvas");
-        const meta=await HDRLibraryFinishedThumbnails.load({...photo,...row},canvas,entry.controller.signal,current,state.hdr);
-        if(!meta||!current()){canvas.getContext("webgpu")?.unconfigure();canvas.width=canvas.height=0;return false;}
-        target.canvas=canvas;target.meta=meta;
+        target.canvas=canvas;
+        const meta=await HDRLibraryFinishedThumbnails.load({...photo,...row},canvas,entry.controller.signal,owned,state.hdr);
+        if(!meta||!owned())return false;
+        target.meta=meta;
       }
-      if(!current())return false;
+      if(!owned())return false;
       // The photo is graded before its overlays attach, so no ungraded map is reused.
       Object.assign(photo,{edited:row.edited,grade_identity:row.grade_identity});
       for(const target of targets) {
@@ -2254,6 +2288,7 @@
         canvas.dataset.gradeHandoff=packet.id;
         overlays?.attach(photo,canvas,meta,cell.controller,()=>state.active&&cell.element.isConnected&&!cell.controller.signal.aborted);
       }
+      installed=true;
       readyWindow.invalidate(p=>p.path===photo.path);quickWindow.invalidate(p=>p.path===photo.path);
       HDRLibraryScenes.invalidate([photo.path],{finishingOnly:true});
       for(const [key] of recentPictures)if(key.startsWith(photo.path+"|"))recentPictures.delete(key);
@@ -2271,7 +2306,8 @@
     } finally {
       for(const target of targets) {
         if(target.canvas&&target.cell.fallback!==target.canvas){target.canvas.getContext("webgpu")?.unconfigure();target.canvas.width=target.canvas.height=0;}
-        if(target.pooled&&target.cell.fallback&&!target.cell.controller.signal.aborted&&target.cell.fallback!==target.canvas)tilePool.put(target.key,target.cell,target.cell.fallback.width*target.cell.fallback.height*16);
+        if(!installed&&owned()&&target.pooled&&target.cell.fallback)tilePool.put(target.key,target.cell,target.cell.fallback.width*target.cell.fallback.height*16);
+        else if(!installed&&target.pooled){target.cell.controller.abort();target.cell.element.remove();if(target.cell.fallback){target.cell.fallback.getContext("webgpu")?.unconfigure();target.cell.fallback.width=target.cell.fallback.height=0;}}
       }
     }
   }

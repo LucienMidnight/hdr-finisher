@@ -12,7 +12,7 @@ test('Single swaps the correct finished canvas and hides the previous grade whil
  const key=p=>p.path+':'+p.grade_identity;
  const readyWindow=create({key,load:async p=>{const value={canvas:canvas(p),meta:{key:p.grade_identity,edge:2560}};if(block)await block;return value;},dispose:value=>{disposed.push(value);if(value.canvas===visible)value.canvas.hidden=true;}});
  const surfaces={has:()=>true,get:()=>undefined};
- const context={refreshedShown(){},HDRLibraryStopwatch(){},logView:()=>"single",HDRLibraryScreenPreviews:{display:()=>({})},state,navigationTrace:null,selected:()=>state.photos[state.index],singleEdge:()=>2560,readyKey:key,readyWindow,readySurfaces:surfaces,
+ const context={pasteProgress:new Map(),publicationGuard:()=>()=>true,refreshedShown(){},HDRLibraryStopwatch(){},logView:()=>"single",HDRLibraryScreenPreviews:{display:()=>({})},state,navigationTrace:null,selected:()=>state.photos[state.index],singleEdge:()=>2560,readyKey:key,readyWindow,readySurfaces:surfaces,
    HDRLibraryScenes:{review(){},save(){}},quickWindow:{update(){},get:async()=>null},navigationGate:{touch(){}},beforeSource:async()=>{},showQuick(){},showCameraPreview(){},performance,
    readAhead:{update(){}},developmentNeighbours:()=>[],developAhead(){},
   compare:{enabled:()=>false,hide(){}},HDRLibraryTrace:{begin:()=>({}),end(){},mark(){},present:(trace,current)=>{assert.ok(current());assert.equal(visible.pixels,key(state.photos[state.index]));}},
@@ -125,7 +125,7 @@ test('a retained failed detail request becomes eligible for an explicit user ret
  const fn=source.slice(source.indexOf('  async function showNative()'),source.indexOf('  function singleFrameInset('));
  const error=Object.assign(Error('Not enough memory'),{needsMemory:true});
  const state={fitMeta:{route:'stored-screen-preview'},zoom:true,detailRequested:'photo',active:true,view:'single',zoomScale:1,fullDetail:Promise.reject(error)};
- const messages=[],context={state,selected:()=>({path:'photo',name:'photo'}),window:{devicePixelRatio:1},$:()=>({}),AbortController,aborted:()=>false,status:s=>messages.push(s)};
+ const messages=[],context={publicationGuard:()=>()=>true,state,selected:()=>({path:'photo',name:'photo'}),window:{devicePixelRatio:1},$:()=>({}),AbortController,aborted:()=>false,status:s=>messages.push(s)};
  vm.runInNewContext(fn+';this.run=showNative;',context);await context.run();
  assert.equal(state.detailRefused,true);assert.equal(state.nativeLoading,false);assert.match(messages.at(-1),/unavailable/);
 });

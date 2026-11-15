@@ -32,7 +32,7 @@ test('Refresh cancels old Grid, filmstrip, Single and zoom presentation owners',
  const state={cells:cells(),filmCells:cells(),single:new AbortController(),native:new AbortController(),nativeSource:new AbortController(),fullDetail:Promise.resolve('old'),nativeLoading:true};
  const owners=[...state.cells.values(),...state.filmCells.values()].map(c=>c.controller).concat(state.single,state.native,state.nativeSource);
  const native={hidden:false};
- const context={state,selected:()=>({path:'photo'}),readyWindow:{invalidate(){}},quickWindow:{invalidate(){}},recentPictures:new Map(),HDRLibraryScenes:{invalidate(){}},window:{},tilePool:{discard(){}},$:()=>native};
+ const context={state,gradeHandoffs:new Map(),selected:()=>({path:'photo'}),readyWindow:{invalidate(){}},quickWindow:{invalidate(){}},recentPictures:new Map(),HDRLibraryScenes:{invalidate(){}},window:{},tilePool:{discard(){}},$:()=>native};
  const fn=source.slice(source.indexOf('  function invalidateGradePictures'),source.indexOf('  const pasteGrades'));
  vm.runInNewContext(fn+';invalidateGradePictures(["photo"],{source:true});',context);
  assert.ok(owners.every(c=>c.signal.aborted));assert.equal(state.cells.size,0);assert.equal(state.filmCells.size,0);
@@ -48,7 +48,7 @@ function settingsPoll({photoGrade = 'new', tileGrade = 'old', handoff = null} = 
   document:{hidden:false},selected:()=>photo,shownCells:map=>[...map.values()],
   api:async()=>({photos:[{...photo,grade_identity:'new'}],events:[]}),
   pictureIdentity:p=>`${p.path}|${p.grade_identity || ''}|${p.bytes}|${p.mtime_ns}`,
-  gradeHandoffs:new Map(handoff?[['photo',handoff]]:[]),tilePool:{discard(){}},
+  gradeHandoffs:new Map(handoff?[['photo',{...handoff,controller:new AbortController()}]]:[]),tilePool:{discard(){}},
   readyWindow:{invalidate(){}},quickWindow:{invalidate(){}},recentPictures:new Map(),
   HDRLibraryScenes:{invalidate:paths=>invalidated.push(...paths)},
   applyQuery(){},updateDetails(){},paintGrid(){},paintFilm(){},showSingle(){},status(){},console};

@@ -15,7 +15,7 @@ const originals = photos.map(photo => fs.readFileSync(photo));
   const browser = await chromium.launch({headless:true,channel:'msedge'});
   try {
     const page = await browser.newPage(), errors=[];
-    page.on('pageerror', error=>errors.push(error.message)); page.setDefaultTimeout(30000);
+    page.on('pageerror', error=>{errors.push(error.message);console.error('Page error:',error.message);}); page.setDefaultTimeout(30000);
     await page.addInitScript(() => localStorage.setItem("hdr-finisher:library-show-all-files", "true"));
     if(process.env.HDR_W2_BEFORE==='1')for(const name of ['grade-paste.js','photo-library.js']) {
       const body=require('node:child_process').execFileSync('git',['show','97078dba:codebase/frontend/'+name],{cwd:root,encoding:'utf8'});
@@ -48,6 +48,11 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     await iframe.evaluate(el => {
       const w=el.contentWindow, d=w.document;
       w.__pasteFeedback=[];
+      w.__pastePublications=0;
+      new w.MutationObserver(records=>{
+        for(const record of records)for(const node of record.addedNodes)
+          if(node.textContent.startsWith('Pasted grade onto '))w.__pastePublications++;
+      }).observe(d.querySelector('#library-status'),{childList:true,subtree:true});
       d.addEventListener('click',event=>{
         if(!event.target.closest('.grade-paste-dialog .button-primary'))return;
         const start=w.performance.now(), row={confirmedAt:start};w.__pasteFeedback.push(row);
@@ -70,7 +75,7 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     const copy=(await savedWhen(photos[1],saved=>saved.virtual_copies?.some(copy=>copy.name==='Paste target'))).virtual_copies.find(copy=>copy.name==='Paste target');
     const copyPath=photos[1]+'|copy|'+copy.photo_id, targets=[photos[1],photos[2],copyPath];
     await physical('copied.png').click();await frame.locator('#library-grid').press(`${process.platform === "darwin" ? "Meta" : "Control"}+c`);
-    await frame.locator('#library-status').filter({hasText:'Grade copied from copied.png'}).waitFor();
+    await page.waitForFunction(async()=>{const result=await fetch('/api/library/grade-copy').then(response=>response.json());return result.name==='copied.png';});
     // Text shortcuts remain native; a paste into a text control cannot open a grade dialog.
     const text=frame.locator('#library-tag-input');await text.fill('normal text');await text.selectText();
     await text.press(`${process.platform === "darwin" ? "Meta" : "Control"}+c`);await text.press('ArrowRight');await text.press(`${process.platform === "darwin" ? "Meta" : "Control"}+v`);
@@ -182,8 +187,10 @@ assert.equal((await firstPaste).status(),200);await written(photos[1]);
     // The open photo is a target; its reload must not flash the Grade page.
     await page.evaluate(()=>{window.__pages=[];addEventListener('hdrfinisher:workflowchange',event=>window.__pages.push(event.detail.workflow));});
     const pasted=page.waitForResponse(response=>response.url().endsWith('/api/library/grade-paste')&&!JSON.parse(response.request().postData()).preview);
+    const publications=await iframe.evaluate(el=>el.contentWindow.__pastePublications);
     await dialog.getByRole('button',{name:'Paste onto 3 photos',exact:true}).click();
     const result=await (await pasted).json();assert.equal(result.count,3);assert.equal(result.undo_available,true);
+    await page.waitForFunction(before=>document.querySelector('#library-frame').contentWindow.__pastePublications>before,publications);
     const pastedKeys={};
     for(const target of targets){
       const picture=await scene(target);

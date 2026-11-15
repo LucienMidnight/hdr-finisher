@@ -62,7 +62,9 @@
       const z=o.zoom(),dpr=devicePixelRatio||1,percent=`${Math.round(z.scale*100)}%`;
       if(HDRLibraryZoom.fitCovers(s.meta,z.scale)){s.note.textContent='';return;}
       const c=new AbortController();s.nativeController=c;
-      const current=()=>enabled&&o.active()&&!c.signal.aborted&&s.photo?.path===s.fit.dataset.picturePath;
+      const publish=o.publicationGuard?.(s.photo)||(()=>true);
+      if(!publish())return;
+      const current=()=>publish()&&enabled&&o.active()&&!c.signal.aborted&&s.photo?.path===s.fit.dataset.picturePath;
       s.note.textContent=`Preparing detail preview · ${percent}…`;
       try{
         window.HDRLibraryStopwatch?.("picture_development_start",{path:s.photo.path,reason:"zoom detail",view:"compare"});
@@ -79,8 +81,11 @@
       await Promise.all(sides.map(async(s,i)=>{
         const fresh=s.fit.cloneNode(false);s.fit.replaceWith(fresh);s.fit=fresh;
         s.photo=photos[i];s.meta=null;s.nativeMeta=null;s.native.hidden=true;s.note.textContent='';s.fit.style.cssText='';
-        const c=new AbortController();s.controller=c;const current=()=>enabled&&o.active()&&generation===gen&&!c.signal.aborted;
+        const c=new AbortController();s.controller=c;
         if(!s.photo)return;
+        const publish=o.publicationGuard?.(s.photo)||(()=>true);
+        const current=()=>publish()&&enabled&&o.active()&&generation===gen&&!c.signal.aborted;
+        if(!current()){s.fit.hidden=true;s.note.textContent='Preparing adjustments';return;}
         try{const edge=Math.max(s.stage.clientWidth,s.stage.clientHeight)*(devicePixelRatio||1);s.meta=await o.load(s.photo,edge<=1280?1280:edge<=1920?1920:2560,s.fit,c,current,0);if(!current())return;position();captions();await native(s);}catch(e){if(e.name!=='AbortError')o.status(e.message);}
       }));
       if(generation!==gen)return;
