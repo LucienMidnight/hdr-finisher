@@ -119,6 +119,42 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | N5 | X2 "Start HDR from SDR". | N4 |
 | N6 | Final review, fixes, brief/PRD updates, push. | all |
 
+### N5 acceptance proposed before measurement (November 16)
+
+X2 compares finished SDR display-linear sRGB with finished HDR converted to
+linear sRGB and scaled by `R / (0.18 × 203)`, using the shared project
+reference-white context. Thus both pictures are in nits / 203, not two
+independently normalised pictures. Capture the SDR target once (including
+its authored base). Freeze the body selection from that target: finite,
+luma .005–.9 and all channels below .98, at least 64 pixels. Do not change
+the selection during fitting. Analysis excludes stochastic grain, not Film
+Look; the delivered recipe retains its normal grain controls.
+
+Require median/P95 absolute luma ≤ .010/.030 and OKLab distance ≤ .015/.040
+both overall and separately for red, yellow, green, cyan, blue, magenta and
+neutral families with at least 16 body samples. Report smaller families as
+insufficient coverage, never as passes. These retain Match's normal body
+limits, adding family gates so aggregate success cannot hide denim shifts.
+No existing forward-Match gate changes. Test Film off and Portra 400 at 50%
+on synthetic neutral/coloured ramps and all five named shared RAWs.
+
+For a dense 1/64-stop ramp through body and highlights, require finite
+output, nondecreasing luminance (roundoff ≤ 1e-6), and no adjacent output
+step above .1 EV; report cap-flattened samples separately. This rejects a
+body/highlight splice or highlight reversal without imposing an impossible
+positive slope after a hard delivery cap. Check the exact BT.2020 delivery
+channel ceiling at the preserved HDR target (only encoder rounding allowed).
+Retain an enabled HC mode/settings; if bypassed, use Fixed cap with Start
+80% of the retained target: it is scene-peak-independent and its common
+RGB gain avoids a new colour trajectory. Explain that cap activation in
+the overwrite confirmation. SDR, shared masks and other source state must
+remain unchanged; successful application is one revision-guarded Undo.
+
+Qualification is a ship gate, not permission to widen tolerances: if these
+cannot be met in this overnight step, retain only an unexposed prototype,
+with no user-visible button or public mutation endpoint. Native/encoded
+qualification and the two app layouts remain required before enabling it.
+
 ### N4 acceptance agreed before measurement (November 16)
 
 Local Match fits the difference between mapped finished HDR with the parent
