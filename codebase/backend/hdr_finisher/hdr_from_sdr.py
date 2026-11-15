@@ -9,9 +9,9 @@ import math
 
 import numpy as np
 
-from .adjustments import SDR_DISPLAY_REFERENCE_WHITE, _linear_luma, apply_adjustments
+from .adjustments import SDR_DISPLAY_REFERENCE_WHITE, _linear_luma, _srgb_decode, apply_adjustments
 from .color import acescg_to_linear_bt2020, acescg_to_linear_srgb
-from .color_context import RenderColorContext, scene_linear_to_nits
+from .color_context import RenderColorContext, nits_to_scene_linear, scene_linear_to_nits
 from .models import AdjustmentState, HDRAdjustments, LocalAdjustment, PreviewKind
 from .sdr_gamut import linear_srgb_to_oklab
 from .sdr_match import _translate_color_grading_wheels
@@ -44,8 +44,9 @@ def seed_hdr_from_sdr(adjustments, locals_, *, reference_white_nits=203):
     fields.update(cap)
     fields["exposure"] = float(np.clip(adjustments.sdr.exposure
         + math.log2(100 / context.hdr_reference_white_nits), -8, 8))
-    fields["contrast_pivot"] = float(np.clip(adjustments.sdr.contrast_pivot * .18
-        / float(SDR_DISPLAY_REFERENCE_WHITE), .0001, 18))
+    linear_pivot = float(_srgb_decode(np.asarray(adjustments.sdr.contrast_pivot, dtype=np.float32)))
+    fields["contrast_pivot"] = float(np.clip(nits_to_scene_linear(
+        linear_pivot * 203, context.hdr_reference_white_nits), .0001, 18))
     fields["highlight_desaturation_start"] = adjustments.sdr.highlight_desaturation_start * .18 / float(SDR_DISPLAY_REFERENCE_WHITE)
     if not adjustments.hdr.highlight_section_enabled or adjustments.hdr.highlight_compression_mode == "off":
         fields.update(highlight_section_enabled=True, highlight_compression_mode="fixed_cap",

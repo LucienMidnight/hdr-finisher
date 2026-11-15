@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from hdr_finisher.adjustments import apply_adjustments
+from hdr_finisher.adjustments import _srgb_decode, apply_adjustments
 from hdr_finisher.color import acescg_to_linear_srgb, linear_srgb_to_acescg
 from hdr_finisher.hdr_from_sdr import (
     body_metrics, delivery_ceiling_metrics, fit_hdr_from_sdr,
@@ -25,6 +25,13 @@ def test_neutral_physical_brightness_fit_and_no_mutation(reference):
     assert proposal.metrics["overall"]["p95_luma_error"] < 1e-5
     assert proposal.adjustments.sdr == adjustments.sdr
     assert adjustments.model_dump_json() == original
+
+
+@pytest.mark.parametrize("reference", [100, 203])
+def test_seed_pivot_decodes_sdr_signal_before_physical_conversion(reference):
+    candidate, _ = seed_hdr_from_sdr(AdjustmentState(), [], reference_white_nits=reference)
+    expected_nits = float(_srgb_decode(np.asarray(.5, dtype=np.float32))) * 203
+    assert candidate.hdr.contrast_pivot * reference / .18 == pytest.approx(expected_nits)
 
 
 @pytest.mark.parametrize("mode", ["peak_fit", "fixed_cap", "soft_ceiling", "clip"])
