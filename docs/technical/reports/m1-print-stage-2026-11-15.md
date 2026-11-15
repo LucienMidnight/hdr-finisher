@@ -402,3 +402,17 @@ changes made by this investigation. Other agents' edits remain separate.
 - No Electron/GPU, Proof or encoded-export run: no rendering code changed.
   This is not a fresh GPU parity or delivery certification. No acceptance
   gate, tolerance or protected fixture is changed.
+
+
+## November 16 N3a follow-up: placement remains unresolved
+
+Steve approved equal Film input and post-film fitting. The N3a bounded probe
+holds global Exposure equal, fits the pre-Film prefix with ordinary controls,
+then searches actual Film/HC/gamut renders over four HC modes and print
+controls. It still has P95 input-luma gap .118722 and fails the unchanged
+.050 body-colour ceiling at Portra .067320, Ektar .062441, Velvia .068645.
+No probe recipe is installed; this is not exact input equivalence, nor proof
+that a complete editable solver cannot work. The final safe code retains the
+old global Film placement. M1d stays open. Full per-colour, all-stop and
+five-RAW comparisons against all three requested baselines are in the new
+N3a section of [M1 follow-up](m1-colour-follow-up-2026-11-15.md).

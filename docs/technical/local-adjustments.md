@@ -1,5 +1,35 @@
 # Local adjustments
 
+## November 16: shared five-control Local Tone (N3a)
+
+Each layer applies Exposure/Contrast first, freezes its own luminance and
+brightest delivery-channel guide, then runs the same `tone.py` operation as
+global Tone: Blacks, Shadows, Midtones, Highlights, Whites. Local colour,
+HSL, curves, wheels and Detail follow; mask × opacity mixes the completed
+layer into its input. Each next layer freezes a fresh guide. CPU and WGSL
+share the global/local curve implementation, not the retired linear zone
+basis. Strengths are −100…+100. Center/Width defaults are −1.5/5, 0/4,
+Highlights +2.25/4.5 EV HDR or +1.75/3.5 EV SDR. Slider travel matches global
+Center −8…+8 and Width .5…12 EV; typed/model bounds remain −12…+12 and
+.5…24. G=.18×D; D=.18 HDR or 100/203 SDR; HDR P follows the parent target
+and project reference, SDR P=1, including HC bypass. The mask does not
+change a Tone range or the limiter calculation.
+
+GPU LOCAL grows from 23 to 34 named slots; the first 23 retain positions.
+Parent Tone context reaches direct, tiled/delivery and peak-candidate paths.
+No persistent full-frame guide/cache is added. Finished thumbnail version
+v7 and screen-preview v6 invalidate derived pictures only. Stored nonzero
+local Tone edits (including materialized SDR Match locals) change rendering;
+there is no pre-1.0 compatibility renderer or recipe conversion. Shared
+read-only projects remain byte-for-byte untouched.
+
+Local Match proposals now use bounded calls to the real local renderer;
+HDR proposals inherit the project reference/target and preserve the HDR
+grade’s own enabled flag. Complete materialization still certifies through
+actual Film Look, output compression and gamut mapping. This does not solve
+the separate global equal-Film-input/highlight-colour problem; see the N3a
+section in [M1 measurements](reports/m1-colour-follow-up-2026-11-15.md).
+
 ## October 27: selection edge controls
 
 Global recipes and hue leaves persist `edge` (−8..8 source px), `edge_feather`

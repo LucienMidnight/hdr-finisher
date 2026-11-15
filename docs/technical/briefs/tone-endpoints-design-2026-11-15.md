@@ -2,8 +2,10 @@
 
 **Status, November 16:** N1 and **global N2 + C4 built** on
 `feat/watermark-and-library-polish`. Steve's decisions are recorded in the sprint
-brief. Local Tone and the full Match rebuild remain N3a; **N3b clipping/range
-diagnostics are built**. No Auto or compatibility renderer is included.
+brief. **N3a Local Tone is built**, including renderer-based local Match
+proposals; the full equal-Film-input/highlight-colour Match rebuild is stopped
+after failed unchanged-gate probes, not shipped. **N3b clipping/range diagnostics
+are built**. No Auto or compatibility renderer is included.
 
 ## Goals (Steve)
 
@@ -177,12 +179,27 @@ translation. This changes existing non-neutral wheel grades, including locals.
   shoulder, Blacks changes the toe and grain exposure, halation responds to
   extra energy. No hidden normalisation or post-film Whites correction.
   Show pre-look qualification and the finished post-cap clipping separately.
-- Local Tone (approved, N3a not built in N2): same curves per layer: local
+- Local Tone (built in N3a): same curves per layer: local
   Exposure/Contrast, freeze that layer's guide, five-control block, then
   local colour/HSL/curves/wheels/detail, then mask × opacity.
-- Match (N3a): replace the linear local-tone basis with a bounded fit that calls
-  the real renderer and certifies through the real SDR tail, Film Look, cap
-  and gamut mapper. Keep every Match gate unchanged.
+- Match (N3a, partial): the linear local-tone basis is replaced by a bounded
+  fit calling the shared local renderer; full recipes are certified through
+  the real SDR tail, Film Look, cap and gamut mapper. HDR local enabled and
+  parent target/reference are preserved. No Match gate changes.
+- M1/M1d remain open: global Match still changes pre-Film exposure and does
+  not constrain highlight colour. The equal-exposure/prefix-plus-post-Film
+  probe misses the body colour ceiling (.050) at .067320 Portra, .062441
+  Ektar, .068645 Velvia 50%; Film input also still differs (P95 absolute
+  luma .118722). This best-found failure is not proof of impossibility and
+  is not shipped. No hidden Match-only post-Film correction is added.
+- N1 mode review: retain Soft Ceiling for Match; both bounded four-mode
+  searches still select it, not a universal optimum claim. Ordinary SDR
+  default remains Peak Fit. Global-only chart and five-RAW final results
+  are identical to pre-N3a. See the existing M1 report's November 16 section.
+- N3a intentional output changes: stored nonzero local Tone and generated
+  local Match proposals, including DSC00950's local edits. The two protected
+  DSC00264 projects have zero local Tone. No source project/fixture bytes
+  are rewritten; derived Library thumbnail/screen identities are v7/v6.
 
 ## N3b affordances (November 16, preview only)
 

@@ -148,11 +148,13 @@ Softness and Microcontrast moved to the Detail section:
 | Softness | Softens digital edge hardness across the whole picture, in colour. Runs after the completed film scan; follows Detail's on/off, not Film Look's Look Strength. | 0–100 |
 | Microcontrast | Lowers or raises fine local contrast across the whole picture, in colour. Works differently from Texture. Same placement as Softness. | -100 to +100 |
 
-## Global Tone ranges in HDR and SDR
+## Global and Local Tone ranges in HDR and SDR
 
 The former Lift/Gamma/Gain controls are replaced by the five-control Tone block
 in the HDR table. All five strengths are −100…+100. Shadows/Midtones/Highlights
-use Center/Width targeting; Blacks/Whites are narrow fixed endpoints. Defaults
+use Center/Width targeting; Blacks/Whites are narrow fixed endpoints. Local
+Tone uses the same strengths, slider travel and typed bounds after the local
+Exposure/Contrast and before its colour/Detail, then mask × opacity. Defaults
 are −1.5/5 EV, 0/4 EV, and Highlights +2.25/4.5 EV HDR or +1.75/3.5 EV SDR.
 Black/broad overlap is one stop; broad/Whites overlap is half a stop. The combined
 limiter may reduce extreme settings to keep the response monotonic.

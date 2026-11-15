@@ -151,3 +151,18 @@ Both paths finish with output resize/sharpening, Highlight Compression (bypassed
 - Expecting Match HDR bands to produce identical HDR and SDR tonal placement
 - Expecting exact color identity between wide-gamut HDR and sRGB SDR
 - Correcting a wrong source interpretation independently in each branch
+
+
+## Match limitations after the Local Tone update
+
+Match now fits local Tone through the actual local renderer and preserves a
+local HDR grade that is switched off. New local Tone strengths use the same
+−100…+100 scale as global Tone, including Whites and editable ranges.
+
+This is not a fix for all HDR-to-SDR colour shifts. Bright colours can still
+differ with Film Look off or on, and Match does not yet give Film Look the
+same input exposure in both renditions. Some photographs still need review
+or are refused by the existing safety checks. Inspect the SDR result rather
+than assuming matching Film/print settings reproduce HDR colours. Changing
+HDR later does not update the one-shot SDR recipe; Rematch creates a new
+editable recipe.

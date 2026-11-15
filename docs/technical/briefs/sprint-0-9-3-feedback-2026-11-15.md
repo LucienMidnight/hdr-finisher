@@ -50,8 +50,8 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | C2 | Colour wheels: Balance direction | W3 | built — positive favours Highlights globally/locally; Match translates local wheel hues too |
 | C3 | Colour wheels: clicking a puck changes it | W3 | built — shared drawing/input radius and grab offset; stationary 40% stays 40% |
 | C4 | HDR/SDR colour-wheel tonal ranges | N2 | built — same photographic-grey anchor globally/locally, CPU/GPU; Match retains primaries translation; existing active wheel looks intentionally change |
-| T1 | Blacks/Whites and Shadows/Midtones/Highlights redesign | W4 | global block built and checked in N2; approved Local Tone remains N3a, clipping/range preview N3b, Auto later |
-| M1 | HDR to SDR Match colour shifts (blue jeans) | W5 | broader research complete; not fixed across colours — all-hue/stock tables and five shared RAWs show remaining bright-colour errors/regressions; complete-target fitting and M1d need Steve's decision |
+| T1 | Blacks/Whites and Shadows/Midtones/Highlights redesign | W4 | global N2 and Local N3a built and checked; clipping/range preview built in N3b, Auto later |
+| M1 | HDR to SDR Match colour shifts (blue jeans) | W5 | not fixed across colours; N3a local renderer adaptation built, but approved equal-Film-input/highlight-colour rebuild stopped after failed unchanged-gate probes; all-hue/stock and five-RAW comparisons remain unchanged vs pre-N3a |
 | M1a | SDR contrast/Film Look clipping turns saturated colours | W3 | built, scoped clipping fix only — existing calibrated exposure/body guards pass; broader M1 follow-up finds bright green/cyan/indigo errors and DSC00264 highlight regression; no new pixel/gate change; GPU Match fixture still fails before Match |
 | X1 | Match SDR button for local adjustments and masks | — | design done, waiting on Steve |
 | X2 | Reverse workflow: SDR grade applied to HDR automatically | — | design done, waiting on Steve |
@@ -113,11 +113,103 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | --- | --- | --- |
 | N1 | Highlight Compression: add the fixed cap mode beside Peak Fit, Soft Ceiling and Clip; move SDR HC after Film Look and finishing. | — |
 | N2 | **Built and checked:** global five-control Tone before Film Look, frozen guide, photographic-grey anchor, combined limiter, Whites UI; aligned colour wheel ranges (C4). See result below. | N1 |
-| N3a | Local Tone shares the curves; Match rebuilt to fit through the real renderer, including highlight colour and equal Film Look input exposure (M1, M1d). | N2 |
+| N3a | **Partial:** Local Tone shares N2 curves and local Match proposals use the real renderer; equal-Film-input/highlight-colour rebuild stopped after failed unchanged-gate probes (M1/M1d open). See result below. | N2 |
 | N3b | **Built:** clipping and gated neutral-ray range preview (T1-d), Auto deferred. See result below. | N2 (parallel with N3a) |
 | N4 | X1 local "Match SDR". | N3a |
 | N5 | X2 "Start HDR from SDR". | N4 |
 | N6 | Final review, fixes, brief/PRD updates, push. | all |
+
+### N3a result (November 16, MacBook Neo / A18 Pro / 8 GB)
+
+**Partial: Local Tone built; HDR→SDR colour shifts are not fixed across
+colours, with or without Film Look.** The equal-Film-input/highlight-colour
+portion stopped after the bounded probe failed unchanged acceptance gates.
+No unsafe candidate or hidden Match-only renderer was installed. No gate,
+tolerance, memory limit or frozen Library dataset was loosened. N4 must not
+assume M1/M1d is resolved.
+
+**Built:** Local Exposure/Contrast freezes each layer's guide, then the same
+N2 five-control curves/limiter run before colour/HSL/curves/wheels/detail and
+mask × opacity. Local Whites and all three Center/Width pairs reuse global
+components/tokens/units; parent D/G/P is passed through CPU/direct GPU/tiled
+and delivery paths. Lane-specific defaults/reset work in HDR and SDR. LOCAL
+parameter slots grow 23→34 with old slots retained; finished thumbnail/screen
+versions advance v7/v6. No persistent full-frame guide or migration renderer.
+Code commit `449a71ed` includes the Local UI, layout/reference checks and
+shared CPU/WGSL curves. The obsolete `fn toneZones(` source-name assertion
+was replaced by actual GPU compile/reference coverage, not a tolerance change.
+
+**Safe Match adaptation:** bounded local proposals call the real shared local
+renderer, preserve each HDR grade's own enabled flag and inherit the parent
+HDR target/reference. Full recipes still pass through real Film → final HC/cap
+→ gamut certification. GPU-explored candidates get at most three conservative
+CPU RGB-residual refinement passes rather than one, with the same improvement
+predicate and sparse/editable curves. Global neutral/body fitting still uses
+pre-Film controls; equal Film input and highlight-colour fitting remain open.
+
+**Measured stop:** the equal-global-exposure / captured-prefix / real-tail
+four-mode-plus-print search returns body P95 OKLab .067320 / .062441 / .068645
+for Portra / Ektar / Velvia 50%, above the unchanged .050 colour ceiling.
+Film-input median/P95 absolute luma gap remains .001325/.118722; this is not
+exact equal input, nor proof that no solution exists. Film-off probe .003961
+body OKLab was not fully white-area/+.5-EV/editability certified. A separate
+production-style tail-only experiment retains those guards but still changes
+Film input, worsens Portra body P95 .025318→.025833, and costs more; discarded.
+Both mode searches select Soft Ceiling, so retain N1's Match choice; ordinary
+SDR default remains Peak Fit. Further visible/editable post-Film colour or
+better prefix fitting needs implementation, not a gate waiver.
+
+**Comparisons:** all seven hues × 45/75/100% saturation × −4…+3 stops plus grey,
+Film off and Portra/Ektar/Velvia 50%; independent 176- and 224-patch fits. Five
+shared RAWs A7R00619 / DSC00264 / IMG_3129 / IMG_0790 / IMG_7723 use identical
+≤512-edge decoded arrays. Inherent / residual / total whole-image/per-family
+results compare `55e8bb5f`, pre-N1 `541dc130`, pre-N3a `5bc997f3`, final.
+Final and pre-N3a global-only CSV metrics are byte-for-byte equal: no claimed
+colour improvement or regression from the safe local adaptation. Final
+176-chart coloured residual median/P95 ΔE00: off .118/8.229; Portra
+1.734/13.484; Ektar 1.919/13.579; Velvia .505/11.533. Wide Film charts still
+refuse, as do IMG_0790 off and IMG_7723 Portra/Ektar. Failed fits have no
+residual/total output. Full tables and failed-probe numbers are in the existing
+[M1 report](../reports/m1-colour-follow-up-2026-11-15.md#november-16-n3a-local-tone-built-colourfilm-rebuild-stopped);
+reproducible scripts, states, CSVs and hashes are under
+`codebase/output/review/n3a-match-2026-11-16/`. Research uses the real CPU
+renderer, not native-size/encoded-export colour qualification.
+
+**Validation:** every Electron/GPU run uses the shared GPU lock, sequentially.
+Latest N3a Node suite 1,062 pass / one skip / zero fail; Python 3,543 pass /
+144 skip / one unexpected pass / one unrelated Starlette/httpx deprecation
+warning (272.72 s). `local-grade-reference.js` passes 48 cases / 384 pixels,
+including parent reference/target, five controls, floor, opacity, and real
+Local HDR/SDR panel bounds at 1408×794 and 1100×720. Existing 2e−5 numerical
+limit unchanged. `tone-zones-delivery.js` (Peak Fit), 1,245-vector SDR gamut
+parity, delivery/Proof smoke, Proof size interaction, and all 33 SDR Film
+stock cases pass their enforced checks. Tone delivery retains the known N2
+report-only encoded-HDR mean .538241 / P99.9 10.880558; this is **not** an
+encoded-HDR quality pass. Delivery smoke likewise has report-only HDR values.
+Actual browser Match fails before Match with `Could not prepare the HDR Match
+browser fixture.`; known pre-existing block, not a new Match pass. Quick
+Library first run hits the memory reserve during concurrent CPU research;
+one permitted isolated retry passes all nine pictures, first picture .3 s,
+90 s, no errors. Frozen `library-mixed-v1` and limits unchanged. Evidence:
+`codebase/output/n3a-validation/` and
+`codebase/output/quick-library-check/n3a-isolated/report.json`.
+
+**Not run:** full release/sweep/endurance/broad timing; all four delivery HC
+modes again (N2 already covers these); full-resolution/native five-RAW encoded
+colour matrix; successful browser Match (fixture blocked); complete Film-off
+probe white-area/+.5-EV/editability certification; Windows/PC GPU/packaged app;
+Steve's visual sign-off. Slow checks stayed below the ~30-minute budget.
+
+**Affected stored work:** nonzero local Tone and materialized local Match
+recipes now render differently; new Match/Rematch local proposals change.
+DSC00950 has three nonzero HDR and five nonzero SDR local Tone grades. Both
+DSC00264 four-mask/fifty-local projects have zero local Tone, so no new N3a
+Tone-only change. All three protected file hashes remain unchanged. Generated
+local-tone/reference probes and calibrated `hdr_match_scene.tiff` render
+expectations change; source fixture bytes do not. No conversion/migration.
+Output size starts/ends at 13.0 GB (100-GB limit); own backend copies/RAW-array
+and solver scratch are removed after retaining the cited compact evidence.
+Local commits only, no push. N3b changes are committed separately by its worker.
 
 ### N3b result (November 16, MacBook Neo / 8 GB)
 

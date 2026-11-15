@@ -591,3 +591,393 @@ projects are never saved over. Fixtures whose derived pixels change include
 Tone delivery `hues.tiff`, the five shared reduced RAWs above, and cached
 finished Library thumbnails/screens. The frozen Library v1 sources/fixture
 and retained source-development versions are unchanged.
+
+
+## November 16 N3a: Local Tone built; colour/Film rebuild stopped
+
+### Finding
+
+**Not fixed across colours, with or without Film Look.** Local Tone is built; the equal-Film-input/highlight-colour rebuild is stopped, not installed. Final global-only results are numerically identical to pre-N3a `5bc997f3` on the supplied populations and five RAWs. Bright-colour residuals and refusals remain. No acceptance gate or tolerance changes.
+
+### Method
+
+- MacBook Neo A18 Pro, 8 GB; real CPU renderer and fresh materialization. Same copied all-colour harness, outside the repository while running. Historical backends extracted read-only with `git archive`; no branch switch/worktree or migration renderer.
+- Baselines: `55e8bb5f`, `541dc130` (pre-N1), `5bc997f3` (pre-N3a); final = N3a safe changes. Grain, lens, halation and locals off for colour research; source already decoded; 203-nit project reference. Global Exposure +0.2 EV, Contrast +0.12, Saturation +0.10, original five-point luma curve; Portra/Ektar/Velvia stock strength 50%.
+- Seven requested hue families × 45/75/100% saturation × every stop −4…+3, plus grey: 176 patches. The 224-patch population adds 48 BT.2020 blue/green fit controls; it is a separate image-dependent fit, never pooled with 176.
+- H = finished HDR converted to linear sRGB / 0.18; T = actual Match target; D = actual finished SDR including Film Look, final HC/cap/gamut mapping. **I/R/T = inherent H:T / residual T:D / total H:D**. Each cell is P95 Delta E00 over its own selection. H-based differences are descriptive relative-white coordinates, not an HDR appearance acceptance threshold. Residual SDR Delta E00 measures the remaining colour error.
+- RAWs reuse identical <=512-edge source arrays for every revision. Families are selected from target normalized Lab (chroma >=5, luma >=.0008), not each renderer’s output: skin 25–75°, reds 350–45°, greens 90–170°, cyans 170–240°, blues 240–310°, magentas 310–350°. Families intentionally overlap skin/red; highlights use HDR placed luma >.9. Empty families are —, not zero. These are reduced research renders, not native RAW/encoded-export colour qualification.
+- Refused fits have inherent values only; no usable D exists, so residual/total are —. Full per-patch/per-stop metrics (Delta E00, signed hue, chroma, Delta L and luma ratio), RAW medians/P95/counts, statuses, recipes, source hashes and scripts remain in `codebase/output/review/n3a-match-2026-11-16/`. Final and pre-N3a CSVs compare byte-for-byte equal for both patch and accepted RAW metrics.
+
+### 176-patch all-stop comparisons
+
+Columns are I / R / T P95 Delta E00. All eight stops and three saturations contribute to each coloured-family cell.
+
+#### Film off
+
+| Family | 55e8bb5f | Pre-N1 541dc130 | Pre-N3a 5bc997f3 | N3a final |
+| --- | --- | --- | --- | --- |
+| denim | 64.41 / 11.09 / 64.89 | 64.41 / 8.40 / 64.89 | 64.41 / 9.19 / 64.48 | 64.41 / 9.19 / 64.48 |
+| indigo | 66.08 / 9.59 / 66.50 | 66.08 / 9.90 / 66.50 | 66.08 / 10.09 / 66.15 | 66.08 / 10.09 / 66.15 |
+| cyan | 62.02 / 10.10 / 62.96 | 62.02 / 16.21 / 62.96 | 62.02 / 9.67 / 61.74 | 62.02 / 9.67 / 61.74 |
+| red | 67.94 / 10.88 / 66.78 | 67.94 / 10.88 / 66.78 | 67.94 / 4.91 / 67.98 | 67.94 / 4.91 / 67.98 |
+| green | 63.03 / 11.94 / 64.71 | 63.03 / 24.26 / 65.98 | 63.03 / 5.59 / 62.88 | 63.03 / 5.59 / 62.88 |
+| magenta | 67.72 / 14.33 / 67.20 | 67.72 / 14.33 / 67.20 | 67.72 / 3.09 / 67.76 | 67.72 / 3.09 / 67.76 |
+| skin | 62.34 / 8.19 / 62.34 | 62.34 / 1.07 / 62.34 | 62.34 / 7.12 / 62.34 | 62.34 / 7.12 / 62.34 |
+| grey | 50.47 / 0.57 / 50.47 | 50.47 / 0.32 / 50.47 | 50.47 / 2.02 / 51.01 | 50.47 / 2.02 / 51.01 |
+
+#### Portra 50%
+
+| Family | 55e8bb5f | Pre-N1 541dc130 | Pre-N3a 5bc997f3 | N3a final |
+| --- | --- | --- | --- | --- |
+| denim | 59.90 / 12.52 / 60.14 | 59.90 / 7.41 / 60.14 | 59.90 / 10.69 / 59.85 | 59.90 / 10.69 / 59.85 |
+| indigo | 61.60 / 9.70 / 62.06 | 61.60 / 10.91 / 62.06 | 61.60 / 12.59 / 61.60 | 61.60 / 12.59 / 61.60 |
+| cyan | 57.92 / 14.70 / 59.00 | 57.92 / 14.53 / 59.00 | 57.92 / 11.73 / 57.49 | 57.92 / 11.73 / 57.49 |
+| red | 61.45 / 12.62 / 60.53 | 61.45 / 11.43 / 60.53 | 61.45 / 16.09 / 61.53 | 61.45 / 16.09 / 61.53 |
+| green | 58.37 / 15.10 / 60.62 | 58.37 / 23.71 / 61.29 | 58.37 / 10.22 / 57.96 | 58.37 / 10.22 / 57.96 |
+| magenta | 62.33 / 13.72 / 62.25 | 62.33 / 13.55 / 62.25 | 62.33 / 15.07 / 62.35 | 62.33 / 15.07 / 62.35 |
+| skin | 57.89 / 11.62 / 57.89 | 57.89 / 3.73 / 57.89 | 57.89 / 11.78 / 57.87 | 57.89 / 11.78 / 57.87 |
+| grey | 47.45 / 2.20 / 47.45 | 47.45 / 2.20 / 47.45 | 47.45 / 3.49 / 48.23 | 47.45 / 3.49 / 48.23 |
+
+#### Ektar 50%
+
+| Family | 55e8bb5f | Pre-N1 541dc130 | Pre-N3a 5bc997f3 | N3a final |
+| --- | --- | --- | --- | --- |
+| denim | 59.95 / 12.48 / 60.20 | 59.95 / 7.61 / 60.20 | 59.95 / 10.83 / 59.90 | 59.95 / 10.83 / 59.90 |
+| indigo | 61.65 / 9.94 / 62.10 | 61.65 / 11.13 / 62.10 | 61.65 / 12.78 / 61.65 | 61.65 / 12.78 / 61.65 |
+| cyan | 57.80 / 14.88 / 59.07 | 57.80 / 15.47 / 59.07 | 57.80 / 11.86 / 57.55 | 57.80 / 11.86 / 57.55 |
+| red | 61.48 / 12.34 / 60.47 | 61.48 / 11.67 / 60.47 | 61.48 / 16.31 / 61.56 | 61.48 / 16.31 / 61.56 |
+| green | 58.26 / 15.00 / 60.36 | 58.26 / 23.99 / 61.27 | 58.26 / 10.26 / 57.87 | 58.26 / 10.26 / 57.87 |
+| magenta | 62.31 / 13.80 / 62.23 | 62.31 / 13.63 / 62.23 | 62.31 / 15.45 / 62.33 | 62.31 / 15.45 / 62.33 |
+| skin | 57.89 / 11.78 / 57.89 | 57.89 / 4.43 / 57.89 | 57.89 / 11.99 / 57.86 | 57.89 / 11.99 / 57.86 |
+| grey | 47.46 / 2.48 / 47.45 | 47.46 / 2.48 / 47.45 | 47.46 / 3.68 / 48.25 | 47.46 / 3.68 / 48.25 |
+
+#### Velvia 50%
+
+| Family | 55e8bb5f | Pre-N1 541dc130 | Pre-N3a 5bc997f3 | N3a final |
+| --- | --- | --- | --- | --- |
+| denim | 59.85 / 9.60 / 62.83 | 59.85 / 10.13 / 60.04 | 59.85 / 9.60 / 59.74 | 59.85 / 9.60 / 59.74 |
+| indigo | 61.62 / 8.35 / 64.72 | 61.62 / 11.34 / 62.01 | 61.62 / 11.56 / 61.62 | 61.62 / 11.56 / 61.62 |
+| cyan | 57.69 / 9.45 / 60.29 | 57.69 / 13.05 / 58.30 | 57.69 / 10.51 / 57.19 | 57.69 / 10.51 / 57.19 |
+| red | 62.26 / 9.59 / 64.45 | 62.26 / 9.99 / 61.71 | 62.26 / 13.11 / 62.32 | 62.26 / 13.11 / 62.32 |
+| green | 58.51 / 8.52 / 61.44 | 58.51 / 19.14 / 61.11 | 58.51 / 10.07 / 58.08 | 58.51 / 10.07 / 58.08 |
+| magenta | 62.50 / 13.70 / 65.46 | 62.50 / 13.44 / 62.50 | 62.50 / 13.38 / 62.50 | 62.50 / 13.38 / 62.50 |
+| skin | 57.64 / 7.26 / 60.34 | 57.64 / 2.65 / 57.64 | 57.64 / 10.52 / 57.60 | 57.64 / 10.52 / 57.60 |
+| grey | 47.50 / 3.47 / 50.47 | 47.50 / 0.54 / 47.50 | 47.50 / 2.82 / 48.21 | 47.50 / 2.82 / 48.21 |
+
+### Bright colours (+1…+3 stops)
+
+Residual P95 Delta E00 only. No bright family improves between pre-N3a and the safe final code; that portion of the requested goal is not achieved.
+
+| Stock | Family | 55e8bb5f | Pre-N1 | Pre-N3a | N3a final |
+| --- | --- | --- | --- | --- | --- |
+| Film off | denim | 11.60 | 8.76 | 10.49 | 10.49 |
+| Film off | indigo | 9.69 | 12.12 | 10.61 | 10.61 |
+| Film off | cyan | 12.29 | 16.89 | 11.85 | 11.85 |
+| Film off | red | 11.00 | 11.00 | 6.95 | 6.95 |
+| Film off | green | 12.12 | 24.86 | 9.32 | 9.32 |
+| Film off | magenta | 14.46 | 14.46 | 6.28 | 6.28 |
+| Film off | skin | 9.88 | 1.09 | 7.62 | 7.62 |
+| Film off | grey | 0.02 | 0.02 | 2.42 | 2.42 |
+| Portra 50% | denim | 13.15 | 8.11 | 11.52 | 11.52 |
+| Portra 50% | indigo | 9.84 | 11.64 | 13.91 | 13.91 |
+| Portra 50% | cyan | 15.45 | 15.61 | 13.79 | 13.79 |
+| Portra 50% | red | 13.90 | 12.31 | 17.49 | 17.49 |
+| Portra 50% | green | 18.24 | 24.36 | 12.47 | 12.47 |
+| Portra 50% | magenta | 14.70 | 13.72 | 15.47 | 15.47 |
+| Portra 50% | skin | 14.58 | 4.68 | 12.34 | 12.34 |
+| Portra 50% | grey | 0.73 | 0.73 | 3.76 | 3.76 |
+| Ektar 50% | denim | 13.14 | 8.38 | 11.64 | 11.64 |
+| Ektar 50% | indigo | 10.03 | 11.80 | 14.04 | 14.04 |
+| Ektar 50% | cyan | 16.09 | 16.59 | 13.88 | 13.88 |
+| Ektar 50% | red | 13.89 | 11.95 | 17.41 | 17.41 |
+| Ektar 50% | green | 18.46 | 24.61 | 12.51 | 12.51 |
+| Ektar 50% | magenta | 14.89 | 13.80 | 15.76 | 15.76 |
+| Ektar 50% | skin | 14.98 | 5.54 | 12.68 | 12.68 |
+| Ektar 50% | grey | 0.93 | 0.93 | 3.84 | 3.84 |
+| Velvia 50% | denim | 10.40 | 11.23 | 10.46 | 10.46 |
+| Velvia 50% | indigo | 9.16 | 12.30 | 12.93 | 12.93 |
+| Velvia 50% | cyan | 12.46 | 14.07 | 13.42 | 13.42 |
+| Velvia 50% | red | 10.41 | 11.72 | 14.33 | 14.33 |
+| Velvia 50% | green | 9.39 | 21.51 | 12.01 | 12.01 |
+| Velvia 50% | magenta | 14.07 | 14.55 | 14.55 | 14.55 |
+| Velvia 50% | skin | 8.12 | 4.43 | 10.67 | 10.67 |
+| Velvia 50% | grey | 3.47 | 0.50 | 3.38 | 3.38 |
+
+### 224-patch population
+
+Separate fits including the wide-gamut controls. I / R / T P95 Delta E00. Pre-N3a/final Film fits are refused: Portra body P95 OKLab .068, Ektar .072, Velvia .062 versus the unchanged .050 acceptance ceiling (P95 luma .027/.031/.026).
+
+#### Film off
+
+| Family | 55e8bb5f | Pre-N1 541dc130 | Pre-N3a 5bc997f3 | N3a final |
+| --- | --- | --- | --- | --- |
+| denim | 64.41 / 10.83 / 64.89 | 64.41 / 8.40 / 64.89 | 64.41 / 9.19 / 64.48 | 64.41 / 9.19 / 64.48 |
+| indigo | 66.08 / 9.62 / 66.50 | 66.08 / 10.16 / 66.50 | 66.08 / 10.09 / 66.15 | 66.08 / 10.09 / 66.15 |
+| cyan | 62.02 / 11.96 / 62.96 | 62.02 / 16.09 / 62.96 | 62.02 / 9.67 / 61.74 | 62.02 / 9.67 / 61.74 |
+| red | 67.94 / 11.00 / 66.78 | 67.94 / 10.88 / 66.78 | 67.94 / 4.91 / 67.98 | 67.94 / 4.91 / 67.98 |
+| green | 63.03 / 11.94 / 64.96 | 63.03 / 23.80 / 65.98 | 63.03 / 5.59 / 62.88 | 63.03 / 5.59 / 62.88 |
+| magenta | 67.72 / 14.33 / 67.20 | 67.72 / 14.33 / 67.20 | 67.72 / 3.09 / 67.76 | 67.72 / 3.09 / 67.76 |
+| skin | 62.34 / 10.19 / 62.34 | 62.34 / 1.07 / 62.34 | 62.34 / 7.12 / 62.34 | 62.34 / 7.12 / 62.34 |
+| grey | 50.47 / 1.63 / 50.47 | 50.47 / 0.77 / 50.47 | 50.47 / 2.02 / 51.01 | 50.47 / 2.02 / 51.01 |
+| bt2020_blue | 66.37 / 12.49 / 68.84 | 66.37 / 12.37 / 69.57 | 66.37 / 3.69 / 66.51 | 66.37 / 3.69 / 66.51 |
+| bt2020_green | 66.21 / 12.66 / 67.50 | 66.21 / 23.14 / 67.93 | 66.21 / 2.73 / 66.17 | 66.21 / 2.73 / 66.17 |
+
+#### Portra 50%
+
+| Family | 55e8bb5f | Pre-N1 541dc130 | Pre-N3a 5bc997f3 | N3a final |
+| --- | --- | --- | --- | --- |
+| denim | 59.90 / 12.03 / 60.14 | 59.90 / 6.03 / 60.14 | 59.90 / — / — | 59.90 / — / — |
+| indigo | 61.60 / 8.20 / 62.06 | 61.60 / 8.27 / 62.06 | 61.60 / — / — | 61.60 / — / — |
+| cyan | 57.92 / 12.83 / 59.00 | 57.92 / 14.83 / 59.00 | 57.92 / — / — | 57.92 / — / — |
+| red | 61.45 / 11.61 / 60.53 | 61.45 / 10.74 / 60.53 | 61.45 / — / — | 61.45 / — / — |
+| green | 58.37 / 19.46 / 61.29 | 58.37 / 23.71 / 61.29 | 58.37 / — / — | 58.37 / — / — |
+| magenta | 62.33 / 13.72 / 62.25 | 62.33 / 13.55 / 62.25 | 62.33 / — / — | 62.33 / — / — |
+| skin | 57.89 / 10.80 / 57.89 | 57.89 / 7.04 / 57.89 | 57.89 / — / — | 57.89 / — / — |
+| grey | 47.45 / 1.91 / 47.45 | 47.45 / 1.95 / 47.45 | 47.45 / — / — | 47.45 / — / — |
+| bt2020_blue | 58.37 / 12.31 / 62.69 | 58.37 / 12.31 / 62.69 | 58.37 / — / — | 58.37 / — / — |
+| bt2020_green | 58.16 / 18.79 / 60.97 | 58.16 / 25.11 / 60.57 | 58.16 / — / — | 58.16 / — / — |
+
+#### Ektar 50%
+
+| Family | 55e8bb5f | Pre-N1 541dc130 | Pre-N3a 5bc997f3 | N3a final |
+| --- | --- | --- | --- | --- |
+| denim | 59.95 / 12.00 / 60.20 | 59.95 / 6.59 / 60.20 | 59.95 / — / — | 59.95 / — / — |
+| indigo | 61.65 / 8.22 / 62.10 | 61.65 / 8.86 / 62.10 | 61.65 / — / — | 61.65 / — / — |
+| cyan | 57.80 / 12.94 / 59.07 | 57.80 / 15.75 / 59.07 | 57.80 / — / — | 57.80 / — / — |
+| red | 61.48 / 11.00 / 60.47 | 61.48 / 10.80 / 60.47 | 61.48 / — / — | 61.48 / — / — |
+| green | 58.26 / 19.94 / 61.27 | 58.26 / 23.99 / 61.27 | 58.26 / — / — | 58.26 / — / — |
+| magenta | 62.31 / 13.80 / 62.23 | 62.31 / 13.63 / 62.23 | 62.31 / — / — | 62.31 / — / — |
+| skin | 57.89 / 10.84 / 57.89 | 57.89 / 8.15 / 57.89 | 57.89 / — / — | 57.89 / — / — |
+| grey | 47.46 / 1.91 / 47.45 | 47.46 / 2.29 / 47.45 | 47.46 / — / — | 47.46 / — / — |
+| bt2020_blue | 58.59 / 12.57 / 62.84 | 58.59 / 12.30 / 62.84 | 58.59 / — / — | 58.59 / — / — |
+| bt2020_green | 58.08 / 19.15 / 60.93 | 58.08 / 25.21 / 60.48 | 58.08 / — / — | 58.08 / — / — |
+
+#### Velvia 50%
+
+| Family | 55e8bb5f | Pre-N1 541dc130 | Pre-N3a 5bc997f3 | N3a final |
+| --- | --- | --- | --- | --- |
+| denim | 59.85 / 8.80 / 62.83 | 59.85 / 10.00 / 60.04 | 59.85 / — / — | 59.85 / — / — |
+| indigo | 61.62 / 8.64 / 64.72 | 61.62 / 11.30 / 62.01 | 61.62 / — / — | 61.62 / — / — |
+| cyan | 57.69 / 11.12 / 60.90 | 57.69 / 13.59 / 58.30 | 57.69 / — / — | 57.69 / — / — |
+| red | 62.26 / 9.59 / 64.45 | 62.26 / 10.13 / 61.71 | 62.26 / — / — | 62.26 / — / — |
+| green | 58.51 / 9.98 / 62.07 | 58.51 / 19.31 / 61.11 | 58.51 / — / — | 58.51 / — / — |
+| magenta | 62.50 / 13.68 / 65.46 | 62.50 / 13.44 / 62.50 | 62.50 / — / — | 62.50 / — / — |
+| skin | 57.64 / 7.90 / 60.34 | 57.64 / 6.61 / 57.64 | 57.64 / — / — | 57.64 / — / — |
+| grey | 47.50 / 3.47 / 50.47 | 47.50 / 1.59 / 47.50 | 47.50 / — / — | 47.50 / — / — |
+| bt2020_blue | 57.98 / 10.08 / 63.84 | 57.98 / 11.11 / 60.49 | 57.98 / — / — | 57.98 / — / — |
+| bt2020_green | 58.13 / 11.17 / 61.59 | 58.13 / 19.72 / 60.02 | 58.13 / — / — | 58.13 / — / — |
+
+### Five RAWs: whole image
+
+I / R / T P95 Delta E00; same source samples in every revision. The final IMG_7723 Portra/Ektar fits remain refused (P95 luma .060/.081, strict review ceiling .060; rounded display is not a waiver). IMG_0790 Film off is also refused (body P95 OKLab .124 versus .050).
+
+| Photo | Stock | 55e8bb5f | Pre-N1 | Pre-N3a | N3a final |
+| --- | --- | --- | --- | --- | --- |
+| A7R00619.ARW | Film off | 43.15 / 6.68 / 43.16 | 43.15 / 1.61 / 43.16 | 43.15 / 7.86 / 43.17 | 43.15 / 7.86 / 43.17 |
+| A7R00619.ARW | Portra 50% | 38.69 / 4.53 / 38.69 | 38.69 / 4.13 / 38.69 | 38.69 / 6.28 / 38.94 | 38.69 / 6.28 / 38.94 |
+| A7R00619.ARW | Ektar 50% | 38.79 / 4.40 / 38.80 | 38.79 / 4.00 / 38.80 | 38.79 / 6.39 / 39.03 | 38.79 / 6.39 / 39.03 |
+| A7R00619.ARW | Velvia 50% | 38.42 / 5.83 / 41.56 | 38.42 / 3.91 / 38.42 | 38.42 / 6.22 / 38.72 | 38.42 / 6.22 / 38.72 |
+| DSC00264.ARW | Film off | 30.28 / 1.72 / 29.81 | 30.28 / 1.58 / 30.99 | 30.28 / 4.64 / 30.12 | 30.28 / 4.64 / 30.12 |
+| DSC00264.ARW | Portra 50% | 26.19 / 2.75 / 25.54 | 26.19 / 2.70 / 26.02 | 26.19 / 4.83 / 27.41 | 26.19 / 4.83 / 27.41 |
+| DSC00264.ARW | Ektar 50% | 26.22 / 2.81 / 25.52 | 26.22 / 2.73 / 26.00 | 26.22 / 5.10 / 27.65 | 26.22 / 5.10 / 27.65 |
+| DSC00264.ARW | Velvia 50% | 26.07 / 3.45 / 28.51 | 26.07 / 1.75 / 25.88 | 26.07 / 4.15 / 26.83 | 26.07 / 4.15 / 26.83 |
+| IMG_3129.CR2 | Film off | 17.38 / 3.14 / 17.09 | 17.38 / 0.47 / 17.23 | 17.38 / 0.28 / 17.34 | 17.38 / 0.28 / 17.34 |
+| IMG_3129.CR2 | Portra 50% | 16.23 / 1.81 / 17.28 | 16.23 / 1.79 / 17.27 | 16.23 / 1.81 / 17.56 | 16.23 / 1.81 / 17.56 |
+| IMG_3129.CR2 | Ektar 50% | 16.25 / 2.09 / 17.96 | 16.25 / 1.91 / 17.96 | 16.25 / 2.28 / 18.22 | 16.25 / 2.28 / 18.22 |
+| IMG_3129.CR2 | Velvia 50% | 16.23 / 1.45 / 17.05 | 16.23 / 0.98 / 16.96 | 16.23 / 1.16 / 16.88 | 16.23 / 1.16 / 16.88 |
+| IMG_0790.CR2 | Film off | 20.48 / 4.75 / 19.74 | 20.48 / 4.72 / 20.45 | 20.48 / — / — | 20.48 / — / — |
+| IMG_0790.CR2 | Portra 50% | 18.59 / 3.06 / 19.50 | 18.59 / 2.91 / 19.80 | 18.59 / 2.86 / 20.42 | 18.59 / 2.86 / 20.42 |
+| IMG_0790.CR2 | Ektar 50% | 18.70 / 3.00 / 19.22 | 18.70 / 2.86 / 19.19 | 18.70 / 2.96 / 20.47 | 18.70 / 2.96 / 20.47 |
+| IMG_0790.CR2 | Velvia 50% | 18.96 / 4.67 / 20.46 | 18.96 / 4.12 / 19.57 | 18.96 / 5.80 / 19.65 | 18.96 / 5.80 / 19.65 |
+| IMG_7723.CR3 | Film off | 20.33 / 1.44 / 20.49 | 20.33 / 0.74 / 20.38 | 20.33 / 7.06 / 21.61 | 20.33 / 7.06 / 21.61 |
+| IMG_7723.CR3 | Portra 50% | 16.30 / — / — | 16.30 / — / — | 16.30 / — / — | 16.30 / — / — |
+| IMG_7723.CR3 | Ektar 50% | 16.39 / — / — | 16.39 / — / — | 16.39 / — / — | 16.39 / — / — |
+| IMG_7723.CR3 | Velvia 50% | 16.22 / 2.73 / 18.69 | 16.22 / 1.89 / 17.73 | 16.22 / 3.75 / 19.56 | 16.22 / 3.75 / 19.56 |
+
+### Five RAWs: per family
+
+I / R / T P95 Delta E00. Pixel counts and signed hue/chroma/Delta L medians/P95 are in retained `raw_metrics.csv` and `refused_raw_inherent.csv`; very small families are descriptive, not standalone acceptance tests.
+
+#### A7R00619.ARW
+
+| Stock | Family | 55e8bb5f | Pre-N1 | Pre-N3a | N3a final |
+| --- | --- | --- | --- | --- | --- |
+| Film off | skin | 15.91 / 0.19 / 15.99 | 15.91 / 0.19 / 15.99 | 15.91 / 0.27 / 15.81 | 15.91 / 0.27 / 15.81 |
+| Film off | reds | 15.96 / 0.23 / 16.05 | 15.96 / 0.22 / 16.05 | 15.96 / 0.27 / 15.89 | 15.96 / 0.27 / 15.89 |
+| Film off | greens | 15.79 / 0.24 / 15.81 | 15.79 / 0.24 / 15.81 | 15.79 / 0.27 / 15.62 | 15.79 / 0.27 / 15.62 |
+| Film off | cyans | 15.85 / 0.71 / 15.86 | 15.85 / 0.71 / 15.86 | 15.85 / 0.28 / 15.76 | 15.85 / 0.28 / 15.76 |
+| Film off | blues | 18.62 / 4.31 / 18.29 | 18.62 / 1.14 / 18.66 | 18.62 / 2.71 / 18.91 | 18.62 / 2.71 / 18.91 |
+| Film off | magentas | 16.07 / 0.29 / 16.17 | 16.07 / 0.29 / 16.17 | 16.07 / 0.29 / 16.05 | 16.07 / 0.29 / 16.05 |
+| Film off | highlights | 52.13 / 11.09 / 52.13 | 52.13 / 2.56 / 52.13 | 52.13 / 8.93 / 52.25 | 52.13 / 8.93 / 52.25 |
+| Portra 50% | skin | 15.94 / 4.17 / 17.31 | 15.94 / 4.17 / 17.31 | 15.94 / 5.32 / 17.50 | 15.94 / 5.32 / 17.50 |
+| Portra 50% | reds | 15.96 / 3.75 / 17.53 | 15.96 / 3.74 / 17.53 | 15.96 / 4.80 / 17.66 | 15.96 / 4.80 / 17.66 |
+| Portra 50% | greens | 14.97 / 4.16 / 15.99 | 14.97 / 4.16 / 15.99 | 14.97 / 5.33 / 16.43 | 14.97 / 5.33 / 16.43 |
+| Portra 50% | cyans | 15.82 / 3.90 / 17.53 | 15.82 / 3.90 / 17.53 | 15.82 / 5.16 / 17.77 | 15.82 / 5.16 / 17.77 |
+| Portra 50% | blues | 17.48 / 3.40 / 17.89 | 17.48 / 3.17 / 17.89 | 17.48 / 3.95 / 18.20 | 17.48 / 3.95 / 18.20 |
+| Portra 50% | magentas | 16.01 / 4.08 / 17.99 | 16.01 / 4.07 / 17.99 | 16.01 / 5.18 / 18.16 | 16.01 / 5.18 / 18.16 |
+| Portra 50% | highlights | 49.12 / 8.70 / 49.12 | 49.12 / 4.55 / 49.12 | 49.12 / 7.73 / 49.41 | 49.12 / 7.73 / 49.41 |
+| Ektar 50% | skin | 15.96 / 4.38 / 17.31 | 15.96 / 4.38 / 17.31 | 15.96 / 5.59 / 17.52 | 15.96 / 5.59 / 17.52 |
+| Ektar 50% | reds | 15.96 / 3.64 / 17.35 | 15.96 / 3.64 / 17.35 | 15.96 / 4.72 / 17.52 | 15.96 / 4.72 / 17.52 |
+| Ektar 50% | greens | 14.66 / 4.12 / 15.76 | 14.66 / 4.12 / 15.76 | 14.66 / 5.26 / 16.15 | 14.66 / 5.26 / 16.15 |
+| Ektar 50% | cyans | 15.85 / 3.94 / 17.60 | 15.85 / 3.94 / 17.60 | 15.85 / 5.21 / 17.95 | 15.85 / 5.21 / 17.95 |
+| Ektar 50% | blues | 17.43 / 3.39 / 17.75 | 17.43 / 3.09 / 17.78 | 17.43 / 3.95 / 18.20 | 17.43 / 3.95 / 18.20 |
+| Ektar 50% | magentas | 16.02 / 3.98 / 17.76 | 16.02 / 3.97 / 17.76 | 16.02 / 5.13 / 18.02 | 16.02 / 5.13 / 18.02 |
+| Ektar 50% | highlights | 49.23 / 8.59 / 49.23 | 49.23 / 3.90 / 49.23 | 49.23 / 7.80 / 49.50 | 49.23 / 7.80 / 49.50 |
+| Velvia 50% | skin | 15.92 / 5.51 / 17.18 | 15.92 / 3.23 / 16.65 | 15.92 / 4.34 / 16.78 | 15.92 / 4.34 / 16.78 |
+| Velvia 50% | reds | 15.93 / 4.51 / 17.00 | 15.93 / 2.55 / 16.59 | 15.93 / 3.48 / 16.68 | 15.93 / 3.48 / 16.68 |
+| Velvia 50% | greens | 15.57 / 5.96 / 17.09 | 15.57 / 3.50 / 16.37 | 15.57 / 4.69 / 16.57 | 15.57 / 4.69 / 16.57 |
+| Velvia 50% | cyans | 15.77 / 5.67 / 17.11 | 15.77 / 3.48 / 16.53 | 15.77 / 5.01 / 16.73 | 15.77 / 5.01 / 16.73 |
+| Velvia 50% | blues | 17.19 / 4.94 / 18.77 | 17.19 / 2.50 / 17.40 | 17.19 / 3.29 / 18.00 | 17.19 / 3.29 / 18.00 |
+| Velvia 50% | magentas | 16.00 / 5.04 / 17.42 | 16.00 / 2.84 / 16.86 | 16.00 / 3.90 / 17.04 | 16.00 / 3.90 / 17.04 |
+| Velvia 50% | highlights | 48.92 / 6.08 / 51.92 | 48.92 / 6.12 / 48.92 | 48.92 / 8.11 / 49.22 | 48.92 / 8.11 / 49.22 |
+
+#### DSC00264.ARW
+
+| Stock | Family | 55e8bb5f | Pre-N1 | Pre-N3a | N3a final |
+| --- | --- | --- | --- | --- | --- |
+| Film off | skin | 9.81 / 1.52 / 9.47 | 9.81 / 1.52 / 9.47 | 9.81 / 1.52 / 9.67 | 9.81 / 1.52 / 9.67 |
+| Film off | reds | 6.42 / 1.49 / 6.63 | 6.42 / 1.49 / 6.63 | 6.42 / 1.48 / 6.62 | 6.42 / 1.48 / 6.62 |
+| Film off | greens | 31.67 / 6.54 / 29.16 | 31.67 / 11.93 / 37.56 | 31.67 / 6.84 / 28.83 | 31.67 / 6.84 / 28.83 |
+| Film off | cyans | 15.74 / 1.04 / 15.74 | 15.74 / 1.04 / 15.74 | 15.74 / 2.13 / 15.83 | 15.74 / 2.13 / 15.83 |
+| Film off | blues | 15.83 / 0.48 / 15.87 | 15.83 / 0.48 / 15.87 | 15.83 / 0.71 / 15.91 | 15.83 / 0.71 / 15.91 |
+| Film off | magentas | 11.81 / 1.56 / 11.73 | 11.81 / 1.56 / 11.73 | 11.81 / 1.55 / 11.71 | 11.81 / 1.55 / 11.71 |
+| Film off | highlights | 59.10 / 8.17 / 59.10 | 59.10 / 16.23 / 59.10 | 59.10 / 10.91 / 59.08 | 59.10 / 10.91 / 59.08 |
+| Portra 50% | skin | 11.07 / 3.39 / 9.00 | 11.07 / 3.39 / 9.00 | 11.07 / 1.60 / 9.68 | 11.07 / 1.60 / 9.68 |
+| Portra 50% | reds | 5.92 / 0.82 / 5.32 | 5.92 / 0.82 / 5.32 | 5.92 / 0.43 / 5.52 | 5.92 / 0.43 / 5.52 |
+| Portra 50% | greens | 30.84 / 8.37 / 27.14 | 30.84 / 10.17 / 36.05 | 30.84 / 12.04 / 28.01 | 30.84 / 12.04 / 28.01 |
+| Portra 50% | cyans | 15.79 / 1.74 / 15.58 | 15.79 / 1.74 / 15.58 | 15.79 / 1.74 / 15.57 | 15.79 / 1.74 / 15.57 |
+| Portra 50% | blues | 15.76 / 1.75 / 16.44 | 15.76 / 1.75 / 16.44 | 15.76 / 1.76 / 16.60 | 15.76 / 1.76 / 16.60 |
+| Portra 50% | magentas | 5.07 / 0.43 / 4.88 | 5.07 / 0.43 / 4.88 | 5.07 / 0.42 / 4.88 | 5.07 / 0.42 / 4.88 |
+| Portra 50% | highlights | 54.98 / 9.77 / 54.98 | 54.98 / 11.69 / 54.98 | 54.98 / 13.06 / 54.95 | 54.98 / 13.06 / 54.95 |
+| Ektar 50% | skin | 10.66 / 3.20 / 8.42 | 10.66 / 3.20 / 8.42 | 10.66 / 1.13 / 9.72 | 10.66 / 1.13 / 9.72 |
+| Ektar 50% | reds | 5.40 / 0.67 / 5.08 | 5.40 / 0.67 / 5.08 | 5.40 / 0.31 / 5.48 | 5.40 / 0.31 / 5.48 |
+| Ektar 50% | greens | 31.45 / 8.76 / 27.83 | 31.45 / 10.46 / 36.59 | 31.45 / 11.85 / 28.87 | 31.45 / 11.85 / 28.87 |
+| Ektar 50% | cyans | 15.84 / 2.06 / 15.55 | 15.84 / 2.06 / 15.55 | 15.84 / 1.30 / 16.34 | 15.84 / 1.30 / 16.34 |
+| Ektar 50% | blues | 15.82 / 2.07 / 16.96 | 15.82 / 2.07 / 16.96 | 15.82 / 2.15 / 17.79 | 15.82 / 2.15 / 17.79 |
+| Ektar 50% | magentas | 6.42 / 0.73 / 5.65 | 6.42 / 0.73 / 5.65 | 6.42 / 0.37 / 6.06 | 6.42 / 0.37 / 6.06 |
+| Ektar 50% | highlights | 54.90 / 9.81 / 54.90 | 54.90 / 12.06 / 54.90 | 54.90 / 12.88 / 54.87 | 54.90 / 12.88 / 54.87 |
+| Velvia 50% | skin | 9.78 / 1.65 / 8.29 | 9.78 / 1.65 / 8.29 | 9.78 / 2.77 / 10.75 | 9.78 / 2.77 / 10.75 |
+| Velvia 50% | reds | 6.47 / 1.36 / 6.42 | 6.47 / 1.36 / 6.42 | 6.47 / 0.85 / 6.67 | 6.47 / 0.85 / 6.67 |
+| Velvia 50% | greens | 22.87 / 4.62 / 22.17 | 22.87 / 5.30 / 20.24 | 22.87 / 10.07 / 21.76 | 22.87 / 10.07 / 21.76 |
+| Velvia 50% | cyans | 15.72 / 0.85 / 15.19 | 15.72 / 0.85 / 15.19 | 15.72 / 0.77 / 15.89 | 15.72 / 0.77 / 15.89 |
+| Velvia 50% | blues | 15.83 / 0.86 / 16.18 | 15.83 / 0.86 / 16.18 | 15.83 / 0.70 / 16.35 | 15.83 / 0.70 / 16.35 |
+| Velvia 50% | magentas | 11.25 / 1.14 / 10.43 | 11.25 / 1.14 / 10.43 | 11.25 / 0.68 / 11.08 | 11.25 / 0.68 / 11.08 |
+| Velvia 50% | highlights | 54.61 / 9.34 / 57.41 | 54.61 / 9.92 / 54.61 | 54.61 / 13.37 / 54.59 | 54.61 / 13.37 / 54.59 |
+
+#### IMG_3129.CR2
+
+| Stock | Family | 55e8bb5f | Pre-N1 | Pre-N3a | N3a final |
+| --- | --- | --- | --- | --- | --- |
+| Film off | skin | 31.12 / 10.70 / 29.71 | 31.12 / 1.47 / 30.82 | 31.12 / 1.79 / 30.13 | 31.12 / 1.79 / 30.13 |
+| Film off | reds | 13.14 / 0.17 / 13.07 | 13.14 / 0.17 / 13.07 | 13.14 / 0.27 / 12.88 | 13.14 / 0.27 / 12.88 |
+| Film off | greens | 14.14 / 0.18 / 14.07 | 14.14 / 0.18 / 14.07 | 14.14 / 0.27 / 13.89 | 14.14 / 0.27 / 13.89 |
+| Film off | cyans | 15.37 / 0.16 / 15.34 | 15.37 / 0.16 / 15.34 | 15.37 / 0.28 / 15.12 | 15.37 / 0.28 / 15.12 |
+| Film off | blues | 15.69 / 0.12 / 15.68 | 15.69 / 0.12 / 15.67 | 15.69 / 0.28 / 15.45 | 15.69 / 0.28 / 15.45 |
+| Film off | magentas | 13.43 / 0.17 / 13.37 | 13.43 / 0.17 / 13.36 | 13.43 / 0.27 / 13.17 | 13.43 / 0.27 / 13.17 |
+| Film off | highlights | 59.44 / 15.52 / 59.16 | 59.44 / 10.90 / 59.14 | 59.44 / 12.15 / 59.48 | 59.44 / 12.15 / 59.48 |
+| Portra 50% | skin | 21.46 / 7.40 / 21.32 | 21.46 / 2.59 / 21.67 | 21.46 / 3.28 / 21.88 | 21.46 / 3.28 / 21.88 |
+| Portra 50% | reds | 13.31 / 1.72 / 11.63 | 13.31 / 1.72 / 11.63 | 13.31 / 1.73 / 11.62 | 13.31 / 1.73 / 11.62 |
+| Portra 50% | greens | 14.69 / 1.73 / 13.02 | 14.69 / 1.73 / 13.02 | 14.69 / 1.72 / 12.99 | 14.69 / 1.72 / 12.99 |
+| Portra 50% | cyans | 15.30 / 1.76 / 13.53 | 15.30 / 1.76 / 13.53 | 15.30 / 1.76 / 13.50 | 15.30 / 1.76 / 13.50 |
+| Portra 50% | blues | 15.38 / 1.75 / 13.59 | 15.38 / 1.75 / 13.59 | 15.38 / 1.76 / 13.57 | 15.38 / 1.76 / 13.57 |
+| Portra 50% | magentas | 9.53 / 1.65 / 7.83 | 9.53 / 1.65 / 7.83 | 9.53 / 1.66 / 7.83 | 9.53 / 1.66 / 7.83 |
+| Portra 50% | highlights | 54.18 / 17.59 / 54.33 | 54.18 / 10.98 / 54.33 | 54.18 / 14.77 / 54.20 | 54.18 / 14.77 / 54.20 |
+| Ektar 50% | skin | 20.43 / 6.80 / 20.70 | 20.43 / 3.14 / 20.95 | 20.43 / 3.76 / 21.27 | 20.43 / 3.76 / 21.27 |
+| Ektar 50% | reds | 13.35 / 1.25 / 12.19 | 13.35 / 1.25 / 12.19 | 13.35 / 1.26 / 12.16 | 13.35 / 1.26 / 12.16 |
+| Ektar 50% | greens | 14.72 / 1.26 / 13.59 | 14.72 / 1.26 / 13.59 | 14.72 / 1.26 / 13.55 | 14.72 / 1.26 / 13.55 |
+| Ektar 50% | cyans | 15.69 / 1.30 / 14.50 | 15.69 / 1.30 / 14.50 | 15.69 / 1.30 / 14.45 | 15.69 / 1.30 / 14.45 |
+| Ektar 50% | blues | 15.43 / 1.29 / 14.26 | 15.43 / 1.29 / 14.26 | 15.43 / 1.30 / 14.21 | 15.43 / 1.30 / 14.21 |
+| Ektar 50% | magentas | 11.77 / 1.24 / 10.51 | 11.77 / 1.24 / 10.51 | 11.77 / 1.25 / 10.50 | 11.77 / 1.25 / 10.50 |
+| Ektar 50% | highlights | 54.23 / 18.61 / 54.33 | 54.23 / 11.59 / 54.33 | 54.23 / 15.53 / 54.32 | 54.23 / 15.53 / 54.32 |
+| Velvia 50% | skin | 16.26 / 1.17 / 16.83 | 16.26 / 0.91 / 16.82 | 16.26 / 1.13 / 16.88 | 16.26 / 1.13 / 16.88 |
+| Velvia 50% | reds | 13.41 / 0.84 / 12.59 | 13.41 / 0.84 / 12.59 | 13.41 / 0.55 / 13.38 | 13.41 / 0.55 / 13.38 |
+| Velvia 50% | greens | 13.21 / 0.83 / 12.40 | 13.21 / 0.83 / 12.40 | 13.21 / 0.44 / 13.21 | 13.21 / 0.44 / 13.21 |
+| Velvia 50% | cyans | 14.82 / 0.86 / 14.00 | 14.82 / 0.86 / 14.00 | 14.82 / 0.45 / 14.83 | 14.82 / 0.45 / 14.83 |
+| Velvia 50% | blues | 15.26 / 0.86 / 14.39 | 15.26 / 0.86 / 14.39 | 15.26 / 0.27 / 15.28 | 15.26 / 0.27 / 15.28 |
+| Velvia 50% | magentas | 13.59 / 0.84 / 12.75 | 13.59 / 0.84 / 12.75 | 13.59 / 0.45 / 13.56 | 13.59 / 0.45 / 13.56 |
+| Velvia 50% | highlights | 54.74 / 10.52 / 57.38 | 54.74 / 11.36 / 55.03 | 54.74 / 12.11 / 54.79 | 54.74 / 12.11 / 54.79 |
+
+#### IMG_0790.CR2
+
+| Stock | Family | 55e8bb5f | Pre-N1 | Pre-N3a | N3a final |
+| --- | --- | --- | --- | --- | --- |
+| Film off | skin | 28.31 / 6.75 / 25.59 | 28.31 / 4.04 / 27.38 | 28.31 / — / — | 28.31 / — / — |
+| Film off | reds | 12.71 / 3.77 / 12.91 | 12.71 / 3.87 / 13.42 | 12.71 / — / — | 12.71 / — / — |
+| Film off | greens | 6.15 / 2.42 / 6.12 | 6.15 / 2.01 / 6.58 | 6.15 / — / — | 6.15 / — / — |
+| Film off | cyans | 5.24 / 2.16 / 5.76 | 5.24 / 1.77 / 5.84 | 5.24 / — / — | 5.24 / — / — |
+| Film off | blues | 5.87 / 3.20 / 8.03 | 5.87 / 3.87 / 8.57 | 5.87 / — / — | 5.87 / — / — |
+| Film off | magentas | 7.10 / 5.87 / 10.06 | 7.10 / 6.63 / 11.16 | 7.10 / — / — | 7.10 / — / — |
+| Film off | highlights | 59.81 / 14.32 / 59.30 | 59.81 / 11.22 / 59.27 | 59.81 / — / — | 59.81 / — / — |
+| Portra 50% | skin | 22.43 / 4.80 / 21.96 | 22.43 / 3.24 / 22.21 | 22.43 / 3.90 / 25.21 | 22.43 / 3.90 / 25.21 |
+| Portra 50% | reds | 12.38 / 2.35 / 13.72 | 12.38 / 2.57 / 13.82 | 12.38 / 0.76 / 12.03 | 12.38 / 0.76 / 12.03 |
+| Portra 50% | greens | 6.18 / 5.18 / 5.67 | 6.18 / 4.93 / 5.78 | 6.18 / 0.32 / 6.38 | 6.18 / 0.32 / 6.38 |
+| Portra 50% | cyans | 5.14 / 6.07 / 3.70 | 5.14 / 5.77 / 3.72 | 5.14 / 0.34 / 5.16 | 5.14 / 0.34 / 5.16 |
+| Portra 50% | blues | 3.99 / 2.43 / 4.08 | 3.99 / 2.41 / 4.06 | 3.99 / 0.66 / 3.63 | 3.99 / 0.66 / 3.63 |
+| Portra 50% | magentas | 6.26 / 1.51 / 6.63 | 6.26 / 1.54 / 6.64 | 6.26 / 0.64 / 5.83 | 6.26 / 0.64 / 5.83 |
+| Portra 50% | highlights | 54.08 / 15.03 / 54.07 | 54.08 / 11.22 / 54.07 | 54.08 / 13.38 / 54.24 | 54.08 / 13.38 / 54.24 |
+| Ektar 50% | skin | 22.63 / 5.21 / 21.84 | 22.63 / 2.86 / 22.04 | 22.63 / 3.92 / 25.70 | 22.63 / 3.92 / 25.70 |
+| Ektar 50% | reds | 12.34 / 2.27 / 13.18 | 12.34 / 2.26 / 13.18 | 12.34 / 0.84 / 11.89 | 12.34 / 0.84 / 11.89 |
+| Ektar 50% | greens | 6.05 / 5.50 / 5.26 | 6.05 / 5.50 / 5.26 | 6.05 / 0.35 / 6.16 | 6.05 / 0.35 / 6.16 |
+| Ektar 50% | cyans | 5.33 / 5.97 / 3.78 | 5.33 / 5.97 / 3.78 | 5.33 / 0.34 / 5.35 | 5.33 / 0.34 / 5.35 |
+| Ektar 50% | blues | 3.97 / 2.87 / 4.00 | 3.97 / 2.87 / 4.00 | 3.97 / 0.69 / 3.61 | 3.97 / 0.69 / 3.61 |
+| Ektar 50% | magentas | 6.11 / 1.50 / 6.20 | 6.11 / 1.50 / 6.20 | 6.11 / 0.66 / 5.64 | 6.11 / 0.66 / 5.64 |
+| Ektar 50% | highlights | 54.17 / 15.44 / 54.24 | 54.17 / 11.11 / 54.24 | 54.17 / 13.61 / 54.22 | 54.17 / 13.61 / 54.22 |
+| Velvia 50% | skin | 19.03 / 5.01 / 20.51 | 19.03 / 4.26 / 19.60 | 19.03 / 5.47 / 19.69 | 19.03 / 5.47 / 19.69 |
+| Velvia 50% | reds | 12.58 / 4.71 / 13.17 | 12.58 / 4.12 / 12.70 | 12.58 / 4.66 / 13.01 | 12.58 / 4.66 / 13.01 |
+| Velvia 50% | greens | 5.08 / 1.49 / 5.99 | 5.08 / 1.34 / 5.76 | 5.08 / 4.60 / 5.69 | 5.08 / 4.60 / 5.69 |
+| Velvia 50% | cyans | 3.42 / 1.18 / 4.28 | 3.42 / 1.07 / 4.20 | 3.42 / 5.37 / 6.20 | 3.42 / 5.37 / 6.20 |
+| Velvia 50% | blues | 4.25 / 2.62 / 6.43 | 4.25 / 2.58 / 6.26 | 4.25 / 5.62 / 8.43 | 4.25 / 5.62 / 8.43 |
+| Velvia 50% | magentas | 6.95 / 4.21 / 10.01 | 6.95 / 3.88 / 9.67 | 6.95 / 5.31 / 9.64 | 6.95 / 5.31 / 9.64 |
+| Velvia 50% | highlights | 54.85 / 10.04 / 57.22 | 54.85 / 11.65 / 54.87 | 54.85 / 9.54 / 56.34 | 54.85 / 9.54 / 56.34 |
+
+#### IMG_7723.CR3
+
+| Stock | Family | 55e8bb5f | Pre-N1 | Pre-N3a | N3a final |
+| --- | --- | --- | --- | --- | --- |
+| Film off | skin | 15.93 / 0.44 / 16.29 | 15.93 / 0.44 / 16.29 | 15.93 / 0.20 / 16.04 | 15.93 / 0.20 / 16.04 |
+| Film off | reds | 15.96 / 0.45 / 16.31 | 15.96 / 0.45 / 16.31 | 15.96 / 0.21 / 16.06 | 15.96 / 0.21 / 16.06 |
+| Film off | greens | 15.98 / 0.41 / 16.34 | 15.98 / 0.41 / 16.34 | 15.98 / 0.16 / 16.08 | 15.98 / 0.16 / 16.08 |
+| Film off | cyans | 15.76 / 0.37 / 16.17 | 15.76 / 0.37 / 16.17 | 15.76 / 0.18 / 15.92 | 15.76 / 0.18 / 15.92 |
+| Film off | blues | 15.74 / 0.56 / 16.27 | 15.74 / 0.56 / 16.27 | 15.74 / 1.10 / 16.77 | 15.74 / 1.10 / 16.77 |
+| Film off | magentas | 15.72 / 0.21 / 15.91 | 15.72 / 0.21 / 15.91 | 15.72 / 0.10 / 15.80 | 15.72 / 0.10 / 15.80 |
+| Film off | highlights | 23.33 / 2.76 / 23.34 | 23.33 / 2.06 / 23.33 | 23.33 / 8.31 / 23.54 | 23.33 / 8.31 / 23.54 |
+| Portra 50% | skin | 15.94 / — / — | 15.94 / — / — | 15.94 / — / — | 15.94 / — / — |
+| Portra 50% | reds | 15.98 / — / — | 15.98 / — / — | 15.98 / — / — | 15.98 / — / — |
+| Portra 50% | greens | 16.00 / — / — | 16.00 / — / — | 16.00 / — / — | 16.00 / — / — |
+| Portra 50% | cyans | 15.77 / — / — | 15.77 / — / — | 15.77 / — / — | 15.77 / — / — |
+| Portra 50% | blues | 15.77 / — / — | 15.77 / — / — | 15.77 / — / — | 15.77 / — / — |
+| Portra 50% | magentas | 15.90 / — / — | 15.90 / — / — | 15.90 / — / — | 15.90 / — / — |
+| Portra 50% | highlights | 18.77 / — / — | 18.77 / — / — | 18.77 / — / — | 18.77 / — / — |
+| Ektar 50% | skin | 15.96 / — / — | 15.96 / — / — | 15.96 / — / — | 15.96 / — / — |
+| Ektar 50% | reds | 15.96 / — / — | 15.96 / — / — | 15.96 / — / — | 15.96 / — / — |
+| Ektar 50% | greens | 16.02 / — / — | 16.02 / — / — | 16.02 / — / — | 16.02 / — / — |
+| Ektar 50% | cyans | 15.81 / — / — | 15.81 / — / — | 15.81 / — / — | 15.81 / — / — |
+| Ektar 50% | blues | 15.73 / — / — | 15.73 / — / — | 15.73 / — / — | 15.73 / — / — |
+| Ektar 50% | magentas | 15.72 / — / — | 15.72 / — / — | 15.72 / — / — | 15.72 / — / — |
+| Ektar 50% | highlights | 18.91 / — / — | 18.91 / — / — | 18.91 / — / — | 18.91 / — / — |
+| Velvia 50% | skin | 15.92 / 0.24 / 16.13 | 15.92 / 0.24 / 16.13 | 15.92 / 0.27 / 16.18 | 15.92 / 0.27 / 16.18 |
+| Velvia 50% | reds | 15.92 / 0.33 / 16.14 | 15.92 / 0.33 / 16.14 | 15.92 / 0.36 / 16.21 | 15.92 / 0.36 / 16.21 |
+| Velvia 50% | greens | 16.03 / 0.35 / 16.26 | 16.03 / 0.35 / 16.26 | 16.03 / 0.39 / 16.30 | 16.03 / 0.39 / 16.30 |
+| Velvia 50% | cyans | 15.65 / 0.12 / 15.94 | 15.65 / 0.12 / 15.94 | 15.65 / 0.11 / 15.98 | 15.65 / 0.11 / 15.98 |
+| Velvia 50% | blues | 15.85 / 0.68 / 16.36 | 15.85 / 0.68 / 16.36 | 15.85 / 0.93 / 16.60 | 15.85 / 0.93 / 16.60 |
+| Velvia 50% | magentas | 15.90 / 0.45 / 16.14 | 15.90 / 0.45 / 16.14 | 15.90 / 0.69 / 16.34 | 15.90 / 0.69 / 16.34 |
+| Velvia 50% | highlights | 18.56 / 3.57 / 21.93 | 18.56 / 3.35 / 18.61 | 18.56 / 5.94 / 21.07 | 18.56 / 5.94 / 21.07 |
+
+### Film-placement experiment: stop, not a shipped fix
+
+A bounded probe holds SDR global Exposure at HDR Exposure, scales its contrast pivot, fits five pre-Film Exposure Bands merges to captured HDR Film input in common linear-sRGB exposure coordinates, then searches the **real SDR renderer** over all four HC modes and ordinary print exposure/warmth/tint/preflash/contrast. The search includes highlight colour in its all-pixel OKLab objective. Best-found, not a certified global optimum. Velvia print controls are inert by design.
+
+This is **not exact equal input**: median/P95 absolute input-luma gap is .001325/.118722 across the 224-patch population. It therefore does not implement or validate Steve’s equal-Film-input requirement. It does not prove the requirement mathematically impossible. The current visible pre-Film correction controls plus the searched post-Film HC/print controls were insufficient in this probe. An explicit, ordinary editable post-Film colour correction or better prefix translation needs further implementation; no hidden Match-only correction is added.
+
+| Film | Best-found HC/start | Body P95 luma | Body P95 OKLab | Coloured residual median/P95 Delta E00 | Disposition |
+| --- | --- | ---: | ---: | --- | --- |
+| Off | Soft Ceiling / 100 | .008297 | .003961 | .100 / .345 | Research only; +.5-EV white-area/editability not certified |
+| Portra 50% | Soft Ceiling / 95 | .029409 | **.067320** | .412 / 8.045 | Reject: exceeds .050 colour ceiling |
+| Ektar 50% | Soft Ceiling / 95 | .028742 | **.062441** | .221 / 7.521 | Reject: exceeds .050 colour ceiling |
+| Velvia 50% | Soft Ceiling / 80 | .035327 | **.068645** | .294 / 8.775 | Reject: exceeds .050 colour ceiling |
+
+The probe did not enforce every production body/white/+.5-EV guard while searching; even the gate failures above already prevent installing Film recipes. No Film, white-area, exposure-room, curve-slope or normal/review threshold is relaxed.
+
+A second, production-style tail-only candidate searched Soft Ceiling / Fixed Cap / Peak Fit / Clip and start 75/85/90/95/99, plus negative-stock print controls, retaining original body gates, clipped-white area and +.5-EV white-growth guards. It still selected Soft Ceiling on all four 176-patch charts (start 75 off, 70 stocks); Ektar did not change. Portra body OKLab P95 .025318→.025833 worsened while all-pixel colour objective improved. This incomplete solver still changed pre-Film exposure and took 1.626–14.028 s per accepted reduced RAW, versus final .656–3.057 s without it, under varying CPU load. It is also **not shipped**: incomplete Film placement, no broad bright-colour qualification and no justified whole-wait gain.
+
+**N1 mode review:** retain Soft Ceiling for generated recipes. It is the measured best-found choice in both bounded mode searches; no alternative demonstrated a safely better all-colour result with equal Film input and unchanged gates. This is not a claim Soft Ceiling is universally optimal. Ordinary SDR defaults stay Peak Fit. The equal-Film/highlight-colour portion remains open, not silently redefined as a successful Match fix.

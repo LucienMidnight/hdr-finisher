@@ -27,10 +27,19 @@ You can also press **+** first and pick the tool afterwards. The row reads **Pic
 
 Each adjustment has its own grade. Everything here affects only the masked area.
 
-- **Light · Local:** **Exposure**, **Highlights**, **Midtones**, **Shadows**, **Blacks**, **Contrast**.
+- **Light · Local:** **Exposure**, **Contrast**, then **Blacks**, **Shadows**, **Midtones**, **Highlights** and **Whites**. The five Tone strengths use −100…+100, just like global Tone. Shadows/Midtones/Highlights each have **Center** and **Width** in EV.
 - **Color · Local:** **Temperature**, **Tint**, **Saturation**, **Vibrance**.
 - **Detail · Local:** **Texture**, **Clarity**, **Clarity Radius**, **Sharpen**, **Radius**, **Threshold**. Detail runs last inside the local grade.
-- **Adjustment opacity** fades the whole adjustment in or out.
+- **Adjustment opacity** fades the completed adjustment in or out, together with its mask.
+
+The five Tone controls read the same frozen input after that layer’s Exposure
+and Contrast, before its colour and Detail. One control does not move another
+control’s selected range. Center/Width defaults are Shadows −1.5/5 EV,
+Midtones 0/4 EV, and Highlights +2.25/4.5 EV HDR or +1.75/3.5 EV SDR. Blacks
+and Whites are narrow endpoints; Whites uses the project’s HDR target or SDR
+white, not monitor brightness. Scroll the panel to reach all range controls.
+Older saved local Tone edits render differently under the new curves and
+strength units; there is no automatic conversion.
 
 Curves and the colour wheels are global only. They are not in the local grade.
 

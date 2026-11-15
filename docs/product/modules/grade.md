@@ -1,3 +1,31 @@
+## November 16: N3a Local Tone built; Match colour/Film work remains open
+
+Local Tone now uses the global five-control curves in CPU and GPU: local
+Exposure/Contrast → frozen layer guide → Blacks/Shadows/Midtones/Highlights/
+Whites → colour/HSL/curves/wheels/detail → mask × opacity. Strengths are
+−100…+100; existing Center/Width components, lane defaults and reset behaviour
+match global Tone. Parent HDR reference/target supplies D/G/P. The real Local
+panel fits HDR and SDR at 1408×794 and 1100×720 using existing tokens.
+
+Match's local translator now calls the real local renderer in a bounded fit,
+keeps the HDR grade's own enabled flag and certifies the materialized recipe
+through the real SDR tail. This is **not** the full M1/M1d rebuild: global Match
+still changes pre-Film exposure and does not constrain highlight colour.
+A bounded equal-exposure/prefix-plus-post-Film probe fails the unchanged body
+colour gate with Portra/Ektar/Velvia at 50%; it is not installed. Global-only
+176/224-patch and five-RAW comparisons are identical to pre-N3a `5bc997f3`.
+**The HDR→SDR colour shift is not fixed across colours, with or without Film.**
+Soft Ceiling remains the measured best-found Match mode; ordinary SDR defaults
+stay Peak Fit. No gate, tolerance, memory budget or hidden renderer changes.
+
+Stored nonzero local Tone (including materialized Match locals) changes output
+without migration. Protected DSC00950 has such edits; the two DSC00264 local
+fixtures have zero Tone and do not gain an N3a Tone change. All three files
+remain untouched. Finished Library caches advance to thumbnail v7 / screen v6.
+See the sprint brief N3a result and existing M1 report for comparisons,
+validation, the browser-Match fixture block and unqualified paths. N4 must not
+assume equal Film input/highlight colour is solved.
+
 ## November 16: N3b Tone diagnostics (preview only)
 
 Hover or drag Blacks, Shadows, Midtones, Highlights, Whites, Center or Width

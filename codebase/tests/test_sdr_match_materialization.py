@@ -61,6 +61,49 @@ def _curve_is_identity(points: list[list[float]]) -> bool:
     return all(abs(x - y) < 1e-7 for x, y in points)
 
 
+def test_local_translation_keeps_its_independent_enabled_flag():
+    from hdr_finisher.sdr_match import _translate_local_grade
+    from hdr_finisher.models import LocalGrade
+    grade = LocalGrade(enabled=False, exposure=.7, whites=35, midtones=-25)
+    translated = _translate_local_grade(grade, 1.)
+    assert translated.enabled is False
+    assert grade.enabled is False
+
+
+def test_local_translation_uses_the_parent_hdr_target_and_reference(monkeypatch):
+    import hdr_finisher.sdr_match as matching
+    from hdr_finisher.models import LocalGrade
+    render = matching._apply_local_grade
+    calls = []
+
+    def measured(pixels, grade, kind, **options):
+        if kind == PreviewKind.HDR:
+            calls.append(options)
+        return render(pixels, grade, kind, **options)
+
+    monkeypatch.setattr(matching, "_apply_local_grade", measured)
+    matching._translate_local_grade(LocalGrade(whites=-100), 1., reference_white_nits=100, target_peak_nits=400)
+    assert calls == [dict(reference_white_nits=100, target_peak_nits=400)]
+
+
+def test_local_tone_fit_calls_the_shared_renderer(monkeypatch):
+    import hdr_finisher.sdr_match as matching
+    from hdr_finisher.models import LocalGrade
+    values = np.geomspace(.001, 1., 64).astype(np.float32)
+    grade = LocalGrade()
+    calls = []
+    render = matching._apply_local_grade
+    def measure(*args, **kwargs):
+        calls.append(args[2])
+        return render(*args, **kwargs)
+    monkeypatch.setattr(matching, "_apply_local_grade", measure)
+    matching._fit_local_tonal_controls(grade, values, values * 1.1)
+    assert calls and set(calls) == {PreviewKind.SDR}
+    pixels = np.repeat(values[None, :, None], 3, axis=-1)
+    fitted = render(pixels, grade, PreviewKind.SDR)[0, :, 0]
+    assert np.mean(np.abs(fitted - values * 1.1)) < np.mean(values * .1)
+
+
 def test_input_reuse_preserves_the_complete_generated_recipe() -> None:
     source = tifffile.imread(FIXTURE).astype(np.float32)
     adjustments, locals_ = _calibrated_grade()

@@ -1,3 +1,10 @@
+## November 16: N3a validation on MacBook Neo
+
+| Action | Existing guard | Observation | Conditions / evidence |
+| --- | --- | --- | --- |
+| Library viewport, first picture / coverage | Default 90 s, system reserve and existing app memory ceiling | Isolated pass: first .3 s; all 9 requested pictures; no errors. Initial concurrent fast/research CPU run hit reserve and pictured 7/9; repeated once after that load ended. | Neo A18 Pro / 8 GB / 1408×794; plain Electron under shared GPU lock; frozen v1 unchanged. `output/quick-library-check/n3a-isolated/report.json`; viewport check only, not whole-folder survey. |
+| CPU Match materialization, decoded research RAWs | Existing body/colour, exposure-room and editable-recipe gates; no new timing gate | Accepted-case ranges: pre-N3a .688–3.262 s, final .656–3.057 s; discarded tail-search prototype 1.626–14.028 s. No speed claim. | Same Neo, identical <=512-edge arrays of five requested RAWs, four Film cases, variable CPU validation load; decode/UI wait excluded so not whole-wait speed qualification. `output/review/n3a-match-2026-11-16/{5bc997f3,final,n3a}/raw_states.json`. The prototype is not installed. |
+
 ## November 15–16: N1 validation on MacBook Neo
 
 | Action | Existing guard | Observation | Conditions / evidence |

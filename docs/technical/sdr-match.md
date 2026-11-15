@@ -99,3 +99,37 @@ the captured HDR Film input, even though equal-input stock kernels nearly
 agree. No hidden Match stage, Film reordering, gamut change, new gate or
 tolerance relaxation is implemented in this follow-up. The complete-target
 fitting and colour-versus-brightness/editability policy need Steve's decision.
+
+
+## November 16 N3a: renderer-based local proposals; M1/M1d remain open
+
+The local translator no longer fits a copied linear zone basis. Its bounded
+coordinate search calls the actual SDR local renderer, including shared
+five-control Tone and its limiter, then the normal full recipe is measured
+through the real SDR Film Look → final HC/cap → gamut tail. HDR proposal
+ramps receive the parent reference/target. The translated local preserves
+`hdr_grade.enabled` independently from layer enabled/opacity. The remote
+GPU-candidate path permits at most three conservative CPU-certified RGB
+residual passes rather than one, retaining the same improvement predicate
+and sparse/editable curve rules; an unsafe result still falls back/refuses.
+
+**Not a full Match rebuild.** The global neutral/body fit still changes
+Exposure/Exposure Bands/curves before Film Look and copies print settings.
+It does not guarantee equal HDR/SDR Film input or fit highlight colour.
+The bounded equal-exposure/prefix-plus-post-film probe misses the unchanged
+body colour ceiling: P95 OKLab .067320/.062441/.068645 for Portra/Ektar/Velvia
+50% against .050. Its prefix still differs at Film input (P95 absolute luma
+.118722); this is a best-found failed probe, not proof of impossibility.
+It is not shipped. No hidden Match-only renderer/correction or compatibility
+path is introduced, and no body, colour, clipped-white, +.5-EV exposure-room
+or editable-slope gate is loosened.
+
+Retain N1 Soft Ceiling for generated Match recipes: both bounded four-mode
+searches still select it; no alternative demonstrates safe equal-Film-input
+all-colour improvement. Ordinary SDR defaults remain Peak Fit. The supplied
+176/224-patch and five-RAW global-only comparisons are identical to pre-N3a
+`5bc997f3`; bright-colour residuals and refusals remain, with full comparisons
+to `55e8bb5f` and pre-N1 `541dc130` in the [N3a M1 report section](reports/m1-colour-follow-up-2026-11-15.md).
+Stored locals with nonzero old Tone strengths change without migration;
+new Match/Rematch local proposals also change. N4 should not assume M1d is
+resolved.

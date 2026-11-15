@@ -416,7 +416,9 @@ def _materialize_sdr_match_impl(
     with _match_stage("semantic_translation"):
         result_adjustments = adjustments.model_copy(deep=True)
         result_adjustments.sdr = _semantic_sdr_translation(adjustments, settled_hdr)
-        result_locals = _materialize_local_grades(source, settled_hdr, adjustments, local_adjustments)
+        result_locals = _materialize_local_grades(
+            source, settled_hdr, adjustments, local_adjustments, reference_white_nits
+        )
 
     with _match_stage("neutral_tonal_fit"):
         _fit_neutral_tonal_response(result_adjustments, adjustments, reference_white_nits)
@@ -552,20 +554,24 @@ def _materialize_sdr_match_impl(
             if quality.p95_oklab_error > 0.04:
                 if timing is not None:
                     timing["cpu_pre_refinement_quality"] = quality.model_dump(mode="json")
-                previous_curves = {
-                    name: getattr(result_adjustments.sdr, name)
-                    for name in ("red_curve", "green_curve", "blue_curve")
-                }
-                for name, channel_index in (("red_curve", 0), ("green_curve", 1), ("blue_curve", 2)):
-                    correction = _fit_image_curve(candidate[..., channel_index], target[..., channel_index], body)
-                    setattr(result_adjustments.sdr, name, _compose_curve(previous_curves[name], correction))
-                trial = render_match_candidate(source, result_adjustments, result_locals, source_pixel_scale)
-                trial_quality = _quality_metrics(target, trial, body)
-                if _refinement_improves(quality, trial_quality):
-                    candidate, quality = trial, trial_quality
-                else:
-                    for name, curve in previous_curves.items():
-                        setattr(result_adjustments.sdr, name, curve)
+                for _ in range(3):
+                    previous_curves = {
+                        name: getattr(result_adjustments.sdr, name)
+                        for name in ("red_curve", "green_curve", "blue_curve")
+                    }
+                    for name, channel_index in (("red_curve", 0), ("green_curve", 1), ("blue_curve", 2)):
+                        correction = _fit_image_curve(candidate[..., channel_index], target[..., channel_index], body)
+                        setattr(result_adjustments.sdr, name, _compose_curve(previous_curves[name], correction))
+                    trial = render_match_candidate(source, result_adjustments, result_locals, source_pixel_scale)
+                    trial_quality = _quality_metrics(target, trial, body)
+                    if _refinement_improves(quality, trial_quality):
+                        candidate, quality = trial, trial_quality
+                    else:
+                        for name, curve in previous_curves.items():
+                            setattr(result_adjustments.sdr, name, curve)
+                        break
+                    if quality.p95_oklab_error <= 0.05:
+                        break
         if timing is not None:
             timing["gpu_explored_quality"] = explored.model_dump(mode="json")
             timing["cpu_certified_quality"] = quality.model_dump(mode="json")
@@ -733,6 +739,7 @@ def _materialize_local_grades(
     settled_hdr: np.ndarray,
     adjustments: AdjustmentState,
     local_adjustments: list[LocalAdjustment],
+    reference_white_nits: float = 203.0,
 ) -> list[LocalAdjustment]:
     if not local_adjustments:
         return []
@@ -749,13 +756,19 @@ def _materialize_local_grades(
                 factor = float(np.sum(weights * derivative) / np.sum(weights))
         except (ValueError, FloatingPointError):
             factor = 1.0
-        translated = _translate_local_grade(local.hdr_grade, factor)
+        translated = _translate_local_grade(
+            local.hdr_grade, factor, reference_white_nits=reference_white_nits,
+            target_peak_nits=adjustments.hdr.highlight_compression_target_nits,
+        )
         materialized.append(local.model_copy(update={"sdr_grade": translated}, deep=True))
     return materialized
 
 
-def _translate_local_grade(hdr_grade: LocalGrade, highlight_factor: float) -> LocalGrade:
-    sdr_grade = LocalGrade()
+def _translate_local_grade(
+    hdr_grade: LocalGrade, highlight_factor: float, *,
+    reference_white_nits: float = 203.0, target_peak_nits: float = 1000.0,
+) -> LocalGrade:
+    sdr_grade = LocalGrade(enabled=hdr_grade.enabled, highlights_center=1.75, highlights_width=3.5)
     for name in ("white_balance_kelvin", "tint", "saturation", "vibrance"):
         setattr(sdr_grade, name, getattr(hdr_grade, name))
     sdr_grade.detail = hdr_grade.detail.model_copy(deep=True)
@@ -777,10 +790,10 @@ def _translate_local_grade(hdr_grade: LocalGrade, highlight_factor: float) -> Lo
     tonal.color_grading.shadows.saturation = 0.0
     tonal.color_grading.midtones.saturation = 0.0
     tonal.color_grading.highlights.saturation = 0.0
-    output = _apply_local_grade(ramp, tonal, PreviewKind.HDR)
-    # Legacy local-fit proposal basis only, not an early render stage. Every
-    # recipe is certified through the actual final SDR tail; N3a replaces this
-    # approximate local fit together with the new Local Tone curves.
+    output = _apply_local_grade(
+        ramp, tonal, PreviewKind.HDR, reference_white_nits=reference_white_nits,
+        target_peak_nits=target_peak_nits,
+    )
     input_sdr = automatic_sdr_match_luma(scene_values)
     output_sdr = automatic_sdr_match_luma(np.maximum(_acescg_luma(output)[0], 0.0))
     _fit_local_tonal_controls(sdr_grade, input_sdr, output_sdr)
@@ -789,65 +802,46 @@ def _translate_local_grade(hdr_grade: LocalGrade, highlight_factor: float) -> Lo
     # the mask-weighted shoulder derivative says no editable SDR body remains.
     tonal_strength = float(np.clip((highlight_factor - 0.02) / 0.48, 0.0, 1.0))
     tonal_strength = tonal_strength * tonal_strength * (3.0 - 2.0 * tonal_strength)
-    for name in ("exposure", "highlights", "midtones", "shadows", "blacks", "contrast"):
+    for name in ("exposure", "highlights", "midtones", "shadows", "blacks", "whites", "contrast"):
         setattr(sdr_grade, name, float(getattr(sdr_grade, name) * tonal_strength))
     return sdr_grade
 
 
 def _fit_local_tonal_controls(grade: LocalGrade, source_luma: np.ndarray, target_luma: np.ndarray) -> None:
-    """Represent a local HDR transfer with the GPU-supported local tone sliders."""
-    source = np.asarray(source_luma, dtype=np.float64)
-    target = np.asarray(target_luma, dtype=np.float64)
-    valid = (
-        np.isfinite(source)
-        & np.isfinite(target)
-        & (source > 1e-5)
-        & (source < 0.995)
-        & (target > 1e-5)
-    )
-    if int(np.count_nonzero(valid)) < 16:
+    source = np.asarray(source_luma, dtype=np.float32)
+    target = np.asarray(target_luma, dtype=np.float32)
+    valid = np.isfinite(source) & np.isfinite(target) & (source > 1e-5) & (target > 1e-5)
+    if np.count_nonzero(valid) < 16:
         return
     source = source[valid]
-    target = np.clip(target[valid], 1e-6, 1.0)
-    # Specular samples describe a diminishing shoulder. They should influence
-    # the highlight slider, but must not redistribute that energy into the SDR
-    # body or force a flat local curve.
-    weights = np.where(source <= MATCH_SHOULDER_START, 1.0, automatic_sdr_match_derivative(source))
-    weights = np.maximum(weights.astype(np.float64), 0.05)
-    best: tuple[float, float, np.ndarray] | None = None
-    best_loss = float("inf")
-    for pivot in (0.18, 0.25, 0.36, float(SDR_DISPLAY_REFERENCE_WHITE)):
-        stops = np.log2(source / pivot)
-        features = np.column_stack((
-            np.ones_like(stops),
-            np.clip((-stops - 3.0) / 3.0, 0.0, 1.0),
-            np.clip(1.0 - np.abs(stops + 2.0) / 2.5, 0.0, 1.0),
-            np.clip(1.0 - np.abs(stops) / 2.5, 0.0, 1.0),
-            np.clip((stops - 0.5) / 3.0, 0.0, 1.0),
-            stops,
-        ))
-        desired = np.log2(target / pivot)
-        root_weight = np.sqrt(weights)
-        coefficients, *_ = np.linalg.lstsq(features * root_weight[:, None], desired * root_weight, rcond=None)
-        coefficients[0] = np.clip(coefficients[0], -8.0, 8.0)
-        coefficients[1:5] = np.clip(coefficients[1:5], -2.0, 2.0)
-        coefficients[5] = np.clip(coefficients[5], 0.25, 4.0)
-        predicted_stops = features[:, :-1] @ coefficients[:-1] + features[:, -1] * coefficients[-1]
-        predicted = pivot * np.exp2(np.clip(predicted_stops, -32.0, 24.0))
-        loss = float(np.median(np.abs(predicted - target)) + 0.25 * np.percentile(np.abs(predicted - target), 95))
-        if loss < best_loss:
-            best_loss = loss
-            best = (pivot, float(np.log2(coefficients[5])), coefficients)
-    if best is None:
-        return
-    pivot, contrast, coefficients = best
-    grade.contrast_pivot = pivot
-    grade.exposure = float(coefficients[0])
-    grade.blacks = float(coefficients[1])
-    grade.shadows = float(coefficients[2])
-    grade.midtones = float(coefficients[3])
-    grade.highlights = float(coefficients[4])
-    grade.contrast = contrast
+    target = target[valid]
+    ramp = np.repeat(source[None, :, None], 3, axis=-1)
+    trial = LocalGrade(highlights_center=1.75, highlights_width=3.5)
+    weights = np.maximum(automatic_sdr_match_derivative(source), 0.05)
+
+    def loss():
+        rendered = _apply_local_grade(ramp, trial, PreviewKind.SDR)[0, :, 0]
+        linear = np.abs(rendered - target)
+        log = np.abs(np.log2(np.maximum(rendered, 1e-6) / target))
+        return float(np.mean(weights * (linear + .05 * log)))
+
+    best = loss()
+    for scale in (1.0, .5, .2, .1, .05):
+        for name, step in (("exposure", .5), ("contrast", .25), ("blacks", 50),
+                           ("shadows", 50), ("midtones", 50), ("highlights", 50), ("whites", 50)):
+            previous = float(getattr(trial, name))
+            selected = previous
+            bound = 8 if name == "exposure" else 2 if name == "contrast" else 100
+            for direction in (-1, 1):
+                value = float(np.clip(previous + direction * step * scale, -bound, bound))
+                setattr(trial, name, value)
+                measured = loss()
+                if measured < best:
+                    best, selected = measured, value
+            setattr(trial, name, selected)
+    for name in ("exposure", "contrast", "blacks", "shadows", "midtones", "highlights", "whites"):
+        setattr(grade, name, getattr(trial, name))
+    grade.contrast_pivot = trial.contrast_pivot
     grade.luma_curve = _identity_curve()
     grade.red_curve = _identity_curve()
     grade.green_curve = _identity_curve()
