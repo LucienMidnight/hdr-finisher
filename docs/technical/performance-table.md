@@ -1,3 +1,9 @@
+## November 15: H1 HSL investigation diagnostic (MacBook Neo)
+
+| Action | Existing rule | Observed before H1 fixes | Conditions / evidence |
+| --- | --- | --- | --- |
+| Global HSL Show selection, request to decoded/drawn overlay | Existing warm <1 s goal; no tolerance changed | HDR Fit 0.380–1.659 s, 100% 0.048–0.128 s; SDR Fit 1.090–1.289 s, 100% 0.781–1.223 s. SDR does not consistently meet the existing warm goal. | November 15, Neo A18 Pro / 8 GB / 1408×794 / DPR 2, exclusive shared GPU lock, fresh Electron profile, shared DSC00264.ARW, plain grade; `40c939b2` checkout with concurrent W2 work. Five toggles per lane/zoom, including initial preparation and final Feather edit. Correctness diagnostic, not a paired performance comparison or a new speed qualification. `codebase/output/performance/hsl-h1/before.json`; picker/control scoping passed all four combinations. H1 changes request ordering/cancellation only; no speedup claim. |
+
 ## November 15: W2 ready Grade thumbnail return (MacBook Neo)
 
 | Action | Target | Before → after / latest | Conditions / evidence |

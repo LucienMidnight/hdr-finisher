@@ -37,7 +37,7 @@ function initializeHslPanels() {
     }
     bindSliderReadouts(host);
     host.querySelectorAll('[data-hsl-mode]').forEach(button=>button.addEventListener('click',()=>{
-      ui.mode=button.dataset.hslMode;hslUI.picker=ui;hslNotice(ui,'Click or drag on the main preview. Escape stops picking.');hslSync(ui);
+      ui.mode=button.dataset.hslMode;ui.pickGeneration=(ui.pickGeneration||0)+1;hslUI.picker=ui;hslNotice(ui,'Click or drag on the main preview. Escape stops picking.');hslSync(ui);
     }));
     host.querySelector('[data-hsl-action="stop"]').onclick=()=>{hslUI.picker=null;hslSync(ui);};
     host.querySelector('[data-hsl-action="reset"]').onclick=()=>hslEdit(ui,()=>{
@@ -248,13 +248,15 @@ async function hslFetchStage(ui,points,extra={}){
   const result=await safeJson(response);if(!response.ok)throw Error(typeof result.detail==='string'?result.detail:'HSL stage sampling failed.');return result;
 }
 async function hslPickSamples(stroke){
-  const {ui}=stroke,identity=hslUI.identity,channel=ui.channel,mode=ui.mode;
+  const {ui}=stroke,identity=hslUI.identity,channel=ui.channel,mode=ui.mode,generation=ui.pickGeneration;
+  const current=()=>hslUI.picker===ui&&generation===ui.pickGeneration&&channel===ui.channel&&mode===ui.mode&&identity===hslUI.identity&&stroke.lane===state.currentView&&stroke.session===state.session?.session_id&&(ui.scope!=='local'||stroke.localId===selectedLocal()?.id);
   if(ui.sampling){hslNotice(ui,"Wait for the current colour sample to finish.");return;}ui.sampling=true;
   try{
     hslNotice(ui,'Sampling colours…');
     if(await syncGlobalEditState()===false)throw Error('Save the current edit before picking colours.');
+    if(!current())return;
     const result=await hslFetchStage(ui,stroke.points);
-    if(channel!==ui.channel||mode!==ui.mode||identity!==hslUI.identity||stroke.lane!==state.currentView||stroke.session!==state.session?.session_id)return;
+    if(!current())return;
     const samples=result.samples.filter(v=>HDRHSL.describe(v).relativeChroma>=.02&&Math.abs(HDRHSL.describe(v).L)>=1e-5);
     if(!samples.length){hslNotice(ui,'That sample is too grey to have a hue. Pick a more colourful area.');return;}
     hslEdit(ui,()=>{
@@ -267,7 +269,7 @@ async function hslPickSamples(stroke){
       ui.range=Math.max(0,c.recipe.ranges.length-1);
       if(c.recipe.ranges.length<32)hslNotice(ui,'Colours selected. Click or drag to pick again; Escape stops picking.');
     });
-  }catch(error){hslNotice(ui,error.message);}finally{ui.sampling=false;}
+  }catch(error){if(current())hslNotice(ui,error.message);}finally{ui.sampling=false;}
 }
 function hslVisibleRect(){
   const preview=activePreviewElement();if(!preview)return null;

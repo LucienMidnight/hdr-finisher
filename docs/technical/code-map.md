@@ -1,5 +1,16 @@
 # Code map
 
+## November 15: H1 colour-picking interactions
+
+`frontend/hsl-panel.js` owns per-activation HSL sample acceptance;
+`frontend/mask-gestures.js` waits for acknowledged edits before Local Hue/Luma
+sampling and binds replies to the current lane/mask/gesture.
+`tests/hsl-picking.js` exercises real-RAW clicks, wheel and sampling-gizmo
+gestures, cancelled results and an overlapping save in both lanes.
+`tests/hsl-picker.test.js`, `mask-sampling.test.js` and
+`test_hsl_integration.py` check asynchronous results and clicked-pixel/mask
+correctness without depending on source wording.
+
 ## November 15: button tier review
 
 `codebase/tools/button-tiers-review.cjs` runs through the Electron harness and

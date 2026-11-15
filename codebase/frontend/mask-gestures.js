@@ -1,4 +1,6 @@
 // Status bar keys for the Local mask tool under the pointer.
+let localRangeSampleGeneration = 0;
+
 function localKeyHints() {
   if (state.activeWorkflow !== "grade" || state.gradeMode !== "local") return null;
   const local = selectedLocal();
@@ -73,6 +75,8 @@ function bindLocalMaskCanvas() {
         type: "luminance_sample",
         leaf,
         localId: local.id,
+        lane: state.currentView,
+        expressionId: selectedMaskExpression(local)?.id,
         remove: event.altKey,
         points: [point],
       };
@@ -292,16 +296,31 @@ function appendLuminanceSamplePoint(gesture, point) {
 }
 
 async function finishLuminanceSampleGesture(gesture) {
-  const local = selectedLocal();
+  let local = selectedLocal();
   if (!state.session || !local || local.id !== gesture.localId || !gesture.points.length) return;
   // An asynchronous preview/edit refresh can replace the selected local while
   // a pointer gesture is active. Always mutate the leaf that will actually be
   // serialized, rather than the pointerdown snapshot retained by the gesture.
-  const leaf = selectedMaskLeaf(local);
+  let leaf = selectedMaskLeaf(local);
   if (!["luminance_range", "hue_range"].includes(leaf?.type)) return;
   if (!leaf) return;
   const sessionId = state.session.session_id;
+  const lane = gesture.lane || state.currentView;
+  const expressionId = gesture.expressionId || selectedMaskExpression(local)?.id;
+  const type = leaf.type;
+  const generation = ++localRangeSampleGeneration;
+  const current = () => generation === localRangeSampleGeneration
+    && state.session?.session_id === sessionId && state.currentView === lane
+    && selectedLocal()?.id === gesture.localId && state.gradeMode === "local"
+    && selectedMaskExpression(selectedLocal())?.id === expressionId
+    && selectedMaskLeaf(selectedLocal())?.type === type;
   try {
+    if (await syncGlobalEditState() === false) throw new Error("Save the current edit before sampling the photo.");
+    await state.editCommandQueue;
+    if (!current()) return;
+    local = selectedLocal();
+    leaf = selectedMaskLeaf(local);
+    if (!["luminance_range", "hue_range"].includes(leaf?.type)) return;
     const response = await fetch(`/api/session/${sessionId}/${leaf.type === "hue_range" ? "local-hue-sample" : "local-luminance-sample"}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -309,12 +328,15 @@ async function finishLuminanceSampleGesture(gesture) {
         points: gesture.points,
         edit_revision: state.editRevision,
         long_edge: settledProxyLongEdge(),
-        lane: state.currentView,
+        lane,
       }),
     });
     const sample = await safeJson(response);
-    if (!response.ok) throw new Error(sample.detail || "Luminance sampling failed.");
-    if (state.session?.session_id !== sessionId || selectedLocal() !== local || selectedMaskLeaf(local) !== leaf || state.gradeMode !== "local") return;
+    if (!response.ok) throw new Error(typeof sample.detail === "string" ? sample.detail : sample.detail?.message || "Photo sampling failed.");
+    if (!current()) return;
+    local = selectedLocal();
+    leaf = selectedMaskLeaf(local);
+    if (!["luminance_range", "hue_range"].includes(leaf?.type)) return;
     if (leaf.type === "hue_range") {
       leaf.hue_center = sample.center;
       leaf.hue_width = sample.width;
@@ -323,9 +345,10 @@ async function finishLuminanceSampleGesture(gesture) {
     renderMaskTreeEditor(local);
     syncRangeVisuals(els.localEditor);
     queueLocalMaskOverlayRender();
-    if (state.session?.session_id !== sessionId || selectedLocal() !== local || selectedMaskLeaf(local) !== leaf || state.gradeMode !== "local") return;
+    if (!current()) return;
     await commitSelectedLocal({ maskContent: true });
   } catch (error) {
+    if (!current()) return;
     console.error(error);
     status.post({ id: "edit", severity: "error", message: error.message });
     queueLocalMaskOverlayRender();

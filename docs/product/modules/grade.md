@@ -19,6 +19,50 @@ W6 in concurrent W1 work. Visual sign-off pending; no new tokens.
 
 # Module PRD: Grade
 
+## November 15: H1 picking investigation and asynchronous selection fixes
+
+Two confirmed interaction defects are fixed without changing colour maths,
+GPU shaders, selection edges or numerical tolerances:
+
+- Local Hue (and the shared Luma sampler) could send an old edit revision
+  while an upstream grade save was still being acknowledged. The backend
+  rejected the photo click with `edit_revision_mismatch`, leaving the colour
+  selection unchanged. Sampling now waits for global/local saves, then edits
+  the current acknowledged mask rather than an obsolete JavaScript object.
+- An HSL sample already being processed could still alter the selection after
+  Stop/Escape, or after stopping and rearming the same picker. Results now
+  belong to that specific picking activation and Local adjustment. Local
+  range results also reject changed lanes/masks and superseded gestures.
+
+The Local failure reproduces in real Electron on the MacBook Neo with the
+shared DSC00264.ARW, both on this sprint and on detached `55e8bb5f` (before
+the sprint). It is not a new tooltip/focus/wheel-rendering regression. History
+places the missing HSL cancellation guard in the October 23 integration
+(`af4403f6b`); Local Hue inherited the unsynchronised range sampler when it
+was introduced October 27 (`93f04c424`). No bisect of sprint commits is needed.
+
+`tests/hsl-picking.js` checks actual Global/Local HSL buttons and photo clicks,
+the returned pixel's hue, wheel-handle dragging, sampling-gizmo canvas pixels
+and drag points, a delayed upstream acknowledgement, and Stop/Escape in HDR
+and SDR on the minimum Mac. Its RAW is a reusable isolated test copy, not
+Steve's original. New fast checks cover delayed/stale/reordered responses;
+CPU checks verify the clicked pre-HSL pixel selects its patch and excludes
+the opposite hue. Hue GPU/CPU preview, export and Proof checks pass unchanged.
+Evidence: `codebase/output/hsl-h1/result.json`.
+
+Final checks: Python 3,497 passed / 144 skipped / 1 xpassed; targeted picking
+Node checks 14 passed. Full Node run: 1,056 passed / 1 skipped, with one
+unrelated concurrent `grade-opening.test.js` failure (`geometrySignature is
+not defined`). The default 90-second Library smoke failed its system-reserve
+memory check and pictured 7 of 9 expected viewport photos. These Library
+findings are outside H1; neither guard was relaxed and no broad rerun was made.
+
+The broader report of an idle picker or gizmo never working was not reproduced:
+normal photo picking and drawing work in both lanes. Steve should recheck his
+original photo/sequence; this is a scoped fix, not proof that every reported
+symptom is resolved. The previously reported HSL stage-cache failures also
+do not reproduce: all 47 original integration cases pass on both revisions.
+
 
 ## November 15: M1 all-colour follow-up (research; not fully fixed)
 

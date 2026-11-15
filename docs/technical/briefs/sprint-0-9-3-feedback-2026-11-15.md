@@ -29,6 +29,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 
 | ID | Item | Package | Status |
 | --- | --- | --- | --- |
+| H1 | HSL picker, Local hue selection and gizmos | Follow-up | built, scoped — pre-sprint Local save/sample race and late HSL cancellation fixed; HDR/SDR real-RAW picking, wheel/sampling-gizmo gestures and CPU/GPU hue delivery pass; general idle failure not reproduced, Steve's original sequence still needs confirmation |
 | R1 | SDR local Detail: CPU clips, GPU keeps headroom | W1 | built — CPU local Detail retains headroom; Portra/Velvia GPU preview against CPU export passes |
 | R2 | Startup reconciliation brings back invalidated scenes | W1 | built — reconciliation checks saved epoch and pending deletion; scene/surface regressions pass |
 | R3 | Grade import overlaps a running paste import | W1 | built — real Grade import waits for paste release; continuation/cancel regressions pass; broader P3 remains W2 |

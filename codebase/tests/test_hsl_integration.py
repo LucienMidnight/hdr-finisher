@@ -96,6 +96,38 @@ def test_global_sdr_cache_invalidates_authored_reference_and_highlights():
 
 
 @pytest.mark.parametrize("lane", list(PreviewKind))
+def test_clicked_stage_pixel_selects_the_expected_local_hue_mask(lane):
+    from hdr_finisher.color import linear_srgb_to_acescg, acescg_to_linear_srgb
+    from hdr_finisher.hsl import from_lab, to_lab
+    from hdr_finisher.models import MaskExpression, MaskLeaf, MaskPoint
+
+    lab = np.zeros((96, 192, 3), np.float32)
+    lab[..., 0] = .6
+    for region, hue in [(slice(0, 96), 40), (slice(96, 192), 220)]:
+        lab[:, region, 1] = .1 * np.cos(np.radians(hue))
+        lab[:, region, 2] = .1 * np.sin(np.radians(hue))
+    source = linear_srgb_to_acescg(from_lab(lab).astype(np.float32))
+    cache = SessionRenderCache(source, None)
+    grade = AdjustmentState()
+    point = MaskPoint(x=.25, y=.5)
+    stage = cache.hsl_stage_input(grade, 1000, lane)
+    expected = acescg_to_linear_srgb(stage) if lane == PreviewKind.HDR else stage
+    request = HSLSampleRequest(lane=lane, adjustments=grade, points=[point], edit_revision=0)
+    sampled = sample_stage(cache, request)["samples"][0]
+    np.testing.assert_allclose(sampled, expected[48, 48], atol=1e-6)
+    sample = cache.sample_hue(grade, [point], 1000, lane)
+    hue_input = stage if lane == PreviewKind.HDR else linear_srgb_to_acescg(stage)
+    sampled_lab = to_lab(acescg_to_linear_srgb(hue_input)[48, 48])
+    expected_hue = np.degrees(np.arctan2(sampled_lab[2], sampled_lab[1])) % 360
+    assert abs((sample["center"] - expected_hue + 180) % 360 - 180) < 1e-3
+    local = LocalAdjustment(mask=MaskExpression(leaf=MaskLeaf(
+        type="hue_range", hue_center=sample["center"], hue_width=sample["width"])))
+    mask = cache.compiled_local_mask(grade, local, 1000, lane=lane).astype(float) / 255
+    assert mask[48, 48] > .95
+    assert mask[48, 144] < .01
+
+
+@pytest.mark.parametrize("lane", list(PreviewKind))
 def test_neutral_and_bypass_are_exact_through_global_and_local_pipelines(lane):
     image = np.random.default_rng(3).uniform(-.01, 4, (8, 12, 3)).astype(np.float32)
     grade = AdjustmentState()

@@ -85,3 +85,29 @@ test('2x picker sends normalized coordinates and applies the returned colour to 
   assert.ok(Math.abs(recipe.ranges[0].center - HDRHSL.describe([.8, .1, .02]).hue) < 1e-10);
   assert.match(ui.notice, /Colours selected/);
 });
+
+for (const cancellation of ['stop', 'rearm', 'local']) test(`HSL discards a delayed colour sample after ${cancellation}`, async () => {
+  const { context, event } = setup();
+  const recipe = HDRHSL.newRecipe();
+  const ui = context.ui.picker;
+  Object.assign(ui, { channel: 'red', mode: 'pick', pickGeneration: 1 });
+  context.syncGlobalEditState = async () => true;
+  context.hslNotice = () => {};
+  context.hslChannel = () => ({ id: 'red', kind: 'band', recipe });
+  context.hslEdit = (_ui, change) => change();
+  let finish;
+  context.hslFetchStage = () => new Promise(resolve => { finish = resolve; });
+  context.hslPickStart(event(900, 600));
+  const pending = context.hslPickSamples(context.ui.stroke);
+  await new Promise(setImmediate);
+  if (cancellation === 'stop') context.ui.picker = null;
+  if (cancellation === 'rearm') ui.pickGeneration += 1;
+  if (cancellation === 'local') {
+    ui.scope = 'local';
+    context.selectedLocal = () => ({ id: 'another-local' });
+  }
+  finish({ samples: [[.8, .1, .02]] });
+  await pending;
+  assert.equal(recipe.ranges.length, 0);
+  assert.equal(ui.sampling, false);
+});
