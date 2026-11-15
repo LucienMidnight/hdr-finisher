@@ -1,3 +1,32 @@
+### November 15: W2 P5 Lensfun stage measurement; no rewrite
+
+The existing RAW import phase history now separates Lensfun profile/modifier,
+vignette preparation, exact coordinate generation and parallel strip remapping.
+The RAW baseline driver records those phases alongside first picture and exact
+picture/scopes, host load and the existing native release wait. No processing,
+coordinate sampling, cache, pre-lens image, GPU route or allowance changes.
+
+MacBook Neo A18 Pro / 8 GB, full 7952×5304 DSC04375.ARW, unique automatic
+Sony ILCE-7RM3 / Tamron E 35mm F2.8 F053 match: decode/development 2.61–2.78 s,
+coordinates 0.449–0.518 s, remap 2.27–2.34 s, profile/modifier 0–0.080 s.
+Vignette call is <1 ms because this profile has no vignette calibration; that
+is a coverage limit, not a fast calibrated-vignette claim. Whole import to
+exact picture/scopes is 7.64–9.00 s; first picture 7.32–8.43 s. Before the
+scheduling changes the same instrumented RAW measured 8.28–8.75 s to exact
+picture/scopes. Concurrent load and first-use GPU work differ: no RAW speedup
+is claimed. Details and sources are in the performance table.
+
+Recommendation: **no-go on an exact strip-fused remap rewrite for now**.
+Even removing all measured coordinates and remap would remove only about
+32–36% of the whole wait; fusion could save only part of that, and current
+remap already uses all CPU workers. It might avoid a full coordinate map,
+but that is an unmeasured memory benefit, not permission for another cache or
+a changed gate. A calibrated-vignette lens remains unmeasured. Grade's own
+full RAW development and lens-only re-development stay open work. No rewrite
+without Steve's separate approval. Existing format/camera bridge group: 153
+passes / 16 skips, with unchanged exact source/remap checks. The final combined
+focused W2 Python checks and full fast-suite limits are in the Library record.
+
 ### November 13: bounded JPEG XL metadata helper (P1-D)
 
 The metadata helper has a five-second subprocess deadline. Missing,

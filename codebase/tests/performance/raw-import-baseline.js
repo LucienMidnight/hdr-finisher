@@ -10,9 +10,12 @@ const option = (name, fallback = "") => {
 };
 const rawPath = path.resolve(option("--raw"));
 const outputPath = path.resolve(option("--output", "output/performance/review/raw-import.json"));
-const sampleCount = Math.max(1, Number(option("--samples", "3")));
+const contention = args.includes("--contention");
+const sampleCount = Math.max(1, Number(option("--samples", contention ? "2" : "3")));
 const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8799";
 const edgeFallback = args.includes("--edge");
+const rawImportSettings = option("--raw-settings") ? JSON.parse(option("--raw-settings")) : undefined;
+const hostLoad = () => ({loadAverage:require("node:os").loadavg(),cpus:require("node:os").cpus().length});
 
 function percentile(values, fraction) {
   const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
@@ -33,7 +36,13 @@ async function main() {
     await page.waitForFunction(() => window.HDRFinisherPerformance?.gpuSnapshot?.()?.available === true, null, { timeout: 180_000 });
     await page.evaluate(() => {
       window.HDRFinisherPerformance.enableGpuInstrumentation(true);
-      window.__rawImportProbe = { previews: [], scopes: [], jobs: [] };
+      window.__rawImportProbe = { previews: [], scopes: [], jobs: [], libraryOpenings: [] };
+      const library=document.querySelector('#library-frame')?.contentWindow;
+      let opening=false;
+      library?.addEventListener('library-work-changed',()=>{
+        const active=!!library.HDRLibraryGrants?.snapshot().opening;
+        if(active!==opening){opening=active;window.__rawImportProbe.libraryOpenings.push({at:performance.now(),active});}
+      });
       window.addEventListener("hdrfinisher:preview-presented", (event) => {
         window.__rawImportProbe.previews.push({ at: performance.now(), ...structuredClone(event.detail || {}) });
       });
@@ -41,14 +50,35 @@ async function main() {
         window.__rawImportProbe.scopes.push({ at: performance.now(), ...structuredClone(event.detail || {}) });
       });
     });
+    if(contention)await page.evaluate(async()=>{
+      const r=await fetch('/api/library/memory-setting',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bytes:4000000000})});
+      if(!r.ok)throw Error('Could not select existing 4 GB test memory setting');
+    });
     const rows = [];
     for (let index = 0; index < sampleCount; index += 1) {
+      const duringPaste = contention && index % 2 === 1;
+      if (duringPaste) {
+        const pasteRaw=path.resolve(option("--paste-raw"));
+        if(!fs.existsSync(pasteRaw)||pasteRaw===rawPath)throw Error("--paste-raw requires a different curated RAW");
+        await page.evaluate(async target=>{
+          const post=(route,body)=>fetch('/api/library/'+route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+          const response=await post('grade-preparation',{});if(!response.ok)throw Error('Paste preparation token refused');
+          const {token}=await response.json();
+          window.__contentionPaste={token,started:performance.now(),finished:false};
+          window.__contentionPaste.promise=post('grade-prepare',{path:target,token}).then(async r=>({http:r.status,body:await r.json()}))
+            .then(result=>Object.assign(window.__contentionPaste,{result,finished:true}));
+          await new Promise(r=>setTimeout(r,150));
+          if(window.__contentionPaste.finished)throw Error('Paste finished before Grade started; contention pair not qualified: '+JSON.stringify(window.__contentionPaste.result));
+        },pasteRaw);
+      }
       const started = await page.evaluate(() => ({
         at: performance.now(),
         previews: window.__rawImportProbe.previews.length,
         scopes: window.__rawImportProbe.scopes.length,
+        libraryOpenings: window.__rawImportProbe.libraryOpenings.length,
       }));
-      const backend = await page.evaluate(async (targetPath) => {
+      const loadBefore = hostLoad();
+      const backend = await page.evaluate(async ({targetPath,rawImportSettings}) => {
         let grant;
         if (typeof desktop !== "undefined" && desktop?.grantSourcePath) {
           grant = await desktop.grantSourcePath(targetPath);
@@ -61,7 +91,7 @@ async function main() {
         grant = await grantResponse.json();
         if (!grantResponse.ok) throw new Error(grant.detail || "RAW grant failed");
         }
-        const { response, payload } = await projectIo.createImportJob(fetch, { grant: grant.grant });
+        const { response, payload } = await projectIo.createImportJob(fetch, { grant: grant.grant, rawImportSettings });
         if (!response.ok || !payload?.job_id) throw new Error(payload?.detail || "RAW import failed to start");
         let job = payload;
         while (!['ready', 'error', 'cancelled'].includes(job.state)) {
@@ -75,7 +105,7 @@ async function main() {
         if (!session.response.ok || !session.payload?.session) throw new Error(session.payload?.detail || "Imported session unavailable");
         await activateDesktopSession(session.payload.session, "");
         return job;
-      }, rawPath);
+      }, {targetPath:rawPath,rawImportSettings});
       await page.waitForFunction((begin) => {
         const lane = state.currentView;
         const generation = state.previewGeneration[lane];
@@ -102,35 +132,65 @@ async function main() {
           exactPreviewMs: previews.length ? previews.at(-1).at - begin.at : null,
           settledScopeMs: scopes.length ? scopes.at(-1).at - begin.at : null,
           acceptedPresentation: structuredClone(state.acceptedPresentation),
+          libraryOpenings: window.__rawImportProbe.libraryOpenings.slice(begin.libraryOpenings).map(e=>({...e,ms:e.at-begin.at})),
           source: { width: state.session.source.width, height: state.session.source.height },
           gpu: window.HDRFinisherPerformance.gpuSnapshot(),
         };
       }, { begin: started, job: backend });
+      if(contention&&!args.includes('--before')) {
+        if(!row.libraryOpenings.some(e=>e.active)||!row.libraryOpenings.some(e=>!e.active&&e.ms>=row.firstPreviewMs))
+          throw Error('Library pause did not span Grade first presentation: '+JSON.stringify(row.libraryOpenings));
+      }
+      const sum = phases => row.phaseHistory.filter(p=>phases.includes(p.phase)).reduce((n,p)=>n+(p.duration_ms||0),0);
+      row.stages = {decodeMs:sum(["developing_raw"]),coordinatesMs:sum(["lens_coordinates"]),
+        vignetteMs:sum(["lens_vignette"]),remapMs:sum(["lens_remap"]),profileMs:sum(["lens_correction","lens_profile","lens_setup"]),
+        backendOtherMs:row.backendReadyMs-sum(["developing_raw","lens_coordinates","lens_vignette","lens_remap","lens_correction","lens_profile","lens_setup"]),
+        firstPresentationAfterBackendMs:row.firstPreviewMs-row.backendReadyMs,
+        exactAndScopesAfterBackendMs:row.taskAndScopesMs-row.backendReadyMs};
+      row.load = {before:loadBefore,after:hostLoad()};
+      row.duringPaste=duringPaste;
+      if(duringPaste)row.paste=await page.evaluate(async()=>{
+        const probe=window.__contentionPaste;
+        const post=(route)=>fetch('/api/library/'+route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:probe.token})});
+        await post('grade-preparation-cancel');await probe.promise;await post('grade-preparation-end');
+        return {result:probe.result,started:probe.started,finished:probe.finished};
+      });
       row.index = index + 1;
       rows.push(row);
       fs.writeFileSync(outputPath, `${JSON.stringify({ schemaVersion: 1, rawPath, rows }, null, 2)}\n`);
       process.stdout.write(`RAW import ${index + 1}: backend ${row.backendReadyMs} ms; exact+scopes ${row.taskAndScopesMs.toFixed(1)} ms\n`);
     }
     const values = rows.map((row) => row.taskAndScopesMs);
+    const idle=rows.find(r=>!r.duringPaste),busy=rows.find(r=>r.duringPaste);
+    const releaseWaitMs=busy?.phaseHistory.filter(p=>p.phase==='waiting_for_paste'||p.phase==='waiting_for_library').reduce((n,p)=>n+(p.duration_ms||0),0)||0;
+    const comparison=contention&&idle&&busy?{idleMs:idle.firstPreviewMs,duringPasteMs:busy.firstPreviewMs,
+      releaseWaitMs,addedMs:busy.firstPreviewMs-idle.firstPreviewMs,
+      toleranceMs:Math.max(250,idle.firstPreviewMs*.1)}:null;
+    if(comparison)comparison.pass=comparison.addedMs<=comparison.toleranceMs;
     const report = {
       schemaVersion: 1,
       purpose: "RAW import stage baseline",
       createdAt: new Date().toISOString(),
       rawPath,
+      rawImportSettings,
+      machine: {platform:process.platform,arch:process.arch,window:process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE},
       host: edgeFallback ? "Microsoft Edge diagnostic fallback" : "Electron",
       sampleClass: process.env.HDR_FINISHER_ELECTRON_MAIN_PID
         ? "Fresh Electron/backend process: first row process-cold, later rows warm/recovery. OS filesystem cache not flushed."
         : "First row cold within the live backend; later rows warm/recovery. Not certified process-cold.",
       rows,
+      comparison,
       summary: { samples: rows.length, medianMs: percentile(values, 0.5), maximumMs: Math.max(...values) },
     };
     fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+    if(comparison&&!comparison.pass)throw Error('Grade contention exceeds tolerance: '+JSON.stringify(comparison));
   } finally {
     await browser.close();
   }
 }
 
-main().catch((error) => {
+module.exports = {main};
+if (require.main === module) main().catch((error) => {
   process.stderr.write(`${error.stack || error}\n`);
   process.exitCode = 1;
 });

@@ -1,3 +1,10 @@
+## November 15: W2 RAW/Lensfun stages (MacBook Neo)
+
+| Action / stage | Comparison rule | Measured result | Conditions / evidence |
+| --- | --- | --- | --- |
+| Full RAW open, action to first picture / exact picture plus scopes | Existing 5% ordinary timing noise; diagnostic, no RAW speedup claimed | Before first 7.93–8.17 s / exact 8.28–8.75 s; final first 7.32–8.43 s / exact 7.64–9.00 s | November 15, MacBook Neo A18 Pro / 8 GB, 1408×794, shared GPU lock, fresh Electron/backend per pair, unchanged selected 4 GB app ceiling and memory gates. Each import re-develops full DSC04375.ARW (7952×5304); second row is a new full import during real IMG_0790.CR2 paste preparation. OS caches are not flushed; second-row GPU pipelines are warm. Concurrent agents: before load 3.95–4.67; final load 3.30–4.14. Conditions differ; variation is noise-dominated for RAW speed comparison. `codebase/output/w2-p3-before-qualified.json`, `w2-p3-qualified-final.json`. Instrumentation unchanged between comparisons. |
+| Full RAW decode/development; Lensfun coordinates; vignette call; remap; profile/modifier; first/exact presentation after backend ready | Measure and report only; no rewrite | Final 2.61–2.78 s; 0.449–0.518 s; <0.001 s; 2.27–2.34 s; 0–0.080 s; first 0.110–0.964 s / exact+scopes 0.426–1.531 s | Same final pair, auto unique Sony ILCE-7RM3 / Tamron E 35mm F2.8 F053. This profile has no calibrated vignetting: the near-zero call is not a calibrated-vignette benchmark. Before decode 2.66–2.73 s, coordinates 0.426–0.467 s, remap 2.42–2.71 s; unchanged math. **No-go for now**: coordinates plus remap are only about 32–36% of the whole final wait even if removed entirely; exact strip fusion can save less. Memory benefit and other calibrated lenses remain unmeasured. No pre-lens cache, sampled GPU handoff or implementation rewrite. Commit containing this note. |
+
 ## November 15: W7 tooltip wait (MacBook Neo)
 
 | Action | Target / tolerance | Result | Conditions / revision |

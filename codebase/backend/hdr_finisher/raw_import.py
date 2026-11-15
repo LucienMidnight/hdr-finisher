@@ -422,6 +422,7 @@ def _apply_raw_corrections(
             lens_name=decoded.exif.get("lens_model") or decoded.exif.get("lens_name"),
             cancelled=cancelled,
             consume_input=True,
+            progress=progress,
         )
         if not plan.opcode_plan and decoded.bridge_metadata is None:
             aces2065 = lens_output
@@ -1239,8 +1240,12 @@ def apply_lens_correction(
     lens_name: str | None = None,
     cancelled: Callable[[], bool] | None = None,
     consume_input: bool = False,
+    progress: Callable[[str, str], None] | None = None,
 ) -> tuple[np.ndarray, dict[str, Any]]:
+    # Measurement only: progress records the existing boundaries, with exactly
+    # the same full-resolution Lensfun operations and remapping below.
     _raise_if_cancelled(cancelled)
+    if progress: progress("lens_profile", "Selecting Lensfun profile")
     try:
         import lensfunpy
     except ImportError as exc:
@@ -1303,6 +1308,7 @@ def apply_lens_correction(
     crop = float(getattr(camera, "crop_factor", 1.0) or 1.0)
     height, width = image.shape[:2]
     try:
+        if progress: progress("lens_setup", "Preparing Lensfun modifier")
         modifier = lensfunpy.Modifier(lens, crop, width, height)
         flags = lensfunpy.ModifyFlags.SCALE
         if settings.distortion:
@@ -1316,17 +1322,20 @@ def apply_lens_correction(
         )
         # RAW development owns this buffer exclusively; vignette it before
         # remapping instead of retaining an untouched third full-size plane.
+        if progress: progress("lens_vignette", "Applying Lensfun vignetting")
         corrected = np.ascontiguousarray(image, dtype=np.float32)
         if not consume_input or not corrected.flags.writeable:
             corrected = corrected.copy()
         if settings.vignetting and aperture > 0:
             modifier.apply_color_modification(corrected)
         _raise_if_cancelled(cancelled)
+        if progress: progress("lens_coordinates", "Calculating exact Lensfun coordinates")
         coordinates = None
         if settings.chromatic_aberration:
             coordinates = modifier.apply_subpixel_geometry_distortion()
         elif settings.distortion:
             coordinates = modifier.apply_geometry_distortion()
+        if progress: progress("lens_remap", "Remapping Lensfun pixels")
         if coordinates is not None:
             corrected = _remap_bilinear_strips(
                 corrected,
@@ -1338,6 +1347,7 @@ def apply_lens_correction(
         raise
     except Exception as exc:
         raise RawImportError(f"Lensfun could not apply the selected profile: {exc}") from exc
+    if progress: progress("lens_complete", "Lensfun corrections complete")
     return corrected, {
         "mode": settings.mode,
         "applied": True,

@@ -41,7 +41,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | P2 | Edited thumbnail appears fast after leaving Grade | W2 | to do |
 | P3 | Opening Grade during background work is fast | W2 | to do |
 | P4 | Library Denoise setup reused when nothing changed | W2 | to do |
-| P5 | Lensfun: measure, then decide | W2 | to do |
+| P5 | Lensfun: measure, then decide | W2 | measured — full RAW stage timings recorded; no-go for strip-fused rewrite for now; no pixel/cache changes |
 | C1 | Colour wheels: tiny move changes highlights | W3 | built — CPU/GPU retain headroom; continuity and unchanged-range checks pass |
 | C2 | Colour wheels: Balance direction | W3 | built — positive favours Highlights globally/locally; Match translates local wheel hues too |
 | C3 | Colour wheels: clicking a puck changes it | W3 | built — shared drawing/input radius and grab offset; stationary 40% stays 40% |
