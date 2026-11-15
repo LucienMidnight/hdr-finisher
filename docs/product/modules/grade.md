@@ -20,6 +20,68 @@ W6 in concurrent W1 work. Visual sign-off pending; no new tokens.
 # Module PRD: Grade
 
 
+## November 15: M1 all-colour follow-up (research; not fully fixed)
+
+Steve's correction is confirmed: Match's remaining error is not blue-only.
+The original patch population reproduces the quoted `55e8bb5f` table exactly;
+a separate sRGB-only run shows why changing the fitter's supporting patches
+changes the numbers. Both versions were rematched, Film off and Portra 400 /
+Ektar 100 / Velvia 100 at 50%, over all hues, three saturations and -4..+3
+stops. [Complete tables and stage attribution](../../technical/reports/m1-colour-follow-up-2026-11-15.md)
+include Delta E00, defined hue shift, chroma ratio and Delta L for inherent,
+residual and total differences. This is MacBook Neo / A18 Pro / 8 GB research
+against measured HEAD `83fb8f8c`, not a new output implementation.
+
+The clipping fix helps body colours, but bright target-reproduction errors
+remain and some regress. With the original wide-control population, Film-off
+green +2 maximum residual is 11.945 ->23.904 Delta E00; +3 is 14.278 ->25.131.
+Film-off -1-stop maximum across the seven colours improves 3.113 ->1.024;
+remaining darkness is mainly the neutral/image fit, not highlight compression.
+HEAD's -1-stop chroma ratios at 75% saturation are 1.000 with essentially no
+hue shift. Near-white pixels with undefined hue are not reported as rotations.
+
+Five shared RAWs were developed once with canonical <=512-pixel source
+development and reused on both versions: A7R00619, DSC00264, IMG_3129,
+IMG_0790 (people/fire) and IMG_7723 (foliage). Whole-image and skin-colour,
+red, green, cyan, blue, magenta and highlight selections cover all stocks.
+DSC00264 Film-off green P95 residual worsens 6.542 ->11.928 Delta E00;
+its highlight P95 worsens 8.174 ->16.227 despite its accepted body score.
+IMG_0790 still has 4.724 whole-image P95 residual. Each version accepts 18/20
+RAW/stock fits; IMG_7723 Portra and Ektar are refused at unchanged gates.
+Colour-family masks are diagnostic colour proxies, not skin segmentation.
+
+The SDR shoulder/gamut boundary still precedes Exposure Bands and contrast;
+the fitted lifts raise already-compressed colours above white, and the final
+gamut mapper removes their remaining chroma. The current fitter's body gates
+exclude highlights; its finished-highlight refinement fits luminance, not
+highlight colour or future exposure edits. M1d also remains: at +1 stop the
+median SDR Film input is 22% lower for Portra/Ektar and 32% lower for Velvia
+than the common-space HDR input in the sRGB-only experiment.
+
+A7R00619 +0.5 EV reproduces the 11.594-point white-area growth. Exposure Bands
+raises the white fraction from 0.437%/0.542% to 12.516%/22.375%
+(untrimmed/trimmed), then contrast/final mapping takes it to 15.432%/27.026%.
+Peak Detail 35 reduces growth to 0.154 points but worsens highlight P95
+2.559 ->9.836 Delta E00 and body luma P95 0.011817 ->0.059226, outside the
+current candidate's normal matched 0.030 gate. No counterfactual is installed.
+
+No further general pixel fix was shown to avoid a colour/brightness or
+editability trade-off. Steve must decide the complete-target fitting policy
+and M1d placement before that redesign. No renderer, CPU/GPU order, Match
+gate, tolerance, budget, shader pin or protected project changes here.
+M1 remains open; M1a remains the scoped premature-clipping correction.
+
+Validation, grouped once: Node 1,030 passed / one skipped; Python 3,484 passed /
+144 skipped / one unexpected pass (262.25 s). All Match tests pass in that
+suite. Sequential Electron checks through the machine GPU lock: gamut parity
+passes 1,245 vectors (maximum linear-channel difference 0.0000110511);
+`sdr-match-gpu-interaction.js` still fails with "Could not prepare the HDR
+Match browser fixture" before Match. It was not retried or repaired in this
+task. GPU Match interaction and full-resolution/encoded export are not claimed
+as validated by the reduced CPU research. Evidence and logs are retained at
+`codebase/output/review/m1-all-colours/`; the committed report retains the
+complete original-population comparison tables.
+
 ## November 15: W3 wheels and SDR colour headroom (output change; M1a built)
 
 C1–C3 are implemented together on CPU and WebGPU. Wheels no longer clamp the

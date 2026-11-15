@@ -46,8 +46,8 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | C2 | Colour wheels: Balance direction | W3 | built — positive favours Highlights globally/locally; Match translates local wheel hues too |
 | C3 | Colour wheels: clicking a puck changes it | W3 | built — shared drawing/input radius and grab offset; stationary 40% stays 40% |
 | T1 | Blacks/Whites and Shadows/Midtones/Highlights redesign | W4 | research |
-| M1 | HDR to SDR Match colour shifts (blue jeans) | W5 | research done |
-| M1a | SDR contrast/Film Look clipping turns saturated colours | W3 | built — hue gains retained on denim and all three shared RAWs; finished-highlight fitting passes unchanged exposure guard (0.410pp <= 1.000pp) and normal colour gate (0.039884 <= 0.040); 38 Match tests pass; known browser fixture failure precedes Match |
+| M1 | HDR to SDR Match colour shifts (blue jeans) | W5 | broader research complete; not fixed across colours — all-hue/stock tables and five shared RAWs show remaining bright-colour errors/regressions; complete-target fitting and M1d need Steve's decision |
+| M1a | SDR contrast/Film Look clipping turns saturated colours | W3 | built, scoped clipping fix only — existing calibrated exposure/body guards pass; broader M1 follow-up finds bright green/cyan/indigo errors and DSC00264 highlight regression; no new pixel/gate change; GPU Match fixture still fails before Match |
 | U1 | Export panel padding and single divider | W6 | built — Export strip/results share Destination inset; one boundary; three-theme screenshots pass |
 | U2 | No selection borders after mouse use | W6 | built — pointer typing stays ring-free; Tab/F6 retain keyboard rings; Export checked |
 | U3 | Module header: dot + Reset left, Presets right | W6 | built — name, dot + Reset, Presets, eye in DOM/visual order; Presets always visible |
@@ -237,6 +237,35 @@ final clipping with Film Look (M, output change); M1b local-colour
 diagnostics in Match (S–M); M1c show presentation mode and EDR headroom
 (M, diagnostic); M1d fit Film Look input placement in Match (L). Waiting on
 Steve's jeans photo and project before changing output.
+
+**All-colour follow-up (Nov 15, MacBook Neo / A18 Pro / 8 GB):** Steve's
+correction is confirmed; the problem is not blue-only. The original patch
+population (including the wide-gamut controls that affect the fit) reproduces
+the quoted `55e8bb5f` table. It and a separate sRGB-only population were
+rematched at `83fb8f8c`, Film off and Portra/Ektar/Velvia at 50%, all hues,
+three saturations and -4..+3 stops. [Full tables](../reports/m1-colour-follow-up-2026-11-15.md)
+record inherent/residual/total Delta E00, meaningful hue, chroma and Delta L.
+Five canonical <=512-pixel shared RAWs also have whole-image/skin-colour/
+red/green/cyan/blue/magenta/highlight measurements across those stocks.
+
+- M1a repairs early channel clipping, not full-colour target reproduction.
+  Film-off green +2 maximum residual worsens 11.945 ->23.904 Delta E00;
+  DSC00264 green P95 worsens 6.542 ->11.928 and highlight P95 8.174 ->16.227.
+  Original-population -1-stop maximum improves 3.113 ->1.024; its remaining
+  Film-off error is predominantly darkness, not a significant hue rotation.
+- Early shoulder/gamut compression still precedes Exposure Bands/contrast.
+  Fitted lifts raise these pixels above white, then final gamut mapping
+  removes chroma. Body gates do not constrain highlight colour. M1d remains:
+  +1-stop median Film input is 22% lower for Portra/Ektar and 32% for Velvia.
+- A7R00619 reproduces +11.594 points white-area growth after +0.5 EV. Peak
+  Detail 35 cuts growth to 0.154 points but worsens highlight P95
+  2.559 ->9.836 Delta E00 and body luma P95 0.011817 ->0.059226, losing the
+  current candidate's normal 0.030 gate. No such trade-off is installed.
+- No further output, CPU/GPU order, gate or tolerance change. Complete-target
+  fitting/colour-versus-brightness/editability and Film placement need Steve.
+  All fast checks pass: Node 1,030 plus Python 3,484; sequential locked GPU
+  gamut parity passes 1,245 vectors. The known browser Match fixture fails
+  before Match; no retry, browser-Match or full-resolution export claim.
 
 ### W6: Small interface fixes
 
