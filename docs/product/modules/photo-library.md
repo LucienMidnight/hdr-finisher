@@ -1,3 +1,11 @@
+## November 15: left-panel collapse alignment
+
+Library left-panel collapse now matches the unchanged Grade/Proof reference: the expanded header uses the same end inset, and the collapsed rail is 44 px with its button centred. The shared button is allowed its natural width rather than being squeezed by flex layout.
+
+PC Electron at 2560x1440: all four buttons measure 26x24 px (the existing visual-controls rule widens the 24 px token). Expanded boxes are (194,52); collapsed boxes are (9,52), except Export (8.5,52), within Steve's 1 px tolerance. The 14 px chevron is centred in each button. Crops and measured boxes: `codebase/output/review/collapse-buttons/`.
+
+Validation: focused Electron measurements/crops pass the 1 px tolerance; plain-Electron 90-second Library viewport check passes. JavaScript: 1,003 passed, one skipped. Python: 3,553 passed, 43 skipped; only the known Windows path-separator failure in test_machine_tooling.py::test_js_python_settings_agree. No output processing changes.
+
 ### November 15, 2026: discover stale tiles after grade changes
 
 The commit containing this note makes the saved-settings poll compare each Grid

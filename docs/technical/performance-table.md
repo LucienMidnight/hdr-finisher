@@ -1,3 +1,5 @@
+November 15, collapse-button alignment (commit containing this note): Windows PC, 2560x1440, frozen mixed-v1 fixture, shared GPU lock, plain Electron; Python fast checks running concurrently. First/ten pictures 2.3/2.9 s; all 30 visited viewport pictures drawn, no errors or memory violation. Diagnostic smoke only, not an isolated speed comparison. Report: `codebase/output/quick-library-check/collapse-buttons/report.json`.
+
 ## November 15: Detail highlight fix validation (Windows PC)
 
 The default frozen-v1 Library viewport smoke did not finish observation before

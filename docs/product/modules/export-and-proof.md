@@ -1,3 +1,9 @@
+## November 15: left-panel collapse alignment
+
+Export Presets keeps its collapse button separate from the 30 px menu action. Its shared collapse control uses its natural width and the Grade header end inset. Grade and Proof are unchanged.
+
+PC Electron at 2560x1440: all four buttons measure 26x24 px (the existing visual-controls rule widens the 24 px token). Expanded boxes are (194,52); collapsed boxes are (9,52), except Export (8.5,52), within Steve's 1 px tolerance. The 14 px chevron is centred in each button. Crops and measured boxes: `codebase/output/review/collapse-buttons/`.
+
 # Module PRD: Export and Proof
 
 ## November 14: Export Settings disclosure styling

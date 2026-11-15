@@ -540,7 +540,9 @@ html.desktop-shell .unified-menu-button:is(:hover, :focus-visible, [aria-expande
 :root .batch-preview .batch-statusbar { pointer-events: auto; }
 
 /* November 7: Library sidebar is the "Pinned" panel; Folders, Albums and Smart Albums are its sections. */
-:root .library-nav > .library-panel-heading { padding-left: 12px; }
+:root .library-nav > .library-panel-heading { padding-inline: var(--workspace-leading); }
+:root :is(.library-nav, .batch-preset-rail) .panel-collapse-button { flex-basis: auto; }
+:root .library-left-closed .library-nav > .library-panel-heading { padding-inline: 0; justify-content: center; }
 :root .library-section-title { flex: 1; min-width: 0; color: var(--text); white-space: nowrap; font: var(--group-title-font-weight) var(--group-title-font-size) var(--group-title-font-family); letter-spacing: var(--group-title-letter-spacing); }
 
 /* Filter bar symbols are Tabler icons, centred like the toolbar icons. */

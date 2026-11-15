@@ -14,7 +14,7 @@ body { margin: 0; color: var(--body); background: var(--app); }
 .library-heading .panel-title { flex: 1; }
 #collapse-left::before, #collapse-right[aria-expanded="false"]::before { transform: rotate(180deg); }
 #collapse-left[aria-expanded="false"]::before { transform: none; }
-.library-left-closed { --library-left-track: 36px; }
+.library-left-closed { --library-left-track: 44px; }
 .library-right-closed { --library-right-track: 36px; }
 .library-details > .library-heading { padding-left: 12px; }
 .library-splitter { min-height: 0; }

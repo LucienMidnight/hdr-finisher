@@ -9130,7 +9130,7 @@ body.batch-export-ready[data-workflow="export"] .batch-preset-rail { z-index: 41
 .window-menu-trigger { text-align: left; }
 .source-rail .rail-title-row { margin-inline: calc(-1 * var(--workspace-leading)); padding-left: var(--workspace-leading); }
 .source-rail .disclosure-trigger { justify-content: flex-start; padding-left: 0; }
-.batch-preset-rail .workflow-rail-header { padding-left: var(--workspace-leading); }
+.batch-preset-rail .workflow-rail-header { padding-left: var(--workspace-leading); padding-right: calc(var(--workspace-leading) - 1px); }
 /* Fixed workflow rails leave their adjacent grid splitter exposed. */
 .workflow-side-panel { min-width: 0; max-width: none; }
 
@@ -9141,8 +9141,10 @@ body[data-workflow="export"] .app-shell .source-splitter { display: block; }
 
 /* Export presets collapse to the same narrow rail as source metadata. */
 .batch-preset-rail .workflow-rail-header .panel-title { flex:1; min-width:0; }
-/* Match component-sheet panel actions; override the legacy Metadata flex rule. */
-.batch-preset-rail .workflow-rail-header > button {
+/* Collapse keeps the shared panel-collapse size (as Grade/Proof); only override the legacy Metadata flex rule. */
+.batch-preset-rail .workflow-rail-header > #batch-presets-collapse { display: inline-grid !important; }
+/* Other header actions match component-sheet panel actions. */
+.batch-preset-rail .workflow-rail-header > button:not(#batch-presets-collapse) {
   display: inline-grid !important;
   place-items: center;
   box-sizing: border-box;
