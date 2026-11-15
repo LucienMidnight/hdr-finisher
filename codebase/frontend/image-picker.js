@@ -22,14 +22,14 @@
   $('picker-path').addEventListener('keydown', event => { if(event.key==='Enter') void session?.browse(event.target.value); });
   $('picker-up').addEventListener('click', () => session?.browse(session.parent,session.current));
   window.HDRImagePicker = Object.freeze({
-    async show({path='', onSelect, onCancel}) {
+    async show({path='', onSelect, onCancel, onPreviewSelected}) {
       session?.stop(); confirm = onSelect; onClose = onCancel;
       const api = async (url, body, signal) => {
         const response = await fetch(url, {signal, ...(body ? {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)} : {})});
         const result = await response.json(); if(!response.ok) throw Error(typeof result.detail==='string' ? result.detail : result.detail?.message || 'Could not read this folder.');
         return result;
       };
-      session=HDRLibraryFolderPicker.create({api,sleep,mode:'source',onOpen:entry=>void open(entry)});
+      session=HDRLibraryFolderPicker.create({api,sleep,mode:'source',onPreviewSelected,onOpen:entry=>void open(entry)});
       if(!dialog.open) dialog.showModal();
       await session.browse(path);
     },

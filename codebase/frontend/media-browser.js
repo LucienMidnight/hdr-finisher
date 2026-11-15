@@ -54,7 +54,7 @@ window.HDRMediaBrowser = Object.freeze({
     let bound = false;
 async function openMediaBrowser(mode, path = "", options = {}) {
   if (mode === "source" && window.HDRImagePicker) {
-    return window.HDRImagePicker.show({path, onCancel: () => callbacks.onClose?.(), onSelect: async selected => {
+    return window.HDRImagePicker.show({path, onPreviewSelected: callbacks.onPreviewSelected, onCancel: () => callbacks.onClose?.(), onSelect: async selected => {
       if (!callbacks.grantSourcePath) {
         window.HDRImagePicker.close(); callbacks.pickSourceFile?.(); return;
       }

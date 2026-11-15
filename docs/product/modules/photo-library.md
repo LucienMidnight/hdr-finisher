@@ -1,3 +1,18 @@
+## November 15: W7 image-browser validation
+
+MacBook Neo / 8 GB: locked real Electron confirms single-photo selection,
+temporary grid thumbnails and preview, an actual JPEG open into Grade, and
+folder multi-selection mode. Project open/save and export-destination dialogs
+still open with their established controls. The browser fits 1408×794 and
+1100×720; screenshots are in `codebase/output/review/w7-interface/`.
+The existing media-browser regression passes loading, rejection of stale
+responses, preview failures and colour-interpretation/profile explanations.
+Source preview notes still reach the editor; unsupported files never count as
+selected photos. Node fast suite: 1,025 passed / one skipped. Python full run
+observed 13 unrelated processing/native-source/Match failures during concurrent
+work; the old tooltip wording failure was replaced (12 focused contracts pass).
+No rendering maths, cache size, authored grade or export-output changes.
+
 ## November 15: W7 shared image/folder browser (L4)
 
 Open image now uses the same thumbnail grid/list view and temporary-picture

@@ -13,7 +13,8 @@ function assert(condition, message) {
 
 async function main() {
   const browser = await chromium.launch({ headless: true, channel: "chrome" });
-  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const [width, height] = (process.env.HDR_FINISHER_ELECTRON_WINDOW_SIZE || "1408x794").split("x").map(Number);
+  const context = await browser.newContext({ viewport: { width, height } });
   const page = await context.newPage();
   const entries = [
     { name: "first.jpg", path: "/mock/first.jpg", kind: "file", supported: true, format: "jpg", kind_label: "JPEG image", size: 100, date_added_ms: 1, thumbnail_key: "first-v1" },

@@ -3,7 +3,7 @@
   "use strict";
   const $ = id => document.getElementById(id);
   const VIEW_KEY = "hdr-finisher:folder-picker-view";
-  function create({ api, sleep, bindFolderMenu = () => {}, bindLocationMenu = () => {}, closeFolderMenu = () => {}, mode = "folder", onOpen = () => {} }) {
+  function create({ api, sleep, bindFolderMenu = () => {}, bindLocationMenu = () => {}, closeFolderMenu = () => {}, mode = "folder", onOpen = () => {}, onPreviewSelected = () => {} }) {
     const sourceMode = mode === "source";
     const list = $("picker-list"), pane = $("picker-preview-pane");
     const requests = HDRLibraryRequestQueue.create(2);
@@ -159,7 +159,7 @@
     }
     function paintSelection() {
       [...list.children].forEach((button, index) => {
-        const selected = session.selection.has(index) || (index === focused && session.entries[index].kind !== "directory");
+        const selected = session.selection.has(index) || (!sourceMode && index === focused && session.entries[index].kind !== "directory");
         button.setAttribute("aria-selected", String(selected)); button.classList.toggle("selected", selected);
       });
       if (sourceMode) {
@@ -184,6 +184,7 @@
         } else { session.selection = new Set([index]); session.anchor = index; }
       }
       paintSelection();
+      if (sourceMode && entry.kind !== "directory") onPreviewSelected(entry);
       if (entry.supported) void showPreview(entry);
     }
     function render() {
