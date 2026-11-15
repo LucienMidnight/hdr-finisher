@@ -71,6 +71,25 @@ No allowance or reserve changed.
 
 # Module PRD: Memory and caches
 
+### November 15, 2026: cancellable paste preparation (Steve approved)
+
+The `paste-import` job is a full corrected Grade import, not a reduced Library
+picture. A backend-wide lane prepares one photo at a time across both Library
+windows. Admission reuses the full-image resource preflight: float RGB decoder
+staging, two float RGB working images, bounded strip scratch and fixed overhead;
+RAW imports additionally reserve the existing WORKING allowance used by parallel
+lens-remap gathers. Header dimensions only; an unreadable size gives a clear
+error rather than decoding to find it. Existing limits and shares are unchanged.
+This job has no visible-picture floor or protected-photo 110% admission exception:
+its full reservation must fit the configured ceiling, measured census and system
+headroom. Grade import jobs publish their active lifetime to this scheduler;
+paste preparation yields at the import's existing safe checkpoints and waits
+behind them. Cancelling or preempting retains the grant until the decoder really
+returns, including non-interruptible native calls. Starting documents may be kept;
+authored grades are applied only after every target is prepared, as one Undo step.
+The picker itself reads stored documents only and never requests an import grant.
+
+
 ### November 14: P1-B HSL stage ownership
 
 Global HSL Show selection/picking keeps at most one pre-HSL CPU array per

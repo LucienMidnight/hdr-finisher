@@ -2,7 +2,12 @@
 from copy import deepcopy
 import json
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Event
+from uuid import uuid4
+from .library_scheduler import scheduler
+
+# Backend-wide lane, shared by both windows and every LibraryPaste instance.
+_PREPARATION_LANE = Lock()
 from .models import EditDocument
 from .projects import validate_saved
 from .library_grades import grade_key
@@ -61,19 +66,27 @@ class LibraryPaste:
         self.grades=grades; self.marks=grades.marks; self.clipboard=None
         self.preferences=self.marks.database.parent/'library-paste-selection.json'
         self._locks_lock=Lock(); self._path_locks={}
+        self._operations = {}
+        from .library_pictures import LibraryPictureCache
+        self.pictures = LibraryPictureCache(self.marks.database.parent)
 
     def _path_lock(self, path):
         with self._locks_lock: return self._path_locks.setdefault(str(path),Lock())
 
-    def document(self, path):
+    def document(self, path, *, stored_only=False, cancelled=lambda:False):
         state=self.grades._get(path)
         doc=self.marks._document(Path(path)) or {}
         current=state.get('desired') if state.get('pending') else doc.get('grade') or state.get('indexed_grade')
         default=state.get('default') or doc.get('grade_default')
+        if default is None and stored_only and current is not None:
+            default = current  # Preview only needs the authored current document.
+        if default is None and stored_only:
+            default = self.pictures.default_document(self.marks.source_path(path))
+            if default is None: return None
         if default is None:
-            # The paste preview and the paste itself may ask at once: develop once.
+            # Concurrent preparation requests share one starting document.
             with self._path_lock(path):
-                default=self.grades._get(path).get('default') or self.starting_document(path)
+                default=self.grades._get(path).get('default') or self.starting_document(path, cancelled=cancelled)
                 with self.marks._lock:
                     state=self.grades._get(path)
                     default=state.get('default') or default
@@ -82,22 +95,70 @@ class LibraryPaste:
         return (validate_saved(EditDocument, current if current is not None else default).model_dump(mode="json"),
                 validate_saved(EditDocument, default).model_dump(mode="json"))
 
-    def starting_document(self, path):
+    def starting_document(self, path, cancelled=lambda:False):
         source=self.marks.source_path(path)
-        from .library_pictures import LibraryPictureCache
         # Live scenes retain Grade's starting document for this photo version.
         try:
-            document=LibraryPictureCache(self.marks.database.parent).default_document(source)
+            document=self.pictures.default_document(source)
             if document: return validate_saved(EditDocument, document).model_dump(mode='json')
         except (OSError,ValueError): pass
         from .sessions import SessionStore
         from .library_diagnostics import log
         log("paste_cpu_fallback", path=str(source), reason="No retained starting document for this photo version.")
-        session=SessionStore().prepare_session(source,owns_source_path=False)
-        return session.edit_document().model_dump(mode='json')
+        from .library_estimates import full_import_estimate
+        amount = full_import_estimate(source)
+        while True:
+            if cancelled(): raise ValueError('Paste preparation cancelled; no grades changed.')
+            if not _PREPARATION_LANE.acquire(timeout=.05): continue
+            token = uuid4().hex
+            try:
+                job = scheduler.ask(token, 'backend', str(source), 'paste-import', amount, 'soon')
+                while job.granted is None:
+                    if cancelled(): raise ValueError('Paste preparation cancelled; no grades changed.')
+                    if job.reason == 'needs more memory':
+                        raise ValueError(f'Preparing this photo needs about {amount/1e9:.1f} GB. Free memory or raise Memory the app may use in Settings.')
+                    job.ready.wait(.05)
+                preempted = Event()
+                session = None
+                def stopped():
+                    with scheduler.lock:
+                        grade = any(j.cls == 'Grade' for j in scheduler.jobs.values())
+                    if grade: preempted.set()
+                    return cancelled() or grade
+                try:
+                    if stopped(): raise RuntimeError('Import cancelled')
+                    session = SessionStore().prepare_session(source, owns_source_path=False, cancelled=stopped)
+                    if stopped(): raise RuntimeError('Import cancelled')
+                    document = session.edit_document().model_dump(mode='json')
+                    del session
+                    return document
+                except Exception:
+                    if cancelled(): raise ValueError('Paste preparation cancelled; no grades changed.') from None
+                    if not preempted.is_set(): raise
+                    # Grade preemption is a safe-point pause, not a decoder retry.
+            finally:
+                session = None
+                scheduler.finish(token)
+                _PREPARATION_LANE.release()
 
-    def prepare(self, path):
-        self.document(str(self.marks._path(path)))
+    def begin(self):
+        token = uuid4().hex
+        with self._locks_lock: self._operations[token] = [Event(), False]
+        return {'token':token}
+
+    def cancel(self, token):
+        with self._locks_lock:
+            operation = self._operations.get(token)
+            if operation and not operation[1]: operation[0].set()
+        return {'cancelled':bool(operation and operation[0].is_set())}
+
+    def prepare(self, path, token=None, cancelled=lambda:False):
+        event = None
+        if token:
+            with self._locks_lock: event = self._operations[token][0]
+        stop = lambda: cancelled() or bool(event and event.is_set())
+        if stop(): raise ValueError('Paste preparation cancelled; no grades changed.')
+        self.document(str(self.marks._path(path)), cancelled=stop)
         return {'ready':True}
 
     def schema(self, grade, start):
@@ -146,6 +207,7 @@ class LibraryPaste:
 
     def copy(self,path):
         path=str(self.marks._path(path))
+        self.document(path)
         with self.grades.store._lock,self.marks._lock:
             grade,start=self.document(path)
             self.clipboard={'path':path,'grade':grade,'start':start,'name':(self.marks._document(Path(path)) or {}).get('name') or self.marks.source_path(path).name}
@@ -156,21 +218,31 @@ class LibraryPaste:
         clip=self.clipboard; groups=self.schema(clip['grade'],clip['start'])
         return {'name':clip['name'],'groups':groups,'selection':self.selection(groups)}
 
-    def paste(self,paths,selection=None,preview=False):
+    def paste(self,paths,selection=None,preview=False,token=None):
         if not self.clipboard: raise ValueError('Copy a grade first.')
         clip=deepcopy(self.clipboard); groups=self.schema(clip['grade'],clip['start']); selection=self.selection(groups,selection)
         paths=list(dict.fromkeys(str(self.marks._path(p)) for p in paths))
         if not paths: raise ValueError('Select photos to paste onto.')
         # Cold starting documents may require a full corrected RAW decode. Do
         # that before the edit locks: Grade remains usable throughout preflight.
-        for path in paths: self.document(path)
-        targets={}; warnings=[]
+        if not preview:
+            for path in paths: self.prepare(path, token)
+            if token:
+                with self._locks_lock:
+                    event, applying = self._operations[token]
+                    if event.is_set(): raise ValueError('Paste preparation cancelled; no grades changed.')
+                    self._operations[token][1] = True
+        targets={}; warnings=[]; unchecked=0
         raw_prefix='source.raw_import_settings.'
         with self.grades.store._lock,self.marks._lock:
             for path in paths:
                 session=self.grades.history.current(path)
                 if session and session.dirty and not preview: raise ValueError('Save or discard the open photo changes before pasting.')
-                current,start=self.document(path); target=deepcopy(current)
+                documents = self.document(path, stored_only=True) if preview else self.document(path)
+                if documents is None:
+                    unchecked += 1
+                    continue
+                current,start=documents; target=deepcopy(current)
                 raw=self.marks.source_path(path).suffix.lower() in RAW_EXTENSIONS
                 skipped=[]
                 for group in groups:
@@ -186,7 +258,7 @@ class LibraryPaste:
                 if skipped: warnings.append({'path':path,'message':', '.join(dict.fromkeys(skipped))+' skipped for this file type.'})
                 if not self.marks.source_path(path).parent.exists(): warnings.append({'path':path,'message':'Photo is offline; settings will be written when it reconnects.'})
                 if grade_key(current)!=grade_key(target): targets[path]=target
-            if preview: return {'count':len(targets),'warnings':warnings}
+            if preview: return {'count':len(targets),'unchecked':unchecked,'warnings':warnings}
             result=self.grades.history.rewrite(list(targets),targets=targets,save_open=True)
             atomic_json(self.preferences,selection)
             result['warnings']=warnings
@@ -194,7 +266,9 @@ class LibraryPaste:
 
 
 def add_paste_routes(router,grades):
-    from fastapi import HTTPException
+    from fastapi import HTTPException, Request
+    import asyncio
+    from starlette.concurrency import run_in_threadpool
     paste=LibraryPaste(grades); grades.paste=paste
     def call(action):
         try: return action()
@@ -204,6 +278,28 @@ def add_paste_routes(router,grades):
     @router.post('/grade-copy')
     def copy_grade(request:dict): return call(lambda:paste.copy(request['path']))
     @router.post('/grade-paste')
-    def paste_grade(request:dict): return call(lambda:paste.paste(request.get('paths',[]),request.get('selection'),request.get('preview',False)))
+    def paste_grade(request:dict): return call(lambda:paste.paste(request.get('paths',[]),request.get('selection'),request.get('preview',False),request.get('token')))
+    @router.post('/grade-preparation')
+    def begin_preparation(): return paste.begin()
+    @router.post('/grade-preparation-cancel')
+    async def cancel_preparation(request:dict): return paste.cancel(request['token'])
+    @router.post('/grade-preparation-end')
+    def end_preparation(request:dict):
+        with paste._locks_lock: paste._operations.pop(request['token'], None)
+        return {'done':True}
     @router.post('/grade-prepare')
-    def prepare_grade(request:dict): return call(lambda:paste.prepare(request['path']))
+    async def prepare_grade(request:dict, connection:Request):
+        disconnected = Event()
+        work = asyncio.create_task(run_in_threadpool(lambda:call(lambda:paste.prepare(request['path'], request.get('token'), disconnected.is_set))))
+        try:
+            while not work.done():
+                if await connection.is_disconnected(): disconnected.set()
+                await asyncio.sleep(.05)
+            return await work
+        finally:
+            disconnected.set()
+            # A disconnect must not free the reservation before the decoder stops.
+            if not work.done():
+                await asyncio.shield(work)
+            if await connection.is_disconnected() and request.get('token'):
+                with paste._locks_lock: paste._operations.pop(request['token'], None)

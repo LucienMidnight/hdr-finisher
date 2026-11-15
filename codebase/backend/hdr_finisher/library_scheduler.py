@@ -498,7 +498,20 @@ class Scheduler:
                 if block:
                     blocked_classes.add(CLASSES[job.cls])
                 continue
-            if job.cls == "Grade":
+            if job.kind == "paste-import":
+                # Full imports have neither the visible-picture floor nor the
+                # protected-photo 110% allowance. Grade always takes precedence.
+                if any(j.cls == 'Grade' for j in self.jobs.values()):
+                    reason = "paused for Grade"
+                elif any(j.kind == 'paste-import' for j in running):
+                    reason = "another paste import is running"
+                elif job.estimate > self.ceiling-STARTING:
+                    reason = "needs more memory"
+                elif job.estimate+used > room or self.pressure != "none":
+                    reason = "room"
+                elif headroom is not None and job.estimate > headroom:
+                    reason = "system reserve"
+            elif job.cls == "Grade":
                 pass
             elif job.estimate > self.ceiling:
                 reason = "needs more memory"
@@ -547,7 +560,7 @@ class Scheduler:
             # Decision 21 widens only the protected, drained turn. New grants
             # still consume physical headroom above, including the fast lane.
             guarded_alone = job is guard and not any(j.cls == job.cls for j in running)
-            admission_limit = self.ceiling * 11 // 10 if guarded_alone else self.ceiling
+            admission_limit = self.ceiling * 11 // 10 if guarded_alone and job.kind != "paste-import" else self.ceiling
             measured_fits = self.total is None or self.total + unmeasured + job.estimate <= admission_limit
             if not reason and job.cls != "Grade" and not job.fast and not job.floor and not measured_fits:
                 reason = "measured memory"

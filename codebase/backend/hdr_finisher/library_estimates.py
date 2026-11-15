@@ -356,3 +356,24 @@ def gpu_metadata(path, document=None, edge=2560):
         return meta
     except Exception:
         return None
+
+
+def full_import_estimate(path):
+    """Full corrected Grade import, never the reduced Library development rate.
+
+    Reuse DNG's two full float intermediates, float decoder staging, fixed
+    overhead and strip scratch. RAW remapping additionally holds the existing
+    WORKING allowance (raw_import._remap_rgb's bounded parallel gathers).
+    """
+    from .resource_preflight import estimate_resources, ResourceSnapshot
+    try:
+        width, height = dimensions(path)
+    except Exception as error:
+        raise ValueError('Cannot safely estimate paste preparation memory for this photo.') from error
+    peak = estimate_resources(width=width, height=height, samples=3,
+        bytes_per_sample=4, resources=ResourceSnapshot(None,None,'header'),
+        full_float_intermediates=2).conservative_import_peak_bytes
+    from .raw_import import RAW_EXTENSIONS
+    if Path(path).suffix.lower() in RAW_EXTENSIONS:
+        peak += app_memory.WORKING
+    return max(MINIMUM, peak)

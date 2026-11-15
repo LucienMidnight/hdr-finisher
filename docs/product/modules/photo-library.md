@@ -4431,13 +4431,19 @@ fails as recorded above; export, Proof and their limits were not changed.
 - Copy and paste of grades (Ctrl+C, Ctrl+V, Ctrl+Shift+V with the tick
   list). Pictures for grades changed in bulk go through a durable queue
   with Pause/Resume in Activity, resume on launch, visible photos first.
-  Paste is usable as soon as something is ticked (October 18): the check
-  that counts changed photos runs alongside, and photos not yet prepared
-  are prepared after confirming, with "Preparing 3 of 12 photos for
-  paste…" in the status bar. A RAW grid thumbnail now runs Grade's own
-  import and keeps the starting grade it produced, so paste does not
-  develop that photo again. Each photo is developed at most once even
-  when the check and the paste ask together.
+  **Steve approved November 15, 2026:** opening, changing or closing the
+  paste picker must never decode or develop photos. Its count uses saved,
+  pending and retained starting documents only; unchecked photos are labelled
+  as checked after confirmation. Confirmation prepares missing starting
+  documents in a backend-wide single lane, through scheduler memory admission
+  for full corrected Grade imports. Grade imports take priority; preparation
+  stops at a safe checkpoint and waits before resuming. The preparation dialog
+  uses existing dialog/button styles and offers Cancel, including Escape.
+  Cancel stops further photos and cancels the current import at its next safe
+  checkpoint, retaining its reservation until it has stopped. No authored
+  grades change before all preparation finishes. Already prepared starting
+  documents may be reused after cancellation. Applying completes as one Undo
+  step. The per-photo lock still prevents duplicate preparation.
 - October 19, GPU RAW follow-up part 3: GPU thumbnails retain the starting
   document, full-source measurements, RAW settings and source fingerprint.
   Concurrent paste checks reuse it through the existing per-photo lock.

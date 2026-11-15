@@ -194,6 +194,14 @@ To rename a copy, choose **Rename copy…**. To delete one, choose **Remove virt
 
 Each photo keeps its previous grade, so Ctrl+Z undoes the paste.
 
+The settings picker checks stored grades without opening the photos. If some
+photos have not been prepared, it says they will be checked after you confirm.
+Preparation runs one photo at a time and waits when Grade or memory is needed.
+Choose **Cancel**, or press Escape, to stop preparation without changing any
+grades. A decoder may need a moment to stop. Once applying begins, the paste
+finishes as one Undo step.
+
+
 To paste only some settings, press Ctrl+Shift+V or choose **Paste grade (choose settings)…**. Tick what you want. **All**, **Modified only** and **None** help you start. By default crop, lens corrections and local adjustments are not ticked.
 
 The same commands are in the **Edit** menu.

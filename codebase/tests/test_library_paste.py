@@ -165,7 +165,7 @@ def test_preferences_shared_between_raw_and_nonraw(setup, monkeypatch, raw_first
     paste=LibraryPaste(grades)
     raw=photo.with_suffix('.ARW');raw.write_bytes(b'test RAW placeholder')
     document=session.edit_document().model_dump(mode='json')
-    monkeypatch.setattr(paste,'document',lambda path:(deepcopy(document),deepcopy(document)))
+    monkeypatch.setattr(paste,'document',lambda path, **options:(deepcopy(document),deepcopy(document)))
     first,second=(raw,photo) if raw_first else (photo,raw)
     description=paste.copy(str(first))
     raw_id=next(r['id'] for g in description['groups'] if g['id']=='raw-development' for r in g['settings'])
@@ -177,3 +177,127 @@ def test_preferences_shared_between_raw_and_nonraw(setup, monkeypatch, raw_first
     assert bool(result['warnings'])==raw_first
     groups=[g for g in description['groups'] if g['id']!='raw-development']
     assert paste.selection(groups)=={'lanes':['hdr'],'settings':[HDR]}
+
+
+def test_cold_preview_never_imports_or_schedules(setup, monkeypatch):
+    from hdr_finisher.library_scheduler import scheduler
+    photo,store,session,marks,grades=setup
+    saved(setup); paste=LibraryPaste(grades); paste.copy(str(photo))
+    cold=photo.with_name('cold.png');cold.write_bytes(photo.read_bytes())
+    before=deepcopy(grades._get(str(cold)))
+    def forbidden(*args, **kwargs): raise AssertionError('Preview started heavy work')
+    monkeypatch.setattr(SessionStore,'prepare_session',forbidden)
+    monkeypatch.setattr(scheduler,'ask',forbidden)
+    for _ in range(3):
+        result=paste.paste([str(photo),str(cold)],preview=True)
+        assert result['count']==0 and result['unchecked']==1
+    assert grades._get(str(cold))==before
+
+
+def test_cancel_keeps_reservation_until_import_stops_and_changes_no_grades(setup, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from hdr_finisher.library_scheduler import Scheduler
+    import hdr_finisher.library_paste as module
+    photo,store,session,marks,grades=setup
+    saved(setup); paste=LibraryPaste(grades);paste.copy(str(photo));store.clear()
+    local=Scheduler();monkeypatch.setattr(module,'scheduler',local)
+    cold=photo.with_name('cold.png');cold.write_bytes(photo.read_bytes())
+    second=photo.with_name('second.png');second.write_bytes(photo.read_bytes())
+    entered,stop_seen,release=Event(),Event(),Event(); imports=[]
+    def develop(self,path,**options):
+        imports.append(str(path));entered.set()
+        assert release.wait(3)
+        assert options['cancelled']();stop_seen.set()
+        raise RuntimeError('Import cancelled')
+    monkeypatch.setattr(SessionStore,'prepare_session',develop)
+    token=paste.begin()['token']
+    with ThreadPoolExecutor() as pool:
+        work=pool.submit(paste.prepare,str(cold),token)
+        assert entered.wait(3)
+        assert len(local.jobs)==1 and next(iter(local.jobs.values())).granted is not None
+        paste.cancel(token)
+        assert len(local.jobs)==1  # decoder still owns its buffers
+        release.set()
+        with pytest.raises(ValueError,match='cancelled'):work.result(timeout=3)
+    assert stop_seen.is_set() and not local.jobs
+    with pytest.raises(ValueError,match='cancelled'):paste.prepare(str(second),token)
+    with pytest.raises(ValueError,match='cancelled'):paste.paste([str(cold)],token=token)
+    assert imports==[str(cold)]
+    assert not grades._get(str(cold)).get('desired')
+    assert not Path(str(cold)+'.hdrf').exists()
+
+
+def test_cold_imports_share_lane_and_yield_to_grade(setup, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    import time
+    from hdr_finisher.library_scheduler import Scheduler
+    import hdr_finisher.library_paste as module
+    photo,store,session,marks,grades=setup
+    local=Scheduler();monkeypatch.setattr(module,'scheduler',local)
+    paste=LibraryPaste(grades)
+    paths=[photo.with_name(name) for name in ('one.png','two.png')]
+    for path in paths:path.write_bytes(photo.read_bytes())
+    real=SessionStore.prepare_session;entered,preempted=Event(),Event();calls=[]
+    def develop(self,path,**options):
+        calls.append(str(path))
+        assert sum(j.kind=='paste-import' and j.granted is not None for j in local.jobs.values())==1
+        if len(calls)==1:
+            entered.set()
+            for _ in range(100):
+                if options['cancelled']():preempted.set();raise RuntimeError('Import cancelled')
+                time.sleep(.01)
+            raise AssertionError('Grade did not preempt preparation')
+        return real(self,path,**options)
+    monkeypatch.setattr(SessionStore,'prepare_session',develop)
+    with ThreadPoolExecutor() as pool:
+        first=pool.submit(paste.prepare,str(paths[0]));assert entered.wait(3)
+        local.ask('grade','backend',str(photo),'grade-import',0,'Grade')
+        assert preempted.wait(3)
+        second=pool.submit(paste.prepare,str(paths[1]))
+        local.finish('grade')
+        assert first.result(timeout=10)['ready'] and second.result(timeout=10)['ready']
+    assert len(calls)==3 and not local.jobs
+
+
+def test_paste_import_never_uses_floor_or_over_ceiling_allowance():
+    from hdr_finisher.library_scheduler import Scheduler
+    local=Scheduler();local.update(total=3_800_000_000)
+    job=local.ask('paste','backend','photo.ARW','paste-import',300_000_000,'now')
+    assert job.granted is None and not job.floor and not job.alone
+    local.finish('paste')
+    huge=local.ask('large','backend','photo.ARW','paste-import',3_000_000_000,'soon')
+    assert huge.granted is None and huge.reason=='needs more memory'
+
+
+def test_disconnected_preparation_request_stops_import(setup, monkeypatch):
+    import asyncio
+    from threading import Event
+    from fastapi import APIRouter, HTTPException
+    from hdr_finisher.library_scheduler import Scheduler
+    import hdr_finisher.library_paste as module
+    photo,store,session,marks,grades=setup
+    local=Scheduler();monkeypatch.setattr(module,'scheduler',local)
+    router=APIRouter();module.add_paste_routes(router,grades)
+    endpoint=next(route.endpoint for route in router.routes if route.path=='/grade-prepare')
+    cold=photo.with_name('disconnected.png');cold.write_bytes(photo.read_bytes())
+    entered,disconnect=Event(),Event()
+    class Connection:
+        async def is_disconnected(self):return disconnect.is_set()
+    def develop(self,path,**options):
+        entered.set()
+        for _ in range(100):
+            if options['cancelled']():raise RuntimeError('Import cancelled')
+            import time
+            time.sleep(.01)
+        raise AssertionError('Disconnect failed to cancel import')
+    monkeypatch.setattr(SessionStore,'prepare_session',develop)
+    async def exercise():
+        task=asyncio.create_task(endpoint({'path':str(cold)},Connection()))
+        while not entered.is_set():await asyncio.sleep(.01)
+        disconnect.set()
+        with pytest.raises(HTTPException,match='cancelled'):
+            await asyncio.wait_for(task,3)
+    asyncio.run(exercise())
+    assert not local.jobs and not grades._get(str(cold)).get('desired')

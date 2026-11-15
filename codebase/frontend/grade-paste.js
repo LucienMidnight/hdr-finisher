@@ -32,14 +32,53 @@
         await refresh(); if (!copied?.name) return;
         const selection = await dialog(copied, paths, choose);
         if (!selection || !await prepare(paths)) return;
-        // Photos never prepared need Grade's import for their own starting point.
-        for (const [index, path] of paths.entries()) {
-          if (paths.length > 1) status(`Preparing ${index + 1} of ${paths.length} photos for paste…`);
-          await api('/api/library/grade-prepare', {path});
-        }
-        const result = await api('/api/library/grade-paste', {paths, selection});
+        const result = await prepareAndPaste(paths, selection);
+        if (!result) return;
         changed?.(copied, result);
       } finally { running = false; }
+    }
+    async function prepareAndPaste(paths, selection) {
+      const {make} = root.HDRLibraryDialogs;
+      const box = make('dialog', 'application-dialog library-ask');
+      box.setAttribute('aria-label', 'Preparing photos for paste');
+      const header = make('div', 'application-dialog-header');
+      header.append(make('h2', '', 'Preparing photos for paste'));
+      const body = make('div', 'library-ask-body'), message = make('p');
+      body.append(message);
+      const actions = make('div', 'app-dialog-actions'), cancel = make('button', 'button-secondary', 'Cancel');
+      cancel.type = 'button'; actions.append(cancel); box.append(header, body, actions);
+      let token, cancelled = false, applying = false;
+      const stop = () => {
+        if (applying) return;
+        cancelled = true; cancel.disabled = true;
+        message.textContent = 'Stopping preparation… No grades have changed.';
+        if (token) void api('/api/library/grade-preparation-cancel', {token}).catch(() => {});
+      };
+      cancel.addEventListener('click', stop);
+      box.addEventListener('cancel', event => { event.preventDefault(); stop(); });
+      root.addEventListener('pagehide', stop);
+      document.body.append(box); box.showModal();
+      try {
+        ({token} = await api('/api/library/grade-preparation'));
+        for (const [index, path] of paths.entries()) {
+          if (cancelled) return null;
+          message.textContent = `Preparing ${index + 1} of ${paths.length} photos for paste… Waiting for memory or Grade if needed.`;
+          status(message.textContent);
+          await api('/api/library/grade-prepare', {path, token});
+        }
+        if (cancelled) return null;
+        applying = true; cancel.disabled = true;
+        message.textContent = 'Applying grade…';
+        return await api('/api/library/grade-paste', {paths, selection, token});
+      } catch (error) {
+        if (!cancelled) throw error;
+        return null;
+      } finally {
+        root.removeEventListener('pagehide', stop);
+        box.close(); box.remove();
+        if (token) await api('/api/library/grade-preparation-end', {token});
+        if (cancelled) status('Paste cancelled. No grades changed.');
+      }
     }
     function dialog(clipboard, paths, expanded) {
       const {make} = root.HDRLibraryDialogs;
@@ -85,7 +124,7 @@
           details.append(rows); sections.get(group.section).append(details); checks.push({group, ...tick});
         }
         choices.append(tools, list);
-        const notes = make('p'), warnings = make('p'); notes.textContent = `${paths.length} ${paths.length === 1 ? 'photo will' : 'photos will'} change. Each keeps its previous grade. Ctrl+Z undoes the whole paste.`;
+        const notes = make('p'), warnings = make('p'); notes.textContent = 'Checking stored grades. Photos without a starting grade are checked after you confirm. Ctrl+Z undoes the whole paste.';
         body.append(choose, choices);
         const footer = make('div', 'library-ask-body'); footer.append(notes, warnings);
         const actions = make('div', 'app-dialog-actions'), cancel = make('button','button-secondary','Cancel'), yes = make('button','button-primary', paths.length > 1 ? `Paste onto ${paths.length} photos` : 'Paste grade');
@@ -101,8 +140,8 @@
           // Paste is usable at once; the check below only refines the count and warnings.
           yes.disabled = !active.length; clearTimeout(timer); const id = ++previewId;
           if (active.length) timer = setTimeout(async () => {
-            notes.textContent = `Checking ${paths.length === 1 ? 'the photo' : `${paths.length} photos`}… Photos not yet prepared take a few seconds each.`;
-            try { const preview = await api('/api/library/grade-paste', {paths, selection: model.value(), preview:true}); if (id !== previewId || !dialog.isConnected) return; warnings.textContent = (preview.warnings || []).map(warning => typeof warning === 'string' ? warning : `${warning.path.split(/[\\/]/).at(-1)}: ${warning.message}`).join(' '); notes.textContent = `${preview.count} of ${paths.length} ${paths.length === 1 ? 'photo will' : 'photos will'} change. Each keeps its previous grade. Ctrl+Z undoes the whole paste.`; yes.disabled = !preview.count; }
+            notes.textContent = 'Checking stored grades…';
+            try { const preview = await api('/api/library/grade-paste', {paths, selection: model.value(), preview:true}); if (id !== previewId || !dialog.isConnected) return; warnings.textContent = (preview.warnings || []).map(warning => typeof warning === 'string' ? warning : `${warning.path.split(/[\\/]/).at(-1)}: ${warning.message}`).join(' '); notes.textContent = `${preview.unchecked ? `${preview.unchecked} ${preview.unchecked === 1 ? 'photo is' : 'photos are'} checked after you confirm. ${preview.count} checked photos will change.` : `${preview.count} of ${paths.length} ${paths.length === 1 ? 'photo will' : 'photos will'} change.`} Each keeps its previous grade. Ctrl+Z undoes the whole paste.`; yes.disabled = !preview.count && !preview.unchecked; }
             catch(error) { if (id === previewId && dialog.isConnected) { warnings.textContent = error.message; yes.disabled = true; } }
           }, 120);
         }

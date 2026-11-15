@@ -92,7 +92,10 @@ class ImportJobManager:
             self._jobs[job.job_id] = job
             self._active_job_id = job.job_id
             self._prune()
-        self._executor.submit(self._run, job)
+        from .library_scheduler import scheduler
+        scheduler.ask('grade-import-'+job.job_id, 'backend', str(path), 'grade-import', 0, 'Grade')
+        future = self._executor.submit(self._run, job)
+        future.add_done_callback(lambda _: scheduler.finish('grade-import-'+job.job_id))
         return job
 
     def get(self, job_id: str) -> ImportJob:

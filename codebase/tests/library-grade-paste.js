@@ -55,9 +55,13 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     await text.press(`${process.platform === "darwin" ? "Meta" : "Control"}+c`);await text.press('ArrowRight');await text.press(`${process.platform === "darwin" ? "Meta" : "Control"}+v`);
     assert.equal(await text.inputValue(),'normal textnormal text');
     assert.equal(await frame.locator('dialog[open]').count(),0);
+    const firstCheck = page.waitForResponse(response => response.url().endsWith('/api/library/grade-paste') && JSON.parse(response.request().postData()).preview);
     await physical('target.png').click();await frame.locator('#library-grid').press(`${process.platform === "darwin" ? "Meta" : "Control"}+v`);
     const dialog=frame.getByRole('dialog',{name:'Paste Grade From copied.png',exact:true});await dialog.waitFor();
-    assert.match(await dialog.innerText(),/1 photo will change/);
+    await firstCheck.then(async response => {
+      const checked = await response.json();
+      assert.equal(checked.count, 1); assert.equal(checked.unchecked, 0);
+    });
     const choose=dialog.getByRole('button',{name:'Choose what to paste',exact:true});
     assert.equal(await choose.getAttribute('aria-expanded'),'false');await choose.click();
     await dialog.getByRole('button',{name:'None',exact:true}).click();
