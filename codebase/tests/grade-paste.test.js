@@ -129,3 +129,33 @@ test('picker disables immediately while checking and ignores stale preview respo
   assert.equal(yes.disabled,false); assert.equal(dialog.dataset.previewState,'ready');
   nodes.find(node=>node.textContent==='Cancel').fire('click'); await answer;
 });
+
+
+test('linked lane choices mirror Denoise ticks while separate choices retain inactive ticks', () => {
+  const paired = ['hdr','sdr'].map(lane => ({id:lane+'-denoise',lane,settings:[{id:'denoise.'+lane+'.enabled',modified:lane==='sdr'}]}));
+  const model=selectionModel(paired,{lanes:['sdr'],settings:[]});
+  assert.equal(model.linked(),false);
+  model.choose('modified','sdr'); assert.deepEqual(model.value().settings,['denoise.sdr.enabled']);
+  model.toggleLane('sdr',false); assert.equal(model.active().length,0);
+  assert.equal(model.has('denoise.sdr.enabled'),true);
+  model.link(true); model.toggleLane('hdr',true); model.choose('modified','hdr');
+  assert.deepEqual(model.value().settings,['denoise.hdr.enabled','denoise.sdr.enabled']);
+  model.toggle('denoise.hdr.enabled',false); assert.equal(model.has('denoise.sdr.enabled'),false);
+  assert.equal(selectionModel(paired,null,true).linked(),true);
+});
+
+
+test('dialog summary and count requests follow the active side ticks', async () => {
+  const requests=[];
+  const {nodes,timers,controller}=dialogHarness(async (_,body)=>{requests.push(body);return {count:1,unchecked:0};});
+  const groups=['hdr','sdr'].map(lane=>({id:lane+'-denoise',label:'Denoise',section:'Detail',lane,settings:[{id:'denoise.'+lane+'.enabled',label:'Enabled',modified:true}]}));
+  const answer=controller.dialog({name:'source',groups,selection:{lanes:['hdr','sdr'],settings:groups.flatMap(g=>g.settings.map(s=>s.id))}},['target'],true);
+  assert.ok(nodes.some(n=>String(n.textContent).includes('(HDR and SDR)')));
+  const master=nodes.find(n=>n.tag==='label' && n.children.some(c=>c.textContent==='HDR side'));
+  master.children[0].checked=false;master.children[0].fire('change');
+  await [...timers.values()].at(-1)();
+  assert.deepEqual([...requests.at(-1).selection.lanes],['sdr']);
+  assert.ok(nodes.some(n=>String(n.textContent).includes('(SDR)')));
+  assert.ok(nodes.some(n=>n.textContent==='1 of 1 photo will change.'));
+  nodes.find(n=>n.textContent==='Cancel').fire('click'); await answer;
+});

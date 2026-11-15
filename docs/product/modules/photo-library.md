@@ -41,6 +41,38 @@ Output remains 46.2 GB. Evidence: codebase/output/thumbnail-grade-{node,python,
 app}.log and codebase/output/quick-library-check/thumbnail-grade/. Steve's
 running app was left open; its next normal restart loads the fix. No push.
 
+### November 15, 2026: Paired Paste Grade lanes
+
+Steve approved aligned HDR/SDR module columns, shared settings above them,
+and a Same on both sides / Separately selector using the existing Grade
+segmented plate. Different source-side values default to Separately; equal
+values default to linked choices. Remembered asymmetric choices stay separate
+so opening the picker does not silently broaden a previous selection. Linking
+mirrors which settings are selected, never the source values for each side.
+Modified only in linked mode includes modifications from either side. Turning
+a side off retains its ticks and greys its column. Denoise remains per side.
+
+The expanded dialog fits the window with 20 px margins, scrolls its choices,
+and pins lane headers and the result/Undo footer. Paired disclosures open
+together; quiet Mod text follows each name. Shared settings use a compact
+full-width section above the lanes. The summary names the active sides and
+stored-grade counts continue to use exactly the submitted tick selection.
+
+Validation for this commit: saved SDR-only Denoise on/off, no-change counts
+and whole-paste Undo are covered by Python result tests; linked/separate
+choices by JavaScript result tests. The focused Electron check covers native
+clipboard, selective and virtual-copy bulk paste, saved grades, live redraw,
+Ctrl+Z, and the 2560, 1100 and 1408 px window layouts. Review captures are in
+`codebase/output/review/paste-grade-redesign/`.
+
+Full fast checks for the paired-lane change: JavaScript 1004 passed / one
+skipped, followed by all nine focused picker tests passing; Python 3511
+passed / 86 skipped. The unrelated machine tooling settings-agreement test
+fails because Node returns forward slashes and Python backslashes for the
+main checkout path. No tooling or guard changed. The locked paste app check
+passes. An intermediate capture selector matched a closed folder dialog;
+the narrowed selector passes in the final run.
+
 ### November 15, 2026: Paste Grade dialog
 
 The commit containing this note gives Paste Grade a settings summary, a raised

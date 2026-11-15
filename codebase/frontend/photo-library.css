@@ -400,3 +400,28 @@ img:not([src]), img[src=""] { visibility:hidden; }
 :root .grade-paste-dialog .checkbox-row > input[type="checkbox"]:checked::after { content: none; }
 :root .grade-paste-dialog .checkbox-row > input[type="checkbox"]:focus-visible { outline: revert; }
 .grade-paste-dialog .grade-paste-mod { margin-left: 8px; color: var(--muted); font: var(--font-weight-regular) var(--font-size-min)/var(--line-height-normal) var(--font-body); letter-spacing: var(--tracking-none); }
+
+/* Paired paste lanes: only the choices scroll; title, status and actions stay visible. */
+.grade-paste-dialog { width: min(960px, calc(100vw - 40px)); max-height: calc(100dvh - 40px); }
+.grade-paste-dialog:has(.grade-paste-choices:not([hidden])) { height: calc(100dvh - 40px); }
+.grade-paste-dialog > .library-ask-body:nth-child(2) { display: flex; flex-direction: column; overflow: hidden; flex: 1; }
+.grade-paste-dialog .grade-paste-choices { min-height: 0; overflow: auto; flex: 1; }
+.grade-paste-dialog .grade-paste-mode { width: max-content; max-width: 100%; margin-bottom: 8px; }
+.grade-paste-dialog .grade-paste-shared { padding: 12px 0; }
+.grade-paste-dialog .grade-paste-lane-headers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); position: sticky; top: 0; z-index: 1; background: var(--raised); border-bottom: 1px solid var(--plate-edge); }
+.grade-paste-dialog .grade-paste-lane-header { padding: 8px 12px; }
+.grade-paste-dialog .grade-paste-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; border-bottom: 1px solid var(--plate-edge); }
+.grade-paste-dialog .grade-paste-cell { min-width: 0; padding: 0 12px; }
+.grade-paste-dialog .grade-paste-cell:first-child, .grade-paste-dialog .grade-paste-lane-header:first-child { border-right: 1px solid var(--plate-edge); }
+.grade-paste-dialog .grade-paste-subsettings { padding-left: 18px; }
+.grade-paste-dialog .grade-paste-subsettings .checkbox-row { min-height: 32px; }
+.grade-paste-dialog .checkbox-row:has(input:disabled) { opacity: var(--disabled-opacity); }
+.grade-paste-dialog .group-preset-list { padding: 0; }
+.grade-paste-dialog .grade-paste-footer { margin-top: 0; }
+.grade-paste-dialog .library-options[hidden] { display: none; }
+
+.grade-paste-dialog .grade-paste-shared { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 0 12px; }
+.grade-paste-dialog .grade-paste-shared > h3 { align-self: center; }
+.grade-paste-dialog .grade-paste-shared > .library-options { justify-content: flex-end; padding: 0 0 6px; }
+.grade-paste-dialog .grade-paste-shared > .grade-paste-cell { border-right: 0; }
+.grade-paste-dialog .grade-paste-mode > button { font: var(--font-weight-medium) var(--font-size-md)/var(--line-height-normal) var(--font-body); text-transform: none; }

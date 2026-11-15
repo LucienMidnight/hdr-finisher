@@ -1,15 +1,34 @@
 /* Reusable settings picker: selection is independent of the Library and future Looks UI. */
 (function (root) {
   'use strict';
-  function selectionModel(groups, saved) {
+  function selectionModel(groups, saved, sameSides = false) {
     const ids = groups.flatMap(group => group.settings.map(setting => setting.id));
     const settings = new Set((saved?.settings || ids.filter(id => !groups.some(group => ['geometry', 'lens-corrections', 'local-adjustments'].includes(group.id) && group.settings.some(setting => setting.id === id)))) .filter(id => ids.includes(id)));
     const lanes = new Set(saved?.lanes || ['hdr', 'sdr']);
+    let linked = sameSides;
+    const peer = id => id.replace(/\.(hdr|sdr)\./, (_, lane) => '.' + (lane === 'hdr' ? 'sdr' : 'hdr') + '.');
+    if (saved && (lanes.has('hdr') !== lanes.has('sdr') || ids.some(id => ids.includes(peer(id)) && settings.has(id) !== settings.has(peer(id))))) linked = false;
+    function toggle(id, checked) {
+      checked ? settings.add(id) : settings.delete(id);
+      if (linked && ids.includes(peer(id))) checked ? settings.add(peer(id)) : settings.delete(peer(id));
+    }
     return {
+      linked: () => linked,
+      link(value) {
+        linked = value;
+        if (linked) {
+          for (const id of [...settings]) toggle(id, true);
+          if (lanes.size) { lanes.add('hdr'); lanes.add('sdr'); }
+        }
+      },
       has: id => settings.has(id), lane: id => lanes.has(id),
-      toggle(id, checked) { checked ? settings.add(id) : settings.delete(id); },
-      toggleLane(id, checked) { checked ? lanes.add(id) : lanes.delete(id); },
-      choose(choice) { settings.clear(); for (const group of groups) for (const setting of group.settings) if (choice === 'all' || choice === 'modified' && setting.modified) settings.add(setting.id); },
+      toggle,
+      toggleLane(id, checked) { for (const lane of linked ? ['hdr','sdr'] : [id]) checked ? lanes.add(lane) : lanes.delete(lane); },
+      choose(choice, lane) {
+        const scope = groups.filter(group => lane === undefined || (lane === 'shared' ? !group.lane : linked ? !!group.lane : group.lane === lane));
+        for (const group of scope) for (const setting of group.settings) settings.delete(setting.id);
+        for (const group of scope) for (const setting of group.settings) if (choice === 'all' || choice === 'modified' && setting.modified) toggle(setting.id, true);
+      },
       value: () => ({lanes: [...lanes], settings: ids.filter(id => settings.has(id))}),
       active: () => groups.filter(group => (!group.lane || lanes.has(group.lane)) && group.settings.some(setting => settings.has(setting.id))),
     };
@@ -99,7 +118,7 @@
     function dialog(clipboard, paths, expanded) {
       const {make} = root.HDRLibraryDialogs;
       return new Promise(resolve => {
-        const model = selectionModel(clipboard.groups, clipboard.selection);
+        const model = selectionModel(clipboard.groups, clipboard.selection, clipboard.same_sides);
         const dialog = make('dialog', 'application-dialog library-ask library-smart-editor grade-paste-dialog');
         dialog.setAttribute('aria-label', `Paste Grade From ${clipboard.name}`);
         const header = make('div', 'application-dialog-header'), words = make('div');
@@ -116,31 +135,60 @@
           input.addEventListener('change', () => { callback(input.checked); update(); }); row.append(input, make('span', '', label));
           return {row, input};
         }
-        for (const lane of ['hdr', 'sdr']) {
-          const tick = checkbox(`${lane.toUpperCase()} side`, model.lane(lane), value => model.toggleLane(lane, value)); tools.append(tick.row); masters.push({lane, ...tick});
+        const mode = make('div', 'control-mode-switch grade-paste-mode');
+        mode.setAttribute('role', 'group'); mode.setAttribute('aria-label', 'Side selection');
+        const modeButtons = [];
+        for (const [linked, text] of [[true, 'Same on both sides'], [false, 'Separately']]) {
+          const button = make('button', '', text); button.type = 'button';
+          button.addEventListener('click', () => { model.link(linked); update(); }); mode.append(button); modeButtons.push({button, linked});
         }
-        for (const [value, label] of [['all','All'], ['modified','Modified only'], ['none','None']]) {
-          const button = make('button', 'button-secondary', label); button.type = 'button';
-          button.addEventListener('click', () => { model.choose(value); update(); }); tools.append(button);
+        const hint = make('p', 'grade-paste-help');
+        function quickTools(lane) {
+          const bar = make('div', 'library-options');
+          for (const [value, text] of [['all','All'], ['modified','Modified only'], ['none','None']]) {
+            const button = make('button', 'button-secondary', text); button.type = 'button';
+            button.addEventListener('click', () => { model.choose(value, lane); update(); }); bar.append(button);
+          }
+          return bar;
         }
-        const sections = new Map();
-        for (const group of clipboard.groups) {
-          if (!sections.has(group.section)) { const section = make('section'); section.append(make('h3', 'group-preset-subheading', group.section)); list.append(section); sections.set(group.section, section); }
-          const details = make('details'), label = make('summary');
-          const tick = checkbox(`${group.lane ? group.lane.toUpperCase() + ' · ' : ''}${group.label}`, false, checked => { for (const setting of group.settings) model.toggle(setting.id, checked); });
+        function groupCell(group) {
+          if (!group) return make('div', 'grade-paste-cell');
+          const details = make('details', 'grade-paste-cell'), label = make('summary');
+          details.dataset.group = group.id;
+          const tick = checkbox(group.label, false, checked => { for (const setting of group.settings) model.toggle(setting.id, checked); });
           tick.input.setAttribute('aria-label', `${group.lane || ''} ${group.label}`.trim());
-          // Keep disclosure keyboard behaviour separate from the checkbox.
           tick.row.addEventListener('click', event => event.stopPropagation());
-          label.append(tick.row); if (group.modified) label.append(make('small', 'grade-paste-mod', 'Mod')); details.append(label);
-          const rows = make('div', 'library-ask-body');
+          if (group.modified) tick.row.append(make('small', 'grade-paste-mod', 'Mod'));
+          label.append(tick.row); details.append(label);
+          const rows = make('div', 'grade-paste-subsettings');
           for (const setting of group.settings) {
             const child = checkbox(setting.label, model.has(setting.id), checked => model.toggle(setting.id, checked));
-            child.input.dataset.setting = setting.id; if (setting.modified) child.row.append(make('small', 'grade-paste-mod', 'Mod'));
+            child.input.dataset.setting = setting.id;
+            if (setting.modified) child.row.append(make('small', 'grade-paste-mod', 'Mod'));
             rows.append(child.row); checks.push({setting, group, ...child});
           }
-          details.append(rows); sections.get(group.section).append(details); checks.push({group, ...tick});
+          details.append(rows); checks.push({group, ...tick}); return details;
         }
-        choices.append(tools, list);
+        const shared = make('section', 'grade-paste-shared');
+        shared.append(make('h3', 'group-preset-subheading', 'Shared settings'), quickTools('shared'));
+        for (const group of clipboard.groups.filter(group => !group.lane)) shared.append(groupCell(group));
+        const laneHeaders = make('div', 'grade-paste-lane-headers');
+        const linkedTools = quickTools('hdr'); linkedTools.className += ' grade-paste-linked-tools';
+        const laneTools = [];
+        for (const lane of ['hdr', 'sdr']) {
+          const column = make('div', 'grade-paste-lane-header');
+          const tick = checkbox(`${lane.toUpperCase()} side`, model.lane(lane), value => model.toggleLane(lane, value));
+          const bar = quickTools(lane); column.append(tick.row, bar); laneHeaders.append(column);
+          masters.push({lane, ...tick}); laneTools.push(bar);
+        }
+        const keys = [...new Set(clipboard.groups.filter(g => g.lane).map(g => g.id.replace(/^(hdr|sdr)-/, '')))];
+        for (const key of keys) {
+          const pair = make('div', 'grade-paste-pair');
+          const cells = ['hdr','sdr'].map(lane => groupCell(clipboard.groups.find(g => g.id === lane + '-' + key)));
+          for (const cell of cells) cell.addEventListener('toggle', () => { for (const other of cells) if (other.open !== cell.open) other.open = cell.open; });
+          pair.append(...cells); list.append(pair);
+        }
+        choices.append(mode, hint, shared, linkedTools, laneHeaders, list);
         const notes = make('p', 'grade-paste-status'), warnings = make('p');
         notes.setAttribute('role', 'status');
         warnings.hidden = true;
@@ -151,12 +199,23 @@
         cancel.type = yes.type = 'button'; actions.append(cancel, yes); dialog.append(header, body, footer, actions); document.body.append(dialog);
         let answer = null, previewId = 0, timer;
         function update() {
+          for (const {button, linked} of modeButtons) button.setAttribute('aria-pressed', String(model.linked() === linked));
+          hint.textContent = model.linked() ? 'Checkbox choices are linked. Each side uses its own source values.' : 'Choose settings for each side independently.';
+          linkedTools.hidden = !model.linked();
+          for (const bar of laneTools) bar.hidden = model.linked();
+          for (const master of masters) {
+            const settings = clipboard.groups.filter(g => g.lane === master.lane).flatMap(g => g.settings);
+            const count = settings.filter(s => model.has(s.id)).length;
+            master.input.checked = model.lane(master.lane);
+            master.input.indeterminate = model.lane(master.lane) && count > 0 && count < settings.length;
+          }
           for (const row of checks) {
             if (row.setting) { row.input.checked = model.has(row.setting.id); row.input.disabled = !!row.group.lane && !model.lane(row.group.lane); }
             else { const count = row.group.settings.filter(setting => model.has(setting.id)).length; row.input.checked = count === row.group.settings.length; row.input.indeterminate = count > 0 && count < row.group.settings.length; row.input.disabled = !!row.group.lane && !model.lane(row.group.lane); }
           }
           const active = model.active(), names = [...new Set(active.map(group => group.section === 'Outside the grade groups' ? group.label : group.section))];
-          summary.textContent = `Paste ${names.length ? names.join(', ') + ' settings' : 'no settings'}${paths.length > 1 ? ` onto ${paths.length} photos` : ''}.`;
+          const sides = ['hdr','sdr'].filter(lane => active.some(g => g.lane === lane)).map(lane => lane.toUpperCase());
+          summary.textContent = `Paste ${names.length ? names.join(', ') + ' settings' : 'no settings'}${sides.length ? ' (' + sides.join(' and ') + ')' : ''}${paths.length > 1 ? ` onto ${paths.length} photos` : ''}.`;
           clearTimeout(timer); const id = ++previewId;
           function show(preview, error) {
             const result = previewState(paths.length, active.length, preview, error);

@@ -5,7 +5,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..'), output = path.join(root, 'output', 'library-grade-paste');
 fs.mkdirSync(output, {recursive:true});
-const review = path.join(root,'output','review','grade-paste-dialog');
+const review = path.join(root,'output','review','paste-grade-redesign');
 fs.mkdirSync(review,{recursive:true});
 const folder = fs.mkdtempSync(path.join(output, 'photos-'));
 const photos = ['copied.png','target.png','other.png'].map(name => path.join(folder,name));
@@ -66,13 +66,42 @@ const originals = photos.map(photo => fs.readFileSync(photo));
     });
     await dialog.locator('.button-primary:enabled').waitFor();
     await dialog.screenshot({path:path.join(review,'normal.png')});
+    async function capture(name) {
+      const opened = await dialog.locator('details[open]').evaluateAll(nodes => { const ids=nodes.map(n=>n.dataset.group); for(const n of nodes)n.open=false; return ids; });
+      await dialog.locator('.grade-paste-choices').evaluate(el => { const header=el.querySelector('.grade-paste-lane-headers'); el.scrollTop=header.offsetTop-el.offsetTop; });
+      await frame.locator('.grade-paste-dialog[open]:not([data-preview-state="checking"])').waitFor();
+      await dialog.screenshot({path:path.join(review,name)});
+      await dialog.locator('details').evaluateAll((nodes,ids)=>{for(const n of nodes)if(ids.includes(n.dataset.group))n.open=true;},opened);
+    }
     const choose=dialog.getByRole('button',{name:'Choose what to paste',exact:true});
     assert.equal(await choose.getAttribute('aria-expanded'),'false');await choose.click();
-    await dialog.getByRole('button',{name:'None',exact:true}).click();
+    await dialog.getByRole('button',{name:'Separately',exact:true}).click();
+    for (const button of await dialog.getByRole('button',{name:'None',exact:true}).all()) await button.click();
     const exposure=dialog.locator('input[data-setting="global_adjustments.hdr.exposure"]');
     await exposure.evaluate(el=>el.closest('details').open=true);await exposure.check();
     await dialog.locator('.button-primary:enabled').waitFor();
-    await dialog.screenshot({path:path.join(review,'choices-open.png')});
+    await dialog.locator('.grade-paste-lane-headers').evaluate(el=>el.scrollIntoView({block:'start'}));
+    await capture('normal.png');
+    const hdrMaster=dialog.getByRole('checkbox',{name:'HDR side',exact:true});
+    await hdrMaster.uncheck();
+    assert.equal(await exposure.isDisabled(),true);
+    assert.equal(await dialog.locator('input[data-setting="denoise.sdr.enabled"]').isDisabled(),false);
+    await capture('hdr-off.png');
+    await hdrMaster.check();
+    await dialog.getByRole('button',{name:'Same on both sides',exact:true}).click();
+    await capture('linked.png');
+    await dialog.getByRole('button',{name:'Separately',exact:true}).click();
+    // Restore the selective HDR-only choice after the linked review.
+    const sdrExposure=dialog.locator('input[data-setting="global_adjustments.sdr.exposure"]');
+    await sdrExposure.uncheck();
+    const originalSize=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
+    for(const size of [{width:1100,height:794},{width:1408,height:794}]) {
+      await page.setViewportSize(size);
+      const bounds=await dialog.boundingBox(); assert.ok(bounds.width<=size.width && bounds.height<=size.height);
+      await capture(size.width===1100?'narrow.png':'macbook.png');
+    }
+    await page.setViewportSize(originalSize);
+    await dialog.locator('.button-primary:enabled').waitFor();
     const firstPaste=page.waitForResponse(response=>response.url().endsWith('/api/library/grade-paste')&&!JSON.parse(response.request().postData()).preview);
     // Hold one genuine preparation request long enough to capture the progress box.
     let releasePreparation;

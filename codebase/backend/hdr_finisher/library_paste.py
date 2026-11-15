@@ -223,7 +223,10 @@ class LibraryPaste:
     def describe(self):
         if self.clipboard is None: return {'name':None,'groups':[],'selection':None}
         clip=self.clipboard; groups=self.schema(clip['grade'],clip['start'])
-        return {'name':clip['name'],'groups':groups,'selection':self.selection(groups)}
+        same_sides = all(value(clip['grade'], row['id']) == value(clip['grade'], row['id'].replace('.hdr.', '.sdr.'))
+                         for group in groups if group['lane'] == 'hdr' for row in group['settings']
+                         if '.hdr.' in row['id'])
+        return {'name':clip['name'],'groups':groups,'selection':self.selection(groups),'same_sides':same_sides}
 
     def paste(self,paths,selection=None,preview=False,token=None):
         if not self.clipboard: raise ValueError('Copy a grade first.')

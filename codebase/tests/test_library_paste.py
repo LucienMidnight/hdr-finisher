@@ -316,3 +316,26 @@ def test_cancel_is_not_stuck_behind_another_request_for_the_same_photo(setup, mo
         assert time.monotonic()-started<2
     finally:
         lock.release()
+
+
+@pytest.mark.parametrize('enabled', [True, False])
+def test_sdr_only_denoise_saved_count_and_undo(setup, enabled):
+    from hdr_finisher.models import EditDocument
+    photo, store, session, marks, grades = setup
+    saved(setup)
+    before = session.edit_document().model_dump(mode='json')
+    before['denoise']['sdr']['enabled'] = not enabled
+    store.replace_edit_document(str(session.session_id), EditDocument.model_validate(before), session.edit_revision)
+    grades.save(str(session.session_id)); marks.writer.drain()
+    paste = LibraryPaste(grades); paste.copy(str(photo))
+    paste.clipboard['grade']['denoise']['sdr']['enabled'] = enabled
+    paste.clipboard['grade']['denoise']['hdr']['enabled'] = True
+    selection = {'lanes': ['sdr'], 'settings': ['denoise.hdr.enabled', 'denoise.sdr.enabled']}
+    assert paste.paste([str(photo)], selection, preview=True)['count'] == 1
+    assert paste.paste([str(photo)], selection)['count'] == 1
+    marks.writer.drain()
+    expected = deepcopy(before); expected['denoise']['sdr']['enabled'] = enabled
+    assert settings(photo)['grade'] == expected
+    assert paste.paste([str(photo)], selection, preview=True)['count'] == 0
+    marks.undo(); marks.writer.drain()
+    assert settings(photo)['grade'] == before
