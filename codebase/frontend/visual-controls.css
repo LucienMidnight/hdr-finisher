@@ -12,6 +12,8 @@ button, input, select, textarea, output { font-family: var(--font-body); font-va
  min-height: 30px; padding: 0 14px; border: 1px solid var(--plate-edge); border-radius: var(--radius-plate);
  background: var(--plate-up); box-shadow: var(--plate-lift); color: var(--body); font: var(--font-weight-medium) var(--font-size-md) var(--font-body); text-shadow: none;
 }
+/* Icon-only collapse control: no text padding, so the chevron centres in its 30 px plate. */
+:root .panel-collapse-button { padding: 0; }
 :root :is(.button-secondary, .tool-button, .top-icon-button, .panel-collapse-button, .curve-channel):hover:not(:disabled) { background: var(--plate-up-hover); color: var(--text); filter: none; }
 :root :is(.button-secondary, .tool-button, .top-icon-button, .panel-collapse-button, .curve-channel):active:not(:disabled),
 :root :is(.tool-button, .curve-channel)[aria-pressed="true"] { background: var(--plate-down); color: var(--accent-strong); box-shadow: var(--plate-press); }
