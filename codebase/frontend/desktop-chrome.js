@@ -195,6 +195,7 @@
     maximize.setAttribute("aria-label", maximized ? "Restore" : "Maximize");
     maximize.title = maximized ? "Restore" : "Maximize";
     maximize.classList.toggle("is-maximized", maximized);
+    maximize.querySelector("img").src = `/static/assets/icons/tabler/${maximized ? "copy" : "square"}.svg`;
   };
   document.querySelectorAll("[data-window-action]").forEach((button) => {
     button.addEventListener("click", () => void desktop.performWindowAction?.(button.dataset.windowAction));

@@ -1,3 +1,34 @@
+## November 15: W6 window and application icons
+
+The custom Windows maximize control now changes both its accessible name and
+Tabler image on every native window-state event (Maximize / Restore). macOS
+continues to use native window controls. Development launches set the Dock icon
+after app readiness; packaged launches use the same PNG shipped explicitly as
+`Resources/icon.png`. No installed app or system cache was changed.
+
+The logo background radius is reduced from 84.095 to 60 source units, with
+its bounds, gradient and white symbol unchanged. All five background SVG
+copies and the 1024px desktop PNG agree. `tools/regenerate-app-icon.cjs` now
+uses bundled Electron Chromium on macOS and Windows, through the shared GPU
+lock, rather than requiring Edge. The Mac regeneration passed; the PNG and
+small-size review copies were inspected. Windows execution and a packaged
+build remain release-platform checks, not claimed here.
+
+Validation: native-state consumer regression passes repeated maximize/restore
+events; fast Node suite 1,008 passed / one skipped. Python: 3,452 passed,
+144 skipped, one unexpected pass; unrelated grain-reference and cache-publication
+failures belong to concurrent W1 work. Development Electron launches succeed.
+No image-processing or delivered-photo output change; visual sign-off pending.
+
+If an installed icon remains stale, Steve may run the following himself
+(the app should be closed first); this was **not** run by the worker:
+
+```sh
+sudo rm -rf /Library/Caches/com.apple.iconservices.store
+sudo find /private/var/folders -type f -name com.apple.dock.iconcache -delete
+killall Dock
+```
+
 # Module PRD: Desktop and release
 
 ## November 15: icon action tiers

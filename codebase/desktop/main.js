@@ -1360,6 +1360,8 @@ if (!gotLock) {
     libraryStage("app_start", { time: libraryAppStarted / 1000 });
     libraryStage("app_ready");
     app.setAppUserModelId(APP_ID);
+    if (process.platform === "darwin") app.dock?.setIcon(app.isPackaged
+      ? path.join(process.resourcesPath, "icon.png") : path.join(__dirname, "assets", "icon.png"));
     loadApplicationPreferences();
     session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     try {

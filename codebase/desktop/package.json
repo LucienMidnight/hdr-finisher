@@ -45,6 +45,7 @@
       "package.json"
     ],
     "extraResources": [
+      { "from": "assets/icon.png", "to": "icon.png" },
       {
         "from": "../dist/HDR Finisher Backend",
         "to": "backend",
