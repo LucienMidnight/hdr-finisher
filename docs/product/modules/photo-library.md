@@ -1,3 +1,38 @@
+### November 15, 2026: discover stale tiles after grade changes
+
+The commit containing this note makes the saved-settings poll compare each Grid
+and filmstrip tile's own picture identity with the latest grade, even when
+background metadata hydration has already advanced the shared photo record.
+Previously those matching records could hide an older displayed tile from the
+poll. Detected changes now use the existing per-photo finishing invalidation,
+including outstanding discovery, retained direct descriptions and Single work.
+Developed source pixels are retained; unrelated photos are not rebuilt. Pending
+atomic Grade-picture handoffs still keep the old picture until replacement.
+
+Evidence from Steve's running Library was read-only: DSC07727.ARW's desired,
+indexed and baseline grades all identify as f5ea997f8d84...; pending is false,
+with no picture job or error. The stored SDR surface d04784361522... carries
+that same grade and the correct live-63a0b8d67f6c... finishing identity. Logs
+show a failed Grade capture handoff at unix 1794710453.3756 followed by stored
+thumbnail reuse, and another refresh at 1794734149.3133. Thus the available
+cache is correctly identified now; these records do not prove which picture
+Steve saw earlier. The frontend race is reproduced independently by advancing
+the shared photo's grade while retaining its old tile. No evidence attributes
+it to the recent Refresh, reconciliation or Pin commits.
+
+Validation: two regression checks fail before the change; all seven focused
+Refresh/settings checks pass afterward, including filmstrip, failed-handoff
+fallback, current-tile retention and active handoff retention. Full JavaScript
+suite: 1,002 passed / one skipped before the final added filmstrip case; that
+case passes in the final focused run. Python thumbnail/history/paste/live/grade
+selection: 103 passed. Backend import passes. The one locked plain-Electron
+attempt (--grade-return, frozen v1 fixture) stops before Grade because its
+fixture lookup finds no full-size RAW copy; no app acceptance pass is claimed
+and it was not rerun. No timing baseline, tolerance or cache budget changed.
+Output remains 46.2 GB. Evidence: codebase/output/thumbnail-grade-{node,python,
+app}.log and codebase/output/quick-library-check/thumbnail-grade/. Steve's
+running app was left open; its next normal restart loads the fix. No push.
+
 ### November 15, 2026: Paste Grade dialog
 
 The commit containing this note gives Paste Grade a settings summary, a raised

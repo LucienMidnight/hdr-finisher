@@ -2327,16 +2327,22 @@
         let changed = false;
         for (const photo of state.allPhotos) {
           const row = byPath.get(photo.path);
-          if (row && (row.grade_identity || "") !== (photo.grade_identity || "")) {
+          // Metadata hydration can advance the shared photo before its tile.
+          // Compare the presentation owner's snapshot, not only that record.
+          const expected = row && pictureIdentity({...photo, ...row});
+          const staleTile = row && [state.cells, state.filmCells].some(map => {
+            const cell = map.get(photo.path);
+            return cell && cell.identity !== expected;
+          });
+          if (row && ((row.grade_identity || "") !== (photo.grade_identity || "") || staleTile)) {
             // Saved-grade hand-offs replace surfaces atomically. Polling must
             // not remove their old tiles while capture/storage is in flight.
             // A hand-off that finished without replacing the tile, or stopped
             // answering, no longer holds it: the tile is redrawn as Library work.
             const handoff = gradeHandoffs.get(photo.path);
             if (handoff?.grade_identity===row.grade_identity && (handoff.deferred || (!handoff.finished && Date.now()-handoff.received<30000))) continue;
-            tilePool.discard(cell => cell.photo.path === photo.path);
+            invalidateGradePictures([photo.path]);
             Object.assign(photo, { edited: row.edited, grade_identity: row.grade_identity });
-            for (const map of [state.cells, state.filmCells]) { const cell = map.get(photo.path); if (cell) { cell.controller.abort(); cell.element.remove(); map.delete(photo.path); } }
             changed = true;
           }
           // A missing write_reason means "". A false change here restarts Compare

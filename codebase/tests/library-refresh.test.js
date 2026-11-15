@@ -38,3 +38,45 @@ test('Refresh cancels old Grid, filmstrip, Single and zoom presentation owners',
  assert.ok(owners.every(c=>c.signal.aborted));assert.equal(state.cells.size,0);assert.equal(state.filmCells.size,0);
  assert.equal(state.fullDetail,null);assert.equal(state.nativeLoading,false);assert.equal(native.hidden,true);
 });
+
+
+function settingsPoll({photoGrade = 'new', tileGrade = 'old', handoff = null} = {}) {
+ const photo={path:'photo',grade_identity:photoGrade,bytes:10,mtime_ns:20,edited:true,marks:{},albums:[]};
+ const cell={photo,identity:`photo|${tileGrade}|10|20`,controller:new AbortController(),element:{remove(){}}};
+ const invalidated=[];
+ const context={state:{active:true,allPhotos:[photo],cells:new Map([['photo',cell]]),filmCells:new Map(),view:'grid'},
+  document:{hidden:false},selected:()=>photo,shownCells:map=>[...map.values()],
+  api:async()=>({photos:[{...photo,grade_identity:'new'}],events:[]}),
+  pictureIdentity:p=>`${p.path}|${p.grade_identity || ''}|${p.bytes}|${p.mtime_ns}`,
+  gradeHandoffs:new Map(handoff?[['photo',handoff]]:[]),tilePool:{discard(){}},
+  readyWindow:{invalidate(){}},quickWindow:{invalidate(){}},recentPictures:new Map(),
+  HDRLibraryScenes:{invalidate:paths=>invalidated.push(...paths)},
+  applyQuery(){},updateDetails(){},paintGrid(){},paintFilm(){},showSingle(){},status(){},console};
+ const poll=source.slice(source.indexOf('  let writerEvent = 0;'),source.indexOf('  // One poll at a time.'));
+ const invalidate=source.slice(source.indexOf('  function invalidateGradePictures'),source.indexOf('  const pasteGrades ='));
+ vm.runInNewContext(invalidate+poll+';this.poll=pollSettings;',context);
+ return {context,cell,invalidated};
+}
+
+test('settings poll replaces an old tile even when metadata already has the saved grade',async()=>{
+ const {context,cell,invalidated}=settingsPoll();await context.poll();
+ assert.deepEqual(invalidated,['photo']);assert.equal(cell.controller.signal.aborted,true);
+});
+
+test('settings poll invalidates finishing work when it discovers a changed grade',async()=>{
+ const {context,invalidated}=settingsPoll({photoGrade:'old'});await context.poll();
+ assert.deepEqual(invalidated,['photo']);assert.equal(context.state.allPhotos[0].grade_identity,'new');
+});
+
+test('settings poll retains a current tile and an active atomic Grade handoff',async()=>{
+ const current=settingsPoll({tileGrade:'new'});await current.context.poll();assert.deepEqual(current.invalidated,[]);
+ const pending=settingsPoll({handoff:{grade_identity:'new',received:Date.now()}});
+ await pending.context.poll();assert.deepEqual(pending.invalidated,[]);assert.equal(pending.cell.controller.signal.aborted,false);
+});
+
+
+test('a failed handoff cannot leave the old filmstrip tile under updated photo metadata',async()=>{
+ const run=settingsPoll({handoff:{grade_identity:'new',received:Date.now(),finished:true}});
+ run.context.state.cells.clear();run.context.state.filmCells.set('photo',run.cell);
+ await run.context.poll();assert.deepEqual(run.invalidated,['photo']);assert.equal(run.cell.controller.signal.aborted,true);
+});
