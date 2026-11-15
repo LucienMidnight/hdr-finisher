@@ -1,3 +1,32 @@
+### November 15: W1 completed validation (R1–R8)
+
+On the MacBook Neo (A18 Pro, 8 GB, 1408x794), the final fast suites pass:
+Node 1,009 passed / one skipped; Python 3,464 passed / 144 skipped / one
+unexpected pass. Python uses its own shell as `HDR_FINISHER_DESKTOP_PID`, as in
+the earlier minimum-Mac checks, to exclude sibling agents from app accounting.
+The final 66-test W1 focused group also passes. The first full Python run found
+only the obsolete test expectation that reconciliation should revive an
+invalidated file; it was corrected to the R2 contract before the passing rerun.
+
+Exactly two focused GPU drivers ran through the shared lock, one at a time:
+local Detail then Film Look against CPU export (Portra and Velvia, existing
+mean <1 / p99.9 <=3 Delta E 2000 limits), and the 84-case isolated Detail
+reference. A first reference-helper import-path error was fixed before the
+end-to-end driver passed. No broad sweep, further Library smoke, budget change,
+installer or push. This bounded synthetic qualification does not replace the
+existing full-native real-RAW output follow-up. R1 and R4 intentionally change
+local SDR Detail output and retire old finished pixels; all other W1 work
+preserves processing. W2 P3's full background pause remains open.
+
+W1 code and module records are committed separately from concurrent packages.
+Only W1's R1–R8 status/result cells were changed in the shared brief, left for
+the coordinator's combined brief commit so other packages' edits are not swept
+into a W1 commit. Small retained results: `codebase/output/w1-node-fast-final.log`,
+`w1-python-fast-final.log`, `w1-final-focused.log`, `w1-local-detail-film.json`
+and `w1-detail-reference.json` (the latter names share `codebase/output/`).
+Scratch output remains 12.8 GB, almost entirely the shared reusable test photos,
+below the 100 GB limit; temporary driver captures and obsolete run logs removed.
+
 ### November 15: W1 paste handoff and cleanup (R3/R7)
 
 Grade now waits before allocating its imported image until running paste
