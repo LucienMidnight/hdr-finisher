@@ -673,7 +673,8 @@ function renderInterpretationGate() {
   });
 }
 
-function retireActiveSession() {
+function retireActiveSession(replacementSessionId = null) {
+  if (state.session?.session_id && state.session.session_id !== replacementSessionId) window.HDRGradeOpenFailed?.(state.session.session_id);
   suspendGradeInstruments();
   status.clear("match");
   status.clear("grade-save");

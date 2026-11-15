@@ -30,6 +30,9 @@ class ImportJob:
     session_id: str | None = None
     error: str | None = None
     presented: bool = False
+    opening_owner: str | None = None
+    opening_retired: bool = False
+    work_finished: bool = False
     phase_history: list[dict[str, object]] = field(default_factory=list)
     cancel_event: Event = field(default_factory=Event, repr=False)
     state_lock: RLock = field(default_factory=RLock, repr=False)
@@ -69,10 +72,34 @@ class ImportJobManager:
         self._lock = RLock()
         self._jobs: dict[str, ImportJob] = {}
         self._active_job_id: str | None = None
+        self._owners: set[str] = set()
+
+    def connect_owner(self, owner: str) -> None:
+        with self._lock:
+            self._owners.add(owner)
+
+    def disconnect_owner(self, owner: str) -> None:
+        with self._lock:
+            self._owners.discard(owner)
+            for job in self._jobs.values():
+                if job.opening_owner == owner:
+                    job.opening_retired = True
+                    job.cancel_event.set()
+                    self._release_opening(job)
+
+    def retire(self, session_id: str | None = None, job_id: str | None = None, owner: str | None = None) -> None:
+        with self._lock:
+            for job in self._jobs.values():
+                if ((session_id is None or job.session_id == session_id)
+                        and (job_id is None or job.job_id == job_id)
+                        and (owner is None or job.opening_owner == owner)):
+                    job.opening_retired = True
+                    job.cancel_event.set()
+                    self._release_opening(job)
 
     def start(
         self, path: Path, settings: RawImportSettings, replace_session_id: str | None = None,
-        grade: EditDocument | None = None
+        grade: EditDocument | None = None, opening_owner: str | None = None
     ) -> ImportJob:
         job = ImportJob(
             job_id=uuid4().hex,
@@ -80,14 +107,18 @@ class ImportJobManager:
             raw_import_settings=grade.source.raw_import_settings if grade else settings,
             grade=grade,
             replace_session_id=replace_session_id,
+            opening_owner=opening_owner,
         )
         with self._lock:
+            if opening_owner is not None and opening_owner not in self._owners:
+                raise ValueError("Grade opening window is disconnected.")
             if self._active_job_id is not None:
                 previous = self._jobs.get(self._active_job_id)
                 if previous is not None:
                     with previous.state_lock:
                         previous_terminal = previous.state in TERMINAL_IMPORT_STATES
                     if previous_terminal:
+                        previous.opening_retired = True
                         self._release_opening(previous)
                     if not previous_terminal:
                         previous.cancel_event.set()
@@ -102,22 +133,25 @@ class ImportJobManager:
         return job
 
     def _release_opening(self, job):
+        if not job.work_finished:
+            return
         from .library_scheduler import scheduler
         scheduler.finish('grade-import-'+job.job_id)
 
     def _import_finished(self, job):
         with job.state_lock:
-            if job.state != "ready" or job.presented or job.cancel_event.is_set():
+            job.work_finished = True
+            if job.state != "ready" or job.presented or job.opening_retired or job.cancel_event.is_set():
                 self._release_opening(job)
 
-    def presented(self, session_id: str) -> bool:
+    def presented(self, session_id: str, job_id: str | None = None) -> bool:
         # Import's priority survives backend readiness until real pixels have
         # reached Grade. An obsolete session cannot release a newer opening.
         with self._lock:
             job = self._jobs.get(self._active_job_id)
             if job is not None:
                 with job.state_lock:
-                    if job.session_id == session_id and job.state == "ready":
+                    if job.session_id == session_id and job.state == "ready" and (job_id is None or job.job_id == job_id):
                         job.presented = True
                         self._release_opening(job)
                         return True
@@ -143,6 +177,7 @@ class ImportJobManager:
         return job
 
     def close(self) -> None:
+        self.retire()
         with self._lock:
             jobs = list(self._jobs.values())
         for job in jobs:

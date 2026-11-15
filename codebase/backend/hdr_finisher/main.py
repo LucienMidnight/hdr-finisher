@@ -40,6 +40,7 @@ from .media_browser import MediaBrowserError, MediaBrowserInterpretationRequired
 from .library_worker import LibraryWorker
 from .library_api import create_library_router
 from .import_jobs import ImportJobManager
+from .import_opening import add_opening_routes
 from .local_adjustments import spatial_mask_signature
 from .hsl_sampling import HSLSampleRequest, sample_stage
 from .mask_softness import SOFT_ESTIMATE_LIMIT, bitmap_frame_rect, gpu_bitmap_soft_verdict, soft_mask_verdict
@@ -447,6 +448,7 @@ app.include_router(create_gpu_delivery_router())
 from .denoise_measurement import create_router as create_denoise_measurement_router
 app.include_router(create_denoise_measurement_router(store))
 import_jobs = ImportJobManager(store, media_browser_store, workers=1)
+add_opening_routes(app, import_jobs)
 atexit.register(import_jobs.close)
 external_proof_tokens: dict[str, tuple[str, float]] = {}
 SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
@@ -573,15 +575,16 @@ def create_import_job(request: ImportJobRequest) -> dict[str, object]:
                 raise ValueError("RAW re-development must use the active session source.")
         return import_jobs.start(
             source_path, request.raw_import_settings, replace_session_id=request.replace_session_id,
-            grade=store.library_grades.open_settings(source_path, request.item_key, recovery=request.recovery) if request.replace_session_id is None else None
+            grade=store.library_grades.open_settings(source_path, request.item_key, recovery=request.recovery) if request.replace_session_id is None else None,
+            opening_owner=request.opening_owner,
         ).payload()
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/import-jobs/presented")
-def import_picture_presented(session_id: str) -> dict[str, bool]:
-    return {"released": import_jobs.presented(session_id)}
+def import_picture_presented(session_id: str, job_id: str | None = None) -> dict[str, bool]:
+    return {"released": import_jobs.presented(session_id, job_id)}
 
 
 @app.get("/api/import-jobs/{job_id}")
@@ -716,6 +719,7 @@ def get_session(session_id: str) -> SessionSummary:
 
 @app.delete("/api/session/current")
 def clear_session() -> dict[str, str]:
+    import_jobs.retire()
     library_worker.grade_active(False)
     store.clear()
     return {"status": "cleared"}

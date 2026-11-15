@@ -1500,6 +1500,7 @@ class DesktopSessionOpenRequest(BaseModel):
 
 class ImportJobRequest(BaseModel):
     grant: str
+    opening_owner: str | None = None
     item_key: str | None = None
     recovery: bool = False
     raw_import_settings: RawImportSettings = Field(default_factory=RawImportSettings)

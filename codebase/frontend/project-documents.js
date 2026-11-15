@@ -119,14 +119,11 @@ function gradeOpenStage(stage, fields = {}) {
 
 // Release only the import whose pixels were actually presented. Backend
 // readiness alone leaves Library work paused through upload and first draw.
-let gradePresentedSession = null, gradePresentedFlight = null;
-window.HDRGradeOpenPresented = sessionId => {
-  if (!sessionId || sessionId !== state.session?.session_id || gradePresentedSession === sessionId || gradePresentedFlight === sessionId) return;
-  gradePresentedFlight = sessionId;
-  void fetch("/api/import-jobs/presented?"+new URLSearchParams({session_id:sessionId}), {method:"POST"})
-    .then(response=>{if(response.ok)gradePresentedSession=sessionId;}).catch(()=>{})
-    .finally(()=>{if(gradePresentedFlight===sessionId)gradePresentedFlight=null;});
-};
+const gradeOpening = window.HDRGradeOpening.create({fetch, socket:url=>new WebSocket(url),
+  url:location.origin.replace(/^http/,"ws")+"/api/import-opening", current:id=>id===state.session?.session_id});
+window.HDRGradeOpenPresented = sessionId => { void gradeOpening.acknowledge(sessionId); };
+window.HDRGradeOpenFailed = sessionId => gradeOpening.retire(sessionId);
+window.addEventListener("pagehide",()=>gradeOpening.close());
 window.addEventListener("hdrfinisher:preview-presented", event => {
   if(event.detail?.generation===state.previewGeneration?.[event.detail.lane] && event.detail.lane===state.currentView)
     window.HDRGradeOpenPresented(event.detail.sessionId);
@@ -187,6 +184,7 @@ async function openStagedDesktopSource(selection) {
       replaceSessionId: selection.replaceSessionId,
       itemKey: selection.itemKey,
       recovery: recoveryChoice === "restore",
+      openingOwner: await gradeOpening.connect(),
     });
     let job = initialJob;
     if (generation !== state.importGeneration) {
@@ -222,7 +220,7 @@ async function openStagedDesktopSource(selection) {
         const gradeSession = selection.replaceSessionId ? payload.session : await window.HDRGradeSaving.open(payload.session, selection.itemKey, () => generation === state.importGeneration, recoveryChoice);
         if (generation !== state.importGeneration) return;
         gradeOpenStage("grade_open_attached");
-        await activateDesktopSession(gradeSession, retainedProjectPath, generation);
+        await activateDesktopSession(gradeSession, retainedProjectPath, generation, {openingJobId});
         if (generation !== state.importGeneration) return;
         gradeOpenStage("grade_open_controls");
         completed = true;
@@ -279,9 +277,9 @@ async function openStagedDesktopSource(selection) {
 }
 
 // stayOnTab: a background reload of the open photo (paste, outside change) keeps the current page.
-async function activateDesktopSession(session, projectPath, openGeneration = null, { stayOnTab = false } = {}) {
-  gradePresentedSession = null; gradePresentedFlight = null;
-  retireActiveSession();
+async function activateDesktopSession(session, projectPath, openGeneration = null, { stayOnTab = false, openingJobId = null } = {}) {
+  retireActiveSession(session.session_id);
+  gradeOpening.reset(openingJobId);
   if (!stayOnTab) collapseGradeModules();
   state.session = session;
   state.renderCoordinator?.noteSource(session.session_id);

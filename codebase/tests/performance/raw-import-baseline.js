@@ -31,6 +31,12 @@ async function main() {
     args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan,UseSkiaRenderer"],
   } : { headless: false });
   const page = await browser.newPage({ viewport: { width: 2560, height: 1440 } });
+  let presentationAcks=0;
+  if(args.includes('--fail-first-ack'))await page.route('**/api/import-jobs/presented?**',async route=>{
+    presentationAcks++;
+    if(presentationAcks===1)await route.fulfill({status:503,body:'Temporary acknowledgement failure'});
+    else await route.continue();
+  });
   try {
     await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 180_000 });
     await page.waitForFunction(() => window.HDRFinisherPerformance?.gpuSnapshot?.()?.available === true, null, { timeout: 180_000 });
@@ -91,7 +97,7 @@ async function main() {
         grant = await grantResponse.json();
         if (!grantResponse.ok) throw new Error(grant.detail || "RAW grant failed");
         }
-        const { response, payload } = await projectIo.createImportJob(fetch, { grant: grant.grant, rawImportSettings });
+        const { response, payload } = await projectIo.createImportJob(fetch, { grant: grant.grant, rawImportSettings, openingOwner:await gradeOpening.connect() });
         if (!response.ok || !payload?.job_id) throw new Error(payload?.detail || "RAW import failed to start");
         let job = payload;
         while (!['ready', 'error', 'cancelled'].includes(job.state)) {
@@ -103,23 +109,24 @@ async function main() {
         if (job.state !== "ready" || !job.session_id) throw new Error(job.error || `RAW import ended ${job.state}`);
         const session = await projectIo.fetchSession(fetch, job.session_id);
         if (!session.response.ok || !session.payload?.session) throw new Error(session.payload?.detail || "Imported session unavailable");
-        await activateDesktopSession(session.payload.session, "");
+        await activateDesktopSession(session.payload.session, "", null, {openingJobId:job.job_id});
         return job;
       }, {targetPath:rawPath,rawImportSettings});
       await page.waitForFunction((begin) => {
         const lane = state.currentView;
         const generation = state.previewGeneration[lane];
         const preview = window.__rawImportProbe.previews.slice(begin.previews)
-          .some((event) => event.lane === lane && event.generation === generation);
+          .some((event) => event.sessionId === state.session?.session_id && event.lane === lane && event.generation === generation);
         const scope = window.__rawImportProbe.scopes.slice(begin.scopes).some((event) => event.lane === lane);
         return preview && scope && viewerState().status === "ready"
           && state.acceptedPresentation?.lane === lane
           && state.acceptedPresentation?.generation === generation
           && state.acceptedPresentation?.exact === true;
       }, started, { timeout: 600_000 });
+      if(contention&&!args.includes('--before'))await page.waitForFunction(begin=>window.__rawImportProbe.libraryOpenings.slice(begin.libraryOpenings).some(event=>!event.active),started,{timeout:15000});
       const row = await page.evaluate(({ begin, job }) => {
         const ended = performance.now();
-        const previews = window.__rawImportProbe.previews.slice(begin.previews);
+        const previews = window.__rawImportProbe.previews.slice(begin.previews).filter(event=>event.sessionId===job.session_id);
         const scopes = window.__rawImportProbe.scopes.slice(begin.scopes);
         return {
           taskAndScopesMs: ended - begin.at,
@@ -180,9 +187,11 @@ async function main() {
         : "First row cold within the live backend; later rows warm/recovery. Not certified process-cold.",
       rows,
       comparison,
+      presentationAcks,
       summary: { samples: rows.length, medianMs: percentile(values, 0.5), maximumMs: Math.max(...values) },
     };
     fs.writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
+    if(args.includes('--fail-first-ack')&&presentationAcks<sampleCount+1)throw Error('Presentation acknowledgement did not retry');
     if(comparison&&!comparison.pass)throw Error('Grade contention exceeds tolerance: '+JSON.stringify(comparison));
   } finally {
     await browser.close();

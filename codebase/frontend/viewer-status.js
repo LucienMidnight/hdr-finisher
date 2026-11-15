@@ -267,6 +267,7 @@ function previewStatusText(value) {
 }
 
 function markPreviewUnavailable(reason) {
+  window.HDRGradeOpenFailed?.(state.session?.session_id);
   reason = previewStatusText(reason);
   if (state.perspectiveApplyOperation?.signature === geometrySignature()) {
     setPerspectiveStatus(`Perspective saved, but the preview failed: ${reason}. Change preview tier or try again.`, "previewFailed");
@@ -382,6 +383,7 @@ function setIndeterminatePreviewMessage(message) {
 }
 
 function setPreviewError(message) {
+  window.HDRGradeOpenFailed?.(state.session?.session_id);
   message = previewStatusText(message) || "Preview failed to render.";
   if (state.perspectiveApplyOperation?.signature === geometrySignature()) {
     setPerspectiveStatus(`Perspective saved, but the preview failed: ${message}. Change preview tier or try again.`, "previewFailed");

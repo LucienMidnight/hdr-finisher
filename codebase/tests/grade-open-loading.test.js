@@ -10,6 +10,7 @@ function harness() {
   const events = [];
   const c = {
     performance, console, setTimeout, clearTimeout, URLSearchParams,
+    location:{origin:'http://test'},HDRGradeOpening:{create:()=>({connect:async()=> 'renderer',acknowledge(){},retire(){},close(){},reset(){}})},
     addEventListener() {},
     state: { session: { session_id: 'old' }, editDocument: {}, documentDirty: true,
       importGeneration: 0, projectOpenGeneration: 0, byteUploadQueue: Promise.resolve(),
