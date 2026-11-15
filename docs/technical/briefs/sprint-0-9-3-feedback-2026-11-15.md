@@ -415,6 +415,8 @@ Local commits only, no push. N3b changes are committed separately by its worker.
 
 ### N3b result (November 16, MacBook Neo / 8 GB)
 
+**Review fixes (November 16):** accepted-path drag-start snapshots survive direct/tiled and cold preparation; disabled HDR/SDR local grades suppress range diagnostics; grain/order docs corrected. Node: 1,071 passed/one skipped; Python: 3,577 passed/144 skipped/one xpassed; locked overlay checks prove four baseline captures/new-endpoint pixels, identical finished pixels/recipes and byte-identical GPU exports (test startup now establishes delivery before comparison; synthetic gestures no longer enter the real slider handler); locked Library smoke passed. Diagnostics/docs only; no grading/export code changed; local commit, no push.
+
 Built beside N3a in the shared checkout after N2 `5bc997f3`. Preview-only
 files are separate from the grading/local/Match shaders and UI. Local Tone
 controls are recognized generically, including N3a's new Whites. No Auto,

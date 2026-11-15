@@ -42,6 +42,16 @@ test("Effective ranges include the real combined limiter without moving the froz
   assert.equal(actual.limiter, limiter);
 });
 
+for (const lane of ["hdr", "sdr"]) test(`Disabled ${lane.toUpperCase()} local grades have no diagnostic influence`, () => {
+  const local = { hdr_grade: { enabled: true }, sdr_grade: { enabled: true } };
+  local[`${lane}_grade`].enabled = false;
+  for (const selected of ["hdr", "sdr"]) {
+    const result = model.influence(local[`${selected}_grade`], selected === "hdr", "blacks", 0, 0, 203, tone);
+    assert.equal(result.weight, selected === lane ? 0 : 1);
+    assert.equal(result.limiter, selected === lane ? 0 : 1);
+  }
+});
+
 test("Endpoint contact is not proof of clipped channels; drag-start transitions are separate", () => {
   assert.deepEqual(model.endpoint(1, 1, 1), { touching: true, lost: false, newly: false });
   assert.deepEqual(model.endpoint(1, 1.2, 1), { touching: true, lost: true, newly: false });

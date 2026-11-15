@@ -45,11 +45,11 @@ The HDR global order relevant to this module is:
 1. Exposure, Contrast and Pivot
 2. Color / B&W and Exposure Bands
 3. Frozen-guide global Tone: Blacks, Shadows, Midtones, Highlights, Whites
-4. HSL, Curves, Color Grading, Detail, local adjustments, Film Look, and Vignette
-5. Final grain
+4. HSL, Curves, Color Grading, Detail, local adjustments, Film Look (including density grain developed in the negative before paper/scan), and Vignette
+5. Delivery resize and output sharpening (when delivering)
 6. Output Highlight Compression
 
-Peak Fit measures the finished post-grain pixels, so later exposure, creative, finishing, or texture changes cannot invalidate the target.
+Peak Fit measures the finished post-Film-Look pixels, after delivery resize/sharpening when delivering, so exposure, creative, finishing, or texture changes cannot invalidate the target. Grain is part of Film Look, not a separate final display-space pass.
 
 The generated SDR order is Exposure and scene Color/B&W, fixed placement
 and linear-sRGB conversion, then tone/creative controls, locals, Film Look,

@@ -29,7 +29,7 @@
         * smooth(Math.log2(Math.max(luminance, 1e-30) / (knee / 2)))
         * (1 - smooth(2 * white));
     }
-    const enabled = branch.tone_section_enabled !== false;
+    const enabled = branch.enabled !== false && branch.tone_section_enabled !== false;
     return { weight: enabled ? weight * limiter : 0, limiter: enabled ? limiter : 0, grey, peak, knee };
   }
 

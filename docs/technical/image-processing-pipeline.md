@@ -69,10 +69,11 @@ source file
   -> geometry
   -> HDR or SDR global grade
   -> ordered local grades
-  -> film/spatial finishing
+  -> Film Look (negative/development with density grain, paper/scan) and spatial finishing
   -> vignette
-  -> grain
-  -> preview/scopes OR full-resolution output finishing and delivery encoding
+  -> delivery resize/sharpening when delivering
+  -> final Highlight Compression and delivery gamut boundary
+  -> preview/scopes OR delivery encoding
 ```
 
 The application has two renderers with different jobs:
@@ -91,7 +92,7 @@ Future changes should preserve these unless a deliberate architecture migration 
 3. **Proxy before grade.** Interactive CPU work downsamples the source before expensive grading. Never place an unconditional full-resolution filter in the per-slider path.
 4. **Geometry precedes creative grading.** Masks are evaluated against a fixed, geometry-transformed source. A later grade must not move its own selection boundary.
 5. **Order is semantic.** HDR, generated SDR, and authored SDR are different branches. Locals run in list order. Film effects, vignette, and grain occupy deliberate positions.
-6. **Grain is last at the resolution being delivered.** Preview grain is generated at preview resolution. Export excludes ordinary grain, resizes and sharpens, then regenerates grain at final output resolution.
+6. **Grain develops inside Film Look.** Density grain is resolved in the negative before paper/scan and the Look Strength mix. Delivery resize/sharpening resamples the completed film; no separate grain pass follows it. Final Highlight Compression follows delivery finishing.
 7. **Scopes consume the rendered branch.** They do not define another grade order. GPU scopes reuse the presented render; CPU scopes reuse the adjusted-frame cache.
 8. **Overlays are diagnostics.** False color, zebras, clipping indicators, crop guides, and qualification maps do not enter proof or export pixels.
 9. **Stale work never wins.** Frontend generations, backend edit revisions/tokens, cancellation, single-flight work, and latest-owner activation are correctness mechanisms as well as performance mechanisms.
@@ -193,7 +194,8 @@ Implementation: [`finishing.apply_geometry`](../../codebase/backend/hdr_finisher
 | 12 | Negative/development and grain | Grain perturbs developed film density |
 | 13 | Paper and scan | Slides skip paper; Scan Sharpening and Lab Levels; one Look Strength mix |
 | 14 | Detail structure and Vignette | Independent finishing after Film Look |
-| 15 | Highlight Compression (Peak Fit, Fixed cap, Soft Ceiling or Clip), then delivery-primary ceiling | Final target after creative work and finishing |
+| 15 | Delivery resize and output sharpening (when delivering) | Resample the completed film, including its grain |
+| 16 | Highlight Compression (Peak Fit, Fixed cap, Soft Ceiling or Clip), then delivery-primary ceiling | Final target after creative work and finishing |
 
 With Highlight Compression enabled, the final HDR target is a delivery guarantee; the existing encoded-file ceiling checks remain unchanged.
 
@@ -214,8 +216,7 @@ Generated SDR starts from the ACEScg HDR source:
 11. ordered local layers.
 12. lens filter, film resolution, halation, negative and density grain, paper/scanner, one Look Strength mix.
 13. Detail structure and vignette.
-14. final grain dispatch (film density grain is already resolved).
-15. output resize/sharpening when delivering, then Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
+14. output resize/sharpening when delivering, then Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
 
 The scene-to-display conversion boundary is important. Moving a scene-linear control after it changes both its numerical meaning and its visual behavior.
 
@@ -231,10 +232,9 @@ When a source contains an authored SDR rendition, the branch begins from its ret
 6. temporarily convert sRGB to ACEScg for scene-color operations, then return with headroom retained;
 7. frozen-guide five-control Tone, HSL, curves, global color grading and Detail;
 8. ordered local layers;
-9. film response and spatial finishing;
+9. Film Look, including negative/density grain before paper/scan, and spatial finishing;
 10. vignette;
-11. grain;
-12. output resize/sharpening when delivering, then optional Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
+11. output resize/sharpening when delivering, then optional Highlight Compression and unconditional hue-preserving sRGB gamut mapping to `[0, 1]`.
 
 Do not collapse this branch into generated SDR. The authored base is a distinct creative endpoint in a gain-map source. Existing SDR grades intentionally render through the new final-shoulder order; there is no compatibility renderer.
 
@@ -244,7 +244,7 @@ Within one local layer, the CPU applies its supported tone/zone/exposure/contras
 
 ### 5.5 Film and grain separation
 
-`_apply_film_look` applies the lens filter, film resolution, halation, negative/density grain, paper/scanner and the single master mix before Detail. The retained final-grain dispatch resolves density grain at the requested output size; it does not add a second display-space grain field. Export and full-size Proof use the same CPU reference.
+`_apply_film_look` applies the lens filter, film resolution, halation, negative/density grain, paper/scanner and the single master mix before Detail structure. Grain is developed inside Film Look, not dispatched after vignette or regenerated after delivery resizing. Delivery resize/sharpening resamples the completed film before final Highlight Compression. Export and full-size Proof use the same CPU reference.
 
 ## 6. Interactive preview pipeline
 
@@ -332,9 +332,9 @@ Preview proxies are never export sources. Export rerenders the selected full-res
 The shared export sequence in [`exporters.py`](../../codebase/backend/hdr_finisher/exporters.py) is:
 
 1. deep-copy adjustment state and suppress viewer-only diagnostics;
-2. `apply_adjustments(..., include_grain=False)` at full source resolution;
+2. `apply_adjustments(..., include_grain=True, include_output_highlight_compression=False)` at full source resolution, developing grain inside Film Look;
 3. apply output resizing, then edge-aware sharpening;
-4. regenerate seeded grain at the final delivery dimensions;
+4. apply final output Highlight Compression and the delivery gamut boundary;
 5. transform to the delivery color encoding and encode;
 6. validate/independently decode where required;
 7. atomically replace the destination with the completed artifact.
@@ -375,7 +375,7 @@ A future denoiser must not be implemented as “one more adjustment” until its
 3. **Never re-develop RAW per edit.** Source-aware metadata/analysis may be computed once and cached. Ordinary sliders must not cause RAW decode, demosaic, or full-source denoise.
 4. **Proxy before expensive interactive work.** The draft path operates on a bounded source proxy or a precomputed cached proxy product. Full-resolution filtering is reserved for explicit settle/export work with cancellation and bounded memory.
 5. **Compute once, resolve many.** Cache one compact wavelet analysis per required source/lane/tier and let live controls recombine its residual evidence. Local denoise masks are out of scope for v2; a future local design must never run one denoiser per layer.
-6. **Design CPU, GPU, scopes, and export together.** CPU defines the numerical contract. WebGPU must match or explicitly fall back. Scopes must analyze the same processed result. Export must state whether it recomputes at full resolution, how tiles overlap, and where grain remains last.
+6. **Design CPU, GPU, scopes, and export together.** CPU defines the numerical contract. WebGPU must match or explicitly fall back. Scopes must analyze the same processed result. Export must state whether it recomputes at full resolution, how tiles overlap, and how Film Look grain is resampled before the final cap.
 7. **Tile spatial algorithms with halos.** Full-resolution neighborhoods require bounded tiles/strips plus enough overlap to avoid seams. Track peak live bytes, not only final-array size.
 8. **Keep viewport state independent.** A denoised or refined proxy carries source dimensions/aspect identity; it never owns CSS width, zoom, or scroll state.
 9. **Preserve scheduler/backpressure behavior.** New work needs revision/generation checks, cancellation, latest-wins presentation, single-flight computation, and bounded queues. No image-sized readback fallback.
