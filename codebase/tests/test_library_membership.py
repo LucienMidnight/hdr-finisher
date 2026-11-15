@@ -199,3 +199,58 @@ def test_foreground_recovery_finishes_while_background_helper_is_paused(tmp_path
     assert marks._rows([str(photos[0])])[str(photos[0])]["marks"]["rating"] == 4
     assert not candidates(index)
     assert marks.writer.status()["waiting"] == 1
+
+
+def test_scoped_pin_changes_match_full_reconciliation(tmp_path):
+    folder, photos, browser, marks, index = library(tmp_path)
+    marks.change(photos, MarkChange(rating=4)); marks.writer.drain()
+    marks.album_create("Keep", [photos[0]]); marks.writer.drain()
+    # A pending edit outside albums must remain recoverable after unpin.
+    db = marks._connect()
+    with db: db.execute("UPDATE photos SET pending=1 WHERE path=?", (str(photos[1]),))
+    db.close()
+    unrelated = tmp_path / "shoot-extra"; unrelated.mkdir()
+    Image.new("RGB", (8,8)).save(unrelated / "other.png")
+    browser.add_pin(str(unrelated))
+    index.remember_scan(str(unrelated), scan_folder(unrelated)["photos"])
+    def snapshot():
+        return {table: sorted(marks._query(f"SELECT * FROM {table}")) for table in
+            ("files", "photos", "photo_tags", "album_photos", "settings_writes")}
+    for pin in (False, True):
+        if pin:
+            browser.add_pin(str(folder))
+            index.remember_scan(str(folder), scan_folder(folder)["photos"])
+            marks.read(photos)
+        else: browser.remove_pin(str(folder))
+        index.queue_membership(folders=[str(folder)])
+        thread = index._membership_thread
+        if thread: thread.join(10); assert not thread.is_alive()
+        assert index._membership_progress["state"] == "idle"
+        scoped = snapshot()
+        recovery = index.membership.path
+        saved = recovery.read_bytes()
+        index.membership.reconcile()
+        assert snapshot() == scoped
+        assert recovery.read_bytes() == saved
+        assert str(photos[0]) in candidates(index)
+        if not pin:
+            assert marks._query("SELECT path FROM photos WHERE path=?", (str(photos[1]),))
+            assert str(photos[2]) not in candidates(index)
+    index.close()
+
+
+def test_folder_impact_and_scope_preserve_nested_pins_and_literal_names(tmp_path):
+    folder, photos, browser, marks, index = library(tmp_path)
+    nested = folder / "keep_%_[x]"; nested.mkdir()
+    photo = nested / "kept.png"; Image.new("RGB", (8,8)).save(photo)
+    browser.add_pin(str(nested))
+    index.remember_scan(str(nested), scan_folder(nested)["photos"])
+    assert index.membership.impact(folder=str(folder)) == {"leaving": 3, "kept": 0}
+    browser.remove_pin(str(folder))
+    for batch in index.membership.folder_batches([str(folder)]):
+        index.membership.maintain(batch, background=False)
+    assert candidates(index) == {str(photo)}
+    assert index.membership.impact(folder=str(nested)) == {"leaving": 1, "kept": 0}
+    nested.rename(folder / "offline")
+    assert index.membership.impact(folder=str(nested)) == {"leaving": 1, "kept": 0}
+    index.close()

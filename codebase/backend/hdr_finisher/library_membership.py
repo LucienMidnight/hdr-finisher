@@ -84,15 +84,72 @@ class LibraryMembership:
         finally:
             db.close()
 
+    @staticmethod
+    def folder_clause(column, folder):
+        prefix = str(folder).rstrip("/\\") + os.sep
+        # SQLite performs the Windows case-insensitive comparison. Values are
+        # bound parameters, so %, _, brackets and quotes remain literal names.
+        if os.name == "nt":
+            return f"substr({column},1,?) = ? COLLATE NOCASE", (len(prefix), prefix)
+        return f"({column}>=? AND {column}<?)", (prefix, prefix[:-1] + chr(ord(prefix[-1]) + 1))
+
+    def folder_batches(self, folders):
+        """Read only affected keys, in bounded pages, outside request threads."""
+        if not self.marks.database.exists():
+            return
+        db = self.marks._connect()
+        try:
+            tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            for folder in folders:
+                for table in ("files", "photos", "album_photos", "photo_grades", "library_copies"):
+                    if table not in tables:
+                        continue
+                    column = "source" if table == "library_copies" else "path"
+                    clause, args = self.folder_clause(column, folder)
+                    after = ""
+                    while True:
+                        self.index.wait_for_upkeep()
+                        batch = [r[0] for r in db.execute(
+                            f"SELECT DISTINCT {column} FROM {table} WHERE {clause} AND {column}>? ORDER BY {column} LIMIT 200", (*args, after))]
+                        if not batch:
+                            break
+                        yield sorted({source(p) for p in batch})
+                        after = batch[-1]
+        finally:
+            db.close()
+        # A moved/deleted family can remain only in the durable recovery list.
+        for record in list(self._saved_records.values()):
+            paths = {source(row[1] if table == "album_photos" else row[0])
+                for table, rows in record.items() for row in rows}
+            affected = [p for p in paths if any(self.under(p, f) for f in folders)]
+            if affected:
+                yield affected
+
+    def folder_impact(self, folder):
+        if not self.marks.database.exists():
+            return {"leaving": 0, "kept": 0}
+        remaining = [p for p in self.pins(check_available=False) if os.path.normcase(p) != os.path.normcase(str(folder))]
+        clause, args = self.folder_clause("f.path", folder)
+        args = list(args)
+        for pin in remaining:
+            other, values = self.folder_clause("f.path", pin)
+            clause += " AND NOT " + other
+            args.extend(values)
+        db = self.marks._connect()
+        try:
+            # Album copies keep the physical family, exactly as _reconcile_piece.
+            rows = db.execute(f"SELECT CASE WHEN EXISTS (SELECT 1 FROM album_photos a WHERE a.path=f.path OR (a.path>=f.path||'|copy|' AND a.path<f.path||'|copy}}')) THEN 1 ELSE 0 END AS kept, COUNT(*) FROM files f WHERE {clause} GROUP BY kept", args)
+            counts = dict(rows)
+            return {"leaving": counts.get(0, 0), "kept": counts.get(1, 0)}
+        finally:
+            db.close()
+
     def impact(self, folder=None, album=None, paths=None):
+        if folder:
+            return self.folder_impact(folder)
         with self.marks._lock:
             pins = self.pins()
-            remaining = [p for p in pins if os.path.normcase(p) != os.path.normcase(str(folder))] if folder else pins
             members = self.marks._query("SELECT album,path FROM album_photos")
-            kept = {source(p) for a,p in members}
-            if folder:
-                affected = {p for (p,) in self.marks._query("SELECT path FROM files") if self.under(p, folder) and not self.pinned(p, remaining)}
-                return {"leaving": len(affected-kept), "kept": len(affected & kept)}
             removed = set(paths) if paths is not None else {p for a,p in members if a.casefold() == album.casefold()}
             survivors = {source(p) for a,p in members if not (a.casefold() == album.casefold() and p in removed)}
             leaving = {source(p) for a,p in members if a.casefold() == album.casefold() and p in removed and not self.pinned(p, pins)} - survivors

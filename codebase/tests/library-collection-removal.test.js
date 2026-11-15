@@ -50,9 +50,9 @@ function navigationHarness(fail=false, fallback=false) {
  const state={pins:[pin,...(fallback?[{path:'C:/other',available:true}]:[])],folderSelection:new Set([pin.path]),path:pin.path,lastFolder:pin.path,collection:null,photos:[{path:'one'}],allPhotos:[{path:'one'}],selection:new Set(['one']),index:0,anchor:0,view:'single',cells:new Map(),filmCells:new Map(),scan:new AbortController(),single:new AbortController(),native:new AbortController()};
  const elements=new Map(),visited=[], error=new Error('remove failed');let menu;
  const get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};get('place-title').textContent='Photos';
- const context=vm.createContext({state,offlineSources:new Set(),pinsRevision:0,$:get,api:async route=>{if(route.endsWith('/impact'))return {leaving:1,kept:0};if(route.endsWith('/remove')){if(fail)throw error;return {};}throw new Error('GET failed');},HDRLibraryDialogs:{ask:async()=>true},showAllAction:()=>({label:"Show all files"}),showMenu:(_e,actions)=>menu=actions,paintFolderSelection(){},folderRow:()=>new Element(),status(){},clearPrefetch(){},clearCells:m=>m.clear(),albums:{setActive(){},refresh:async()=>{}},smart:{setActive(){}},tagWindow:{refresh:async()=>{}},setView:v=>state.view=v,updateDetails(){},paintGrid(){},paintFilm(){},browse:async p=>visited.push(p),reopen:async()=>{},portableState:()=>({path:state.path}),restoreState:async()=>{state.scan=new AbortController();},navigation:{orderPins:p=>p}});
+ const context=vm.createContext({state,offlineSources:new Set(),pinsRevision:0,$:get,api:async route=>{if(route.endsWith('/impact'))return {leaving:1,kept:0};if(route.endsWith('/remove')){if(fail)throw error;return {pinned:state.pins.filter(p=>p.path!==pin.path)};}throw new Error('GET failed');},HDRLibraryDialogs:{ask:async()=>true},showAllAction:()=>({label:"Show all files"}),showMenu:(_e,actions)=>menu=actions,paintFolderSelection(){},folderRow:()=>new Element(),status(){},clearPrefetch(){},clearCells:m=>m.clear(),albums:{setActive(){},refresh:async()=>{}},smart:{setActive(){}},tagWindow:{refresh:async()=>{}},setView:v=>state.view=v,updateDetails(){},paintGrid(){},paintFilm(){},browse:async p=>visited.push(p),reopen:async()=>{},portableState:()=>({path:state.path}),restoreState:async()=>{state.scan=new AbortController();},navigation:{orderPins:p=>p}});
  vm.runInContext(functionBody('function leaveRemovedCollection()', 'void smart.refresh'),context);
- vm.runInContext(functionBody('async function refreshPins()', 'function paintFolderSelection()'),context);
+ vm.runInContext(functionBody('async function refreshPins(', 'function paintFolderSelection()'),context);
  vm.runInContext(functionBody('function showFolderMenu(', '$("folders").addEventListener'),context);
  return {state,visited,error,title:get('place-title'),leave:()=>vm.runInContext('leaveRemovedCollection()',context),unpin:()=>{context.event={target:{closest:()=>null}};vm.runInContext('showFolderMenu(event,"C:/photos")',context);return menu.find(a=>a.label==='Unpin folder').run();}};
 }
@@ -64,7 +64,7 @@ for(const index of [1,2]) test(`Single removal at ${index} retains Single with n
 test('pins: newest list wins',async()=>{
  const reads=[], state={pins:[]}, folders=new Element();
  const context=vm.createContext({state,pinsRevision:0,offlineSources:new Set(),api:()=>{const d=deferred();reads.push(d);return d.promise;},navigation:{orderPins:p=>p},$:()=>folders,folderRow:pin=>pin,paintGrid(){}});
- vm.runInContext(functionBody('async function refreshPins()', 'function paintFolderSelection()'),context);
+ vm.runInContext(functionBody('async function refreshPins(', 'function paintFolderSelection()'),context);
  const first=vm.runInContext('refreshPins()',context),second=vm.runInContext('refreshPins()',context);
  reads[1].resolve({pinned:[{path:'new'}]});await second;reads[0].resolve({pinned:[{path:'old'}]});await first;
  assert.equal(state.pins[0].path,'new');assert.equal(folders.children[0].path,'new');

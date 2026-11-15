@@ -28,7 +28,8 @@ const folder=fs.mkdtempSync(path.join(out,"shoot-")),newName="เที่ยว
  await page.getByText("Test Patterns is hidden from the Library. Its files remain on disk.",{exact:true}).waitFor();
  await page.locator("#settings-close").click();
  await lib.waitForFunction(()=>!Array.from(document.querySelectorAll(".library-folder-row .folder-name")).some(el=>el.textContent==="Test Patterns"));
- await lib.evaluate(async folder=>{await fetch("/api/library/pins",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths:[folder]})});},folder);
+ const pinMs = await lib.evaluate(async folder=>{const start=performance.now();const response=await fetch("/api/library/pins",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({paths:[folder]})});if(!response.ok)throw new Error(await response.text());await HDRLibrary.refreshPins(await response.json());await new Promise(requestAnimationFrame);return performance.now()-start;},folder);
+ assert.ok(pinMs<1000, `Pin to painted folder list: ${pinMs} ms`);
  await lib.goto(new URL("/library",process.env.HDR_FINISHER_URL).href);await lib.waitForFunction(()=>window.HDRLibrary && HDRLibrary.getSnapshot().count===1);
  const row=()=>lib.locator('.library-folder-row[data-path]').filter({hasText:path.basename(folder)}).first();
  await row().click({button:"right"});await lib.getByRole("menuitem",{name:"New folder inside…",exact:true}).click();
@@ -38,5 +39,13 @@ const folder=fs.mkdtempSync(path.join(out,"shoot-")),newName="เที่ยว
  await row().click({button:"right"});await lib.getByRole("menuitem",{name:"Rename label…",exact:true}).click();await lib.locator('.library-ask input[name="name"]').fill("Disposable shoot");await lib.getByRole("button",{name:"Save label",exact:true}).click();
  await lib.getByRole("button",{name:"Disposable shoot",exact:true}).waitFor();assert.ok(fs.existsSync(folder));await lib.locator("#library-undo").click();await lib.getByRole("button",{name:path.basename(folder),exact:true}).waitFor();
  await row().click({button:"right"});assert.equal(await lib.getByRole("menuitem",{name:"Show in Explorer",exact:true}).count(),1);await page.keyboard.press("Escape");
+ await lib.evaluate(folder=>{window.unpinFolder=folder;},folder);
+ await row().click({button:"right"});await lib.getByRole("menuitem",{name:"Unpin folder",exact:true}).click();
+ const confirm=lib.getByRole("button",{name:"Unpin folder",exact:true});await confirm.waitFor();
+ await lib.evaluate(()=>{window.unpinStarted=performance.now();});await confirm.click();
+ await lib.waitForFunction(()=>!Array.from(document.querySelectorAll(".library-folder-row")).some(el=>el.dataset.path===window.unpinFolder) && document.querySelector("#library-status").textContent.includes("Folder unpinned"));
+ const unpinMs=await lib.evaluate(()=>performance.now()-window.unpinStarted);
+ assert.ok(unpinMs<1000, `Unpin confirmation to list/status: ${unpinMs} ms`);
+ console.log(JSON.stringify({pinToPaintMs:pinMs,unpinToListAndStatusMs:unpinMs}));
  assert.deepEqual(errors,[]);console.log("PASS: Unicode folder, safe empty-folder Undo, pin label and Undo, Explorer entry on disposable shoot.");
 }finally{try { await browser.close(); } finally { fs.rmSync(folder,{recursive:true,force:true}); }}})().catch(e=>{console.error(e);process.exitCode=1;});

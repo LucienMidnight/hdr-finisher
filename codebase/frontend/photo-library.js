@@ -1835,9 +1835,9 @@
     void refreshPins().then(() => reopen()).catch(error => status(error.message));
   });
   let pinsRevision = 0;
-  async function refreshPins() {
+  async function refreshPins(saved = null) {
     const request = ++pinsRevision;
-    const result = await api("/api/library/pins"); if (request !== pinsRevision) return; state.pins = navigation.orderPins(result.pinned);
+    const result = saved || await api("/api/library/pins"); if (request !== pinsRevision) return; state.pins = navigation.orderPins(result.pinned);
     const key = path => path.replaceAll("\\", "/").replace(/\/$/, "").toLowerCase();
     for (const pin of state.pins) if ([...offlineSources].some(path => key(path).startsWith(key(pin.path) + "/"))) pin.available = false;
     $("folders").replaceChildren(...state.pins.map((pin) => folderRow(pin))); paintGrid();
@@ -1880,8 +1880,9 @@
       const saved = leaving ? portableState() : null;
       if (leaving) state.scan?.abort(); // Stop listing before membership is removed.
       ++pinsRevision;
+      let pinResult;
       try {
-        await api(pinned ? "/api/library/pins/remove" : "/api/library/pins", pinned ? { path: pinned.path } : { paths: [path] });
+        pinResult = await api(pinned ? "/api/library/pins/remove" : "/api/library/pins", pinned ? { path: pinned.path } : { paths: [path] });
       } catch (error) {
         ++pinsRevision; await refreshPins().catch(() => {});
         if (saved) await restoreState(saved, { refreshPins: false }).catch(() => {});
@@ -1894,7 +1895,7 @@
         $("folders").replaceChildren(...state.pins.map(pin => folderRow(pin)));
         if (leaving) leaveRemovedCollection();
       }
-      await refreshPins().catch(error => status(error.message));
+      await refreshPins(pinResult).catch(error => status(error.message));
       updateDetails(); void albums.refresh().catch(error => status(error.message)); void tagWindow.refresh().catch(error => status(error.message));
       if (!leaving && (state.collection || state.path)) void reopen();
       status(pinned ? "Folder unpinned. Photos stay where they are." : "Folder pinned.");

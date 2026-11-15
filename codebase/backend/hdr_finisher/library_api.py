@@ -1274,7 +1274,7 @@ def create_library_router(worker, browser, store=None):
         try:
             result = set_test_patterns_enabled(browser, request.enabled)
             if result.pop("changed"):
-                index.membership.reconcile()
+                index.queue_membership(folders=[result["folder"]])
                 index.kick()
             return result
         except (OSError, ValueError, ImportError) as exc:
@@ -1289,7 +1289,7 @@ def create_library_router(worker, browser, store=None):
             previous = {item["path"] for item in browser.pinned()}
             for path in paths:
                 browser.add_pin(path)
-            index.membership.reconcile()
+            index.queue_membership(folders=paths)
             index.kick()
             return {"pinned": folder_commands.pins(), "skipped": sum(path in previous for path in paths)}
         except (OSError, ValueError) as exc:
@@ -1307,17 +1307,10 @@ def create_library_router(worker, browser, store=None):
     def remove_pin(command: FolderRequest):
         # Missing/offline folders must still be removable from preferences.
         try:
-            membership = index.membership
-            with marks._lock:
-                impact = membership.impact(folder=command.path)
-                # Only this folder's photos can leave; a whole-library pass
-                # made unpinning wait on every other folder.
-                leaving = {p for table in ("files", "photos")
-                    for (p,) in marks._query(f"SELECT path FROM {table}") if membership.under(p, command.path)}
-                pinned = browser.remove_pin(command.path)
-            membership.reconcile(sorted(leaving))
+            browser.remove_pin(command.path)
+            index.queue_membership(folders=[command.path])
             index.kick()
-            return {"pinned": pinned, **impact}
+            return {"pinned": folder_commands.pins()}
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=user_error(exc)) from exc
 

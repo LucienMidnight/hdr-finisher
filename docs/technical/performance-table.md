@@ -1,3 +1,10 @@
+## November 15: Pin-folder command feedback (Windows PC)
+
+| Action | Target | Result | Conditions / revision |
+| --- | --- | --- | --- |
+| Pin folder / Unpin folder, through list feedback | <1 s | Pin 0.015 s; Unpin 0.076 s | November 15, Windows PC, 2560x1440, isolated Electron folder-controls check under shared GPU lock; this commit, parent `6b92f6da`. Disposable one-photo folder, startup/background work enabled. Pin starts at API request, ends at next folder-list animation frame using returned pins; Unpin starts before confirmation click, ends after list removal and status. Steve's running app untouched. |
+| Pin / Unpin / unpin impact, request response with upkeep blocked | <1 s | 0.037 / 0.003 / 0.123 s | November 15, Windows PC, same revision; FastAPI TestClient, synthetic 140,000-file SQLite Library, background worker held at upkeep gate, no picture decode. Confirms requests do not wait for reconciliation; not a large-Library on-screen measurement. Earlier diagnosed real-app Pin wait was about 68 s while full reconciliation ran inside the request. |
+
 ## November 14: focused 0.9.3 release on the minimum Mac
 
 | Action | Existing guard | Mac result | Conditions / evidence |

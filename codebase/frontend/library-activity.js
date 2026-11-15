@@ -9,6 +9,8 @@
     return `Writing settings: ${count(writer.done)} of ${count(writer.total)}`;
   }
   function indexText(index) {
+    if (index.membership?.state === "updating") return `Updating Library membership ? ${count(index.membership.done)} checked`;
+    if (index.membership?.state === "failed") return "Library membership update needs attention";
     if (index.state === "failed") return "Indexing stopped · Re-scan to try again";
     if (index.state === "retrying") return "Indexing is waiting to try again";
     if (index.state === "off") return "Background indexing is off";
@@ -64,7 +66,7 @@
     const writer = health.writer, index = health.index, jobs = [];
     if (writer.waiting) jobs.push(writerText(writer));
     if (checkText(index)) jobs.push(checkText(index));
-    if (index.state === "indexing" || index.state === "retrying" || index.paused) jobs.push(indexText(index));
+    if (index.membership?.state === "updating" || index.membership?.state === "failed" || index.state === "indexing" || index.state === "retrying" || index.paused) jobs.push(indexText(index));
     if (health.file_commands?.jobs?.length) jobs.unshift(`File commands: ${health.file_commands.jobs[0].done} of ${health.file_commands.jobs[0].total}`);
     const pause=(typeof window!=="undefined"?window.HDRLibraryGrants?.snapshot().jobs:health.grants)?.find(j=>j.reason==="paused for Grade");
     if(pause)return `Library paused: memory is in use by ${pause.grade} in Grade`;

@@ -99,3 +99,15 @@ test("hidden photo failures do not count in Needs attention", () => {
   assert.match(summary(health,path=>path.endsWith('.arw')),/Needs attention: 1/);
   assert.equal(summary(health,()=>false),'Activity');
 });
+
+
+test("queued membership remains visible while the index is idle", () => {
+  const health = rest();
+  health.index.membership = {state: "updating", done: 16};
+  assert.match(summary(health), /16/);
+  assert.notEqual(summary(health), "Activity");
+  health.index.membership.state = "idle";
+  assert.equal(summary(health), "Activity");
+  health.index.membership.state = "failed";
+  assert.notEqual(summary(health), "Activity");
+});

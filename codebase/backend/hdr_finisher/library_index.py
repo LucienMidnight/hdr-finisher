@@ -40,6 +40,12 @@ class LibraryIndex:
         self._thread = None
         self._upkeep_thread = None
         self._upkeep_ident = None
+        self._membership_ident = None
+        self._membership_thread = None
+        self._membership_folders = set()
+        self._membership_paths = set()
+        self._membership_progress = {"state": "idle", "done": 0}
+        self._membership_id = "membership-upkeep-" + str(id(self))
         self._upkeep_id = "startup-upkeep-" + str(id(self))
         from .library_folder_checks import FolderChecks
         self.checks = FolderChecks(self)
@@ -52,13 +58,14 @@ class LibraryIndex:
 
     def wait_for_upkeep(self):
         """Yield between photo families, without owning a database lock."""
-        if get_ident() == self._upkeep_ident:
+        if get_ident() in (self._upkeep_ident, self._membership_ident):
             from .library_scheduler import scheduler, MINIMUM
+            upkeep_id = self._membership_id if get_ident() == self._membership_ident else self._upkeep_id
             with scheduler.lock:
-                scheduler.finish(self._upkeep_id)
+                scheduler.finish(upkeep_id)
                 if self._stop.is_set():
                     raise CancelledError()
-                job = scheduler.ask(self._upkeep_id, self._upkeep_id, str(self.browser.root),
+                job = scheduler.ask(upkeep_id, upkeep_id, str(self.browser.root),
                                     "upkeep", MINIMUM, "eventually")
             job.ready.wait()
             if self._stop.is_set():
@@ -97,6 +104,52 @@ class LibraryIndex:
             from .library_scheduler import scheduler
             scheduler.finish(self._upkeep_id)
             self._upkeep_ident = None
+
+    def queue_membership(self, *, folders=(), paths=()):
+        """Acknowledge scope changes without waiting for database upkeep."""
+        with self._state:
+            self._membership_folders.update(folders)
+            self._membership_paths.update(paths)
+            self._membership_progress = {"state": "updating", "done": 0}
+            if self._membership_thread is None:
+                self._membership_thread = Thread(target=self._membership_upkeep, name="hdr-library-membership", daemon=True)
+                self._membership_thread.start()
+
+    def _membership_upkeep(self):
+        from .library_scheduler import scheduler
+        from .cpu_budget import lower_thread_priority
+        self._membership_ident = get_ident()
+        lower_thread_priority()
+        try:
+            while not self._stop.is_set():
+                with self._state:
+                    folders, paths = sorted(self._membership_folders), sorted(self._membership_paths)
+                    self._membership_folders.clear()
+                    self._membership_paths.clear()
+                    if not folders and not paths:
+                        scheduler.finish(self._membership_id)
+                        self._membership_progress["state"] = "idle"
+                        self._membership_ident = None
+                        self._membership_thread = None
+                        return
+                for batch in self.membership.folder_batches(folders):
+                    self.membership.maintain(batch)
+                    with self._state:
+                        self._membership_progress["done"] += len(batch)
+                if paths:
+                    self.membership.maintain(paths)
+        except CancelledError:
+            pass
+        except Exception as error:
+            with self._state:
+                self._membership_progress["state"] = "failed"
+            problem("membership_upkeep_failed", self.browser.root, error, "recovery retained; retry on next launch")
+        finally:
+            with self._state:
+                if self._membership_ident == get_ident():
+                    scheduler.finish(self._membership_id)
+                    self._membership_ident = None
+                    self._membership_thread = None
 
     # Personal settings stay outside the database, which can be rebuilt.
 
@@ -307,6 +360,7 @@ class LibraryIndex:
         self._stop.set()
         from .library_scheduler import scheduler
         scheduler.finish(self._upkeep_id)
+        scheduler.finish(self._membership_id)
         self.checks.wake.set()
         with self.checks.lock:
             for signal in self.checks.signals.values(): signal.close()
@@ -328,7 +382,7 @@ class LibraryIndex:
             elif self._paused and progress["state"] != "idle":
                 progress["state"] = "paused"
             helper = self.worker.status()["paused"] if self.worker is not None else False
-            return {**progress, "enabled": enabled, "paused": self._paused, "waiting": bool(helper and progress["state"] == "indexing"), "checks": self.checks.status(), "checkWaiting": bool(helper)}
+            return {**progress, "membership": dict(self._membership_progress), "enabled": enabled, "paused": self._paused, "waiting": bool(helper and progress["state"] == "indexing"), "checks": self.checks.status(), "checkWaiting": bool(helper)}
 
     def _set(self, **progress):
         with self._state:

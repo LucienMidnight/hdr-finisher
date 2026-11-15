@@ -1,3 +1,44 @@
+### November 15, 2026: immediate Pin / Unpin feedback
+
+The commit containing this note removes membership reconciliation from Pin,
+Unpin, the Test Patterns switch and file-command completion (including folder
+move/rename and Undo). Pin changes persist first and return the current labelled
+folder list. The menu paints that returned list without another request. The
+existing index scan still discovers newly pinned photos incrementally.
+
+A coalesced background queue reconciles the affected folders or physical photo
+families, reading keys in bounded pages across files, marks, albums, grades and
+copies, including durable recovery-only families. It uses the existing upkeep
+scheduler, yields between pieces and retains the existing `_reconcile_piece`
+rules for albums, grades and pending work. Activity reports checked families
+and failures. Startup recovery remains a background whole-Library pass; no
+request or file-command completion runs one. Unpin impact uses a read-only SQL
+count without holding the marks/writer lock or loading every Library row.
+No picture maths, Library inclusion rule, cache allowance or memory limit changes.
+
+Acceptance target: command to folder-list/status feedback below one second on
+the Windows PC, as requested by Steve; request responsiveness must also hold
+while upkeep is blocked. The isolated Electron folder-controls check passes:
+Pin request to next folder-list frame 15 ms; Unpin confirmation click to list
+removal/status 76 ms. Pin's app measurement includes the same returned-list
+paint used by the menu, but starts at the request rather than a menu click.
+A synthetic 140,000-file Library with upkeep deliberately blocked gives Pin
+37 ms, Unpin 3 ms, impact 123 ms. These are separate conditions, not timings
+from Steve's open 140k-photo app. Tests compare scoped pin/unpin state and
+recovery with full reconciliation and check album/pending retention, nested
+pins and offline folders. Validation: full JavaScript suite 996 passed / one skipped, plus the added
+Activity behavior test and final 33 focused frontend checks pass. Full Python
+suite: 3,550 passed / 43 skipped / two failures: known
+`test_js_python_settings_agree` Windows separators and unrelated
+`test_publication_started_before_a_command_cannot_recreate_old_cache_entries`
+(unchanged cache-only publication test). Neither check was relaxed or repaired.
+The final 60 focused pin/membership/file-command/Test Patterns tests pass.
+The initial frontend run needed its existing closure-extraction harness updated
+for the optional returned-pins argument; the final full run passes.
+Small retained run logs: `codebase/output/pin-{app,node,python,final-focused}.log`.
+Output remains 46.2 GB, below the 100 GB limit. No push; Steve's open app was
+left running and needs its next normal restart to load the backend changes.
+
 ### November 15, 2026: Refresh thumbnail feedback and invalidation
 
 The commit containing this note makes Refresh acknowledge the command before
