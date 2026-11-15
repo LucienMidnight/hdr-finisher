@@ -52,6 +52,17 @@ function stablePreviewJson(value) {
     : entry));
 }
 
+function mergeLocalSdrMatchStatus(optimistic, acknowledged) {
+  const recipe = locals => locals.map(({ sdr_match, name, ...local }) => local);
+  const newerDraft = stablePreviewJson(recipe(optimistic)) !== stablePreviewJson(recipe(acknowledged));
+  for (const local of optimistic) {
+    const saved = acknowledged.find(item => item.id === local.id);
+    if (local.sdr_match && saved?.sdr_match?.signature === local.sdr_match.signature) {
+      local.sdr_match.out_of_date = newerDraft || saved.sdr_match.out_of_date;
+    }
+  }
+}
+
 /**
  * `refreshPreview` is true (always re-render on success), false, or
  * "if-changed": re-render only when the acknowledged document changes what the
@@ -103,7 +114,10 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     if (state.session?.session_id !== sessionId || state.editRevision !== result.revision) return false;
     recordAcknowledgedLocals(result.document);
     if (commandType === "replace_document") loadDenoiseDocument(state.editDocument);
-    if (optimisticLocals) state.editDocument.local_adjustments = optimisticLocals;
+    if (optimisticLocals) {
+      mergeLocalSdrMatchStatus(optimisticLocals, result.document.local_adjustments);
+      state.editDocument.local_adjustments = optimisticLocals;
+    }
     if (optimisticAdjustments) state.editDocument.global_adjustments = optimisticAdjustments;
     state.documentDirty = preserveNewerGlobalEdit || Boolean(result.dirty);
     state.adjustments = optimisticAdjustments || result.document.global_adjustments;

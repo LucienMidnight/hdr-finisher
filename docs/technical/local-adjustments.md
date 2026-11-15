@@ -1,5 +1,31 @@
 # Local adjustments
 
+## November 16: per-parent Match SDR (N4)
+
+`LocalAdjustment.sdr_match` optionally stores a snapshot signature and finished
+proxy fit metrics. `POST /api/session/{id}/local/{parent_id}/sdr-match` requires
+the current edit revision. It computes before mutation and commits one existing
+`update_local` command, replacing only `sdr_grade` and its match record. The
+inverse restores the exact prior local. No-op/refused fits add no history.
+Sub-mask selection resolves to the parent in the UI; no bulk operation exists.
+
+The fit uses a 256px source pair and authoritative lane-specific masks,
+including hue selection from each lane's HSL-stage picture. Repaired source,
+lane Denoise, authored SDR when enabled, project reference white and geometry
+remain inputs. Actual finished HDR on/off renders supply a mapped difference;
+the current finished SDR with that parent neutralised supplies the baseline.
+All globals/other locals stay fixed. Detail is copied, not fitted; local curves
+remain identity. Film, final compression/cap and gamut mapping are evaluated
+after overlapping locals. See [local Match details](sdr-match.md#local-match-sdr-n4).
+
+Every read derives **Out of date** from the current recipe, masks, geometry,
+order, reference white, source interpretation, repairs and Denoise. Names and
+derived source-peak readback caches are excluded (their authored inputs remain
+included). Optimistic stroke acknowledgements merge this marker without
+replacing newer mask edits. Neither staleness nor a disabled contribution
+triggers an automatic rematch. Match records persist in ordinary project JSON;
+there is no schema migration or alternate renderer.
+
 ## November 16: shared five-control Local Tone (N3a)
 
 Each layer applies Exposure/Contrast first, freezes its own luminance and

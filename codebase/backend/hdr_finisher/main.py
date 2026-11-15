@@ -820,6 +820,20 @@ async def post_sdr_match_candidate(
     return Response(status_code=204)
 
 
+@app.post("/api/session/{session_id}/local/{target_id}/sdr-match")
+def post_local_sdr_match(session_id: str, target_id: str, request: SdrMatchActionRequest):
+    try:
+        result, message, changed = store.apply_local_sdr_match_action(
+            session_id, expected_revision=request.expected_revision, target_id=target_id)
+        return {**result.model_dump(mode="json"), "message": message, "changed": changed}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RevisionConflictError as exc:
+        raise _revision_conflict(exc) from exc
+    except (EditCommandError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/session/{session_id}/sdr-match", response_model=EditStateResponse)
 def post_sdr_match(session_id: str, request: SdrMatchActionRequest, response: Response) -> EditStateResponse:
     timing: dict[str, object] = {}

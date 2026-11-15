@@ -53,7 +53,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | T1 | Blacks/Whites and Shadows/Midtones/Highlights redesign | W4 | global N2 and Local N3a built and checked; clipping/range preview built in N3b, Auto later |
 | M1 | HDR to SDR Match colour shifts (blue jeans) | W5 | not fixed across colours; N3a local renderer adaptation built, but approved equal-Film-input/highlight-colour rebuild stopped after failed unchanged-gate probes; all-hue/stock and five-RAW comparisons remain unchanged vs pre-N3a |
 | M1a | SDR contrast/Film Look clipping turns saturated colours | W3 | built, scoped clipping fix only — existing calibrated exposure/body guards pass; broader M1 follow-up finds bright green/cyan/indigo errors and DSC00264 highlight regression; no new pixel/gate change; GPU Match fixture still fails before Match |
-| X1 | Match SDR button for local adjustments and masks | — | design done, waiting on Steve |
+| X1 | Match SDR button for local adjustments and masks | N4 | built, scoped — per-parent same-change fit, independent SDR global grade, Undo, stale marker and overwrite consent; 16/18 proxy cases accepted, two safely refused; native sharp-highlight delivery qualification remains limited |
 | X2 | Reverse workflow: SDR grade applied to HDR automatically | — | design done, waiting on Steve |
 | U1 | Export panel padding and single divider | W6 | built — Export strip/results share Destination inset; one boundary; three-theme screenshots pass |
 | U2 | No selection borders after mouse use | W6 | built — pointer typing stays ring-free; Tab/F6 retain keyboard rings; Export checked |
@@ -115,7 +115,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | N2 | **Built and checked:** global five-control Tone before Film Look, frozen guide, photographic-grey anchor, combined limiter, Whites UI; aligned colour wheel ranges (C4). See result below. | N1 |
 | N3a | **Partial:** Local Tone shares N2 curves and local Match proposals use the real renderer; equal-Film-input/highlight-colour rebuild stopped after failed unchanged-gate probes (M1/M1d open). See result below. | N2 |
 | N3b | **Built:** clipping and gated neutral-ray range preview (T1-d), Auto deferred. See result below. | N2 (parallel with N3a) |
-| N4 | X1 local "Match SDR". | N3a |
+| N4 | **Built, scoped:** X1 per-parent local Match SDR; acceptance and N4 results below. M1/M1d remain open. | N3a |
 | N5 | X2 "Start HDR from SDR". | N4 |
 | N6 | Final review, fixes, brief/PRD updates, push. | all |
 
@@ -132,6 +132,62 @@ failure retains the old SDR local. No existing whole-Match gate changes.
 Non-body covered pixels must also pass mean/P95 ΔE2000 ≤ 1/3; highlight
 compression is not permission to accept a bad local fit. Synthetic overlap,
 Film/cap and two shared RAWs (gradient/brush and hue) qualify the action.
+
+### N4 result (November 16, MacBook Neo / A18 Pro / 8 GB)
+
+Built on N3a `034c55c4`; the acceptance was committed before measurement in
+`22c2d0f3`. Local **Match SDR** names the parent, including when a child mask
+is selected. It replaces only that parent's SDR grade and match snapshot in
+one Undo step, never stacks on rerun, and leaves global SDR, other locals,
+HDR flags/settings, masks, geometry, feather/blend/opacity, IDs and order
+unchanged. Detail copies without optimisation; fitted local curves stay
+identity. A poor fit/no-op retains previous settings and history. Later recipe,
+mask or stack edits show **Out of date**, without automatic rematching.
+Whole-picture Match still replaces all SDR locals, now with overwrite consent
+for individually matched or non-neutral SDR grades. No new design tokens,
+render stage, Match gate, delivery tolerance, memory limit or Library dataset.
+**M1/M1d are not solved.** X2 was not implemented in N4.
+
+Measurements (`codebase/output/review/n4-local-match/measurements.json`):
+18 bounded real-renderer cases, synthetic and shared **DSC00264.ARW** /
+**IMG_3129.CR2**, gradient/brush/hue, Film off and Portra 50%, independent SDR
+global −0.15 EV and another overlapping local. **16 accepted, two refused.**
+Among accepted cases, worst mean/P95 Delta E 2000 = **0.751 / 1.525**;
+worst median/P95 luma = **0.003689 / 0.010379**, OKLab =
+**0.004579 / 0.009639**. All fit inputs remain unchanged. IMG_3129's brush
+refuses with mean/P95 Delta E **1.383 / 4.057** (Film off) and
+**1.201 / 3.102** (Portra); previous SDR settings remain. This is safe refusal,
+not a claim that every brush can be matched. Both body and non-body Delta E
+are gated; the reported values take the worse covered region. Proxy success
+is not native-size visual qualification.
+
+Real app: selected child resolves to “Window light”; exact saved-document
+comparison proves unchanged globals/mask/HDR; one Undo/Redo, stale marker,
+whole-Match Cancel and SDR-only visibility pass. Screenshots are in
+`codebase/output/review/n4-local-match/`: `matched-1408x794.png`,
+`matched-1100x720.png`, `undo-1100x720.png`, `out-of-date-1100x720.png`,
+`whole-match-confirmation.png`; metrics/checks in `interaction.json`.
+The app check caught and fixed marker acknowledgements being lost while
+optimistic local edits were retained. Derived peak-readback noise is excluded
+from snapshot identity; its authored inputs still invalidate the match.
+
+Finished delivery on the bounded smooth fixture passes unchanged mean <1 /
+P99.9 ≤3 gates: HDR Delta E ITP **0.360 / 2.847**, SDR Delta E 2000
+**0.142 / 2.135**. Native-size (96×64 fixture) full Proof is byte-identical
+to export on GPU and forced CPU; decoded HDR peak **595.81 nits** under the
+1000-nit cap. `delivery.json`. The direct local GPU/export reference also
+passes **48 cases / 384 pixels**, unchanged 0.00002 linear limit.
+
+Additional sharp/headroom fixture delivery **does not qualify** at the same
+gates; neutral-SDR baseline HDR mean/P99.9 is **0.656 / 6.179**, matched HDR
+**0.878 / 7.981**; baseline SDR **0.063 / 2.987**, matched SDR
+**0.153 / 3.370**. Retained `headroom-baseline.json` and
+`headroom-matched.json` report the exact results. This is not waived or
+fixed here; Proof/export byte identity still passes. The baseline run reports
+diagnostics only (exit zero is not colour acceptance). Reproduce with the
+same app driver plus `--headroom --baseline` or `--headroom`.
+
+Validation completion and precise omissions are recorded below before handoff.
 
 ### N3a result (November 16, MacBook Neo / A18 Pro / 8 GB)
 
@@ -739,16 +795,16 @@ No renderer/shader/recipe/gate/tolerance change. Film-input preservation,
 guarded print fitting and signed-colour handling remain options for Steve;
 [full report and per-hue/stop tables](../reports/m1-print-stage-2026-11-15.md).
 
-### X1/X2: Local Match SDR and SDR → HDR (design, Nov 15)
+### X1/X2: Local Match SDR and SDR → HDR (design Nov 15; X1 built Nov 16)
 
-- **Today:** whole-picture Match already replaces every local's SDR grade.
+- **At design time (before N3a):** whole-picture Match already replaced every local's SDR grade.
   Masks are shared (one mask, opacity and bypass; separate `hdr_grade` /
   `sdr_grade`), but hue masks select from each lane's own picture.
   Local tone is fitted on a neutral ramp; temperature/tint/saturation,
   HSL and Detail are copied; wheels are translated; local curves are not
   transferred faithfully (`sdr_match.py` ~681/744, `sessions.py` ~597).
   The local translator does not copy the HDR local's own `enabled` flag.
-- **X1 proposal:** a "Match SDR" action per parent adjustment in the local
+- **X1 (Steve approved same-change; N4 built above):** a "Match SDR" action per parent adjustment in the local
   grade area (not per sub-mask, no bulk action at first). It fits only the
   selected SDR local through the real renderer so SDR gets the same local
   *change*, keeps the mask and the SDR global grade as they are, one Undo,
@@ -759,8 +815,8 @@ guarded print fitting and signed-colour handling remain options for Steve;
   the highlight and gamut information). Keeps the SDR body's brightness and
   colour, takes HDR highlights from the original scene under the HC cap,
   replaces HDR in one undoable action. Size L; build after T1/M1.
-- Open for Steve: what the local button promises (same change vs same
-  final look); simple transfer now vs fitted match later; build X2 or defer.
+- Steve chose the fitted **same change** promise and X2 after the tone/colour
+  work. X1 is built; X2 remains the following work package, not part of N4.
 
 ### W6: Small interface fixes
 

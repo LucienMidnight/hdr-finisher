@@ -3,6 +3,15 @@ async function setSdrMatch() {
   const sessionId = state.session.session_id;
   const isCurrent = () => state.session?.session_id === sessionId;
   if (await syncGlobalEditState() === false || !isCurrent()) return false;
+  const protectedLocals = (state.editDocument?.local_adjustments || []).filter(local => local.sdr_match
+    || stablePreviewJson(local.sdr_grade) !== stablePreviewJson(defaultLocalGrade("sdr")));
+  if (protectedLocals.length) {
+    const confirmed = await window.HDRDialogs.confirm(
+      "Whole-picture Match replaces every SDR local, including individually matched or edited adjustments. Undo restores them.",
+      { title: "Replace SDR local adjustments", confirmLabel: "Replace SDR locals" },
+    );
+    if (!confirmed || !isCurrent()) return false;
+  }
   const authored = state.editDocument?.source?.luminance?.sdr_rendition === "authored";
   let consent = false;
   if (authored) {
@@ -120,6 +129,67 @@ async function revertRendition(lane) {
     status.post({ id: "edit", severity: "success", message: `${lane.toUpperCase()} rendition reverted to its original state.` });
   }
   return applied;
+}
+
+function renderLocalSdrMatch(local, pendingSelected = false) {
+  const actions = document.getElementById("local-sdr-match-actions");
+  if (!actions) return;
+  actions.classList.toggle("hidden", state.currentView !== "sdr" || !local || pendingSelected);
+  const button = document.getElementById("local-sdr-match");
+  button.disabled = !state.session || !local || unusedLocal(local) || Boolean(state.localSdrMatchBusy);
+  button.textContent = state.localSdrMatchBusy ? "Matching…" : "Match SDR";
+  button.setAttribute("aria-label", `Match SDR for ${local?.name || "selected adjustment"}`);
+  document.getElementById("local-sdr-match-parent").textContent = local?.name || "";
+  const indicator = document.getElementById("local-sdr-match-status");
+  indicator.dataset.outdated = String(Boolean(local?.sdr_match?.out_of_date));
+  indicator.textContent = local?.sdr_match?.out_of_date
+    ? "Out of date · grade, mask or stack changed. Match again to update."
+    : local?.sdr_match ? "Individually matched to SDR" : "";
+}
+
+async function matchSelectedLocalSdr() {
+  if (!state.session || state.localSdrMatchBusy) return false;
+  const sessionId = state.session.session_id;
+  const targetId = selectedLocal()?.id;
+  if (!targetId || unusedLocal()) return false;
+  const current = () => state.session?.session_id === sessionId;
+  const panel = document.getElementById("grade-workflow-panel");
+  const wasInert = panel?.inert;
+  if (panel) panel.inert = true;
+  state.localSdrMatchBusy = true;
+  renderLocalSdrMatch(selectedLocal());
+  try {
+    if (await syncGlobalEditState() === false || !current()) return false;
+    if (state.editCommandQueue && await state.editCommandQueue === false) return false;
+    if (!current()) return false;
+    const response = await fetch(`/api/session/${sessionId}/local/${encodeURIComponent(targetId)}/sdr-match`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expected_revision: state.editRevision }),
+    });
+    const result = await safeJson(response);
+    if (!current()) return false;
+    if (!response.ok) {
+      if (response.status === 409) await refreshEditState();
+      if (!current()) return false;
+      throw new Error(responseErrorMessage(result, "Local SDR Match failed. Previous settings are unchanged."));
+    }
+    await refreshEditState();
+    if (!current()) return false;
+    if (result.changed) {
+      invalidatePreview("sdr", { markDirty: false });
+      debouncePreview("sdr");
+      syncDesktopDocumentState();
+    }
+    status.post({ id: "match", severity: result.changed ? "success" : "info", message: result.message });
+    return Boolean(result.changed);
+  } catch (error) {
+    if (current()) status.post({ id: "match", severity: "attention", message: error.message });
+    return false;
+  } finally {
+    if (panel) panel.inert = wasInert;
+    state.localSdrMatchBusy = false;
+    if (current()) renderLocalSdrMatch(selectedLocal());
+  }
 }
 
 /**

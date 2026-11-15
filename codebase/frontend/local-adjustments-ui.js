@@ -186,6 +186,7 @@ async function assignToolToPending(type) {
 }
 
 function bindLocalAdjustmentEvents() {
+  document.getElementById("local-sdr-match")?.addEventListener("click", matchSelectedLocalSdr);
   els.localToolButtons.forEach((button) => button.addEventListener("click", async () => {
     if (typeof retouchUI !== "undefined") retouchUI.active = false;
     if (state.localPathDraft && (!unusedLocal() || (selectedMaskLeaf()?.nodes?.length || 0) >= 3)) await finishLocalPathDraft();
@@ -789,6 +790,7 @@ function renderLocalAdjustments() {
   const pendingSelected = state.pendingLocalAdjustment?.id === state.selectedLocalId
     || state.pendingSubMask?.id === state.selectedSubMaskId;
   els.localEditor?.classList.toggle("hidden", !local || pendingSelected);
+  renderLocalSdrMatch(local, pendingSelected);
   els.localMaskFooterActions?.classList.toggle("hidden", !local || pendingSelected);
   const selectedIndex = local ? locals.findIndex((item) => item.id === local.id) : -1;
   if (els.localDuplicate) els.localDuplicate.disabled = !local || Boolean(state.selectedSubMaskId);

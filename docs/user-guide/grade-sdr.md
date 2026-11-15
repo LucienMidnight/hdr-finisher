@@ -1,5 +1,19 @@
 # Author the SDR Fallback
 
+## Match one local adjustment
+
+To give an SDR local adjustment the same **change** it makes in HDR, select
+it in **Local**, switch its grade to **SDR**, then press **Match SDR** beside
+the parent name. Your SDR global grade and the shared mask stay unchanged.
+Sub-masks act on their parent. One Undo restores the prior local; later edits
+show **Out of date**, never an automatic rematch. A failed fit or an empty or
+disabled HDR contribution leaves your previous settings untouched.
+See [local Match instructions](local-adjustments.md#match-this-adjustment-to-sdr).
+
+Whole-picture **Match entire HDR grade** is different: it still replaces all
+SDR locals. A confirmation warns before replacing individually matched or
+non-neutral SDR local grades, including manual edits. Cancel keeps them.
+
 The SDR branch is a full creative rendition, not a preview convenience. It becomes the primary/base image in gain-map exports and is what ordinary JPEG readers, unsupported browsers, many social services, and standalone SDR JPEG/PNG exports display.
 
 Every numeric readout can also be typed directly, including controlled values beyond normal slider travel. See [Grading Controls Reference](grading-controls-reference.md) for keyboard behavior, plain-language control descriptions, and all slider and direct-entry limits.

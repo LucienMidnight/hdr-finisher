@@ -1504,6 +1504,13 @@
       }
     },
     {
+      "path": "tests/local-sdr-match.js",
+      "areas": ["masks", "ui", "export-proof"],
+      "tier": "area",
+      "protects": "Local Match parent selection, independent SDR state, Undo, stale marker and overwrite consent.",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/local-grade-reference.js",
       "areas": [
         "masks"

@@ -31,6 +31,7 @@ These strings predate the title-tooltip policy. They are recorded here for centr
 |---|---|---|
 | `controls.hdr_rendition` | HDR grade | Edit the HDR version, shown on HDR screens. |
 | `controls.sdr_rendition` | SDR grade | Edit the SDR version, shown on screens without HDR. |
+| `local.match_sdr` | Match SDR in the selected adjustment | Matches this adjustment only. Global grade and mask stay unchanged. |
 | `preview.high_resolution` | High-res Preview | Uses more GPU memory for a larger preview. Export quality is unchanged. |
 | `export.guarantee_peak` | Guarantee HDR peak | Highlight Compression checks every HDR export and Proof after encoding. Up to 1% above target is accepted unchanged; larger overshoots are corrected locally toward the target. Files still above the allowance are not delivered. This option also checks the codec ceiling when Highlight Compression is bypassed. |
 | `sdr.highlight_compression.mode` | Mode help | Peak Fit anchors the measured source peak at display white while preserving a smooth highlight gradient. |

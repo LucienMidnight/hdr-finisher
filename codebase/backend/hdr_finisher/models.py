@@ -886,6 +886,12 @@ class LocalGrade(BaseModel):
     detail: DetailAdjustments = Field(default_factory=DetailAdjustments)
 
 
+class LocalSdrMatch(BaseModel):
+    signature: str
+    out_of_date: bool = False
+    metrics: dict[str, float] = Field(default_factory=dict)
+
+
 class LocalAdjustment(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -896,6 +902,7 @@ class LocalAdjustment(BaseModel):
     mask: MaskExpression = Field(default_factory=_default_local_mask)
     hdr_grade: LocalGrade = Field(default_factory=LocalGrade)
     sdr_grade: LocalGrade = Field(default_factory=lambda: LocalGrade(highlights_center=1.75, highlights_width=3.5))
+    sdr_match: LocalSdrMatch | None = None
 
 
 class DenoiseLiveControls(BaseModel):

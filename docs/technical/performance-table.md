@@ -119,6 +119,13 @@ The release failure inventory and limits on comparison evidence are in
 
 # Performance table
 
+## November 16: N4 local Match SDR (MacBook Neo)
+
+| Action / stage | Observation | Conditions / evidence |
+| --- | --- | --- |
+| Bounded local fitting only | 0.164–3.111 s across 18 cases; RAW-derived proxies 1.204–3.111 s. Diagnostic, not a whole-action latency acceptance or speedup claim | Neo A18 Pro / 8 GB; CPU real renderer, 256px edge, synthetic plus DSC00264.ARW / IMG_3129.CR2; gradient/brush/hue, Film off/Portra 50%, overlap. Source decode, mask preparation, request and presentation are excluded; some fast validation concurrent. `codebase/output/review/n4-local-match/measurements.json`. |
+| Default Library viewport smoke | 90 s passed; 9/9 viewport pictures, no photo/app errors, 50 ms longest drawing gap (250 ms guard), external peak 3.137 GB | Plain Electron 1408×794, shared GPU lock, frozen library-mixed-v1, no new memory setting. Not a whole-folder/Single check or speed comparison; fast suites overlap the tail. `codebase/output/quick-library-check/n4-local-match/report.json`. |
+
 November 15 live hang investigation: **Windows PC**, installed **0.9.3**,
 2560x1440 machine setting; normal use of `20261114 Lucas 8 bday`, with bulk
 paste preparation and Grade work overlapping. Read-only inspection of

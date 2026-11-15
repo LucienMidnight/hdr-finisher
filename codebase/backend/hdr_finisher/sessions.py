@@ -192,7 +192,7 @@ class LoadedSession:
         )
 
     def edit_document(self) -> EditDocument:
-        return EditDocument(
+        document = EditDocument(
             hdr_reference_white_nits=self.hdr_reference_white_nits,
             source=self.source_reference(),
             interpretation_override=self.interpretation_override,
@@ -203,6 +203,13 @@ class LoadedSession:
             sdr_match=self.sdr_match,
             framing=self.framing,
         )
+        if any(local.sdr_match for local in self.local_adjustments):
+            from .sdr_local_match import local_match_signature
+            signature = local_match_signature(document)
+            document.local_adjustments = [local.model_copy(update={"sdr_match": local.sdr_match.model_copy(
+                update={"out_of_date": local.sdr_match.signature != signature})}) if local.sdr_match else local
+                for local in self.local_adjustments]
+        return document
 
     def edit_state(self) -> EditStateResponse:
         from .retouch_routes import records
@@ -594,6 +601,47 @@ class SessionStore:
                 self.grade_recovery_observer(session)
             return session.edit_state()
 
+    def apply_local_sdr_match_action(self, session_id: str, *, expected_revision: int, target_id: str):
+        from .models import LocalSdrMatch
+        from .sdr_local_match import LOCAL_MATCH_EDGE, fit_local_sdr, local_match_signature
+        with self._lock:
+            session = self.get(session_id)
+            if session.edit_revision != expected_revision:
+                raise RevisionConflictError(expected_revision, session.edit_revision)
+            document = session.edit_document().model_copy(deep=True)
+            index = _local_index(document.local_adjustments, target_id)
+        source, sdr_reference = session.render_cache.source_pair(LOCAL_MATCH_EDGE)
+        masks = {lane.value: {local.id: session.render_cache.compiled_local_mask(
+            document.global_adjustments, local, LOCAL_MATCH_EDGE, spatial_only=True, lane=lane)
+            for local in document.local_adjustments} for lane in (PreviewKind.HDR, PreviewKind.SDR)}
+        sdr_source = source
+        if document.denoise.hdr.enabled or document.denoise.sdr.enabled:
+            from .denoise_adaptive import AdaptiveControls, estimate_adaptive_model, resolve_adaptive
+            noise = estimate_adaptive_model(source)
+            if document.denoise.hdr.enabled:
+                source = resolve_adaptive(source, noise, AdaptiveControls(**document.denoise.hdr.controls.model_dump()))
+            if document.denoise.sdr.enabled:
+                controls = AdaptiveControls(**document.denoise.sdr.controls.model_dump())
+                if sdr_reference is not None and document.global_adjustments.sdr.use_authored_base:
+                    sdr_reference = resolve_adaptive(sdr_reference, estimate_adaptive_model(sdr_reference), controls)
+                else:
+                    sdr_source = resolve_adaptive(sdr_source, noise, controls)
+        result = fit_local_sdr(source, document.global_adjustments, document.local_adjustments, target_id,
+                               reference_white_nits=document.hdr_reference_white_nits,
+                               source_pixel_scale=min(1., LOCAL_MATCH_EDGE / max(session.image.shape[:2])),
+                               masks=masks, sdr_source=sdr_source, sdr_reference=sdr_reference)
+        if result.grade is None:
+            with self._lock:
+                if session.edit_revision != expected_revision:
+                    raise RevisionConflictError(expected_revision, session.edit_revision)
+                return session.edit_state(), result.message, False
+        local = document.local_adjustments[index]
+        local.sdr_grade = result.grade
+        local.sdr_match = LocalSdrMatch(signature=local_match_signature(document), metrics=result.metrics)
+        response = self.apply_edit_commands(session_id, [EditCommand(expected_revision=expected_revision,
+            command_type="update_local", target_id=target_id, payload={"local": local.model_dump(mode="json")})])
+        return response, result.message, True
+
     def apply_sdr_match_action(
         self,
         session_id: str,
@@ -642,7 +690,7 @@ class SessionStore:
         translated_by_id = {item.id: item.sdr_grade for item in materialized.local_adjustments}
         target_locals = [
             item.model_copy(
-                update={"sdr_grade": translated_by_id.get(item.id, LocalGrade()).model_copy(deep=True)},
+                update={"sdr_grade": translated_by_id.get(item.id, LocalGrade()).model_copy(deep=True), "sdr_match": None},
                 deep=True,
             )
             for item in current_locals

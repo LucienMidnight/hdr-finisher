@@ -1,5 +1,42 @@
 # HDR-to-SDR Match
 
+## Local Match SDR (N4)
+
+The SDR local-grade area exposes one **Match SDR** action for the selected
+parent adjustment (including when a child mask is selected). Its promise is
+the same **change**, not the same final look. It does not invoke whole-picture
+Match or edit the independent SDR global grade.
+
+At a bounded 256px source, render finished HDR with the parent on and
+neutralised. Apply the existing `build_sdr_match_target` construction to both
+and subtract. Add that difference to the current finished SDR with the parent
+neutralised, then gamut-map the target. Fit the selected parent's ordinary SDR
+controls through the real complete renderer, with global SDR and the entire
+other-local stack fixed. N3a's real-local-renderer translation seeds the fit;
+a neutral seed is also tested. Four bounded coordinate passes fit Exposure,
+Contrast, five Tone strengths, Temperature, Tint and Saturation. Detail copies
+from HDR and is never optimised; no fitted local curves are written. Film,
+the final shoulder/cap and sRGB gamut mapper judge every candidate. Grain is
+excluded from analysis, as in whole Match; delivery still renders normal grain.
+
+Effective mask coverage must include at least 16 proxy pixels, 0.01% of the
+frame, with at least 1% influence. Empty/negligible coverage or a disabled/no
+visible HDR contribution returns an explanatory no-op. Acceptance was recorded
+before measurement in the sprint brief: existing body luma/OKLab metrics within
+the mask, plus mean/P95 Delta E 2000 ≤ 1/3 independently in covered body and
+non-body pixels. A failed fit retains the previous grade and history unchanged.
+These are proxy qualifications, not a native-size fit guarantee or a fix for
+M1/M1d. Two RAW brush cases deliberately refuse at the unchanged gates.
+
+Successful results replace only the selected `sdr_grade` and match snapshot.
+Shared/HDR enable flags, masks, geometry, feather, blend, opacity, IDs and order
+are preserved. One revision-guarded `update_local` gives one exact Undo.
+Repeated Match starts from the current picture with this parent neutralised,
+so it replaces rather than stacks. Snapshot mismatch displays **Out of date**;
+there is no automatic recalculation. Whole-picture Match still replaces every
+SDR local, clears individual match records, and asks before overwriting
+individually matched or non-neutral SDR locals (including manual edits).
+
 HDR-to-SDR Match is a recipe-snapshot operation. An active match owns a captured HDR recipe, ordered HDR local grades and masks, reference-white and source identity, highlight-boundary values, a stale-detection signature, and the independent SDR state retained for Revert. SDR controls remain separate trims over the matched rendition.
 
 Grain has one match-specific source selector. `captured_hdr` synthesizes the captured HDR grain once, after SDR trims; `sdr_override` uses the current SDR grain controls instead. An edit to any `sdr.film_look.grain_*` field atomically copies the captured grain recipe into SDR, applies the edit, and switches the selector. The two grain recipes are never stacked.
@@ -29,8 +66,9 @@ retaining body-quality gates and the calibrated +0.5 EV white-area allowance.
 It does not author ineffective Peak Detail/Bias searches for Soft Ceiling.
 The old Local Tone translation remains a proposal basis; it inserts no render
 stage and every result is certified through the actual final tail. N3a replaces
-that approximation along with Local Tone and fits complete highlight colour
-and equal Film input exposure. N1 does **not** claim M1 is fixed: all-colour
+that local approximation along with Local Tone; its complete-highlight-colour
+and equal-Film-input rebuild did not pass the unchanged gates and is not shipped.
+N1 does **not** claim M1 is fixed: all-colour
 research includes regressions and additional safely refused fits, recorded in
 [the updated M1 report](reports/m1-colour-follow-up-2026-11-15.md#n1-remeasurement-final-sdr-compression).
 

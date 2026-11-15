@@ -30,6 +30,9 @@
 .grade-folder-tabs > .lane-switch { width: 100%; min-width: 0; margin: 0; }
 .sdr-match-entire-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 12px; padding: 10px; border: 1px solid var(--hairline); border-radius: var(--radius-1); background: var(--input); box-shadow: var(--rail-shadow); }
 .sdr-match-copy { flex: 1 1 140px; color: var(--muted); font: var(--font-weight-regular) var(--font-size-sm)/var(--line-height-normal) var(--font-body); }
+.local-sdr-match-actions { margin: 10px 12px; padding: 10px; border-bottom: 1px solid var(--hairline); }
+.local-sdr-match-actions .helper { white-space: normal; overflow-wrap: anywhere; }
+#local-sdr-match-status[data-outdated="true"] { color: var(--attention); }
 .sdr-match-entire-actions:has(.rematch-required) { border-left: 3px solid var(--attention); }
 #sdr-match-entire { min-height: 28px; white-space: nowrap; font-size: var(--font-size-sm); }
 #sdr-match-entire.rematch-required { color: var(--attention); }

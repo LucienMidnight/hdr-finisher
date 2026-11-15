@@ -1,3 +1,25 @@
+## November 16: local Match SDR (N4 / X1)
+
+On the SDR side of a selected local adjustment, **Match SDR** names its
+parent and fits that adjustment's HDR **change**, not the whole photo's look.
+A selected sub-mask still acts on its parent; there is no bulk local action.
+The explanation is “Matches this adjustment only. Global grade and mask stay
+unchanged.” SDR global grading and every other local stay independent.
+
+The bounded real-renderer fit replaces only that parent's SDR local grade.
+It includes overlapping locals, Film Look, final compression/cap and gamut
+mapping, copies Detail without optimising it, and writes no hidden curve
+correction. Masks, IDs, order, shared opacity and the HDR grade are unchanged.
+One Undo restores the previous SDR local. Repeating the action calculates a
+fresh replacement, never an additional correction. Relevant later edits show
+**Out of date**, without automatically rematching. Empty, negligible or
+disabled contributions make no edit; an inadequate fit retains prior settings
+and explains why. Whole-picture Match still replaces every SDR local and now
+asks before overwriting individually matched or non-neutral SDR local grades.
+
+Qualification and safe refusals: [N4 sprint result](../../technical/briefs/sprint-0-9-3-feedback-2026-11-15.md#n4-result-november-16-macbook-neo--a18-pro--8-gb).
+This does **not** solve the global M1/M1d colour/Film issue.
+
 ## November 16: N3a Local Tone built; Match colour/Film work remains open
 
 Local Tone now uses the global five-control curves in CPU and GPU: local

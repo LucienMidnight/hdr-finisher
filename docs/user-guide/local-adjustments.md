@@ -25,6 +25,31 @@ You can also press **+** first and pick the tool afterwards. The row reads **Pic
 
 ## Grade inside the mask
 
+### Match this adjustment to SDR
+
+Select an adjustment, switch its grade to **SDR**, then press **Match SDR**.
+The name above the button confirms which parent adjustment it will change.
+Selecting a sub-mask still matches its parent adjustment, not that sub-mask
+alone. There is no “match all locals” button.
+
+This gives SDR the same **change** the adjustment makes in HDR, while keeping
+your SDR global grade, the other adjustments and the mask unchanged. It is
+not a promise that the entire SDR picture will look like HDR. Detail settings
+are copied; they are not fitted separately.
+
+Running it again replaces the previous SDR local settings instead of adding
+another correction. **Undo** restores those previous settings in one step.
+If you later change the grade, mask or surrounding recipe, **Out of date**
+appears; press Match again only when you want to update it. Nothing rematches
+automatically. An empty mask or disabled HDR contribution makes no change.
+If a close enough match is not possible, the app explains and leaves your
+previous SDR settings alone; try a smaller HDR change or adjust SDR manually.
+
+**Match entire HDR grade** is different: it replaces every SDR local and asks
+before overwriting individually matched or edited SDR adjustments.
+
+### Local controls
+
 Each adjustment has its own grade. Everything here affects only the masked area.
 
 - **Light · Local:** **Exposure**, **Contrast**, then **Blacks**, **Shadows**, **Midtones**, **Highlights** and **Whites**. The five Tone strengths use −100…+100, just like global Tone. Shadows/Midtones/Highlights each have **Center** and **Width** in EV.

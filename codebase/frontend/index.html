@@ -784,6 +784,12 @@
           <div id="local-gradient-controls" class="local-gradient-controls hidden" aria-live="polite"></div>
           <div class="local-lane-folder">
             <div class="local-grade-folder-body">
+            <div id="local-sdr-match-actions" class="local-sdr-match-actions hidden">
+              <div id="local-sdr-match-parent" class="helper"></div>
+              <button id="local-sdr-match" class="button-secondary tooltip-trigger" type="button" data-tooltip="Matches this adjustment only. Global grade and mask stay unchanged." aria-describedby="local-sdr-match-explanation">Match SDR</button>
+              <p id="local-sdr-match-explanation" class="helper">Matches this adjustment only. Global grade and mask stay unchanged.</p>
+              <p id="local-sdr-match-status" class="helper" role="status"></p>
+            </div>
             <div class="local-grade-controls">
               <section class="local-grade-section" data-local-grade-section="light" aria-labelledby="local-light-heading">
                 <div class="local-mask-subpanel-heading">
