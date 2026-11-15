@@ -39,5 +39,7 @@ def test_frontend_contract_split_preserves_the_reviewed_inventory() -> None:
     # code were retired (Codebase Modularization Sprint, phase 1). What is left
     # pins page structure, styles, numbers, limits and shader maths.
     # Peak estimate opt-in was removed in favor of automatic measurement.
-    assert len(test_names) == 86
+    # November 15, 2026: two tooltip source-wording checks were replaced by
+    # real-app coverage of the shared tooltip controller (sprint item L1).
+    assert len(test_names) == 84
     assert len(test_names) == len(set(test_names))
