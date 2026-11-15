@@ -80,3 +80,12 @@ Trigger delay: 2.5 seconds on the PREVIEW WINDOW title hover. The same tooltip a
 
 
 Shared export status buttons: "Pause the current export", "Resume the current export" (while paused), and "Cancel the current export". Accessible labels match these tooltips.
+
+## November 15: conditional control names (L2)
+
+Overlays, Frame, Export list actions, Compare/Focus, Settings/Help and Activity
+omit redundant naming while their labels are visible. Responsive icon forms
+keep their names. Labelled controls with only shortcut information show the
+shortcut alone (`KEEP_SHORTCUT_ONLY`, pending Steve). Explanations, warnings
+and disabled reasons remain. Filename/metadata values and resize choices show
+full text only when actually clipped; accessible names stay available.

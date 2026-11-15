@@ -4,6 +4,7 @@
   const HOVER_DELAY_MS = 2500;
   // Steve's neighbour decision is pending. Zero means every target waits.
   const NEIGHBOUR_WINDOW_MS = 0;
+  const KEEP_SHORTCUT_ONLY = true; // Steve can remove labelled shortcut help here.
   const selector = '[data-tooltip], [data-tip], [data-native-tooltip], [title], button[aria-label], [role="separator"][aria-label], .scope-title-wrap, .preview-title-wrap, .source-filename-wrap';
   function install() {
     if (window.HDRTooltips) return;
@@ -33,11 +34,45 @@
       if (active && (!active.isConnected || !active.getClientRects().length)) hide();
     });
     observer.observe(document.documentElement, {subtree:true, childList:true, attributes:true, attributeFilter:['title', 'hidden']});
+    function visibleLabel(trigger) {
+      const parts = [];
+      const walk = node => {
+        if (node.nodeType === 3) { parts.push(node.textContent); return; }
+        if (node.nodeType !== 1 || node.matches('.title-tooltip, svg, [aria-hidden="true"], .visually-hidden')) return;
+        const style = getComputedStyle(node);
+        if (style.display === 'none' || style.visibility === 'hidden' || Number.parseFloat(style.fontSize) === 0) return;
+        node.childNodes.forEach(walk);
+      };
+      walk(trigger);
+      return parts.join(' ').replace(/\s+/g, ' ').trim();
+    }
+    function clipped(trigger) {
+      if (trigger.scrollWidth > trigger.clientWidth + 1 || trigger.scrollHeight > trigger.clientHeight + 1) return true;
+      if (trigger.matches('input, select')) {
+        const style = getComputedStyle(trigger), canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d'); context.font = style.font;
+        const text = trigger.matches('select') ? trigger.selectedOptions[0]?.textContent || '' : trigger.value;
+        return context.measureText(text).width > trigger.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) - (trigger.matches('select') ? 20 : 0);
+      }
+      return [...trigger.querySelectorAll('.name, .picker-tile-name, .directory-browser-entry-name')].some(clipped);
+    }
+    const normalized = text => text.toLowerCase().replace(/[.…:]+$/g, '').trim();
     function textFor(trigger) {
       const authored = trigger.querySelector('.title-tooltip');
-      if (trigger.matches('.source-filename-wrap') && !trigger.classList.contains('has-overflow')) return '';
-      return trigger.dataset.tooltip || trigger.dataset.tip || trigger.dataset.nativeTooltip || authored?.textContent.trim() || trigger.getAttribute('aria-label') || '';
+      if (trigger.matches('.source-filename-wrap')) return trigger.classList.contains('has-overflow') ? authored?.textContent.trim() || '' : '';
+      const text = trigger.dataset.tooltip || trigger.dataset.tip || trigger.dataset.nativeTooltip || authored?.textContent.trim() || trigger.getAttribute('aria-label') || '';
+      const label = visibleLabel(trigger);
+      // Explanation, warnings and disabled reasons always survive. Only names
+      // and repeated values are conditional on visible ink / actual overflow.
+      if (trigger.matches('input, select') && text === (trigger.matches('select') ? trigger.selectedOptions[0]?.textContent : trigger.value)) return clipped(trigger) ? text : '';
+      if (trigger.matches('.directory-browser-entry, .folder-name, .library-file-name, .picker-tile-name, .directory-browser-entry-name, .name, #place-title, #picker-preview-name') && (text === trigger.dataset.path || text === label)) return clipped(trigger) ? text : '';
+      const namedOnly = trigger.matches('#index-status, #compare-button, #focus-button');
+      const [name, ...keys] = text.split(/\s*·\s*/);
+      const isName = normalized(name) === normalized(label) || normalized(name) === normalized(label + ' options') || namedOnly;
+      if (/[a-z0-9]/i.test(label) && isName) return KEEP_SHORTCUT_ONLY && keys.length ? keys.join(' · ') : '';
+      return text;
     }
+
     function hide() {
       clearTimeout(timer); timer = 0; pending = null;
       if (active) {

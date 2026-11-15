@@ -146,6 +146,7 @@ Title-case panel titles: Afacad 12px, weight 600, no tracking. Group names: sent
 - Keep labels concrete, use sentence case, and include appropriate units (EV, nit, %, K).
 - The toolbar logo is the square mark from the app icon (`assets/brand/hdr-finisher-mark.svg`, the simple icon trimmed to its drawing), 26px high. The Library sidebar chevrons line up with its left edge.
 - The menu button and window controls use Tabler icons: the menu glyph is drawn at 28px, the window controls at 16px, so the primary menu outweighs the quiet system controls.
+- Tooltips name a control only when its label is hidden (including responsive icon-only forms). Explanations, warnings and disabled reasons remain. Full names and values appear only when clipped. Labelled shortcut-only help remains pending Steve’s decision (`KEEP_SHORTCUT_ONLY` in `tooltips.js`).
 - Tooltips explain consequences and tradeoffs. Keep internal implementation details out of product copy.
 
 ## Controls and feedback

@@ -1,3 +1,13 @@
+## November 15: W7 conditional tooltip copy (L2)
+
+The shared controller checks visible label ink at display time, so responsive
+icon forms retain names and labelled controls omit repeated names. This covers
+Overlays/Frame, Export list actions, Compare/Focus, Settings/Help and Activity.
+Explanations, warnings and disabled reasons remain; full names, metadata values
+and selected resize choices appear only when clipped. Shortcut-only help remains
+behind one `KEEP_SHORTCUT_ONLY` constant pending Steve’s decision. Accessible
+names are preserved separately. Syntax passes; grouped app review follows.
+
 ## November 15: W7 shared tooltips (L1)
 
 Main, embedded/pop-out Library and standalone media browser now load one
