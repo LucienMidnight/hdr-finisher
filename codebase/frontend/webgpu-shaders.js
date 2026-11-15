@@ -14,6 +14,26 @@
 
   const HSL_WGSL = globalThis.HDRHslShader || require("./hsl-shader.js");
   const PEAK_HISTOGRAM_BINS = 4096;
+  function toneZonesWgsl(indices, name) {
+    return `    fn ${name}(input: vec3f, y: f32) -> vec3f {
+      if (p[${indices.BLACKS}] == 0.0 && p[${indices.WHITES}] == 0.0 && p[${indices.SHADOWS}] == 0.0 && p[${indices.MIDTONES}] == 0.0 && p[${indices.HIGHLIGHTS}] == 0.0) { return input; }
+      let delivery = select(input, acescgToBt2020(input), p[${indices.HDR_LANE}] > 0.5);
+      let brightest = max(max(delivery.r, max(delivery.g, delivery.b)), 0.0);
+      let stops = log2(max(y, 1e-30) / p[${indices.TONE_GREY}]);
+      let whitePosition = clamp(log2(max(brightest, 1e-30) / (p[${indices.TONE_PEAK}] * 0.5)), 0.0, 1.0);
+      let gate = smoothstep(0.0, 1.0, log2(max(y, 1e-30) / (p[${indices.TONE_KNEE}] * 0.5))) * (1.0 - smoothstep(0.0, 1.0, 2.0 * whitePosition));
+      let whiteAmount = p[${indices.WHITES}] * select(log2(1.0 / 0.775), 1.0, p[${indices.WHITES}] >= 0.0);
+      let delta = gate * (p[${indices.SHADOWS}] * toneZoneWeight(stops, p[${indices.SHADOWS_CENTER}], p[${indices.SHADOWS_WIDTH}])
+        + p[${indices.MIDTONES}] * toneZoneWeight(stops, p[${indices.MIDTONES_CENTER}], p[${indices.MIDTONES_WIDTH}])
+        + p[${indices.HIGHLIGHTS}] * toneZoneWeight(stops, p[${indices.HIGHLIGHTS_CENTER}], p[${indices.HIGHLIGHTS_WIDTH}])) + whiteAmount * whitePosition * whitePosition;
+      let blackWeight = max(1.0 - y / p[${indices.TONE_KNEE}], 0.0);
+      let floor = 0.45 * p[${indices.BLACKS}] * p[${indices.TONE_KNEE}] * blackWeight * blackWeight;
+      let candidate = input * exp2(delta) + vec3f(floor);
+      let result = input + p[${indices.TONE_LIMITER}] * (candidate - input);
+      return select(result, max(result, vec3f(0.0)), floor < 0.0);
+    }
+`;
+  }
   function colorDesaturationWgsl(params, name, luma) {
     return `fn ${name}(rgb: vec3f) -> vec3f {
       let high = ${params}[${GPU_PARAMS.HIGHLIGHT_DESATURATION}];
@@ -793,23 +813,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     fn toneZoneWeight(stops: f32, center: f32, width: f32) -> f32 {
       return 1.0 - smoothstep(0.0, max(width * 0.5, 0.001), abs(stops - center));
     }
-    fn toneZones(input: vec3f, y: f32) -> vec3f {
-      if (p[${GPU_PARAMS.BLACKS}] == 0.0 && p[${GPU_PARAMS.WHITES}] == 0.0 && p[${GPU_PARAMS.SHADOWS}] == 0.0 && p[${GPU_PARAMS.MIDTONES}] == 0.0 && p[${GPU_PARAMS.HIGHLIGHTS}] == 0.0) { return input; }
-      let delivery = select(input, acescgToBt2020(input), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
-      let brightest = max(max(delivery.r, max(delivery.g, delivery.b)), 0.0);
-      let stops = log2(max(y, 1e-30) / p[${GPU_PARAMS.TONE_GREY}]);
-      let whitePosition = clamp(log2(max(brightest, 1e-30) / (p[${GPU_PARAMS.TONE_PEAK}] * 0.5)), 0.0, 1.0);
-      let gate = smoothstep(0.0, 1.0, log2(max(y, 1e-30) / (p[${GPU_PARAMS.TONE_KNEE}] * 0.5))) * (1.0 - smoothstep(0.0, 1.0, 2.0 * whitePosition));
-      let whiteAmount = p[${GPU_PARAMS.WHITES}] * select(log2(1.0 / 0.775), 1.0, p[${GPU_PARAMS.WHITES}] >= 0.0);
-      let delta = gate * (p[${GPU_PARAMS.SHADOWS}] * toneZoneWeight(stops, p[${GPU_PARAMS.SHADOWS_CENTER}], p[${GPU_PARAMS.SHADOWS_WIDTH}])
-        + p[${GPU_PARAMS.MIDTONES}] * toneZoneWeight(stops, p[${GPU_PARAMS.MIDTONES_CENTER}], p[${GPU_PARAMS.MIDTONES_WIDTH}])
-        + p[${GPU_PARAMS.HIGHLIGHTS}] * toneZoneWeight(stops, p[${GPU_PARAMS.HIGHLIGHTS_CENTER}], p[${GPU_PARAMS.HIGHLIGHTS_WIDTH}])) + whiteAmount * whitePosition * whitePosition;
-      let blackWeight = max(1.0 - y / p[${GPU_PARAMS.TONE_KNEE}], 0.0);
-      let floor = 0.45 * p[${GPU_PARAMS.BLACKS}] * p[${GPU_PARAMS.TONE_KNEE}] * blackWeight * blackWeight;
-      let candidate = input * exp2(delta) + vec3f(floor);
-      let result = input + p[${GPU_PARAMS.TONE_LIMITER}] * (candidate - input);
-      return select(result, max(result, vec3f(0.0)), floor < 0.0);
-    }
+    ${toneZonesWgsl(GPU_PARAMS, "toneZones")}
     fn hdrBase(input: vec3f) -> vec3f {
       return input * exp2(p[${GPU_PARAMS.EXPOSURE}]);
     }
@@ -2100,18 +2104,15 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return neutral + chroma * max(0.0, 1.0 + p[${MASK_PARAMS.LOCAL.VIBRANCE}] * vibranceWeight) * max(0.0, 1.0 + p[${MASK_PARAMS.LOCAL.SATURATION}]);
     }
 
+    ${toneZonesWgsl(MASK_PARAMS.LOCAL, "localToneZones")}
     fn applyLocalGrade(input: vec3f) -> vec3f {
       let hdr = p[${MASK_PARAMS.LOCAL.HDR_LANE}] > 0.5;
       let sourceY = max(select(lumaSrgb(input), lumaAces(input), hdr), 0.00000001);
       let pivot = max(p[${MASK_PARAMS.LOCAL.CONTRAST_PIVOT}], 0.000001);
       let stops = log2(sourceY / pivot);
-      let blacks = clamp((-stops - 3.0) / 3.0, 0.0, 1.0);
-      let shadows = clamp(1.0 - abs(stops + 2.0) / 2.5, 0.0, 1.0);
-      let midtones = clamp(1.0 - abs(stops) / 2.5, 0.0, 1.0);
-      let highlights = clamp((stops - 0.5) / 3.0, 0.0, 1.0);
-      let zoneEv = p[${MASK_PARAMS.LOCAL.BLACKS}] * blacks + p[${MASK_PARAMS.LOCAL.SHADOWS}] * shadows + p[${MASK_PARAMS.LOCAL.MIDTONES}] * midtones + p[${MASK_PARAMS.LOCAL.HIGHLIGHTS}] * highlights;
-      let targetStops = stops * exp2(p[${MASK_PARAMS.LOCAL.CONTRAST}]) + zoneEv + p[${MASK_PARAMS.LOCAL.EXPOSURE}];
+      let targetStops = stops * exp2(p[${MASK_PARAMS.LOCAL.CONTRAST}]) + p[${MASK_PARAMS.LOCAL.EXPOSURE}];
       var rgb = input * (pivot * exp2(clamp(targetStops, -32.0, 24.0)) / sourceY);
+      rgb = localToneZones(rgb, max(select(lumaSrgb(rgb), lumaAces(rgb), hdr), 0.0));
       if (hdr) {
         let offset = (p[${MASK_PARAMS.LOCAL.WHITE_BALANCE_KELVIN}] - 6500.0) / 6500.0;
         rgb *= vec3f(1.0 + offset * 0.15, 1.0 + p[${MASK_PARAMS.LOCAL.TINT}] * 0.08, 1.0 - offset * 0.15);

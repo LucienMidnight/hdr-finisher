@@ -29,6 +29,36 @@ def test_reference_units_and_defaults():
     assert (SDRAdjustments().highlights_center, SDRAdjustments().highlights_width) == (1.75, 3.5)
 
 
+@pytest.mark.parametrize("hdr", [True, False])
+@pytest.mark.parametrize("reference,peak", [(203, 1000), (100, 400)])
+def test_local_tone_is_the_global_block_after_local_exposure_contrast(hdr, reference, peak):
+    from hdr_finisher.models import LocalGrade
+    from hdr_finisher.local_adjustments import _apply_local_grade
+    kind = PreviewKind.HDR if hdr else PreviewKind.SDR
+    branch = HDRAdjustments() if hdr else SDRAdjustments()
+    values = np.geomspace(1e-5, 4, 257).astype(np.float32)
+    pixels = np.repeat(values[None, :, None], 3, axis=-1)
+    grade = LocalGrade(exposure=.4, contrast=.2, blacks=70, whites=-90,
+                       shadows=100, midtones=-60, highlights=80,
+                       highlights_center=branch.highlights_center, highlights_width=branch.highlights_width)
+    entry = grade.contrast_pivot * np.exp2(
+        np.log2(values / grade.contrast_pivot) * np.float32(2 ** grade.contrast) + grade.exposure
+    )
+    entry = np.repeat(entry[None, :, None], 3, axis=-1)
+    for name in ("blacks", "whites", "shadows", "midtones", "highlights", "highlights_center", "highlights_width"):
+        setattr(branch, name, getattr(grade, name))
+    if hdr:
+        branch.highlight_compression_target_nits = peak
+    expected = apply_tone(entry, branch, hdr, reference)
+    if not hdr:
+        from hdr_finisher.adjustments import _apply_white_balance
+        from hdr_finisher.color import acescg_to_linear_srgb
+        expected = acescg_to_linear_srgb(_apply_white_balance(linear_srgb_to_acescg(expected), 6500, 0))
+    expected = np.maximum(expected, 0)
+    actual = _apply_local_grade(pixels, grade, kind, reference_white_nits=reference, target_peak_nits=peak)
+    np.testing.assert_allclose(actual, expected, rtol=3e-6, atol=3e-7)
+
+
 @pytest.mark.parametrize("reference", [100, 203])
 def test_hdr_whites_uses_project_reference_white_without_changing_target(reference):
     branch = HDRAdjustments(whites=-100, highlight_section_enabled=False)

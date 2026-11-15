@@ -861,10 +861,17 @@ class LocalGrade(BaseModel):
 
     enabled: bool = True
     exposure: float = Field(default=0.0, ge=-8.0, le=8.0)
-    highlights: float = Field(default=0.0, ge=-2.0, le=2.0)
-    midtones: float = Field(default=0.0, ge=-2.0, le=2.0)
-    shadows: float = Field(default=0.0, ge=-2.0, le=2.0)
-    blacks: float = Field(default=0.0, ge=-2.0, le=2.0)
+    highlights: float = Field(default=0.0, ge=-100.0, le=100.0)
+    midtones: float = Field(default=0.0, ge=-100.0, le=100.0)
+    shadows: float = Field(default=0.0, ge=-100.0, le=100.0)
+    blacks: float = Field(default=0.0, ge=-100.0, le=100.0)
+    whites: float = Field(default=0.0, ge=-100.0, le=100.0)
+    shadows_center: float = Field(default=-1.5, ge=-12.0, le=12.0)
+    shadows_width: float = Field(default=5.0, ge=0.5, le=24.0)
+    midtones_center: float = Field(default=0.0, ge=-12.0, le=12.0)
+    midtones_width: float = Field(default=4.0, ge=0.5, le=24.0)
+    highlights_center: float = Field(default=2.25, ge=-12.0, le=12.0)
+    highlights_width: float = Field(default=4.5, ge=0.5, le=24.0)
     contrast: float = Field(default=0.0, ge=-2.0, le=2.0)
     contrast_pivot: float = Field(default=0.18, ge=0.001, le=4.0)
     white_balance_kelvin: int = Field(default=6500, ge=1000, le=25000)
@@ -888,7 +895,7 @@ class LocalAdjustment(BaseModel):
     opacity: float = Field(default=1.0, ge=0.0, le=1.0)
     mask: MaskExpression = Field(default_factory=_default_local_mask)
     hdr_grade: LocalGrade = Field(default_factory=LocalGrade)
-    sdr_grade: LocalGrade = Field(default_factory=LocalGrade)
+    sdr_grade: LocalGrade = Field(default_factory=lambda: LocalGrade(highlights_center=1.75, highlights_width=3.5))
 
 
 class DenoiseLiveControls(BaseModel):

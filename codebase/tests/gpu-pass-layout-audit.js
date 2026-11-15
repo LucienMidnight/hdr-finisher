@@ -18,7 +18,12 @@ function recordWrites(source){
 function auditPassUses(sources,layouts){
  const written=new Set(),read=new Set(),errors=[];
  const add=(target,layout,name)=>{if(!layouts[layout]||!Object.hasOwn(layouts[layout].indices,name))errors.push(`Unknown ${layout}.${name}`);else target.add(layout+'.'+name);};
- for(const raw of sources){const source=clean(raw);
+ for(const raw of sources){let source=clean(raw);
+  if(source.includes("toneZonesWgsl(MASK_PARAMS.LOCAL")){
+   const helper=/function toneZonesWgsl\(indices, name\)\s*\{\s*return `([\s\S]*?)`;/.exec(source);
+   assert.ok(helper,"Shared Tone shader factory must be inspectable");
+   source+="`"+helper[1].replace(/indices\.(\w+)/g,"MASK_PARAMS.LOCAL.$1")+"`";
+  }
   for(const [layout,name] of recordWrites(source))add(written,layout,name);
   for(const m of source.matchAll(/\bvalues\[MASK_PARAMS\.(\w+)\.(\w+)\]\s*(?:\+=|=(?!=))/g))add(written,m[1],m[2]);
   // Only shader template readers count; host bounds reads cannot hide an absent GPU reader.

@@ -92,20 +92,20 @@ def _parameters(grey, peak, blacks, whites, shapes):
     return (*amounts, limiter, knee)
 
 
-def parameters(branch, hdr: bool, reference_white_nits=203.0):
+def parameters(branch, hdr: bool, reference_white_nits=203.0, target_peak_nits=None):
     grey = reference_grey(hdr)
-    peak = float(branch.highlight_compression_target_nits) * 0.18 / reference_white_nits if hdr else 1.0
+    peak = float(target_peak_nits if target_peak_nits is not None else getattr(branch, "highlight_compression_target_nits", 1000)) * 0.18 / reference_white_nits if hdr else 1.0
     shapes = tuple((float(getattr(branch, zone)) / 100, float(getattr(branch, f"{zone}_center")),
         float(getattr(branch, f"{zone}_width")) / 2) for zone in ZONES)
     return _parameters(grey, peak, float(branch.blacks) / 100, float(branch.whites) / 100, shapes)
 
 
-def apply_tone(image, branch, hdr: bool, reference_white_nits=203.0):
+def apply_tone(image, branch, hdr: bool, reference_white_nits=203.0, target_peak_nits=None):
     if not any(float(getattr(branch, name)) for name in ("blacks", *ZONES, "whites")):
         return image
-    amounts = parameters(branch, hdr, reference_white_nits)
+    amounts = parameters(branch, hdr, reference_white_nits, target_peak_nits)
     grey = reference_grey(hdr)
-    peak = float(branch.highlight_compression_target_nits) * 0.18 / reference_white_nits if hdr else 1.0
+    peak = float(target_peak_nits if target_peak_nits is not None else getattr(branch, "highlight_compression_target_nits", 1000)) * 0.18 / reference_white_nits if hdr else 1.0
     weights = np.array([0.2722287, 0.6740818, 0.0536895] if hdr else [0.2126, 0.7152, 0.0722], np.float32)
     luminance = np.maximum(np.sum(image * weights, axis=-1), 0)
     delivery = acescg_to_linear_bt2020(image) if hdr else image

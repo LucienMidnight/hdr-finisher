@@ -1,4 +1,4 @@
-function defaultLocalGrade() {
+function defaultLocalGrade(lane = "hdr") {
   return {
     enabled: true,
     exposure: 0,
@@ -6,6 +6,13 @@ function defaultLocalGrade() {
     midtones: 0,
     shadows: 0,
     blacks: 0,
+    whites: 0,
+    shadows_center: -1.5,
+    shadows_width: 5,
+    midtones_center: 0,
+    midtones_width: 4,
+    highlights_center: lane === "hdr" ? 2.25 : 1.75,
+    highlights_width: lane === "hdr" ? 4.5 : 3.5,
     contrast: 0,
     contrast_pivot: 0.18,
     white_balance_kelvin: 6500,
@@ -40,7 +47,7 @@ function newLocalAdjustment(type, pending = null) {
     opacity: 1,
     mask: newMaskExpression(type),
     hdr_grade: defaultLocalGrade(),
-    sdr_grade: defaultLocalGrade(),
+    sdr_grade: defaultLocalGrade("sdr"),
   };
 }
 
@@ -810,6 +817,7 @@ function renderLocalAdjustments() {
     syncLocalMaskOverlayControl();
     const grade = local[`${state.currentView}_grade`];
     els.localGradeControls.forEach((control) => {
+      control.dataset.defaultValue = String(getValueByPath(defaultLocalGrade(state.currentView), control.dataset.localGrade));
       control.value = String(getValueByPath(grade, control.dataset.localGrade));
       updateLocalGradeOutput(control.dataset.localGrade, Number(control.value));
     });
@@ -872,6 +880,8 @@ function updateLocalGradeOutput(name, value) {
     els.localGradeOutputs.push(output);
   }
   if (name === "exposure") output.textContent = `${value.toFixed(2)} EV`;
+  else if (name.endsWith("_center") || name.endsWith("_width")) output.textContent = `${value.toFixed(2)} EV`;
+  else if (["blacks", "whites", "shadows", "midtones", "highlights"].includes(name)) output.textContent = `${Math.round(value)}`;
   else if (name === "white_balance_kelvin") output.textContent = `${Math.round(value)} K`;
   else if (name.endsWith("clarity_radius_percent")) output.textContent = `${value.toFixed(2)}%`;
   else if (name.endsWith("sharpen_radius_px")) output.textContent = `${value.toFixed(2)} px`;
@@ -1070,7 +1080,7 @@ function beginLocalDetailInteraction(control) {
 function updateLocalGradeFoldoutSummaries() {
   const grade = selectedLocal()?.[`${state.currentView}_grade`];
   if (!grade) return;
-  const baseline = defaultLocalGrade();
+  const baseline = defaultLocalGrade(state.currentView);
   for (const section of document.querySelectorAll(".local-grade-section")) {
     const fields = [...section.querySelectorAll("[data-local-grade]")].map(control => control.dataset.localGrade);
     let count = fields.filter(path => Math.abs(Number(getValueByPath(grade, path)) - Number(getValueByPath(baseline, path))) > 1e-8).length;

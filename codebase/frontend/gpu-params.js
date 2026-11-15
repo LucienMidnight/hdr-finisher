@@ -435,7 +435,7 @@
     return graphScaleContract().localDetailActive(grade);
   }
 
-  function buildLocalParams(local, lane, sourcePixelScale = 1, curveOffset = 0) {
+  function buildLocalParams(local, lane, sourcePixelScale = 1, curveOffset = 0, globalParams = null) {
     const grade = local[`${lane}_grade`];
     const detail = grade.detail || {};
     const values = new Float32Array(PARAM_COUNT);
@@ -443,10 +443,25 @@
     values[MASK_PARAMS.LOCAL.HDR_LANE] = lane === "hdr" ? 1 : 0;
     values[MASK_PARAMS.LOCAL.OPACITY] = Number(local.opacity) || 0;
     values[MASK_PARAMS.LOCAL.EXPOSURE] = Number(grade.exposure) || 0;
-    values[MASK_PARAMS.LOCAL.HIGHLIGHTS] = Number(grade.highlights) || 0;
-    values[MASK_PARAMS.LOCAL.MIDTONES] = Number(grade.midtones) || 0;
-    values[MASK_PARAMS.LOCAL.SHADOWS] = Number(grade.shadows) || 0;
-    values[MASK_PARAMS.LOCAL.BLACKS] = Number(grade.blacks) || 0;
+    const hdr = lane === "hdr";
+    const peak = globalParams?.[GPU_PARAMS.TONE_PEAK] || (hdr ? 1000 * 0.18 / 203 : 1);
+    const toneGrade = { ...grade, highlight_compression_target_nits: peak * 203 / 0.18 };
+    const tone = (globalThis.HDRTone || require("./tone-engine.js")).parameters(toneGrade, hdr);
+    values[MASK_PARAMS.LOCAL.BLACKS] = (grade.blacks || 0) / 100;
+    values[MASK_PARAMS.LOCAL.WHITES] = (grade.whites || 0) / 100;
+    values[MASK_PARAMS.LOCAL.SHADOWS] = tone[0];
+    values[MASK_PARAMS.LOCAL.MIDTONES] = tone[1];
+    values[MASK_PARAMS.LOCAL.HIGHLIGHTS] = tone[2];
+    values[MASK_PARAMS.LOCAL.TONE_LIMITER] = tone[3];
+    values[MASK_PARAMS.LOCAL.TONE_KNEE] = tone[4];
+    values[MASK_PARAMS.LOCAL.TONE_GREY] = 0.18 * (hdr ? 0.18 : 100 / 203);
+    values[MASK_PARAMS.LOCAL.TONE_PEAK] = peak;
+    values[MASK_PARAMS.LOCAL.SHADOWS_CENTER] = grade.shadows_center ?? -1.5;
+    values[MASK_PARAMS.LOCAL.SHADOWS_WIDTH] = grade.shadows_width ?? 5;
+    values[MASK_PARAMS.LOCAL.MIDTONES_CENTER] = grade.midtones_center ?? 0;
+    values[MASK_PARAMS.LOCAL.MIDTONES_WIDTH] = grade.midtones_width ?? 4;
+    values[MASK_PARAMS.LOCAL.HIGHLIGHTS_CENTER] = grade.highlights_center ?? (hdr ? 2.25 : 1.75);
+    values[MASK_PARAMS.LOCAL.HIGHLIGHTS_WIDTH] = grade.highlights_width ?? (hdr ? 4.5 : 3.5);
     values[MASK_PARAMS.LOCAL.CONTRAST] = Number(grade.contrast) || 0;
     values[MASK_PARAMS.LOCAL.CONTRAST_PIVOT] = Math.max(0.001, Number(grade.contrast_pivot) || 0.18);
     values[MASK_PARAMS.LOCAL.WHITE_BALANCE_KELVIN] = Number(grade.white_balance_kelvin) || 6500;

@@ -7,13 +7,13 @@ const names=['gpu-params.js','webgpu-shaders.js','gpu-brush-mask.js','gpu-mask-r
 const sources=names.map(name=>fs.readFileSync(path.join(__dirname,'../frontend',name),'utf8'));
 const audit=(input=sources)=>auditPassUses(input,passes.layouts);
 test('local and mask pass slots have one frozen position list',()=>{
- assert.equal(crypto.createHash('sha256').update(JSON.stringify(Object.entries(passes.layouts).map(([name,layout])=>[name,layout.fields]))).digest('hex'),'acf70297b2e2962ba457c9f0eb80790a95e4024ebe13573e6fdc7ad003647a5e');
+ assert.equal(crypto.createHash('sha256').update(JSON.stringify(Object.entries(passes.layouts).map(([name,layout])=>[name,layout.fields]))).digest('hex'),'40c5748bf465e025a28aef30222dba1262b3e4bc242972de49443e1299e22c10');
  for(const layout of Object.values(passes.layouts)){
   assert.ok(Object.isFrozen(layout)&&Object.isFrozen(layout.fields)&&Object.isFrozen(layout.indices));
   assert.equal(new Set(layout.fields.map(f=>f.name)).size,layout.count);
   assert.deepEqual(layout.fields.map(f=>f.index),Array.from({length:layout.count},(_,i)=>i));
  }
- assert.equal(passes.layouts.LOCAL.count,23);assert.equal(passes.layouts.RASTER.count,10);
+ assert.equal(passes.layouts.LOCAL.count,34);assert.equal(passes.layouts.RASTER.count,10);
  assert.equal(passes.layouts.STROKE.count,10);assert.equal(passes.layouts.SEGMENT.count,5);
  assert.deepEqual(passes.record('BOX',{AXIS:1,RADIUS:7}),[7,1]);
  assert.throws(()=>passes.record('BOX',{UNKNOWN:0}),/Unknown BOX parameter/);

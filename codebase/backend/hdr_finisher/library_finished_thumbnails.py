@@ -14,7 +14,7 @@ from .library_copies import source
 from .library_documents import identity as grade_identity
 from .library_pictures import PICTURE_VERSION
 
-VERSION = "finished-thumbnail-v6:" + PICTURE_VERSION
+VERSION = "finished-thumbnail-v7:" + PICTURE_VERSION
 
 
 class FinishedThumbnails:

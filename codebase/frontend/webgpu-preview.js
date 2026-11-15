@@ -1348,7 +1348,7 @@
         pass(a, pipelines.base, source, b, this.paramBuffer, b);
         let current = a;
         for (const {local, entry} of masks) {
-          const values = buildLocalParams(local, lane, 1,this.localCurveOffsets?.get(local.id) || 0);
+          const values = buildLocalParams(local, lane, 1,this.localCurveOffsets?.get(local.id) || 0, params);
           values[MASK_PARAMS.LOCAL.TEXTURE_AMOUNT] = values[MASK_PARAMS.LOCAL.CLARITY_AMOUNT] = values[MASK_PARAMS.LOCAL.SHARPEN_AMOUNT] = 0;
           const buffer = this.createStorageBuffer(values); buffers.push(buffer);
           this.device.queue.writeBuffer(buffer, 0, values);
@@ -5356,7 +5356,7 @@
         for (let index = 0; index < activeLocals.length; index += 1) {
           const local = activeLocals[index];
           const target = localSource === intermediate.baseTexture ? intermediate.localTexture : intermediate.baseTexture;
-          const localBuffer = this.localParamBuffer(local, lane, sourcePixelScale, proxy.width, proxy.height, masks[index]);
+          const localBuffer = this.localParamBuffer(local, lane, sourcePixelScale, proxy.width, proxy.height, masks[index], params);
           if (gpuLocalDetailActive(local[`${lane}_grade`])) {
             // Preserve the pre-local source until the final mask mix. The normal
             // ping-pong target holds the unmasked candidate, while the two Detail
@@ -8746,10 +8746,10 @@
       return entry;
     }
 
-    localParamBuffer(local, lane, sourcePixelScale, frameWidth = 0, frameHeight = 0, maskEntry = null) {
+    localParamBuffer(local, lane, sourcePixelScale, frameWidth = 0, frameHeight = 0, maskEntry = null, globalParams = null) {
       const key = `${local.id}:${lane}`;
       let buffer = this.localParamBuffers.get(key);
-      const values = buildLocalParams(local, lane, sourcePixelScale,this.localCurveOffsets?.get(local.id) || 0);
+      const values = buildLocalParams(local, lane, sourcePixelScale,this.localCurveOffsets?.get(local.id) || 0, globalParams);
       if (frameWidth > 0 && frameHeight > 0) {
         writeClarityPlan(values, frameWidth, frameHeight, values[MASK_PARAMS.LOCAL.CLARITY_RADIUS]);
         values[GPU_PARAMS.FRAME_WIDTH] = frameWidth;

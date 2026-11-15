@@ -31,6 +31,8 @@ def apply_local_stack(
     tile_size: int = 512,
     compiled_masks: dict[str, np.ndarray] | None = None,
     source_pixel_scale: float = 1.0,
+    reference_white_nits: float = 203.0,
+    target_peak_nits: float = 1000.0,
 ) -> np.ndarray:
     """Apply ordered local corrections without allocating per-layer frames or masks."""
     active = [item for item in local_adjustments if item.enabled and item.opacity > 0.0]
@@ -92,6 +94,8 @@ def apply_local_stack(
                     kind,
                     source_pixel_scale=source_pixel_scale,
                     hsl_stage_id=local.id,
+                    reference_white_nits=reference_white_nits,
+                    target_peak_nits=target_peak_nits,
                 )
                 tile[...] = tile + (candidate - tile) * influence[..., None]
     # Local corrections precede Film Look; finishing owns the SDR white ceiling.
@@ -1502,6 +1506,8 @@ def _apply_local_grade(
     *,
     source_pixel_scale: float = 1.0,
     hsl_stage_id: str | None = None,
+    reference_white_nits: float = 203.0,
+    target_peak_nits: float = 1000.0,
 ) -> np.ndarray:
     from .adjustments import (
         _apply_color_grading,
@@ -1514,17 +1520,13 @@ def _apply_local_grade(
     weights = ACESCG_LUMA if kind == PreviewKind.HDR else LINEAR_SRGB_LUMA
     luma = np.maximum(np.einsum("...c,c->...", result[..., :3], weights, optimize=True), 1e-8)
     stops = np.log2(luma / np.float32(grade.contrast_pivot))
-    zone_adjustment = (
-        np.float32(grade.blacks) * np.clip((-stops - 3.0) / 3.0, 0.0, 1.0)
-        + np.float32(grade.shadows) * np.clip(1.0 - np.abs(stops + 2.0) / 2.5, 0.0, 1.0)
-        + np.float32(grade.midtones) * np.clip(1.0 - np.abs(stops) / 2.5, 0.0, 1.0)
-        + np.float32(grade.highlights) * np.clip((stops - 0.5) / 3.0, 0.0, 1.0)
-    )
     contrast_factor = np.float32(2.0 ** grade.contrast)
-    target_stops = stops * contrast_factor + zone_adjustment + np.float32(grade.exposure)
+    target_stops = stops * contrast_factor + np.float32(grade.exposure)
     target_luma = np.float32(grade.contrast_pivot) * np.exp2(np.clip(target_stops, -32.0, 24.0))
     gain = target_luma / luma
     result *= gain[..., None]
+    from .tone import apply_tone
+    result = apply_tone(result, grade, kind == PreviewKind.HDR, reference_white_nits, target_peak_nits)
 
     if kind == PreviewKind.SDR:
         acescg = linear_srgb_to_acescg(result)

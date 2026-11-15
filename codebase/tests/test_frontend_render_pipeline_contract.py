@@ -280,7 +280,6 @@ def test_electron_preview_correctness_contract() -> None:
     assert 'webUtils.getPathForFile(file)' in preload
     assert 'handle("desktop:write-clipboard-text"' in main
     assert "clipboard.writeText(value)" in main
-    assert "fn toneZones(" in frontend_scripts()
 
 
 def test_export_format_dropdown_does_not_claim_a_provisional_or_alternative_ranking() -> None:

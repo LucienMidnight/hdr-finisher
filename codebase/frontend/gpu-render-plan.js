@@ -326,7 +326,7 @@ const GPU_PARAMS = window.HDRGpuParamLayout.indices;
   // especially for brush masks whose serialized stroke history can be large.
   function buildTiledLocalState(proxyIdentity, params, locals, lane, sourcePixelScale = 1, curveOffsets = new Map()) {
     const states = locals.map((local) => ({
-      params: buildLocalParams(local, lane, sourcePixelScale,curveOffsets.get(local.id) || 0), detailPrefix: null,
+      params: buildLocalParams(local, lane, sourcePixelScale,curveOffsets.get(local.id) || 0, params), detailPrefix: null,
     }));
     let lastDetail = -1;
     locals.forEach((local, index) => {

@@ -244,7 +244,18 @@
       { name: "SHARPEN_THRESHOLD", index: 19 },
       { name: "SOURCE_PIXEL_SCALE", index: 20 },
       { name: "CURVE_FLAGS", index: 21 },
-      { name: "CURVE_OFFSET", index: 22 }
+      { name: "CURVE_OFFSET", index: 22 },
+      { name: "WHITES", index: 23 },
+      { name: "SHADOWS_CENTER", index: 24 },
+      { name: "SHADOWS_WIDTH", index: 25 },
+      { name: "MIDTONES_CENTER", index: 26 },
+      { name: "MIDTONES_WIDTH", index: 27 },
+      { name: "HIGHLIGHTS_CENTER", index: 28 },
+      { name: "HIGHLIGHTS_WIDTH", index: 29 },
+      { name: "TONE_LIMITER", index: 30 },
+      { name: "TONE_KNEE", index: 31 },
+      { name: "TONE_GREY", index: 32 },
+      { name: "TONE_PEAK", index: 33 }
     ]),
     GRADIENT: define([
       { name: "START_X", index: 0 },

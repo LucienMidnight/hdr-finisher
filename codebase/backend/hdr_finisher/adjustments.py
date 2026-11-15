@@ -281,6 +281,8 @@ def _apply_hdr_adjustments(
                 adjustments.shared.geometry,
                 compiled_masks=compiled_local_masks,
                 source_pixel_scale=source_pixel_scale,
+                reference_white_nits=color_context.hdr_reference_white_nits,
+                target_peak_nits=hdr.highlight_compression_target_nits,
             )
     if hdr.film_look_section_enabled or _structure_is_active(hdr):
         result = _apply_film_look(result, adjustments, PreviewKind.HDR, include_grain=include_grain, frame_window=frame_window, source_pixel_scale=source_pixel_scale)
