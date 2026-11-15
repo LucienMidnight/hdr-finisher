@@ -190,42 +190,7 @@ function bindZoneScopeOverlays() {
 }
 
 function drawZoneScopeOverlay(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight) {
-  const overlay = state.scopeZoneOverlay;
-  if (!overlay || overlay.lane !== scope.preview_kind) return;
-  const settings = state.adjustments[overlay.lane];
-  // Tone zone (Shadows, Midtones or Highlights): Center +/- Width/2, in stops
-  // from middle grey: scene 0.18 in HDR (nit scope), display-linear 0.18 in
-  // SDR (whose scope shows the encoded signal).
-  const center = Number(settings?.[`${overlay.zone}_center`] ?? 0);
-  const width = Math.max(0.1, Number(settings?.[`${overlay.zone}_width`] ?? 4));
-  const lowerStop = center - width * 0.5;
-  const upperStop = center + width * 0.5;
-  const encode = (value) => (value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055);
-  // Scene 0.18 is drawn at the project's reference white (203 nits by default).
-  const greyNits = typeof projectReferenceWhiteNits === "function" ? projectReferenceWhiteNits() : 203;
-  const toValue = overlay.lane === "hdr"
-    ? (stop) => greyNits * (2 ** stop)
-    : (stop) => encode(clamp(0.18 * (2 ** stop), 0, 1));
-  const lower = clamp(guidePosition(scope, toValue(lowerStop)), 0, 1);
-  const upper = clamp(guidePosition(scope, toValue(upperStop)), 0, 1);
-  const start = Math.min(lower, upper);
-  const end = Math.max(lower, upper);
-  ctx.save();
-  ctx.fillStyle = "rgba(151, 224, 236, 0.13)";
-  ctx.strokeStyle = "rgba(151, 224, 236, 0.55)";
-  ctx.lineWidth = 1;
-  if (isWaveform) {
-    const top = plotTop + (1 - end) * plotHeight;
-    const bandHeight = Math.max(2, (end - start) * plotHeight);
-    ctx.fillRect(plotLeft, top, plotWidth, bandHeight);
-    ctx.strokeRect(plotLeft, top, plotWidth, bandHeight);
-  } else {
-    const left = plotLeft + start * plotWidth;
-    const bandWidth = Math.max(2, (end - start) * plotWidth);
-    ctx.fillRect(left, plotTop, bandWidth, plotHeight);
-    ctx.strokeRect(left, plotTop, bandWidth, plotHeight);
-  }
-  ctx.restore();
+  window.HDRTonePreview?.drawScope(ctx, scope, isWaveform, plotLeft, plotTop, plotWidth, plotHeight);
 }
 
 function drawResolveHistogram(ctx, channels, palette, plotLeft, plotTop, plotWidth, plotHeight) {

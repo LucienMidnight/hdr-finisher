@@ -12,6 +12,23 @@ function renderOverlayPresetNote() {
   renderFalseColorKey(mode);
 }
 
+void (async () => {
+  const version = new URL(document.currentScript?.src || location.href).search;
+  const stylesheet = document.createElement("link");
+  stylesheet.rel = "stylesheet";
+  stylesheet.href = `/static/tone-preview.css${version}`;
+  document.head.append(stylesheet);
+  for (const name of ["tone-preview-model", "tone-preview-gpu", "tone-preview-ui"]) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = `/static/${name}.js${version}`;
+      script.onload = resolve;
+      script.onerror = reject;
+      document.body.append(script);
+    });
+  }
+})().catch(error => console.warn("Tone preview could not load", error));
+
 function renderFalseColorKey(mode) {
   if (!els.falseColorKey) return;
   els.falseColorKey.classList.toggle("hidden", mode !== "false_color");

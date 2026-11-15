@@ -1,0 +1,15 @@
+.tone-preview-key {
+  position: absolute;
+  inset: var(--tab-plate-inset) var(--tab-plate-inset) auto;
+  z-index: 4;
+  padding: var(--tab-plate-inset);
+  border-radius: var(--radius-1);
+  background: var(--panel);
+  color: var(--body);
+  font: var(--font-weight-regular) var(--font-size-sm)/var(--line-height-normal) var(--font-body);
+  pointer-events: none;
+}
+.tone-preview-key span { white-space: pre-line; }
+.tone-preview-key canvas { display: block; width: 100%; height: calc(var(--panel-control-h) * 2); }
+.tone-clipping-overlay { position: absolute; z-index: 3; pointer-events: none; }
+.tone-preview-key.hidden, .tone-clipping-overlay.hidden { display: none; }
