@@ -375,5 +375,8 @@ def full_import_estimate(path):
         full_float_intermediates=2).conservative_import_peak_bytes
     from .raw_import import RAW_EXTENSIONS
     if Path(path).suffix.lower() in RAW_EXTENSIONS:
-        peak += app_memory.WORKING
+        # Lens correction holds a full-image coordinate map (six float32
+        # coordinates per pixel for chromatic correction) beside the input
+        # and output images; WORKING covers the separate remap scratch.
+        peak += width * height * 6 * 4 + app_memory.WORKING
     return max(MINIMUM, peak)

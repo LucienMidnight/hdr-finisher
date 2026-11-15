@@ -85,12 +85,19 @@ class LibraryPaste:
             if default is None: return None
         if default is None:
             # Concurrent preparation requests share one starting document.
-            with self._path_lock(path):
+            # Wait in short steps so a cancel or closed window is not stuck
+            # behind another request preparing the same photo.
+            lock=self._path_lock(path)
+            while not lock.acquire(timeout=.05):
+                if cancelled(): raise ValueError('Paste preparation cancelled; no grades changed.')
+            try:
                 default=self.grades._get(path).get('default') or self.starting_document(path, cancelled=cancelled)
                 with self.marks._lock:
                     state=self.grades._get(path)
                     default=state.get('default') or default
                     state['default']=default; self.grades._put(path,state)
+            finally:
+                lock.release()
         from .projects import validate_saved
         return (validate_saved(EditDocument, current if current is not None else default).model_dump(mode="json"),
                 validate_saved(EditDocument, default).model_dump(mode="json"))
@@ -205,9 +212,9 @@ class LibraryPaste:
             raise ValueError('Unknown paste setting.')
         return {'lanes':list(dict.fromkeys(lanes)),'settings':list(dict.fromkeys(settings))}
 
-    def copy(self,path):
+    def copy(self,path,cancelled=lambda:False):
         path=str(self.marks._path(path))
-        self.document(path)
+        self.document(path, cancelled=cancelled)
         with self.grades.store._lock,self.marks._lock:
             grade,start=self.document(path)
             self.clipboard={'path':path,'grade':grade,'start':start,'name':(self.marks._document(Path(path)) or {}).get('name') or self.marks.source_path(path).name}
@@ -275,8 +282,23 @@ def add_paste_routes(router,grades):
         except (ValueError,OSError,KeyError) as error: raise HTTPException(status_code=400,detail=str(error)) from error
     @router.get('/grade-copy')
     def clipboard(): return call(paste.describe)
+    async def until_done(connection, action):
+        # Run blocking work; a closed window cancels it at the next safe point.
+        # A disconnect must not free a reservation before the decoder stops.
+        disconnected = Event()
+        work = asyncio.create_task(run_in_threadpool(lambda:call(lambda:action(disconnected.is_set))))
+        try:
+            while not work.done():
+                if await connection.is_disconnected(): disconnected.set()
+                await asyncio.sleep(.05)
+            return await work
+        finally:
+            disconnected.set()
+            if not work.done():
+                await asyncio.shield(work)
     @router.post('/grade-copy')
-    def copy_grade(request:dict): return call(lambda:paste.copy(request['path']))
+    async def copy_grade(request:dict, connection:Request):
+        return await until_done(connection, lambda stop:paste.copy(request['path'], stop))
     @router.post('/grade-paste')
     def paste_grade(request:dict): return call(lambda:paste.paste(request.get('paths',[]),request.get('selection'),request.get('preview',False),request.get('token')))
     @router.post('/grade-preparation')
@@ -289,17 +311,8 @@ def add_paste_routes(router,grades):
         return {'done':True}
     @router.post('/grade-prepare')
     async def prepare_grade(request:dict, connection:Request):
-        disconnected = Event()
-        work = asyncio.create_task(run_in_threadpool(lambda:call(lambda:paste.prepare(request['path'], request.get('token'), disconnected.is_set))))
         try:
-            while not work.done():
-                if await connection.is_disconnected(): disconnected.set()
-                await asyncio.sleep(.05)
-            return await work
+            return await until_done(connection, lambda stop:paste.prepare(request['path'], request.get('token'), stop))
         finally:
-            disconnected.set()
-            # A disconnect must not free the reservation before the decoder stops.
-            if not work.done():
-                await asyncio.shield(work)
             if await connection.is_disconnected() and request.get('token'):
                 with paste._locks_lock: paste._operations.pop(request['token'], None)

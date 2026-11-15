@@ -301,3 +301,18 @@ def test_disconnected_preparation_request_stops_import(setup, monkeypatch):
             await asyncio.wait_for(task,3)
     asyncio.run(exercise())
     assert not local.jobs and not grades._get(str(cold)).get('desired')
+
+def test_cancel_is_not_stuck_behind_another_request_for_the_same_photo(setup, monkeypatch):
+    import time
+    photo,store,session,marks,grades=setup
+    saved(setup); paste=LibraryPaste(grades)
+    cold=photo.with_name('cold-wait.png');cold.write_bytes(photo.read_bytes())
+    monkeypatch.setattr(paste.pictures,'default_document',lambda source:None)
+    lock=paste._path_lock(str(marks._path(str(cold)))); lock.acquire()
+    try:
+        started=time.monotonic()
+        with pytest.raises(ValueError, match='cancelled'):
+            paste.copy(str(cold), cancelled=lambda:time.monotonic()-started>.2)
+        assert time.monotonic()-started<2
+    finally:
+        lock.release()
