@@ -650,6 +650,7 @@ def _translate_local_grade(hdr_grade: LocalGrade, highlight_factor: float) -> Lo
     sdr_grade.hsl_section_enabled = hdr_grade.hsl_section_enabled
     sdr_grade.hsl = hdr_grade.hsl.model_copy(deep=True)
     sdr_grade.color_grading = hdr_grade.color_grading.model_copy(deep=True)
+    _translate_color_grading_wheels(sdr_grade.color_grading, hdr_grade.color_grading)
     _attenuate_highlight_qualified_controls(sdr_grade.color_grading, highlight_factor)
 
     scene_values = np.concatenate(

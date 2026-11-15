@@ -731,10 +731,8 @@ def apply_sdr_output_highlight_compression(
     stays where the headroom still exists and only the ceiling runs last, which
     is what output finishing and grain need bounding by.
     """
-    sdr = adjustments.sdr
-    if not sdr.highlight_section_enabled:
-        return image
-    return np.clip(image, 0.0, 1.0).astype(np.float32, copy=False)
+    # The shoulder can be bypassed; delivery still needs legal SDR colours.
+    return _compress_to_srgb_gamut(image)
 
 
 def _apply_sdr_adjustments(
@@ -855,8 +853,9 @@ def _apply_sdr_post_highlight_tail(
     if sdr.vignette_section_enabled:
         result = _apply_vignette(result, sdr.vignette, PreviewKind.SDR, frame_window=frame_window)
     if include_output_highlight_compression:
-        result = apply_sdr_output_highlight_compression(result, adjustments)
-    return np.clip(result, 0.0, 1.0)
+        return apply_sdr_output_highlight_compression(result, adjustments)
+    # Delivery resizes/sharpens before applying the same final gamut boundary.
+    return result.astype(np.float32, copy=False)
 
 
 def _sdr_pre_highlight(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:
@@ -1090,9 +1089,9 @@ def _apply_luminance_section_controls(
     # SDR contrast should feel perceptually uniform even though the pipeline
     # stores linear-light pixels. Work on an encoded luma signal, then scale
     # linear RGB together so the adjustment remains hue preserving.
-    working = np.clip(image.astype(np.float32, copy=True), 0.0, 1.0)
-    linear_luma = np.clip(_linear_luma(working), 0.0, 1.0)
-    luma = _srgb_encode(linear_luma)
+    working = image.astype(np.float32, copy=True)
+    linear_luma = np.maximum(_linear_luma(working), 0.0)
+    luma = _srgb_encode(linear_luma, preserve_headroom=True)
     target_luma = luma.copy()
 
     if contrast != 0.0:
@@ -1102,7 +1101,7 @@ def _apply_luminance_section_controls(
         slope = np.float32(2.0 ** (contrast * 0.5))
         target_luma = (target_luma - pivot) * slope + pivot
 
-    target_linear_luma = _srgb_decode(np.clip(target_luma, 0.0, 1.0))
+    target_linear_luma = _srgb_decode(target_luma, preserve_headroom=True)
     luma_ratio = np.where(
         linear_luma > 1e-6,
         target_linear_luma / np.maximum(linear_luma, 1e-6),
@@ -1753,8 +1752,8 @@ def _acescg_luma(image: np.ndarray) -> np.ndarray:
     return 0.2722287 * image[..., 0] + 0.6740818 * image[..., 1] + 0.0536895 * image[..., 2]
 
 
-def _srgb_encode(value: np.ndarray) -> np.ndarray:
-    positive = np.clip(value.astype(np.float32, copy=False), 0.0, 1.0)
+def _srgb_encode(value: np.ndarray, *, preserve_headroom: bool = False) -> np.ndarray:
+    positive = np.clip(value.astype(np.float32, copy=False), 0.0, None if preserve_headroom else 1.0)
     return np.where(
         positive <= 0.0031308,
         positive * np.float32(12.92),
@@ -1762,8 +1761,8 @@ def _srgb_encode(value: np.ndarray) -> np.ndarray:
     ).astype(np.float32)
 
 
-def _srgb_decode(value: np.ndarray) -> np.ndarray:
-    encoded = np.clip(value.astype(np.float32, copy=False), 0.0, 1.0)
+def _srgb_decode(value: np.ndarray, *, preserve_headroom: bool = False) -> np.ndarray:
+    encoded = np.clip(value.astype(np.float32, copy=False), 0.0, None if preserve_headroom else 1.0)
     return np.where(
         encoded <= 0.04045,
         encoded / np.float32(12.92),
@@ -1849,7 +1848,8 @@ def _apply_film_look(
         result = image + (result - image) * strength
     if _structure_is_active(branch):
         result = _apply_image_structure(result, branch.detail, kind)
-    return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+    # Keep SDR headroom through the strength mix; output gamut mapping runs last.
+    return np.maximum(result, 0.0).astype(np.float32)
 
 
 def _apply_color_grading(image: np.ndarray, grading: object, kind: PreviewKind) -> np.ndarray:
@@ -1862,7 +1862,7 @@ def _apply_color_grading(image: np.ndarray, grading: object, kind: PreviewKind) 
         zone_signal = np.log2(np.maximum(source_luma, 1e-7) / np.float32(0.18))
     else:
         zone_signal = np.log2(np.maximum(_srgb_encode(np.clip(source_luma, 0.0, 1.0)), 1e-7) / np.float32(0.5))
-    balance = np.float32(grading.balance / 50.0)
+    balance = np.float32(-grading.balance / 50.0)
     width = np.float32(0.55 + 3.45 * grading.blending / 100.0)
     shadow = 1.0 - _smoothstep(float(-1.0 + balance - width * 0.5), float(-1.0 + balance + width * 0.5), zone_signal)
     highlight = _smoothstep(float(1.0 + balance - width * 0.5), float(1.0 + balance + width * 0.5), zone_signal)
@@ -1884,9 +1884,12 @@ def _apply_color_grading(image: np.ndarray, grading: object, kind: PreviewKind) 
         luminance_ev += masks[..., index] * np.float32(wheel.luminance_ev)
     tinted = image.astype(np.float32, copy=False) + tint * source_luma[..., None]
     tinted_luma = np.maximum(np.einsum("...c,c->...", tinted, weights, optimize=True), 1e-7)
-    tinted *= (source_luma / tinted_luma)[..., None]
+    tinted *= np.where(source_luma > 1e-7, source_luma / tinted_luma, 1.0)[..., None]
     tinted *= np.exp2(luminance_ev)[..., None]
-    return np.clip(tinted, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+    # A wheel must never limit pixels, including those outside its range.
+    active = np.array([w.saturation != 0.0 or w.luminance_ev != 0.0 for w in wheels])
+    affected = np.any(masks[..., active] > 0.0, axis=-1)
+    return np.where(affected[..., None], tinted, image).astype(np.float32)
 
 
 def _apply_vignette(
@@ -1925,7 +1928,7 @@ def _apply_vignette(
         highlight = _smoothstep(0.55, 0.95, _film_encode_luma(luma, kind))
         mask *= 1.0 - highlight * np.float32(vignette.highlight_protection / 100.0)
     gain = np.exp2(ev * mask)
-    return np.clip(image.astype(np.float32, copy=False) * gain[..., None], 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+    return np.maximum(image.astype(np.float32, copy=False) * gain[..., None], 0.0).astype(np.float32)
 
 
 def _film_luma(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
@@ -2346,7 +2349,7 @@ def _apply_image_structure(
     low_pass = _film_detail_blur(source, radius)
     result = image + (low_pass - image) * softness * np.float32(0.65)
     result += (image - low_pass) * microcontrast * np.float32(0.5)
-    return np.clip(result, 0.0, None if kind == PreviewKind.HDR else 1.0).astype(np.float32)
+    return np.maximum(result, 0.0).astype(np.float32)
 
 
 def _apply_film_resolution(

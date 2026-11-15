@@ -857,17 +857,18 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let masks = vec3f(shadow, midtone, highlight) / total;
       var tint = vec3f(0.0);
       var luminanceEv = 0.0;
+      var affected = false;
       for (var index: u32 = 0u; index < 3u; index = index + 1u) {
         let offset = ${GPU_PARAMS.COLOR_GRADING_SHADOW_HUE} + index * 3;
+        affected = affected || (masks[index] > 0.0 && (p[offset + 1] != 0.0 || p[offset + 2] != 0.0));
         tint += gradingVector(p[offset], hdr) * p[offset + 1] * masks[index];
         luminanceEv += p[offset + 2] * masks[index];
       }
+      if (!affected) { return input; }
       var result = input + tint * sourceY;
       let tintedY = max(select(lumaSrgb(result), lumaAces(result), hdr), 0.0000001);
-      result *= sourceY / tintedY;
-      let graded = max(result * exp2(luminanceEv), vec3f(0.0));
-      // Export's active SDR grading clips to display white inside the stage.
-      return select(min(graded, vec3f(1.0)), graded, hdr);
+      if (sourceY > 0.0000001) { result *= sourceY / tintedY; }
+      return result * exp2(luminanceEv);
     }
     fn hdrSoftCeiling(input: vec3f) -> vec3f {
       if (p[${GPU_PARAMS.HIGHLIGHT_MODE}] != 2.0 || p[${GPU_PARAMS.HIGHLIGHT_SOFTNESS}] <= 0.0) { return input; }
@@ -1205,11 +1206,12 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
     fn sdrContrast(input: vec3f) -> vec3f {
       if (p[${GPU_PARAMS.CONTRAST}] == 0.0) { return input; }
-      let rgb = clamp(input, vec3f(0.0), vec3f(1.0));
-      let linearY = clamp(lumaSrgb(rgb), 0.0, 1.0);
-      let encodedY = srgbEncode(linearY);
+      let rgb = input;
+      let linearY = max(lumaSrgb(rgb), 0.0);
+      let encodedY = displayEncodeChannel(linearY);
       let targetValue = (encodedY - p[${GPU_PARAMS.CONTRAST_PIVOT}]) * exp2(p[${GPU_PARAMS.CONTRAST}] * 0.5) + p[${GPU_PARAMS.CONTRAST_PIVOT}];
-      let targetY = srgbDecode(clamp(targetValue, 0.0, 1.0));
+      let positive = max(targetValue, 0.0);
+      let targetY = select(pow((positive + 0.055) / 1.055, 2.4), positive / 12.92, positive <= 0.04045);
       if (linearY > 0.000001) { return rgb * (targetY / linearY); }
       return vec3f(targetY);
     }
@@ -1293,11 +1295,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         rgb = sdrPrimaries(rgb);
         rgb = applyColorGrading(applyCurves(applyHsl(rgb, false), false), false);
       }
-      // Export clips to display white only inside the stages that are active
-      // (contrast, primaries, curves, grading), which the helpers above do. A
-      // tone-equalizer lift above white therefore reaches Detail and the
-      // locals unclipped, and a darkening local recovers it; the output
-      // mapping clips last.
+      // Contrast and wheels retain headroom for Detail, locals and Film Look.
+      // The final output gamut mapper owns SDR white and gamut.
       return max(rgb, vec3f(0.0));
     }
 
@@ -1463,12 +1462,14 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (p[${GPU_PARAMS.HDR_LANE}] > 0.5) {
         return bt2020ToAcescg(clamp(acescgToBt2020(input), vec3f(0.0), vec3f(p[${GPU_PARAMS.HIGHLIGHT_TARGET}])));
       }
-      return clamp(input, vec3f(0.0), vec3f(1.0));
+      return compressSrgbGamut(input);
     }
     // The shoulder shapes the picture and the ceiling guarantees the delivery
     // spec. A shoulder anchored on a measured peak cannot promise the target on
     // its own, because ringing and grain samples sit above the picture it fits.
     fn applyOutputHighlights(input: vec3f) -> vec3f {
+      // SDR always finishes inside white and gamut, even with its shoulder bypassed.
+      if (p[${GPU_PARAMS.HDR_LANE}] < 0.5) { return compressSrgbGamut(input); }
       if (p[${GPU_PARAMS.HIGHLIGHT_MODE}] < 0.5) { return input; }
       if (p[${GPU_PARAMS.HIGHLIGHT_MODE}] == 3.0) { return clipToOutputTarget(input); }
       if (p[${GPU_PARAMS.HDR_LANE}] > 0.5) { return clipToOutputTarget(hdrPeakFit(hdrSoftCeiling(input))); }
@@ -1939,7 +1940,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         rgb = structureSource
           + (structureBlur - structureSource) * p[${GPU_PARAMS.STRUCTURE_SOFTNESS}] * 0.65
           + (structureSource - structureBlur) * p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}] * 0.5;
-        rgb = select(clamp(rgb, vec3f(0.0), vec3f(1.0)), max(rgb, vec3f(0.0)), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
+        rgb = max(rgb, vec3f(0.0));
       }
       return applyVignette(rgb, coordinate);
     }
@@ -2064,7 +2065,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
       if (p[${GPU_PARAMS.STRUCTURE_ENABLED}] > 0.5 && (abs(p[${GPU_PARAMS.STRUCTURE_SOFTNESS}]) > 0.000001 || abs(p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}]) > 0.000001)) { return rgb; }
       if (filmModuleActive()) {
-        rgb = select(clamp(rgb, vec3f(0.0), vec3f(1.0)), max(rgb, vec3f(0.0)), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
+        rgb = max(rgb, vec3f(0.0));
       }
       return applyVignette(rgb, coordinate);
     }
@@ -2129,12 +2130,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // Local curves precede colour wheels and Detail, just as in export.
       rgb = applyCurvesOffset(rgb,hdr,u32(p[${MASK_PARAMS.LOCAL.CURVE_FLAGS}]),u32(p[${MASK_PARAMS.LOCAL.CURVE_OFFSET}]));
       rgb = applyColorGrading(rgb,hdr);
-      // CPU active SDR grading clips before Detail; neutral grading skips
-      // that stage so an unclipped candidate can still enter Detail.
-      if (!hdr && (p[${GPU_PARAMS.COLOR_GRADING_SHADOW_SATURATION}] != 0.0 || p[${GPU_PARAMS.COLOR_GRADING_SHADOW_LUMINANCE_EV}] != 0.0 || p[${GPU_PARAMS.COLOR_GRADING_MIDTONE_SATURATION}] != 0.0
-        || p[${GPU_PARAMS.COLOR_GRADING_MIDTONE_LUMINANCE_EV}] != 0.0 || p[${GPU_PARAMS.COLOR_GRADING_HIGHLIGHT_SATURATION}] != 0.0 || p[${GPU_PARAMS.COLOR_GRADING_HIGHLIGHT_LUMINANCE_EV}] != 0.0)) {
-        rgb = min(rgb,vec3f(1.0));
-      }
+      // Wheels retain headroom through Detail and the local mask blend.
       return max(rgb, vec3f(0.0));
     }
 
@@ -2673,7 +2669,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let source = textureLoad(sourceTexture, coordinate, 0).rgb;
       let influence = clamp(localMaskValue(coordinate) * p[${MASK_PARAMS.LOCAL.OPACITY}] * p[${MASK_PARAMS.LOCAL.MASK_OPACITY}], 0.0, 1.0);
       let graded = applyLocalGrade(source);
-      let candidate = select(min(graded,vec3f(1.0)),graded,p[${MASK_PARAMS.LOCAL.HDR_LANE}]>0.5);
+      let candidate = graded;
       return vec4f(mix(source,candidate,influence), 1.0);
     }
 

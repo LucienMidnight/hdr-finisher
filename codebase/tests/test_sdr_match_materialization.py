@@ -17,6 +17,7 @@ from hdr_finisher.models import (
 )
 from hdr_finisher.sdr_match import (
     MATCH_SHOULDER_START,
+    MATCH_REVIEW_P95_LUMA_LIMIT,
     SDRMatchMaterializationError,
     _materialize_local_grades,
     build_sdr_match_target,
@@ -113,14 +114,11 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     ):
         assert len(curve) <= 7
         assert _curve_has_useful_slope(curve)
-    assert any(
-        not _curve_is_identity(curve)
-        for curve in (
-            result.adjustments.sdr.red_curve,
-            result.adjustments.sdr.green_curve,
-            result.adjustments.sdr.blue_curve,
-        )
-    )
+    # Headroom no longer needs RGB curves to compensate channel clipping.
+    # Judge the finished result against the existing quality limits above.
+    finished = apply_adjustments(source, result.adjustments, PreviewKind.SDR,
+                                 include_grain=False, local_adjustments=result.local_adjustments)
+    assert np.isfinite(finished).all() and finished.min() >= 0 and finished.max() <= 1
     local_grade = result.local_adjustments[0].sdr_grade
     assert _curve_is_identity(local_grade.luma_curve)
     assert _curve_is_identity(local_grade.red_curve)
@@ -333,10 +331,16 @@ def test_match_copies_physical_lens_recipe_without_threshold_translation(family)
     assert translated.film_look.lens_size == 2.5
 
 
-def test_match_rejects_coloured_lens_target_outside_existing_quality_gate() -> None:
+def test_match_coloured_lens_target_meets_existing_quality_gate() -> None:
     source = tifffile.imread(FIXTURE).astype(np.float32)
     adjustments, locals_ = _calibrated_grade()
     adjustments.hdr.film_look.lens_filter = "black_pro_mist"
     adjustments.hdr.film_look.lens_strength = 0.5
-    with pytest.raises(SDRMatchMaterializationError, match="could not be safely materialized"):
-        materialize_sdr_match(source, adjustments, locals_, reference_white_nits=203, source_pixel_scale=1.0)
+    # The clipping fix makes this formerly rejected recipe fit without a waiver.
+    result = materialize_sdr_match(source, adjustments, locals_, reference_white_nits=203, source_pixel_scale=1.0)
+    assert result.status == "needs_review"
+    assert result.quality.p95_luma_error <= MATCH_REVIEW_P95_LUMA_LIMIT
+    assert result.quality.p95_oklab_error <= 0.05
+    finished = apply_adjustments(source, result.adjustments, PreviewKind.SDR,
+                                 include_grain=False, local_adjustments=result.local_adjustments)
+    assert np.isfinite(finished).all() and finished.min() >= 0 and finished.max() <= 1

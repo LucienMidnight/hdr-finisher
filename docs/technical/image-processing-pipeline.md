@@ -8,6 +8,22 @@ This document explains the pipeline as it runs today, including the reasons behi
 
 When this document disagrees with running code or tests, code and tests win. Update this page in the same change. The repository's broader authority order is active code/tests, reproducible evidence, validation records, user documentation, then PRDs and design history.
 
+## November 15 W3: SDR headroom boundary (draft; Match guard open)
+
+Wheels edit their weighted ranges without limiting RGB. SDR contrast keeps
+above-white RGB through its luminance-only gain. Film Look's final strength
+mix, structure and vignette also keep headroom. Finished SDR passes through
+the existing hue-preserving adaptive OKLCh sRGB gamut mapper, replacing
+independent channel clipping. The SDR shoulder stays before Exposure Bands.
+Preview/scopes map after film/vignette; delivery defers the same mapping
+until after resize/sharpening. Bypassing the shoulder still produces legal
+SDR white and gamut. HDR's exact delivery ceiling is unchanged.
+
+This is an intentional output change. The implementation is a reviewable draft:
+the existing Match +0.5 EV white-area-growth guard fails (1.279 percentage
+points versus the unchanged 1.000 allowance). See the November 15 W3 record in
+[Grade](../product/modules/grade.md); M1a is not release-qualified.
+
 ## 1. The shortest correct mental model
 
 ```text
@@ -166,7 +182,7 @@ Generated SDR starts from the ACEScg HDR source:
 12. lens filter, film resolution, halation, negative and density grain, paper/scanner, one Look Strength mix.
 13. Detail structure and vignette.
 14. final grain dispatch (film density grain is already resolved).
-15. clamp to `[0, 1]` display-linear sRGB.
+15. hue-preserving sRGB gamut mapping to `[0, 1]` (W3 draft above).
 
 The scene-to-display conversion boundary is important. Moving a scene-linear control after it changes both its numerical meaning and its visual behavior.
 
@@ -185,7 +201,7 @@ When a source contains an authored SDR rendition, the branch begins from its ret
 9. film response and spatial finishing;
 10. vignette;
 11. grain;
-12. clamp to `[0, 1]`.
+12. hue-preserving sRGB gamut mapping to `[0, 1]` (W3 draft above).
 
 Do not collapse this branch into generated SDR. The authored base is a distinct creative endpoint in a gain-map source. Legacy v4 projects without an SDR rendering-version marker continue through the retired Base Rendition/Highlight Recovery renderer so reopening a project does not alter its pixels.
 

@@ -19,6 +19,91 @@ W6 in concurrent W1 work. Visual sign-off pending; no new tokens.
 
 # Module PRD: Grade
 
+
+## November 15: W3 wheels and SDR colour headroom (output change; M1a blocked)
+
+C1–C3 are implemented together on CPU and WebGPU. Wheels no longer clamp the
+whole image when enabled: pixels outside an active wheel's range are exact
+passthrough, and tiny strengths approach the neutral result continuously,
+including signed near-black colours. Positive Balance favours Highlights and
+negative Balance favours Shadows, globally and locally. Existing HDR/SDR
+range definitions are retained; C4 remains Steve's separate decision. Match
+keeps Balance's meaning and now translates local wheel hue/strength between
+ACEScg and linear sRGB, as it already did for global wheels.
+
+The puck uses one 45%-of-pad radius for drawing and input. Grabbing anywhere
+on a puck retains the grab offset; a stationary press/move produces no grade
+write. A puck at 40% stays at 40%, rather than jumping to 36%. No visual
+tokens, colours or saved fields are added.
+
+M1a is implemented as a **reviewable draft**, not signed off. SDR contrast
+retains RGB and luminance headroom and scales all channels together. Film
+Look's strength mix, structure, vignette and delivery finishing retain
+headroom until the existing adaptive OKLCh sRGB gamut mapper finishes the
+picture. The CPU delivery branch defers that boundary until after output
+resize/sharpening; WebGPU preview/scopes and delivery use the same mapper.
+The SDR shoulder stays in its original position. Final SDR pixels remain
+finite and within [0, 1], even when the shoulder is bypassed. HDR's delivery
+ceiling is unchanged. Existing nonzero Balance/wheel edits and SDR grades
+that formerly clipped before finishing intentionally render differently.
+
+On MacBook Neo (A18 Pro, 8 GB), the W5 saved synthetic recipe gives denim at
+0 stops / 75% saturation, Film off: 5.522 -> 0.430 Delta E 2000 against
+Match's own target; hue error 14.688 -> 0.231 degrees. Velvia 50% gives
+3.282 -> 0.162 Delta E 2000. These isolate the renderer change by keeping
+the same recipe and target. Shared RAW checks use canonical reduced RAW
+source development (long edge <=512), HDR Exposure +0.2 / Contrast +0.12 /
+Saturation +0.10 and the research luma curve, Film off, then actual Match.
+Before/after renders share the resulting editable recipe and target.
+A7R00619.ARW's 44,539 blue pixels improve at P95 from 5.232 -> 1.336 Delta E
+2000 and 18.085 -> 0.282 degrees absolute hue error. IMG_3129.CR2's 6,312
+blue pixels remain 0.092 Delta E 2000 at P95: this grade does not push that
+selection above white. DSC00264.ARW's 6,203 blue pixels remain 0.475 at P95
+(before 0.475149, after 0.475035); 82 blue pixels change by >0.0001 linear
+RGB. Blue selection: B > 1.2R, B > 1.05G, luma 0.02–0.9
+on Match's target. All measured final SDR ranges remain [0, 1].
+
+**Stop condition:** `test_calibrated_scene_materializes_into_normal_visible_modules`
+still fails its unchanged editable-exposure guard. A +0.5 EV SDR trim grows
+the >=0.999-luma fraction from 16.865% to 18.145% (1.279 percentage points;
+the existing allowance is 1.000). No tolerance or Match gate is relaxed.
+An in-memory alternative ceiling also fails the unchanged Match colour gate
+(OKLab P95 0.056 > 0.050); that alternative was not adopted. M1a remains
+open for the coordinator/Steve to resolve this conflict before release.
+
+Tests intentionally updated: Film strength is checked before the nonlinear
+final gamut mapper with its original 2e-6 tolerances; Match is judged by its
+finished pixels and original quality gates rather than requiring corrective
+RGB curves or rejection of a lens recipe that now reaches `needs_review`.
+The one-percentage-point exposure guard remains intact and failing. New CPU
+and Node checks cover wheel continuity, unchanged out-of-range pixels,
+Balance direction, local Match translation, stationary puck, above-white
+contrast hue, Film strength headroom, legal final gamut and delivery finishing.
+
+Validation on MacBook Neo / 8 GB / 1408x794: final Node suite 1,024 passed,
+one skipped. Full Python run: 3,466 passed / 144 skipped / one unexpected
+pass / 11 failed; three W3 expectations were subsequently updated as described
+above. Focused final CPU validation: 275 passed and the unchanged Match
+exposure guard failed; `test_adjustments.py` separately passes all 226 after
+the blend-test update. The eight unrelated full-run failures were tooltip
+wording and Library native/raw ownership/source-release checks; left to W1/W7.
+
+All Electron/GPU runs used the shared lock, sequentially. Global wheel /
+contrast / final-gamut probe passes 37 cases (296 pixels, existing 2e-6 gate);
+local grade passes 28 cases (224 pixels, existing 2e-6 gate). The analytic SDR
+gamut parity driver, all 33 SDR Film stock cases and the 90-second Library
+check pass. Velvia's fixed physical-chain caps pass: mean 0.119114 / p99.9
+1.044660 Delta E 2000. Extended tone/wheels/contrast/Film delivery passes:
+finished SDR mean 0.009702 / p99.9 0.160948 Delta E 2000; HDR mean 0.035002 /
+p99.9 0.126557 Delta ITP, Proof/export byte equality, decoded peak 986.059
+nits below 1000. GPU delivery smoke also passes its existing verdict.
+The encoded-HDR JPEG comparisons remain report-only in those drivers and
+exceed their stricter percentile diagnostic; no gate is changed here.
+`sdr-match-gpu-interaction.js` fails while preparing its HDR fixture, before
+Match is invoked; no measurement from that driver is claimed. Initial local
+and delivery checks exposed the remaining clamps, which were fixed and the
+checks rerun successfully. Scratch output remains 12.8 GB, under 100 GB.
+
 ## November 15: W1 import waits for paste release (R3)
 
 The real Grade import manager now waits for running paste preparation to

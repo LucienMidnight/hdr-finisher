@@ -377,7 +377,7 @@
     const grading = branch.color_grading || {};
     params[GPU_PARAMS.COLOR_GRADING_ENABLED] = branch.color_grading_section_enabled !== false ? 1 : 0;
     params[GPU_PARAMS.COLOR_GRADING_BLENDING] = 0.55 + 3.45 * (grading.blending ?? 50) / 100;
-    params[GPU_PARAMS.COLOR_GRADING_BALANCE] = (grading.balance || 0) / 50;
+    params[GPU_PARAMS.COLOR_GRADING_BALANCE] = -(grading.balance || 0) / 50;
     [grading.shadows || {}, grading.midtones || {}, grading.highlights || {}].forEach((wheel, index) => {
       params[GPU_PARAMS.COLOR_GRADING_SHADOW_HUE + index * 3] = wheel.hue || 0;
       params[GPU_PARAMS.COLOR_GRADING_SHADOW_SATURATION + index * 3] = (wheel.saturation || 0) / 400;
@@ -505,7 +505,7 @@
     const grading = grade.color_grading || {};
     values[GPU_PARAMS.COLOR_GRADING_ENABLED] = 1;
     values[GPU_PARAMS.COLOR_GRADING_BLENDING] = 0.55 + 3.45 * (grading.blending ?? 50) / 100;
-    values[GPU_PARAMS.COLOR_GRADING_BALANCE] = (grading.balance || 0) / 50;
+    values[GPU_PARAMS.COLOR_GRADING_BALANCE] = -(grading.balance || 0) / 50;
     [grading.shadows || {},grading.midtones || {},grading.highlights || {}].forEach((wheel,index)=>{
       values[GPU_PARAMS.COLOR_GRADING_SHADOW_HUE+index*3] = wheel.hue || 0;
       values[GPU_PARAMS.COLOR_GRADING_SHADOW_SATURATION+index*3] = (wheel.saturation || 0)/400;

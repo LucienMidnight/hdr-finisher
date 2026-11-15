@@ -501,12 +501,13 @@ def test_film_response_look_strength_is_a_single_linear_blend(kind: PreviewKind)
     look.shadow_contrast = 35
     look.highlight_contrast = 55
 
+    # Strength is linear before the deliberately nonlinear final gamut mapping.
     look.look_strength = 0
-    bypass = apply_adjustments(image, state, kind)
+    bypass = apply_adjustments(image, state, kind, include_output_highlight_compression=False)
     look.look_strength = 100
-    authored = apply_adjustments(image, state, kind)
+    authored = apply_adjustments(image, state, kind, include_output_highlight_compression=False)
     look.look_strength = 50
-    midpoint = apply_adjustments(image, state, kind)
+    midpoint = apply_adjustments(image, state, kind, include_output_highlight_compression=False)
 
     np.testing.assert_allclose(midpoint, bypass + (authored - bypass) * 0.5, rtol=2e-6, atol=2e-6)
 

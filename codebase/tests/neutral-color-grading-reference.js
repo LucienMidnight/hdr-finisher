@@ -12,15 +12,15 @@ const cases = JSON.parse(execFileSync(process.env.HDR_FINISHER_PYTHON || require
 import json
 import numpy as np
 from backend.hdr_finisher.color import map_negative_acescg
-from backend.hdr_finisher.adjustments import _apply_color_grading
-from backend.hdr_finisher.models import ColorGradingAdjustments, PreviewKind
+from backend.hdr_finisher.adjustments import _apply_color_grading, _apply_luminance_section_controls, apply_sdr_output_highlight_compression
+from backend.hdr_finisher.models import ColorGradingAdjustments, PreviewKind, AdjustmentState
 pixels = np.array([[[-.00028979886,-.00048077852,.00236804318],[-.00001202161,-.00023974421,.001966723], [0,0,0],[-.001,-.001,-.001], [1e-8,2e-8,3e-8],[.1,.2,.3],[1,2,4],[-.01,.2,.3]]],dtype=np.float32)
 cases=[]
 for kind in [PreviewKind.HDR,PreviewKind.SDR]:
-    for name, recipe, enabled in [('neutral',{},True),('neutral-hue-balance',dict(shadows=dict(hue=270),midtones=dict(hue=90),highlights=dict(hue=180),balance=45,blending=100),True),('disabled',dict(shadows=dict(saturation=30)),False),('active',dict(shadows=dict(hue=210,saturation=30,luminance_ev=.2),midtones=dict(hue=45,saturation=20,luminance_ev=-.1),highlights=dict(hue=90,saturation=15,luminance_ev=.1)),True)]:
+    for name, recipe, enabled in [('neutral',{},True),('neutral-hue-balance',dict(shadows=dict(hue=270),midtones=dict(hue=90),highlights=dict(hue=180),balance=45,blending=100),True),('disabled',dict(shadows=dict(saturation=30)),False),('tiny-shadows',dict(shadows=dict(hue=210,saturation=.001),blending=0),True),('active',dict(shadows=dict(hue=210,saturation=30,luminance_ev=.2),midtones=dict(hue=45,saturation=20,luminance_ev=-.1),highlights=dict(hue=90,saturation=15,luminance_ev=.1)),True)]:
         grading=ColorGradingAdjustments(**recipe)
         expected=_apply_color_grading(pixels,grading,kind) if enabled else pixels
-        fixture=dict(lane=kind.value,name=name,grading=grading.model_dump(),enabled=enabled,clampOutput=kind==PreviewKind.SDR and name=='active',source=pixels.reshape(-1).tolist(),expected=expected.reshape(-1).tolist())
+        fixture=dict(lane=kind.value,name=name,grading=grading.model_dump(),enabled=enabled,source=pixels.reshape(-1).tolist(),expected=expected.reshape(-1).tolist())
         cases.append(fixture)
         if kind==PreviewKind.HDR:cases.append(dict(fixture,name='base/'+name,base=True))
         if kind==PreviewKind.HDR:
@@ -29,6 +29,19 @@ for kind in [PreviewKind.HDR,PreviewKind.SDR]:
             mapped_fixture=dict(fixture,name='mapped-source/'+name,source=mapped.reshape(-1).tolist(),expected=mapped_expected.reshape(-1).tolist())
             cases.append(mapped_fixture)
             cases.append(dict(mapped_fixture,name='base/mapped-source/'+name,base=True))
+for balance in [-50,50]:
+    for wheel in ['shadows','highlights']:
+        grading=ColorGradingAdjustments(balance=balance,blending=100)
+        getattr(grading,wheel).saturation=40
+        for kind in [PreviewKind.HDR,PreviewKind.SDR]:
+            expected=_apply_color_grading(pixels,grading,kind)
+            cases.append(dict(lane=kind.value,name=f'{wheel}/balance{balance}',grading=grading.model_dump(),enabled=True,source=pixels.reshape(-1).tolist(),expected=expected.reshape(-1).tolist()))
+for contrast in [-.5,1e-6,.5]:
+    z=AdjustmentState();z.sdr.contrast=contrast
+    expected=_apply_luminance_section_controls(pixels,z.sdr,PreviewKind.SDR,apply_primaries=False)
+    cases.append(dict(lane='sdr',name=f'contrast/{contrast}',operation=1,contrast=contrast,pivot=z.sdr.contrast_pivot,grading=ColorGradingAdjustments().model_dump(),source=pixels.reshape(-1).tolist(),expected=expected.reshape(-1).tolist()))
+expected=apply_sdr_output_highlight_compression(pixels,AdjustmentState())
+cases.append(dict(lane='sdr',name='final-gamut',operation=2,grading=ColorGradingAdjustments().model_dump(),source=pixels.reshape(-1).tolist(),expected=expected.reshape(-1).tolist()))
 print(json.dumps(cases))
 `], {cwd:root,encoding:'utf8'}));
 
@@ -46,9 +59,9 @@ print(json.dumps(cases))
           let source=textureLoad(sourceTexture, vec2i(input.position.xy), 0).rgb;
           var graded = applyColorGrading(source, p[0] > 0.5);
           if(p[194]>0.5){graded=renderHdrBase(source);}
-          // renderSdrBase immediately clamps active grading to display range;
-          // CPU's grading function includes that upper clamp itself.
-          return vec4f(select(graded, min(graded, vec3f(1.0)), p[195] > 0.5), 1.0);
+          if(p[195]==1.0){graded=sdrContrast(source);}
+          if(p[195]==2.0){graded=applyOutputHighlights(source);}
+          return vec4f(graded, 1.0);
         }
       `});
       const pipeline = device.createRenderPipeline({layout:renderer.pipelineLayout,
@@ -58,9 +71,10 @@ print(json.dumps(cases))
         const source=device.createTexture({size:[8,1],format:'rgba32float',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST});
         const target=device.createTexture({size:[8,1],format:'rgba32float',usage:GPUTextureUsage.RENDER_ATTACHMENT|GPUTextureUsage.COPY_SRC});
         const params=new Float32Array(196); params[0]=fixture.lane==='hdr'?1:0;params[111]=fixture.enabled?1:0;
-        params[195]=fixture.clampOutput?1:0;
-        params[194]=fixture.base?1:0;
-        params[112]=.55+3.45*fixture.grading.blending/100;params[113]=fixture.grading.balance/50;
+
+        params[194]=fixture.base?1:0; params[195]=fixture.operation||0;
+        params[8]=fixture.contrast||0;params[9]=fixture.pivot||.1845;
+        params[112]=.55+3.45*fixture.grading.blending/100;params[113]=-fixture.grading.balance/50;
         ['shadows','midtones','highlights'].forEach((name,i)=>{const wheel=fixture.grading[name];params[114+i*3]=wheel.hue;params[115+i*3]=wheel.saturation/400;params[116+i*3]=wheel.luminance_ev;});
         const buffer=device.createBuffer({size:params.byteLength,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
         const read=device.createBuffer({size:256,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});

@@ -1,4 +1,5 @@
 let selectedWheelRange = "shadows";
+const COLOR_WHEEL_RADIUS = 0.45;
 function bindColorWheels() {
   const host = document.querySelector(".grading-wheels");
   const tabs = document.createElement("div"); tabs.className = "wheel-range-tabs";
@@ -49,11 +50,12 @@ function bindColorWheels() {
       grid.append(line);
     }
     pad.prepend(grid);
+    let gesture = null;
     const update = (event) => {
       const rect = pad.getBoundingClientRect();
-      const dx = event.clientX - rect.left - rect.width / 2;
-      const dy = event.clientY - rect.top - rect.height / 2;
-      const radius = Math.min(1, Math.hypot(dx, dy) / Math.max(1, rect.width / 2));
+      const dx = event.clientX - (gesture?.offsetX || 0) - rect.left - rect.width / 2;
+      const dy = event.clientY - (gesture?.offsetY || 0) - rect.top - rect.height / 2;
+      const radius = Math.min(1, Math.hypot(dx, dy) / Math.max(1, rect.width * COLOR_WHEEL_RADIUS));
       const hue = (Math.atan2(dy, dx) * 180 / Math.PI - 210 + 720) % 360;
       const wheel = pad.closest("[data-wheel]").dataset.wheel;
       setValueByPath(state.adjustments, `current.color_grading.${wheel}.hue`, hue);
@@ -62,8 +64,22 @@ function bindColorWheels() {
       invalidatePreview(state.currentView);
       debouncePreview(state.currentView);
     };
-    pad.addEventListener("pointerdown", (event) => { pad.setPointerCapture(event.pointerId); update(event); });
-    pad.addEventListener("pointermove", (event) => { if (pad.hasPointerCapture(event.pointerId)) update(event); });
+    pad.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      pad.setPointerCapture(event.pointerId);
+      const puck = event.target.closest?.(".color-wheel-puck");
+      const rect = puck?.getBoundingClientRect();
+      gesture = { x: event.clientX, y: event.clientY,
+        offsetX: rect ? event.clientX - rect.left - rect.width / 2 : 0,
+        offsetY: rect ? event.clientY - rect.top - rect.height / 2 : 0 };
+      if (!puck) update(event);
+    });
+    pad.addEventListener("pointermove", (event) => {
+      if (!pad.hasPointerCapture(event.pointerId) || !gesture) return;
+      if (event.clientX === gesture.x && event.clientY === gesture.y) return;
+      gesture.x = event.clientX; gesture.y = event.clientY; update(event);
+    });
+    pad.addEventListener("lostpointercapture", () => { gesture = null; });
     pad.addEventListener("keydown", (event) => {
       if (["Delete", "Backspace", "Home"].includes(event.key)) {
         event.preventDefault();
@@ -103,7 +119,7 @@ function renderColorWheels() {
     if (tab) tab.setAttribute("aria-label", `${container.dataset.wheel}${modified ? ", modified" : ""}`);
     const puck = container.querySelector(".color-wheel-puck");
     if (!wheel || !puck) return;
-    const radius = Math.min(100, Math.max(0, wheel.saturation)) * 0.45;
+    const radius = Math.min(100, Math.max(0, wheel.saturation)) * COLOR_WHEEL_RADIUS;
     const angle = (wheel.hue + 210) * Math.PI / 180;
     puck.style.left = `${50 + Math.cos(angle) * radius}%`;
     puck.style.top = `${50 + Math.sin(angle) * radius}%`;

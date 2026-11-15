@@ -1,5 +1,6 @@
 // Real app/device: Tone sliders (Blacks, Shadows, Midtones, Highlights) in GPU
 // preview and finished GPU/CPU delivery, Proof equality and the HDR ceiling.
+// Also exercise headroom through contrast, colour wheels and Film Look (W3).
 const assert=require('node:assert/strict');
 const {chromium}=require('playwright');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
@@ -27,7 +28,9 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`,[path.join(root,'hues.tiff'
  await page.evaluate(async ()=>{
    await syncGlobalEditState();
    for(const lane of ['hdr','sdr']){
-    Object.assign(state.adjustments[lane],{blacks:30,shadows:70,midtones:-40,highlights:40,shadows_width:3.5});
+    Object.assign(state.adjustments[lane],{blacks:30,shadows:70,midtones:-40,highlights:40,shadows_width:3.5,contrast:.2});
+    Object.assign(state.adjustments[lane].color_grading,{balance:35,blending:80,shadows:{hue:210,saturation:15,luminance_ev:.1},highlights:{hue:120,saturation:20,luminance_ev:.2}});
+    Object.assign(state.adjustments[lane].film_look,{film_stock:"none",print_exposure:.5,look_strength:50,grain_enabled:false,halation_enabled:false});
    }
    for(const lane of ['hdr','sdr']){
     const b=state.adjustments[lane];b.highlight_section_enabled=lane==='hdr';b.highlight_compression_mode='peak_fit';
@@ -72,5 +75,5 @@ for i,lane in enumerate(['hdr','sdr']):
   const result=JSON.parse(execFileSync(python,[path.join(__dirname,'helpers/gpu_delivery_fixture.py'),'compare',root],{env,encoding:'utf8'}));
   console.log('Finished tone zones delivery',JSON.stringify(result));/* JPEG differences are accepted for v1; the float rendering verdict above is strict. *//* The helper enforces the shared decoded ceiling and encoding allowance. */
   assert.deepEqual(errors,[]);console.log('Tone zones integration PASS');
- }finally{await api('/api/delivery/preferences',{force_cpu:false}).catch(()=>{});await browser.close();}
+ }finally{await api('/api/delivery/preferences',{force_cpu:false}).catch(()=>{});await browser.close();fs.rmSync(root,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

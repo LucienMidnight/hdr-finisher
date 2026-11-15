@@ -68,7 +68,8 @@ fn lanczos(v:f32)->f32 { if(abs(v)>=3.){return 0.;} return sinc(v)*sinc(v/3.); }
    var gain=1.;let y=luma(rgb);if(y>1e-7 && abs(detail)>1e-7){gain=targetY/y;}
    value=vec4f(max(rgb*gain,vec3f(0.)),1.);
  } else if(mode==6) {value=vec4f(at(src,q).r,at(fine,q).r,0.,1.);}
- else if(mode==7) {var rgb=max(at(src,q).rgb,vec3f(0.));if(p[3]<.5){rgb=min(rgb,vec3f(1.));} value=vec4f(rgb,1.);}
+ // The shared output shader maps SDR hue into gamut after finishing.
+ else if(mode==7) {value=vec4f(max(at(src,q).rgb,vec3f(0.)),1.);}
  textureStore(dst,q,value);
 }`;
     const module=this.device.createShaderModule({code});
