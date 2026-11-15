@@ -61,11 +61,11 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | U11 | Unpin control looks odd | W6 | waiting on Steve |
 | U12 | Mac Dock/Command-Tab icon | W6 | built — development Dock icon set; packaged PNG runtime resource included; installed app/caches untouched |
 | U13 | Less rounding on the logo background | W6 | built — gentler smaller radius in five SVGs and PNG; portable Electron regeneration passes on Mac |
-| L1 | Tooltips appear after about 2.5 s | W7 | built — shared 2.5 s controller in every renderer; neighbour grace disabled; grouped app validation pending |
-| L2 | Tooltip pass: no redundant labels | W7 | built — visible labels suppress names; clipped values only; explanations retained; shortcut-only switch kept; app review pending |
+| L1 | Tooltips appear after about 2.5 s | W7 | built and checked — shared 2.5 s hover/focus controller; main/Library iframe/pop-out, rendition, dialog layer and bounds pass; neighbour grace disabled |
+| L2 | Tooltip pass: no redundant labels | W7 | built and checked — names only for hidden/clipped labels; explanations retained; shortcut-only switch kept; responsive and metadata checks pass |
 | L3 | "Choose what to paste" organised | W7 | to do |
 | L4 | Open image uses the Library grid browser | W7 | built and checked — shared grid/list single-image mode; JPEG opens into Grade; folder/project/destination modes and preview regression pass; 1408×794 and 1100×720 captures |
-| L5 | Purple default accent, orange still offered | W7 | built — purple before first paint; saved accents retained; ten focused checks pass; grouped app review pending |
+| L5 | Purple default accent, orange still offered | W7 | built and checked — purple before first paint; saved orange retained; Settings passes all three themes and startup checks |
 
 ## Decisions
 
@@ -264,7 +264,7 @@ approval; propose names in the report.
 | L1 | Every tooltip in every window appears after about 2.5 s of hover or focus, dismisses at once on click, Escape or leaving, and never doubles up. | Six mechanisms: shared JS tooltip at 600 ms (`workspace-layout.js` ~252), instant CSS toolbar tooltips plus native `title` (`visual-controls.css` ~519), 2 s CSS rules, native titles across Library/Export. The Library page does not load the shared controller. Update `docs/design/HDR_Finisher_Tooltip_Copy.md` timing. |
 | L2 | A tooltip names a control only when its label is hidden; explanations and warnings stay; full text only when clipped. | Item list in the tooltip review: Overlays, Frame, Export list buttons, Compare/Focus, Settings/Help, Activity, resize selection, names and metadata. |
 | L3 | "Choose what to paste" reads in clear sections in the edit panel's order, with section checkboxes and authored names. | Dialog is in `grade-paste.js` ~138, schema in `library_paste.py` ~57/171; label generator exposes technical names (`library_paste.py` ~36). Keep safe defaults (no crop, lens or masks) and do not widen what is pasteable. |
-| L4 | Open image uses the Library grid browser | W7 | built and checked — shared grid/list single-image mode; JPEG opens into Grade; folder/project/destination modes and preview regression pass; 1408×794 and 1100×720 captures |
+| L4 | Open image uses the same thumbnail grid/list browser as Open folder, in a single-image mode. | Open image uses the older list browser (`media-browser.js` ~344); Open folder uses `library-folder-picker.js`. |
 | L5 | Purple is the default accent everywhere from first paint; orange remains in Settings. | Orange default in `appearance.js` ~3, `application-preferences.js` ~4, `application-shell.js` ~28; old purple `#9b7bff` (commit `bf220721`). Derive strong/low shades with the current formulas. |
 
 ## Reporting

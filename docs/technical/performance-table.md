@@ -1,3 +1,9 @@
+## November 15: W7 tooltip wait (MacBook Neo)
+
+| Action | Target / tolerance | Result | Conditions / revision |
+| --- | --- | --- | --- |
+| Hover to shared tooltip | About 2.5 s; 2.4–2.9 s allows timer/frame scheduling; hidden at 2.2 s | 2.502–2.504 s; passes | November 15, MacBook Neo A18 Pro / 8 GB, real Electron through shared GPU lock. Main 1408×794; iframe 1408×750; native Library pop-out 1408×796; Settings dialog top layer. Keyboard focus also waits; click/Escape dismiss immediately. `codebase/output/review/w7-interface/checks.json`; code in `66d744cf`, `68e0882f` and the commit containing this note. Every neighbour waits; no speed comparison is claimed. |
+
 ## November 15: W2 paste feedback (MacBook Neo)
 
 | Action | Target | Before → after | Conditions / evidence |

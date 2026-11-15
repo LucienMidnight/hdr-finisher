@@ -65,3 +65,17 @@ test("missing accent resolves to purple while saved orange is retained",()=>{
  assert.deepEqual(sanitizeApplicationPreferences().accent,appearance.normalize());
  assert.deepEqual(appearance.normalize({preset:"burnt-orange"}),{preset:"burnt-orange",color:"#d0612a"});
 });
+
+test("startup applies the saved or purple accent synchronously in every theme and renderer",()=>{
+ const vm=require('node:vm'),fs=require('node:fs');
+ const appearanceSource=fs.readFileSync(require.resolve('../frontend/appearance.js'),'utf8');
+ const startupSource=fs.readFileSync(require.resolve('../frontend/theme-startup.js'),'utf8');
+ for(const theme of ['modern-dark','default-light','studio-gray'])for(const embedded of [false,true])for(const accent of [undefined,{preset:'burnt-orange'},{preset:'custom',color:'#a1b2c3'}]){
+  const applied={},document={documentElement:{dataset:{},style:{setProperty:(name,value)=>applied[name]=value}},addEventListener(){},dispatchEvent(){}};
+  const window={document},parent=embedded?{document:{documentElement:{dataset:{theme,accent:JSON.stringify(accent??null)}}}}:window;
+  const context=vm.createContext({window,document,parent,localStorage:{getItem:()=>JSON.stringify({theme,accent})},CustomEvent:class{}});
+  vm.runInContext(appearanceSource,context);vm.runInContext(startupSource,context);
+  assert.equal(document.documentElement.dataset.theme,theme);
+  assert.equal(applied['--accent'],appearance.normalize(accent).color);
+ }
+});
