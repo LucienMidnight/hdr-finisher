@@ -24,9 +24,10 @@ def grain_cases(render=_apply_density_grain):
 
 
 def test_uncancelled_pixels_equal_pre_change_output():
-    with np.load(Path(__file__).parent / "fixtures/grain-before-88775059.npz") as before:
-        for key, pixels in grain_cases():
-            np.testing.assert_array_equal(pixels, before[key], err_msg=key)
+    from helpers.grain_before_88775059 import _apply_density_grain as before
+    for (key, pixels), (old_key, reference) in zip(grain_cases(), grain_cases(before), strict=True):
+        assert key == old_key
+        np.testing.assert_array_equal(pixels, reference, err_msg=key)
 
 
 def test_cancel_during_grain_band(monkeypatch):

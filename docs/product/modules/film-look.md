@@ -1,5 +1,22 @@
 # Module PRD: Film Look
 
+## November 15: W1 exact grain check across machines (R8)
+
+The cancellation regression now executes the frozen grain kernel and density
+wrapper from `88775059` beside the current implementation on the same machine.
+It still requires exact array equality for both lanes, both film types, native /
+2x2 / 4x4 sampling and two row chunks. The obsolete Windows-generated `.npz`
+reference is removed: platform libm differences of roughly 1e-7 no longer look
+like cancellation-induced image changes. No tolerance is added or loosened and
+no production grain renderer, saved grade or output changes.
+
+The frozen reference is test-only and requires no Git history at test runtime;
+it shares the current unchanged colour-development helpers, while retaining
+its own pre-cancellation grain kernel and row scheduling. All seven grain-work
+checks and the complete 66-test W1 focused Python group pass on the MacBook Neo.
+The final Node fast suite passes 1,009 tests with one skip. Whole-sprint fast
+Python validation is recorded with the Library W1 completion note.
+
 ### November 14: fixed perceptual drift guards (Steve, 2026-11-14)
 
 | Decision | Date |
