@@ -1,3 +1,16 @@
+### November 15, 2026: Refresh invalidation and locked disposable files
+
+Refresh reuses the existing source-generation ledger and adds indexed screen
+slot ownership plus a durable pending-deletion list. A locked file remains
+inside its original disk allowance until physically removed; it cannot be read
+as the refreshed photo or reintroduced by an earlier publication. Cleanup checks
+the recorded size and timestamp before deleting, preserving replacements.
+Finished surface identities and unprotected screen identities carry the source
+generation. Protected built screen previews remain readable across Refresh.
+There is no new pixel cache, retained image copy, concurrency, size or memory
+allowance. Source ownership is recovered during existing background inventory,
+never by a whole-cache scan in Refresh.
+
 ### November 14: native source-stream admission correction
 
 The commit containing this record corrects Full-preview admission for a GPU

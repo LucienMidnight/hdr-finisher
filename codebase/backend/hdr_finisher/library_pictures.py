@@ -245,6 +245,8 @@ class LibraryPictureCache:
         if body is not None:
             with np.load(BytesIO(body), allow_pickle=False) as stored:
                 metadata = json.loads(str(stored["metadata"]))
+            if metadata.get("cache_epoch", 0) != self.managed.publication_epoch(path):
+                return None
             return metadata | {"key": key, "cache_hit": True, "stored_bytes": 0,
                 "_transient": base64.b64encode(body).decode()}
         destination = self.full_root / (key + ".npz") if edge >= 1280 else self.file(key)
@@ -305,7 +307,7 @@ class LibraryPictureCache:
             starting_look = metadata.pop("starting_look", None)
             grade = validate_saved(AdjustmentState, starting_look) if starting_look else default_look(
                 pixels, reference, metadata.pop("raw_input", False), path.suffix.lower())
-            metadata.update(path=str(path), width=pixels.shape[1], height=pixels.shape[0],
+            metadata.update(cache_epoch=epoch, path=str(path), width=pixels.shape[1], height=pixels.shape[0],
                 edge=edge, quality=quality, adjustments=grade.model_dump(mode="json"),
                 white=203, has_reference=reference is not None,
                 decode_ms=(perf_counter() - started) * 1000)

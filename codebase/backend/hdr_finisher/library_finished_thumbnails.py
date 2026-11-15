@@ -46,7 +46,8 @@ class FinishedThumbnails:
             state = json.loads(states[path]) if path in states else {}
             grade = state.get("desired") if state.get("pending") else state.get("indexed_grade", state.get("baseline"))
             value = dict(version=VERSION, path=path, lane=lane, format=format,
-                         bytes=row[0], mtime_ns=row[1], grade=grade_identity(grade))
+                         bytes=row[0], mtime_ns=row[1], grade=grade_identity(grade),
+                         cache_epoch=self.cache.publication_epoch(source(path)))
             key = sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
             result[path] = dict(value, key=key), grade
         return result
@@ -80,6 +81,8 @@ class FinishedThumbnails:
         if current is None or not self.cache.preferences()["enabled"]:
             return False
         value, document = current
+        if meta.get("cache_epoch", 0) != value["cache_epoch"]:
+            return False
         # A single Grade picture publishes several surface formats. Reuse its
         # successful validation only within that call, for the exact same meta
         # object and indexed path/stamp/grade. Every file still checks the current
@@ -125,8 +128,7 @@ class FinishedThumbnails:
             latest = self.current(path, lane, format)
             if latest is None or latest[0] != value:
                 return False
-            os.replace(temporary, destination)
-            self.cache.record(destination)
+            self.cache.publish(temporary, destination, source(path), value["cache_epoch"])
             self.cache.trim(allowance="thumbnail")
             return True
         finally:

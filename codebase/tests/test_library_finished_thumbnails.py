@@ -105,3 +105,17 @@ def test_batched_http_response_restores_exact_surfaces_and_handles_missing(tmp_p
         assert records[0]['length'] == len(data)-4-length
         empty = client.post('/finished-thumbnails?lane=hdr&format=rgba16float',json={'paths':[str(source)]}).content
         assert json.loads(empty[4:]) == []
+
+
+def test_refresh_rejects_late_finished_upload_and_rediscovers_new_picture(tmp_path):
+    from hdr_finisher.library_refresh import refresh
+    from hdr_finisher.library_screen_previews import StoredScreenPreviews
+    photo, marks, cache, meta = setup_cache(tmp_path)
+    body = bytes(512)
+    assert cache.write(str(photo), 'sdr', 'bgra8unorm', meta, body, 2, 2, 256)
+    refresh(cache.live, StoredScreenPreviews(cache.live.root), [str(photo)])
+    assert cache.read(str(photo), 'sdr', 'bgra8unorm') is None
+    assert not cache.write(str(photo), 'sdr', 'bgra8unorm', meta, body, 2, 2, 256)
+    meta['cache_epoch'] = cache.cache.publication_epoch(photo)
+    assert cache.write(str(photo), 'sdr', 'bgra8unorm', meta, body, 2, 2, 256)
+    assert cache.read(str(photo), 'sdr', 'bgra8unorm')[1] == body

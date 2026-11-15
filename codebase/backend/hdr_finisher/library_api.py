@@ -843,7 +843,7 @@ def create_library_router(worker, browser, store=None):
                         validate_owner()
                         look = metadata.pop("starting_look")
                         metadata.pop("default_document", None)
-                        result = dict(metadata, key=picture_key(source, edge, header["source_quality"]),
+                        result = dict(metadata, cache_epoch=live.cache.managed.publication_epoch(source), key=picture_key(source, edge, header["source_quality"]),
                             path=str(source), edge=edge, quality=header["source_quality"],
                             width=header["height"] if not header.get("rgb") and header.get("flip") in (5, 6) else header["width"],
                             height=header["width"] if not header.get("rgb") and header.get("flip") in (5, 6) else header["height"], adjustments=look,

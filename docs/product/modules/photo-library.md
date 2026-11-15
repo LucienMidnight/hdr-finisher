@@ -1,3 +1,41 @@
+### November 15, 2026: Refresh thumbnail feedback and invalidation
+
+The commit containing this note makes Refresh acknowledge the command before
+waiting for cache work. Its result stays in the existing status bar until the
+next user action; background indexing cannot replace a failure reason. A new
+picture is confirmed only after the Grid, filmstrip or Single canvas is drawn,
+with a `refresh_picture_shown` log for each view. Rebuild failures are reported
+as Refresh failures too.
+
+Refresh uses the cache's indexed source ownership and indexed screen slots,
+rather than opening every cache header. It advances the shared publication
+generation, discards pending handoffs and rejects old scene/surface/screen
+publications. Frontend requests are invalidated before and after the backend
+command. Windows files still in use become invalid immediately and enter a
+durable deletion queue; ordinary cache cleanup retries them without deleting
+a newly replaced file. Their bytes remain charged until deletion. Protected
+built previews, source photos and grades remain intact. Old disposable finished
+cache identities refill naturally; saved projects need no changes. Development
+and drawing maths, all limits and all allowances are unchanged.
+
+Validation: the locked plain-Electron `--refresh` check passes, exercising the
+real context menu and confirming refreshed Grid, filmstrip and Single canvases.
+The first attempt confirmed Grid, then the test incorrectly double-clicked into
+Grade; the corrected attempt uses the Single button. The first attempt also
+recorded a 370 ms frame gap against the existing 250 ms limit; no guard was
+changed. Behavior tests cover immediate feedback, persistent failure text,
+indexed lookup without directory scans, locked-file cleanup, rejection of stale
+publications and preservation of protected built previews. The full JavaScript
+suite passes (989 passed, one skipped), plus three new Refresh tests. The full
+Python run reports 3,545 passed, 43 skipped and two failures: the known
+`test_js_python_settings_agree` Windows separator failure, and an older Retouch
+capture test double missing the new generation dependency. Updating that test
+double preserves its exact repaired-pixel comparison; its focused rerun passes.
+The final 28 refresh/surface/screen/Grade-publication checks and 110 Library
+live/RGB checks pass. Final frontend Single/Refresh checks pass too. Output is
+46.2 GB, below 100 GB; the app harness removes its temporary profile. No push
+or change to Steve's running app.
+
 ## November 14: 8 GB Library fixes built; full acceptance remains open
 
 The ordinary quick check shows only the current viewport. On the MacBook's

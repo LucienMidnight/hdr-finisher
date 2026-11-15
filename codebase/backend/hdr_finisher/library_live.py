@@ -93,6 +93,9 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
     from .models import EditDocument
     cache = cache or LibraryPictureCache(root)
     source_quality = quality(document)
+    cache_epoch = cache.managed.publication_epoch(path)
+    if prepared is not None:
+        cache_epoch = prepared.setdefault("cache_epoch", cache_epoch)
     cached = cache.cached(path, edge, source_quality)
     if cached:
         return cached
@@ -186,7 +189,7 @@ def _develop_cpu(root, path, document, edge, cancelled=None, cache=None, progres
             metadata["default_document"] = default.model_dump(mode="json")
         item = cache.build(path, size, source_quality, cancelled,
             (reduce(source.image, size),
-             reduce(source.sdr_reference_image, size) if source.sdr_reference_image is not None else None, metadata), defer_store=draw_first)
+             reduce(source.sdr_reference_image, size) if source.sdr_reference_image is not None else None, metadata), defer_store=draw_first, cache_epoch=cache_epoch)
         if size == edge:
             result = item
     from .library_diagnostics import log
@@ -203,13 +206,15 @@ _cpu_condition = Condition()
 def develop_cpu(root, path, document, edge, cancelled=None, progress=None, draw_first=False, edges=None):
     """Share a preparation across active scene tiers, with independent cancellation."""
     from .library_pictures import picture_key, check_cancelled
-    key = (str(root), picture_key(path, 100000 if edge == 100000 else 0, quality(document)))
+    from .library_cache import LibraryCache
+    cache_epoch = LibraryCache(root).publication_epoch(path)
+    key = (str(root), picture_key(path, 100000 if edge == 100000 else 0, quality(document)), cache_epoch)
     demand = cancelled or (lambda: False)
     with _cpu_condition:
         flight = _cpu_flights.get(key)
         owner = flight is None or (flight["done"] and edge not in flight["results"])
         if owner:
-            flight = {"users": [], "edges": [], "results": {}, "prepared": {}, "done": False, "cache": LibraryPictureCache(root)}
+            flight = {"users": [], "edges": [], "results": {}, "prepared": {"cache_epoch": cache_epoch}, "done": False, "cache": LibraryPictureCache(root)}
             _cpu_flights[key] = flight
         flight["users"].append(demand)
         if edge not in flight["edges"]: flight["edges"].append(edge)

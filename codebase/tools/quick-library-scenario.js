@@ -94,6 +94,27 @@ async function scenario(config) {
       console.log('QUICK_VIRTUAL_COPY:'+JSON.stringify(config.virtualCopyResult));
       window.fetch=originalFetch;
     }
+    if(config.refresh){
+      const refresh = async cell => {
+        const before = events.length;
+        cell.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,clientX:200,clientY:200}));
+        await wait(()=>[...document.querySelectorAll('[role=menuitem]')].some(e=>/^Refresh thumbnail/.test(e.textContent)));
+        [...document.querySelectorAll('[role=menuitem]')].find(e=>/^Refresh thumbnail/.test(e.textContent)).click();
+        if(!document.getElementById('library-status').textContent.startsWith('Refreshing'))throw Error('No immediate Refresh acknowledgement');
+        await wait(()=>events.slice(before).some(e=>e.stage==='refresh_picture_shown'),60000);
+      };
+      mark('refresh grid');
+      await wait(()=>document.querySelector('#grid-space .library-cell canvas[data-picture-key]'),60000);
+      const cell=document.querySelector('#grid-space .library-cell:has(canvas[data-picture-key])');
+      cell.click();await refresh(cell);
+      mark('refresh single and filmstrip');
+      document.getElementById('single-view').click();
+      await wait(()=>visible(document.getElementById('single-picture')),60000);
+      await wait(()=>document.querySelector('#filmstrip .library-cell canvas[data-picture-key]'),60000);
+      await refresh([...document.querySelectorAll('#filmstrip .library-cell')].find(c=>c.dataset.path===HDRLibrary.getSnapshot().selected));
+      await wait(()=>['grid','filmstrip','single'].every(view=>events.some(e=>e.stage==='refresh_picture_shown'&&e.view===view)),60000);
+      mark('refresh pictures shown');
+    }
     if(config.singleMode){
       await wait(()=>config.busy ? HDRLibraryScenes.snapshot().sources.jobs.some(j=>j.state==='running') && document.querySelector('#grid-space .library-cell') : document.querySelector('#grid-space .library-cell canvas[data-picture-key]'),60000);
       if(HDRLibrary.getSnapshot().sort!=='name')throw Error('Folder did not use name sort');

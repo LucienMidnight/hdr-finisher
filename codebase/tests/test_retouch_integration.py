@@ -198,9 +198,11 @@ def test_library_native_source_uses_same_repair_before_reduction(photo, tmp_path
     saved = session.edit_document().model_dump(mode="json")
     assert quality(saved) != quality(untouched)
     # A capture cache inspects pixels actually passed to the Library store.
+    from hdr_finisher.library_cache import LibraryCache
     class CaptureCache:
+        managed = LibraryCache(tmp_path)
         def cached(self, *args): return None
-        def build(self, path, edge, source_quality, cancelled, pixels, *, defer_store=False):
+        def build(self, path, edge, source_quality, cancelled, pixels, *, defer_store=False, cache_epoch=None):
             assert not defer_store
             np.testing.assert_array_equal(pixels[0], reduce_picture(session.image, edge))
             return edge

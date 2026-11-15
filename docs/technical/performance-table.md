@@ -3335,3 +3335,10 @@ drawing gap within the unchanged 250 ms limit. First/ten/twenty pictures:
 2560x1440, disposable profile, shared run-photo copies, shared GPU lock;
 Python and Node suites had finished. This is a smoke observation, not a speed
 comparison. Evidence: codebase/output/quick-library-check/w20-framing/report.json.
+
+
+### November 15, 2026: Refresh thumbnail correctness check (Windows PC)
+
+| Action | Observation | Date / commit | Conditions |
+| --- | --- | --- | --- |
+| Refresh thumbnail, Grid / filmstrip / Single | Refreshed canvases confirmed in all three views; no new latency baseline or speedup claim | 2026-11-15, commit containing this note | Windows PC, 2560x1440, plain Electron `--refresh --folder=library-live-grid`, existing 4 GB harness setting. First attempt recorded a 370 ms frame gap (250 ms guard); its Single transition was a test error. Corrected attempt passes; full Python suite and other project work were active. Evidence: `codebase/output/quick-library-check/refresh-pictures/`. |

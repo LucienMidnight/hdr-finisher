@@ -72,18 +72,20 @@ class GradePictures:
         # The response task keeps the existing upload slot until it finishes,
         # bounding body ownership without a new queue or cache allowance.
         if defer_screen is not None:
-            self.write_thumbnails(path, document, session, lane, pixels[..., :3])
+            self.write_thumbnails(path, document, session, lane, pixels[..., :3], cache_epoch=current["cache_epoch"])
             defer_screen(save_screen)
         else:
             with ThreadPoolExecutor(max_workers=1) as encoding:
                 screen = encoding.submit(save_screen)
-                self.write_thumbnails(path, document, session, lane, pixels[..., :3])
+                self.write_thumbnails(path, document, session, lane, pixels[..., :3], cache_epoch=current["cache_epoch"])
                 if not screen.result():
                     raise HTTPException(409, "Grade picture could not be stored.")
         if not valid(): raise HTTPException(409, "The Library has a newer grade.")
         return dict(path=path, grade_identity=grade, lane=lane, source="Grade picture")
 
-    def write_thumbnails(self, path, document, session, lane, pixels):
+    def write_thumbnails(self, path, document, session, lane, pixels, cache_epoch=None):
+        if cache_epoch is None:
+            cache_epoch = self.thumbnails.cache.publication_epoch(source(path))
         from .color import acescg_to_linear_bt2020, acescg_to_linear_srgb
         from .jpegxl import _srgb_oetf
         # Resize the finished picture, never a source to be graded again.
@@ -108,6 +110,7 @@ class GradePictures:
         formats["rgba8unorm"] = np.round(np.clip(encoded, 0, 1)*255).astype("u1")
         formats["bgra8unorm"] = formats["rgba8unorm"][..., [2,1,0]]
         meta = self.thumbnail_meta(path, document, session)
+        meta["cache_epoch"] = cache_epoch
         validation = {}
         for format, rgb in formats.items():
             h, w = rgb.shape[:2]

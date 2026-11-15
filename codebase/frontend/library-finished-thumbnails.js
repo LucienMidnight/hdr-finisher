@@ -23,7 +23,7 @@ window.HDRLibraryFinishedThumbnails = (() => {
         const body=buffer.getMappedRange().slice(0);
         buffer.unmap();
         const params=query(meta.path,hdr,format);for(const [key,value] of Object.entries({width,height,stride}))params.set(key,value);
-        const response=await HDRLibraryUpload.send('/api/library/finished-thumbnail?'+params,{body,headers:{'X-Thumbnail-Scene':JSON.stringify({source_key:meta.source_key,key:meta.key,grade_identity:meta.grade_identity,adjustments:meta.adjustments})}});
+        const response=await HDRLibraryUpload.send('/api/library/finished-thumbnail?'+params,{body,headers:{'X-Thumbnail-Scene':JSON.stringify({cache_epoch:meta.cache_epoch || 0,source_key:meta.source_key,key:meta.key,grade_identity:meta.grade_identity,adjustments:meta.adjustments})}});
         HDRLibraryStopwatch('picture_finished_saved',{path:meta.path,reason:String(response.status)});
         if(!response.ok&&response.status!==409)console.debug('Finished thumbnail save:',response.status);
       } catch(error){HDRLibraryStopwatch('picture_finished_failed',{path:meta.path,reason:error.message});console.debug('Finished thumbnail capture:',error.message);}

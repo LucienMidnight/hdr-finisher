@@ -39,7 +39,20 @@
       if (["grade-replaced", "quick-export", "export-selection", "command-state", "add-export-selection", "close-grade"].includes(action)) void libraryDesktop.forwardLibraryAction?.(action, detail).catch(error => status(error.message));
     }
   };
-  const status = (message) => { $("library-status").textContent = message; };
+  let refreshNotice = null;
+  const status = message => { if (!refreshNotice) $("library-status").textContent = message; };
+  const refreshStatus = message => { refreshNotice = message; $("library-status").textContent = message; };
+  for (const name of ["pointerdown", "keydown"]) document.addEventListener(name, event => {
+    if (event.isTrusted) refreshNotice = null;
+  }, true);
+  const refreshedPictures = new Map();
+  function refreshedShown(path, view) {
+    const pending = refreshedPictures.get(path);
+    if (!pending || pending.has(view)) return;
+    pending.add(view);
+    HDRLibraryStopwatch("refresh_picture_shown", {path, view});
+    if (refreshNotice) refreshStatus(`Refreshed picture shown: ${path.split(/[\\/]/).at(-1)}.`);
+  }
   // Capture OS drops anywhere; internal photo/folder drags keep their own handlers.
   const externalDrop = event => Array.from(event.dataTransfer?.types || []).includes("Files")
     && !Array.from(event.dataTransfer?.types || []).some(type => type.startsWith("application/x-hdr-library-"));
@@ -557,6 +570,11 @@
     setTimeout(()=>{paintGrid();paintFilm();if(state.view==="single")showSingle();},100);
   });
   function removeUnreadable(photo, error) {
+    if (refreshedPictures.has(photo.path)) {
+      refreshedPictures.delete(photo.path);
+      if (refreshNotice) refreshStatus(`Refresh failed: ${error.message}`);
+      HDRLibraryStopwatch("refresh_failed", {path:photo.path, reason:error.message});
+    }
     if (error.libraryError) {
       pictureErrors.remember(error.libraryError);
       void activity.refresh();
@@ -734,6 +752,7 @@
             fallback.hidden = false; canvas.hidden = true; canvas.removeAttribute("src"); element.classList.remove("loading");
             pictureErrors.paint(cell);
             fallback.dataset.pictureKey=meta.key; fallback.dataset.picturePath=photo.path;
+            refreshedShown(photo.path, container === space ? "grid" : "filmstrip");
             HDRLibraryStopwatch("picture_shown",{reason:meta.bitmap?meta.picture_source:meta.cache_hit?"HDR Finisher stored":"HDR Finisher fresh",...window.HDRLibraryPictureLog?.(meta),view:container === space ? "grid" : "filmstrip",path:photo.path,key:meta.key,duration_ms:cell.elapsed});
             HDRLibraryTrace.present(trace,current,{picture_size:"thumbnail",route:meta.route});
             overlays?.attach(photo,fallback,meta,cell.controller,current);
@@ -1010,7 +1029,13 @@
     if (source) window.HDRLibraryRawGPU?.clear?.();
     tilePool.discard(cell => targets.has(cell.photo.path));
     for (const map of [state.cells, state.filmCells]) for (const [path, cell] of map) if (targets.has(path)) { cell.controller.abort(); cell.element.remove(); map.delete(path); }
-    if (targets.has(selected()?.path)) { state.single?.abort(); state.fitMeta = null; state.nativeMeta = null; }
+    if (targets.has(selected()?.path)) {
+      state.single?.abort(); state.fitMeta = null; state.nativeMeta = null;
+      if (source) {
+        state.native?.abort(); state.nativeSource?.abort(); state.fullDetail = null;
+        state.nativeLoading = false; $("native-picture").hidden = true;
+      }
+    }
   }
   const pasteGrades = HDRGradePaste.create({api, status,
     prepare: paths => standalone ? libraryDesktop?.prepareLibraryPaste?.(paths) ?? Promise.resolve(false) : parent.HDRLibraryHost.preparePaste(paths),
@@ -1045,10 +1070,19 @@
   // Steve, November 1: throw away a photo's stored pictures and develop it
   // again, for a picture that looks wrong and for testing. Grades stay.
   async function refreshThumbnails(paths) {
-    await api("/api/library/refresh-pictures", { paths });
+    refreshStatus(`Refreshing ${plural(paths.length, "photo")}…`);
     invalidateGradePictures(paths, { source: true });
-    status(`Refreshing ${plural(paths.length, "photo")}.`);
-    paintGrid(); paintFilm(); if (state.view === "single") showSingle();
+    try {
+      await api("/api/library/refresh-pictures", { paths });
+      invalidateGradePictures(paths, { source: true });
+      for (const path of paths) refreshedPictures.set(path, new Set());
+      state.singleIdentity = "";
+      refreshStatus(`Refreshing ${plural(paths.length, "photo")}. Rebuilding pictures…`);
+      paintGrid(); paintFilm(); if (state.view === "single") await showSingle();
+    } catch (error) {
+      refreshStatus(`Refresh failed: ${error.message}`);
+      HDRLibraryStopwatch("refresh_failed", {reason:error.message, paths});
+    }
   }
   async function developSelection(photos) {
     for(const photo of photos){
@@ -1256,6 +1290,7 @@
       }
       state.fullSceneQuality = meta.quality;
       state.fitMeta = meta; positionZoom(); if (state.zoom) void showNative();
+      refreshedShown(photo.path, logView());
       HDRLibraryStopwatch("picture_shown",{path:photo.path,route:meta.route,reason:meta.bitmap?meta.picture_source:meta.cache_hit?"HDR Finisher stored":"HDR Finisher fresh",view:logView()});
       HDRLibraryTrace.present(trace,current,{key:meta.key,route:meta.route,cache_hit:!!meta.cache_hit,kept,quick_draw:false,sharp_draw:true});
       if(!meta.bitmap)HDRLibraryScenes.save?.(meta,true);

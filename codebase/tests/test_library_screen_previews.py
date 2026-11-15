@@ -92,3 +92,15 @@ def test_indexed_screen_preview_survives_offline_source_and_rejects_pending_grad
     db.execute('UPDATE photo_grades SET state=?', (json.dumps({'pending':True,'desired':document}),))
     db.commit();db.close()
     assert restarted.read(restarted.identity(str(photo),2560,1440,'hdr')) is None
+
+
+def test_refresh_generation_rejects_late_screen_write_but_keeps_built_picture(tmp_path):
+    photo, document, cache = setup_cache(tmp_path)
+    identity = cache.identity(str(photo), 2560, 1440, 'hdr')
+    pixels = np.full((8, 32, 4), .9, dtype='<f2')
+    assert cache.write(identity, pixels.tobytes(), 32, 8, 256, protected=True)
+    with cache.cache.mutation([photo], ''):
+        pass
+    current = cache.identity(str(photo), 2560, 1440, 'hdr')
+    assert cache.read(current) is not None
+    assert not cache.write(identity, pixels.tobytes(), 32, 8, 256)

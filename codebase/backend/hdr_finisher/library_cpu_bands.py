@@ -49,6 +49,9 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first, 
     from .models import RawImportSettings
     from .color import map_negative_acescg, acescg_to_linear_bt2020
     from .import_defaults import calibrate_camera_raw
+    cache_epoch = cache.managed.publication_epoch(path)
+    if prepared is not None:
+        cache_epoch = prepared.setdefault('cache_epoch', cache_epoch)
     settings = RawImportSettings.model_validate(recipe(document)['raw_import_settings'])
     if settings.highlight_reconstruction.enabled and settings.highlight_reconstruction.method == raw.EDGE_COLOUR_METHOD:
         raise ValueError('CPU band edge-colour development is not yet qualified.')
@@ -56,7 +59,7 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first, 
         raise ValueError('CPU Library band development does not yet support native inspection or saved repairs.')
     check = lambda: check_cancelled(cancelled)
     if prepared is not None and edge in prepared:
-        return cache.build(path, edge, quality(document), cancelled, prepared[edge], defer_store=draw_first)
+        return cache.build(path, edge, quality(document), cancelled, prepared[edge], defer_store=draw_first, cache_epoch=cache_epoch)
     with TemporaryDirectory(prefix='hdr-library-bands-') as directory:
         folder = Path(directory)
         if progress: progress('unpack','Reading RAW sensor samples')
@@ -159,7 +162,7 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first, 
                 meta.update(route='library-live',renderer='cpu',raw_start_brightness=brightness,source_fingerprint_sha256=fingerprint)
                 if prepared is not None: prepared[size] = (pixels,reference,meta)
                 if size != edge: return None
-                return cache.build(source,size,quality(document),cancelled,(pixels,reference,meta),defer_store=draw_first)
+                return cache.build(source,size,quality(document),cancelled,(pixels,reference,meta),defer_store=draw_first, cache_epoch=cache_epoch)
         result=None
         for size,reduction in reductions.items():
             header=dict(identity=_identity(Path(path)),width=reduction.width,height=reduction.height,edge=size,flip=0,

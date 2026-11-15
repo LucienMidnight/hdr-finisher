@@ -1,81 +1,58 @@
-"""Refresh thumbnail: forget a photo's stored Library pictures so it develops again.
-
-Steve, November 1, 2026: a right-click action for pictures that look wrong
-(for example the teal/black 42 MP thumbnails) and for testing. Removes the
-stored scenes at every size, the finished display surfaces and unprotected
-screen previews. Photos, grades, marks and protected built previews stay.
-Cache file names are hashes, so files are matched by the photo path in their
-own small headers; this is a manual action, not a hot path.
-"""
+"""Refresh indexed disposable pictures; originals, grades and built previews stay."""
 import json
-import os
-import zipfile
 from pathlib import Path
-
-import numpy as np
-
 from .library_copies import source
 from .library_diagnostics import log
 
 
-def _norm(path):
-    return os.path.normcase(os.path.abspath(str(path)))
-
-
-def _scene_path(file):
-    """Photo path from a stored scene's metadata, without reading its pixels."""
-    try:
-        with zipfile.ZipFile(file) as archive:
-            with archive.open("metadata.npy") as handle:
-                text = str(np.lib.format.read_array(handle, allow_pickle=False))
-        return json.loads(text).get("path")
-    except (OSError, KeyError, ValueError, zipfile.BadZipFile):
-        return None
-
-
 def refresh(live, screen_previews, paths):
-    wanted = {_norm(p) for p in paths} | {_norm(source(p)) for p in paths}
-    cache = live.cache
-    removed = {"scenes": 0, "surfaces": 0, "screen_previews": 0}
-    for directory in (cache.root, cache.full_root):
-        for file in Path(directory).glob("*.npz"):
-            found = _scene_path(file)
-            if found is None or _norm(found) not in wanted:
-                continue
-            with cache.transient_lock:
-                cache.transient.pop(file.stem, None)
-                cache.pending_stores.pop(file.stem, None)
-            file.unlink(missing_ok=True)
-            cache.managed.record(file)
-            removed["scenes"] += 1
-    surfaces = cache.managed.directory("library-thumbnails")
-    for file in surfaces.glob("*.surface"):
-        try:
-            with file.open("rb") as handle:
-                found = json.loads(handle.readline()).get("identity", {}).get("path")
-        except (OSError, ValueError, AttributeError):
-            continue
-        if found and _norm(found) in wanted:
-            file.unlink(missing_ok=True)
-            cache.managed.record(file)
-            removed["surfaces"] += 1
-    for manifest, picture, info in list(screen_previews.records()):
-        found = info.get("identity", {}).get("path")
-        if found and _norm(found) in wanted and not info.get("protected"):
-            picture.unlink(missing_ok=True)
-            manifest.unlink(missing_ok=True)
-            removed["screen_previews"] += 1
-    log("library_pictures_refreshed", photos=len(paths), **removed)
+    managed = live.cache.managed
+    wanted = set(paths) | {source(path) for path in paths}
+    removed = dict(scenes=0, surfaces=0, screen_previews=0)
+    # Resolve the selected identities before advancing their publication generation.
+    scenes = {file for path in wanted for file in managed.source_files(path, retarget=True)
+              if file.suffix in ('.npz', '.surface')}
+    indexed = {filename: kind for path in wanted for filename, kind in managed.refresh_files(path)}
+    commands = getattr(getattr(live, 'marks', None), 'file_commands', None)
+    if commands is not None:
+        commands.epoch += 1
+    with managed.mutation({source(path) for path in paths}, ''):
+        with live.cache.transient_lock:
+            for key, pending in list(live.cache.pending_stores.items()):
+                if pending[0] in wanted:
+                    live.cache.pending_stores.pop(key, None)
+                    live.cache.transient.pop(key, None)
+            for file in scenes:
+                live.cache.transient.pop(file.stem, None)
+                live.cache.pending_stores.pop(file.stem, None)
+        for file in scenes:
+            managed.remove_disposable(file)
+            removed['surfaces' if file.suffix == '.surface' else 'scenes'] += 1
+        for filename, kind in indexed.items():
+            manifest = Path(filename)
+            try:
+                info = json.loads(manifest.read_text('utf-8'))
+                if info.get('protected'): continue
+                name = info['file']
+                if Path(name).name != name: continue
+                managed.remove_disposable(manifest.parent / name)
+                managed.remove_disposable(manifest)
+                removed[kind] += 1
+            except FileNotFoundError:
+                pass
+    log('library_pictures_refreshed', photos=len(paths), **removed)
     return removed
 
 
 def add_refresh_route(router, live, screen_previews):
+    from fastapi import HTTPException
     from pydantic import BaseModel
     from starlette.concurrency import run_in_threadpool
-
     class RefreshRequest(BaseModel):
         paths: list[str]
-
-    @router.post("/refresh-pictures")
+    @router.post('/refresh-pictures')
     async def refresh_pictures(command: RefreshRequest):
-        return await run_in_threadpool(refresh, live, screen_previews, command.paths[:10000])
+        try:
+            return await run_in_threadpool(refresh, live, screen_previews, command.paths[:10000])
+        except (OSError, ValueError) as error:
+            raise HTTPException(409, f'Could not refresh pictures: {error}') from error

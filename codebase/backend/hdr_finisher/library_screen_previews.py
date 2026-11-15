@@ -57,7 +57,7 @@ class StoredScreenPreviews:
         identity = dict(version=VERSION, path=str(path), lane=lane,
             display_width=display_width, display_height=display_height,
             source_key=source_key,
-            stamp=stamp, grade_identity=grade)
+            stamp=stamp, grade_identity=grade, cache_epoch=self.cache.publication_epoch(physical))
         key = sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         slot = sha256(json.dumps([str(path), lane, display_width, display_height]).encode()).hexdigest()
         # Live Library's HDR route currently uses the fixed 1000-nit target.
@@ -74,12 +74,16 @@ class StoredScreenPreviews:
         read_ms = codec_ms = pack_ms = 0.0
         try:
             info = json.loads((directory / (identity['slot'] + '.json')).read_text('utf-8'))
-            if info['identity'] != identity:
+            saved_identity = dict(info['identity'])
+            if info.get('protected'):
+                saved_identity['cache_epoch'] = identity['cache_epoch']
+                saved_identity['key'] = identity['key']
+            if saved_identity != identity:
                 result = 'stale'
                 return None
             import imagecodecs
             filename = info['file']
-            if Path(filename).name != filename or not filename.startswith(identity['key'] + '-') or not filename.endswith('.jxl'):
+            if Path(filename).name != filename or not filename.startswith(info['identity']['key'] + '-') or not filename.endswith('.jxl'):
                 raise ValueError('Invalid stored screen preview filename')
             encoded = (directory / filename).read_bytes()
             read_ms = (perf_counter()-started)*1000
@@ -153,7 +157,7 @@ class StoredScreenPreviews:
         filename = identity['key'] + '-' + uuid4().hex + '.jxl'
         file = directory / filename
         with _lock:
-            if cancelled(): return False
+            if cancelled() or identity.get("cache_epoch", 0) != self.cache.publication_epoch(source(identity["path"])): return False
             info_path=directory / (identity['slot'] + '.json')
             try: previous=json.loads(info_path.read_text('utf-8'))
             except (FileNotFoundError,ValueError): previous={}
@@ -164,11 +168,22 @@ class StoredScreenPreviews:
             if usage['protected_bytes'] + len(encoded) - (old_size if previous.get('protected') else 0) > LIMIT_BYTES:
                 raise ValueError('Protected screen previews fill the stored-preview limit. Discard some or build fewer photos.')
             file.write_bytes(encoded)
-            atomic_json(directory / (identity['slot'] + '.json'), dict(identity=identity,
-                file=filename, protected=bool(protected), width=width, height=height,
-                source_width=source_width or width, source_height=source_height or height, grade_picture=grade_picture))
+            from tempfile import NamedTemporaryFile
+            temporary = None
+            try:
+                with NamedTemporaryFile('w', encoding='utf-8', dir=directory, suffix='.tmp', delete=False) as handle:
+                    temporary = Path(handle.name)
+                    json.dump(dict(identity=identity, file=filename, protected=bool(protected), width=width, height=height,
+                        source_width=source_width or width, source_height=source_height or height, grade_picture=grade_picture), handle)
+                self.cache.publish(temporary, info_path, source(identity['path']), identity.get('cache_epoch', 0), accounted=False)
+            except ValueError:
+                self.cache.remove_disposable(file)
+                return False
+            finally:
+                if temporary: temporary.unlink(missing_ok=True)
             if previous.get('file') and previous['file']!=filename and Path(previous['file']).name==previous['file']:
                 (directory / previous['file']).unlink(missing_ok=True)
+            self.cache.index_refresh_file(info_path, identity['path'], 'screen_previews', protected)
             self.trim()
         log('stored_screen_preview_write', path=identity['path'], rendition=identity['lane'],
             write_ms=round((perf_counter()-started)*1000, 2), bytes=len(encoded), picture_size='screen preview')
@@ -183,6 +198,7 @@ class StoredScreenPreviews:
                 if Path(name).name!=name: continue
                 picture=self.directory/name
                 if picture.is_symlink(): continue
+                self.cache.index_refresh_file(file, info['identity']['path'], 'screen_previews', info.get('protected', False))
                 yield file,picture,info
             except (OSError,ValueError,KeyError,TypeError): continue
 
@@ -205,6 +221,7 @@ class StoredScreenPreviews:
         return dict(discarded=removed,**self.usage())
 
     def trim(self):
+        self.cache.cleanup_pending()
         protected=set()
         for manifest,picture,info in self.records():
             if info.get('protected'): protected.update((manifest,picture))
@@ -267,14 +284,14 @@ def add_screen_preview_routes(router, live, worker, store=None):
     @router.post('/stored-screen-preview')
     async def write(request: Request, path: str, display_width: int, display_height: int,
                     lane: str, width: int, height: int, stride: int, grade_identity: str, source_key: str,
-                    source_width: int, source_height: int, protected: bool = False):
+                    source_width: int, source_height: int, protected: bool = False, cache_epoch: int = 0):
         if not slots.acquire(blocking=False): return Response(status_code=202)
         release_here = True
         try:
             if not 1 <= width <= 2560 or not 1 <= height <= 2560 or stride != ((width*8+255)//256)*256:
                 raise HTTPException(400, 'Invalid screen preview dimensions')
             current = await run_in_threadpool(identity, path, display_width, display_height, lane)
-            if not current or current['grade_identity'] != grade_identity or current['source_key'] != source_key:
+            if not current or current['cache_epoch'] != cache_epoch or current['grade_identity'] != grade_identity or current['source_key'] != source_key:
                 log('stored_screen_preview_rejected', path=path, indexed=current is not None,
                     grade_match=bool(current and current['grade_identity'] == grade_identity),
                     source_match=bool(current and current['source_key'] == source_key))

@@ -103,6 +103,9 @@ class LibraryCache:
                 CREATE INDEX IF NOT EXISTS cache_source ON sources(source);
                 CREATE TABLE IF NOT EXISTS source_generations(path TEXT PRIMARY KEY, epoch INTEGER);
                 CREATE TABLE IF NOT EXISTS source_mutations(source TEXT PRIMARY KEY, epoch INTEGER, owner TEXT);
+                CREATE TABLE IF NOT EXISTS refresh_files(path TEXT PRIMARY KEY, source TEXT, kind TEXT, protected INTEGER);
+                CREATE INDEX IF NOT EXISTS refresh_source ON refresh_files(source);
+                CREATE TABLE IF NOT EXISTS pending_deletes(path TEXT PRIMARY KEY, size INTEGER, stamp INTEGER);
             """)
             _LEDGERS[key] = db
             try:
@@ -182,7 +185,15 @@ class LibraryCache:
                     if file.is_symlink() or not file.is_file() or file.suffix == '.tmp' or file.name.startswith('kept-'):
                         continue
                     self.record(file)
-                    if file.suffix == '.npz' and not self._source_current(file):
+                    if file.suffix == '.surface':
+                        try:
+                            with file.open('rb') as handle:
+                                owner = json.loads(handle.readline())['identity']['path']
+                            if not self.has_source_record(file):
+                                self.record(file, source=owner)
+                        except (OSError, ValueError, KeyError, TypeError):
+                            pass
+                    if file.suffix == '.npz' and not self.has_source_record(file):
                         try:
                             import numpy as np
                             with np.load(file, allow_pickle=False) as stored:
@@ -271,7 +282,7 @@ class LibraryCache:
             raise ValueError('A file command owns this photo; cached pixels were not published.')
         return epoch
 
-    def publish(self, temporary, destination, source, epoch, retarget=False):
+    def publish(self, temporary, destination, source, epoch, retarget=False, accounted=True):
         with _LOCK:
             db = self._ledger()
             db.execute('BEGIN IMMEDIATE')
@@ -280,7 +291,8 @@ class LibraryCache:
                 if not retarget and (epoch != current or active):
                     raise ValueError('Photo moved or was deleted before cached pixels could be published.')
                 os.replace(temporary, destination)
-                self._record(db, Path(destination), source, retarget=retarget)
+                if accounted:
+                    self._record(db, Path(destination), source, retarget=retarget)
                 db.commit()
             except BaseException:
                 db.rollback()
@@ -304,6 +316,10 @@ class LibraryCache:
                 with db:
                     db.executemany("UPDATE source_mutations SET owner='' WHERE source=? AND owner=?",
                                    [(source, str(owner)) for source in keys])
+
+    def has_source_record(self, file):
+        with _LOCK:
+            return self._ledger().execute('SELECT 1 FROM sources WHERE path=?', (str(file),)).fetchone() is not None
 
     def _source_current(self, file):
         with _LOCK:
@@ -341,7 +357,7 @@ class LibraryCache:
             file = Path(filename)
             try:
                 safe = (file.parent in directories and not file.is_symlink() and not file.parent.is_symlink()
-                        and not file.name.startswith('kept-') and file.suffix in ('.npz', '.json'))
+                        and not file.name.startswith('kept-') and file.suffix in ('.npz', '.json', '.surface'))
                 stat = file.stat() if safe else None
                 if stat is not None and (stat.st_size, stat.st_mtime_ns) == (size, stamp) and (retarget or self.source_valid(file, recorded_source)):
                     yield file
@@ -349,6 +365,56 @@ class LibraryCache:
             except OSError:
                 pass
             self.forget_source(file)
+
+    def index_refresh_file(self, file, source, kind, protected=False):
+        with _LOCK:
+            db = self._ledger()
+            with db:
+                db.execute('INSERT OR REPLACE INTO refresh_files VALUES (?,?,?,?)',
+                    (str(file), os.path.normcase(str(Path(source).resolve())), kind, int(protected)))
+
+    def refresh_files(self, source):
+        source = os.path.normcase(str(Path(source).resolve()))
+        with _LOCK:
+            db = self._ledger()
+            return db.execute("SELECT path,kind FROM refresh_files WHERE source=? AND protected=0", (source,)).fetchall()
+
+    def remove_disposable(self, file):
+        file = Path(file)
+        with _LOCK:
+            db = self._ledger()
+            try:
+                stat = file.stat()
+                file.unlink()
+            except FileNotFoundError:
+                pass
+            except PermissionError:
+                with db:
+                    db.execute('INSERT OR REPLACE INTO pending_deletes VALUES (?,?,?)',
+                        (str(file), stat.st_size, stat.st_mtime_ns))
+                return False
+            if file.parent.name in DIRECTORIES:
+                self.record(file)
+            with db:
+                db.execute('DELETE FROM pending_deletes WHERE path=?', (str(file),))
+                db.execute('DELETE FROM refresh_files WHERE path=?', (str(file),))
+            return True
+
+    def cleanup_pending(self):
+        with _LOCK:
+            db = self._ledger()
+            rows = db.execute('SELECT path,size,stamp FROM pending_deletes').fetchall()
+        for filename, size, stamp in rows:
+            file = Path(filename)
+            try:
+                stat = file.stat()
+                if (stat.st_size, stat.st_mtime_ns) == (size, stamp):
+                    if not self.remove_disposable(file):
+                        continue
+            except FileNotFoundError:
+                pass
+            with _LOCK, db:
+                db.execute('DELETE FROM pending_deletes WHERE path=?', (filename,))
 
     def forget_source(self, file):
         with _LOCK:
@@ -419,6 +485,7 @@ class LibraryCache:
         self.trim()
 
     def trim(self, limit_bytes=None, allowance='thumbnail'):
+        self.cleanup_pending()
         if allowance not in ALLOWANCES:
             raise ValueError('Unknown Library cache allowance.')
         preferences = self.preferences()
