@@ -425,3 +425,23 @@ img:not([src]), img[src=""] { visibility:hidden; }
 .grade-paste-dialog .grade-paste-shared > .library-options { justify-content: flex-end; padding: 0 0 6px; }
 .grade-paste-dialog .grade-paste-shared > .grade-paste-cell { border-right: 0; }
 .grade-paste-dialog .grade-paste-mode > button { font: var(--font-weight-medium) var(--font-size-md)/var(--line-height-normal) var(--font-body); text-transform: none; }
+
+/* Shared neutral hover and readable, viewport-bounded context commands. */
+.library-folder-row:hover, .library-folder-row:hover button { background: var(--plate-up-hover); }
+.library-folder-menu { max-height: calc(100vh - 16px); max-width: calc(100vw - 16px); overflow: auto; background: var(--raised); border: 2px solid var(--muted); box-shadow: var(--popover-shadow); }
+.library-folder-menu button { width: 100%; font-size: var(--font-size-md); }
+.library-folder-menu kbd { font-size: var(--font-size-xs); }
+.library-folder-menu button:hover:not(:disabled) { background: var(--plate-up-hover); }
+.library-menu-pending { color: var(--muted); padding: 5px 10px; font-size: var(--font-size-sm); }
+.library-nav :is(.nav-insert-before,.nav-insert-after) { position: relative; }
+.library-nav :is(.nav-insert-before,.nav-insert-after)::after { content: ""; position: absolute; left: 0; right: 0; height: 2px; background: var(--accent); pointer-events: none; z-index: 2; }
+.library-nav .nav-insert-before::after { top: 0; }
+.library-nav .nav-insert-after::after { bottom: 0; }
+#single-review-marks { display: none; }
+.library.review #single-review-marks { display: flex; position: absolute; right: 16px; bottom: 16px; padding: 6px 10px; border-radius: var(--radius-plate); background: var(--raised); color: var(--text); box-shadow: var(--popover-shadow); pointer-events: none; z-index: 5; }
+#single-review-marks .library-marks { display: flex; gap: 8px; }
+#single-review-marks :is(.library-copy,.library-edited) { display: none; }
+
+.library-popover button:hover:not(:disabled) { background: var(--plate-up-hover); }
+.library-folder-menu button { transition: none; }
+#single-review-marks .library-marks { font-size: var(--font-size-md); }

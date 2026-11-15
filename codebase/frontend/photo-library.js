@@ -1100,12 +1100,11 @@
   async function photoMenu(event, photo) {
     event.preventDefault();
     const index = state.photos.findIndex(item => item.path === photo.path);
-    if (!state.selection.has(photo.path)) select(index); else { state.index = index; updateDetails(); }
+    select(index, false, state.selection.has(photo.path) ? "preserve" : "single", true);
+    commandState();
     const paths = [...state.selection], one = paths.length === 1, grades = [];
-    try {
-      const { counts } = await api("/api/library/grade-reverts", { paths });
-      for (const [target, revert] of Object.entries(REVERTS)) if (counts[target]) grades.push({ label: revert.label, run: () => revertGrades(paths, target, counts[target]) });
-    } catch (error) { status(error.message); }
+    const reverts = { pending: api("/api/library/grade-reverts", { paths }).then(({counts}) =>
+      Object.entries(REVERTS).filter(([target])=>counts[target]).map(([target,revert])=>({label:revert.label,run:()=>revertGrades(paths,target,counts[target])}))) };
     const chosen = state.photos.filter(item => state.selection.has(item.path));
     grades.push({label:"Copy grade", key:"Ctrl+C", disabled:!commands.canCopy(), run:commands.copy},
       {label:"Paste grade", key:"Ctrl+V", disabled:!commands.canPaste(), run:() => commands.paste()},
@@ -1123,7 +1122,7 @@
       ...(one && !photo.copy_id ? [{label:"Rename photo…",run:()=>fileCommands.rename(photo)}] : []),
       ...(chosen.some(p=>!p.copy_id) ? [{label:"Move to folder…",run:()=>fileCommands.move(chosen)}] : []),
       ...(chosen.some(item => !item.copy_id) ? [{label:'Delete…',key:'Del',danger:true,run:()=>fileCommands.remove(chosen)}] : []),
-      ...(chosen.some(item => item.copy_id) ? [{ separator: true }, { label: "Remove virtual copy…", key: "Del", danger: true, run: () => removeCopy(chosen) }] : [])],
+      ...(chosen.some(item => item.copy_id) ? [{ separator: true }, { label: "Remove virtual copy…", key: "Del", danger: true, run: () => removeCopy(chosen) }] : []), reverts],
       { label: "Photo actions", onError: error => status(error.message) });
   }
   const compare = HDRLibraryCompare.create({api,status,load:(photo,edge,...args)=>loadAndShow(photo,2560,...args),
@@ -1143,6 +1142,9 @@
   void overlays.init();
   function updateSingleCaption() {
     if (compare.enabled()) compare.captions();
+    let reviewMarks=$("single-review-marks");
+    if(!reviewMarks){reviewMarks=make("div", "", "");reviewMarks.id="single-review-marks";reviewMarks.setAttribute("aria-label","Photo marks");$("single-stage").append(reviewMarks);}
+    reviewMarks.replaceChildren(...(selected()?[culling.strip(selected())]:[]));
     if (!selected()) return;
     $("single-caption").replaceChildren(document.createTextNode(selected().name), culling.strip(selected()));
     if(state.fitMeta && !state.fitMeta.bitmap){const badge=document.createElement("span");badge.className="library-colour-note";badge.style.position="static";badge.style.color="var(--muted)";badge.style.borderColor="var(--border)";badge.textContent="Developed";badge.classList.add("is-developed");$("single-caption").append(badge);}
@@ -1154,13 +1156,19 @@
       $("single-caption").append(button);
     }
   }
-  function select(index, scroll = false, mode = "single") {
+  function select(index, scroll = false, mode = "single", deferPaint = false) {
     if (!state.review && state.view === "grid") restoreReviewGrid = null;
     if(state.folderOpen)state.folderOpen.restore=null;
     if (!state.photos.length) return;
     if (compare.enabled() && state.view === "single") mode = "single";
     const next = HDRLibrarySelection.choose(state.photos.map(photo => photo.path), state.selection, state.anchor, index, mode);
-    state.index = next.index; state.selection = next.selected; state.anchor = next.anchor; updateDetails();
+    state.index = next.index; state.selection = next.selected; state.anchor = next.anchor;
+    if (deferPaint) {
+      // Keep all selection bookkeeping immediate, but let the menu paint before Details.
+      requestAnimationFrame(() => setTimeout(() => select(state.index, false, "preserve"), 0));
+      return;
+    }
+    updateDetails();
     if (state.view === "grid") {
       if (scroll && state.layout) {
         const top = state.layout.scrollFor(state.index);

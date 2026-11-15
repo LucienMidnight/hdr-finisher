@@ -1,3 +1,9 @@
+## November 15: W6 photo context menu (MacBook Neo)
+
+| Action | Target / comparison tolerance | Result | Conditions / revision |
+| --- | --- | --- | --- |
+| Right-click photo to first visible menu frame | ≤100 ms; differences within 20 ms or 20% (whichever is larger) are ordinary event/frame scheduling noise | Before 15.9–40.9 ms (median 26.6); after 2.4–13.8 ms (median 8.6); passes | November 15, MacBook Neo A18 Pro / 8 GB, 1408×794 points, shared GPU lock, disposable real Electron, six curated SDR photos, five actual right-clicks per version. Before serves frontend files from `7d745d28` without altering the checkout; after is the commit containing this note. Concurrent W1 backend edits are shared, so this is a diagnostic frontend comparison, not an isolated backend benchmark. Browser-clock contextmenu event to next menu-visible animation frame; excludes Playwright polling. `codebase/output/review/w6-interface/{before,after}.json`. A held-response check independently proves ordinary commands open while Revert waits and a late answer cannot reopen a closed menu. |
+
 November 15, collapse-button alignment (commit containing this note): Windows PC, 2560x1440, frozen mixed-v1 fixture, shared GPU lock, plain Electron; Python fast checks running concurrently. First/ten pictures 2.3/2.9 s; all 30 visited viewport pictures drawn, no errors or memory violation. Diagnostic smoke only, not an isolated speed comparison. Report: `codebase/output/quick-library-check/collapse-buttons/report.json`.
 
 ## November 15: Detail highlight fix validation (Windows PC)

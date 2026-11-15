@@ -33,9 +33,9 @@
   }
   // One menu at a time. It is placed inside the open dialog, if any, so it stays on top.
   const menu = make("div", "window-menu-popover library-folder-menu"); menu.id = "library-folder-menu"; menu.setAttribute("role", "menu"); menu.hidden = true;
-  let origin = null, failed = () => {};
+  let origin = null, failed = () => {}, generation = 0;
   function closeMenu(restoreFocus = false) {
-    menu.hidden = true;
+    menu.hidden = true; generation++;
     if (restoreFocus && origin?.isConnected) origin.focus({ preventScroll: true });
     origin = null;
   }
@@ -44,7 +44,18 @@
     if (!actions.length) return;
     origin = anchor || event.target.closest("button") || document.activeElement; failed = onError;
     menu.setAttribute("aria-label", label);
-    menu.replaceChildren(...actions.map(action => {
+    const token=generation;
+    const renderAction=action => {
+      if(action.pending){
+        const group=make("div","library-menu-deferred"), pending=make("div","library-menu-pending","Checking revert options…");group.append(pending);
+        Promise.resolve(action.pending).then(items=>{
+          if(token!==generation || menu.hidden)return;
+          group.replaceChildren(...items.map(renderAction));
+          // Revert options append at the end; keep existing targets still.
+          menu.style.maxHeight=`${innerHeight-(parseFloat(menu.style.top)||0)}px`;
+        }).catch(error=>{if(token===generation&&!menu.hidden){group.remove();onError(error);}});
+        return group;
+      }
       if (action.separator) return make("hr", "library-menu-separator");
       if (action.header) return make("div", "library-menu-header", action.header);
       const button = make("button", action.danger ? "danger" : "", action.label);
@@ -55,9 +66,11 @@
         try { await action.run(); } catch (error) { report(error); }
       });
       return button;
-    }));
+    };
+    menu.replaceChildren(...actions.map(renderAction));
     const dialogs = [...document.querySelectorAll("dialog[open]")];
     (dialogs.at(-1) || document.body).append(menu);
+    menu.style.maxHeight="";
     menu.hidden = false;
     const bounds = origin?.getBoundingClientRect?.() || { left: 0, bottom: 0, top: 0 };
     const pointer = event.type === "contextmenu";

@@ -10,17 +10,18 @@
     for (const id of saved.sections || []) { const section = sections.find(item => item.dataset.section === id); if (section) root.append(section); }
     // Append newly added sections after the saved ones.
     for (const section of sections) if (!(saved.sections || []).includes(section.dataset.section)) root.append(section);
+    function clearInsertion(){ root.querySelectorAll(".nav-insert-before,.nav-insert-after").forEach(item=>item.classList.remove("nav-insert-before","nav-insert-after")); }
     function draggable(handle, target, kind, id, drop) {
       handle.addEventListener("dragstart", event => {
         event.stopPropagation(); dragging = { kind, id }; event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("application/x-hdr-library-navigation", kind);
       });
-      handle.addEventListener("dragend", () => { dragging = null; root.querySelectorAll(".drag-target").forEach(item => item.classList.remove("drag-target")); });
-      target.addEventListener("dragover", event => { if (dragging?.kind !== kind || dragging.id === id) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; target.classList.add("drag-target"); });
-      target.addEventListener("dragleave", () => target.classList.remove("drag-target"));
+      handle.addEventListener("dragend", () => { dragging = null; clearInsertion(); });
+      target.addEventListener("dragover", event => { if (dragging?.kind !== kind || dragging.id === id) return; event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; clearInsertion(); const after=event.clientY > target.getBoundingClientRect().top + target.getBoundingClientRect().height/2; target.classList.add(after ? "nav-insert-after" : "nav-insert-before"); });
+      target.addEventListener("dragleave", event => { if (!target.contains(event.relatedTarget)) target.classList.remove("nav-insert-before","nav-insert-after"); });
       target.addEventListener("drop", event => {
         if (dragging?.kind !== kind || dragging.id === id) return;
-        event.preventDefault(); event.stopPropagation(); target.classList.remove("drag-target");
+        event.preventDefault(); event.stopPropagation(); clearInsertion();
         drop(dragging.id, event.clientY > target.getBoundingClientRect().top + target.getBoundingClientRect().height / 2);
         dragging = null; persist();
       });
@@ -30,7 +31,7 @@
       const toggle = () => { body.hidden = !!saved.closed?.[id]; button.setAttribute("aria-expanded", String(!body.hidden)); button.setAttribute("aria-label", `${body.hidden ? "Expand" : "Collapse"} ${section.querySelector(".library-section-title").textContent}`); };
       toggle();
       button.addEventListener("click", () => { saved.closed ||= {}; saved.closed[id] = !body.hidden; toggle(); persist(); });
-      draggable(section.querySelector(".section-handle"), section.querySelector(".library-heading"), "section", id, (source, after) => {
+      draggable(section.querySelector(".section-handle"), section, "section", id, (source, after) => {
         const moved = sections.find(item => item.dataset.section === source);
         root.insertBefore(moved, after ? section.nextSibling : section);
         saved.sections = [...root.querySelectorAll(".library-nav-section")].map(item => item.dataset.section);

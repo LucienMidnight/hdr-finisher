@@ -1,3 +1,33 @@
+## November 15: W6 review, menus and navigation feedback
+
+Full-screen review now displays the existing rating, pick/reject and colour
+marks at bottom-right. They are display-only, refresh with the shown photo and
+with mark changes, and omit copy/edited badges. Context commands use the 14.5px
+menu token and smaller 12px shortcut token; long menus scroll within the window.
+Pinned rows, toolbar menu buttons and menu rows use the existing neutral
+`--plate-up-hover` background, with no new border or token.
+
+Photo menus show immediately; Revert availability loads independently at the
+end, without moving existing command targets. A closed/replaced menu rejects
+late answers. Selection bookkeeping remains immediate; Details and picture
+painting defer until the menu's first frame. Dragging pins or sidebar sections
+shows a two-pixel insertion line at the actual before/after boundary, replacing
+whole-row reorder highlights. Photo-onto-folder moves remain separate.
+
+MacBook Neo A18 Pro / 8 GB, real Electron under the shared lock: the focused
+review passes all three themes at 1408×794 and 1100×720, with menu bounds,
+keyboard focus, full-screen marks/navigation, section insertion and asynchronous
+menu closure checked. A fast controller regression checks pin before/after,
+persisted order and ignoring photo drops. Native Windows maximize and pin tests
+also pass. Final fast Node suite: 1,009 passed / one skipped. Python: 3,452 passed /
+144 skipped / one unexpected pass, with grain-reference and cache-publication
+failures in concurrent W1 work. No image processing/output changed.
+Menu timing conditions/results are in the performance table. Screenshots and
+assertions: `codebase/output/review/w6-interface/`; driver:
+`codebase/tools/w6-interface-review.cjs`. Early driver attempts failed fixture,
+accessible-name or intercepted-route setup, then a real header DOM-order issue
+was corrected; final full review passes. Visual sign-off pending; U11 is untouched.
+
 ## November 15: left-panel collapse alignment
 
 Library left-panel collapse now matches the unchanged Grade/Proof reference: the expanded header uses the same end inset, and the collapsed rail is 44 px with its button centred. The shared button is allowed its natural width rather than being squeezed by flex layout.
