@@ -93,8 +93,8 @@ class ImportJobManager:
             self._active_job_id = job.job_id
             self._prune()
         from .library_scheduler import scheduler
-        scheduler.ask('grade-import-'+job.job_id, 'backend', str(path), 'grade-import', 0, 'Grade')
-        future = self._executor.submit(self._run, job)
+        grant = scheduler.ask('grade-import-'+job.job_id, 'backend', str(path), 'grade-import', 0, 'Grade')
+        future = self._executor.submit(self._run, job, grant)
         future.add_done_callback(lambda _: scheduler.finish('grade-import-'+job.job_id))
         return job
 
@@ -122,8 +122,20 @@ class ImportJobManager:
             job.cancel_event.set()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
-    def _run(self, job: ImportJob) -> None:
+    def _run(self, job: ImportJob, grant) -> None:
         try:
+            with self._lock:
+                if not self._is_current_locked(job):
+                    return
+                if grant.granted is None:
+                    self._set_phase(job, "queued", "waiting_for_paste", "Waiting for paste preparation to release memory")
+            while grant.granted is None:
+                if not self._is_current(job):
+                    return
+                grant.ready.wait(.05)
+            # A native paste decode may only stop at its next safe point. Its
+            # scheduler grant remains held until all preparation buffers unwind;
+            # Grade must not enter prepare_session before that acknowledgement.
             if not self._is_current(job):
                 return
             suffix = job.path.suffix.lower()

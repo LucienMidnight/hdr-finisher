@@ -512,7 +512,8 @@ class Scheduler:
                 elif headroom is not None and job.estimate > headroom:
                     reason = "system reserve"
             elif job.cls == "Grade":
-                pass
+                if job.kind == "grade-import" and any(j.kind == 'paste-import' for j in running):
+                    reason = "waiting for paste release"
             elif job.estimate > self.ceiling:
                 reason = "needs more memory"
             elif headroom is not None and job.estimate > headroom:

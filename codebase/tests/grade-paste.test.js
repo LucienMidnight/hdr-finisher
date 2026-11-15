@@ -30,7 +30,7 @@ test('copy failure is reported through the Library status message', async () => 
   assert.deepEqual(messages, ['Could not copy grade: Copy failed']);
 });
 
-function dialogHarness(api) {
+function dialogHarness(api, options = {}) {
   const vm = require('node:vm'), fs = require('node:fs');
   const nodes = [];
   class Element {
@@ -48,7 +48,7 @@ function dialogHarness(api) {
   const window = {HDRLibraryDialogs:{make:(...args)=>new Element(...args)},addEventListener(){},removeEventListener(){}};
   const context = {window, document:{body:new Element('body')},setTimeout:callback=>{timers.set(++sequence,callback);return sequence;},clearTimeout:id=>timers.delete(id)};
   vm.runInNewContext(fs.readFileSync(require.resolve('../frontend/grade-paste.js'),'utf8'),context);
-  const controller=window.HDRGradePaste.create({api,status(){},prepare:async()=>true});
+  const controller=window.HDRGradePaste.create({api,status(){},prepare:async()=>true,...options});
   return {nodes, timers, controller};
 }
 const clipboard = {name:'source',groups:[{id:'tone',label:'Tone',section:'Tone',lane:'hdr',settings:[{id:'exposure',label:'Exposure'}]}],selection:{lanes:['hdr'],settings:['exposure']}};
@@ -158,4 +158,39 @@ test('dialog summary and count requests follow the active side ticks', async () 
   assert.ok(nodes.some(n=>String(n.textContent).includes('(SDR)')));
   assert.ok(nodes.some(n=>n.textContent==='1 of 1 photo will change.'));
   nodes.find(n=>n.textContent==='Cancel').fire('click'); await answer;
+});
+
+
+for (const cleanup of ['rejected', 'hung']) test(`successful paste still publishes result after ${cleanup} cleanup`, async () => {
+  const results = [], requests = [];
+  const transaction = {count:2,grade_changed:true,undo:'whole-paste'};
+  const {nodes,timers,controller}=dialogHarness(async (url,body)=>{
+    requests.push({url,body});
+    if(url.endsWith('grade-copy'))return clipboard;
+    if(url.endsWith('grade-paste'))return body.preview ? {count:2} : transaction;
+    if(url.endsWith('grade-preparation'))return {token:'operation'};
+    if(url.endsWith('grade-preparation-end')) {
+      if(cleanup === 'rejected')throw Error('connection lost during cleanup');
+      return new Promise(()=>{});
+    }
+    return {ready:true};
+  },{changed:(_copied,result)=>{if(result)results.push(result);}});
+  const work=controller.paste(['one','two']);
+  await new Promise(resolve=>setImmediate(resolve));
+  await [...timers.values()][0]();
+  nodes.find(node=>node.className==='button-primary').fire('click');
+  await new Promise(resolve=>setImmediate(resolve));
+  if(cleanup === 'hung') {
+    assert.equal(results.length,0);
+    assert.equal(timers.size,1);
+    await [...timers.values()][0]();
+  }
+  await work;
+  assert.deepEqual(results,[transaction]);
+  assert.equal(timers.size,0);
+  assert.equal(nodes.filter(node=>node.tag==='dialog'&&node.isConnected).length,0);
+  assert.ok(requests.some(row=>row.url.endsWith('grade-preparation-end')));
+  // The controller leaves its running state even if cleanup never answers.
+  await controller.copy('next-photo');
+  assert.equal(requests.at(-1).body.path,'next-photo');
 });

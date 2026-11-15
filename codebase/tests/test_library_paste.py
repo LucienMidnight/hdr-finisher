@@ -339,3 +339,59 @@ def test_sdr_only_denoise_saved_count_and_undo(setup, enabled):
     assert paste.paste([str(photo)], selection, preview=True)['count'] == 0
     marks.undo(); marks.writer.drain()
     assert settings(photo)['grade'] == before
+
+
+@pytest.mark.parametrize('cancel_grade', [False, True])
+def test_real_grade_start_waits_for_paste_release(setup, monkeypatch, cancel_grade):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from hdr_finisher.import_jobs import ImportJobManager
+    from hdr_finisher.media_browser import MediaBrowserStore
+    from hdr_finisher.models import RawImportSettings
+    from hdr_finisher.library_scheduler import Scheduler
+    import hdr_finisher.library_scheduler as scheduler_module
+    import hdr_finisher.library_paste as module
+    photo, store, session, marks, grades = setup
+    local = Scheduler()
+    monkeypatch.setattr(module, 'scheduler', local)
+    monkeypatch.setattr(scheduler_module, 'scheduler', local)
+    paste = LibraryPaste(grades)
+    cold = photo.with_name('cold.png'); cold.write_bytes(photo.read_bytes())
+    paste_entered, release_paste, grade_entered, release_grade = (Event() for _ in range(4))
+    real = SessionStore.prepare_session
+    attempts = []
+    def prepare(self, path, **options):
+        if Path(path) == cold:
+            attempts.append(path)
+            if len(attempts) == 1:
+                paste_entered.set()
+                assert release_paste.wait(5)
+                if options['cancelled']():
+                    raise RuntimeError('Import cancelled')
+        else:
+            grade_entered.set()
+            assert not any(j.kind == 'paste-import' and j.granted is not None for j in local.jobs.values())
+            assert release_grade.wait(5)
+        return real(self, path, **options)
+    monkeypatch.setattr(SessionStore, 'prepare_session', prepare)
+    manager = ImportJobManager(store, MediaBrowserStore(marks.database.parent))
+    try:
+        with ThreadPoolExecutor() as pool:
+            work = pool.submit(paste.prepare, str(cold))
+            assert paste_entered.wait(3)
+            job = manager.start(photo, RawImportSettings())
+            assert not grade_entered.wait(.15)
+            assert next(j for j in local.jobs.values() if j.kind == 'paste-import').granted is not None
+            if cancel_grade: manager.cancel(job.job_id)
+            release_paste.set()
+            if not cancel_grade:
+                assert grade_entered.wait(3)
+                assert len(attempts) == 1  # paste cannot restart ahead of Grade
+            release_grade.set()
+            assert work.result(timeout=10)['ready']
+            manager._executor.shutdown(wait=True)
+            assert job.payload()['state'] == ('cancelled' if cancel_grade else 'ready')
+            assert grade_entered.is_set() == (not cancel_grade)
+            assert not local.jobs
+    finally:
+        release_paste.set(); release_grade.set(); manager.close()

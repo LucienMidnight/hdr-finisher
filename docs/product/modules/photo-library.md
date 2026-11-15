@@ -1,3 +1,18 @@
+### November 15: W1 paste handoff and cleanup (R3/R7)
+
+Grade now waits before allocating its imported image until running paste
+preparation has unwound and released its scheduler grant. The real-manager
+blocked-preparation regressions also cover cancellation and paste resumption;
+all 66 W1 focused Python checks pass. W2 P3's broader Library/background pause
+remains open for its next worker.
+
+After a successful paste transaction, optional preparation-token cleanup is
+best-effort with a one-second wait bound. A failed or hung cleanup request can
+no longer replace the successful result, suppress thumbnail/status/Undo updates
+or leave the controller busy. Both failure cases pass behavioural JavaScript
+checks (11 focused picker/paste tests). Grade documents, transaction atomicity,
+whole-paste Undo and cancellation semantics are unchanged; no output change.
+
 ### November 15: W1 Refresh and cache ownership (R2/R5/R6)
 
 Startup reconciliation preserves the epoch recorded inside each scene/surface;

@@ -111,7 +111,17 @@
       } finally {
         root.removeEventListener('pagehide', stop);
         box.close(); box.remove();
-        if (token) await api('/api/library/grade-preparation-end', {token});
+        if (token) {
+          // The transaction result owns success/Undo. Optional token cleanup
+          // cannot replace it with an HTTP error or keep the dialog waiting.
+          let timer;
+          try {
+            await Promise.race([
+              Promise.resolve().then(() => api('/api/library/grade-preparation-end', {token})).catch(() => {}),
+              new Promise(resolve => { timer = setTimeout(resolve, 1000); }),
+            ]);
+          } finally { clearTimeout(timer); }
+        }
         if (cancelled) status('Paste cancelled. No grades changed.');
       }
     }

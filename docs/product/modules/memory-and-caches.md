@@ -1,3 +1,20 @@
+### November 15: W1 Grade waits for paste's acknowledged release (R3)
+
+A Grade import publishes its priority immediately, but now waits on its
+scheduler grant before calling `prepare_session`. That grant is withheld while
+a paste-import grant still owns preparation memory. Paste observes Grade at its
+existing safe points and unwinds first; only `scheduler.finish` acknowledges
+release and admits Grade. Queued cancellation and supersession remain effective
+while waiting. A native decode cannot be interrupted early and retains its
+reservation until it actually returns. Existing limits and reservations stay.
+
+Two regressions start a real `ImportJobManager` while preparation is deliberately
+blocked, covering both Grade continuation and cancellation. They prove that
+Grade never enters preparation before paste releases and that paste cannot
+restart ahead of Grade. The final W1 focused Python group has 66 passes.
+This is the import-to-import handoff only. W2 P3 still needs to pause all other
+Library work until Grade has presented a picture; no such pause is built here.
+
 ### November 15: W1 cache generation and deferred-deletion repair (R2/R5/R6)
 
 Background inventory now recovers a source mapping only when the file's own

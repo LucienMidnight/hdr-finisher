@@ -19,6 +19,15 @@ W6 in concurrent W1 work. Visual sign-off pending; no new tokens.
 
 # Module PRD: Grade
 
+## November 15: W1 import waits for paste release (R3)
+
+The real Grade import manager now waits for running paste preparation to
+acknowledge memory release before its large source allocation. Grade priority
+still arrives immediately, prompting paste to yield at its existing safe points.
+Cancellation while waiting remains responsive. Two real-manager blocked-import
+regressions pass, including cancellation; this does not implement W2 P3's pause
+of Library redraws/warm-up or change Grade's RAW processing, budgets or pixels.
+
 ## November 15: W1 local Detail CPU headroom correction (R1/R4)
 
 The earlier PC correction already retained headroom in the GPU's local Detail
