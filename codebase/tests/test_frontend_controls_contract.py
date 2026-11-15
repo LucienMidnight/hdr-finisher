@@ -128,7 +128,7 @@ def test_panel_titles_and_scope_description_follow_shared_design_contract() -> N
     assert "--font-size-md: 14.5px" in css
     assert "--group-title-font-weight: var(--font-weight-medium)" in css
     assert ".disclosure-trigger > span:first-child" in css
-    assert "transition-delay: 2s" in css
+    # Tooltip timing is exercised in the real-DOM W7 review.
     assert "justify-content: flex-start" in css
 
 
@@ -178,36 +178,8 @@ def test_preview_resolution_and_gpu_memory_are_persisted_application_preferences
     assert 'schemaVersion: 3' in shell
 
 
-def test_rendition_descriptions_are_delayed_title_tooltips() -> None:
-    html = (FRONTEND / "index.html").read_text(encoding="utf-8")
-    css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
-
-    assert 'id="lane-note"' not in html
-    assert 'aria-describedby="hdr-controls-tooltip"' in html
-    assert 'aria-describedby="sdr-controls-tooltip"' in html
-    assert 'id="hdr-controls-tooltip" class="title-tooltip lane-title-tooltip" role="tooltip"' in html
-    assert 'id="sdr-controls-tooltip" class="title-tooltip lane-title-tooltip" role="tooltip"' in html
-    assert ".lane-switch button:hover .lane-title-tooltip" in css
-    assert "transition-delay: 2s" in css
-
-
-def test_help_tooltips_are_portaled_and_clamped_to_the_visible_app_bounds() -> None:
-    javascript = frontend_scripts()
-    css = "\n".join((FRONTEND / name).read_text(encoding="utf-8") for name in ("styles.css", "visual-tokens.css", "visual-controls.css"))
-
-    assert "initializeBoundedTooltips();" in javascript
-    assert 'const selector = ".help-tip[data-tooltip], .help-tip[data-tip], .tooltip-trigger[data-tooltip], .group-toggle[data-tooltip], .disclosure-trigger[data-tooltip]"' in javascript
-    assert 'tooltip.className = "bounded-help-tooltip"' in javascript
-    assert "const visualViewport = window.visualViewport" in javascript
-    assert "viewport.width - margin * 2" in javascript
-    assert "viewport.height - margin - tooltipRect.height" in javascript
-    assert "const preferredTop = below <= maximumTop ? below : above" in javascript
-    assert "document.addEventListener(\"scroll\", position, true)" in javascript
-    assert ".help-tip::after" in css
-    assert "content: none !important" in css
-    assert ".bounded-help-tooltip" in css
-    assert "position: fixed" in css
-    assert "max-height: calc(100vh - 16px)" in css
+# Tooltip timing, focus, bounds and rendition help now run against the real DOM
+# in tools/w7-interface-review.cjs, replacing the two source-wording checks.
 
 
 def test_explanatory_copy_uses_title_hover_without_persistent_helper_rows() -> None:

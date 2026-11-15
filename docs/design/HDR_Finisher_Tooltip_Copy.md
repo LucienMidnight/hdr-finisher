@@ -2,6 +2,9 @@
 
 This file is the reviewable copy registry for explanatory tooltips. Copy strings from here into application markup or script without rewriting them in place. Interaction rules live in `../product/archive/HDR_Finisher_PRD_v1.2.md` (archived; current requirements are in the module PRDs under `../product/modules/`).
 
+Timing validation allows 2.4–2.9 seconds on the MacBook Neo (timer and frame
+scheduling); no early tooltip at 2.2 seconds.
+
 Every tooltip waits 2.5 seconds on hover or keyboard focus, in every window.
 Click, Escape, leave and blur dismiss immediately. Native title bubbles and CSS
 tooltips are replaced by one accessible, viewport-bounded top-layer controller.

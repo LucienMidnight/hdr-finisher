@@ -1,3 +1,35 @@
+## November 15: W7 tooltip/accent acceptance
+
+On the MacBook Neo / 8 GB, the locked real Electron review passes main,
+Library iframe and pop-out hover/focus timing, immediate click/Escape dismissal,
+viewport containment, native-title removal and tooltip layering above a real
+Settings dialog. Hover waits measured 2.502–2.504 seconds (permitted 2.4–2.9;
+none at 2.2). The iframe keeps its accessible name without a second frame tooltip.
+Hidden labels/Activity and clipped metadata checks pass; warnings/explanations
+remain. Pointer focus cannot reopen help after a click. Local tool-name reuse
+and overlay diagnostics read the transferred tooltip copy after title removal.
+
+Settings passes Modern Dark, Default Light and Studio Gray with Purple selected;
+saved orange survives reload. Synchronous startup tests cover all themes with
+missing, orange and custom choices in top-level and embedded renderers. The
+standalone browser also starts with the saved Purple accent. Main content was
+1408×794, iframe 1408×750, native pop-out 1408×796; the browser also fits 1100×720.
+Screenshots and timing bounds: `codebase/output/review/w7-interface/`.
+
+Final fast Node suite: 1,025 passed / one skipped. Full Python run: 3,463 passed,
+144 skipped, one unexpected pass, 14 failures during concurrent work. The one
+W7 failure was an obsolete source-wording tooltip test; it and the old two-second
+rendition wording check are replaced by real-DOM timing/focus/bounds coverage.
+The focused Python interface suite passes all 12 checks. The other 13 observed
+failures are outside W7: Film response blend, HSL upstream cache, Library native
+source/owner/crop/pause/reader tests, and SDR Match materialisation/gating. No
+unrelated tests were changed or rerun, and no numerical tolerance was relaxed.
+
+Neighbour acceleration stays disabled (`NEIGHBOUR_WINDOW_MS = 0`); labelled
+shortcut-only help stays enabled (`KEEP_SHORTCUT_ONLY = true`), each one switch
+pending Steve. L3 remains untouched. No photo-processing or delivered-output
+change. Output storage stayed below 100 GB (12.8 GB at start, 12.9 GB at end).
+
 ## November 15: W7 conditional tooltip copy (L2)
 
 The shared controller checks visible label ink at display time, so responsive

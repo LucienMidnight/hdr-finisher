@@ -5,17 +5,22 @@
   // Steve's neighbour decision is pending. Zero means every target waits.
   const NEIGHBOUR_WINDOW_MS = 0;
   const KEEP_SHORTCUT_ONLY = true; // Steve can remove labelled shortcut help here.
-  const selector = '[data-tooltip], [data-tip], [data-native-tooltip], [title], button[aria-label], [role="separator"][aria-label], .scope-title-wrap, .preview-title-wrap, .source-filename-wrap';
+  const selector = '[data-tooltip], [data-tip], [data-native-tooltip], [title], button[aria-label], [role="separator"][aria-label], select, .lane-switch button, .scope-title-wrap, .preview-title-wrap, .source-filename-wrap';
   function install() {
     if (window.HDRTooltips) return;
     const tooltip = document.createElement('div');
     tooltip.id = 'bounded-help-tooltip'; tooltip.className = 'bounded-help-tooltip';
     tooltip.setAttribute('role', 'tooltip'); tooltip.setAttribute('popover', 'manual'); tooltip.hidden = true;
     document.body.append(tooltip);
-    let active = null, pending = null, timer = 0, lastShown = -Infinity;
+    let active = null, pending = null, timer = 0, lastShown = -Infinity, previousDescription = null;
     const migrate = element => {
       if (!element.hasAttribute('title')) return;
       const text = element.getAttribute('title');
+      // Frame titles name their browsing surface; they are never hover help.
+      if (element.matches('iframe')) {
+        if (text && !element.getAttribute('aria-label')) element.setAttribute('aria-label', text);
+        element.removeAttribute('title'); return;
+      }
       element.dataset.nativeTooltip = text;
       // title may have supplied the only accessible name of an icon control.
       if (text && element.matches('button, input, select, iframe, [role="button"]') && !element.getAttribute('aria-label') && !element.getAttribute('aria-labelledby') && !element.textContent.trim()) element.setAttribute('aria-label', text);
@@ -58,27 +63,30 @@
     }
     const normalized = text => text.toLowerCase().replace(/[.…:]+$/g, '').trim();
     function textFor(trigger) {
+      if (!trigger.getClientRects().length) return "";
       const authored = trigger.querySelector('.title-tooltip');
       if (trigger.matches('.source-filename-wrap')) return trigger.classList.contains('has-overflow') ? authored?.textContent.trim() || '' : '';
+      if (trigger.matches('select') && !trigger.dataset.tooltip && !trigger.dataset.tip && !trigger.dataset.nativeTooltip) return clipped(trigger) ? trigger.selectedOptions[0]?.textContent || '' : '';
       const text = trigger.dataset.tooltip || trigger.dataset.tip || trigger.dataset.nativeTooltip || authored?.textContent.trim() || trigger.getAttribute('aria-label') || '';
       const label = visibleLabel(trigger);
       // Explanation, warnings and disabled reasons always survive. Only names
       // and repeated values are conditional on visible ink / actual overflow.
       if (trigger.matches('input, select') && text === (trigger.matches('select') ? trigger.selectedOptions[0]?.textContent : trigger.value)) return clipped(trigger) ? text : '';
       if (trigger.matches('.directory-browser-entry, .folder-name, .library-file-name, .picker-tile-name, .directory-browser-entry-name, .name, #place-title, #picker-preview-name') && (text === trigger.dataset.path || text === label)) return clipped(trigger) ? text : '';
-      const namedOnly = trigger.matches('#index-status, #compare-button, #focus-button');
+      const namedOnly = trigger.matches('#index-status') && normalized(text) === 'library activity';
       const [name, ...keys] = text.split(/\s*·\s*/);
       const isName = normalized(name) === normalized(label) || normalized(name) === normalized(label + ' options') || namedOnly;
-      if (/[a-z0-9]/i.test(label) && isName) return KEEP_SHORTCUT_ONLY && keys.length ? keys.join(' · ') : '';
+      if (/[a-z0-9]/i.test(label) && isName) return KEEP_SHORTCUT_ONLY && keys.length ? keys.join(' · ') : clipped(trigger) ? text : '';
       return text;
     }
 
     function hide() {
       clearTimeout(timer); timer = 0; pending = null;
       if (active) {
-        const ids = (active.getAttribute('aria-describedby') || '').split(/\s+/).filter(id => id && id !== tooltip.id);
-        if (ids.length) active.setAttribute('aria-describedby', ids.join(' ')); else active.removeAttribute('aria-describedby');
+        if (previousDescription === null) active.removeAttribute('aria-describedby');
+        else active.setAttribute('aria-describedby', previousDescription);
       }
+      previousDescription = null;
       active = null;
       if (tooltip.matches(':popover-open')) tooltip.hidePopover();
       tooltip.hidden = true; tooltip.classList.remove('visible');
@@ -103,7 +111,8 @@
         const text = textFor(trigger);
         if (!text || !trigger.isConnected || !trigger.getClientRects().length) return hide();
         pending = null; active = trigger; tooltip.textContent = text; tooltip.hidden = false;
-        const ids = new Set((trigger.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean));
+        previousDescription = trigger.getAttribute('aria-describedby');
+        const ids = new Set((previousDescription || '').split(/\s+/).filter(id => id && !document.getElementById(id)?.matches('.title-tooltip')));
         ids.add(tooltip.id); trigger.setAttribute('aria-describedby', [...ids].join(' '));
         tooltip.showPopover(); tooltip.classList.add('visible'); position(); lastShown = performance.now();
       }, NEIGHBOUR_WINDOW_MS && performance.now()-lastShown < NEIGHBOUR_WINDOW_MS ? 0 : HOVER_DELAY_MS);
@@ -111,11 +120,14 @@
     const target = event => event.target instanceof Element ? event.target.closest(selector) : null;
     document.addEventListener('pointerover', event => { const t=target(event); if(t && !t.contains(event.relatedTarget)) schedule(t); });
     document.addEventListener('pointerout', event => { const t=target(event); if(t && !t.contains(event.relatedTarget) && (t===active || t===pending)) hide(); });
-    document.addEventListener('focusin', event => { const t=target(event); if(t && event.target.matches(':focus-visible')) schedule(t); });
+    document.addEventListener('focusin', event => { const t=target(event); if(t && event.target.matches(':focus-visible') && document.documentElement.dataset.inputModality !== 'pointer') schedule(t); });
     document.addEventListener('focusout', hide);
     document.addEventListener('pointerdown', hide, true);
     document.addEventListener('click', hide, true);
-    document.addEventListener('keydown', event => { if(event.key==='Escape' || event.key==='Enter' || event.key===' ') hide(); }, true);
+    document.addEventListener('keydown', event => {
+      if(event.key==='Escape' && (active || pending)) { event.preventDefault(); event.stopPropagation(); hide(); }
+      else if(event.key==='Enter' || event.key===' ') hide();
+    }, true);
     window.addEventListener('blur', hide);
     document.addEventListener('scroll', () => { if(active) position(); }, true);
     window.addEventListener('resize', hide);

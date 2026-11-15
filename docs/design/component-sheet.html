@@ -84,11 +84,6 @@
   .hf-button.icon { width: var(--panel-control-h); padding: 0; }
   /* Tool: an icon-only plate, named by its tooltip (Local and Retouch tools, Crop, Rotate). */
   .hf-button.tool { position: relative; width: 40px; height: 34px; padding: 0; }
-  .hf-button.tool[data-tip]:is(:hover, :focus-visible)::after {
-    content: attr(data-tip); position: absolute; z-index: 10; top: calc(100% + 7px); left: 0; width: max-content; pointer-events: none;
-    padding: 6px 9px; border: 1px solid var(--plate-edge); border-radius: var(--radius-plate); background: var(--panel); box-shadow: var(--plate-lift);
-    color: var(--text); font: var(--font-weight-regular) var(--font-size-sm)/var(--line-height-tight) var(--font-body);
-  }
   .hf-tool-strip { display: flex; flex-wrap: wrap; gap: 6px; }
   /* Tier 2: --compact-action-size is 26px for row/card/section actions (preset, bypass, more). */
   .hf-ghost {
@@ -281,8 +276,16 @@
 
   /* Tooltip. */
   .hf-tooltip { display: inline-block; max-width: 280px; padding: 6px 9px; border: 1px solid var(--plate-edge); border-radius: var(--radius-plate); background: var(--panel); box-shadow: var(--plate-lift); color: var(--text); font: var(--font-weight-regular) var(--font-size-sm)/var(--line-height-tight) var(--font-body); }
+  .bounded-help-tooltip {
+    position: fixed; inset: auto; margin: 0; max-width: min(260px, calc(100vw - 16px));
+    padding: 8px 9px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-plate);
+    background: var(--tooltip); color: var(--body); box-shadow: var(--tooltip-shadow);
+    font: var(--font-weight-regular) var(--font-size-min)/var(--line-height-normal) var(--font-body);
+    overflow-wrap: anywhere; pointer-events: none;
+  }
+  .bounded-help-tooltip[hidden] { display: none; }
 </style>
-</head>
+<script defer src="../../codebase/frontend/tooltips.js"></script></head>
 <body>
 <!-- Tabler outline icons used on this page (same files as codebase/frontend/assets/icons/tabler). -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -627,6 +630,7 @@
 
 <section id="tooltips">
   <h2>Tooltips</h2>
+  <p>All windows use one controller: 2.5 seconds per hover or keyboard focus, including neighbours. Click, Escape, leave and blur dismiss immediately. Names appear only for icon forms; explanations remain and clipped values expand. Labelled shortcut-only help stays pending Steve’s decision. Purple is the default accent; saved choices, including orange, remain.</p>
   <div class="specimens">
     <div class="specimen"><h3>Tooltip</h3><div class="demo" data-css="hf-tooltip"><span class="hf-tooltip">Exposure: show clipped highlights and shadows</span></div></div>
   </div>

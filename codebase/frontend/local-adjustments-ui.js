@@ -505,7 +505,7 @@ function updateLocalToolState() {
     button.classList.toggle("queued", Boolean(state.localCreationTool && active));
     button.setAttribute("aria-pressed", String(active));
     button.disabled = !state.session;
-    if (!button.dataset.creationTitle) button.dataset.creationTitle = button.title;
+    if (!button.dataset.creationTitle) button.dataset.creationTitle = button.title || button.dataset.nativeTooltip || "";
     button.title = button.dataset.creationTitle;
   });
   const paint = document.getElementById("local-paint");

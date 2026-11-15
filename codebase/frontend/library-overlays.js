@@ -151,7 +151,7 @@
     }
     function toggle(kind,value){const task=switching.then(async()=>{const result=await o.api('/api/library/overlay-switch',{kind,enabled:value??!enabled[kind]});enabled[kind]=result.enabled;$(`${kind}-enabled`).checked=result.enabled;syncSwitches();controls[kind].button.classList.toggle('active',result.enabled);refresh(kind);});switching=task.catch(e=>o.status(e.message));return task;}
     async function init(){try{prefs=await o.api('/api/library/review-preferences');for(const [id,key] of Object.entries(fields)){const input=$(id);if(input.type==='checkbox')input.checked=prefs[key];else input.value=prefs[key];}redraw();}catch(e){o.status(e.message);}}
-    return {attach,detach:canvas=>{const record=records.get(canvas);if(record)remove(record);},toggle,init,snapshot:()=>({enabled:{...enabled},settings:{...prefs},maps:[...records.values()].flatMap(r=>Object.values(r.items).map(item=>({path:r.photo.path,kind:item.kind,camera:cameraPicture(r.meta),key:item.map?.key,quality:item.map?.quality,ready:!!item.values,unavailable:item.badge.title})))})};
+    return {attach,detach:canvas=>{const record=records.get(canvas);if(record)remove(record);},toggle,init,snapshot:()=>({enabled:{...enabled},settings:{...prefs},maps:[...records.values()].flatMap(r=>Object.values(r.items).map(item=>({path:r.photo.path,kind:item.kind,camera:cameraPicture(r.meta),key:item.map?.key,quality:item.map?.quality,ready:!!item.values,unavailable:item.badge.title||item.badge.dataset.nativeTooltip||""})))})};
   }
   window.HDRLibraryOverlays={create};
 })();
