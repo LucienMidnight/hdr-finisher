@@ -752,6 +752,16 @@ colour profiles) are after v1.
    development, matching Grade's CPU result within the agreed perceptual
    tolerance, for the Library, Grade and export. Not started; needs its own
    brief.
+7. **To address (Steve, November 15, 2026): full RAW development time in
+   Grade.** Grade's full corrected RAW development works correctly but takes
+   too long when many photos need editing one after another (for example a
+   whole shoot). The same full import also drives cold paste preparation
+   (`library_paste.py`: 16.8 s for DSC06615.ARW on the PC, November 15). Not
+   started; needs its own brief. Measure the whole wait from choosing a photo
+   to an editable picture first, including how much of it the Library's
+   stored development could already cover. Follow AGENTS.md "Speed where it
+   is felt". Rendered and exported pictures must stay within the agreed
+   tolerances.
 
 ## 7. Detail and history
 
