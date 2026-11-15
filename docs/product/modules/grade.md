@@ -1,5 +1,29 @@
 # Module PRD: Grade
 
+## November 15: SDR Detail highlight headroom
+
+Detail's Texture/Clarity/Sharpen stage precedes Film Look. Its CPU and global/
+local GPU implementations now retain values above display white until finishing;
+the SDR lane still limits the final output to white. Previously, any changed
+Detail sample was clipped to 1 before Film Look could develop its highlight
+range. This produced a flat shelf in DSC07585.ARW at Clarity +21 / Sharpen +55.
+The correction also reaches CPU fallback, GPU delivery and Proof through their
+shared renderers; amounts, radii, halo bounds and HDR behaviour are unchanged.
+Existing SDR grades with above-white input to active Detail intentionally regain
+that lost highlight range. No saved-file migration or tolerance change.
+
+Validation on Windows: 84 isolated GPU global/local Detail cases pass; the
+1024px DSC07585 scene proxy and saved grade, with Denoise/grain omitted for
+isolation, pass finished GPU-preview/CPU colour agreement (mean Delta E 2000
+0.245, p99.9 1.994; existing 1/3 limits). Each route's full-size JPEG Proof is
+byte-identical to its Export. Decoded GPU/CPU JPEG agreement remains outside
+that limit with Detail bypassed too (SDR p99.9 5.516 bypassed, 5.816 enabled);
+this is not waived or repaired here. Native-size original-photo validation
+with Denoise/grain remains unverified. Review crops and metric conditions:
+`codebase/output/review/detail-highlights/`.
+
+
+
 ## November 14: round 2 fixed chrome and joined dividers
 
 Steve's review confirmed that the compact open metadata rail covered the

@@ -2504,7 +2504,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let delta = clamp(adjusted - logY, -16.0, 16.0);
       if (abs(delta) <= 0.0000001) { return vec4f(source, 1.0); }
       var result = source * exp2(delta);
-      result = select(clamp(result, vec3f(0.0), vec3f(1.0)), max(result, vec3f(0.0)), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
+      // Preserve SDR headroom until Film Look and the final output ceiling.
+      result = max(result, vec3f(0.0));
       return vec4f(result, 1.0);
     }
 
@@ -2569,7 +2570,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let delta = clamp(adjusted - logY, -16.0, 16.0);
       if (abs(delta) <= 0.0000001) { return vec4f(source, 1.0); }
       var result = source * exp2(delta);
-      result = select(clamp(result, vec3f(0.0), vec3f(1.0)), max(result, vec3f(0.0)), p[${MASK_PARAMS.LOCAL.HDR_LANE}] > 0.5);
+      // Preserve SDR headroom until Film Look and the final output ceiling.
+      result = max(result, vec3f(0.0));
       return vec4f(result, 1.0);
     }
 

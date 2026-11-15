@@ -150,3 +150,15 @@ def test_sharpen_amount_keeps_responding_under_the_halo_bound() -> None:
     assert changes[0] < changes[1] < changes[2]
     assert max(peaks) <= float(np.max(image)) * 2.0 ** 0.25 + 1e-4
     assert abs(peaks[-1] - peaks[0]) < 1e-5
+
+
+def test_sdr_detail_preserves_headroom_before_film_look() -> None:
+    # Display-linear SDR can exceed white before Film Look's negative/scanner.
+    # Detail must change local contrast without replacing that range with 1.0.
+    image = _detail_fixture() * np.float32(8.0)
+    actual = apply_detail(image, DetailAdjustments(clarity_amount=21), PreviewKind.SDR)
+    assert np.all(actual > 1.0)
+    assert float(np.std(actual)) > float(np.std(image))
+    # Sharpen must also preserve this input range at native pixel scale.
+    sharpened = apply_detail(image, DetailAdjustments(sharpen_amount=55), PreviewKind.SDR)
+    assert np.percentile(sharpened, 95) > 1.0
