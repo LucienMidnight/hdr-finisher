@@ -1,5 +1,24 @@
 # Module PRD: Desktop and release
 
+## November 15: icon action tiers
+
+Panel-header collapse actions use the existing 30px `--panel-control-h`,
+with unchanged 14px chevron glyphs and matching Metadata grid tracks.
+Compact Export card/version menus, Grade preset/eye and Local/Retouch row
+actions use Steve-approved `--compact-action-size` (26px). The shared 24px
+disclosure/status token stays unchanged. App review now passes in all three
+themes at 2560x1440 on the Windows PC: all four pages share (190,49) expanded;
+collapsed buttons are at (7,49), Export (6.5,49), within the 1px allowance.
+All chevrons remain 14px and grid-centred. Local row actions were 2px high;
+they now match Retouch within 0.5px of the row centre. Long preset names
+truncate before the menu; card menus align with name ink within 1px.
+Review: `codebase/output/review/button-tiers/index.html` and `measurements.json`.
+The locked 90-second Library viewport check passes (not full-folder coverage).
+
+Fast checks: Node 1,003 passed / one skipped; release-driver inventory
+27 passed. Python: 3,510 passed / 86 skipped / one failure. The existing Windows
+path-separator failure is unrelated; no test guard was relaxed.
+
 ## November 14: 0.9.3 UI polish and round 2 review
 
 Workflow pages return to flat navigation, guided by the original underline

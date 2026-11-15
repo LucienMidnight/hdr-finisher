@@ -4604,8 +4604,8 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   top: 8px;
   right: 6px;
   display: grid;
-  width: 30px;
-  min-height: 30px;
+  width: var(--compact-action-size);
+  min-height: var(--compact-action-size);
   padding: 0;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -4622,8 +4622,8 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   top: 8px;
   right: 38px;
   display: grid;
-  width: 30px;
-  min-height: 30px;
+  width: var(--compact-action-size);
+  min-height: var(--compact-action-size);
   padding: 0;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -6407,7 +6407,7 @@ body[data-workflow="grade"] .import-workflow-panel { display: none; }
   text-align: left;
 }
 
-.group-preset { order: 2; min-height: 26px; padding: 2px 5px; }
+.group-preset { order: 2; min-height: var(--compact-action-size); padding: 2px 5px; }
 .group-reset { order: 3; }
 .section-bypass { order: 4; }
 .control-group:not(.modified) .group-reset { visibility: hidden; }
@@ -8038,12 +8038,12 @@ input[type="range"]:focus-visible::-webkit-slider-thumb,
 .panel-collapse-button {
   appearance: none;
   display: inline-grid;
-  flex: 0 0 var(--panel-collapse-button-size);
+  flex: 0 0 var(--panel-control-h);
   place-items: center;
-  width: var(--panel-collapse-button-size);
-  min-width: var(--panel-collapse-button-size);
-  height: var(--panel-collapse-button-size);
-  min-height: var(--panel-collapse-button-size);
+  width: var(--panel-control-h);
+  min-width: var(--panel-control-h);
+  height: var(--panel-control-h);
+  min-height: var(--panel-control-h);
   padding: 0;
   border: 0;
   border-radius: var(--radius-1);
@@ -8712,8 +8712,8 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
 
 .source-rail.collapsed .rail-title-row {
   display: grid;
-  grid-template-columns: var(--panel-collapse-button-size);
-  grid-template-rows: var(--panel-collapse-button-size);
+  grid-template-columns: var(--panel-control-h);
+  grid-template-rows: var(--panel-control-h);
   align-items: center;
   justify-items: center;
   place-content: center;
@@ -8727,7 +8727,7 @@ html.desktop-shell .compact-workspace.source-overlay-open .source-rail {
    in separate tracks at every compact boundary and interaction state. */
 .source-rail .rail-title-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--panel-collapse-button-size);
+  grid-template-columns: minmax(0, 1fr) var(--panel-control-h);
   align-items: center;
   gap: 8px;
   height: var(--panel-header-h);
@@ -9111,9 +9111,10 @@ body.batch-export-ready[data-workflow="export"] #export-sheet { display:flex; fl
 #batch-summary { font-size:var(--font-size-min); }
 #batch-run { width:100%; }
 .batch-preset-row { position:relative; display:flex; align-items:stretch; border-radius:var(--radius); }
-.batch-preset-row .batch-preset { padding-right:36px; border-color:transparent; background:transparent; }
+.batch-preset-row .batch-preset { min-width:0; padding-right:calc(var(--compact-action-size) + 10px); border-color:transparent; background:transparent; }
+.batch-preset-row .batch-preset strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .batch-preset-row .batch-preset[aria-pressed="true"] { border-color:var(--accent-strong); background:var(--accent-bed); }
-.batch-preset-row .top-icon-button { position:absolute; right:4px; top:8px; }
+.batch-preset-row .top-icon-button { font:inherit; position:absolute; right:4px; top:calc(11px + (1lh - var(--compact-action-size)) / 2); }
 #batch-modified { margin:0; padding:6px 16px; color:var(--muted); }
 #batch-modified:empty { display:none; }
 

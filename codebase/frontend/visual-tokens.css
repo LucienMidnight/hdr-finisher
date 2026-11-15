@@ -254,6 +254,7 @@
   --workspace-leading: 12px;
   --chevron-size: 14px;
   --group-disclosure-gap: 8px;
+  --compact-action-size: 26px; /* compact row, card and section icon actions */
   --panel-collapse-button-size: 24px;
   --bypass-icon-size: 17px;
   --panel-border-external-width: 3px;

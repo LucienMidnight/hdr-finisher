@@ -268,6 +268,7 @@
     }
   ],
   "drivers": [
+    {"path":"tools/button-tiers-review.cjs","areas":["ui"],"tier":"diagnostic","protects":"Three-theme 30px panel and 26px compact actions, four-page expanded/collapsed alignment within 1px, Scopes, long preset names, open menus and Local/Retouch row centring at 2560x1440.","launch":{"method":"electron"}},
     {"path":"tests/hdr-ceiling-delivery.js","areas":["export-proof"],"tier":"core","protects":"Bounded 1600px real-photo fixture: all-codec CPU/GPU exports and reduced/full-size Proof decoded targets with encoding allowance, full-size Proof identity and mandatory checking with checkbox off. --native-source keeps the original source for a separate native-size diagnostic.","launch":{"method":"electron"}},
     {"path":"tests/performance/hdr-ceiling-cost.py","areas":["export-proof"],"tier":"diagnostic","protects":"Real read-only photo CPU export and reduced/full Proof decoded ceilings, full Proof identity, and paired CPU or Electron GPU full-export cost with/without post-encode decoding.","launch":{"method":"python","requires":"Pass existing source photo paths; --gpu measures Electron request timing. Run under gpu-run-lock.py for isolated timings."}},
     {"path":"tests/library-grid-stability.js","areas":["library","ui"],"tier":"area","protects":"Scrollbar appearance cannot trigger repeated thumbnail resizing; control reproduces the 37-photo feedback loop.","launch":{"method":"native"}},

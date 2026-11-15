@@ -3359,3 +3359,9 @@ comparison. Evidence: codebase/output/quick-library-check/w20-framing/report.jso
 | Action | Observation | Date / commit | Conditions |
 | --- | --- | --- | --- |
 | Refresh thumbnail, Grid / filmstrip / Single | Refreshed canvases confirmed in all three views; no new latency baseline or speedup claim | 2026-11-15, commit containing this note | Windows PC, 2560x1440, plain Electron `--refresh --folder=library-live-grid`, existing 4 GB harness setting. First attempt recorded a 370 ms frame gap (250 ms guard); its Single transition was a test error. Corrected attempt passes; full Python suite and other project work were active. Evidence: `codebase/output/quick-library-check/refresh-pictures/`. |
+
+### November 15: button tier Library smoke (Windows PC)
+
+| Action | Observation | Date / commit | Conditions |
+| --- | --- | --- | --- |
+| Mixed Library viewport | 90-second smoke passed; first/ten/twenty pictures 1.0/1.7/9.6 s; no speed comparison | 2026-11-15, commit containing this note | Windows PC, 2560x1440, shared GPU lock, plain Electron, frozen library-mixed-v1; fast Node/Python suites active concurrently. Viewport scope only (30/33 eligible pictured), no app errors or memory violation. Evidence: `codebase/output/quick-library-check/button-tiers/report.json`. |
