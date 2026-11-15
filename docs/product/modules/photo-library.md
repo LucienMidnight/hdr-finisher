@@ -57,6 +57,14 @@ clipboard, selective and virtual-copy bulk paste, saved grades, live redraw,
 Ctrl+Z, and the 2560, 1100 and 1408 px window layouts. Review captures are in
 `codebase/output/review/paste-grade-redesign/`.
 
+Full fast checks for the paired-lane change: JavaScript 1004 passed / one
+skipped, followed by all nine focused picker tests passing; Python 3511
+passed / 86 skipped. The unrelated machine tooling settings-agreement test
+fails because Node returns forward slashes and Python backslashes for the
+main checkout path. No tooling or guard changed. The locked paste app check
+passes. An intermediate capture selector matched a closed folder dialog;
+the narrowed selector passes in the final run.
+
 ### November 15, 2026: Paste Grade dialog
 
 The commit containing this note gives Paste Grade a settings summary, a raised
