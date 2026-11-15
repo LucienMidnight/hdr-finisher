@@ -29,14 +29,14 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 
 | ID | Item | Package | Status |
 | --- | --- | --- | --- |
-| R1 | SDR local Detail: CPU clips, GPU keeps headroom | W1 | to do |
-| R2 | Startup reconciliation brings back invalidated scenes | W1 | to do |
-| R3 | Grade import overlaps a running paste import | W1 | to do |
-| R4 | Built previews keep the pre-fix Detail rendering | W1 | to do |
-| R5 | Refresh invalidates unrelated photos' work | W1 | to do |
-| R6 | Deferred delete can remove a fresh replacement | W1 | to do |
-| R7 | Failed clean-up request hides a successful paste | W1 | to do |
-| R8 | Exact grain test fails on the Mac | W1 | to do |
+| R1 | SDR local Detail: CPU clips, GPU keeps headroom | W1 | built — CPU local Detail retains headroom; Portra/Velvia GPU preview against CPU export passes |
+| R2 | Startup reconciliation brings back invalidated scenes | W1 | built — reconciliation checks saved epoch and pending deletion; scene/surface regressions pass |
+| R3 | Grade import overlaps a running paste import | W1 | built — real Grade import waits for paste release; continuation/cancel regressions pass; broader P3 remains W2 |
+| R4 | Built previews keep the pre-fix Detail rendering | W1 | built — finished thumbnail/screen versions advanced, including built previews; source scene reuse verified |
+| R5 | Refresh invalidates unrelated photos' work | W1 | built — Refresh cancels only its photo families; unrelated source work completes |
+| R6 | Deferred delete can remove a fresh replacement | W1 | built — compare/delete share the publication transaction; concurrent replacement survives |
+| R7 | Failed clean-up request hides a successful paste | W1 | built — best-effort cleanup bounded to one second; rejected/hung cleanup preserves successful result |
+| R8 | Exact grain test fails on the Mac | W1 | built — exact same-run old/new grain comparison replaces Windows-generated arrays; no tolerance change |
 | P1 | Paste Grade shows it has started immediately | W2 | to do |
 | P2 | Edited thumbnail appears fast after leaving Grade | W2 | to do |
 | P3 | Opening Grade during background work is fast | W2 | to do |
@@ -46,20 +46,21 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | C2 | Colour wheels: Balance direction | W3 | to do |
 | C3 | Colour wheels: clicking a puck changes it | W3 | to do |
 | T1 | Blacks/Whites and Shadows/Midtones/Highlights redesign | W4 | research |
-| M1 | HDR to SDR Match colour shifts (blue jeans) | W5 | research |
-| U1 | Export panel padding and single divider | W6 | to do |
-| U2 | No selection borders after mouse use | W6 | to do |
-| U3 | Module header: dot + Reset left, Presets right | W6 | to do |
-| U4 | Full screen shows rating/pick/colour | W6 | to do |
-| U5 | Maximize button shows Restore when maximized | W6 | to do |
-| U6 | Right-click menu text size | W6 | to do |
-| U7 | Right-click menu opens without lag | W6 | to do |
-| U8 | Frame menu fits the MacBook Neo | W6 | to do |
-| U9 | Hover backgrounds as tokens in every theme | W6 | to do |
-| U10 | Pinned drag shows an insertion line | W6 | to do |
+| M1 | HDR to SDR Match colour shifts (blue jeans) | W5 | research done |
+| M1a | SDR contrast/Film Look clipping turns saturated colours | W3 | to do |
+| U1 | Export panel padding and single divider | W6 | built — Export strip/results share Destination inset; one boundary; three-theme screenshots pass |
+| U2 | No selection borders after mouse use | W6 | built — pointer typing stays ring-free; Tab/F6 retain keyboard rings; Export checked |
+| U3 | Module header: dot + Reset left, Presets right | W6 | built — name, dot + Reset, Presets, eye in DOM/visual order; Presets always visible |
+| U4 | Full screen shows rating/pick/colour | W6 | built — display-only marks at bottom-right; photo/mark changes checked in Electron |
+| U5 | Maximize button shows Restore when maximized | W6 | built — Restore image follows native state; consumer regression passes; Windows OS check pending |
+| U6 | Right-click menu text size | W6 | built — 14.5px commands, 12px shortcuts; viewport-bounded scrolling menus |
+| U7 | Right-click menu opens without lag | W6 | built — immediate menu, deferred Revert/Details; Neo 2.4–13.8ms; stale response check passes |
+| U8 | Frame menu fits the MacBook Neo | W6 | built — both layers open, full-width sliders, viewport clamp; fits 1408x794 and 1100x720 |
+| U9 | Hover backgrounds as tokens in every theme | W6 | built — existing neutral plate-up-hover on pinned/menu surfaces; no new tokens |
+| U10 | Pinned drag shows an insertion line | W6 | built — before/after insertion lines for pins/sections; pin order/photo-drop regression passes |
 | U11 | Unpin control looks odd | W6 | waiting on Steve |
-| U12 | Mac Dock/Command-Tab icon | W6 | to do |
-| U13 | Less rounding on the logo background | W6 | to do |
+| U12 | Mac Dock/Command-Tab icon | W6 | built — development Dock icon set; packaged PNG runtime resource included; installed app/caches untouched |
+| U13 | Less rounding on the logo background | W6 | built — gentler smaller radius in five SVGs and PNG; portable Electron regeneration passes on Mac |
 | L1 | Tooltips appear after about 2.5 s | W7 | built — shared 2.5 s controller in every renderer; neighbour grace disabled; grouped app validation pending |
 | L2 | Tooltip pass: no redundant labels | W7 | built — visible labels suppress names; clipped values only; explanations retained; shortcut-only switch kept; app review pending |
 | L3 | "Choose what to paste" organised | W7 | to do |
@@ -75,6 +76,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | Nov 15 | Purple `#9b7bff` is the default accent. Orange stays a choice in Settings. Saved choices are kept. |
 | Nov 15 | Add a Whites slider beside Blacks. Blacks and Whites are simple endpoint controls that feel the same in HDR and SDR and overlap little with Shadows/Highlights. Shadows/Midtones/Highlights cover broader, customisable ranges, closer to lift/gamma/gain. Exact design waits for the T1 research. |
 | Nov 15 | Steve opened the slow RAW (over 30 s) in **Grade**, while a paste was running. |
+| Nov 15 | Fix the SDR clipping bug (M1a) now, in W3 with the colour wheel fixes. Verify on the shared test RAWs (any saturated blue should show it); the jeans were only a recent example. |
 
 **Recommended defaults, adopted unless Steve overrides**
 
@@ -161,6 +163,39 @@ gain (`adjustments.py` ~985), not a black point; Blacks and default Shadows
 overlap over two stops and compound because Blacks runs first; there is no
 Whites slider.
 
+**Research result (Nov 15), proposal awaiting Steve's decisions:**
+
+- Other apps: Lightroom documents Blacks/Whites as clipping endpoints and
+  Shadows/Highlights as broader regions, all image-adaptive and
+  interacting; DxO PhotoLab 10 added Whites (users split on it darkening
+  too much); Resolve's HDR palette has adjustable zones with a visible range
+  display (users praise it, but zones can miss the picture's tones);
+  darktable keeps creative tone shaping separate from the display mapping.
+  No app publishes its curves.
+- Proposed design: one five-control Tone block (Blacks, Shadows, Midtones,
+  Highlights, Whites) that reads one frozen pre-tone guide, so no control
+  moves another's selection. Blacks is a narrow floor control near black
+  (relative to reference white); Whites a narrow control over the top half
+  of the output range (relative to the HDR target peak, or SDR white),
+  selected by the brightest channel. Broad zones keep Center/Width but are
+  gated away from both endpoints. Overlap: about one stop at the black end,
+  half a stop at the white end. Whites −100 takes a 1000-nit peak to about
+  775 nits; +100 fills toward the ceiling but never raises it.
+- Placement: after Highlight Compression's shoulder and before the final
+  ceiling, in HDR, generated SDR and authored SDR, so Peak Fit cannot
+  cancel Whites. This also moves the zones after Film Look (they no longer
+  change film exposure; Exposure still does).
+- Local Tone would share the same curves; Match's local fitter must be
+  rebuilt. Later: Alt/Option-drag clipping preview, effective-range display,
+  then Shift-double-click Auto per endpoint.
+- Size **L**. All saved non-zero tone edits and stored Match recipes render
+  differently (pre-1.0: no migration renderer).
+
+Open decisions for Steve (one at a time): T1-a tone block after highlight
+compression (and after Film Look)? T1-b is narrow Whites travel enough?
+T1-c Local Tone in the same change? T1-d clipping/range preview first and
+Auto later?
+
 ### W5: HDR to SDR Match colour (M1), research first
 
 Steve sees denim come out a very different blue in SDR after Match. A data
@@ -169,6 +204,36 @@ the real CPU pipeline, stage by stage (Match, placement, highlight
 compression, gamut mapping, Film Look), measured in a perceptual space, plus
 an objective display check so the conclusion does not depend on Steve's
 monitor. No fix until the cause is shown with numbers.
+
+**Research result (Nov 15, synthetic patches, CPU renderer at `55e8bb5f`):**
+
+- **Confirmed defect:** SDR contrast clips RGB to 0–1 *before* its
+  hue-preserving luminance step (`adjustments.py` ~1093, shader ~1206).
+  After Match lowers SDR exposure and Exposure Bands lift blue back above
+  white, contrast turns denim about 13° and drops chroma to 70%; the final
+  SDR ceiling (`adjustments.py` ~721) adds about 4° more. Film-off denim at
+  0 stops: 5.5 ΔE00 from Match's own target (skin, green, cyan under 0.8).
+  An in-memory headroom fix cut it to 0.4. Film Look's final 0–1 clip
+  (`adjustments.py` ~1852) can add more. Same family as C1 and R1.
+- **Steve's hypothesis holds:** stocks shift a fixed blue by tens of degrees
+  between −4 and 0 stops, and Match feeds Film Look different exposure in
+  SDR (Portra 50%: +16% at −3 stops, −29% at +1). HDR and SDR stock code
+  agree within 0.25 ΔE00 at equal input.
+- **Match can pass while one colour is off:** its aggregate gates
+  (`sdr_match.py` ~366, ~479) allow a 15° denim error.
+- **Display:** this Mac reported 1.0× current EDR headroom (2.0× potential).
+  With no headroom, the HDR view falls back to a per-channel `RGB/(1+RGB)`
+  picture that differs a lot from the SDR target. The app does not show
+  which presentation mode is active.
+- **Objective check:** export HDR AVIF + sRGB PNG and run
+  `measure_exports.py` (kept in the coordinator's scratch folder) on the
+  jeans rectangle.
+
+Candidate items: M1a preserve headroom through SDR contrast and coordinate
+final clipping with Film Look (M, output change); M1b local-colour
+diagnostics in Match (S–M); M1c show presentation mode and EDR headroom
+(M, diagnostic); M1d fit Film Look input placement in Match (L). Waiting on
+Steve's jeans photo and project before changing output.
 
 ### W6: Small interface fixes
 
