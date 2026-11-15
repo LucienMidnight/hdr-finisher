@@ -16,7 +16,7 @@ from typing import Iterator
 import numpy as np
 
 from .adjustments import SDR_DISPLAY_REFERENCE_WHITE, _acescg_luma, _linear_luma, apply_adjustments
-from .color import acescg_to_linear_srgb
+from .color import acescg_to_linear_srgb, linear_srgb_to_acescg
 from .color_context import RenderColorContext
 from .finishing import apply_geometry, geometry_output_dimensions
 from .local_adjustments import _apply_local_grade
@@ -625,28 +625,35 @@ def _grading_tint_vectors(hues: object, weights: np.ndarray) -> np.ndarray:
 
 
 def _translate_color_grading_wheels(
-    grading: ColorGradingAdjustments, source: ColorGradingAdjustments
+    grading: ColorGradingAdjustments, source: ColorGradingAdjustments,
+    *, source_lane: PreviewKind = PreviewKind.HDR,
 ) -> None:
-    """Re-aim each wheel so SDR tints the colour the HDR lane actually produced.
+    """Re-aim wheels between lane primaries, without highlight attenuation.
 
     Each lane builds its wheel direction in its own primaries and makes it
     luma-neutral with its own weights, so an identical hue number is a
     different colour in each -- up to sixteen degrees apart, and up to twice the
     strength, once the HDR tint is measured in display primaries. Copying the
     numbers across therefore does not copy the grade.  Solve instead for the
-    wheel angle and saturation whose SDR tint best reproduces the HDR one.
+    wheel angle and saturation whose destination tint best reproduces the
+    source one. SDR-to-HDR uses the inverse primaries transform directly;
+    it does not divide by the forward Match shoulder's attenuation.
     """
     candidate_hues = np.arange(0.0, 360.0, 0.25, dtype=np.float32)
-    candidates = _grading_tint_vectors(candidate_hues, _SDR_GRADING_LUMA)
+    forward = source_lane == PreviewKind.HDR
+    source_weights = _HDR_GRADING_LUMA if forward else _SDR_GRADING_LUMA
+    target_weights = _SDR_GRADING_LUMA if forward else _HDR_GRADING_LUMA
+    convert = acescg_to_linear_srgb if forward else linear_srgb_to_acescg
+    candidates = _grading_tint_vectors(candidate_hues, target_weights)
     energy = np.maximum(np.sum(candidates * candidates, axis=1), 1e-6)
     for name in ("shadows", "midtones", "highlights"):
         authored = getattr(source, name)
         saturation = float(authored.saturation)
         if saturation <= 1e-6:
             continue
-        target = acescg_to_linear_srgb(
+        target = convert(
             (
-                _grading_tint_vectors([authored.hue], _HDR_GRADING_LUMA)[0]
+                _grading_tint_vectors([authored.hue], source_weights)[0]
                 * np.float32(saturation)
             ).reshape(1, 1, 3)
         ).reshape(3)

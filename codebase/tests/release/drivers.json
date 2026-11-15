@@ -1504,6 +1504,13 @@
       }
     },
     {
+      "path": "tests/hdr-from-sdr-research.js",
+      "areas": ["ui", "export-proof"],
+      "tier": "diagnostic",
+      "protects": "Unexposed X2 research only: no visible action, both layouts, unchanged SDR and existing document-swap Undo, bounded candidate CPU/GPU encoded ceiling and Proof/export identity.",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/local-sdr-match.js",
       "areas": ["masks", "ui", "export-proof"],
       "tier": "area",
