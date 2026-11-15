@@ -64,7 +64,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | L2 | Tooltip pass: no redundant labels | W7 | to do |
 | L3 | "Choose what to paste" organised | W7 | to do |
 | L4 | Open image uses the Library grid browser | W7 | to do |
-| L5 | Purple default accent, orange still offered | W7 | to do |
+| L5 | Purple default accent, orange still offered | W7 | built — purple before first paint; saved accents retained; ten focused checks pass; grouped app review pending |
 
 ## Decisions
 

@@ -130,6 +130,7 @@ body:is(.slider-hover, .tool-key-hints) .slider-key-legend { opacity: 1; }
 :root .accent-option { display: grid; justify-items: center; gap: 6px; padding: 8px 2px 6px; border: 1px solid transparent; border-radius: var(--radius-plate); background: transparent; box-shadow: none; color: var(--muted); font: var(--font-weight-regular) var(--font-size-xs) var(--font-body); }
 :root .accent-option:hover, :root .accent-option[aria-pressed="true"] { background: var(--raised); color: var(--text); border-color: var(--border); }
 .accent-chip { display: block; width: 24px; height: 24px; border-radius: 50%; box-shadow: var(--plate-lift); }
+.accent-chip.purple { background: var(--accent-preset-purple); }
 .accent-chip.burnt-orange { background: var(--accent-preset-burnt-orange); }
 .accent-chip.blue-gray { background: var(--accent-preset-blue-gray); }
 .accent-chip.coating-blue { background: var(--accent-preset-coating-blue); }

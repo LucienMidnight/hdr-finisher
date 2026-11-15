@@ -11,7 +11,7 @@ test("accent choices survive preference sanitization and match browser normaliza
  const accent={preset:"custom",color:"#A1B2C3"};
  assert.deepEqual(sanitizeApplicationPreferences({accent}).accent,{preset:"custom",color:"#a1b2c3"});
 });
-test("malformed accents return the approved orange default",()=>{
+test("malformed accents return the approved purple default",()=>{
  for(const accent of [null,{}, {preset:"custom",color:"red"},{preset:"custom",color:"#123"},{preset:"unknown"}])
   assert.deepEqual(sanitizeApplicationPreferences({accent}).accent,appearance.normalize());
 });
@@ -58,4 +58,10 @@ test("first paint normalizes retired and missing themes in the app and embedded 
    assert.equal(document.documentElement.dataset.theme,expected);
   }
  }
+});
+
+test("missing accent resolves to purple while saved orange is retained",()=>{
+ assert.deepEqual(appearance.normalize(),{preset:"purple",color:"#9b7bff"});
+ assert.deepEqual(sanitizeApplicationPreferences().accent,appearance.normalize());
+ assert.deepEqual(appearance.normalize({preset:"burnt-orange"}),{preset:"burnt-orange",color:"#d0612a"});
 });

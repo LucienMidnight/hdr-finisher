@@ -34,7 +34,7 @@ Use these principles when changing the interface:
 
 ## Startup and persistence
 
-Every application load begins from the canonical editing defaults. Theme and existing application settings retain their established persistence. The November 4 v1 brief explicitly adds accent colour as the only new persistent visual preference: Burnt orange, Blue-gray, Coating blue or a custom six-digit sRGB colour. It uses application preferences, never project or preset files. Unknown or missing choices return to burnt orange; no migration is provided.
+Every application load begins from the canonical editing defaults. Theme and existing application settings retain their established persistence. The November 4 v1 brief explicitly adds accent colour as the only new persistent visual preference: Purple (default), Burnt orange, Blue-gray, Coating blue or a custom six-digit sRGB colour. It uses application preferences, never project or preset files. Unknown or missing choices return to Purple; no migration is provided.
 
 - Do not restore adjustments, proof options, comparison layout, preview-quality mode, scope range, rail visibility, rail sizes, dock size, dock tab, or dock visibility from browser storage.
 - All grade control groups begin collapsed. This includes HDR, SDR, Curves, and Film Look groups.
@@ -124,7 +124,7 @@ controls, md (14.5px) supporting copy and 2xl headings. Application menus
 use a solid raised surface, a 2px muted-ink border and the existing popover
 shadow. The root menu aligns with the left edge of the hamburger glyph.
 
-The selectable accent starts at burnt orange `#d0612a`; presets also include Blue-gray `#566481` and Coating blue `#38a3dc`. For chosen A, derive strong as 72% A + 28% white, low as 82% A + 18% black, and bed as 16% A + 84% panel. On-accent is `#120c08` above linearized sRGB relative luminance 0.18, otherwise white. These formulas apply in every theme, following Steve's November 4 clarification; there is no automatic contrast substitution for Light or custom colours.
+The selectable accent starts at Purple `#9b7bff` (Steve, November 15); presets also include Burnt orange `#d0612a`, Blue-gray `#566481` and Coating blue `#38a3dc`. For chosen A, derive strong as 72% A + 28% white, low as 82% A + 18% black, and bed as 16% A + 84% panel. On-accent is `#120c08` above linearized sRGB relative luminance 0.18, otherwise white. These formulas apply in every theme, following Steve's November 4 clarification; there is no automatic contrast substitution for Light or custom colours.
 
 Accent text uses `accent-strong`. Required copy uses `body`, `text` or `muted`; `quiet` is only for nonessential marks. Warning chrome uses yellow `attention`; `headroom` is data only. Stars use neutral `star`. Colour-label, scope, curve, exposure-band, Kelvin and tint colours retain their independent meanings and never follow the chosen accent. No decorative glow.
 

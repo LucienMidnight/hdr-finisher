@@ -1,3 +1,12 @@
+## November 15: W7 purple accent (L5)
+
+Purple `#9b7bff` is the default in runtime tokens, browser and desktop
+preferences, before first paint in every window and all three themes.
+Settings offers Purple alongside Burnt orange and the other saved choices;
+existing saved accents remain selected. The approved derivation formulas stay.
+Validation: ten focused appearance/preference checks pass; grouped real-app
+review follows with the remaining W7 interface changes. No image output change.
+
 ## November 15: W6 window and application icons
 
 The custom Windows maximize control now changes both its accessible name and

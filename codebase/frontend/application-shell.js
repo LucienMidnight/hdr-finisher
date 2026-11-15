@@ -25,7 +25,7 @@
     roiPreview: "fit",
     navigationWindow: "auto",
     theme: "modern-dark",
-    accent: { preset: "burnt-orange", color: "#d0612a" },
+    accent: { preset: "purple", color: "#9b7bff" },
     viewerFrame: { preset: "theme", customColor: "#000000" },
     folders: { projectSave: "", projectImport: "", fileSave: "", fileImport: "", presetSave: "" },
     shortcuts: {},

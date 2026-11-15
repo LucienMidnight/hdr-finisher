@@ -1,10 +1,10 @@
 /* Appearance only: no image or grade state is involved. */
 (function (root) {
-  const presets = { "burnt-orange": "#d0612a", "blue-gray": "#566481", "coating-blue": "#38a3dc" };
+  const presets = { "purple": "#9b7bff", "burnt-orange": "#d0612a", "blue-gray": "#566481", "coating-blue": "#38a3dc" };
   function normalize(value) {
     if (Object.hasOwn(presets, value?.preset)) return { preset: value.preset, color: presets[value.preset] };
     if (value?.preset === "custom" && /^#[0-9a-f]{6}$/i.test(value.color)) return { preset: "custom", color: value.color.toLowerCase() };
-    return { preset: "burnt-orange", color: presets["burnt-orange"] };
+    return { preset: "purple", color: presets["purple"] };
   }
   function luminance(hex) {
     const c = hex.slice(1).match(/../g).map(v => parseInt(v,16)/255).map(v => v <= .04045 ? v/12.92 : ((v+.055)/1.055)**2.4);
