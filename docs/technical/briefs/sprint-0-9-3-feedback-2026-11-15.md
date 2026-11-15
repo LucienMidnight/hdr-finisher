@@ -176,8 +176,40 @@ HDR-display telemetry validation, tiled stress, CPU clipping image fallback or
 full-source clipping certification. No additional colour approval needed;
 existing semantic scope RGB/luma, accent and attention tokens are used.
 Black/white are diagnostic data endpoints, not new interface colours.
-Output scratch started at 13.0 GB; final size and implementation SHA follow
-in the completion note. No protected project or grading output changed.
+**Completion:** implementation `b63e09a5`; initial documentation `dd407e67`.
+The two native-upload admission failures both pass in isolation (2 passed,
+0.45 s); the remaining full-suite failure was N3a's still-changing Match
+translation test, outside N3b. Latest Node suite: 1,063 passed, one skipped,
+zero failed (1,064 total). No backend/test fix belonging to N3a was staged.
+
+Locked real-photo follow-up passes on shared `DSC_3931_01.jpg` (2000×1168),
+with both lanes, all Tone hover/range controls, local endpoint gestures, Alt
+release and workflow cleanup. Direct GPU readback also checks HDR's three
+different threshold marks. At the **same accepted source serial**, toggling
+the overlay preserves finished float pixels and the recipe exactly. Actual
+128-pixel Ultra HDR exports made with the overlay off/on are byte-identical
+in each lane. No rendered/exported pixels changed. The first photo assertion
+incorrectly compared a forced 512-pixel frame with a later normal-resolution
+frame; the corrected test requires the same accepted frame, not a relaxed
+pixel tolerance. Export test paths are unique and disposable.
+
+Neo real-photo interaction (12 live Whites inputs/lane, 1408×794-point app,
+input to matching accepted overlay at the next animation frame): HDR median
+32.55 ms, p95/max 46.2 ms; SDR median 33.5 ms, p95/max 36.9 ms. Both are below
+the unchanged 50-ms Grade slider p95 budget on this photo. Overlay command
+submission is at most 0.2 ms in this run; queue completion includes shared
+renderer work and is not an isolated GPU pass time. This does not qualify
+large RAW/tiled throughput or physical HDR presentation. Actual diagnostic
+baseline 640×374 = 1,914,880 bytes, plus 957,440 canvas bytes and parameters;
+no new full-resolution allocation.
+
+Final photo evidence: `codebase/output/review/n3b-clipping/photo/result.json`,
+`photo/{hdr,sdr}-{whites,blacks}.png`, `photo-gpu.log`; admission recheck:
+`pytest-admission-recheck.log`. Each Electron/GPU run (including Library)
+used the single shared GPU lock. Focus stayed on this driver and the quick
+Library check; no slow broad sweep was added. Scratch output is **13.0 GB
+at start and end**, below 100 GB; evidence is about 1.3 MB. No protected
+project or grading output changed. Still not pushed.
 
 ### N2 result (November 16, MacBook Neo / 8 GB)
 
