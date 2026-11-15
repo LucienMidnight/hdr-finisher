@@ -1,6 +1,6 @@
 # Design proposal: five-control Tone block (T1), November 15, 2026
 
-**Status:** proposal, not approved for building. Part of the 0.9.3 feedback
+**Status:** approved for building Nov 15 with Steve's answers (see the sprint brief's Decisions): T1-e offer both (fixed cap added, Peak Fit kept), T1-f SDR HC moved last, anchor = 18% of the lane's reference white (scene 0.18 = 203-nit reference white in this app; SDR reference = 100/203 display-linear), T1-b narrow, T1-c Local Tone together, T1-d preview first. Earlier status: proposal. Part of the 0.9.3 feedback
 sprint (`sprint-0-9-3-feedback-2026-11-15.md`, item T1). Decided: T1-a
 (user-facing order Tone → Film Look → Highlight Compression last as the cap).
 Open: T1-e, T1-f, anchor, T1-b, T1-c, T1-d (end of this file). Sources:

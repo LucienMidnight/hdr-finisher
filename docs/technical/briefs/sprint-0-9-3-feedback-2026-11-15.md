@@ -82,6 +82,39 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | Nov 15 | T1-a: the Tone block stays **early**, before Film Look (users set tone, then add a look, like a LUT workflow). Highlight Compression stays **last** as the cap that guarantees the delivery peak. The backend may differ internally where that is more intuitive or gives better results, but the user-facing order is tone → look → cap. The research proposal's after-compression placement is rejected; the design is being revised for this order. |
 | Nov 15 | Fix the SDR clipping bug (M1a) now, in W3 with the colour wheel fixes. Verify on the shared test RAWs (any saturated blue should show it); the jeans were only a recent example. |
 
+**Steve's answers to the combined question list (Nov 15, evening)**
+
+| Q | Decision |
+| --- | --- |
+| L1 neighbours | Every tooltip waits 2.5 s (no instant neighbours). |
+| L2 shortcut tips | Keep shortcut-only tooltips on labelled controls. |
+| M1a | Keep the SDR headroom/clipping fix until the restructure lands. |
+| M1 / M1d | Restructure: SDR highlight compression moves to the end, SDR Film Look receives the same exposure as HDR, Match also fits highlight colour. |
+| T1-e | **Offer both:** add a fixed cap mode and keep Peak Fit (plus Soft Ceiling and Clip) unchanged, so Steve can test and compare. Existing Highlight Compression behaviour and saved settings must not be lost. |
+| T1-f | SDR highlight compression moves after Film Look and finishing. |
+| Anchor | Coordinator's choice (Steve deferred it): tone zones are measured from **photographic mid-grey = 18% of the lane's reference white**. In this app scene 0.18 is the reference/diffuse white (203 nits in HDR; 100 of 203 nits in generated SDR), so Center 0 = 36.5 nits in HDR and 0.18 × (100/203) display-linear in SDR. This keeps HDR and SDR zones at the same place relative to Steve's 203-nit white (today they differ by about 1.5 stops), and puts Midtones on mid-grey instead of on white. Exposure runs before the block, so badly exposed RAWs are corrected first; the range display shows where each zone lands. Implementers verify the SDR reference constant in code. |
+| T1-b | Narrow Whites. |
+| T1-c | Local Tone gets the same curves in the same change. |
+| T1-d | Clipping/range preview first; Auto later. |
+| C4 | HDR and SDR colour wheel ranges aligned as part of the tone work. |
+| X1 | Local Match promises the same *change*; build after the Local Tone/Match work. |
+| X2 | Build "Start HDR from SDR" after the tone and colour work. |
+| P5 | No Lensfun rewrite for now. |
+| Push | Push the branch to GitHub as a backup. |
+| U11 | Not answered; still open. |
+
+**Overnight plan (Nov 15–16), in order; Steve tests the app in the morning**
+
+| Step | Work | Depends on |
+| --- | --- | --- |
+| N1 | Highlight Compression: add the fixed cap mode beside Peak Fit, Soft Ceiling and Clip; move SDR HC after Film Look and finishing. | — |
+| N2 | Global five-control Tone block (Blacks, Shadows, Midtones, Highlights, Whites) before Film Look, frozen guide, anchor above, combined limiter, Whites slider in the UI; align colour wheel ranges (C4). | N1 |
+| N3a | Local Tone shares the curves; Match rebuilt to fit through the real renderer, including highlight colour and equal Film Look input exposure (M1, M1d). | N2 |
+| N3b | Clipping and tone-range preview (T1-d). | N2 (parallel with N3a) |
+| N4 | X1 local "Match SDR". | N3a |
+| N5 | X2 "Start HDR from SDR". | N4 |
+| N6 | Final review, fixes, brief/PRD updates, push. | all |
+
 **Recommended defaults, adopted unless Steve overrides**
 
 - Open image gains the grid chooser only; opening a photo keeps today's behaviour (L4).
