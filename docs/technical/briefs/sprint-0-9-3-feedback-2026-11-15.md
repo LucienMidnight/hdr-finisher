@@ -48,6 +48,8 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | T1 | Blacks/Whites and Shadows/Midtones/Highlights redesign | W4 | research |
 | M1 | HDR to SDR Match colour shifts (blue jeans) | W5 | broader research complete; not fixed across colours — all-hue/stock tables and five shared RAWs show remaining bright-colour errors/regressions; complete-target fitting and M1d need Steve's decision |
 | M1a | SDR contrast/Film Look clipping turns saturated colours | W3 | built, scoped clipping fix only — existing calibrated exposure/body guards pass; broader M1 follow-up finds bright green/cyan/indigo errors and DSC00264 highlight regression; no new pixel/gate change; GPU Match fixture still fails before Match |
+| X1 | Match SDR button for local adjustments and masks | — | design done, waiting on Steve |
+| X2 | Reverse workflow: SDR grade applied to HDR automatically | — | design done, waiting on Steve |
 | U1 | Export panel padding and single divider | W6 | built — Export strip/results share Destination inset; one boundary; three-theme screenshots pass |
 | U2 | No selection borders after mouse use | W6 | built — pointer typing stays ring-free; Tab/F6 retain keyboard rings; Export checked |
 | U3 | Module header: dot + Reset left, Presets right | W6 | built — name, dot + Reset, Presets, eye in DOM/visual order; Presets always visible |
@@ -284,6 +286,29 @@ boundary is also a design/output decision. Existing gates refuse all three
 No renderer/shader/recipe/gate/tolerance change. Film-input preservation,
 guarded print fitting and signed-colour handling remain options for Steve;
 [full report and per-hue/stop tables](../reports/m1-print-stage-2026-11-15.md).
+
+### X1/X2: Local Match SDR and SDR → HDR (design, Nov 15)
+
+- **Today:** whole-picture Match already replaces every local's SDR grade.
+  Masks are shared (one mask, opacity and bypass; separate `hdr_grade` /
+  `sdr_grade`), but hue masks select from each lane's own picture.
+  Local tone is fitted on a neutral ramp; temperature/tint/saturation,
+  HSL and Detail are copied; wheels are translated; local curves are not
+  transferred faithfully (`sdr_match.py` ~681/744, `sessions.py` ~597).
+  The local translator does not copy the HDR local's own `enabled` flag.
+- **X1 proposal:** a "Match SDR" action per parent adjustment in the local
+  grade area (not per sub-mask, no bulk action at first). It fits only the
+  selected SDR local through the real renderer so SDR gets the same local
+  *change*, keeps the mask and the SDR global grade as they are, one Undo,
+  out-of-date marker, never auto-rematches. Size M after the T1 Local Tone
+  fitter exists, L standalone. Cheaper alternative: "Transfer HDR settings"
+  (S, approximate).
+- **X2 proposal:** "Start HDR from SDR", not a true reverse Match (SDR lost
+  the highlight and gamut information). Keeps the SDR body's brightness and
+  colour, takes HDR highlights from the original scene under the HC cap,
+  replaces HDR in one undoable action. Size L; build after T1/M1.
+- Open for Steve: what the local button promises (same change vs same
+  final look); simple transfer now vs fitted match later; build X2 or defer.
 
 ### W6: Small interface fixes
 
