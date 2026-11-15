@@ -1,130 +1,169 @@
-"""Tone sliders: Blacks, Shadows, Midtones, Highlights (Steve, 2026-10-27).
-
-Exposure is an equal change in stops; these are curves on part of the range,
-measured in stops from middle grey (0.18), and they leave other tones alone.
-Each is a strength from -100 to +100: Blacks 100 is two stops on the darkest
-tones; a zone's 100 is the most its centre can move without tones swapping.
-"""
 import itertools
 
 import numpy as np
 import pytest
 
 from hdr_finisher.adjustments import (
-    _apply_tone_zones,
-    _blacks_factor,
-    apply_adjustments,
-    blacks_stops,
-    tone_zone_amounts,
+    GRAIN_DEVELOP_HDR_SCALE, SDR_SCENE_TO_DISPLAY_SCALE, _apply_color_grading,
+    apply_adjustments, apply_hdr_output_highlight_compression, _apply_sdr_adjustments_to_reference,
 )
-from hdr_finisher.models import AdjustmentState, HDRAdjustments, PreviewKind, SDRAdjustments
-
-TONE_FIELDS = {"blacks", "shadows", "midtones", "highlights", "shadows_center", "shadows_width",
-               "midtones_center", "midtones_width", "highlights_center", "highlights_width"}
-
-
-def grey(stop):
-    """A neutral pixel ``stop`` stops from middle grey."""
-    return np.full((1, 1, 3), 0.18 * 2.0 ** stop, dtype=np.float32)
+from hdr_finisher.color import acescg_to_linear_bt2020, linear_bt2020_to_acescg, linear_srgb_to_acescg
+from hdr_finisher.models import AdjustmentState, HDRAdjustments, SDRAdjustments, PreviewKind, ColorGradingAdjustments
+from hdr_finisher.tone import apply_tone, parameters, reference_grey, ZONES, _smooth
 
 
-def stops_of(pixel):
-    return float(np.log2(pixel.mean() / 0.18))
+@pytest.mark.parametrize("hdr", [True, False])
+def test_zero_is_an_exact_bypass_including_signed_pixels(hdr):
+    branch = HDRAdjustments() if hdr else SDRAdjustments()
+    pixels = np.array([[[-0.1, 0.0, 0.1], [0.0, 0.0, 0.0], [10.0, 1.0, 0.2]]], np.float32)
+    assert apply_tone(pixels, branch, hdr) is pixels
 
 
-def full_stops(branch, zone):
-    """What strength 100 moves this zone's centre by, in stops."""
-    return 0.6 * getattr(branch, f"{zone}_width") / 2
+def test_reference_units_and_defaults():
+    assert reference_grey(True) == pytest.approx(0.0324)
+    assert reference_grey(False) == pytest.approx(0.18 * 100 / 203)
+    assert reference_grey(True) * 203 / 0.18 == pytest.approx(36.54)
+    assert SDR_SCENE_TO_DISPLAY_SCALE == pytest.approx((100 / 203) / 0.18)
+    assert GRAIN_DEVELOP_HDR_SCALE == SDR_SCENE_TO_DISPLAY_SCALE
+    assert (HDRAdjustments().highlights_center, HDRAdjustments().highlights_width) == (2.25, 4.5)
+    assert (SDRAdjustments().highlights_center, SDRAdjustments().highlights_width) == (1.75, 3.5)
 
 
-@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
-def test_default_tone_sliders_change_nothing(kind):
-    ramp = np.repeat(np.geomspace(1e-6, 50.0, 400, dtype=np.float32).reshape(1, -1, 1), 3, axis=2)
-    branch = HDRAdjustments() if kind == PreviewKind.HDR else SDRAdjustments()
-    assert _apply_tone_zones(ramp, branch, kind) is ramp
-    np.testing.assert_array_equal(_blacks_factor(ramp[..., 0], 0.0), np.ones(ramp.shape[:2], np.float32))
+@pytest.mark.parametrize("reference", [100, 203])
+def test_hdr_whites_uses_project_reference_white_without_changing_target(reference):
+    branch = HDRAdjustments(whites=-100, highlight_section_enabled=False)
+    peak = branch.highlight_compression_target_nits * .18 / reference
+    pixels = np.full((1, 1, 3), peak, np.float32)
+    np.testing.assert_allclose(apply_tone(pixels, branch, True, reference), pixels * .775, rtol=1e-6)
+    assert branch.highlight_compression_target_nits == 1000
 
 
-def test_blacks_moves_only_the_darkest_tones():
-    assert blacks_stops(100) == 2.0 and blacks_stops(-50) == -1.0
-    assert _blacks_factor(np.float32(0.18 * 2 ** -9), blacks_stops(50)) == pytest.approx(2.0, rel=1e-6)
-    assert _blacks_factor(np.float32(0.18 * 2 ** -2.5), blacks_stops(75)) == pytest.approx(1.0, abs=1e-7)
-    assert _blacks_factor(np.float32(0.18), blacks_stops(-100)) == pytest.approx(1.0, abs=1e-7)
+@pytest.mark.parametrize("strength", [-100, 100])
+def test_generated_and_authored_sdr_apply_one_identical_display_linear_block(strength):
+    pixels = np.repeat(np.geomspace(1e-5, 3, 257).astype(np.float32)[None, :, None], 3, -1)
+    state = AdjustmentState(sdr=SDRAdjustments(blacks=strength, whites=strength,
+        shadows=strength, midtones=-strength, highlights=strength))
+    expected = apply_tone(pixels, state.sdr, False)
+    authored = _apply_sdr_adjustments_to_reference(pixels, state,
+        include_grain=False, include_output_highlight_compression=False)
+    scene = linear_srgb_to_acescg(pixels) / SDR_SCENE_TO_DISPLAY_SCALE
+    placed = apply_adjustments(scene, AdjustmentState(), PreviewKind.SDR,
+        include_grain=False, include_output_highlight_compression=False)
+    generated = apply_adjustments(scene, state, PreviewKind.SDR,
+        include_grain=False, include_output_highlight_compression=False)
+    np.testing.assert_allclose(authored, expected, rtol=3e-6, atol=3e-7)
+    np.testing.assert_allclose(generated, apply_tone(placed, state.sdr, False), rtol=3e-6, atol=3e-7)
 
 
-@pytest.mark.parametrize("zone", ["shadows", "midtones", "highlights"])
-@pytest.mark.parametrize("strength", [50.0, 100.0, -100.0])
-def test_each_zone_moves_its_centre_by_its_strength_and_leaves_outside_tones_alone(zone, strength):
-    branch = HDRAdjustments(**{zone: strength})
-    center = getattr(branch, f"{zone}_center")
-    half = getattr(branch, f"{zone}_width") / 2
-    expected = center + strength / 100 * full_stops(branch, zone)
-    assert stops_of(_apply_tone_zones(grey(center), branch, PreviewKind.HDR)) == pytest.approx(expected, abs=1e-4)
-    for outside in (center - half - 0.25, center + half + 0.25):
-        np.testing.assert_array_equal(_apply_tone_zones(grey(outside), branch, PreviewKind.HDR), grey(outside))
+@pytest.mark.parametrize("hdr", [True, False])
+def test_endpoint_weights_and_neutral_floor(hdr):
+    branch = HDRAdjustments(blacks=100) if hdr else SDRAdjustments(blacks=100)
+    knee = parameters(branch, hdr)[4]
+    pixels = np.repeat(np.array([0, knee / 2, knee, knee * 2], np.float32)[None, :, None], 3, axis=-1)
+    output = apply_tone(pixels, branch, hdr)
+    np.testing.assert_allclose(output[0, :, 0] - pixels[0, :, 0], [0.45 * knee, 0.45 * knee / 4, 0, 0], atol=1e-9)
+    np.testing.assert_array_equal(output[..., 0], output[..., 1])
+    branch.blacks = -100
+    assert np.all(apply_tone(pixels[:, :1], branch, hdr) == 0)
 
 
-def test_shadows_keeps_black_and_highlights_keeps_the_peak():
-    branch = HDRAdjustments(shadows=100, highlights=-100)
-    for stop in (-9.0, 6.0):  # near-black and an HDR specular
-        np.testing.assert_array_equal(_apply_tone_zones(grey(stop), branch, PreviewKind.HDR), grey(stop))
+@pytest.mark.parametrize("hdr", [True, False])
+@pytest.mark.parametrize("strength,gain", [(-100, 0.775), (100, 2)])
+def test_whites_top_stop_and_target_with_compression_bypassed(hdr, strength, gain):
+    branch = HDRAdjustments(whites=strength) if hdr else SDRAdjustments(whites=strength)
+    peak = branch.highlight_compression_target_nits * 0.18 / 203 if hdr else 1
+    pixels = np.repeat(np.array([peak / 4, peak / 2, peak, peak * 2], np.float32)[None, :, None], 3, axis=-1)
+    output = apply_tone(pixels, branch, hdr)
+    np.testing.assert_array_equal(output[:, :2], pixels[:, :2])
+    np.testing.assert_allclose(output[:, 2:], pixels[:, 2:] * gain, rtol=1e-6)
+    if hdr:
+        branch.highlight_compression_target_nits = 2000
+        np.testing.assert_array_equal(apply_tone(pixels[:, :3], branch, hdr), pixels[:, :3])
 
 
-def test_center_and_width_move_and_resize_the_zone():
-    moved = HDRAdjustments(shadows=100, shadows_center=-5.0, shadows_width=2.0)
-    assert stops_of(_apply_tone_zones(grey(-5.0), moved, PreviewKind.HDR)) == pytest.approx(-5.0 + 0.6, abs=1e-4)
-    # -2.5 (the default centre) is now outside the narrower, lower zone.
-    np.testing.assert_array_equal(_apply_tone_zones(grey(-2.5), moved, PreviewKind.HDR), grey(-2.5))
+@pytest.mark.parametrize("hdr", [True, False])
+def test_frozen_guide_matches_one_candidate_not_sequential_controls(hdr):
+    branch = HDRAdjustments(blacks=65, shadows=80, midtones=-65, highlights=50, whites=70) if hdr else SDRAdjustments(blacks=65, shadows=80, midtones=-65, highlights=50, whites=70)
+    grey = reference_grey(hdr)
+    pixels = (np.geomspace(grey / 64, 2, 129)[:, None] * np.array([[0.8, 1, 0.3]])).astype(np.float32)[None]
+    luma_weights = np.array([0.2722287, 0.6740818, 0.0536895] if hdr else [0.2126, 0.7152, 0.0722])
+    luminance = (pixels * luma_weights).sum(-1)
+    brightest = (acescg_to_linear_bt2020(pixels) if hdr else pixels).max(-1)
+    amounts = parameters(branch, hdr)
+    peak = branch.highlight_compression_target_nits * 0.18 / 203 if hdr else 1
+    position = np.clip(np.log2(brightest / (peak / 2)), 0, 1)
+    gate = _smooth(np.log2(luminance / (amounts[4] / 2))) * (1 - _smooth(2 * position))
+    exponent = 0.7 * position ** 2
+    for amount, zone in zip(amounts[:3], ZONES):
+        exponent += amount * (1 - _smooth(np.abs(np.log2(luminance / grey) - getattr(branch, zone + "_center")) / (getattr(branch, zone + "_width") / 2))) * gate
+    floor = 0.45 * 0.65 * amounts[4] * np.maximum(1 - luminance / amounts[4], 0) ** 2
+    expected = pixels + amounts[3] * (pixels * np.exp2(exponent)[..., None] + floor[..., None] - pixels)
+    np.testing.assert_allclose(apply_tone(pixels, branch, hdr), expected, rtol=2e-6, atol=1e-8)
 
 
-@pytest.mark.parametrize("kind", [PreviewKind.HDR, PreviewKind.SDR])
-def test_tones_never_swap_order_at_extreme_settings(kind):
-    ramp = np.repeat((0.18 * np.exp2(np.linspace(-14, 10, 4097))).astype(np.float32).reshape(1, -1, 1), 3, axis=2)
-    for strengths in itertools.product((-100.0, 100.0), repeat=3):
-        for width in (0.5, 1.0, 3.0):
-            branch = HDRAdjustments(
-                shadows=strengths[0], midtones=strengths[1], highlights=strengths[2],
-                shadows_center=-1.0, midtones_center=-0.5, highlights_center=0.0,
-                shadows_width=width, midtones_width=width, highlights_width=width,
-                blacks=strengths[0],
-            )
-            out = _apply_tone_zones(ramp, branch, kind)
-            assert np.all(np.diff(out[0, :, 0]) > 0), (strengths, width)
-            sdr = SDRAdjustments(**branch.model_dump(include=TONE_FIELDS))
-            whole = apply_adjustments(ramp, AdjustmentState(hdr=branch, sdr=sdr), kind)
-            assert np.all(np.diff(whole[0, :, 0]) >= -1e-6), (strengths, width)
+@pytest.mark.parametrize("hdr", [True, False])
+def test_endpoint_gates_and_gated_strength(hdr):
+    branch = HDRAdjustments(shadows=100, midtones=-100, highlights=100) if hdr else SDRAdjustments(shadows=100, midtones=-100, highlights=100)
+    for zone in ZONES:
+        setattr(branch, zone + "_width", 24)
+    knee = parameters(branch, hdr)[4]
+    peak = branch.highlight_compression_target_nits * 0.18 / 203 if hdr else 1
+    values = np.array([knee / 4, knee / 2, peak / np.sqrt(2), peak, 2 * peak], np.float32)
+    pixels = np.repeat(values[None, :, None], 3, -1)
+    np.testing.assert_allclose(apply_tone(pixels, branch, hdr), pixels, atol=1e-7)
+    branch = HDRAdjustments(shadows=100) if hdr else SDRAdjustments(shadows=100)
+    center = reference_grey(hdr) * 2 ** branch.shadows_center
+    pixels = np.full((1, 1, 3), center, np.float32)
+    amount = parameters(branch, hdr)[0]
+    np.testing.assert_allclose(apply_tone(pixels, branch, hdr), pixels * 2 ** amount, rtol=1e-6)
+    assert 0 < amount <= 0.6 * branch.shadows_width / 2
 
 
-def test_a_single_zone_at_full_strength_is_never_reduced():
-    for zone in ("shadows", "midtones", "highlights"):
-        for strength in (100.0, -100.0):
-            branch = HDRAdjustments(**{zone: strength})
-            amounts = dict(zip(("shadows", "midtones", "highlights"), tone_zone_amounts(branch)))
-            assert amounts[zone] == pytest.approx(strength / 100 * full_stops(branch, zone), rel=1e-12)
+@pytest.mark.parametrize("hdr", [True, False])
+def test_combined_limiter_on_fixed_colour_rays_and_parameter_extremes(hdr):
+    reference = reference_grey(hdr)
+    values = np.geomspace(reference / 1024, 16, 4097).astype(np.float32)
+    colours = np.array([[1, 1, 1], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [0, 1, 1], [1, 0, 1], [1, .1, .01]], np.float32)
+    if hdr:
+        colours = linear_bt2020_to_acescg(colours.reshape(1, -1, 3))[0]
+    luma_weights = np.array([0.2722287, 0.6740818, 0.0536895] if hdr else [0.2126, 0.7152, 0.0722])
+    for strengths in itertools.product((-100, 100), repeat=3):
+        for width in (0.5, 4, 24):
+            branch = HDRAdjustments() if hdr else SDRAdjustments()
+            branch.blacks, branch.whites = strengths[0], strengths[2]
+            for zone, strength, center in zip(ZONES, strengths, (-3.5, 0, 3)):
+                setattr(branch, zone, strength)
+                setattr(branch, zone + "_width", width)
+                setattr(branch, zone + "_center", center)
+            pixels = values[None, :, None] * colours[:, None, :]
+            output = apply_tone(pixels, branch, hdr)
+            source_luma, output_luma = (pixels * luma_weights).sum(-1), (output * luma_weights).sum(-1)
+            slope = np.diff(output_luma) / np.diff(source_luma)
+            unclipped = (np.all(output[:, 1:] > 0, axis=-1)
+                & np.all(output[:, :-1] > 0, axis=-1)
+                & (source_luma[:, :-1] > parameters(branch, hdr)[4] / 32))
+            assert np.min(slope) >= -1e-5, (hdr, strengths, width, np.min(slope))
+            assert np.min(slope[unclipped]) >= 0.099, (hdr, strengths, width)
+            assert 0 < parameters(branch, hdr)[3] <= 1
 
 
-def test_overlapping_opposed_zones_shrink_together():
-    branch = HDRAdjustments(shadows=100, midtones=-100)
-    shadows, midtones, _ = tone_zone_amounts(branch)
-    assert 0 < shadows < full_stops(branch, "shadows")
-    assert shadows / full_stops(branch, "shadows") == pytest.approx(-midtones / full_stops(branch, "midtones"))
+def test_whites_does_not_raise_the_final_hdr_ceiling():
+    pixels = np.repeat(np.geomspace(1e-5, 30, 512).astype(np.float32)[None, :, None], 3, -1)
+    for mode in ("fixed_cap", "peak_fit", "soft_ceiling", "clip"):
+        state = AdjustmentState(hdr=HDRAdjustments(whites=100, blacks=50, shadows=50, highlight_section_enabled=True, highlight_compression_mode=mode))
+        toned = apply_adjustments(pixels, state, PreviewKind.HDR, include_output_highlight_compression=False)
+        output = apply_hdr_output_highlight_compression(toned, state)
+        assert np.max(acescg_to_linear_bt2020(output)) <= 1000 * .18 / 203 + 1e-6
 
 
-# Mirrored in tests/tone-zones.test.js against gpu-params.js toneZoneAmounts.
-SHARED_CASES = [
-    dict(shadows=100.0),
-    dict(shadows=60.0, midtones=-40.0, highlights=50.0),
-    dict(shadows=100.0, midtones=-100.0),
-    dict(shadows=100.0, midtones=-100.0, highlights=100.0, shadows_center=-1.0, midtones_center=-0.5,
-         highlights_center=0.0, shadows_width=1.0, midtones_width=1.0, highlights_width=1.0),
-]
-
-
-def test_shared_cases_match_the_values_pinned_for_the_gpu():
-    import json, pathlib
-    source = (pathlib.Path(__file__).with_name("tone-zones.test.js")).read_text(encoding="utf-8")
-    expected = json.loads(source.split("const EXPECTED = ")[1].split(";")[0])
-    cases = json.loads(source.split("const CASES = ")[1].split(";")[0])
-    assert cases == SHARED_CASES
-    for case, values in zip(SHARED_CASES, expected):
-        np.testing.assert_allclose(tone_zone_amounts(HDRAdjustments(**case)), values, rtol=1e-12)
+@pytest.mark.parametrize("balance", [-100, 0, 100])
+@pytest.mark.parametrize("blending", [0, 50, 100])
+def test_wheel_ranges_are_equal_relative_to_reference_white(balance, blending):
+    grading = ColorGradingAdjustments(balance=balance, blending=blending)
+    grading.shadows.luminance_ev = .7
+    grading.midtones.luminance_ev = -.4
+    grading.highlights.luminance_ev = .9
+    ramp = np.repeat(np.geomspace(1e-4, 16, 513).astype(np.float32)[None, :, None], 3, -1)
+    hdr = _apply_color_grading(ramp * .18, grading, PreviewKind.HDR) / .18
+    sdr = _apply_color_grading(ramp * (100 / 203), grading, PreviewKind.SDR) / (100 / 203)
+    np.testing.assert_allclose(hdr, sdr, rtol=2e-6, atol=1e-7)

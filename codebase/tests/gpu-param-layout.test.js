@@ -11,16 +11,16 @@ const sources=['gpu-render-plan.js','gpu-params.js','webgpu-preview.js','graph-s
 const shaderSource=shaders.SHADER_SOURCE+'\n'+shaders.PEAK_REDUCTION_SHADER_SOURCE;
 const audit=(js=sources,wgsl=shaderSource)=>auditGlobalParameterUses(js,wgsl,layout.fields);
 
-test('the global parameter list preserves all 198 names and original positions',()=>{
+test('the global parameter list pins Tone endpoint allocations without moving existing positions',()=>{
  assert.equal(layout.count,200+13*140);
  assert.equal(new Set(layout.fields.map(f=>f.name)).size,200);
  assert.deepEqual(layout.fields.map(f=>f.index),Array.from({length:200},(_,i)=>i));
- assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.slice(0,198).map(({name,index})=>[name,index]))).digest('hex'),'e3e781dbcd630b865c70bdfda40b2dafad8c272ec1c5610c136c22f9296eb83f');
+ assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.slice(0,198).map(({name,index})=>[name,index]))).digest('hex'),'0ed2b6eddd2687c555fc4ae20dc55b60e184275915bd5375e332a91b9f937b0e');
  // Positions 4-7 and 54-59 renamed, not moved (Oct 27 2026): Shadow/Lift/Gamma/Gain and their
  // pivots/ranges became BLACKS, SHADOWS, MIDTONES, HIGHLIGHTS and the zones' CENTER/WIDTH.
  // Position 60 became HIGHLIGHT_ATTENUATION (AgX-style Attenuate prototype, Oct 2026).
  // Position 199 became HSL_SHARED_SELECTION (shared colour selection, Oct 27 2026).
- assert.deepEqual(layout.fields.filter(f=>f.reserved).map(f=>f.index),[14,83,84,87,94,96,147]);
+ assert.deepEqual(layout.fields.filter(f=>f.reserved).map(f=>f.index),[14,147]);
  assert.deepEqual(layout.fields.filter(f=>f.hostOnly).map(f=>f.name),['DETAIL_ENABLED']);
  assert.ok(Object.isFrozen(layout)&&Object.isFrozen(layout.indices)&&Object.isFrozen(layout.fields));
  assert.ok(layout.fields.every(Object.isFrozen));
@@ -43,7 +43,7 @@ test('the use guard catches a JavaScript write without a shader read',()=>{
 
 test('the use guard rejects unknown names and reserved positions',()=>{
  assert.throws(()=>audit([...sources,'params[GPU_PARAMS.UNKNOWN_SETTING] = 0;']),/Unknown parameter UNKNOWN_SETTING/);
- assert.ok(audit([...sources,'params[GPU_PARAMS.RESERVED_83] = 0;']).errors.includes('RESERVED_83 is reserved but used'));
+ assert.ok(audit([...sources,'params[GPU_PARAMS.RESERVED_147] = 0;']).errors.includes('RESERVED_147 is reserved but used'));
 });
 
 test('the global position list loads before the consumers in the page',()=>{

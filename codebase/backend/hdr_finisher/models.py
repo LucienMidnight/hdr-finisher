@@ -431,20 +431,20 @@ class _BranchAdjustments(BaseModel):
     )
     tone_equalizer_influence_radius: float = Field(default=1.5, ge=0.25, le=12.0)
     tone_equalizer_smoothing: float = Field(default=0.5, ge=0.0, le=1.0)
-    # Tone sliders (Steve, 2026-10-27), strength -100..+100. Blacks: 100 is
-    # two stops on the darkest tones. Each zone is Center +/- Width/2, in stops
-    # from middle grey (0.18) in the lane's working space; 100 is the most that
-    # zone can move its centre without tones swapping order.
+    # Five-control Tone (2026-11-15): strength -100..+100, frozen Y/M guide.
+    # Center is stops from 18% of lane reference white; endpoint gates and
+    # the shared parameter-only limiter preserve luminance order.
     blacks: float = Field(default=0.0, ge=-100.0, le=100.0)
+    whites: float = Field(default=0.0, ge=-100.0, le=100.0)
     shadows: float = Field(default=0.0, ge=-100.0, le=100.0)
     midtones: float = Field(default=0.0, ge=-100.0, le=100.0)
     highlights: float = Field(default=0.0, ge=-100.0, le=100.0)
-    shadows_center: float = Field(default=-2.5, ge=-12.0, le=12.0)
+    shadows_center: float = Field(default=-1.5, ge=-12.0, le=12.0)
     shadows_width: float = Field(default=5.0, ge=0.5, le=24.0)
     midtones_center: float = Field(default=0.0, ge=-12.0, le=12.0)
     midtones_width: float = Field(default=4.0, ge=0.5, le=24.0)
-    highlights_center: float = Field(default=1.25, ge=-12.0, le=12.0)
-    highlights_width: float = Field(default=2.5, ge=0.5, le=24.0)
+    highlights_center: float = Field(default=1.75, ge=-12.0, le=12.0)
+    highlights_width: float = Field(default=3.5, ge=0.5, le=24.0)
     contrast: float = Field(default=0.0, ge=-2.0, le=2.0)
     contrast_pivot: float = Field(default=0.5, ge=0.001, le=0.999)
     white_balance_kelvin: int = Field(default=6500, ge=1000, le=25000)
@@ -505,7 +505,7 @@ _COMMON_BRANCH_FIELD_ORDER = (
 )
 _COMMON_TONE_FIELD_ORDER = (
     "tone_equalizer_nodes", "tone_equalizer_influence_radius", "tone_equalizer_smoothing",
-    "blacks", "shadows", "midtones", "highlights", "shadows_center", "shadows_width",
+    "blacks", "whites", "shadows", "midtones", "highlights", "shadows_center", "shadows_width",
     "midtones_center", "midtones_width", "highlights_center", "highlights_width", "contrast", "contrast_pivot", "white_balance_kelvin", "tint",
     "saturation", "vibrance", "highlight_desaturation", "highlight_desaturation_start", "shadow_desaturation", "shadow_desaturation_start", "red_hue", "red_purity", "green_hue", "green_purity",
     "blue_hue", "blue_purity", "tint_hue", "tint_purity",
@@ -514,6 +514,8 @@ _CURVE_FIELD_ORDER = ("luma_curve", "red_curve", "green_curve", "blue_curve")
 
 
 class HDRAdjustments(_BranchAdjustments):
+    highlights_center: float = Field(default=2.25, ge=-12.0, le=12.0)
+    highlights_width: float = Field(default=4.5, ge=0.5, le=24.0)
     _serialized_field_order: ClassVar[tuple[str, ...]] = (
         *_COMMON_BRANCH_FIELD_ORDER,
         "highlight_compression_start_nits", "highlight_compression_target_nits",

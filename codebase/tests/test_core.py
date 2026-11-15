@@ -517,7 +517,7 @@ def test_sdr_shadows_and_highlights_target_their_tones() -> None:
     # Highlight compression is off and the brightest grey stays below display
     # white: otherwise that grey is the measured peak, Peak Fit pins it at white
     # with or without Gain, and the comparison is left to float rounding.
-    image = np.array([[[0.01, 0.01, 0.01], [0.1, 0.1, 0.1], [0.3, 0.3, 0.3]]], dtype=np.float32)
+    image = np.array([[[0.01, 0.01, 0.01], [0.06, 0.06, 0.06], [0.12, 0.12, 0.12]]], dtype=np.float32)
     off = {"highlight_section_enabled": False}
     lifted = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {**off, "shadows": 40}}), PreviewKind.SDR)
     gained = apply_adjustments(image, AdjustmentState.model_validate({"sdr": {**off, "highlights": 60}}), PreviewKind.SDR)

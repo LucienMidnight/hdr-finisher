@@ -8,11 +8,11 @@ const { frontendSource } = require("./frontend-source.js");
 const { HDRWebGPUShaders } = require("../frontend/webgpu-shaders.js");
 
 // COLOR-DESAT-01 intentionally updates peak colour evaluation with the render.
-// Tone sliders (Oct 27 2026) intentionally replace Shadow with Blacks in the peak tone.
+// N2 (Nov 16 2026) intentionally removes early Blacks from peak measurement.
 // Byte pins for the shaders the viewport work must leave alone: the peak
 // measurement and Denoise. A change to one of them fails here.
 const EXPECTED_SHA256 = Object.freeze({
-  PEAK_REDUCTION_SHADER_SOURCE: "e9a123ee2d39c787b9f35d404cdafe923c037d3b999959d277f29bebe266c9ad",
+  PEAK_REDUCTION_SHADER_SOURCE: "5ac1b9b7e6736f43ada50ef31d443dff8f41f1a638d211e12a9d8ae68c4591ee",
   ADAPTIVE_DENOISE_SHADER_SOURCE: "818ec2ddb4523a1208eaa31f2a3bfe943e89d9ec6449e9866ff741bc49a3c807",
 });
 

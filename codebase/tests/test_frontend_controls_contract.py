@@ -39,7 +39,7 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     # Tone sliders replaced the Lift, Gamma, Gain group (Oct 27 2026).
     assert "Lift, Gamma, Gain" not in html
     for lane in ("hdr", "sdr"):
-        for control in ("blacks", "shadows", "midtones", "highlights"):
+        for control in ("blacks", "shadows", "midtones", "highlights", "whites"):
             assert f'data-path="{lane}.{control}"' in html
     assert "Legacy Primaries" not in html
     assert 'id="tone-equalizer-add"' in html
@@ -190,7 +190,22 @@ def test_explanatory_copy_uses_title_hover_without_persistent_helper_rows() -> N
     assert html.count('class="group-toggle" type="button" aria-expanded="false" data-tooltip=') >= 5
     assert 'data-tooltip="Adjust exposure by scene brightness.' in html
     assert 'data-tooltip="Adjust the tone-mapped SDR image by brightness.' in html
-    assert html.count('data-tooltip="Where the zone sits, in stops from middle grey."') == 6
+    from html.parser import HTMLParser
+
+    class TargetingTooltips(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.targeting = []
+
+        def handle_starttag(self, tag, attrs):
+            fields = dict(attrs)
+            if tag == "label" and fields.get("for", "").endswith("-center") and "data-tooltip" in fields:
+                self.targeting.append(fields["data-tooltip"])
+
+    targeting = TargetingTooltips()
+    targeting.feed(html)
+    assert len(targeting.targeting) == 6
+    assert all(targeting.targeting)
     assert 'data-tooltip="Scale-selective detail:' in html
     assert 'data-tooltip="Controls physical enlargement for halation, resolution, and grain.' in html
     assert 'data-tooltip="Strip modes anchor the cross-scan dimension' in html

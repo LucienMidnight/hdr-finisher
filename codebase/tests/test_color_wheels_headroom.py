@@ -25,7 +25,7 @@ def test_wheel_continuous_at_zero_and_unaffected_pixels_exact(kind, control):
 @pytest.mark.parametrize('kind', list(PreviewKind))
 def test_positive_balance_favours_highlights(kind):
     # Equal tint directions isolate the weight of each range.
-    pivot = .18 if kind == PreviewKind.HDR else float(a._srgb_decode(np.array(.5)))
+    pivot = .18 * (.18 if kind == PreviewKind.HDR else 100 / 203)
     pixels = np.full((1, 1, 3), pivot, np.float32)
     for wheel, direction in [('highlights', 1), ('shadows', -1)]:
         strengths = []

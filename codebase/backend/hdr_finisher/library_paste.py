@@ -54,7 +54,7 @@ SETTING_LABELS = {
     'film_look_section_enabled':'Film look enabled',
     'color_grading_section_enabled':'Colour grading enabled', 'vignette_section_enabled':'Vignette enabled',
     'hsl':'HSL', 'channels':'Colour channels', 'exposure':'Exposure', 'contrast':'Contrast',
-    'contrast_pivot':'Contrast pivot', 'blacks':'Blacks', 'shadows':'Shadows',
+    'contrast_pivot':'Contrast pivot', 'blacks':'Blacks', 'whites':'Whites', 'shadows':'Shadows',
     'midtones':'Midtones', 'highlights':'Highlights', 'shadows_center':'Shadows centre',
     'shadows_width':'Shadows width', 'midtones_center':'Midtones centre',
     'midtones_width':'Midtones width', 'highlights_center':'Highlights centre', 'highlights_width':'Highlights width',
@@ -120,7 +120,7 @@ def setting_group(field):
     if field.endswith('_curve') or field == 'curves_section_enabled': return 'curves'
     for name in ('hsl','film_look','color_grading','vignette','detail','black_and_white'):
         if field == name or field == name+'_section_enabled': return name.replace('_','-')
-    if field in ('exposure','contrast','contrast_pivot','blacks','tone_section_enabled') or field.startswith(('shadows','midtones','highlights')): return 'tone'
+    if field in ('exposure','contrast','contrast_pivot','blacks','whites','tone_section_enabled') or field.startswith(('shadows','midtones','highlights')): return 'tone'
     return 'color'
 
 

@@ -1829,6 +1829,7 @@ def test_sdr_branches_share_one_post_highlight_tail(monkeypatch: pytest.MonkeyPa
 
     for name in (
         "_apply_sdr_tone_equalizer",
+        "apply_tone",
         "_apply_hdr_color",
         "_apply_curves",
         "_apply_color_grading",
@@ -1851,7 +1852,7 @@ def test_sdr_branches_share_one_post_highlight_tail(monkeypatch: pytest.MonkeyPa
     expected = [
         "_apply_sdr_tone_equalizer",
         "tone",
-        "primaries",
+        "apply_tone",
         "_apply_curves",
         "_apply_color_grading",
         "apply_detail",

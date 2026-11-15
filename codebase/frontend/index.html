@@ -939,7 +939,7 @@
               </div>
             </div>
             <div class="control-row" data-control-path="hdr.blacks">
-              <div class="control-heading"><label class="tooltip-trigger" for="hdr-blacks" data-tooltip="Brightens or deepens the darkest tones. Midtones and highlights are not changed.">Blacks</label><output data-value-path="hdr.blacks">0</output></div>
+              <div class="control-heading"><label class="tooltip-trigger" for="hdr-blacks" data-tooltip="Lifts or clips the narrow black floor. Tones above the floor are unchanged. Tone ranges are selected before any of the five controls.">Blacks</label><output data-value-path="hdr.blacks">0</output></div>
               <input id="hdr-blacks" type="range" min="-100" max="100" step="1" value="0" data-path="hdr.blacks">
             </div>
             <div class="slider-group-tile" data-slider-relationship="targeting" data-zone-hover="shadows" tabindex="-1">
@@ -949,8 +949,8 @@
             </div>
             <div class="slider-group-relationship">Targeting</div>
             <div class="control-pair zone-targeting compact-subrails">
-              <div class="control-row compact-subrail" data-control-path="hdr.shadows_center"><div class="control-heading"><label class="tooltip-trigger" for="hdr-shadows-center" data-tooltip="Where the zone sits, in stops from middle grey.">Center</label><output data-value-path="hdr.shadows_center">-2.50 EV</output></div><input id="hdr-shadows-center" type="range" min="-8" max="8" step="0.25" value="-2.5" data-path="hdr.shadows_center"></div>
-              <div class="control-row compact-subrail" data-control-path="hdr.shadows_width"><div class="control-heading"><label class="tooltip-trigger" for="hdr-shadows-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly to nothing at both ends.">Width</label><output data-value-path="hdr.shadows_width">5.00 EV</output></div><input id="hdr-shadows-width" type="range" min="0.5" max="12" step="0.25" value="5" data-path="hdr.shadows_width"></div>
+              <div class="control-row compact-subrail" data-control-path="hdr.shadows_center"><div class="control-heading"><label class="tooltip-trigger" for="hdr-shadows-center" data-tooltip="Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first.">Center</label><output data-value-path="hdr.shadows_center">-1.50 EV</output></div><input id="hdr-shadows-center" type="range" min="-8" max="8" step="0.25" value="-1.5" data-path="hdr.shadows_center"></div>
+              <div class="control-row compact-subrail" data-control-path="hdr.shadows_width"><div class="control-heading"><label class="tooltip-trigger" for="hdr-shadows-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak.">Width</label><output data-value-path="hdr.shadows_width">5.00 EV</output></div><input id="hdr-shadows-width" type="range" min="0.5" max="12" step="0.25" value="5" data-path="hdr.shadows_width"></div>
             </div>
             </div>
             <div class="slider-group-tile" data-slider-relationship="targeting" data-zone-hover="midtones" tabindex="-1">
@@ -960,8 +960,8 @@
             </div>
             <div class="slider-group-relationship">Targeting</div>
             <div class="control-pair zone-targeting compact-subrails">
-              <div class="control-row compact-subrail" data-control-path="hdr.midtones_center"><div class="control-heading"><label class="tooltip-trigger" for="hdr-midtones-center" data-tooltip="Where the zone sits, in stops from middle grey.">Center</label><output data-value-path="hdr.midtones_center">0.00 EV</output></div><input id="hdr-midtones-center" type="range" min="-8" max="8" step="0.25" value="0" data-path="hdr.midtones_center"></div>
-              <div class="control-row compact-subrail" data-control-path="hdr.midtones_width"><div class="control-heading"><label class="tooltip-trigger" for="hdr-midtones-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly to nothing at both ends.">Width</label><output data-value-path="hdr.midtones_width">4.00 EV</output></div><input id="hdr-midtones-width" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.midtones_width"></div>
+              <div class="control-row compact-subrail" data-control-path="hdr.midtones_center"><div class="control-heading"><label class="tooltip-trigger" for="hdr-midtones-center" data-tooltip="Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first.">Center</label><output data-value-path="hdr.midtones_center">0.00 EV</output></div><input id="hdr-midtones-center" type="range" min="-8" max="8" step="0.25" value="0" data-path="hdr.midtones_center"></div>
+              <div class="control-row compact-subrail" data-control-path="hdr.midtones_width"><div class="control-heading"><label class="tooltip-trigger" for="hdr-midtones-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak.">Width</label><output data-value-path="hdr.midtones_width">4.00 EV</output></div><input id="hdr-midtones-width" type="range" min="0.5" max="12" step="0.25" value="4" data-path="hdr.midtones_width"></div>
             </div>
             </div>
             <div class="slider-group-tile" data-slider-relationship="targeting" data-zone-hover="highlights" tabindex="-1">
@@ -971,9 +971,13 @@
             </div>
             <div class="slider-group-relationship">Targeting</div>
             <div class="control-pair zone-targeting compact-subrails">
-              <div class="control-row compact-subrail" data-control-path="hdr.highlights_center"><div class="control-heading"><label class="tooltip-trigger" for="hdr-highlights-center" data-tooltip="Where the zone sits, in stops from middle grey.">Center</label><output data-value-path="hdr.highlights_center">1.25 EV</output></div><input id="hdr-highlights-center" type="range" min="-8" max="8" step="0.25" value="1.25" data-path="hdr.highlights_center"></div>
-              <div class="control-row compact-subrail" data-control-path="hdr.highlights_width"><div class="control-heading"><label class="tooltip-trigger" for="hdr-highlights-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly to nothing at both ends.">Width</label><output data-value-path="hdr.highlights_width">2.50 EV</output></div><input id="hdr-highlights-width" type="range" min="0.5" max="12" step="0.25" value="2.5" data-path="hdr.highlights_width"></div>
+              <div class="control-row compact-subrail" data-control-path="hdr.highlights_center"><div class="control-heading"><label class="tooltip-trigger" for="hdr-highlights-center" data-tooltip="Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first.">Center</label><output data-value-path="hdr.highlights_center">2.25 EV</output></div><input id="hdr-highlights-center" type="range" min="-8" max="8" step="0.25" value="2.25" data-path="hdr.highlights_center"></div>
+              <div class="control-row compact-subrail" data-control-path="hdr.highlights_width"><div class="control-heading"><label class="tooltip-trigger" for="hdr-highlights-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak.">Width</label><output data-value-path="hdr.highlights_width">4.50 EV</output></div><input id="hdr-highlights-width" type="range" min="0.5" max="12" step="0.25" value="4.5" data-path="hdr.highlights_width"></div>
             </div>
+            </div>
+            <div class="control-row" data-control-path="hdr.whites">
+              <div class="control-heading"><label class="tooltip-trigger" for="hdr-whites" data-tooltip="Adjusts the top stop below Target Peak (display white in SDR). Positive values overdrive Film Look; final Highlight Compression still owns the delivery ceiling.">Whites</label><output data-value-path="hdr.whites">0</output></div>
+              <input id="hdr-whites" type="range" min="-100" max="100" step="1" value="0" data-path="hdr.whites">
             </div>
           </div>
         </section>
@@ -1149,7 +1153,7 @@
               </div>
             </div>
             <div class="control-row" data-control-path="sdr.blacks">
-              <div class="control-heading"><label class="tooltip-trigger" for="sdr-blacks" data-tooltip="Brightens or deepens the darkest tones. Midtones and highlights are not changed.">Blacks</label><output data-value-path="sdr.blacks">0</output></div>
+              <div class="control-heading"><label class="tooltip-trigger" for="sdr-blacks" data-tooltip="Lifts or clips the narrow black floor. Tones above the floor are unchanged. Tone ranges are selected before any of the five controls.">Blacks</label><output data-value-path="sdr.blacks">0</output></div>
               <input id="sdr-blacks" type="range" min="-100" max="100" step="1" value="0" data-path="sdr.blacks">
             </div>
             <div class="slider-group-tile" data-slider-relationship="targeting" data-zone-hover="shadows" tabindex="-1">
@@ -1159,8 +1163,8 @@
             </div>
             <div class="slider-group-relationship">Targeting</div>
             <div class="control-pair zone-targeting compact-subrails">
-              <div class="control-row compact-subrail" data-control-path="sdr.shadows_center"><div class="control-heading"><label class="tooltip-trigger" for="sdr-shadows-center" data-tooltip="Where the zone sits, in stops from middle grey.">Center</label><output data-value-path="sdr.shadows_center">-2.50 EV</output></div><input id="sdr-shadows-center" type="range" min="-8" max="8" step="0.25" value="-2.5" data-path="sdr.shadows_center"></div>
-              <div class="control-row compact-subrail" data-control-path="sdr.shadows_width"><div class="control-heading"><label class="tooltip-trigger" for="sdr-shadows-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly to nothing at both ends.">Width</label><output data-value-path="sdr.shadows_width">5.00 EV</output></div><input id="sdr-shadows-width" type="range" min="0.5" max="12" step="0.25" value="5" data-path="sdr.shadows_width"></div>
+              <div class="control-row compact-subrail" data-control-path="sdr.shadows_center"><div class="control-heading"><label class="tooltip-trigger" for="sdr-shadows-center" data-tooltip="Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first.">Center</label><output data-value-path="sdr.shadows_center">-1.50 EV</output></div><input id="sdr-shadows-center" type="range" min="-8" max="8" step="0.25" value="-1.5" data-path="sdr.shadows_center"></div>
+              <div class="control-row compact-subrail" data-control-path="sdr.shadows_width"><div class="control-heading"><label class="tooltip-trigger" for="sdr-shadows-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak.">Width</label><output data-value-path="sdr.shadows_width">5.00 EV</output></div><input id="sdr-shadows-width" type="range" min="0.5" max="12" step="0.25" value="5" data-path="sdr.shadows_width"></div>
             </div>
             </div>
             <div class="slider-group-tile" data-slider-relationship="targeting" data-zone-hover="midtones" tabindex="-1">
@@ -1170,8 +1174,8 @@
             </div>
             <div class="slider-group-relationship">Targeting</div>
             <div class="control-pair zone-targeting compact-subrails">
-              <div class="control-row compact-subrail" data-control-path="sdr.midtones_center"><div class="control-heading"><label class="tooltip-trigger" for="sdr-midtones-center" data-tooltip="Where the zone sits, in stops from middle grey.">Center</label><output data-value-path="sdr.midtones_center">0.00 EV</output></div><input id="sdr-midtones-center" type="range" min="-8" max="8" step="0.25" value="0" data-path="sdr.midtones_center"></div>
-              <div class="control-row compact-subrail" data-control-path="sdr.midtones_width"><div class="control-heading"><label class="tooltip-trigger" for="sdr-midtones-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly to nothing at both ends.">Width</label><output data-value-path="sdr.midtones_width">4.00 EV</output></div><input id="sdr-midtones-width" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.midtones_width"></div>
+              <div class="control-row compact-subrail" data-control-path="sdr.midtones_center"><div class="control-heading"><label class="tooltip-trigger" for="sdr-midtones-center" data-tooltip="Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first.">Center</label><output data-value-path="sdr.midtones_center">0.00 EV</output></div><input id="sdr-midtones-center" type="range" min="-8" max="8" step="0.25" value="0" data-path="sdr.midtones_center"></div>
+              <div class="control-row compact-subrail" data-control-path="sdr.midtones_width"><div class="control-heading"><label class="tooltip-trigger" for="sdr-midtones-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak.">Width</label><output data-value-path="sdr.midtones_width">4.00 EV</output></div><input id="sdr-midtones-width" type="range" min="0.5" max="12" step="0.25" value="4" data-path="sdr.midtones_width"></div>
             </div>
             </div>
             <div class="slider-group-tile" data-slider-relationship="targeting" data-zone-hover="highlights" tabindex="-1">
@@ -1181,9 +1185,13 @@
             </div>
             <div class="slider-group-relationship">Targeting</div>
             <div class="control-pair zone-targeting compact-subrails">
-              <div class="control-row compact-subrail" data-control-path="sdr.highlights_center"><div class="control-heading"><label class="tooltip-trigger" for="sdr-highlights-center" data-tooltip="Where the zone sits, in stops from middle grey.">Center</label><output data-value-path="sdr.highlights_center">1.25 EV</output></div><input id="sdr-highlights-center" type="range" min="-8" max="8" step="0.25" value="1.25" data-path="sdr.highlights_center"></div>
-              <div class="control-row compact-subrail" data-control-path="sdr.highlights_width"><div class="control-heading"><label class="tooltip-trigger" for="sdr-highlights-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly to nothing at both ends.">Width</label><output data-value-path="sdr.highlights_width">2.50 EV</output></div><input id="sdr-highlights-width" type="range" min="0.5" max="12" step="0.25" value="2.5" data-path="sdr.highlights_width"></div>
+              <div class="control-row compact-subrail" data-control-path="sdr.highlights_center"><div class="control-heading"><label class="tooltip-trigger" for="sdr-highlights-center" data-tooltip="Where the zone sits, in stops from photographic mid-grey: 18% of reference white. Exposure runs first.">Center</label><output data-value-path="sdr.highlights_center">1.75 EV</output></div><input id="sdr-highlights-center" type="range" min="-8" max="8" step="0.25" value="1.75" data-path="sdr.highlights_center"></div>
+              <div class="control-row compact-subrail" data-control-path="sdr.highlights_width"><div class="control-heading"><label class="tooltip-trigger" for="sdr-highlights-width" data-tooltip="How many stops the zone covers. Its effect fades smoothly at both ends and is gated away from the black floor and white peak.">Width</label><output data-value-path="sdr.highlights_width">3.50 EV</output></div><input id="sdr-highlights-width" type="range" min="0.5" max="12" step="0.25" value="3.5" data-path="sdr.highlights_width"></div>
             </div>
+            </div>
+            <div class="control-row" data-control-path="sdr.whites">
+              <div class="control-heading"><label class="tooltip-trigger" for="sdr-whites" data-tooltip="Adjusts the top stop below Target Peak (display white in SDR). Positive values overdrive Film Look; final Highlight Compression still owns the delivery ceiling.">Whites</label><output data-value-path="sdr.whites">0</output></div>
+              <input id="sdr-whites" type="range" min="-100" max="100" step="1" value="0" data-path="sdr.whites">
             </div>
           </div>
         </section>
@@ -1980,7 +1988,8 @@
   <script src="/static/gpu-mask-resample.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/whole-image-preview-pipe.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/gpu-render-plan.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
-  <script src="/static/gpu-params.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+  <script src="/static/tone-engine.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
+<script src="/static/gpu-params.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
   <script src="/static/idle-warmup.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
 <script src="/static/denoise-measurement.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>
 <script src="/static/webgpu-preview.js?v=__HDR_FINISHER_ASSET_VERSION__"></script>

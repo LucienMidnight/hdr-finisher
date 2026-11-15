@@ -28,7 +28,7 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     # and before the SDR highlight stage on both SDR paths.
     assert "let scene = sceneColor(hdrContrast(hdrBase(source)));" in shader
     assert "let balanced = blackAndWhite(scene, guide);" in shader
-    assert "fn sdrScenePrefix(source: vec3f) -> vec3f {" in shader and "return sceneColor(rgb * toneBlacksFactor(" in shader
+    assert "fn sdrScenePrefix(source: vec3f) -> vec3f {" in shader and "return sceneColor(rgb);" in shader
     assert "let grey = blackAndWhite(scene, guide);" in shader
     assert "acescgToSrgb(grey) * ((100.0 / 203.0) / 0.18)" in shader
     assert "rgb = acescgToSrgb(blackAndWhite(srgbToAcescg(rgb), srgbToAcescg(guide)));" in shader
@@ -110,8 +110,6 @@ def test_webgpu_pipeline_preserves_cpu_section_order_and_lane_specific_exposure_
     assert chain.index("pipelines.lens") < chain.index("pipelines.scatter") < chain.index("pipelines.finish")
     assert "spatialExtractFragmentMain" in shader
     assert "fn applyColorGrading" in shader
-    assert "srgbEncode(sourceY)" in shader
-    assert "srgbEncode(vec3f(sourceY))" not in shader
     assert "fn applyVignette" in shader
 
 

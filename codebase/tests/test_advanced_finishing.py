@@ -164,7 +164,7 @@ def test_invalid_crop_and_export_dimensions_are_rejected() -> None:
 
 
 def test_color_grading_tint_preserves_luminance_when_luminance_control_is_neutral() -> None:
-    image = np.full((16, 16, 3), 0.18, dtype=np.float32)
+    image = np.full((16, 16, 3), 0.18 * 0.18, dtype=np.float32)
     state = AdjustmentState()
     state.hdr.color_grading.shadows.hue = 25
     state.hdr.color_grading.shadows.saturation = 70
