@@ -46,7 +46,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | C1 | Colour wheels: tiny move changes highlights | W3 | built — CPU/GPU retain headroom; continuity and unchanged-range checks pass |
 | C2 | Colour wheels: Balance direction | W3 | built — positive favours Highlights globally/locally; Match translates local wheel hues too |
 | C3 | Colour wheels: clicking a puck changes it | W3 | built — shared drawing/input radius and grab offset; stationary 40% stays 40% |
-| T1 | Blacks/Whites and Shadows/Midtones/Highlights redesign | W4 | research |
+| T1 | Blacks/Whites and Shadows/Midtones/Highlights redesign | W4 | design done (`tone-endpoints-design-2026-11-15.md`), waiting on Steve |
 | M1 | HDR to SDR Match colour shifts (blue jeans) | W5 | broader research complete; not fixed across colours — all-hue/stock tables and five shared RAWs show remaining bright-colour errors/regressions; complete-target fitting and M1d need Steve's decision |
 | M1a | SDR contrast/Film Look clipping turns saturated colours | W3 | built, scoped clipping fix only — existing calibrated exposure/body guards pass; broader M1 follow-up finds bright green/cyan/indigo errors and DSC00264 highlight regression; no new pixel/gate change; GPU Match fixture still fails before Match |
 | X1 | Match SDR button for local adjustments and masks | — | design done, waiting on Steve |
