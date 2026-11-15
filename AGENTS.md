@@ -10,6 +10,25 @@ Steve owns this project and is not a coder. Explain status and results in
 plain language. Put decisions to him one at a time, each with the trade-off
 and what could break.
 
+## Check Git before any local work
+
+Steve, November 15, 2026, after a day of PC work was built on 0.9.2 while
+GitHub already held the 0.9.3 release from the Mac. Steve works on two
+machines (see "Machines"), so the local checkout is often behind.
+
+At the start of every session and before any local work (code, tests,
+documents, log investigation), from the Git root:
+
+- `git fetch`, then `git status` and
+  `git rev-list --left-right --count HEAD...@{upstream}` (and the same
+  against `origin/main`).
+- Compare the app version in `codebase/desktop/package.json` with the
+  newest `v*` tag on GitHub.
+- If the branch is behind, tell Steve in one line (how many commits, and
+  which version is on GitHub) and ask before pulling. Do not start work on
+  a stale checkout. Uncommitted local changes that would block the pull are
+  named, not discarded.
+
 ## How much to test
 
 Adopted October 6, 2026, after a 19-line cleanup was validated with a full
