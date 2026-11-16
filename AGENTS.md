@@ -219,9 +219,9 @@ coming back to him.
   or delivery ceiling is relaxed. Measurements: Film Look module PRD.
 - The one exact image requirement: HDR output never exceeds the highlight
   compression target (a 1000-nit target means no finished pixel above 1000
-  nits), on every render path and after encoding. Steve, November 16, 2026:
-  encoder rounding is also corrected or refused; there is no above-target
-  encoding allowance.
+  nits), on every render path and after encoding, allowing only encoder
+  rounding (the 1% encoded allowance, Steve, November 14, 2026). Finished
+  pixels before encoding have no allowance (Steve, November 16, 2026).
 - A result inside its tolerance is a pass. Do not stop, investigate, re-run
   or report it as a problem. A timing that moves 1% between two runs, against
   an agreed 5%, is normal noise.
