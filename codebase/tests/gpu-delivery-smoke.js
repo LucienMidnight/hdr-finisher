@@ -59,7 +59,7 @@ const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
 
     }
     const result=JSON.parse(execFileSync(python,[helper,"compare",root],{env,encoding:"utf8"}));console.log(JSON.stringify(result));
-    if(!result.hdr.passed||!result.sdr.passed)console.error("Existing stricter delivery p99.9 limit exceeded; recorded separately from Denoise measurement's agreed p99.");
+    if(!result.hdr.passed||!result.sdr.passed)throw Error("Finished renderer agreement exceeds mean < 1 / P99.9 <= 3.");
     if(!result.hdr.denoise_passed||!result.sdr.denoise_passed)throw Error("Denoise delivery perceptual limits exceeded.");
   }finally{await page.request.post(api("/api/delivery/preferences"),{data:{force_cpu:false}}).catch(()=>{});await browser.close();fs.rmSync(root,{recursive:true,force:true});}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -75,6 +75,16 @@ format's fidelity loss stage by stage, then try decoded-base gain fitting with
 less map smoothing (JPEG/AVIF) and a wide-gamut gain map for AVIF, reporting
 file size against fidelity before any setting changes.
 
+Built in the unpackaged delivery test tooling: actual finished inputs are
+captured inside the disposable test backend, after all finishing/framing/
+watermark operations and before quantization or encoding. Delivery helper
+verdicts now use these GPU/CPU inputs at the unchanged per-lane 1/3 limits;
+each file's own-source fidelity and decoded-file pair are separately labelled
+in the output. The performance preview/file driver retains its metadata and
+ceiling assertions and reports own-source fidelity separately; its existing
+preview/file presentation-level measurements remain diagnostics, not a
+renderer-agreement verdict. No shipping settings or codec defaults change.
+
 ## November 16: exact finished target; 1% encoding allowance kept
 
 Steve approved removing a float rounding overshoot (600.000061 nits at a

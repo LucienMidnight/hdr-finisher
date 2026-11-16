@@ -31,6 +31,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -470,6 +471,11 @@ def run(
     correctness = export_correctness(
         delivered_path, format_name, settings, hdr_project, sdr, metadata, reference_white
     )
+    fidelity = None
+    if os.environ.get("HDR_FINISHER_TEST_CAPTURE_DIR"):
+        sys.path.insert(0, str(ROOT / "tests/helpers"))
+        from delivery_comparison import own_fidelity
+        fidelity = own_fidelity(delivered_path)
 
     encoding_name = (
         f"preview-presentation-p3-extended-{reference_white}"
@@ -499,6 +505,8 @@ def run(
             "height": int(hdr.shape[0]),
         },
         "exportCorrectness": correctness,
+        "encodingFidelity": fidelity,
+        "comparisonRole": "decoded-versus-preview diagnostic; not the pre-encode renderer gate",
         "encoding": {
             "name": encoding_name,
             "hdrSurface": hdr_surface,
@@ -543,6 +551,7 @@ def main() -> int:
     )
     correctness = result["exportCorrectness"]
     whole = result["comparison"]["whole"]
+    print("Encoding fidelity (report only):", json.dumps(result["encodingFidelity"]))
     print(
         f"{result['scenario']:<11} export {'OK' if correctness['ok'] else 'FAIL'}"
         f" | peak {correctness['decodedPeakNits']} nits"

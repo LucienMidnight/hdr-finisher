@@ -721,6 +721,8 @@ function pythonExecutable() {
         sheets,
         assertions: {
           exportCorrectness: comparison.exportCorrectness,
+          encodingFidelity: comparison.encodingFidelity,
+          comparisonRole: comparison.comparisonRole,
           encoding: comparison.encoding,
           precision: comparison.precision,
           comparison: comparison.comparison,

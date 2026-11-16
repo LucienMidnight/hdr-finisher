@@ -111,6 +111,15 @@ let startupTimer;
   // resets when the crash kills the process). The app is launched with that
   // variable removed so the runner behaves the same in any host shell.
   const launchEnvironment = { ...process.env };
+  const captureDrivers = ["gpu-delivery-smoke.js", "hsl-selection-delivery.js", "hsl-integration.js",
+    "color-desat-delivery.js", "tone-zones-delivery.js", "hue-mask-delivery.js",
+    "photo-framing-delivery.js", "local-sdr-match.js", "gpu-delivery-repeat.js", "export-parity.js"];
+  if (!packaged && captureDrivers.includes(path.basename(testPath))) {
+    process.env.HDR_FINISHER_TEST_CAPTURE_DIR = path.join(userDataDirectory, "finished-delivery");
+    launchEnvironment.HDR_FINISHER_TEST_CAPTURE_DIR = process.env.HDR_FINISHER_TEST_CAPTURE_DIR;
+    launchEnvironment.PYTHONPATH = [path.join(__dirname, "helpers", "delivery_capture"),
+      path.resolve(__dirname, "../backend"), process.env.PYTHONPATH].filter(Boolean).join(path.delimiter);
+  }
   delete launchEnvironment.ELECTRON_RUN_AS_NODE;
   launchEnvironment.HDR_FINISHER_USER_DATA_DIR = userDataDirectory;
   if (process.env.HDR_FINISHER_RUNNER_DEBUG === "1") {

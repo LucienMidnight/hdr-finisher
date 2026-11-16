@@ -1,5 +1,15 @@
 # Code map
 
+## November 16: actual finished delivery inputs in tests
+
+The unpackaged Electron runner enables `tests/helpers/delivery_capture/` only
+for delivery-comparison drivers. Its Python startup hook records the actual
+finished export inputs (including locals, finishing, framing and watermark),
+not a reconstructed recipe. `tests/helpers/delivery_comparison.py` separates
+the unchanged pre-encode renderer gate from report-only own-source encoding
+fidelity and decoded-file pair diagnostics. Captures live in the disposable
+test profile and are removed with it; no production encoder or default changes.
+
 ## November 16: isolated equal-input Film research
 
 `codebase/tools/film_equal_input_trial.py` runs opt-in charts, reduced shared

@@ -40,7 +40,7 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
     const bytes=await page.request.get(new URL(`/api/proof/artifact/${proof.artifact_id}.jpg`,base).href);assert.ok(bytes.ok());
     const proofBytes=await bytes.body();
     if(!fs.readFileSync(file).equals(proofBytes)){fs.writeFileSync(file.replace(/\.jpg$/,'-proof.jpg'),proofBytes);
-     if(keep)console.log('proof differs',file);else assert.fail('Proof equals delivered bytes');}
+     assert.fail('Proof equals delivered bytes');}
    }
    const result=JSON.parse(execFileSync(python,[path.join(__dirname,'helpers/gpu_delivery_fixture.py'),'compare',dir],{env,encoding:'utf8'}));
    result.cpu_peak_nits=JSON.parse(execFileSync(python,['-c','import sys,json;from hdr_finisher.hdr_delivery import check_decoded_hdr_ceiling;print(json.dumps(check_decoded_hdr_ceiling(sys.argv[1],"jpeg_ultrahdr",1000)))',path.join(dir,'cpu.jpg')],{env,encoding:'utf8'}));
@@ -60,6 +60,7 @@ const settled=()=>state.acceptedPresentation?.exact&&state.acceptedPresentation.
   await configure(false);const off=await deliver('neutral');
   await configure(true);const on=await deliver(local?'local':'global');
   for(const lane of ['hdr','sdr']){
+   assert.ok(off[lane].passed&&on[lane].passed,`${lane}: finished renderer agreement ${JSON.stringify({off:off[lane],on:on[lane]})}`);
    assert.ok(on[lane].mean<=off[lane].mean+.15&&on[lane].p99<=off[lane].p99+.5,
     `${lane}: HSL adds a GPU/CPU difference ${JSON.stringify({off:off[lane],on:on[lane]})}`);
   }

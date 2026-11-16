@@ -76,7 +76,6 @@ const harness=global.HDRFinisherElectronTestHarness;
       console.log(JSON.stringify({renderer,budget,target,peaks,byteIdentical}));
     }
     const compare=async(first,second)=>{
-      if(fs.readFileSync(first).equals(fs.readFileSync(second)))return {byteIdentical:true,hdr:{mean:0,p999:0,passed:true},sdr:{mean:0,p999:0,passed:true}};
       const decoded=await execute(python,[path.join(__dirname,"helpers/export_repeat_compare.py"),first,second],{env:pythonEnv,encoding:"utf8"});
       return JSON.parse(decoded.stdout);
     };

@@ -103,7 +103,7 @@ for i,lane in enumerate(['hdr','sdr']):
  assert result.passed,(lane,result)
 `,[root]));
   const result=JSON.parse(execFileSync(python,[path.join(__dirname,'helpers/gpu_delivery_fixture.py'),'compare',root],{env,encoding:'utf8'}));
-  console.log('Finished tone zones delivery',JSON.stringify(result));/* JPEG differences are accepted for v1; the float rendering verdict above is strict. *//* The helper enforces the shared decoded ceiling and encoding allowance. */
+  console.log('Finished tone zones delivery',JSON.stringify(result));assert.ok(result.hdr.passed&&result.sdr.passed,JSON.stringify(result));
   assert.deepEqual(errors,[]);console.log('Tone zones integration PASS');
  }finally{await api('/api/delivery/preferences',{force_cpu:false}).catch(()=>{});await browser.close();fs.rmSync(root,{recursive:true,force:true});}
 })().catch(e=>{console.error(e);process.exitCode=1;});

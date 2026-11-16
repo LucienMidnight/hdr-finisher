@@ -5,7 +5,7 @@ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {execFileSync}=require('node:child_process');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'hsl-app-'));
 const python=require('../tools/lib/platform.cjs').pythonExecutable();
-const env={...process.env,PYTHONPATH:path.resolve(__dirname,'../backend')};
+const env={...process.env,PYTHONPATH:[path.resolve(__dirname,'../backend'),path.join(__dirname,'helpers')].join(path.delimiter)};
 const run=(script,args=[])=>execFileSync(python,['-c',script,...args],{env,encoding:'utf8'});
 (async()=>{
  run(`import numpy as np,tifffile,sys,colorsys
@@ -76,13 +76,10 @@ for i,lane in enumerate(['hdr','sdr']):
 `,[root]));
   const result=JSON.parse(run(`import json,sys
 from pathlib import Path
-from hdr_finisher.loader import load_image
-from hdr_finisher.delivery_colour import compare_finished_pixels
+from delivery_comparison import compare_delivery
 from hdr_finisher.hdr_delivery import check_decoded_hdr_ceiling
-root=Path(sys.argv[1]);a=load_image(root/'gpu.avif');b=load_image(root/'cpu.avif')
-result={}
-for lane,index in [('hdr',0),('sdr',4)]:
- m=compare_finished_pixels(a[index],b[index],lane);result[lane]={'mean':m.mean,'p999':m.p999,'passed':m.passed}
+root=Path(sys.argv[1]);result=compare_delivery(root/'gpu.avif',root/'cpu.avif')
+result.update(result['renderer_agreement'])
 result['peak_nits']=max(check_decoded_hdr_ceiling(root/(renderer+'.avif'),'avif_gain_map',1000) for renderer in ['gpu','cpu'])
 print(json.dumps(result))`,[root]));
   fs.mkdirSync(path.resolve(__dirname,'../output/hue-mask-smooth'),{recursive:true});

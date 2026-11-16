@@ -1,5 +1,22 @@
 # Known Limitations and Support Status
 
+## November 16: encoding fidelity is not renderer agreement
+
+Steve approved the separate checks in the Export/Proof module. Actual finished
+GPU/CPU pixels must still pass mean < 1 / P99.9 ≤ 3 per lane before encoding.
+The test-only capture hook records those actual inputs, not a second render.
+Each decoded delivery is also compared with its own original finished input;
+this is explicitly report-only while codec fidelity fixes are investigated.
+Decoded GPU/CPU files are retained as diagnostics, never used to enlarge the
+renderer limits. This does not waive the exact finished ceiling, the 1%
+encoded allowance, full-size Proof/export byte identity or coverage assertions.
+
+Existing research shows own-source failures in JPEG Ultra HDR, AVIF gain map
+and JPEG XL HDR at sharp highlights. See the two November 16 encoding-drift
+reports; large decoded errors are not an approved quality tolerance. The
+framed six-format driver and GPU/Denoise delivery smoke now pass the actual
+renderer gate; their decoded/fidelity numbers remain in the logs.
+
 ## November 14: minimum-Mac memory-admission follow-up
 
 The three newly regressing drivers identified below now pass on the MacBook
