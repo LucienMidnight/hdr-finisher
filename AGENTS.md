@@ -596,6 +596,10 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
 - `docs/technical/briefs/sprint-0-9-3-feedback-2026-11-15.md`: the current
   sprint. Steve's 0.9.3 notes, review findings on the November 15 PC
   changes, status board, decisions and work packages W1–W7.
+- `docs/technical/briefs/denoise-v1-quality-trial-2026-11-16.md`: Denoise
+  v1 quality trial (AI or classical): goal, measured quality contract,
+  candidates, phases and open questions for Steve. Research reports go in
+  `docs/technical/research/denoise-v1-2026-11-16/`.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.

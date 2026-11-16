@@ -200,6 +200,13 @@ recognition, maps, cloud sync, phone companion, tethering, printing, web
 galleries, slideshows and video. Details are in each module's
 out-of-scope list.
 
+**Denoise quality trial for v1 (Steve, November 16, 2026).** Steve wants
+sensor noise removed without losing structure or sharpness, AI or not. A
+better Denoise (AI, classical or hybrid) may be tried for v1; it ships only
+if it clearly beats the current Denoise on the measured contract and Steve
+approves. Noise removal is restoration, not the excluded AI selection or
+generation. See the [Denoise v1 brief](../technical/briefs/denoise-v1-quality-trial-2026-11-16.md).
+
 **Deferred to v2 (Steve, October 21, 2026):** Library Looks, linked
 photos, portable projects, and an MCP server so an AI assistant can
 operate the app. These are not v1 launch requirements. The MCP server
