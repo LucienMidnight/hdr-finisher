@@ -183,3 +183,8 @@ the [technology watch](../denoising-technology-watch-2026.md):
 
 - 2026-11-16: brief written; PRD records Steve's decision; Phase 1 workers
   started (harness, candidate survey).
+
+- 2026-11-16: Phase 1 CPU harness committed (`da0d5ace`), quick/full
+  off/current-Denoise baselines completed; report in
+  `../research/denoise-v1-2026-11-16/harness-baseline.md`. Single-frame sensor
+  profiles remain provisional; no app integration or replacement approved.

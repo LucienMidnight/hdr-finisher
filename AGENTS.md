@@ -571,6 +571,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
 
 ### Briefs (current work)
 
+- `docs/technical/research/denoise-v1-2026-11-16/harness-baseline.md`:
+  Phase 1 CPU harness baseline, corpus ISO inventory, provisional camera fits
+  and current Denoise quality limitations.
 - `docs/technical/briefs/codex-brief-export-gpu-speed-2026-10-20.md`: GPU
   export speed.
 - `docs/technical/briefs/codex-brief-hsl-edge-controls-2026-10-27.md`: HSL
