@@ -4,6 +4,7 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
+import sys
 
 import numpy as np
 import colour
@@ -78,6 +79,19 @@ def own_fidelity(path):
             "target": "mean < 1.0, P99.9 <= 3.0; report only", "lanes": fidelity}
 
 
+def report_summary(result):
+    def lanes(values):
+        return "; ".join(f"{lane.upper()} {value['mean']:.4f} / {value['p999']:.4f} "
+                         f"({'within target' if value['passed'] else 'outside target'})"
+                         for lane, value in values.items())
+    passed = all(value["passed"] for value in result["renderer_agreement"].values())
+    rows = [f"Finished renderer agreement — {'PASS' if passed else 'FAIL'}: {lanes(result['renderer_agreement'])}"]
+    for value in result["encoding_fidelity"].values():
+        rows.append(f"Encoding fidelity — REPORT ONLY — {value['format']} / {value['renderer']}: {lanes(value['lanes'])}")
+    rows.append(f"Decoded file pair — DIAGNOSTIC ONLY: {lanes(result['decoded_pair_diagnostic'])}")
+    return "\n".join(rows)
+
+
 def compare_delivery(first_path, second_path):
     first_folder, first = finished_capture(first_path)
     second_folder, second = finished_capture(second_path)
@@ -98,4 +112,5 @@ def compare_delivery(first_path, second_path):
     decoded_second = decoded_lanes(second_path, second["format"], white)
     for lane in decoded_first:
         result["decoded_pair_diagnostic"][lane] = metric(decoded_first[lane], decoded_second[lane], lane, white)
+    print(report_summary(result), file=sys.stderr)
     return result

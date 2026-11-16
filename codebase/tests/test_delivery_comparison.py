@@ -42,7 +42,7 @@ def captured_pair(tmp_path, monkeypatch):
     return files, root, pixels
 
 
-def test_encoding_loss_is_reported_without_failing_renderer_agreement(captured_pair):
+def test_encoding_loss_is_reported_without_failing_renderer_agreement(captured_pair, capsys):
     files, root, pixels = captured_pair
     result = compare_delivery(*files)
     assert all(lane["passed"] for lane in result["renderer_agreement"].values())
@@ -51,6 +51,11 @@ def test_encoding_loss_is_reported_without_failing_renderer_agreement(captured_p
     folder, metadata = finished_capture(files[0])
     np.testing.assert_array_equal(np.load(folder / "hdr.npy"), pixels)
     assert metadata["renderer"] == "gpu"
+    report = capsys.readouterr().err
+    assert "Finished renderer agreement — PASS" in report
+    assert "REPORT ONLY — jpeg_ultrahdr / gpu" in report
+    assert "DIAGNOSTIC ONLY" in report
+    assert "outside target" in report
 
 
 def test_bad_finished_renderer_fails_even_with_identical_decodes(captured_pair):
