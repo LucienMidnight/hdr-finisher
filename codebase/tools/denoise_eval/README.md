@@ -112,6 +112,11 @@ scene-linear clamping by an adapter. Headline metrics average per-scene values.
 
 * PSNR: encoded RGB MSE, unit range. SSIM: Wang 11×11 Gaussian, sigma 1.5,
   K1 .01/K2 .03; valid inner pixels, averaged over RGB. Both SDR and HDR.
+  Every truth-bearing adapter also reports `half_resolution`: non-overlapping
+  2×2 **scene-linear** area averages of output and truth, then the same SDR/PQ
+  PSNR and colour transforms. An odd trailing row/column is omitted. This
+  reduces fine demosaic disagreement; it does not make different demosaicers
+  equivalent, replace native-resolution scoring, or establish clean detail.
 * Colour: finished SDR CIEDE2000 (D65 Lab), mean/p99; HDR BT.2100-2 PQ ICtCp,
   BT.2124 ΔE ITP = `720 sqrt(dI²+(.5*dCt)²+dCp²)`, mean/p99.
 * Flats: SDR Y (.2126/.7152/.0722), R−Y/B−Y chroma residual std vs truth;
@@ -257,6 +262,44 @@ the full-frame clocks distinguish sensor prep, filtering and AHD/colour
 development. Its full-size intermediates are temporary and removed on failure.
 Measured times allow ±10% noise; compiled-C/WGSL figures in the report are
 explicit estimates, never benchmarks. No Electron/WebGPU is used or qualified.
+
+## Pilot-guided empirical Wiener trial
+
+`candidates.pilot_wiener:{self,tuned,bayer}_{both,luma}` are offline adapters.
+`both` attenuates only the AHD image's own five opponent/B3 detail bands using
+pilot energy and the existing measured adaptive noise model. `luma` uses that
+stage on luma and substitutes cached pilot chroma at normal strength; it is
+deliberately **not** covered by the own-coefficient no-invention guarantee.
+The tuned pilot uses the existing nearest-ISO PSNR controls, not clean truth.
+Bayer uses the separately verified full-strength RawNIND model/colour bridge.
+No production imports, model requirements, default or budget changes occur.
+
+Prepare builds coefficients/gains once. Resolve changes Amount, Luminance,
+Color Noise, Detail Recovery and four sizes by algebra on that evidence; zero
+strength and bypass are exact. `luma`'s direct chroma blend saturates at the
+pilot (normal strength); its upper Color Noise range cannot clean further.
+The numerical reconstruction/grid allowance is 2e-7 linear units, chosen for
+float32 accumulation order only; finished-pixel seam/exposure limits remain
+mean <1 / p99 <3, unchanged. Timing noise allowance stays ±10%.
+
+Small adapters refuse inputs above one million pixels rather than allocating
+a multi-GB cache. Use `candidates.pilot_wiener_measure native --photo
+IMG_0790.CR2 --pilot bayer` (or `tuned`/`self`, optional `--direct-chroma`) for
+the bounded native experiment. It develops AHD in haloed sensor tiles, holds
+one global model and pilot, spools 512px cache cores to temporary disk, resolves
+every pixel, retains four crops only, and removes all full-frame/cache scratch.
+`RawNIND.prepare(camera_anchor_mean=...)` optionally accepts the accumulated
+unity-WB AHD camera mean to avoid an extra full-frame development allocation;
+the default calculation is unchanged and equality is regression-tested.
+Native time includes disk I/O, not UI or an approved production cache design.
+
+Under `tools/gpu-run-lock.py` and `candidates/guard.py`, run
+`python -m tools.denoise_eval.candidates.pilot_wiener_measure controls` and
+`probes` for the three-value Amount/Color Noise sweeps and **independent**
+decomposition/network grid checks (not merely cached-frame slicing).
+`python -m tools.denoise_eval.candidates.pilot_wiener_report` rebuilds tables
+and the compact review from retained JSON/PNG evidence under
+`output/denoise-v1/pilot-wiener/`. The model/runtime remain venv/output-only.
 
 `tests/test_denoise_classical.py` checks finite output, bypass/alpha, native
 internal tile boundaries, CFA orientation, algebraic VST inversion (2e-6),
