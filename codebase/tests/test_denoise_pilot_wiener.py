@@ -112,3 +112,18 @@ def test_half_resolution_is_two_by_two_scene_linear_mean():
     image = np.arange(6*8*3, dtype=np.float32).reshape(6, 8, 3)
     expected = (image[::2, ::2] + image[1::2, ::2] + image[::2, 1::2] + image[1::2, 1::2]) / 4
     np.testing.assert_array_equal(area_half(image), expected)
+
+
+def test_half_resolution_excludes_every_partly_invalid_pair_block():
+    from tools.denoise_eval.metrics import evaluate
+    clean = np.full((32, 32, 3), .3, dtype=np.float32)
+    output = clean.copy()
+    output[8:10, 8:10] = .9
+    valid = np.ones((32, 32), dtype=bool)
+    valid[8, 8] = False
+    masks = dict(valid=valid, flat=valid, texture=np.zeros_like(valid), edge=valid)
+    measured = evaluate(output, output, clean, masks)
+    for lane in ('sdr', 'hdr'):
+        assert measured['half_resolution'][lane]['psnr_db'] is None
+        assert measured['half_resolution'][lane]['colour_difference']['mean'] == 0
+        assert measured[lane]['psnr_db'] is not None

@@ -25,6 +25,15 @@ include the revised AHD anchor pass. No shipping replacement is selected.
 The current Denoise remains unchanged; classical comparison and Steve's visual
 decision remain open. No tolerance, cache allowance or shipping dependency changes.
 
+Committed research tooling `20f2224a` adds an explicitly CC0 RawNIND noisy/clean
+subset, with documented held-out versus seen-by-RawNIND labels and crop-only
+registration/exposure matching. The [public-pairs results](../../technical/research/denoise-v1-2026-11-16/public-pairs.md)
+score 52 crops / 11 scenes / four cameras; four held-out scenes survive input
+screens. All candidates above ISO 6400 are excluded, not qualified. Default
+Denoise reduces real noise; tuning trades edge/detail for small aggregate
+fidelity gains. This addresses a research-input gap, not laboratory calibration
+or a shipping denoiser decision. Current defaults and quality limits stay fixed.
+
 ## November 16: safe linked SDR built and scoped qualification
 
 Whole-photo Match now tries the trial's body/colour-best output tail, then
