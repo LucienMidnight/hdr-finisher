@@ -45,8 +45,8 @@ def worker(photo, scratch, result):
     row = dict(photo=photo.name, width=width, height=height, resources=asdict(resources), estimate=asdict(estimate), lanes={})
     result.write_text(json.dumps(row))
     from hdr_finisher.app_memory import CEILING, STARTING
-    if estimate.export_decision.value != 'pass' or estimate.conservative_export_peak_bytes + STARTING > CEILING:
-        row['unqualified'] = 'Native export not attempted: full-size working estimate plus existing starting footprint exceeds the default app ceiling, or system reserve refuses it.'
+    if estimate.import_decision.value != 'pass' or estimate.decoded_source_bytes + 320 * 1024**2 > CEILING - STARTING:
+        row['unqualified'] = 'Native export not attempted: source storage plus bounded working room exceeds the default app ceiling, or import system reserve refuses it.'
         result.write_text(json.dumps(row)); return
     stage = lambda value: result.with_suffix('.stage').write_text(value)
     stage('sourceDecode')
@@ -74,7 +74,7 @@ def worker(photo, scratch, result):
             if not high and 'refused' in row['lanes'][lane]:
                 continue
             target = scratch/f'{lane}-{high}.jxl'
-            config = ExportSettings(format=format_name, quality=90, jpegxl_high_fidelity=high,
+            config = ExportSettings(format=format_name, quality=95, jpegxl_high_fidelity=high,
                                     dithering='off' if lane=='hdr' else 'auto', output_path=str(target))
             encode_times=[]
             encode_name='encode_hdr_jpegxl' if lane=='hdr' else 'encode_sdr_jpegxl'
@@ -94,11 +94,7 @@ def worker(photo, scratch, result):
                 row['lanes'][lane]['refused']=exported.message
                 result.write_text(json.dumps(row));continue
             size=target.stat().st_size
-            stage(lane+('-high' if high else '-default')+'-decode')
-            started=time.perf_counter()
-            decoded=decoded_lanes(target,format_name,203)[lane]
-            decode=time.perf_counter()-started
-            del decoded
+            decode = None
             stage(lane+'-fidelity')
             fidelity=own_fidelity(target)
             folder,_=finished_capture(target)
@@ -109,7 +105,16 @@ def worker(photo, scratch, result):
                 assert peak<=1000,peak
                 row['lanes'][lane]['finishedPeakNits']=peak
             stage(lane+'-ceiling')
-            peak=check_decoded_hdr_ceiling(target,format_name,1000) if lane=='hdr' else None
+            if lane == 'hdr':
+                from hdr_finisher.jpegxl_stream import decode as scan_decode
+                from colour.models import eotf_ST2084
+                maximum_code = [0]
+                def peak_scan(x, y, pixels): maximum_code[0] = max(maximum_code[0], int(pixels.max()))
+                scan_decode(target.read_bytes(), peak_scan, expected_shape=(height, width), bits=12)
+                peak = float(eotf_ST2084(maximum_code[0] / 4095.))
+                assert peak <= 1010, peak
+            else:
+                peak = None
             row['lanes'][lane]['variants']['high' if high else 'webDefault']=dict(
                 bytes=size,exportSeconds=elapsed,encodeSeconds=sum(encode_times),encodeRounds=len(encode_times),decodeSeconds=decode,fidelity=fidelity['lanes'][lane],peakNits=peak)
             result.write_text(json.dumps(row))
@@ -139,7 +144,7 @@ def main():
             photo=photos/name
             with photo.open('rb') as stream: assert hashlib.file_digest(stream,'sha256').hexdigest()==approved[name]
             result=temp/'result.json';result.unlink(missing_ok=True);result.with_suffix('.stage').unlink(missing_ok=True)
-            env={**os.environ,'HDR_FINISHER_FORCE_CPU_DELIVERY':'1','HDR_FINISHER_USER_DATA_DIR':str(temp/'profile')}
+            env={**os.environ,'MallocSpaceEfficient':'1','HDR_FINISHER_FORCE_CPU_DELIVERY':'1','HDR_FINISHER_USER_DATA_DIR':str(temp/'profile')}
             child=subprocess.Popen([sys.executable,__file__,'--worker',str(photo),str(temp),str(result)],env=env,stdout=subprocess.DEVNULL)
             peak=0; minimum=None; samples=0; stages={}
             while child.poll() is None:

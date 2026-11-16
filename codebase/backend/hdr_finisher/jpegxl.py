@@ -155,20 +155,19 @@ def encode_hdr_jpegxl(
 
     reference_white_nits = validate_reference_white(reference_white_nits)
     def samples(band):
-        linear_bt2020 = np.clip(acescg_to_linear_bt2020(band[..., :3]), 0.0, None)
-        luminance_nits = np.clip(scene_linear_to_nits(linear_bt2020, reference_white_nits), 0.0, 10000.0)
-        pq = _pq_oetf(luminance_nits)
-        if sample_type == "integer":
-            maximum = float((1 << bit_depth) - 1)
-            return np.clip(np.round(pq * np.float32(maximum)), 0.0, maximum).astype(storage_type)
-        return pq.astype(storage_type)
+        return quantized_hdr_samples(band, precision, reference_white_nits)
 
-    # Lossless native photos need only the quantized frame and bounded float
-    # scratch. Avoid keeping three full float32 conversions alive in libjxl.
+    # Chunked integer lossless input has no full quantized-frame copy. Float
+    # precision options retain their established imagecodecs route.
+    if quality == 100 and sample_type == "integer":
+        from .jpegxl_stream import encode
+        payload = encode(image.shape, lambda y, yy, x, xx:
+            _quantized_rectangle(image[y:yy, x:xx, :3], samples, storage_type),
+            bit_depth, hdr=True)
+        return _marked_payload(payload, hdr=True, bit_depth=bit_depth,
+            sample_type=sample_type, reference_white_nits=reference_white_nits, exif_payload=exif_payload)
     if quality == 100:
-        encoded = np.empty((*image.shape[:2], 3), dtype=storage_type)
-        for row in range(0, image.shape[0], 128):
-            encoded[row:row + 128] = samples(image[row:row + 128])
+        encoded = _quantized_rectangle(image, samples, storage_type)
     else:
         encoded = samples(image)
     distance = max(0.0, (100.0 - float(quality)) / 25.0)
@@ -213,6 +212,14 @@ def encode_sdr_jpegxl(
     if not 1 <= int(quality) <= 100:
         raise JPEGXLError("JPEG XL quality must be between 1 and 100.")
 
+    if quality == 100 and dithering == "off":
+        from .jpegxl_stream import encode
+        payload = encode(image.shape, lambda y, yy, x, xx:
+            _quantized_rectangle(image[y:yy, x:xx, :3], quantized_sdr_samples, np.uint8),
+            8, hdr=False)
+        return _marked_payload(payload, hdr=False, bit_depth=8, sample_type="integer",
+            reference_white_nits=100, exif_payload=exif_payload)
+
     srgb = _srgb_oetf(np.clip(image[..., :3], 0.0, 1.0))
     if dithering != "off":
         _dither_srgb_in_place(srgb, amplitude_lsb=0.5 if dithering == "subtle" else 1.0)
@@ -255,25 +262,27 @@ def validate_jpegxl(
         bit_depth, sample_type, _storage_type = _JPEGXL_PRECISIONS[precision]
     except KeyError as exc:
         raise JPEGXLError(f"Unsupported JPEG XL precision: {precision}") from exc
-    try:
-        import imagecodecs
-
-        from .cpu_budget import logical_cpus
-        decoded = np.asarray(imagecodecs.jpegxl_decode(payload, numthreads=logical_cpus()))
-    except Exception as exc:
-        raise JPEGXLError(f"JPEG XL validation decode failed: {exc}") from exc
-    if decoded.shape[:2] != expected_shape:
-        raise JPEGXLError(
-            f"JPEG XL validation returned {decoded.shape[:2]}; expected {expected_shape}."
-        )
-    if not np.all(np.isfinite(decoded)):
-        raise JPEGXLError("JPEG XL validation returned non-finite samples.")
+    if sample_type == "integer":
+        from .jpegxl_stream import decode
+        decode(payload, lambda x, y, pixels: None, expected_shape=expected_shape, bits=bit_depth)
+        decoded = None
+    else:
+        try:
+            import imagecodecs
+            from .cpu_budget import logical_cpus
+            decoded = np.asarray(imagecodecs.jpegxl_decode(payload, numthreads=logical_cpus()))
+        except Exception as exc:
+            raise JPEGXLError(f"JPEG XL validation decode failed: {exc}") from exc
+        if decoded.shape[:2] != expected_shape:
+            raise JPEGXLError(f"JPEG XL validation returned {decoded.shape[:2]}; expected {expected_shape}.")
+        if not np.all(np.isfinite(decoded)):
+            raise JPEGXLError("JPEG XL validation returned non-finite samples.")
     metadata = _validate_app_metadata(_read_app_metadata_box(payload))
     if metadata.get("color_space") != "BT.2020" or metadata.get("transfer_function") != "PQ":
         raise JPEGXLError("JPEG XL output is missing its Rec.2020 PQ interpretation marker.")
     if metadata.get("bit_depth") != bit_depth or metadata.get("sample_type") != sample_type:
         raise JPEGXLError("JPEG XL output marker does not match the selected precision.")
-    if sample_type == "integer":
+    if sample_type == "integer" and decoded is not None:
         maximum = (1 << bit_depth) - 1
         if not np.issubdtype(decoded.dtype, np.integer):
             raise JPEGXLError(f"JPEG XL output did not decode to {bit_depth}-bit integer samples.")
@@ -281,7 +290,7 @@ def validate_jpegxl(
             raise JPEGXLError("JPEG XL output decoded to negative integer samples.")
         if int(np.max(decoded, initial=0)) > maximum:
             raise JPEGXLError(f"JPEG XL output exceeds its declared {bit_depth}-bit range.")
-    elif not np.issubdtype(decoded.dtype, np.floating) or decoded.dtype.itemsize * 8 != bit_depth:
+    elif sample_type != "integer" and (not np.issubdtype(decoded.dtype, np.floating) or decoded.dtype.itemsize * 8 != bit_depth):
         raise JPEGXLError(f"JPEG XL output did not decode to {bit_depth}-bit floating-point samples.")
     basic_info = _probe_basic_info(payload)
     if basic_info.get("bits_per_sample") not in {None, bit_depth}:
@@ -295,19 +304,8 @@ def validate_jpegxl(
 
 
 def validate_sdr_jpegxl(payload: bytes, expected_shape: tuple[int, int]) -> str:
-    try:
-        import imagecodecs
-
-        from .cpu_budget import logical_cpus
-        decoded = np.asarray(imagecodecs.jpegxl_decode(payload, numthreads=logical_cpus()))
-    except Exception as exc:
-        raise JPEGXLError(f"JPEG XL validation decode failed: {exc}") from exc
-    if decoded.shape[:2] != expected_shape:
-        raise JPEGXLError(
-            f"JPEG XL validation returned {decoded.shape[:2]}; expected {expected_shape}."
-        )
-    if not np.all(np.isfinite(decoded)):
-        raise JPEGXLError("JPEG XL validation returned non-finite samples.")
+    from .jpegxl_stream import decode
+    decode(payload, lambda x, y, pixels: None, expected_shape=expected_shape, bits=8)
     metadata = _validate_app_metadata(_read_app_metadata_box(payload))
     expected_marker = {
         "color_space": "sRGB",
@@ -317,12 +315,6 @@ def validate_sdr_jpegxl(payload: bytes, expected_shape: tuple[int, int]) -> str:
     }
     if any(metadata.get(key) != value for key, value in expected_marker.items()):
         raise JPEGXLError("JPEG XL SDR output is missing its 8-bit sRGB interpretation marker.")
-    if not np.issubdtype(decoded.dtype, np.integer) or decoded.dtype.itemsize != 1:
-        raise JPEGXLError("JPEG XL SDR output did not decode to 8-bit integer samples.")
-    if np.issubdtype(decoded.dtype, np.signedinteger) and np.any(decoded < 0):
-        raise JPEGXLError("JPEG XL SDR output decoded to negative integer samples.")
-    if int(np.max(decoded, initial=0)) > 255:
-        raise JPEGXLError("JPEG XL SDR output exceeds its declared 8-bit range.")
     basic_info = _probe_basic_info(payload)
     if basic_info.get("bits_per_sample") not in {None, 8}:
         raise JPEGXLError("JPEG XL SDR codestream precision does not match its marker.")
@@ -330,6 +322,65 @@ def validate_sdr_jpegxl(payload: bytes, expected_shape: tuple[int, int]) -> str:
     if exponent_bits not in {None, 0}:
         raise JPEGXLError("JPEG XL SDR codestream is not integer encoded.")
     return "Validated by decoding the 8-bit sRGB SDR result."
+
+
+def _quantized_rectangle(image, convert, dtype):
+    result = np.empty((*image.shape[:2], 3), dtype=dtype)
+    for row in range(0, image.shape[0], 128):
+        result[row:row + 128] = convert(image[row:row + 128])
+    return result
+
+
+def quantized_hdr_samples(image, precision="uint12", reference_white_nits=203):
+    bit_depth, sample_type, dtype = _JPEGXL_PRECISIONS[precision]
+    linear = np.clip(acescg_to_linear_bt2020(image[..., :3]), 0.0, None)
+    pq = _pq_oetf(np.clip(scene_linear_to_nits(linear, reference_white_nits), 0.0, 10000.0))
+    if sample_type == "integer":
+        maximum = float((1 << bit_depth) - 1)
+        return np.clip(np.round(pq * np.float32(maximum)), 0.0, maximum).astype(dtype)
+    return pq.astype(dtype)
+
+
+def quantized_sdr_samples(image):
+    srgb = _srgb_oetf(np.clip(image[..., :3], 0, 1))
+    return np.clip(np.round(srgb * np.float32(255.0)), 0, 255).astype(np.uint8)
+
+
+def _marked_payload(payload, *, hdr, bit_depth, sample_type, reference_white_nits, exif_payload):
+    marker = {"schema_version": _APP_METADATA_VERSION,
+              "color_space": "BT.2020" if hdr else "sRGB",
+              "transfer_function": "PQ" if hdr else "sRGB", "bit_depth": bit_depth,
+              "sample_type": sample_type, "reference_white_nits": float(reference_white_nits)}
+    return (payload + _box(_APP_BOX_TYPE, json.dumps(marker, separators=(",", ":")).encode("utf-8"))
+            + (_jpegxl_exif_box(exif_payload) if exif_payload else b""))
+
+
+def verify_lossless_jpegxl(payload, image, *, hdr, reference_white_nits=203,
+                           ceiling_nits=None, encoding_allowance=0):
+    """Check every decoded sample against its own quantized source and ceiling.
+
+    Exact sample equality is stronger than a lossy own-source comparison; the
+    perceptual comparison against finished floats remains in delivery tests.
+    No decoder RGB output or full-size nits array is retained.
+    """
+    from .jpegxl_stream import decode
+    peak_code = 0
+    def visit(x, y, pixels):
+        nonlocal peak_code
+        source = image[y:y + 1, x:x + len(pixels), :3]
+        expected = (quantized_hdr_samples(source, reference_white_nits=reference_white_nits)
+                    if hdr else quantized_sdr_samples(source))[0]
+        if not np.array_equal(pixels, expected):
+            raise JPEGXLError("Lossless JPEG XL changed a quantized source sample.")
+        peak_code = max(peak_code, int(pixels.max(initial=0)))
+    decode(payload, visit, expected_shape=image.shape[:2], bits=12 if hdr else 8)
+    peak_nits = None
+    if hdr:
+        from colour.models import eotf_ST2084
+        peak_nits = float(eotf_ST2084(peak_code / 4095.0))
+        if ceiling_nits is not None and peak_nits > ceiling_nits * (1 + encoding_allowance):
+            raise JPEGXLError(f"Lossless JPEG XL peak {peak_nits:.3f} exceeds the encoded HDR ceiling.")
+    return peak_nits
 
 
 def _pq_oetf(luminance_nits: np.ndarray) -> np.ndarray:

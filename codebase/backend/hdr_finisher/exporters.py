@@ -35,6 +35,7 @@ from .jpegxl import (
     encode_sdr_jpegxl,
     validate_jpegxl,
     validate_sdr_jpegxl,
+    verify_lossless_jpegxl,
 )
 from .test_pattern import build_hdr_test_pattern
 from .hdr_ceiling import ENCODING_ALLOWANCE, decoded_channel_nits, delivery_ceiling_nits, encode_within_ceiling
@@ -164,6 +165,15 @@ def _render_unwatermarked_branch(
     session: object, settings: ExportSettings, kind: PreviewKind, adjustments: AdjustmentState
 ) -> np.ndarray:
     from .gpu_delivery import render_pair
+    object.__setattr__(settings, "_last_cpu_strips", False)
+    if _bounded_export_eligible(session, settings, kind, adjustments):
+        from . import app_memory
+        height, width = session.image.shape[:2]
+        from .finishing import geometry_output_dimensions
+        output = geometry_output_dimensions(width, height, adjustments.shared.geometry)
+        gpu_required = width * height * 12 + output[0] * output[1] * 76 + 288 * 1024**2
+        if app_memory.snapshot()["totalBytes"] + gpu_required > app_memory.CEILING:
+            object.__setattr__(settings, "_bounded_cpu_delivery", True)
     pair = render_pair(session, settings, adjustments)
     if pair is not None:
         result = pair[kind.value]
@@ -173,6 +183,23 @@ def _render_unwatermarked_branch(
             settings._exact_measurements[kind.value] = {"peak": peak}
         return result
     color_context = getattr(session, "color_context", RenderColorContext(getattr(session, "hdr_reference_white_nits", 203)))
+    if _bounded_export_eligible(session, settings, kind, adjustments):
+        from .cpu_strips import render_in_strips
+        object.__setattr__(settings, "_last_cpu_strips", True)
+        image, report = render_in_strips(session.image, adjustments, kind,
+            sdr_reference_image=getattr(session, "sdr_reference_image", None), color_context=color_context)
+        if kind.value in settings.editing_measurements:
+            peak = report.scope_peak_value
+            if kind == PreviewKind.HDR:
+                peak *= .18 / color_context.hdr_reference_white_nits
+            measurement = {"peak": peak}
+            anchor = report.anchor
+            if anchor is not None:
+                measured = anchor.hdr_source_peak_nits if kind == PreviewKind.HDR else anchor.sdr_peak
+                if measured is not None:
+                    measurement["anchor"] = measured * .18 / color_context.hdr_reference_white_nits if kind == PreviewKind.HDR else measured
+            settings._exact_measurements[kind.value] = measurement
+        return image
     source = _denoised_export_source(session, kind)
     image = apply_adjustments(
         source,
@@ -221,6 +248,23 @@ def _render_unwatermarked_branch(
     return result
 
 
+def _bounded_export_eligible(session, settings, kind, adjustments):
+    """Use the already-qualified exact strip graph only when finishing is identity."""
+    from .cpu_strips import strip_execution_refusals
+    from .finishing import geometry_output_dimensions, resolve_output_dimensions
+    from .photo_framing import delivery_layout
+    height, width = session.image.shape[:2]
+    native = geometry_output_dimensions(width, height, adjustments.shared.geometry)
+    if (settings.output_finishing.sharpening != "off"
+            or resolve_output_dimensions(*native, settings.output_finishing) != native
+            or delivery_layout(session, settings, adjustments) is not None):
+        return False
+    return not strip_execution_refusals(adjustments, kind,
+        local_adjustments=adjustments.enabled_locals(getattr(session, "local_adjustments", None)),
+        denoise_active=denoise_settings_for_export(session, kind) is not None,
+        source_width=width, source_height=height)
+
+
 @dataclass(frozen=True)
 class _PreparedExport:
     staging_suffix: str
@@ -250,11 +294,26 @@ def _reserve_high_fidelity_jxl(session, settings):
     width, height = geometry_output_dimensions(width, height, session.adjustments.shared.geometry)
     layout = output_layout(width, height, getattr(session, "framing", None), settings.output_finishing,
                            include=settings.export_with_frame)
-    rate = (_JXL_SDR_WORK_BYTES_PER_PIXEL if settings.format == "sdr_jpegxl"
-            and getattr(session, "sdr_reference_image", None) is None else _JXL_HDR_WORK_BYTES_PER_PIXEL)
-    required = width * height * rate + FULL_PREVIEW_FIXED_OVERHEAD_BYTES
-    # Source rendering happens before output resizing; admit whichever is larger.
-    required = max(required, layout.width * layout.height * rate + FULL_PREVIEW_FIXED_OVERHEAD_BYTES)
+    kind = PreviewKind.SDR if settings.format == "sdr_jpegxl" else PreviewKind.HDR
+    bounded = _bounded_export_eligible(session, settings, kind, session.adjustments)
+    pixels = max(width * height, layout.width * layout.height)
+    # Existing source storage is already in the census. One output frame plus
+    # 25%, the existing 48 MiB strip workspace and bounded codec scratch.
+    cpu_required = pixels * 15 + FULL_PREVIEW_FIXED_OVERHEAD_BYTES + 48 * 1024**2
+    # GPU delivery also owns both lane handoffs, shared source, output copies,
+    # finishing textures and the creative graph's existing 256 MiB minimum.
+    gpu_required = session.image.shape[0] * session.image.shape[1] * 12 + pixels * 76 + 288 * 1024**2
+    total = app_memory.snapshot()["totalBytes"]
+    from .delivery import preferences
+    forced_cpu = preferences()["effective_force_cpu"]
+    use_bounded_cpu = bounded and (forced_cpu or total + gpu_required > app_memory.CEILING)
+    object.__setattr__(settings, "_bounded_cpu_delivery", use_bounded_cpu)
+    if bounded:
+        required = cpu_required if use_bounded_cpu else max(cpu_required, gpu_required)
+    else:
+        rate = (_JXL_SDR_WORK_BYTES_PER_PIXEL if kind == PreviewKind.SDR
+                and getattr(session, "sdr_reference_image", None) is None else _JXL_HDR_WORK_BYTES_PER_PIXEL)
+        required = pixels * rate + FULL_PREVIEW_FIXED_OVERHEAD_BYTES
     resources = detect_memory_resources()
     reserve = max(2 * GIB, int((resources.total_ram_bytes or 0) * .15))
     message = ("High fidelity JPEG XL needs more working memory for this photo. "
@@ -455,6 +514,8 @@ class SDRJPEGXLExportBackend(ExportBackend):
                 dithering=settings.dithering,
                 exif_payload=None,
             )
+            if settings.jpegxl_high_fidelity:
+                verify_lossless_jpegxl(payload, sdr_image, hdr=False)
             shape = sdr_image.shape[:2]
             return _PreparedExport(
                 ".sdr.tmp.jxl",
@@ -727,16 +788,24 @@ class JPEGXLHDRExportBackend(ExportBackend):
             hdr_image = _render_export_branch(session, settings, PreviewKind.HDR, finishing_adjustments)
             reference_white_nits = getattr(session, "hdr_reference_white_nits", 203)
             exif_payload = None
-            payload = encode_within_ceiling(
-                hdr_image,
-                reference_white_nits,
-                lambda hdr: encode_hdr_jpegxl(hdr, int(settings.quality), settings.jpegxl_precision,
-                    exif_payload=exif_payload, reference_white_nits=reference_white_nits),
-                _decoded_jpegxl_channel_nits,
-                _peak_ceiling(settings, finishing_adjustments),
-                notes,
-                encoding_allowance=_peak_allowance(finishing_adjustments),
-            )
+            if settings.jpegxl_high_fidelity:
+                payload = encode_hdr_jpegxl(hdr_image, 100, "uint12",
+                    exif_payload=exif_payload, reference_white_nits=reference_white_nits)
+                verify_lossless_jpegxl(payload, hdr_image, hdr=True,
+                    reference_white_nits=reference_white_nits,
+                    ceiling_nits=_peak_ceiling(settings, finishing_adjustments),
+                    encoding_allowance=_peak_allowance(finishing_adjustments))
+            else:
+                payload = encode_within_ceiling(
+                    hdr_image,
+                    reference_white_nits,
+                    lambda hdr: encode_hdr_jpegxl(hdr, int(settings.quality), settings.jpegxl_precision,
+                        exif_payload=exif_payload, reference_white_nits=reference_white_nits),
+                    _decoded_jpegxl_channel_nits,
+                    _peak_ceiling(settings, finishing_adjustments),
+                    notes,
+                    encoding_allowance=_peak_allowance(finishing_adjustments),
+                )
             shape = hdr_image.shape[:2]
             return _PreparedExport(
                 ".tmp.jxl",

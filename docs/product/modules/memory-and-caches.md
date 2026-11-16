@@ -1,21 +1,41 @@
 ### November 15: W2 P2 format-first publication within the same upload slot
 
-## November 16: high-fidelity JXL admission
+## November 16: bounded native high-fidelity JXL (qualification in progress)
 
-The opt-in uses the existing whole-app admission owner and physical preflight
-reserve; no ceiling, cache share or reserve increases. Native 4000×2666 CPU
-measurement isolated 1.913 GB charged peak for HDR render/encode/check and
-4.435 GB for generated SDR, excluding Electron. SDR rendering, rather than
-lossless compression alone, dominates the latter; that renderer belongs to the
-separate SDR workstream and is unchanged here. High fidelity therefore reserves
-225 bytes/source pixel for HDR or authored SDR, 525 for generated SDR, plus
-the existing 256 MiB fixed overhead (measured peak/pixel plus 25%, rounded up).
-The larger source/output canvas governs; resizing does not hide native render
-work. A renewable lease spans render, encode, ceiling, validation and replace;
-refusal precedes rendering and preserves an existing destination. Large native
-photos remain unqualified on the default 2.5 GB Mac setting rather than being
-admitted by raising it. Lossless JXL quantization now uses 128-row float scratch;
-all quantized samples are unchanged across all five precisions.
+No RAM ceiling, GPU budget, cache share or physical reserve changes. Eligible
+native exports now reuse the existing exact CPU strip renderer (48 MiB scratch),
+including generated SDR, instead of building whole-frame grade intermediates.
+Resizing, output sharpening, framing, Denoise, local/spatial effects and the
+strip renderer's other refusals keep the previous graph and conservative rates.
+The CPU strips are also used by ordinary delivery when its complete GPU working
+set cannot fit the app ceiling; the GPU decision is cached with the existing
+source/grade delivery identity, keeping full Proof/export decisions consistent.
+
+Eligible high-fidelity CPU admission reserves 15 bytes/output pixel (one float
+RGB output plus 25%) + the existing 256 MiB fixed overhead + the existing 48 MiB
+strip workspace. Existing source ownership remains counted by the app census.
+GPU delivery reserves its shared source (12 bytes/source pixel), both lane
+handoffs/copies and finishing work (76 bytes/output pixel), plus 288 MiB for the
+existing creative minimum and transport overhead. If that will not fit, an
+eligible graph goes directly to bounded CPU. Unsupported CPU strip graphs keep
+225 bytes/pixel HDR/authored SDR or 525 generated SDR + 256 MiB; no estimate
+is lowered for work that still allocates the old intermediates. The larger
+source/output canvas still governs, and the renewable lease spans encoding,
+verification, metadata, validation and replacement. Refusal preserves destinations.
+
+Integer lossless JXL now uses the bundled libjxl 0.11+ chunked-frame input,
+streaming buffering and lossless effort 3. Quantization scratch stays in 128-row
+bands within each requested ~2048-square chunk; no full quantized frame exists.
+Scanline validation and exact own-source sample/ceiling verification avoid a
+full decoded RGB/nits frame. The test-only perceptual check also streams decoded
+pixels and retains only the exact upper 0.1% tail; every pixel is checked.
+Full Proof converts its uniquely owned CPU SDR endpoint in bands in place;
+GPU cached lanes are never modified. No new pixel cache or disk spool is added.
+Initial 10.7 MP standalone CPU qualification: both lanes pass, sampled worker
+peak 0.977 GB including Q95 comparisons; high-fidelity render/encode peaks
+0.432 GB HDR / 0.382 GB SDR, versus the prior 1.913 / 4.435 GB. Whole-app and
+larger native qualification is still pending; do not read standalone worker
+numbers as Electron acceptance. Final values belong in the performance table.
 
 
 The current display's existing finished-thumbnail format is published before

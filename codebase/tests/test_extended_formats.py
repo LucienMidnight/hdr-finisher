@@ -998,3 +998,68 @@ def test_high_fidelity_memory_refusal_preserves_destination_and_does_not_render(
     assert 'working memory' in result.message
     assert output.read_bytes() == b'previous delivered photo'
     assert not list(tmp_path.glob('.*tmp*'))
+
+
+@pytest.mark.parametrize('bits,hdr', [(8, False), (12, True)])
+def test_chunked_jxl_crosses_group_boundary_with_exact_scanline_output(bits, hdr):
+    from hdr_finisher.jpegxl_stream import encode, decode
+    import imagecodecs
+    source = np.random.default_rng(289).integers(0, 1 << bits, (257, 2183, 3),
+        dtype=np.uint16 if hdr else np.uint8)
+    rectangles = []
+    def samples(y, yy, x, xx):
+        rectangles.append((yy-y, xx-x))
+        return source[y:yy, x:xx]
+    payload = encode(source.shape, samples, bits, hdr=hdr)
+    np.testing.assert_array_equal(imagecodecs.jpegxl_decode(payload), source)
+    decoded = np.empty_like(source)
+    decode(payload, lambda x, y, pixels: decoded.__setitem__((y, slice(x, x+len(pixels))), pixels),
+           expected_shape=source.shape[:2], bits=bits)
+    np.testing.assert_array_equal(decoded, source)
+    assert rectangles and max(max(rect) for rect in rectangles) <= 2064
+    with pytest.raises(ValueError, match='dimensions'):
+        decode(payload, lambda *args: None, expected_shape=(258, 2183), bits=bits)
+    with pytest.raises(ValueError, match='decode failed|every pixel'):
+        decode(payload[:len(payload)//2], lambda *args: None, expected_shape=source.shape[:2], bits=bits)
+
+
+def test_lossless_jxl_verification_rejects_changed_source_and_peak():
+    from hdr_finisher.jpegxl import verify_lossless_jpegxl
+    image = np.full((7, 9, 3), .18, np.float32)
+    payload = encode_hdr_jpegxl(image, 100)
+    peak = verify_lossless_jpegxl(payload, image, hdr=True, ceiling_nits=204, encoding_allowance=.01)
+    assert 202 < peak < 204
+    with pytest.raises(ValueError, match='changed a quantized'):
+        verify_lossless_jpegxl(payload, image * 2, hdr=True)
+    with pytest.raises(__import__('hdr_finisher.jpegxl', fromlist=['JPEGXLError']).JPEGXLError, match='ceiling'):
+        verify_lossless_jpegxl(payload, image, hdr=True, ceiling_nits=100)
+
+
+def test_streaming_sdr_quantization_matches_existing_samples():
+    import imagecodecs
+    from hdr_finisher.jpegxl import _srgb_oetf
+    image = np.random.default_rng(923).uniform(-.1, 1.1, (271, 31, 3)).astype(np.float32)
+    expected = np.clip(np.round(_srgb_oetf(np.clip(image, 0, 1)) * np.float32(255)), 0, 255).astype(np.uint8)
+    np.testing.assert_array_equal(imagecodecs.jpegxl_decode(encode_sdr_jpegxl(image, 100)), expected)
+
+
+@pytest.mark.parametrize('lane', ['hdr', 'sdr'])
+@pytest.mark.parametrize('mode', ['fixed_cap', 'peak_fit', 'soft_ceiling', 'clip'])
+def test_native_export_uses_existing_strips_without_changing_finished_samples(monkeypatch, lane, mode):
+    from hdr_finisher import exporters
+    from hdr_finisher.adjustments import apply_adjustments
+    from hdr_finisher.color_context import RenderColorContext
+    image = np.random.default_rng(584).uniform(.001, 2, (241, 77, 3)).astype(np.float32)
+    adjustments = AdjustmentState()
+    branch = getattr(adjustments, lane)
+    branch.highlight_section_enabled = True
+    # These are the supported native finishing modes; no resize or sharpen.
+    branch.highlight_compression_mode = mode
+    kind = __import__('hdr_finisher.models', fromlist=['PreviewKind']).PreviewKind(lane)
+    session = SimpleNamespace(image=image, sdr_reference_image=None, adjustments=adjustments,
+                              local_adjustments=[], color_context=RenderColorContext(203))
+    settings = ExportSettings(format='jpegxl_hdr' if lane == 'hdr' else 'sdr_jpegxl')
+    monkeypatch.setattr('hdr_finisher.gpu_delivery.render_pair', lambda *args: None)
+    actual = exporters._render_unwatermarked_branch(session, settings, kind, adjustments)
+    expected = apply_adjustments(image, adjustments, kind, color_context=session.color_context)
+    np.testing.assert_array_equal(actual, expected)

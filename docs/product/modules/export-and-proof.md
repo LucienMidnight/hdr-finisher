@@ -48,6 +48,28 @@ sections. Both Default themes are captured at 1408×794, including a folded
 example, in `codebase/output/ui-polish-1114/`. Proof has review captures only;
 its rendering and delivery paths are untouched. Visual sign-off pending.
 
+## November 16: bounded native JPEG XL follow-up (qualification in progress)
+
+Integer lossless export now feeds quantized chunks to the bundled libjxl at
+lossless effort 3 and validates by scanline decode. Every decoded sample must
+exactly equal its own quantized source; HDR checks the unchanged encoded ceiling
+without allocating full decoded float/nits images. The 12-bit HDR / 8-bit SDR
+samples, own-source mean <1 / P99.9 ≤3, exact finished ceiling, 1% encoding
+allowance and full Proof/export byte identity are unchanged. Native eligible CPU
+exports reuse the existing exact strip renderer, including generated SDR; GPU
+remains available when the complete working set fits. Unsupported spatial graphs
+retain their existing path and conservative admission. No Film/Match/shader edit.
+Full-size Proof reuses its uniquely owned CPU SDR output for banded endpoint
+conversion; shared GPU lanes remain immutable. Memory accounting: memory module.
+
+On the initial native 4000×2666 photo both lanes now pass. HDR export is 5.27 s /
+18.78 MB, SDR 6.77 s / 9.54 MB (includes diagnostic finished capture and validation).
+Effort 3 costs 11.0% HDR / 7.8% SDR in size versus the prior effort-7 lossless
+files of the same photo; compression remains mathematically lossless. Q95 size
+ratios are 3.99× HDR and 2.04× SDR. Standalone peak including Q95 is 0.977 GB;
+whole-app, 24 MP-class/42.2 MP and native Proof results remain pending.
+The prior qualification below is historical until those runs complete.
+
 ## November 16: opt-in high-fidelity JPEG XL (Steve)
 
 | Decision | Required behaviour |

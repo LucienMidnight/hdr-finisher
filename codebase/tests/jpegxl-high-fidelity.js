@@ -3,13 +3,88 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawn } = require('node:child_process');
 const { chromium } = require('playwright');
 const { resolveInterpretation } = require('./helpers/resolve-interpretation.js');
 const python = require('../tools/lib/platform.cjs').pythonExecutable();
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hdr-jxl-fidelity-'));
 const report = path.resolve('output/review/jpegxl-high-fidelity');
 fs.mkdirSync(report, { recursive: true });
+// --native-photo NAME is the same production export/Proof path at original
+// dimensions, with an independent census of the complete Electron tree.
+async function nativePhoto(page, post, root, name) {
+  const { photosRoot } = require('./helpers/photos-root.cjs');
+  const crypto = require('node:crypto');
+  const source = path.join(photosRoot(), 'HDR Test Images', name);
+  const manifest = require('./test-photos.manifest.json').files.find(item => item.name === name);
+  assert(manifest, 'Native qualification requires an approved original');
+  assert.equal(crypto.createHash('sha256').update(fs.readFileSync(source)).digest('hex'), manifest.sha256);
+  const photo = path.join(root, name);
+  fs.linkSync(source, photo);
+  const samples = [], errors = [], stages = [];
+  let phase = 'import', pending = '';
+  const sampler = spawn(python, [path.resolve('tools/measure-library-processes.py'), process.env.HDR_FINISHER_ELECTRON_MAIN_PID, '.2']);
+  sampler.stderr.on('data', chunk => errors.push(String(chunk)));
+  sampler.stdout.on('data', chunk => {
+    pending += chunk;
+    for (;;) {
+      const end = pending.indexOf('\n'); if (end < 0) break;
+      const line = pending.slice(0, end); pending = pending.slice(end + 1);
+      if (line) samples.push({ ...JSON.parse(line), phase });
+    }
+  });
+  try {
+    await page.goto(process.env.HDR_FINISHER_URL);
+    await page.setInputFiles('#file-input', photo);
+    await resolveInterpretation(page);
+    await page.waitForFunction(() => state.session && !state.importInProgress, null, { timeout: 180000 });
+    const session = await page.evaluate(async () => {
+      state.adjustments.hdr.highlight_section_enabled = true;
+      state.adjustments.hdr.highlight_compression_mode = 'fixed_cap';
+      state.adjustments.hdr.highlight_compression_target_nits = 1000;
+      markGlobalEditDirty();
+      await syncGlobalEditState();
+      return state.session;
+    });
+    for (const forceCpu of [true, false]) {
+      await post('/api/delivery/preferences', { force_cpu: forceCpu });
+      for (const format of ['jpegxl_hdr', 'sdr_jpegxl']) {
+        const output = path.join(root, `${forceCpu}-${format}.jxl`);
+        await global.HDRFinisherElectronTestHarness.selectExportPath(output);
+        const grant = await page.evaluate(() => desktop.chooseExportPath({ extension: 'jxl', suggestedName: 'native.jxl' }));
+        const settings = { format, jpegxl_high_fidelity: true, metadata_policy: 'none', edit_revision: null };
+        phase = `${forceCpu ? 'cpu' : 'gpu-request'}-${format}`;
+        const started = Date.now();
+        const result = await post(`/api/session/${session.session_id}/export`, { ...settings, output_path: output, path_grant: grant.grant });
+        stages.push({ phase, seconds: (Date.now() - started) / 1000, ...result, bytes: fs.existsSync(output) ? fs.statSync(output).size : null });
+        assert(result.accepted, JSON.stringify(result));
+        if (format === 'jpegxl_hdr') {
+          phase += '-proof-full';
+          const began = Date.now();
+          const proof = await post(`/api/session/${session.session_id}/proof/artifact`, { ...settings, full_size: true, force: true });
+          const response = await page.request.get(new URL(`/api/proof/artifact/${proof.artifact_id}.jxl`, page.url()).href);
+          assert(response.ok());
+          assert(fs.readFileSync(output).equals(await response.body()), 'Native full-size Proof/export byte identity');
+          stages.push({ phase, seconds: (Date.now() - began) / 1000, ...proof });
+        }
+      }
+    }
+  } finally {
+    sampler.kill();
+    await new Promise(resolve => sampler.once('close', resolve));
+    const summary = { photo: name, stages, observerErrors: errors,
+      peakBytes: Math.max(0, ...samples.map(s => s.totalBytes)),
+      minimumAvailableBytes: Math.min(...samples.map(s => s.availableBytes)),
+      stagePeaks: Object.fromEntries([...new Set(samples.map(s => s.phase))].map(p => [p, Math.max(...samples.filter(s => s.phase === p).map(s => s.totalBytes))])),
+      samples: samples.length };
+    fs.writeFileSync(path.join(report, `app-native-${name}.json`), JSON.stringify(summary, null, 2));
+    console.log(JSON.stringify(summary));
+    assert.equal(errors.length, 0, errors.join('\n'));
+    assert(summary.peakBytes <= 2500000000, `Default whole-app ceiling exceeded: ${summary.peakBytes}`);
+    assert(samples.every(s => s.availableBytes >= s.systemReserveBytes), 'Existing system reserve was breached');
+  }
+}
+
 (async () => {
   const browser = await chromium.launch();
   const page = await browser.newPage();
@@ -20,6 +95,11 @@ fs.mkdirSync(report, { recursive: true });
     return value;
   };
   try {
+    const native = process.argv.indexOf('--native-photo');
+    if (native >= 0) {
+      await nativePhoto(page, post, root, process.argv[native + 1]);
+      return;
+    }
     const photo = path.join(root, 'fixture.tiff');
     execFileSync(python, ['-c', 'import numpy as np,tifffile,sys; y,x=np.mgrid[:320,:480].astype(np.float32); v=.015+1.2*(x/479)**2+.04*np.sin(y/5)**2; a=np.stack([v,v*.87,v*.65],axis=-1); a[80:90,200:202]=[3,.2,.03]; tifffile.imwrite(sys.argv[1],a,photometric="rgb")', photo]);
     await page.goto(process.env.HDR_FINISHER_URL);

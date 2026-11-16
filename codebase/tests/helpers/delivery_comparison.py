@@ -63,14 +63,61 @@ def decoded_lanes(path, format_name, white):
     return result
 
 
+def streamed_jxl_fidelity(path, finished, lane, white):
+    """All-pixel own-source gate with scanline decode and an exact upper tail."""
+    from hdr_finisher.jpegxl_stream import decode
+    from hdr_finisher.color import normalize_to_acescg
+    total = finished.shape[0] * finished.shape[1]
+    index = .999 * (total - 1)
+    retain = total - int(np.floor(index)) + 2
+    tail = np.empty(0, np.float64)
+    summed, observed = 0., 0
+    def visit(x, y, pixels):
+        nonlocal tail, summed, observed
+        actual = pixels[None].astype(np.float32) / np.float32(4095 if lane == "hdr" else 255)
+        expected = finished[y:y + 1, x:x + len(pixels)]
+        if lane == "hdr":
+            actual = normalize_to_acescg(actual, "BT.2020", "PQ") * np.float32(203 / white)
+            converted = [colour.RGB_to_ICtCp(np.maximum(scene_linear_to_nits(
+                acescg_to_linear_bt2020(v), white), 0), method="ITU-R BT.2100-2 PQ")
+                for v in (expected, actual)]
+            errors = colour.difference.delta_E_ITP(*converted).ravel()
+        else:
+            actual = acescg_to_linear_srgb(normalize_to_acescg(actual, "sRGB", "sRGB"))
+            converted = [colour.XYZ_to_Lab(colour.RGB_to_XYZ(np.clip(v, 0, 1),
+                colour.RGB_COLOURSPACES["sRGB"])) for v in (expected, actual)]
+            errors = colour.difference.delta_E_CIE2000(*converted).ravel()
+        assert np.isfinite(errors).all()
+        summed += float(errors.sum())
+        observed += errors.size
+        tail = np.concatenate((tail, errors))
+        if tail.size > retain * 2:
+            tail = np.partition(tail, tail.size - retain)[-retain:]
+    decode(Path(path).read_bytes(), visit, expected_shape=finished.shape[:2], bits=12 if lane == "hdr" else 8)
+    assert observed == total
+    tail.sort()
+    lower, upper = int(np.floor(index)), int(np.ceil(index))
+    start = total - tail.size
+    p999 = float(tail[lower - start] + (tail[upper - start] - tail[lower - start]) * (index - lower))
+    mean = summed / total
+    from hdr_finisher.delivery_colour import DELIVERY_MEAN_LIMIT, DELIVERY_P999_LIMIT
+    return dict(metric="Delta E ITP" if lane == "hdr" else "Delta E 2000",
+                mean=mean, p999=p999, passed=mean < DELIVERY_MEAN_LIMIT and p999 <= DELIVERY_P999_LIMIT)
+
+
 def own_fidelity(path):
     folder, metadata = finished_capture(path)
     white = metadata["reference_white_nits"]
-    decoded = decoded_lanes(path, metadata["format"], white)
+    high = metadata.get("jpegxl_high_fidelity", False) and metadata["format"] in {"jpegxl_hdr", "sdr_jpegxl"}
+    if high:
+        lane = "sdr" if metadata["format"] == "sdr_jpegxl" else "hdr"
+        decoded = {lane: None}
+    else:
+        decoded = decoded_lanes(path, metadata["format"], white)
     fidelity = {}
     for lane, pixels in decoded.items():
         finished = np.load(folder / f"{lane}.npy", mmap_mode="r")
-        fidelity[lane] = metric(finished, pixels, lane, white)
+        fidelity[lane] = streamed_jxl_fidelity(path, finished, lane, white) if high else metric(finished, pixels, lane, white)
         if lane == "hdr" and metadata["ceiling_nits"] is not None:
             peak = max(float(channel_nits(finished[row:row + 128], white).max())
                        for row in range(0, finished.shape[0], 128))

@@ -103,7 +103,8 @@ def test_high_fidelity_jxl_own_source_is_a_hard_gate(captured_pair, monkeypatch)
     folder, metadata = finished_capture(files[0])
     metadata.update(format="jpegxl_hdr", jpegxl_high_fidelity=True)
     (folder / "metadata.json").write_text(json.dumps(metadata))
+    monkeypatch.setattr("delivery_comparison.streamed_jxl_fidelity", lambda *args: metric(pixels, pixels * 2, "hdr"))
     with pytest.raises(AssertionError, match="High-fidelity JPEG XL own-source fidelity"):
         own_fidelity(files[0])
-    monkeypatch.setattr("delivery_comparison.decoded_lanes", lambda *args: {"hdr": pixels})
+    monkeypatch.setattr("delivery_comparison.streamed_jxl_fidelity", lambda *args: metric(pixels, pixels, "hdr"))
     assert own_fidelity(files[0])["required"]

@@ -137,6 +137,10 @@ def _render_pair(frame, owner, settings, adjustments):
     try:
         if policy["effective_force_cpu"]:
             return None
+        if getattr(settings, "_bounded_cpu_delivery", False):
+            record = {"renderer": "cpu", "fallback_reason":
+                "Native GPU delivery working set does not fit the existing app memory ceiling; using bounded CPU strips."}
+            return None
         if root is None or not (root / "heartbeat").exists() or time.time() - (root / "heartbeat").stat().st_mtime > 5:
             cacheable = False
             raise RuntimeError("The GPU delivery renderer is unavailable.")

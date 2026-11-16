@@ -45,11 +45,13 @@ async function main() {
     fs.copyFileSync(path.resolve("tests", "fixtures", "hdr_headroom.tiff"), fixture);
     let chooser = null;
     if (await page.evaluate(() => Boolean(desktop))) {
-      await page.evaluate(() => { void requestSourceImport(); });
+      // Opening resolves after the initial folder has loaded. Typing while
+      // that request is pending lets its result overwrite the requested path.
+      await page.evaluate(() => requestSourceImport());
       await page.locator("#folder-picker").waitFor({ state: "visible" });
       await page.locator("#picker-path").fill(path.dirname(fixture));
       await page.locator("#picker-path").press("Enter");
-      await page.locator("#folder-picker .directory-browser-entry", { hasText: "hdr_headroom.tiff" }).click();
+      await page.locator("#picker-list").getByRole("option").filter({ hasText: "hdr_headroom.tiff" }).click();
       await page.waitForFunction(() => !document.getElementById("picker-pin").disabled);
       await page.locator("#picker-pin").click();
       await page.locator("#folder-picker").waitFor({ state: "hidden" });

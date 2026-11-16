@@ -283,12 +283,19 @@ class ProofArtifactStore:
         # Matrix rendering uses the HDR working convention where 0.18 is
         # 100-nit diffuse white, so normalize the endpoint before applying a
         # gain map or encoding a PQ tile.
-        encoded_sdr_linear = np.clip(sdr_authored[..., :3], 0.0, 1.0)
-        sdr_matrix_endpoint = np.clip(
-            linear_srgb_to_acescg(encoded_sdr_linear) * np.float32(0.18),
-            0.0,
-            None,
-        )
+        # A CPU strip result is a unique output owned by this build. Reuse it
+        # after rendering: it is never the source or a cached GPU lane. Convert
+        # in bands instead of holding three more native SDR frames at once.
+        reuse = (result.renderer == "cpu" and sdr_authored.flags.owndata
+                 and getattr(export_settings, "_last_cpu_strips", False))
+        sdr_matrix_endpoint = sdr_authored if reuse else np.empty_like(sdr_authored)
+        if reuse:
+            sdr_matrix_endpoint.setflags(write=True)
+        for row in range(0, sdr_authored.shape[0], 128):
+            encoded_sdr_linear = np.clip(sdr_authored[row:row + 128, :, :3], 0, 1)
+            sdr_matrix_endpoint[row:row + 128] = np.clip(
+                linear_srgb_to_acescg(encoded_sdr_linear) * np.float32(0.18), 0, None)
+        sdr_matrix_endpoint.setflags(write=False)
         encoded_headroom, metadata_summary = _inspect_artifact(final_path, request.format, context.hdr_reference_white_nits)
         jpeg_gain_map = None
         if request.format == "jpeg_ultrahdr":
