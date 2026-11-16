@@ -10,6 +10,16 @@ the unchanged pre-encode renderer gate from report-only own-source encoding
 fidelity and decoded-file pair diagnostics. Captures live in the disposable
 test profile and are removed with it; no production encoder or default changes.
 
+`codebase/tools/encoding-fidelity-fixes.py` is opt-in CPU research, not a
+shipping encoder path. It reuses finished capture arrays or the approved
+1024px whole-photo recipes; measures preparation, compression and ceiling
+correction separately; and tries decoded-base gain fitting, unfiltered maps,
+private libavif range/colour-space options and lossless JXL. Its alternate
+12-bit AVIF reconstruction is a measurement diagnostic only. The private
+libavif baseline must match shipping bytes; temporary encodes and patches
+never replace bundled binaries. `tests/test_encoding_fidelity_options.py`
+checks input immutability, restoration on exceptions and source-patch guards.
+
 ## November 16: isolated equal-input Film research
 
 `codebase/tools/film_equal_input_trial.py` runs opt-in charts, reduced shared
@@ -743,7 +753,8 @@ the export delivery render; CPU and GPU are compared within perceptual tolerance
 
 November 11 export repeatability: `tests/gpu-delivery-repeat.js` forces independent
 saved-grade exports at different admission caps; `tests/helpers/export_repeat_compare.py`
-compares complete decoded renditions with `delivery_colour.py` limits. No render path changed.
+compares actual finished inputs with `delivery_colour.py` limits, reporting
+decoded renditions separately (November 16 split). No render path changed.
 
 November 11 Grade release diagnostic: `codebase/tests/performance/grade-release-sweep.js`
 captures the live Grade control inventory, per-control exact-presentation waits,

@@ -62,8 +62,9 @@ decoded CPU file does not show which renderer is wrong. Instead:
 - **Encoding fidelity**, per format: each decoded file against its own
   finished pre-encode image, starting with the same visual target (mean < 1,
   P99.9 ≤ 3) for HDR and SDR separately. Current JPEG Ultra HDR, AVIF gain map
-  and JPEG XL HDR files miss it at sharp bright edges (and JPEG/AVIF clip
-  colours outside the sRGB base); this is recorded as a known limitation and
+  and JPEG XL HDR files miss it at sharp bright edges (the current JPEG path
+  also clips colours outside its sRGB gain space; AVIF already selects the
+  wider BT.2020 alternate space); this is recorded as a known limitation and
   reported, not used to block delivery, until the per-format fixes land.
   No looser number is set from today's failures without Steve.
 - Decoded GPU-file against decoded CPU-file comparisons remain as a
@@ -84,6 +85,15 @@ in the output. The performance preview/file driver retains its metadata and
 ceiling assertions and reports own-source fidelity separately; its existing
 preview/file presentation-level measurements remain diagnostics, not a
 renderer-agreement verdict. No shipping settings or codec defaults change.
+
+The shared source-picker regression driver now passes with its four-format
+batch destination/name and JPEG 4:2:2 coverage intact. Opt-in CPU research
+isolates the large JXL error to lossy compression: lossless 12-bit meets the
+visual target on the fixture and three native highlight crops, at about
+3.5× the HDR crop sizes. Decoded-base fitting/unfiltered JPEG maps and full-map
+AVIF improve fidelity but do not meet every HDR target; higher-precision AVIF
+reconstruction is a measurement experiment only. Full findings and unqualified
+scope: `docs/technical/reports/encoding-fidelity-fixes-2026-11-16.md`.
 
 ## November 16: exact finished target; 1% encoding allowance kept
 

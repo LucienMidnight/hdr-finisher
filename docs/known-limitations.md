@@ -17,6 +17,15 @@ reports; large decoded errors are not an approved quality tolerance. The
 framed six-format driver and GPU/Denoise delivery smoke now pass the actual
 renderer gate; their decoded/fidelity numbers remain in the logs.
 
+The follow-up `docs/technical/reports/encoding-fidelity-fixes-2026-11-16.md`
+isolates the large JXL error to lossy compression: lossless quantized JXL
+passes the fixture, three highlight crops and four reduced whole photos, at
+larger sizes. JPEG decoded-base/unfiltered-map and AVIF full-map/decoded-base
+options improve fidelity but do not meet every HDR target, even at their
+highest tested quality. AVIF already uses BT.2020 gain math here; its decoder's
+10-bit reconstruction adds measurement loss but does not explain the whole
+residual tail. These remain non-shipping experiments, not approved defaults.
+
 `export-file-browser-interaction.js` now uses the intended L4 shared image
 picker, not the superseded source directory dialog. Confirm becomes enabled
 after selecting the disposable TIFF; import, saved grade and all four batch

@@ -501,6 +501,10 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 
 ### Technical (how it works)
 
+- `docs/technical/reports/encoding-fidelity-fixes-2026-11-16.md`:
+  finished-renderer test split, shared-picker regression, stage attribution and
+  non-shipping JPEG/AVIF/JXL fidelity-versus-size options.
+
 - `docs/technical/reports/film-look-equal-input-trial-2026-11-16.md`:
   isolated common scene Film research, colour/character, saved-grade drift,
   Match safeguards and CPU costs; no shipping order change.
