@@ -147,6 +147,17 @@ for direct/tiled sources, local/global gestures, release and export/recipe
 invariance. Review captures overwrite `codebase/output/review/clipping-view/`.
 The compact diagnostic can miss isolated full-resolution clipped pixels.
 
+November 16 solid-view validation: the focused Electron driver passes all
+6,144 synthetic diagnostic pixels, live HDR/SDR and local gestures, cold/direct/
+tiled/delayed frame matching, immediate release, unchanged finished frames and
+byte-identical Ultra HDR exports with either diagnostic active. Mac Option and
+Windows Alt tooltip unit checks pass. Python: 3,802 passed, 144 skipped and one
+unexpected pass. Full Node: 1,090 passed, one skipped; its only failure is the
+tooltip catalogue's concurrent Highlight Compression source edits, not Tone
+rows (those are refreshed). The default 90-second Library check did not pass:
+9/33 photos shown and `Whole-app memory: system reserve`; no unrelated repair
+or repeat run. See `codebase/output/quick-library-check/clipping-view/report.json`.
+
 ## November 16: N2 global Tone and C4 wheel ranges
 
 Built the five-control global Tone block in HDR, generated SDR and authored SDR:

@@ -2,6 +2,31 @@ const assert = require("node:assert/strict");
 const { test } = require("node:test");
 const model = require("../frontend/tone-preview-model.js");
 const tone = require("../frontend/tone-engine.js");
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+for (const [platform, modifier] of [["darwin", "Option"], ["win32", "Alt"]]) {
+  test(`${platform} endpoint tooltips name the platform's drag modifier`, () => {
+    const controls = ["hdr.blacks", "hdr.whites", "sdr.blacks", "sdr.whites", "blacks", "whites"].map(controlPath => {
+      const label = { dataset: {}, classList: { add() {} } };
+      return { dataset: controlPath.includes(".") ? { path: controlPath } : { localGrade: controlPath }, closest: () => ({ querySelector: () => label }), label };
+    });
+    const window = { hdrFinisherDesktop: { platform }, HDRTonePreviewModel: model, addEventListener() {} };
+    const context = vm.createContext({
+      window,
+      document: { querySelectorAll: () => controls, addEventListener() {}, getElementById: () => null },
+      MutationObserver: class { observe() {} },
+    });
+    for (const file of ["shortcut-labels.js", "tone-preview-ui.js"]) {
+      vm.runInContext(fs.readFileSync(path.join(__dirname, "../frontend", file), "utf8"), context);
+    }
+    for (const control of controls) {
+      assert.ok(control.label.dataset.tooltip.includes(`${modifier}-drag`));
+      assert.ok(!control.label.dataset.tooltip.includes("Alt/Option"));
+    }
+  });
+}
 
 test("Tone gestures recognize all global and local ranges without matching unrelated controls", () => {
   for (const prefix of ["", "hdr.", "sdr."]) {
@@ -66,7 +91,7 @@ test("Finished endpoint contact and overshoot count, but nearby tones do not", (
   for (const post of [NaN, Infinity, -Infinity]) assert.equal(model.endpoint(post), false);
 });
 
-test("Display warning maps reported physical nits, not headroom against an assumed project white", () => {
+test("Display guidance maps reported physical nits, not headroom against an assumed project white", () => {
   assert.equal(model.displayPeak({ max_luminance_nits: 1000 }, 100), 1.8);
   assert.equal(model.displayPeak({ nominal_headroom: 2, sdr_white_nits: 100 }, 100), 0.72);
   assert.equal(model.displayPeak({ nominal_headroom: 2 }), 0);

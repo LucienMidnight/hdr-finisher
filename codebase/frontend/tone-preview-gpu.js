@@ -40,6 +40,7 @@
       this.params = device.createBuffer({ size: renderer.paramBuffer.size, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
       this.config = device.createBuffer({ size: 32, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
       this.allocation = renderer.gpuAllocator?.register({ kind: "tone-diagnostic", bytes: this.params.size + this.config.size, pinned: true });
+      this.outputBytes = 0;
       this.context = canvas.getContext("webgpu");
       this.context.configure({ device, format: "bgra8unorm", alphaMode: "opaque" });
       this.ready = device.createRenderPipelineAsync({
@@ -56,10 +57,11 @@
       const scale = Math.min(1, 640 / Math.max(source.width, source.height));
       const boundedHeight = Math.max(1, Math.round(source.height * scale));
       const boundedWidth = Math.max(1, Math.round(source.width * scale));
-      if (this.canvas.width !== boundedWidth || this.canvas.height !== boundedHeight) {
+      if (!this.outputBytes || this.canvas.width !== boundedWidth || this.canvas.height !== boundedHeight) {
         this.canvas.width = boundedWidth;
         this.canvas.height = boundedHeight;
-        renderer.gpuAllocator?.resize(this.allocation, boundedWidth * boundedHeight * 4 + this.params.size + this.config.size);
+        this.outputBytes = boundedWidth * boundedHeight * 4;
+        renderer.gpuAllocator?.resize(this.allocation, this.outputBytes + this.params.size + this.config.size);
       }
       const indices = window.HDRGpuParamLayout.indices;
       const params = new Float32Array(source.params);

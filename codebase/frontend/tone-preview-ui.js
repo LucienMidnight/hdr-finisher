@@ -161,6 +161,10 @@
     const limiter = range(selected, 0).limiter;
     const name = selected.zone[0].toUpperCase() + selected.zone.slice(1);
     const explanation = `${name} · Pre-look neutral-ray range${selected.local ? " before spatial mask" : ""} · limiter ${Math.round(limiter * 100)}%${selected.local ? ` · opacity ${Math.round(selected.opacity * 100)}%` : ""}`;
+    if (clipping && (overlay.dataset.generation !== String(state.acceptedPresentation?.generation)
+      || (state.acceptedPresentation?.execution !== "tiled" && overlay.dataset.sourceSerial !== String(state.acceptedPresentation?.sourceSerial)))) {
+      overlay.classList.add("hidden");
+    }
     if (clipping && !painting) {
       painting = true;
       void paintClipping(selected).then(message => { if (clipping && selection()) caption.textContent = `${explanation}\n${message}`; }).catch(error => {

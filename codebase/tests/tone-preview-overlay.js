@@ -189,7 +189,7 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`, path.join(temporary, "tone
           state.acceptedPresentation = { ...state.acceptedPresentation, sourceSerial: 701, generation: 501 };
           if (release) release();
           await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-          if (!hidden()) throw Error("Stale diagnostic remained visible");
+          if (!hidden()) throw Error(`Stale diagnostic remained visible: ${execution}/${cold}, generation ${overlay().dataset.generation}, draws ${draws}`);
           renderer.scopeSources.set(els.previewCanvas, changed);
           renderer.scopeSources.set(renderer.scopeAnalysisCanvas, changed);
           await wait(() => !hidden() && overlay().dataset.sourceSerial === "701");
@@ -266,7 +266,7 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`, path.join(temporary, "tone
       for (const name of ["whites", "blacks"]) {
         const slider = page.locator(`#${lane}-${name}`);
         const gesture = await page.evaluate(() => HDRShortcuts.isMac() ? "Option" : "Alt");
-        assert.ok((await slider.locator("..").locator("label").getAttribute("data-tooltip")).includes(`${gesture}-drag`));
+        assert.ok((await slider.evaluate(input => input.closest(".control-row").querySelector("label").dataset.tooltip)).includes(`${gesture}-drag`));
         await slider.hover();
         await page.waitForTimeout(250);
         const box = await slider.boundingBox();
@@ -291,11 +291,9 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`, path.join(temporary, "tone
         assert.deepEqual(unchanged, without, "Overlay on/off preserves the exact same accepted finished frame and recipe");
         await page.keyboard.down("Alt");
         await page.waitForFunction(() => !document.getElementById("tone-clipping-overlay").classList.contains("hidden"));
-        if (name === "whites") {
-          const activeExport = await exportedBytes();
-          const difference = originalExport.findIndex((value, index) => value !== activeExport[index]);
-          assert.ok(originalExport.equals(activeExport), `An active ${lane} overlay does not change the actual Ultra HDR export bytes: lengths ${originalExport.length}/${activeExport.length}, first difference ${difference}, ${originalExport.subarray(difference, difference + 48).toString("hex")}/${activeExport.subarray(difference, difference + 48).toString("hex")}`);
-        }
+        const activeExport = await exportedBytes();
+        const difference = originalExport.findIndex((value, index) => value !== activeExport[index]);
+        assert.ok(originalExport.equals(activeExport), `An active ${lane}/${name} overlay does not change the actual Ultra HDR export bytes: lengths ${originalExport.length}/${activeExport.length}, first difference ${difference}, ${originalExport.subarray(difference, difference + 48).toString("hex")}/${activeExport.subarray(difference, difference + 48).toString("hex")}`);
         const pane = await page.locator("#preview-primary-pane").boundingBox();
         const screenshot = path.join(review, `${lane}-${name}.png`);
         await page.screenshot({ path: screenshot, clip: pane });
@@ -343,12 +341,14 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`, path.join(temporary, "tone
       await page.waitForFunction(() => document.getElementById("tone-preview-key").textContent.includes("before spatial mask"));
       await page.waitForTimeout(250);
       const box = await slider.boundingBox();
+      const localRecipe = await page.evaluate(() => JSON.stringify(state.adjustments));
       await page.keyboard.down("Alt");
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
       await page.waitForFunction(() => !document.getElementById("tone-clipping-overlay").classList.contains("hidden"));
       await page.keyboard.up("Alt");
       await page.waitForFunction(() => document.getElementById("tone-clipping-overlay").classList.contains("hidden"));
       await page.mouse.up();
+      assert.equal(await page.evaluate(() => JSON.stringify(state.adjustments)), localRecipe, "Local clipping gesture does not change the recipe");
     }
     await page.evaluate(() => { setGradeMode("global"); activateWorkflowTab("proof"); });
     await page.waitForFunction(() => document.getElementById("tone-preview-key").classList.contains("hidden"));

@@ -710,6 +710,15 @@ movement before Steve tries the app. No Denoise scheduler change was made.
 P1-B stays partial: no 20 fps or final HSL speed acceptance. The Grade and Film
 Look PRDs hold the validation ledger and Decisions for Steve.
 
+November 16 solid Tone clipping-view validation: default 90 s quick Library
+check, MacBook Neo / A18 Pro / 8 GB, 1408x794-point plain Electron through the
+shared GPU lock, default mixed 33-photo fixture, Steve's app left open and
+parallel workers active. Head before the implementation commit: `ab0645be`
+plus the solid-view changes. First picture 0.5 s; 9/33 by 90 s, ten never.
+Failed with `Whole-app memory: system reserve`; not a speed acceptance or an
+isolated comparison. No repeat timing run or Library changes. Evidence:
+`codebase/output/quick-library-check/clipping-view/report.json`.
+
 November 14 P1-B validation's default 90 s quick Library check: **MacBook**
 Neo / A18 Pro / 8 GB, 1408x794-point plain unpackaged Electron, GPU lock,
 default mixed 33-photo fixture, no overlapping tests. Branch `f542c0a8` plus
