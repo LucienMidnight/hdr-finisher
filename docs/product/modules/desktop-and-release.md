@@ -338,6 +338,19 @@ check, and a release process that is quick to run and safe.
 - Updates panel, settings, diagnostics.
 - The release process and its checks.
 
+## November 16: common 4 GB app-memory minimum (Steve)
+
+4 GB app memory is the minimum on macOS, Windows and Linux, explicitly
+including 8 GB machines. The default is 4 GB on the minimum MacBook Neo and
+on 16/32/64 GB machines. Windows follows the same rule despite its different
+memory architecture: 2.5 GB is insufficient. Normal validation clamps saved
+lower settings to 4 GB without migration code. Settings displays the 4 GB
+minimum and backend-provided default. The user-adjustable maximum remains
+RAM − max(2 GB, RAM/10), and the physical free-memory reserve gate is unchanged.
+The [memory module](memory-and-caches.md) owns these numbers and their cache
+share consequences. Platform specifications are in the master PRD Scope and
+[user-facing minimum table](../../getting-started/install-and-run.md#minimum-specification).
+
 ## 3. Decisions
 
 | Decision | Date |

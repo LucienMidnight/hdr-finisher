@@ -1,5 +1,39 @@
 ### November 15: W2 P2 format-first publication within the same upload slot
 
+## November 16: Steve's 4 GB minimum and default on every platform
+
+**Steve's decision, November 16, 2026:** 4 GB app memory is the minimum, on
+every platform (macOS, Windows, Linux). The 8 GB MacBook Neo is the minimum
+spec, so 8 GB machines explicitly use a 4,000,000,000-byte minimum and default.
+Windows uses the same rule despite its different memory architecture, because
+2.5 GB is not enough. Defaults on 16/32/64 GB machines remain 4 GB. The
+user-adjustable maximum stays RAM − max(2 GB, RAM/10), approximately 6.59 GB
+on this 8 GiB Mac. The existing 2 GB physical free-memory reserve gate is
+unchanged. Saved preferences below 4 GB are raised by the normal clamp; no
+migration or compatibility layer is added. Existing custom settings >=4 GB stay.
+
+The existing `budgets()` formula restores the ordinary 4 GB cache shares on
+8 GB machines; no share formula, concurrency or GPU budget changes:
+
+| Owner | Previous 2.5 GB setting (MB) | New 4 GB minimum/default (MB) | Optional 6 GB setting (MB) |
+| --- | ---: | ---: | ---: |
+| Finished thumbnails | 536.87 | 536.87 | 536.87 |
+| Sharp pictures | 20.68 | 512.00 | 1167.10 |
+| Camera previews | 2.58 | 64.00 | 145.89 |
+| RAW source cache | 31.02 | 768.00 | 1750.64 |
+| Handoff | 10.34 | 256.00 | 583.55 |
+| Working room | 600.00 | 600.00 | 600.00 |
+
+These are retained-cache caps inside the single whole-app owner, not extra
+memory entitlements. Starting footprint stays 1.3 GB; target is 3.4 GB at the
+new default. A 6 GB setting leaves 2.59 GB of the Mac's 8.59 GB for macOS,
+other apps and physical headroom, versus 4.59 GB at 4 GB. It also scales the
+variable caches to 2.279× their 4 GB sizes, so it does not dedicate all extra
+memory to a single export. It cannot bypass the physical reserve/pressure gate.
+6 GB is an optional diagnostic/user setting, not a new approved default.
+Default 90-second Library and native JXL qualification are recorded below
+when complete; do not infer a pass from changing the rule.
+
 ## November 16: bounded native high-fidelity JXL (qualification in progress)
 
 No RAM ceiling, GPU budget, cache share or physical reserve changes. Eligible
@@ -1089,8 +1123,8 @@ app behaves when the machine runs short.
 
 | Decision | Date |
 | --- | --- |
-| **Whole-app RAM ceiling: the smaller of 4 GB or a quarter of total RAM, but never less than 2.5 GB.** 4 GB means 4,000,000,000 bytes, counting Electron main, renderers, GPU-process host RAM, the Python backend and its helpers. Dedicated VRAM is not counted. | Steve, 2026-10-29 |
-| **User memory setting, like DaVinci Resolve.** Settings will let the user choose how much memory the app may use: from 2.5 GB up to the computer's RAM minus the system reserve (the larger of 2 GB or 10%). The ceiling, target, scaled shares, admission and the very-large-picture check all follow it. The default stays the rule above (Steve, 2026-10-31: users with big files raise it themselves). Built live and persistent in phase 3c; evidence and limitations in the scheduler design, section 7.8. | Steve, 2026-10-31 |
+| **Whole-app RAM minimum and default: 4 GB on macOS, Windows and Linux, explicitly including the minimum 8 GB machine.** 4 GB means 4,000,000,000 bytes, counting Electron main, renderers, GPU-process host RAM, the Python backend and its helpers. Dedicated VRAM is not counted. | Steve, 2026-11-16 (replaces October 29 default) |
+| **User memory setting, like DaVinci Resolve.** Settings will let the user choose how much memory the app may use: from 4 GB up to the computer's RAM minus the system reserve (the larger of 2 GB or 10%). The ceiling, target, scaled shares, admission and the very-large-picture check all follow it. The default and minimum are 4 GB (Steve, 2026-11-16); lower saved settings clamp to 4 GB. Built live and persistent in phase 3c; evidence and limitations in the scheduler design, section 7.8. | Steve, 2026-10-31 |
 | **Budget split** as in section 4. Approved as a trial; adjust from measurements. | Steve, 2026-10-29 |
 | **Respond to system memory pressure** by trimming caches early (principle 6). | Steve, 2026-10-29 |
 | Older pictures may be discarded and redrawn; visible and nearby pictures keep priority. | Steve, 2026-10-29 |

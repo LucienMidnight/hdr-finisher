@@ -21,9 +21,9 @@ Rendering mode does not change final export quality.
 ## Performance and memory
 
 **Memory the app may use** sets the app's memory allowance. The default is
-the smaller of 4 GB or one quarter of your computer's RAM, with a minimum of
-2.5 GB. Settings shows the default for your computer. You can choose from
-2.5 GB up to RAM minus the larger of 2 GB or 10% reserved for the system.
+4 GB on macOS, Windows and Linux, including on the 8 GB MacBook Neo.
+4 GB is also the minimum; saved lower settings are raised to 4 GB. Settings shows the default for your computer. You can choose from
+4 GB up to RAM minus the larger of 2 GB or 10% reserved for the system.
 Use **Use default** to return to the automatic value.
 
 Changes apply immediately and are saved for next time. Lowering the value

@@ -110,10 +110,19 @@ def test_fixed_shares_and_small_machine_ceiling():
     assert shares['handoff']==256_000_000
     assert shares['working']==600_000_000
     small,cache=app_memory.budgets(8*1024**3)
-    assert small==2_500_000_000
+    assert small==4_000_000_000
     assert cache['working']==shares['working']
     assert cache['thumbnails']==shares['thumbnails']
-    assert cache['raw']<shares['raw']
+    assert cache == shares
+    minimum, clamped = app_memory.budgets(8*1024**3, chosen=2_500_000_000)
+    assert minimum == 4_000_000_000
+    assert clamped == shares
+    assert app_memory.memory_options(8*1024**3)['maximumBytes'] == 8*1024**3 - 2_000_000_000
+    assert app_memory.memory_options(3*1024**3)['defaultBytes'] == 4_000_000_000
+    for gib in (8, 16, 32, 64):
+        options = app_memory.memory_options(gib*1024**3)
+        assert options['minimumBytes'] == options['defaultBytes'] == 4_000_000_000
+        assert options['maximumBytes'] == gib*1024**3 - max(2_000_000_000, (gib*1024**3)//10)
 
 
 def test_shared_pages_charged_once_and_aggregate_cache_limit(monkeypatch):

@@ -57,9 +57,12 @@ def machine_memory():
 
 def memory_options(ram=None):
     ram = ram or machine_memory()
-    return dict(minimumBytes=2_500_000_000,
-        maximumBytes=max(2_500_000_000, ram-max(2_000_000_000, ram//10)),
-        defaultBytes=max(2_500_000_000,min(4_000_000_000,ram//4)), ramBytes=ram)
+    maximum = max(4_000_000_000, ram-max(2_000_000_000, ram//10))
+    # Steve, 2026-11-16: 4 GB minimum/default on every platform, including
+    # the minimum supported 8 GB machine. The supported-machine user
+    # maximum and the independent physical-memory reserve are unchanged.
+    return dict(minimumBytes=4_000_000_000, maximumBytes=maximum,
+        defaultBytes=min(4_000_000_000, maximum), ramBytes=ram)
 
 
 def budgets(ram=None, chosen=None):
