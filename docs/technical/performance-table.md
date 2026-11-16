@@ -6,6 +6,12 @@
 | Library viewport quick check | Default 90 s, existing memory/reserve/drawing guards | First picture .5 s; run 93.115 s including harness; nine of 33 eligible pictured, no errors; independent peak 2.973 GB. Viewport only. | Same Neo/window/lock, frozen v1, fresh plain Electron; no concurrent own fast suite. `output/quick-library-check/exact-highlight-ceiling/report.json`, shared-checkout HEAD `cdb30ac5`. |
 | Full Python fast validation | Existing test expectations; no new timing gate | 266.19 s; 3,800 pass, two obsolete 1% allowance pins fail; final focused 287 pass after tightening pins to exact 1000 nits | Same Neo, no overlapping own Electron run; `850f2e45` plus concurrent UI edits. Not a product speed measurement. `output/review/n4-local-match/exact-python-fast.log`; final focused 9.88 s. |
 
+## November 16: picker, help and select UI smoke (MacBook Neo)
+
+| Action | Existing guard | Observation | Conditions / evidence |
+| --- | --- | --- | --- |
+| Library viewport quick check | Default 90 s; unchanged whole-machine 2 GB reserve | All 9 requested pictures drawn, first 0.5 s, no photo errors or drawing-gap failure; **failed system reserve** (available 1.48 GB at external tree peak 3.10 GB). | Neo A18 Pro / 8 GB / 1408×794, plain Electron through the shared GPU lock, frozen v1, Steve's app kept open; `850f2e45`. Diagnostic smoke only, no speed comparison or limit change. `codebase/output/quick-library-check/picker-help-selects/report.json`. No repeat to chase this unrelated memory guard. |
+
 ## November 16: menu/shortcut validation on MacBook Neo
 
 | Action | Existing guard | Observation | Conditions / evidence |

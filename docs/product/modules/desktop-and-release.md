@@ -55,6 +55,14 @@ sampling, wheel gestures and cancellation in HDR and SDR. Fast suites pass
 (1,082 JavaScript; 3,577 Python, with their existing skips). Review captures:
 `codebase/output/review/picker-help-selects/`. Page captures omit the OS cursor;
 `pipette-artwork.png` shows the exact cursor artwork on light and dark wells.
+The required 90-second Library smoke drew all 9 requested viewport pictures,
+with no photo errors or drawing-gap failure, but failed the unchanged system
+memory reserve guard. See `output/quick-library-check/picker-help-selects/`.
+The capture driver waits for Library readiness and delivers pointerover to the
+real help target without moving the OS pointer; a native pointer-leave on this
+shared Mac cancelled the first capture refresh as designed. Earlier real-hover
+captures and the completed HSL driver remain part of this grouped check.
+
 
 
 ## November 15: W7 tooltip/accent acceptance

@@ -10,7 +10,11 @@ const out=path.resolve('output/review/picker-help-selects');fs.mkdirSync(out,{re
  assert.ok(support.base&&support.picker,JSON.stringify(support));console.log('Customizable select support:',support);
  const tooltip=async(target,selector,name)=>{
   const control=target.locator(selector),tip=target.locator('#bounded-help-tooltip');
-  await control.hover();await page.waitForTimeout(2200);assert.equal(await tip.isVisible(),false);
+  await control.scrollIntoViewIfNeeded();
+  assert.notEqual(await control.evaluate(e=>HDRTooltips.textFor(e)),'',name+' has eligible help');
+  // A real OS pointer can leave this Electron window while Steve uses his Mac.
+  // Deliver the hover event to the real control without moving his pointer.
+  await control.dispatchEvent('pointerover');await page.waitForTimeout(2200);assert.equal(await tip.isVisible(),false);
   await tip.waitFor({state:'visible'});
   const geometry=await control.evaluate(e=>{const r=e.getBoundingClientRect(),t=document.getElementById('bounded-help-tooltip').getBoundingClientRect();return {distance:Math.min(Math.abs(t.top-r.bottom),Math.abs(r.top-t.bottom)),overlap:t.right>=r.left&&t.left<=r.right,bounded:t.left>=0&&t.top>=0&&t.right<=innerWidth&&t.bottom<=innerHeight};});
   assert.ok(geometry.distance<=8&&geometry.overlap&&geometry.bounded,JSON.stringify(geometry));
@@ -26,8 +30,8 @@ const out=path.resolve('output/review/picker-help-selects');fs.mkdirSync(out,{re
   await (target.screenshot?target:page).screenshot({path:path.join(out,name+'-select.png')});
   await (target.keyboard||page.keyboard).press('Escape');assert.equal(await select.evaluate(e=>e.matches(':open')),false);checks.push({name,...bounds});
  };
- const lib=await(await page.locator('#library-frame').elementHandle()).contentFrame();await lib.waitForFunction(()=>window.HDRTooltips);
- await tooltip(lib,'#filter-button','library');
+ const lib=await(await page.locator('#library-frame').elementHandle()).contentFrame();await lib.waitForFunction(()=>window.HDRTooltips&&window.HDRLibrary&&document.body.dataset.libraryReady==='true');
+ await tooltip(lib,'#sort-dir','library');
  const data=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=400;c.height=240;const x=c.getContext('2d');const g=x.createLinearGradient(0,0,400,240);g.addColorStop(0,'white');g.addColorStop(1,'black');x.fillStyle=g;x.fillRect(0,0,400,240);return c.toDataURL().split(',')[1];});
  await page.locator('#file-input').setInputFiles({name:'ui-check.png',mimeType:'image/png',buffer:Buffer.from(data,'base64')});
  await page.waitForFunction(()=>state.session&&!state.importInProgress&&state.activeWorkflow==='grade',null,{timeout:120000});
@@ -89,7 +93,7 @@ const out=path.resolve('output/review/picker-help-selects');fs.mkdirSync(out,{re
  await page.evaluate(()=>activateWorkflowTab('import'));await lib.locator('#filter-button').click();
  await popup(lib,'#filter-rating-op','library-minimum');
  const popped=page.context().waitForEvent('page');await lib.locator('#popout-library').click();const popout=await popped;
- await popout.waitForFunction(()=>window.HDRTooltips&&window.HDRLibrary);
+ await popout.waitForFunction(()=>window.HDRTooltips&&window.HDRLibrary&&document.body.dataset.libraryReady==='true');
  if(!await popout.locator('#library-filterbar').isVisible())await popout.locator('#filter-button').click();await popup(popout,'#filter-rating-op','library-popout');
  await tooltip(popout,'#filter-add','library-popout');
  for(const target of [page,lib,popout]){
