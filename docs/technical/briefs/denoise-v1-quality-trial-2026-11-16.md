@@ -195,3 +195,11 @@ the [technology watch](../denoising-technology-watch-2026.md):
   Neither meets the proposed quality/HDR limits. Real Bayer quality crops use
   explicit AHD range fallback; native Bayer timing is unclipped experimental
   extrapolation. Current Denoise and app requirements remain unchanged.
+
+- 2026-11-16: Bayer verification found a sensor-mean/camera-RGB gain mismatch
+  and replaced the real-crop range fallback with the requested upstream [0,1]
+  sensor convention. Corrected full-strength gains at ISO 6400/25600 are
+  +1.34/+4.13 dB SDR; ISO 1600 and detail/halo/colour limits still fail.
+  Pinned upstream reproduction also changes clean fabric/text substantially.
+  See “Verification, November 16” in the existing RawNIND prototype report;
+  previous Bayer numbers/timing qualification are superseded, not deleted.

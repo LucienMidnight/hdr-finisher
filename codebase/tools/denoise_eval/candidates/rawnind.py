@@ -50,7 +50,7 @@ class RawNIND:
     supports_bypass = True
 
     def __init__(self, kind='linear', strength=1., *, model_root=None, tile_shift=0,
-                 provider='CPUExecutionProvider', extrapolate_bayer=False):
+                 provider='CPUExecutionProvider'):
         if kind not in HASHES or not 0 <= strength <= 1:
             raise ValueError('Expected linear/bayer and strength in [0,1]')
         if kind == 'bayer' and provider != 'CPUExecutionProvider':
@@ -62,7 +62,6 @@ class RawNIND:
         self.tile_shift = tile_shift
         if kind == 'bayer' and tile_shift % 2:
             raise ValueError('Bayer tile shift must preserve even CFA phase')
-        self.extrapolate_bayer = extrapolate_bayer
         self.provider = provider
         self.model_path = Path(model_root or MODEL_ROOT) / f'model_{kind}.onnx'
         self.session = None
@@ -71,8 +70,9 @@ class RawNIND:
         return dict(algorithm='RawNIND-UtNet2', input_kind=self.input_kind, strength=self.strength,
                     model_sha256=HASHES[self.kind], provider=self.provider, tile=512,
                     halo=self.margin, core=384 if self.kind == 'linear' else 768,
-                    gain='one retained-core frame-global mean ratio', clipping=False,
-                    bayer_out_of_domain='experimental extrapolation' if self.extrapolate_bayer else 'AHD fallback',
+                    gain='one frame-global ratio; Bayer anchor is unity-WB AHD camera RGB',
+                    clipping='normalised Bayer sensor only, upstream [0,1]' if self.kind == 'bayer' else False,
+                    bayer_out_of_domain='clip finite sensor samples; unsupported CFA uses AHD',
                     linear_out_of_domain='unclipped extrapolation; not established HDR support',
                     seam_probe='prepared-frame slices are cached; use independent tile_shift preparations')
 
@@ -121,12 +121,19 @@ class RawNIND:
             if supported_cfa:
                 phase_row, phase_column = (int(value) for value in np.argwhere(pattern == 0)[0])
                 supported_cfa = pattern[1-phase_row, 1-phase_column] == 2
-            supported = supported_cfa and minimum >= 0 and maximum <= 1
-            if not supported_cfa or (not supported and not self.extrapolate_bayer):
-                reason = 'unsupported CFA' if not supported_cfa else 'normalised sensor range outside [0,1]'
+            if not supported_cfa:
+                reason = 'unsupported CFA'
                 return Prepared(develop(image, metadata), 1., dict(total=time.perf_counter()-start,
                                 inference=0., stitch_colour=0., session=0., tiles=0), domain, reason)
             domain['canonical_phase_offset'] = [phase_row, phase_column]
+            domain['clipped'] = minimum < 0 or maximum > 1
+            domain['extrapolated'] = False
+            domain['clipped_fraction'] = float(np.count_nonzero((image < 0) | (image > 1))) / image.size
+            camera_anchor = develop(image, {**metadata, 'white_balance': [1, 1, 1],
+                                           'camera_to_acescg': np.eye(3).tolist(), 'exposure_stops': 0})
+            anchor_mean = float(np.mean(camera_anchor, dtype=np.float64))
+            domain['ahd_camera_anchor_mean'] = anchor_mean
+            del camera_anchor
         session_start = time.perf_counter()
         session = self._session()
         session_seconds = time.perf_counter() - session_start
@@ -153,6 +160,7 @@ class RawNIND:
                                             top//2-64+(row-phase_row)//2, left//2-64+(column-phase_column)//2, 512, 512)
                                             for row, column in ((0, 0), (0, 1), (1, 0), (1, 1))])
                     tensor = np.ascontiguousarray(packed_tile[None], dtype=np.float32)
+                    np.clip(tensor, 0, 1, out=tensor)
                     retained_input = image[first_row:last_row, first_column:last_column]
                 inference_start = time.perf_counter()
                 model_minimum = min(model_minimum, float(np.min(tensor)))
@@ -172,6 +180,8 @@ class RawNIND:
                 output_count += retained_output.size
                 tiles += 1
         input_mean, output_mean = input_sum/input_count, output_sum/output_count
+        if self.kind == 'bayer':
+            input_mean = anchor_mean
         domain.update(model_input_minimum=model_minimum, model_input_maximum=model_maximum,
                       extrapolated=model_minimum < 0 or model_maximum > 1)
         if not np.isfinite(output_mean) or abs(output_mean) < 1e-12:

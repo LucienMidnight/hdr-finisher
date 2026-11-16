@@ -24,14 +24,16 @@ def write_json(path, value):
     path.write_text(json.dumps(value, indent=2, allow_nan=False)+'\n')
 
 
-def quality():
+def quality(bayer_only=False):
     from tools.denoise_eval.run import main
-    names = ['off', 'denoise_v2'] + [PLUGIN+name for name in
-             ('linear_half', 'linear_three_quarters', 'linear', 'bayer_half', 'bayer_three_quarters', 'bayer')]
+    variants = ('bayer_half', 'bayer_three_quarters', 'bayer')
+    if not bayer_only:
+        variants = ('linear_half', 'linear_three_quarters', 'linear') + variants
+    names = ['off', 'denoise_v2'] + [PLUGIN+name for name in variants]
     main(['--set', 'full', '--adapters', ','.join(names), '--output-dir', str(OUTPUT), '--review-size', '128'])
 
 
-def probes():
+def probes(bayer_only=False):
     import gc
     import numpy as np
     from tools.denoise_eval import metrics
@@ -55,7 +57,7 @@ def probes():
         results['review_rows'].append(dict(name=f'No-noise demosaic difference: {sample.name}',
                                          metadata='No added noise; not a denoising gain', images=images))
         if 'fabric' in sample.name:
-            for kind in ('linear', 'bayer'):
+            for kind in (('bayer',) if bayer_only else ('linear', 'bayer')):
                 adapter = RawNIND(kind)
                 source = sample.rgb if kind == 'linear' else sample.bayer
                 unshifted = adapter.prepare(source, sample.metadata)
@@ -70,8 +72,9 @@ def probes():
         del state
         gc.collect()
     linear = RawNIND('linear')
-    for name, colour in [('near_black', [1e-7]*3), ('saturated', [0., .02, 1.]),
-                         ('negative_hdr', [-.125, 1.5, 8.]), ('black', [0.]*3)]:
+    domain_cases = [('near_black', [1e-7]*3), ('saturated', [0., .02, 1.]),
+                    ('negative_hdr', [-.125, 1.5, 8.]), ('black', [0.]*3)]
+    for name, colour in ([] if bayer_only else domain_cases):
         image = np.broadcast_to(np.array(colour, np.float32), (64, 64, 3)).copy()
         try:
             state = linear.prepare(image, {})
@@ -85,7 +88,7 @@ def probes():
     print(json.dumps(results, indent=2), flush=True)
 
 
-def full_frame(filename, kind, extrapolate):
+def full_frame(filename, kind):
     import gc
     import numpy as np
     import rawpy
@@ -98,7 +101,7 @@ def full_frame(filename, kind, extrapolate):
     start = time.perf_counter()
     entry = dict(file=filename, camera='from native metadata', iso=3200 if filename=='IMG_0790.CR2' else 4000,
                  noise_fit_positions=[])
-    adapter = RawNIND(kind, extrapolate_bayer=extrapolate)
+    adapter = RawNIND(kind)
     rows = []
     with tempfile.TemporaryDirectory(prefix=f'full-frame-{os.getpid()}-', dir=OUTPUT) as scratch:
         with rawpy.imread(str(photo_root()/filename)) as raw:
@@ -146,7 +149,7 @@ def full_frame(filename, kind, extrapolate):
         measured_seconds = time.perf_counter()-start
         record = dict(file=filename, variant=kind, shape=[height, width], sensor_shape=sensor_shape,
                       native_orientation=orientation if kind == 'linear' else 0, measured=True,
-                      experimental_extrapolation=extrapolate, domain=state.domain, fallback=state.fallback,
+                      domain=state.domain, fallback=state.fallback,
                       decode_prep_seconds=prep_seconds, **state.timing, wall_seconds=measured_seconds,
                       peak_rss_bytes=peak_rss(), gain=state.gain, conditions='MacBook Neo A18 Pro 8 GB, CPU one thread, disk-backed source/result, no presentation')
         record['normalised_24mp_seconds_estimated'] = measured_seconds*24_000_000/(height*width)
@@ -164,7 +167,7 @@ def full_frame(filename, kind, extrapolate):
                 save_image(blended*np.float32(2**lift), OUTPUT/'review'/crop_name)
                 images.append((f'{kind} strength {strength}; common +{lift:.2f} stop viewing lift', crop_name))
             rows.append(dict(name=f'{filename} / {kind} / {role}',
-                             metadata=str(dict(crop=crop, iso=entry['iso'], experimental_extrapolation=extrapolate)), images=images))
+                             metadata=str(dict(crop=crop, iso=entry['iso'])), images=images))
         record['crops'] = choices
         record['review_rows'] = rows
         write_json(OUTPUT/f'full-{Path(filename).stem}-{kind}.json', record)
@@ -196,7 +199,7 @@ def assemble_review():
     marker = '<!-- RawNIND additional probes -->'
     content = content.split(marker)[0].replace('</body></html>', '')
     sections = []
-    for path in [OUTPUT/'probes.json', *sorted(OUTPUT.glob('full-*.json'))]:
+    for path in [OUTPUT/'probes.json', *sorted(OUTPUT.glob('full-*.json')), OUTPUT.parent/'verify/reference.json']:
         if not path.exists():
             continue
         record = json.loads(path.read_text())
@@ -227,10 +230,10 @@ def assemble_review():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=('quality', 'probes', 'full-frame', 'pytest', 'review'))
+    parser.add_argument('mode', choices=('quality', 'probes', 'full-frame', 'pytest', 'review', 'verify'))
     parser.add_argument('--file', choices=('IMG_0790.CR2', '2025_0730_1331_3.arw'))
     parser.add_argument('--kind', choices=('linear', 'bayer'), default='linear')
-    parser.add_argument('--extrapolate-bayer', action='store_true')
+    parser.add_argument('--bayer-only', action='store_true')
     parser.add_argument('--worker', action='store_true')
     args = parser.parse_args()
     OUTPUT.mkdir(parents=True, exist_ok=True)
@@ -240,11 +243,14 @@ def main():
         return
     if args.worker:
         if args.mode == 'quality':
-            quality()
+            quality(args.bayer_only)
         elif args.mode == 'probes':
-            probes()
+            probes(args.bayer_only)
+        elif args.mode == 'verify':
+            from tools.denoise_eval.candidates.verify_rawnind import reference
+            reference()
         elif args.file:
-            full_frame(args.file, args.kind, args.extrapolate_bayer)
+            full_frame(args.file, args.kind)
         else:
             parser.error('--file required for full-frame')
         return
