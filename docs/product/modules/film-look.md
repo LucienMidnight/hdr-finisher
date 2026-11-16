@@ -1,5 +1,31 @@
 # Module PRD: Film Look
 
+## November 16: option B implementation stopped at tail acceptance
+
+The implementation attempt did **not** enable linking. Re-rendering the 49
+original reduced chart/RAW cases reproduces 49 body passes and exact HDR,
+but only 30 ordering and 35 white-growth passes. The unchanged target also
+fails ordering in the same 19 cases. Bright hue/stop P95 remains at most
+1.975 ΔE00; good colour alone is not acceptance.
+
+An isolated output-tail probe tries 2,040 candidates per chart/configuration:
+existing HC modes, late Exposure/Saturation trims, and either the existing
+adaptive gamut mapper or a constant-luminance alternative. Only Velvia 100%
+in each chart retains the trial's roughly 3 ΔE00 bright-colour goal together
+with the unchanged body, ordering and +0.5 EV white-growth checks: **2/14**
+configurations. Where other cases can pass the three safeguards, best bright
+hue/stop P95 is 11.347–17.844; several have no such candidate. This bounded
+search is **not proof that every possible tail is impossible**. It has not
+found a safe general tail to implement; no check is weakened to ship one.
+
+Only research tooling/tests and records change. No app control, linking state,
+recipe, renderer, default, local grade, migration, export/Proof code or tooltip
+is changed. No saved project changes its rendering because of this attempt.
+GPU implementation/parity, local integration, native delivery and whole-slider
+wait measurements remain unbuilt/unmeasured, not passes. Details, per-hue/stop
+and five-RAW colour remeasurement, reproduction and pending work:
+[tail acceptance follow-up](../../technical/reports/film-look-equal-input-trial-2026-11-16.md#9-option-b-implementation-checkpoint-no-shipping-change).
+
 ## November 16: Steve chose linked SDR after Match (option B; not yet built)
 
 Steve accepted option B from the M1-EQ trial below. Match links a photo's SDR

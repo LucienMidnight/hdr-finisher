@@ -484,6 +484,129 @@ Sources/contracts: [M1/M1a/M1d/N3a sprint brief](../briefs/sprint-0-9-3-feedback
 [SDR Match](../sdr-match.md), [pipeline contract](../image-processing-pipeline.md).
 Experimental tools: `codebase/tools/film_equal_input_trial.py` and `.cjs`.
 
+## 9. Option B implementation checkpoint: no shipping change
+
+Steve approved option B after the original trial. The implementation attempt
+stopped before application changes because it did not find a general SDR tail
+that retains the colour improvement and passes the existing safeguards. This
+is an **unsolved implementation**, not a claim of mathematical impossibility
+and not a completed linked-SDR feature.
+
+### Reproduction on the current CPU reference
+
+`tools/linked_sdr_tail_probe.py --baseline` re-renders the same seven looks
+on both charts and the five cached <=512px RAW sources, with the original
+selected tail settings. Grain, halation and locals remain off, reference white
+203 nits; all body masks and the target construction remain unchanged. It does
+not call Match, save a recipe, open a protected project, or run an encoder.
+
+The result exactly reproduces **49/49 body passes, 30/49 ordering passes,
+35/49 white-growth passes, and 49/49 exact HDR common-stage reconstruction**.
+The target itself has the same 19 ordering failures. Worst +0.5 EV white growth
+is **4.463 percentage points**, IMG_7723 Film off, against the unchanged one
+point allowance. The 336 coloured hue/stop P95s over +1/+2/+3 stops still have
+maximum **1.975 ΔE00**. `baseline.json` retains every per-hue/stop value, all
+four body metrics, both checks and the seven looks for each RAW.
+
+Five-RAW colour remeasurement, ranges across Film off / Portra / Ektar /
+Velvia 50% and 100% (these remain the **unqualified original tails**, not new
+accepted Matches):
+
+| RAW | Whole-frame P95 ΔE00 range | Highlight P95 ΔE00 range |
+| --- | --- | --- |
+| A7R00619.ARW | 0.228–0.389 | 0.502–0.842 |
+| DSC00264.ARW | 0.037–0.267 | 0.645–1.206 |
+| IMG_3129.CR2 | <0.001 | 1.051–1.981 |
+| IMG_0790.CR2 | <0.001–3.222 | 0.111–1.042 |
+| IMG_7723.CR3 | <0.001–0.349 | 0.015–0.872 |
+
+The near-zero figures above are nonzero measurements, not missing selections.
+For a concrete ordering conflict, chart176 Film-off target highlight-bin
+medians fall **0.983510 → 0.845706** between the fifth and sixth HDR-brightness
+quantile bins: a 0.137804 drop against the existing 0.005 allowance. The bins
+contain different colours; this observation does not authorize changing the
+diagnostic or the target.
+
+### Bounded tail search, not a new production fitter
+
+For **each** chart/configuration independently, the probe tests 2,040 candidates:
+
+- Soft Ceiling, Fixed cap, Peak Fit with its ordinary Smooth Color Rolloff
+  settings, and Clip; start 10/30/50/70/80/85/90/92/95/97/99% where applicable,
+  Softness 100.
+- Post-Film exposure -0.25/-0.10/0/+0.10/+0.25 EV, and saturation multipliers
+  0.50/0.75/0.90/1/1.10/1.25. These are the two simple late creative trims being
+  investigated, **not added controls or persisted recipe fields**.
+- The incumbent adaptive gamut boundary, or a research boundary that reduces
+  chroma toward neutral while preserving legal linear luminance. The latter
+  deliberately probes the suspected colour/luminance-order conflict; it is
+  never installed in the renderer.
+
+This is **28,560 candidates over 14 chart configurations**, with original body
+limits 0.050/0.015 OKLab P95/median and 0.030/0.010 luma P95/median; no normal
+matched threshold changes. Ordering calls the existing helper. White growth
+is tested after an additional +0.5 EV **before** HC/gamut, never after a cap
+or by keeping the output artificially below the white-count threshold.
+
+Only **Velvia 100%** in each population retains the approximately 3 ΔE00
+bright hue/stop goal together with all three safeguards: **1/7 + 1/7**.
+For the other six chart176 looks, five have body/order/growth-safe candidates
+but best bright hue/stop P95 is **14.914–17.844**; Film off has none. On chart224,
+only Ektar 100% has an additional safeguard-safe candidate, at **11.347**;
+the other five have none. The per-configuration best candidates and their
+per-hue/stop measurements are in `chart176.json` and `chart224.json`.
+
+This rules out these tested simple tails as a satisfactory general solution.
+It does **not** cover every curve, gamut construction or trim value, and it
+does not establish that option B is impossible. No RAW search or GPU port of
+the failing designs is presented as qualification. A different output/gamut
+design must be demonstrated before adding a live link or changing Match.
+
+### Visible behaviour, saved grades, locals and remaining work
+
+Steve sees **no change in the app** from this work. Both lanes remain
+independent; Match does not yet create a live link. No production code or
+schema is changed, so saved grades and protected projects have **zero rendering
+change from this attempt**. The original counterfactual DSC00950 10.050 and
+DSC00264 15.317 P95 drifts above are not applied to those projects.
+
+The proposed local contract, **not implemented**, is to evaluate HDR local
+grades and their shared, source-anchored masks once in the common pre-Film
+prefix. Do not stack the independent SDR locals on top. An actual SDR local
+creative edit would unlink the photo and use today's independent SDR renderer;
+a refused/no-op local Match must not unlink it. Whole-picture Match must retain
+N4's confirmation before replacing authored SDR locals. This needs explicit
+Undo/Redo, bypass, overlapping-mask, HDR-change and local-Match tests; the
+no-local trial does not certify any of them.
+
+Still required: an accepted tail and visible late-trim semantics; CPU and
+WebGPU integration with a single Film evaluation; live linked/unlinked state,
+Match/unlink/edit transactions and saved format; authored-SDR/source handling;
+GPU/CPU pre-encode agreement (mean <1, P99.9 <=3 in the lane's required metric);
+native Film/lens/grain/halation/local coverage; export/Proof qualification; and
+real slider action-to-current-picture timing before/after on this Mac. The
+existing paired CPU microbenchmark is not substituted for that whole wait.
+The prior research GPU compile failure is not claimed repaired or qualified.
+No shipping tooltips are regenerated and unapplied catalogue edits are left
+alone. User guides are not rewritten to describe an unavailable feature.
+
+Reproduce from `codebase`, after producing the original chart fixtures and
+shared RAW derivatives using section 8:
+
+```sh
+.venv/bin/python tools/linked_sdr_tail_probe.py --baseline --output output/review/linked-sdr-tail
+.venv/bin/python tools/linked_sdr_tail_probe.py --population chart176 --output output/review/linked-sdr-tail
+.venv/bin/python tools/linked_sdr_tail_probe.py --population chart224 --output output/review/linked-sdr-tail
+.venv/bin/python -m pytest tests/test_linked_sdr_tail_probe.py -q
+```
+
+Each result retains code/backend hashes; the baseline also fingerprints its
+reused inputs, and the searches fingerprint each original chart fixture.
+Only compact JSON and validation logs are retained under
+`codebase/output/review/linked-sdr-tail/`. Validation results are recorded in
+the follow-up commit. No push, protected-file writes, test relaxation,
+migration, cache/budget change or encoder/tooling edits.
+
 ## Appendix A. Every hue family and stop, before → after P95 ΔE00
 
 Each coloured cell is the P95 of its **three saturation patches**; grey has
