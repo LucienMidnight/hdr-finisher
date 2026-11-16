@@ -1,3 +1,11 @@
+## November 16: exact-ceiling scoped validation on MacBook Neo
+
+| Action | Existing guard | Observation | Conditions / evidence |
+| --- | --- | --- | --- |
+| 1600px real-photo HDR export request to completed response | Exact decoded ceiling; no new timing gate | GPU 5.785–7.708 s; CPU 5.256–9.445 s across Ultra HDR/AVIF/JXL; all export/reduced/full Proof targets pass. No before/after speed claim. | Neo A18 Pro / 8 GB / 1408×794, shared lock, default bounded DSC00264 fixture, sharpening off; `0a524303` during shared-checkout work. `output/ceiling-followup/delivery.json`. Encoder correction/validation included, source setup and Proof time excluded from these export waits. |
+| Library viewport quick check | Default 90 s, existing memory/reserve/drawing guards | First picture .5 s; run 93.115 s including harness; nine of 33 eligible pictured, no errors; independent peak 2.973 GB. Viewport only. | Same Neo/window/lock, frozen v1, fresh plain Electron; no concurrent own fast suite. `output/quick-library-check/exact-highlight-ceiling/report.json`, shared-checkout HEAD `cdb30ac5`. |
+| Full Python fast validation | Existing test expectations; no new timing gate | 266.19 s; 3,800 pass, two obsolete 1% allowance pins fail; final focused 287 pass after tightening pins to exact 1000 nits | Same Neo, no overlapping own Electron run; `850f2e45` plus concurrent UI edits. Not a product speed measurement. `output/review/n4-local-match/exact-python-fast.log`; final focused 9.88 s. |
+
 ## November 16: menu/shortcut validation on MacBook Neo
 
 | Action | Existing guard | Observation | Conditions / evidence |
