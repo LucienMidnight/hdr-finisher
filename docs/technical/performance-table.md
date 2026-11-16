@@ -1,3 +1,28 @@
+## November 16: RawNIND full-frame CPU prototype (research only)
+
+MacBook Neo / Apple A18 Pro / 8 GB; ONNX Runtime 1.32.0 CPUExecutionProvider,
+tooling `7bce787f`, one thread, fixed 512 input tiles, mirror edges, frame-global gain, native
+WB/camera colour tail. One run per row, under the shared machine lock, 2.5 GB
+process-RSS abort guard; no Electron/GPU or app integration. These waits end at
+a prepared ACEScg array, not a picture on screen. Source/result arrays are
+temporary disk-backed files. No timing regression or accelerator-gain claim;
+the harness's proposed ±10% descriptive allowance is unchanged.
+
+| Measured native action | Decode/prep / session / inference / stitch-colour s | Total wait / peak process RSS | Conditions / evidence |
+| --- | --- | --- | --- |
+| 18.02 MP Canon / RawNIND linear | 1.033 / 0.060 / 27.596 / 1.297 | 30.010 s / 1.371 GB | IMG_0790.CR2, ISO 3200, 140 retained-core tiles; app-native AHD normalisation. |
+| 18.02 MP Canon / RawNIND Bayer | 0.366 / 0.068 / 6.986 / 0.432 | 7.858 s / 1.064 GB | Same sensor, 35 tiles, phase-correct RGGB packing; explicit unclipped experimental extrapolation. |
+| 42.39 MP Sony / RawNIND linear | 2.133 / 0.155 / 59.628 / 2.863 | 64.842 s / 2.243 GB | 2025_0730_1331_3.arw, ISO 4000, 294 retained-core tiles, app-native AHD normalisation and portrait orientation. |
+| 42.39 MP Sony / RawNIND Bayer | 0.235 / 0.047 / 15.828 / 0.975 | 17.101 s / 1.519 GB | Same sensor, 77 tiles; explicit unclipped experimental extrapolation outside [0,1], not default fallback or qualified quality. |
+
+Native pixel-proportional 24 MP totals are **estimates**, 36.71–39.97 s linear /
+9.68–10.47 s Bayer, not measured actions or preparation-budget passes. Whole-app
+peak/settled memory, display, GPU/ANE, export reuse and 61 MP are unmeasured.
+Quality rejects both variants and all measured strengths; no shipping change.
+Evidence: `codebase/output/denoise-v1/rawnind/full-*.json`, guard receipts,
+`results-full.json`, `probes.json` and `review/index.html`; contracts and
+coverage limits are in [the prototype report](research/denoise-v1-2026-11-16/rawnind-prototype.md).
+
 ## November 16: Denoise candidate CPU load smoke (research only)
 
 MacBook Neo / A18 Pro / 8 GB, ORT 1.32.0 CPUExecutionProvider, one thread,

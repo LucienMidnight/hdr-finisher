@@ -188,3 +188,10 @@ the [technology watch](../denoising-technology-watch-2026.md):
   off/current-Denoise baselines completed; report in
   `../research/denoise-v1-2026-11-16/harness-baseline.md`. Single-frame sensor
   profiles remain provisional; no app integration or replacement approved.
+
+- 2026-11-16: Phase 2 RawNIND linear/Bayer CPU adapters (`7bce787f`), strengths .5/.75/1,
+  full quality set, clean-mosaic separation and guarded 18/42 MP native trials
+  completed; [report](../research/denoise-v1-2026-11-16/rawnind-prototype.md).
+  Neither meets the proposed quality/HDR limits. Real Bayer quality crops use
+  explicit AHD range fallback; native Bayer timing is unclipped experimental
+  extrapolation. Current Denoise and app requirements remain unchanged.

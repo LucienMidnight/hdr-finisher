@@ -98,15 +98,16 @@ def diagnostics(adapter,sample):
     return result
 
 
-def save_image(image,path):
+def save_image(image,path,size=256):
     rgb=np.uint8(np.rint(np.clip(metrics.display(image),0,1)*255))
     im=Image.fromarray(rgb)
-    im.thumbnail((256,256),Image.Resampling.LANCZOS)
+    im.thumbnail((size,size),Image.Resampling.LANCZOS)
     im.save(path,optimize=True)
 
 
 def review_page(rows,folder,results):
     title=f"Denoise baseline: {results['set']}"
+    token_stylesheet=Path(os.path.relpath(ROOT/'frontend/visual-tokens.css',folder)).as_posix()
     style='''body {background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:var(--font-size-lg);line-height:var(--line-height-normal)}
     h1{font-size:var(--font-size-3xl);font-weight:var(--font-weight-semibold)}
     h2{font-size:var(--font-size-xl);font-weight:var(--font-weight-medium)}
@@ -122,7 +123,7 @@ def review_page(rows,folder,results):
         figures=''.join(f'<figure><img loading="lazy" src="{html.escape(file)}"><figcaption>{html.escape(label)}</figcaption></figure>' for label,file in row['images'])
         sections.append(f"<section><h2>{html.escape(row['name'])}</h2><p>{html.escape(row['metadata'])}</p><div class='row'>{figures}</div></section>")
     page=f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>{title}</title>
-    <link rel="stylesheet" href="../../../frontend/visual-tokens.css"><style>{style}</style></head><body>
+    <link rel="stylesheet" href="{token_stylesheet}"><style>{style}</style></head><body>
     <h1>{title}</h1><p>CPU only • {results['machine']} • fixed seed {SEED}. SDR: ACEScg → linear sRGB, clip 0–1, sRGB encoding.
     Every image uses the same transform. Images fit within 256 px; original crop size is recorded in JSON. These are noise simulations, not clean real pairs.</p>
     <p><a href="results.json">Complete measurements, calibration, crop coordinates and limitations</a></p>
@@ -147,13 +148,18 @@ def headlines(cases,names):
 
 
 def main(argv=None):
+    global OUTPUT
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--adapters',default='off,denoise_v2')
     parser.add_argument('--set',choices=('quick','full'),default='quick')
     parser.add_argument('--controls',default='{}',help='JSON controls for denoise_v2_custom')
     parser.add_argument('--pairs',type=Path,help='Optional approved folder with pairs.json, no downloads')
     parser.add_argument('--banding',type=float,default=0.,help='Added row and column sigma in normalised sensor units')
+    parser.add_argument('--output-dir',type=Path,help='Separate research results/review destination')
+    parser.add_argument('--review-size',type=int,choices=(128,256),default=256,help='Bound review size when comparing many adapters')
     args=parser.parse_args(argv)
+    if args.output_dir is not None:
+        OUTPUT=args.output_dir
     OUTPUT.mkdir(parents=True,exist_ok=True)
     # Cross-worktree CPU lock: stale locks are never silently stolen.
     lock=Path(settings()['lockFolder'])/'denoise-eval-cpu.lock'
@@ -216,8 +222,13 @@ def execute(args):
                     raise ValueError('Nonfinite adapter output')
                 measured=metrics.evaluate(output,sample.rgb,sample.clean,sample.masks,'slanted-edge' in sample.name)
                 measured.update(seconds=seconds,finite=True,negative_values=int(np.sum(output[...,:3]<0)),above_white_values=int(np.sum(output[...,:3]>1)))
+                if hasattr(adapter,'state_description'):
+                    measured['adapter_state']=adapter.state_description(state)
                 case['adapters'][name]=measured
-                filename=f'crop-{index:03d}-{len(row["images"])}.png';save_image(output,folder/filename);row['images'].append((name+(f" · SDR {measured['sdr']['psnr_db']:.2f} dB / SSIM {measured['sdr']['ssim']:.3f}" if 'sdr' in measured and measured['sdr']['psnr_db'] is not None else ''),filename))
+                label=name+(f" · SDR {measured['sdr']['psnr_db']:.2f} dB / SSIM {measured['sdr']['ssim']:.3f}" if 'sdr' in measured and measured['sdr']['psnr_db'] is not None else '')
+                if measured.get('adapter_state',{}).get('fallback'):
+                    label+=' · AHD fallback: '+measured['adapter_state']['fallback']
+                filename=f'crop-{index:03d}-{len(row["images"])}.png';save_image(output,folder/filename,args.review_size);row['images'].append((label,filename))
                 if name not in results['diagnostics'] and 'fabric' in sample.name and sample.metadata.get('iso')==6400:
                     results['diagnostics'][name]=diagnostics(adapter,sample)
                     results['diagnostics'][name]['safety']=safety(adapter)
