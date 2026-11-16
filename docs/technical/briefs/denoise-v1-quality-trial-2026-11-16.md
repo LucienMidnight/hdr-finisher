@@ -172,9 +172,12 @@ the [technology watch](../denoising-technology-watch-2026.md):
   4–6 high-ISO RAWs (different cameras, ISO 3200–25600, deep shadows), plus
   one lens-cap dark frame at high ISO? Without them the real-photo results
   rest on very few pictures.
-- **Q2.** May the research use a public set of noisy/clean RAW pairs
-  (downloaded only to the output folder, never shipped or committed)? It
-  gives real ground truth instead of simulated noise.
+- **Q2. Answered (Steve, November 16, 2026):** yes, a public noisy/clean
+  dataset may be used if it is open and appropriately licensed (CC0, CC-BY or
+  CC-BY-SA; non-commercial or research-only terms are excluded). Research
+  use only: downloaded under `codebase/output/denoise-v1/datasets/`, never
+  committed or shipped, and not part of the approved test-photo corpus. If no
+  suitable set exists, Steve will supply or shoot noisy photos.
 - **Q3.** Are the speed, memory and size targets in 3.3 acceptable?
 - **Q4.** (Still open from before.) A noise-free linear EXR render
   ≥ 540×540 for the existing Denoise render check.
@@ -202,3 +205,5 @@ the [technology watch](../denoising-technology-watch-2026.md):
   No defaults, output limits or shipping pipeline changed; NLM not ported.
   Node checks pass and all ten new Python tests pass; the broad Python suite
   stopped at the unchanged research watchdog (2.524 GB), so remains incomplete.
+- 2026-11-16: Steve answered Q2 (open-licensed public pairs allowed for research);
+  dataset worker started.
