@@ -19,7 +19,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 from hdr_finisher import exporters as writer
 from hdr_finisher.adjustments import apply_adjustments
-from hdr_finisher.binaries import resolve_binary
 from hdr_finisher.color import linear_srgb_to_acescg, linear_bt2020_to_acescg
 from hdr_finisher.delivery_colour import compare_finished_pixels
 from hdr_finisher.gainmap_decoders import decode_ultrahdr_jpeg, parse_jpeg_gain_map_probe
@@ -75,12 +74,6 @@ def eotf(codes):
 def rgb(jpeg):
     with Image.open(BytesIO(jpeg)) as image:
         return np.array(image.convert("RGB"))
-
-
-def jpeg(codes, quality=100):
-    buffer = BytesIO()
-    Image.fromarray(codes).save(buffer, format="JPEG", quality=quality, subsampling=0)
-    return buffer.getvalue()
 
 
 def probe(binary, path):
@@ -142,6 +135,8 @@ def encode(folder, binary, hdr, sdr, *, quality=95, map_quality=95, scale="full"
         kwargs = {"quality": map_quality}
         if filtering == "weak":
             kwargs["amount"] = .25
+        if filtering == "reencode":
+            kwargs["amount"] = 0
         if filtering == "edge":
             kwargs["radius"] = 1
             kwargs["epsilon"] = 1e-5
@@ -169,6 +164,16 @@ def fidelity(case, hdr, sdr, binary):
         "bytes": case["bytes"], "decoded_peak_nits": float(channel_nits(case["hdr"]).max()),
         "partial_boost": partial_boost, "partial_hdr": metric(partial_reference, partial, "hdr"),
         "instrumented_decoder_vs_shipping": metric(full, case["hdr"], "hdr"), "metadata": case["metadata_json"]}
+
+
+def delivered_fidelity(path, hdr, sdr, binary):
+    settings = ExportSettings(format="jpeg_ultrahdr", quality=95, jpeg_chroma_subsampling="444", jpeg_gain_map_quality=95, jpeg_gain_map_scale="full", dithering="off")
+    writer.write_jpeg_gainmap_renditions(path, hdr, sdr, settings, ceiling_nits=1000, encoding_allowance=ENCODING_ALLOWANCE)
+    decoded_hdr, decoded_sdr, _ = decode_ultrahdr_jpeg(path)
+    _, metadata = probe(binary, path)
+    case = {"path": path, "hdr": decoded_hdr, "sdr": decoded_sdr, "metadata": metadata,
+        "metadata_json": metadata.model_dump(mode="json"), "bytes": path.stat().st_size}
+    return fidelity(case, hdr, sdr, binary), (decoded_hdr, decoded_sdr)
 
 
 def review_crop(case, hdr, sdr, binary, output, name):
@@ -250,6 +255,26 @@ def mechanism(case, hdr):
         "floor_code_channel_percent": float(np.mean(case["codes"] <= 2) * 100)}
 
 
+def partial_models(case, hdr, sdr, binary):
+    from hdr_finisher.color import acescg_to_linear_srgb
+    metadata = case["metadata"]
+    endpoint = np.maximum(acescg_to_linear_srgb(hdr / .18), 0)
+    def middle(base):
+        samples = np.sqrt((np.maximum(base, 0) + metadata.offset_sdr) * (endpoint + metadata.offset_hdr)) - metadata.offset_hdr
+        return np.clip(linear_srgb_to_acescg(samples * .18), 0, None).astype(np.float32)
+    author = middle(sdr)
+    prepared = middle(eotf(case["codes"]))
+    parent = case["path"].parent
+    raw_base, raw_map = parent / "partial-base.raw", parent / "partial-map.raw"
+    raw_base.write_bytes(case["codes"].tobytes())
+    raw_map.write_bytes(case["raw_map"].tobytes())
+    decoded = decode_boost(binary, parent / "initial.jpg", hdr.shape[:2], metadata, np.sqrt(metadata.hdr_capacity_max),
+        {"HDRF_RESEARCH_BASE_INPUT": str(raw_base), "HDRF_RESEARCH_MAP_INPUT": str(raw_map)})
+    return {"author_vs_prepared_endpoint_model": metric(author, prepared, "hdr"),
+        "raw_native_vs_author_model": metric(author, decoded, "hdr"),
+        "raw_native_vs_prepared_model": metric(prepared, decoded, "hdr")}
+
+
 def fixture(binary, output):
     arrays = np.load(ROOT / "output/review/n4-local-match/sharp-matched-floats.npz")
     hdr, sdr = arrays["cpu_hdr"], arrays["cpu_sdr"]
@@ -266,6 +291,7 @@ def fixture(binary, output):
         result["stages"] = stage_metrics(cpu, hdr)
         result["native_stages"] = native_stages(cpu, hdr, binary)
         result["mechanism"] = mechanism(cpu, hdr)
+        result["partial_model_diagnostic"] = partial_models(cpu, hdr, sdr, binary)
         result["pair_stages"] = {}
         for label, map_key in (("raw_8bit", "raw_map"), ("map_jpeg100", "gain")):
             pair = []
@@ -326,13 +352,7 @@ def fixture(binary, output):
         result["delivered"] = {}
         for renderer in ("cpu", "gpu"):
             path = folder / f"delivered-{renderer}.jpg"
-            notes = []
-            writer.write_jpeg_gainmap_renditions(path, arrays[f"{renderer}_hdr"], arrays[f"{renderer}_sdr"], settings,
-                ceiling_nits=1000, encoding_allowance=ENCODING_ALLOWANCE, notes=notes)
-            decoded_hdr, decoded_sdr, _ = decode_ultrahdr_jpeg(path)
-            result["delivered"][renderer] = {"hdr": metric(arrays[f"{renderer}_hdr"], decoded_hdr, "hdr"),
-                "sdr": metric(arrays[f"{renderer}_sdr"], decoded_sdr, "sdr"), "notes": notes,
-                "peak_nits": float(channel_nits(decoded_hdr).max()), "bytes": path.stat().st_size}
+            result["delivered"][renderer] = delivered_fidelity(path, arrays[f"{renderer}_hdr"], arrays[f"{renderer}_sdr"], binary)[0]
         result["repeat"] = encode(folder / "repeat", binary, hdr, sdr)["path"].read_bytes() == cpu["path"].read_bytes()
         shipping_path = folder / "shipping.jpg"
         writer._write_jpeg_gainmap_once(shipping_path, hdr, sdr, settings)
@@ -343,9 +363,12 @@ def fixture(binary, output):
 
 def variants():
     return {"unfiltered": {"filtering": "none"}, "quality100": {"quality": 100, "map_quality": 100},
+        "map95_no_smooth": {"filtering": "reencode"},
+        "q100_unfiltered": {"quality": 100, "filtering": "none"},
         "half_map": {"scale": "half"}, "base420": {"chroma": "420"},
         "weak_filter": {"filtering": "weak"}, "edge_filter": {"filtering": "edge"},
         "fixed_range": {"fixed_range": True}, "decoded_fit": {"decoded_fit": True},
+        "decoded_fit_unfiltered": {"decoded_fit": True, "filtering": "none"},
         "decoded_fit100_unfiltered": {"decoded_fit": True, "quality": 100, "filtering": "none"}}
 
 
@@ -386,6 +409,7 @@ def photos(binary, photos_root, output, edge, stages_only=False):
                 results[name]["native_stages"] = record["native_stages"]
                 results[name]["mechanism"] = record["mechanism"]
                 results[name]["review_crop"] = record["review_crop"]
+                results[name]["delivered"] = delivered_fidelity(folder / "delivered.jpg", hdr, sdr, binary)[0]
                 (output / "photos.json").write_text(json.dumps(results, indent=2))
                 continue
             record["variants"]["baseline"] = fidelity(cpu, hdr, sdr, binary)
@@ -394,13 +418,9 @@ def photos(binary, photos_root, output, edge, stages_only=False):
                 record["variants"][label] = fidelity(case, hdr, sdr, binary)
             preview = writer._linear_to_srgb8(sdr, dither="off")
             Image.fromarray(preview).save(output / f"{path.stem}-sdr.png")
-            settings = ExportSettings(format="jpeg_ultrahdr", quality=95, jpeg_chroma_subsampling="444", jpeg_gain_map_quality=95, jpeg_gain_map_scale="full", dithering="off")
             delivery = folder / "delivered.jpg"
             try:
-                writer.write_jpeg_gainmap_renditions(delivery, hdr, sdr, settings, ceiling_nits=1000, encoding_allowance=ENCODING_ALLOWANCE)
-                final_hdr, final_sdr, _ = decode_ultrahdr_jpeg(delivery)
-                record["delivered"] = {"hdr": metric(hdr, final_hdr, "hdr"), "sdr": metric(sdr, final_sdr, "sdr"),
-                    "peak_nits": float(channel_nits(final_hdr).max()), "bytes": delivery.stat().st_size}
+                record["delivered"] = delivered_fidelity(delivery, hdr, sdr, binary)[0]
             except Exception as error:
                 record["delivered"] = {"refused": str(error)}
         results[name] = record
@@ -422,17 +442,12 @@ def paired_captures(binary, capture_root, output):
         with TemporaryDirectory(prefix="hdrf-jpeg-paired-") as temporary:
             folder = Path(temporary)
             cases = {}
-            settings = ExportSettings(format="jpeg_ultrahdr", quality=95, jpeg_chroma_subsampling="444", jpeg_gain_map_quality=95, jpeg_gain_map_scale="full", dithering="off")
             for renderer in ("cpu", "gpu"):
                 hdr, sdr = arrays[f"{renderer}_hdr"], arrays[f"{renderer}_sdr"]
                 case = encode(folder / renderer, binary, hdr, sdr)
                 result["renderers"][renderer] = fidelity(case, hdr, sdr, binary)
                 path = folder / f"{renderer}-delivered.jpg"
-                writer.write_jpeg_gainmap_renditions(path, hdr, sdr, settings, ceiling_nits=1000, encoding_allowance=ENCODING_ALLOWANCE)
-                final_hdr, final_sdr, _ = decode_ultrahdr_jpeg(path)
-                result["renderers"][renderer]["delivered"] = {"hdr": metric(hdr, final_hdr, "hdr"), "sdr": metric(sdr, final_sdr, "sdr"),
-                    "peak_nits": float(channel_nits(final_hdr).max()), "bytes": path.stat().st_size}
-                cases[renderer] = (final_hdr, final_sdr)
+                result["renderers"][renderer]["delivered"], cases[renderer] = delivered_fidelity(path, hdr, sdr, binary)
             result["delivered_pair"] = {lane: metric(cases["cpu"][index], cases["gpu"][index], lane) for index, lane in enumerate(("hdr", "sdr"))}
         results[record["name"]] = result
         (output / "paired-photos.json").write_text(json.dumps(results, indent=2))
