@@ -57,7 +57,11 @@ may not contradict these.
 2. **Two authored renditions.** HDR and SDR are graded as independent,
    equally good pictures of the same photo. The SDR side is never just a
    by-product. HDR should win with brightness and range, not with stronger
-   colour.
+   colour. Steve, November 16, 2026 (Film option B, not yet built): after
+   Match, SDR follows HDR's creative grade (Tone and Film Look computed once
+   on the HDR scene grade) and keeps only SDR-specific adjustments after the
+   film, so colours agree. Changing SDR's own Tone or Film unlinks that photo
+   and returns it to an independent SDR grade, as before.
 3. **Speed where it is felt; the GPU where it pays** (Steve, November 2,
    2026; replaces "GPU first" of October 18). Judge speed by the wait the
    user feels, measured from their action to the result on screen, not by

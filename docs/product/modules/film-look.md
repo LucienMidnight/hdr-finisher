@@ -1,5 +1,17 @@
 # Module PRD: Film Look
 
+## November 16: Steve chose linked SDR after Match (option B; not yet built)
+
+Steve accepted option B from the M1-EQ trial below. Match links a photo's SDR
+to its HDR creative grade: Tone and Film Look are evaluated once on the HDR
+scene grade, and SDR applies only its own output tail after the film (scale to
+SDR, Highlight Compression, gamut mapping, SDR-only trims). Editing SDR's own
+pre-Film Tone or Film controls unlinks the photo, which then renders as an
+independent SDR grade exactly as today. Open before shipping: the SDR tail
+must pass the highlight-ordering and white-growth checks (30/49 and 35/49 in
+the trial), a GPU implementation, export/Proof qualification, and listing
+which saved grades change. No migration code (pre-1.0).
+
 ## November 16: common scene Film trial (M1-EQ; research only)
 
 Steve's approved equal-input trial evaluates the HDR scene grade/Film once,

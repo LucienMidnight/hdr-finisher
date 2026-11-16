@@ -48,6 +48,33 @@ sections. Both Default themes are captured at 1408×794, including a folded
 example, in `codebase/output/ui-polish-1114/`. Proof has review captures only;
 its rendering and delivery paths are untouched. Visual sign-off pending.
 
+## November 16: renderer agreement and encoding fidelity are separate checks
+
+Steve approved splitting the October 18 GPU-against-CPU check after the
+encoding-drift research (reports: `docs/technical/reports/encoding-drift-jpeg-ultrahdr-2026-11-16.md`,
+`encoding-drift-avif-jxl-2026-11-16.md`). Codecs magnify tiny, acceptable
+input differences at sharp highlights, so comparing a decoded GPU file with a
+decoded CPU file does not show which renderer is wrong. Instead:
+
+- **Renderer agreement**, measured on finished pixels **before encoding**:
+  GPU against CPU, HDR ΔE ITP and SDR ΔE00, mean below 1.0 and P99.9 at or
+  below 3.0 per image and lane (the October 18 numbers, unchanged).
+- **Encoding fidelity**, per format: each decoded file against its own
+  finished pre-encode image, starting with the same visual target (mean < 1,
+  P99.9 ≤ 3) for HDR and SDR separately. Current JPEG Ultra HDR, AVIF gain map
+  and JPEG XL HDR files miss it at sharp bright edges (and JPEG/AVIF clip
+  colours outside the sRGB base); this is recorded as a known limitation and
+  reported, not used to block delivery, until the per-format fixes land.
+  No looser number is set from today's failures without Steve.
+- Decoded GPU-file against decoded CPU-file comparisons remain as a
+  diagnostic report, not a pass/fail gate.
+
+Unchanged: identical full-size Proof/export bytes, and the HDR ceiling (exact
+before encoding, 1% encoding allowance after). Open work: locate each
+format's fidelity loss stage by stage, then try decoded-base gain fitting with
+less map smoothing (JPEG/AVIF) and a wide-gamut gain map for AVIF, reporting
+file size against fidelity before any setting changes.
+
 ## November 16: exact finished target; 1% encoding allowance kept
 
 Steve approved removing a float rounding overshoot (600.000061 nits at a
@@ -643,7 +670,7 @@ Settings rules (from v1.2 section 5, still in force):
 | **GPU first, including export.** Export, Proof and Library pictures render on the GPU at full size (tiled where memory needs it); the CPU is the fallback. CPU export is no longer an exact reference. | Steve, 2026-10-18 |
 | **Approved GPU architecture:** a hidden Electron renderer reuses Grade's renderer and shaders. Export resize and output sharpening join the shared GPU graph, after the creative look and before the final highlight limiter. Preset versions that share rendering reuse the same finished lanes. | Steve, 2026-10-18 |
 | **Scheduling:** Grade first, then visible Library pictures (top-left first), then background export. GPU work yields between bounded submissions and shares one memory budget. Closing the last visible window cancels a batch cleanly; finished files stay. | Steve, 2026-10-18 |
-| **Perceptual limits** for GPU against CPU, Proof against export, and Library picture against export: SDR ΔE 2000 and HDR ΔE ITP (BT.2124), per image and per lane, mean below 1.0, 99.9th percentile at or below 3.0. No per-pixel maximum. Include grain and local adjustments. | Steve, 2026-10-18 |
+| **Perceptual limits** (GPU against CPU measured before encoding since 2026-11-16; encoding fidelity checked separately, see November 16) for GPU against CPU, Proof against export, and Library picture against export: SDR ΔE 2000 and HDR ΔE ITP (BT.2124), per image and per lane, mean below 1.0, 99.9th percentile at or below 3.0. No per-pixel maximum. Include grain and local adjustments. | Steve, 2026-10-18 |
 | **HDR ceiling:** decode every Highlight Compression HDR export and reduced/full Proof, CPU and GPU. Accept initial peaks up to target + 1% unchanged and without a note; above that correct locally toward 97–100% of target. Refuse any file still above target + 1% after all rounds, preserving the existing destination. Library pictures are not checked after encoding. With Highlights off, the optional strict codec-limit check is unchanged. Supersedes the October 18–19 ceiling decisions. | Steve, 2026-11-14 |
 | Each export result records which renderer made it and any fallback reason. | Steve, 2026-10-18 |
 | GPU failure rule: each GPU route makes one attempt, then uses its CPU fallback. A second GPU try only for a temporary failure outside the work (preemption, memory held by other work, device lost or renderer restarting, contention timeout). A result that fails a validity or range check, a compile or validation error, a job too large for the card, or no GPU goes straight to the CPU. Master PRD philosophy 3, "When a GPU attempt fails". | Steve, 2026-11-06 |
