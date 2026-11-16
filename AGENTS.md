@@ -600,6 +600,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   v1 quality trial (AI or classical): goal, measured quality contract,
   candidates, phases and open questions for Steve. Research reports go in
   `docs/technical/research/denoise-v1-2026-11-16/`.
+- `docs/technical/research/denoise-v1-2026-11-16/`: Phase 1 Denoise research;
+  `candidates.md` checks weight/code licences, classical alternatives,
+  minimum-Mac feasibility and the four recommended prototype adapters.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.

@@ -1,3 +1,21 @@
+## November 16: Denoise candidate CPU load smoke (research only)
+
+MacBook Neo / A18 Pro / 8 GB, ORT 1.32.0 CPUExecutionProvider, one thread,
+batch one, CPU arena/memory pattern disabled; one synthetic 512-square tensor
+per model, sequential cold invocation. Other-worker CPU activity possible.
+These are descriptive load checks, not production action-to-picture waits or
+an accepted speed comparison; no performance tolerance is changed.
+
+| Candidate / action | Measured time | Conditions / evidence |
+| --- | ---: | --- |
+| RawNIND linear: session / one 512×512 RGB tile | 0.033 / 0.358 s | 576 MB OS peak RSS, finite output; same ONNX hash as November 13 B1. |
+| RawNIND Bayer: session / one 512×512 packed tile → 1024×1024 RGB | 0.026 / 0.328 s | 606 MB OS peak RSS, finite output; no RAW decode, demosaic/color tail or presentation included. |
+
+Evidence: `codebase/output/denoise-v1/candidates/{cpu-smoke.json,smoke_cpu.py}`.
+Source, model hashes, licence checks, uncertain 24/61 MP extrapolations and
+adapter instructions: [candidate survey](research/denoise-v1-2026-11-16/candidates.md).
+No GPU/Electron run. Commit containing this note; no shipping code changed.
+
 ## November 16: DSC01287 saved-grade lag investigation (minimum Mac)
 
 MacBook Neo / A18 Pro / 8 GB, actual 1408×794 / DPR 2, default 4 GB,
