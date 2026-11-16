@@ -10,7 +10,7 @@ Dynamic entries show the JavaScript expression/template, with supporting definit
 
 ## Coverage and limits
 
-This inventory contains **761 source entries**, not 761 distinct hover messages. Shared helpers can produce many messages; multiple sources can feed one control. It scans HTML and JavaScript in frontend and the desktop shell (including embedded markup), title/data-tooltip/data-tip/data-native-tooltip attributes and assignments, authored title-tooltip spans, accessible-label fallbacks, and selected-option names. No app or photo is opened.
+This inventory contains **762 source entries**, not 762 distinct hover messages. Shared helpers can produce many messages; multiple sources can feed one control. It scans HTML and JavaScript in frontend and the desktop shell (including embedded markup), title/data-tooltip/data-tip/data-native-tooltip attributes and assignments, authored title-tooltip spans, accessible-label fallbacks, and selected-option names. No app or photo is opened.
 
 Runtime names, paths, errors, backend capability messages, custom album/label meanings and selected values have no finite list of text: their expression is recorded. Arbitrary computed property names, new helper APIs, external content and native operating-system menus are not discoverable by this static scanner. Supporting expressions are conservative and may include strings that are not shown as tooltips. When adding a new tooltip mechanism, extend the extractor and its fixture test.
 
@@ -704,8 +704,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| els.viewerBranchNote.textContent | canShow ? &#96;Chromium Proof · ${proofSizeLabel()} · ${proofFormatLabel()} · ${proofPreviewLabel()} · scopes: authored HDR.&#96; : "Chromium Proof is not current · build or refresh it from the Proof settings rail." | dynamic expression | codebase/frontend/proofing-ui.js:321 · [source](../../codebase/frontend/proofing-ui.js#L321) |
-| els.viewerBranchNote.textContent | branchCopy[state.currentView] | dynamic expression | codebase/frontend/proofing-ui.js:326 · [source](../../codebase/frontend/proofing-ui.js#L326) |
+| els.viewerBranchNote.textContent | canShow ? &#96;Chromium Proof · ${proofSizeLabel()} · ${proofFormatLabel()} · ${proofPreviewLabel()} · scopes: authored HDR.&#96; : "Chromium Proof is not current · build or refresh it from the Proof settings rail." | dynamic expression | codebase/frontend/proofing-ui.js:322 · [source](../../codebase/frontend/proofing-ui.js#L322) |
+| els.viewerBranchNote.textContent | branchCopy[state.currentView] | dynamic expression | codebase/frontend/proofing-ui.js:327 · [source](../../codebase/frontend/proofing-ui.js#L327) |
 
 ## Export
 
@@ -719,151 +719,152 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | JPEG XL (SDR) | JPEG XL (SDR) | name only (selected option, when clipped) | codebase/frontend/index.html:1564 · [source](../../codebase/frontend/index.html#L1564) |
 | PNG (SDR) | PNG (SDR) | name only (selected option, when clipped) | codebase/frontend/index.html:1565 · [source](../../codebase/frontend/index.html#L1565) |
 | JPEG (SDR) | JPEG (SDR) | name only (selected option, when clipped) | codebase/frontend/index.html:1566 · [source](../../codebase/frontend/index.html#L1566) |
-| Web Default Web Optimized Maximum Fidelity Custom | Manual encoding changes switch the preset to Custom. | fixed | codebase/frontend/index.html::#export-preset · [source](../../codebase/frontend/index.html#L1572) |
+| Web Default Web Optimized Maximum Fidelity High fidelity JPEG XL Custom | Manual encoding changes switch the preset to Custom. | fixed | codebase/frontend/index.html::#export-preset · [source](../../codebase/frontend/index.html#L1572) |
 | Web Default | Web Default | name only (selected option, when clipped) | codebase/frontend/index.html:1573 · [source](../../codebase/frontend/index.html#L1573) |
 | Web Optimized | Web Optimized | name only (selected option, when clipped) | codebase/frontend/index.html:1574 · [source](../../codebase/frontend/index.html#L1574) |
 | Maximum Fidelity | Maximum Fidelity | name only (selected option, when clipped) | codebase/frontend/index.html:1575 · [source](../../codebase/frontend/index.html#L1575) |
-| Custom | Custom | name only (selected option, when clipped) | codebase/frontend/index.html:1576 · [source](../../codebase/frontend/index.html#L1576) |
-| 8-bit | 8-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1592 · [source](../../codebase/frontend/index.html#L1592) |
-| 10-bit | 10-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1592::2 · [source](../../codebase/frontend/index.html#L1592) |
-| 12-bit | 12-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1592::3 · [source](../../codebase/frontend/index.html#L1592) |
-| 4:2:0 | 4:2:0 | name only (selected option, when clipped) | codebase/frontend/index.html:1595 · [source](../../codebase/frontend/index.html#L1595) |
-| 4:2:2 | 4:2:2 | name only (selected option, when clipped) | codebase/frontend/index.html:1595::2 · [source](../../codebase/frontend/index.html#L1595) |
-| 4:4:4 | 4:4:4 | name only (selected option, when clipped) | codebase/frontend/index.html:1595::3 · [source](../../codebase/frontend/index.html#L1595) |
-| Half | Half | name only (selected option, when clipped) | codebase/frontend/index.html:1602 · [source](../../codebase/frontend/index.html#L1602) |
-| Full | Full | name only (selected option, when clipped) | codebase/frontend/index.html:1602::2 · [source](../../codebase/frontend/index.html#L1602) |
-| Full | Full | name only (selected option, when clipped) | codebase/frontend/index.html:1611 · [source](../../codebase/frontend/index.html#L1611) |
-| Half | Half | name only (selected option, when clipped) | codebase/frontend/index.html:1611::2 · [source](../../codebase/frontend/index.html#L1611) |
-| 4:2:0 | 4:2:0 | name only (selected option, when clipped) | codebase/frontend/index.html:1614 · [source](../../codebase/frontend/index.html#L1614) |
-| 4:2:2 | 4:2:2 | name only (selected option, when clipped) | codebase/frontend/index.html:1614::2 · [source](../../codebase/frontend/index.html#L1614) |
-| 4:4:4 | 4:4:4 | name only (selected option, when clipped) | codebase/frontend/index.html:1614::3 · [source](../../codebase/frontend/index.html#L1614) |
-| 4:2:0 | 4:2:0 | name only (selected option, when clipped) | codebase/frontend/index.html:1618 · [source](../../codebase/frontend/index.html#L1618) |
-| 4:2:2 | 4:2:2 | name only (selected option, when clipped) | codebase/frontend/index.html:1618::2 · [source](../../codebase/frontend/index.html#L1618) |
-| 4:4:4 | 4:4:4 | name only (selected option, when clipped) | codebase/frontend/index.html:1618::3 · [source](../../codebase/frontend/index.html#L1618) |
-| 10-bit integer | 10-bit integer | name only (selected option, when clipped) | codebase/frontend/index.html:1621 · [source](../../codebase/frontend/index.html#L1621) |
-| 12-bit integer | 12-bit integer | name only (selected option, when clipped) | codebase/frontend/index.html:1621::2 · [source](../../codebase/frontend/index.html#L1621) |
-| 16-bit integer | 16-bit integer | name only (selected option, when clipped) | codebase/frontend/index.html:1621::3 · [source](../../codebase/frontend/index.html#L1621) |
-| 16-bit float | 16-bit float | name only (selected option, when clipped) | codebase/frontend/index.html:1621::4 · [source](../../codebase/frontend/index.html#L1621) |
-| 32-bit float | 32-bit float | name only (selected option, when clipped) | codebase/frontend/index.html:1621::5 · [source](../../codebase/frontend/index.html#L1621) |
-| 8-bit | 8-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1625 · [source](../../codebase/frontend/index.html#L1625) |
-| 16-bit | 16-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1625::2 · [source](../../codebase/frontend/index.html#L1625) |
-| Auto | Auto | name only (selected option, when clipped) | codebase/frontend/index.html:1628 · [source](../../codebase/frontend/index.html#L1628) |
-| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:1628::2 · [source](../../codebase/frontend/index.html#L1628) |
-| Subtle | Subtle | name only (selected option, when clipped) | codebase/frontend/index.html:1628::3 · [source](../../codebase/frontend/index.html#L1628) |
-| None | None | name only (selected option, when clipped) | codebase/frontend/index.html:1632 · [source](../../codebase/frontend/index.html#L1632) |
-| Copyright only | Copyright only | name only (selected option, when clipped) | codebase/frontend/index.html:1632::2 · [source](../../codebase/frontend/index.html#L1632) |
-| All except location | All except location | name only (selected option, when clipped) | codebase/frontend/index.html:1632::3 · [source](../../codebase/frontend/index.html#L1632) |
-| All including location | All including location | name only (selected option, when clipped) | codebase/frontend/index.html:1632::4 · [source](../../codebase/frontend/index.html#L1632) |
-| Guarantee HDR peakHighlight Compression checks every HDR export and Proof after encoding. Up to 1% above target is accepted unchanged; larger overshoots are corrected locally toward the target. Files still above the allowance are not delivered. This option also checks the codec ceiling when Highlight Compression is bypassed. | Highlight Compression checks every HDR export and Proof after encoding. Up to 1% above target is accepted unchanged; larger overshoots are corrected locally toward the target. Files still above the allowance are not delivered. This option also checks the codec ceiling when Highlight Compression is bypassed. | fixed | codebase/frontend/index.html:1643 · [source](../../codebase/frontend/index.html#L1643) |
-| Original (cropped)Long edgeFit within dimensions | Original (cropped) | fixed | codebase/frontend/index.html::#export-resize-mode · [source](../../codebase/frontend/index.html#L1651) |
-| Original (cropped) | Original (cropped) | name only (selected option, when clipped) | codebase/frontend/index.html:1651 · [source](../../codebase/frontend/index.html#L1651) |
-| Long edge | Long edge | name only (selected option, when clipped) | codebase/frontend/index.html:1651::2 · [source](../../codebase/frontend/index.html#L1651) |
-| Fit within dimensions | Fit within dimensions | name only (selected option, when clipped) | codebase/frontend/index.html:1651::3 · [source](../../codebase/frontend/index.html#L1651) |
-| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:1659 · [source](../../codebase/frontend/index.html#L1659) |
-| Subtle | Subtle | name only (selected option, when clipped) | codebase/frontend/index.html:1659::2 · [source](../../codebase/frontend/index.html#L1659) |
-| Standard | Standard | name only (selected option, when clipped) | codebase/frontend/index.html:1659::3 · [source](../../codebase/frontend/index.html#L1659) |
-| Strong | Strong | name only (selected option, when clipped) | codebase/frontend/index.html:1659::4 · [source](../../codebase/frontend/index.html#L1659) |
-| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:1665 · [source](../../codebase/frontend/index.html#L1665) |
-| Text in both renditions | Text in both renditions | name only (selected option, when clipped) | codebase/frontend/index.html:1665::2 · [source](../../codebase/frontend/index.html#L1665) |
-| Gain-map test: HDR / SDR | Gain-map test: HDR / SDR | name only (selected option, when clipped) | codebase/frontend/index.html:1665::3 · [source](../../codebase/frontend/index.html#L1665) |
-| Bottom right | Bottom right | name only (selected option, when clipped) | codebase/frontend/index.html:1667 · [source](../../codebase/frontend/index.html#L1667) |
-| Bottom left | Bottom left | name only (selected option, when clipped) | codebase/frontend/index.html:1667::2 · [source](../../codebase/frontend/index.html#L1667) |
-| Top right | Top right | name only (selected option, when clipped) | codebase/frontend/index.html:1667::3 · [source](../../codebase/frontend/index.html#L1667) |
-| Top left | Top left | name only (selected option, when clipped) | codebase/frontend/index.html:1667::4 · [source](../../codebase/frontend/index.html#L1667) |
+| High fidelity JPEG XL | High fidelity JPEG XL | name only (selected option, when clipped) | codebase/frontend/index.html:1576 · [source](../../codebase/frontend/index.html#L1576) |
+| Custom | Custom | name only (selected option, when clipped) | codebase/frontend/index.html:1577 · [source](../../codebase/frontend/index.html#L1577) |
+| 8-bit | 8-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1597 · [source](../../codebase/frontend/index.html#L1597) |
+| 10-bit | 10-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1597::2 · [source](../../codebase/frontend/index.html#L1597) |
+| 12-bit | 12-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1597::3 · [source](../../codebase/frontend/index.html#L1597) |
+| 4:2:0 | 4:2:0 | name only (selected option, when clipped) | codebase/frontend/index.html:1600 · [source](../../codebase/frontend/index.html#L1600) |
+| 4:2:2 | 4:2:2 | name only (selected option, when clipped) | codebase/frontend/index.html:1600::2 · [source](../../codebase/frontend/index.html#L1600) |
+| 4:4:4 | 4:4:4 | name only (selected option, when clipped) | codebase/frontend/index.html:1600::3 · [source](../../codebase/frontend/index.html#L1600) |
+| Half | Half | name only (selected option, when clipped) | codebase/frontend/index.html:1607 · [source](../../codebase/frontend/index.html#L1607) |
+| Full | Full | name only (selected option, when clipped) | codebase/frontend/index.html:1607::2 · [source](../../codebase/frontend/index.html#L1607) |
+| Full | Full | name only (selected option, when clipped) | codebase/frontend/index.html:1616 · [source](../../codebase/frontend/index.html#L1616) |
+| Half | Half | name only (selected option, when clipped) | codebase/frontend/index.html:1616::2 · [source](../../codebase/frontend/index.html#L1616) |
+| 4:2:0 | 4:2:0 | name only (selected option, when clipped) | codebase/frontend/index.html:1619 · [source](../../codebase/frontend/index.html#L1619) |
+| 4:2:2 | 4:2:2 | name only (selected option, when clipped) | codebase/frontend/index.html:1619::2 · [source](../../codebase/frontend/index.html#L1619) |
+| 4:4:4 | 4:4:4 | name only (selected option, when clipped) | codebase/frontend/index.html:1619::3 · [source](../../codebase/frontend/index.html#L1619) |
+| 4:2:0 | 4:2:0 | name only (selected option, when clipped) | codebase/frontend/index.html:1623 · [source](../../codebase/frontend/index.html#L1623) |
+| 4:2:2 | 4:2:2 | name only (selected option, when clipped) | codebase/frontend/index.html:1623::2 · [source](../../codebase/frontend/index.html#L1623) |
+| 4:4:4 | 4:4:4 | name only (selected option, when clipped) | codebase/frontend/index.html:1623::3 · [source](../../codebase/frontend/index.html#L1623) |
+| 10-bit integer | 10-bit integer | name only (selected option, when clipped) | codebase/frontend/index.html:1626 · [source](../../codebase/frontend/index.html#L1626) |
+| 12-bit integer | 12-bit integer | name only (selected option, when clipped) | codebase/frontend/index.html:1626::2 · [source](../../codebase/frontend/index.html#L1626) |
+| 16-bit integer | 16-bit integer | name only (selected option, when clipped) | codebase/frontend/index.html:1626::3 · [source](../../codebase/frontend/index.html#L1626) |
+| 16-bit float | 16-bit float | name only (selected option, when clipped) | codebase/frontend/index.html:1626::4 · [source](../../codebase/frontend/index.html#L1626) |
+| 32-bit float | 32-bit float | name only (selected option, when clipped) | codebase/frontend/index.html:1626::5 · [source](../../codebase/frontend/index.html#L1626) |
+| 8-bit | 8-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1630 · [source](../../codebase/frontend/index.html#L1630) |
+| 16-bit | 16-bit | name only (selected option, when clipped) | codebase/frontend/index.html:1630::2 · [source](../../codebase/frontend/index.html#L1630) |
+| Auto | Auto | name only (selected option, when clipped) | codebase/frontend/index.html:1633 · [source](../../codebase/frontend/index.html#L1633) |
+| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:1633::2 · [source](../../codebase/frontend/index.html#L1633) |
+| Subtle | Subtle | name only (selected option, when clipped) | codebase/frontend/index.html:1633::3 · [source](../../codebase/frontend/index.html#L1633) |
+| None | None | name only (selected option, when clipped) | codebase/frontend/index.html:1637 · [source](../../codebase/frontend/index.html#L1637) |
+| Copyright only | Copyright only | name only (selected option, when clipped) | codebase/frontend/index.html:1637::2 · [source](../../codebase/frontend/index.html#L1637) |
+| All except location | All except location | name only (selected option, when clipped) | codebase/frontend/index.html:1637::3 · [source](../../codebase/frontend/index.html#L1637) |
+| All including location | All including location | name only (selected option, when clipped) | codebase/frontend/index.html:1637::4 · [source](../../codebase/frontend/index.html#L1637) |
+| Guarantee HDR peakHighlight Compression checks every HDR export and Proof after encoding. Up to 1% above target is accepted unchanged; larger overshoots are corrected locally toward the target. Files still above the allowance are not delivered. This option also checks the codec ceiling when Highlight Compression is bypassed. | Highlight Compression checks every HDR export and Proof after encoding. Up to 1% above target is accepted unchanged; larger overshoots are corrected locally toward the target. Files still above the allowance are not delivered. This option also checks the codec ceiling when Highlight Compression is bypassed. | fixed | codebase/frontend/index.html:1648 · [source](../../codebase/frontend/index.html#L1648) |
+| Original (cropped)Long edgeFit within dimensions | Original (cropped) | fixed | codebase/frontend/index.html::#export-resize-mode · [source](../../codebase/frontend/index.html#L1656) |
+| Original (cropped) | Original (cropped) | name only (selected option, when clipped) | codebase/frontend/index.html:1656 · [source](../../codebase/frontend/index.html#L1656) |
+| Long edge | Long edge | name only (selected option, when clipped) | codebase/frontend/index.html:1656::2 · [source](../../codebase/frontend/index.html#L1656) |
+| Fit within dimensions | Fit within dimensions | name only (selected option, when clipped) | codebase/frontend/index.html:1656::3 · [source](../../codebase/frontend/index.html#L1656) |
+| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:1664 · [source](../../codebase/frontend/index.html#L1664) |
+| Subtle | Subtle | name only (selected option, when clipped) | codebase/frontend/index.html:1664::2 · [source](../../codebase/frontend/index.html#L1664) |
+| Standard | Standard | name only (selected option, when clipped) | codebase/frontend/index.html:1664::3 · [source](../../codebase/frontend/index.html#L1664) |
+| Strong | Strong | name only (selected option, when clipped) | codebase/frontend/index.html:1664::4 · [source](../../codebase/frontend/index.html#L1664) |
+| Off | Off | name only (selected option, when clipped) | codebase/frontend/index.html:1670 · [source](../../codebase/frontend/index.html#L1670) |
+| Text in both renditions | Text in both renditions | name only (selected option, when clipped) | codebase/frontend/index.html:1670::2 · [source](../../codebase/frontend/index.html#L1670) |
+| Gain-map test: HDR / SDR | Gain-map test: HDR / SDR | name only (selected option, when clipped) | codebase/frontend/index.html:1670::3 · [source](../../codebase/frontend/index.html#L1670) |
+| Bottom right | Bottom right | name only (selected option, when clipped) | codebase/frontend/index.html:1672 · [source](../../codebase/frontend/index.html#L1672) |
+| Bottom left | Bottom left | name only (selected option, when clipped) | codebase/frontend/index.html:1672::2 · [source](../../codebase/frontend/index.html#L1672) |
+| Top right | Top right | name only (selected option, when clipped) | codebase/frontend/index.html:1672::3 · [source](../../codebase/frontend/index.html#L1672) |
+| Top left | Top left | name only (selected option, when clipped) | codebase/frontend/index.html:1672::4 · [source](../../codebase/frontend/index.html#L1672) |
 
 ### batch export
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
 | element.dataset.tooltip | text | dynamic expression | codebase/frontend/batch-export.js:7 · [source](../../codebase/frontend/batch-export.js#L7) |
-| b aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:57 · [source](../../codebase/frontend/batch-export.js#L57) |
-| label — text used by dynamic tooltips | failed?"Failed":active?"Exporting…":skipped?&#96;${skipped} skipped&#96;:results.length?"Done":"" | dynamic supporting definition | codebase/frontend/batch-export.js:147 · [source](../../codebase/frontend/batch-export.js#L147) |
-| skipped — text used by dynamic tooltips | results.filter(r=&gt;r.outcome==="skipped").length | dynamic supporting definition | codebase/frontend/batch-export.js:146 · [source](../../codebase/frontend/batch-export.js#L146) |
-| results — text used by dynamic tooltips | node("ul") | dynamic supporting definition | codebase/frontend/batch-export.js:313 · [source](../../codebase/frontend/batch-export.js#L313) |
-| b.title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:57::2 · [source](../../codebase/frontend/batch-export.js#L57) |
-| els.exportResizeMode.title | els.exportResizeMode.selectedOptions[0]?.textContent &#124;&#124; "" | dynamic expression | codebase/frontend/batch-export.js:105 · [source](../../codebase/frontend/batch-export.js#L105) |
-| patternHelp.dataset.tooltip | $("batch-example").textContent | dynamic expression | codebase/frontend/batch-export.js:106 · [source](../../codebase/frontend/batch-export.js#L106) |
-| meter aria-label | &#96;Versions completed for ${p.name}&#96; | dynamic expression | codebase/frontend/batch-export.js:149 · [source](../../codebase/frontend/batch-export.js#L149) |
-| name — text used by dynamic tooltips | node("input") | dynamic supporting definition | codebase/frontend/batch-export.js:248 · [source](../../codebase/frontend/batch-export.js#L248) |
-| firstChild aria-label | error.message | dynamic expression | codebase/frontend/batch-export.js:196 · [source](../../codebase/frontend/batch-export.js#L196) |
-| .title | model.directory | dynamic expression | codebase/frontend/batch-export.js:211 · [source](../../codebase/frontend/batch-export.js#L211) |
+| b aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:58 · [source](../../codebase/frontend/batch-export.js#L58) |
+| label — text used by dynamic tooltips | failed?"Failed":active?"Exporting…":skipped?&#96;${skipped} skipped&#96;:results.length?"Done":"" | dynamic supporting definition | codebase/frontend/batch-export.js:148 · [source](../../codebase/frontend/batch-export.js#L148) |
+| skipped — text used by dynamic tooltips | results.filter(r=&gt;r.outcome==="skipped").length | dynamic supporting definition | codebase/frontend/batch-export.js:147 · [source](../../codebase/frontend/batch-export.js#L147) |
+| results — text used by dynamic tooltips | node("ul") | dynamic supporting definition | codebase/frontend/batch-export.js:314 · [source](../../codebase/frontend/batch-export.js#L314) |
+| b.title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:58::2 · [source](../../codebase/frontend/batch-export.js#L58) |
+| els.exportResizeMode.title | els.exportResizeMode.selectedOptions[0]?.textContent &#124;&#124; "" | dynamic expression | codebase/frontend/batch-export.js:106 · [source](../../codebase/frontend/batch-export.js#L106) |
+| patternHelp.dataset.tooltip | $("batch-example").textContent | dynamic expression | codebase/frontend/batch-export.js:107 · [source](../../codebase/frontend/batch-export.js#L107) |
+| meter aria-label | &#96;Versions completed for ${p.name}&#96; | dynamic expression | codebase/frontend/batch-export.js:150 · [source](../../codebase/frontend/batch-export.js#L150) |
+| name — text used by dynamic tooltips | node("input") | dynamic supporting definition | codebase/frontend/batch-export.js:249 · [source](../../codebase/frontend/batch-export.js#L249) |
+| firstChild aria-label | error.message | dynamic expression | codebase/frontend/batch-export.js:197 · [source](../../codebase/frontend/batch-export.js#L197) |
+| .title | model.directory | dynamic expression | codebase/frontend/batch-export.js:212 · [source](../../codebase/frontend/batch-export.js#L212) |
 | model — text used by dynamic tooltips | {paths:[],photos:[],presets:[],draft:null,saved:null,version:0,job:null,selected:new Set(),directory:"",grant:null,initialized:false,anchor:0,grid:true,closedJob:null} | dynamic supporting definition | codebase/frontend/batch-export.js:3 · [source](../../codebase/frontend/batch-export.js#L3) |
-| job — text used by dynamic tooltips | await api("/api/batch-export",{paths,preset,directory:model.directory,path_grant:model.grant}) | dynamic supporting definition | codebase/frontend/batch-export.js:222 · [source](../../codebase/frontend/batch-export.js#L222) |
-| grid — text used by dynamic tooltips | node("div") | dynamic supporting definition | codebase/frontend/batch-export.js:307 · [source](../../codebase/frontend/batch-export.js#L307) |
-| .title | model.directory | dynamic expression | codebase/frontend/batch-export.js:218 · [source](../../codebase/frontend/batch-export.js#L218) |
-| .title | model.directory | dynamic expression | codebase/frontend/batch-export.js:221 · [source](../../codebase/frontend/batch-export.js#L221) |
-| collapse aria-label | collapsed?"Expand export presets":"Collapse export presets" | dynamic expression | codebase/frontend/batch-export.js:241 · [source](../../codebase/frontend/batch-export.js#L241) |
-| collapsed — text used by dynamic tooltips | document.body.classList.toggle("batch-presets-collapsed") | dynamic supporting definition | codebase/frontend/batch-export.js:239 · [source](../../codebase/frontend/batch-export.js#L239) |
-| collapse.title | collapsed?"Expand export presets":"Collapse export presets" | dynamic expression | codebase/frontend/batch-export.js:242 · [source](../../codebase/frontend/batch-export.js#L242) |
-| collapse aria-label | Collapse export presets | name only (fallback candidate) | codebase/frontend/batch-export.js:246 · [source](../../codebase/frontend/batch-export.js#L246) |
-| collapse.title | Collapse export presets | fixed | codebase/frontend/batch-export.js:246::2 · [source](../../codebase/frontend/batch-export.js#L246) |
-| select aria-label | Output version | name only (fallback candidate) | codebase/frontend/batch-export.js:255 · [source](../../codebase/frontend/batch-export.js#L255) |
-| exportFormat aria-label | Format | name only (fallback candidate) | codebase/frontend/batch-export.js:261 · [source](../../codebase/frontend/batch-export.js#L261) |
-| exportPreset aria-label | Quality profile | name only (fallback candidate) | codebase/frontend/batch-export.js:261::2 · [source](../../codebase/frontend/batch-export.js#L261) |
-| els.exportResizeMode.title | els.exportResizeMode.selectedOptions[0]?.textContent &#124;&#124; "" | dynamic expression | codebase/frontend/batch-export.js:263 · [source](../../codebase/frontend/batch-export.js#L263) |
-| input aria-label | &#96;${label} in pixels&#96; | dynamic expression | codebase/frontend/batch-export.js:268 · [source](../../codebase/frontend/batch-export.js#L268) |
-| pattern aria-label | File name pattern | name only (fallback candidate) | codebase/frontend/batch-export.js:284 · [source](../../codebase/frontend/batch-export.js#L284) |
-| tokens aria-label | Insert filename token | name only (fallback candidate) | codebase/frontend/batch-export.js:285 · [source](../../codebase/frontend/batch-export.js#L285) |
-| dest aria-label | Destination folder | name only (fallback candidate) | codebase/frontend/batch-export.js:297 · [source](../../codebase/frontend/batch-export.js#L297) |
-| dest.title | dest.value | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:297::2 · [source](../../codebase/frontend/batch-export.js#L297) |
-| dest — text used by dynamic tooltips | node("input") | dynamic supporting definition | codebase/frontend/batch-export.js:297::3 · [source](../../codebase/frontend/batch-export.js#L297) |
-| b aria-label | kind==="grid"?"Grid":"Preview" | dynamic expression | codebase/frontend/batch-export.js:304 · [source](../../codebase/frontend/batch-export.js#L304) |
-| b.title | kind==="grid"?"Grid":"Preview" | dynamic expression | codebase/frontend/batch-export.js:304::2 · [source](../../codebase/frontend/batch-export.js#L304) |
-| b.title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:305 · [source](../../codebase/frontend/batch-export.js#L305) |
-| b aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:305::2 · [source](../../codebase/frontend/batch-export.js#L305) |
-| grid aria-label | Photos in this batch | name only (fallback candidate) | codebase/frontend/batch-export.js:307::2 · [source](../../codebase/frontend/batch-export.js#L307) |
-| meter aria-label | Overall export progress | name only (fallback candidate) | codebase/frontend/batch-export.js:313::2 · [source](../../codebase/frontend/batch-export.js#L313) |
-| Export help | Each output version creates a separate file from the same saved photo edits, with its own export settings (format, size and naming). Changes here affect only the selected version. Export creates all versions. | fixed | codebase/frontend/batch-export.js:257 · [source](../../codebase/frontend/batch-export.js#L257) |
-| Export help | framingNote.textContent | dynamic expression | codebase/frontend/batch-export.js:274 · [source](../../codebase/frontend/batch-export.js#L274) |
-| Export help | Filename preview | fixed | codebase/frontend/batch-export.js:288 · [source](../../codebase/frontend/batch-export.js#L288) |
+| job — text used by dynamic tooltips | await api("/api/batch-export",{paths,preset,directory:model.directory,path_grant:model.grant}) | dynamic supporting definition | codebase/frontend/batch-export.js:223 · [source](../../codebase/frontend/batch-export.js#L223) |
+| grid — text used by dynamic tooltips | node("div") | dynamic supporting definition | codebase/frontend/batch-export.js:308 · [source](../../codebase/frontend/batch-export.js#L308) |
+| .title | model.directory | dynamic expression | codebase/frontend/batch-export.js:219 · [source](../../codebase/frontend/batch-export.js#L219) |
+| .title | model.directory | dynamic expression | codebase/frontend/batch-export.js:222 · [source](../../codebase/frontend/batch-export.js#L222) |
+| collapse aria-label | collapsed?"Expand export presets":"Collapse export presets" | dynamic expression | codebase/frontend/batch-export.js:242 · [source](../../codebase/frontend/batch-export.js#L242) |
+| collapsed — text used by dynamic tooltips | document.body.classList.toggle("batch-presets-collapsed") | dynamic supporting definition | codebase/frontend/batch-export.js:240 · [source](../../codebase/frontend/batch-export.js#L240) |
+| collapse.title | collapsed?"Expand export presets":"Collapse export presets" | dynamic expression | codebase/frontend/batch-export.js:243 · [source](../../codebase/frontend/batch-export.js#L243) |
+| collapse aria-label | Collapse export presets | name only (fallback candidate) | codebase/frontend/batch-export.js:247 · [source](../../codebase/frontend/batch-export.js#L247) |
+| collapse.title | Collapse export presets | fixed | codebase/frontend/batch-export.js:247::2 · [source](../../codebase/frontend/batch-export.js#L247) |
+| select aria-label | Output version | name only (fallback candidate) | codebase/frontend/batch-export.js:256 · [source](../../codebase/frontend/batch-export.js#L256) |
+| exportFormat aria-label | Format | name only (fallback candidate) | codebase/frontend/batch-export.js:262 · [source](../../codebase/frontend/batch-export.js#L262) |
+| exportPreset aria-label | Quality profile | name only (fallback candidate) | codebase/frontend/batch-export.js:262::2 · [source](../../codebase/frontend/batch-export.js#L262) |
+| els.exportResizeMode.title | els.exportResizeMode.selectedOptions[0]?.textContent &#124;&#124; "" | dynamic expression | codebase/frontend/batch-export.js:264 · [source](../../codebase/frontend/batch-export.js#L264) |
+| input aria-label | &#96;${label} in pixels&#96; | dynamic expression | codebase/frontend/batch-export.js:269 · [source](../../codebase/frontend/batch-export.js#L269) |
+| pattern aria-label | File name pattern | name only (fallback candidate) | codebase/frontend/batch-export.js:285 · [source](../../codebase/frontend/batch-export.js#L285) |
+| tokens aria-label | Insert filename token | name only (fallback candidate) | codebase/frontend/batch-export.js:286 · [source](../../codebase/frontend/batch-export.js#L286) |
+| dest aria-label | Destination folder | name only (fallback candidate) | codebase/frontend/batch-export.js:298 · [source](../../codebase/frontend/batch-export.js#L298) |
+| dest.title | dest.value | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:298::2 · [source](../../codebase/frontend/batch-export.js#L298) |
+| dest — text used by dynamic tooltips | node("input") | dynamic supporting definition | codebase/frontend/batch-export.js:298::3 · [source](../../codebase/frontend/batch-export.js#L298) |
+| b aria-label | kind==="grid"?"Grid":"Preview" | dynamic expression | codebase/frontend/batch-export.js:305 · [source](../../codebase/frontend/batch-export.js#L305) |
+| b.title | kind==="grid"?"Grid":"Preview" | dynamic expression | codebase/frontend/batch-export.js:305::2 · [source](../../codebase/frontend/batch-export.js#L305) |
+| b.title | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:306 · [source](../../codebase/frontend/batch-export.js#L306) |
+| b aria-label | label | dynamic expression; name/status supplied at runtime | codebase/frontend/batch-export.js:306::2 · [source](../../codebase/frontend/batch-export.js#L306) |
+| grid aria-label | Photos in this batch | name only (fallback candidate) | codebase/frontend/batch-export.js:308::2 · [source](../../codebase/frontend/batch-export.js#L308) |
+| meter aria-label | Overall export progress | name only (fallback candidate) | codebase/frontend/batch-export.js:314::2 · [source](../../codebase/frontend/batch-export.js#L314) |
+| Export help | Each output version creates a separate file from the same saved photo edits, with its own export settings (format, size and naming). Changes here affect only the selected version. Export creates all versions. | fixed | codebase/frontend/batch-export.js:258 · [source](../../codebase/frontend/batch-export.js#L258) |
+| Export help | framingNote.textContent | dynamic expression | codebase/frontend/batch-export.js:275 · [source](../../codebase/frontend/batch-export.js#L275) |
+| Export help | Filename preview | fixed | codebase/frontend/batch-export.js:289 · [source](../../codebase/frontend/batch-export.js#L289) |
 
 ### export ui
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| exportOptionTooltips / avifBitDepth / 8 | Smallest AVIF primary image; lower gradient precision. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:54 · [source](../../codebase/frontend/export-ui.js#L54) |
-| exportOptionTooltips / avifBitDepth / 10 | Balanced AVIF precision for HDR publishing. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:55 · [source](../../codebase/frontend/export-ui.js#L55) |
-| exportOptionTooltips / avifBitDepth / 12 | Highest available AVIF primary-image precision. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:56 · [source](../../codebase/frontend/export-ui.js#L56) |
-| exportOptionTooltips / avifChromaSubsampling / 420 | Smallest primary image; suitable for most photographic content. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:59 · [source](../../codebase/frontend/export-ui.js#L59) |
-| exportOptionTooltips / avifChromaSubsampling / 422 | Retains more horizontal color detail. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:60 · [source](../../codebase/frontend/export-ui.js#L60) |
-| exportOptionTooltips / avifChromaSubsampling / 444 | Retains full color resolution for fine colored edges and text. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:61 · [source](../../codebase/frontend/export-ui.js#L61) |
-| exportOptionTooltips / avifGainMapScale / full | Stores the gain map at full image resolution. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:64 · [source](../../codebase/frontend/export-ui.js#L64) |
-| exportOptionTooltips / avifGainMapScale / half | Stores a half-resolution gain map to reduce delivery size. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:65 · [source](../../codebase/frontend/export-ui.js#L65) |
-| exportOptionTooltips / jpegGainMapScale / full | Stores the gain map at full image resolution. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:68 · [source](../../codebase/frontend/export-ui.js#L68) |
-| exportOptionTooltips / jpegGainMapScale / half | Stores a half-resolution gain map to reduce delivery size. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:69 · [source](../../codebase/frontend/export-ui.js#L69) |
-| exportOptionTooltips / jpegUltrahdrChromaSubsampling / 420 | Smallest primary JPEG; suitable for most photographic content. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:72 · [source](../../codebase/frontend/export-ui.js#L72) |
-| exportOptionTooltips / jpegUltrahdrChromaSubsampling / 422 | Retains more horizontal color detail. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:73 · [source](../../codebase/frontend/export-ui.js#L73) |
-| exportOptionTooltips / jpegUltrahdrChromaSubsampling / 444 | Retains full color resolution for fine colored edges and text. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:74 · [source](../../codebase/frontend/export-ui.js#L74) |
-| exportOptionTooltips / jpegChromaSubsampling / 420 | Smallest JPEG; suitable for most photographic content. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:77 · [source](../../codebase/frontend/export-ui.js#L77) |
-| exportOptionTooltips / jpegChromaSubsampling / 422 | Retains more horizontal color detail. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:78 · [source](../../codebase/frontend/export-ui.js#L78) |
-| exportOptionTooltips / jpegChromaSubsampling / 444 | Retains full color resolution for fine colored edges and text. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:79 · [source](../../codebase/frontend/export-ui.js#L79) |
-| exportOptionTooltips / jpegxlPrecision / uint10 | Compact integer HDR precision. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:82 · [source](../../codebase/frontend/export-ui.js#L82) |
-| exportOptionTooltips / jpegxlPrecision / uint12 | Balanced integer HDR precision. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:83 · [source](../../codebase/frontend/export-ui.js#L83) |
-| exportOptionTooltips / jpegxlPrecision / uint16 | Highest practical integer precision. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:84 · [source](../../codebase/frontend/export-ui.js#L84) |
-| exportOptionTooltips / jpegxlPrecision / float16 | Specialist half-float interchange. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:85 · [source](../../codebase/frontend/export-ui.js#L85) |
-| exportOptionTooltips / jpegxlPrecision / float32 | Specialist full-float interchange with the largest files. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:86 · [source](../../codebase/frontend/export-ui.js#L86) |
-| exportOptionTooltips / sdrPngBitDepth / 8 | Standard web-compatible PNG precision. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:89 · [source](../../codebase/frontend/export-ui.js#L89) |
-| exportOptionTooltips / sdrPngBitDepth / 16 | High-precision PNG interchange. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:90 · [source](../../codebase/frontend/export-ui.js#L90) |
-| exportOptionTooltips / exportDithering / auto | Applies deterministic signal-domain dither when exporting 8-bit output. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:93 · [source](../../codebase/frontend/export-ui.js#L93) |
-| exportOptionTooltips / exportDithering / off | Disables export dithering. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:94 · [source](../../codebase/frontend/export-ui.js#L94) |
-| exportOptionTooltips / exportDithering / subtle | Applies subtle signal-domain dither. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:95 · [source](../../codebase/frontend/export-ui.js#L95) |
-| exportOptionTooltips / exportMetadataPolicy / none | Removes optional source metadata while retaining required color and HDR signaling. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:98 · [source](../../codebase/frontend/export-ui.js#L98) |
-| exportOptionTooltips / exportMetadataPolicy / copyright | Preserves copyright metadata only. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:99 · [source](../../codebase/frontend/export-ui.js#L99) |
-| exportOptionTooltips / exportMetadataPolicy / all_except_location | Preserves source metadata except location information. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:100 · [source](../../codebase/frontend/export-ui.js#L100) |
-| exportOptionTooltips / exportMetadataPolicy / all_including_location | Preserves all supported source metadata, including possible GPS coordinates. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:101 · [source](../../codebase/frontend/export-ui.js#L101) |
-| exportOptionTooltips / exportResizeMode / original | Keeps cropped photo pixels; adds the Frame and Border when included. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:104 · [source](../../codebase/frontend/export-ui.js#L104) |
-| exportOptionTooltips / exportResizeMode / long_edge | Resizes the complete canvas, including any Frame and Border, by its longest edge. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:105 · [source](../../codebase/frontend/export-ui.js#L105) |
-| exportOptionTooltips / exportResizeMode / fit | Fits the complete canvas, including any Frame and Border, within the width and height limits. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:106 · [source](../../codebase/frontend/export-ui.js#L106) |
-| exportOptionTooltips / exportSharpening / off | No output sharpening. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:109 · [source](../../codebase/frontend/export-ui.js#L109) |
-| exportOptionTooltips / exportSharpening / subtle | Light edge-aware sharpening after resize. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:110 · [source](../../codebase/frontend/export-ui.js#L110) |
-| exportOptionTooltips / exportSharpening / standard | Moderate edge-aware sharpening after resize. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:111 · [source](../../codebase/frontend/export-ui.js#L111) |
-| exportOptionTooltips / exportSharpening / strong | Strong edge-aware sharpening after resize. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:112 · [source](../../codebase/frontend/export-ui.js#L112) |
-| exportFormatNotes / avif_gain_map | Efficient adaptive HDR for current Chromium browsers, with an SDR base for other decoders. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:44 · [source](../../codebase/frontend/export-ui.js#L44) |
-| exportFormatNotes / jpeg_ultrahdr | Broad JPEG fallback with HDR in compatible viewers; recompression can remove the gain map. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:45 · [source](../../codebase/frontend/export-ui.js#L45) |
-| exportFormatNotes / jpegxl_hdr | Direct Rec.2020 PQ HDR for specialist workflows; no SDR fallback and limited browser support. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:46 · [source](../../codebase/frontend/export-ui.js#L46) |
-| exportFormatNotes / sdr_jpegxl | Compact SDR for JPEG XL-aware workflows; browser support remains uneven. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:47 · [source](../../codebase/frontend/export-ui.js#L47) |
-| exportFormatNotes / sdr_png | Lossless SDR delivery with 8-bit web and 16-bit fidelity choices. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:48 · [source](../../codebase/frontend/export-ui.js#L48) |
-| exportFormatNotes / sdr_jpeg | Conventional compact SDR JPEG, including very wide images up to 65,500 pixels. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:49 · [source](../../codebase/frontend/export-ui.js#L49) |
+| exportOptionTooltips / avifBitDepth / 8 | Smallest AVIF primary image; lower gradient precision. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:56 · [source](../../codebase/frontend/export-ui.js#L56) |
+| exportOptionTooltips / avifBitDepth / 10 | Balanced AVIF precision for HDR publishing. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:57 · [source](../../codebase/frontend/export-ui.js#L57) |
+| exportOptionTooltips / avifBitDepth / 12 | Highest available AVIF primary-image precision. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:58 · [source](../../codebase/frontend/export-ui.js#L58) |
+| exportOptionTooltips / avifChromaSubsampling / 420 | Smallest primary image; suitable for most photographic content. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:61 · [source](../../codebase/frontend/export-ui.js#L61) |
+| exportOptionTooltips / avifChromaSubsampling / 422 | Retains more horizontal color detail. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:62 · [source](../../codebase/frontend/export-ui.js#L62) |
+| exportOptionTooltips / avifChromaSubsampling / 444 | Retains full color resolution for fine colored edges and text. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:63 · [source](../../codebase/frontend/export-ui.js#L63) |
+| exportOptionTooltips / avifGainMapScale / full | Stores the gain map at full image resolution. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:66 · [source](../../codebase/frontend/export-ui.js#L66) |
+| exportOptionTooltips / avifGainMapScale / half | Stores a half-resolution gain map to reduce delivery size. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:67 · [source](../../codebase/frontend/export-ui.js#L67) |
+| exportOptionTooltips / jpegGainMapScale / full | Stores the gain map at full image resolution. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:70 · [source](../../codebase/frontend/export-ui.js#L70) |
+| exportOptionTooltips / jpegGainMapScale / half | Stores a half-resolution gain map to reduce delivery size. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:71 · [source](../../codebase/frontend/export-ui.js#L71) |
+| exportOptionTooltips / jpegUltrahdrChromaSubsampling / 420 | Smallest primary JPEG; suitable for most photographic content. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:74 · [source](../../codebase/frontend/export-ui.js#L74) |
+| exportOptionTooltips / jpegUltrahdrChromaSubsampling / 422 | Retains more horizontal color detail. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:75 · [source](../../codebase/frontend/export-ui.js#L75) |
+| exportOptionTooltips / jpegUltrahdrChromaSubsampling / 444 | Retains full color resolution for fine colored edges and text. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:76 · [source](../../codebase/frontend/export-ui.js#L76) |
+| exportOptionTooltips / jpegChromaSubsampling / 420 | Smallest JPEG; suitable for most photographic content. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:79 · [source](../../codebase/frontend/export-ui.js#L79) |
+| exportOptionTooltips / jpegChromaSubsampling / 422 | Retains more horizontal color detail. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:80 · [source](../../codebase/frontend/export-ui.js#L80) |
+| exportOptionTooltips / jpegChromaSubsampling / 444 | Retains full color resolution for fine colored edges and text. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:81 · [source](../../codebase/frontend/export-ui.js#L81) |
+| exportOptionTooltips / jpegxlPrecision / uint10 | Compact integer HDR precision. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:84 · [source](../../codebase/frontend/export-ui.js#L84) |
+| exportOptionTooltips / jpegxlPrecision / uint12 | Balanced integer HDR precision. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:85 · [source](../../codebase/frontend/export-ui.js#L85) |
+| exportOptionTooltips / jpegxlPrecision / uint16 | Highest practical integer precision. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:86 · [source](../../codebase/frontend/export-ui.js#L86) |
+| exportOptionTooltips / jpegxlPrecision / float16 | Specialist half-float interchange. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:87 · [source](../../codebase/frontend/export-ui.js#L87) |
+| exportOptionTooltips / jpegxlPrecision / float32 | Specialist full-float interchange with the largest files. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:88 · [source](../../codebase/frontend/export-ui.js#L88) |
+| exportOptionTooltips / sdrPngBitDepth / 8 | Standard web-compatible PNG precision. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:91 · [source](../../codebase/frontend/export-ui.js#L91) |
+| exportOptionTooltips / sdrPngBitDepth / 16 | High-precision PNG interchange. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:92 · [source](../../codebase/frontend/export-ui.js#L92) |
+| exportOptionTooltips / exportDithering / auto | Applies deterministic signal-domain dither when exporting 8-bit output. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:95 · [source](../../codebase/frontend/export-ui.js#L95) |
+| exportOptionTooltips / exportDithering / off | Disables export dithering. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:96 · [source](../../codebase/frontend/export-ui.js#L96) |
+| exportOptionTooltips / exportDithering / subtle | Applies subtle signal-domain dither. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:97 · [source](../../codebase/frontend/export-ui.js#L97) |
+| exportOptionTooltips / exportMetadataPolicy / none | Removes optional source metadata while retaining required color and HDR signaling. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:100 · [source](../../codebase/frontend/export-ui.js#L100) |
+| exportOptionTooltips / exportMetadataPolicy / copyright | Preserves copyright metadata only. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:101 · [source](../../codebase/frontend/export-ui.js#L101) |
+| exportOptionTooltips / exportMetadataPolicy / all_except_location | Preserves source metadata except location information. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:102 · [source](../../codebase/frontend/export-ui.js#L102) |
+| exportOptionTooltips / exportMetadataPolicy / all_including_location | Preserves all supported source metadata, including possible GPS coordinates. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:103 · [source](../../codebase/frontend/export-ui.js#L103) |
+| exportOptionTooltips / exportResizeMode / original | Keeps cropped photo pixels; adds the Frame and Border when included. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:106 · [source](../../codebase/frontend/export-ui.js#L106) |
+| exportOptionTooltips / exportResizeMode / long_edge | Resizes the complete canvas, including any Frame and Border, by its longest edge. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:107 · [source](../../codebase/frontend/export-ui.js#L107) |
+| exportOptionTooltips / exportResizeMode / fit | Fits the complete canvas, including any Frame and Border, within the width and height limits. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:108 · [source](../../codebase/frontend/export-ui.js#L108) |
+| exportOptionTooltips / exportSharpening / off | No output sharpening. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:111 · [source](../../codebase/frontend/export-ui.js#L111) |
+| exportOptionTooltips / exportSharpening / subtle | Light edge-aware sharpening after resize. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:112 · [source](../../codebase/frontend/export-ui.js#L112) |
+| exportOptionTooltips / exportSharpening / standard | Moderate edge-aware sharpening after resize. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:113 · [source](../../codebase/frontend/export-ui.js#L113) |
+| exportOptionTooltips / exportSharpening / strong | Strong edge-aware sharpening after resize. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:114 · [source](../../codebase/frontend/export-ui.js#L114) |
+| exportFormatNotes / avif_gain_map | Efficient adaptive HDR for current Chromium browsers, with an SDR base for other decoders. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:46 · [source](../../codebase/frontend/export-ui.js#L46) |
+| exportFormatNotes / jpeg_ultrahdr | Broad JPEG fallback with HDR in compatible viewers; recompression can remove the gain map. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:47 · [source](../../codebase/frontend/export-ui.js#L47) |
+| exportFormatNotes / jpegxl_hdr | Direct Rec.2020 PQ HDR for specialist workflows; no SDR fallback and limited browser support. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:48 · [source](../../codebase/frontend/export-ui.js#L48) |
+| exportFormatNotes / sdr_jpegxl | Compact SDR for JPEG XL-aware workflows; browser support remains uneven. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:49 · [source](../../codebase/frontend/export-ui.js#L49) |
+| exportFormatNotes / sdr_png | Lossless SDR delivery with 8-bit web and 16-bit fidelity choices. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:50 · [source](../../codebase/frontend/export-ui.js#L50) |
+| exportFormatNotes / sdr_jpeg | Conventional compact SDR JPEG, including very wide images up to 65,500 pixels. | fixed (dynamic lookup) | codebase/frontend/export-ui.js:51 · [source](../../codebase/frontend/export-ui.js#L51) |
 
 ## Dialogs and settings
 
@@ -871,18 +872,18 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Close | Close folder browser | name only (fallback) | codebase/frontend/index.html::#directory-browser-close · [source](../../codebase/frontend/index.html#L1700) |
+| Close | Close folder browser | name only (fallback) | codebase/frontend/index.html::#directory-browser-close · [source](../../codebase/frontend/index.html#L1705) |
 | Close | Close folder browser | name only (fallback) | codebase/frontend/media-browser-standalone.html::#directory-browser-close · [source](../../codebase/frontend/media-browser-standalone.html#L15) |
 
 ### directory-browser
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Resize Name column | Resize Name column | name only (fallback) | codebase/frontend/index.html:1718 · [source](../../codebase/frontend/index.html#L1718) |
-| Resize Size column | Resize Size column | name only (fallback) | codebase/frontend/index.html:1722 · [source](../../codebase/frontend/index.html#L1722) |
-| Resize Kind column | Resize Kind column | name only (fallback) | codebase/frontend/index.html:1726 · [source](../../codebase/frontend/index.html#L1726) |
-| Resize Date Added column | Resize Date Added column | name only (fallback) | codebase/frontend/index.html:1730 · [source](../../codebase/frontend/index.html#L1730) |
-| Resize preview panel | Resize preview panel | name only (fallback) | codebase/frontend/index.html:1735 · [source](../../codebase/frontend/index.html#L1735) |
+| Resize Name column | Resize Name column | name only (fallback) | codebase/frontend/index.html:1723 · [source](../../codebase/frontend/index.html#L1723) |
+| Resize Size column | Resize Size column | name only (fallback) | codebase/frontend/index.html:1727 · [source](../../codebase/frontend/index.html#L1727) |
+| Resize Kind column | Resize Kind column | name only (fallback) | codebase/frontend/index.html:1731 · [source](../../codebase/frontend/index.html#L1731) |
+| Resize Date Added column | Resize Date Added column | name only (fallback) | codebase/frontend/index.html:1735 · [source](../../codebase/frontend/index.html#L1735) |
+| Resize preview panel | Resize preview panel | name only (fallback) | codebase/frontend/index.html:1740 · [source](../../codebase/frontend/index.html#L1740) |
 | Resize Name column | Resize Name column | name only (fallback) | codebase/frontend/media-browser-standalone.html:33 · [source](../../codebase/frontend/media-browser-standalone.html#L33) |
 | Resize Size column | Resize Size column | name only (fallback) | codebase/frontend/media-browser-standalone.html:37 · [source](../../codebase/frontend/media-browser-standalone.html#L37) |
 | Resize Kind column | Resize Kind column | name only (fallback) | codebase/frontend/media-browser-standalone.html:41 · [source](../../codebase/frontend/media-browser-standalone.html#L41) |
@@ -893,77 +894,77 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Close settings | Close | fixed | codebase/frontend/index.html::#settings-close · [source](../../codebase/frontend/index.html#L1756) |
+| Close settings | Close | fixed | codebase/frontend/index.html::#settings-close · [source](../../codebase/frontend/index.html#L1761) |
 
 ### general
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| 203 nit · Standard | 203 nit · Standard | name only (selected option, when clipped) | codebase/frontend/index.html:1774 · [source](../../codebase/frontend/index.html#L1774) |
-| 100 nit · Controlled workflow | 100 nit · Controlled workflow | name only (selected option, when clipped) | codebase/frontend/index.html:1775 · [source](../../codebase/frontend/index.html#L1775) |
+| 203 nit · Standard | 203 nit · Standard | name only (selected option, when clipped) | codebase/frontend/index.html:1779 · [source](../../codebase/frontend/index.html#L1779) |
+| 100 nit · Controlled workflow | 100 nit · Controlled workflow | name only (selected option, when clipped) | codebase/frontend/index.html:1780 · [source](../../codebase/frontend/index.html#L1780) |
 
 ### performance
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| 1 GB | 1 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1789 · [source](../../codebase/frontend/index.html#L1789) |
-| 2 GB | 2 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1789::2 · [source](../../codebase/frontend/index.html#L1789) |
-| 5 GB | 5 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1789::3 · [source](../../codebase/frontend/index.html#L1789) |
-| 10 GB | 10 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1789::4 · [source](../../codebase/frontend/index.html#L1789) |
-| 20 GB | 20 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1789::5 · [source](../../codebase/frontend/index.html#L1789) |
-| 1 GB | 1 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1793 · [source](../../codebase/frontend/index.html#L1793) |
-| 2 GB | 2 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1793::2 · [source](../../codebase/frontend/index.html#L1793) |
-| 5 GB | 5 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1793::3 · [source](../../codebase/frontend/index.html#L1793) |
-| 10 GB | 10 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1793::4 · [source](../../codebase/frontend/index.html#L1793) |
-| 20 GB | 20 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1793::5 · [source](../../codebase/frontend/index.html#L1793) |
-| 1 GB | 1 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1797 · [source](../../codebase/frontend/index.html#L1797) |
-| 2 GB | 2 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1797::2 · [source](../../codebase/frontend/index.html#L1797) |
-| 5 GB | 5 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1797::3 · [source](../../codebase/frontend/index.html#L1797) |
-| 10 GB | 10 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1797::4 · [source](../../codebase/frontend/index.html#L1797) |
-| 20 GB | 20 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1797::5 · [source](../../codebase/frontend/index.html#L1797) |
-| Auto · Recommended | Auto · Recommended | name only (selected option, when clipped) | codebase/frontend/index.html:1809 · [source](../../codebase/frontend/index.html#L1809) |
-| GPU preferred | GPU preferred | name only (selected option, when clipped) | codebase/frontend/index.html:1810 · [source](../../codebase/frontend/index.html#L1810) |
-| CPU compatibility | CPU compatibility | name only (selected option, when clipped) | codebase/frontend/index.html:1811 · [source](../../codebase/frontend/index.html#L1811) |
-| Faster dragging | For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected. | fixed | codebase/frontend/index.html:1815 · [source](../../codebase/frontend/index.html#L1815) |
-| Auto · up to half of your graphics card's memory | Auto · up to half of your graphics card's memory | name only (selected option, when clipped) | codebase/frontend/index.html:1824 · [source](../../codebase/frontend/index.html#L1824) |
-| 1 GiB | 1 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1825 · [source](../../codebase/frontend/index.html#L1825) |
-| 2 GiB | 2 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1826 · [source](../../codebase/frontend/index.html#L1826) |
-| 3 GiB | 3 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1827 · [source](../../codebase/frontend/index.html#L1827) |
-| 4 GiB | 4 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1828 · [source](../../codebase/frontend/index.html#L1828) |
-| 6 GiB | 6 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1829 · [source](../../codebase/frontend/index.html#L1829) |
-| 8 GiB | 8 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1830 · [source](../../codebase/frontend/index.html#L1830) |
-| 12 GiB | 12 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1831 · [source](../../codebase/frontend/index.html#L1831) |
-| Custom… | Custom… | name only (selected option, when clipped) | codebase/frontend/index.html:1832 · [source](../../codebase/frontend/index.html#L1832) |
+| 1 GB | 1 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1794 · [source](../../codebase/frontend/index.html#L1794) |
+| 2 GB | 2 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1794::2 · [source](../../codebase/frontend/index.html#L1794) |
+| 5 GB | 5 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1794::3 · [source](../../codebase/frontend/index.html#L1794) |
+| 10 GB | 10 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1794::4 · [source](../../codebase/frontend/index.html#L1794) |
+| 20 GB | 20 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1794::5 · [source](../../codebase/frontend/index.html#L1794) |
+| 1 GB | 1 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1798 · [source](../../codebase/frontend/index.html#L1798) |
+| 2 GB | 2 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1798::2 · [source](../../codebase/frontend/index.html#L1798) |
+| 5 GB | 5 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1798::3 · [source](../../codebase/frontend/index.html#L1798) |
+| 10 GB | 10 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1798::4 · [source](../../codebase/frontend/index.html#L1798) |
+| 20 GB | 20 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1798::5 · [source](../../codebase/frontend/index.html#L1798) |
+| 1 GB | 1 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1802 · [source](../../codebase/frontend/index.html#L1802) |
+| 2 GB | 2 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1802::2 · [source](../../codebase/frontend/index.html#L1802) |
+| 5 GB | 5 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1802::3 · [source](../../codebase/frontend/index.html#L1802) |
+| 10 GB | 10 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1802::4 · [source](../../codebase/frontend/index.html#L1802) |
+| 20 GB | 20 GB | name only (selected option, when clipped) | codebase/frontend/index.html:1802::5 · [source](../../codebase/frontend/index.html#L1802) |
+| Auto · Recommended | Auto · Recommended | name only (selected option, when clipped) | codebase/frontend/index.html:1814 · [source](../../codebase/frontend/index.html#L1814) |
+| GPU preferred | GPU preferred | name only (selected option, when clipped) | codebase/frontend/index.html:1815 · [source](../../codebase/frontend/index.html#L1815) |
+| CPU compatibility | CPU compatibility | name only (selected option, when clipped) | codebase/frontend/index.html:1816 · [source](../../codebase/frontend/index.html#L1816) |
+| Faster dragging | For slower computers: shows a softer image while you drag, sharp again when you let go. Exports are unaffected. | fixed | codebase/frontend/index.html:1820 · [source](../../codebase/frontend/index.html#L1820) |
+| Auto · up to half of your graphics card's memory | Auto · up to half of your graphics card's memory | name only (selected option, when clipped) | codebase/frontend/index.html:1829 · [source](../../codebase/frontend/index.html#L1829) |
+| 1 GiB | 1 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1830 · [source](../../codebase/frontend/index.html#L1830) |
+| 2 GiB | 2 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1831 · [source](../../codebase/frontend/index.html#L1831) |
+| 3 GiB | 3 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1832 · [source](../../codebase/frontend/index.html#L1832) |
+| 4 GiB | 4 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1833 · [source](../../codebase/frontend/index.html#L1833) |
+| 6 GiB | 6 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1834 · [source](../../codebase/frontend/index.html#L1834) |
+| 8 GiB | 8 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1835 · [source](../../codebase/frontend/index.html#L1835) |
+| 12 GiB | 12 GiB | name only (selected option, when clipped) | codebase/frontend/index.html:1836 · [source](../../codebase/frontend/index.html#L1836) |
+| Custom… | Custom… | name only (selected option, when clipped) | codebase/frontend/index.html:1837 · [source](../../codebase/frontend/index.html#L1837) |
 
 ### appearance
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| On hover | On hover | name only (selected option, when clipped) | codebase/frontend/index.html:1847 · [source](../../codebase/frontend/index.html#L1847) |
-| Always | Always | name only (selected option, when clipped) | codebase/frontend/index.html:1847::2 · [source](../../codebase/frontend/index.html#L1847) |
+| On hover | On hover | name only (selected option, when clipped) | codebase/frontend/index.html:1852 · [source](../../codebase/frontend/index.html#L1852) |
+| Always | Always | name only (selected option, when clipped) | codebase/frontend/index.html:1852::2 · [source](../../codebase/frontend/index.html#L1852) |
 
 ### shortcuts
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Shortcut presets… | Shortcut presets… | name only (selected option, when clipped) | codebase/frontend/index.html:1872 · [source](../../codebase/frontend/index.html#L1872) |
+| Shortcut presets… | Shortcut presets… | name only (selected option, when clipped) | codebase/frontend/index.html:1877 · [source](../../codebase/frontend/index.html#L1877) |
 
 ### diagnostics
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| Auto · the budget decides Force Direct Force Tiled | Diagnostic. Auto lets the memory budget decide. Forcing Tiled always works. Forcing Direct is ignored when the budget cannot hold a whole-frame render, because a diagnostic switch must not override the memory guard. | fixed | codebase/frontend/index.html::#settings-execution-override · [source](../../codebase/frontend/index.html#L1883) |
-| Auto · the budget decides | Auto · the budget decides | name only (selected option, when clipped) | codebase/frontend/index.html:1884 · [source](../../codebase/frontend/index.html#L1884) |
-| Force Direct | Force Direct | name only (selected option, when clipped) | codebase/frontend/index.html:1885 · [source](../../codebase/frontend/index.html#L1885) |
-| Force Tiled | Force Tiled | name only (selected option, when clipped) | codebase/frontend/index.html:1886 · [source](../../codebase/frontend/index.html#L1886) |
-| Off · display driven | Off · display driven | name only (selected option, when clipped) | codebase/frontend/index.html:1892 · [source](../../codebase/frontend/index.html#L1892) |
-| 1K | 1K | name only (selected option, when clipped) | codebase/frontend/index.html:1893 · [source](../../codebase/frontend/index.html#L1893) |
-| 2K | 2K | name only (selected option, when clipped) | codebase/frontend/index.html:1894 · [source](../../codebase/frontend/index.html#L1894) |
-| 4K | 4K | name only (selected option, when clipped) | codebase/frontend/index.html:1895 · [source](../../codebase/frontend/index.html#L1895) |
-| Full | Full | name only (selected option, when clipped) | codebase/frontend/index.html:1896 · [source](../../codebase/frontend/index.html#L1896) |
-| Whole frame · refinement processes every tile Visible region · refinement processes what you see | When enabled, only the refinement pass is limited to the visible region: the tiles you can see are refined at full tier quality and the rest of the frame keeps the accepted image. Pan and zoom are never limited, so a newly exposed region always has complete pixels. | fixed | codebase/frontend/index.html::#settings-roi-preview · [source](../../codebase/frontend/index.html#L1901) |
-| Whole frame · refinement processes every tile | Whole frame · refinement processes every tile | name only (selected option, when clipped) | codebase/frontend/index.html:1902 · [source](../../codebase/frontend/index.html#L1902) |
-| Visible region · refinement processes what you see | Visible region · refinement processes what you see | name only (selected option, when clipped) | codebase/frontend/index.html:1903 · [source](../../codebase/frontend/index.html#L1903) |
+| Auto · the budget decides Force Direct Force Tiled | Diagnostic. Auto lets the memory budget decide. Forcing Tiled always works. Forcing Direct is ignored when the budget cannot hold a whole-frame render, because a diagnostic switch must not override the memory guard. | fixed | codebase/frontend/index.html::#settings-execution-override · [source](../../codebase/frontend/index.html#L1888) |
+| Auto · the budget decides | Auto · the budget decides | name only (selected option, when clipped) | codebase/frontend/index.html:1889 · [source](../../codebase/frontend/index.html#L1889) |
+| Force Direct | Force Direct | name only (selected option, when clipped) | codebase/frontend/index.html:1890 · [source](../../codebase/frontend/index.html#L1890) |
+| Force Tiled | Force Tiled | name only (selected option, when clipped) | codebase/frontend/index.html:1891 · [source](../../codebase/frontend/index.html#L1891) |
+| Off · display driven | Off · display driven | name only (selected option, when clipped) | codebase/frontend/index.html:1897 · [source](../../codebase/frontend/index.html#L1897) |
+| 1K | 1K | name only (selected option, when clipped) | codebase/frontend/index.html:1898 · [source](../../codebase/frontend/index.html#L1898) |
+| 2K | 2K | name only (selected option, when clipped) | codebase/frontend/index.html:1899 · [source](../../codebase/frontend/index.html#L1899) |
+| 4K | 4K | name only (selected option, when clipped) | codebase/frontend/index.html:1900 · [source](../../codebase/frontend/index.html#L1900) |
+| Full | Full | name only (selected option, when clipped) | codebase/frontend/index.html:1901 · [source](../../codebase/frontend/index.html#L1901) |
+| Whole frame · refinement processes every tile Visible region · refinement processes what you see | When enabled, only the refinement pass is limited to the visible region: the tiles you can see are refined at full tier quality and the rest of the frame keeps the accepted image. Pan and zoom are never limited, so a newly exposed region always has complete pixels. | fixed | codebase/frontend/index.html::#settings-roi-preview · [source](../../codebase/frontend/index.html#L1906) |
+| Whole frame · refinement processes every tile | Whole frame · refinement processes every tile | name only (selected option, when clipped) | codebase/frontend/index.html:1907 · [source](../../codebase/frontend/index.html#L1907) |
+| Visible region · refinement processes what you see | Visible region · refinement processes what you see | name only (selected option, when clipped) | codebase/frontend/index.html:1908 · [source](../../codebase/frontend/index.html#L1908) |
 
 ### library dialogs
 
@@ -1080,8 +1081,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 | NAVIGATE | Drag to move the Navigate window | fixed | codebase/frontend/index.html:482 · [source](../../codebase/frontend/index.html#L482) |
 | Resize analysis dock | Resize analysis dock | name only (fallback) | codebase/frontend/index.html::#dock-splitter · [source](../../codebase/frontend/index.html#L487) |
 | Resize grade rail | Resize grade rail | name only (fallback) | codebase/frontend/index.html::#grade-splitter · [source](../../codebase/frontend/index.html#L587) |
-| Close help | Close | fixed | codebase/frontend/index.html::#help-close · [source](../../codebase/frontend/index.html#L1923) |
-| Close presets | Close | fixed | codebase/frontend/index.html::#group-preset-close · [source](../../codebase/frontend/index.html#L1937) |
+| Close help | Close | fixed | codebase/frontend/index.html::#help-close · [source](../../codebase/frontend/index.html#L1928) |
+| Close presets | Close | fixed | codebase/frontend/index.html::#group-preset-close · [source](../../codebase/frontend/index.html#L1942) |
 
 ### analysis-dock
 
@@ -1124,8 +1125,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| branchCopy / hdr | Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side. | fixed (dynamic lookup) | codebase/frontend/app-state.js:1366 · [source](../../codebase/frontend/app-state.js#L1366) |
-| branchCopy / sdr | Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side. | fixed (dynamic lookup) | codebase/frontend/app-state.js:1367 · [source](../../codebase/frontend/app-state.js#L1367) |
+| branchCopy / hdr | Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side. | fixed (dynamic lookup) | codebase/frontend/app-state.js:1368 · [source](../../codebase/frontend/app-state.js#L1368) |
+| branchCopy / sdr | Displays the active HDR grade or SDR fallback with current adjustments applied. Switch renditions in the Control Panel or use the layout buttons to view them side-by-side. | fixed (dynamic lookup) | codebase/frontend/app-state.js:1369 · [source](../../codebase/frontend/app-state.js#L1369) |
 
 ### control panel
 

@@ -113,7 +113,7 @@ let startupTimer;
   const launchEnvironment = { ...process.env };
   const captureDrivers = ["gpu-delivery-smoke.js", "hsl-selection-delivery.js", "hsl-integration.js",
     "color-desat-delivery.js", "tone-zones-delivery.js", "hue-mask-delivery.js",
-    "photo-framing-delivery.js", "local-sdr-match.js", "gpu-delivery-repeat.js", "export-parity.js"];
+    "jpegxl-high-fidelity.js", "photo-framing-delivery.js", "local-sdr-match.js", "gpu-delivery-repeat.js", "export-parity.js"];
   if (!packaged && captureDrivers.includes(path.basename(testPath))) {
     process.env.HDR_FINISHER_TEST_CAPTURE_DIR = path.join(userDataDirectory, "finished-delivery");
     launchEnvironment.HDR_FINISHER_TEST_CAPTURE_DIR = process.env.HDR_FINISHER_TEST_CAPTURE_DIR;

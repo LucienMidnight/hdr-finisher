@@ -75,8 +75,11 @@ def own_fidelity(path):
             peak = max(float(channel_nits(finished[row:row + 128], white).max())
                        for row in range(0, finished.shape[0], 128))
             assert peak <= metadata["ceiling_nits"], ("Exact finished ceiling", peak, metadata)
-    return {"format": metadata["format"], "renderer": metadata["renderer"],
-            "target": "mean < 1.0, P99.9 <= 3.0; report only", "lanes": fidelity}
+    required = metadata.get("jpegxl_high_fidelity", False) and metadata["format"] in {"jpegxl_hdr", "sdr_jpegxl"}
+    if required:
+        assert all(value["passed"] for value in fidelity.values()), ("High-fidelity JPEG XL own-source fidelity", fidelity)
+    return {"format": metadata["format"], "renderer": metadata["renderer"], "required": required,
+            "target": "mean < 1.0, P99.9 <= 3.0; " + ("required" if required else "report only"), "lanes": fidelity}
 
 
 def report_summary(result):
@@ -87,7 +90,8 @@ def report_summary(result):
     passed = all(value["passed"] for value in result["renderer_agreement"].values())
     rows = [f"Finished renderer agreement — {'PASS' if passed else 'FAIL'}: {lanes(result['renderer_agreement'])}"]
     for value in result["encoding_fidelity"].values():
-        rows.append(f"Encoding fidelity — REPORT ONLY — {value['format']} / {value['renderer']}: {lanes(value['lanes'])}")
+        verdict = "PASS" if value.get("required") else "REPORT ONLY"
+        rows.append(f"Encoding fidelity — {verdict} — {value['format']} / {value['renderer']}: {lanes(value['lanes'])}")
     rows.append(f"Decoded file pair — DIAGNOSTIC ONLY: {lanes(result['decoded_pair_diagnostic'])}")
     return "\n".join(rows)
 

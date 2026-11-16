@@ -14,6 +14,7 @@
     const v=model.draft.versions[model.version], s=v.settings;
     const controls={format:"exportFormat",quality:"exportQuality",jpeg_gain_map_quality:"jpegGainMapQuality",jpeg_gain_map_scale:"jpegGainMapScale",avif_bit_depth:"avifBitDepth",avif_chroma_subsampling:"avifChromaSubsampling",avif_gain_map_quality:"avifGainMapQuality",avif_gain_map_scale:"avifGainMapScale",sdr_png_bit_depth:"sdrPngBitDepth",jpegxl_precision:"jpegxlPrecision",dithering:"exportDithering",metadata_policy:"exportMetadataPolicy"};
     for(const [key,id] of Object.entries(controls)) if(s[key]!=null&&els[id]) els[id].value=String(s[key]);
+    els.jpegxlHighFidelity.checked=s.jpegxl_high_fidelity===true;
     for(const key of ["title","caption","creator","copyright"]) $("export-metadata-"+key).value=s.metadata_template?.[key]||"";
     $("export-metadata-strip-location").checked=s.metadata_strip_location===true;
     $("export-metadata-strip-serials").checked=s.metadata_strip_serials===true;
@@ -257,7 +258,7 @@
     help(editor.parentElement.querySelector("summary"),"Each output version creates a separate file from the same saved photo edits, with its own export settings (format, size and naming). Changes here affect only the selected version. Export creates all versions.");
     tabs.append(select,menuButton("Output version actions",versionActions));editor.append(tabs,versionName);
     const formatSection=els.exportFormat.closest("section"),profileSection=els.exportPreset.closest("section");
-    const format=section("Format & quality");format.append(field("Format",els.exportFormat),field("Quality profile",els.exportPreset),els.exportQualityRow,els.exportFormatNote);formatSection.remove();profileSection.remove();
+    const format=section("Format & quality");format.append(field("Format",els.exportFormat),field("Quality profile",els.exportPreset),els.exportQualityRow,els.jpegxlFidelitySettings,els.exportFormatNote);formatSection.remove();profileSection.remove();
     els.exportFormat.setAttribute("aria-label","Format");els.exportFormat.removeAttribute("aria-labelledby");els.exportPreset.setAttribute("aria-label","Quality profile");els.exportPreset.removeAttribute("aria-labelledby");
     const finishing=section("Size & sharpening");
     els.exportResizeMode.addEventListener("change",()=>{els.exportResizeMode.title=els.exportResizeMode.selectedOptions[0]?.textContent || "";});

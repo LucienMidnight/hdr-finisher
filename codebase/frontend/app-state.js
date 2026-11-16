@@ -1176,6 +1176,8 @@ const els = {
   jpegChromaSubsampling: document.getElementById("jpeg-chroma-subsampling"),
   jpegxlSettings: document.getElementById("jpegxl-settings"),
   jpegxlPrecision: document.getElementById("jpegxl-precision"),
+  jpegxlHighFidelity: document.getElementById("jpegxl-high-fidelity"),
+  jpegxlFidelitySettings: document.getElementById("jpegxl-fidelity-settings"),
   sdrPngSettings: document.getElementById("sdr-png-settings"),
   sdrPngBitDepth: document.getElementById("sdr-png-bit-depth"),
   exportDitheringField: document.getElementById("export-dithering-field"),

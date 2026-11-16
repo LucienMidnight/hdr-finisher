@@ -1105,6 +1105,7 @@ function bindEvents() {
     els.jpegGainMapScale,
     els.jpegChromaSubsampling,
     els.jpegxlPrecision,
+    els.jpegxlHighFidelity,
     els.sdrPngBitDepth,
     els.exportDithering,
     els.exportMetadataPolicy,

@@ -70,7 +70,7 @@ def test_proof_request_order_signature_and_export_conversion_are_stable(tmp_path
         "adjustments", "edit_revision", "format", "quality", "jpeg_gain_map_quality",
         "jpeg_gain_map_scale", "jpeg_chroma_subsampling", "avif_bit_depth",
         "avif_chroma_subsampling", "avif_gain_map_chroma_subsampling",
-        "avif_gain_map_quality", "avif_gain_map_scale", "jpegxl_precision", "dithering",
+        "avif_gain_map_quality", "avif_gain_map_scale", "jpegxl_precision", "jpegxl_high_fidelity", "dithering",
         "long_edge", "full_size", "output_finishing", "watermark", "export_with_frame", "guarantee_hdr_peak", "force", "editing_measurements",
     )
     # Cache identity follows rendering policy, while a forced refresh keeps the
@@ -97,7 +97,7 @@ def test_proof_request_order_signature_and_export_conversion_are_stable(tmp_path
         "format", "quality", "jpeg_gain_map_quality", "jpeg_gain_map_scale",
         "jpeg_chroma_subsampling", "avif_bit_depth", "avif_chroma_subsampling",
         "avif_gain_map_chroma_subsampling", "avif_gain_map_quality", "avif_gain_map_scale",
-        "jpegxl_precision", "dithering", "output_finishing", "watermark", "guarantee_hdr_peak",
+        "jpegxl_precision", "jpegxl_high_fidelity", "dithering", "output_finishing", "watermark", "guarantee_hdr_peak",
     ):
         assert getattr(converted, name) == getattr(request, name)
     assert converted.output_path == "proof.jpg"

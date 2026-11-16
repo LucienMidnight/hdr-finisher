@@ -1573,6 +1573,7 @@
         <option value="web_default" selected>Web Default</option>
         <option value="web_optimized">Web Optimized</option>
         <option value="maximum_fidelity">Maximum Fidelity</option>
+        <option value="high_fidelity" hidden>High fidelity JPEG XL</option>
         <option value="custom" hidden>Custom</option>
       </select>
       <small id="export-preset-note" class="helper visually-hidden">Manual encoding changes switch the preset to Custom.</small>
@@ -1583,6 +1584,10 @@
       <div class="control-row export-quality-row">
         <div class="control-heading"><label for="export-quality">Quality</label><output id="export-quality-value">85</output></div>
         <input id="export-quality" type="range" min="1" max="100" value="85">
+      </div>
+      <div id="jpegxl-fidelity-settings" class="hidden">
+        <label class="checkbox-row"><input id="jpegxl-high-fidelity" type="checkbox" aria-describedby="jpegxl-fidelity-note"> High fidelity JPEG XL</label>
+        <p id="jpegxl-fidelity-note" class="helper">Matches the finished picture with lossless 12-bit HDR. Much larger files, typically 3–4×. Separate SDR JPEG XL uses lossless 8-bit without dithering.</p>
       </div>
       <details id="jpeg-advanced-settings" class="jpeg-advanced-settings">
         <summary>Advanced export settings</summary>

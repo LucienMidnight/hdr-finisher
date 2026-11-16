@@ -216,6 +216,7 @@
             avif_gain_map_quality: Number(els.avifGainMapQuality.value) || Number(els.exportQuality.value) || 85,
             avif_gain_map_scale: els.avifGainMapScale.value || "half",
             jpegxl_precision: els.jpegxlPrecision.value || "uint12",
+            jpegxl_high_fidelity: els.jpegxlHighFidelity.checked,
             dithering: els.exportDithering.disabled ? "off" : els.exportDithering.value || "auto",
             long_edge: Math.min(1200, state.session.preview?.long_edge || 1200),
             full_size: state.proofSize === "full",

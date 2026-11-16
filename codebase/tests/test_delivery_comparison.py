@@ -36,7 +36,7 @@ def captured_pair(tmp_path, monkeypatch):
     for renderer in ("gpu", "cpu"):
         target = tmp_path / f"{renderer}.jpg"
         exporters._execute_export(None, SimpleNamespace(renderer=renderer, payload=renderer.encode()),
-                                 SimpleNamespace(output_path=str(target), format="jpeg_ultrahdr"))
+                                 SimpleNamespace(output_path=str(target), format="jpeg_ultrahdr", jpegxl_high_fidelity=False))
         files.append(target)
     monkeypatch.setattr("delivery_comparison.decoded_lanes", lambda *args: {"hdr": pixels * 2, "sdr": pixels * 2})
     return files, root, pixels
@@ -94,3 +94,15 @@ def test_cli_path_strings_are_normalized_for_the_decoder(monkeypatch):
 
     monkeypatch.setattr("delivery_comparison.load_image", decode)
     np.testing.assert_array_equal(decoded_lanes("delivery.jxl", "jpegxl_hdr", 203)["hdr"], pixels)
+
+
+def test_high_fidelity_jxl_own_source_is_a_hard_gate(captured_pair, monkeypatch):
+    from delivery_comparison import own_fidelity
+    files, root, pixels = captured_pair
+    folder, metadata = finished_capture(files[0])
+    metadata.update(format="jpegxl_hdr", jpegxl_high_fidelity=True)
+    (folder / "metadata.json").write_text(json.dumps(metadata))
+    with pytest.raises(AssertionError, match="High-fidelity JPEG XL own-source fidelity"):
+        own_fidelity(files[0])
+    monkeypatch.setattr("delivery_comparison.decoded_lanes", lambda *args: {"hdr": pixels})
+    assert own_fidelity(files[0])["required"]

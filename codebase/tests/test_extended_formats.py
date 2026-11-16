@@ -944,3 +944,22 @@ def test_jpegxl_data_profile_controls_pixels_original_is_provenance(tmp_path, mo
 
 def test_jpegxl_native_probe_rejects_truncated_input():
     assert _probe_basic_info(b"\xff\x0a") == {}
+
+
+@pytest.mark.parametrize("format_name", ["jpegxl_hdr", "sdr_jpegxl"])
+def test_high_fidelity_settings_survive_preset_and_proof_roundtrip(tmp_path, format_name):
+    from hdr_finisher.models import ProofArtifactRequest
+    from hdr_finisher.export_presets import ExportPreset, ExportVersion, ExportPresets
+    settings = ExportSettings(format=format_name, quality=15, jpegxl_precision="float32",
+                              dithering="auto", jpegxl_high_fidelity=True)
+    assert (settings.quality, settings.jpegxl_precision, settings.dithering) == (100, "uint12", "off")
+    store = ExportPresets(tmp_path)
+    store.save(ExportPreset(name="High fidelity", versions=[ExportVersion(settings=settings)]))
+    loaded = store.list()[0].versions[0].settings
+    assert loaded == settings
+    request = ProofArtifactRequest.model_validate(loaded.model_dump())
+    converted = request.to_export_settings("proof.jxl")
+    assert converted.jpegxl_high_fidelity
+    assert (converted.quality, converted.jpegxl_precision, converted.dithering) == (100, "uint12", "off")
+    assert not ExportSettings(format=format_name).jpegxl_high_fidelity
+    assert ExportSettings(format=format_name).quality == 85

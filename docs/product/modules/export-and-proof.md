@@ -48,6 +48,24 @@ sections. Both Default themes are captured at 1408×794, including a folded
 example, in `codebase/output/ui-polish-1114/`. Proof has review captures only;
 its rendering and delivery paths are untouched. Visual sign-off pending.
 
+## November 16: opt-in high-fidelity JPEG XL (Steve)
+
+| Decision | Required behaviour |
+| --- | --- |
+| High fidelity JPEG XL | Explicit opt-in in Format & quality, also offered as a quality profile. HDR is lossless 12-bit Rec.2020 PQ; much larger files, typically 3–4× the researched Q95 HDR files. Existing defaults and other profiles stay unchanged. |
+| Separate SDR JXL | The same opt-in uses lossless 8-bit sRGB, dithering off. It applies to an SDR output version as well, so both delivered lanes can match their own finished pictures. HDR JXL contains no SDR fallback; add the SDR output version separately. Research SDR sizes were about 1.6–2.1× Q95. |
+| Own-source encoding fidelity | **Hard requirement only for the high-fidelity JXL option:** decoded file against its actual finished pre-encode image, HDR ΔE ITP / SDR ΔE00, mean <1 and P99.9 ≤3, separately per image and lane, including CPU and GPU delivery. Lossless refers to quantized samples, not original floating pixels. |
+| Ordinary lossy settings, every format | Own-source encoding fidelity remains **report-only**. Steve: “anything below high fidelity, I think users understand there will be compression artifacts or trade-offs.” No measured failure becomes a new accepted numerical tolerance. |
+| Independent guarantees | Finished renderer agreement retains mean <1 / P99.9 ≤3. Exact finished HDR target, encoded target +1% allowance, and identical full-size Proof/export bytes remain strict for every setting. |
+
+The opt-in is carried by export settings, saved Export/Quick export presets,
+batch output versions and Proof signatures. Backend validation resolves it to
+Q100/lossless, HDR uint12, dithering off, regardless of other supplied quality
+or precision values. The UI disables those overridden controls and names the
+resolved encoding. Unchecking restores ordinary controls. No shader, Film Look,
+SDR Match, budget, encoder implementation or default changes in this step.
+Native-photo size/speed/memory qualification and final test results follow below.
+
 ## November 16: renderer agreement and encoding fidelity are separate checks
 
 Steve approved splitting the October 18 GPU-against-CPU check after the
@@ -60,12 +78,13 @@ decoded CPU file does not show which renderer is wrong. Instead:
   GPU against CPU, HDR ΔE ITP and SDR ΔE00, mean below 1.0 and P99.9 at or
   below 3.0 per image and lane (the October 18 numbers, unchanged).
 - **Encoding fidelity**, per format: each decoded file against its own
-  finished pre-encode image, starting with the same visual target (mean < 1,
-  P99.9 ≤ 3) for HDR and SDR separately. Current JPEG Ultra HDR, AVIF gain map
+  finished pre-encode image, at the same visual target (mean < 1,
+  P99.9 ≤ 3) for HDR and SDR separately. Steve’s November 16 decision above
+  makes this a hard requirement only for opt-in high-fidelity JPEG XL. Current JPEG Ultra HDR, AVIF gain map
   and JPEG XL HDR files miss it at sharp bright edges (the current JPEG path
   also clips colours outside its sRGB gain space; AVIF already selects the
   wider BT.2020 alternate space); this is recorded as a known limitation and
-  reported, not used to block delivery, until the per-format fixes land.
+  reported, not used to block ordinary lossy delivery.
   No looser number is set from today's failures without Steve.
 - Decoded GPU-file against decoded CPU-file comparisons remain as a
   diagnostic report, not a pass/fail gate.

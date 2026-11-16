@@ -19,11 +19,13 @@ const exportPresetMappings = {
     maximum_fidelity: { quality: 100, jpegGainMapQuality: 100, jpegGainMapScale: "full", jpegUltrahdrChromaSubsampling: "444", exportDithering: "off", exportMetadataPolicy: "all_except_location" },
   },
   jpegxl_hdr: {
+    high_fidelity: { quality: 100, jpegxlHighFidelity: true, jpegxlPrecision: "uint12", exportDithering: "off", exportMetadataPolicy: "all_except_location" },
     web_default: { quality: 90, jpegxlPrecision: "uint12", exportDithering: "off", exportMetadataPolicy: "copyright" },
     web_optimized: { quality: 80, jpegxlPrecision: "uint10", exportDithering: "off", exportMetadataPolicy: "none" },
     maximum_fidelity: { quality: 100, jpegxlPrecision: "uint16", exportDithering: "off", exportMetadataPolicy: "all_except_location" },
   },
   sdr_jpegxl: {
+    high_fidelity: { quality: 100, jpegxlHighFidelity: true, exportDithering: "off", exportMetadataPolicy: "all_except_location" },
     web_default: { quality: 90, exportDithering: "auto", exportMetadataPolicy: "copyright" },
     web_optimized: { quality: 80, exportDithering: "auto", exportMetadataPolicy: "none" },
     maximum_fidelity: { quality: 100, exportDithering: "subtle", exportMetadataPolicy: "all_except_location" },
@@ -304,6 +306,7 @@ function currentExportSettings(outputPath = null, overwrite = false, pathGrant =
       avif_gain_map_scale: els.avifGainMapScale.value,
       sdr_png_bit_depth: Number(els.sdrPngBitDepth.value),
       jpegxl_precision: els.jpegxlPrecision.value,
+      jpegxl_high_fidelity: els.jpegxlHighFidelity.checked,
       dithering: els.exportDithering.value,
       metadata_policy: els.exportMetadataPolicy.value,
       metadata_template: Object.fromEntries(["title","caption","creator","copyright"].map(key=>[key,document.getElementById(`export-metadata-${key}`).value])),
@@ -394,6 +397,7 @@ function markExportPresetCustom() {
 function applyExportPreset(format, presetName, { invalidate = true } = {}) {
   const mapping = exportPresetMappings[format]?.[presetName];
   if (!mapping) return;
+  els.jpegxlHighFidelity.checked = false;
   const controls = { quality: els.exportQuality, ...els };
   Object.entries(mapping).forEach(([key, value]) => {
     const control = controls[key];
@@ -451,6 +455,7 @@ function applyExportOptionTooltips() {
       web_default: "Balanced recommended publishing settings.",
       web_optimized: "Smaller files while retaining acceptable publishing quality.",
       maximum_fidelity: "Highest practical precision and color fidelity.",
+      high_fidelity: "Lossless JPEG XL: 12-bit HDR or separate 8-bit SDR. Much larger files to match the finished picture.",
       custom: "One or more controls differ from the selected built-in preset.",
     })[option.value] || "";
   });
@@ -460,6 +465,11 @@ function applyExportOptionTooltips() {
 
 function renderFormatCards() {
   const format = els.exportFormat.value;
+  const jxl = ["jpegxl_hdr", "sdr_jpegxl"].includes(format);
+  const highFidelity = jxl && els.jpegxlHighFidelity.checked;
+  els.jpegxlFidelitySettings.classList.toggle("hidden", !jxl);
+  els.exportPreset.querySelector('option[value="high_fidelity"]').hidden = !jxl;
+  els.jpegxlPrecision.disabled = highFidelity;
   const capability = state.capabilities[capabilityForFormat[format]];
   els.exportFormatNote.textContent = capability?.status === "available"
     ? exportFormatNotes[format]
@@ -472,10 +482,10 @@ function renderFormatCards() {
   els.jpegxlSettings.classList.toggle("hidden", format !== "jpegxl_hdr");
   els.sdrPngSettings.classList.toggle("hidden", format !== "sdr_png");
 
-  const qualityApplicable = format !== "sdr_png";
+  const qualityApplicable = format !== "sdr_png" && !highFidelity;
   els.exportQuality.disabled = !qualityApplicable;
   els.exportQualityRow.classList.toggle("disabled-setting", !qualityApplicable);
-  els.exportQualityRow.title = qualityApplicable ? "" : "PNG compression is lossless; the Quality setting does not apply.";
+  els.exportQualityRow.title = highFidelity ? "High fidelity uses lossless compression; Quality does not apply." : qualityApplicable ? "" : "PNG compression is lossless; the Quality setting does not apply.";
 
   const sourceMetadataApplicable = true;
   els.exportMetadataPolicy.disabled = !sourceMetadataApplicable;
@@ -492,10 +502,12 @@ function renderFormatCards() {
     : 8;
   // The HDR peak guarantee only applies to HDR deliveries.
   els.exportGuaranteePeakField?.classList.toggle("hidden", !["jpeg_ultrahdr", "avif_gain_map", "jpegxl_hdr"].includes(format));
-  const ditherApplicable = selectedBitDepth === 8 && format !== "jpegxl_hdr";
+  const ditherApplicable = selectedBitDepth === 8 && format !== "jpegxl_hdr" && !highFidelity;
   els.exportDithering.disabled = !ditherApplicable;
   els.exportDitheringField.classList.toggle("disabled-setting", !ditherApplicable);
-  els.exportDitheringNote.textContent = ditherApplicable
+  els.exportDitheringNote.textContent = highFidelity
+    ? "High fidelity disables dithering to preserve the quantized finished picture."
+    : ditherApplicable
     ? "Auto applies deterministic signal-domain dithering when the selected output is quantized to 8 bits."
     : `Dithering is disabled because this ${selectedBitDepth}-bit output does not benefit from 8-bit quantization dither.`;
   els.exportDithering.title = els.exportDitheringNote.textContent;
@@ -508,7 +520,8 @@ function renderFormatCards() {
     sdr_png: `${els.sdrPngBitDepth.value}-bit sRGB PNG`,
     sdr_jpeg: `8-bit sRGB JPEG · ${formatChroma(els.jpegChromaSubsampling.value)}`,
   }[format];
-  els.exportResolvedEncoding.textContent = `Resolved encoding: ${encodingSummary || "automatic"}`;
+  const resolved = highFidelity ? (format === "jpegxl_hdr" ? "Lossless 12-bit integer · Rec.2020 PQ" : "Lossless 8-bit sRGB JPEG XL · dithering off") : encodingSummary;
+  els.exportResolvedEncoding.textContent = `Resolved encoding: ${resolved || "automatic"}`;
   els.exportReferenceWhite.textContent = `HDR reference white: ${projectReferenceWhiteNits()} nits`;
   annotateWebDefaultOptions(format);
   applyExportOptionTooltips();

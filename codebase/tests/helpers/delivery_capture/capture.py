@@ -26,6 +26,7 @@ def install():
         if folder is not None:
             np.save(folder / f"{kind.value}.npy", pixels, allow_pickle=False)
             (folder / "metadata.json").write_text(json.dumps({
+                "jpegxl_high_fidelity": settings.jpegxl_high_fidelity,
                 "reference_white_nits": getattr(session, "hdr_reference_white_nits", 203),
                 "ceiling_nits": delivery_ceiling_nits(adjustments),
                 "format": settings.format.value if hasattr(settings.format, "value") else settings.format,

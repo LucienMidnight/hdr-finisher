@@ -1407,7 +1407,7 @@ _ENCODING_FIELD_ORDER = (
     "format", "quality", "jpeg_gain_map_quality", "jpeg_gain_map_scale",
     "jpeg_chroma_subsampling", "avif_bit_depth", "avif_chroma_subsampling",
     "avif_gain_map_chroma_subsampling", "avif_gain_map_quality", "avif_gain_map_scale",
-    "jpegxl_precision", "dithering",
+    "jpegxl_precision", "jpegxl_high_fidelity", "dithering",
 )
 
 
@@ -1440,10 +1440,19 @@ class _EncodingSettings(BaseModel):
     avif_gain_map_quality: int | None = Field(default=None, ge=1, le=100)
     avif_gain_map_scale: Literal["full", "half"] = "half"
     jpegxl_precision: Literal["uint10", "uint12", "uint16", "float16", "float32"] = "uint12"
+    jpegxl_high_fidelity: bool = False
     dithering: Literal["auto", "off", "subtle"] = "auto"
     watermark: WatermarkSettings = Field(default_factory=WatermarkSettings)
     export_with_frame: bool = True
     output_finishing: OutputFinishingSettings = Field(default_factory=OutputFinishingSettings)
+
+    @model_validator(mode="after")
+    def resolve_jpegxl_fidelity(self):
+        if self.jpegxl_high_fidelity and self.format in {"jpegxl_hdr", "sdr_jpegxl"}:
+            self.quality = 100
+            self.jpegxl_precision = "uint12"
+            self.dithering = "off"
+        return self
 
     @model_serializer(mode="wrap")
     def preserve_serialized_field_order(self, handler):
