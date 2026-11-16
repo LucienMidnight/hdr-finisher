@@ -1,3 +1,29 @@
+## November 16: approved 4 GB minimum/default (MacBook Neo)
+
+Steve's November 16 decision makes 4 GB the minimum/default on macOS, Windows
+and Linux, explicitly including 8 GB machines. The adjustable maximum and
+physical reserve stay unchanged. MacBook Neo / A18 Pro / 8 GiB, 1408×794,
+plain Electron, shared GPU lock; frozen v1 fixture and default 90-second viewport
+check. Revision `95a2a8f5`; this is not a whole-folder survey or a speed claim.
+
+| Check | Result | Evidence / scope |
+| --- | --- | --- |
+| Default Library viewport | Pass: 9/9 requested pictured, first at 0.8 s | `codebase/output/quick-library-check/memory-4gb-minimum/report.json`; 24 unvisited photos excluded from scope |
+| Whole-app memory | 3.220 GB peak; 0.799 GB settled | No app violation; minimum system availability 4.209 GB, no reserve breach; independent 250 ms census |
+| Responsiveness | Longest redraw gap 50 ms; main-thread delay 76 ms | Zero redraw gaps >100 ms; existing 250 ms limit unchanged |
+| Settings | Lower saved preference clamps to 4 GB; API rejects below 4 GB; Use default and 4.0 GB minimum/default display pass | Locked `tests/theme-settings.js`, all three themes |
+| 6 GB setting, headroom analysis only | Leaves 2.59 GB of this Mac's 8.59 GB for macOS/other apps, versus 4.59 GB at 4 GB; variable cache shares become 2.279× the 4 GB sizes | No 6 GB workload/swap experiment. End-of-session pressure normal (1); existing swap about 1.58 GiB. `codebase/output/review/jpegxl-high-fidelity/memory-setting-headroom.json` |
+| 192 MP at a 6 GB setting | Header-only refusal: import work 4.950 GB, safely available 3.780 GB after unchanged 2 GiB native reserve | `panorama-6gb-preflight.json` in the same evidence folder. No native pixels allocated, no successful export claimed |
+
+The larger minimum restores existing 4 GB retained-cache shares; derived RAW
+lanes on this Mac rise 1→2 and retained GPU pictures 2→10. Foreground priority,
+12-RAW-file count, scheduler concurrency policy and GPU budget are unchanged.
+Full cache numbers and platform defaults (16/32/64 GB: 4 GB) are in the memory
+module. Fast Node 1,091 pass / one skip; desktop preferences 4 pass; memory/RAW/
+reduced group 75 pass. Final full Python: 3,893 pass / 144 skip / one xpass; two old-minimum
+expectations were updated as intended. Subsequent refusal-message/guard
+follow-up: 169 affected tests pass / 16 skip.
+
 ## November 16: safe-link Film slider baseline on MacBook Neo
 
 | Action | Existing guard | Observation | Conditions / evidence |

@@ -37,8 +37,31 @@ other apps and physical headroom, versus 4.59 GB at 4 GB. It also scales the
 variable caches to 2.279× their 4 GB sizes, so it does not dedicate all extra
 memory to a single export. It cannot bypass the physical reserve/pressure gate.
 6 GB is an optional diagnostic/user setting, not a new approved default.
-Default 90-second Library and native JXL qualification are recorded below
-when complete; do not infer a pass from changing the rule.
+Final minimum/default check (Neo / 8 GiB, 1408×794, shared GPU lock,
+`95a2a8f5`): default 90-second Library passes, all 9 requested viewport pictures,
+first picture 0.8 s, whole-app peak **3.220 GB**, settled **0.799 GB**, minimum
+available system RAM **4.209 GB**, no reserve or app violation. Longest redraw
+gap **50 ms**, main-thread delay **76 ms**; no >100 ms redraw gaps. The 24
+unvisited pictures are not whole-folder qualification. Evidence:
+`codebase/output/quick-library-check/memory-4gb-minimum/report.json` and `memory.jsonl`.
+The locked Settings/theme driver passes lower-preference clamp, API rejection
+below minimum, Use default, minimum/default display and all three themes.
+75 memory/RAW/reduced tests and 4 desktop preference checks pass. Final full
+Python: 3,893 pass / 144 skip / one xpass; the two old-minimum expectations
+were updated for Steve's intended policy. Node: 1,091 pass / 1 skip. A subsequent
+physical-refusal message/check follow-up passes all 169 affected tests (16 skips).
+
+A header-only 6 GB panorama diagnostic still rejects import: **4.950 GB**
+estimated work versus **3.780 GB** safely available after the unchanged
+2 GiB native preflight reserve. No native panorama pixels were allocated.
+No tested photo has been demonstrated to need 6 GB after the JXL reductions.
+The 42.2 MP sustained session below runs out of system headroom while still
+below 4 GB app usage, so raising its app cap cannot remove that refusal.
+At the end of these 4 GB runs macOS reports normal pressure (level 1) with
+about **1.58 GiB swap already in use**. This is existing session state, not
+swap caused by a tested 6 GB workload; no 6 GB load/swap experiment was run.
+Evidence: `codebase/output/review/jpegxl-high-fidelity/memory-setting-headroom.json`
+and `panorama-6gb-preflight.json`.
 
 ## November 16: bounded native high-fidelity JXL (qualification in progress)
 
