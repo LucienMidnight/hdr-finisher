@@ -51,6 +51,14 @@ For how the application works (data flow, session lifecycle, preview
 scheduling) see [architecture](architecture.md). For testing rules see
 `AGENTS.md` at the repository root.
 
+## Tooltip editing catalogue (November 16, 2026)
+
+`codebase/tools/tooltip-catalogue.cjs` reads frontend and desktop HTML/JavaScript
+without running or changing the app. It prints `docs/product/tooltips.md`;
+`--check` verifies it without writing. `tests/tooltip-catalogue.test.js` checks
+source/catalogue agreement and extraction from disposable fixture windows.
+Preserve Steve's pending document edits, apply them to source, then regenerate.
+
 ## Shared development tooling (November 13, 2026)
 
 `codebase/tools/lib/machine-settings.cjs` and `machine_settings.py` read the same
@@ -143,6 +151,7 @@ These already have one job each and can be read whole.
 | Scopes | `scope-analysis.js`, `scope-readback.js`, `scope-ui.js` |
 | Shader source text | `webgpu-shaders.js` (mostly WGSL) |
 | Application frame | `application-shell.js`, `desktop-chrome.js`, `app-dialog.js`, `status-manager.js`, `key-hints.js` (status bar tool key hints), `render-failure.js` |
+| Floating menus and shortcut presentation | `floating-surfaces.js` / `.css` (top layer, viewport fit and scrolling), `shortcut-labels.js` (Apple modifier order and shared fixed/configurable labels); loaded by both main and Library pages. `tests/menu-shortcuts.js` checks native Electron windows; `shortcut-labels.test.js` covers formatting and bounds. |
 | Projects and proofing | `project-io.js`, `proofing-ui.js` |
 
 ### Feature files

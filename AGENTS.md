@@ -473,6 +473,9 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 
 ### Product (what to build and why)
 
+- `docs/product/tooltips.md`: generated tooltip editing catalogue, by workflow;
+  Steve edits text here, then an agent applies it to source and regenerates with
+  `codebase/tools/tooltip-catalogue.cjs`. Preserve unapplied edits before regenerating.
 - `docs/product/PRD.md`: master PRD. Scope, philosophy, module map,
   priorities, open work per module.
 - `docs/product/modules/photo-library.md`: the Library. Status at the top,
@@ -619,8 +622,9 @@ Completed UI polish round 5 (pending visual sign-off):
   component drawn from the tokens, with its HTML and CSS, in all three themes.
   Match it when building or fixing UI. Items marked Proposed need Steve's
   approval.
-- `docs/design/HDR_Finisher_Tooltip_Copy.md`: tooltip text registry. Copy
-  from here; don't rewrite.
+- `docs/design/HDR_Finisher_Tooltip_Copy.md`: historical tooltip copy registry
+  and interaction policy. Current source wording and editing passes are in
+  `docs/product/tooltips.md`; keep approved copy changes consistent here.
 - `docs/design/Unified_Media_Browser.md`: the add-folder and export-folder
   browser design.
 - `docs/design/Import_Pipeline_Architecture.md`: September import pipeline

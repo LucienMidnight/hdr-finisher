@@ -990,3 +990,20 @@ approval; propose names in the report.
 Each worker ends with: what changed, what was tested and the result,
 any output change, anything left open, and the status lines to update
 above. Plain language first, for Steve.
+
+## Steve’s editing passes before v1.0 (open)
+
+- [ ] Steve: tooltip editing pass before v1.0, using docs/product/tooltips.md
+- [ ] Steve: font token pass before v1.0 (all font sizes including tooltips; some are too small)
+
+November 16: read-only tooltip extractor, generated workflow catalogue and fast
+sync test added. No tooltip wording or frontend source changed by this task.
+
+Tooltip catalogue verification: its two focused Node checks pass. The requested
+full fast suites ran in the shared checkout: Node 1,055 passed / 21 failed /
+1 skipped; Python 3,558 passed / 19 failed / 144 skipped / 1 unexpected pass.
+Failures are outside this documentation/tooling change: Node GPU layout, Grade
+paste, Library refresh and mask sampling; Python HDR ceiling/delivery/export
+parity and native/RAW Library tests. Other workers were editing these areas;
+no unrelated repairs or GPU checks were made for this task. Catalogue regenerated
+against the latest shared frontend before the local commit.
