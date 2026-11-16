@@ -8,17 +8,12 @@
   let failed = false;
   let identity = "";
   let serial = null;
-  let baselinePending = false;
-  let baselineRequest = null;
-  let baselineFlight = null;
   let key = null;
   let caption = null;
   let overlay = null;
   let lastChart = "";
   let proxyFlight = false;
   let proxyGeneration = null;
-  let paletteSignature = "";
-  let palette = null;
   const metrics = { frames: [], resources: null };
 
   function target(element) {
@@ -86,26 +81,6 @@
     if (wasVisible) drawHistogram(state.lastScope || []);
   }
 
-  function colors() {
-    const tokens = ["--scope-red", "--scope-green", "--scope-blue", "--scope-luma", "--accent-strong", "--attention"].map(token => uiToken(token));
-    const signature = JSON.stringify(tokens);
-    if (signature === paletteSignature) return palette;
-    const probe = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
-    palette = tokens.map(color => {
-      probe.fillStyle = color;
-      probe.fillRect(0, 0, 1, 1);
-      return [...probe.getImageData(0, 0, 1, 1).data].slice(0, 3).map(channel => channel / 255);
-    });
-    paletteSignature = signature;
-    return palette;
-  }
-
-  function displayLimit() {
-    const displays = state.displayTelemetry?.displays || [];
-    const display = displays.find(item => item.primary) || displays[0];
-    return model.displayPeak(display, projectReferenceWhiteNits());
-  }
-
   function warm(selected) {
     const renderer = state.gpuPreview;
     if (!renderer?.available || failed) return;
@@ -143,8 +118,6 @@
 
   async function paintClipping(selected) {
     const renderer = state.gpuPreview;
-    if (baselinePending && renderer?.available && baselineRequest?.accepted?.transport === "WebGPU"
-      && !failed && !await captureBaseline(selected)) return "Preparing drag-start clipping baseline…";
     const accepted = state.acceptedPresentation;
     const source = accepted?.execution === "tiled" && renderer?.available
       ? await tiledSource(renderer, accepted, selected) : renderer?.scopeSources?.get(els.previewCanvas);
@@ -152,7 +125,7 @@
       || !source || source.sessionId !== state.session.session_id
       || source.lane !== selected.lane || (accepted.execution !== "tiled" && source.serial !== accepted.sourceSerial)
       || source.applicationGeneration !== accepted.generation || source.geometrySignature !== geometrySignature()
-      || renderer.activeRenderCount > 0) {
+      || state.acceptedPresentation !== accepted || renderer.activeRenderCount > 0) {
       overlay.classList.add("hidden");
       return "Clipping preview updating from the GPU; range remains available.";
     }
@@ -162,7 +135,7 @@
     if (!engine.clippingPipeline) return "Preparing clipping preview…";
     if (serial !== source.serial) {
       const started = performance.now();
-      metrics.resources = engine.draw(source, { black: selected.zone === "blacks", colors: colors(), displayPeak: displayLimit(), referenceWhite: projectReferenceWhiteNits() });
+      metrics.resources = engine.draw(source, { black: selected.zone === "blacks" });
       serial = source.serial;
       overlay.dataset.sourceSerial = String(serial);
       overlay.dataset.generation = String(accepted.generation);
@@ -173,67 +146,7 @@
     }
     place();
     overlay.classList.remove("hidden");
-    return selected.lane === "hdr"
-      ? `Finished, post-cap · RGB: cap-clipped; dashed RGB: new endpoint; pale dots: touch only · accent: >100 nit SDR white · warning: >primary display${displayLimit() ? "" : " (unknown)"} · pale: HC target guide ${selected.branch.highlight_compression_target_nits ?? 1000} nit`
-      : "Finished, post-cap · RGB: cap-clipped; dashed RGB: new endpoint; pale dots: touch only · multiple channels alternate";
-  }
-
-  function requestBaseline(selected) {
-    if (!state.session) return;
-    baselinePending = true;
-    baselineRequest = {
-      accepted: state.acceptedPresentation,
-      adjustments: structuredClone(state.adjustments),
-      locals: structuredClone(localsBypassed() ? [] : localAdjustments()),
-      sessionId: state.session.session_id,
-      revision: state.editRevision,
-      white: projectReferenceWhiteNits(),
-      geometry: geometrySignature(),
-      sourceSize: { width: state.session.source.width, height: state.session.source.height },
-    };
-    warm(selected);
-  }
-
-  function captureBaseline(selected) {
-    if (baselineFlight) return baselineFlight;
-    const work = resolveBaseline(selected);
-    baselineFlight = work;
-    void work.finally(() => { if (baselineFlight === work) baselineFlight = null; }).catch(() => {});
-    return work;
-  }
-
-  async function resolveBaseline(selected) {
-    const request = baselineRequest;
-    const renderer = state.gpuPreview;
-    const candidate = engine;
-    const isCurrent = () => clipping && baselineRequest === request && engine === candidate
-      && state.session?.session_id === request.sessionId && state.currentView === selected.lane
-      && geometrySignature() === request.geometry && selection()?.input === selected.input;
-    if (!request || request.accepted?.transport !== "WebGPU" || !renderer?.available || !candidate || !isCurrent()) return false;
-    if (!candidate.clippingPipeline) { await candidate.ready; if (!isCurrent()) return false; }
-    if (renderer.activeRenderCount > 0) return false;
-    const accepted = request.accepted;
-    const canvas = accepted?.execution === "tiled" ? renderer.scopeAnalysisCanvas : els.previewCanvas;
-    let source = renderer.scopeSources.get(canvas);
-    if (!source || source.applicationGeneration !== accepted?.generation
-      || (accepted.execution !== "tiled" && source.serial !== accepted.sourceSerial)
-      || source.sessionId !== request.sessionId || source.lane !== selected.lane
-      || source.geometrySignature !== request.geometry) {
-      await renderer.renderScopeProxy(request.sessionId, selected.lane, request.adjustments, sampleCurvePoints,
-        640, request.locals, request.revision, request.white, request.sourceSize,
-        { applicationGeneration: accepted?.generation, isCurrent });
-      if (!isCurrent()) return false;
-      source = renderer.scopeSources.get(renderer.scopeAnalysisCanvas);
-      proxyGeneration = null;
-      if (!source || source.sessionId !== request.sessionId || source.lane !== selected.lane
-        || source.applicationGeneration !== accepted?.generation || source.geometrySignature !== request.geometry) {
-        throw new Error("Drag-start clipping source unavailable");
-      }
-    }
-    candidate.draw(source, { black: selected.zone === "blacks", baseline: true, colors: colors(), referenceWhite: request.white });
-    baselinePending = false;
-    serial = null;
-    return true;
+    return `Finished, post-cap · ${selected.zone === "blacks" ? "White background; black: all channels crushed" : "Black background; white: all channels clipped"} · RGB/mixed colours: channels at the endpoint`;
   }
 
   let painting = false;
@@ -256,7 +169,7 @@
         caption.textContent = `${explanation}\nClipping preview unavailable; range remains available.`;
       }).finally(() => { painting = false; });
     } else if (!clipping) {
-      caption.textContent = `${explanation} · Alt/Option-drag Blacks or Whites for clipping`;
+      caption.textContent = `${explanation} · ${window.HDRShortcuts.isMac() ? "Option" : "Alt"}-drag Blacks or Whites for clipping`;
       overlay.classList.add("hidden");
       if (["blacks", "whites"].includes(selected.zone) && selected.dimension === "amount") warm(selected);
       else if (engine) releaseGpu();
@@ -265,7 +178,7 @@
   }
 
   function wake() { if (!frame) frame = requestAnimationFrame(tick); }
-  function end() { dragging = null; clipping = false; baselinePending = false; baselineRequest = null; if (!hovered) hide(); wake(); }
+  function end() { dragging = null; clipping = false; overlay?.classList.add("hidden"); if (!hovered) hide(); wake(); }
   document.addEventListener("pointerover", event => { if (dragging) return; hovered = target(event.target); wake(); }, true);
   document.addEventListener("pointerout", event => { if (!dragging) hovered = target(event.relatedTarget); wake(); }, true);
   document.addEventListener("focusin", event => { hovered = target(event.target); wake(); }, true);
@@ -276,21 +189,17 @@
     dragging = selected;
     clipping = event.altKey && ["blacks", "whites"].includes(selected.zone) && selected.dimension === "amount";
     failed = false;
-    if (clipping) {
-      surfaces(); requestBaseline(selection() || selected);
-      void captureBaseline(selection() || selected).catch(() => {});
-    }
     wake();
   }, true);
   for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) document.addEventListener(type, end, true);
   document.addEventListener("keydown", event => {
     if (event.key === "Escape") { hovered = null; end(); }
     if (event.key === "Alt" && dragging && ["blacks", "whites"].includes(dragging.zone) && dragging.dimension === "amount") {
-      clipping = true; requestBaseline(selection() || dragging);
+      clipping = true;
       wake();
     }
   }, true);
-  document.addEventListener("keyup", event => { if (event.key === "Alt") { clipping = false; baselinePending = false; baselineRequest = null; overlay?.classList.add("hidden"); wake(); } }, true);
+  document.addEventListener("keyup", event => { if (event.key === "Alt") { clipping = false; overlay?.classList.add("hidden"); wake(); } }, true);
   window.addEventListener("blur", () => { hovered = null; end(); });
   window.addEventListener("hdrfinisher:workflowchange", () => { hovered = null; end(); });
 
@@ -302,7 +211,7 @@
       if (!label || label.dataset.tonePreviewTip) continue;
       label.dataset.tonePreviewTip = "true";
       const gesture = ["blacks", "whites"].includes(selected.zone) && selected.dimension === "amount"
-        ? " Alt/Option-drag to inspect finished clipping. Pale dots mean endpoint only; RGB marks lost channels; dashed RGB marks channels newly reaching an endpoint."
+        ? ` ${window.HDRShortcuts.isMac() ? "Option" : "Alt"}-drag to inspect finished clipping. Whites: black background, white where all channels clip. Blacks: white background, black where all channels crush. RGB and mixed colours show which channels reach the endpoint.`
         : "";
       label.dataset.tooltip = `${label.dataset.tooltip || ""} Hover or drag to see the effective, endpoint-protected range on the histogram.${gesture}`.trim();
       label.classList.add("tooltip-trigger");

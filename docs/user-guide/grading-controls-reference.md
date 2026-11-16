@@ -10,6 +10,29 @@ Units are optional. For example, `100`, `100 nit`, and `100 nits` all set a nit 
 
 The sliders intentionally cover the useful everyday range. Some slider ranges become narrower for sources classified as Medium or Narrow latitude, which makes fine adjustments easier. Direct entry provides controlled extra room without making the slider less precise.
 
+## Checking Blacks and Whites clipping
+
+Hold **Option** on Mac or **Alt** on Windows while dragging **Whites** or
+**Blacks**, in either HDR or SDR, globally or in a local adjustment:
+
+- **Whites:** the photo turns black. Solid white areas mean all three channels
+  reach white; red, green, blue, yellow, cyan or magenta shows which channels
+  reach white when only some do.
+- **Blacks:** the photo turns white. Solid black areas mean all three channels
+  reach black; the same channel colours identify partial channel clipping.
+
+The view follows the finished image, including local adjustments, Film Look
+and the final Highlight Compression cap. HDR white is the current **Peak**
+target; SDR white is finished SDR white. Touching an endpoint counts (within
+the existing tiny rounding tolerance), not just values pushed beyond it.
+There is no extra near-clipping warning, and a marked area does not by itself
+prove detail was lost. Release Option/Alt or finish the drag to see the photo
+again immediately. The diagnostic does not change the grade or export.
+
+This is a compact GPU preview, so very small clipped features may be missed.
+On a CPU preview, the histogram range trace remains available but the clipping
+view is unavailable. No caption or help panel covers the photo.
+
 ## HDR Tone and Highlights
 
 In both lanes, Highlight Compression is the first graded module, followed by

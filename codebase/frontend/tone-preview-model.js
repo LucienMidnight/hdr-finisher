@@ -33,13 +33,13 @@
     return { weight: enabled ? weight * limiter : 0, limiter: enabled ? limiter : 0, grey, peak, knee };
   }
 
-  function endpoint(post, pre, baseline, { black = false, peak = 1 } = {}) {
-    const epsilon = Math.max(peak * 0.001, 1e-6);
-    const touching = black ? Math.abs(post) <= 1e-6 : Math.abs(post - peak) <= epsilon;
-    const lost = touching && (black ? pre < -1e-6 : pre > peak + epsilon);
-    const newly = touching && Number.isFinite(baseline)
-      && (black ? baseline > 1e-6 : baseline < peak - epsilon);
-    return { touching, lost, newly };
+  function endpointTolerance(peak, black) {
+    return black ? 1e-6 : Math.max(peak * 0.001, 1e-6);
+  }
+
+  function endpoint(post, { black = false, peak = 1 } = {}) {
+    const epsilon = endpointTolerance(peak, black);
+    return Number.isFinite(post) && (black ? post <= epsilon : post >= peak - epsilon);
   }
 
   function displayPeak(display, referenceWhite = 203) {
@@ -49,7 +49,7 @@
     return Math.max(0, nits * 0.18 / referenceWhite);
   }
 
-  const api = Object.freeze({ control, influence, endpoint, displayPeak });
+  const api = Object.freeze({ control, influence, endpoint, endpointTolerance, displayPeak });
   if (typeof window !== "undefined") window.HDRTonePreviewModel = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })();

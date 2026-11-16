@@ -52,14 +52,18 @@ for (const lane of ["hdr", "sdr"]) test(`Disabled ${lane.toUpperCase()} local gr
   }
 });
 
-test("Endpoint contact is not proof of clipped channels; drag-start transitions are separate", () => {
-  assert.deepEqual(model.endpoint(1, 1, 1), { touching: true, lost: false, newly: false });
-  assert.deepEqual(model.endpoint(1, 1.2, 1), { touching: true, lost: true, newly: false });
-  assert.deepEqual(model.endpoint(1, 1.2, 0.8), { touching: true, lost: true, newly: true });
-  assert.deepEqual(model.endpoint(0, 0, 0, { black: true }), { touching: true, lost: false, newly: false });
-  assert.deepEqual(model.endpoint(0, 0, 0.2, { black: true }), { touching: true, lost: false, newly: true });
-  assert.equal(model.endpoint(0.9, 1.2, 0.8).lost, false);
-  assert.equal(model.endpoint(1.2, 1.2, 0.8).touching, false);
+test("Finished endpoint contact and overshoot count, but nearby tones do not", () => {
+  for (const peak of [1, 1000 * 0.18 / 203]) {
+    assert.equal(model.endpoint(peak, { peak }), true);
+    assert.equal(model.endpoint(peak * 1.2, { peak }), true);
+    assert.equal(model.endpoint(peak * 0.9995, { peak }), true);
+    assert.equal(model.endpoint(peak * 0.998, { peak }), false);
+  }
+  assert.equal(model.endpoint(0, { black: true }), true);
+  assert.equal(model.endpoint(-0.2, { black: true }), true);
+  assert.equal(model.endpoint(0.0000005, { black: true }), true);
+  assert.equal(model.endpoint(0.000002, { black: true }), false);
+  for (const post of [NaN, Infinity, -Infinity]) assert.equal(model.endpoint(post), false);
 });
 
 test("Display warning maps reported physical nits, not headroom against an assumed project white", () => {

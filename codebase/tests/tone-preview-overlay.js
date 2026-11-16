@@ -6,7 +6,7 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const python = require("../tools/lib/platform.cjs").pythonExecutable();
 const photograph = process.argv.includes("--photo");
-const review = path.resolve(__dirname, `../output/review/n3b-clipping${photograph ? "/photo" : ""}`);
+const review = path.resolve(__dirname, `../output/review/clipping-view${photograph ? "/photo" : ""}`);
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "n3b-clipping-"));
 fs.mkdirSync(review, { recursive: true });
 
@@ -44,6 +44,8 @@ height,width=256,512
 signal=np.exp2(np.linspace(-14,5,width,dtype=np.float32))[None,:,None]*.18
 hues=np.array([[1,.4,.2],[.2,1,.4],[.4,.2,1],[1,1,1]],np.float32)
 rgb=np.tile(signal,(height,1,3))*hues[np.arange(height)//64,None,:]
+for band in range(8):
+    rgb[band*32:(band+1)*32,:128]=[0 if band & bit else .02 for bit in (1,2,4)]
 tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`, path.join(temporary, "tone.tiff")]);
     await page.goto(base);
     await page.waitForFunction(() => state.gpuPreview?.available && window.HDRTonePreview, null, { timeout: 30000 });
@@ -63,79 +65,78 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`, path.join(temporary, "tone
       state.globalEditDirty = true;
       await syncGlobalEditState();
     });
-    const diagnostics = await page.evaluate(async () => {
+    result.diagnostics = await page.evaluate(async () => {
       state.previewScheduler?.cancel();
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
       await renderGpuDraft("hdr", { longEdge: 512 });
       const renderer = state.gpuPreview;
       const device = renderer.device;
-      const source = { ...renderer.scopeSources.get(els.previewCanvas), width: 64, height: 8, lane: "sdr" };
+      const source = { ...renderer.scopeSources.get(els.previewCanvas), width: 64, height: 24 };
       source.params = new Float32Array(source.params);
       const indices = HDRGpuParamLayout.indices;
-      source.params[indices.HDR_LANE] = 0;
       source.params[indices.HIGHLIGHT_MODE] = 3;
-      source.params[indices.TONE_PEAK] = 1;
-      const texture = device.createTexture({ size: [64, 8], format: "rgba32float", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+      source.params[indices.PROJECT_REFERENCE_WHITE_NITS] = 203;
+      source.params[indices.HIGHLIGHT_TARGET_NITS] = 1000;
+      const texture = device.createTexture({ size: [64, 24], format: "rgba32float", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
       source.filmTexture = texture;
       const canvas = document.createElement("canvas");
       const engine = new HDRTonePreviewGpu(renderer, canvas);
       await engine.ready;
       engine.context.configure({ device, format: "bgra8unorm", alphaMode: "opaque", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
-      const colors = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [.5, .5, .5], [.7, .4, .9], [1, .7, .1]];
-      async function picture(rgb, black = false, baseline = false, displayPeak = 0) {
-        const pixels = new Float32Array(64 * 8 * 4);
-        for (let index = 0; index < 64 * 8; index++) pixels.set([...rgb, 1], index * 4);
-        device.queue.writeTexture({ texture }, pixels, { bytesPerRow: 1024 }, [64, 8]);
-        engine.draw(source, { black, baseline, colors, displayPeak });
-        if (baseline) return null;
-        const buffer = device.createBuffer({ size: 256 * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
-        const encoder = device.createCommandEncoder();
-        encoder.copyTextureToBuffer({ texture: engine.context.getCurrentTexture() }, { buffer, bytesPerRow: 256 }, [64, 8]);
-        device.queue.submit([encoder.finish()]);
-        await buffer.mapAsync(GPUMapMode.READ);
-        const bytes = new Uint8Array(buffer.getMappedRange());
-        const pixel = horizontal => Array.from(bytes.slice(horizontal * 4, horizontal * 4 + 3)).reverse();
-        const result = [pixel(0), pixel(3), pixel(6), pixel(9), pixel(12), pixel(1)];
-        buffer.unmap(); buffer.destroy();
-        return result;
-      }
+      const results = [];
       try {
-        const touching = await picture([1, 1, 1]);
-        const clippedRed = await picture([2, 0, 0]);
-        const blackTouching = await picture([0, 0, 0], true);
-        const clippedBlack = await picture([-.2, .2, .2], true);
-        await picture([.5, .5, .5], false, true);
-        const newly = await picture([1, 1, 1]);
-        engine.hasBaseline = false;
-        source.lane = "hdr";
-        source.params[indices.HDR_LANE] = 1;
-        source.params[indices.HIGHLIGHT_TARGET] = 1;
-        const hdrSdrWhite = await picture([.12, .12, .12]);
-        const hdrDisplay = await picture([.2, .2, .2], false, false, .15);
-        const hdrTarget = await picture([1, 1, 1]);
-        return { touching, clippedRed, blackTouching, clippedBlack, newly, hdrSdrWhite, hdrDisplay, hdrTarget };
+        for (const lane of ["hdr", "sdr"]) for (const black of [false, true]) {
+          const peak = lane === "hdr" ? 1000 * 0.18 / 203 : 1;
+          source.lane = lane;
+          source.params[indices.HDR_LANE] = Number(lane === "hdr");
+          source.params[indices.HIGHLIGHT_TARGET] = peak;
+          source.params[indices.TONE_PEAK] = peak;
+          const pixels = new Float32Array(64 * 24 * 4);
+          for (let vertical = 0; vertical < 24; vertical++) for (let horizontal = 0; horizontal < 64; horizontal++) {
+            const mask = Math.floor(horizontal / 8);
+            const row = Math.floor(vertical / 8);
+            const contact = black ? [0, -0.1, 0.0001][row] : peak * [1, 1.2, 0.99][row];
+            const rgb = [1, 2, 4].map(bit => mask & bit ? contact : peak * 0.25);
+            const stored = lane === "hdr" ? [
+              0.9746957086 * rgb[0] + 0.0216339017 * rgb[1] + 0.0036703891 * rgb[2],
+              0.0016784991 * rgb[0] + 0.9977360501 * rgb[1] + 0.0005854508 * rgb[2],
+              0.0048862547 * rgb[0] + 0.0211319326 * rgb[1] + 0.9739818130 * rgb[2],
+            ] : rgb;
+            pixels.set([...stored, 1], (vertical * 64 + horizontal) * 4);
+          }
+          device.queue.writeTexture({ texture }, pixels, { bytesPerRow: 1024 }, [64, 24]);
+          const originalParams = Array.from(source.params);
+          const resources = engine.draw(source, { black });
+          if (JSON.stringify(originalParams) !== JSON.stringify(Array.from(source.params))) throw Error("Diagnostic mutated accepted parameters");
+          const buffer = device.createBuffer({ size: 256 * 24, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+          try {
+            const encoder = device.createCommandEncoder();
+            encoder.copyTextureToBuffer({ texture: engine.context.getCurrentTexture() }, { buffer, bytesPerRow: 256 }, [64, 24]);
+            device.queue.submit([encoder.finish()]);
+            await buffer.mapAsync(GPUMapMode.READ);
+            const bytes = new Uint8Array(buffer.getMappedRange());
+            for (let vertical = 0; vertical < 24; vertical++) for (let horizontal = 0; horizontal < 64; horizontal++) {
+              const mask = Math.floor(horizontal / 8);
+              const marked = vertical < 16 && mask !== 0;
+              const expected = !marked ? [black ? 255 : 0, black ? 255 : 0, black ? 255 : 0]
+                : black && mask === 7 ? [0, 0, 0] : [1, 2, 4].map(bit => mask & bit ? 255 : 0);
+              const offset = (vertical * 64 + horizontal) * 4;
+              const actual = [bytes[offset + 2], bytes[offset + 1], bytes[offset]];
+              if (actual.some((channel, index) => channel !== expected[index])) throw Error(lane + "/" + black + " pixel " + horizontal + "," + vertical + ": " + actual + " expected " + expected);
+            }
+            buffer.unmap();
+            results.push({ lane, black, pixelsChecked: 64 * 24, resources });
+          } finally { buffer.destroy(); }
+        }
       } finally { engine.destroy(); texture.destroy(); }
+      return results;
     });
-    assert.deepEqual(diagnostics.touching[1], [0, 0, 0], "White endpoint contact is not labelled as lost channels");
-    assert.deepEqual(diagnostics.clippedRed[1], [255, 0, 0], "Only the lost red channel is marked");
-    assert.deepEqual(diagnostics.blackTouching[1], [255, 255, 255], "Black endpoint contact uses the white diagnostic background");
-    assert.deepEqual(diagnostics.clippedBlack[1], [255, 0, 0], "Black cap loss identifies its channel");
-    assert.deepEqual(diagnostics.newly[1], [0, 0, 0], "New endpoint transitions use dashes, not solid cap-loss marks");
-    assert.deepEqual(diagnostics.newly[2], [0, 255, 0], "A newly touching green channel remains visible");
-    assert.deepEqual(diagnostics.newly[4], [0, 0, 255], "A newly touching blue channel remains visible");
-    for (const [actual, expected, message] of [
-      [diagnostics.hdrSdrWhite[0], [179, 102, 230], "HDR crossing SDR white uses the accent, not clipping RGB"],
-      [diagnostics.hdrDisplay[5], [255, 179, 26], "HDR display overrange has a separate warning"],
-      [diagnostics.hdrTarget[1], [128, 128, 128], "HDR reaching the target gets a pale marker"],
-    ]) assert.ok(actual.every((channel, index) => Math.abs(channel - expected[index]) <= 1), `${message}: ${actual}`);
-    result.diagnostics = diagnostics;
-    result.baselines = await page.evaluate(async () => {
+    result.frameMatching = await page.evaluate(async () => {
       state.previewScheduler?.cancel();
       while (state.gpuDraftInFlight) await state.gpuDraftInFlight.catch(() => null);
       const group = document.querySelector('[data-group="hdr-tone"]');
       if (group.classList.contains("collapsed")) group.querySelector(".group-toggle").click();
       const renderer = state.gpuPreview;
-      const device = renderer.device;
       const OriginalEngine = window.HDRTonePreviewGpu;
       const originalSources = renderer.scopeSources;
       const originalProxy = renderer.renderScopeProxy;
@@ -144,93 +145,93 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`, path.join(temporary, "tone
       const input = document.getElementById("hdr-whites");
       const diagnosticGesture = event => { if (!event.isTrusted) event.stopImmediatePropagation(); };
       input.addEventListener("pointerdown", diagnosticGesture, true);
-      const textures = [];
       const results = [];
-      function fixture(value, serial, generation) {
-        const texture = device.createTexture({ size: [64, 8], format: "rgba32float", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
-        textures.push(texture);
-        const pixels = new Float32Array(64 * 8 * 4);
-        for (let offset = 0; offset < pixels.length; offset += 4) pixels.set([value, value, value, 1], offset);
-        device.queue.writeTexture({ texture }, pixels, { bytesPerRow: 64 * 16 }, [64, 8]);
-        const params = new Float32Array(source.params);
-        params[HDRGpuParamLayout.indices.HDR_LANE] = 0;
-        params[HDRGpuParamLayout.indices.HIGHLIGHT_MODE] = 3;
-        params[HDRGpuParamLayout.indices.TONE_PEAK] = 1;
-        return { ...source, width: 64, height: 8, filmTexture: texture, params, serial, applicationGeneration: generation };
-      }
-      try {
-        for (const execution of ["direct", "tiled"]) {
-          for (const cold of [false, true]) {
-            HDRTonePreview.end();
-            input.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
-            await new Promise(resolve => requestAnimationFrame(resolve));
-            const baseline = fixture(.5, 700, 500);
-            const changed = fixture(1, 701, 501);
-            let release;
-            let prepared;
-            let captured = 0;
-            let baselineSerial;
-            let reading = false;
-            let finish;
-            const completed = new Promise(resolve => { finish = resolve; });
-            window.HDRTonePreviewGpu = class extends OriginalEngine {
-              constructor(...args) {
-                super(...args);
-                prepared = this.ready;
-                if (cold) this.ready = this.ready.then(() => new Promise(resolve => { release = resolve; }));
-              }
-              draw(frameSource, options) {
-                const resources = super.draw(frameSource, options);
-                if (options.baseline) { captured++; baselineSerial = frameSource.serial; }
-                else if (!reading) {
-                  reading = true;
-                  const buffer = device.createBuffer({ size: 256 * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
-                  this.context.configure({ device, format: "bgra8unorm", alphaMode: "opaque", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC });
-                  super.draw(frameSource, options);
-                  const encoder = device.createCommandEncoder();
-                  encoder.copyTextureToBuffer({ texture: this.context.getCurrentTexture() }, { buffer, bytesPerRow: 256 }, [64, 8]);
-                  device.queue.submit([encoder.finish()]);
-                  void buffer.mapAsync(GPUMapMode.READ).then(() => {
-                    const bytes = new Uint8Array(buffer.getMappedRange());
-                    const pixel = horizontal => Array.from(bytes.slice(horizontal * 4, horizontal * 4 + 3)).reverse();
-                    finish({ captured, baselineSerial, hasBaseline: this.hasBaseline, pixels: [pixel(3), pixel(6)], green: options.colors[1].map(channel => Math.round(channel * 255)), bounded: resources.width <= 640 && resources.height <= 640 });
-                    buffer.unmap(); buffer.destroy();
-                  });
-                }
-                return resources;
-              }
-            };
-            renderer.scopeSources = new Map();
-            renderer.scopeAnalysisCanvas ||= document.createElement("canvas");
-            const canvas = execution === "tiled" ? renderer.scopeAnalysisCanvas : els.previewCanvas;
-            renderer.scopeSources.set(canvas, baseline);
-            const accepted = { ...originalAccepted, execution, transport: "WebGPU", sourceSerial: baseline.serial, generation: 500 };
-            state.acceptedPresentation = accepted;
-            const recipe = JSON.stringify(state.adjustments);
-            renderer.renderScopeProxy = async (...args) => {
-              const generation = args[9].applicationGeneration;
-              if (generation === 500 && (args[2] === state.adjustments || JSON.stringify(args[2]) !== recipe)) throw Error("Baseline did not retain a separate drag-start recipe");
-              renderer.scopeSources.set(renderer.scopeAnalysisCanvas, generation === 500 ? baseline : changed);
-            };
-            input.dispatchEvent(new PointerEvent("pointerover", { bubbles: true }));
-            if (!cold) {
-              await new Promise(resolve => requestAnimationFrame(resolve));
-              await prepared;
-            } else if (execution === "direct") renderer.scopeSources.delete(canvas);
-            input.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, altKey: true }));
-            if (cold) {
-              await prepared;
-              await Promise.resolve();
-            }
-            state.acceptedPresentation = { ...accepted, generation: 501, sourceSerial: changed.serial };
-            renderer.scopeSources.set(canvas, changed);
-            if (release) release();
-            let timeout;
-            const outcome = await Promise.race([completed, new Promise((resolve, reject) => { timeout = setTimeout(() => reject(Error(`Missing ${execution}/${cold} UI baseline`)), 10000); })]).finally(() => clearTimeout(timeout));
-            results.push({ execution, cold, ...outcome });
-            HDRTonePreview.end();
-          }
+      const overlay = () => document.getElementById("tone-clipping-overlay");
+      const wait = async predicate => {
+        const deadline = performance.now() + 10000;
+        while (!predicate()) {
+          if (performance.now() > deadline) throw Error("Clipping frame matching timed out");
+          await new Promise(resolve => requestAnimationFrame(resolve));
         }
+      };
+      const hidden = () => overlay()?.classList.contains("hidden");
+      try {
+        for (const execution of ["direct", "tiled"]) for (const cold of [false, true]) {
+          HDRTonePreview.end();
+          input.dispatchEvent(new PointerEvent("pointerout", { bubbles: true }));
+          await new Promise(resolve => requestAnimationFrame(resolve));
+          let release;
+          let prepared;
+          const draws = [];
+          window.HDRTonePreviewGpu = class extends OriginalEngine {
+            constructor(...args) {
+              super(...args);
+              prepared = this.ready;
+              if (cold) this.ready = this.ready.then(() => {
+                const pipeline = this.clippingPipeline;
+                this.clippingPipeline = null;
+                return new Promise(resolve => { release = () => { this.clippingPipeline = pipeline; resolve(); }; });
+              });
+            }
+            draw(frameSource, options) {
+              draws.push(frameSource.serial);
+              return super.draw(frameSource, options);
+            }
+          };
+          const current = { ...source, serial: 700, applicationGeneration: 500 };
+          const changed = { ...source, serial: 701, applicationGeneration: 501 };
+          renderer.scopeSources = new Map([[els.previewCanvas, current], [renderer.scopeAnalysisCanvas, current]]);
+          renderer.renderScopeProxy = async () => null;
+          state.acceptedPresentation = { ...originalAccepted, transport: "WebGPU", execution, sourceSerial: 700, generation: 500 };
+          input.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, altKey: true }));
+          await wait(() => Boolean(prepared));
+          await prepared;
+          state.acceptedPresentation = { ...state.acceptedPresentation, sourceSerial: 701, generation: 501 };
+          if (release) release();
+          await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          if (!hidden()) throw Error("Stale diagnostic remained visible");
+          renderer.scopeSources.set(els.previewCanvas, changed);
+          renderer.scopeSources.set(renderer.scopeAnalysisCanvas, changed);
+          await wait(() => !hidden() && overlay().dataset.sourceSerial === "701");
+          if (overlay().dataset.generation !== "501" || draws.some(serial => serial !== 700 && serial !== 701)) throw Error("Wrong accepted frame");
+          document.dispatchEvent(new KeyboardEvent("keyup", { key: "Alt", bubbles: true }));
+          if (!hidden()) throw Error("Option/Alt release did not hide immediately");
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Alt", bubbles: true }));
+          await wait(() => !hidden());
+          document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+          if (!hidden()) throw Error("Drag end did not hide immediately");
+          results.push({ execution, cold, sourceSerial: 701, generation: 501 });
+        }
+        let finishProxy;
+        let proxyStarted = false;
+        const draws = [];
+        window.HDRTonePreviewGpu = class extends OriginalEngine {
+          draw(frameSource, options) { draws.push(frameSource.serial); return super.draw(frameSource, options); }
+        };
+        renderer.scopeSources = new Map();
+        renderer.renderScopeProxy = async () => {
+          proxyStarted = true;
+          await new Promise(resolve => { finishProxy = resolve; });
+        };
+        state.acceptedPresentation = { ...originalAccepted, transport: "WebGPU", execution: "tiled", sourceSerial: 800, generation: 800 };
+        input.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, altKey: true }));
+        await wait(() => proxyStarted);
+        state.acceptedPresentation = { ...state.acceptedPresentation, sourceSerial: 801, generation: 801 };
+        renderer.scopeSources.set(renderer.scopeAnalysisCanvas, { ...source, serial: 801, applicationGeneration: 801 });
+        finishProxy();
+        await wait(() => !hidden() && overlay().dataset.generation === "801");
+        if (draws.some(serial => serial !== 801)) throw Error("Late proxy overwrote the current diagnostic");
+        document.dispatchEvent(new KeyboardEvent("keyup", { key: "Alt", bubbles: true }));
+        proxyStarted = false;
+        state.acceptedPresentation = { ...state.acceptedPresentation, sourceSerial: 802, generation: 802 };
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Alt", bubbles: true }));
+        await wait(() => proxyStarted);
+        document.dispatchEvent(new KeyboardEvent("keyup", { key: "Alt", bubbles: true }));
+        if (!hidden()) throw Error("Release during proxy preparation did not hide immediately");
+        finishProxy();
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        if (!hidden() || draws.includes(802)) throw Error("Late proxy resurrected a released diagnostic");
+        results.push({ delayedProxy: "Current frame wins; release stays hidden" });
       } finally {
         HDRTonePreview.end();
         input.removeEventListener("pointerdown", diagnosticGesture, true);
@@ -240,18 +241,9 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`, path.join(temporary, "tone
         renderer.scopeSources = originalSources;
         renderer.renderScopeProxy = originalProxy;
         state.acceptedPresentation = originalAccepted;
-        textures.forEach(texture => texture.destroy());
       }
       return results;
     });
-    for (const baseline of result.baselines) {
-      assert.equal(baseline.captured, 1, `${baseline.execution}/${baseline.cold}: UI captures exactly one baseline`);
-      assert.equal(baseline.baselineSerial, 700);
-      assert.equal(baseline.hasBaseline, true);
-      assert.equal(baseline.bounded, true);
-      assert.deepEqual(baseline.pixels[0], [0, 0, 0], "Newly reached endpoints have dash gaps");
-      assert.deepEqual(baseline.pixels[1], baseline.green, "Newly reached green endpoint has a channel mark");
-    }
     for (const lane of ["hdr", "sdr"]) {
       await page.evaluate(async lane => {
         await switchLane(lane);
@@ -273,6 +265,8 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`, path.join(temporary, "tone
       }
       for (const name of ["whites", "blacks"]) {
         const slider = page.locator(`#${lane}-${name}`);
+        const gesture = await page.evaluate(() => HDRShortcuts.isMac() ? "Option" : "Alt");
+        assert.ok((await slider.locator("..").locator("label").getAttribute("data-tooltip")).includes(`${gesture}-drag`));
         await slider.hover();
         await page.waitForTimeout(250);
         const box = await slider.boundingBox();
@@ -310,39 +304,29 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`, path.join(temporary, "tone
         await page.keyboard.up("Alt");
         await page.waitForFunction(() => document.getElementById("tone-clipping-overlay").classList.contains("hidden"));
       }
-      const timingSlider = page.locator(`#${lane}-whites`);
-      await timingSlider.hover();
-      await page.waitForTimeout(250);
-      const timingBox = await timingSlider.boundingBox();
-      await page.keyboard.down("Alt");
-      await page.mouse.move(timingBox.x + timingBox.width / 2, timingBox.y + timingBox.height / 2);
+      const liveSlider = page.locator(`#${lane}-whites`);
+      await liveSlider.hover();
+      const liveBox = await liveSlider.boundingBox();
+      await page.mouse.move(liveBox.x + liveBox.width / 2, liveBox.y + liveBox.height / 2);
       await page.mouse.down();
-      const timings = await page.evaluate(async lane => {
-        const input = document.getElementById(`${lane}-whites`);
-        const samples = [];
-        for (const value of [10, 20, 30, 40, 50, 60, 70, 80, 90, 50, 25, 0]) {
-          const start = performance.now();
-          const previous = state.acceptedPresentation?.sourceSerial;
+      await page.keyboard.down("Alt");
+      for (const value of [10, 30, 60, 90, 25, 0]) {
+        const previous = await page.evaluate(() => state.acceptedPresentation?.sourceSerial);
+        await page.evaluate(({ lane, value }) => {
+          const input = document.getElementById(`${lane}-whites`);
           input.value = String(value);
           input.dispatchEvent(new Event("input", { bubbles: true }));
-          await new Promise((resolve, reject) => {
-            function check() {
-              if (performance.now() - start > 5000) { reject(Error("Overlay did not follow the current preview")); return; }
-              const current = state.acceptedPresentation;
-              const overlay = document.getElementById("tone-clipping-overlay");
-              if (current?.sourceSerial !== previous && overlay.dataset.sourceSerial === String(current.sourceSerial)
-                && overlay.dataset.generation === String(current.generation) && !overlay.classList.contains("hidden")) {
-                samples.push(performance.now() - start); resolve();
-              } else requestAnimationFrame(check);
-            }
-            requestAnimationFrame(check);
-          });
-        }
-        return { samples, gpu: structuredClone(HDRTonePreview.metrics) };
-      }, lane);
-      await page.mouse.up();
+        }, { lane, value });
+        await page.waitForFunction(previous => {
+          const current = state.acceptedPresentation;
+          const overlay = document.getElementById("tone-clipping-overlay");
+          return current?.sourceSerial !== previous && overlay.dataset.sourceSerial === String(current.sourceSerial)
+            && overlay.dataset.generation === String(current.generation) && !overlay.classList.contains("hidden");
+        }, previous);
+      }
       await page.keyboard.up("Alt");
-      result.lanes[lane] = timings;
+      await page.mouse.up();
+      result.lanes[lane] = "Live accepted-frame matching passed";
       await page.mouse.move(10, 10);
       await page.waitForFunction(() => document.getElementById("tone-preview-key").classList.contains("hidden"));
     }
@@ -352,7 +336,8 @@ tifffile.imwrite(sys.argv[1],rgb,photometric='rgb')`, path.join(temporary, "tone
       if (!await commitSelectedLocal({ maskContent: true })) throw Error("Local fixture commit refused");
       state.localShowMask = false;
     });
-    for (const name of ["blacks", "whites"]) {
+    for (const lane of ["hdr", "sdr"]) for (const name of ["blacks", "whites"]) {
+      await page.evaluate(async lane => { await switchLane(lane); await renderGpuDraft(lane, { longEdge: 512 }); }, lane);
       const slider = page.locator(`#local-${name}`);
       await slider.scrollIntoViewIfNeeded(); await slider.hover();
       await page.waitForFunction(() => document.getElementById("tone-preview-key").textContent.includes("before spatial mask"));

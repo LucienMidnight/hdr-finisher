@@ -85,7 +85,11 @@ Defaults (Center / Width): Shadows −1.5 / 5 EV; Midtones 0 / 4 EV;
 Highlights HDR +2.25 / 4.5 EV, SDR +1.75 / 3.5 EV. Blacks/broad overlap is
 one stop; broad/Whites overlap is half a stop. The new curves intentionally
 change saved non-zero global Tone grades. Local Tone uses its existing curves
-until the next step; clipping/range preview is not yet part of this block.
+until the next step. Hover a Tone control to see its effective range on the
+histogram. Option-drag (Mac) or Alt-drag (Windows) Blacks or Whites for a solid,
+channel-coloured clipping view of the finished image; release the key or end
+the drag to return to the photo. See [Checking Blacks and Whites
+clipping](grading-controls-reference.md#checking-blacks-and-whites-clipping).
 
 HDR mid-grey is scene-linear .0324: 36.54 nits with 203-nit project Reference
 White. Contrast Pivot retains its separate existing meaning; it is not Center 0.

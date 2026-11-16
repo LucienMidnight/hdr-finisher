@@ -120,22 +120,32 @@ This is pre-look qualification, not a selection map on the finished photo:
 saturated pixels also depend on their brightest delivery-space channel.
 
 Alt/Option-drag global/local Blacks or Whites replaces the active image with
-a **finished, post-look/post-cap** clipping diagnostic. Whites uses black;
-Blacks uses white. Existing scope RGB tokens identify channels with measurable
-loss at the final cap; pale dots identify endpoint contact without evidence of
-loss. Dashed RGB identifies newly reached endpoints against a bounded
-drag-start snapshot, not proof of lost detail. HDR additionally distinguishes
-crossing 100-nit SDR white, reported primary-display overrange, and the HC
-target guide. Missing display telemetry is labelled unknown, not guessed.
+a **finished, post-look/post-cap** clipping diagnostic. Following Steve's
+November 16 correction, this uses the familiar photographic clipping view:
+Whites replaces the photo with black, with solid white where all channels
+reach the endpoint; Blacks replaces it with white, with solid black where all
+channels reach black. Partial clipping uses the affected RGB channels directly
+as diagnostic data: red, green, blue, yellow, cyan or magenta. No dots, dashes,
+alternating channels, drag-start comparison, SDR-white or display-overrange
+markings remain. No explanatory panel covers the photo; the existing
+visually-hidden status remains. Tooltips say Option on Mac and Alt on Windows.
+Endpoint contact counts, including the existing 0.1% white / 1e-6 black
+numerical tolerance; there is no additional near-clipping or faint-shade band.
+An endpoint alone is not proof of lost detail. HDR white means the Highlight
+Compression Peak/target, not SDR white; SDR white means its finished white.
 
 GPU-only clipping reads the existing accepted finished scope texture; tiled
 presentation uses the existing compact scope-proxy route. No grading/export
 shader or recipe changes, full-resolution cache, persistent image readback,
 new UI token or Auto. Diagnostics are at most 640 pixels on the long edge;
-the GPU allocator accounts for the baseline, canvas and parameters, released
+the GPU allocator accounts for the canvas and parameters, released
 on exit. On a CPU preview, the range remains available and clipping is
 explicitly unavailable. Cancellation, Alt release and leaving Grade clear it.
-See the sprint brief N3b result for tests, evidence and unqualified paths.
+The updated `tests/tone-preview-overlay.js` checks every pixel in known
+single-, mixed- and all-channel regions in both lanes, accepted-frame matching
+for direct/tiled sources, local/global gestures, release and export/recipe
+invariance. Review captures overwrite `codebase/output/review/clipping-view/`.
+The compact diagnostic can miss isolated full-resolution clipped pixels.
 
 ## November 16: N2 global Tone and C4 wheel ranges
 
