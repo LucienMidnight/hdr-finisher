@@ -152,7 +152,7 @@
     Object.freeze({ name: "HIGHLIGHT_DESATURATION_START", index: 144 }),
     Object.freeze({ name: "SHADOW_DESATURATION", index: 145 }),
     Object.freeze({ name: "SHADOW_DESATURATION_START", index: 146 }),
-    Object.freeze({ name: "RESERVED_147", index: 147, reserved: true }),
+    Object.freeze({ name: "HIGHLIGHT_TARGET_NITS", index: 147 }),
     Object.freeze({ name: "DETAIL_ENABLED", index: 148, hostOnly: true }),
     Object.freeze({ name: "TEXTURE_AMOUNT", index: 149 }),
     Object.freeze({ name: "CLARITY_AMOUNT", index: 150 }),

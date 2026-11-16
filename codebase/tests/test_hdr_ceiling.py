@@ -64,39 +64,25 @@ def test_every_checked_delivery_is_decoded_even_with_input_headroom(peak):
     assert len(decoded) == 1
 
 
-@pytest.mark.parametrize("peak", [1000, 1005, 1010])
-def test_encoding_allowance_preserves_bytes_and_adds_no_note(peak):
-    assert hdr_ceiling.ENCODING_ALLOWANCE == 0.01
-    notes, calls = [], []
-    original = scene()
-    delivered = hdr_ceiling.encode_within_ceiling(original, 203,
-        lambda image: calls.append(image) or b"encoded bytes",
-        lambda payload: np.full(original.shape[:2], peak, np.float32), 1000, notes,
+@pytest.mark.parametrize("target", [203, 600, 1000, 4000])
+def test_encoder_rounding_above_target_is_corrected(target):
+    assert hdr_ceiling.ENCODING_ALLOWANCE == 0.0
+    encode, decode, calls = ringing_codec(overshoot=1.000001)
+    delivered = hdr_ceiling.encode_within_ceiling(scene(target), 203, encode, decode, target,
         encoding_allowance=hdr_ceiling.ENCODING_ALLOWANCE)
-    assert delivered == b"encoded bytes" and len(calls) == 1 and notes == []
+    assert decode(delivered).max() <= target
+    assert len(calls) >= 2
 
 
-def test_above_allowance_aims_below_target_even_if_a_round_is_within_allowance():
-    calls = []
-    peaks = iter([1010.01, 1005, 995])
-    hdr_ceiling.encode_within_ceiling(scene(), 203,
-        lambda image: calls.append(image) or image,
-        lambda image: np.full(image.shape[:2], next(peaks), np.float32), 1000,
-        encoding_allowance=hdr_ceiling.ENCODING_ALLOWANCE)
-    assert len(calls) == 3
-
-
-def test_last_round_can_accept_encoding_rounding_but_codec_limit_has_no_allowance():
+def test_even_the_last_correction_cannot_accept_a_small_overshoot():
     calls = []
     def decode(image):
-        return np.full(image.shape[:2], 1012 if len(calls) == 1 else 1005, np.float32)
-    hdr_ceiling.encode_within_ceiling(scene(), 203,
-        lambda image: calls.append(image) or image, decode, 1000,
-        encoding_allowance=hdr_ceiling.ENCODING_ALLOWANCE)
-    assert len(calls) == len(hdr_ceiling.MARGINS) + 1
+        return np.full(image.shape[:2], 1012 if len(calls) == 1 else 1000.000061, np.float32)
     with pytest.raises(hdr_ceiling.CeilingError):
-        hdr_ceiling.encode_within_ceiling(scene(), 203, lambda image: image,
-            lambda image: np.full(image.shape[:2], 10050, np.float32), 10000)
+        hdr_ceiling.encode_within_ceiling(scene(), 203,
+            lambda image: calls.append(image) or image, decode, 1000,
+            encoding_allowance=hdr_ceiling.ENCODING_ALLOWANCE)
+    assert len(calls) == len(hdr_ceiling.MARGINS) + 1
 
 
 def test_proof_preserves_the_peak_option_and_its_cache_signature():
@@ -143,7 +129,7 @@ def test_an_export_that_stays_over_target_preserves_the_destination(monkeypatch,
 
 @pytest.mark.parametrize("format_name", ["jpeg_ultrahdr", "avif_gain_map", "jpegxl_hdr"])
 @pytest.mark.parametrize("highlights", [False, True])
-def test_only_active_highlights_get_the_encoding_allowance(monkeypatch, tmp_path, format_name, highlights):
+def test_neither_active_highlights_nor_codec_limit_accept_overshoot(monkeypatch, tmp_path, format_name, highlights):
     from types import SimpleNamespace
     from hdr_finisher import exporters
     from hdr_finisher.capabilities import probe_capabilities
@@ -162,7 +148,7 @@ def test_only_active_highlights_get_the_encoding_allowance(monkeypatch, tmp_path
         hdr_reference_white_nits=203, sdr_reference_image=None, local_adjustments=[])
     result = backend.export(session, ExportSettings(format=format_name, quality=90,
         guarantee_hdr_peak=True, output_path=str(tmp_path / "delivery")))
-    assert result.accepted is highlights, result.message
+    assert result.accepted is False, result.message
     assert result.delivery_notes == []
 
 
@@ -277,3 +263,40 @@ def test_compliant_encoded_bytes_do_not_change(monkeypatch, tmp_path, format_nam
         output_path=str(tmp_path / "unchecked")))
     assert unchecked.accepted, unchecked.message
     assert Path(checked.output_path).read_bytes() == Path(unchecked.output_path).read_bytes()
+
+
+@pytest.mark.parametrize('target', [203, 600, 1000, 4000])
+@pytest.mark.parametrize('mode', ['peak_fit', 'soft_ceiling', 'clip', 'fixed_cap'])
+@pytest.mark.parametrize('format_name', ['jpeg_ultrahdr', 'avif_gain_map', 'jpegxl_hdr'])
+def test_all_modes_and_targets_remain_exact_after_real_encoding(tmp_path, target, mode, format_name):
+    from pathlib import Path
+    from types import SimpleNamespace
+    from hdr_finisher.capabilities import probe_capabilities
+    from hdr_finisher.exporters import build_export_backends
+    from hdr_finisher.models import AdjustmentState, ExportSettings
+    backend = build_export_backends(probe_capabilities())[format_name]
+    if backend.capability.status.value != 'available':
+        pytest.skip(backend.capability.detail)
+    image = np.broadcast_to(np.linspace(.01, target * NITS * 4, 64, dtype=np.float32)[None, :, None], (16, 64, 3)).copy()
+    adjustments = AdjustmentState()
+    hdr = adjustments.hdr
+    hdr.highlight_section_enabled = True
+    hdr.highlight_compression_mode = mode
+    hdr.highlight_compression_target_nits = target
+    hdr.highlight_compression_start_nits = target * .4
+    hdr.highlight_compression_softness = 60
+    session = SimpleNamespace(session_id='exact', image=image, adjustments=adjustments,
+        hdr_reference_white_nits=203, sdr_reference_image=None, local_adjustments=[])
+    if format_name == 'avif_gain_map' and target == 203:
+        from hdr_finisher.gainmap_decoders import GainMapDecodeError
+        # Existing ISO decoder refuses equal-headroom renditions at SDR white.
+        # Confirm safe refusal, rather than claiming encoded qualification.
+        with pytest.raises(GainMapDecodeError, match='does not define distinct SDR and HDR renditions'):
+            backend.export(session, ExportSettings(format=format_name, quality=95,
+                jpeg_gain_map_scale='full', dithering='off', output_path=str(tmp_path / 'exact')))
+        assert list(tmp_path.iterdir()) == []
+        return
+    result = backend.export(session, ExportSettings(format=format_name, quality=95,
+        jpeg_gain_map_scale='full', dithering='off', output_path=str(tmp_path / 'exact')))
+    assert result.accepted, result.message
+    assert float(hdr_ceiling.decoded_channel_nits(Path(result.output_path), format_name).max()) <= target

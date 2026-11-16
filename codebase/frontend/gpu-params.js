@@ -240,6 +240,12 @@
       params[BLACK_AND_WHITE_PARAM + 1 + index] = blackAndWhiteOn ? (Number(blackAndWhite[name]) || 0) / 100 : 0;
     });
     params[GPU_PARAMS.HIGHLIGHT_TARGET] = lane === "hdr" ? ((branch.highlight_compression_target_nits ?? 1000) * 0.18 / projectReferenceWhite) : 1;
+    // Keep curve parameters unchanged. The separate final check uses authored
+    // nits, rounded down only if float32 cannot represent the exact target.
+    const targetNits = lane === "hdr" ? (branch.highlight_compression_target_nits ?? 1000) : 203;
+    const targetBits = new Uint32Array(new Float32Array([targetNits]).buffer);
+    if (new Float32Array(targetBits.buffer)[0] > targetNits) targetBits[0] -= 1;
+    params[GPU_PARAMS.HIGHLIGHT_TARGET_NITS] = new Float32Array(targetBits.buffer)[0];
     params[GPU_PARAMS.HIGHLIGHT_MODE] = highlightEnabled ? (branch.highlight_compression_mode === "peak_fit" ? 1 : branch.highlight_compression_mode === "soft_ceiling" ? 2 : branch.highlight_compression_mode === "clip" ? 3 : branch.highlight_compression_mode === "fixed_cap" ? 4 : 0) : 0;
     params[GPU_PARAMS.HIGHLIGHT_ANCHOR] = lane === "hdr"
       ? toneAdjustedHighlightPeakLinear(branch, toneEnabled, projectReferenceWhite)

@@ -1449,7 +1449,20 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // per-channel ceiling in the encoded signal.
     fn clipToOutputTarget(input: vec3f) -> vec3f {
       if (p[${GPU_PARAMS.HDR_LANE}] > 0.5) {
-        return bt2020ToAcescg(clamp(acescgToBt2020(input), vec3f(0.0), vec3f(p[${GPU_PARAMS.HIGHLIGHT_TARGET}])));
+        var result = bt2020ToAcescg(clamp(acescgToBt2020(input), vec3f(0.0), vec3f(p[${GPU_PARAMS.HIGHLIGHT_TARGET}])));
+        // Check after the matrix round trip and the nits conversion. Curves
+        // keep their existing parameters; only an actual overshoot changes.
+        let targetNits = p[${GPU_PARAMS.HIGHLIGHT_TARGET_NITS}];
+        let reference = p[${GPU_PARAMS.PROJECT_REFERENCE_WHITE_NITS}];
+        var transport = acescgToBt2020(result);
+        var peak = max(max(transport.r, transport.g), transport.b) / 0.18 * reference;
+        while (peak > targetNits) {
+          let gain = min(targetNits / peak, 1.0);
+          result *= bitcast<f32>(bitcast<u32>(gain) - 1u);
+          transport = acescgToBt2020(result);
+          peak = max(max(transport.r, transport.g), transport.b) / 0.18 * reference;
+        }
+        return result;
       }
       return compressSrgbGamut(input);
     }

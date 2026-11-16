@@ -383,12 +383,14 @@ def clip_hdr_output_target(
 ) -> np.ndarray:
     """The delivery-ceiling half of the HDR output stage."""
     color_context = color_context or RenderColorContext()
-    return _clip_to_output_target(
+    clipped = _clip_to_output_target(
         image,
         adjustments.hdr.highlight_compression_target_nits,
         color_context.hdr_reference_white_nits,
         transport_max=anchor.hdr_output_transport_max if anchor is not None else None,
     )
+    return _enforce_exact_hdr_output_target(clipped, adjustments.hdr.highlight_compression_target_nits,
+        color_context.hdr_reference_white_nits)
 
 
 def hdr_output_transport_signal(image: np.ndarray) -> np.ndarray:
@@ -417,6 +419,26 @@ def _clip_to_output_target(
         return np.clip(image, 0.0, None).astype(np.float32, copy=False)
     np.clip(transport, np.float32(0.0), target, out=transport)
     return np.clip(linear_bt2020_to_acescg(transport), 0.0, None).astype(np.float32, copy=False)
+
+
+def _enforce_exact_hdr_output_target(image: np.ndarray, target_nits: float, reference_white_nits: int) -> np.ndarray:
+    # A float32 target and the delivery-primary round trip can each round up.
+    # Recheck the finished value in nits, changing only overshooting pixels;
+    # all already-compliant images retain their exact previous bytes.
+    peak = scene_linear_to_nits(np.max(acescg_to_linear_bt2020(image), axis=-1), reference_white_nits)
+    over = peak.astype(np.float64) > float(target_nits)
+    if not np.any(over):
+        return image
+    image = image.copy()
+    active = image[over]
+    active_peak = peak[over]
+    while np.any(active_peak.astype(np.float64) > float(target_nits)):
+        gain = np.minimum(np.float32(1.0), (float(target_nits) / active_peak.astype(np.float64)).astype(np.float32))
+        gain = np.nextafter(gain, np.float32(0.0))
+        active *= gain[:, None]
+        active_peak = scene_linear_to_nits(np.max(acescg_to_linear_bt2020(active), axis=-1), reference_white_nits)
+    image[over] = active
+    return image
 
 
 def _hdr_before_black_and_white(image: np.ndarray, adjustments: AdjustmentState) -> np.ndarray:

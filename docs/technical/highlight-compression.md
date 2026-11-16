@@ -141,25 +141,29 @@ The curve must remain continuous and monotonic. Highlight Detail retains positiv
 
 Target Peak is an exact transfer-curve endpoint for the measured final-grade signal, and every mode is followed by an unconditional ceiling at Target Peak in the delivery primaries. The shoulder shapes the picture; the ceiling makes the target a delivery guarantee. That separation matters because the shoulder anchors on a measured peak, and sharpening ringing, grain, and output finishing all leave individual samples above the picture the shoulder was fitted to. A Standard or otherwise downsampled preview can filter away the exact maximum sample, so its measured peak can land below Target Peak; it can never land above.
 
-The encoded-delivery rule (Steve, 2026-11-14, superseding October 18–19)
-checks the decoded brightest BT.2020 channel after every HDR encode with
-Highlight Compression enabled: CPU/GPU export and reduced/full-size Proof.
-Lossy encoding can overshoot even when pre-encode samples have headroom.
-`ENCODING_ALLOWANCE = 0.01` in `hdr_ceiling.py` accepts an initial decoded
-peak up to target + 1% unchanged and without a note. Larger overshoots get
-bounded local correction, aiming at or just below the target (about 97–100%),
-without changing SDR pixels or dimming the whole picture. Every corrected
-encode is checked again; a final peak above target + 1% refuses delivery and
-preserves any existing destination. Refusal is a last resort, not a substitute
-for accurate files. Full-size Proof uses the export pipeline; reduced Proof
-checks its own encoded pixels. Library pictures are not decoded/checked by
-this rule. Disabling the optional codec-limit checkbox never disables an
-active Highlight Compression target. With Highlights off, the optional strict
-10,000-nit codec-limit check is unchanged.
+The exact-delivery rule (Steve, 2026-11-16, superseding the November 14
+encoding allowance) checks every decoded BT.2020 channel after every HDR
+encode with Highlight Compression enabled: CPU/GPU export and reduced/full
+Proof. `ENCODING_ALLOWANCE = 0.0` in `hdr_ceiling.py`: even encoder rounding
+above the target requires the existing bounded local correction and another
+decode. A file still above target is refused, preserving the destination.
+Already-compliant encoded bytes and the SDR rendition stay unchanged. Lossy
+correction can change the nearby decoded pixels too; it cannot independently
+replace one decoded JPEG sample. Library pictures have no post-encode check.
+With Highlights off, the optional strict 10,000-nit codec limit is unchanged.
+
+The CPU final boundary remeasures after the incumbent primary conversions,
+then reduces only pixels whose finished float32 nits exceed the exact authored
+target. It deliberately follows both incumbent Clip calls, so the correction
+cannot change their branch choice or any already-compliant output bytes.
+The WebGPU boundary similarly rechecks after its primary round trip. Parameter
+147 carries the authored target in nits (rounded downward only when float32
+cannot represent it); the existing scene-unit curve parameters are unchanged.
+SDR retains its final gamut boundary with an exact maximum of 1.0.
 
 ## Clip
 
-Clip converts the finished HDR grade to linear BT.2020, clamps every channel to Target Peak, and converts back to ACEScg. It is the deterministic pre-encode clamp; the encoded file still follows the shared 1% encoding-allowance rule. Unlike Peak Fit and Soft Ceiling, it intentionally creates a flat clipped endpoint and can alter hue in saturated clipped colors.
+Clip converts the finished HDR grade to linear BT.2020, clamps every channel to Target Peak, and converts back to ACEScg. It is the deterministic pre-encode clamp; the decoded file must also stay at or below the target. Unlike Peak Fit and Soft Ceiling, it intentionally creates a flat clipped endpoint and can alter hue in saturated clipped colors.
 
 The default Highlight Detail is `35%`. This is intentional: it retains visible shape and local contrast in bright fixtures and reflections. `0%` is available when a flatter, fuller shoulder is preferred, but it is not the neutral technical default and can make peak regions feel plateaued.
 
@@ -225,6 +229,7 @@ The WebGPU implementation retains `hdrPeakFit` / `hdrSoftCeiling` / `fixedCap` f
 | `p[76]` | Highlight Detail normalized to 0–1 |
 | `p[77]` | Compression Bias normalized and scaled to ±0.6 |
 | `p[110]` | Highlight Color: `0` Preserve color, `1` Neutralize peak, `2` Smooth color rolloff |
+| `p[147]` | Exact authored HDR target in nits, separate from the unchanged curve target |
 | `p[159]` | SDR renderer contract: `1` Highlight Compression v2, `0` legacy Base Rendition compatibility |
 
 The authoring preview keeps active HDR and SDR output compression on WebGPU. Peak Fit, Fixed cap, Soft Ceiling, and Clip are applied in the final composite after Film Look, spatial effects, vignette, and grain; Clip therefore remains a true output-boundary clamp without forcing a backend preview. Proof and export use the shared GPU delivery renderer with CPU fallback. Their Peak Fit reduction reads finished pixels after resize/sharpening. Settled direct SDR preview and Library reduce the finished texture too; interactive/tiled editing carries a bounded whole-picture estimate. Fixed cap requests no reduction. Extreme neutral-paper SDR uses the existing scaled half-float storage and float reduction, as HDR already did.

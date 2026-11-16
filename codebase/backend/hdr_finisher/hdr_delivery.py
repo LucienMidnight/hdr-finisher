@@ -37,7 +37,7 @@ def decoded_hdr_peak_nits(path: Path, format_name: str) -> float:
 
 
 def check_decoded_hdr_ceiling(path: Path, format_name: str, target_nits: float) -> float:
-    """Reject decoded pixels above the target plus its encoding allowance.
+    """Reject any decoded pixel above the target.
 
     This read-only check does not correct encoders or alter delivered pixels.
     The per-channel check also bounds BT.2020 luminance.

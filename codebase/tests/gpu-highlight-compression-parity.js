@@ -176,7 +176,53 @@ function assert(condition, message) {
       const staleScopeRetainedUpdating = els.scopeFreshness.classList.contains("updating");
       const refreshedRendered = await renderGpuDraft("hdr", { longEdge, tier: "settled" });
       const currentScopeApplied = await refreshScopes(scopeLongEdge("settled"), { tier: "settled", lane: "hdr" });
+      // Exercise the actual final shader in isolation, with float32 readback.
+      // This catches matrix/unit rounding without involving a lossy encoder.
+      const P = window.HDRGpuParamLayout.indices;
+      const exactModule = device.createShaderModule({code: window.HDRWebGPUShaders.SHADER_SOURCE + `
+        @compute @workgroup_size(64) fn exactCeilingMain(@builtin(global_invocation_id) id: vec3u) {
+          if (id.x >= arrayLength(&gamutParityInputs)) { return; }
+          gamutParityOutputs[id.x] = vec4f(applyOutputHighlights(gamutParityInputs[id.x].rgb), 1.0);
+        }`});
+      const exactPipeline = await device.createComputePipelineAsync({layout:"auto", compute:{module:exactModule,entryPoint:"exactCeilingMain"}});
+      const count = 128;
+      const inputBuffer = device.createBuffer({size:count*16,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
+      const outputBuffer = device.createBuffer({size:count*16,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC});
+      const readBuffer = device.createBuffer({size:count*16,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST});
+      const paramBuffer = device.createBuffer({size:window.HDRGpuParamLayout.count*4,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
+      const group = device.createBindGroup({layout:exactPipeline.getBindGroupLayout(0),entries:[
+        {binding:1,resource:{buffer:paramBuffer}},{binding:10,resource:{buffer:inputBuffer}},{binding:11,resource:{buffer:outputBuffer}}]});
+      let ceilingCases = 0, largestOvershoot = 0;
+      for (const hdr of [false,true]) for (const reference of [100,203]) for (const target of [203,600,1000,4000]) for (const mode of [1,2,3,4]) for (const colour of [0,1,2,3]) {
+        const limit = hdr ? target*.18/reference : 1;
+        const values = new Float32Array(count*4);
+        for(let i=0;i<count;i++) { const v = i<4 ? limit : limit*(i/count)*4;
+          values.set([v,v*(i%3===0?1:.13),v*(i%3===1?1:.37),1],i*4); }
+        const params = new Float32Array(window.HDRGpuParamLayout.count);
+        params[P.HDR_LANE]=hdr?1:0;params[P.HIGHLIGHT_MODE]=mode;
+        params[P.HIGHLIGHT_TARGET]=limit;params[P.HIGHLIGHT_TARGET_NITS]=target;
+        params[P.PROJECT_REFERENCE_WHITE_NITS]=reference;params[P.HIGHLIGHT_START]=limit*.4;
+        params[P.HIGHLIGHT_ANCHOR]=limit*4;params[P.HIGHLIGHT_SOFTNESS]=60;
+        params[P.HIGHLIGHT_PEAK_DETAIL]=.35;params[P.HIGHLIGHT_COLOR_HANDLING]=colour;
+        device.queue.writeBuffer(inputBuffer,0,values);device.queue.writeBuffer(paramBuffer,0,params);
+        const encoder=device.createCommandEncoder(),pass=encoder.beginComputePass();
+        pass.setPipeline(exactPipeline);pass.setBindGroup(0,group);pass.dispatchWorkgroups(count/64);pass.end();
+        encoder.copyBufferToBuffer(outputBuffer,0,readBuffer,0,count*16);device.queue.submit([encoder.finish()]);
+        await readBuffer.mapAsync(GPUMapMode.READ);const output=new Float32Array(readBuffer.getMappedRange().slice(0));readBuffer.unmap();
+        for(let i=0;i<count;i++) {
+          const rgb=Array.from(output.slice(i*4,i*4+3));
+          // Float32 conversion at the same delivery boundary as the CPU checker.
+          const nits=hdr ? toBt2020(rgb).map(v=>Math.fround(Math.fround(Math.fround(v)/Math.fround(.18))*reference)) : rgb;
+          const peak=Math.max(...nits), cap=hdr?target:1;
+          if(!Number.isFinite(peak)||peak>cap) throw Error(`Exact ceiling failed: ${JSON.stringify({hdr,reference,target,mode,i,rgb,peak})}`);
+          largestOvershoot=Math.max(largestOvershoot,peak-cap);
+        }
+        ceilingCases++;
+      }
+      for(const buffer of [inputBuffer,outputBuffer,readBuffer,paramBuffer])buffer.destroy();
       return {
+        ceilingCases,
+        largestOvershoot,
         measured,
         expected,
         measuredSmooth,
