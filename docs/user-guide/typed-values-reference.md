@@ -16,7 +16,7 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 
 ## How typed values behave
 
-- **Bold ranges go beyond the slider.** 55 controls accept typed
+- **Bold ranges go beyond the slider.** 54 controls accept typed
   values past the ends of their slider. The slider then sits at its end and is
   marked, and the typed value is what is saved, previewed and exported.
   Dragging the slider afterwards brings the value back inside the slider's
@@ -35,6 +35,13 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
   threshold on a file that is not RAW, Vignette Highlight Protection unless
   Amount is negative.
 - Text that is not a number is ignored and the previous value stays.
+
+Highlight Compression's HDR **Peak** has the same minimum for its slider and
+typed entry: **225 nit** with either 100- or 203-nit project reference white.
+This leaves room above both project white and the gain-map format's 203-nit
+white. A lower Peak in a pasted grade, preset or opened project is clamped;
+Start is lowered only if necessary to keep it below Peak. This cannot add HDR
+highlights to a picture that does not contain them.
 
 ## Not typed
 
@@ -64,7 +71,7 @@ python tools/value_entry_reference.py audit-folder ../docs/user-guide/typed-valu
 | Control | Slider | Typed value | Notes |
 | --- | --- | --- | --- |
 | Start | 100 to 4,000 nit | **1 to 9,999 nit** |  |
-| Output target | 200 to 10,000 nit | **2 to 10,000 nit** |  |
+| Peak | 225 to 10,000 nit | 225 to 10,000 nit | HDR delivery headroom; both project whites. |
 | Softness | 0 to 100 | 0 to 100 |  |
 | Highlight Detail | 0 to 100 % | 0 to 100 % |  |
 | Manual Source Peak | 100 to 100,000 nit | **1 to 1,000,000 nit** |  |

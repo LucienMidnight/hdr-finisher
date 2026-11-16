@@ -92,6 +92,7 @@ function syncPressedControl(control, pressed) {
 }
 
 function syncControlsFromState() {
+  syncHighlightCompressionMinimum();
   els.controls.forEach((control) => {
     const value = getValueByPath(state.adjustments, control.dataset.path);
     if (value === undefined) return;

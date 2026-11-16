@@ -10,6 +10,13 @@ AUTHORING_ANCHOR = 0.18
 DEFAULT_HDR_REFERENCE_WHITE_NITS = 203
 SUPPORTED_HDR_REFERENCE_WHITES = (100, 203)
 CHROMIUM_CANVAS_REFERENCE_WHITE_NITS = 203.0
+HDR_MIN_DELIVERY_HEADROOM = 1.02
+HDR_PEAK_SLIDER_STEP_NITS = 25
+
+
+def minimum_hdr_peak_nits(reference_white_nits: int | float = DEFAULT_HDR_REFERENCE_WHITE_NITS) -> int:
+    reference = max(validate_reference_white(reference_white_nits), CHROMIUM_CANVAS_REFERENCE_WHITE_NITS)
+    return math.ceil(reference * HDR_MIN_DELIVERY_HEADROOM / HDR_PEAK_SLIDER_STEP_NITS) * HDR_PEAK_SLIDER_STEP_NITS
 
 
 def validate_reference_white(value: object) -> int:

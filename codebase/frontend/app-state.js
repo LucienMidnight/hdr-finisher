@@ -100,7 +100,7 @@ const latitudePresets = {
 const MANUAL_VALUE_RULES = {
   "hdr.exposure": { min: -8, max: 8, decimals: 2 },
   "hdr.highlight_compression_start_nits": { min: 1, max: 9999, decimals: 0 },
-  "hdr.highlight_compression_target_nits": { min: 2, max: 10000, decimals: 0 },
+  "hdr.highlight_compression_target_nits": { min: 225, max: 10000, decimals: 0 },
   "hdr.highlight_compression_softness": { min: 0, max: 100, decimals: 1 },
   "hdr.highlight_compression_peak_detail": { min: 0, max: 100, decimals: 0 },
   "hdr.highlight_compression_attenuation": { min: 0, max: 90, decimals: 0 },

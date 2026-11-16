@@ -1,4 +1,24 @@
+function minimumHdrPeakNits() {
+  return Math.ceil(Math.max(projectReferenceWhiteNits(), 203) * 1.02 / 25) * 25;
+}
+
+function syncHighlightCompressionMinimum() {
+  const hdr = state.adjustments.hdr;
+  if (!hdr) return;
+  const minimum = minimumHdrPeakNits();
+  MANUAL_VALUE_RULES["hdr.highlight_compression_target_nits"].min = minimum;
+  const control = document.getElementById("hdr-compression-target");
+  if (control) control.min = String(minimum);
+  const label = document.querySelector('label[for="hdr-compression-target"]');
+  if (label) label.dataset.tooltip = `Sets the final peak after grading and finishing. Minimum ${minimum} nit keeps HDR headroom above project reference white and the gain-map format's 203-nit white (rounded to 25 nit). Dark pictures may still have no HDR rendition.`;
+  if (Number(hdr.highlight_compression_target_nits) < minimum) {
+    hdr.highlight_compression_target_nits = minimum;
+    hdr.highlight_compression_start_nits = Math.min(hdr.highlight_compression_start_nits, minimum - 1);
+  }
+}
+
 function normalizeHighlightCompressionControls(changedPath) {
+  syncHighlightCompressionMinimum();
   const hdr = state.adjustments.hdr;
   if (hdr.highlight_compression_target_nits <= hdr.highlight_compression_start_nits) {
     if (changedPath.endsWith("start_nits")) {
@@ -145,6 +165,7 @@ function useHighlightDisplayPeak() {
 }
 
 function renderHighlightCompressionControls() {
+  syncHighlightCompressionMinimum();
   renderHighlightDisplayNote();
   const hdr = state.adjustments.hdr;
   if (!hdr || !els.highlightCompressionGraph) return;

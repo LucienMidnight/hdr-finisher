@@ -947,10 +947,10 @@
           <div class="control-group-body">
             <div class="control-row" data-control-path="hdr.highlight_compression_target_nits">
               <div class="control-heading">
-                <label class="tooltip-trigger" for="hdr-compression-target" data-tooltip="Sets the final peak after grading, local adjustments, Detail, Film Look, and Vignette.">Peak</label>
+                <label class="tooltip-trigger" for="hdr-compression-target" data-tooltip="Sets the final peak after grading and finishing. At least 225 nit keeps HDR headroom above project and gain-map reference white.">Peak</label>
                 <output data-value-path="hdr.highlight_compression_target_nits">1000 nit</output>
               </div>
-              <input id="hdr-compression-target" type="range" min="200" max="10000" step="25" value="1000" data-path="hdr.highlight_compression_target_nits">
+              <input id="hdr-compression-target" type="range" min="225" max="10000" step="25" value="1000" data-path="hdr.highlight_compression_target_nits">
               <div id="hdr-compression-display-note" class="highlight-display-note helper" hidden>
                 <span id="hdr-compression-display-message" role="status"></span>
                 <button id="hdr-compression-use-display" class="text-button" type="button">Use this display</button>

@@ -1522,6 +1522,13 @@
       "launch": {"method": "electron"}
     },
     {
+      "path": "tests/highlight-delivery-floor.js",
+      "areas": ["ui", "export-proof"],
+      "tier": "area",
+      "protects": "Reference-relative HDR Peak slider, typed entry and pasted-state floor at both project whites and window layouts.",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/local-grade-reference.js",
       "areas": [
         "masks"

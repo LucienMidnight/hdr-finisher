@@ -21,6 +21,27 @@ The HDR Highlight Compression section starts bypassed for a new grade, with **Pe
 
 ## Units and reference white
 
+### Minimum deliverable Peak (November 16, 2026)
+
+Peak is clamped on input, recipe validation and control synchronization to
+`ceil(max(project reference white, 203) × 1.02 / 25) × 25` nits. This is
+**225 nits for both supported project whites** (100 and 203 nits). The 203-nit
+floor is the AVIF PQ/gain-map route's format white, not a replacement for the
+project's configurable scene-linear conversion. A 125-nit peak with a
+100-nit project white still produces indistinct AVIF headroom; `1.02 × project
+white` alone is therefore insufficient. Typed values, presets and pasted/saved
+recipes use the same floor; a clamped recipe's Start is lowered only when
+needed to remain below Peak. Valid recipes and all encoder settings remain
+unchanged. No migration is performed.
+
+Real encodes of all three formats and all four HC modes first pass together
+at a tested 205-nit candidate, but AVIF Clip refuses 206 nits after quantization
+at 203-nit project white. This is not a monotonic epsilon boundary. The
+25-nit slider step above the tested stable 207–210-nit region is 225 nits.
+The guard prevents choosing an intrinsically undeliverable cap; it cannot
+create HDR content in an actually dark picture. Measurements and limitations:
+`reports/encoding-drift-avif-jxl-2026-11-16.md`.
+
 The app defines scene-linear ACEScg `0.18` as the selected project HDR Reference White (`R`, 203 nits by default or 100 nits in the controlled workflow). Conversion is:
 
 ```text

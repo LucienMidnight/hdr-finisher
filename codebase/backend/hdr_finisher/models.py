@@ -8,7 +8,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_serializer, model_validator
 
 from .config import APP_VERSION
-from .color_context import validate_reference_white
+from .color_context import minimum_hdr_peak_nits, validate_reference_white
 from .retouch_recipe import InpaintRecipe
 from .hsl import HSLRecipe, HSLSettings
 
@@ -534,6 +534,25 @@ class HDRAdjustments(_BranchAdjustments):
     highlight_compression_source_peak_nits: float = Field(default=1000.0, ge=1.0, le=1_000_000.0)
     highlight_compression_manual_peak_nits: float = Field(default=1000.0, ge=1.0, le=1_000_000.0)
     contrast_pivot: float = Field(default=0.1845, ge=0.0001, le=18.0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def clamp_highlight_delivery_floor(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        try:
+            target = float(value.get("highlight_compression_target_nits", 1000))
+            start = float(value.get("highlight_compression_start_nits", 400))
+        except (TypeError, ValueError):
+            return value
+        minimum = minimum_hdr_peak_nits()
+        if not math.isfinite(target) or target >= minimum:
+            return value
+        normalized = dict(value)
+        normalized["highlight_compression_target_nits"] = minimum
+        if math.isfinite(start) and start >= minimum:
+            normalized["highlight_compression_start_nits"] = minimum - 1
+        return normalized
 
     @model_validator(mode="before")
     @classmethod
