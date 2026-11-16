@@ -22,17 +22,23 @@ const report = { date: new Date().toISOString(), commit: execFileSync('git', ['r
   const network = c.networkProbe(page);
   const memory = c.sampler();
   const save = () => c.write(output, report);
-  const settle = async () => {
+  const settle = async (attempt = 0) => {
     await page.waitForTimeout(150);
     await page.waitForFunction(() => {
       const a = state.acceptedPresentation;
       return a?.exact && a.lane === state.currentView && a.generation === state.previewGeneration[state.currentView]
         && a.processedLongEdge === refinementProxyLongEdge() && viewerState().status === 'ready'
         && !state.gpuDraftInFlight && !state.globalEditSyncPending && !pendingHighlightAnchors.size && !exactHighlightAnchorInflight.size
+        && !state.previewScheduler?.frameInFlight && !state.previewScheduler?.framePending && state.previewScheduler?.frame == null
         && !state.zoomRefinementTimer && !state.renderCoordinator?.state(state.currentView)?.panTimerPending
         && !state.renderCoordinator?.state(state.currentView)?.inFlight && !state.renderCoordinator?.state(state.currentView)?.pending;
     }, null, { timeout: 60000 });
     await page.evaluate(async () => { await state.gpuPreview.device.queue.onSubmittedWorkDone(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); });
+    if (!await page.evaluate(() => state.acceptedPresentation?.exact && state.acceptedPresentation.generation === state.previewGeneration[state.currentView]
+      && !state.gpuDraftInFlight && !state.previewScheduler?.frameInFlight && !pendingHighlightAnchors.size && !exactHighlightAnchorInflight.size)) {
+      if (attempt >= 4) throw Error('The GPU fence was followed by another unsettled frame');
+      return settle(attempt + 1);
+    }
   };
   async function step(name, action) {
     const mark = await page.evaluate(() => ({ at: performance.now(), n: __lag.frames.length, s: state.gpuPreview.performanceMetrics.stages.length }));
@@ -59,10 +65,38 @@ const report = { date: new Date().toISOString(), commit: execFileSync('git', ['r
   try {
     await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => state.gpuPreview?.available, null, { timeout: 30000 });
+    if (process.argv.includes('--before-zoom')) {
+      // Controlled baseline: restore only the former scheduling methods in
+      // this disposable renderer. Source, shaders, grade and budgets stay equal.
+      const ref = 'ad829254';
+      const old = file => execFileSync('git', ['show', `${ref}:codebase/frontend/${file}`], { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 });
+      const zoom = old('zoom-navigation.js');
+      const fn = zoom.slice(zoom.indexOf('function scheduleZoomRefinement('), zoom.indexOf('\nfunction shouldKeepHdrGpuSurface('));
+      const session = await page.context().newCDPSession(page);
+      const expression = `(() => { const current = HDRWebGPUPreview; ${old('webgpu-preview.js')}\nObject.getPrototypeOf(state.gpuPreview).encodeTiledGeneration = HDRWebGPUPreview.prototype.encodeTiledGeneration; window.HDRWebGPUPreview = current;
+        const coordinator = HDRRenderCoordinator; ${old('render-coordinator.js')}\nfor (const name of ['notePan','armCatchUp']) Object.getPrototypeOf(state.renderCoordinator)[name] = HDRRenderCoordinator.prototype[name]; window.HDRRenderCoordinator = coordinator;
+        scheduleZoomRefinement = ${fn}; })()`;
+      const result = await session.send('Runtime.evaluate', { expression, allowUnsafeEvalBlockedByCSP: true });
+      if (result.exceptionDetails) throw Error(JSON.stringify(result.exceptionDetails));
+      await session.detach(); report.beforeZoomRevision = ref;
+    }
     await page.evaluate(() => {
       state.appPreferences.gradeAutosave = false;
       state.gpuPreview.setInstrumentationEnabled(true);
       window.__lag = { frames: [], inputs: [], releaseAt: 0 };
+      const queue = state.gpuPreview.device.queue;
+      const submit = queue.submit.bind(queue);
+      queue.submit = commands => {
+        submit(commands);
+        if (__lag.encodingCatchup) __lag.catchupSubmittedAt = performance.now();
+      };
+      const encode = state.gpuPreview.encodeTiledGeneration;
+      state.gpuPreview.encodeTiledGeneration = async function (...args) {
+        const catchup = args.at(-1)?.roiCatchUp;
+        if (catchup) __lag.encodingCatchup = true;
+        try { return await encode.apply(this, args); }
+        finally { if (catchup) __lag.encodingCatchup = false; }
+      };
       addEventListener('hdrfinisher:preview-presented', e => {
         const row = { ...e.detail, accepted: structuredClone(state.acceptedPresentation) };
         __lag.frames.push(row);
@@ -81,7 +115,39 @@ const report = { date: new Date().toISOString(), commit: execFileSync('git', ['r
       preferences: state.appPreferences, methods: Object.getOwnPropertyNames(Object.getPrototypeOf(state.gpuPreview)) }));
     const saved = JSON.parse(fs.readFileSync(grade, 'utf8')).grade.global_adjustments;
     if (JSON.stringify(report.conditions.adjustments.hdr.film_look) !== JSON.stringify(saved.hdr.film_look)) throw Error('Saved Film grade did not load unchanged');
-    if (part === 'raw') {
+    if (part === 'race') {
+      for (let repeat = 0; repeat < 3; repeat++) {
+        await page.evaluate(() => setZoomMode('fit')); await settle();
+        await page.evaluate(() => { __lag.catchupSubmittedAt = 0; setCustomZoom(50); });
+        await page.waitForFunction(() => state.renderCoordinator?.inFlight(state.currentView)?.request.roiCatchUp
+          && __lag.catchupSubmittedAt > 0 && performance.now() - __lag.catchupSubmittedAt > 20, null, { timeout: 30000, polling: 5 });
+        await step(`zoom during catch-up ${repeat}`, () => page.evaluate(() => setCustomZoom(100)));
+        const clip = await page.evaluate(() => {
+          const b = els.dropzone.getBoundingClientRect();
+          return { x: Math.round(b.x + b.width / 2 - 160), y: Math.round(b.y + b.height / 2 - 100), width: 320, height: 200 };
+        });
+        const png = output.replace(/\.json$/, `-${repeat}.png`);
+        await page.screenshot({ path: png, clip });
+        report.rows.at(-1).screenshot = { path: png, sha256: sha(png) }; save();
+      }
+    } else if (part === 'probe' || part === 'tiers') {
+      const original = report.conditions.adjustments;
+      for (const variant of part === 'tiers' ? [] : ['saved', 'grain-off', 'halation-off', 'detail-off']) {
+        await page.evaluate(async ({ original, variant }) => {
+          await queueEditCommand('set_global_adjustments', { adjustments: structuredClone(original) });
+          if (variant !== 'saved') commitAdjustmentValue(variant === 'grain-off' ? 'hdr.film_look.grain_enabled'
+            : variant === 'halation-off' ? 'hdr.film_look.halation_enabled' : 'hdr.detail_section_enabled', false, { manual: true });
+          setZoomMode('fit');
+        }, { original, variant }); await settle();
+        for (let i = 0; i < 3; i++) await step(`${variant} Fit exposure ${i}`, () => page.evaluate(i => commitAdjustmentValue('hdr.exposure', i % 2 ? -.1 : .1, { manual: true }), i));
+        for (const z of [50, 100, 'fit']) await step(`${variant} zoom ${z}`, () => page.evaluate(z => z === 'fit' ? setZoomMode('fit') : setCustomZoom(z), z));
+      }
+      for (const edge of ['1024', '2048', '4096']) {
+        await page.evaluate(async ({ original, edge }) => { setZoomMode('fit'); await queueEditCommand('set_global_adjustments', { adjustments: structuredClone(original) }); applyPreviewResolution(edge); }, { original, edge });
+        await settle();
+        for (let i = 0; i < 3; i++) await step(`${edge} exposure ${i}`, () => page.evaluate(i => commitAdjustmentValue('hdr.exposure', i % 2 ? -.1 : .1, { manual: true }), i));
+      }
+    } else if (part === 'raw') {
       for (const change of ['lens', 'reconstruction', 'restore']) {
         await step(`RAW ${change}`, () => page.evaluate(async change => {
           els.lensMode.value = change === 'lens' ? 'off' : 'auto';
@@ -140,6 +206,8 @@ const report = { date: new Date().toISOString(), commit: execFileSync('git', ['r
     report.memory = memory.rows; report.memoryErrors = memory.errors; memory.stop();
     const backendLog = path.join(global.HDRFinisherElectronTestHarness.userDataDirectory, 'logs/backend.log');
     if (fs.existsSync(backendLog)) { fs.mkdirSync(path.dirname(output), { recursive: true }); fs.copyFileSync(backendLog, output.replace(/\.json$/, '-backend.log')); }
-    report.finalHashes = [sha(input), sha(grade)]; save(); await browser.close();
+    report.finalHashes = [sha(input), sha(grade)];
+    if (JSON.stringify(report.finalHashes) !== JSON.stringify(report.hashes)) { report.failure = 'Test source or saved grade changed'; process.exitCode = 1; }
+    save(); await browser.close();
   }
 })();

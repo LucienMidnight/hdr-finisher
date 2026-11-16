@@ -13,7 +13,8 @@ function assert(condition, message) {
     channel: "msedge",
     args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan,UseSkiaRenderer"],
   });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const [width, height] = require("../tools/lib/platform.cjs").machineSettings().windowSize.split("x").map(Number);
+  const page = await browser.newPage({ viewport: { width, height } });
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 

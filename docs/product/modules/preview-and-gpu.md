@@ -8,6 +8,36 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 16: stale zoom work and busy-frame recovery
+
+DSC01287.ARW on the minimum Mac reproduces real multi-second zoom waits.
+A new zoom now retires the prior scale's coordinator work immediately; panning
+cancels running/pending catch-up. Deferred catch-up validates its scale and has
+background priority. Its existing four-tile batches wait for device completion,
+so a new action can stop offscreen work before the whole native frame is queued.
+Idle catch-up and its exact tile/render maths remain. No shader, tile size,
+quality, cache share or memory allowance changes; delivery/Proof/measurement
+submission policy is unchanged.
+
+The recovery watchdog also waits for scheduler frames queued or waiting on their
+GPU fence. Previously it could restart a valid long render repeatedly. GPU
+scopes defer while the first GPU picture is preparing and cancel older CPU
+scopes when they take over; cancelling CPU work cannot mark a pending GPU
+scope fresh. CPU-only settings, GPU failure fallback and Proof retain CPU scopes.
+
+Neo / A18 Pro / 8 GB / 1408×794, saved Ektar/grain/halation/Tamron grade:
+controlled zoom during catch-up drops median first refined picture 2.174→.502 s,
+final viewport 2.639→.883 s (three pairs, same finished crop bytes). One repeated
+4K adjustment drops 23.840→1.664 s after watchdog repair; ordinary warm 4K
+remains ~1.7 s. Auto/Fit grain and Peak Fit settling remain costly, and 50%
+cache returns are mixed. These are scoped gains, not general instant-preview
+acceptance. Full conditions, limits and before/after records are in the
+[performance table](../../technical/performance-table.md).
+
+Focused scheduling tests pass. Covering real GPU and final fast checks are
+pending at this implementation checkpoint and will be recorded after they run.
+Further approximation or a grain-cache budget change needs Steve's decision.
+
 ## November 15: CPU preview diagnostics and grain cancellation
 
 Grade CPU preview requests now write `grade_preview_cpu` to the existing backend

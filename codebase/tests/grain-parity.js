@@ -66,7 +66,8 @@ tifffile.imwrite(sys.argv[1], rgb.astype(np.float32), photometric="rgb")
 (async () => {
   const fixturePath = writeFixture();
   const browser = await chromium.launch({ headless: true, channel: "msedge" });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+  const [width, height] = require("../tools/lib/platform.cjs").machineSettings().windowSize.split("x").map(Number);
+  const page = await browser.newPage({ viewport: { width, height } });
   // preview-raw is an SDR byte surface; pin the canvas to standard range so
   // the comparison is between two encodings of the same thing.
   await page.addInitScript(() => {

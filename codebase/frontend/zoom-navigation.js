@@ -205,6 +205,10 @@ function scheduleZoomRefinement({ continuous = false } = {}) {
   // A pending adjustment settle from the previous scale can otherwise race
   // this zoom and start a whole-frame CPU fallback at the new edge.
   state.previewScheduler?.cancel();
+  // A zoom owns a new scale even before its deferred dispatch runs. Retire
+  // the previous scale's catch-up/pan now, rather than letting that work
+  // supersede the new viewport or fill the device queue in the meantime.
+  state.renderCoordinator?.cancelLane(state.currentView, "superseded-by-zoom");
   state.inactiveSourceController?.abort();
   state.inactiveSourceController = null;
   // Zoom changes the requested processing scale without changing the edit

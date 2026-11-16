@@ -87,7 +87,7 @@ function refreshScopes(longEdge = 960, { tier = "settled", generation = null, la
   }
   if (gpuPreviewEligible(lane)
     && lane === state.currentView
-    && els.previewCanvas.style.display !== "none"
+    && (!state.acceptedPresentation || els.previewCanvas.style.display !== "none")
     && !state.comparePeekActive
     && state.activeWorkflow !== "proof") {
     // The grading render owns source identity. Never analyze the previous
@@ -264,6 +264,15 @@ async function runGpuScopeRequest(request) {
 }
 
 function enqueueGpuScopeRequest(request) {
+  // A newer GPU scope supersedes CPU work just as a newer CPU request does.
+  // In particular, a startup scope must not keep building the old Film grain
+  // field after the GPU picture and its replacement scope are already ready.
+  const cpu = state.scopeRequestInFlight;
+  if (cpu && cpu.generation < request.generation) cpu.controller?.abort();
+  if (state.pendingScopeRequest?.generation < request.generation) {
+    state.pendingScopeRequest.resolve(false);
+    state.pendingScopeRequest = null;
+  }
   return new Promise((resolve) => {
     const queued = { ...request, resolve };
     if (state.gpuScopeRequestInFlight) {
@@ -396,7 +405,7 @@ async function runScopeRequest(request) {
     state.pendingScopeRequest = null;
     if (next) {
       void runScopeRequest(next);
-    } else {
+    } else if (!state.gpuScopeRequestInFlight && !state.pendingGpuScopeRequest) {
       els.scopeFreshness.classList.remove("updating");
       if (!applied) els.scopeFreshness.textContent = state.lastScope ? scopeFreshnessLabel(state.lastScope.tier) : "Waiting";
     }

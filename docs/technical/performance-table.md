@@ -1,3 +1,60 @@
+## November 16: DSC01287 preview scheduling fixes
+
+Same MacBook Neo / A18 Pro / 8 GB, 1408×794 / DPR 2, default 4 GB and
+unchanged saved grade as the investigation below. Production baseline
+`ad829254`; final scheduling changes in this commit. No shader, pixel maths,
+quality setting, cache allowance or memory limit changes. Timing band ±10%.
+
+| Whole action-to-picture wait | Before | After | Conditions / result |
+| --- | --- | --- | --- |
+| 100% zoom interrupts an already submitted 50% catch-up: first refined viewport | Median 2.174 s; empirical p95 2.592 s | Median .502 s; p95 .768 s | Three controlled pairs; 77% less median wait. Same source, grade, shaders and budgets; before restores only former scheduling methods from `ad829254` in the disposable renderer. Catch-up must have submitted **rendering**, not just a source upload. |
+| Same action, final visible viewport | Median 2.639 s; p95 2.707 s; range 1.900–2.714 s | Median .883 s; p95 1.240 s; range .880–1.279 s | **67% less median whole wait.** GPU-completion fence + animation frame, still-current serial. All six 320×200 final screenshots have identical SHA-256 `d7285b3d…356858`. This is visible-crop regression evidence, not full export qualification. |
+| Ordinary 100% zooms in the full interaction run | Final 3.482 / 2.878 s | 1.126 / 1.025 s | Same real RAW and native control sequence. 50% is mixed: first 3.144→3.320 s, warm return .746→2.259 s. Previously completed offscreen work can make an old cached return faster; no blanket all-zoom gain. |
+| First 4096-tier exposure adjustment after tier preparation | 23.840 s; 26 presentations of the **same** edit generation | 1.664 s, two presentations | One causal before/after observation; watchdog mistook a submitted frame waiting on its device fence for idle/lost work. Does not set a new speed target or prove a common first-tier time. |
+| Warm 4096-tier exposure edits | 1.844–1.855 s | 1.724–1.745 s | Two samples each, within 10%; ordinary exact grain cost remains. `tiers-native.json` / `tiers-final.json`; first exploratory `probe-native.json` 4096 captures were not reliably settled and are excluded. |
+| Native Fit drag feedback/cadence | Exposure first-input feedback 66–82 ms; Whites 59–100 ms. Median/p95 completed-frame gaps: Exposure 49.7/76.8 ms; Whites 56.1/68.0 ms | No large Fit gain claimed | Three native drags each. Before displayed throughput Exposure 18.6–18.8/s, Whites 14.6–17.1/s. Final exact/Peak Fit can still take roughly .3–1.9 s after release. Scope-only A/B did not reliably improve waits; its obsolete startup CPU scope goes from ~37 s of discarded work to no request. |
+| Same grade on quarter-pixel-count image | Native RAW 5320×7968, 42.39 MP: fixed 2048 edge final 1.558–1.600 s | 2660×3984, 10.60 MP EXR derivative: .467–.495 s | Controlled same-photo area downsample, lens/reconstruction baked before reduction, identical creative grade. At the same preview dimensions native grain uses 16 samples, derivative uses 4; this is not a RAW-decode or EXR-import speed comparison. Fit still uses 16 on both, so cost does not simply follow source megapixels. |
+| Fixed 1024 edge, full grade versus grain off | Final .405–.571 s; median GPU timestamp 337 ms | Grain off .054–.084 s; GPU 13.5 ms | Three warm changes; halation off GPU 327 ms, neutral Detail off 332 ms. Stock-off bypass also removes Film/grain and does not isolate stock maths. Grain-off is diagnostic only, never a shipped look. |
+| Native final grade versus grain-off diagnostic, zoom | 50% 1.850 s; 100% 1.330 s | .300 / .552 s | One observation each, differing cache warmth. Upper-bound evidence for a future preview-quality decision, not promised savings from a particular approximation. |
+| RAW import toggles | Lens off re-development 8.28 s; reconstruction off 11.67 s; restore 13.25 s | Interactive exposure still .35–2.10 s across those sessions | Diagnostic individual re-developments, not controlled opening-speed comparisons. Development/remap happen on import/settings changes, not per slider/zoom. RAW and copied sidecar hashes remain exact. |
+
+The whole-frame catch-up formerly queued up to 176 tiles / 73.4 MP including
+halos behind the visible region. It now has background priority, yields after
+one existing four-tile batch, and is cancelled immediately by a new zoom/pan.
+Old-scale timers cannot dispatch into the new scale. Idle catch-up still
+finishes the same tiles, preserving exact offscreen coverage. The watchdog now
+recognises queued/device-fenced scheduler work; genuinely orphaned work still
+re-arms. GPU scopes defer until the first picture and cancel older CPU scopes.
+
+At Fit the active Film grain visits three dye layers and up to 16 subpixel
+samples. At 50% it uses four, at native 100% one; zooming out is not necessarily
+cheaper. Source proxies are reused during ordinary edits. Zoom requests bounded
+regions; halation is quarter-grid/halo work, not a full-native blur redone per
+tile. Peak Fit and whole-picture scopes can run additional bounded measurements
+and redraws. No new grain cache or budget is proposed here.
+
+Memory: OS charged-tree samples reach 4.23 GB before, 4.36 GB in the scope-only
+run, ~4.03 GB in the final full interaction run; one-second sampling is not a
+strict peak qualification. macOS pressure remains normal (level 1); existing
+swap is ~1.69 GiB before and ~2.08 GiB after intervening suites/fixture work.
+This does not establish swap caused by the 4 GB default. No budget was raised.
+Steve's real preferences were read-only: Auto resolution/rendering, Faster
+dragging off, automatic memory setting, matching the primary reproduction.
+
+Evidence: `codebase/output/performance/stacked-raw/{before-fenced,after,final,
+race-before,race-after,tiers-native,tiers-final,probe-native,probe-half,raw,
+ablate,profile}.json`, corresponding backend logs and six small race crops.
+The source derivative is disposable and removed after qualification. Preliminary
+race probes that caught upload instead of rendering were overwritten; a run
+whose opening overlapped the Node suite was replaced by the quiet final A/B.
+Final covering GPU/Library checks and fast-suite qualification are recorded
+with the subsequent verification note; no release sweep or push is authorised.
+
+**Decision left for Steve:** any further grain approximation during zoom/pan
+would change draft pixels and needs his approval. The grain-off measurements
+bound potential benefit but do not predict a particular new method. Keep
+settled preview/export agreement and current budgets; no such change is built.
+
 ## November 16: DSC01287 saved-grade lag investigation (minimum Mac)
 
 MacBook Neo / A18 Pro / 8 GB, actual 1408×794 / DPR 2, default 4 GB,

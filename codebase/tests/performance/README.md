@@ -496,8 +496,11 @@ in SDR; see performance-table section 5 for the breakdown and proposed work.
 reusable RAW/sidecar without saving either. Run through `run-in-electron.js`
 and the shared GPU lock at the machine window. `--part baseline` measures
 native Exposure/Whites drags, 50/100% zoom and pan, and HDR/SDR switches;
-`zoom`, `ablate`, `raw` and `profile` isolate navigation, Film/tier controls,
-RAW import settings and a renderer CPU profile. `--output` overwrites one report.
+`zoom`, `ablate`, `raw`, `probe`, `tiers` and `profile` isolate navigation,
+Film/tier controls, RAW settings, same-grade pixel-count scaling and a renderer
+CPU profile. `race` interrupts already-submitted catch-up; `--before-zoom`
+restores only former scheduling methods from `ad829254` inside the disposable
+renderer for a same-source/shader/budget comparison, retaining small final crops. `--output` overwrites one report.
 
 Presentation events mean submission, not completed display. The report also
 records a GPU completion fence plus animation frame and whether that frame

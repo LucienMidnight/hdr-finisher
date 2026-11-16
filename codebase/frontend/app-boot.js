@@ -133,6 +133,11 @@ function installPreviewWatchdog() {
       return;
     }
     if (state.previewScheduler.interacting || state.gpuDraftInFlight) return;
+    // Submission retires the draft before its device fence retires the paced
+    // scheduler frame. That is busy work, not a lost wake-up: rearming it can
+    // alternate draft/exact renders for the same input for many seconds.
+    if (state.previewScheduler.frameInFlight || state.previewScheduler.framePending
+      || state.previewScheduler.frame != null) return;
     const cpuFlight = state.cpuPreviewInflight?.get(state.currentView);
     if (cpuFlight?.sessionId === state.session.session_id
       && cpuFlight.generation === state.previewGeneration[state.currentView]) return;

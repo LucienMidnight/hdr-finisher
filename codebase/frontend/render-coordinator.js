@@ -537,6 +537,9 @@
       if (!this.panCandidate(lane)) return false;
       this.cancelPan(lane);
       const st = this.laneState(lane);
+      this.cancelCatchUp(lane);
+      if (st.inFlight?.request.roiCatchUp) this.cancelInFlight(lane, "superseded-by-pan");
+      if (st.pending?.request.roiCatchUp) this.dropPending(lane, "superseded-by-pan");
       st.panTimer = this.setTimer(() => {
         st.panTimer = null;
         void this.requestPanRefinement(lane);
@@ -602,6 +605,7 @@
       const st = this.laneState(lane);
       this.cancelCatchUp(lane);
       const targetGeneration = generation === null ? st.editGeneration : Number(generation);
+      const targetScaleGeneration = st.scaleGeneration;
       const targetEdge = Math.max(0, toInt(longEdge, 0));
       st.catchUpTimer = this.setTimer(() => {
         st.catchUpTimer = null;
@@ -609,6 +613,7 @@
         if (this.activeLane !== lane) return;
         if (!this.sessionId) return;
         if (targetGeneration !== st.editGeneration) return;
+        if (targetScaleGeneration !== st.scaleGeneration) return;
         if (this.canCatchUp && !this.canCatchUp(lane, targetEdge)) {
           if (this.onCatchUpDeclined) this.onCatchUpDeclined(lane, targetEdge);
           return;
@@ -619,7 +624,7 @@
           tier: "refinement",
           longEdge: targetEdge,
           reason: "catch-up",
-          priority: "foreground",
+          priority: "background",
           viewport: false,
           catchUp: true,
         }).catch((error) => this.reportError(lane, "catch-up", error));

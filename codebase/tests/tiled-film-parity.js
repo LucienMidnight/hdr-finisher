@@ -45,7 +45,8 @@ const MAX_CHANNEL_DELTA = 0;
     channel: argument("--channel", "msedge"),
     args: ["--enable-unsafe-webgpu", "--enable-features=Vulkan,UseSkiaRenderer"],
   });
-  const page = await browser.newPage({ viewport: { width: 1680, height: 1000 } });
+  const [width, height] = require("../tools/lib/platform.cjs").machineSettings().windowSize.split("x").map(Number);
+  const page = await browser.newPage({ viewport: { width, height } });
   page.on("response", async response => { if (response.status() >= 400) console.error(response.status(),response.url(),await response.text()); });
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));

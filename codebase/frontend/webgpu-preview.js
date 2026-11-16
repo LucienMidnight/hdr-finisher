@@ -4647,6 +4647,12 @@
         batchTiles += 1;
         if (batchTiles >= tileBatchSize) {
           flushTiles();
+          // Catch-up paints offscreen tiles after the visible region is ready.
+          // Keep only one batch on the device so a zoom/pan/edit can cancel it
+          // at the next tile boundary. Queueing the entire native frame here
+          // made the next foreground view wait seconds behind obsolete grain.
+          // Delivery and measurement retain their existing submission policy.
+          if (options.roiCatchUp && !measureOnly) await this.waitForSubmittedWork();
           if (options.beforeDeliverySubmit) {
             await this.waitForSubmittedWork(); await options.beforeDeliverySubmit();
           }

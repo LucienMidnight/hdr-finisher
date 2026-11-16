@@ -1,3 +1,23 @@
+## November 16: DSC01287 grain cost and interruptible catch-up
+
+The reported saved Ektar 100 grade is reproduced on Neo / 8 GB / 1408×794.
+Grain dominates its repeated Film work: at fixed 1024 processing edge the
+finished-picture wait is .405–.571 s, versus .054–.084 s with grain disabled
+for diagnosis (median GPU timestamps 337 / 13.5 ms). Halation and neutral
+Detail contribute little at that size. Source megapixels alone do not predict
+the cost: the same graded half-dimension derivative at a 2048 preview uses four
+grain samples, versus 16 for the full RAW, and waits .467–.495 rather than
+1.558–1.600 s. Grain is not cached; its existing physical field and all samples
+remain unchanged.
+
+Preview scheduling now lets foreground zoom/pan cancel whole-frame offscreen
+catch-up between its existing tile batches, and avoids watchdog resubmission
+while a frame waits on the GPU. The controlled whole 100% zoom wait falls
+2.639→.883 s; finished crop bytes agree. See Preview/GPU and the performance
+table for conditions, mixed 50% cache returns and qualification. No Film
+shader/quality, export/Proof output, memory budget or tolerance changed.
+Further preview grain approximation is an option for Steve, not implemented.
+
 # Module PRD: Film Look
 
 ## November 16: safe linked SDR built and scoped qualification

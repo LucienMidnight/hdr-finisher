@@ -285,6 +285,37 @@ test("a catch-up armed for an older generation never dispatches", async () => {
   assert.equal(dispatches.length, 0);
 });
 
+test("a catch-up for the previous zoom scale cannot dispatch", async () => {
+  const { coordinator, timers, dispatches } = makeCoordinator({ sessionId: "s1", regionRoute: true });
+  coordinator.noteScale("hdr", { tier: "refinement", longEdge: 4000 });
+  coordinator.armCatchUp("hdr", { longEdge: 4000 });
+  coordinator.noteScale("hdr", { tier: "refinement", longEdge: 8000 });
+  timers.fireAll();
+  await flush();
+  assert.equal(dispatches.length, 0);
+});
+
+test("catch-up cannot cancel foreground work and a pan cancels running catch-up", async () => {
+  const dispatch = deferredDispatch();
+  const { coordinator, timers, dispatches } = makeCoordinator({ sessionId: "s1", roiMode: "refinement", dispatchImpl: dispatch.impl });
+  coordinator.noteViewport("hdr", { x: 0, y: 0, width: 100, height: 100 });
+  coordinator.noteAccepted({ lane: "hdr", transport: "WebGPU", execution: "tiled", exact: true, processedLongEdge: 4000 });
+  const foreground = coordinator.submit({ lane: "hdr", longEdge: 4000, reason: "visible" });
+  coordinator.armCatchUp("hdr", { longEdge: 4000 });
+  timers.fireAll(); await flush();
+  assert.equal(dispatches[0].token.cancelled, false);
+  dispatch.queue[0].resolve({ rendered: true, execution: "tiled" });
+  await foreground; await flush();
+  assert.equal(dispatches[1].roiCatchUp, true);
+  assert.equal(dispatches[1].priority, "background");
+  coordinator.notePan("hdr");
+  assert.equal(dispatches[1].token.cancelReason, "superseded-by-pan");
+  dispatch.queue[1].resolve(false); await flush();
+  timers.fireAll(); await flush();
+  assert.equal(dispatches[2].panPass, true);
+  dispatch.queue[2].resolve({ rendered: true, execution: "tiled" }); await flush();
+});
+
 test("a declined catch-up reports its lane and size and dispatches nothing", async () => {
   // The app uses the report to hold the whole source for panning instead.
   const { coordinator, timers, dispatches } = makeCoordinator({ sessionId: "s1", roiMode: "refinement" });

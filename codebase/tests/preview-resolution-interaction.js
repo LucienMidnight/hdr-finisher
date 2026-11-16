@@ -5,7 +5,8 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
 
 (async () => {
   const browser = await chromium.launch({ headless: true, channel: "chrome" });
-  const page = await browser.newPage({ viewport: { width: 1680, height: 1000 } });
+  const [width, height] = require("../tools/lib/platform.cjs").machineSettings().windowSize.split("x").map(Number);
+  const page = await browser.newPage({ viewport: { width, height } });
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
 
@@ -23,21 +24,23 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
       const preview = activePreviewElement();
       const source = state.session?.source;
       if (!preview || !source || state.zoomMode !== "custom" || state.geometryPresentationPending) return false;
-      return Math.abs(Number.parseFloat(preview.style.width) - source.width) <= 1
-        && Math.abs(Number.parseFloat(preview.style.height) - source.height) <= 1;
+      const ratio = Math.max(1, devicePixelRatio);
+      return Math.abs(Number.parseFloat(preview.style.width) * ratio - source.width) <= 1
+        && Math.abs(Number.parseFloat(preview.style.height) * ratio - source.height) <= 1;
     });
     const actualSize = await page.evaluate(() => {
       const preview = activePreviewElement();
       const source = state.session.source;
       return {
         cssWidth: Number.parseFloat(preview.style.width),
+        deviceRatio: Math.max(1, devicePixelRatio),
         cssHeight: Number.parseFloat(preview.style.height),
         sourceWidth: source.width,
         sourceHeight: source.height,
       };
     });
-    if (Math.abs(actualSize.cssWidth - actualSize.sourceWidth) > 1 || Math.abs(actualSize.cssHeight - actualSize.sourceHeight) > 1) {
-      throw new Error(`100% zoom was not one source pixel per CSS pixel: ${JSON.stringify(actualSize)}`);
+    if (Math.abs(actualSize.cssWidth * actualSize.deviceRatio - actualSize.sourceWidth) > 1 || Math.abs(actualSize.cssHeight * actualSize.deviceRatio - actualSize.sourceHeight) > 1) {
+      throw new Error(`100% zoom was not one source pixel per display pixel: ${JSON.stringify(actualSize)}`);
     }
     await page.evaluate(() => HDRApplicationShell.openSettings("performance"));
     await page.locator('[data-settings-panel="performance"]').waitFor({ state: "visible" });
@@ -71,7 +74,7 @@ const baseUrl = process.env.HDR_FINISHER_URL || "http://127.0.0.1:8765";
       width: Number.parseFloat(activePreviewElement().style.width),
       height: Number.parseFloat(activePreviewElement().style.height),
     }));
-    if (Math.abs(afterResponseChange.width - actualSize.sourceWidth) > 1 || Math.abs(afterResponseChange.height - actualSize.sourceHeight) > 1) {
+    if (Math.abs(afterResponseChange.width * actualSize.deviceRatio - actualSize.sourceWidth) > 1 || Math.abs(afterResponseChange.height * actualSize.deviceRatio - actualSize.sourceHeight) > 1) {
       throw new Error(`Faster dragging changed 100% viewer geometry: ${JSON.stringify(afterResponseChange)}`);
     }
     await selector.check();
