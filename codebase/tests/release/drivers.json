@@ -270,6 +270,7 @@
     }
   ],
   "drivers": [
+    {"path":"tests/grade-panel-order.js","areas":["ui"],"tier":"area","protects":"HDR/SDR module and Peak ordering, shared-section identity, mode visibility, presets, fold state, bypass, focus, sticky headers, advisory-only display peak with one-step Undo/Redo, and unchanged sampled GPU pixels.","launch":{"method":"electron"}},
     {"path":"tests/menu-shortcuts.js","areas":["ui","library"],"tier":"area","protects":"Top-layer menus/popovers, default and minimum geometry, scrolling, pop-out Library and native platform shortcuts.","launch":{"method":"native"}},
     {"path":"tests/ui-picker-help-selects.js","areas":["ui"],"tier":"area","protects":"Photo picker cursor lifecycle, nearby delayed tooltips, customizable select popups and keyboard behaviour across workflows and minimum-size windows.","launch":{"method":"electron"}},
     {"path":"tools/button-tiers-review.cjs","areas":["ui"],"tier":"diagnostic","protects":"Three-theme 30px panel and 26px compact actions, four-page expanded/collapsed alignment within 1px, Scopes, long preset names, open menus and Local/Retouch row centring at 2560x1440.","launch":{"method":"electron"}},
