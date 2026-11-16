@@ -1,6 +1,7 @@
 const { resolveInterpretation } = require("./helpers/resolve-interpretation.js");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { chromium } = require("playwright");
 
 const urlIndex = process.argv.indexOf("--url");
@@ -19,7 +20,7 @@ async function main() {
     if (response.status() === 422) browserErrors.push(`${response.url()}: ${await response.text()}`);
   });
 
-  const outputDirectory = path.resolve("output", "export-file-browser-interaction");
+  const outputDirectory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "export-file-browser-interaction-")));
   const runId = Date.now();
   fs.mkdirSync(outputDirectory, { recursive: true });
 
@@ -45,13 +46,13 @@ async function main() {
     let chooser = null;
     if (await page.evaluate(() => Boolean(desktop))) {
       await page.evaluate(() => { void requestSourceImport(); });
-      await page.locator("#directory-browser").waitFor({ state: "visible" });
-      await page.waitForFunction(() => !document.getElementById('directory-browser-go')?.disabled);
-      await page.locator("#directory-browser-path").fill(path.dirname(fixture));
-      await page.locator("#directory-browser-path").press("Enter");
-      await page.locator(".directory-browser-entry", { hasText: "hdr_headroom.tiff" }).click();
-      await page.locator("#directory-browser-select").click();
-      await page.locator("#directory-browser").waitFor({ state: "hidden" });
+      await page.locator("#folder-picker").waitFor({ state: "visible" });
+      await page.locator("#picker-path").fill(path.dirname(fixture));
+      await page.locator("#picker-path").press("Enter");
+      await page.locator("#folder-picker .directory-browser-entry", { hasText: "hdr_headroom.tiff" }).click();
+      await page.waitForFunction(() => !document.getElementById("picker-pin").disabled);
+      await page.locator("#picker-pin").click();
+      await page.locator("#folder-picker").waitFor({ state: "hidden" });
     } else {
       const chooserPromise = page.waitForEvent("filechooser");
       await page.evaluate(() => { void requestSourceImport(); });
@@ -150,6 +151,7 @@ async function main() {
   } finally {
     await context.close();
     await browser.close();
+    fs.rmSync(outputDirectory, { recursive: true, force: true });
   }
 }
 

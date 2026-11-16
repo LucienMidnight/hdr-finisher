@@ -17,6 +17,13 @@ reports; large decoded errors are not an approved quality tolerance. The
 framed six-format driver and GPU/Denoise delivery smoke now pass the actual
 renderer gate; their decoded/fidelity numbers remain in the logs.
 
+`export-file-browser-interaction.js` now uses the intended L4 shared image
+picker, not the superseded source directory dialog. Confirm becomes enabled
+after selecting the disposable TIFF; import, saved grade and all four batch
+exports complete, including SDR JPEG 4:2:2 and destination/name checks. The
+older “Confirm disabled” failure below does not reproduce on this Mac. The
+driver removes its own temporary sources and exports after pass or failure.
+
 ## November 14: minimum-Mac memory-admission follow-up
 
 The three newly regressing drivers identified below now pass on the MacBook
