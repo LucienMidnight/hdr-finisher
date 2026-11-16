@@ -631,7 +631,7 @@ class SessionStore:
                                reference_white_nits=document.hdr_reference_white_nits,
                                source_pixel_scale=min(1., LOCAL_MATCH_EDGE / max(session.image.shape[:2])),
                                masks=masks, sdr_source=sdr_source, sdr_reference=sdr_reference)
-        if result.grade is None or result.grade == document.local_adjustments[index].sdr_grade:
+        if result.grade is None:
             with self._lock:
                 if session.edit_revision != expected_revision:
                     raise RevisionConflictError(expected_revision, session.edit_revision)
@@ -673,6 +673,17 @@ class SessionStore:
         source, _ = session.render_cache.source_pair(MATCH_ANALYSIS_EDGE)
         if timing is not None:
             timing["source_proxy_ms"] = round((perf_counter() - source_started) * 1000.0, 3)
+        linked_source = None
+        linked_refusal_reason = None
+        if current_denoise.hdr.enabled:
+            from .denoise_adaptive import AdaptiveControls, estimate_adaptive_model, resolve_adaptive
+            try:
+                linked_source = resolve_adaptive(source, estimate_adaptive_model(source),
+                    AdaptiveControls(**current_denoise.hdr.controls.model_dump()))
+            except (ValueError, IndexError):
+                # Some tiny/flat sources cannot support a noise measurement.
+                # Refuse this proposal and keep the incumbent independent fit.
+                linked_refusal_reason = "the shared Denoise source could not be prepared"
         try:
             materialized = materialize_sdr_match(
                 source,
@@ -682,6 +693,8 @@ class SessionStore:
                 source_pixel_scale=min(1.0, 768 / max(session.image.shape[:2])),
                 timing=timing,
                 candidate_bridge=candidate_bridge,
+                linked_source=linked_source,
+                linked_refusal_reason=linked_refusal_reason,
             )
         except SDRMatchMaterializationError as exc:
             raise EditCommandError(str(exc)) from exc

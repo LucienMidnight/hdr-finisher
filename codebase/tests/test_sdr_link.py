@@ -98,3 +98,38 @@ def test_link_survives_saved_document_roundtrip():
     from test_sdr_match_state import _store_with_source
     a = AdjustmentState(); a.sdr.linked_to_hdr = True; a.sdr.use_authored_base = False; a.sdr.output_exposure = .2
     assert AdjustmentState.model_validate_json(a.model_dump_json()) == a
+
+
+def test_match_evaluates_common_film_once_and_fallback_keeps_independent_fit(monkeypatch):
+    from hdr_finisher.sdr_match import materialize_sdr_match, _materialize_sdr_match_impl
+    source = tifffile.imread(Path(__file__).parent / 'fixtures/hdr_match_scene.tiff').astype(np.float32)
+    a = AdjustmentState(); a.hdr.film_look.film_stock = 'kodak_portra_400'; a.hdr.film_look.look_strength = 50
+    calls = []; film = rendering._apply_film_look
+    def counted(*args, **kwargs):
+        calls.append(args[2]); return film(*args, **kwargs)
+    monkeypatch.setattr(rendering, '_apply_film_look', counted)
+    linked = materialize_sdr_match(source, a, [], reference_white_nits=203, source_pixel_scale=1)
+    assert linked.adjustments.sdr.linked_to_hdr
+    assert calls == [PreviewKind.HDR]
+    monkeypatch.setattr('hdr_finisher.sdr_link.try_linked_match', lambda *args, **kwargs: (None, 'white-growth test'))
+    fallback = materialize_sdr_match(source, a, [], reference_white_nits=203, source_pixel_scale=1)
+    incumbent = _materialize_sdr_match_impl(source, a, [], reference_white_nits=203, source_pixel_scale=1)
+    assert fallback.adjustments == incumbent.adjustments
+    assert fallback.local_adjustments == incumbent.local_adjustments
+    assert fallback.quality == incumbent.quality and fallback.status == incumbent.status
+    assert fallback.link_fallback_reason == 'white-growth test'
+
+
+def test_refused_and_equal_local_matches_keep_link(tmp_path, monkeypatch):
+    from test_sdr_local_match import store_fixture
+    from hdr_finisher.sdr_local_match import LocalMatchResult
+    store, sid, lid = store_fixture(tmp_path); s = store.get(sid)
+    s.adjustments.sdr.linked_to_hdr = True
+    before = s.edit_document().model_dump(); revision = s.edit_revision
+    monkeypatch.setattr('hdr_finisher.sdr_local_match.fit_local_sdr', lambda *args, **kwargs: LocalMatchResult(None, 'No change', {}))
+    response, message, changed = store.apply_local_sdr_match_action(sid, expected_revision=revision, target_id=lid)
+    assert not changed and s.edit_revision == revision and s.edit_document().model_dump() == before
+    grade = s.local_adjustments[0].sdr_grade.model_copy(deep=True)
+    monkeypatch.setattr('hdr_finisher.sdr_local_match.fit_local_sdr', lambda *args, **kwargs: LocalMatchResult(grade, 'Already equal', {}))
+    response, message, changed = store.apply_local_sdr_match_action(sid, expected_revision=revision, target_id=lid)
+    assert s.adjustments.sdr.linked_to_hdr and s.local_adjustments[0].sdr_grade == grade

@@ -1,3 +1,9 @@
+## November 16: safe-link Film slider baseline on MacBook Neo
+
+| Action | Existing guard | Observation | Conditions / evidence |
+| --- | --- | --- | --- |
+| Film-on Print Exposure slider, action to exact current picture | Exploratory ±10% paired timing noise; no budget changed | Before: HDR 139–548 ms (three warmed follow-ups 547–548); independent SDR 680–2560 ms, substantial spread. Linked did not exist in the shipping baseline. After/link comparison in progress. | Neo A18 Pro / 8 GB, 1408×794, DPR 2, Fit, existing 24 MP TIFF, Portra 400, two trials plus reset, normal input/change handlers and two animation frames; GPU lock. Baseline revision `80cf7ccc`; `codebase/output/performance/safe-link/before.json`. These are whole waits; no per-stage speed claim. |
+
 ## November 16: equal-input Film research on MacBook Neo
 
 | Action | Existing guard | Observation | Conditions / evidence |

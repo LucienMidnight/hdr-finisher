@@ -249,7 +249,8 @@ class LibraryPaste:
         for lane in ('hdr','sdr'):
             fields={}
             for field,data in grade['global_adjustments'][lane].items():
-                if field in ('highlight_compression_source_peak_nits','highlight_compression_source_peak_percent'): continue
+                if field in ('highlight_compression_source_peak_nits','highlight_compression_source_peak_percent',
+                             'linked_to_hdr', 'output_exposure'): continue
                 group=setting_group(field)
                 fields.setdefault(group,[]).extend(leaves(data,'global_adjustments.'+lane+'.'+field))
             for group,paths in fields.items():
@@ -341,7 +342,20 @@ class LibraryPaste:
                             skipped.append(group['label']); continue
                         data=value(clip['grade'],setting)
                         put(target,setting,data)
-                EditDocument.model_validate(target)
+                parsed = EditDocument.model_validate(target)
+                if current['global_adjustments']['sdr'].get('linked_to_hdr', False):
+                    from .models import SDRAdjustments, LocalGrade
+                    from .sdr_link import linked_creative_changed
+                    before_sdr = SDRAdjustments.model_validate(current['global_adjustments']['sdr'])
+                    old_locals = {item['id']: item['sdr_grade'] for item in current['local_adjustments']}
+                    local_edit = any(item.sdr_grade.model_dump() != old_locals.get(item.id, LocalGrade().model_dump())
+                                     for item in parsed.local_adjustments)
+                    if linked_creative_changed(before_sdr, parsed.global_adjustments.sdr) or local_edit:
+                        target['global_adjustments']['sdr']['linked_to_hdr'] = False
+                    elif target['denoise']['sdr'] != current['denoise']['sdr']:
+                        target['global_adjustments']['sdr']['linked_to_hdr'] = False
+                    else:
+                        target['denoise']['sdr'] = deepcopy(target['denoise']['hdr'])
                 if skipped: warnings.append({'path':path,'message':', '.join(dict.fromkeys(skipped))+' skipped for this file type.'})
                 if not self.marks.source_path(path).parent.exists(): warnings.append({'path':path,'message':'Photo is offline; settings will be written when it reconnects.'})
                 if grade_key(current)!=grade_key(target): targets[path]=target

@@ -307,6 +307,8 @@ def materialize_sdr_match(
     settled_hdr: np.ndarray | None = None,
     timing: dict[str, object] | None = None,
     candidate_bridge: RemoteCandidateBridge | None = None,
+    linked_source: np.ndarray | None = None,
+    linked_refusal_reason: str | None = None,
 ) -> MaterializedSDRMatch:
     """Fit a temporary HDR target into normal, editable SDR controls.
 
@@ -336,6 +338,21 @@ def materialize_sdr_match(
     try:
         if reference_white_nits not in {100, 203}:
             raise SDRMatchMaterializationError("SDR Match requires the app-wide 100/203-nit reference convention.")
+        if settled_hdr is not None and not np.isfinite(settled_hdr).all():
+            raise SDRMatchMaterializationError("The HDR analysis produced invalid values.")
+        from .sdr_link import try_linked_match
+        linked, link_reason = (None, linked_refusal_reason) if linked_refusal_reason else try_linked_match(
+            source if linked_source is None else linked_source, adjustments, local_adjustments,
+            settled_hdr if linked_source is None else None,
+            reference_white_nits=reference_white_nits, source_pixel_scale=source_pixel_scale,
+        )
+        if timing is not None:
+            timing["linked"] = linked is not None
+            timing["link_fallback_reason"] = link_reason
+        if linked is not None:
+            if candidate_bridge is not None:
+                candidate_bridge.close()
+            return linked
         if settled_hdr is None:
             target_started = perf_counter()
             settled_hdr = render_match_target(
@@ -346,21 +363,12 @@ def materialize_sdr_match(
                 timing["settled_hdr_ms"] = round((perf_counter() - target_started) * 1000.0, 3)
         if not np.isfinite(settled_hdr).all():
             raise SDRMatchMaterializationError("The HDR analysis produced invalid values.")
-        from .sdr_link import try_linked_match
-        linked, link_reason = try_linked_match(
-            source, adjustments, local_adjustments, settled_hdr,
-            reference_white_nits=reference_white_nits, source_pixel_scale=source_pixel_scale,
-        )
-        if timing is not None:
-            timing["linked"] = linked is not None
-            timing["link_fallback_reason"] = link_reason
-        if linked is not None:
-            if candidate_bridge is not None:
-                candidate_bridge.close()
-            return linked
         def independent():
             from dataclasses import replace
-            return replace(run(), link_fallback_reason=link_reason)
+            try:
+                return replace(run(), link_fallback_reason=link_reason)
+            except SDRMatchMaterializationError as exc:
+                raise SDRMatchMaterializationError(f"This photo couldn’t be linked because {link_reason}. {exc}") from exc
         if candidate_bridge is None:
             return independent()
         remote_token = _MATCH_REMOTE.set(candidate_bridge)

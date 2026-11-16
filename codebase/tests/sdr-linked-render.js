@@ -25,14 +25,16 @@ const base = process.env.HDR_FINISHER_URL || 'http://127.0.0.1:8765';
       const pixels = await page.evaluate(async ({test,width,height}) => {
         const gpu = state.gpuPreview;
         gpu.device.pushErrorScope('validation');
-        const value = await gpu.renderMatchCandidate(state.session.session_id, test.adjustments, sampleCurvePoints,
-          test.locals, state.editRevision, 203, {width,height}, Math.max(width,height), {width,height});
+        const canvas = gpu.linkedTestCanvas ||= document.createElement('canvas');
+        const rendered = await gpu.renderTo(canvas, state.session.session_id, 'sdr', test.adjustments, sampleCurvePoints,
+          Math.max(width,height), test.locals, state.editRevision, null, 203, {width,height},
+          {measureOnly:true,scopeAnalysis:true,forceSdrSurface:true,sourceLane:'hdr',frameAnchor:true});
         const error = await gpu.device.popErrorScope();
         if(error) throw Error(error.message);
-        if(!value) throw Error('Linked GPU renderer refused the reference');
-        // renderMatchCandidate disables grain for fitting. Physical-effect rows
-        // are separately compared with the same no-grain CPU recipe below.
-        return Array.from(value.pixels);
+        if(rendered?.execution!=='direct') throw Error('Linked GPU renderer refused the reference');
+        const value = await gpu.analyzeScope(canvas,{width,height,tier:'picture',raw:true});
+        if(!value) throw Error('Linked GPU readback failed');
+        return Array.from(value.halves);
       }, {test,width:cases.width,height:cases.height});
       const half = Buffer.from(new Uint16Array(pixels).buffer);
       fs.writeFileSync(path.join(directory,'gpu.f16'), half);
@@ -44,8 +46,7 @@ from hdr_finisher.models import AdjustmentState,LocalAdjustment,PreviewKind
 from hdr_finisher.adjustments import apply_adjustments
 import tifffile
 p=Path(sys.argv[1]);c=json.loads((p/'cases.json').read_text());t=c['rows'][int(sys.argv[2])]
-a=AdjustmentState.model_validate(t['adjustments']);a.hdr.film_look.grain_amount=0
-cpu=apply_adjustments(tifffile.imread(p/'source.tiff'),a,PreviewKind.SDR,local_adjustments=[LocalAdjustment.model_validate(x) for x in t['locals']])
+cpu=np.fromfile(p/(t['name']+'-sdr.f32'),dtype='<f4').reshape(c['height'],c['width'],3)
 gpu=np.fromfile(p/'gpu.f16',dtype='<f2').astype(np.float32).reshape(c['height'],c['width'],3)
 s=colour.RGB_COLOURSPACES['sRGB']
 def lab(x):return colour.XYZ_to_Lab(x.astype(float)@s.matrix_RGB_to_XYZ.T,s.whitepoint)

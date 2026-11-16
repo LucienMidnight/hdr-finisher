@@ -151,7 +151,15 @@ function renderDenoiseAdvancedVisibility() {
 async function persistDenoiseSettings() {
   if (!state.session) return false;
   const applied = await queueEditCommand("set_denoise_settings", { denoise: JSON.parse(JSON.stringify(state.denoise)) }, null, { refreshPreview: false });
-  if (applied) renderLaneChrome();
+  if (applied) {
+    if (state.adjustments?.sdr?.linked_to_hdr && !valuesEqual(state.denoise.sdr, state.denoise.hdr)) {
+      state.denoise.sdr = structuredClone(state.denoise.hdr);
+      const runtime = state.denoiseRuntime.sdr;
+      runtime.generation += 1; runtime.dirty = Boolean(state.denoise.sdr.enabled);
+      runtime.status = runtime.dirty ? "dirty" : "off";
+    }
+    renderLaneChrome();
+  }
   return applied;
 }
 

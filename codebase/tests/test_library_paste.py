@@ -20,7 +20,8 @@ def test_schema_order_authored_labels_and_safe_defaults(setup):
         'raw-development','lens-corrections','highlight-reconstruction','geometry','perspective','local-adjustments']
     assert [group['id'] for group in groups if group['lane']=='hdr'] == ['hdr-'+module for module in MODULE_ORDER]
     expected={path for lane in ('hdr','sdr') for field,data in grade['global_adjustments'][lane].items()
-              if field not in ('highlight_compression_source_peak_nits','highlight_compression_source_peak_percent')
+              if field not in ('highlight_compression_source_peak_nits','highlight_compression_source_peak_percent',
+                               'linked_to_hdr','output_exposure')
               for path in leaves(data,'global_adjustments.'+lane+'.'+field)}
     expected.update(leaves(grade['global_adjustments']['shared']['geometry'],'global_adjustments.shared.geometry'))
     expected.update(leaves({key:data for key,data in grade['source']['raw_import_settings'].items() if key!='lens'},'source.raw_import_settings'))
@@ -453,3 +454,22 @@ def test_redevelopment_same_session_releases_the_new_opening_not_an_old_ticket(s
             assert job.presented and not local.opening and not local.jobs
     finally:
         manager.close()
+
+
+@pytest.mark.parametrize('lane', ['hdr','sdr'])
+def test_paste_creatives_only_unlinks_when_sdr_changes(setup, lane):
+    photo,store,session,marks,grades=setup
+    saved(setup); paste=LibraryPaste(grades); paste.copy(str(photo))
+    doc=session.edit_document().model_copy(deep=True)
+    doc.global_adjustments.sdr.linked_to_hdr=True
+    doc.global_adjustments.sdr.use_authored_base=False
+    doc.global_adjustments.sdr.exposure=.25
+    doc.global_adjustments.hdr.exposure=0
+    store.replace_edit_document(str(session.session_id),doc,session.edit_revision)
+    grades.save(str(session.session_id));marks.writer.drain()
+    before=paste.document(str(photo))[0]
+    paste.paste([str(photo)],{'lanes':[lane],'settings':['global_adjustments.'+lane+'.exposure']})
+    actual=paste.document(str(photo))[0]
+    assert actual['global_adjustments']['sdr']['linked_to_hdr'] == (lane=='hdr')
+    assert 'global_adjustments.sdr.linked_to_hdr' not in {row['id'] for group in paste.schema(actual,actual) for row in group['settings']}
+    marks.undo();assert paste.document(str(photo))[0]==before

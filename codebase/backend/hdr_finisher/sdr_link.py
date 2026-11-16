@@ -1,7 +1,8 @@
 """Safe linked SDR: one HDR creative prefix and one SDR output tail."""
 from __future__ import annotations
 import numpy as np
-from .adjustments import (SDR_SCENE_TO_DISPLAY_SCALE, _acescg_luma, _linear_luma,
+from .adjustments import (SDR_SCENE_TO_DISPLAY_SCALE, SDR_DISPLAY_REFERENCE_WHITE, _acescg_luma, _linear_luma,
+                          apply_hdr_output_highlight_compression,
                           apply_adjustments, apply_sdr_output_highlight_compression)
 from .color import acescg_to_linear_srgb
 from .color_context import RenderColorContext
@@ -23,7 +24,7 @@ def linked_highlight_order_is_safe(hdr, target, candidate):
     .005 allowance to the independent diagnostic. That diagnostic is unchanged.
     """
     from .sdr_match import MATCH_SHOULDER_START
-    normalized = np.maximum(_acescg_luma(hdr), 0) * SDR_SCENE_TO_DISPLAY_SCALE
+    normalized = np.maximum(_acescg_luma(hdr), 0.0) / np.float32(.18) * SDR_DISPLAY_REFERENCE_WHITE
     selection = normalized > MATCH_SHOULDER_START
     if int(np.count_nonzero(selection)) < 8:
         return True
@@ -68,13 +69,18 @@ def acceptance_reason(hdr, target, candidate, raised, *, relative_order=True):
 
 
 def try_linked_match(source, adjustments, locals_, settled_hdr, *, reference_white_nits, source_pixel_scale, relative_order=True):
-    from .sdr_match import MaterializedSDRMatch, _semantic_sdr_translation, build_sdr_match_target
+    from .sdr_match import (MaterializedSDRMatch, _semantic_sdr_translation, build_sdr_match_target,
+                            MATCH_SHOULDER_START, _quality_metrics)
     common = apply_adjustments(source, adjustments, PreviewKind.HDR, include_grain=False,
         include_output_highlight_compression=False, apply_output_clamp=False,
         local_adjustments=adjustments.enabled_locals(locals_),
         color_context=RenderColorContext(reference_white_nits), source_pixel_scale=source_pixel_scale)
+    if settled_hdr is None:
+        settled_hdr = np.clip(apply_hdr_output_highlight_compression(common, adjustments,
+            color_context=RenderColorContext(reference_white_nits)), 0.0, None)
     placed = acescg_to_linear_srgb(common) * SDR_SCENE_TO_DISPLAY_SCALE
     target = build_sdr_match_target(settled_hdr)
+    body = _acescg_luma(settled_hdr) * SDR_SCENE_TO_DISPLAY_SCALE <= MATCH_SHOULDER_START
     result = adjustments.model_copy(deep=True)
     result.sdr = _semantic_sdr_translation(adjustments, settled_hdr)
     result.sdr.linked_to_hdr, result.sdr.use_authored_base = True, False
@@ -95,15 +101,14 @@ def try_linked_match(source, adjustments, locals_, settled_hdr, *, reference_whi
             sdr.highlight_compression_softness, sdr.highlight_compression_peak_detail = 100, 35
             sdr.highlight_compression_bias = 0
             candidate = apply_sdr_output_highlight_compression(placed, result)
-            raised = apply_sdr_output_highlight_compression(placed * np.float32(2 ** .5), result)
-            from .sdr_match import MATCH_SHOULDER_START, _quality_metrics
-            quality = _quality_metrics(target, candidate, _acescg_luma(settled_hdr) * SDR_SCENE_TO_DISPLAY_SCALE <= MATCH_SHOULDER_START)
+            quality = _quality_metrics(target, candidate, body)
             body_safe = (quality.p95_oklab_error <= .040 and quality.median_oklab_error <= .015
                          and quality.median_luma_error <= .010 and quality.p95_luma_error <= .030)
             rank = (not body_safe, float(np.mean(np.square(candidate.astype(np.float64) - target))))
             if best is None or rank < best[0]:
-                best = rank, result.model_copy(deep=True), quality, candidate, raised
-    reason, quality = acceptance_reason(settled_hdr, target, best[3], best[4], relative_order=relative_order)
+                best = rank, result.model_copy(deep=True), quality, candidate
+    raised = apply_sdr_output_highlight_compression(placed * np.float32(2 ** .5), best[1])
+    reason, quality = acceptance_reason(settled_hdr, target, best[3], raised, relative_order=relative_order)
     if reason:
         return None, reason
     independent_locals = [local.model_copy(update={'sdr_grade': LocalGrade.model_validate(

@@ -170,7 +170,7 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     assert result.adjustments.sdr.use_authored_base is False
     assert result.adjustments.sdr.highlight_section_enabled is True
     assert result.adjustments.sdr.highlight_compression_mode == "soft_ceiling"
-    assert result.adjustments.sdr.highlight_compression_color_handling == "preserve_color"
+    assert result.adjustments.sdr.highlight_compression_color_handling == ("smooth_rolloff" if result.adjustments.sdr.linked_to_hdr else "preserve_color")
     assert _curve_is_identity(result.adjustments.sdr.luma_curve)
     if not result.adjustments.sdr.linked_to_hdr:
         assert any(abs(node.adjustment_ev) > 0.001 for node in result.adjustments.sdr.tone_equalizer_nodes)
