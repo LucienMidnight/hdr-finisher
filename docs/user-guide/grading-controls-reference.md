@@ -12,12 +12,27 @@ The sliders intentionally cover the useful everyday range. Some slider ranges be
 
 ## HDR Tone and Highlights
 
+In both lanes, Highlight Compression is the first graded module, followed by
+Tone, Exposure Bands, Curves, Color sliders, HSL, Color wheels, Black & White,
+Detail, Film Look and Vignette. RAW highlight recovery, Denoise and framing stay
+above these modules. Panel order does not change processing order.
+
+Within Highlight Compression, **Peak** comes before Mode in every mode. HDR Peak
+is the existing delivery target (called Target Peak below). When it exceeds a
+known display peak, the helper's **Use this display** button makes one undoable
+edit: round the reported peak to the ordinary 25-nit slider step and clamp it
+to 200–10,000 nit. The existing Start/Peak separation rule still applies.
+Telemetry alone never changes a setting; no note appears for unknown or
+sufficient display peaks. SDR instead shows the non-adjustable **Peak: SDR
+white (100%)**. Mode-specific controls, graph and Advanced highlight controls
+follow Peak and Mode, with the same visibility rules as before.
+
 | Control | Purpose in plain English | How it works | Normal slider range | Direct-entry range |
 |---|---|---|---|---|
+| Peak (Target Peak) | Sets the brightest intended finished highlight. | Peak Fit maps the selected final-grade signal to this value. Soft Ceiling treats it as an asymptote. Clip clamps every linear BT.2020 channel to it. HDR transport still has a 10,000-nit PQ ceiling. | 200 to 10,000 nit | **2 to 10,000 nit**; it must remain above Start |
 | Exposure | Makes the whole HDR rendition brighter or darker. | Multiplies scene-linear light by `2^EV`; +1 EV doubles light. | Narrow -2 to +2 EV; Medium -3 to +3 EV; Wide -4 to +4 EV | **-8 to +8 EV** |
 | Compression Mode | Chooses the kind of output highlight treatment. Peak Fit is the default; the section bypass is the single on/off control. | Peak Fit anchors a monotonic shoulder to the measured finished peak. Soft Ceiling is asymptotic. Clip imposes a strict per-channel delivery ceiling. | Peak Fit, Soft Ceiling, Clip | Same choices |
 | Compression Start | Protects tones below the shoulder and says where highlight bending should begin. | Converts the entered reference-nit level to scene-linear ACEScg. Peak Fit can move the effective start lower when necessary to keep an extreme compression ratio smooth and monotonic; the graph and caption show this. | 100 to 4,000 nit | **1 to 9,999 nit**; it must remain below Target Peak |
-| Target Peak | Sets the brightest intended finished highlight. | Peak Fit maps the selected final-grade signal to this value. Soft Ceiling treats it as an asymptote. Clip clamps every linear BT.2020 channel to it. HDR transport still has a 10,000-nit PQ ceiling. | 200 to 10,000 nit | **2 to 10,000 nit**; it must remain above Start |
 | Softness | Changes Soft Ceiling from firm and late to broad and gentle. | Changes the generalized soft-ceiling exponent and blends the effect in from 0%. The slider moves in fine 0.5-percentage-point steps. It only applies in Soft Ceiling mode. | 0 to 100% | **0 to 100%**; 0% makes Soft Ceiling neutral |
 | Manual Source Peak | Overrides the measured source peak when automatic measurement does not describe the highlight you care about. | Supplies Peak Fit's final pre-compression input anchor. Automatic choices use the active Highlight Color signal or its 99.99th percentile to ignore isolated pixels. | 100 to 100,000 nit | **1 to 1,000,000 nit** |
 | Compression Bias | Moves compression pressure earlier or later without moving the endpoints. | Re-parameterizes the monotonic shoulder while preserving its endpoint anchors and requested peak slope. Negative and positive settings redistribute contrast in opposite directions. | -100 to +100 | **-100 to +100** |
@@ -163,6 +178,7 @@ limiter may reduce extreme settings to keep the response monotonic.
 
 | Control | Purpose in plain English | How it works | Normal slider range | Direct-entry range |
 |---|---|---|---|---|
+| Peak: SDR white (100%) | Identifies the fixed SDR ceiling before Mode. | Reference only; there is no adjustable SDR target. | Not adjustable | Not adjustable |
 | Exposure | Makes the whole SDR fallback brighter or darker. | Multiplies light by `2^EV` before highlight compression. | Narrow -2 to +2 EV; Medium -3 to +3 EV; Wide -4 to +4 EV | **-8 to +8 EV** |
 | Contrast | Separates or compresses SDR tones around Pivot. | Changes the display-domain contrast slope while preserving the selected pivot. | Narrow -0.5 to +0.5; Medium -0.75 to +0.75; Wide -1 to +1 | **-2 to +2** |
 | Pivot | Chooses the normalized SDR brightness that Contrast works around. | Sets the fixed point of the display-domain contrast operation. | Narrow/Medium 0.05 to 0.95; Wide 0.02 to 0.98 | **0.001 to 0.999** |

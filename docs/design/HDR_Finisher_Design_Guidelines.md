@@ -2,7 +2,7 @@
 
 Status: living guideline for the shipped application
 
-Last updated: 2026-11-14
+Last updated: 2026-11-16
 
 This guideline is authoritative for current UI behavior and supersedes persistence language in older product and sprint documents.
 
@@ -46,6 +46,20 @@ Every application load begins from the canonical editing defaults. Theme and exi
 - Exports and deliberately recorded proof evidence are durable artifacts; transient interface preferences are not.
 
 When adding a new preference, default to session-only behavior. Persistent state requires an explicit product decision and documentation update.
+
+## November 16: Grade module order
+
+Both lanes show Highlight compression → Tone → Exposure bands → Curves → Color
+sliders → HSL → Color wheels → Black & white → Detail → Film look → Vignette.
+RAW highlight recovery, Denoise, Crop & rotate and Perspective stay above them.
+This is panel organization only, not processing order. Highlight compression
+uses the same header, bypass, reset and collapse affordances as other modules.
+
+Its first row is HDR Peak (the delivery target) or the fixed SDR line
+“Peak: SDR white (100%)”, followed by Mode, applicable controls, the graph and
+Advanced highlight controls. A short helper below HDR Peak appears only when a
+known display peak is lower than the target. The ordinary text button “Use this
+display” is explicit and undoable; telemetry never changes a delivery target.
 
 ## Information hierarchy
 

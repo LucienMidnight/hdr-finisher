@@ -11,6 +11,26 @@ colours already lost in an SDR image; a future version must use the original
 scene/HDR-capable source for those highlights. For now, grade HDR separately
 and enable Highlight Compression when you need a guaranteed delivery peak.
 
+## Panel order and Peak
+
+Below RAW highlight recovery, Denoise, Crop & Rotate and Perspective, both grade
+lanes show: Highlight Compression → Tone → Exposure Bands → Curves → Color
+sliders → HSL → Color wheels → Black & White → Detail → Film Look → Vignette.
+This browsing order does not change the order in which the image is processed.
+
+Highlight Compression starts with **Peak**, the intended delivered HDR target,
+then Mode and the controls that apply to that mode. The graph and Advanced
+highlight controls follow. Peak remains available in every mode. The section
+still has its normal collapse, bypass, reset and preset controls.
+
+If the app knows your display's peak and your target exceeds it, a note below
+Peak explains that your display cannot show the full target. **Use this display**
+sets Peak to that display's reported brightness, rounded to the slider's 25-nit
+step within 200–10,000 nit. One Undo restores your previous settings. Nothing
+changes automatically: Peak describes delivery, not the current screen. No note
+appears when the display peak is unknown or the target fits. At the slider's
+minimum, a dimmer display may still be unable to show the full target.
+
 ## A practical grading order
 
 1. Establish overall exposure and diffuse-white placement.

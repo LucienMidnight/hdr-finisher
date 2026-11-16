@@ -18,6 +18,18 @@ The SDR branch is a full creative rendition, not a preview convenience. It becom
 
 Every numeric readout can also be typed directly, including controlled values beyond normal slider travel. See [Grading Controls Reference](grading-controls-reference.md) for keyboard behavior, plain-language control descriptions, and all slider and direct-entry limits.
 
+## Panel order and Peak
+
+Below RAW highlight recovery, Denoise, Crop & Rotate and Perspective, SDR uses
+the same order as HDR: Highlight Compression → Tone → Exposure Bands → Curves
+→ Color sliders → HSL → Color wheels → Black & White → Detail → Film Look →
+Vignette. This is browsing order, not a processing-order change.
+
+Highlight Compression starts with **Peak: SDR white (100%)**, a fixed reference,
+not an adjustable target. Mode comes next, then applicable controls, the graph
+and Advanced highlight controls. Normal collapse, bypass, reset and preset
+behaviour is unchanged. HDR's optional display-peak button does not alter SDR.
+
 ## The basic goal
 
 Preserve the subject, color relationships, and important highlight detail in a conventional SDR image without trying to imitate HDR brightness. A strong fallback should look intentional on its own.

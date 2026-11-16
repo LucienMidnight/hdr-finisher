@@ -1,3 +1,36 @@
+## November 16: Grade panel order and Peak placement
+
+Steve approved this presentation-only order in both HDR and SDR: Highlight
+Compression → Tone → Exposure Bands → Curves → Color sliders → HSL → Color
+wheels → Black & White → Detail → Film Look → Vignette. RAW highlight recovery,
+Denoise, Crop & Rotate and Perspective remain above these sections. Shared
+sections move as the same live controls between lanes; folding, presets,
+bypass, reset, modified state, keyboard navigation and section scrolling retain
+their existing behaviour. This is not a change to processing order.
+
+Highlight Compression keeps its normal module header. HDR **Peak** (the existing
+delivery target) comes first in every mode, then Mode, applicable controls, the
+graph and Advanced highlight controls. SDR begins with the fixed line **Peak:
+SDR white (100%)**. When a known current/primary display peak is below the HDR
+target, an advisory below Peak explains the display limitation. **Use this
+display** changes the target only on click, rounded to the ordinary slider step
+and clamped to its range, in one undoable edit. Unknown telemetry or a target
+that fits produces no note. Opening the panel, changing lanes or refreshing
+telemetry never changes the target. Recipes, saved-file formats, defaults and
+rendered output are unchanged.
+
+Verification: the fast suites pass (1,086 JavaScript checks, one skipped;
+3,802 Python checks, 144 skipped, one expected failure now passing). The focused
+`tests/grade-panel-order.js` Electron driver opens both lanes and checks the
+actual module order, mode visibility, shared folding/preset ownership, reset,
+bypass, focus order, sticky chrome and one-step display-target Undo/Redo. Its
+128×64 finished GPU picture readbacks are exactly equal with the previous and
+new panel ordering in both lanes. No rendering, recipe-definition or saved-file
+code changed. The 90-second Library viewport check shows all nine visible
+photos without errors. Review captures at 1408×794 live under
+`codebase/output/review/panel-order/`; the display-note capture uses deliberately
+supplied 613-nit telemetry, not a claim about this Mac's measured display.
+
 ## November 16: visible photo sampling mode
 
 HSL Pick/Add/Subtract and Local hue/luminance range tools show a pipette over
