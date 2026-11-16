@@ -1,6 +1,6 @@
 # Offline CPU Denoise evaluation
 
-Research tooling only: no app changes, Electron, GPU, downloads, or source writes.
+Research tooling only: no app changes, Electron, GPU, automatic downloads, or source writes.
 Run setup first, then from `codebase` (Windows: `.venv/Scripts/python.exe`):
 
 ```sh
@@ -69,6 +69,67 @@ Missing photos/profiles fail visibly. No search in personal folders.
   `[{"name":"scene","noisy":"noisy.npy","clean":"clean.npy","metadata":{"iso":6400}}]`.
   Finite floating ACEScg RGB(A), matching shapes, 32–1024 px. No alignment,
   download or dataset approval is performed by the hook.
+
+### Public RAW pairs (Q2 approved November 16, 2026)
+
+`datasets/rawnind-manifest.json` pins a bounded subset, exact file hashes,
+capture metadata, per-scene CC0 permission and the authors' documented held-out
+split. The RawNIND dataset-wide CC-BY-SA label is **not** sufficient on its own:
+its `permissions.txt` includes research-only artwork, which this subset excludes.
+Training scenes are marked **seen by RawNIND**. These are experimental inputs,
+not additions to the frozen photographic test corpus, app assets or shipped data.
+
+`datasets/summarize.py RESULTS --output SUMMARY` computes equal scene-weighted
+ISO-band and held-out/seen summaries: crop mean within capture, capture mean
+within scene/band, then scene mean. Every metric includes its available scene,
+capture and crop counts; means of colour p99s are not pooled pixel percentiles.
+
+Run the opt-in downloader explicitly with isolated Python; it verifies every
+size/SHA-256 and refuses to overwrite differing files. It never executes an
+archive, shell command or downloaded script. On Windows use the venv Python
+under `Scripts`; all paths below otherwise work unchanged.
+
+```sh
+.venv/bin/python tools/gpu-run-lock.py --label denoise-dataset-download -- .venv/bin/python -I tools/denoise_eval/datasets/download.py
+.venv/bin/python tools/gpu-run-lock.py --label denoise-dataset-prepare -- .venv/bin/python tools/denoise_eval/candidates/guard.py --receipt output/denoise-v1/datasets/prepare-guard.json --seconds 900 --bytes 2300000000 -- .venv/bin/python -I tools/denoise_eval/datasets/prepare.py
+.venv/bin/python tools/gpu-run-lock.py --label denoise-dataset-baseline -- .venv/bin/python tools/denoise_eval/candidates/guard.py --receipt output/denoise-v1/public-pairs/baseline-guard.json --seconds 1200 --bytes 2300000000 -- .venv/bin/python -I tools/denoise_eval/datasets/evaluate.py --set pairs --pairs output/denoise-v1/datasets/rawnind/pairs --output-dir output/denoise-v1/public-pairs --review-size 128 --adapters off,denoise_v2,tools.denoise_eval.candidates.denoise_v2_tuned:factory,tools.denoise_eval.candidates.denoise_v2_tuned:sharp
+.venv/bin/python -I tools/denoise_eval/datasets/summarize.py output/denoise-v1/public-pairs/results-pairs.json --output output/denoise-v1/public-pairs/summary.json
+```
+
+The evaluator entry point only establishes the trusted repository import path
+under `-I`, then calls the normal harness. `--set pairs` skips private-corpus
+inventory and synthetic/real single-image sets completely. No data or model
+download occurs in tests or in evaluation. It works with the same RGB/Bayer
+candidate factories used by other sets; raw candidates see the original noisy
+Bayer window and its camera bridge/noise estimate, never the clean reference.
+
+`python -I tools/denoise_eval/datasets/smoke.py --pairs PAIR_FOLDER --output RECEIPT`
+checks one 96px pair crop once with each available candidate. It skips absent
+RawNIND weights/GALOSH binaries without installing or building them. This is
+an interface/finite-output check only, not a candidate quality evaluation.
+
+Preparation reads one noisy/clean camera pair at a time and emits up to four
+deterministic 512px crops per accepted pair (flat/shadow/texture/edge from a
+3×3 grid). It estimates one sensor translation from independent green-plane
+anchors, resamples **clean only** within each CFA plane, fits one zero-offset
+global gain per RGB channel on unclipped raw samples, and holds that gain
+across all crops. Two greens share the green gain. Unstable/non-rigid pairs
+and locally inconsistent crops are rejected, with reasons in `preparation.json`.
+The recorded `POLICY` is set before measurement: 16px translation bound,
+1px anchor-consistency bound, ECC ≥.90, local structure correlation ≥.97,
+relative smoothed residual ≤.12, at least 20% usable crop. These screen
+registration/illumination failures, not denoiser quality; no output threshold
+is changed or tuned to win this comparison.
+
+Prepared NPZ bundles contain floating ACEScg and pre-WB Bayer noisy/clean
+windows plus Boolean valid/flat/texture/edge masks. Black/white clipping in
+either source (including gain-induced clipping) is excluded with a 40px
+filter-support halo. This deliberately loses near-black/highly saturated
+coverage; rejection is not a pass. All truth metrics use valid pixels only;
+SSIM and band filters use clean support. Pair edge sharpness is local gradient
+energy relative to clean, **not** slanted-edge MTF50 and not an MTF-budget pass.
+Low-ISO truth still contains sensor noise; clean-only interpolation can bias
+fine bands. See `public-pairs.md` for accepted coverage and stratified results.
 
 ## Adapters
 

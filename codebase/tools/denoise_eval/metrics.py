@@ -25,8 +25,9 @@ def display(rgb, lane='sdr'):
     return np.where(linear <= .0031308, 12.92 * linear, 1.055 * linear ** (1 / 2.4) - .055)
 
 
-def psnr(a, b):
-    mse = float(np.mean((np.asarray(a, dtype=np.float64) - b) ** 2))
+def psnr(a, b, mask=None):
+    error = (np.asarray(a, dtype=np.float64) - b) ** 2
+    mse = float(np.mean(error if mask is None else error[mask]))
     return None if mse == 0 else -10 * math.log10(mse)  # None means +infinity in strict JSON
 
 
@@ -34,14 +35,15 @@ def blur(x, sigma):
     return cv2.GaussianBlur(np.asarray(x, dtype=np.float64), (0, 0), sigma, borderType=cv2.BORDER_REFLECT)
 
 
-def ssim(a, b):
+def ssim(a, b, mask=None):
     """Wang SSIM, 11x11 Gaussian sigma=1.5, K1=.01/K2=.03, unit display range."""
     a, b = np.asarray(a, dtype=np.float64), np.asarray(b, dtype=np.float64)
     filt = lambda x: cv2.GaussianBlur(x, (11, 11), 1.5, borderType=cv2.BORDER_REFLECT)
     u, v = filt(a), filt(b)
     va, vb, cov = filt(a*a)-u*u, filt(b*b)-v*v, filt(a*b)-u*v
     score = ((2*u*v+.01**2)*(2*cov+.03**2))/((u*u+v*v+.01**2)*(va+vb+.03**2))
-    return float(np.mean(score[5:-5, 5:-5]))
+    score = score[5:-5, 5:-5]
+    return float(np.mean(score if mask is None else score[mask[5:-5, 5:-5]]))
 
 
 def summary(values):
@@ -78,6 +80,8 @@ def flat_residual(output, noisy, clean=None, mask=None):
             image[mask] -= plane
     if mask is None:
         mask = np.ones(o.shape[:2], bool)
+    if not mask.any():
+        return None
     so, sn = np.std(o[mask], axis=0), np.std(n[mask], axis=0)
     return dict(luma_std=float(so[0]), chroma_std=float(np.sqrt(np.mean(so[1:]**2))),
                 luma_ratio=ratio(so[0], sn[0]), chroma_ratio=ratio(np.linalg.norm(so[1:]), np.linalg.norm(sn[1:])))
@@ -135,34 +139,49 @@ def halo(image, clean):
     return ratio(extra, height)
 
 
-def colour_bleed(output, clean):
+def colour_bleed(output, clean, valid=None):
     c = display(clean)
     chroma = luma_chroma(c)[..., 1:]
     grad = np.sqrt(sum(cv2.Sobel(chroma, cv2.CV_64F, dx, dy, ksize=3)**2 for dx, dy in ((1,0),(0,1)))).sum(-1)
     edge = grad > max(.1, float(np.percentile(grad, 90)))
     mask = cv2.dilate(edge.astype('uint8'), np.ones((7,7), 'uint8')).astype(bool)
+    if valid is not None:
+        mask &= valid
     return summary(np.linalg.norm(luma_chroma(display(output))[..., 1:]-chroma, axis=-1)[mask]) if mask.any() else None
 
 
-def method_noise(output, noisy):
+def method_noise(output, noisy, valid=None):
     n = display(noisy) @ LUMA; residual = n-display(output) @ LUMA
     # Correlate removed magnitude with edge strength measured on a smoothed input.
     base = blur(n, 2)
     edge = np.hypot(cv2.Sobel(base, cv2.CV_64F, 1, 0), cv2.Sobel(base, cv2.CV_64F, 0, 1))
+    if valid is not None:
+        residual, edge = residual[valid], edge[valid]
     if np.std(residual) < 1e-12 or np.std(edge) < 1e-12:
         return 0.
     return float(np.corrcoef(np.abs(residual).ravel(), edge.ravel())[0,1])
 
 
 def evaluate(output, noisy, clean, masks, slanted=False):
+    valid = masks.get('valid')
     result = {'flat_residual_sdr': flat_residual(output, noisy, clean, masks['flat']),
-              'method_noise_edge_correlation': method_noise(output, noisy)}
+              'method_noise_edge_correlation': method_noise(output, noisy, valid)}
     if clean is not None:
         for lane in ('sdr', 'hdr'):
             a, b = display(output, lane), display(clean, lane)
-            result[lane] = dict(psnr_db=psnr(a,b), ssim=ssim(a,b), colour_difference=summary(colour_error(output,clean,lane)))
+            difference = colour_error(output, clean, lane)
+            result[lane] = dict(psnr_db=psnr(a,b,valid), ssim=ssim(a,b,valid),
+                                colour_difference=summary(difference if valid is None else difference[valid]))
         result['texture'] = texture(output, clean, masks['texture']) if masks['texture'].any() else None
-        result['colour_bleed'] = colour_bleed(output, clean)
+        result['colour_bleed'] = colour_bleed(output, clean, valid)
+        if valid is not None:
+            reference = blur(display(clean) @ LUMA, .5)
+            developed = blur(display(output) @ LUMA, .5)
+            reference_energy = sum(cv2.Sobel(reference, cv2.CV_64F, dx, dy)**2 for dx, dy in ((1,0),(0,1)))
+            output_energy = sum(cv2.Sobel(developed, cv2.CV_64F, dx, dy)**2 for dx, dy in ((1,0),(0,1)))
+            edge_mask = masks.get('edge', valid) & valid
+            result['edge'] = dict(local_gradient_energy_ratio=ratio(float(np.mean(output_energy[edge_mask])),
+                                                                   float(np.mean(reference_energy[edge_mask])))) if edge_mask.any() else None
         if slanted:
             a, b = mtf50(output), mtf50(clean)
             result['edge'] = dict(mtf50=a, clean_mtf50=b, mtf50_ratio=ratio(a,b) if a is not None and b is not None else None,

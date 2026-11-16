@@ -610,6 +610,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   `classical-prototypes.md` records Phase 2 tuned-current, darktable wavelet
   and GALOSH RAW CPU quality, native-frame time/memory, review crops and
   licence/patent qualifications; no shipping replacement is approved.
+  `public-pairs.md` records public dataset licences, the explicitly CC0
+  RawNIND subset, held-out/seen labels, bounded registration and baseline
+  truth measurements; no replacement candidate is run on the full pair set.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.

@@ -107,6 +107,10 @@ def save_image(image,path,size=256):
 
 def review_page(rows,folder,results):
     title=f"Denoise baseline: {results['set']}"
+    pair_set = results['set'] == 'pairs'
+    truth_label = 'real low-ISO camera references' if pair_set else 'synthetic truth'
+    context = ('Real noisy/clean RAW pairs; low-ISO references retain sensor noise. Clipping, registration and clean resampling exclusions are recorded in JSON.'
+               if pair_set else 'These are noise simulations, not clean real pairs.')
     token_stylesheet=Path(os.path.relpath(ROOT/'frontend/visual-tokens.css',folder)).as_posix()
     style='''body {background:var(--bg);color:var(--text);font-family:var(--font-body);font-size:var(--font-size-lg);line-height:var(--line-height-normal)}
     h1{font-size:var(--font-size-3xl);font-weight:var(--font-weight-semibold)}
@@ -118,14 +122,14 @@ def review_page(rows,folder,results):
     for name,levels in results['headline'].items():
         for iso,values in levels.items():
             headline_rows.append('<tr>'+''.join(f'<td>{html.escape(str(value))}</td>' for value in (name,iso,round(values['sdr_psnr_db'],2) if values['sdr_psnr_db'] is not None else '∞',round(values['sdr_ssim'],3),round(values['hdr_psnr_db'],2) if values['hdr_psnr_db'] is not None else '∞',round(values['hdr_ssim'],3)))+'</tr>')
-    headline_table='<table><caption>Mean per-scene fidelity against synthetic truth</caption><thead><tr><th>Adapter</th><th>ISO equivalent</th><th>SDR PSNR dB</th><th>SDR SSIM</th><th>HDR PSNR dB</th><th>HDR SSIM</th></tr></thead><tbody>'+''.join(headline_rows)+'</tbody></table>'
+    headline_table=f'<table><caption>Mean per-crop fidelity against {truth_label}; exact ISO groups</caption><thead><tr><th>Adapter</th><th>ISO</th><th>SDR PSNR dB</th><th>SDR SSIM</th><th>HDR PSNR dB</th><th>HDR SSIM</th></tr></thead><tbody>'+''.join(headline_rows)+'</tbody></table>'
     for row in rows:
         figures=''.join(f'<figure><img loading="lazy" src="{html.escape(file)}"><figcaption>{html.escape(label)}</figcaption></figure>' for label,file in row['images'])
         sections.append(f"<section><h2>{html.escape(row['name'])}</h2><p>{html.escape(row['metadata'])}</p><div class='row'>{figures}</div></section>")
     page=f'''<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>{title}</title>
     <link rel="stylesheet" href="{token_stylesheet}"><style>{style}</style></head><body>
     <h1>{title}</h1><p>CPU only • {results['machine']} • fixed seed {SEED}. SDR: ACEScg → linear sRGB, clip 0–1, sRGB encoding.
-    Every image uses the same transform. Images fit within 256 px; original crop size is recorded in JSON. These are noise simulations, not clean real pairs.</p>
+    Every image uses the same transform. Downscaled previews; original crop size is recorded in JSON. {context}</p>
     <p><a href="results.json">Complete measurements, calibration, crop coordinates and limitations</a></p>
     <p>Run: {results['elapsed_seconds']:.1f} s; peak process memory {results['peak_rss_bytes']/1e9:.2f} GB. No GPU/CPU comparison was run. Synthetic source clipping and single-frame calibration can bias conclusions.</p>
     {headline_table}
@@ -151,13 +155,15 @@ def main(argv=None):
     global OUTPUT
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--adapters',default='off,denoise_v2')
-    parser.add_argument('--set',choices=('quick','full'),default='quick')
+    parser.add_argument('--set',choices=('quick','full','pairs'),default='quick')
     parser.add_argument('--controls',default='{}',help='JSON controls for denoise_v2_custom')
     parser.add_argument('--pairs',type=Path,help='Optional approved folder with pairs.json, no downloads')
     parser.add_argument('--banding',type=float,default=0.,help='Added row and column sigma in normalised sensor units')
     parser.add_argument('--output-dir',type=Path,help='Separate research results/review destination')
     parser.add_argument('--review-size',type=int,choices=(128,256),default=256,help='Bound review size when comparing many adapters')
     args=parser.parse_args(argv)
+    if args.set == 'pairs' and args.pairs is None:
+        parser.error('--set pairs requires --pairs; no downloads run automatically')
     if args.output_dir is not None:
         OUTPUT=args.output_dir
     OUTPUT.mkdir(parents=True,exist_ok=True)
@@ -182,7 +188,7 @@ def execute(args):
     for pattern in ('crop-*.png','index.html','results.json'):
         for file in folder.glob(pattern):
             file.unlink()
-    inv=inventory()
+    inv=[] if args.set == 'pairs' else inventory()
     inventory_seconds=time.perf_counter()-start
     print(f'Inventory/calibration: {inventory_seconds:.2f} s',flush=True)
     results=dict(schema_version=1,set=args.set,seed=SEED,machine=f'{platform.system()} {platform.machine()} / {platform.processor()}',
@@ -197,7 +203,18 @@ def execute(args):
                               'Geometry, lens correction and highlight reconstruction are excluded consistently for all candidates.',
                               'CPU/GPU agreement is not applicable: CPU-only harness. Highlight cap is the fixed display transform, not production delivery validation.',
                               'Real pair folders are opt-in and require already aligned ACEScg crops; no external dataset was downloaded.'])
-    samples=itertools.chain(synthetic_samples(inv,args.set=='quick',args.banding),real_samples(inv,args.set=='quick'),paired_samples(args.pairs) if args.pairs else [])
+    if args.set == 'pairs':
+        results['mask_generation'] = 'Prepared pair valid support (clipping plus 40px halo); clean-only flat/texture/edge masks'
+        results['limitations'] = [
+            'Real low-ISO camera frames are low-noise references, not mathematically noiseless truth.',
+            'One translation and one RGB gain per capture pair; clean-only CFA-plane interpolation changes its fine-frequency response.',
+            'Misregistered/moving crops and clipped/filter-support regions are excluded; see preparation.json for rejections.',
+            'Held-out and seen-by-RawNIND scenes are separately labelled; no RawNIND model is evaluated in this baseline.',
+            'Fixed SDR/PQ display transforms and crop-local preparation are research measurements, not production HDR or whole-photo qualification.',
+        ]
+        samples = paired_samples(args.pairs)
+    else:
+        samples=itertools.chain(synthetic_samples(inv,args.set=='quick',args.banding),real_samples(inv,args.set=='quick'),paired_samples(args.pairs) if args.pairs else [])
     rows=[]
     for index,sample in enumerate(samples):
         print(f'{index+1}: {sample.name}',flush=True)
@@ -206,7 +223,7 @@ def execute(args):
         row={'name':sample.name,'metadata':f"{sample.rgb.shape[1]}×{sample.rgb.shape[0]}; ISO {sample.metadata.get('iso','?')}; exposure +{sample.metadata.get('exposure_stops',0):.2f} stops",'images':[]}
         for label,image in [('Noisy',sample.rgb),('Clean truth',sample.clean)]:
             if image is not None:
-                filename=f'crop-{index:03d}-{len(row["images"])}.png';save_image(image,folder/filename);row['images'].append((label,filename))
+                filename=f'crop-{index:03d}-{len(row["images"])}.png';save_image(image,folder/filename,args.review_size);row['images'].append((label,filename))
         for name,adapter in adapters.items():
             source=sample.rgb if adapter.input_kind=='rgb' else sample.bayer
             if source is None:
