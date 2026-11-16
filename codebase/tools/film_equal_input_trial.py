@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--backend", type=Path, default=REPO / "codebase/backend")
 parser.add_argument("--backend-revision", default=None)
 parser.add_argument("--output", type=Path, required=True)
-parser.add_argument("--only", choices=["charts", "raws", "saved", "character", "timing", "gpu-prepare", "all"], default="all")
+parser.add_argument("--only", choices=["charts", "raws", "saved", "saved-sidecar", "character", "timing", "gpu-prepare", "all"], default="all")
 parser.add_argument("--repeats", type=int, default=3)
 args = parser.parse_args()
 sys.path.insert(0, str(args.backend))
@@ -317,6 +317,45 @@ def saved_project():
     save_csv("saved-summary.csv", ROWS)
 
 
+def saved_sidecar():
+    from hdr_finisher.loader import load_image
+    from hdr_finisher.projects import validate_saved_document
+    sidecar = PHOTOS / "DSC00264.ARW.hdrf"
+    digest_before = hashlib.sha256(sidecar.read_bytes()).hexdigest()
+    document = json.loads(sidecar.read_text())["grade"]
+    recovered = validate_saved_document(document)
+    original = PHOTOS / document["source"]["filename"]
+    source_digest = hashlib.sha256(original.read_bytes()).hexdigest()
+    if source_digest != document["source"]["fingerprint_sha256"]:
+        raise ValueError("DSC00264 source fingerprint differs from saved sidecar")
+    decoded = load_image(original, library_edge=512, analyze_hdr=False,
+        raw_import_settings=recovered.source.raw_import_settings)[0]
+    stride = max(1, int(np.ceil(max(decoded.shape[:2]) / 512)))
+    source = np.ascontiguousarray(decoded[::stride, ::stride])
+    del decoded
+    state = recovered.global_adjustments
+    white = document.get("hdr_reference_white_nits", 203)
+    hdr = adjustments_module.apply_adjustments(source, state, PreviewKind.HDR, include_grain=False,
+        local_adjustments=recovered.local_adjustments, color_context=RenderColorContext(white))
+    baseline = adjustments_module.apply_adjustments(source, state, PreviewKind.SDR, include_grain=False,
+        local_adjustments=recovered.local_adjustments)
+    common = common_scene(source, state, recovered.local_adjustments, white)
+    trial = finish(common, state)
+    hdr_trial = np.maximum(adjustments_module.apply_hdr_output_highlight_compression(common, state,
+        color_context=RenderColorContext(white)), 0)
+    if not np.array_equal(hdr, hdr_trial):
+        raise AssertionError("Shared-film trial changed saved DSC00264 HDR pixels")
+    summarize("DSC00264_saved_sidecar", state.hdr.film_look.film_stock, state.hdr.film_look.look_strength,
+        "saved_recipe_drift", baseline, trial, selections(match_module.build_sdr_match_target(hdr), hdr, None))
+    if hashlib.sha256(sidecar.read_bytes()).hexdigest() != digest_before:
+        raise AssertionError("DSC00264 saved sidecar changed")
+    save_json("DSC00264-saved-sidecar.json", dict(sidecar_sha256=digest_before, source_sha256=source_digest,
+        hdr_exact=True, shape=list(source.shape), hdr_stock=state.hdr.film_look.film_stock,
+        sdr_stock=state.sdr.film_look.film_stock, grain_included=False,
+        recovery_notice=getattr(recovered, "_saved_grade_notice", None)))
+    save_csv("DSC00264-sidecar-summary.csv", [row for row in ROWS if row["population"] == "DSC00264_saved_sidecar"])
+
+
 if args.only == "gpu-prepare":
     gpu_source = np.load(SOURCES / "DSC00264.ARW.npz")["source"]
     source_rgba = np.concatenate([gpu_source, np.ones((*gpu_source.shape[:2], 1), dtype=np.float32)], axis=-1)
@@ -463,3 +502,5 @@ if args.only in ["raws", "all"]:
         measure(photo, np.load(SOURCES / (photo + ".npz"))["source"])
 if args.only in ["saved", "all"]:
     saved_project()
+if args.only in ["saved-sidecar", "all"]:
+    saved_sidecar()

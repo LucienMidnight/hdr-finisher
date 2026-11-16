@@ -1,5 +1,15 @@
 # Code map
 
+## November 16: isolated equal-input Film research
+
+`codebase/tools/film_equal_input_trial.py` runs opt-in charts, reduced shared
+RAWs, read-only saved-grade comparisons, output-tail ablations and CPU timings
+against an optional frozen backend. It never materializes shipping recipes or
+changes the processing order. `film_equal_input_trial.cjs` is the isolated GPU
+prototype; its first compilation failed and the correction is GPU-unvalidated.
+Both are diagnostic-only in the release inventory. Results and limitations:
+`reports/film-look-equal-input-trial-2026-11-16.md`.
+
 ## November 16: JPEG Ultra HDR drift research
 
 `codebase/tools/jpeg_encoding_drift_probe.py` is a non-shipping diagnostic:

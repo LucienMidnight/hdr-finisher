@@ -1,3 +1,11 @@
+## November 16: equal-input Film research on MacBook Neo
+
+| Action | Existing guard | Observation | Conditions / evidence |
+| --- | --- | --- | --- |
+| Paired CPU HDR + SDR renders, existing separate Film vs shared scene Film | Exploratory ±10% timing noise; not a shipping speed budget | Film on: median 259.2–458.1 ms before, 167.8–254.6 ms shared; paired reduction 34.6–44.4%. Film off 68.0→52.0 ms. Some three-sample spreads exceed ±10%; not a stable per-stock ranking or whole-wait claim. | Neo A18 Pro / 8 GB, threads=2, DSC00264 498×333 proxy, 3 warmed alternating-order samples, frozen backend `ab0645be`; grain/halation off. `output/review/film-equal-input-trial-2026-11-16/cpu-pair-timing.json`. Source decode, Match fit, UI and encode excluded. |
+| CPU SDR alone and shared output tail | Same exploratory conditions; no new GPU route justified | Film-on standalone medians 115.6–152.4 ms old, 122.3–168.8 ms trial; already-shared output tail 20.8–29.9 ms. Different sweeps have different thermal/noise conditions; do not subtract these from the separate paired run. | Same Neo/proxy/backend/threads, 3 warmed samples. `cpu-timing.json` and the full per-stock table in `reports/film-look-equal-input-trial-2026-11-16.md`. No native-size extrapolation. |
+| GPU equal-input prototype | One locked GPU attempt, then CPU fallback | No timing/parity: research WGSL compilation failed (`common` reserved). Variable corrected, syntax checked, not rerun. No driver-fault or GPU speed claim. | Neo / 1408×794; own Electron through shared lock, Steve's app left open. `output/review/film-equal-input-trial-2026-11-16/gpu.log`. |
+
 ## November 16: exact-ceiling scoped validation on MacBook Neo
 
 | Action | Existing guard | Observation | Conditions / evidence |

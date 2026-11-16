@@ -1,5 +1,31 @@
 # Module PRD: Film Look
 
+## November 16: common scene Film trial (M1-EQ; research only)
+
+Steve's approved equal-input trial evaluates the HDR scene grade/Film once,
+then fits SDR with a late display cap and gamut boundary. On frozen backend
+`ab0645be`, all 49 reduced chart/RAW cases meet unchanged body limits (worst
+OKLab P95 0.01916, luma P95 0.00618); every coloured +1…+3 hue/stop group
+has residual P95 <3 ΔE00 (worst 1.975), and RAW highlight P95 is 0.015–1.981.
+HDR pixels are exact in all 49 matrix cases and the additional DSC00264
+saved-sidecar study. A single late SDR cap retains the common Film body's
+grey contrast; Film's print curve alone does not replace SDR output mapping.
+
+**Recommendation: ship with changes, not the harness as-is.** This changes
+control ownership and existing SDR grades: recovered DSC00950 P95 drift is
+10.050, and the actual DSC00264 saved grade (HDR Vision3 200T / SDR Film off)
+drifts 15.317. Only 30/49 pass highlight ordering, 35/49 the +0.5 EV output-trim
+white-growth check; 49 colour-safe fits are not 49 accepted production Matches.
+The unchanged target itself has the same 19 ordering failures. A locked GPU
+attempt failed harness WGSL compilation, so GPU cost/parity and native
+export/Proof remain unqualified. No default/order/recipe/project or gate changes.
+
+Steve must first decide whether creative Tone/Film is linked between lanes;
+then a real Match/output materializer must preserve the existing safeguards.
+No old-renderer compatibility path is proposed. Full per-hue/stop, RAW, Film
+character, saved-grade and CPU-cost results, caveats and reproduction:
+[equal-input trial](../../technical/reports/film-look-equal-input-trial-2026-11-16.md).
+
 ## November 15: print-stage Match research (M1d; no rendering change)
 
 Steve's finding is reproduced: Print Warmth and Preflash alone reduce the

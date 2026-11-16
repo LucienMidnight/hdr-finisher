@@ -501,6 +501,10 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 
 ### Technical (how it works)
 
+- `docs/technical/reports/film-look-equal-input-trial-2026-11-16.md`:
+  isolated common scene Film research, colour/character, saved-grade drift,
+  Match safeguards and CPU costs; no shipping order change.
+
 - `docs/technical/reports/encoding-drift-avif-jxl-2026-11-16.md`:
   AVIF/JXL renderer sensitivity, own-source fidelity and measured minimum HDR Peak.
 
