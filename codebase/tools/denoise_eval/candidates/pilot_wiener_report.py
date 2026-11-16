@@ -5,6 +5,7 @@ import numpy as np
 from PIL import Image
 
 from tools.denoise_eval.candidates.pilot_wiener_measure import OUTPUT
+from tools.denoise_eval.datasets.summarize import summarize
 from tools.denoise_eval.run import review_page
 
 
@@ -37,6 +38,68 @@ def mean(rows, *path):
         if value is not None:
             values.append(value)
     return float(np.mean(values))
+
+
+def pair_tables():
+    source = OUTPUT/'pairs/results-pairs.json'
+    if not source.exists():
+        return
+    results = json.loads(source.read_text())
+    summary = summarize(results)
+    (OUTPUT/'pairs/summary.json').write_text(json.dumps(summary, indent=2, allow_nan=False)+'\n')
+    chunks = []
+    for population in ('held-out', 'seen by RawNIND'):
+        rows = [row for row in summary['rows'] if row['population'] == population and row['iso_band'] == 'all ISOs']
+        fidelity, half, detail = [], [], []
+        for row in rows:
+            def value(field, digits=3):
+                measured = row['metrics'].get(field)
+                return f"{measured['mean']:.{digits}f}" if measured else '—'
+            full_row = [short(row['adapter']), f"{row['scenes']}/{row['captures']}/{row['crops']}"]
+            half_row = [short(row['adapter'])]
+            for lane in ('sdr', 'hdr'):
+                full_row.extend([value(lane+'.psnr_db', 2), value(lane+'.ssim'),
+                                 value(lane+'.colour_difference.mean')+'/'+value(lane+'.colour_difference.p99')])
+                half_row.extend([value('half_resolution.'+lane+'.psnr_db', 2),
+                                 value('half_resolution.'+lane+'.colour_difference.mean')+'/'+value('half_resolution.'+lane+'.colour_difference.p99')])
+            fidelity.append(full_row)
+            half.append(half_row)
+            detail.append([short(row['adapter']),
+                           value('flat_residual_sdr.luma_std')+'/'+value('flat_residual_sdr.chroma_std'),
+                           value('flat_residual_sdr.luma_ratio')+'/'+value('flat_residual_sdr.chroma_ratio'),
+                           '; '.join(value(f'texture.energy_ratio.{index}') for index in range(4)),
+                           value('edge.local_gradient_energy_ratio'),
+                           value('colour_bleed.mean')+'/'+value('colour_bleed.p99'),
+                           value('method_noise_edge_correlation')])
+        chunks.extend([f'### Public pairs, {population}: full resolution\n',
+                       table(['Method', 'Scenes/captures/crops', 'SDR dB', 'SSIM', 'ΔE00 mean/p99', 'HDR dB', 'SSIM', 'ΔE ITP mean/p99'], fidelity),
+                       f'### Public pairs, {population}: half resolution\n',
+                       table(['Method', 'SDR dB', 'ΔE00 mean/p99', 'HDR dB', 'ΔE ITP mean/p99'], half),
+                       f'### Public pairs, {population}: noise and structure proxies\n',
+                       table(['Method', 'Flat σ Y/C', 'Flat ratio Y/C', 'Texture ratio per band', 'Local edge energy/clean', 'Bleed mean/p99', 'Removed-edge correlation'], detail)])
+        intervals = []
+        for row in summary['rows']:
+            if row['population'] != population or row['iso_band'] == 'all ISOs':
+                continue
+            numbers = [row['metrics'][key]['mean'] for key in ('sdr.psnr_db', 'half_resolution.sdr.psnr_db', 'hdr.psnr_db', 'half_resolution.hdr.psnr_db')]
+            intervals.append([row['iso_band'], short(row['adapter']), f"{row['scenes']}/{row['captures']}/{row['crops']}", *[f'{number:.2f}' for number in numbers]])
+        chunks.extend([f'### Public pairs, {population}: ISO bands\n',
+                       table(['ISO band', 'Method', 'Scenes/captures/crops', 'SDR full dB', 'SDR half dB', 'HDR full dB', 'HDR half dB'], intervals)])
+    (OUTPUT/'pairs/tables.md').write_text('\n'.join(chunks))
+    review_rows = []
+    for index, case in enumerate(results['cases']):
+        metadata = case['metadata']
+        population = 'HELD-OUT' if metadata['held_out'] else 'SEEN BY RAWNIND'
+        labels = ['Noisy', 'Clean truth']+[short(name) for name in results['adapters']]
+        review_rows.append(dict(name=case['name'], metadata=f"{population}; scene {metadata['scene_id']}; ISO {metadata['iso']}",
+                                images=[(label, f'crop-{index:03d}-{column}.png') for column, label in enumerate(labels)]))
+    review_page(review_rows, OUTPUT/'pairs/review', results)
+    page = OUTPUT/'pairs/review/index.html'
+    page.write_text(page.read_text().replace('<h1>', '<p><a href="../../review/index.html">Synthetic and native-photo review</a>. Scenes explicitly marked seen were used to train RawNIND, not independent validation.</p><h1>', 1))
+    if any(not (page.parent/file).is_file() for row in review_rows for _, file in row['images']):
+        raise ValueError('Missing public-pair review image')
+    if sum(path.stat().st_size for path in page.parent.iterdir() if path.is_file()) > 20_000_000:
+        raise ValueError('Public-pair review exceeds budget')
 
 
 def main():
@@ -114,17 +177,20 @@ def main():
                          images=[(label, f'crop-{index:03d}-{column}.png') for column, label in enumerate(labels)]))
     native_rows = []
     for path in sorted(OUTPUT.glob('native-*.json')):
-        native_rows.extend(json.loads(path.read_text())['review_rows'])
+        native_rows.extend(json.loads(path.read_text()).get('review_rows', []))
     if (OUTPUT/'inspection.json').exists():
         native_rows.extend(json.loads((OUTPUT/'inspection.json').read_text()))
     review_page(rows+native_rows, folder, results)
     for path in folder.glob('crop-*.png'):
         with Image.open(path) as image:
-            image.thumbnail((96, 96), Image.Resampling.LANCZOS)
+            image.thumbnail((80, 80), Image.Resampling.LANCZOS)
             image.save(path)
     page = folder/'index.html'
-    note = '<p>Full-set thumbnails are 96 px; native photo crops are 256 px. All measurements use the original arrays, not these thumbnails. Both-Wiener attenuates only source coefficients; direct-pilot chroma is an explicit exception.</p>'
+    note = '<p>Full-set thumbnails are 80 px; native photo crops are 256 px. All measurements use the original arrays, not these thumbnails. Both-Wiener attenuates only source coefficients; direct-pilot chroma is an explicit exception.</p>'
     page.write_text(page.read_text().replace('<h1>', note+'<h1>', 1))
+    if (OUTPUT/'pairs/review/index.html').exists():
+        page.write_text(page.read_text().replace('<h1>', '<p><a href="../pairs/review/index.html">Public noisy/clean pairs: held-out and seen-by-RawNIND crops</a></p><h1>', 1))
+    pair_tables()
     links = [file for row in rows+native_rows for _, file in row['images']]
     missing = [file for file in links if not (folder/file).is_file()]
     if missing:
