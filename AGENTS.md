@@ -501,6 +501,9 @@ module PRD for the area you touch, then `docs/technical/code-map.md`.
 
 ### Technical (how it works)
 
+- `docs/technical/reports/encoding-drift-avif-jxl-2026-11-16.md`:
+  AVIF/JXL renderer sensitivity, own-source fidelity and measured minimum HDR Peak.
+
 - `docs/technical/reports/encoding-drift-jpeg-ultrahdr-2026-11-16.md`:
   non-shipping JPEG Ultra HDR sensitivity, stage and own-source fidelity research.
 
