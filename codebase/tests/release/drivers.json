@@ -4237,6 +4237,8 @@
       "protects":"Opt-in frozen-backend equal-input Film colour, Match-body, character, saved-grade drift and CPU cost research; never changes production order or projects.","launch":{"method":"python","requires":"Pass --output and optionally --backend/--backend-revision; needs existing M1 reduced RAW inputs. Modes all, character, gpu-prepare and timing are explicit separate steps."}},
     {"path":"tools/film_equal_input_trial.cjs","areas":["film","preview"],"tier":"diagnostic",
       "protects":"Isolated equal-input Film GPU timing prototype; compilation failed on its first attempt, corrected harness remains GPU-unvalidated and is not a shipping gate.","launch":{"method":"electron","requires":"Prepare inputs with film_equal_input_trial.py --only gpu-prepare and pass the output folder. Use the shared GPU lock; a later run needs Steve's decision, not a retry of the failed compilation."}},
+    {"path":"tests/performance/stacked-raw-latency.js","areas":["preview","film"],"tier":"diagnostic",
+      "protects":"Opt-in copied saved-grade RAW action-to-GPU-completion observations, native slider drags, zoom/pan, lane switches, ablations, CPU profile and whole-tree memory; never saves source or sidecar.","launch":{"method":"electron","requires":"Use output/test-photos copy and saved sidecar; --part baseline, zoom, ablate, raw or profile. Shared GPU lock and machine window required."}},
     {"path":"tests/performance/library-large-folder-open.js","areas":["library"],"tier":"diagnostic",
       "protects":"Opt-in large-folder index-first timing, first grid thumbnail, complete disk check and backend memory on a disposable Library database.","launch":{"method":"electron"}}
   ]

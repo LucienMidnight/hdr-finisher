@@ -489,3 +489,19 @@ correctly fail the existing colour-safety gate on the W10 photo.
 W11 reports/profiles are retained in the main checkout's
 `output/performance/grade-0-9-2/w11/`. Sampling and Match remain above one second
 in SDR; see performance-table section 5 for the breakdown and proposed work.
+
+## Saved-grade RAW latency diagnostic
+
+`stacked-raw-latency.js --input output/test-photos/DSC01287.ARW` opens the
+reusable RAW/sidecar without saving either. Run through `run-in-electron.js`
+and the shared GPU lock at the machine window. `--part baseline` measures
+native Exposure/Whites drags, 50/100% zoom and pan, and HDR/SDR switches;
+`zoom`, `ablate`, `raw` and `profile` isolate navigation, Film/tier controls,
+RAW import settings and a renderer CPU profile. `--output` overwrites one report.
+
+Presentation events mean submission, not completed display. The report also
+records a GPU completion fence plus animation frame and whether that frame
+was still current; use these for visible-wait estimates, alongside the final
+settled observation. This is not a physical display scanout measurement.
+Panning moves the held picture through the compositor before new tiles arrive.
+Do not treat no-new-render pans as failures or event-only times as screen times.

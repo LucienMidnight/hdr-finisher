@@ -1,0 +1,145 @@
+/** Opt-in action-to-presentation diagnostic. Only opens the reusable test copy;
+ * never saves it. --part baseline|ablate|profile, --input, --grade, --output. */
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { execFileSync } = require('node:child_process');
+const { chromium } = require('playwright');
+const c = require('./heavy-project-review-common');
+const opt = (key, fallback) => process.argv.includes(key) ? process.argv[process.argv.indexOf(key) + 1] : fallback;
+const input = path.resolve(opt('--input', 'output/test-photos/DSC01287.ARW'));
+const grade = path.resolve(opt('--grade', input + '.hdrf'));
+const output = path.resolve(opt('--output', 'output/performance/stacked-raw/before.json'));
+const part = opt('--part', 'baseline');
+const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const report = { date: new Date().toISOString(), commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+  input, grade, hashes: [sha(input), sha(grade)], part, rows: [], errors: [] };
+
+(async () => {
+  if (!input.startsWith(path.resolve('output/test-photos') + path.sep)) throw Error('Use the shared test copy');
+  const browser = await chromium.launch();
+  const page = await browser.newPage();
+  const network = c.networkProbe(page);
+  const memory = c.sampler();
+  const save = () => c.write(output, report);
+  const settle = async () => {
+    await page.waitForTimeout(150);
+    await page.waitForFunction(() => {
+      const a = state.acceptedPresentation;
+      return a?.exact && a.lane === state.currentView && a.generation === state.previewGeneration[state.currentView]
+        && a.processedLongEdge === refinementProxyLongEdge() && viewerState().status === 'ready'
+        && !state.gpuDraftInFlight && !state.globalEditSyncPending && !pendingHighlightAnchors.size && !exactHighlightAnchorInflight.size
+        && !state.zoomRefinementTimer && !state.renderCoordinator?.state(state.currentView)?.panTimerPending
+        && !state.renderCoordinator?.state(state.currentView)?.inFlight && !state.renderCoordinator?.state(state.currentView)?.pending;
+    }, null, { timeout: 60000 });
+    await page.evaluate(async () => { await state.gpuPreview.device.queue.onSubmittedWorkDone(); await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); });
+  };
+  async function step(name, action) {
+    const mark = await page.evaluate(() => ({ at: performance.now(), n: __lag.frames.length, s: state.gpuPreview.performanceMetrics.stages.length }));
+    const n = network.length;
+    let failure;
+    try { await action(); await settle(); } catch (e) { failure = e.message; }
+    const row = await page.evaluate(({ mark, name, failure }) => ({ name, failure, elapsedMs: performance.now() - mark.at,
+      frames: __lag.frames.slice(mark.n).map(f => ({ ...f, ms: f.presentedAt - mark.at })),
+      stages: state.gpuPreview.performanceMetrics.stages.filter(s => s.at >= mark.at),
+      gpu: state.gpuPreview.diagnosticsSnapshot(), accepted: state.acceptedPresentation,
+      viewer: viewerState(), scheduler: state.previewScheduler.metrics,
+      requiredEdge: refinementProxyLongEdge(), zoom: state.zoomPercent, resolution: state.previewResolution,
+      refusal: state.lastGpuDraftRefusal, releaseMs: __lag.releaseAt >= mark.at ? __lag.releaseAt - mark.at : null,
+      inputs: __lag.inputs.filter(i => i.at >= mark.at).map(i => ({ ...i, ms: i.at - mark.at })),
+    }), { mark, name, failure });
+    row.requests = network.slice(n);
+    report.rows.push(row); save();
+    console.log(JSON.stringify({ name, failure, elapsedMs: row.elapsedMs, releaseMs: row.releaseMs,
+      frames: row.frames.map(f => ({ ms: Math.round(f.ms), edge: f.longEdge, exact: f.accepted?.exact, execution: f.execution })),
+      renders: row.gpu.renders?.slice(-3), accepted: row.accepted }));
+    if (failure) throw Error(`${name}: ${failure}`);
+  }
+  page.on('pageerror', e => report.errors.push(e.message));
+  try {
+    await page.goto(process.env.HDR_FINISHER_URL, { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => state.gpuPreview?.available, null, { timeout: 30000 });
+    await page.evaluate(() => {
+      state.appPreferences.gradeAutosave = false;
+      state.gpuPreview.setInstrumentationEnabled(true);
+      window.__lag = { frames: [], inputs: [], releaseAt: 0 };
+      addEventListener('hdrfinisher:preview-presented', e => {
+        const row = { ...e.detail, accepted: structuredClone(state.acceptedPresentation) };
+        __lag.frames.push(row);
+        void state.gpuPreview.device.queue.onSubmittedWorkDone().then(() => requestAnimationFrame(() => {
+          row.completedAt = performance.now(); row.currentAtCompletion = state.acceptedPresentation?.sourceSerial === row.sourceSerial;
+        }));
+      });
+      document.addEventListener('input', e => __lag.inputs.push({ at: performance.now(), id: e.target.id, value: e.target.value }), true);
+    });
+    await step('open', () => page.evaluate(async input => {
+      await openDesktopSelection({ kind: 'source', ...await desktop.grantSourcePath(input) });
+      activateWorkflowTab('grade');
+    }, input));
+    report.conditions = await page.evaluate(() => ({ window: [innerWidth, innerHeight], dpr: devicePixelRatio,
+      source: state.session.source, adjustments: state.adjustments, gpu: state.gpuPreview.detail,
+      preferences: state.appPreferences, methods: Object.getOwnPropertyNames(Object.getPrototypeOf(state.gpuPreview)) }));
+    const saved = JSON.parse(fs.readFileSync(grade, 'utf8')).grade.global_adjustments;
+    if (JSON.stringify(report.conditions.adjustments.hdr.film_look) !== JSON.stringify(saved.hdr.film_look)) throw Error('Saved Film grade did not load unchanged');
+    if (part === 'raw') {
+      for (const change of ['lens', 'reconstruction', 'restore']) {
+        await step(`RAW ${change}`, () => page.evaluate(async change => {
+          els.lensMode.value = change === 'lens' ? 'off' : 'auto';
+          renderRawHighlightState({ enabled: change !== 'reconstruction' });
+          await applyRawImportSettings();
+        }, change));
+        for (let i = 0; i < 3; i++) await step(`${change} exposure ${i}`, () => page.evaluate(i => commitAdjustmentValue('hdr.exposure', i % 2 ? -.1 : .1, { manual: true }), i));
+      }
+    } else if (part === 'profile') {
+      const session = await page.context().newCDPSession(page);
+      await session.send('Profiler.enable'); await session.send('Profiler.start');
+      await step('profile-exposure', () => page.evaluate(() => commitAdjustmentValue('hdr.exposure', 0.1, { manual: true })));
+      await step('profile-zoom', () => page.evaluate(() => setCustomZoom(100)));
+      report.cpuProfile = (await session.send('Profiler.stop')).profile;
+      await session.detach();
+    } else if (part === 'baseline' || part === 'zoom') {
+      if (part === 'baseline') {
+      for (const selector of ['#hdr-exposure', '#hdr-whites']) {
+        await c.reveal(page, selector); await settle();
+        for (let repeat = 0; repeat < 3; repeat++) await step(`drag ${selector} ${repeat}`, async () => {
+          const b = await page.locator(selector).boundingBox();
+          await page.keyboard.down('Control');
+          await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2); await page.mouse.down();
+          for (let i = 1; i <= 20; i++) { await page.mouse.move(b.x + b.width / 2 + (repeat % 2 ? -1 : 1) * i * 1.5, b.y + b.height / 2); await page.waitForTimeout(25); }
+          await page.mouse.up(); await page.keyboard.up('Control');
+          await page.evaluate(() => { __lag.releaseAt = performance.now(); });
+        });
+      }
+      }
+      for (const z of [50, 100, 50, 'fit', 100, 'fit']) {
+        await step(`zoom ${z}`, () => page.evaluate(z => z === 'fit' ? setZoomMode('fit') : setCustomZoom(z), z));
+        if (z !== 'fit') for (let pan = 0; pan < 2; pan++) await step(`pan ${z} ${pan}`, () => page.evaluate(pan => {
+          els.dropzone.scrollLeft += (pan ? -1 : 1) * 240; els.dropzone.scrollTop += (pan ? -1 : 1) * 160;
+          els.dropzone.dispatchEvent(new Event('scroll'));
+        }, pan));
+      }
+      for (const lane of ['sdr', 'hdr', 'sdr', 'hdr', 'sdr', 'hdr']) await step(`switch ${lane}`, () => page.evaluate(lane => switchLane(lane), lane));
+    } else if (part === 'ablate') {
+      const original = report.conditions.adjustments;
+      const variants = { all: {}, grain: { 'hdr.film_look.grain_enabled': false }, halation: { 'hdr.film_look.halation_enabled': false },
+        stock: { 'hdr.film_look.film_stock': 'none' }, detail: { 'hdr.detail_section_enabled': false },
+        highlight: { 'hdr.highlight_section_enabled': false } };
+      for (const edge of ['auto', '1024', '2048']) {
+        await page.evaluate(edge => applyPreviewResolution(edge), edge); await settle();
+        for (const [name, edits] of Object.entries(variants)) {
+          await page.evaluate(async ({ original, edits }) => {
+            await queueEditCommand('set_global_adjustments', { adjustments: structuredClone(original) });
+            for (const [key, value] of Object.entries(edits)) commitAdjustmentValue(key, value, { manual: true });
+          }, { original, edits }); await settle();
+          for (let i = 0; i < 3; i++) await step(`${edge} without ${name} ${i}`, () => page.evaluate(i => commitAdjustmentValue('hdr.exposure', i % 2 ? -.1 : .1, { manual: true }), i));
+        }
+      }
+    }
+  } catch (error) { report.failure = String(error.stack || error); console.error(report.failure); process.exitCode = 1; }
+  finally {
+    report.memory = memory.rows; report.memoryErrors = memory.errors; memory.stop();
+    const backendLog = path.join(global.HDRFinisherElectronTestHarness.userDataDirectory, 'logs/backend.log');
+    if (fs.existsSync(backendLog)) { fs.mkdirSync(path.dirname(output), { recursive: true }); fs.copyFileSync(backendLog, output.replace(/\.json$/, '-backend.log')); }
+    report.finalHashes = [sha(input), sha(grade)]; save(); await browser.close();
+  }
+})();

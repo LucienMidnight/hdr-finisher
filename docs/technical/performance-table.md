@@ -1,3 +1,33 @@
+## November 16: DSC01287 saved-grade lag investigation (minimum Mac)
+
+MacBook Neo / A18 Pro / 8 GB, actual 1408×794 / DPR 2, default 4 GB,
+shared GPU lock, disposable unpackaged Electron profile. Reusable copy of
+Steve’s DSC01287.ARW and unchanged Nov 16 sidecar (Ektar 100%, grain 19.46,
+size 19.60, halation 3.57/.451, automatic Tamron lens correction, RAW highlight
+reconstruction; no locals/Denoise). Baseline `5d1e9c01`. Timing noise band
+±10%; any optimisation must retain exact final pixels. No speed target changed.
+
+| Action | Baseline wait | Conditions / evidence |
+| --- | --- | --- |
+| Open to first GPU-completed picture / final anchor settlement | 8.04 / 9.82 s | Lens remap 2.21 s, coordinate build .293 s, RAW development 2.04 s in initial diagnostic; Steve’s original first-frame event was 7.07 s. Different clocks: presentation events precede GPU completion. |
+| Native Fit Exposure drag | First feedback .090–.128 s; final visible frame .282–1.076 s after release | Three drags, 20 moves each; exact grain restored after release. |
+| Native Fit Whites drag | First feedback .114–.149 s; final visible frame .303–1.939 s after release | Three drags, same input method; automatic Peak Fit measurement can redraw the settled picture. |
+| Zoom in to 50–100% | First refined tiles .746–2.612 s; final .746–3.482 s | Four zooms including cached return. Held lower-resolution picture changes scale first. |
+| Pan at 50–100% | New tile completion .184–2.603 s, or held tiles reused without rendering | Compositor moves the held picture first. Initial no-wait diagnostic undercounted pan refinement; excluded. |
+| Return to Fit | .315–.338 s GPU-completed frame | Two observations. |
+| Switch HDR/SDR at Fit | .277–.330 s GPU-completed frame | Six switches; first SDR additionally waits for source/anchor preparation (final observation 1.26 s). |
+| Grain ablation at fixed 1024 processing edge | Full grade .405–.571 s → grain off .054–.084 s | Three warmed exposure changes; disabled-grain picture is diagnostic only, never shipped. Both early labels 1600/2400 normalized to 1024; they are not 1600/2400 measurements. |
+| Halation / neutral Detail ablation at that same edge | .397–.470 / .399–.526 s | Little gain versus full grade. Stock off also bypasses Film/grain; not an isolated stock-maths cost. |
+| Renderer CPU profile, exposure then zoom | 1.325 / .562 s total actions | CPU samples chiefly idle (1.538 s), program .330 s, scope payload .060 s; no full RAW development/lens remap per interactive frame. Separate profiled run, not subtracted from unprofiled baselines. |
+
+Evidence under `codebase/output/performance/stacked-raw/`: `before-fenced.json`,
+`ablate.json`, `profile.json` and corresponding backend logs. Completed-frame
+clock is GPU fence plus animation frame, retaining only still-current serials;
+it bounds device completion/presentation opportunity, not physical scanout.
+Initial `before.json` retains submission-only evidence and the pan-timing flaw,
+not a second screen baseline. The startup CPU scope runs for ~37 s behind
+already visible GPU previews and is a candidate for cancellation/deferment.
+
 ## November 16: bounded native high-fidelity JPEG XL (minimum Mac)
 
 MacBook Neo / A18 Pro / 8 GiB, 1408×794, one run at a time under the shared
