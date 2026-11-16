@@ -27,6 +27,13 @@ const out=path.resolve('output/review/picker-help-selects');fs.mkdirSync(out,{re
   await select.click();assert.equal(await select.evaluate(e=>e.matches(':open')),true);
   const bounds=await select.evaluate(e=>{const options=[...e.options].filter(o=>!o.disabled).map(o=>o.getBoundingClientRect()).filter(r=>r.width&&r.height);return {visible:options.some(r=>r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth),font:getComputedStyle(e.options[0]).fontFamily};});
   assert.ok(bounds.visible,JSON.stringify(bounds));assert.match(bounds.font,/Afacad/);
+  const focus=await select.evaluate(e=>{
+   const option=[...e.options].find(o=>o.matches(':focus, :focus-visible'));
+   if(!option)return null;
+   const token=document.createElement('span');token.style.color='var(--accent-strong)';e.after(token);
+   const result={outline:getComputedStyle(option).outlineColor,accent:getComputedStyle(token).color};token.remove();return result;
+  });
+  if(focus)assert.equal(focus.outline,focus.accent,'Popup focus uses the app accent');
   await (target.screenshot?target:page).screenshot({path:path.join(out,name+'-select.png')});
   await (target.keyboard||page.keyboard).press('Escape');assert.equal(await select.evaluate(e=>e.matches(':open')),false);checks.push({name,...bounds});
  };

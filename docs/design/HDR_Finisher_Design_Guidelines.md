@@ -543,5 +543,6 @@ Dropdowns retain native select semantics and use `appearance: base-select`
 with `::picker(select)` in Electron's Chromium. The popup uses panel/text,
 plate-edge, radius-1, popover-shadow and body type tokens. Selected options use
 plate-down and accent-strong; hovered/focused options use plate-up-hover and
-accent-strong. The top-layer popup scrolls within the window. The closed
+accent-strong. Focused options use an accent-strong outline rather than the
+system focus colour. The top-layer popup scrolls within the window. The closed
 control keeps its established plate and ink chevron.

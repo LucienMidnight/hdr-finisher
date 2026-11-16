@@ -173,6 +173,7 @@
     .hf-select option { min-height: var(--panel-control-h); padding: 4px 8px; gap: 8px; border-radius: var(--radius-1); font: inherit; white-space: normal; overflow-wrap: anywhere; }
     .hf-select option:checked { background: var(--plate-down); color: var(--accent-strong); }
     .hf-select option:is(:hover, :focus) { background: var(--plate-up-hover); color: var(--accent-strong); }
+    .hf-select option:is(:focus, :focus-visible) { outline: 2px solid var(--accent-strong); outline-offset: -2px; }
     .hf-select option::checkmark { color: var(--accent-strong); }
   }
 

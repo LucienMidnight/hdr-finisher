@@ -41,7 +41,8 @@ All renderer dropdowns use Chromium's customizable native select, including
 Grade, Scopes, Library, Proof, Export, Settings and separate Library/browser
 windows. Shared styles apply the existing surface, type, corner, shadow and
 accent tokens; native keyboard navigation, accessible roles and form events
-remain. Pickers use the top layer so scrolling panels and dialogs cannot clip
+remain. Focused popup items use an accent-token outline, including Chromium's
+otherwise system-blue initial focus ring. Pickers use the top layer so scrolling panels and dialogs cannot clip
 them. Electron 43.4.0 / Chromium 150 on the Mac supports `base-select` and
 `::picker(select)`; no replacement widget or `selectedcontent` is needed for
 the existing plain-text options. Windows visual acceptance remains Steve's.
@@ -51,8 +52,11 @@ placement/delay/Escape, select opening and native keyboard/change events in
 Grade, Scopes, Library, Proof, Export and Settings, including the 1100x720
 minimum and Library pop-out. All existing selects in the main and Library
 renderers compute to base-select. `tests/hsl-picking.js` also passes real-photo
-sampling, wheel gestures and cancellation in HDR and SDR. Fast suites pass
-(1,082 JavaScript; 3,577 Python, with their existing skips). Review captures:
+sampling, wheel gestures and cancellation in HDR and SDR. The grouped fast run passed 1,082 JavaScript and 3,577 Python checks. The final
+full JavaScript repeat after the focus-ring polish passed 1,071 but found 12
+failures in `grade-paste.test.js`, outside this task's files. Focused
+picker/sampling/tooltip checks and all 85 frontend Python contract checks pass.
+Review captures:
 `codebase/output/review/picker-help-selects/`. Page captures omit the OS cursor;
 `pipette-artwork.png` shows the exact cursor artwork on light and dark wells.
 The required 90-second Library smoke drew all 9 requested viewport pictures,
