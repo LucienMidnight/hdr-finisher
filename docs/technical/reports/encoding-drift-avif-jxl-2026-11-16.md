@@ -161,11 +161,29 @@ Proof/export bytes and the independent ceiling checks must remain exact under
 either design. A single shared finished renderer avoids GPU/CPU sensitivity
 but does not cure poor own-source fidelity; performance is unmeasured here.
 
-The JPEG sibling report is currently a scope/methodology record rather than
-finished measurements. The established JPEG fixture delivered result remains
-.877670 / 7.980648 HDR, .152682 / 3.370376 SDR. This report does not invent
-the sibling's real-photo results or compare unlike crops as identical trials.
-Coordinator: merge the completed sibling findings once available.
+The JPEG sibling's completed findings are now available in
+`encoding-drift-jpeg-ultrahdr-2026-11-16.md` (read from the shared working
+checkout before this handoff). Its established fixture delivered pair is
+.877670 / 7.980648 HDR, .152682 / 3.370376 SDR, versus AVIF's .9342 / 6.0141
+and JPEG XL's .1414 / 1.7342 HDR on the same captured fixture arrays. All
+three encode routes amplify acceptable input differences; JXL happens to
+remain within the existing agreement limits on this fixture, not on every
+photographic crop.
+
+JPEG's same-renderer control changes sparse SDR channels by one code while
+keeping HDR identical: input SDR .037 / 1.034 becomes decoded HDR
+1.278 / 8.615. That independently supports the AVIF/JXL sensitivity finding.
+JPEG own-source fidelity on the delivered fixture is 4.004 / 29.187 HDR
+and .601 / 7.300 SDR for CPU, 4.035 / 29.415 HDR and .611 / 7.313 SDR for
+GPU. Like AVIF and JXL, it therefore needs a separate fidelity check rather
+than an enlarged renderer-agreement limit. JPEG's ablation attributes its
+fixture failure to map compression, base compression and final map processing;
+JXL demonstrates that a gain map is not required for this general sensitivity.
+The sibling also finds wide-gamut/zero-channel and partial-headroom fidelity
+issues that these endpoint AVIF/JXL measurements do not qualify. Its photo
+sizes, crops and perturbation definitions differ: do not treat the real-photo
+numbers as a controlled three-codec ranking. Both reports recommend the same
+split and require Steve's approval before changing the existing gate.
 
 ## Minimum Peak: what was measured and implemented
 
@@ -238,7 +256,8 @@ Reproduction tools: `codebase/tools/encoding-drift.py` (prepare/capture/probe),
 `encoding-drift-headroom.py` (real-encode sweep);
 `tests/highlight-delivery-floor.js` (focused UI/export/Proof).
 Retained evidence is under `codebase/output/review/encoding-drift-avif-jxl/`:
-`fixture.json`, `photos.json`, each photo's `floats.npz`, `document.json` and
+`fixture.json`, `sharp-matched-floats.npz` (a retained copy of the original
+N4 capture), `photos.json`, each photo's `floats.npz`, `document.json` and
 `results.json`, `headroom.json`, `headroom-refined.json`, `project-audit.json`,
 `minimum-delivery.json`, `ui.json`, screenshots and compact test logs.
 Intermediate decoded files, encoded probes, imported TIFF crops and temporary
