@@ -7,7 +7,7 @@ from hdr_finisher.color import linear_bt2020_to_acescg
 from hdr_finisher.models import PreviewKind, ScopeMode
 from hdr_finisher.scopes import _linear_srgb_to_signal, build_scope_from_processed
 
-from frontend_source import frontend_scripts
+from frontend_source import gpu_scope_payload
 
 
 def _populated_bin(channel) -> int:
@@ -85,9 +85,17 @@ def test_hdr_histogram_flags_transport_primary_above_pq_limit_even_with_legal_lu
 
 
 def test_gpu_histogram_contract_matches_cpu_domain_and_normalization() -> None:
-    javascript = frontend_scripts()
-
-    assert "linearSrgbToScopeSignal" in javascript
-    assert "hdrWaveformRec2020(r, g, b)" in javascript
-    assert 'robustScopePopulationPeak(counts, mode === "histogram" ? 0.985 : 0.995)' in javascript
-    assert 'mode === "histogram" ? "18% signal" : "18%"' in javascript
+    pixels = [[0.18, 0.18, 0.18]] * 32 + [[1.0, 0.0, 0.0], [0.02, 0.03, 0.04], [0.0, 0.0, 0.0]]
+    for lane in (PreviewKind.HDR, PreviewKind.SDR):
+        actual = gpu_scope_payload(
+            pixels, lane=lane.value, mode="histogram", tier="settled", generation=1,
+            bins=64, columns=64, maxNits=4000, referenceWhite=203,
+        )
+        expected = build_scope_from_processed(
+            np.asarray([pixels], dtype=np.float32), lane, ScopeMode.HISTOGRAM, bins=64,
+            channel_names=("R", "G", "B"),
+        )
+        assert [channel["bins"] for channel in actual["channels"]] == [channel.bins for channel in expected.channels]
+        assert actual["normalization_peak"] == expected.normalization_peak
+        assert actual["peak_value"] == pytest.approx(expected.peak_value, rel=1e-6)
+        assert actual["clipped"] is expected.clipped

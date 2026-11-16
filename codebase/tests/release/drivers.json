@@ -2279,6 +2279,16 @@
       }
     },
     {
+      "path": "tests/performance/gpu-pass-probe.cjs",
+      "areas": ["preview"],
+      "tier": "diagnostic",
+      "protects": "Test-only named GPU timestamps; preserves draw commands and releases query resources.",
+      "launch": {
+        "method": "helper",
+        "via": ["tests/performance/stacked-raw-latency.js"]
+      }
+    },
+    {
       "path": "tests/performance/heavy-project-review-common.js",
       "areas": [
         "export-proof"

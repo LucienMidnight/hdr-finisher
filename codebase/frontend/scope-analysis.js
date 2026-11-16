@@ -4,12 +4,11 @@
   const vectorscopeTransferLutCache = new Map();
   const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
 
-function hdrWaveformRec2020(r, g, b) {
-  return [
-    Math.max(0, 1.0260187082 * r - 0.0221655448 * g - 0.0038531634 * b),
-    Math.max(0, -0.0017230808 * r + 1.0023190716 * g - 0.0005959908 * b),
-    Math.max(0, -0.0051099278 * r - 0.0216355504 * g + 1.0267454781 * b),
-  ];
+function hdrWaveformRec2020(r, g, b, result = []) {
+  result[0] = Math.max(0, 1.0260187082 * r - 0.0221655448 * g - 0.0038531634 * b);
+  result[1] = Math.max(0, -0.0017230808 * r + 1.0023190716 * g - 0.0005959908 * b);
+  result[2] = Math.max(0, -0.0051099278 * r - 0.0216355504 * g + 1.0267454781 * b);
+  return result;
 }
 
 function linearSrgbToScopeSignal(value) {
@@ -30,6 +29,7 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
   const counts = channelEntries.map(() => new Int32Array(mode === "waveform" ? bins * columns : bins));
   const bounds = scopeAnalysisBounds(analysis, scopeRegion);
   const lumaValues = new Float32Array(bounds.width * bounds.height);
+  const values = new Float64Array(4);
   let peak = 0;
   let clipped = false;
   let above100 = 0;
@@ -43,16 +43,19 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
       const r = Math.max(0, analysis.pixels[offset]);
       const g = Math.max(0, analysis.pixels[offset + 1]);
       const b = Math.max(0, analysis.pixels[offset + 2]);
-      const scopeRgb = hdr
-        ? hdrWaveformRec2020(r, g, b)
-        : [linearSrgbToScopeSignal(r), linearSrgbToScopeSignal(g), linearSrgbToScopeSignal(b)];
+      if (hdr) hdrWaveformRec2020(r, g, b, values);
+      else {
+        values[0] = linearSrgbToScopeSignal(r);
+        values[1] = linearSrgbToScopeSignal(g);
+        values[2] = linearSrgbToScopeSignal(b);
+      }
       const luma = hdr
-        ? 0.2627 * scopeRgb[0] + 0.6780 * scopeRgb[1] + 0.0593 * scopeRgb[2]
-        : 0.2126 * scopeRgb[0] + 0.7152 * scopeRgb[1] + 0.0722 * scopeRgb[2];
-      const scopeLuma = luma;
-      const values = hdr
-        ? [...scopeRgb, scopeLuma].map((value) => value / 0.18 * referenceWhite)
-        : [...scopeRgb, scopeLuma].map((value) => clamp(value, 0, 1));
+        ? 0.2627 * values[0] + 0.6780 * values[1] + 0.0593 * values[2]
+        : 0.2126 * values[0] + 0.7152 * values[1] + 0.0722 * values[2];
+      values[0] = hdr ? values[0] / 0.18 * referenceWhite : clamp(values[0], 0, 1);
+      values[1] = hdr ? values[1] / 0.18 * referenceWhite : clamp(values[1], 0, 1);
+      values[2] = hdr ? values[2] / 0.18 * referenceWhite : clamp(values[2], 0, 1);
+      values[3] = hdr ? luma / 0.18 * referenceWhite : clamp(luma, 0, 1);
       lumaValues[regionPixel] = values[3];
       regionPixel += 1;
       peak = Math.max(peak, values[3]);
@@ -68,13 +71,13 @@ function buildGpuScopePayload(analysis, { lane, mode, tier, generation, bins, co
         above1000 += values[3] > 1000 ? 1 : 0;
       }
       const column = Math.min(columns - 1, Math.floor((sourceX - bounds.x0) / bounds.width * columns));
-      channelEntries.forEach(([valueIndex], channel) => {
-        const value = values[valueIndex];
+      for (let channel = 0; channel < channelEntries.length; channel += 1) {
+        const value = values[channelEntries[channel][0]];
         const bin = hdr
           ? Math.min(bins - 1, Math.max(0, Math.floor(Math.log10(clamp(value, 1, ceiling)) / Math.log10(ceiling) * bins)))
           : Math.min(bins - 1, Math.max(0, Math.floor(value * bins)));
         counts[channel][mode === "waveform" ? bin * columns + column : bin] += 1;
-      });
+      }
     }
   }
   // TypedArray#sort is numeric and in-place. Avoid boxing every sample into a

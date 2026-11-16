@@ -1,3 +1,200 @@
+## November 16: controlled draft-grain comparison and interactive stage costs
+
+**The earlier slowdown is not reproduced consistently; its cause remains
+unestablished. No grain, settled-picture, Proof or export change is made here.**
+The one production cleanup removes temporary arrays/callbacks from CPU scope
+analysis, preserving its arithmetic and complete numerical output.
+
+### Parent versus `4e84549e`
+
+Neo / A18 Pro / 8 GB / 1408×794 points, saved DSC01287 Ektar/grain/halation/
+Tamron grade, Auto processing. Both arms use the same current diagnostic driver,
+photo, sidecar, preferences and disposable Electron profile. A serves the exact
+three changed production-file blobs from parent `e61a3a88`; B serves those from
+`4e84549e`. Asset hashes and successful interceptions are recorded. No scope
+cleanup was installed during this comparison. The GPU lock serializes all runs
+against the other worker; no existing Electron was closed.
+
+Seven complete pairs: A1 B1 B2 A2 A3 B3 B4 A4 B5 A5 A6 B6 B7 A7. Each arm
+has 42 native Fit drags and seven repetitions of each zoom transition. The
+diagnostic timing band was ±10% before measuring, not an acceptance waiver.
+These medians count only accepted frames still current when GPU completion is
+observed, followed by animation-frame callback; they are not submission times
+or physical display scanout measurements.
+
+| Measure | Parent A | Draft commit B | Median change |
+| --- | ---: | ---: | ---: |
+| Native Fit drag | 17.54 fps | 17.46 fps | −0.5% |
+| Release to last current exact frame | 1.169 s | 1.192 s | +2.0% |
+| Release through all idle/anchor/fence guards | 1.279 s | 1.306 s | +2.1% |
+| 100%, first / final exact | .819 / 1.444 s | .819 / 1.437 s | −0.1% / −0.4% |
+| Return 50%, first / final exact | 1.102 / 2.464 s | 1.218 / 1.678 s | +10.6% / −31.9% |
+| Return Fit, first / final exact | .337 s | .347 s | +3.1% |
+
+The original .718→2.455 s first 100% frame and 1.336→3.206 s final frame
+do not recur as a consistent revision effect. Paired first-100% differences
+range −33.3% to +67.8%; paired release-to-final differences range −5.9% to
++5.5%. The 50% first-frame median is just outside the diagnostic band: paired
+changes range −6.0% to +44.7% (four slower, three faster). Its final-frame
+changes range −44.0% to +60.5%. Do not label those mixed results a speedup,
+prove grain caused them, or claim memory caused them. There is no justified
+grain revert from these data; a smaller 50% first-frame regression remains
+unresolved. Steve should try 100%→50% before another timing sweep.
+
+Each report includes one-second available-memory/load/app-process samples and
+start/end process CPU/RSS snapshots, with action wall-clock timestamps. RAM
+below is sampled **available** RAM in decimal GB, not process RSS or a peak
+between samples; the unchanged reserve is 2 GB. Fit-drag samples are mostly
+3–4 GB available, but zooms repeatedly fall below reserve. This is not a
+clean, unloaded-machine experiment: other open Electron, T3/WebKit and OS work
+remain, and the six-core machine's one-minute load reaches 8.82. The lock
+prevents another test driver overlapping, not those other applications.
+
+| Pair | A available GB / load-1 range | B available GB / load-1 range |
+| --- | --- | --- |
+| 1 | .90–4.55 / 3.47–4.92 | 1.07–5.58 / 4.52–5.70 |
+| 2 | 1.13–5.41 / 8.07–8.82 | .85–5.67 / 4.96–7.54 |
+| 3 | 1.03–5.50 / 6.56–8.27 | .94–5.41 / 5.67–7.63 |
+| 4 | .99–5.41 / 5.65–6.93 | .86–5.41 / 4.47–5.86 |
+| 5 | 1.06–5.76 / 5.42–6.93 | 1.11–4.64 / 4.56–6.34 |
+| 6 | .91–5.15 / 3.31–4.03 | 1.01–5.76 / 5.06–6.29 |
+| 7 | 1.04–5.93 / 3.56–4.71 | 1.20–6.01 / 4.56–4.99 |
+
+Two comparison launches failed before opening the photo (`A6-startup-failed`,
+then A8): `HDRTonePreviewModel is not defined`, followed by the unchanged
+60-second app-ready timeout. A6's one retry succeeded; comparison stopped at
+seven complete pairs when A8 failed. They remain in the evidence, not in
+successful action statistics. An old-scope stage launch later hit the same
+startup failure; no startup code or timeout was changed to get a pass.
+
+### Where the time goes
+
+One pre-cleanup Fit drag and 100%→50%→Fit sequence were profiled with named
+GPU pass timestamps and the renderer CPU profiler. GPU pass intervals overlap
+on this tile GPU. The following are ordered **completion-path increments**
+(each pass's end beyond the greatest previous end), not sums of overlapping
+raw pass durations or independently isolated module benchmarks.
+
+| GPU module / pass | Fit drag, per picture (21 live pictures) | 100%, total | Return 50%, total | Return Fit, total |
+| --- | ---: | ---: | ---: | ---: |
+| Base / tone / lens | .40 ms | 5.83 ms | 6.95 ms | 1.11 ms |
+| Film response (two passes) | .15 ms | 2.49 ms | 1.44 ms | .13 ms |
+| Halation extract + horizontal/vertical blur | 1.62 ms | 2.95 ms | 13.24 ms | 4.65 ms |
+| Film finish (grain / vignette) | **22.08 ms** | **249.82 ms** | **1308.36 ms** | **251.20 ms** |
+| Scanner / Detail | .71 ms | 12.98 ms | 6.49 ms | .72 ms |
+| Picture compositing | .34 ms | 6.23 ms | 2.82 ms | .33 ms |
+| Peak patch reduction | not in live pictures | 21.95 ms | 15.66 ms | — |
+| Scope extraction (unnamed probe pipelines) | 2.16 ms over three commands | — | 1.11 ms | .79 ms |
+| Placeholder compositing | — | 45.74 ms | 7.80 ms | — |
+
+The live GPU picture takes about 26 ms; grain still dominates even with one
+sample. Denoise and local adjustments are not active in this saved grade; this
+is not a profile of every possible module. Fit's whole drag-plus-settle action
+also does 48 native peak-patch renders; its total GPU increments are 1068 ms,
+including 931 ms in Film finish. That is cumulative work, not release latency.
+
+| Other stage | Fit drag + settle | 100% | Return 50% | Return Fit |
+| --- | --- | --- | --- | --- |
+| Full action, including idle guards | 2.473 s; release at 1.146 s | .997 s | 4.827 s | 1.758 s |
+| CPU command encode→submit, median / max | .10 / .40 ms | .20 / .40 ms | .30 / .80 ms | .40 / .70 ms |
+| Scheduler queue | median 5.2 ms, max 27.6 ms | no new slider frames | no new slider frames | no new slider frames |
+| Source preparation | 96 patch requests, 529 ms cumulative | viewport await 285 ms | region await 3353 ms; first tile 3054 ms | existing source reused |
+| Scope map/readback wait | 1.4–248.3 ms | none completes in action | 319.5 / 387.5 ms | 270.9 ms |
+| Scope unpack | 2.5–6.7 ms | — | 17.2 / 11.2 ms | 17.1 ms |
+| CPU histogram build | 14.5–47.1 ms each, 145.3 ms total | — | 68.6 / 89.2 ms | 66.8 ms |
+| CPU histogram draw | 1.1–1.4 ms each | — | 5.4 / 3.2 ms | 3.8 ms |
+
+A whole-frame `/proxy/hdr` request starts during 100%, takes 3.538 s, and
+finishes during the return to 50%; its corresponding awaited preparation
+stage is 3.546 s. These concurrent/continuing requests must not be added to
+each other or to GPU waits. Scope map time includes queued picture rendering,
+not just transfer. The first Fit histogram finishes earlier scope work during
+the drag, so it is interference, not a newly requested live histogram.
+
+Native Playwright moves arrive roughly every 40–67 ms. A separate three-drag
+display-paced check sends inputs every ~16.7 ms yet still completes only
+18.80 / 17.47 / 18.90 current pictures per second. The native driver therefore
+does not establish a maximum, but removing its round-trip pacing does **not**
+make dragging fast. GPU completion and presentation/scheduler pacing remain.
+
+### Three priorities and the one shipped cleanup
+
+1. **Grain / Film finish:** 22.08 ms per live picture, 251 ms for the settled
+   Fit return, 1.308 s cumulative at 50%. Proposal: reuse coordinate-only
+   hash/noise work across edits with unchanged geometry/seed, retaining the
+   exact signal-dependent arithmetic, sample positions and existing memory
+   budget. Engineering estimate, not measured: 5–10 ms off a live picture
+   (~10–20% of the observed ~55 ms cadence if presentation pacing allows it),
+   50–125 ms off a single settled Fit wait when that geometry's cache is warm;
+   no cold-cache gain is claimed. Needs byte-exact qualification;
+   not implemented and no reduced finished sample count is proposed as a fix.
+2. **Source preparation / stale scale work:** the 50% viewport waits 3.353 s
+   for source preparation while a preceding whole-frame request continues.
+   Proposal: propagate zoom cancellation into stale whole-frame decode/upload
+   and prioritize the demanded viewport, reusing only correctly keyed source
+   slots within existing budgets. Plausible whole-wait saving 0.3–1.5 s in
+   this cold-return case, not a measured promise; source identity and fallback
+   make this too risky for this patch.
+3. **CPU histogram allocations:** 14.5–89.2 ms per build. Shipped: one
+   per-call four-double scratch buffer replaces per-pixel RGB/spread/map
+   arrays and channel callbacks; all operation order, sampling, bins, stats
+   and output values stay exact. No retained cache, texture or budget grows.
+
+The actual 256×384 settled DSC01287 scope buffer is run through old and new
+implementations in the same Electron renderer, warmed three times, then nine
+interleaved pairs of two calls. Median CPU build falls **29.85→16.35 ms
+(−45.2%, 13.50 ms saved)**; complete payload JSON matches exactly. Another
+108 full-object cases and the committed 16-case numerical golden test cover
+HDR/SDR, full/cropped histogram/waveform and vectorscope behavior.
+
+For a single build on the critical path, the demonstrated gain is ~14 ms,
+about 1% of the ~1.2 s release wait; it does not promise a dragging/zoom
+speedup. Profile before/after wall samples are recorded but are not controlled
+enough to attribute: 100% .997→.728 s, 50% 4.827→2.972 s, Fit 1.758→.406 s,
+while Fit drag release-to-last-exact worsens .283→.723 s. Different background
+work and input cadence dominate those samples. The old-scope paired application
+profile was blocked by the startup error, so **no whole-app gain is claimed**.
+
+Evidence (local, ignored output): `codebase/output/performance/grain-ab/`:
+`summary.json`, A1–A7/B1–B7 JSON/logs, startup-failure records, `stages.json`,
+`stage-summary.json`, `scope-before.json` (failed), `scope-after.json` (includes
+the exact-output paired benchmark), and `cadence.json`. Reproduction and timing
+definitions: `codebase/tests/performance/README.md`. `zoom-comparison.html`
+shows all seven first-100% pairs rather than hiding their variation.
+
+### Validation and boundaries
+
+- Final Node: **1108 passed, one skipped**. Initial inventory failure was
+  fixed by registering the diagnostic helper, not excluding or weakening the
+  inventory check. `fast-node-final.log`.
+- Final Python: **3894 passed, 144 skipped, one existing xpass**; one existing
+  Starlette deprecation warning. Two initial failures pinned the old function
+  signature/array syntax. They now execute the frontend and compare actual
+  HDR/SDR histogram bins, normalization, waveform grids, peaks and clipping to
+  the CPU. A new exact-double matrix fingerprint retains the coefficient
+  guarantee independently of source wording. No tolerance was relaxed.
+  `fast-python-final.log`, `scopes-python-focused.log`.
+- `grain-sampling.js`: all **36** frozen settled/export fields and existing
+  one-sample drafts byte-identical; native bypass exact. `grain-sampling.log`.
+- `tiled-film-parity.js`: direct/tiled and cross-tile-size grain/vignette
+  comparisons exact, including zero differing bytes in the view-map case;
+  bounded batches and one presentation copy pass. `tiled-film-parity.log`.
+- `gpu-delivery-smoke.js`: GPU/CPU finished-render agreement passes: HDR
+  mean/p99.9 ΔE ITP .0335/.0765; SDR mean/p99.9 ΔE 2000 .0193/.0588. Denoise
+  delivery guards and watermarked full-Proof/export file hashes pass on both
+  renderers. Each encoding's own-source fidelity passes. The separately
+  reported decoded-pair HDR diagnostic has p99.9 3.377; it is not the
+  finished-render agreement gate and is not hidden or relaxed.
+  `gpu-delivery-smoke.log`.
+- Default 90-second plain-Electron Library check: **9/9 requested viewport
+  pictures**, no errors or memory violation; independent app peak **3.190 GB**.
+  This is not whole-folder qualification (nine of 33 eligible photos are
+  pictured). `quick-library.log`.
+- Reusable DSC01287 source/sidecar hashes remain exact after all checks; the
+  Desktop originals were not modified. Final scratch **14.5 GB**, below
+  100 GB; the disposable candidate source was removed. No other worker's
+  process was killed, no budget/gate changed, and no push was made.
+
 ## November 16: grain sample-count investigation and draft-only routing
 
 **Decision pending Steve's crop review. Settled previews, Proof and export

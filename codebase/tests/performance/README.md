@@ -1,5 +1,49 @@
 # Preview performance harness
 
+## Controlled grain revision comparison and stage profiling
+
+From `codebase`, use the shared lock and the reusable DSC01287 test copy:
+
+```sh
+.venv/bin/python tools/gpu-run-lock.py --label grain-parent --minutes 4 -- node tests/run-in-electron.js tests/performance/stacked-raw-latency.js --part comparison --revision e61a3a88 --output output/performance/grain-ab/A1.json
+.venv/bin/python tools/gpu-run-lock.py --label grain-draft --minutes 4 -- node tests/run-in-electron.js tests/performance/stacked-raw-latency.js --part comparison --revision 4e84549e --output output/performance/grain-ab/B1.json
+.venv/bin/python tools/gpu-run-lock.py --label grain-stages --minutes 4 -- node tests/run-in-electron.js tests/performance/stacked-raw-latency.js --part stages --scope-benchmark --output output/performance/grain-ab/stages-after.json
+```
+
+`--revision` serves the exact Git blobs of the three production files changed
+by `4e84549e`; the report records their hashes and requires every interception
+to occur. It does not change the checkout. This isolates that commit against
+its parent, not arbitrary revisions with other changed production files.
+Interleave A/B order, keep photo, grade, harness and preferences equal, and
+retain all repeats, including failures. `comparison` does six native Fit drags
+and zooms 50%, 100%, 50%, Fit, 100%, Fit. Each launch has a disposable profile;
+the source and sidecar are hashed before and after and never saved.
+
+Reports include one-second available-RAM/load/process samples and start/end
+process CPU/RSS snapshots. Correlate `system[].at` with each action's
+`wallStartedAt`. Frame timing uses `completedAt` only when
+`currentAtCompletion` is true; final frames must also have `accepted.exact`.
+Subtract `startedAt` and, for release-to-settled, `releaseMs`. Submission alone
+is not completion or a measured physical display scanout.
+
+`stages` records one Fit drag, 100%, 50%, Fit, a renderer CPU profile, CPU
+histogram build/draw durations, source requests, and named GPU-pass timestamps.
+The probe is diagnostic-only and replaces the ordinary overall GPU timestamps
+in that disposable page. On tile GPUs, pass timestamp intervals can overlap:
+do not sum their raw durations. Attribute the GPU completion path using each
+ordered pass's positive end-time increment over the largest previous end,
+starting at the first pass's start. These increments are not exclusive engine
+times. Readback mapping includes queued GPU work, not just transfer; concurrent
+source requests and CPU/GPU stages must not be added into a fictitious total.
+
+Use `--scope-revision 4e84549e` for old-scope application timing. With
+`--scope-benchmark`, the same actual analysis buffer is evaluated by old and
+current scope implementations after warmup, alternating order for nine pairs
+of two calls. It requires identical complete payload JSON before timing.
+`--part cadence` separately drives three 1.5-second Fit edits at display cadence
+with native pointer-down/up, avoiding Playwright's per-move round-trip pacing.
+It is synthetic capacity evidence, not a replacement for the native drag.
+
 Run the app, install the browser-test dependency with `npm install`, then run:
 
 ```powershell

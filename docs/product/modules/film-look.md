@@ -1,3 +1,20 @@
+## November 16: draft-grain follow-up
+
+Seven interleaved parent/`4e84549e` pairs (84 Fit drags) do not reproduce the
+earlier large 100% zoom regression: first/final medians .819/1.444 s versus
+.819/1.437 s, release-to-exact 1.169→1.192 s. That does not prove memory caused
+the original result: zooms still dip below the 2 GB reserve, load varies, and
+the 50% first-frame median is 10.6% worse with mixed paired results. Leave
+grain routing unchanged; the smaller 50% question remains open for Steve's
+app check. Full conditions and failures are in the
+[performance table](../../technical/performance-table.md).
+
+Named pass profiling still attributes about 22 ms of each live Fit picture
+to Film finish despite its one grain sample. No finished approximation is
+committed. The only production cleanup is exact CPU histogram allocation
+removal (29.85→16.35 ms on the same actual scope buffer); no overall picture
+latency gain is claimed. Finished Film, Proof and export code remain unchanged.
+
 ## November 16: DSC01287 grain cost and interruptible catch-up
 
 The reported saved Ektar 100 grade is reproduced on Neo / 8 GB / 1408×794.

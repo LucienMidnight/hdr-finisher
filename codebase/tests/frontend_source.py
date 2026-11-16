@@ -9,12 +9,28 @@ job for the Node unit tests.
 from __future__ import annotations
 
 from functools import lru_cache
+import json
 from pathlib import Path
 import re
 import subprocess
 
 
 FRONTEND = Path(__file__).resolve().parents[1] / "frontend"
+
+
+def gpu_scope_payload(pixels: list[list[float]], **options) -> dict:
+    script = """
+const {HDRScopeAnalysis} = require('./scope-analysis.js');
+const {pixels, options} = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
+const analysis = {width: pixels.length, height: 1, pixels: Float32Array.from(pixels.flat())};
+console.log(JSON.stringify(HDRScopeAnalysis.buildGpuScopePayload(analysis, options)));
+"""
+    result = subprocess.run(
+        ["node", "-e", script], cwd=FRONTEND,
+        input=json.dumps({"pixels": pixels, "options": options}),
+        capture_output=True, text=True, check=True,
+    )
+    return json.loads(result.stdout)
 
 _REGEX_AFTER_WORD = {
     "return", "typeof", "case", "in", "of", "void", "delete", "throw", "new", "else", "do", "await", "yield",

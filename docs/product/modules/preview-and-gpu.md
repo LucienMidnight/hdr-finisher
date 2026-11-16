@@ -8,6 +8,24 @@
   scopes UI; backend `render_cache.py`, `cpu_strips.py`, `preview.py`,
   `scopes.py`, `overlay.py`, `peak_*.py`.
 
+## November 16: measured stage costs and exact scope cleanup
+
+The follow-up records named GPU completion-path increments, CPU profiling,
+source transport, scope readback/unpack, histogram build/draw, per-run memory
+and machine load. One-sample Film finish still takes ~22 ms per live Fit
+picture; cold source preparation can cost seconds, and CPU scope analysis
+adds 14–89 ms per build. Display-paced inputs still yield ~18 fps. See the
+[performance table](../../technical/performance-table.md) for overlapping-stage
+limitations, seven-pair draft-grain comparison and unimplemented priorities.
+
+CPU histogram/waveform analysis now reuses four double-precision scratch
+values within each call rather than allocating arrays and callbacks for each
+sample. Arithmetic, sampling, statistics, bounds and full output values are
+unchanged; no persistent cache or budget grows. The same actual scope buffer
+measures 29.85→16.35 ms over nine alternating pairs, with exact payload equality.
+This removes CPU stalls, not the GPU/source bottleneck; no end-to-end gain is
+claimed. No shader, settled image, Proof or export implementation changes.
+
 ## November 16: stale zoom work and busy-frame recovery
 
 DSC01287.ARW on the minimum Mac reproduces real multi-second zoom waits.

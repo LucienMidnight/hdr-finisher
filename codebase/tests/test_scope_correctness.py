@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from conftest import fixture_path
-from frontend_source import frontend_scripts
+from frontend_source import gpu_scope_payload
 
 from hdr_finisher.color import linear_bt2020_to_acescg
 from hdr_finisher.loader import load_image
@@ -122,21 +122,16 @@ def test_hdr_scope_reports_final_peak_fit_after_exposure_band_expansion() -> Non
 
 
 def test_gpu_waveform_uses_the_same_acescg_to_rec2020_matrix() -> None:
-    app = frontend_scripts()
-
-    assert "function hdrWaveformRec2020(r, g, b)" in app
-    for coefficient in (
-        "1.0260187082",
-        "0.0221655448",
-        "0.0038531634",
-        "0.0017230808",
-        "1.0023190716",
-        "0.0005959908",
-        "0.0051099278",
-        "0.0216355504",
-        "1.0267454781",
-    ):
-        assert coefficient in app
-    assert "? hdrWaveformRec2020(r, g, b)" in app
-    assert "[linearSrgbToScopeSignal(r), linearSrgbToScopeSignal(g), linearSrgbToScopeSignal(b)]" in app
-    assert ": r >= 1 || g >= 1 || b >= 1;" in app
+    pixels = [[0.18, 0.0, 0.0], [0.0, 0.18, 0.0], [0.0, 0.0, 0.18], [1.2, 0.1, 0.02]]
+    for lane in (PreviewKind.HDR, PreviewKind.SDR):
+        actual = gpu_scope_payload(
+            pixels, lane=lane.value, mode="waveform", tier="settled", generation=1,
+            bins=128, columns=len(pixels), maxNits=4000, referenceWhite=203,
+        )
+        expected = build_scope_from_processed(
+            np.asarray([pixels], dtype=np.float32), lane, ScopeMode.WAVEFORM,
+            bins=128, waveform_columns=len(pixels), channel_names=("R", "G", "B"),
+        )
+        assert [channel["grid"] for channel in actual["channels"]] == [channel.grid for channel in expected.channels]
+        assert actual["peak_value"] == pytest.approx(expected.peak_value, rel=1e-6)
+        assert actual["clipped"] is expected.clipped
