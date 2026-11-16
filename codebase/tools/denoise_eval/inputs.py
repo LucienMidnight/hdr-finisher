@@ -336,7 +336,7 @@ def synthetic_samples(entries,quick,banding=0.):
 
 
 def paired_samples(folder):
-    """Optional approved local pairs: pairs.json -> .npy float32 ACEScg RGB, aligned already."""
+    """Approved aligned pairs: RGB .npy files or bounded Bayer/RGB/mask .npz bundles."""
     folder=Path(folder).resolve()
     for item in json.loads((folder/'pairs.json').read_text()):
         def load(name):
@@ -349,6 +349,27 @@ def paired_samples(folder):
             if not np.isfinite(a).all():
                 raise ValueError('Pair input contains nonfinite values')
             return np.asarray(a,dtype='float32')
+        if 'bundle' in item:
+            path = (folder / item['bundle']).resolve()
+            if not path.is_relative_to(folder.resolve()):
+                raise ValueError('Pair bundle leaves its folder')
+            with np.load(path, allow_pickle=False) as bundle:
+                noisy, clean = np.asarray(bundle['rgb']), np.asarray(bundle['clean'])
+                if noisy.shape != clean.shape or noisy.ndim != 3 or noisy.shape[-1] != 3 or not 32 <= min(noisy.shape[:2]) <= max(noisy.shape[:2]) <= 1024:
+                    raise ValueError('Invalid bounded pair RGB shapes')
+                bayer, clean_bayer = bundle['bayer'], bundle['clean_bayer']
+                masks = {key: bundle[key] for key in ('flat', 'texture', 'edge', 'valid')}
+                if bayer.shape != noisy.shape[:2] or clean_bayer.shape != bayer.shape:
+                    raise ValueError('Invalid pair Bayer shapes')
+                if any(mask.shape != bayer.shape or mask.dtype != np.bool_ for mask in masks.values()):
+                    raise ValueError('Invalid pair metric masks')
+                if not masks['valid'].any() or any((mask & ~masks['valid']).any() for key, mask in masks.items() if key != 'valid'):
+                    raise ValueError('Pair metric masks include invalid pixels')
+                if any(not np.issubdtype(image.dtype, np.floating) or not np.isfinite(image).all()
+                       for image in (noisy, clean, bayer, clean_bayer)):
+                    raise ValueError('Pair contains nonfinite/nonfloating input')
+                yield Sample(f"pair-{item['name']}", noisy, bayer, item.get('metadata', {}), clean, masks, clean_bayer)
+            continue
         noisy,clean=load(item['noisy']),load(item['clean'])
         if noisy.shape!=clean.shape:
             raise ValueError('Pair shapes differ')
