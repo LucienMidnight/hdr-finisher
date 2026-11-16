@@ -1,5 +1,13 @@
 # Code map
 
+## November 16: JPEG Ultra HDR drift research
+
+`codebase/tools/jpeg_encoding_drift_probe.py` is a non-shipping diagnostic:
+it instruments a separately downloaded pinned libultrahdr source tree, dumps
+pre-JPEG map stages, and measures codec sensitivity, own-source fidelity and
+partial-headroom renditions. It does not replace bundled encoders or touch
+production settings. Findings: `reports/encoding-drift-jpeg-ultrahdr-2026-11-16.md`.
+
 ## November 15: H1 colour-picking interactions
 
 `frontend/hsl-panel.js` owns per-activation HSL sample acceptance;
