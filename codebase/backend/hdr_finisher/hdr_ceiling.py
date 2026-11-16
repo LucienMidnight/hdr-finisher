@@ -2,7 +2,7 @@
 
 Lossy codecs and gain-map reconstruction can overshoot at bright edges and
 in saturated highlights. Enabled Highlight Compression always enforces its
-target after encoding, with no encoding allowance. With Highlights off the
+target after encoding, with a 1% encoding allowance. With Highlights off the
 optional preset check uses the codec limit. Uncorrectable files are rejected.
 
 Only the neighbourhood of an overshoot is lowered, by the amount it
@@ -29,8 +29,8 @@ BLOCK = 16
 STRENGTH = 2.0
 MARGINS = (0.003, 0.006, 0.012, 0.025, 0.05, 0.1)
 CODEC_LIMIT_NITS = 10000.0
-# Steve, 2026-11-16: decoded pixels must also stay at or below the target.
-ENCODING_ALLOWANCE = 0.0
+# Steve, 2026-11-14: accept initial encodes within this allowance unchanged.
+ENCODING_ALLOWANCE = 0.01
 
 
 class CeilingError(ValueError):

@@ -257,7 +257,7 @@ def test_ceiling_uses_the_brightest_channel_not_luminance(tmp_path: Path, encode
         hdr, np.full_like(hdr, 0.18), _synthetic_jpeg_metadata(4.0), 203)
     assert not result["ok"]
     assert result["ceiling"]["peak_nits"] == pytest.approx(1500, abs=0.01)
-    assert result["ceiling"]["allowed_nits"] == 1000
+    assert result["ceiling"]["allowed_nits"] == 1010
 
 
 def test_export_correctness_requires_the_gain_map_container(tmp_path: Path) -> None:

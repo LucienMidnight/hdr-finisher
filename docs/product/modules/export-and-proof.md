@@ -48,17 +48,18 @@ sections. Both Default themes are captured at 1408×794, including a folded
 example, in `codebase/output/ui-polish-1114/`. Proof has review captures only;
 its rendering and delivery paths are untouched. Visual sign-off pending.
 
-## November 16: exact target, including encoder rounding
+## November 16: exact finished target; 1% encoding allowance kept
 
-**Awaiting full Still-strict validation.** Steve supersedes the November 14
-1% allowance: no finished or decoded channel may exceed the authored target.
-CPU and WebGPU recheck the final float after primary/unit roundoff, reducing
-only overshooting pixels. Curve parameters/order and compliant pixels retain
-their bytes. The shared post-encode allowance is now zero; existing local
-correction/recheck and safe refusal cover export and both Proof sizes.
-Already-compliant encoded files and SDR bases are retained. Correcting a lossy
-HDR file may alter neighbouring decoded HDR pixels as well as the overshoot.
-No encoder, gain-map filter, codec setting, tolerance or memory gate changes.
+Steve approved removing a float rounding overshoot (600.000061 nits at a
+600-nit target): no finished pixel may exceed the authored target before
+encoding. CPU and WebGPU recheck the final float after primary/unit roundoff,
+reducing only overshooting pixels; curve parameters/order and compliant pixels
+keep their bytes. The November 14 rule for encoded files is unchanged: initial
+decoded peaks up to target + 1% are accepted unchanged, larger overshoots are
+corrected locally, and files still above the allowance are refused. (A brief
+error briefly set the encoded allowance to zero on November 16; that was
+reverted the same day because Steve had not asked for it.) Full Still-strict
+validation of the float change is still pending.
 
 The sharp local-Match fixture passes before encoding (HDR mean/P99.9
 0.031/0.113; SDR 0.013/0.052), but fails decoded GPU/CPU agreement
@@ -72,7 +73,7 @@ not encoded qualification.
 
 ## November 14: encoded HDR target and delivery startup recovery
 
-**Historical Steve decision, 2026-11-14; superseded by November 16 above.**
+**Steve, 2026-11-14; supersedes the October 18–19 ceiling decisions.**
 With Highlight Compression enabled, every HDR export and reduced/full-size
 Proof is decoded after encoding on CPU and GPU. The brightest BT.2020 channel
 may be up to **1% above the user's target** due to encoding; that initial file
@@ -643,7 +644,7 @@ Settings rules (from v1.2 section 5, still in force):
 | **Approved GPU architecture:** a hidden Electron renderer reuses Grade's renderer and shaders. Export resize and output sharpening join the shared GPU graph, after the creative look and before the final highlight limiter. Preset versions that share rendering reuse the same finished lanes. | Steve, 2026-10-18 |
 | **Scheduling:** Grade first, then visible Library pictures (top-left first), then background export. GPU work yields between bounded submissions and shares one memory budget. Closing the last visible window cancels a batch cleanly; finished files stay. | Steve, 2026-10-18 |
 | **Perceptual limits** for GPU against CPU, Proof against export, and Library picture against export: SDR ΔE 2000 and HDR ΔE ITP (BT.2124), per image and per lane, mean below 1.0, 99.9th percentile at or below 3.0. No per-pixel maximum. Include grain and local adjustments. | Steve, 2026-10-18 |
-| **HDR ceiling:** decode every Highlight Compression HDR export and reduced/full Proof, CPU and GPU. Require every finished/decoded channel ≤ the exact authored target, including encoder rounding. Correct any overshoot locally; refuse any file still above target after all rounds, preserving the existing destination. Library pictures are not checked after encoding. With Highlights off, the optional strict codec-limit check is unchanged. Supersedes the November 14 allowance. | Steve, 2026-11-16 |
+| **HDR ceiling:** decode every Highlight Compression HDR export and reduced/full Proof, CPU and GPU. Accept initial peaks up to target + 1% unchanged and without a note; above that correct locally toward 97–100% of target. Refuse any file still above target + 1% after all rounds, preserving the existing destination. Library pictures are not checked after encoding. With Highlights off, the optional strict codec-limit check is unchanged. Supersedes the October 18–19 ceiling decisions. | Steve, 2026-11-14 |
 | Each export result records which renderer made it and any fallback reason. | Steve, 2026-10-18 |
 | GPU failure rule: each GPU route makes one attempt, then uses its CPU fallback. A second GPU try only for a temporary failure outside the work (preemption, memory held by other work, device lost or renderer restarting, contention timeout). A result that fails a validity or range check, a compile or validation error, a job too large for the card, or no GPU goes straight to the CPU. Master PRD philosophy 3, "When a GPU attempt fails". | Steve, 2026-11-06 |
 | The Export page stays and grows. Two routes: the Export page and Quick export… with a preset. It must leave room for print settings and watermarks. | Steve, 2026-10-11 |
@@ -677,8 +678,9 @@ Settings rules (from v1.2 section 5, still in force):
 - Proof: reduced size (1,200 px) or full size, through the export pipeline.
 - Highlight Compression's target is mandatory after encoding on every HDR
   export and Proof path. The decoded brightest channel is checked even when
-  the source is well below the target. Any overshoot, including encoding roundoff, requires local correction and
-  another decode. Results still above target fail without replacing an existing file.
+  the source is well below the target. Initial peaks up to 1% above target
+  are accepted unchanged; local correction aims at or just below the target.
+  Results still over the allowance fail without replacing an existing file.
   Guarantee HDR peak remains in Advanced
   settings, off by default, and additionally checks the 10,000-nit codec
   ceiling when Highlights are bypassed (Steve, November 14).

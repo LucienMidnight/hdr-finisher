@@ -32,7 +32,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | N1 | Fixed cap and final SDR Highlight Compression | Overnight | built and checked — fourth mode added, existing curves/settings/defaults retained; CPU/GPU finishing, all 33 SDR Film cases, Proof/export and isolated Library pass; M1 mixed results/new refusals remain for N3a |
 | N2 | Global five-control Tone and aligned wheel ranges | Overnight | built and checked — frozen Y/M guide, photographic-grey anchor, endpoint gates/combined limiter, Whites UI; four HC modes, CPU/GPU, Proof/export, both layouts and isolated Library pass; encoded-HDR diagnostics remain outside report-only caps |
 | N3b | Tone clipping and effective-range diagnostics (T1-d) | Overnight | built, preview-only — HDR/SDR/global/local gestures, endpoint-vs-cap-loss channel checks and Library pass; no Auto/new UI tokens; final photo/export qualification recorded in N3b result |
-| N6-A | Exact finished/encoded HC ceiling | Follow-up | implemented — **awaiting full Still-strict validation**; final roundoff corrected only above target; zero encoded allowance; scoped CPU/GPU/codec/Proof checks recorded below |
+| N6-A | Exact finished/encoded HC ceiling | Follow-up | implemented — **awaiting full Still-strict validation**; final roundoff corrected only above target; 1% encoded allowance kept (zero-allowance change reverted, not approved); scoped CPU/GPU/codec/Proof checks recorded below |
 | N6-B | Sharp-highlight delivery failure | Follow-up | investigated, still open — finished floats/quantized inputs pass; JPEG/gain-map processing amplifies differences; no tested codec-only alternative passes the unchanged gate |
 | H1 | HSL picker, Local hue selection and gizmos | Follow-up | built, scoped — pre-sprint Local save/sample race and late HSL cancellation fixed; HDR/SDR real-RAW picking, wheel/sampling-gizmo gestures and CPU/GPU hue delivery pass; general idle failure not reproduced, Steve's original sequence still needs confirmation |
 | R1 | SDR local Detail: CPU clips, GPU keeps headroom | W1 | built — CPU local Detail retains headroom; Portra/Velvia GPU preview against CPU export passes |
@@ -152,14 +152,12 @@ four AVIF/203-nit cases hit the existing ISO decoder equal-headroom refusal
 and deliver no file. Those four are safe-refusal checks, **not** encoded colour
 or successful delivery qualification. The decoder limitation is still open.
 
-The encoded allowance changes **1% → zero**, as Steve approved. Every checked
-HDR export/Proof is decoded; even an encoder-rounding overshoot uses the
-existing bounded local correction/recheck, then refuses if still above target.
-Already-compliant encoded files and SDR base bytes stay unchanged. A lossy
-HDR correction can also change neighbouring decoded HDR samples: exact
-independent replacement of just one decoded JPEG pixel is not possible.
-Files formerly accepted between target and target+1% now change or refuse;
-this is the intentional delivered-output difference beyond float roundoff.
+**Reverted the same day:** the worker also set the encoded allowance from 1%
+to zero, because the brief wrongly asked for checks "after encoding". Steve
+had only approved fixing the float overshoot, and the 1% encoding allowance is
+his November 14 decision, so the allowance is back to 1%. Encoded files
+between the target and target + 1% are again accepted unchanged. A zero
+allowance remains an option for Steve to decide separately.
 
 **B — the sharp check measures decoded export against decoded export**, not
 preview against export. `local-sdr-match.js --headroom --diagnose` captures
