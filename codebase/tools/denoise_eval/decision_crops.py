@@ -55,6 +55,7 @@ PREFIX = 'tools.denoise_eval.candidates.'
 COLUMNS = (
     ('off', 'off'),
     ('denoise_v2', 'denoise_v2'),
+    ('denoise_v2_app', PREFIX + 'denoise_v2_appdefault:factory'),
     ('denoise_v2_tuned', PREFIX + 'denoise_v2_tuned:factory'),
     ('pilot_wiener_bayer_both', PREFIX + 'pilot_wiener:bayer_both'),
     ('rawnind_bayer', PREFIX + 'rawnind:bayer'),
