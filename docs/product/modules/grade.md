@@ -1,3 +1,16 @@
+## November 16: Denoise quality-trial measurement harness
+
+Phase 1 CPU-only research tooling is committed in `da0d5ace`: bounded Bayer
+and ACEScg inputs, provisional per-camera noise fits, deterministic targets,
+off/current-Denoise adapters, contract measurements and a small static review.
+The app's Denoise and controls are unchanged. Baseline shows substantial noise
+reduction but loss of high-ISO edge/detail; no replacement is selected or
+approved, and no proposed tolerance is relaxed. Calibration remains limited
+by single noisy frames and missing clean/dark pairs. See
+[the baseline](../../technical/research/denoise-v1-2026-11-16/harness-baseline.md)
+and [the active brief](../../technical/briefs/denoise-v1-quality-trial-2026-11-16.md).
+Candidate work and Steve's visual decision remain open.
+
 ## November 16: safe linked SDR built and scoped qualification
 
 Whole-photo Match now tries the trial's body/colour-best output tail, then

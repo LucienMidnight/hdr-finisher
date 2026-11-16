@@ -16,6 +16,24 @@ Source, model hashes, licence checks, uncertain 24/61 MP extrapolations and
 adapter instructions: [candidate survey](research/denoise-v1-2026-11-16/candidates.md).
 No GPU/Electron run. Commit containing this note; no shipping code changed.
 
+## November 16: offline Denoise quality harness (minimum Mac)
+
+MacBook Neo / A18 Pro / 8 GB; CPU only, one native thread, no Electron/GPU.
+Harness `da0d5ace`; app reference `0ba5593f` (exact app base is recorded in
+`docs/technical/research/denoise-v1-2026-11-16/harness-baseline.md`). Timings
+cover corpus ISO inventory and calibration, crop development, both off/current
+Denoise adapters, every metric/probe and review writing. Proposed timing noise
+band ±10%; these shared-machine full runs vary beyond it (38.6–48.5 s), so this
+is a descriptive range, not an app speed or regression claim. No budget changed.
+
+| Action | Observed wait | Conditions / retained evidence |
+| --- | --- | --- |
+| Quick quality set | 11.4–13.9 s; latest 13.9 s, peak process RSS 0.82 GB | 21 generated cases + two real 512 px crops; <120 s budget. `codebase/output/denoise-v1/results-quick.json`. |
+| Full quality set | 38.6–48.5 s; latest 38.6 s, peak process RSS 1.14 GB | 27 synthetic cases (including two binned low-ISO photos) + eight real 640 px crops. Latest review 15.2 MB; `results-full.json` and `review/index.html` beside the quick JSON. Both sets below the 2.5 GB process limit. |
+
+Quality conclusions and provisional sensor-fit limits are in the harness baseline.
+No GPU, production export/Proof or whole-photo preparation speed was measured.
+
 ## November 16: DSC01287 saved-grade lag investigation (minimum Mac)
 
 MacBook Neo / A18 Pro / 8 GB, actual 1408×794 / DPR 2, default 4 GB,

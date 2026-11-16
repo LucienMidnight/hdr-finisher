@@ -603,6 +603,8 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
 - `docs/technical/research/denoise-v1-2026-11-16/`: Phase 1 Denoise research;
   `candidates.md` checks weight/code licences, classical alternatives,
   minimum-Mac feasibility and the four recommended prototype adapters.
+  `harness-baseline.md` is the CPU harness baseline: corpus ISO inventory,
+  provisional camera noise fits and current Denoise quality limits.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.
@@ -678,6 +680,9 @@ Completed UI polish round 5 (pending visual sign-off):
   manual.
 
 ### Code-side READMEs
+
+- `codebase/tools/denoise_eval/README.md`: CPU-only Denoise quality harness,
+  adapters, sensor calibration, fixed display transforms and metric definitions.
 
 - `codebase/bin/README.md` (bundled encoders) and `codebase/bin/licenses/`.
 - `codebase/samples/README.md`: generated HDR reference samples.
