@@ -165,12 +165,26 @@ Run from `codebase`, one command at a time, through the shared machine lock:
 .venv/bin/python -m tools.denoise_eval.candidates.measure_rawnind review
 ```
 
-For Bayer full-frame **research extrapolation only**, use `--kind bayer
---extrapolate-bayer`; the default adapter instead uses the existing AHD path
-when sensor values leave [0,1]. Neither mode clips model inputs. All four
+For Bayer full-frame research use `--kind bayer`. As in the pinned upstream
+demo, finite normalised sensor samples are clipped to [0,1] before inference;
+this does not clip developed scene-linear colour or exposure. Unsupported CFA
+still uses an explicit AHD fallback. All four
 ordinary Bayer orientations are canonicalised through phase-preserving plane
 gathering, with output cropped back to original sensor coordinates. No
-whole-frame `np.pad`, resampling, second WB, or AHD after the model.
+whole-frame `np.pad`, resampling, second WB, or AHD after the model. One global
+gain is anchored to the unity-WB AHD **camera-RGB mean**, not the four-plane
+sensor mean (which counts green twice and shifts exposure). This research
+anchor requires an additional AHD pass; former Bayer native timings do not
+qualify the revised adapter's speed. Linear's gain/colour path is unchanged.
+
+`quality --bayer-only` runs off, current Denoise and Bayer .5/.75/1;
+`probes --bayer-only` skips unchanged linear probes. `verify` loads the pinned
+`demo.py` saved read-only under `output/denoise-v1/verify/upstream/darktable-ai/`
+and compares its actual packing, inference, gain, matrix and TIFF save against
+AHD through the same path on clean mosaics and two low-ISO RAW crops. A separate
+even crop with red at (0,0) disambiguates the demo's non-RGGB packing from host
+phase alignment. It records host-tail agreement, eight real shadow-bias rows
+and post-development exposure −6…+6 separately from sensor saturation.
 
 The runner samples child RSS every 20 ms and terminates above 2.5 GB; full-frame
 float source/result files are temporary disk-backed arrays and removed after
@@ -188,7 +202,7 @@ unchanged full input/metric set with all eight variants; generic harness options
 `review` appends native 256 px full-photo crops and clean-mosaic comparisons in
 the same page format, checking the complete folder against 20 MB. Optional
 model-dependent unit checks skip when weights/runtime are absent; synthetic
-phase-gather/fallback checks require no weights. See the Phase 2 report for
+phase-gather checks require no weights. See the Phase 2 report for
 quality failures and the learned-scale gain guard; no candidate is approved.
 
 ## Classical Phase 2 prototypes (not app integration)

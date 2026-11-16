@@ -15,6 +15,13 @@ Neither qualifies: linear improves high-ISO noise but fails low-ISO fidelity,
 detail/halo and HDR/exposure safeguards; Bayer changes clean fine detail and
 uses an explicit AHD fallback on out-of-domain real sensor inputs. The separate
 unclipped Bayer native timings are experimental extrapolation, not qualification.
+The later November 16 verification supersedes those Bayer measurements: its
+research adapter now clips normalised sensor input as upstream does and anchors
+global gain to AHD camera RGB. All eight real crops now use neural inference;
+full strength improves ISO 6400/25600 fidelity but still fails low ISO,
+detail/halo/colour and real-structure requirements. The pinned upstream
+reference also changes clean fabric/text. Earlier native Bayer timings do not
+include the revised AHD anchor pass. No shipping replacement is selected.
 The current Denoise remains unchanged; classical comparison and Steve's visual
 decision remain open. No tolerance, cache allowance or shipping dependency changes.
 

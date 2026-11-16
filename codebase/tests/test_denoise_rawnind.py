@@ -53,14 +53,72 @@ def test_bayer_rejects_gpu_before_loading_weights():
         RawNIND('bayer', provider='CoreMLExecutionProvider')
 
 
-def test_bayer_unsupported_range_uses_explicit_ahd_fallback():
-    image = np.full((24, 24), 1.25, np.float32)
-    metadata = dict(cfa=[[0, 1], [1, 2]], white_balance=[1, 1, 1], camera_to_acescg=np.eye(3).tolist())
+def test_bayer_global_gain_counts_camera_rgb_not_green_twice():
+    image = np.full((24, 32), .6, np.float32)
+    image[0::2, 0::2] = .1
+    image[1::2, 1::2] = .2
+    metadata = dict(cfa=[[0, 1], [1, 2]], white_balance=[2, 1, 1.5], camera_to_acescg=np.eye(3).tolist())
+
+    class ArbitraryGainCameraOutput:
+        def get_inputs(self):
+            return [SimpleNamespace(name='input')]
+
+        def run(self, names, inputs):
+            tensor = inputs['input'][0]
+            camera = np.stack((tensor[0], (tensor[1]+tensor[2])*.5, tensor[3]))
+            return [(camera * 1e6).repeat(2, axis=1).repeat(2, axis=2)[None]]
+
     candidate = RawNIND('bayer')
+    candidate.session = ArbitraryGainCameraOutput()
+    output = candidate.prepare(image, metadata).denoised
+    assert np.allclose(output, develop(image, metadata), atol=2e-5)
+
+
+def test_bayer_sensor_clipping_matches_upstream_domain(candidate):
+    if candidate.kind != 'bayer':
+        pytest.skip('Bayer sensor convention only')
+    image = np.full((24, 24), .2, np.float32)
+    image[:4] = -.01
+    image[-4:] = 1.25
+    metadata = dict(cfa=[[0, 1], [1, 2]], white_balance=[1, 1, 1], camera_to_acescg=np.eye(3).tolist())
     state = candidate.prepare(image, metadata)
-    assert state.fallback is not None
-    assert state.timing['inference'] == 0
-    assert np.array_equal(candidate.process(image, metadata, state), develop(image, metadata))
+    clipped = candidate.prepare(np.clip(image, 0, 1), metadata)
+    assert state.fallback is None
+    assert state.timing['inference'] > 0
+    assert state.domain['clipped']
+    assert state.domain['clipped_fraction'] == pytest.approx(1 / 3)
+    assert state.domain['model_input_minimum'] == 0
+    assert state.domain['model_input_maximum'] == 1
+    assert np.array_equal(state.denoised, clipped.denoised)
+
+
+def test_clean_bayer_gradient_keeps_ahd_exposure_and_colour(candidate):
+    if candidate.kind != 'bayer':
+        pytest.skip('Bayer camera-RGB gain only')
+    ramp = np.broadcast_to(np.linspace(.01, .3, 192, dtype=np.float32), (192, 192))
+    image = ramp.copy()
+    image[0::2, 0::2] *= .45
+    image[1::2, 1::2] *= .7
+    metadata = dict(cfa=[[0, 1], [1, 2]], white_balance=[2, 1, 1.5], camera_to_acescg=np.eye(3).tolist())
+    state = candidate.prepare(image, metadata)
+    baseline = develop(image, metadata)
+    difference = colour_error(state.denoised[12:-12, 12:-12], baseline[12:-12, 12:-12])
+    assert float(np.mean(difference)) < .5
+    assert np.percentile(difference, 99) < 1
+
+
+def test_bayer_keeps_developed_negative_and_above_white_values(candidate):
+    if candidate.kind != 'bayer':
+        pytest.skip('Bayer downstream scene-linear colour tail only')
+    image = np.full((24, 24), .2, np.float32)
+    image[0::2, 0::2] = .05
+    metadata = dict(cfa=[[0, 1], [1, 2]], white_balance=[2, 1, 1.5],
+                    camera_to_acescg=[[1, -.8, 0], [0, 1, 0], [0, 0, 1]])
+    base = candidate.prepare(image, metadata).denoised
+    output = candidate.prepare(image, {**metadata, 'exposure_stops': 6}).denoised
+    assert output.min() < 0
+    assert output.max() > 1
+    assert np.array_equal(output, base * 64)
 
 
 @pytest.mark.parametrize('phase', [(0, 0), (0, 1), (1, 0), (1, 1)])

@@ -1,3 +1,27 @@
+## November 16: RawNIND Bayer verification (research only)
+
+MacBook Neo / Apple A18 Pro / 8 GB; tooling `6fe14d32`, verified Bayer
+sensor-domain/gain correction, ORT 1.32.0 CPUExecutionProvider, one native
+thread, shared machine lock and 2.5 GB sampled process-RSS abort guard.
+Standalone research-tool durations, **not action-to-screen waits**. No GPU,
+timing repeat, native-photo benchmark or speedup claim. The existing ±10%
+descriptive timing allowance is unchanged; five-adapter and eight-adapter
+quality durations are not comparable performance baselines.
+
+| Research action | Duration / sampled peak process RSS | Conditions / evidence |
+| --- | --- | --- |
+| Corrected full quality set | 103.0 s / 1.377 GB | 27 synthetic + eight real crops; off/current/Bayer .5/.75/1; zero adapter errors. `output/denoise-v1/rawnind/results-full.json`, quality guard. |
+| Pinned reference and bias probe | 54.8 s / 1.406 GB | Nine clean scenes, two unbinned low-ISO crops, canonical/literal demo colour paths and actual TIFF readback, eight real shadow-bias cases, developed exposure −6…+6. `output/denoise-v1/verify/reference.json`, verify guard. |
+| Final Python fast suite | 265.3 s / 2.062 GB | 3,917 passed, 147 skipped, one xpassed; system TEMP under the research guard, optional local verified models present. `output/denoise-v1/verify/python-tests.log`. |
+| Final Node fast suite | 15.3 s | 1,091 passed, one skipped, zero failures. `output/denoise-v1/verify/node-tests.log`. |
+
+Earlier Bayer native timings below are retained history, **not timings of the
+corrected adapter**: it now needs an extra AHD pass to anchor exposure in
+camera RGB and uses upstream [0,1] sensor clipping. A new native speed/memory
+qualification has not been run. The unchanged linear rows remain historical
+measurements of that variant. Full quality, provenance and limits are in
+[Verification, November 16](research/denoise-v1-2026-11-16/rawnind-prototype.md#verification-november-16).
+
 ## November 16: RawNIND full-frame CPU prototype (research only)
 
 MacBook Neo / Apple A18 Pro / 8 GB; ONNX Runtime 1.32.0 CPUExecutionProvider,
