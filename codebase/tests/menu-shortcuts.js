@@ -65,7 +65,7 @@ async function surface(frame,selector){
  // Windows custom application menus retain their DOM keyboard navigation on Mac too.
  await page.evaluate(()=>{const button=document.querySelector('.unified-menu-button');button.hidden=false;button.click();});
  await surface(page,'.window-menu-bar');await page.locator('.window-menu-trigger').first().focus();await page.keyboard.press('ArrowRight');await surface(page,'.window-menu .window-menu-popover[popover]');await page.keyboard.press('Escape');await page.keyboard.press('Escape');
- // A deliberately taller menu also grows asynchronously and keeps its final row reachable.
+ // A deliberately taller menu keeps its final row reachable.
  await page.evaluate(()=>{const host=document.createElement('div');host.id='overflow-test-host';host.style.cssText='position:fixed;inset:0;z-index:999999;overflow:hidden;transform:translateZ(0)';const menu=document.createElement('div');menu.id='overflow-test';menu.className='window-menu-popover';menu.setAttribute('role','menu');menu.style.cssText='left:1000px;top:680px';for(let i=0;i<60;i++){const b=document.createElement('button');b.textContent=`Action ${i}`;menu.append(b);}host.append(menu);document.body.append(host);});
  await surface(page,'#overflow-test');await page.locator('#overflow-test button').last().scrollIntoViewIfNeeded();await page.locator('#overflow-test button').last().click();await page.evaluate(()=>document.querySelector('#overflow-test-host').remove());
  // Pop-out Library is a separate native window, using exactly the same helpers.

@@ -20,7 +20,14 @@ application menus, plus physical Command copy/paste/choose-paste/filter/quick
 export. Screenshots: `codebase/output/review/menu-shortcuts/`. Focused Node
 checks pass. The complete fast suites ran; unrelated mask-sampling (Node)
 and ceiling/HSL/Library-native backend tests (Python) failed during concurrent
-work. Plain quick Library verification is recorded in the follow-up note.
+work. Plain 90-second quick Library check showed all 9 expected pictures and passed
+memory/coverage checks, but failed its drawing-gap guard once: 367 ms against
+250 ms (main-thread maximum 140 ms). Responsiveness needs Steve's app check
+before spending another run; no timing or memory limit was changed. Fast-suite
+results at the time: Node 1,075 passed / 5 mask-sampling failures / 1 skipped;
+Python 3,703 passed / 19 concurrent backend failures / 144 skipped / 1 xpass.
+Logs: `codebase/output/review/menu-shortcuts-{node,pytest,focused,run}.log`;
+quick result: `codebase/output/quick-library-check/menu-shortcuts/report.json`.
 
 ## November 16: nearby help and app-styled select popups
 

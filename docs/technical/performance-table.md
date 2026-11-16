@@ -1,3 +1,9 @@
+## November 16: menu/shortcut validation on MacBook Neo
+
+| Action | Existing guard | Observation | Conditions / evidence |
+| --- | --- | --- | --- |
+| Library viewport quick check | Default 90 s, 250 ms drawing-gap ceiling, existing app memory ceiling/reserve | All 9 expected pictures; first 0.5 s; no coverage or memory errors; peak 2.976 GB; run 93.183 s. **Failed drawing-gap guard:** one 367 ms frame gap; longest main-thread block 140 ms. Needs Steve's responsiveness check before a repeat; no relaxed guard. | Neo A18 Pro / 8 GB / 1408×794, fresh plain Electron, frozen v1, shared GPU lock; `11d8675f` during concurrent shared-checkout work. `output/quick-library-check/menu-shortcuts/report.json`. Not a speed comparison. |
+
 ## November 16: N3a validation on MacBook Neo
 
 | Action | Existing guard | Observation | Conditions / evidence |
