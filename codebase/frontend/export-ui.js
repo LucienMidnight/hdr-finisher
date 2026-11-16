@@ -395,6 +395,7 @@ function markExportPresetCustom() {
 }
 
 function applyExportPreset(format, presetName, { invalidate = true } = {}) {
+  if (!exportPresetMappings[format]?.[presetName]) presetName = "web_default";
   const mapping = exportPresetMappings[format]?.[presetName];
   if (!mapping) return;
   els.jpegxlHighFidelity.checked = false;

@@ -153,15 +153,24 @@ def encode_hdr_jpegxl(
         raise JPEGXLError("JPEG XL quality must be between 1 and 100.")
     bit_depth, sample_type, storage_type = _JPEGXL_PRECISIONS[precision]
 
-    linear_bt2020 = np.clip(acescg_to_linear_bt2020(image[..., :3]), 0.0, None)
     reference_white_nits = validate_reference_white(reference_white_nits)
-    luminance_nits = np.clip(scene_linear_to_nits(linear_bt2020, reference_white_nits), 0.0, 10000.0)
-    pq = _pq_oetf(luminance_nits)
-    if sample_type == "integer":
-        maximum = float((1 << bit_depth) - 1)
-        encoded = np.clip(np.round(pq * np.float32(maximum)), 0.0, maximum).astype(storage_type)
+    def samples(band):
+        linear_bt2020 = np.clip(acescg_to_linear_bt2020(band[..., :3]), 0.0, None)
+        luminance_nits = np.clip(scene_linear_to_nits(linear_bt2020, reference_white_nits), 0.0, 10000.0)
+        pq = _pq_oetf(luminance_nits)
+        if sample_type == "integer":
+            maximum = float((1 << bit_depth) - 1)
+            return np.clip(np.round(pq * np.float32(maximum)), 0.0, maximum).astype(storage_type)
+        return pq.astype(storage_type)
+
+    # Lossless native photos need only the quantized frame and bounded float
+    # scratch. Avoid keeping three full float32 conversions alive in libjxl.
+    if quality == 100:
+        encoded = np.empty((*image.shape[:2], 3), dtype=storage_type)
+        for row in range(0, image.shape[0], 128):
+            encoded[row:row + 128] = samples(image[row:row + 128])
     else:
-        encoded = pq.astype(storage_type)
+        encoded = samples(image)
     distance = max(0.0, (100.0 - float(quality)) / 25.0)
     try:
         payload = imagecodecs.jpegxl_encode(
@@ -212,6 +221,7 @@ def encode_sdr_jpegxl(
         0.0,
         255.0,
     ).astype(np.uint8)
+    del srgb
     distance = max(0.0, (100.0 - float(quality)) / 25.0)
     try:
         payload = imagecodecs.jpegxl_encode(

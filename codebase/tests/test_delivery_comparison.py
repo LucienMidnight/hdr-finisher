@@ -88,7 +88,8 @@ def test_report_uses_unchanged_metric_limits():
 def test_cli_path_strings_are_normalized_for_the_decoder(monkeypatch):
     pixels = np.full((3, 4, 3), .18, np.float32)
 
-    def decode(path):
+    def decode(path, *, analyze_hdr):
+        assert analyze_hdr is False
         assert isinstance(path, Path)
         return pixels, None, {}, None, None
 

@@ -3481,3 +3481,20 @@ comparison. Evidence: codebase/output/quick-library-check/w20-framing/report.jso
 | Action | Observation | Date / commit | Conditions |
 | --- | --- | --- | --- |
 | Mixed Library viewport | 90-second smoke passed; first/ten/twenty pictures 1.0/1.7/9.6 s; no speed comparison | 2026-11-15, commit containing this note | Windows PC, 2560x1440, shared GPU lock, plain Electron, frozen library-mixed-v1; fast Node/Python suites active concurrently. Viewport scope only (30/33 eligible pictured), no app errors or memory violation. Evidence: `codebase/output/quick-library-check/button-tiers/report.json`. |
+
+## November 16: opt-in high-fidelity JPEG XL qualification (minimum Mac)
+
+Native-photo timings are descriptive, not a speedup claim. Any paired timing
+comparison uses the existing 5% noise tolerance; no new speed or size gate is
+set. Machine: MacBook Neo, A18 Pro / 8 GB, fresh CPU worker per photo, one at a
+time under `gpu-run-lock.py`, default 2.5 GB app ceiling and existing physical
+reserve. Sources are SHA-256-approved originals read in place. Native export
+uses default creative settings, a 1000-nit Fixed cap, original dimensions,
+no output sharpening/frame/metadata; Web Default comparison is Q90, 12-bit
+HDR/no dither or 8-bit SDR/Auto dither. Instrumentation captures the actual
+finished input; the export wait includes that test-only capture, validation
+and HDR ceiling decoding. Decode timing is a separate pixel-only import,
+without histogram analysis. Source loading and colour-difference measurement
+are excluded from export time. Values and final per-stage memory samples:
+`codebase/output/review/jpegxl-high-fidelity/native-final.json`; revision
+`779382d9` plus the memory-admission follow-up containing this record.

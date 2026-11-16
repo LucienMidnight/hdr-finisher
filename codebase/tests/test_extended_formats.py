@@ -963,3 +963,38 @@ def test_high_fidelity_settings_survive_preset_and_proof_roundtrip(tmp_path, for
     assert (converted.quality, converted.jpegxl_precision, converted.dithering) == (100, "uint12", "off")
     assert not ExportSettings(format=format_name).jpegxl_high_fidelity
     assert ExportSettings(format=format_name).quality == 85
+
+
+@pytest.mark.parametrize("precision", ["uint10", "uint12", "uint16", "float16", "float32"])
+def test_bounded_jxl_preparation_preserves_every_quantized_sample(precision):
+    import imagecodecs
+    from hdr_finisher.jpegxl import _pq_oetf, _JPEGXL_PRECISIONS
+    from hdr_finisher.color import acescg_to_linear_bt2020
+    from hdr_finisher.color_context import scene_linear_to_nits
+    image = np.random.default_rng(829).uniform(0, 3, (271, 39, 3)).astype(np.float32)
+    bit_depth, sample_type, dtype = _JPEGXL_PRECISIONS[precision]
+    pq = _pq_oetf(np.clip(scene_linear_to_nits(np.clip(acescg_to_linear_bt2020(image), 0, None), 203), 0, 10000))
+    expected = (np.clip(np.round(pq * np.float32((1 << bit_depth)-1)), 0, (1 << bit_depth)-1).astype(dtype)
+                if sample_type == "integer" else pq.astype(dtype))
+    actual = imagecodecs.jpegxl_decode(encode_hdr_jpegxl(image, 100, precision))
+    np.testing.assert_array_equal(actual, expected)
+
+
+def test_high_fidelity_memory_refusal_preserves_destination_and_does_not_render(tmp_path, monkeypatch):
+    from hdr_finisher import exporters, app_memory
+    from hdr_finisher.resource_preflight import ResourceSnapshot
+    image = np.full((16, 20, 3), .18, np.float32)
+    session = SimpleNamespace(session_id='memory', image=image, sdr_reference_image=None,
+                              adjustments=AdjustmentState(), local_adjustments=[])
+    output = tmp_path/'kept.jxl'
+    output.write_bytes(b'previous delivered photo')
+    monkeypatch.setattr(app_memory, 'admit', lambda *args, **kwargs: {'granted': False})
+    monkeypatch.setattr('hdr_finisher.resource_preflight.detect_memory_resources',
+                        lambda: ResourceSnapshot(8*1024**3, 6*1024**3, 'test'))
+    monkeypatch.setattr(exporters, '_render_export_branch', lambda *args: pytest.fail('Must refuse before render'))
+    result = JPEGXLHDRExportBackend(CapabilityInfo(name='JXL', status=CapabilityStatus.AVAILABLE, detail='test')).export(
+        session, ExportSettings(format='jpegxl_hdr', jpegxl_high_fidelity=True, output_path=str(output), overwrite=True))
+    assert not result.accepted
+    assert 'working memory' in result.message
+    assert output.read_bytes() == b'previous delivered photo'
+    assert not list(tmp_path.glob('.*tmp*'))

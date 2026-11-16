@@ -50,7 +50,8 @@ fs.mkdirSync(report, { recursive: true });
     }
     await page.setViewportSize({ width: 1408, height: 794 });
     // A saved preset is the same object used by Export, Quick export and batch.
-    const preset = await post('/api/export-presets?directory=' + encodeURIComponent(path.join(root, 'presets')), {
+    const presetDirectory = await page.evaluate(async () => state.appPreferences?.folders?.presetSave || await desktop.getDefaultPresetDirectory());
+    const preset = await post('/api/export-presets?directory=' + encodeURIComponent(presetDirectory), {
       id: 'jxl-fidelity-test', name: 'High fidelity test', versions: [
         { name: 'HDR', quality_preset: 'high_fidelity', settings: await page.evaluate(() => currentExportSettings()) },
         { name: 'SDR', settings: { format: 'sdr_jpegxl', quality: 10, dithering: 'auto', jpegxl_high_fidelity: true } },
@@ -91,7 +92,31 @@ fs.mkdirSync(report, { recursive: true });
     await page.selectOption('#export-preset', 'web_default');
     assert.equal(await page.isChecked('#jpegxl-high-fidelity'), false);
     assert.equal(await page.isDisabled('#export-quality'), false);
-    console.log('High fidelity JPEG XL UI, saved preset, CPU/GPU HDR/SDR own-source fidelity, exact finished/encoded ceilings and reduced/full Proof passed.');
+    // Reopen the saved preset in the actual Export UI, then deliver it from
+    // Quick export through the normal batch worker and desktop folder grant.
+    const document = await page.evaluate(() => state.editDocument);
+    fs.writeFileSync(photo + '.hdrf', JSON.stringify({ format: 'HDR Finisher Photo', schema_version: 1,
+      photo_id: 'jxl-native-fixture', grade: document, marks: {}, albums: [] }));
+    await page.reload();
+    await page.waitForFunction(() => window.batchExport);
+    await page.evaluate(photo => batchExport.open([photo], { fromLibrary: true }), photo);
+    await page.waitForFunction(() => document.getElementById('batch-version-select').options.length === 2);
+    assert(await page.isChecked('#jpegxl-high-fidelity'));
+    await page.selectOption('#batch-version-select', '1');
+    assert(await page.isChecked('#jpegxl-high-fidelity'));
+    assert.equal(await page.inputValue('#export-format'), 'sdr_jpegxl');
+    await page.evaluate(photo => batchExport.quick([photo]), photo);
+    const dialog = page.getByRole('dialog', { name: 'Quick export…', exact: true });
+    await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+    await page.waitForFunction(() => batchExport.activity()?.state === 'finished', null, { timeout: 120000 });
+    const batch = await page.evaluate(() => batchExport.activity());
+    assert.equal(batch.results.length, 2, JSON.stringify(batch));
+    assert(batch.results.every(result => ['exported', 'renamed'].includes(result.outcome)), JSON.stringify(batch));
+    const batchMetrics = JSON.parse(execFileSync(python, [path.join(__dirname, 'helpers/jpegxl_fidelity_check.py'), root], {
+      env: { ...process.env, PYTHONPATH: path.resolve('backend') }, encoding: 'utf8', timeout: 180000,
+    }));
+    fs.writeFileSync(path.join(report, 'delivery.json'), JSON.stringify({ deliveries, metrics, batch, batchMetrics }, null, 2));
+    console.log('High fidelity JPEG XL UI, Export/Quick preset roundtrip, batch, CPU/GPU HDR/SDR fidelity, ceilings and reduced/full Proof passed.');
   } finally {
     await post('/api/delivery/preferences', { force_cpu: false }).catch(() => {});
     await browser.close();

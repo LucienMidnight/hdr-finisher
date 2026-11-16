@@ -229,6 +229,59 @@ class _PreparedExport:
     notes: list[str] = field(default_factory=list)
 
 
+# Native 10.7 MP Neo measurement: 179.4 B/px HDR and 415.9 B/px
+# generated SDR, plus 25%, rounded up. These are admission estimates, not
+# larger budgets. Authored SDR avoids the generated-SDR working set.
+_JXL_HDR_WORK_BYTES_PER_PIXEL = 225
+_JXL_SDR_WORK_BYTES_PER_PIXEL = 525
+
+
+def _reserve_high_fidelity_jxl(session, settings):
+    """Admit the opt-in's whole render/encode/check before allocating pixels."""
+    if not settings.jpegxl_high_fidelity or settings.format not in {"jpegxl_hdr", "sdr_jpegxl"}:
+        return None
+    from . import app_memory
+    from .finishing import geometry_output_dimensions
+    from .photo_framing import output_layout
+    from .resource_preflight import detect_memory_resources, FULL_PREVIEW_FIXED_OVERHEAD_BYTES, GIB
+    from threading import Event, Thread
+    from uuid import uuid4
+    height, width = session.image.shape[:2]
+    width, height = geometry_output_dimensions(width, height, session.adjustments.shared.geometry)
+    layout = output_layout(width, height, getattr(session, "framing", None), settings.output_finishing,
+                           include=settings.export_with_frame)
+    rate = (_JXL_SDR_WORK_BYTES_PER_PIXEL if settings.format == "sdr_jpegxl"
+            and getattr(session, "sdr_reference_image", None) is None else _JXL_HDR_WORK_BYTES_PER_PIXEL)
+    required = width * height * rate + FULL_PREVIEW_FIXED_OVERHEAD_BYTES
+    # Source rendering happens before output resizing; admit whichever is larger.
+    required = max(required, layout.width * layout.height * rate + FULL_PREVIEW_FIXED_OVERHEAD_BYTES)
+    resources = detect_memory_resources()
+    reserve = max(2 * GIB, int((resources.total_ram_bytes or 0) * .15))
+    message = ("High fidelity JPEG XL needs more working memory for this photo. "
+               "Free memory or raise the app memory setting before trying again.")
+    if resources.available_ram_bytes is None or required > resources.available_ram_bytes - reserve:
+        raise ValueError(message)
+    key = "jxl-" + uuid4().hex
+    if not app_memory.admit(key, required)["granted"]:
+        raise ValueError(message)
+    stop = Event()
+    def renew():
+        while not stop.wait(10):
+            app_memory.admit(key, required)
+    thread = Thread(target=renew, daemon=True, name="jxl-memory-lease")
+    thread.start()
+    return key, stop, thread
+
+
+def _release_high_fidelity_jxl(lease):
+    if lease is not None:
+        from . import app_memory
+        key, stop, thread = lease
+        stop.set()
+        thread.join()
+        app_memory.admit(key, 0, release=True)
+
+
 def _execute_export(
     backend: ExportBackend,
     session: object,
@@ -246,11 +299,13 @@ def _execute_export(
     output_path: Path | None = None
     staged_output: Path | None = None
     timings = timings_ms if timings_ms is not None else {}
+    jxl_lease = None
     try:
         output_path = Path(
             _resolve_output_path(getattr(session, "session_id", "session"), settings, suffix)
         )
         _require_overwrite_permission(output_path, settings)
+        jxl_lease = _reserve_high_fidelity_jxl(session, settings)
         prepared = prepare()
         from .retouch_routes import delivery_record
         rendering = delivery_record(session, getattr(session, "_delivery_record", rendering))
@@ -283,6 +338,7 @@ def _execute_export(
             timings_ms=timings,
         )
     finally:
+        _release_high_fidelity_jxl(jxl_lease)
         _remove_incomplete_output(staged_output)
     message = success_message(output_path, validation)
     if prepared.notes:

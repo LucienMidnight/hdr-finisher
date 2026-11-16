@@ -1,5 +1,23 @@
 ### November 15: W2 P2 format-first publication within the same upload slot
 
+## November 16: high-fidelity JXL admission
+
+The opt-in uses the existing whole-app admission owner and physical preflight
+reserve; no ceiling, cache share or reserve increases. Native 4000×2666 CPU
+measurement isolated 1.913 GB charged peak for HDR render/encode/check and
+4.435 GB for generated SDR, excluding Electron. SDR rendering, rather than
+lossless compression alone, dominates the latter; that renderer belongs to the
+separate SDR workstream and is unchanged here. High fidelity therefore reserves
+225 bytes/source pixel for HDR or authored SDR, 525 for generated SDR, plus
+the existing 256 MiB fixed overhead (measured peak/pixel plus 25%, rounded up).
+The larger source/output canvas governs; resizing does not hide native render
+work. A renewable lease spans render, encode, ceiling, validation and replace;
+refusal precedes rendering and preserves an existing destination. Large native
+photos remain unqualified on the default 2.5 GB Mac setting rather than being
+admitted by raising it. Lossless JXL quantization now uses 128-row float scratch;
+all quantized samples are unchanged across all five precisions.
+
+
 The current display's existing finished-thumbnail format is published before
 the acknowledgement. Other existing formats and the compressed screen finish
 in that same response task, retaining the same admitted upload slot/body until

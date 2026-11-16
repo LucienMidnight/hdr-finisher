@@ -54,7 +54,7 @@ def percentile99(first, second, lane, white):
 
 
 def decoded_lanes(path, format_name, white):
-    loaded = load_image(Path(path))
+    loaded = load_image(Path(path), analyze_hdr=False)
     if format_name.startswith("sdr_"):
         return {"sdr": acescg_to_linear_srgb(loaded[0])}
     result = {"hdr": loaded[0] * np.float32(203 / white)}

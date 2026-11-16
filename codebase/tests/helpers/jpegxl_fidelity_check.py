@@ -15,8 +15,8 @@ for file in root.glob("*.jxl"):
     value = own_fidelity(file)
     assert value["required"], value
     info = inspect_jpegxl(file)
-    assert info["bits_per_sample"] == (8 if file.name.startswith("SDR") else 12)
-    if not file.name.startswith("SDR"):
+    assert info["bits_per_sample"] == (8 if value["format"] == "sdr_jpegxl" else 12)
+    if value["format"] == "jpegxl_hdr":
         value["peak_nits"] = check_decoded_hdr_ceiling(file, "jpegxl_hdr", 1000)
     results[file.name] = value
 print(json.dumps(results))

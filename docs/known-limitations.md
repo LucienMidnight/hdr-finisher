@@ -6,7 +6,10 @@ Steve approved the separate checks in the Export/Proof module. Actual finished
 GPU/CPU pixels must still pass mean < 1 / P99.9 ≤ 3 per lane before encoding.
 The test-only capture hook records those actual inputs, not a second render.
 Each decoded delivery is also compared with its own original finished input;
-this is explicitly report-only while codec fidelity fixes are investigated.
+this is report-only for ordinary lossy settings in every format. Steve’s
+November 16 decision makes the same per-image/per-lane mean <1 / P99.9 ≤3
+requirement strict only for the explicit high-fidelity JPEG XL option (HDR
+ΔE ITP, SDR ΔE00).
 Decoded GPU/CPU files are retained as diagnostics, never used to enlarge the
 renderer limits. This does not waive the exact finished ceiling, the 1%
 encoded allowance, full-size Proof/export byte identity or coverage assertions.
@@ -25,6 +28,26 @@ options improve fidelity but do not meet every HDR target, even at their
 highest tested quality. AVIF already uses BT.2020 gain math here; its decoder's
 10-bit reconstruction adds measurement loss but does not explain the whole
 residual tail. These remain non-shipping experiments, not approved defaults.
+
+Measured limits at sharp bright edges and saturated highlights (November 16,
+Steve; existing research settings, **not** a quality allowance):
+
+| Encoded input / setting | Own-source HDR mean / P99.9 ΔE ITP | Own-source SDR mean / P99.9 ΔE00 |
+| --- | --- | --- |
+| Sharp fixture, JPEG Ultra HDR Q95 / 4:4:4 / full map, delivered CPU | 4.004 / 29.187 | 0.601 / 7.300 |
+| DSC08883 native highlight crop, same JPEG path | 12.530 / 67.818 | 1.468 / 7.891 |
+| Sharp fixture, AVIF Q95 / 10-bit 4:2:0 / half map, delivered CPU | 5.112 / 67.492 | 0.759 / 17.896 |
+| DSC08883 native highlight crop, same AVIF path | 12.058 / 129.376 | 1.551 / 13.760 |
+
+Four reduced whole photos also miss: JPEG HDR mean 3.926–16.278 / tails
+36.750–62.427; AVIF HDR mean 3.214–19.994 / tails 81.038–130.775. These are
+stress cases, not a ranking of all photos or all codec settings. JPEG's pinned
+sRGB gain math additionally loses saturated colour outside that gain space;
+AVIF already uses wider BT.2020 gain math, but sampling/compression and gain
+reconstruction still lose bright-edge fidelity. Ordinary delivery remains
+allowed under Steve’s explicit compression-trade-off decision; renderer
+agreement and ceilings remain strict. Exact recipes, signed-gamut metric
+limits and experimental fixes are in the three encoding reports.
 
 `export-file-browser-interaction.js` now uses the intended L4 shared image
 picker, not the superseded source directory dialog. Confirm becomes enabled

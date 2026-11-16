@@ -63,7 +63,10 @@ batch output versions and Proof signatures. Backend validation resolves it to
 Q100/lossless, HDR uint12, dithering off, regardless of other supplied quality
 or precision values. The UI disables those overridden controls and names the
 resolved encoding. Unchecking restores ordinary controls. No shader, Film Look,
-SDR Match, budget, encoder implementation or default changes in this step.
+SDR Match, budget or default changes. Lossless JXL preparation uses bounded
+128-row float scratch with identical quantized samples. High fidelity uses
+the existing app memory owner and physical reserve; its measured admission
+estimates and native-size refusals are recorded in the memory module.
 Native-photo size/speed/memory qualification and final test results follow below.
 
 ## November 16: renderer agreement and encoding fidelity are separate checks

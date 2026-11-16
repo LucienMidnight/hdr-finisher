@@ -23,6 +23,36 @@ Choose the output **Format**, then choose **Web Default**, **Web Optimized**, or
 
 Advanced Export Settings starts collapsed and remains keyboard-operable. Within each submenu, the choice used by that format's Web Default carries the suffix **· Web Default**. Options that are not defaults are intentionally unlabeled.
 
+### High fidelity JPEG XL
+
+For **JPEG XL HDR** or **JPEG XL (SDR)**, enable **High fidelity JPEG XL**
+in **Format & quality**, or choose its quality profile. It uses lossless
+compression of 12-bit Rec.2020 PQ HDR or separate 8-bit sRGB SDR, without
+dithering. Quality and HDR precision are fixed while enabled. HDR JPEG XL has
+no embedded SDR fallback: add a separate SDR output version when you need both.
+The setting is saved with each output version in Export and Quick export
+presets and is used by batch export and Proof. Today's Web Default stays the same.
+
+This trades much larger files for an export that matches the finished picture.
+The researched HDR files were typically 3–4× Q95; actual size depends on the
+photo and comparison settings. “Lossless” preserves the quantized samples,
+not every value of the original floating image. SDR research files were about
+1.6–2.1× Q95. JPEG XL viewer support is still limited.
+
+High fidelity qualification checks require decoded files to agree with their own finished
+picture at mean below 1 and P99.9 at most 3 (HDR ΔE ITP / SDR ΔE00, each image
+and lane). Ordinary lossy settings in every format retain compression
+trade-offs; their own-source fidelity is reported rather than required to meet
+this target. In particular, JPEG Ultra HDR and AVIF can lose detail/colour at
+sharp bright edges and saturated highlights, even at high quality. Higher
+quality alone is not a promise of the high-fidelity target.
+
+High fidelity reserves working memory before rendering. If the complete
+native render/encode/check cannot fit the app's memory setting or system
+reserve, it refuses delivery and keeps an existing destination intact. Very
+large photos may need a higher memory setting on a larger machine. No memory
+limit is raised automatically.
+
 ### Guarantee HDR peak
 
 Enabled Highlight Compression checks every encoded HDR export and reduced or full-size Proof, whether rendered on the CPU or GPU. The file is decoded and its brightest channel is checked against your target. Encoding may land up to **1% above the target** (1010 nits for a 1000-nit target); those files are accepted unchanged, without a note. Larger overshoots are corrected locally and re-encoded, aiming at or just below the target, usually within 3% below it. The SDR rendition is not changed. If all correction rounds still leave the file above the 1% allowance, delivery fails without replacing an existing destination. Full-size Proof shows the file export will deliver with the same settings; reduced Proof is checked at its own size. Library pictures do not receive this post-encoding check.
