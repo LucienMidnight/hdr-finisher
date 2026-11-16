@@ -184,6 +184,20 @@ the [technology watch](../denoising-technology-watch-2026.md):
 
 ## 8. Log
 
+- 2026-11-16: pilot-guided empirical Wiener CPU adapters implemented, with
+  self/tuned/verified Bayer pilots, both-Wiener/direct-pilot-chroma variants,
+  cached control sweeps, full/half-resolution scoring and bounded 18/42 MP
+  runs. Tuned-both gains 2.04/1.87/1.35 dB over current defaults at ISO
+  1600/6400/25600 but only .34/.36/.12 dB over tuned current; high-ISO
+  MTF50 remains .693 of clean. No complete quality-contract pass or app change.
+  Public-pairs merge `56cff0de` incorporated with all-four-pixels-valid
+  half-scale masks; all 11 adapters complete 52 crops with no errors.
+  Bayer-both leads four held-out scenes by 1.91 dB SDR over default / .69 dB
+  over tuned; seven training-seen scenes stay separate. Six native runs peak
+  at 1.871 GB; tuned-both / Bayer-both take 22.36/22.27 s at 18 MP and
+  54.60/57.27 s at 42 MP, not UI timings. Still no complete quality pass.
+  See [pilot-wiener.md](../research/denoise-v1-2026-11-16/pilot-wiener.md).
+
 - 2026-11-16: brief written; PRD records Steve's decision; Phase 1 workers
   started (harness, candidate survey).
 
