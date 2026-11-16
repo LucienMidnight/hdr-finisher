@@ -88,7 +88,7 @@
     function build() {
       dialog = make("dialog", "application-dialog library-tags"); dialog.id = "library-tags"; dialog.setAttribute("aria-labelledby", "library-tags-title");
       const header = make("div", "application-dialog-header"), words = make("div"), title = make("h2", "", "Tags and Labels"); title.id = "library-tags-title";
-      words.append(title, make("p", "", "Changes here reach every photo in the library that carries the tag. Ctrl+Z takes the last one back.")); header.append(words);
+      words.append(title, make("p", "", window.HDRShortcuts.text("Changes here reach every photo in the library that carries the tag. Ctrl+Z takes the last one back."))); header.append(words);
       const tools = make("div", "library-tags-tools");
       element.search = make("input"); element.search.type = "search"; element.search.id = "library-tags-search"; element.search.placeholder = "Find a tag"; element.search.setAttribute("aria-label", "Find a tag");
       element.search.addEventListener("input", render);

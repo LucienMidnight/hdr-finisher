@@ -333,10 +333,10 @@
     footer.before(libraryStatusRow);
     libraryStatusObserver.observe(footer);
     libraryStatusObserver.observe(libraryStatusRow);
-    // A modal in the iframe cannot cover an overlay in its parent document.
-    // Keep the reserved row, but remove that overlay until the modal closes.
+    // An iframe top layer cannot cover an overlay in its parent document.
+    // Keep the reserved row, but remove that overlay while a modal/menu is open.
     new MutationObserver(placeStatusDock).observe(doc.body, {
-      attributes: true, attributeFilter: ["open"], childList: true, subtree: true,
+      attributes: true, attributeFilter: ["open", "data-floating-surface"], childList: true, subtree: true,
     });
     placeStatusDock();
   }
@@ -346,7 +346,7 @@
     const inLibrary = document.body.dataset.workflow==="import";
     if(libraryStatusRow)libraryStatusRow.hidden=!inLibrary || document.body.classList.contains("library-review");
     statusDock.classList.toggle("library-status-dock",inLibrary);
-    statusDock.style.visibility = inLibrary && libraryFrame.contentDocument?.querySelector("dialog:modal")
+    statusDock.style.visibility = inLibrary && libraryFrame.contentDocument?.querySelector("dialog:modal, [data-floating-surface]:popover-open")
       ? "hidden" : "";
     const panel = $("batch-grid-panel");
     if(inLibrary && libraryStatusRow){

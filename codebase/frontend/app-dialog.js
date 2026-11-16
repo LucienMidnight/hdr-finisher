@@ -75,7 +75,7 @@
       const token = ++sequence;
 
       parts.title.textContent = title || "";
-      parts.message.textContent = message || "";
+      parts.message.textContent = window.HDRShortcuts?.text(message) || message || "";
       parts.message.hidden = !message;
 
       if (input) {

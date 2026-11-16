@@ -1,0 +1,14 @@
+/* Top-layer geometry only. Existing component rules retain all token skins. */
+[data-floating-surface][popover] {
+  position: fixed !important;
+  inset: auto;
+  right: auto !important;
+  bottom: auto !important;
+  margin: 0;
+  box-sizing: border-box;
+  position-anchor: auto !important;
+  transform: none !important;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+[data-floating-surface]::backdrop { pointer-events: none; }

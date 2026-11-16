@@ -40,8 +40,8 @@
     }
   };
   let refreshNotice = null;
-  const status = message => { if (!refreshNotice) $("library-status").textContent = message; };
-  const refreshStatus = message => { refreshNotice = message; $("library-status").textContent = message; };
+  const status = message => { if (!refreshNotice) $("library-status").textContent = HDRShortcuts.text(message); };
+  const refreshStatus = message => { refreshNotice = message; $("library-status").textContent = HDRShortcuts.text(message); };
   for (const name of ["pointerdown", "keydown"]) document.addEventListener(name, event => {
     if (event.isTrusted) refreshNotice = null;
   }, true);

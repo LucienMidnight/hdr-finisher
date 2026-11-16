@@ -245,7 +245,7 @@
         const overview = make('div', 'grade-paste-overview'); overview.append(summary, choose);
         body.append(overview, mode, hint, choices);
         const footer = make('div', 'library-ask-body grade-paste-footer');
-        footer.append(notes, warnings, make('p', 'grade-paste-help', 'Each photo keeps its previous grade. Ctrl+Z undoes the whole paste.'));
+        footer.append(notes, warnings, make('p', 'grade-paste-help', root.HDRShortcuts.text('Each photo keeps its previous grade. Ctrl+Z undoes the whole paste.')));
         const actions = make('div', 'app-dialog-actions'), cancel = make('button','button-secondary','Cancel'), yes = make('button','button-primary', paths.length > 1 ? `Paste onto ${paths.length} photos` : 'Paste grade');
         cancel.type = yes.type = 'button'; actions.append(cancel, yes); dialog.append(header, body, footer, actions); document.body.append(dialog);
         let answer = null, previewId = 0, timer;

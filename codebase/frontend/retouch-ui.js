@@ -239,7 +239,7 @@ function selectRetouchRepair(id) {
   retouchUI.loadedRecipe = null;
   retouchMessage(record.recipe.mode === "inpaint"
     ? "Selected repair. Drag it to move it, or change settings and apply them; Retry tries another donor."
-    : "Selected repair. Drag either circle, or hold Alt (source) or Ctrl (destination) and click, to move it.");
+    : `Selected repair. Drag either circle, or hold Alt (source) or ${window.HDRShortcuts.format("Mod")} (destination) and click, to move it.`);
   renderRetouchControls();
   renderLocalMaskOverlay();
 }

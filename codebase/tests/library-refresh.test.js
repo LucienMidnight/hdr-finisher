@@ -2,7 +2,7 @@
 const source=fs.readFileSync(require.resolve('../frontend/photo-library'),'utf8');
 function setup(api){
  const display={textContent:''},listeners={},invalidated=[],shown=[];
- const context={$:()=>display,document:{addEventListener:(name,fn)=>listeners[name]=fn},api,
+ const context={HDRShortcuts:require('../frontend/shortcut-labels.js'),$:()=>display,document:{addEventListener:(name,fn)=>listeners[name]=fn},api,
   plural:(n)=>`${n} photos`,invalidateGradePictures:paths=>invalidated.push([...paths]),
   state:{view:'grid'},paintGrid(){},paintFilm(){},showSingle:async()=>{},
   HDRLibraryStopwatch:(...args)=>shown.push(args)};

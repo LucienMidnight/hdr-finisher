@@ -54,6 +54,12 @@ Choose **Preset**, select **Apply** beside a saved preset, or enter a name and c
 
 Film Look also includes read-only built-in presets for Large Format Fine, 35mm Fine, 35mm Balanced, 35mm Fast, and 16mm Fine. These replace the former Reference Model dropdown. Built-ins can be applied and then edited, but they cannot be overwritten or deleted. Film Look's normal Reset state is Neutral.
 
+On macOS, shortcut labels use **⌘ Command**, **⇧ Shift**, **⌥ Option** and
+**⌃ Control**, in that modifier order when combined (⌃⌥⇧⌘). Library Copy,
+Paste, Select all, Filter, Undo and Quick export use Command; for example,
+**⇧⌘E** opens Quick export. Fine slider and graph adjustment remains **⌃**.
+Windows continues to show Ctrl, Shift and Alt.
+
 ## Custom shortcuts
 
 The Shortcuts section lists application commands and continuous grading controls. Select the shortcut field next to a command and press the desired key combination. Press **Backspace** or **Delete** while recording to remove a binding, or **Escape** to cancel.

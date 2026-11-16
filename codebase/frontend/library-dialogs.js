@@ -8,7 +8,7 @@
       const dialog = make("dialog", "application-dialog library-ask"), form = make("form");
       form.method = "dialog"; dialog.setAttribute("aria-label", title);
       const header = make("div", "application-dialog-header"), words = make("div");
-      words.append(make("h2", "", title)); if (message) words.append(make("p", "", message)); header.append(words);
+      words.append(make("h2", "", title)); if (message) words.append(make("p", "", window.HDRShortcuts.text(message))); header.append(words);
       const body = make("div", "library-ask-body"), inputs = [];
       for (const field of fields) {
         const label = make("label", "library-ask-field"), input = make(field.options ? "select" : "input");
@@ -52,7 +52,7 @@
           if(token!==generation || menu.hidden)return;
           group.replaceChildren(...items.map(renderAction));
           // Revert options append at the end; keep existing targets still.
-          menu.style.maxHeight=`${innerHeight-(parseFloat(menu.style.top)||0)}px`;
+          window.HDRFloatingSurfaces.refresh(menu);
         }).catch(error=>{if(token===generation&&!menu.hidden){group.remove();onError(error);}});
         return group;
       }
@@ -60,7 +60,7 @@
       if (action.header) return make("div", "library-menu-header", action.header);
       const button = make("button", action.danger ? "danger" : "", action.label);
       if(action.checked !== undefined){button.setAttribute("role","menuitemcheckbox");button.setAttribute("aria-checked",String(action.checked));button.prepend(document.createTextNode(action.checked ? "✓ " : ""));}
-      if (action.key) button.append(make("kbd", "", action.key)); button.type = "button"; if(action.checked === undefined)button.setAttribute("role", "menuitem"); button.disabled = !!action.disabled;
+      if (action.key) button.append(make("kbd", "", window.HDRShortcuts.text(action.key))); button.type = "button"; if(action.checked === undefined)button.setAttribute("role", "menuitem"); button.disabled = !!action.disabled;
       button.addEventListener("click", async () => {
         const report = failed; closeMenu(true);
         try { await action.run(); } catch (error) { report(error); }
@@ -88,6 +88,7 @@
       event.preventDefault(); event.stopImmediatePropagation();
       const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (at + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
       items[next]?.focus({ preventScroll: true });
+      items[next]?.scrollIntoView({ block: "nearest" });
     }
   }, true);
   window.addEventListener("blur", () => closeMenu());

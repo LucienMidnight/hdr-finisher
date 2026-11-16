@@ -120,7 +120,7 @@
       const copy = document.createElement("span");
       if (normalized.copyId) copy.id = normalized.copyId;
       copy.className = "status-entry-copy";
-      copy.textContent = normalized.message;
+      copy.textContent = global.HDRShortcuts?.text(normalized.message) ?? normalized.message;
       copy.title = normalized.message;
       node.append(copy);
 

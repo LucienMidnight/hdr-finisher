@@ -49,7 +49,7 @@ const keyHints = (() => {
       items.slice(0, count).forEach(([key, action], index) => {
         if (index) node.append(" · ");
         const bold = document.createElement("b");
-        bold.textContent = key;
+        bold.textContent = window.HDRShortcuts?.text(key) ?? key;
         node.append(bold, ` ${action}`);
       });
     };

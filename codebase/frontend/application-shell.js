@@ -316,15 +316,7 @@
 
   function displayShortcut(value) {
     if (!value) return "Not assigned";
-    const mac = isMacPlatform();
-    return value.split("+").map((part) => {
-      if (part === "Mod") return mac ? "⌘" : "Ctrl";
-      if (part === "Ctrl") return mac ? "⌃" : "Ctrl";
-      if (part === "Meta") return mac ? "Meta" : "Win";
-      if (part === "Shift") return mac ? "⇧" : "Shift";
-      if (part === "Alt") return mac ? "⌥" : "Alt";
-      return part;
-    }).join(mac ? "" : "+");
+    return window.HDRShortcuts.format(value);
   }
 
   function findActionForEvent(event) {

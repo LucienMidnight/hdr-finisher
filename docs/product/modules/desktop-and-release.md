@@ -1,3 +1,27 @@
+## November 16: menu layering and platform shortcut labels
+
+Context menus, application menus and viewer/Library popovers use Chromium's
+manual popover top layer while retaining their DOM ancestry and existing
+keyboard/click handlers. The shared placement helper shifts them inside the
+window with an 8px inset and scrolls oversized contents internally, including
+late-added Library revert choices. The parent hint/status overlay yields
+while a docked Library surface is open, retaining its reserved row as it
+already does for Library modal dialogs. The same helpers load in the main app and
+separate Library window. Existing component tokens and skins are retained.
+
+One shortcut formatter supplies application bindings, fixed Library menus,
+hints, dialog/status copy and tooltip help. Mac modifiers display in Apple's
+⌃⌥⇧⌘ order. Library commands use Command; their handlers already accepted
+metaKey. Fine slider/graph adjustment remains physical Control (⌃), and Shift
+snapping remains ⇧. Windows labels and stored bindings retain their meanings.
+Native Electron coverage passes default/minimum Library menus, deferred revert
+rows, long-menu scrolling, separate Library, Grade/Proof popovers, Export and
+application menus, plus physical Command copy/paste/choose-paste/filter/quick
+export. Screenshots: `codebase/output/review/menu-shortcuts/`. Focused Node
+checks pass. The complete fast suites ran; unrelated mask-sampling (Node)
+and ceiling/HSL/Library-native backend tests (Python) failed during concurrent
+work. Plain quick Library verification is recorded in the follow-up note.
+
 ## November 16: nearby help and app-styled select popups
 
 Tooltips sit just below their own control, flip above when needed and stay
