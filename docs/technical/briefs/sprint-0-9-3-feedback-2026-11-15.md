@@ -29,6 +29,7 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 
 | ID | Item | Package | Status |
 | --- | --- | --- | --- |
+| M1-EQ | Equal scene-input Film Look trial | Research | in progress, isolated harness only — Steve-approved look-before-output trial; no default/recipe/project changes; unchanged Match gates (OKLab P95/median .050/.015, luma median/P95 .010/.030), bright residual target P95 about 3 Delta E00; exploratory same-Mac timing noise band ±10%, not a relaxed shipping budget; report `film-look-equal-input-trial-2026-11-16.md` |
 | N1 | Fixed cap and final SDR Highlight Compression | Overnight | built and checked — fourth mode added, existing curves/settings/defaults retained; CPU/GPU finishing, all 33 SDR Film cases, Proof/export and isolated Library pass; M1 mixed results/new refusals remain for N3a |
 | N2 | Global five-control Tone and aligned wheel ranges | Overnight | built and checked — frozen Y/M guide, photographic-grey anchor, endpoint gates/combined limiter, Whites UI; four HC modes, CPU/GPU, Proof/export, both layouts and isolated Library pass; encoded-HDR diagnostics remain outside report-only caps |
 | N3b | Tone clipping and effective-range diagnostics (T1-d) | Overnight | built, preview-only — HDR/SDR/global/local gestures, endpoint-vs-cap-loss channel checks and Library pass; no Auto/new UI tokens; final photo/export qualification recorded in N3b result |
