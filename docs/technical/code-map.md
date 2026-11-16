@@ -1,5 +1,24 @@
 # Code map
 
+## November 16: safe linked SDR after Match
+
+`backend/hdr_finisher/sdr_link.py` selects the trial output tail and checks
+linked-only target-relative ordering plus unchanged body/white-growth/exposure
+gates. `sdr_match.py` falls back to its independent fitter on rejection.
+`adjustments.py` and `webgpu-shaders.js` share HDR creative/Film/local semantics
+with an SDR-only output tail; `gpu-params.js` selects common scene parameters.
+`sessions.py`, `sdr-match-ui.js` and `control-panel.css` own atomic link/unlink,
+local/history behaviour and the visible panel. `hsl_sampling.py` / `render_cache.py`
+select the HDR hue stage while linked. `library_paste.py` excludes link metadata
+and unlinks SDR creative pastes. No new pixel cache or budget.
+
+`tests/test_sdr_link.py`, `sdr-linked-render.js`, `sdr-linked-interaction.js`
+cover history, bypass/overlap/hue masks, real app and pre-encode CPU/GPU/Proof.
+`tools/qualify_sdr_link.py` reproduces both ordering policies over the original
+49 cases. `tests/performance/sdr-linked-slider.js` records whole waits with the
+machine window and an isolated former-eager-prefix before condition.
+
+
 ## November 16: actual finished delivery inputs in tests
 
 The unpackaged Electron runner enables `tests/helpers/delivery_capture/` only

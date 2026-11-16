@@ -147,9 +147,21 @@ Click **Reset** at the top of the panel to return Film Look to Neutral.
 
 ## Film Look in SDR
 
-Film Look has the same controls in the HDR and SDR versions. You can set them separately.
+Film Look has the same controls in HDR and independent SDR. **Match HDR film
+look** copies those settings once; later HDR edits stay separate.
 
-In the SDR version, **Match HDR film look** copies the HDR look across once. After that, the two versions stay independent, so you can still adjust either one. If you use **Match entire HDR grade** on the SDR page, the Film Look comes with it.
+Whole-photo **Match SDR** first tries a live link. **Linked to HDR** means the
+HDR scene, local adjustments and Film are evaluated together once, with SDR
+applying its own bright-end compression afterward. It preserves the shared
+body contrast and colour relationships. HDR Film changes then flow into SDR.
+If the photo cannot pass the safety checks, Match fits independent SDR and
+shows a short reason.
+
+While linked, **SDR output exposure** and **Highlight Compression** remain SDR
+output controls. Editing SDR's own Film Look, Tone, colour or local grade
+unlinks that photo and uses independent SDR processing. **Unlink** does the
+same explicitly; Undo restores the link. Match SDR tries to link again. Old
+saved grades do not silently acquire a link.
 
 The note at the bottom of the panel explains how the end result is handled:
 

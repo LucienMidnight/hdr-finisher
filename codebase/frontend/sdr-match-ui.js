@@ -4,16 +4,20 @@ function linkedSdrCreativeSignature(sdr) {
 }
 
 function renderLinkedSdrState() {
+  if (state.localSdrUnlinkPending && state.localSdrUnlinkPending.sessionId !== state.session?.session_id) state.localSdrUnlinkPending = null;
   const linked = Boolean(state.adjustments?.sdr?.linked_to_hdr);
   if (els.sdrMatchEntireStatus && linked) els.sdrMatchEntireStatus.textContent = "Linked to HDR · HDR edits update SDR live. SDR creative edits unlink.";
   else if (els.sdrMatchEntireStatus && state.linkedSdrCreativeSnapshot) els.sdrMatchEntireStatus.textContent = "Independent SDR · Match SDR to try linking again.";
   const actions = els.sdrMatchEntireActions;
   if (!actions) return;
+  actions.dataset.matched = String(Boolean(state.editDocument?.sdr_match?.materialized_status));
+  if (linked) els.sdrMatchEntireStatus?.setAttribute("data-tooltip", "Uses HDR tone, colour, local adjustments and Film Look. SDR output exposure and Highlight Compression stay separate. Editing other SDR controls unlinks this photo.");
+  else els.sdrMatchEntireStatus?.removeAttribute("data-tooltip");
   let controls = document.getElementById("sdr-link-controls");
   if (!controls) {
     controls = document.createElement("div");
     controls.id = "sdr-link-controls";
-    controls.className = "control-row";
+    controls.className = "sdr-link-controls";
     const unlink = document.createElement("button");
     unlink.id = "sdr-unlink";
     unlink.type = "button";
@@ -197,11 +201,18 @@ function renderLocalSdrMatch(local, pendingSelected = false) {
   const button = document.getElementById("local-sdr-match");
   button.disabled = !state.session || !local || unusedLocal(local) || Boolean(state.localSdrMatchBusy);
   button.textContent = state.localSdrMatchBusy ? "Matching…" : "Match SDR";
+  const explanation = state.adjustments?.sdr?.linked_to_hdr
+    ? "Fits this adjustment in independent SDR. A changed result unlinks this photo; no change keeps the link. The mask stays unchanged."
+    : "Matches this adjustment only. Global grade and mask stay unchanged.";
+  document.getElementById("local-sdr-match-explanation").textContent = explanation;
+  button.setAttribute("data-tooltip", explanation);
   button.setAttribute("aria-label", `Match SDR for ${local?.name || "selected adjustment"}`);
   document.getElementById("local-sdr-match-parent").textContent = local?.name || "";
   const indicator = document.getElementById("local-sdr-match-status");
   indicator.dataset.outdated = String(Boolean(local?.sdr_match?.out_of_date));
-  indicator.textContent = local?.sdr_match?.out_of_date
+  indicator.textContent = state.adjustments?.sdr?.linked_to_hdr
+    ? "Linked to HDR · SDR local edits unlink this photo."
+    : local?.sdr_match?.out_of_date
     ? "Out of date · grade, mask or stack changed. Match again to update."
     : local?.sdr_match ? "Individually matched to SDR" : "";
 }

@@ -77,6 +77,9 @@ def capture_stage_input(source, adjustments, kind, *, reference=None, color_cont
         apply_adjustments(source, adjustments, kind, sdr_reference_image=reference,
                           color_context=color_context, source_pixel_scale=source_pixel_scale)
     except _Captured as captured:
+        if kind == PreviewKind.SDR and captured.kind == PreviewKind.HDR:
+            from .color import acescg_to_linear_srgb
+            return acescg_to_linear_srgb(captured.pixels)
         return captured.pixels
     finally:
         _target.reset(token)
@@ -84,7 +87,12 @@ def capture_stage_input(source, adjustments, kind, *, reference=None, color_cont
 
 
 def stage_input_signature(adjustments, lane):
+    linked = lane == PreviewKind.SDR and adjustments.sdr.linked_to_hdr
+    if linked:
+        lane = PreviewKind.HDR
     branch = getattr(adjustments, lane.value).model_dump(mode="json")
+    if linked:
+        branch['linked_to_hdr'] = True
     downstream = {"hsl", "hsl_section_enabled", "curves_section_enabled", "luma_curve", "red_curve",
                   "green_curve", "blue_curve", "detail", "detail_section_enabled", "film_look",
                   "film_look_section_enabled", "vignette", "vignette_section_enabled",

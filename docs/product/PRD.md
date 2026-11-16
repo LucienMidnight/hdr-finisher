@@ -57,11 +57,14 @@ may not contradict these.
 2. **Two authored renditions.** HDR and SDR are graded as independent,
    equally good pictures of the same photo. The SDR side is never just a
    by-product. HDR should win with brightness and range, not with stronger
-   colour. Steve, November 16, 2026 (Film option B, not yet built): after
-   Match, SDR follows HDR's creative grade (Tone and Film Look computed once
-   on the HDR scene grade) and keeps only SDR-specific adjustments after the
-   film, so colours agree. Changing SDR's own Tone or Film unlinks that photo
-   and returns it to an independent SDR grade, as before.
+   colour. Steve, November 16, 2026 (safe Film option B): whole-photo Match
+   first tries the shared HDR creative grade and Film, then SDR's output tail.
+   Only a result passing every safeguard links; otherwise the existing
+   independent fit runs and explains why. Linked ordering judges additional
+   inversions relative to the settled-HDR Match target, with the existing bins
+   and allowance; independent ordering is unchanged. SDR keeps HDR body
+   contrast and gently compresses the bright end. Editing SDR's pre-Film
+   controls or local creative grade unlinks; HDR edits flow into linked SDR.
 3. **Speed where it is felt; the GPU where it pays** (Steve, November 2,
    2026; replaces "GPU first" of October 18). Judge speed by the wait the
    user feels, measured from their action to the result on screen, not by

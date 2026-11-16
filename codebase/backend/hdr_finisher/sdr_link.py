@@ -78,8 +78,14 @@ def try_linked_match(source, adjustments, locals_, settled_hdr, *, reference_whi
     if settled_hdr is None:
         settled_hdr = np.clip(apply_hdr_output_highlight_compression(common, adjustments,
             color_context=RenderColorContext(reference_white_nits)), 0.0, None)
+    if not np.isfinite(common).all() or not np.isfinite(settled_hdr).all():
+        return None, 'the shared HDR analysis contains invalid values'
+    if common.shape != settled_hdr.shape:
+        return None, 'the HDR analysis geometry could not be shared'
     placed = acescg_to_linear_srgb(common) * SDR_SCENE_TO_DISPLAY_SCALE
     target = build_sdr_match_target(settled_hdr)
+    if not np.isfinite(target).all():
+        return None, 'the HDR Match target contains invalid values'
     body = _acescg_luma(settled_hdr) * SDR_SCENE_TO_DISPLAY_SCALE <= MATCH_SHOULDER_START
     result = adjustments.model_copy(deep=True)
     result.sdr = _semantic_sdr_translation(adjustments, settled_hdr)

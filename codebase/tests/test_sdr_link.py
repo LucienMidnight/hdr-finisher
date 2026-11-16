@@ -133,3 +133,41 @@ def test_refused_and_equal_local_matches_keep_link(tmp_path, monkeypatch):
     monkeypatch.setattr('hdr_finisher.sdr_local_match.fit_local_sdr', lambda *args, **kwargs: LocalMatchResult(grade, 'Already equal', {}))
     response, message, changed = store.apply_local_sdr_match_action(sid, expected_revision=revision, target_id=lid)
     assert s.adjustments.sdr.linked_to_hdr and s.local_adjustments[0].sdr_grade == grade
+    assert not changed and s.edit_revision == revision and s.edit_document().model_dump() == before
+
+
+def test_linked_hue_masks_and_picker_use_hdr_prefix_and_follow_hdr_edits():
+    from hdr_finisher.models import MaskExpression, MaskLeaf
+    from hdr_finisher.render_cache import SessionRenderCache
+    from hdr_finisher.hsl_sampling import capture_stage_input
+    source = tifffile.imread(Path(__file__).parent/'fixtures/hdr_match_scene.tiff').astype(np.float32)
+    a=AdjustmentState();a.sdr.linked_to_hdr=True;a.sdr.use_authored_base=False
+    a.hdr.saturation=.2;a.sdr.saturation=-.5
+    local=LocalAdjustment(mask=MaskExpression(leaf=MaskLeaf(type='hue_range',hue_center=230,hue_width=40)))
+    cache=SessionRenderCache(source,None)
+    try:
+        hdr=cache.compiled_local_mask(a,local,256,lane=PreviewKind.HDR,spatial_only=True)
+        sdr=cache.compiled_local_mask(a,local,256,lane=PreviewKind.SDR,spatial_only=True)
+        np.testing.assert_array_equal(hdr,sdr)
+        before=cache.hsl_stage_input(a,256,PreviewKind.SDR).copy()
+        expected=acescg_to_linear_srgb(capture_stage_input(source,a,PreviewKind.HDR))
+        np.testing.assert_array_equal(before,expected)
+        a.hdr.exposure=.4
+        assert not np.array_equal(before,cache.hsl_stage_input(a,256,PreviewKind.SDR))
+    finally:
+        cache.clear_adjusted()
+
+
+def test_hdr_denoise_mirror_keeps_link_through_undo_redo(tmp_path):
+    from test_sdr_local_match import store_fixture
+    store,sid,_=store_fixture(tmp_path);s=store.get(sid)
+    s.adjustments.sdr.linked_to_hdr=True
+    before=s.edit_document().model_dump()
+    desired=s.denoise.model_copy(deep=True);desired.hdr.enabled=True;desired.hdr.controls.amount=.8
+    store.apply_edit_commands(sid,[EditCommand(expected_revision=s.edit_revision,command_type='set_denoise_settings',payload={'denoise':desired.model_dump()})])
+    assert s.adjustments.sdr.linked_to_hdr and s.denoise.sdr==s.denoise.hdr
+    after=s.edit_document().model_dump()
+    store.apply_edit_commands(sid,[EditCommand(expected_revision=s.edit_revision,command_type='undo')])
+    assert s.edit_document().model_dump()==before
+    store.apply_edit_commands(sid,[EditCommand(expected_revision=s.edit_revision,command_type='redo')])
+    assert s.edit_document().model_dump()==after

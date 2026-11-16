@@ -261,9 +261,9 @@ function renderLaneChrome() {
       : match?.link_fallback_reason ? `Independent SDR · couldn’t link: ${match.link_fallback_reason}.`
       : match?.rematch_required ? "Rematch required · repairs changed"
       : match?.materialized_status === "needs_review"
-      ? "Match needs review · editable SDR controls populated"
+      ? "Independent SDR · Match needs review"
       : match?.materialized_status === "matched"
-        ? "Matched into editable SDR controls"
+        ? "Independent SDR · Match SDR to try linking again."
         : "";
   }
   renderLinkedSdrState();

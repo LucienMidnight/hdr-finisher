@@ -8,12 +8,15 @@ This document explains the pipeline as it runs today, including the reasons behi
 
 When this document disagrees with running code or tests, code and tests win. Update this page in the same change. The repository's broader authority order is active code/tests, reproducible evidence, validation records, user documentation, then PRDs and design history.
 
-**Linked SDR status, November 16:** option B is an approved design, not a
-shipping stage. The attempted implementation stopped before renderer/schema
-changes because no qualifying general output tail was demonstrated. The
-independent generated/authored SDR paths below remain current. No SDR local
-stack is silently moved after Film or added to HDR's locals. [Tail checkpoint
-and outstanding integration surfaces](reports/film-look-equal-input-trial-2026-11-16.md#9-option-b-implementation-checkpoint-no-shipping-change).
+**Linked SDR, November 16:** whole Match first fits the common HDR creative
+scene and the trial's SDR output tail. Only the selected fit passing all
+safeguards links; otherwise the independent generated/authored paths below
+remain current. The linked branch evaluates HDR Tone/colour, ordered HDR locals
+and Film once, then converts/scales that scene into SDR, applies the explicit
+SDR output exposure, delivery finishing, SDR HC and gamut boundary. It skips
+all independent SDR pre-Film controls and locals. HDR's output stage is unchanged.
+Linked ordering alone measures inversions beyond those already in the Match
+target using the same eight bins and .005 allowance. [Current Match contract](sdr-match.md#current-recipe-and-output-contract).
 
 ## November 16 N2: global Tone and aligned wheel ranges
 

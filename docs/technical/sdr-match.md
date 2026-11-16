@@ -20,7 +20,7 @@ remains unchanged. Qualification must report linked/fallback counts with both
 the previous absolute rule and this approved relative rule.
 
 
-## November 16: option B is accepted, not implemented
+## Earlier November 16 checkpoint (superseded)
 
 Whole-photo Match does not yet create a live HDR creative-grade link. The
 implementation attempt stopped at output-tail acceptance: the original 49
@@ -121,18 +121,54 @@ there is no automatic recalculation. Whole-picture Match still replaces every
 SDR local, clears individual match records, and asks before overwriting
 individually matched or non-neutral SDR locals (including manual edits).
 
-HDR-to-SDR Match is a recipe-snapshot operation. An active match owns a captured HDR recipe, ordered HDR local grades and masks, reference-white and source identity, highlight-boundary values, a stale-detection signature, and the independent SDR state retained for Revert. SDR controls remain separate trims over the matched rendition.
+## Current recipe and output contract
 
-Grain has one match-specific source selector. `captured_hdr` synthesizes the captured HDR grain once, after SDR trims; `sdr_override` uses the current SDR grain controls instead. An edit to any `sdr.film_look.grain_*` field atomically copies the captured grain recipe into SDR, applies the edit, and switches the selector. The two grain recipes are never stacked.
+`SDRAdjustments.linked_to_hdr` defaults false. Only an accepted new whole-photo
+Match sets it true and disables the authored SDR base. `output_exposure` is a
+visible late trim in stops, applied after the common Film and before SDR HC.
+It defaults to zero and is ignored by independent SDR rendering. No pixel
+snapshot, captured grain selector, migration or compatibility renderer exists.
 
-Match, Rematch, Revert, and the first grain override apply a fully materialized `set_sdr_match` command. Its forward and inverse payloads contain the exact Match state, global adjustments, and local adjustments, making each action one deterministic undo step. Proxy analysis happens before mutation and the command's expected revision rejects results computed from stale state.
+For linked SDR, HDR Tone/colour, Exposure Bands, HSL, curves, wheels, Detail,
+source-anchored HDR locals, Film/grain/halation/lens and Vignette form the common
+scene prefix. The independent SDR creative/local stack is not applied on top.
+The SDR tail converts ACEScg to linear sRGB, scales by (100/203)/.18, applies
+output exposure, then ordinary SDR finishing, HC and gamut mapping. Preview
+omits delivery resize/sharpening as before. HDR retains its existing output
+compression and exact ceiling; no HDR recipe or pixel change is introduced.
+HDR Denoise supplies the linked source; its controls are mirrored to the
+existing SDR source route. A source whose Denoise cannot be prepared uses
+independent fallback with an explanation.
+
+Match evaluates Film once for its common scene and derives settled HDR from
+that same array. The trial's 19 output tails are ranked by body safety, then
+whole-frame squared RGB error. Only the selected colour-best tail is checked
+for acceptance. A broader shoulder is not substituted just to obtain a link.
+Acceptance retains finite/legal output, the normal .010/.030 luma median/P95
+and .015/.040 OKLab median/P95 gates, +0.5 EV white growth <=1 percentage
+point, and the calibrated exposure-editability checks. Only linked ordering
+has Steve's approved target-relative change. A rejected proposal runs the
+incumbent independent fitter with its original input and absolute diagnostic.
+A failed independent fit remains a refusal, with the link reason also shown.
+
+`set_sdr_match` atomically stores the SDR grade, locals, Denoise and Match
+status/reason. Its exact inverse gives one Undo; expected revision rejects
+stale analysis. Explicit Unlink, SDR creative edits and actual SDR-local edits
+restore independent rendering. The edit and unlink share one history step.
+HDR-only edits, shared masks/opacity/bypass and refused or equal Local Match
+keep the link. A successful changed Local Match fits the independent SDR
+recipe and unlinks in its one local transaction. N4 whole-Match consent stays.
+Library paste cannot copy link/output metadata; an SDR creative paste unlinks
+and Undo restores it. Existing saved photos remain independent until a new,
+accepted Match. The three protected projects are not rewritten.
 
 ## Relationship to HDR Highlight Compression
 
-HDR Peak Fit, Soft Ceiling, or Clip remains part of the captured HDR grade; SDR Match neither replaces nor bypasses it. Output Highlight Compression finishes the rendered HDR result before the Match knee maps its remaining headroom into SDR, so the two shoulders intentionally stack.
-
-The automatic percentile `P` is measured after Highlight Compression and the rest of the captured HDR recipe. Peak Fit can therefore lower `P`, move the automatic Match knee upward, and produce a gentler SDR shoulder. The Peak Fit-shaped relationships remain visible in SDR; additional compression applies only where highlights still extend beyond the Match boundary.
-
+The Match target is still built from settled HDR, including HDR's selected
+output compression. Linked SDR renders the common scene before that HDR-only
+output stage and applies its own late cap; it does not stack HDR output HC
+and SDR output HC. Independent Match's target construction and renderer are
+unchanged. HDR caps and the 1% encoded allowance retain their existing rules.
 
 ## November 15 N1: final SDR shoulder
 

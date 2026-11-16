@@ -1284,6 +1284,9 @@
      * on real neighbours; the candidate atlas never invents their input.
      */
     async rankEditingPeakCandidates(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, isCurrent) {
+      if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
+        locals = locals.map(local => ({ ...local, sdr_grade: local.hdr_grade }));
+      }
       const signature = JSON.stringify(adjustments.shared?.geometry || {});
       this.editingCandidateCache ||= new Map();
       const evidenceKey = `${sessionId}:${lane}:${signature}:${adjustments.sdr?.use_authored_base}`;
@@ -1385,6 +1388,9 @@
     }
 
     async measureEditingPeak(canvas, sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, options = {}) {
+      if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
+        locals = locals.map(local => ({ ...local, sdr_grade: local.hdr_grade }));
+      }
       const isCurrent = options.isCurrent || (() => true);
       if (options.highlightAnchorOnly && adjustments[lane]?.highlight_compression_peak_measurement === "robust") {
         const signature = JSON.stringify(adjustments.shared?.geometry || {});
@@ -8668,6 +8674,9 @@
      * theirs at full size.
      */
     async measurementClaritySurround(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, options) {
+      if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
+        locals = locals.map(local => ({ ...local, sdr_grade: local.hdr_grade }));
+      }
       const isCurrent = options.isCurrent || (() => true);
       const key = JSON.stringify([sessionId, lane, revision, adjustments.shared?.geometry || {}, adjustments[lane],
         lane === "sdr" && adjustments.sdr.linked_to_hdr ? adjustments.hdr : null, locals,

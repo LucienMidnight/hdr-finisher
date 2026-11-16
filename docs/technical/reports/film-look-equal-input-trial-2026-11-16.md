@@ -1,5 +1,9 @@
 # Film Look equal-input trial — November 16, 2026
 
+**Implementation update:** the safe-link build, two-rule counts and scoped
+qualification are in section 10. Sections 1–9 retain the earlier research and
+checkpoint history; their unavailable-stage notes describe that earlier work.
+
 ## Recommendation: ship with changes, not this trial as-is
 
 **Pursue the common scene-grade/Film architecture; do not enable it as the default yet.**
@@ -637,6 +641,183 @@ Only compact JSON and validation logs are retained under
 
 No push, protected-file writes, test relaxation,
 migration, cache/budget change or encoder/export/Proof tooling edits.
+
+## 10. Safe-link implementation and final scoped qualification (November 16)
+
+Steve replaced the always-link plan with **try linking, otherwise use the
+existing independent fit**. He then approved target-relative ordering for
+linked SDR only: use the same HDR-brightness bins and .005 allowance, judge
+SDR's negative adjacent median steps beyond the target's own negative steps.
+Independent ordering is unchanged. All other gates remain unchanged.
+
+The shipping CPU and WebGPU paths now evaluate HDR creatives, source-anchored
+HDR locals and Film once per render, with an SDR-specific output tail. Match
+also reuses its one common Film array to derive settled HDR and search the
+19 tails. It chooses the body/colour-best tail **before** acceptance; it does
+not select a broader/darker tail just to obtain a link. Linked SDR preserves
+HDR's body response, then gently compresses the bright end. The print curve
+alone still does not replace SDR HC/gamut mapping.
+
+The panel visibly says **Linked to HDR**, offers **Unlink** and a post-Film
+**SDR output exposure** trim. HDR changes flow live. Editing SDR's own creative
+controls or actual SDR local grade unlinks in the same Undo transaction;
+shared mask/opacity/bypass and refused/equal Local Match keep the link without
+adding a history step. A pending HDR global save cannot capture the optimistic
+SDR-local unlink: its local transaction owns that unlink and inverse. A changed
+Local Match explains that it fits independent SDR and unlinks. N4 overwrite
+confirmation is retained. HDR Denoise feeds the common scene and is mirrored
+through the existing source routes; an unpreparable Denoise source safely
+falls back. HDR Denoise Undo/Redo retains the link. Live pacing and native peak/Clarity
+measurement select the HDR creative/local recipe while linked. Library paste excludes
+link/output metadata and unlinks actual SDR creative pastes.
+
+### Counts under both ordering rules
+
+Same original 176/224 charts and five <=512px RAW derivatives, seven looks
+(Film off, Portra/Ektar/Velvia at 50/100%), current CPU renderer, grain/halation
+and locals off. This is a bounded corpus, not an all-photo acceptance rate.
+The following is **linked / fallback**, not matched / refused:
+
+| Population | Old absolute ordering | Approved target-relative ordering |
+| --- | --- | --- |
+| chart176 | 0 / 7 | 2 / 5 |
+| chart224 | 0 / 7 | 3 / 4 |
+| A7R00619.ARW | 3 / 4 | 3 / 4 |
+| DSC00264.ARW | 7 / 0 | 7 / 0 |
+| IMG_3129.CR2 | 1 / 6 | 7 / 0 |
+| IMG_0790.CR2 | 6 / 1 | 6 / 1 |
+| IMG_7723.CR3 | 6 / 1 | 6 / 1 |
+| **All 49** | **23 / 26** | **34 / 15** |
+| **Five RAWs × seven looks** | **23 / 12** | **29 / 6** |
+
+Under the approved rule, twelve proposals fail white growth, two fail excess
+ordering (chart224 Portra 100% and Ektar 100%), one fails calibrated exposure
+editability (IMG_0790 Velvia 100%). The selected linked tail otherwise passes
+the normal .010/.030 luma and .015/.040 OKLab median/P95 limits. Worst linked
+body P95 is .006182 luma and .019160 OKLab; maximum white growth .893 points,
+within the original one-point limit. No check is redefined beyond Steve's
+explicit ordering decision.
+
+The 15 fallbacks retain the incumbent fit: **2 matched, 10 needs review,
+3 refused**. Refused: chart176 Velvia 100%, chart224 Velvia 50%/100%. All 35
+RAW/look cases return a usable linked or independent fit. With the old rule,
+the 26 fallbacks contained 6 matched / 15 review / 5 refused. Neither policy
+counts a rejected candidate as a rendered Match.
+
+### Colour: linked and independent fallback
+
+All numbers below are residual Delta E 2000 against the unchanged SDR Match
+target built from settled HDR. RAW highlights use the original >.9 HDR-normalized
+luma mask. Values <.001 are measured nonzero results. The linked chart bright
+hue/stop maximum over +1/+2/+3 is **.519** (176) and **.660** (224); the accepted
+fallback chart maxima remain **17.991** and **14.244**. Refused charts are excluded.
+
+| RAW | Linked whole-frame P95 range | Linked highlight P95 range | Fallback whole-frame / highlight P95 range |
+| --- | --- | --- | --- |
+| A7R00619 | .228–.236 | .502–.842 | 6.222–7.865 / 7.734–8.930 |
+| DSC00264 | .037–.267 | .645–1.206 | none |
+| IMG_3129 | <.001 | .918–1.705 | none |
+| IMG_0790 | <.001–3.222 | .111–1.002 | 4.748 / 8.884 |
+| IMG_7723 | <.001–.349 | .015–.872 | 7.063 / 8.314 |
+
+The 3.222 whole-frame result remains an explicit limit to any “all <3” claim.
+Independent fallback still has the older larger highlight-colour errors.
+Under the old ordering rule, linked RAW highlight P95 was .015–1.539;
+accepted fallback highlights spanned 7.734–15.528. Every returned recipe keeps
+HDR arrays bitwise unchanged. [Full two-rule cases, quality, per-hue/stop colour
+and input/backend fingerprints](../../../codebase/output/review/safe-link/corpus.json).
+
+### GPU, delivery, history, speed and saved grades
+
+The common Film is implemented in the production shader, with appended linked
+output fields and unchanged prior positions. Shader compilation and 24 actual
+preview/direct/tiled finished-float comparisons pass: Film off, Portra, Ektar,
+Velvia, all four SDR HC modes and a late exposure trim, plus grain, lens,
+halation, Detail and overlapping/hue HDR locals.
+Worst mean **.054**, P99.9 **.168 Delta E00**, inside <1 / <=3. Direct and tiled
+delivery results agree. Preview is compared to the CPU preview; delivery is
+compared to CPU resize/sharpen/nonnegative finishing followed by HC/gamut,
+all before encoding. An initial expanded harness compared delivery to the
+pre-finishing preview reference; that reference-stage error was corrected,
+with no tolerance or production-finishing change. [GPU results](../../../codebase/output/review/safe-link/gpu.json).
+
+Real UI/history and linked JPEG Ultra HDR delivery pass. Finished GPU/CPU
+agreement is HDR **0.077/0.200 Delta E ITP**, SDR **0.031/0.118 Delta E00**
+(mean/P99.9). HDR finished maxima are 999.999878 GPU / 1000 CPU nits.
+GPU and CPU full/reduced Proof bytes equal their matching exports on this
+bounded same-size fixture. Encoded own-source and decoded-pair colour numbers
+remain separately reported diagnostics; the pre-existing lossy JPEG tails are
+not claimed fixed. [Interaction and delivery results](../../../codebase/output/review/safe-link/interaction.json).
+
+The visible link block was checked at 1408×794 and 1100×720 using existing
+font/colour/radius tokens. The old whole-Match status was visually clipped;
+that clipping is removed. A real visibility check now protects the link label.
+Local Match also explains its changed-result unlink semantics. Tooltip catalogue
+regeneration first compared its owning source revision: **zero unapplied text
+edits**, so no Steve wording was overwritten.
+
+Whole-slider measurements use the Neo A18 Pro / 8 GB, 1408×794, DPR 2, a
+24.064 MP deterministic source, Portra 400 at 50%, grain/halation off, warmed
+Fit processing at 1290px. Normal control handlers run to the exact current SDR
+picture plus two animation frames. The controlled before uses the former eager
+WGSL prefix evaluation; after evaluates only the active lane. Independent SDR
+Exposure median **104.9→82.7 ms**, range **86.5–138.9→58.4–129.8**; wide overlap
+does not prove a stable general gain. Linked HDR-Exposure-to-SDR median
+**66.6→65.3 ms**, range **63.7–81.8→64.3–85.7**, normal variation within the
+recorded ±10% exploratory noise. This is not a native 100% or Steve's original
+slow-photo benchmark. The older diagnostic forced a 2560px viewport and is
+excluded. Conditions and records: [performance table](../performance-table.md),
+`codebase/output/performance/safe-link/controlled-{before,after}.json`.
+
+New recipe fields are `sdr.linked_to_hdr` (default false), `sdr.output_exposure`
+and a diagnostic fallback reason. No migration/old-renderer path. **Only photos
+that Steve newly Matches and that link change SDR rendering.** Existing
+independent grades and the saved DSC00264 HDR-Vision3/SDR-Film-off grade keep
+independent processing. Protected DSC00950, DSC00264-four-masks and
+DSC00264-fifty-locals projects are unchanged; their hashes are checked.
+
+### Validation and remaining selection
+
+- Full Node: **1,091 passed / one skipped**. Full Python: **3,875 passed /
+  144 skipped / one xpassed**. Focused final history/Match/paste tests: **103 passed**;
+  HSL/hue integration: **58 passed**; final frontend contracts **33 passed**,
+  tooltip/layout sanity **10 passed**. No failing fast test is hidden by the
+  initial helper-layout/paste catalogue failures; those owned causes are fixed.
+- Pass: full **33-case SDR Film stock** matrix, tiled Film/grain, SDR gamut,
+  local Detail/Film, GPU delivery smoke, repeat plus CPU comparison, Proof
+  sizes, and all-codec HDR ceiling across CPU/GPU export and both Proof sizes.
+  The initial stock supervisor killed its wrapper before the child completed;
+  the sole GPU child finished the matrix under the retained lock, and only
+  that verified dead owned lock was cleared. Later runs use wrapper deadlines.
+- The old `sdr-match-gpu-interaction.js` still fails **before Match**, “Could not
+  prepare the HDR Match browser fixture”; unchanged known limitation. The new
+  linked real-app driver passes the actual Match, live edits and history flow.
+- Default 90s Library viewport smoke passes, **9/9 requested pictured**, no
+  errors or reserve violation; external tree peak 3.03 GB. Viewport-only scope.
+- All Electron checks use the shared lock, one at a time. Own slow validation
+  stays within the requested roughly 30-minute allowance; there is no release
+  or full sweep claim. [Driver ledger](../../../codebase/output/review/safe-link/slow-checks.json)
+  and [final checks](../../../codebase/output/review/safe-link/final-checks.json).
+- Not run in this worker's remaining export/Proof selection: high-fidelity JXL
+  (owned by the other worker), HSL selection/global/local delivery, Tone-zone,
+  desaturation, hue-mask delivery, proof-grade diagnostic, GPU Denoise
+  measurement, file-browser/preset export, Local Match native delivery,
+  highlight-delivery floor, performance export parity / protected-project
+  preview-export comparison, batch export, Library export menu, GPU delivery
+  ceiling, RAW edge-colour, GPU edge-colour, HSL integration and photo framing.
+  Exact commands are in `codebase/output/safe-link-release-plan.log`; the
+  explicitly run ceiling/Film/SDR checks above are not silently waived.
+- Still open: visual sign-off, the older Match fixture, full-native five RAWs
+  across all Film/lens/grain settings, and Steve's slow Film-on photo at native
+  zoom. The 49-case proxies do not certify those populations.
+
+Scratch output finishes at **13.7 GB** (13.6 GB at start), below the 100 GB
+limit. The generated 289 MB benchmark derivative and owned temporary profiles/
+float references are removed; compact JSON, logs and panel crops remain. Other
+workers’ output is left in place.
+
+No push, installer, protected-project save, tolerance relaxation, cache/budget
+increase, or exporter/codec/export-preset change belongs to this work.
 
 ## Appendix A. Every hue family and stop, before → after P95 ΔE00
 

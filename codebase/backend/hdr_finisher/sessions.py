@@ -626,12 +626,13 @@ class SessionStore:
                     sdr_reference = resolve_adaptive(sdr_reference, estimate_adaptive_model(sdr_reference), controls)
                 else:
                     sdr_source = resolve_adaptive(sdr_source, noise, controls)
+        was_linked = document.global_adjustments.sdr.linked_to_hdr
         document.global_adjustments.sdr.linked_to_hdr = False
         result = fit_local_sdr(source, document.global_adjustments, document.local_adjustments, target_id,
                                reference_white_nits=document.hdr_reference_white_nits,
                                source_pixel_scale=min(1., LOCAL_MATCH_EDGE / max(session.image.shape[:2])),
                                masks=masks, sdr_source=sdr_source, sdr_reference=sdr_reference)
-        if result.grade is None:
+        if result.grade is None or (was_linked and result.grade == document.local_adjustments[index].sdr_grade):
             with self._lock:
                 if session.edit_revision != expected_revision:
                     raise RevisionConflictError(expected_revision, session.edit_revision)
@@ -796,7 +797,9 @@ class SessionStore:
             old = {item.id: item.sdr_grade for item in previous.local_adjustments}
             unlink |= any(item.sdr_grade != old.get(item.id, LocalGrade()) for item in session.local_adjustments)
             if command.command_type == "set_denoise_settings":
-                unlink |= previous.denoise.sdr != session.denoise.sdr
+                mirrored_hdr_change = (previous.denoise.hdr != session.denoise.hdr
+                                       and session.denoise.sdr == session.denoise.hdr)
+                unlink |= previous.denoise.sdr != session.denoise.sdr and not mirrored_hdr_change
             unlink |= not session.adjustments.sdr.linked_to_hdr
             if unlink:
                 session.adjustments.sdr.linked_to_hdr = False

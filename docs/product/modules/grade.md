@@ -1,4 +1,4 @@
-## November 16: safe linked SDR implementation, qualification in progress
+## November 16: safe linked SDR built and scoped qualification
 
 Whole-photo Match now tries the trial's body/colour-best output tail, then
 requires all existing acceptance checks; linked ordering alone uses Steve's
@@ -13,12 +13,37 @@ CPU reference, direct/tiled WebGPU stage selection and saved opt-in fields
 are implemented. No migration or default link: only photos re-Matched by the
 user and accepted as linked change SDR rendering. HDR remains unchanged;
 the protected DSC00950 and saved DSC00264 projects are not reinterpreted.
-Initial focused validation: 53 Python checks and eight finished-float GPU
-comparisons pass (worst mean 0.042 / P99.9 0.226 Delta E00). Full suites,
-native/source/mask interaction, export/Proof and whole-slider performance
-qualification are still in progress; this paragraph does not certify them.
+Scoped Mac qualification: Node 1,091 pass / one skip; Python 3,875 pass /
+144 skips / one xpass. All 24 linked preview/direct/tiled finished-float cases
+pass across all four SDR HC modes and late exposure, with grain, lens,
+halation, Detail and overlapping/hue HDR locals (worst
+mean 0.054 / P99.9 0.168 Delta E00). Real linked Match, live HDR changes,
+visible link/unlink, global/local edits, Undo/Redo and N4 confirmation pass.
+Linked GPU/CPU export and reduced/full Proof identity pass; HDR finished
+inputs remain unchanged. Existing SDR Film stock (33), tiled grain, gamut,
+local Detail, delivery smoke/repeat/CPU, Proof size and all-codec ceiling
+checks pass. The older Match GPU driver still stops at its pre-existing
+fixture preparation failure, before Match. Library viewport 9/9 passes.
 
-## November 16: linked SDR implementation remains blocked
+The 49-case trial corpus now gives **34 linked / 15 fallback**, versus
+**23 / 26** with the old absolute ordering rule. Of the 35 RAW/look cases,
+**29 link / 6 fall back**. Fallback retains two matched, ten needs-review and
+three refused chart fits; no refused fit is counted as a valid colour result.
+Linked chart bright hue/stop P95 is <=0.660 Delta E00; linked RAW highlight
+P95 is 0.015–1.705. Accepted fallback RAW highlights remain 7.734–8.930.
+These are residuals against the same Match target, not direct HDR/SDR equality.
+
+Controlled 24 MP Film-on Fit slider waits on the Neo: linked median
+66.6→65.3 ms (normal noise); independent 104.9→82.7 ms, with overlapping wide
+sample ranges. This does not prove a general fix for Steve's slow real-photo
+case. See the performance table and report section 10.
+
+**Open qualification:** Steve's visual review; the older browser-Match fixture;
+full-native RAW × all-stock/lens/grain coverage and the remaining release
+selection listed in report section 10. No full release or native five-RAW
+matrix qualification is claimed from the bounded trial.
+
+## Earlier November 16 checkpoint: linked SDR remained blocked (history)
 
 Steve's option B is accepted but not exposed. The tail-acceptance checkpoint
 reproduces the equal-input trial's 49 body passes but only 30 ordering and

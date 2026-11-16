@@ -122,6 +122,13 @@ function queueEditCommand(commandType, payload = {}, targetId = null, { refreshP
     if (optimisticAdjustments) state.editDocument.global_adjustments = optimisticAdjustments;
     state.documentDirty = preserveNewerGlobalEdit || Boolean(result.dirty);
     state.adjustments = optimisticAdjustments || result.document.global_adjustments;
+    if (state.localSdrUnlinkPending?.sessionId === sessionId) {
+      if (["update_local", "create_local", "undo", "redo", "replace_document", "revert_rendition"].includes(commandType)) {
+        state.localSdrUnlinkPending = null;
+      } else if (commandType === "set_global_adjustments" && state.adjustments.sdr.linked_to_hdr) {
+        state.adjustments.sdr.linked_to_hdr = false;
+      }
+    }
     if (draftGeometry) state.adjustments.shared.geometry = draftGeometry;
     if (state.geometryTransformHandoffSignature
       && state.geometryTransformHandoffSignature !== geometrySignature()) {
@@ -195,6 +202,10 @@ async function syncGlobalEditState() {
   const generation = state.globalEditGeneration;
   const historyGroup = state.globalEditHistoryGroup;
   const adjustments = JSON.parse(JSON.stringify(state.adjustments));
+  if (state.localSdrUnlinkPending?.sessionId === sessionId
+    && linkedSdrCreativeSignature(adjustments.sdr) === state.localSdrUnlinkPending.creative) {
+    adjustments.sdr.linked_to_hdr = true;
+  }
   // A plain global save only re-renders if the backend's document differs from
   // the optimistic values already drawn.
   const pending = queueEditCommand("set_global_adjustments", { adjustments }, null, {
@@ -251,6 +262,7 @@ async function resetRepairSource(previousRepairs, documentState) {
 }
 
 async function refreshEditState({ preserveLocalDraft = false } = {}) {
+  if (!preserveLocalDraft) state.localSdrUnlinkPending = null;
   if (!state.session) return;
   const sessionId = state.session.session_id;
   const optimisticLocals = preserveLocalDraft

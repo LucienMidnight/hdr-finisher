@@ -1162,6 +1162,8 @@ class SessionRenderCache:
         with the geometry-fixed frame it belongs to. Keyed by every setting."""
         from .hsl_sampling import capture_stage_input
         from .hue_mask import prepare_stage_input
+        if lane == PreviewKind.SDR and adjustments.sdr.linked_to_hdr:
+            lane = PreviewKind.HDR
         key = (self._source_epoch, edge, PreviewKind(lane).value, adjustment_signature(adjustments),
                repr(self.color_context.cache_key))
         with self._lock:

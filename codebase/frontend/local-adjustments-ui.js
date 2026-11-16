@@ -936,7 +936,10 @@ function scheduleLocalPreview({ spatialMaskChanged = false } = {}) {
   if (state.currentView === "sdr" && state.adjustments?.sdr?.linked_to_hdr && state.linkedSdrLocalSnapshot
     && (state.editDocument?.local_adjustments || []).some(local => stablePreviewJson(local.sdr_grade)
       !== (state.linkedSdrLocalSnapshot.get(local.id) || stablePreviewJson(defaultLocalGrade("sdr"))))) {
-    // Optimistic only: update_local commits the unlink and grade together.
+    // Keep the optimistic unlink out of an unrelated pending global save;
+    // update_local must own the unlink and its exact inverse together.
+    state.localSdrUnlinkPending = { sessionId: state.session?.session_id,
+      creative: linkedSdrCreativeSignature(state.adjustments.sdr) };
     state.adjustments.sdr.linked_to_hdr = false;
     renderLaneChrome();
   }

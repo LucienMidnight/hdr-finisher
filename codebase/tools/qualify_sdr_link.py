@@ -16,6 +16,11 @@ from linked_sdr_tail_probe import frame_metrics, measure
 p=argparse.ArgumentParser();p.add_argument('--output',type=Path,default=Path('output/review/safe-link'));args=p.parse_args()
 fixtures=Path('output/review/film-equal-input-trial-2026-11-16');sources=Path('output/review/m1-all-colours/reduced-sources')
 args.output.mkdir(parents=True,exist_ok=True)
+revision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+backend_hashes={name:hashlib.sha256((Path('backend/hdr_finisher')/name).read_bytes()).hexdigest()
+                for name in ('adjustments.py','sdr_link.py','sdr_match.py','models.py','color.py','sdr_gamut.py')}
+inputs=sorted(fixtures.glob('chart*-gpu.npz'))+sorted(sources.glob('*.npz'))
+input_hashes={str(file):hashlib.sha256(file.read_bytes()).hexdigest() for file in inputs}
 rows=[]
 for population in ('chart176','chart224','A7R00619.ARW','DSC00264.ARW','IMG_3129.CR2','IMG_0790.CR2','IMG_7723.CR3'):
     for stock,strength in [('none',0)]+[(stock,strength) for stock in ('kodak_portra_400','kodak_ektar_100','fujifilm_velvia_100') for strength in (50,100)]:
@@ -50,5 +55,5 @@ for population in ('chart176','chart224','A7R00619.ARW','DSC00264.ARW','IMG_3129
             policy[name]=entry
         rows.append(dict(population=population,stock=stock,strength=strength,**policy))
         print(population,stock,strength,[policy[name]['linked'] for name in policy],flush=True)
-        (args.output/'corpus.json').write_text(json.dumps(dict(revision=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),rows=rows),indent=2,allow_nan=False))
+        (args.output/'corpus.json').write_text(json.dumps(dict(revision=revision,backend_sha256=backend_hashes,input_sha256=input_hashes,rows=rows),indent=2,allow_nan=False))
 print({policy:sum(row[policy]['linked'] for row in rows) for policy in ('old_absolute','target_relative')})
