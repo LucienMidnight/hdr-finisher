@@ -144,3 +144,49 @@ scene-linear clamping by an adapter. Headline metrics average per-scene values.
 Tests: `.venv/bin/python -m pytest tests/test_denoise_eval.py -q`, also included
 in normal pytest. Known-answer PSNR/SSIM, Gaussian edge MTF, published ΔE2000,
 PQ, Bayer noise/binning, a/b recovery within 5%, halo/bleed, alpha/bypass and pairs.
+
+## Optional RawNIND prototype (not installed by setup)
+
+`candidates.rawnind` supplies `linear`, `linear_half`, `linear_three_quarters`,
+`bayer`, `bayer_half`, and `bayer_three_quarters` factories (strengths 1/.5/.75).
+Use the full module prefix `tools.denoise_eval.candidates.rawnind:<factory>`.
+Verified local weights live in `output/denoise-v1/candidates/rawnind/rawdenoise-nind/`;
+weights are never downloaded by these tools or committed. Research-only
+`onnxruntime==1.32.0` and `psutil==7.2.2` belong in this worktree's venv, not
+app requirements. Models are hash-checked before loading; CPU only by default,
+and Bayer rejects non-CPU providers. No app path or control changes.
+
+Run from `codebase`, one command at a time, through the shared machine lock:
+
+```sh
+.venv/bin/python tools/gpu-run-lock.py --label denoise-rawnind-quality -- .venv/bin/python -m tools.denoise_eval.candidates.measure_rawnind quality
+.venv/bin/python tools/gpu-run-lock.py --label denoise-rawnind-probes -- .venv/bin/python -m tools.denoise_eval.candidates.measure_rawnind probes
+.venv/bin/python tools/gpu-run-lock.py --label denoise-rawnind-full -- .venv/bin/python -m tools.denoise_eval.candidates.measure_rawnind full-frame --file IMG_0790.CR2 --kind linear
+.venv/bin/python -m tools.denoise_eval.candidates.measure_rawnind review
+```
+
+For Bayer full-frame **research extrapolation only**, use `--kind bayer
+--extrapolate-bayer`; the default adapter instead uses the existing AHD path
+when sensor values leave [0,1]. Neither mode clips model inputs. All four
+ordinary Bayer orientations are canonicalised through phase-preserving plane
+gathering, with output cropped back to original sensor coordinates. No
+whole-frame `np.pad`, resampling, second WB, or AHD after the model.
+
+The runner samples child RSS every 20 ms and terminates above 2.5 GB; full-frame
+float source/result files are temporary disk-backed arrays and removed after
+success/failure, including guard termination. It records standalone decode/prep,
+model-session, inference, stitch/colour and total times, **not action-to-screen**.
+There is no timing repeat or GPU gain claim; ±10% descriptive timing allowance
+is inherited from this harness. `probes` runs the Bayer model on nine clean
+mosaics and prepares genuinely shifted internal model grids. The normal harness
+grid probe only slices an already-prepared frame for these adapters; that zero
+difference is not independent evidence about inference seams.
+
+Outputs are isolated under `output/denoise-v1/rawnind/`. `quality` calls the
+unchanged full input/metric set with all eight variants; generic harness options
+`--output-dir` and `--review-size 128` keep its many-column review bounded.
+`review` appends native 256 px full-photo crops and clean-mosaic comparisons in
+the same page format, checking the complete folder against 20 MB. Optional
+model-dependent unit checks skip when weights/runtime are absent; synthetic
+phase-gather/fallback checks require no weights. See the Phase 2 report for
+quality failures and the learned-scale gain guard; no candidate is approved.
