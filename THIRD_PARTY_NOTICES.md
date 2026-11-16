@@ -1,5 +1,25 @@
 # Third-party notices
 
+The non-shipping classical Denoise research adapter in
+`codebase/tools/denoise_eval/candidates/darktable_profiled.py` ports core maths
+from darktable `src/iop/denoiseprofile.c` and `src/common/eaw.c`, revision
+`b407398a1b9d03d552f59d7227bd3eff66045495`. Copyright (C) 2012–2026 and
+2017–2024 darktable developers, respectively; GPL-3.0-or-later. It retains
+the GPL notice and uses this repository's GPL text. No camera-profile database
+or darktable runtime is bundled. The reference changes are documented in its
+module header and in the classical prototype report.
+
+`codebase/tools/denoise_eval/candidates/vendor/galosh/` retains the unchanged
+FP32 C reference and header from luxgrain/GALOSH, revision
+`11de0593cc8091933ad76d1d6d873f7dee537f15`, Copyright 2026 luxgrain, under
+Apache-2.0, with its complete `LICENSE` and `NOTICE`. The opt-in offline build
+uses a local serial OpenMP shim, omits two unused SSE helper definitions and
+injects one photo-global dark anchor into the disposable build copy; originals
+are unchanged. No model weights, third-party binary or system package is
+included. The upstream provisional-patent disclosure and Apache contributor
+patent-grant scope are recorded in the research report; no general patent
+clearance is claimed.
+
 The photo-framing geometry reference and measured conformance cases are from
 Pedro C. Silva's [BorderMuse](https://github.com/pedrocsilva/bordermuse),
 Copyright (c) 2026 Pedro C. Silva, under the MIT License. The dependency-free

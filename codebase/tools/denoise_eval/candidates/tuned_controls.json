@@ -1,0 +1,68 @@
+{
+  "1600": {
+    "psnr": {
+      "controls": {
+        "amount": 0.75,
+        "detail_recovery": 0.5,
+        "luminance": 0.5,
+        "color_noise": 0.75
+      },
+      "sdr_psnr_db": 37.116701271692236,
+      "mtf50_ratio": 0.9646787516590545
+    },
+    "sharp": {
+      "controls": {
+        "amount": 0.75,
+        "detail_recovery": 0.5,
+        "luminance": 0.5,
+        "color_noise": 0.75
+      },
+      "sdr_psnr_db": 37.116701271692236,
+      "mtf50_ratio": 0.9646787516590545
+    }
+  },
+  "6400": {
+    "psnr": {
+      "controls": {
+        "amount": 0.75,
+        "detail_recovery": 0.5,
+        "luminance": 0.5,
+        "color_noise": 0.75
+      },
+      "sdr_psnr_db": 31.42841104178649,
+      "mtf50_ratio": 0.81995970811787
+    },
+    "sharp": {
+      "controls": {
+        "amount": 0.5,
+        "detail_recovery": 0.5,
+        "luminance": 0.5,
+        "color_noise": 0.75
+      },
+      "sdr_psnr_db": 31.043641608984938,
+      "mtf50_ratio": 0.9265905235352511
+    }
+  },
+  "25600": {
+    "psnr": {
+      "controls": {
+        "amount": 0.75,
+        "detail_recovery": 0.5,
+        "luminance": 0.5,
+        "color_noise": 0.75
+      },
+      "sdr_psnr_db": 25.078628837195527,
+      "mtf50_ratio": 0.6277013432980492
+    },
+    "sharp": {
+      "controls": {
+        "amount": 0.125,
+        "detail_recovery": 0.25,
+        "luminance": 0.5,
+        "color_noise": 0.75
+      },
+      "sdr_psnr_db": 18.510343759973054,
+      "mtf50_ratio": 0.9101038477379592
+    }
+  }
+}

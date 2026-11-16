@@ -144,3 +144,61 @@ scene-linear clamping by an adapter. Headline metrics average per-scene values.
 Tests: `.venv/bin/python -m pytest tests/test_denoise_eval.py -q`, also included
 in normal pytest. Known-answer PSNR/SSIM, Gaussian edge MTF, published ΔE2000,
 PQ, Bayer noise/binning, a/b recovery within 5%, halo/bleed, alpha/bypass and pairs.
+
+## Classical Phase 2 prototypes (not app integration)
+
+`candidates/darktable_profiled.py` is the pinned GPL generalised-Anscombe RGB
+wavelet reference, after AHD and before camera→ACEScg. The harness's reversible
+colour bridge recovers WB-camera RGB; WB scales shot gain by g and read variance
+by g². Missing camera profiles use the existing measured-noise Denoise, not an
+unrelated camera. The sampled frame-global Bayes thresholds and uncorrected
+AHD correlations make this an adapted reference, not pixel-identical darktable.
+Active scales set the cumulative `2*(2**scales-1)` halo. `half`, `three_quarters`,
+and `factory` blend 50%, 75%, 100% of the native correction, respectively.
+
+`candidates/galosh.py` wraps the Apache-2.0 FP32 RAW reference. Build **offline**
+with `.venv/bin/python -m tools.denoise_eval.candidates.build_galosh`; clang and
+the checked-in source suffice. OpenMP is serial; two unused SSE helper bodies
+are omitted only from the build copy. No system package is installed. The native
+blind alpha/read-variance fit and dark-anchor IRLS run once per photo; calibrated
+mode averages the four CFA models. Every tile holds that fit and unity GAT sigma.
+Calibrated factories: `half`, `three_quarters`, `factory`; blind: `blind_half`,
+`blind_three_quarters`, `blind`. Their native luma/chroma controls are scaled
+together; the upstream positional strength alone is ignored. Halo 160 includes
+the coarsest chroma pyramid and development; origins align to eight sensor pixels.
+RAW bypass is exactly the same AHD development as Off, not a mosaic-shaped RGB
+return; RGB alpha/HDR sentinel is not applicable to this Bayer interface.
+
+`denoise_v2_tuned.py:factory` and `:sharp` use the committed per-ISO selections
+(nearest measured ISO for real photographs). `candidates/tune.py` evaluates the
+recorded full synthetic set and writes `classical-tuning.json`; tuning is
+in-sample and is not proof of generalisation. The sharp selection requires the
+slanted edge's MTF50 ratio ≥0.90. No truth is consulted at adapter runtime.
+
+Run heavy tools **under the shared lock**, for example:
+
+The thirteen-variant `candidates.measure` wrapper uses 128px comparison
+thumbnails (metrics keep their original resolution). Native full-frame
+review crops remain 256px. This is an opt-in wrapper, not a harness default.
+
+```sh
+.venv/bin/python tools/gpu-run-lock.py --label denoise-classical-quality --minutes 25 -- .venv/bin/python tools/denoise_eval/candidates/guard.py --receipt output/denoise-v1/quality-guard.json --seconds 1200 -- .venv/bin/python -m tools.denoise_eval.candidates.measure
+.venv/bin/python tools/gpu-run-lock.py --label denoise-classical-frame --minutes 25 -- .venv/bin/python tools/denoise_eval/candidates/guard.py --receipt output/denoise-v1/frame-guard.json --seconds 1200 -- .venv/bin/python -m tools.denoise_eval.candidates.full_frame --method darktable --photo IMG_0790.CR2
+```
+
+Use `--method galosh` or `--photo 2025_0730_1331_3.arw` for the other trials.
+After quality and native-frame runs, `python -m tools.denoise_eval.candidates.report`
+appends the strength curves and native crops to the same review page.
+On Windows use `.venv/Scripts/python.exe`; no source edits are required.
+The guard samples total process-tree RSS every 0.2s and aborts above 2.5 GB;
+the full-frame clocks distinguish sensor prep, filtering and AHD/colour
+development. Its full-size intermediates are temporary and removed on failure.
+Measured times allow ±10% noise; compiled-C/WGSL figures in the report are
+explicit estimates, never benchmarks. No Electron/WebGPU is used or qualified.
+
+`tests/test_denoise_classical.py` checks finite output, bypass/alpha, native
+internal tile boundaries, CFA orientation, algebraic VST inversion (2e-6),
+and Monte Carlo inverse-of-mean bias within max(1%, 0.0002 sensor units) for
+four constant signals with 100,000 draws each. GALOSH checks skip if unbuilt.
+`source-provenance.json` records source hashes; the vendored LICENSE/NOTICE
+and repository GPL text preserve the licence obligations.
