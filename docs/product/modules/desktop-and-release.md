@@ -1,3 +1,20 @@
+## November 16: nearby help and app-styled select popups
+
+Tooltips sit just below their own control, flip above when needed and stay
+inside the window. The old placement beside the whole rail is removed.
+Name-only range help is suppressed when its label is already readable (for
+example HSL Softness). Explanations, keyboard descriptions, the 2.5-second
+wait and Escape handling remain.
+
+All renderer dropdowns use Chromium's customizable native select, including
+Grade, Scopes, Library, Proof, Export, Settings and separate Library/browser
+windows. Shared styles apply the existing surface, type, corner, shadow and
+accent tokens; native keyboard navigation, accessible roles and form events
+remain. Pickers use the top layer so scrolling panels and dialogs cannot clip
+them. Electron 43.4.0 / Chromium 150 on the Mac supports `base-select` and
+`::picker(select)`; no replacement widget or `selectedcontent` is needed for
+the existing plain-text options. Windows visual acceptance remains Steve's.
+
 ## November 15: W7 tooltip/accent acceptance
 
 On the MacBook Neo / 8 GB, the locked real Electron review passes main,

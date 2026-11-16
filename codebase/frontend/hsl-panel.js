@@ -1,6 +1,26 @@
 /* HSL authoring uses the existing grade history, presets and slider controls. */
 const hslUI = { panels: [], picker: null, stroke: null, overlayRevision: 0 };
 
+// Derive the photo cursor from the tools that already own sampling. SVG keeps
+// the tip sharp on Retina; opposing theme inks keep it visible on any photo.
+function syncPhotoPickCursor() {
+  const pane = els.previewPrimaryPane;
+  if (!pane) return;
+  const local = selectedLocal();
+  const rangePick = state.gradeMode === 'local' && local?.enabled !== false
+    && state.adjustments?.shared?.local_adjustments_enabled !== false
+    && localGizmoVisible(local) && ['hue_range', 'luminance_range'].includes(selectedMaskLeaf(local)?.type);
+  const armed = Boolean(state.session && state.activeWorkflow === 'grade' && (hslUI.picker || rangePick));
+  pane.classList.toggle('photo-pick-armed', armed);
+  if (!armed) return;
+  const style = getComputedStyle(pane);
+  const size = parseFloat(style.getPropertyValue('--compact-action-size'));
+  const ink = style.getPropertyValue('--text').trim(), edge = style.getPropertyValue('--inverse').trim();
+  const path = 'M 15 5 L 19 9 M 17 3 Q 19 1 21 3 Q 23 5 21 7 L 18 10 L 17 9 L 8 18 L 4 20 L 5 16 L 14 7 L 13 6 Z';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24"><path d="${path}" fill="${edge}" stroke="${edge}" stroke-width="4" stroke-linejoin="round"/><path d="${path}" fill="${edge}" stroke="${ink}" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+  pane.style.setProperty('--photo-pick-cursor', `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${Math.round(4*size/24)} ${Math.round(20*size/24)}, crosshair`);
+}
+
 function initializeHslPanels() {
   for (const scope of ['global', 'local']) {
     const host = document.getElementById(`hsl-${scope}-panel`);
@@ -61,7 +81,7 @@ function initializeHslPanels() {
   document.addEventListener('pointerup',hslPickEnd,true);
   document.addEventListener('pointercancel',()=>{hslUI.stroke=null;},true);
   document.addEventListener('keydown',event=>{if(event.key==='Escape'){hslUI.picker=null;hslUI.stroke=null;hslClearSelection();renderHslPanels();}});
-  window.addEventListener('hdrfinisher:workflowchange',()=>hslClearSelection());
+  window.addEventListener('hdrfinisher:workflowchange',()=>{hslUI.picker=null;hslUI.stroke=null;hslClearSelection();syncPhotoPickCursor();});
   // Disclosure changes also invalidate in-flight selection requests.
   document.addEventListener('click',event=>{
     if(event.target.closest('.group-toggle, .disclosure-trigger, summary'))hslClearSelection();
@@ -113,6 +133,7 @@ function renderHslPanels(){
   if(!hslUI.panels.length)return;
   const identity=`${state.session?.session_id}:${state.currentView}:${state.gradeMode}:${selectedLocal()?.id}`;
   if(hslUI.identity!==identity){hslUI.identity=identity;hslUI.picker=null;hslUI.stroke=null;hslClearSelection();}
+  syncPhotoPickCursor();
   for(const ui of hslUI.panels){
     const signature=JSON.stringify([hslOwner(ui)?.hsl,hslOwner(ui)?.hsl_section_enabled,ui.channel,ui.range,Boolean(state.session)]);
     if(signature!==ui.signature){ui.signature=signature;hslSync(ui);}
@@ -132,6 +153,7 @@ function hslBypassed(ui){
   return selectedLocal()?.enabled===false||state.adjustments?.shared?.local_adjustments_enabled===false;
 }
 function hslSync(ui){
+  syncPhotoPickCursor();
   const owner=hslOwner(ui),c=hslChannel(ui);ui.host.hidden=!owner;if(!c)return;
   const e=HDRHSL,global=ui.scope==='global';
   if(global)ui.host.closest('.control-group').classList.toggle('modified',!valuesEqual(owner.hsl,e.defaultSettings())||owner.hsl_section_enabled===false);

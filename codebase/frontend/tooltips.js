@@ -68,7 +68,9 @@
       if (trigger.matches('.source-filename-wrap')) return trigger.classList.contains('has-overflow') ? authored?.textContent.trim() || '' : '';
       if (trigger.matches('select') && !trigger.dataset.tooltip && !trigger.dataset.tip && !trigger.dataset.nativeTooltip) return clipped(trigger) ? trigger.selectedOptions[0]?.textContent || '' : '';
       const text = trigger.dataset.tooltip || trigger.dataset.tip || trigger.dataset.nativeTooltip || authored?.textContent.trim() || trigger.getAttribute('aria-label') || '';
-      const label = visibleLabel(trigger);
+      const label = trigger.matches('input[type="range"]')
+        ? visibleLabel(trigger.closest('.control-row')?.querySelector('.control-heading label') || trigger)
+        : visibleLabel(trigger);
       // Explanation, warnings and disabled reasons always survive. Only names
       // and repeated values are conditional on visible ink / actual overflow.
       if (trigger.matches('input, select') && text === (trigger.matches('select') ? trigger.selectedOptions[0]?.textContent : trigger.value)) return clipped(trigger) ? text : '';
@@ -99,10 +101,8 @@
       tooltip.style.maxHeight = `${Math.max(0, height - margin * 2)}px`;
       const r = active.getBoundingClientRect(), t = tooltip.getBoundingClientRect();
       const clamp = (v, lo, hi) => Math.max(lo, Math.min(Math.max(lo,hi),v));
-      const rail = active.closest('.grade-panel, .source-rail, .workflow-rail')?.getBoundingClientRect();
-      const beside = rail && rail.left - gap - t.width >= x + margin;
-      tooltip.style.left = `${Math.round(clamp(beside ? rail.left-gap-t.width : r.left+(r.width-t.width)/2, x+margin, x+width-margin-t.width))}px`;
-      tooltip.style.top = `${Math.round(clamp(beside ? r.top : r.bottom+gap+t.height <= y+height-margin ? r.bottom+gap : r.top-gap-t.height, y+margin, y+height-margin-t.height))}px`;
+      tooltip.style.left = `${Math.round(clamp(r.left+(r.width-t.width)/2, x+margin, x+width-margin-t.width))}px`;
+      tooltip.style.top = `${Math.round(clamp(r.bottom+gap+t.height <= y+height-margin ? r.bottom+gap : r.top-gap-t.height, y+margin, y+height-margin-t.height))}px`;
     }
     function schedule(trigger) {
       if (active === trigger || pending === trigger) return;

@@ -1,3 +1,13 @@
+## November 16: visible photo sampling mode
+
+HSL Pick/Add/Subtract and Local hue/luminance range tools show a pipette over
+the photo, using the existing picker and gizmo state. The vector cursor uses
+opposing theme inks and a tip hotspot, including on Retina displays. HSL keeps
+its existing repeated-pick behaviour until Stop picking or Escape. Local range
+Escape cancels sampling and hides its gizmo; Show gizmo arms it again. Mode,
+session, lane and workflow changes clear the relevant picker. There is no
+white-balance eyedropper in the current app.
+
 ## November 16: Start HDR from SDR (N5 / X2) not enabled
 
 An unexposed research fitter copies known SDR creative settings into ordinary

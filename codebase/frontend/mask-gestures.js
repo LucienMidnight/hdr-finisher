@@ -20,6 +20,16 @@ function bindLocalMaskCanvas() {
   const canvas = els.localMaskOverlay;
   if (!canvas) return;
   if (typeof keyHints !== "undefined") keyHints.register(localKeyHints);
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || event.defaultPrevented || state.activeWorkflow !== "grade"
+        || state.gradeMode !== "local" || event.target.closest('input, textarea, select, [contenteditable], dialog')) return;
+    const local = selectedLocal();
+    if (!localGizmoVisible(local) || !["hue_range", "luminance_range"].includes(selectedMaskLeaf(local)?.type)) return;
+    localRangeSampleGeneration++;
+    state.localPointerGesture = null;
+    state.localHiddenGizmoIds.add(local.id);
+    renderLocalAdjustments();
+  });
   canvas.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
     const local = selectedLocal();
@@ -310,6 +320,7 @@ async function finishLuminanceSampleGesture(gesture) {
   const type = leaf.type;
   const generation = ++localRangeSampleGeneration;
   const current = () => generation === localRangeSampleGeneration
+    && state.activeWorkflow === "grade" && localGizmoVisible(selectedLocal())
     && state.session?.session_id === sessionId && state.currentView === lane
     && selectedLocal()?.id === gesture.localId && state.gradeMode === "local"
     && selectedMaskExpression(selectedLocal())?.id === expressionId

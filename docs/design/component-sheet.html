@@ -159,6 +159,23 @@
     -webkit-mask: var(--hf-chevron) center/contain no-repeat; mask: var(--hf-chevron) center/contain no-repeat;
   }
   .hf-select:hover::after { background: var(--text); }
+  @supports (appearance: base-select) {
+    .hf-select > select, .hf-select > select::picker(select) { appearance: base-select; }
+    .hf-select > select { align-items: center; }
+    .hf-select > select::picker-icon { display: none; }
+    .hf-select > select::picker(select) {
+      margin-block: 4px; padding: 4px; border: 1px solid var(--plate-edge);
+      border-radius: var(--radius-1); background: var(--panel); color: var(--text);
+      box-shadow: var(--popover-shadow); font: var(--font-weight-regular) var(--font-size-md)/var(--line-height-normal) var(--font-body);
+      min-width: anchor-size(self-inline); max-width: calc(100vw - 16px);
+      max-height: min(320px, calc(100dvh - 16px)); overflow: auto;
+    }
+    .hf-select option { min-height: var(--panel-control-h); padding: 4px 8px; gap: 8px; border-radius: var(--radius-1); font: inherit; white-space: normal; overflow-wrap: anywhere; }
+    .hf-select option:checked { background: var(--plate-down); color: var(--accent-strong); }
+    .hf-select option:is(:hover, :focus) { background: var(--plate-up-hover); color: var(--accent-strong); }
+    .hf-select option::checkmark { color: var(--accent-strong); }
+  }
+
 
   /* Switch: the ON/OFF marks are built in, so it needs no "Enabled" text,
      no box and no background behind it. */

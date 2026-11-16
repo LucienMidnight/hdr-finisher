@@ -697,3 +697,32 @@ html.desktop-shell .window-menu-popover button[role="menuitemradio"][aria-checke
  inset: auto; margin: 0; border-radius: var(--radius-plate);
  transition: none; transform: none;
 }
+
+/* Only the photo and its sampling overlay carry the tool cursor. */
+:root .photo-pick-armed :is(img, canvas, .local-mask-overlay) { cursor: var(--photo-pick-cursor) !important; }
+
+/* Chromium's customizable selects retain the native form, accessibility and
+   keyboard model, while the popup is rendered in the top layer in every window. */
+@supports (appearance: base-select) {
+ :root select:not([multiple], [size]), :root select:not([multiple], [size])::picker(select) { appearance: base-select; }
+ :root select:not([multiple], [size]) { align-items: center; }
+ :root select::picker-icon { display: none; }
+ :root select::picker(select) {
+  margin-block: 4px; padding: 4px; border: 1px solid var(--plate-edge);
+  border-radius: var(--radius-1); background: var(--panel); color: var(--text);
+  box-shadow: var(--popover-shadow);
+  font: var(--font-weight-regular) var(--font-size-md)/var(--line-height-normal) var(--font-body);
+  min-width: anchor-size(self-inline); max-width: calc(100vw - 16px);
+  max-height: min(320px, calc(100dvh - 16px)); overflow: auto; overscroll-behavior: contain;
+ }
+ :root select option {
+  min-height: var(--panel-control-h); padding: 4px 8px; gap: 8px;
+  border-radius: var(--radius-1); background: var(--panel); color: var(--text);
+  font: inherit; white-space: normal; overflow-wrap: anywhere;
+ }
+ :root select option:checked { background: var(--plate-down); color: var(--accent-strong); }
+ :root select option:is(:hover, :focus) { background: var(--plate-up-hover); color: var(--accent-strong); }
+ :root select option:disabled { color: var(--muted); }
+ :root select option::checkmark { color: var(--accent-strong); }
+ :root select optgroup { color: var(--muted); font: inherit; }
+}

@@ -132,6 +132,7 @@ function failPathMaskProgress(localId) {
 }
 
 function renderLocalMaskOverlay() {
+  syncPhotoPickCursor();
   const canvas = els.localMaskOverlay;
   if (!canvas) return;
   if (typeof retouchUI !== "undefined" && retouchUI.active && state.gradeMode === "retouch"
