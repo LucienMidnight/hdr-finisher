@@ -676,6 +676,9 @@ Completed UI polish round 5 (pending visual sign-off):
 
 ### Code-side READMEs
 
+- `codebase/tools/denoise_eval/README.md`: CPU-only Denoise quality harness,
+  adapters, sensor calibration, fixed display transforms and metric definitions.
+
 - `codebase/bin/README.md` (bundled encoders) and `codebase/bin/licenses/`.
 - `codebase/samples/README.md`: generated HDR reference samples.
 - `codebase/tools/session-recorder/README.md`: records app behaviour while
