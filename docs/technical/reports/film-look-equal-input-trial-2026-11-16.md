@@ -603,9 +603,40 @@ shared RAW derivatives using section 8:
 Each result retains code/backend hashes; the baseline also fingerprints its
 reused inputs, and the searches fingerprint each original chart fixture.
 Only compact JSON and validation logs are retained under
-`codebase/output/review/linked-sdr-tail/`. Validation results are recorded in
-the follow-up commit. No push, protected-file writes, test relaxation,
-migration, cache/budget change or encoder/tooling edits.
+`codebase/output/review/linked-sdr-tail/`. Validation of this research change:
+
+- New focused tool checks: **8 passed** (neutral incumbent-tail identity,
+  legal/luminance-preserving research gamut output, unchanged inclusive body
+  limits, chart grouping, geometry rejection and JSON-safe results).
+- Full Node suite: **1,091 passed / one skipped**. Full Python suite:
+  **3,837 passed / nine failed / 144 skipped / one xpassed**. The failures are
+  two HSL upstream-cache reuse assertions, three Library GPU native
+  admission/ownership cases and four Library native retention/decode/admission
+  cases. Exact names and traces are in `python-fast.log`. No production/cache
+  code changes here; these failures are outside the changed research paths and
+  were not repaired or rerun. This is **not a green fast-suite claim**.
+- The default **90-second Library smoke passes**, nine photos pictured,
+  no memory violation, through `tools/gpu-run-lock.py`, window 1408×794.
+  Its report is `codebase/output/quick-library-check/m1-linked-sdr-tail/report.json`;
+  launch log is `library-smoke.log`. This is the only Electron run for this
+  attempt, not a Film/Match/rendering qualification. No overlapping GPU runs.
+- Film/Match/SDR GPU drivers and Still-strict delivery checks are **not run**:
+  there is no accepted tail or production path to qualify. Once implemented,
+  the selection must cover `film-stock-parity.js`, `tiled-film-parity.js`,
+  `sdr-match-gpu-interaction.js`, `sdr-gamut-gpu-parity.js`, local linked/unlink
+  interaction, and the SDR-carrying delivery/Proof paths, including
+  `gpu-delivery-smoke.js`, `gpu-delivery-repeat.js`, `proof-size-interaction.js`
+  and `hdr-ceiling-delivery.js`. Use the release inventory to select all
+  affected output checks and estimate before running; stop/ask if the slow
+  selection exceeds roughly 30 minutes. No release or strict-output pass is
+  claimed from the research result or the Library smoke.
+- Scratch output is **13.6 GB**, below the 100 GB limit (13.6 GB at start).
+  The owned pytest temporary tree and superseded probe logs are removed;
+  the compact research evidence and Library smoke report remain. Other
+  workers' changes and test output are not deleted or included in these commits.
+
+No push, protected-file writes, test relaxation,
+migration, cache/budget change or encoder/export/Proof tooling edits.
 
 ## Appendix A. Every hue family and stop, before → after P95 ΔE00
 

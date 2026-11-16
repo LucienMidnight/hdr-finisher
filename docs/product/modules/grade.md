@@ -1,3 +1,15 @@
+## November 16: linked SDR implementation remains blocked
+
+Steve's option B is accepted but not exposed. The tail-acceptance checkpoint
+reproduces the equal-input trial's 49 body passes but only 30 ordering and
+35 white-growth passes. A bounded 28,560-candidate chart search finds no
+general simple tail retaining the bright-colour improvement with the unchanged
+safeguards (only Velvia 100% passes in each chart). This is not an impossibility
+proof or a completed link implementation. No Grade control, Match action,
+recipe, local grade, renderer or tooltip changes. HDR and saved-project output
+are unchanged by this attempt; GPU/delivery and whole-slider speed work remain
+pending an accepted tail. [Full checkpoint and proposed local contract](../../technical/reports/film-look-equal-input-trial-2026-11-16.md#9-option-b-implementation-checkpoint-no-shipping-change).
+
 ## November 16: Grade panel order and Peak placement
 
 Steve approved this presentation-only order in both HDR and SDR: Highlight

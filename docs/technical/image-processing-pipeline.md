@@ -8,6 +8,13 @@ This document explains the pipeline as it runs today, including the reasons behi
 
 When this document disagrees with running code or tests, code and tests win. Update this page in the same change. The repository's broader authority order is active code/tests, reproducible evidence, validation records, user documentation, then PRDs and design history.
 
+**Linked SDR status, November 16:** option B is an approved design, not a
+shipping stage. The attempted implementation stopped before renderer/schema
+changes because no qualifying general output tail was demonstrated. The
+independent generated/authored SDR paths below remain current. No SDR local
+stack is silently moved after Film or added to HDR's locals. [Tail checkpoint
+and outstanding integration surfaces](reports/film-look-equal-input-trial-2026-11-16.md#9-option-b-implementation-checkpoint-no-shipping-change).
+
 ## November 16 N2: global Tone and aligned wheel ranges
 
 Global Tone is now one frozen-guide operation: Blacks, Shadows, Midtones,

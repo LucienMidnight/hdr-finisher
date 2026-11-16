@@ -1,5 +1,17 @@
 # HDR-to-SDR Match
 
+## November 16: option B is accepted, not implemented
+
+Whole-photo Match does not yet create a live HDR creative-grade link. The
+implementation attempt stopped at output-tail acceptance: the original 49
+CPU cases still fail 19 ordering and 14 white-growth checks, and the bounded
+Exposure/Saturation/HC/gamut probe does not find a satisfactory general tail.
+No target, gate, control ownership, saved state or renderer changes. The
+independent Match behaviour below remains the shipping behaviour; do not infer
+a linked-renderer or saved-schema implementation from the product decision.
+See the [tail checkpoint](reports/film-look-equal-input-trial-2026-11-16.md#9-option-b-implementation-checkpoint-no-shipping-change),
+including the proposed, unimplemented local-edit/unlink contract.
+
 ## Start HDR from SDR: unexposed N5 research
 
 This is **not** a reverse Match: finished SDR has discarded scene highlight

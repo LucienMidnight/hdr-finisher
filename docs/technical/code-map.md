@@ -20,6 +20,13 @@ prototype; its first compilation failed and the correction is GPU-unvalidated.
 Both are diagnostic-only in the release inventory. Results and limitations:
 `reports/film-look-equal-input-trial-2026-11-16.md`.
 
+`codebase/tools/linked_sdr_tail_probe.py` re-renders the 49-case baseline and
+searches simple post-Film Exposure/Saturation/HC/gamut alternatives on the two
+original charts. It never imports into the app or edits a recipe; the failed
+acceptance checkpoint leaves linking unimplemented. Behavioural tool checks:
+`codebase/tests/test_linked_sdr_tail_probe.py`. Results are section 9 of the same
+report; each JSON fingerprints its code and inputs.
+
 ## November 16: JPEG Ultra HDR drift research
 
 `codebase/tools/jpeg_encoding_drift_probe.py` is a non-shipping diagnostic:
