@@ -5293,7 +5293,8 @@ body[data-grade-mode="local"] .local-mask-overlay.editing {
   margin: 7px 0 3px;
 }
 
-#highlight-compression-graph {
+#highlight-compression-graph,
+#sdr-highlight-compression-graph {
   display: block;
   width: 100%;
   height: auto;
