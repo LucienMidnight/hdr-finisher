@@ -10,8 +10,8 @@ quality setting, cache allowance or memory limit changes. Timing band ±10%.
 | 100% zoom interrupts an already submitted 50% catch-up: first refined viewport | Median 2.174 s; empirical p95 2.592 s | Median .502 s; p95 .768 s | Three controlled pairs; 77% less median wait. Same source, grade, shaders and budgets; before restores only former scheduling methods from `ad829254` in the disposable renderer. Catch-up must have submitted **rendering**, not just a source upload. |
 | Same action, final visible viewport | Median 2.639 s; p95 2.707 s; range 1.900–2.714 s | Median .883 s; p95 1.240 s; range .880–1.279 s | **67% less median whole wait.** GPU-completion fence + animation frame, still-current serial. All six 320×200 final screenshots have identical SHA-256 `d7285b3d…356858`. This is visible-crop regression evidence, not full export qualification. |
 | Ordinary 100% zooms in the full interaction run | Final 3.482 / 2.878 s | 1.126 / 1.025 s | Same real RAW and native control sequence. 50% is mixed: first 3.144→3.320 s, warm return .746→2.259 s. Previously completed offscreen work can make an old cached return faster; no blanket all-zoom gain. |
-| First 4096-tier exposure adjustment after tier preparation | 23.840 s; 26 presentations of the **same** edit generation | 1.664 s, two presentations | One causal before/after observation; watchdog mistook a submitted frame waiting on its device fence for idle/lost work. Does not set a new speed target or prove a common first-tier time. |
-| Warm 4096-tier exposure edits | 1.844–1.855 s | 1.724–1.745 s | Two samples each, within 10%; ordinary exact grain cost remains. `tiers-native.json` / `tiers-final.json`; first exploratory `probe-native.json` 4096 captures were not reliably settled and are excluded. |
+| First 4096-tier exposure adjustment after tier preparation | 23.840 s; 26 presentations of the **same** edit generation | 1.666 s, two presentations | One causal before/after observation; watchdog mistook a submitted frame waiting on its device fence for idle/lost work. Does not set a new speed target or prove a common first-tier time. |
+| Warm 4096-tier exposure edits | 1.844–1.855 s | 1.718–1.728 s | Two samples each, within 10%; ordinary exact grain cost remains. `tiers-native.json` / `tiers-final.json`; first exploratory `probe-native.json` 4096 captures were not reliably settled and are excluded. |
 | Native Fit drag feedback/cadence | Exposure first-input feedback 66–82 ms; Whites 59–100 ms. Median/p95 completed-frame gaps: Exposure 49.7/76.8 ms; Whites 56.1/68.0 ms | No large Fit gain claimed | Three native drags each. Before displayed throughput Exposure 18.6–18.8/s, Whites 14.6–17.1/s. Final exact/Peak Fit can still take roughly .3–1.9 s after release. Scope-only A/B did not reliably improve waits; its obsolete startup CPU scope goes from ~37 s of discarded work to no request. |
 | Same grade on quarter-pixel-count image | Native RAW 5320×7968, 42.39 MP: fixed 2048 edge final 1.558–1.600 s | 2660×3984, 10.60 MP EXR derivative: .467–.495 s | Controlled same-photo area downsample, lens/reconstruction baked before reduction, identical creative grade. At the same preview dimensions native grain uses 16 samples, derivative uses 4; this is not a RAW-decode or EXR-import speed comparison. Fit still uses 16 on both, so cost does not simply follow source megapixels. |
 | Fixed 1024 edge, full grade versus grain off | Final .405–.571 s; median GPU timestamp 337 ms | Grain off .054–.084 s; GPU 13.5 ms | Three warm changes; halation off GPU 327 ms, neutral Detail off 332 ms. Stock-off bypass also removes Film/grain and does not isolate stock maths. Grain-off is diagnostic only, never a shipped look. |
@@ -47,8 +47,25 @@ ablate,profile}.json`, corresponding backend logs and six small race crops.
 The source derivative is disposable and removed after qualification. Preliminary
 race probes that caught upload instead of rendering were overwritten; a run
 whose opening overlapped the Node suite was replaced by the quiet final A/B.
-Final covering GPU/Library checks and fast-suite qualification are recorded
-with the subsequent verification note; no release sweep or push is authorised.
+Final qualification on implementation `d26ed3ed` plus the portable zoom-driver
+window: grain parity 12/12, byte-exact tiled Film, tiled-admission CPU-scope
+fallback, Retina preview-resolution/settings and native zoom-stall recovery all
+pass. The old resolution check initially assumed one CSS pixel per source
+pixel; it now checks the existing physical-display-pixel contract with the
+same one-pixel guard, and passes. No rendering or tolerance change was needed.
+
+| Qualification action | Observation | Conditions / evidence |
+| --- | --- | --- |
+| Normal zoom/local burst / deliberately orphaned native preview | .509 s, no re-arm / 1.511 s, one re-arm | Same Neo/window/lock, generated 7968×5320 input; watchdog-off control stays stalled for 6.047 s. `output/stacked-raw-zoom-gpu.log`. Recovery is preserved; no output-quality or new timing gate. |
+| Default Library viewport smoke | First .4 s; 9/9 requested pictured; independent peak 2.367 GB; harness 92.937 s | Neo / 1408×794 / 4 GB default, frozen v1, plain Electron, no concurrent own fast suite. No errors, reserve or app-memory violations. The 24 unvisited pictures do not count as whole-folder qualification. `output/quick-library-check/stacked-raw/report.json`. |
+| Final fast suites | Node 1101 pass / 1 skip, 12.26 s; Python 3894 pass / 144 skips / one existing xpass, 268.50 s | Same Neo, run after all GPU work; `output/stacked-raw-{node,python}-qualified.log`. No failures. Suite duration is not product latency. |
+
+Source/sidecar SHA-256 guards match both the reusable copy and Steve's untouched
+originals. Generated half-size EXR/sidecar and the task-created synthetic zoom
+TIFF were removed; one reusable RAW/grade copy remains. Scratch is **14.1 GB**
+(start 13.7), below 100 GB. Only linked numeric reports/logs and six small race
+crops remain. The crops and `output/performance/stacked-raw/summary.html` can
+be deleted after review. No release sweep, push or installer build was run.
 
 **Decision left for Steve:** any further grain approximation during zoom/pan
 would change draft pixels and needs his approval. The grain-off measurements
@@ -2736,7 +2753,7 @@ DSC01286 .099→.092; DSC01287 .114→.089. Median is selected by the DxO DNG st
 DSC01204 and DxO DNG are slower beyond ±15%. Their Single cache lookups rose 83→155 ms and 77→123 ms respectively; the cause
 of that extra lookup/display latency was not isolated, and no source-decode
 regression was established. Total Single
-sequence 35.496→32.596 s. One DSC00264 trace starts 1.664 s after input, so the
+sequence 35.496→32.596 s. One DSC00264 trace starts 1.666 s after input, so the
 1.931 s whole wait above is used rather than its misleading .267 s inner timer.
 DNG thumbnail speed remains out of scope. A separate initial 31-photo diagnostic
 exposed a 40.916 s DNG step from a completed thumbnail retaining its claim until

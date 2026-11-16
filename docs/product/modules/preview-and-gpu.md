@@ -28,15 +28,29 @@ scope fresh. CPU-only settings, GPU failure fallback and Proof retain CPU scopes
 Neo / A18 Pro / 8 GB / 1408×794, saved Ektar/grain/halation/Tamron grade:
 controlled zoom during catch-up drops median first refined picture 2.174→.502 s,
 final viewport 2.639→.883 s (three pairs, same finished crop bytes). One repeated
-4K adjustment drops 23.840→1.664 s after watchdog repair; ordinary warm 4K
+4K adjustment drops 23.840→1.666 s after watchdog repair; ordinary warm 4K
 remains ~1.7 s. Auto/Fit grain and Peak Fit settling remain costly, and 50%
 cache returns are mixed. These are scoped gains, not general instant-preview
 acceptance. Full conditions, limits and before/after records are in the
 [performance table](../../technical/performance-table.md).
 
-Focused scheduling tests pass. Covering real GPU and final fast checks are
-pending at this implementation checkpoint and will be recorded after they run.
-Further approximation or a grain-cache budget change needs Steve's decision.
+Final qualification on Neo / 1408×794, serial shared GPU lock: all 12 grain
+GPU/CPU-export cases pass; tiled Film is byte-exact; the real tiled-admission
+CPU-scope fallback, Retina zoom/settings and zoom-stall recovery drivers pass.
+The latter converges a normal burst in .509 s without recovery, then restores
+an intentionally orphaned native preview in 1.511 s with one watchdog re-arm.
+The Retina harness now checks the existing one-source-pixel-per-display-pixel
+contract, rather than assuming PC CSS pixels. No tolerance was relaxed.
+
+Final fast suites: Node 1101 passed / one skipped; Python 3894 passed /
+144 skipped / one existing xpass. Default 90-second plain-Electron Library:
+9/9 requested viewport pictures, no errors or memory violations, independent
+peak 2.367 GB; not whole-folder qualification. Sources/sidecars are hash-exact,
+Steve's app was left open, and temporary half-size/synthetic inputs were
+removed. Scratch finishes at 14.1 GB (under 100 GB). Evidence: performance table
+and `codebase/output/stacked-raw-*.log`. No push, release or installer build.
+Further approximation or a grain-cache budget change needs Steve's decision;
+Steve should try the app after restarting before more responsiveness work.
 
 ## November 15: CPU preview diagnostics and grain cancellation
 

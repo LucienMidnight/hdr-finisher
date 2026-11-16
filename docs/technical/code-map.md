@@ -1,5 +1,21 @@
 # Code map
 
+## November 16: interruptible Grade preview work
+
+`zoom-navigation.js` retires old-scale coordinator work before zoom dispatch;
+`render-coordinator.js` gives catch-up background priority, scale identity and
+pan cancellation. `webgpu-preview.js` fences its existing tile batches only for
+preview catch-up. `app-boot.js` keeps the watchdog out of queued/device-fenced
+scheduler work. `scope-requests.js` defers first-picture GPU scopes and cancels
+obsolete CPU scopes at GPU handoff. No shader, budget or delivery route changes.
+
+`tests/performance/stacked-raw-latency.js` measures native input, GPU completion,
+zoom/pan, tiers, RAW/Film ablations and controlled queued-catch-up races on one
+reused RAW/sidecar copy. `--before-zoom` restores former scheduling inside the
+disposable renderer; small final crops check exact displayed-pixel regression.
+`preview-watchdog.test.js`, `scope-gpu-handoff.test.js` and the coordinator tests
+cover real-busy versus orphaned work, cancellation and preserved CPU fallback.
+
 ## November 16: safe linked SDR after Match
 
 `backend/hdr_finisher/sdr_link.py` selects the trial output tail and checks

@@ -67,7 +67,8 @@ async function waitForConvergence(page, timeoutMs) {
 
 (async () => {
   const browser = await chromium.launch({ headless: false, channel: option("--channel", "msedge") });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  const [width, height] = require("../tools/lib/platform.cjs").machineSettings().windowSize.split("x").map(Number);
+  const page = await browser.newPage({ viewport: { width, height } });
   const pageErrors = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   try {

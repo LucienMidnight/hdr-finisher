@@ -508,3 +508,12 @@ was still current; use these for visible-wait estimates, alongside the final
 settled observation. This is not a physical display scanout measurement.
 Panning moves the held picture through the compositor before new tiles arrive.
 Do not treat no-new-render pans as failures or event-only times as screen times.
+
+The optional same-photo scaling comparison uses a half-dimension EXR in the
+same test-photo folder. Develop the reusable RAW with `loader.load_image`,
+its sidecar's `RawImportSettings`, and `analyze_hdr=False`; area-resize the
+ACEScg RGB with `cv2.INTER_AREA`, then write `OpenEXR.File` with
+`colorInteropID: lin_ap1_scene`. Copy the sidecar's creative grade, updating
+source filename/path/fingerprint/size and omitting RAW import settings for the
+EXR. Reuse that derivative for the comparison and remove it afterwards; this
+comparison measures interactive pixel-count/grain sampling, not decoding speed.
