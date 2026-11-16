@@ -5,7 +5,7 @@
   `feat/watermark-and-library-polish`). Keep all work on this branch; another
   coordinator is working on Grade performance, Film Look and export in the
   main checkout, so do not touch those areas.
-- **Status:** Phase 1 (contract, harness, candidate survey).
+- **Status:** Phase 3, waiting on Steve's decisions D1 and D2 (section 7).
 
 ## 1. Goal (Steve, November 16, 2026)
 
@@ -182,6 +182,26 @@ the [technology watch](../denoising-technology-watch-2026.md):
 - **Q4.** (Still open from before.) A noise-free linear EXR render
   ≥ 540×540 for the existing Denoise render check.
 
+**Phase 3 decisions put to Steve (November 16, 2026)**, with the review page
+https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
+
+- **D1.** Retune the default to Amount 0.75, Color Noise 0.75, Detail Recovery
+  0.5 (shipping 0.5/0.5/0.0). Held-out real pairs 34.83 dB / ΔE 3.04 against
+  34.42 / 3.39 as shipped; same edge sharpness. Recommended: yes.
+- **D2.** Build the RawNIND-Bayer-guided Wiener stage (pilot-wiener
+  `bayer_both`) for Bayer camera RAWs, as a Denoise switch on by default;
+  other sources keep current Denoise. Held-out pairs 35.52 dB / ΔE 2.83; best
+  in lifted shadows; erases tiny detail at ISO 25600. Recommended: yes, with
+  Steve's own by-eye trial before release; otherwise ship D1 only.
+- **Proposed tolerance change for Steve:** the 0.90 MTF50 limit applies at
+  ISO 6400 and below; no method (including shipping Denoise, 0.63) reaches it
+  at ISO 25600.
+- **Found:** shipping Denoise leaves dark specks with light rims in strongly
+  lifted high-ISO shadows (`IMG_0790.CR2`, +4 stops); fix regardless of D2.
+- Correction: research `AdaptiveControls` default Detail Recovery 0.5, but the
+  app ships 0.0; Phase 2 "current default" columns used 0.5. The decision page
+  and D1/D2 numbers use the shipping default.
+
 ## 8. Log
 
 - 2026-11-16: pilot-guided empirical Wiener CPU adapters implemented, with
@@ -240,3 +260,5 @@ the [technology watch](../denoising-technology-watch-2026.md):
   96px interface smoke passes, RawNIND/GALOSH assets are absent here. Node
   1091 passed, Python 3928 passed (149 skipped, one xpassed), focused 20 passed.
   No shipping change, GPU run, limit relaxation or push.
+- 2026-11-16: decision crops, shipping-default comparison and review page;
+  D1/D2 put to Steve.
