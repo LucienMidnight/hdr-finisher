@@ -8,6 +8,11 @@
   }
 
   class HDRWebGPUPreview {
+    static usesDraftGrain(options = {}) {
+      return !options.delivery && !options.measureOnly
+        && (options.tier === "interactive" || Boolean(options.coarse));
+    }
+
     static directPreviewMemoryModel(width, height, options = {}) {
       return directPreviewMemoryModel(width, height, options);
     }
@@ -3837,7 +3842,10 @@
       const denoiseIdentity = denoiseActive
         ? `|denoise:${denoiseSelector.identity}:${JSON.stringify(denoiseControls)}`
         : "";
-      const identity = `${proxy.identity}|${editRevision}|${surface.format}${noiseView ? "|noise" : ""}${denoiseIdentity}`;
+      const draftGrain = HDRWebGPUPreview.usesDraftGrain(options);
+      const grainIdentity = draftGrain && params[GPU_PARAMS.GRAIN_ENABLED] > 0.5 && params[GPU_PARAMS.GRAIN_AMOUNT] > 0
+        ? `|draft-grain:${window.HDRWebGPUShaders.GRAIN_SAMPLE_COUNTS.draft}` : "";
+      const identity = `${proxy.identity}|${editRevision}|${surface.format}${noiseView ? "|noise" : ""}${denoiseIdentity}${grainIdentity}`;
       const nodes = ["geometry"];
       if (denoiseActive) nodes.push({ id: "denoise", halo });
       nodes.push("exposure", "white-balance", "curves", "color", "grading");
@@ -4555,7 +4563,8 @@
           });
 
           this.encodeFilmChain(encoder, pipelines, graph, localSource.createView(),
-            (source, spatial, original) => bind(source, spatial, original), params, width, height);
+            (source, spatial, original) => bind(source, spatial, original), params, width, height,
+            { interactive: draftGrain });
         }
         if (options.delivery) {
           encoder.copyTextureToTexture(
@@ -4768,7 +4777,7 @@
         if (processedTiles > 0) measuredPeak = await this.readScopePeak(peakTarget);
         else peakTarget.busy = false;
       }
-      if (measuredPeak !== null && !measureOnly) {
+      if (measuredPeak !== null && !measureOnly && !grainIdentity) {
         this.exactScopePeak = {
           peak: measuredPeak,
           lane,
@@ -4877,6 +4886,7 @@
       this.recordStage(measureOnly ? "tiled-measure" : "tiled-render", { lane, longEdge, ...metrics });
       return {
         rendered: true, refusals: [], width: proxy.width, height: proxy.height,
+        approximate: Boolean(grainIdentity),
         hdr: surface.hdr, proxyFormat: proxy.pixelFormat,
         sourceSerial: proxy.sourceSerial ?? null, execution: "tiled", metrics,
       };
@@ -5499,7 +5509,7 @@
         const glowEncoded = this.encodeFilmChain(encoder, pipelines, intermediate, localSource.createView(),
           (source, spatial, original) => makeBindGroup(source, spatial, this.paramBuffer, original),
           params, proxy.width, proxy.height,
-          { interactive: sourceOptions?.tier === "interactive" && !sourceOptions?.delivery && !sourceOptions?.measureOnly,
+          { interactive: HDRWebGPUPreview.usesDraftGrain(sourceOptions || {}),
             lensGlowKey });
         if (!glowEncoded) lensGlowKey = null;
       }
@@ -5664,7 +5674,7 @@
       }
       draftReturned = true;
       return {
-        approximate: Boolean(sourceOptions?.tier === "interactive" && !sourceOptions?.delivery && !sourceOptions?.measureOnly
+        approximate: Boolean(HDRWebGPUPreview.usesDraftGrain(sourceOptions || {})
           && params[GPU_PARAMS.GRAIN_ENABLED] > 0.5 && params[GPU_PARAMS.GRAIN_AMOUNT] > 0),
         presentationTexture: draftPresentation,
         presentationFormat: surface.format,
@@ -7044,7 +7054,7 @@
       const finishInteractive = create({
         layout: this.pipelineLayout,
         vertex: { module: this.module, entryPoint: "vertexMain" },
-        fragment: { module: this.module, entryPoint: "finishFragmentMain", constants: { interactiveGrain: true }, targets: [{ format: "rgba16float" }] },
+        fragment: { module: this.module, entryPoint: "finishFragmentMain", constants: { grainSampleLimit: window.HDRWebGPUShaders.GRAIN_SAMPLE_COUNTS.draft }, targets: [{ format: "rgba16float" }] },
         primitive: { topology: "triangle-list" },
       });
       const composite = create({

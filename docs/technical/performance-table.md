@@ -1,3 +1,170 @@
+## November 16: grain sample-count investigation and draft-only routing
+
+**Decision pending Steve's crop review. Settled previews, Proof and export
+keep their existing sample placement, count and arithmetic.** The new central
+setting is `HDRWebGPUShaders.GRAIN_SAMPLE_COUNTS` (`draft: 1`, `settled: 16`).
+These are caps, not forced counts: the existing settled rule is
+`min(4, ceil(1 / sourcePixelScale))²`, with the existing single centre sample
+at 100%. For these two photos that means 16 at Fit 1024, four at Fit 4096
+and 50%, and one at 100%/native export.
+
+### What was measured
+
+MacBook Neo / Apple A18 Pro / 8 GB, Electron window 1408×794, shared GPU
+lock, no concurrent own test suite. Two real RAWs: the reusable investigation
+copy of DSC01287 and curated DSC00264. Neither RAW nor sidecar was saved.
+64 groups cover both photos, both HDR/SDR lanes, Fit 1024/4096, 50%/100%,
+and four settings: saved Ektar baseline Amount 19.46 / Size 19.60, strong
+Amount 80 / Size 19.60, fine 80 / 0, coarse 80 / 100. Chroma is 40,
+colour-negative 35 mm. “Default” in the evidence means that saved baseline,
+not factory grain-off defaults (Amount 0 / Size 50).
+
+This is an **isolated production grain-field experiment**, not the whole
+Film/export chain: real-photo linear pixels are explicitly tone-mapped to
+`linear / (1 + linear)`; HDR uses twice that base in ACEScg. The production
+grain function acts on this base. GPU timestamps cover the full Fit frame
+or a 1024×1024 zoom viewport; quality covers the central 256×256 display
+pixels, without enlarging or rescaling the crops. One warm-up and two timed
+draws per group/count; the table pools those timings by median. This is a
+bounded diagnostic, not a new acceptance gate or cross-machine benchmark.
+
+Colour differences are after Gaussian blur, sigma 0.75 display pixel:
+HDR ΔE ITP and SDR ΔE00, using the app's finished-colour comparison.
+RMS is measured per linear channel on grain-on minus grain-off. Power is
+the 32-bin radial average of the windowed, mean-removed noise spectrum;
+the table reports its relative L1 distance from the reference. Full channel
+RMS, spectra and high-frequency ratios remain in `results.json`.
+The 16-cap benchmark was byte-equal to the production default in every group.
+
+### Fit 1024: cost and worst quality differences
+
+Colour columns are the worst mean / P99.9 across the two photos and four
+settings in each lane. RMS range includes every channel and both lanes.
+Power distance 0.369 means 36.9%, not 0.369%.
+
+| Sample cap | GPU ms/frame | HDR ΔE ITP mean / P99.9 | SDR ΔE00 mean / P99.9 | RMS/reference range | Worst power distance |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1 | 19.3 | .829 / 3.055 | .127 / .812 | 1.423–3.921 | 12.004 |
+| 2 | 38.5 | .597 / 2.307 | .092 / .623 | 1.244–2.770 | 6.382 |
+| 4 | 78.1 | .432 / 1.697 | .066 / .449 | 1.055–1.989 | 2.522 |
+| 6 | 121.4 | .352 / 1.381 | .053 / .367 | 1.033–1.639 | 1.340 |
+| 8 | 164.2 | .296 / 1.166 | .045 / .293 | 1.025–1.416 | .878 |
+| 12 | 246.1 | .193 / .750 | .029 / .194 | 1.006–1.154 | .369 |
+| 16, current | 326.1 | 0 / 0 | 0 / 0 | 1–1 | 0 |
+
+### Larger display scales
+
+Counts at or above the existing count produce the same pixels. Differences
+among their timings are not extra samples or a speed claim. Full timings
+for all seven caps at every scale are in `results.json`.
+
+| Scale / cap | Effective samples | GPU ms/frame | HDR mean / P99.9 | SDR mean / P99.9 | RMS/reference range | Worst power distance |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Fit 4096 / 1 | 1 | 335.4 | .556 / 2.128 | .079 / .426 | 1.021–1.633 | 1.192 |
+| Fit 4096 / 2 | 2 | 626.5 | .337 / 1.357 | .048 / .271 | 1.014–1.273 | .446 |
+| Fit 4096 / 4 | 4 | 1254.5 | 0 / 0 | 0 / 0 | 1–1 | 0 |
+| Fit 4096 / 6, 8, 12, 16 | 4 | 1259.5, 1303.2, 1283.9, 1304.4 | 0 / 0 | 0 / 0 | 1–1 | 0 |
+| 50% / 1 | 1 | 26.9 | .573 / 2.159 | .082 / .485 | 1.029–1.658 | 1.249 |
+| 50% / 2 | 2 | 54.3 | .344 / 1.412 | .049 / .305 | 1.015–1.283 | .465 |
+| 50% / 4 | 4 | 118.4 | 0 / 0 | 0 / 0 | 1–1 | 0 |
+| 50% / 6, 8, 12, 16 | 4 | 121.4, 123.1, 119.2, 118.8 | 0 / 0 | 0 / 0 | 1–1 | 0 |
+| 100% / every cap | 1 | 24.5–26.6 | 0 / 0 | 0 / 0 | 1–1 | 0 |
+
+**Recommendation:** one sample for temporary drafts only. Keep the current
+scale-dependent rule for settled/Proof/export until Steve decides. If he
+wants a cheaper small-Fit final, review 12 first: about 25% less isolated
+grain time than 16, versus about 50% for eight, but up to 15.4% more RMS
+grain and a 36.9% power-spectrum change. Eight reaches 41.6% more RMS; blur
+colour alone wrongly makes it look harmless. There is no universal
+“indistinguishable” knee: 12 is the conservative review candidate, not an
+approved final count. Keep four at 4K/50%, one native, and the old rule at
+other scales until those scales are separately qualified.
+
+A smarter **unshipped CPU prototype** scales the single-sample noise to
+match reference variance, calibrated on DSC01287 and tested without refitting
+on DSC00264. At Fit 1024 HDR, held-out RMS ratios are .965–1.055; power
+distance .204–.315; worst colour mean .470 / P99.9 1.778. The calibrated
+gains for baseline/strong/fine/coarse are .326/.321/.260/.677. This preserves
+texture energy much better than raw one-sample grain, but changes individual
+grain positions. No GPU time was measured for this extra blend, and it is
+not production prefiltering. A GPU implementation and full-chain HDR/SDR
+qualification remain necessary before using it for finals.
+
+### Draft implementation and whole-wait measurements
+
+Direct interactive sliders already used one sample before this change.
+The implementation now also honours existing `coarse` requests, including
+tiled drafts, and keeps draft tiles separate from exact tiles. Approximate
+peaks cannot become exact scope anchors. Delivery and measurement always
+bypass the cheaper route; ordinary settled pan/catch-up stays exact.
+
+Same DSC01287 saved grade/window/preferences before and after, three drags
+per slider. FPS counts current GPU-completed frames before release;
+settle is release to the final current GPU-completed frame. Timings keep
+the existing ±10% noise band, not a newly relaxed gate.
+
+| Whole-wait action | Before | After |
+| --- | --- | --- |
+| Fit Exposure drag FPS | 19.3, 19.6, 17.8 | 17.7, 18.3, 18.0 |
+| Fit Whites drag FPS | 15.2, 16.4, 17.2 | 12.7, 16.8, 18.2 |
+| Exposure release settle ms | 270, 1083, 993 | 283, 1165, 1279 |
+| Whites release settle ms | 1804, 290, 1112 | 2234, 292, 1287 |
+| First 50% zoom: first / final ms | 2552 / 4119 | 3095 / 3095 |
+| 100% zoom: first / final ms | 718 / 1336 | 2455 / 3206 |
+| Return 50%: first / final ms | 1361 / 2412 | 1549 / 2765 |
+| Return Fit: completed ms | 304 | 332 |
+| Warm 100%: first / final ms | 522 / 1055 | 697 / 1312 |
+| Final Fit: completed ms | 328 | 345 |
+
+**No normal-interaction speed-up demonstrated.** All measured zoom/pan
+frames were exact, `coarse=false`; therefore the newly connected coarse
+route was not exercised by those gestures. Median drag FPS 17.49→17.87 is
+noise, while median settle 1038→1222 ms and some zooms were slower outside
+the noise band. No cause is established; Steve should try the app before
+another timing investigation. The isolated 16→1 grain reduction is about
+94%, but it is not a measured whole-app gain from this patch. In particular,
+this does not solve the existing .3–1.9 s settle wait or prove faster zoom.
+
+### Review files and qualification
+
+All review files live under this permitted scratch folder:
+`/Users/stevenfuncke/HDR Finisher Tool/ai/codebase/output/performance/grain-samples/`.
+`crop-paths.txt` lists all 192 absolute crop paths. Same-region SDR sheets
+are left 16, centre 12, right eight. Extra sheets show 16 / raw draft one /
+variance-matched prototype one. HDR files are separate 16-bit Rec.2020/PQ
+PNG pairs with cICP tags, plus 12-bit 4:4:4 AVIFs (extra 12-bit rounding).
+HDR-to-PQ uses the app's scene-linear authoring-white conversion. HDR-lane
+SDR sheets are normalized viewing aids, not HDR renditions.
+
+Representative filenames in that folder:
+
+- `DSC01287-fit1024-strong-sdr-16-12-8-sdr.png`
+- `DSC00264-fit1024-strong-sdr-16-12-8-sdr.png`
+- `DSC01287-fit1024-default-hdr-{16,12,8}-pq.avif` (and `.png`)
+- `DSC00264-fit1024-default-hdr-{16,12,8}-pq.avif` (and `.png`)
+
+Reviewed SDR sheets show the extra raw one-sample noise, without obvious
+moiré in those regions. The high-frequency spectrum ratios are aliasing
+diagnostics, not proof of no moiré. Fine/coarse crops and full-chain HDR
+visual sign-off remain open; two photos do not establish every-scene safety.
+
+Library viewport smoke pictured 9/9 requested images, first .6 s, but **failed
+the unchanged system-reserve guard**: available RAM 1.737 GB versus the
+2.000 GB minimum. Independent app-tree peak was 3.238 GB; no app-ceiling
+excess was recorded. The cause is not attributed to this change, and the
+check was not rerun or loosened. Evidence:
+`codebase/output/quick-library-check/grain-draft/report.json`.
+
+Focused checks: 36 frozen-reference settled/draft shader cases byte-exact;
+12 GPU-preview/CPU-export grain agreement cases pass unchanged limits;
+tiled Film/grain parity byte-exact. Fast Node: 1103 pass, one skip; Python:
+3894 pass, 144 skip, one xpass. Evidence: `results.json`, `measurements.json`,
+`shader-regression.json`, `before.json`, `after.json` and test logs in the
+same scratch folder. The input planes and half-float captures were removed
+after analysis. No quality gate, tolerance, memory budget or protected file
+changed. No full release or encoded-delivery matrix is claimed here.
+Final scratch check: 14.2 GB total, below the unchanged 100 GB limit.
+
 ## November 16: DSC01287 preview scheduling fixes
 
 Same MacBook Neo / A18 Pro / 8 GB, 1408×794 / DPR 2, default 4 GB and

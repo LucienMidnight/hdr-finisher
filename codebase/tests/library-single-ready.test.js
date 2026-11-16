@@ -136,7 +136,7 @@ test('Library compiles only demanded passes and uses the unchanged Grade descrip
  const library=fs.readFileSync(require.resolve('../frontend/library-gpu'),'utf8');
  const base=grade.slice(grade.indexOf('    pipelineFor(format, factory = null)'),grade.indexOf('    async warmPipelines'));
  const methods=library.slice(library.indexOf('  pipelineFor(format, factory = null)'),library.indexOf('  async loadProxy'));
- const context={HDRLibraryStopwatch(){},window:{},performance,CLARITY_MAP_FORMAT:'rgba16float'};
+ const context={HDRLibraryStopwatch(){},window:{HDRWebGPUShaders:require('../frontend/webgpu-shaders.js').HDRWebGPUShaders},performance,CLARITY_MAP_FORMAT:'rgba16float'};
  vm.runInNewContext('class Grade {'+base+'};class Library extends Grade {'+methods+'};this.Grade=Grade;this.Library=Library;',context);
  const created=[],gpu=new context.Library();gpu.pipelines=new Map();gpu.module={shader:'unchanged'};gpu.pipelineLayout={layout:'unchanged'};
  gpu.device={createRenderPipeline:d=>{created.push(d);return {descriptor:d};},createRenderPipelineAsync:async d=>{created.push(d);return {descriptor:d};}};

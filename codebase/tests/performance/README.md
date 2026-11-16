@@ -492,6 +492,41 @@ in SDR; see performance-table section 5 for the breakdown and proposed work.
 
 ## Saved-grade RAW latency diagnostic
 
+### Grain sample-count experiment
+
+`grain-sample-reference.py prepare --output output/performance/grain-samples
+output/test-photos/DSC01287.ARW output/test-photos/DSC00264.ARW`, with the venv
+Python and `PYTHONPATH=backend`, prepares bounded linear real-photo planes.
+DSC01287 is Steve's specifically requested reusable investigation copy; the
+other photo is from the curated test set. Neither input nor its saved grade
+is written. Run `grain-sample-sweep.js` through `run-in-electron.js` and the
+shared GPU lock, then the Python helper's `analyze` action on that same folder.
+The sweep resumes completed groups from `measurements.json` after interruption.
+
+The experiment isolates the production physical grain field on an explicitly
+tone-mapped real-photo base, **not the saved grade's complete Film/export
+chain**. Its GPU timestamps cover the whole 1024/4096 Fit plane or the bounded
+1024-pixel zoom viewport; colour/texture use the central 256×256 pixels without
+rescaling. One warm-up and two timed draws are recorded. Requested counts above
+the existing scale-dependent reference count do not add samples. Both lanes,
+two photos, saved Ektar amount/size, strong amount, fine and coarse size are
+included. The HDR metric uses the application's authoring-white conversion.
+
+Analysis records Gaussian σ=.75 display-pixel blurred ΔE ITP / ΔE00, per-channel
+grain RMS and 32-bin radially averaged power spectra (unblurred grain-on minus
+grain-off). The high-frequency ratio is diagnostic, not proof of no moiré.
+An extra CPU-only single-sample variance-matching prototype is calibrated on
+the first photo and checked on the second; it has no measured GPU time and
+does not change production. Review PNGs preserve display-pixel size: separate
+SDR comparison sheets and 16-bit Rec.2020/PQ HDR PNGs with cICP tags. The HDR
+lane's SDR sheets are normalized viewing aids, not HDR files. When `avifenc`
+is available, matching 12-bit 4:4:4 PQ AVIFs are also written; these add
+12-bit rounding. “Default” means the saved Ektar baseline, not factory
+grain-off defaults. Analysis removes
+its input planes and intermediate half-float captures; keep the small JSON,
+logs and review crops until Steve's decision. `grain-sampling.js` separately
+pins settled and existing draft grain against the frozen numerical reference.
+
 `stacked-raw-latency.js --input output/test-photos/DSC01287.ARW` opens the
 reusable RAW/sidecar without saving either. Run through `run-in-electron.js`
 and the shared GPU lock at the machine window. `--part baseline` measures

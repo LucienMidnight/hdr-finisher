@@ -435,8 +435,10 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
   const LENS_COMPONENTS_WGSL = LENS_FILTERS.components.slice(1).flat().map(([sigma,weights]) =>
     `vec4f(${[sigma,...weights].map(value=>Number(value).toPrecision(12)).join(",")})`).join(",\n");
 
+  const GRAIN_SAMPLE_COUNTS = Object.freeze({ draft: 1, settled: 16 });
+
   const SHADER_SOURCE = String.raw`
-    override interactiveGrain: bool = false;
+    override grainSampleLimit: u32 = ${GRAIN_SAMPLE_COUNTS.settled}u;
     @group(0) @binding(0) var sourceTexture: texture_2d<f32>;
     @group(0) @binding(1) var<storage, read> p: array<f32>;
     @group(0) @binding(2) var<storage, read> curveLuts: array<f32>;
@@ -1891,9 +1893,21 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
     fn filmGrainStops(rgb: vec3f, coordinate: vec2i, master: f32) -> vec3f {
       let scale = clamp(p[${GPU_PARAMS.SOURCE_PIXEL_SCALE}], 0.05, 1.0);
-      if (interactiveGrain) { return filmGrainSample(rgb, coordinate, master, vec2f(0.0), scale); }
       if (scale >= 1.0) { return filmGrainSample(rgb, coordinate, master, vec2f(0.0), 1.0); }
       let count = min(4u, u32(ceil(1.0 / scale)));
+      if (grainSampleLimit < count * count) {
+        if (grainSampleLimit <= 1u) { return filmGrainSample(rgb, coordinate, master, vec2f(0.0), scale); }
+        let columns = select(select(2u, 3u, grainSampleLimit == 6u), 4u, grainSampleLimit >= 8u);
+        let rows = max(1u, grainSampleLimit / columns);
+        var reduced = vec3f(0.0);
+        for (var row = 0u; row < rows; row++) {
+          for (var column = 0u; column < columns; column++) {
+            let offset = (vec2f(f32(column), f32(row)) + vec2f(0.5)) / vec2f(f32(columns), f32(rows)) - vec2f(0.5 * scale);
+            reduced += filmGrainSample(rgb, coordinate, master, offset, scale);
+          }
+        }
+        return reduced / f32(columns * rows);
+      }
       var sum = vec3f(0.0);
       for (var y = 0u; y < count; y++) {
         for (var x = 0u; x < count; x++) {
@@ -3281,6 +3295,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
   `;
 
   const HDRWebGPUShaders = Object.freeze({
+    GRAIN_SAMPLE_COUNTS,
     BLACK_AND_WHITE_PARAM,
     PEAK_REDUCTION_SHADER_SOURCE,
     SCALED_FILM_PEAK_REDUCTION_SHADER_SOURCE,

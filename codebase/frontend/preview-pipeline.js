@@ -672,6 +672,7 @@ async function renderGpuDraftInner(
   const maskOverlay = gpuLumaMaskOverlayOptions();
   const sourceOptions = {
     tier,
+    coarse: Boolean(request.coarse),
     applicationGeneration: generation,
     viewport: request.viewport || null,
     // The frame this pass will produce, so that the first magnified pass can

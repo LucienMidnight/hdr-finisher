@@ -20,6 +20,59 @@ Further preview grain approximation is an option for Steve, not implemented.
 
 # Module PRD: Film Look
 
+## November 16: grain sampling, drafts only; final decision pending
+
+The real-photo sweep compares sample caps 1/2/4/6/8/12/16 on DSC01287 and
+DSC00264, HDR/SDR, Fit 1024/4096, 50%/100%, saved baseline/strong/fine/coarse
+grain. It isolates the production grain field on a tone-mapped photo base,
+not the full Film delivery chain. See the top of the performance table for
+the complete method, quality/time tables, actual interaction waits and
+absolute review-folder path. All 192 review paths are in that folder's
+`crop-paths.txt`; HDR PQ PNG/AVIF pairs accompany the SDR comparison sheets.
+
+**Built:** central `HDRWebGPUShaders.GRAIN_SAMPLE_COUNTS` setting:
+`draft: 1`, `settled: 16`. Existing interactive sliders already used one;
+existing coarse requests now also select it on direct/tiled routes. Draft
+tiles cannot be reused as exact tiles, and approximate tiled peaks cannot
+become exact scope anchors. Delivery and measurement exclude this shortcut.
+Ordinary settled preview, settled pan/catch-up, Proof and export keep the
+original sample positions, arithmetic and pixels. The cap is not a forced
+16 samples: the original rule uses four at these photos' 4K Fit/50% scales,
+one at native 100%/export, and up to 16 at small Fit.
+
+**Recommended, awaiting Steve:** retain one for drafts. Review 12 versus
+16 and eight for small-Fit finals, but do not ship a final-count change yet.
+Twelve saves about 25% of isolated Fit-1024 grain time, with up to 15.4%
+more RMS grain and 36.9% radial power-spectrum difference. Eight changes
+RMS by up to 41.6%; small blurred colour differences alone do not mean the
+texture matches. Keep four at 4K/50%, one native and the original rule at
+other scales pending qualification. Final/export count approval remains
+Steve's decision, including any deliberate change in grain appearance.
+
+A variance-matched one-sample CPU-only prototype preserves texture energy
+better on the held-out second photo. It is not shipped, has no measured
+GPU blend time, and still needs a production/full-chain visual qualification.
+No claim of universally alias-free grain is made from these central crops.
+
+Before changing the settled cap, mirror the reduced rectangular sample
+placement and averaging in `backend/hdr_finisher/film_grain.py`'s
+`preview_grain_noise` CPU reference, then rerun preview/export and Proof
+agreement at reduced and native scales. Native export currently samples
+once per source pixel and stays unchanged; resized export/Proof ordering
+must be checked rather than assuming a lower preview cap applies there.
+
+Qualification: 36 shader cases retain byte-exact settled and old draft
+pixels; 12 CPU-export grain agreement cases and tiled Film parity pass.
+Fast Node 1103 pass / one skip; Python 3894 pass / 144 skips / one xpass.
+Normal DSC01287 gestures did not select the newly connected coarse path;
+there is no demonstrated whole-app speed-up. Median drag FPS was unchanged
+within noise; settle/zoom observations include unexplained slowdowns outside
+the existing ±10% band. Steve should try the app before further timing work.
+The remaining settle wait is not declared solved.
+Library smoke pictured 9/9 requested images but failed the unchanged system
+RAM reserve (1.737 GB available, minimum 2.000 GB); no app-ceiling excess.
+That failed qualification is recorded, not waived or rerun.
+
 ## November 16: safe linked SDR built and scoped qualification
 
 Whole-photo Match now tries the trial's body/colour-best output tail, then

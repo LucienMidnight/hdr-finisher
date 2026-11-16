@@ -1063,6 +1063,13 @@
       }
     },
     {
+      "path": "tests/grain-sampling.js",
+      "areas": ["film", "preview", "export-proof"],
+      "tier": "area",
+      "protects": "Default grain and one-sample draft remain byte-identical to their frozen numerical references across scale, size, film type and lane.",
+      "launch": {"method": "electron"}
+    },
+    {
       "path": "tests/grain-parity.js",
       "areas": [
         "film"
@@ -2014,6 +2021,20 @@
           "{output}/failure-taxonomy.js.json"
         ]
       }
+    },
+    {
+      "path": "tests/performance/grain-sample-sweep.js",
+      "areas": ["film", "preview"],
+      "tier": "diagnostic",
+      "protects": "Real-photo grain sample-count colour, texture and GPU-cost comparison; prepares inputs with grain-sample-reference.py.",
+      "launch": {"method": "electron"}
+    },
+    {
+      "path": "tests/performance/grain-sample-reference.py",
+      "areas": ["film"],
+      "tier": "diagnostic",
+      "protects": "Bounded photo preparation and perceptual/texture analysis for grain-sample-sweep.js.",
+      "launch": {"method": "python"}
     },
     {
       "path": "tests/performance/film-grain-size-diagnostic.js",

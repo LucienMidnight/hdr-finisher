@@ -11,6 +11,36 @@ vm.runInContext(frontendSource('webgpu-preview.js'), context);
 const Preview = context.window.HDRWebGPUPreview;
 const indices = HDRGpuParamLayout.indices;
 
+test('only interactive and coarse requests reduce grain, never delivery or measurement', () => {
+  for (const request of [{ tier: 'interactive' }, { tier: 'refinement', coarse: true }, { tier: 'settled', coarse: true }]) {
+    assert.equal(Preview.usesDraftGrain(request), true);
+    assert.equal(Preview.usesDraftGrain({ ...request, delivery: { texture: {} } }), false);
+    assert.equal(Preview.usesDraftGrain({ ...request, measureOnly: true }), false);
+  }
+  for (const request of [{}, { tier: 'settled' }, { tier: 'refinement' }, { tier: 'refinement', panPass: true },
+    { tier: 'refinement', roiCatchUp: true }]) assert.equal(Preview.usesDraftGrain(request), false);
+});
+
+test('scheduled coarse requests reach the renderer without downgrading settled requests', async () => {
+  const requests = [];
+  const state = { currentView: 'hdr', session: { session_id: 'grain-test', source: { width: 7968, height: 5320 } },
+    previewGeneration: { hdr: 1 }, gpuDraftRefusals: {}, adjustments: {},
+    gpuPreview: { render: async (...args) => { requests.push(args.at(-1)); return null; } } };
+  const ui = vm.createContext({ state, performance, geometryDraftActive: () => false,
+    gpuPreviewEligible: () => true, geometrySignature: () => '{}', localsBypassed: () => true,
+    gpuLumaMaskOverlayOptions: () => null, gpuFrameSizeAt: () => ({ width: 1024, height: 683 }),
+    denoiseNoiseViewActive: () => false, sampleCurvePoints() {}, projectReferenceWhiteNits: () => 203 });
+  vm.runInContext(declarations('renderGpuDraftInner') + '\nglobalThis.render = renderGpuDraftInner;', ui);
+  for (const request of [{ tier: 'refinement', coarse: true }, { tier: 'interactive' }, { tier: 'settled' }]) {
+    await ui.render('hdr', { ...request, longEdge: 1024 });
+    const actual = requests.at(-1);
+    assert.equal(actual.coarse, Boolean(request.coarse));
+    assert.equal(actual.tier, request.tier);
+    assert.equal(Preview.usesDraftGrain(actual), request.tier !== 'settled');
+  }
+  assert.equal(requests.length, 3);
+});
+
 test('lens glow identity ignores only Strength and follows source, lane and upstream edits', () => {
   const preview = new Preview(null);
   let source = 'source-a';
