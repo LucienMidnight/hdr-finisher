@@ -200,8 +200,8 @@ async function switchLane(lane) {
 function arrangeLaneControlGroups(lane) {
   const panel = els.lanePanels.find((candidate) => candidate.dataset.lanePanel === lane);
   if (!panel) return;
-  const groupOrder = ["denoise", `${lane}-tone`, `${lane}-equalizer`, `${lane}-zones`,
-    "hsl", "curves", `${lane}-highlights`, `${lane}-color`, "color-grading",
+  const groupOrder = [`${lane}-highlights`, `${lane}-tone`, `${lane}-equalizer`,
+    "curves", `${lane}-color`, "hsl", "color-grading",
     "black-and-white", "detail", "film-look", "vignette"];
   let index = 0;
   for (const groupName of groupOrder) {

@@ -1,4 +1,6 @@
 /* Control Panel modes and shared rendition folder. */
+.highlight-display-note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.highlight-display-note .text-button { color: var(--text); }
 [hidden] { display: none !important; }
 #grade-workflow-panel > .grade-header { display: block; padding: 0; }
 .control-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; height: var(--panel-header-h); padding: 0 16px; border-bottom: 1px solid var(--hairline); }

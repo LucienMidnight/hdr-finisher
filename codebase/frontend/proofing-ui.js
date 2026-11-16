@@ -436,6 +436,7 @@
       state.displayTelemetry = { source: "unavailable", displays: [], detail: error?.message || "Display telemetry is unavailable." };
     }
     populateDisplayOptions();
+    renderHighlightDisplayNote();
     const changed = previous !== JSON.stringify(state.displayTelemetry?.displays || []);
     if (changed && state.proofTarget === "auto" && state.proofReconstruction) {
       state.proofDirty = true;

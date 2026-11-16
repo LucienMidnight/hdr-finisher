@@ -794,6 +794,7 @@ function bindEvents() {
       commitAdjustmentValue(control.dataset.path, value);
     });
   });
+  document.getElementById("hdr-compression-use-display")?.addEventListener("click", useHighlightDisplayPeak);
   els.denoiseBypass?.addEventListener("click", () => setDenoiseEnabled(!state.denoise[state.currentView].enabled));
   els.denoiseShowNoise?.addEventListener("click", toggleDenoiseNoiseView);
   const denoiseSliders = [

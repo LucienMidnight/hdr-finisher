@@ -116,7 +116,36 @@ function mapHighlightNits(inputNits, hdr) {
   return 2 ** (info.effectiveStartStop + span * mapped);
 }
 
+function highlightDisplayPeakNits() {
+  const displays = state.displayTelemetry?.displays || [];
+  const display = displays.find(item => item.primary) || displays[0];
+  return HDRTonePreviewModel.displayPeak(display, projectReferenceWhiteNits()) * projectReferenceWhiteNits() / 0.18;
+}
+
+function renderHighlightDisplayNote() {
+  const note = document.getElementById("hdr-compression-display-note");
+  if (!note) return;
+  const peak = highlightDisplayPeakNits();
+  note.hidden = !(peak > 0 && state.adjustments.hdr.highlight_compression_target_nits > peak);
+  document.getElementById("hdr-compression-display-message").textContent = note.hidden ? ""
+    : `Peak is above this display’s ${Math.round(peak)} nit limit. The delivered target is unchanged.`;
+}
+
+function useHighlightDisplayPeak() {
+  const peak = highlightDisplayPeakNits();
+  const control = document.getElementById("hdr-compression-target");
+  if (!(peak > 0) || !control) return;
+  const minimum = Number(control.min), maximum = Number(control.max);
+  const step = Number(control.dataset.instrumentStep) || Number(control.step);
+  const value = Math.min(maximum, Math.max(minimum, minimum + Math.round((peak - minimum) / step) * step));
+  if (value === state.adjustments.hdr.highlight_compression_target_nits) return;
+  beginGlobalEditGesture(control);
+  commitAdjustmentValue(control.dataset.path, value, { manual: true });
+  endGlobalEditGesture(control);
+}
+
 function renderHighlightCompressionControls() {
+  renderHighlightDisplayNote();
   const hdr = state.adjustments.hdr;
   if (!hdr || !els.highlightCompressionGraph) return;
   syncHighlightCompressionSourcePeak();

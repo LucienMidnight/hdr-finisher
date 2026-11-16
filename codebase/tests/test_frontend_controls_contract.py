@@ -60,8 +60,6 @@ def test_grading_ui_exposes_variable_equalizer_targeting_and_bypass_controls() -
     assert 'data-group="curves"' in html
     assert 'data-group="hdr-highlights"' in html
     assert "content: \"09\"" not in css and "content: \"10\"" not in css
-    assert "Output target" in html
-    assert "Sets the final peak after grading" in html
     assert '<option value="clip">Clip</option>' in html
     assert 'data-path="hdr.highlight_compression_start_nits"' in html
     assert 'data-path="hdr.highlight_compression_target_nits"' in html

@@ -15,7 +15,7 @@ function initializeControlPanel() {
     return panel;
   };
   const global = makePanel("global"), local = makePanel("local"), retouch = makePanel("retouch");
-  for (const selector of ["#raw-settings-section", '[data-group="raw-highlights"]', '[data-group="geometry"]', '[data-group="perspective"]', ".lane-folder-shell"]) {
+  for (const selector of ["#raw-settings-section", '[data-group="raw-highlights"]', '[data-group="denoise"]', '[data-group="geometry"]', '[data-group="perspective"]', ".lane-folder-shell"]) {
     global.append(document.querySelector(selector));
   }
   const label = text => {

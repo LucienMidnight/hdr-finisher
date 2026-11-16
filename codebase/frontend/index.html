@@ -938,6 +938,86 @@
       </div>
 
       <div class="lane-panel" data-lane-panel="hdr">
+        <section class="control-group collapsed" data-group="hdr-highlights">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="false">Highlight Compression <span data-modified-count="hdr-highlights">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="hdr.highlight_section_enabled" aria-pressed="false" aria-label="Toggle Highlight Compression preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="hdr-highlights">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <div class="control-row" data-control-path="hdr.highlight_compression_target_nits">
+              <div class="control-heading">
+                <label class="tooltip-trigger" for="hdr-compression-target" data-tooltip="Sets the final peak after grading, local adjustments, Detail, Film Look, and Vignette.">Peak</label>
+                <output data-value-path="hdr.highlight_compression_target_nits">1000 nit</output>
+              </div>
+              <input id="hdr-compression-target" type="range" min="200" max="10000" step="25" value="1000" data-path="hdr.highlight_compression_target_nits">
+              <div id="hdr-compression-display-note" class="highlight-display-note helper" hidden>
+                <span id="hdr-compression-display-message" role="status"></span>
+                <button id="hdr-compression-use-display" class="text-button" type="button">Use this display</button>
+              </div>
+            </div>
+            <div class="control-row select-control" data-control-path="hdr.highlight_compression_mode">
+              <div class="control-heading">
+                <label id="highlight-compression-summary" class="tooltip-trigger" for="hdr-compression-mode" data-tooltip="Peak Fit anchors the measured final-grade peak at the output target.">Mode</label>
+              </div>
+              <select id="hdr-compression-mode" data-path="hdr.highlight_compression_mode">
+                <option value="peak_fit">Peak Fit</option>
+                <option value="fixed_cap">Fixed cap</option><option value="soft_ceiling">Soft Ceiling</option>
+                <option value="clip">Clip</option>
+              </select>
+            </div>
+            <div class="control-row" data-control-path="hdr.highlight_compression_start_nits">
+              <div class="control-heading"><label for="hdr-compression-start">Start</label><output data-value-path="hdr.highlight_compression_start_nits">400 nit</output></div>
+              <input id="hdr-compression-start" type="range" min="100" max="4000" step="25" value="400" data-path="hdr.highlight_compression_start_nits">
+            </div>
+            <div class="control-row featured-control" data-control-path="hdr.highlight_compression_softness">
+              <div class="control-heading"><label for="hdr-compression-softness">Softness</label><output data-value-path="hdr.highlight_compression_softness">Off</output></div>
+              <input id="hdr-compression-softness" type="range" min="0" max="100" step="0.5" value="0" data-path="hdr.highlight_compression_softness">
+            </div>
+            <div class="control-row select-control" data-control-path="hdr.highlight_compression_color_handling">
+              <div class="control-heading">
+                <label class="tooltip-trigger" for="hdr-compression-color" data-tooltip="Smooth color rolloff gently compresses each Rec.2020 channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white. Attenuate (prototype) fades bright colours gradually toward white, AgX-style.">Highlight Color</label>
+              </div>
+              <select id="hdr-compression-color" data-path="hdr.highlight_compression_color_handling">
+                <option value="smooth_rolloff">Smooth color rolloff</option>
+                <option value="preserve_color">Preserve color</option>
+                <option value="path_to_white">Neutralize peak</option>
+                <option value="agx_attenuate">Attenuate (AgX-style, prototype)</option>
+              </select>
+            </div>
+            <div class="control-row featured-control" data-control-path="hdr.highlight_compression_attenuation">
+              <div class="control-heading"><label class="tooltip-trigger" for="hdr-compression-attenuation" data-tooltip="How strongly bright colours fade toward white as they are compressed. 0% matches Smooth color rolloff.">Attenuation</label><output data-value-path="hdr.highlight_compression_attenuation">20%</output></div>
+              <input id="hdr-compression-attenuation" type="range" min="0" max="90" step="1" value="20" data-path="hdr.highlight_compression_attenuation">
+            </div>
+            <div class="control-row featured-control" data-control-path="hdr.highlight_compression_peak_detail">
+              <div class="control-heading"><label for="hdr-compression-detail">Highlight Detail</label><output data-value-path="hdr.highlight_compression_peak_detail">35%</output></div>
+              <input id="hdr-compression-detail" type="range" min="0" max="100" step="1" value="35" data-path="hdr.highlight_compression_peak_detail">
+            </div>
+            <figure class="highlight-compression-visual">
+              <canvas id="highlight-compression-graph" width="320" height="150" aria-label="Highlight compression input-to-output transfer graph"></canvas>
+            </figure>
+            <details class="highlight-compression-advanced">
+              <summary>Advanced highlight controls</summary>
+              <div class="control-row select-control" data-control-path="hdr.highlight_compression_peak_measurement">
+                <div class="control-heading"><label for="hdr-compression-measurement">Input Peak</label></div>
+                <select id="hdr-compression-measurement" data-path="hdr.highlight_compression_peak_measurement">
+                  <option value="maximum">Measured maximum</option>
+                  <option value="robust">Ignore isolated pixels</option>
+                  <option value="manual">Manual</option>
+                </select>
+              </div>
+              <div class="control-row" data-control-path="hdr.highlight_compression_manual_peak_nits">
+                <div class="control-heading"><label for="hdr-compression-manual-peak">Manual Source Peak</label><output data-value-path="hdr.highlight_compression_manual_peak_nits">1000 nit</output></div>
+                <input id="hdr-compression-manual-peak" type="range" min="100" max="100000" step="100" value="1000" data-path="hdr.highlight_compression_manual_peak_nits">
+              </div>
+              <div class="control-row" data-control-path="hdr.highlight_compression_bias">
+                <div class="control-heading"><label for="hdr-compression-bias">Compression Bias</label><output data-value-path="hdr.highlight_compression_bias">0</output></div>
+                <input id="hdr-compression-bias" type="range" min="-100" max="100" step="1" value="0" data-path="hdr.highlight_compression_bias">
+              </div>
+            </details>
+          </div>
+        </section>
+
         <section class="control-group collapsed" data-group="hdr-tone">
           <div class="control-group-header">
             <button class="group-toggle" type="button" aria-expanded="false">Tone <span data-modified-count="hdr-tone">Default</span></button>
@@ -1000,82 +1080,6 @@
               <div class="control-heading"><label class="tooltip-trigger" for="hdr-whites" data-tooltip="Adjusts the top stop below Target Peak (display white in SDR). Positive values overdrive Film Look; final Highlight Compression still owns the delivery ceiling.">Whites</label><output data-value-path="hdr.whites">0</output></div>
               <input id="hdr-whites" type="range" min="-100" max="100" step="1" value="0" data-path="hdr.whites">
             </div>
-          </div>
-        </section>
-
-        <section class="control-group collapsed" data-group="hdr-highlights">
-          <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="false">Highlight Compression <span data-modified-count="hdr-highlights">Default</span></button>
-            <button class="section-bypass text-button" type="button" data-section-path="hdr.highlight_section_enabled" aria-pressed="false" aria-label="Toggle Highlight Compression preview">&#9673;</button>
-            <button class="group-reset text-button" type="button" data-reset-group="hdr-highlights">Reset</button>
-          </div>
-          <div class="control-group-body">
-            <div class="control-row select-control" data-control-path="hdr.highlight_compression_mode">
-              <div class="control-heading">
-                <label id="highlight-compression-summary" class="tooltip-trigger" for="hdr-compression-mode" data-tooltip="Peak Fit anchors the measured final-grade peak at the output target.">Mode</label>
-              </div>
-              <select id="hdr-compression-mode" data-path="hdr.highlight_compression_mode">
-                <option value="peak_fit">Peak Fit</option>
-                <option value="fixed_cap">Fixed cap</option><option value="soft_ceiling">Soft Ceiling</option>
-                <option value="clip">Clip</option>
-              </select>
-            </div>
-            <div class="control-row" data-control-path="hdr.highlight_compression_start_nits">
-              <div class="control-heading"><label for="hdr-compression-start">Start</label><output data-value-path="hdr.highlight_compression_start_nits">400 nit</output></div>
-              <input id="hdr-compression-start" type="range" min="100" max="4000" step="25" value="400" data-path="hdr.highlight_compression_start_nits">
-            </div>
-            <div class="control-row" data-control-path="hdr.highlight_compression_target_nits">
-              <div class="control-heading">
-                <label class="tooltip-trigger" for="hdr-compression-target" data-tooltip="Sets the final peak after grading, local adjustments, Detail, Film Look, and Vignette.">Output target</label>
-                <output data-value-path="hdr.highlight_compression_target_nits">1000 nit</output>
-              </div>
-              <input id="hdr-compression-target" type="range" min="200" max="10000" step="25" value="1000" data-path="hdr.highlight_compression_target_nits">
-            </div>
-            <div class="control-row featured-control" data-control-path="hdr.highlight_compression_softness">
-              <div class="control-heading"><label for="hdr-compression-softness">Softness</label><output data-value-path="hdr.highlight_compression_softness">Off</output></div>
-              <input id="hdr-compression-softness" type="range" min="0" max="100" step="0.5" value="0" data-path="hdr.highlight_compression_softness">
-            </div>
-            <div class="control-row select-control" data-control-path="hdr.highlight_compression_color_handling">
-              <div class="control-heading">
-                <label class="tooltip-trigger" for="hdr-compression-color" data-tooltip="Smooth color rolloff gently compresses each Rec.2020 channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white. Attenuate (prototype) fades bright colours gradually toward white, AgX-style.">Highlight Color</label>
-              </div>
-              <select id="hdr-compression-color" data-path="hdr.highlight_compression_color_handling">
-                <option value="smooth_rolloff">Smooth color rolloff</option>
-                <option value="preserve_color">Preserve color</option>
-                <option value="path_to_white">Neutralize peak</option>
-                <option value="agx_attenuate">Attenuate (AgX-style, prototype)</option>
-              </select>
-            </div>
-            <div class="control-row featured-control" data-control-path="hdr.highlight_compression_attenuation">
-              <div class="control-heading"><label class="tooltip-trigger" for="hdr-compression-attenuation" data-tooltip="How strongly bright colours fade toward white as they are compressed. 0% matches Smooth color rolloff.">Attenuation</label><output data-value-path="hdr.highlight_compression_attenuation">20%</output></div>
-              <input id="hdr-compression-attenuation" type="range" min="0" max="90" step="1" value="20" data-path="hdr.highlight_compression_attenuation">
-            </div>
-            <div class="control-row featured-control" data-control-path="hdr.highlight_compression_peak_detail">
-              <div class="control-heading"><label for="hdr-compression-detail">Highlight Detail</label><output data-value-path="hdr.highlight_compression_peak_detail">35%</output></div>
-              <input id="hdr-compression-detail" type="range" min="0" max="100" step="1" value="35" data-path="hdr.highlight_compression_peak_detail">
-            </div>
-            <figure class="highlight-compression-visual">
-              <canvas id="highlight-compression-graph" width="320" height="150" aria-label="Highlight compression input-to-output transfer graph"></canvas>
-            </figure>
-            <details class="highlight-compression-advanced">
-              <summary>Advanced highlight controls</summary>
-              <div class="control-row select-control" data-control-path="hdr.highlight_compression_peak_measurement">
-                <div class="control-heading"><label for="hdr-compression-measurement">Input Peak</label></div>
-                <select id="hdr-compression-measurement" data-path="hdr.highlight_compression_peak_measurement">
-                  <option value="maximum">Measured maximum</option>
-                  <option value="robust">Ignore isolated pixels</option>
-                  <option value="manual">Manual</option>
-                </select>
-              </div>
-              <div class="control-row" data-control-path="hdr.highlight_compression_manual_peak_nits">
-                <div class="control-heading"><label for="hdr-compression-manual-peak">Manual Source Peak</label><output data-value-path="hdr.highlight_compression_manual_peak_nits">1000 nit</output></div>
-                <input id="hdr-compression-manual-peak" type="range" min="100" max="100000" step="100" value="1000" data-path="hdr.highlight_compression_manual_peak_nits">
-              </div>
-              <div class="control-row" data-control-path="hdr.highlight_compression_bias">
-                <div class="control-heading"><label for="hdr-compression-bias">Compression Bias</label><output data-value-path="hdr.highlight_compression_bias">0</output></div>
-                <input id="hdr-compression-bias" type="range" min="-100" max="100" step="1" value="0" data-path="hdr.highlight_compression_bias">
-              </div>
-            </details>
           </div>
         </section>
 
@@ -1152,6 +1156,57 @@
       </div>
 
       <div class="lane-panel hidden" data-lane-panel="sdr">
+        <section class="control-group collapsed" data-group="sdr-highlights">
+          <div class="control-group-header">
+            <button class="group-toggle" type="button" aria-expanded="false">Highlight Compression <span data-modified-count="sdr-highlights">Default</span></button>
+            <button class="section-bypass text-button" type="button" data-section-path="sdr.highlight_section_enabled" aria-pressed="true" aria-label="Toggle SDR Highlight Compression preview">&#9673;</button>
+            <button class="group-reset text-button" type="button" data-reset-group="sdr-highlights">Reset</button>
+          </div>
+          <div class="control-group-body">
+            <div class="control-row"><div class="control-heading"><span>Peak: SDR white (100%)</span></div></div>
+            <div class="control-row select-control" data-control-path="sdr.highlight_compression_mode">
+              <div class="control-heading"><label id="sdr-highlight-compression-summary" class="tooltip-trigger" for="sdr-compression-mode" data-tooltip="Peak Fit anchors the measured source peak at display white while preserving a smooth highlight gradient.">Mode</label></div>
+              <select id="sdr-compression-mode" data-path="sdr.highlight_compression_mode"><option value="peak_fit">Peak Fit</option><option value="fixed_cap">Fixed cap</option><option value="soft_ceiling">Soft Ceiling</option><option value="clip">Clip</option></select>
+            </div>
+            <div class="control-row" data-control-path="sdr.highlight_compression_start_percent">
+              <div class="control-heading"><label for="sdr-compression-start">Start</label><output data-value-path="sdr.highlight_compression_start_percent">50%</output></div>
+              <input id="sdr-compression-start" type="range" min="1" max="99" step="1" value="50" data-path="sdr.highlight_compression_start_percent">
+            </div>
+            <div class="control-row featured-control" data-control-path="sdr.highlight_compression_softness">
+              <div class="control-heading"><label for="sdr-compression-softness">Softness</label><output data-value-path="sdr.highlight_compression_softness">Off</output></div>
+              <input id="sdr-compression-softness" type="range" min="0" max="100" step="0.5" value="0" data-path="sdr.highlight_compression_softness">
+            </div>
+            <div class="control-row select-control" data-control-path="sdr.highlight_compression_color_handling">
+              <div class="control-heading"><label class="tooltip-trigger" for="sdr-compression-color" data-tooltip="Smooth color rolloff gently compresses each sRGB channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white.">Highlight Color</label></div>
+              <select id="sdr-compression-color" data-path="sdr.highlight_compression_color_handling"><option value="smooth_rolloff">Smooth color rolloff</option><option value="preserve_color">Preserve color</option><option value="path_to_white">Neutralize peak</option><option value="agx_attenuate">Attenuate (AgX-style, prototype)</option></select>
+            </div>
+            <div class="control-row featured-control" data-control-path="sdr.highlight_compression_attenuation">
+              <div class="control-heading"><label class="tooltip-trigger" for="sdr-compression-attenuation" data-tooltip="How strongly bright colours fade toward white as they are compressed. 0% matches per-channel rolloff.">Attenuation</label><output data-value-path="sdr.highlight_compression_attenuation">20%</output></div>
+              <input id="sdr-compression-attenuation" type="range" min="0" max="90" step="1" value="20" data-path="sdr.highlight_compression_attenuation">
+            </div>
+            <div class="control-row featured-control" data-control-path="sdr.highlight_compression_peak_detail">
+              <div class="control-heading"><label for="sdr-compression-detail">Highlight Detail</label><output data-value-path="sdr.highlight_compression_peak_detail">35%</output></div>
+              <input id="sdr-compression-detail" type="range" min="0" max="100" step="1" value="35" data-path="sdr.highlight_compression_peak_detail">
+            </div>
+            <figure class="highlight-compression-visual"><canvas id="sdr-highlight-compression-graph" width="320" height="150" aria-label="SDR highlight compression input-to-output transfer graph"></canvas></figure>
+            <details class="highlight-compression-advanced">
+              <summary>Advanced highlight controls</summary>
+              <div class="control-row select-control" data-control-path="sdr.highlight_compression_peak_measurement">
+                <div class="control-heading"><label for="sdr-compression-measurement">Input Peak</label></div>
+                <select id="sdr-compression-measurement" data-path="sdr.highlight_compression_peak_measurement"><option value="maximum">Measured maximum</option><option value="robust">Ignore isolated pixels</option><option value="manual">Manual</option></select>
+              </div>
+              <div class="control-row" data-control-path="sdr.highlight_compression_manual_peak_percent">
+                <div class="control-heading"><label for="sdr-compression-manual-peak">Manual Source Peak</label><output data-value-path="sdr.highlight_compression_manual_peak_percent">100%</output></div>
+                <input id="sdr-compression-manual-peak" type="range" min="100" max="10000" step="10" value="100" data-path="sdr.highlight_compression_manual_peak_percent">
+              </div>
+              <div class="control-row" data-control-path="sdr.highlight_compression_bias">
+                <div class="control-heading"><label for="sdr-compression-bias">Compression Bias</label><output data-value-path="sdr.highlight_compression_bias">0</output></div>
+                <input id="sdr-compression-bias" type="range" min="-100" max="100" step="1" value="0" data-path="sdr.highlight_compression_bias">
+              </div>
+            </details>
+          </div>
+        </section>
+
         <section class="control-group collapsed" data-group="sdr-tone">
           <div class="control-group-header">
             <button class="group-toggle" type="button" aria-expanded="false">Tone <span data-modified-count="sdr-tone">Default</span></button>
@@ -1214,56 +1269,6 @@
               <div class="control-heading"><label class="tooltip-trigger" for="sdr-whites" data-tooltip="Adjusts the top stop below Target Peak (display white in SDR). Positive values overdrive Film Look; final Highlight Compression still owns the delivery ceiling.">Whites</label><output data-value-path="sdr.whites">0</output></div>
               <input id="sdr-whites" type="range" min="-100" max="100" step="1" value="0" data-path="sdr.whites">
             </div>
-          </div>
-        </section>
-
-        <section class="control-group collapsed" data-group="sdr-highlights">
-          <div class="control-group-header">
-            <button class="group-toggle" type="button" aria-expanded="false">Highlight Compression <span data-modified-count="sdr-highlights">Default</span></button>
-            <button class="section-bypass text-button" type="button" data-section-path="sdr.highlight_section_enabled" aria-pressed="true" aria-label="Toggle SDR Highlight Compression preview">&#9673;</button>
-            <button class="group-reset text-button" type="button" data-reset-group="sdr-highlights">Reset</button>
-          </div>
-          <div class="control-group-body">
-            <div class="control-row select-control" data-control-path="sdr.highlight_compression_mode">
-              <div class="control-heading"><label id="sdr-highlight-compression-summary" class="tooltip-trigger" for="sdr-compression-mode" data-tooltip="Peak Fit anchors the measured source peak at display white while preserving a smooth highlight gradient.">Mode</label></div>
-              <select id="sdr-compression-mode" data-path="sdr.highlight_compression_mode"><option value="peak_fit">Peak Fit</option><option value="fixed_cap">Fixed cap</option><option value="soft_ceiling">Soft Ceiling</option><option value="clip">Clip</option></select>
-            </div>
-            <div class="control-row" data-control-path="sdr.highlight_compression_start_percent">
-              <div class="control-heading"><label for="sdr-compression-start">Start</label><output data-value-path="sdr.highlight_compression_start_percent">50%</output></div>
-              <input id="sdr-compression-start" type="range" min="1" max="99" step="1" value="50" data-path="sdr.highlight_compression_start_percent">
-            </div>
-            <div class="control-row featured-control" data-control-path="sdr.highlight_compression_softness">
-              <div class="control-heading"><label for="sdr-compression-softness">Softness</label><output data-value-path="sdr.highlight_compression_softness">Off</output></div>
-              <input id="sdr-compression-softness" type="range" min="0" max="100" step="0.5" value="0" data-path="sdr.highlight_compression_softness">
-            </div>
-            <div class="control-row select-control" data-control-path="sdr.highlight_compression_color_handling">
-              <div class="control-heading"><label class="tooltip-trigger" for="sdr-compression-color" data-tooltip="Smooth color rolloff gently compresses each sRGB channel toward white. Preserve color keeps channel ratios intact. Neutralize peak groups channels so the brightest highlights converge to neutral white.">Highlight Color</label></div>
-              <select id="sdr-compression-color" data-path="sdr.highlight_compression_color_handling"><option value="smooth_rolloff">Smooth color rolloff</option><option value="preserve_color">Preserve color</option><option value="path_to_white">Neutralize peak</option><option value="agx_attenuate">Attenuate (AgX-style, prototype)</option></select>
-            </div>
-            <div class="control-row featured-control" data-control-path="sdr.highlight_compression_attenuation">
-              <div class="control-heading"><label class="tooltip-trigger" for="sdr-compression-attenuation" data-tooltip="How strongly bright colours fade toward white as they are compressed. 0% matches per-channel rolloff.">Attenuation</label><output data-value-path="sdr.highlight_compression_attenuation">20%</output></div>
-              <input id="sdr-compression-attenuation" type="range" min="0" max="90" step="1" value="20" data-path="sdr.highlight_compression_attenuation">
-            </div>
-            <div class="control-row featured-control" data-control-path="sdr.highlight_compression_peak_detail">
-              <div class="control-heading"><label for="sdr-compression-detail">Highlight Detail</label><output data-value-path="sdr.highlight_compression_peak_detail">35%</output></div>
-              <input id="sdr-compression-detail" type="range" min="0" max="100" step="1" value="35" data-path="sdr.highlight_compression_peak_detail">
-            </div>
-            <figure class="highlight-compression-visual"><canvas id="sdr-highlight-compression-graph" width="320" height="150" aria-label="SDR highlight compression input-to-output transfer graph"></canvas></figure>
-            <details class="highlight-compression-advanced">
-              <summary>Advanced highlight controls</summary>
-              <div class="control-row select-control" data-control-path="sdr.highlight_compression_peak_measurement">
-                <div class="control-heading"><label for="sdr-compression-measurement">Input Peak</label></div>
-                <select id="sdr-compression-measurement" data-path="sdr.highlight_compression_peak_measurement"><option value="maximum">Measured maximum</option><option value="robust">Ignore isolated pixels</option><option value="manual">Manual</option></select>
-              </div>
-              <div class="control-row" data-control-path="sdr.highlight_compression_manual_peak_percent">
-                <div class="control-heading"><label for="sdr-compression-manual-peak">Manual Source Peak</label><output data-value-path="sdr.highlight_compression_manual_peak_percent">100%</output></div>
-                <input id="sdr-compression-manual-peak" type="range" min="100" max="10000" step="10" value="100" data-path="sdr.highlight_compression_manual_peak_percent">
-              </div>
-              <div class="control-row" data-control-path="sdr.highlight_compression_bias">
-                <div class="control-heading"><label for="sdr-compression-bias">Compression Bias</label><output data-value-path="sdr.highlight_compression_bias">0</output></div>
-                <input id="sdr-compression-bias" type="range" min="-100" max="100" step="1" value="0" data-path="sdr.highlight_compression_bias">
-              </div>
-            </details>
           </div>
         </section>
 
