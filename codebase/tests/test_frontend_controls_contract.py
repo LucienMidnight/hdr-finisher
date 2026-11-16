@@ -220,7 +220,7 @@ def test_grade_readouts_support_bounded_direct_numeric_entry() -> None:
 
     assert html.count("data-value-path=") >= 50
     assert '"hdr.highlight_compression_start_nits": { min: 1, max: 9999' in javascript
-    assert '"hdr.highlight_compression_target_nits": { min: 2, max: 10000' in javascript
+    assert '"hdr.highlight_compression_target_nits": { min: 225, max: 10000' in javascript
     assert '"hdr.exposure": { min: -8, max: 8' in javascript
     assert '"sdr.highlight_compression_start_percent": { min: 1, max: 99' in javascript
     assert '"sdr.highlight_compression_manual_peak_percent": { min: 1, max: 1000000' in javascript
