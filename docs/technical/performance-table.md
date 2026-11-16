@@ -1,3 +1,27 @@
+## November 16: public noisy/clean RAW pairs (research only)
+
+MacBook Neo / Apple A18 Pro / 8 GB; base `045f5442`, pair tooling `20f2224a`,
+one native CPU thread, serial shared machine lock, no Electron/GPU. One
+descriptive run per action; ±10% timing noise allowance, no accepted budget
+changed. These end at research arrays/results, **not** a picture on screen.
+
+| Action | Measured time | Peak RSS | Conditions / evidence |
+| --- | ---: | ---: | --- |
+| Verify/register/brightness-match public RAW pairs | 39.44 s (40.18 s guarded wall) | 0.367 GB | 43 verified RAWs, 31 candidate pairs; 52 retained 512px crops / 11 scenes / four cameras. Rejections are preserved, not retried with looser screens. |
+| Off/default/tuned-PSNR/tuned-sharp pair baselines | 119.11 s (120.05 s guarded wall) | 0.588 GB | 208 crop-method evaluations; masked SDR/HDR metrics, small review, zero adapter errors; ISO 1600/3200/6400 only. |
+| Darktable-profiled pair interface smoke | 0.036 s adapter / 1.29 s guarded wall | 0.117 GB | Exactly one 96px crop, finite output, no fallback; no quality score. RawNIND model and GALOSH binary absent, skipped. |
+| Python fast suite with pair tooling | 280.73 s (282.99 s guarded wall) | 2.062 GB | 3928 passed / 149 skipped / one xpassed; no failures, no guard abort. |
+
+Peak is the larger available OS/process-tree measurement; watchdog threshold
+2.3 GB leaves room below the 2.5 GB research cap. The downloaded RAWs total
+1.170 GB; download plus prepared bundles 1.540 GB; review/contact sheet
+9.975 MB. Evidence: `codebase/output/denoise-v1/datasets/prepare-guard.json`,
+`public-pairs/{results-pairs,summary,baseline-guard,interface,interface-guard}.json`,
+and `public-pairs-pytest-guard.json` under the same `denoise-v1` folder.
+See [public-pairs.md](research/denoise-v1-2026-11-16/public-pairs.md) for licence,
+held-out contamination, exclusions, quality tables and limits. No shipping
+performance/quality pass or full-frame cost extrapolation is claimed.
+
 ## November 16: RawNIND full-frame CPU prototype (research only)
 
 MacBook Neo / Apple A18 Pro / 8 GB; ONNX Runtime 1.32.0 CPUExecutionProvider,

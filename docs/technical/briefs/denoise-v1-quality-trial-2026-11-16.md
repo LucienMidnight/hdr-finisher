@@ -207,3 +207,15 @@ the [technology watch](../denoising-technology-watch-2026.md):
   stopped at the unchanged research watchdog (2.524 GB), so remains incomplete.
 - 2026-11-16: Steve answered Q2 (open-licensed public pairs allowed for research);
   dataset worker started.
+- 2026-11-16: public-pair licence survey selected 12 explicitly CC0 RawNIND
+  scenes (five documented held-out, seven seen by RawNIND), 43 hash-verified
+  RAWs / 1.170 GB. Registration/clipping policy is fixed before baseline
+  measurement; [public-pairs.md](../research/denoise-v1-2026-11-16/public-pairs.md)
+  records evidence, exclusions and the resulting current-method baselines.
+- 2026-11-16: public-pair tooling committed as `20f2224a`: 52 scored crops,
+  11 scenes / four cameras / ISO 1600–6400; four held-out scenes (19 crops).
+  Higher-ISO candidates fail input screens, not denoiser tests. Off/default/
+  tuned-PSNR/tuned-sharp baseline has zero adapter errors; darktable's single
+  96px interface smoke passes, RawNIND/GALOSH assets are absent here. Node
+  1091 passed, Python 3928 passed (149 skipped, one xpassed), focused 20 passed.
+  No shipping change, GPU run, limit relaxation or push.
