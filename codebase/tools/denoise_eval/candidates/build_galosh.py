@@ -6,12 +6,13 @@ IRLS mathematics also builds the global fit entrypoint. No system packages.
 from pathlib import Path
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 
 SOURCE = Path(__file__).parent/'vendor/galosh'
 BUILD = Path(__file__).resolve().parents[3]/'output/denoise-v1/galosh-build'
-BINARY = BUILD/'galosh-serial'
+BINARY = BUILD/('galosh-serial.exe' if os.name == 'nt' else 'galosh-serial')
 PIN = '11de0593cc8091933ad76d1d6d873f7dee537f15'
 
 
@@ -36,7 +37,7 @@ def build():
     shutil.copyfile(SOURCE/'galosh_cpu.h', BUILD/'galosh_cpu.h')
     (BUILD/'omp.h').write_text('#include <time.h>\nstatic int omp_get_max_threads(void){return 1;}\n'
                              'static int omp_get_thread_num(void){return 0;}\n'
-                             'static double omp_get_wtime(void){struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t); return t.tv_sec+t.tv_nsec*1e-9;}\n')
+                             'static double omp_get_wtime(void){struct timespec t; timespec_get(&t,TIME_UTC); return t.tv_sec+t.tv_nsec*1e-9;}\n')
     for name in ('xmmintrin.h', 'emmintrin.h', 'pmmintrin.h'):
         (BUILD/name).write_text('')
     original = (SOURCE/'galosh_raw_cpu.c').read_text()
@@ -74,7 +75,7 @@ int main(int argc, char **argv) {
 '''
     (BUILD/'driver.c').write_text(program)
     command = ['clang', '-O3', '-std=gnu11', '-Wno-unknown-pragmas', '-I', str(BUILD),
-               str(BUILD/'driver.c'), '-lm', '-o', str(BINARY)]
+               str(BUILD/'driver.c'), *([] if os.name == 'nt' else ['-lm']), '-o', str(BINARY)]
     subprocess.run(command, check=True)
     receipt = dict(commit=PIN, command=command, serial=True, fp32=True,
                    modifications=['local OpenMP serial shim', 'empty unused SSE includes',

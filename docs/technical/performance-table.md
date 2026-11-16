@@ -1,3 +1,29 @@
+## November 16: classical Denoise CPU prototypes (minimum Mac, research only)
+
+MacBook Neo / A18 Pro / 8 GB; one native CPU thread, shared cross-worktree
+run lock, no Electron/GPU. Measurement base `01992e9c`, prototype code
+`f032d924` (later build-only clock/Windows conventions do not alter filtering). Descriptive one-run
+timings with ±10% noise allowance; no accepted speed budget changed.
+These include all-corpus calibration and crop writing, not screen presentation
+or a packaged/whole-app memory measurement. The stages exclude that overhead.
+
+| Action | Prep / filter / develop | Research wall | Peak RSS | Conditions / evidence |
+| --- | --- | --- | --- | --- |
+| NumPy profiled wavelets, IMG_0790.CR2, 18.02 MP | 2.28 / 132.46 / 2.01 s | 143.47 s | 1.787 GB | Native sensor, ISO 3200; 1024px core +254 halo, bounded mapped scratch. |
+| NumPy profiled wavelets, 2025_0730_1331_3.arw, 42.39 MP | 2.18 / 314.93 / 4.91 s | 328.85 s | 1.638 GB | Native sensor, ISO 4000; same reference. |
+| Serial FP32 C GALOSH calibrated, IMG_0790.CR2, 18.02 MP | .49 / 30.52 / 1.68 s | 39.42 s | .995 GB | Native sensor, ISO 3200; 768px core +160 halo, global fit/anchor. |
+| Serial FP32 C GALOSH calibrated, 2025_0730_1331_3.arw, 42.39 MP | .51 / 65.21 / 3.95 s | 76.16 s | 1.244 GB | Native sensor, ISO 4000; same reference. |
+| Current Denoise tuning | — | 119.91 s | 1.070 GB | 81 settings ×27 full-set synthetic scenes, in-sample PSNR and MTF-constrained choices. |
+| Full thirteen-variant quality comparison | — | 665.97 s | 1.150 GB | 27 synthetic +8 real crops, all §3.2 harness metrics; zero adapter errors, 17.31 MB review including native crops. |
+
+Peak is the greater of OS parent high-water and 0.2s sampled process-tree RSS;
+all runs stay below the 2.5 GB research cap. Full quality-run totals and
+conditional native-C cost estimates are in
+[classical-prototypes.md](research/denoise-v1-2026-11-16/classical-prototypes.md).
+Evidence: `codebase/output/denoise-v1/full-*.json`, matching guard receipts,
+`classical-tuning.json` and `review/index.html`. No C wavelet or WGSL speed
+estimate is a measured pass; no current-app speed-up is claimed.
+
 ## November 16: Denoise candidate CPU load smoke (research only)
 
 MacBook Neo / A18 Pro / 8 GB, ORT 1.32.0 CPUExecutionProvider, one thread,

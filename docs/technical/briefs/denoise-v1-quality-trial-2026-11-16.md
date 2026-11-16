@@ -188,3 +188,10 @@ the [technology watch](../denoising-technology-watch-2026.md):
   off/current-Denoise baselines completed; report in
   `../research/denoise-v1-2026-11-16/harness-baseline.md`. Single-frame sensor
   profiles remain provisional; no app integration or replacement approved.
+- 2026-11-16: Phase 2 classical adapters trialled: 81-setting current-method
+  sweep, three strengths of profiled wavelets and calibrated/blind GALOSH,
+  full CPU quality set and four native-frame Mac runs. Findings and remaining
+  qualification gaps: [classical-prototypes.md](../research/denoise-v1-2026-11-16/classical-prototypes.md).
+  No defaults, output limits or shipping pipeline changed; NLM not ported.
+  Node checks pass and all ten new Python tests pass; the broad Python suite
+  stopped at the unchanged research watchdog (2.524 GB), so remains incomplete.

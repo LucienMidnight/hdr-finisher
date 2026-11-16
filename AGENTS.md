@@ -605,6 +605,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   minimum-Mac feasibility and the four recommended prototype adapters.
   `harness-baseline.md` is the CPU harness baseline: corpus ISO inventory,
   provisional camera noise fits and current Denoise quality limits.
+  `classical-prototypes.md` records Phase 2 tuned-current, darktable wavelet
+  and GALOSH RAW CPU quality, native-frame time/memory, review crops and
+  licence/patent qualifications; no shipping replacement is approved.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.

@@ -189,7 +189,9 @@ review crops remain 256px. This is an opt-in wrapper, not a harness default.
 Use `--method galosh` or `--photo 2025_0730_1331_3.arw` for the other trials.
 After quality and native-frame runs, `python -m tools.denoise_eval.candidates.report`
 appends the strength curves and native crops to the same review page.
-On Windows use `.venv/Scripts/python.exe`; no source edits are required.
+On Windows use `.venv/Scripts/python.exe`; the builder selects `.exe` and
+the native math library automatically. A clang compiler is required; this
+trial validates the Mac build only, not a Windows or Linux binary.
 The guard samples total process-tree RSS every 0.2s and aborts above 2.5 GB;
 the full-frame clocks distinguish sensor prep, filtering and AHD/colour
 development. Its full-size intermediates are temporary and removed on failure.
