@@ -206,6 +206,86 @@ helper is reproducible without a GPU after capture:
 PYTHONPATH=backend .venv/bin/python tests/helpers/local_delivery_diagnostics.py --codec-bisect output/review/n4-local-match/sharp-matched-floats.npz
 ```
 
+**Scoped validation (MacBook Neo / A18 Pro / 8 GB / 1408×794):**
+
+- Focused CPU/real-codec tests: 266 passed; final read-only decoder consolidation:
+  six passed. Node highlight/layout subset: 18 passed. Shader/anchor driver:
+  256 exact-ceiling cases pass; an intermediate scheduler interaction was
+  superseded, then the final invocation passes without changing any gate.
+- `hdr-ceiling-delivery.js`: all three codecs × CPU/GPU × export/reduced/full
+  Proof pass. Decoded peaks 971.983–999.880 nits at target 1000; full Proof
+  bytes equal export in every codec/renderer pair. `exact-all-codec-proof.log`;
+  detailed rows `output/ceiling-followup/delivery.json`.
+- `tone-zones-delivery.js`: finished floats pass (HDR .025382/.092793,
+  SDR .006448/.027817); both Proof sizes equal export, decoded peak 986.782
+  nits. Its report-only decoded-HDR P99.9 remains **10.881**, not a colour
+  acceptance pass despite exit zero. `gpu-delivery-smoke.js` also exits zero
+  under its Denoise gate, but its stricter HDR P99.9 remains **3.262**, not a
+  strict delivery-colour pass. No gate or verdict was changed.
+- `local-sdr-match.js` smooth fixture: decoded HDR .360/2.847 and SDR
+  .142/2.135 pass; full Proof bytes equal export on both renderers. The
+  separate sharp `--headroom --diagnose` run still exits one as required.
+- Default 90-second Library viewport check exits zero, no errors; nine of 33
+  eligible photos pictured, two GPU developments, five stored pictures readable.
+  This is viewport coverage, not a whole-folder pass. CPU fast tests did not
+  overlap it. `output/quick-library-check/exact-highlight-ceiling/report.json`.
+- Fast Node: **1,071 passed / 12 failed / one skipped**. All failures are in
+  `grade-paste.test.js` under concurrently edited UI code (timer/picker state
+  assumptions); no ceiling/layout failure and no unrelated repair or rerun.
+- Fast Python full run: **3,800 passed / two failed / 144 skipped / one
+  xpassed** (266.19 s). Both failures expected the superseded 1010-nit
+  allowance in `test_export_parity.py`; expected allowed nits are tightened
+  to 1000 under Steve's approved policy. Final focused ceiling/export-parity
+  run: **287 passed**. The broad suite was not repeated after that test-only
+  expectation change; no unrelated Python failure remained.
+- Output size starts/ends at **13.0 GB**, below 100 GB. GPU runs use the shared
+  venv lock, one at a time; no unowned Electron process was killed. Generated
+  native-codec scratch/profiles are removed; small referenced diagnostics remain.
+
+**Still unrun: exactly 19 of the selected 23 export/Proof drivers.** The four
+run are `hdr-ceiling-delivery.js`, `tone-zones-delivery.js`,
+`local-sdr-match.js`, and `gpu-delivery-smoke.js`. No full Still-strict or
+release claim; Steve approved deferral of the remainder on November 16.
+From `codebase`, define the common serial launcher (Mac settings shown):
+
+```sh
+gpu() { HDR_FINISHER_ELECTRON_WINDOW_SIZE=1408x794 .venv/bin/python tools/gpu-run-lock.py --label overnight-ceiling -- node tests/run-in-electron.js "$@"; }
+```
+
+Then these are the outstanding commands, one driver per line (the HSL driver
+also needs its local variant):
+
+```sh
+gpu tests/hsl-selection-delivery.js
+gpu tests/hsl-selection-delivery.js --local
+gpu tests/color-desat-delivery.js
+gpu tests/hue-mask-delivery.js
+gpu desktop/tests/proof-grade-diagnostic.js
+gpu tests/gpu-denoise-measurement.js
+gpu tests/local-detail-film-parity.js
+gpu tests/export-file-browser-interaction.js
+gpu tests/export-presets-interaction.js
+gpu tests/performance/export-parity.js --output output/review/n4-local-match/overnight-export-parity.json
+gpu tests/performance/preview-export-compare.js --enforce --project "/Users/stevenfuncke/HDR Finisher Tool/Photos/HDR Test Images/Projects/DSC00950.hdrfinisher" --output output/review/n4-local-match/overnight-preview-export.json
+gpu tests/proof-size-interaction.js
+gpu tests/batch-export-ui.js
+gpu tests/library-export-menu.js
+gpu tests/gpu-delivery-repeat.js
+gpu tests/gpu-delivery-ceiling.js
+gpu tests/edge-colour-raw.js
+gpu tests/gpu-edge-colour.js
+gpu tests/hsl-integration.js
+gpu tests/photo-framing-delivery.js
+```
+
+The DSC00950 project's saved source is Windows-only; the exact selected
+command above is unrun on this Mac. Schedule that driver on the PC with its
+shared project path, or first supply a separately approved portable fixture;
+do not rewrite the protected project. On the PC use its venv Python/window
+size in the launcher. The plan's timing estimate is incomplete (11 minutes
+for six drivers, 17 without history), so this list is not a promise that the
+remaining overnight selection fits 30 minutes.
+
 ### N5 acceptance proposed before measurement (November 16)
 
 X2 compares finished SDR display-linear sRGB with finished HDR converted to
