@@ -10,6 +10,23 @@ fs.mkdirSync(out, {recursive:true});
   await page.goto(process.env.HDR_FINISHER_URL);
   await page.waitForFunction(() => document.body.dataset.ready === 'true');
   await page.evaluate(() => document.fonts.ready);
+  // Saved lower preferences use the normal minimum clamp; Settings and the
+  // backend must agree without a preference migration.
+  if (await page.evaluate(() => Boolean(desktop?.setPreferences))) {
+   await page.evaluate(async () => desktop.setPreferences({ ...HDRApplicationShell.preferences(), appMemoryBytes: 2500000000 }));
+   await page.reload();
+   await page.waitForFunction(() => document.body.dataset.ready === 'true');
+   assert.equal(await page.evaluate(() => HDRApplicationShell.preferences().appMemoryBytes),4000000000);
+  }
+  await page.evaluate(() => HDRApplicationShell.openSettings('performance'));
+  await page.waitForFunction(() => document.getElementById('settings-app-memory-status').textContent.includes('Default on this computer: 4.0 GB'));
+  assert.equal(await page.locator('#settings-app-memory').getAttribute('min'),'4');
+  assert.equal(await page.locator('#settings-app-memory').inputValue(),'4');
+  const refused = await page.request.post(new URL('/api/library/memory-setting',page.url()).href,{data:{bytes:2500000000}});
+  assert.equal(refused.status(),400);
+  await page.locator('#settings-app-memory-default').click();
+  await page.waitForFunction(() => HDRApplicationShell.preferences().appMemoryBytes === null);
+  await page.locator('#settings-close').click();
   const palettes = {};
   for (const theme of ['modern-dark','default-light','studio-gray']) {
    await page.evaluate(() => HDRApplicationShell.openSettings('appearance'));

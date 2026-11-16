@@ -17,8 +17,8 @@ def test_setting_updates_target_and_scaled_shares_without_changing_fixed_pool(mo
         assert app_memory.limit("working")==600_000_000
         assert app_memory.limit("sharp")>512_000_000
         app_memory.configure(2_500_000_000)
-        assert app_memory.TARGET==1_900_000_000
-        assert app_memory.limit("sharp")<512_000_000
+        assert app_memory.TARGET==3_400_000_000
+        assert app_memory.limit("sharp")==512_000_000
         assert app_memory.memory_options()["maximumBytes"]==57_600_000_000
     finally:app_memory.configure(old)
 

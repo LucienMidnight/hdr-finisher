@@ -13,7 +13,7 @@ unchanged. Saved preferences below 4 GB are raised by the normal clamp; no
 migration or compatibility layer is added. Existing custom settings >=4 GB stay.
 
 The existing `budgets()` formula restores the ordinary 4 GB cache shares on
-8 GB machines; no share formula, concurrency or GPU budget changes:
+8 GB machines; no share formula or GPU budget changes:
 
 | Owner | Previous 2.5 GB setting (MB) | New 4 GB minimum/default (MB) | Optional 6 GB setting (MB) |
 | --- | ---: | ---: | ---: |
@@ -23,6 +23,12 @@ The existing `budgets()` formula restores the ordinary 4 GB cache shares on
 | RAW source cache | 31.02 | 768.00 | 1750.64 |
 | Handoff | 10.34 | 256.00 | 583.55 |
 | Working room | 600.00 | 600.00 | 600.00 |
+
+The existing derived RAW browsing limits consequently change too: retained
+GPU pictures rise from 2 to 10, and the Mac's RAW decoder lanes rise from 1
+to 2 (the existing CPU-derived maximum). The 12-RAW-file count, foreground
+priority and broker admission stay unchanged; this is the existing formula
+responding to the approved larger setting, not a separate concurrency override.
 
 These are retained-cache caps inside the single whole-app owner, not extra
 memory entitlements. Starting footprint stays 1.3 GB; target is 3.4 GB at the

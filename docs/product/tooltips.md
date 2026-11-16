@@ -1012,8 +1012,8 @@ Clipped lane, scope, preview and filename labels use their visible text; dynamic
 
 | Control / visible name | Text | Flags | ID and source |
 | --- | --- | --- | --- |
-| choose.title | choose.disabled ? "Folder preferences use native dialogs in the desktop app." : "" | dynamic expression | codebase/frontend/application-shell.js:561 · [source](../../codebase/frontend/application-shell.js#L561) |
-| record aria-label | &#96;Change shortcut for ${command.label}&#96; | dynamic expression | codebase/frontend/application-shell.js:615 · [source](../../codebase/frontend/application-shell.js#L615) |
+| choose.title | choose.disabled ? "Folder preferences use native dialogs in the desktop app." : "" | dynamic expression | codebase/frontend/application-shell.js:562 · [source](../../codebase/frontend/application-shell.js#L562) |
+| record aria-label | &#96;Change shortcut for ${command.label}&#96; | dynamic expression | codebase/frontend/application-shell.js:616 · [source](../../codebase/frontend/application-shell.js#L616) |
 
 ### desktop chrome
 

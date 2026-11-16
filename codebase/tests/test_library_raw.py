@@ -5,11 +5,12 @@ import multiprocessing
 from hdr_finisher.library_raw import RawBrowsing, allowances, identity, MIB
 
 
-def test_auto_limits_scale_down_without_losing_foreground_lane():
+def test_minimum_machine_uses_the_same_4gb_retained_limits():
     small, large = allowances(8 * 1024**3), allowances(64 * 1024**3)
     assert large["raw_files"] == 12 and large["gpu_pictures"] == 10
-    assert small["raw_bytes"] < large["raw_bytes"]
-    assert small["gpu_pictures"] == 2
+    assert small == large
+    assert small["gpu_pictures"] == 10
+    assert small["raw_bytes"] == 768_000_000
 
 
 def test_windows_priority_promotion_uses_a_real_process_handle():

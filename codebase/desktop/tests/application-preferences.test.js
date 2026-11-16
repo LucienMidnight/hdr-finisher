@@ -31,3 +31,10 @@ test("Developed badge preference accepts Always and defaults to On hover", () =>
   }
   assert.equal(sanitizeApplicationPreferences({developedBadge:"always"}).developedBadge, "always");
 });
+
+test('app memory clamps saved settings to the common 4 GB minimum', () => {
+  for (const saved of [2500000000, 3000000000, 3999999999, 4000000000]) {
+    assert.equal(sanitizeApplicationPreferences({appMemoryBytes:saved}).appMemoryBytes,4000000000);
+  }
+  assert.equal(sanitizeApplicationPreferences({appMemoryBytes:null}).appMemoryBytes,null);
+});
