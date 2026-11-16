@@ -31,7 +31,9 @@ compression of 12-bit Rec.2020 PQ HDR or separate 8-bit sRGB SDR, without
 dithering. Quality and HDR precision are fixed while enabled. HDR JPEG XL has
 no embedded SDR fallback: add a separate SDR output version when you need both.
 The setting is saved with each output version in Export and Quick export
-presets and is used by batch export and Proof. Today's Web Default stays the same.
+presets and is used by batch export and Proof. Switching from its quality
+profile to a different format selects that format’s Web Default. Today's
+Web Default stays the same.
 
 This trades much larger files for an export that matches the finished picture.
 The researched HDR files were typically 3–4× Q95; actual size depends on the

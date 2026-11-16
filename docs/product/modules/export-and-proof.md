@@ -67,7 +67,63 @@ SDR Match, budget or default changes. Lossless JXL preparation uses bounded
 128-row float scratch with identical quantized samples. High fidelity uses
 the existing app memory owner and physical reserve; its measured admission
 estimates and native-size refusals are recorded in the memory module.
-Native-photo size/speed/memory qualification and final test results follow below.
+Native qualification is **scoped**: three approved whole images at their native
+1433×1920, 2000×1168 and 1170×2532 sizes pass HDR and separate SDR own-source
+fidelity and ceilings. Native CPU high-fidelity file sizes are 0.82–3.91 MB HDR
+and 0.74–1.81 MB SDR. Against Q90 Web Default, HDR ratios are 1.73–5.22×;
+the earlier 3–4× figure compared Q95 highlight/reduced inputs. The UI names
+both comparisons. Export/decode timings are in the performance table.
+
+The 4000×2666 photo is now refused by high-fidelity memory admission on the
+default 2.5 GB setting; the 42.2 MP LR image and largest 192 MP panorama fail
+the diagnostic native working-set preflight. They are **not successful native
+qualification**, and no budget was raised. A staged diagnostic before admission
+found generated SDR rendering at 4.435 GB without Electron; HDR reached
+1.913 GB. The separately owned renderer is unchanged. Large-photo native
+CPU/GPU export and Proof qualification remains open; the option must not be
+called fully qualified across the approved corpus. Windows, packaged apps
+and external JPEG XL viewers are also unqualified in this change.
+
+The new registered driver enforces high-fidelity own-source 1/3, exact
+finished peaks, encoded allowance, precision and full-size Proof/export byte
+identity on CPU/GPU; its reduced Proof is genuinely resized (480→256px).
+All five JXL precisions retain exact quantized samples after strip preparation.
+The backend refusal regression keeps an existing destination and does not render.
+Validation on the Neo / 1408×794, all Electron runs under the shared GPU lock:
+
+- New `jpegxl-high-fidelity.js`: pass, including selecting the saved two-version
+  preset, version restoration, Quick export’s actual batch worker, both lanes’
+  own-source fidelity, CPU/GPU delivery, genuine reduced Proof and exact full
+  Proof bytes. The test-only capture hook also follows the isolated batch
+  worker without changing its shipping environment. Initial driver-only preset
+  selection/capture gaps were fixed; no acceptance number changed.
+- Ten existing drivers pass: Export presets, batch UI, Library export menu,
+  Proof size, GPU smoke/repeat, framing, all-codec HDR ceiling, minimum Peak,
+  and GPU delivery ceiling. `export-file-browser-interaction.js` fails at its
+  old `#folder-picker .directory-browser-entry` source locator, before export;
+  it is unchanged by this task and was not repaired/rerun here.
+- Node fast: 1,091 pass / one skip. Python fast: 3,860 pass / 144 skip /
+  one xpass / nine failures in concurrent HSL-cache and Library native-source
+  areas. Focused encoding/capture/model tests: 72 pass / 16 skip; batch/capture follow-up
+  17 pass. The full
+  suites ran during the separately owned linked-SDR work, so these are observed
+  results, not stable-release qualification or attribution to a new JXL defect.
+- Default 90-second Library viewport check: pass, 9/9 requested pictures,
+  first picture 0.4 s, independent whole-app peak 2.458 GB. The other 24
+  eligible but unvisited pictures are not whole-folder qualification.
+- Three protected project hashes unchanged. Scratch starts at 13.6 GB and
+  finishes below 100 GB; temporary native renders, exports and profiles are
+  removed. Compact evidence: `codebase/output/review/jpegxl-high-fidelity/`
+  (including `oversized-preflight.json` for the 42.2 MP source).
+
+Still unrun in this bounded change: the broad real-project `proof_export_identity.py`,
+`proof-grade-diagnostic.js`, `performance/preview-export-compare.js`,
+`performance/export-parity.js`, plus Retouch/HSL/Hue Mask/Tone Zones/colour-desaturation
+feature matrices. Their rendering features are unchanged by this task; they
+are not counted as passes. The focused checks above cover the new encoding
+setting, presets/batch, sizing, ceiling, delivery and Proof paths. This is not a
+release sweep, installer, packaged/Windows qualification or push. Native large
+photos and actual external-viewer compatibility remain open as recorded above.
 
 ## November 16: renderer agreement and encoding fidelity are separate checks
 

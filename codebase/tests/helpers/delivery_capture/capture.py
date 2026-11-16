@@ -53,5 +53,26 @@ def install():
                 shutil.copytree(folder, target)
             return result
 
+    # The production batch worker deliberately resets PYTHONPATH. Keep this
+    # unpackaged test-only hook in that one subprocess, so Quick/batch exports
+    # also bind fidelity to the actual finished pixels rather than a rerender.
+    from hdr_finisher import batch_export
+    if not getattr(batch_export.subprocess, "_delivery_capture_proxy", False):
+        original_subprocess = batch_export.subprocess
+        class CapturingSubprocess:
+            _delivery_capture_proxy = True
+
+            def __getattr__(self, name):
+                return getattr(original_subprocess, name)
+
+            def Popen(self, *args, **kwargs):
+                env = dict(kwargs.get("env") or os.environ)
+                if env.get("HDR_FINISHER_TEST_CAPTURE_DIR"):
+                    env["PYTHONPATH"] = str(Path(__file__).parent) + os.pathsep + env.get("PYTHONPATH", "")
+                    kwargs["env"] = env
+                return original_subprocess.Popen(*args, **kwargs)
+
+        batch_export.subprocess = CapturingSubprocess()
+
     exporters._render_export_branch = capture_branch
     exporters._execute_export = capture_export

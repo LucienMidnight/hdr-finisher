@@ -92,6 +92,10 @@ fs.mkdirSync(report, { recursive: true });
     await page.selectOption('#export-preset', 'web_default');
     assert.equal(await page.isChecked('#jpegxl-high-fidelity'), false);
     assert.equal(await page.isDisabled('#export-quality'), false);
+    await page.selectOption('#export-preset', 'high_fidelity');
+    await page.selectOption('#export-format', 'sdr_png');
+    assert.equal(await page.inputValue('#export-preset'), 'web_default');
+    assert.equal(await page.isChecked('#jpegxl-high-fidelity'), false);
     // Reopen the saved preset in the actual Export UI, then deliver it from
     // Quick export through the normal batch worker and desktop folder grant.
     const document = await page.evaluate(() => state.editDocument);
@@ -100,6 +104,7 @@ fs.mkdirSync(report, { recursive: true });
     await page.reload();
     await page.waitForFunction(() => window.batchExport);
     await page.evaluate(photo => batchExport.open([photo], { fromLibrary: true }), photo);
+    await page.locator('#batch-preset-list .batch-preset').filter({ hasText: 'High fidelity test' }).click();
     await page.waitForFunction(() => document.getElementById('batch-version-select').options.length === 2);
     assert(await page.isChecked('#jpegxl-high-fidelity'));
     await page.selectOption('#batch-version-select', '1');

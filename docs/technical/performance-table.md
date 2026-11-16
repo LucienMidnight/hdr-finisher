@@ -3504,3 +3504,36 @@ without histogram analysis. Source loading and colour-difference measurement
 are excluded from export time. Values and final per-stage memory samples:
 `codebase/output/review/jpegxl-high-fidelity/native-final.json`; revision
 `779382d9` plus the memory-admission follow-up containing this record.
+
+| Native input / lane | High-fidelity bytes (Q90 bytes; ratio) | Native encode / separate decode (s) | Instrumented export (s) | Mean / P99.9 |
+| --- | --- | --- | --- | --- |
+| 5M071612_finished.avif · 1433×1920 · HDR | 3,905,845 (748,411; 5.22×) | 2.748 / 0.352 | 3.583 | 0.0899 / 0.1966 |
+| 5M071612_finished.avif · 1433×1920 · SDR | 1,813,596 (724,866; 2.50×) | 1.805 / 0.310 | 2.091 | 0.2606 / 0.8642 |
+| DSC_3931_01.jpg · 2000×1168 · HDR | 815,192 (469,989; 1.73×) | 0.780 / 0.241 | 1.396 | 0.0438 / 0.1886 |
+| DSC_3931_01.jpg · 2000×1168 · SDR | 807,855 (497,634; 1.62×) | 0.747 / 0.201 | 1.303 | 0.0210 / 0.1146 |
+| IMG_6717.PNG · 1170×2532 · HDR | 1,625,325 (314,620; 5.17×) | 1.802 / 0.353 | 2.654 | 0.0756 / 0.1941 |
+| IMG_6717.PNG · 1170×2532 · SDR | 738,164 (388,995; 1.90×) | 1.296 / 0.306 | 2.073 | 0.0315 / 0.5250 |
+
+All three native inputs pass both lanes; HDR is ΔE ITP and SDR is ΔE00.
+Every high-fidelity encode is one round; no correction re-encode is needed.
+Exact finished/decoded HDR peaks: Urban 757.499/757.659 nits, JPEG
+203.018/203.038, PNG 203.018/203.038 (see JSON for final exact values).
+Sampled full worker-tree charged peaks (including diagnostics and ordinary
+comparisons) are 0.925 / 0.917 / 1.165 GB, respectively, below the 2.5 GB
+default; physical reserve stays above its minimum. This standalone CPU census
+does not certify a complete Electron native-photo session.
+
+The 10.7 MP PQ AVIF is refused by the new high-fidelity app memory admission
+before either lane renders. The 42.2 MP LR source and largest 16000×12000
+panorama fail the diagnostic native working-set preflight; no full-source
+decode/encode is attempted for them. Largest-photo delivery remains open,
+not a pass or a memory-budget waiver. Before admission, the 10.7 MP standalone
+diagnostic reached HDR 1.913 GB and generated SDR 4.435 GB charged; the latter
+also breached the physical reserve. `memory-stages.json` records the stages;
+`oversized-preflight.json` retains the 42.2 MP refusal.
+No comparison speedup or cross-machine inference is claimed.
+
+
+| Check | Result | Conditions |
+| --- | --- | --- |
+| Library viewport smoke | 90 s; first picture 0.4 s; all 9 requested pictures, no errors; independent app peak 2.458 GB | Neo / 8 GB / 1408×794, plain Electron, shared lock, frozen v1 unchanged. `output/quick-library-check/jxl-high-fidelity/report.json`; not whole-folder qualification. |
