@@ -1,6 +1,6 @@
 // Shared colour selection on a real photo: full-size GPU and forced-CPU export of a
 // copy of Balanced Rock with Steve's Global HSL (or --local hue-mask) settings.
-// The photo's GPU/CPU gap is measured with HSL neutral first; the active edit may add at
+// The finished pre-encode GPU/CPU gap is measured with HSL neutral first; the active edit may add at
 // most 0.15 mean / 0.5 p99 to it. Also the 1000-nit HDR ceiling on every file and that
 // full-size Proof is the delivered file.
 // node tests/run-in-electron.js tests/hsl-selection-delivery.js [--local]

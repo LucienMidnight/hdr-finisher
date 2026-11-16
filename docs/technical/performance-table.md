@@ -148,6 +148,12 @@ The release failure inventory and limits on comparison evidence are in
 
 # Performance table
 
+## November 16: renderer-split validation conditions
+
+| Action | Observed time | Conditions |
+| --- | --- | --- |
+| HSL neutral full-size JPEG export | GPU 12.465 s; CPU 19.873 s | MacBook Neo / A18 Pro / 8 GB / 1408×794; shared GPU lock, IMG_0114.CR2, local-HSL driver, actual finished-pixel capture enabled. CPU codec research overlapped; diagnostic times only, not a speed comparison or baseline. `codebase/output/review/encoding-fidelity-fixes/hsl-selection-delivery.log`; `7089958c`. |
+
 ## November 16: N4 local Match SDR (MacBook Neo)
 
 | Action / stage | Observation | Conditions / evidence |

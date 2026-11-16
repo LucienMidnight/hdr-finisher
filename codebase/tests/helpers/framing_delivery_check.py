@@ -1,4 +1,4 @@
-"""Decoded framed deliverables: geometry, perceptual GPU/CPU agreement and HDR ceiling."""
+"""Framed geometry/ceiling checks, finished renderer gate and codec diagnostics."""
 from pathlib import Path
 import json, sys
 import numpy as np

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent / "helpers"))
-from delivery_comparison import compare_delivery, finished_capture, metric
+from delivery_comparison import compare_delivery, decoded_lanes, finished_capture, metric
 
 
 @pytest.fixture
@@ -78,3 +78,14 @@ def test_report_uses_unchanged_metric_limits():
     pixels = np.full((3, 4, 3), .18, np.float32)
     assert metric(pixels, pixels, "hdr")["passed"]
     assert not metric(pixels, pixels * 2, "hdr")["passed"]
+
+
+def test_cli_path_strings_are_normalized_for_the_decoder(monkeypatch):
+    pixels = np.full((3, 4, 3), .18, np.float32)
+
+    def decode(path):
+        assert isinstance(path, Path)
+        return pixels, None, {}, None, None
+
+    monkeypatch.setattr("delivery_comparison.load_image", decode)
+    np.testing.assert_array_equal(decoded_lanes("delivery.jxl", "jpegxl_hdr", 203)["hdr"], pixels)
