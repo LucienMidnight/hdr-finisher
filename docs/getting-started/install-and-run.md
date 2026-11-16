@@ -2,6 +2,25 @@
 
 HDR Finisher is currently a technical alpha. Windows x64, Apple Silicon macOS, and Linux x86_64 have native desktop packaging paths. Kubuntu 26.04 LTS is the primary Linux support target.
 
+## Minimum specification
+
+Steve, November 16, 2026. The MacBook Neo (8 GB) is the minimum supported
+machine; every feature must work on it. The same memory rule applies on every
+platform.
+
+| | macOS | Windows | Linux |
+| --- | --- | --- | --- |
+| Processor | Apple silicon (arm64). No Intel Mac build. Minimum class: Apple A18 Pro, 6 cores (MacBook Neo). | x64 | x86_64 |
+| Memory | 8 GB unified memory | 8 GB RAM | 8 GB RAM |
+| App memory | at least 4 GB (the lowest setting and the default on 8 GB machines); the rest stays free for the system | same rule | same rule |
+| Graphics | Apple GPU (WebGPU on Metal) | GPU with WebGPU support (Direct3D 12) and current drivers | GPU with working hardware WebGPU |
+| Operating system | Tested on the current macOS on the MacBook Neo; older versions are untested | Windows 11 (Windows 10 untested) | Kubuntu 26.04 LTS (primary target) |
+| Window | at least 1100 × 720 points | at least 1100 × 720 | at least 1100 × 720 |
+| HDR review | optional: an HDR-capable built-in or external display | optional: an HDR display with Windows HDR on | optional, see [Linux setup](../setup/linux.md) |
+
+Without a usable GPU the app falls back to the CPU, more slowly. Without an
+HDR display you can still grade, export and check HDR with the scopes.
+
 ## Requirements
 
 - A graphics card with WebGPU support. Preview, export, Proof and Library pictures render on the GPU; the app falls back to the CPU, more slowly, when no usable GPU is found.
