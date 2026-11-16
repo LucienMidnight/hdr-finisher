@@ -626,11 +626,12 @@ class SessionStore:
                     sdr_reference = resolve_adaptive(sdr_reference, estimate_adaptive_model(sdr_reference), controls)
                 else:
                     sdr_source = resolve_adaptive(sdr_source, noise, controls)
+        document.global_adjustments.sdr.linked_to_hdr = False
         result = fit_local_sdr(source, document.global_adjustments, document.local_adjustments, target_id,
                                reference_white_nits=document.hdr_reference_white_nits,
                                source_pixel_scale=min(1., LOCAL_MATCH_EDGE / max(session.image.shape[:2])),
                                masks=masks, sdr_source=sdr_source, sdr_reference=sdr_reference)
-        if result.grade is None:
+        if result.grade is None or result.grade == document.local_adjustments[index].sdr_grade:
             with self._lock:
                 if session.edit_revision != expected_revision:
                     raise RevisionConflictError(expected_revision, session.edit_revision)
@@ -700,6 +701,7 @@ class SessionStore:
         target_match = SdrMatchState(
             materialized_status=materialized.status,
             materialized_metrics=materialized.quality,
+            link_fallback_reason=materialized.link_fallback_reason,
         )
 
         command = EditCommand(
@@ -770,6 +772,30 @@ class SessionStore:
         session.dirty = True
 
     def _execute_command(self, session: LoadedSession, command: EditCommand) -> EditCommand:
+        # Unlink and the creative edit are one history transaction. A refused
+        # local Match never reaches this point; an identical grade is a no-op.
+        linked = session.adjustments.sdr.linked_to_hdr
+        previous = session.edit_document().model_copy(deep=True) if linked else None
+        inverse = self._execute_command_impl(session, command)
+        if linked and command.command_type not in {"replace_document", "set_sdr_match"}:
+            from .sdr_link import linked_creative_changed
+            unlink = linked_creative_changed(previous.global_adjustments.sdr, session.adjustments.sdr)
+            old = {item.id: item.sdr_grade for item in previous.local_adjustments}
+            unlink |= any(item.sdr_grade != old.get(item.id, LocalGrade()) for item in session.local_adjustments)
+            if command.command_type == "set_denoise_settings":
+                unlink |= previous.denoise.sdr != session.denoise.sdr
+            unlink |= not session.adjustments.sdr.linked_to_hdr
+            if unlink:
+                session.adjustments.sdr.linked_to_hdr = False
+                session.render_cache.clear_adjusted()
+                return EditCommand(expected_revision=session.edit_revision, command_type="replace_document",
+                                   payload={"document": previous.model_dump(mode="json")})
+            # The common scene source includes HDR Denoise. The existing
+            # preview/delivery source selectors receive the same controls.
+            session.denoise.sdr = session.denoise.hdr.model_copy(deep=True)
+        return inverse
+
+    def _execute_command_impl(self, session: LoadedSession, command: EditCommand) -> EditCommand:
         current_revision = session.edit_revision
         command_type = command.command_type
         payload = command.payload

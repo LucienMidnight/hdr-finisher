@@ -16,7 +16,8 @@ test('HSL packs every bounded channel and range without touching existing slots'
   assert.deepEqual(Array.from(values.slice(at+8+31*4,at+8+32*4)),[310,5,2,1]);
   assert.equal(values[at+136],100);
  }
- assert.equal(200+13*140,values.length);
+ assert.equal(202+13*140,values.length);
+ assert.deepEqual(Array.from(values.slice(2020)),[-7,-7]);
  assert.equal(h.pack(values,settings,false),0);assert.equal(values[198],0);
  assert.equal(h.pack(values,h.defaultSettings()),0);
 });

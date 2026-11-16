@@ -244,7 +244,7 @@ fn peakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   let dimensions = textureDimensions(peakSource);
   if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
   let source = textureLoad(peakSource, vec2i(id.xy), 0).rgb;
-  let sdrV2 = peakParams[${GPU_PARAMS.HDR_LANE}] < 0.5 && peakParams[${GPU_PARAMS.SDR_PEAK_LANE}] > 0.5;
+  let sdrV2 = (peakParams[${GPU_PARAMS.HDR_LANE}] < 0.5 || peakParams[${GPU_PARAMS.LINKED_SDR}] > 0.5) && peakParams[${GPU_PARAMS.SDR_PEAK_LANE}] > 0.5;
   var guideSource = source;
   if (sdrV2 && peakBlackAndWhiteNeedsGuide()) {
     guideSource = peakBlackAndWhiteLatticeMean(peakSource, vec2i(id.xy), vec2i(dimensions));
@@ -260,7 +260,7 @@ fn finishedPeakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   let dimensions = textureDimensions(peakSource);
   if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
   let rgb = textureLoad(peakSource, vec2i(id.xy), 0).rgb;
-  let sdrV2 = peakParams[${GPU_PARAMS.HDR_LANE}] < 0.5 && peakParams[${GPU_PARAMS.SDR_PEAK_LANE}] > 0.5;
+  let sdrV2 = (peakParams[${GPU_PARAMS.HDR_LANE}] < 0.5 || peakParams[${GPU_PARAMS.LINKED_SDR}] > 0.5) && peakParams[${GPU_PARAMS.SDR_PEAK_LANE}] > 0.5;
   recordPeak(peakSignalOf(rgb, sdrV2));
 }`;
   // Separate final-film entry point. The audited source-prefix and original
@@ -271,7 +271,7 @@ fn scaledFilmPeakReductionMain(@builtin(global_invocation_id) id: vec3u) {
   let dimensions = textureDimensions(peakSource);
   if (id.x >= dimensions.x || id.y >= dimensions.y) { return; }
   let stored = textureLoad(peakSource, vec2i(id.xy), 0);
-  recordPeak(peakSignalOf(stored.rgb * stored.a, peakParams[${GPU_PARAMS.HDR_LANE}] < 0.5));
+  recordPeak(peakSignalOf(stored.rgb * stored.a, (peakParams[${GPU_PARAMS.HDR_LANE}] < 0.5 || peakParams[${GPU_PARAMS.LINKED_SDR}] > 0.5)));
 }`;
   const ADAPTIVE_DENOISE_SHADER_SOURCE = `
 // scratch: (originX, originY, width, height) in frame pixels
@@ -1479,9 +1479,16 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let mapped = min(knee + span * (1.0 - exp(-(signal-knee)/span)), capTarget);
       return input * min(mapped/signal, 1.0);
     }
+    fn outputIsHdr() -> bool {
+      return p[${GPU_PARAMS.HDR_LANE}] > 0.5 && p[${GPU_PARAMS.LINKED_SDR}] < 0.5;
+    }
+    fn linkedSdrOutput(input: vec3f) -> vec3f {
+      if (p[${GPU_PARAMS.LINKED_SDR}] < 0.5) { return input; }
+      return acescgToSrgb(input) * (100.0 / 203.0 / 0.18) * p[${GPU_PARAMS.OUTPUT_EXPOSURE_GAIN}];
+    }
     fn applyOutputHighlights(input: vec3f) -> vec3f {
       let mode = p[${GPU_PARAMS.HIGHLIGHT_MODE}];
-      let hdr = p[${GPU_PARAMS.HDR_LANE}] > 0.5;
+      let hdr = outputIsHdr();
       if (!hdr) {
         var result = input;
         if (mode == 4.0) { result = fixedCap(input, false); }
@@ -2620,8 +2627,8 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       }
       hslSelectionActive = p[${GPU_PARAMS.HSL_SHARED_SELECTION}] > 0.5 && textureDimensions(hslSelection).x > 1u;
       hslSelectionPixel = coordinate;
-      let output = select(renderSdrBase(source), renderHdrBase(source), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
-      return vec4f(output, 1.0);
+      if (p[${GPU_PARAMS.HDR_LANE}] > 0.5) { return vec4f(renderHdrBase(source), 1.0); }
+      return vec4f(renderSdrBase(source), 1.0);
     }
 
     // The HSL stage input as selection fields, for the shared selection. Same
@@ -2734,7 +2741,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
 
     @fragment fn structureFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
-      return storeFilm(finishStructure(coordinate));
+      return storeFilm(linkedSdrOutput(finishStructure(coordinate)));
     }
 
     const LENS_COMPONENTS = array<vec4f,108>(${LENS_COMPONENTS_WGSL});
@@ -2806,7 +2813,11 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     // source, and so the scope pass reads that result instead of recomputing it.
     @fragment fn scanFragmentMain(input: VertexOut) -> @location(0) vec4f {
       let coordinate = clamp(vec2i(input.position.xy), vec2i(0), validTileDimensions() - vec2i(1));
-      return storeFilm(scanFilm(coordinate));
+      let rgb = scanFilm(coordinate);
+      let structure = p[${GPU_PARAMS.STRUCTURE_ENABLED}] > 0.5
+        && (abs(p[${GPU_PARAMS.STRUCTURE_SOFTNESS}]) > 0.000001 || abs(p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}]) > 0.000001);
+      if (structure && !filmDiagnosticMap()) { return storeFilm(rgb); }
+      return storeFilm(linkedSdrOutput(rgb));
     }
 
     @fragment fn finishFragmentMain(input: VertexOut) -> @location(0) vec4f {
@@ -2819,15 +2830,15 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
     }
     fn scopeOutputAt(coordinate: vec2i) -> vec3f {
       let filmOutput = applyOutputHighlights(finishedAt(coordinate));
-      return select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), max(filmOutput, vec3f(0.0)), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
+      return select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), max(filmOutput, vec3f(0.0)), outputIsHdr());
     }
     fn scopePeakSignal(rgb: vec3f) -> f32 {
       // SDR scopes report display signal, matching scopes.py and the histogram.
       let signal = vec3f(srgbEncode(rgb.r), srgbEncode(rgb.g), srgbEncode(rgb.b));
-      return max(select(lumaSrgb(signal), lumaAces(rgb), p[${GPU_PARAMS.HDR_LANE}] > 0.5), 0.0);
+      return max(select(lumaSrgb(signal), lumaAces(rgb), outputIsHdr()), 0.0);
     }
     fn highlightAnchorSignal(rgb: vec3f) -> f32 {
-      if (p[${GPU_PARAMS.HDR_LANE}] < 0.5) {
+      if (!outputIsHdr()) {
         if (p[${GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING}] > 0.5) { return max(max(max(rgb.r, rgb.g), rgb.b), 0.0); }
         return max(lumaSrgb(rgb), 0.0);
       }
@@ -2952,7 +2963,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let c=filmStoredRgb(textureLoad(spatialTexture,clamp(first+vec2i(0,1),vec2i(0),bound),0));
       let d=filmStoredRgb(textureLoad(spatialTexture,clamp(first+vec2i(1,1),vec2i(0),bound),0));
       let filmOutput = applyOutputHighlights(mix(mix(a,b,fraction.x),mix(c,d,fraction.x),fraction.y));
-      let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
+      let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), outputIsHdr());
       return vec4f(displayEncode(output), 1.0);
     }
 
@@ -2968,7 +2979,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       // output mapping, and the canvas transfer is the same sRGB curve.
       if (noiseViewActive()) { return vec4f(clamp(finishedAt(coordinate), vec3f(0.0), vec3f(1.0)), 1.0); }
       let filmOutput = applyOutputHighlights(finishedAt(coordinate));
-      let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), p[${GPU_PARAMS.HDR_LANE}] > 0.5);
+      let output = select(clamp(filmOutput, vec3f(0.0), vec3f(1.0)), displayHdr(filmOutput), outputIsHdr());
       var encoded = displayEncode(output);
       if (p[${GPU_PARAMS.OVERLAY_ENABLED}] > 0.5) {
         let uv = maskUv(coordinate, vec2f(textureDimensions(overlayMaskTexture)));

@@ -1477,7 +1477,7 @@
         params[GPU_PARAMS.EXPOSURE], params[GPU_PARAMS.BLACKS], params[GPU_PARAMS.CONTRAST], params[GPU_PARAMS.CONTRAST_PIVOT], params[GPU_PARAMS.HIGHLIGHT_COLOR_HANDLING],
         ...params.slice(10, 12), ...params.slice(61, 73),
         ...params.slice(BLACK_AND_WHITE_PARAM, BLACK_AND_WHITE_PARAM + 9),
-        [adjustments[lane], locals],
+        [adjustments[lane], lane === "sdr" && adjustments.sdr.linked_to_hdr ? adjustments.hdr : null, locals],
       ]);
       return { measurement, key, cached: this.peakReductionCache.get(key) };
     }
@@ -2423,6 +2423,9 @@
       // exactly as the Direct path derives it, so both request the same proxy.
       const geometrySignature = JSON.stringify(adjustments.shared?.geometry || {});
       const sourceIdentity = sourceOptions?.identity || "source";
+      if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
+        localAdjustments = localAdjustments.map(local => ({ ...local, sdr_grade: local.hdr_grade }));
+      }
       const activeLocals = activeGpuLocals(lane, localAdjustments);
 
       const context = canvas.getContext("webgpu");
@@ -4879,6 +4882,9 @@
 
     async renderTo(canvas, sessionId, lane, adjustments, curveSampler, longEdge = 1600, localAdjustments = [], editRevision = 0, maskOverlay = null, referenceWhiteNits = 203, sourceSize = null, sourceOptions = null) {
       if (!this.available || !sessionId) return this.refuseRender("unavailable-or-no-session");
+      if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
+        localAdjustments = localAdjustments.map(local => ({ ...local, sdr_grade: local.hdr_grade }));
+      }
       const activeLocals = activeGpuLocals(lane, localAdjustments);
       // Eligibility is deliberately checked before resetting a session or
       // requesting a proxy. Unsupported local modules use the CPU renderer,
@@ -4898,7 +4904,7 @@
       const serial = (this.renderSerials.get(canvas) || 0) + 1;
       this.renderSerials.set(canvas, serial);
       // Physical paper/scan variants must arrive before this recipe is drawn.
-      const filmRecipe = adjustments[lane]?.film_look || {};
+      const filmRecipe = adjustments[lane === "sdr" && adjustments.sdr.linked_to_hdr ? "hdr" : lane]?.film_look || {};
       await window.HDRFilmStocks?.request(filmRecipe.film_stock || "none", filmRecipe);
       if (resourceGeneration !== this.resourceGeneration || serial !== this.renderSerials.get(canvas)
         || sourceOptions?.isCurrent?.() === false) return this.refuseRender("superseded-before-stock");
@@ -6581,6 +6587,7 @@
       const startedAt = performance.now();
       const candidate = structuredClone(adjustments);
       candidate.sdr.film_look = { ...(candidate.sdr.film_look || {}), grain_amount: 0 };
+      if (candidate.sdr.linked_to_hdr) candidate.hdr.film_look = { ...candidate.hdr.film_look, grain_amount: 0 };
       const rendered = await this.renderTo(canvas, sessionId, "sdr", candidate, curveSampler,
         longEdge, locals, revision, null, white, sourceSize,
         { measureOnly: true, scopeAnalysis: true, forceSdrSurface: true, sourceLane: "hdr", frameAnchor: true });
@@ -8662,7 +8669,8 @@
      */
     async measurementClaritySurround(sessionId, lane, adjustments, curveSampler, locals, revision, white, sourceSize, options) {
       const isCurrent = options.isCurrent || (() => true);
-      const key = JSON.stringify([sessionId, lane, revision, adjustments.shared?.geometry || {}, adjustments[lane], locals,
+      const key = JSON.stringify([sessionId, lane, revision, adjustments.shared?.geometry || {}, adjustments[lane],
+        lane === "sdr" && adjustments.sdr.linked_to_hdr ? adjustments.hdr : null, locals,
         white, options.identity || "source", this.highlightSourceToken({})]);
       const kept = this.claritySurround;
       if (kept?.key === key && kept.generation === this.resourceGeneration) return kept;

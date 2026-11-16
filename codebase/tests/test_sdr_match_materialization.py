@@ -172,7 +172,8 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     assert result.adjustments.sdr.highlight_compression_mode == "soft_ceiling"
     assert result.adjustments.sdr.highlight_compression_color_handling == "preserve_color"
     assert _curve_is_identity(result.adjustments.sdr.luma_curve)
-    assert any(abs(node.adjustment_ev) > 0.001 for node in result.adjustments.sdr.tone_equalizer_nodes)
+    if not result.adjustments.sdr.linked_to_hdr:
+        assert any(abs(node.adjustment_ev) > 0.001 for node in result.adjustments.sdr.tone_equalizer_nodes)
     tone_targets = [node.input_ev + node.adjustment_ev for node in result.adjustments.sdr.tone_equalizer_nodes]
     assert np.all(np.diff(tone_targets) > 0.0)
     for curve in (
@@ -219,7 +220,10 @@ def test_calibrated_scene_materializes_into_normal_visible_modules() -> None:
     assert float(np.mean(candidate_luma[ordinary_highlights] >= 0.999)) < 0.01
 
     raised = result.adjustments.model_copy(deep=True)
-    raised.sdr.exposure += 0.5
+    if raised.sdr.linked_to_hdr:
+        raised.sdr.output_exposure += 0.5
+    else:
+        raised.sdr.exposure += 0.5
     raised_candidate = apply_adjustments(
         source,
         raised,
@@ -407,7 +411,7 @@ def test_match_coloured_lens_target_meets_existing_quality_gate() -> None:
     adjustments.hdr.film_look.lens_strength = 0.5
     # The clipping fix makes this formerly rejected recipe fit without a waiver.
     result = materialize_sdr_match(source, adjustments, locals_, reference_white_nits=203, source_pixel_scale=1.0)
-    assert result.status == "needs_review"
+    assert result.status == ("matched" if result.adjustments.sdr.linked_to_hdr else "needs_review")
     assert result.quality.p95_luma_error <= MATCH_REVIEW_P95_LUMA_LIMIT
     assert result.quality.p95_oklab_error <= 0.05
     finished = apply_adjustments(source, result.adjustments, PreviewKind.SDR,

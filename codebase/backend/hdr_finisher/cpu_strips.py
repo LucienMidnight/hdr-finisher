@@ -192,7 +192,7 @@ def strip_execution_refusals(
     would be the "Direct-only Full" the PRD lists as a non-goal, in CPU form.
     """
     reasons: list[str] = []
-    branch = adjustments.hdr if kind == PreviewKind.HDR else adjustments.sdr
+    branch = adjustments.hdr if kind == PreviewKind.HDR or adjustments.sdr.linked_to_hdr else adjustments.sdr
 
     if any(local.enabled and local.opacity > 0.0 for local in (local_adjustments or [])):
         reasons.append("local adjustments")

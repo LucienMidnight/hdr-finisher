@@ -1,5 +1,6 @@
 function markGlobalEditDirty() {
   if (!state.session) return;
+  if (typeof unlinkSdrCreativeDraft === "function") { unlinkSdrCreativeDraft(); renderLinkedSdrState(); }
   state.globalEditDirty = true;
   state.globalEditGeneration += 1;
   state.documentDirty = true;

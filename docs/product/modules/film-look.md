@@ -1,5 +1,46 @@
 # Module PRD: Film Look
 
+## November 16: safe linked SDR implementation, qualification in progress
+
+Whole-photo Match now tries the trial's body/colour-best output tail, then
+requires all existing acceptance checks; linked ordering alone uses Steve's
+approved target-relative rule below. Failure runs the unchanged independent
+fitter and retains a short reason. The SDR panel shows Linked to HDR, Unlink,
+and an explicit post-Film SDR output exposure. HDR creative edits flow live;
+SDR pre-Film edits return to ordinary independent rendering. HDR locals run
+once before Film; editing an SDR local unlinks in that same Undo transaction.
+Refused/no-op Local Match keeps the link; whole Match retains N4 consent.
+
+CPU reference, direct/tiled WebGPU stage selection and saved opt-in fields
+are implemented. No migration or default link: only photos re-Matched by the
+user and accepted as linked change SDR rendering. HDR remains unchanged;
+the protected DSC00950 and saved DSC00264 projects are not reinterpreted.
+Initial focused validation: 53 Python checks and eight finished-float GPU
+comparisons pass (worst mean 0.042 / P99.9 0.226 Delta E00). Full suites,
+native/source/mask interaction, export/Proof and whole-slider performance
+qualification are still in progress; this paragraph does not certify them.
+
+
+## November 16: Steve approved safe linking and target-relative ordering
+
+Whole-photo Match first tries the common HDR creative scene and a late SDR
+output tail. Only a fit passing all safeguards becomes linked; otherwise the
+existing independent fit runs and explains one short reason. The linked tail
+must preserve HDR body contrast and tonal relationships within SDR's range,
+compressing the highlights gently rather than giving SDR a different look.
+
+Steve's updated decision permits linked ordering to be judged relative to the
+Match target built from settled HDR. Use the existing eight HDR-brightness
+quantile bins, inclusive memberships, minimum eight highlights and 0.005
+allowance. For each adjacent pair, subtract the target's negative median
+step (or zero) from SDR's step; fail if that excess is below -0.005. This
+accepts only inversions already in the target plus the existing allowance.
+Independent Match keeps its absolute ordering diagnostic unchanged. Every
+body, colour, white-growth, exposure-editability and output-ceiling check
+remains unchanged. Qualification must report linked/fallback counts with both
+the previous absolute rule and this approved relative rule.
+
+
 ## November 16: option B implementation stopped at tail acceptance
 
 The implementation attempt did **not** enable linking. Re-rendering the 49

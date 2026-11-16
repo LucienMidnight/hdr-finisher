@@ -170,6 +170,17 @@
   }
 
   function buildParams(lane, adjustments, workingSpace, hdrSurface, referenceWhiteNits = 203, sourcePixelScale = 1) {
+    if (lane === "sdr" && adjustments.sdr.linked_to_hdr) {
+      const params = buildParams("hdr", adjustments, workingSpace, hdrSurface, referenceWhiteNits, sourcePixelScale);
+      const tail = buildParams("sdr", { ...adjustments, sdr: { ...adjustments.sdr, linked_to_hdr: false } },
+        workingSpace, hdrSurface, referenceWhiteNits, sourcePixelScale);
+      for (const name of ["HIGHLIGHT_SOFTNESS", "HIGHLIGHT_START", "HIGHLIGHT_TARGET", "HIGHLIGHT_TARGET_NITS",
+        "HIGHLIGHT_MODE", "HIGHLIGHT_ANCHOR", "HIGHLIGHT_PEAK_DETAIL", "HIGHLIGHT_BIAS",
+        "HIGHLIGHT_COLOR_HANDLING", "HIGHLIGHT_ATTENUATION", "SDR_PEAK_LANE"]) params[GPU_PARAMS[name]] = tail[GPU_PARAMS[name]];
+      params[GPU_PARAMS.LINKED_SDR] = 1;
+      params[GPU_PARAMS.OUTPUT_EXPOSURE_GAIN] = Math.pow(2, adjustments.sdr.output_exposure || 0);
+      return params;
+    }
     const params = new Float32Array(PARAM_COUNT);
     const projectReferenceWhite = Number(referenceWhiteNits) === 100 ? 100 : 203;
     const branch = adjustments[lane];
@@ -400,7 +411,7 @@
   }
 
   function buildCurves(lane, adjustments, curveSampler, sampleCache, cacheNamespace = lane) {
-    const branch = adjustments[lane];
+    const branch = lane === "sdr" && adjustments.sdr?.linked_to_hdr ? adjustments.hdr : adjustments[lane];
     const names = ["luma_curve", "red_curve", "green_curve", "blue_curve"];
     const signatures = names.map((name) => JSON.stringify(branch[name]));
     const packedKey = `${cacheNamespace}:packed`;
@@ -442,6 +453,8 @@
   }
 
   function buildLocalParams(local, lane, sourcePixelScale = 1, curveOffset = 0, globalParams = null) {
+    const linked = globalParams?.[GPU_PARAMS.LINKED_SDR] > 0.5;
+    if (linked) lane = "hdr";
     const grade = local[`${lane}_grade`];
     const detail = grade.detail || {};
     const values = new Float32Array(PARAM_COUNT);

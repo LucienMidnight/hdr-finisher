@@ -256,13 +256,17 @@ function renderLaneChrome() {
   }
   if (els.sdrMatchEntire) els.sdrMatchEntire.disabled = !state.session;
   if (els.sdrMatchEntireStatus) {
-    els.sdrMatchEntireStatus.textContent = match?.rematch_required ? "Rematch required · repairs changed"
+    els.sdrMatchEntireStatus.textContent = state.adjustments?.sdr?.linked_to_hdr
+      ? "Linked to HDR · HDR edits update SDR live. SDR creative edits unlink."
+      : match?.link_fallback_reason ? `Independent SDR · couldn’t link: ${match.link_fallback_reason}.`
+      : match?.rematch_required ? "Rematch required · repairs changed"
       : match?.materialized_status === "needs_review"
       ? "Match needs review · editable SDR controls populated"
       : match?.materialized_status === "matched"
         ? "Matched into editable SDR controls"
         : "";
   }
+  renderLinkedSdrState();
   syncControlsFromState();
   drawToneEqualizerEditor(lane);
   window.HDRProofing?.syncLane();

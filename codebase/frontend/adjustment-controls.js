@@ -45,6 +45,12 @@ function commitAdjustmentValue(path, value, { manual = false } = {}) {
     beginGlobalDetailInteraction(resolvedPath);
     state.previewScheduler?.beginInteraction();
   }
+  if (resolvedPath.startsWith("sdr.") && state.adjustments.sdr.linked_to_hdr
+    && !resolvedPath.startsWith("sdr.highlight_compression_")
+    && !["sdr.highlight_section_enabled", "sdr.output_exposure", "sdr.linked_to_hdr"].includes(resolvedPath)
+    && stablePreviewJson(getValueByPath(state.adjustments, resolvedPath)) !== stablePreviewJson(value)) {
+    state.adjustments.sdr.linked_to_hdr = false;
+  }
   const filmPath = resolvedPath.match(/^(hdr|sdr)\.film_look\.([^.]+)$/);
   if (filmPath) {
     const film = state.adjustments[filmPath[1]].film_look;

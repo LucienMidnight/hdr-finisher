@@ -12,9 +12,9 @@ const shaderSource=shaders.SHADER_SOURCE+'\n'+shaders.PEAK_REDUCTION_SHADER_SOUR
 const audit=(js=sources,wgsl=shaderSource)=>auditGlobalParameterUses(js,wgsl,layout.fields);
 
 test('the global parameter list pins Tone endpoint allocations without moving existing positions',()=>{
- assert.equal(layout.count,200+13*140);
- assert.equal(new Set(layout.fields.map(f=>f.name)).size,200);
- assert.deepEqual(layout.fields.map(f=>f.index),Array.from({length:200},(_,i)=>i));
+ assert.equal(layout.count,202+13*140);
+ assert.equal(new Set(layout.fields.map(f=>f.name)).size,202);
+ assert.deepEqual(layout.fields.map(f=>f.index),[...Array.from({length:200},(_,i)=>i),2020,2021]);
  assert.equal(crypto.createHash('sha256').update(JSON.stringify(layout.fields.slice(0,198).map(({name,index})=>[name,index]))).digest('hex'),'87f2ae12787ae55edc689ed40f125ff375db0f050b44573b3c651be8d636cc83');
  // Positions 4-7 and 54-59 renamed, not moved (Oct 27 2026): Shadow/Lift/Gamma/Gain and their
  // pivots/ranges became BLACKS, SHADOWS, MIDTONES, HIGHLIGHTS and the zones' CENTER/WIDTH.

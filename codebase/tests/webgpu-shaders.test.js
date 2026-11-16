@@ -12,7 +12,7 @@ const { HDRWebGPUShaders } = require("../frontend/webgpu-shaders.js");
 // Byte pins for the shaders the viewport work must leave alone: the peak
 // measurement and Denoise. A change to one of them fails here.
 const EXPECTED_SHA256 = Object.freeze({
-  PEAK_REDUCTION_SHADER_SOURCE: "5ac1b9b7e6736f43ada50ef31d443dff8f41f1a638d211e12a9d8ae68c4591ee",
+  PEAK_REDUCTION_SHADER_SOURCE: "34cf0fb2c114d5fca3ddbb4ae6b86e029a79fc59b0d89cdd50c5f5cd2d04dc89",
   ADAPTIVE_DENOISE_SHADER_SOURCE: "818ec2ddb4523a1208eaa31f2a3bfe943e89d9ec6449e9866ff741bc49a3c807",
 });
 

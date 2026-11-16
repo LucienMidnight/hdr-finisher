@@ -575,7 +575,7 @@ class HDRAdjustments(_BranchAdjustments):
 
 class SDRAdjustments(_BranchAdjustments):
     _serialized_field_order: ClassVar[tuple[str, ...]] = (
-        "use_authored_base",
+        "use_authored_base", "linked_to_hdr", "output_exposure",
         *_COMMON_BRANCH_FIELD_ORDER,
         "highlight_compression_start_percent",
         "highlight_compression_softness", "highlight_compression_mode",
@@ -587,6 +587,9 @@ class SDRAdjustments(_BranchAdjustments):
         *_CURVE_FIELD_ORDER,
     )
 
+    # Explicit opt-in, set only by a successful whole-photo Match.
+    linked_to_hdr: bool = False
+    output_exposure: float = Field(default=0.0, ge=-5.0, le=5.0)
     highlight_desaturation_start: float = Field(default=0.5, ge=0.01, le=0.99)
     use_authored_base: bool = True
     highlight_compression_start_percent: float = Field(default=50.0, ge=1.0, le=99.0)
@@ -981,6 +984,7 @@ class SdrMatchState(BaseModel):
     materialized_status: Literal["matched", "needs_review"] | None = None
     materialized_metrics: SDRMatchQualityMetrics | None = None
     rematch_required: bool = False
+    link_fallback_reason: str | None = Field(default=None, max_length=240)
 
     @model_validator(mode="after")
     def validate_status_and_metrics(self) -> "SdrMatchState":

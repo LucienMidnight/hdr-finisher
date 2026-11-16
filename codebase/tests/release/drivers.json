@@ -270,6 +270,7 @@
     }
   ],
   "drivers": [
+    {"path":"tests/sdr-linked-render.js","areas":["film","masks","export-proof"],"tier":"area","protects":"Linked SDR common HDR creatives and overlapping locals; finished float CPU/GPU agreement before encoding.","launch":{"method":"electron"}},
     {"path":"tests/jpegxl-high-fidelity.js","areas":["export-proof","ui"],"tier":"core","protects":"Opt-in lossless12 HDR/lossless8 SDR JXL, unchanged defaults, UI/preset settings, per-image own-source fidelity, renderer agreement, exact finished ceilings, encoded allowance and reduced/full Proof byte identity.","launch":{"method":"electron"}},
     {"path":"tests/helpers/jpegxl_fidelity_check.py","areas":["export-proof"],"tier":"core","protects":"Own-source JXL fidelity, metadata and ceilings.","launch":{"method":"helper","via":["tests/jpegxl-high-fidelity.js"]}},
     {"path":"tests/grade-panel-order.js","areas":["ui"],"tier":"area","protects":"HDR/SDR module and Peak ordering, shared-section identity, mode visibility, presets, fold state, bypass, focus, sticky headers, advisory-only display peak with one-step Undo/Redo, and unchanged sampled GPU pixels.","launch":{"method":"electron"}},

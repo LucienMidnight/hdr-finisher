@@ -200,6 +200,21 @@ def apply_fixed_source_adjustments(
             apply_output_clamp=apply_output_clamp,
             frame_window=frame_window,
         )
+    if adjustments.sdr.linked_to_hdr:
+        # HDR creatives, source-anchored locals and Film run once; never apply
+        # the independent SDR creative/local stack on top of this scene frame.
+        common = _apply_hdr_adjustments(
+            fixed_source, adjustments, include_grain,
+            include_output_highlight_compression=False, apply_output_clamp=False,
+            local_adjustments=local_adjustments, fixed_source=fixed_source,
+            compiled_local_masks=compiled_local_masks, color_context=color_context,
+            source_pixel_scale=source_pixel_scale, frame_window=frame_window,
+        )
+        result = acescg_to_linear_srgb(common) * SDR_SCENE_TO_DISPLAY_SCALE
+        result *= np.float32(2.0 ** adjustments.sdr.output_exposure)
+        if include_output_highlight_compression:
+            return apply_sdr_output_highlight_compression(result, adjustments, anchor=highlight_anchor)
+        return result.astype(np.float32, copy=False)
     if fixed_sdr_reference is not None:
         return _apply_sdr_adjustments_to_reference(
             fixed_sdr_reference,

@@ -37,6 +37,12 @@ FIXTURE = Path(__file__).resolve().parent / "fixtures" / "hdr_match_scene.tiff"
 OPTIONS = dict(reference_white_nits=203, source_pixel_scale=1.0)
 
 
+@pytest.fixture(autouse=True)
+def independent_candidate_route(monkeypatch):
+    monkeypatch.setattr("hdr_finisher.sdr_link.try_linked_match", lambda *args, **kwargs: (None, "linked proposal refused in bridge test"))
+
+
+
 def _grade() -> tuple[AdjustmentState, list[LocalAdjustment]]:
     """The calibrated grade of test_sdr_match_materialization: one the CPU fit accepts."""
     adjustments = AdjustmentState()

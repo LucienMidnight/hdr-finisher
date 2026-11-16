@@ -74,6 +74,7 @@ class MaterializedSDRMatch:
     local_adjustments: list[LocalAdjustment]
     quality: SDRMatchQualityMetrics
     status: str
+    link_fallback_reason: str | None = None
 
 
 def automatic_sdr_match_luma(hdr_luma: np.ndarray) -> np.ndarray:
@@ -343,11 +344,28 @@ def materialize_sdr_match(
             )
             if timing is not None:
                 timing["settled_hdr_ms"] = round((perf_counter() - target_started) * 1000.0, 3)
+        if not np.isfinite(settled_hdr).all():
+            raise SDRMatchMaterializationError("The HDR analysis produced invalid values.")
+        from .sdr_link import try_linked_match
+        linked, link_reason = try_linked_match(
+            source, adjustments, local_adjustments, settled_hdr,
+            reference_white_nits=reference_white_nits, source_pixel_scale=source_pixel_scale,
+        )
+        if timing is not None:
+            timing["linked"] = linked is not None
+            timing["link_fallback_reason"] = link_reason
+        if linked is not None:
+            if candidate_bridge is not None:
+                candidate_bridge.close()
+            return linked
+        def independent():
+            from dataclasses import replace
+            return replace(run(), link_fallback_reason=link_reason)
         if candidate_bridge is None:
-            return run()
+            return independent()
         remote_token = _MATCH_REMOTE.set(candidate_bridge)
         try:
-            result = run()
+            result = independent()
             if timing is not None:
                 timing["candidate_renderer"] = "gpu"
             return result
@@ -368,7 +386,7 @@ def materialize_sdr_match(
             candidate_bridge.close()
         if timing is not None:
             timing["candidate_renderer"] = "cpu"
-        return run()
+        return independent()
     finally:
         if timing is not None:
             timing["materialize_total_ms"] = round((perf_counter() - materialize_started) * 1000.0, 3)

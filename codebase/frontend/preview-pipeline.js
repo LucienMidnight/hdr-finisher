@@ -16,6 +16,7 @@ function pacedPreviewInteraction(lane) {
 }
 
 function debouncePreview(lane = state.currentView) {
+  if (lane === "hdr" && state.adjustments?.sdr?.linked_to_hdr && state.currentView === "sdr") lane = "sdr";
   state.previewWatchdogRearms = 0;
   if (!state.previewScheduler) {
     queueGpuDraft(lane);
@@ -941,6 +942,9 @@ function previewInfoFromResponse(response, kind) {
 }
 
 function invalidatePreview(lane, { local = false, markDirty = true } = {}) {
+  if (lane === "hdr" && state.adjustments?.sdr?.linked_to_hdr) {
+    invalidatePreview("sdr", { local: true, markDirty: false });
+  }
   if (markDirty && !local) markGlobalEditDirty();
   // A newer edit makes the pending catch-up obsolete; it would render the old
   // generation into the frame. The same is true of the deferred pan pass: its

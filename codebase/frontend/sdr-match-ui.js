@@ -1,3 +1,59 @@
+function linkedSdrCreativeSignature(sdr) {
+  return stablePreviewJson(Object.fromEntries(Object.entries(sdr || {}).filter(([key]) =>
+    !key.startsWith("highlight_compression_") && !["linked_to_hdr", "output_exposure", "highlight_section_enabled"].includes(key))));
+}
+
+function renderLinkedSdrState() {
+  const linked = Boolean(state.adjustments?.sdr?.linked_to_hdr);
+  if (els.sdrMatchEntireStatus && linked) els.sdrMatchEntireStatus.textContent = "Linked to HDR · HDR edits update SDR live. SDR creative edits unlink.";
+  else if (els.sdrMatchEntireStatus && state.linkedSdrCreativeSnapshot) els.sdrMatchEntireStatus.textContent = "Independent SDR · Match SDR to try linking again.";
+  const actions = els.sdrMatchEntireActions;
+  if (!actions) return;
+  let controls = document.getElementById("sdr-link-controls");
+  if (!controls) {
+    controls = document.createElement("div");
+    controls.id = "sdr-link-controls";
+    controls.className = "control-row";
+    const unlink = document.createElement("button");
+    unlink.id = "sdr-unlink";
+    unlink.type = "button";
+    unlink.className = "button-secondary";
+    unlink.textContent = "Unlink";
+    unlink.setAttribute("data-tooltip", "Returns to the independent SDR grade. Match SDR tries to link again. Undo restores the link.");
+    unlink.addEventListener("click", () => {
+      state.adjustments.sdr.linked_to_hdr = false;
+      invalidatePreview("sdr"); debouncePreview("sdr"); renderLaneChrome();
+      void syncGlobalEditState();
+    });
+    const label = document.createElement("label");
+    label.textContent = "SDR output exposure ";
+    const input = document.createElement("input");
+    input.id = "sdr-output-exposure";
+    input.type = "number"; input.min = "-5"; input.max = "5"; input.step = "0.1";
+    input.setAttribute("aria-label", "SDR output exposure in stops");
+    input.setAttribute("data-tooltip", "Changes SDR brightness after the shared HDR Film Look. Keeps this photo linked.");
+    input.addEventListener("change", () => commitAdjustmentValue("sdr.output_exposure", Number(input.value), { manual: true }));
+    label.append(input); controls.append(unlink, label); actions.append(controls);
+  }
+  controls.classList.toggle("hidden", !linked);
+  controls.querySelector("input").value = String(state.adjustments?.sdr?.output_exposure || 0);
+  if (linked && !state.linkedSdrCreativeSnapshot) {
+    state.linkedSdrCreativeSnapshot = linkedSdrCreativeSignature(state.adjustments.sdr);
+    state.linkedSdrLocalSnapshot = new Map((state.editDocument?.local_adjustments || []).map(local => [local.id, stablePreviewJson(local.sdr_grade)]));
+  } else if (!linked) {
+    state.linkedSdrCreativeSnapshot = null;
+    state.linkedSdrLocalSnapshot = null;
+  }
+}
+
+function unlinkSdrCreativeDraft() {
+  if (state.adjustments?.sdr?.linked_to_hdr && state.linkedSdrCreativeSnapshot
+    && linkedSdrCreativeSignature(state.adjustments.sdr) !== state.linkedSdrCreativeSnapshot) {
+    state.adjustments.sdr.linked_to_hdr = false;
+    renderLinkedSdrState();
+  }
+}
+
 async function setSdrMatch() {
   if (!state.session) return false;
   const sessionId = state.session.session_id;
@@ -102,7 +158,10 @@ async function setSdrMatch() {
     }
     if (!isCurrent()) return false;
     syncDesktopDocumentState();
-    status.post({ id: "match", severity: "success", message: "HDR grade matched to SDR." });
+    const reason = result.document.sdr_match?.link_fallback_reason;
+    const message = state.adjustments.sdr.linked_to_hdr ? "SDR linked to HDR."
+      : reason ? `Matched independently. This photo couldn’t be linked because ${reason}.` : "HDR grade matched to SDR.";
+    status.post({ id: "match", severity: "success", message });
     return true;
   } catch (error) {
     if (!isCurrent()) return false;

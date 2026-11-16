@@ -1,5 +1,25 @@
 # HDR-to-SDR Match
 
+## November 16: Steve approved safe linking and target-relative ordering
+
+Whole-photo Match first tries the common HDR creative scene and a late SDR
+output tail. Only a fit passing all safeguards becomes linked; otherwise the
+existing independent fit runs and explains one short reason. The linked tail
+must preserve HDR body contrast and tonal relationships within SDR's range,
+compressing the highlights gently rather than giving SDR a different look.
+
+Steve's updated decision permits linked ordering to be judged relative to the
+Match target built from settled HDR. Use the existing eight HDR-brightness
+quantile bins, inclusive memberships, minimum eight highlights and 0.005
+allowance. For each adjacent pair, subtract the target's negative median
+step (or zero) from SDR's step; fail if that excess is below -0.005. This
+accepts only inversions already in the target plus the existing allowance.
+Independent Match keeps its absolute ordering diagnostic unchanged. Every
+body, colour, white-growth, exposure-editability and output-ceiling check
+remains unchanged. Qualification must report linked/fallback counts with both
+the previous absolute rule and this approved relative rule.
+
+
 ## November 16: option B is accepted, not implemented
 
 Whole-photo Match does not yet create a live HDR creative-grade link. The

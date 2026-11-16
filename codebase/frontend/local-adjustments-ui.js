@@ -933,6 +933,13 @@ function bindLocalPreviewInteraction(control) {
 }
 
 function scheduleLocalPreview({ spatialMaskChanged = false } = {}) {
+  if (state.currentView === "sdr" && state.adjustments?.sdr?.linked_to_hdr && state.linkedSdrLocalSnapshot
+    && (state.editDocument?.local_adjustments || []).some(local => stablePreviewJson(local.sdr_grade)
+      !== (state.linkedSdrLocalSnapshot.get(local.id) || stablePreviewJson(defaultLocalGrade("sdr"))))) {
+    // Optimistic only: update_local commits the unlink and grade together.
+    state.adjustments.sdr.linked_to_hdr = false;
+    renderLaneChrome();
+  }
   if (!state.session) return;
   state.localPreviewDirty = true;
   invalidatePreview("hdr", { local: true });

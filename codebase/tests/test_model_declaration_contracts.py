@@ -28,7 +28,7 @@ HDR_FIELD_ORDER = (
     "tint_hue", "tint_purity", "luma_curve", "red_curve", "green_curve", "blue_curve",
 )
 SDR_FIELD_ORDER = (
-    "use_authored_base", "tone_section_enabled",
+    "use_authored_base", "linked_to_hdr", "output_exposure", "tone_section_enabled",
     "highlight_section_enabled", "tone_equalizer_section_enabled", "color_section_enabled",
     "hsl_section_enabled", "hsl", "curves_section_enabled", "detail_section_enabled",
     "black_and_white_section_enabled", "film_look_section_enabled",

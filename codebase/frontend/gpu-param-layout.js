@@ -205,10 +205,12 @@
     Object.freeze({ name: "FILM_STOCK_PREFLASH", index: 197 }),
     Object.freeze({ name: "HSL_CHANNEL_COUNT", index: 198 }),
     Object.freeze({ name: "HSL_SHARED_SELECTION", index: 199 }),
+    Object.freeze({ name: "LINKED_SDR", index: 2020 }),
+    Object.freeze({ name: "OUTPUT_EXPOSURE_GAIN", index: 2021 }),
   ]);
 
   const indices = Object.freeze(Object.fromEntries(fields.map(({ name, index }) => [name, index])));
-  const HDRGpuParamLayout = Object.freeze({ fields, indices, count: 200 + 13 * 140 });
+  const HDRGpuParamLayout = Object.freeze({ fields, indices, count: 202 + 13 * 140 });
 
   if (typeof window !== "undefined") window.HDRGpuParamLayout = HDRGpuParamLayout;
   if (typeof module !== "undefined" && module.exports) module.exports = { HDRGpuParamLayout };
