@@ -58,7 +58,7 @@ No tested photo has been demonstrated to need 6 GB after the JXL reductions.
 The 42.2 MP sustained session below runs out of system headroom while still
 below 4 GB app usage, so raising its app cap cannot remove that refusal.
 At the end of these 4 GB runs macOS reports normal pressure (level 1) with
-about **1.58 GiB swap already in use**. This is existing session state, not
+about **1.54 GiB swap already in use**. This is existing session state, not
 swap caused by a tested 6 GB workload; no 6 GB load/swap experiment was run.
 Evidence: `codebase/output/review/jpegxl-high-fidelity/memory-setting-headroom.json`
 and `panorama-6gb-preflight.json`.

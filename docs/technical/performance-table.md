@@ -86,7 +86,7 @@ check. Revision `95a2a8f5`; this is not a whole-folder survey or a speed claim.
 | Whole-app memory | 3.220 GB peak; 0.799 GB settled | No app violation; minimum system availability 4.209 GB, no reserve breach; independent 250 ms census |
 | Responsiveness | Longest redraw gap 50 ms; main-thread delay 76 ms | Zero redraw gaps >100 ms; existing 250 ms limit unchanged |
 | Settings | Lower saved preference clamps to 4 GB; API rejects below 4 GB; Use default and 4.0 GB minimum/default display pass | Locked `tests/theme-settings.js`, all three themes |
-| 6 GB setting, headroom analysis only | Leaves 2.59 GB of this Mac's 8.59 GB for macOS/other apps, versus 4.59 GB at 4 GB; variable cache shares become 2.279× the 4 GB sizes | No 6 GB workload/swap experiment. End-of-session pressure normal (1); existing swap about 1.58 GiB. `codebase/output/review/jpegxl-high-fidelity/memory-setting-headroom.json` |
+| 6 GB setting, headroom analysis only | Leaves 2.59 GB of this Mac's 8.59 GB for macOS/other apps, versus 4.59 GB at 4 GB; variable cache shares become 2.279× the 4 GB sizes | No 6 GB workload/swap experiment. End-of-session pressure normal (1); existing swap about 1.54 GiB. `codebase/output/review/jpegxl-high-fidelity/memory-setting-headroom.json` |
 | 192 MP at a 6 GB setting | Header-only refusal: import work 4.950 GB, safely available 3.780 GB after unchanged 2 GiB native reserve | `panorama-6gb-preflight.json` in the same evidence folder. No native pixels allocated, no successful export claimed |
 
 The larger minimum restores existing 4 GB retained-cache shares; derived RAW
