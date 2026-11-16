@@ -5,9 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .hdr_ceiling import ENCODING_ALLOWANCE
-from .color import acescg_to_linear_bt2020
-from .color_context import scene_linear_to_nits
+from .hdr_ceiling import ENCODING_ALLOWANCE, decoded_channel_nits
 
 def decoded_hdr_peak_nits(path: Path, format_name: str) -> float:
     """Read maximum BT.2020 channel nits, not the metadata content peak.
@@ -15,25 +13,10 @@ def decoded_hdr_peak_nits(path: Path, format_name: str) -> float:
     All three import decoders normalize linear ACEScg to 0.18 == 203 nits.
     Return the observed value without subtracting the encoding allowance.
     """
-    if format_name == "jpeg_ultrahdr":
-        from .gainmap_decoders import decode_ultrahdr_jpeg
-        image, _, _ = decode_ultrahdr_jpeg(path)
-    elif format_name == "avif_gain_map":
-        from .gainmap_decoders import decode_avif
-        image, _, _ = decode_avif(path)
-    elif format_name == "jpegxl_hdr":
-        from .jpegxl import decode_jpegxl
-        image, _ = decode_jpegxl(path)
-    else:
-        raise ValueError(f"Unsupported HDR ceiling format: {format_name}")
-    if image.size == 0 or not np.all(np.isfinite(image)):
-        raise ValueError("HDR validation decoded empty or non-finite pixels.")
-    # Bound colour-conversion scratch for full-resolution deliveries.
-    peak = 0.0
-    for first in range(0, image.shape[0], 256):
-        rgb = acescg_to_linear_bt2020(image[first:first + 256, :, :3])
-        peak = max(peak, float(np.max(rgb)))
-    return float(scene_linear_to_nits(peak, 203))
+    # Use the identical float32 nits boundary as mandatory encoder validation.
+    # Reducing first and converting a Python float instead introduces a second,
+    # float64 rounding rule at exactly the target.
+    return float(np.max(decoded_channel_nits(path, format_name)))
 
 
 def check_decoded_hdr_ceiling(path: Path, format_name: str, target_nits: float) -> float:

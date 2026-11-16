@@ -32,6 +32,8 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | N1 | Fixed cap and final SDR Highlight Compression | Overnight | built and checked — fourth mode added, existing curves/settings/defaults retained; CPU/GPU finishing, all 33 SDR Film cases, Proof/export and isolated Library pass; M1 mixed results/new refusals remain for N3a |
 | N2 | Global five-control Tone and aligned wheel ranges | Overnight | built and checked — frozen Y/M guide, photographic-grey anchor, endpoint gates/combined limiter, Whites UI; four HC modes, CPU/GPU, Proof/export, both layouts and isolated Library pass; encoded-HDR diagnostics remain outside report-only caps |
 | N3b | Tone clipping and effective-range diagnostics (T1-d) | Overnight | built, preview-only — HDR/SDR/global/local gestures, endpoint-vs-cap-loss channel checks and Library pass; no Auto/new UI tokens; final photo/export qualification recorded in N3b result |
+| N6-A | Exact finished/encoded HC ceiling | Follow-up | implemented — **awaiting full Still-strict validation**; final roundoff corrected only above target; zero encoded allowance; scoped CPU/GPU/codec/Proof checks recorded below |
+| N6-B | Sharp-highlight delivery failure | Follow-up | investigated, still open — finished floats/quantized inputs pass; JPEG/gain-map processing amplifies differences; no tested codec-only alternative passes the unchanged gate |
 | H1 | HSL picker, Local hue selection and gizmos | Follow-up | built, scoped — pre-sprint Local save/sample race and late HSL cancellation fixed; HDR/SDR real-RAW picking, wheel/sampling-gizmo gestures and CPU/GPU hue delivery pass; general idle failure not reproduced, Steve's original sequence still needs confirmation |
 | R1 | SDR local Detail: CPU clips, GPU keeps headroom | W1 | built — CPU local Detail retains headroom; Portra/Velvia GPU preview against CPU export passes |
 | R2 | Startup reconciliation brings back invalidated scenes | W1 | built — reconciliation checks saved epoch and pending deletion; scene/surface regressions pass |
@@ -118,6 +120,91 @@ Where this brief and `AGENTS.md` disagree, `AGENTS.md` wins.
 | N4 | **Built, scoped:** X1 per-parent local Match SDR; acceptance and N4 results below. M1/M1d remain open. | N3a |
 | N5 | **Not exposed:** X2 body/family fit misses acceptance; safe research prototype and measurement report only. | N4 |
 | N6 | Final review, fixes, brief/PRD updates, push. | all |
+
+### N6-A/B result: exact ceiling and sharp-highlight diagnosis (November 16)
+
+**Awaiting full Still-strict validation.** Steve limited this run to about
+30 minutes of slow checks because he is using the 8 GB Mac. No push.
+Implementation: `0a524303`; follow-up diagnostics/validation commits follow.
+No encoder/gain-map setting, tolerance, perceptual gate or memory limit was
+loosened. Other workers' UI changes remain outside these commits.
+
+**A — exact target.** The incumbent float32 target and the ACEScg↔BT.2020
+round trip can round up. CPU now rechecks after the complete incumbent final
+boundary, including both Clip calls, and lowers only overshooting pixels.
+Placing that check inside the first Clip call initially changed the second
+call's branch; the 18-array comparison caught it, and the final placement fixes
+that before commit. WebGPU rechecks its final round trip, using authored nits
+in previously reserved parameter 147 without changing any curve parameter.
+SDR's existing final gamut boundary already stays at or below 1.0.
+
+Same-run pre-change/current comparison: 18 arrays (HDR/SDR × Peak Fit/Soft
+Ceiling/Clip × three exposure grades), deterministic seed 817 / 24×64 RGB
+uniform 0–3, enabled HC, 600-nit target, Softness 60, exposure 0/.3/.6 EV.
+**600.000061 → 600.000000 nits**; 71 HDR pixels change by at most
+1.192093e-7 scene units (about .00014 nits). Every previously compliant pixel
+and all nine SDR arrays are byte-identical. `exact-before-after.json`.
+The full shader exercises 256 HDR/SDR/reference/target/mode/colour cases with
+float32 readback and no overshoot. CPU covers both reference whites, every
+mode/colour trajectory, 203/600/1000/4000 plus a fractional target. Real codec
+checks cover 48 mode/target/format combinations: 44 deliver under target;
+four AVIF/203-nit cases hit the existing ISO decoder equal-headroom refusal
+and deliver no file. Those four are safe-refusal checks, **not** encoded colour
+or successful delivery qualification. The decoder limitation is still open.
+
+The encoded allowance changes **1% → zero**, as Steve approved. Every checked
+HDR export/Proof is decoded; even an encoder-rounding overshoot uses the
+existing bounded local correction/recheck, then refuses if still above target.
+Already-compliant encoded files and SDR base bytes stay unchanged. A lossy
+HDR correction can also change neighbouring decoded HDR samples: exact
+independent replacement of just one decoded JPEG pixel is not possible.
+Files formerly accepted between target and target+1% now change or refuse;
+this is the intentional delivered-output difference beyond float roundoff.
+
+**B — the sharp check measures decoded export against decoded export**, not
+preview against export. `local-sdr-match.js --headroom --diagnose` captures
+the GPU's finished float32 readback and the exact authored document, rebuilds
+the CPU result from the same interpreted source, compares both floats and
+both decoded Ultra HDR exports, and still enforces the original gate.
+HDR is ΔE ITP; SDR is ΔE 2000; mean <1 / P99.9 ≤3 is unchanged.
+
+Matched fixture: finished float HDR **.030745/.113321**, SDR
+**.013358/.052095** (mean/P99.9); both float HDR peaks **1000 nits**.
+After input quantization, HDR half-float **.033964/.135368**, SDR 8-bit
+**.039740/1.022045**: both still pass. 12,291 of 30,720 HDR channels and
+774 SDR channels quantize differently. Decoded delivered outputs fail:
+HDR **.877670/7.980648**, SDR **.152682/3.370376**. The first pre-change run
+was HDR **.878005/7.980648**; the ceiling repair does not fix this failure.
+The shared delivery renderer agrees before encoding; the measured failure
+enters through JPEG/base and gain-map processing, not HC/Film order or a
+post-cap sharpening stage (this fixture requests sharpening off).
+
+One-factor codec probes use those same captured float arrays, before local
+ceiling correction; their normal initial HDR P99.9 is **7.882** and its decoded
+peak is 1051.57/1052.36 nits (GPU/CPU). Holding SDR identical gives **5.695**;
+holding HDR identical **8.849**; holding both identical **0**. Thus the codec
+is deterministic, but both small input differences contribute. Bypassing only
+the gain-map filter gives **5.957**; quality 100 for base/map **5.956**; map
+quality 100 alone **7.292**; fitting against the decoded base alone **8.333**.
+None passes. SDR quality 100 still gives P99.9 **3.077**. The initial encoder
+probes deliberately bypass final ceiling correction to isolate those factors;
+only the normal delivered results above are delivery qualification.
+
+**Decision still needed for B:** retain the strict failure and investigate a
+broader codec/gain-map quality change, or choose a common finished renderer
+for delivery (identical inputs measure zero, but performance and native/photo
+qualification are unmeasured). Simply raising quality or removing filtering
+is not a demonstrated fix. No such production change or gate relaxation was
+made. Existing edits keep their codec/settings; M1/M1d remain open.
+
+Evidence under `codebase/output/review/n4-local-match/`:
+`sharp-matched-stages.json`, `sharp-matched-floats.npz`,
+`sharp-codec-bisect-final.json`, and the exact/driver logs. The diagnostic
+helper is reproducible without a GPU after capture:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tests/helpers/local_delivery_diagnostics.py --codec-bisect output/review/n4-local-match/sharp-matched-floats.npz
+```
 
 ### N5 acceptance proposed before measurement (November 16)
 

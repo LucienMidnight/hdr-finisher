@@ -99,6 +99,22 @@ const baseline = process.argv.includes("--baseline");
     const deliverySettings = { format: "jpeg_ultrahdr", quality: 95, jpeg_chroma_subsampling: "444",
       jpeg_gain_map_quality: 95, jpeg_gain_map_scale: "full", dithering: "off", guarantee_hdr_peak: true,
       output_finishing: { resize_mode: "original", sharpening: "off" } };
+    if (process.argv.includes("--diagnose")) {
+      const renderer = page.context().pages().find(p => p.url().includes("gpu-delivery.html"));
+      assert.ok(renderer, "GPU delivery window");
+      await renderer.waitForFunction(() => typeof HDRGpuDeliveryFinishing === "function");
+      await renderer.evaluate(() => {
+        window.__finished = [];
+        const read = HDRGpuDeliveryFinishing.prototype.read;
+        HDRGpuDeliveryFinishing.prototype.read = async function(texture) {
+          const pixels = await read.call(this, texture);
+          window.__finished.push({ width: texture.width, height: texture.height, pixels: Array.from(pixels) });
+          return pixels;
+        };
+      });
+      fs.writeFileSync(path.join(scratch, "document.json"), JSON.stringify(await documentState()));
+      fs.copyFileSync(headroom ? path.join(__dirname, "fixtures/hdr_match_scene.tiff") : fixture, path.join(scratch, "diagnostic-source.tiff"));
+    }
     for (const forceCpu of [false, true]) {
       await post("/api/delivery/preferences", { force_cpu: forceCpu });
       const file = path.join(scratch, forceCpu ? "cpu.jpg" : "gpu.jpg");
@@ -112,6 +128,15 @@ const baseline = process.argv.includes("--baseline");
       const bytes = await page.request.get(`${base}/api/proof/artifact/${proof.artifact_id}.jpg`);
       assert.ok(bytes.ok());
       assert.ok(fs.readFileSync(file).equals(await bytes.body()), "Full-size Proof must equal delivered bytes");
+    }
+    if (process.argv.includes("--diagnose")) {
+      const renderer = page.context().pages().find(p => p.url().includes("gpu-delivery.html"));
+      fs.writeFileSync(path.join(scratch, "finished.json"), JSON.stringify(await renderer.evaluate(() => window.__finished)));
+      const diagnostics = execFileSync(require("../tools/lib/platform.cjs").pythonExecutable(),
+        [path.join(__dirname, "helpers/local_delivery_diagnostics.py"), scratch, path.join(output, `sharp-${baseline ? "baseline" : "matched"}-floats.npz`)],
+        { encoding: "utf8", env: { ...process.env, PYTHONPATH: path.resolve("backend") } });
+      fs.writeFileSync(path.join(output, `sharp-${baseline ? "baseline" : "matched"}-stages.json`), diagnostics);
+      console.log("Delivery stage diagnostics:", diagnostics);
     }
     await post("/api/delivery/preferences", { force_cpu: false });
     const delivery = JSON.parse(execFileSync(require("../tools/lib/platform.cjs").pythonExecutable(),

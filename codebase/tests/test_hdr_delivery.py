@@ -26,7 +26,11 @@ def test_decoded_ceiling_rejects_even_one_slightly_over_target_pixel(
     monkeypatch.setattr(module, decoder_name, decode)
     path = tmp_path / "fixture"
     assert hdr_delivery.check_decoded_hdr_ceiling(path, format_name, 1000) == pytest.approx(990, abs=.01)
-    image[0, 0] = np.nextafter(np.float32(1000 * .18 / 203), np.float32(np.inf))
+    from hdr_finisher.hdr_ceiling import channel_nits
+    image[0, 0] = np.float32(1000 * .18 / 203)
+    assert hdr_delivery.check_decoded_hdr_ceiling(path, format_name, 1000) <= 1000
+    while float(channel_nits(image).max()) <= 1000:
+        image[0, 0] = np.nextafter(image[0, 0], np.float32(np.inf))
     with pytest.raises(ValueError, match="exceeds"):
         hdr_delivery.check_decoded_hdr_ceiling(path, format_name, 1000)
     image[0, 0] = np.nan
