@@ -166,7 +166,7 @@ Open the file named for the thing you are changing. Most files are focused.
 | CPU preview, caches | `render_cache.py`, `cpu_strips.py`, `preview.py` |
 | Scopes, overlays, peak | `scopes.py`, `overlay.py`, `peak_accuracy.py`, `peak_candidates.py` |
 | Session and projects | `sessions.py`, `projects.py` |
-| Export and proof | `exporters.py`, `watermark.py` (final-size text / HDR-SDR test on delivery lanes), `proofing.py`, `hosting_probe.py`, `test_pattern.py` |
+| Export and proof | `jpegxl_stream.py` (bundled libjxl chunked input / scanline output), `exporters.py`, `watermark.py` (final-size text / HDR-SDR test on delivery lanes), `proofing.py`, `hosting_probe.py`, `test_pattern.py` |
 | Library reduced sources (phase 3c) | `library_reduced.py` (JPEG DCT, sequential PNG/TIFF, direct Pillow orientation/ICC handoff without PNG re-encoding, bounded uncompressed row reads); `library_rgb.py`, `library_dng_linear.py`, `library_live.py` select reduced Library routes; full Grade/Proof/export loaders remain default |
 | Grade-to-Library saved-picture hand-off (Batch 4b checkpoint) | `grade-library-pictures.js` captures the current presented full frame after saving, including a bounded Grade scope picture for tiled Fit; `library_grade_pictures.py` publishes thumbnails before deferred screen compression (the original upload slot remains held until completion), and loans the already developed Grade source. `photo-library.js` replaces tiles atomically and keeps completed tiles across Grade navigation. `desktop/library-grade-picture-check.cjs` compares actual Electron grid, filmstrip and stored-screen screenshots in HDR/SDR for two photos; popped-out checks run separately. Capture latency remains open; Windows memory acceptance passed November 5. |
 | Finished Library thumbnail redisplay | `library_finished_thumbnails.py` (local indexed identity, exact surface storage and batched transfer); `library-finished-thumbnails.js` (GPU capture/restore), wired through `library_screen_previews.py`, `library-gpu.js`, `photo-library.js` |
@@ -801,3 +801,20 @@ renderer tooltip timing/copy conditions/bounds; `library-picker-view.js` and
 `library-picker.css` own the shared grid/list chooser, `library-folder-picker.js`
 its folder/source selection and temporary previews, and `image-picker.js` the
 single-source adapter used by `media-browser.js`.
+
+
+November 16 native JXL memory: `exporters.py` reuses `cpu_strips.py` only for
+exactly supported native grades with identity output finishing; unsupported
+spatial/resize/sharpen/frame work keeps its existing graph/admission. The
+`gpu_delivery.py` decision cache also owns the deterministic bounded-CPU
+fallback. `jpegxl_stream.py` binds public libjxl 0.11+ APIs in the already
+bundled codec library, without a new executable. `jpegxl.py` quantizes integer
+lossless chunks at effort 3 and verifies exact own-source samples/ceiling by
+scanline. Ordinary preparation is banded too; ordinary HDR correction retains
+one nits map, filled through the same decoder. `proofing.py` reuses only its
+uniquely owned CPU SDR output for banded endpoint conversion. The standalone
+`tools/qualify-jxl-native.py` records admitted/refused native CPU work; the
+registered `jpegxl-high-fidelity.js --native-photo NAME` measures the complete
+Electron tree and full Proof identity. Both use approved originals without
+per-run photo copies. Limits and final scoped results live in Memory and
+caches, Export/Proof and the performance table.

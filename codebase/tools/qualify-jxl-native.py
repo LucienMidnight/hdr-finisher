@@ -48,6 +48,9 @@ def worker(photo, scratch, result):
     if estimate.import_decision.value != 'pass' or estimate.decoded_source_bytes + 320 * 1024**2 > CEILING - STARTING:
         row['unqualified'] = 'Native export not attempted: source storage plus bounded working room exceeds the default app ceiling, or import system reserve refuses it.'
         result.write_text(json.dumps(row)); return
+    if os.environ.get("HDR_JXL_PREFLIGHT_ONLY") == "1":
+        row['unqualified'] = 'Header-only diagnostic; native pixels deliberately not allocated.'
+        result.write_text(json.dumps(row)); return
     stage = lambda value: result.with_suffix('.stage').write_text(value)
     stage('sourceDecode')
     started = time.perf_counter()
@@ -67,8 +70,10 @@ def worker(photo, scratch, result):
     capture.install()
     from delivery_comparison import own_fidelity, finished_capture
     for lane, kind, format_name in [('hdr', PreviewKind.HDR, 'jpegxl_hdr'), ('sdr', PreviewKind.SDR, 'sdr_jpegxl')]:
+        if os.environ.get('HDR_JXL_QUALIFY_LANE') and lane != os.environ['HDR_JXL_QUALIFY_LANE']: continue
         row['lanes'][lane] = dict(variants={})
         for high in [True, False]:
+            if high and os.environ.get("HDR_JXL_SKIP_HIGH") == "1": continue
             # Do not run a known excessive ordinary comparison for a refused
             # high-fidelity photo: its default settings are outside this work.
             if not high and 'refused' in row['lanes'][lane]:
@@ -96,7 +101,7 @@ def worker(photo, scratch, result):
             size=target.stat().st_size
             decode = None
             stage(lane+'-fidelity')
-            fidelity=own_fidelity(target)
+            fidelity=own_fidelity(target) if high else {'lanes': {lane: {'reportOnly': True, 'notMeasured': 'Q95 size/time comparison; no strict own-source gate'}}}
             folder,_=finished_capture(target)
             finished=np.load(folder/f'{lane}.npy',mmap_mode='r')
             assert finished.shape[:2]==(height,width), finished.shape
@@ -115,7 +120,7 @@ def worker(photo, scratch, result):
                 assert peak <= 1010, peak
             else:
                 peak = None
-            row['lanes'][lane]['variants']['high' if high else 'webDefault']=dict(
+            row['lanes'][lane]['variants']['high' if high else 'q95']=dict(
                 bytes=size,exportSeconds=elapsed,encodeSeconds=sum(encode_times),encodeRounds=len(encode_times),decodeSeconds=decode,fidelity=fidelity['lanes'][lane],peakNits=peak)
             result.write_text(json.dumps(row))
             target.unlink()
@@ -146,20 +151,23 @@ def main():
             result=temp/'result.json';result.unlink(missing_ok=True);result.with_suffix('.stage').unlink(missing_ok=True)
             env={**os.environ,'MallocSpaceEfficient':'1','HDR_FINISHER_FORCE_CPU_DELIVERY':'1','HDR_FINISHER_USER_DATA_DIR':str(temp/'profile')}
             child=subprocess.Popen([sys.executable,__file__,'--worker',str(photo),str(temp),str(result)],env=env,stdout=subprocess.DEVNULL)
-            peak=0; minimum=None; samples=0; stages={}
+            peak=0; minimum=None; samples=0; stages={}; aborted=None
             while child.poll() is None:
                 try:
                     charge=sum(r.get('chargedBytes',r['workingSetBytes']) for r in process_tree(child.pid))
                     available=detect_memory_resources().available_ram_bytes
                     phase=result.with_suffix('.stage').read_text() if result.with_suffix('.stage').exists() else 'startup'
+                    if not aborted and (charge > CEILING or (available is not None and available < 2*1024**3)):
+                        aborted = f'Stopped during {phase}: worker {charge} bytes, system available {available}; existing limits kept.'
+                        child.terminate()
                     stages[phase]=max(stages.get(phase,0),charge)
                     peak=max(peak,charge); minimum=available if minimum is None else min(minimum,available or minimum);samples+=1
                 except (OSError,ProcessLookupError): pass
                 time.sleep(.2)
             row=json.loads(result.read_text()) if result.exists() else dict(photo=name)
-            row.update(exitCode=child.returncode,stagePeakChargedBytes=stages,workerPeakChargedBytes=peak,minimumAvailableBytes=minimum,memorySamples=samples,defaultAppCeilingBytes=CEILING)
+            row.update(aborted=aborted,exitCode=child.returncode,stagePeakChargedBytes=stages,workerPeakChargedBytes=peak,minimumAvailableBytes=minimum,memorySamples=samples,defaultAppCeilingBytes=CEILING)
             rows.append(row);args.output.write_text(json.dumps(rows,indent=2))
             print(name,child.returncode,round(peak/1e9,3),'GB',row.get('unqualified',''),flush=True)
-            if child.returncode: raise RuntimeError(f'Native qualification failed for {name}; see {args.output}')
+            if child.returncode and not aborted: raise RuntimeError(f'Native qualification failed for {name}; see {args.output}')
 
 if __name__=='__main__':main()

@@ -97,7 +97,7 @@ def test_gpu_pair_is_watermarked_without_poisoning_shared_cached_pixels(monkeypa
     image = np.full((200, 300, 3), .1, dtype=np.float32)
     monkeypatch.setattr(gpu, "render_pair", lambda *_: {"hdr": image, "sdr": image})
     settings = ExportSettings(watermark={"mode": "rendition_test"})
-    result = _render_export_branch(SimpleNamespace(hdr_reference_white_nits=203), settings,
+    result = _render_export_branch(SimpleNamespace(image=image, sdr_reference_image=None, hdr_reference_white_nits=203), settings,
         PreviewKind(lane), AdjustmentState())
     assert np.all(image == .1)
     assert np.any(result != image)

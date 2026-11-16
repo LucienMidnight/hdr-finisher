@@ -1,3 +1,77 @@
+## November 16: bounded native high-fidelity JPEG XL (minimum Mac)
+
+MacBook Neo / A18 Pro / 8 GiB, 1408×794, one run at a time under the shared
+GPU lock. Final native Electron runs use Steve's 4 GB minimum/default; 1000-nit
+Fixed cap, native dimensions, neutral creative grade, no resize/sharpen/frame/
+metadata. Times include production render, encode, exact quantized-source
+verification, validation and the diagnostic finished-input capture. Import /
+manual interpretation and separate perceptual analysis are excluded from export
+waits. These are descriptive timings (paired noise tolerance ±10%), not an
+across-machine speed claim. GPU-request means the existing renderer chooses
+GPU or its bounded CPU fallback; it is not a forced/waived GPU pass.
+
+| Native input | Whole-app peak | CPU HDR / SDR export | GPU-request HDR / SDR | Full Proof | Result |
+| --- | ---: | --- | --- | --- | --- |
+| PQ AVIF · 4000×2666 · 10.7 MP | 2.813 GB | 8.15 / 8.05 s | **GPU** 6.99 / 3.88 s | CPU 16.35 s / GPU 5.97 s; exact file bytes | Pass; minimum available RAM 4.724 GB |
+| `_DSC6328.jpg` · 3833×7778 · 29.8 MP | 2.782 GB | 19.08 / 13.58 s | Bounded **CPU** 18.78 / 12.72 s | CPU 24.54 s; both exports match its bytes | Pass; minimum available RAM 3.608 GB |
+| LR AVIF · 5304×7952 · 42.2 MP | 3.591 GB | 26.57 / 19.87 s | Later request safely refused | CPU 35.15 s; exact file bytes | **Scoped:** HDR, SDR and Proof succeed, but system availability reaches 1.212 GB; sustained-session reserve check fails |
+| Panorama · 16000×12000 · 192 MP | No native run | — | — | — | Native source preflight refuses; no successful ordinary/native export claimed |
+
+Evidence: `codebase/output/review/jpegxl-high-fidelity/app-native-4000000000-*.json`.
+The 42.2 MP peaks by stage are HDR 2.544 GB, full Proof 3.144 GB, SDR 3.570 GB;
+import owns the 3.591 GB maximum. A 6 GB cap does not create system headroom.
+The separate header-only 6 GB refusal and cache/swap conditions are in the
+memory/default section below. No tested photo is shown to require only 6 GB.
+
+The standalone CPU helper uses the loader's decoded source; Electron resolves
+the explicit interpretation gate via Rec.2020/PQ for AVIF or sRGB for JPEG.
+For the LR AVIF those routes produce different HDR sources: helper lossless
+HDR is 110.17 MB, Electron HDR 72.01 MB. **Size ratios below use the same helper
+source/render for each pair; they never mix the two interpretations.** This is
+not an assertion of source interpretation agreement. SDR LR is 64.30 MB in both.
+
+| Same-source native CPU input / lane | Lossless effort-3 size | Ordinary Q95 size | Ratio | Own-source mean / P99.9 |
+| --- | ---: | ---: | ---: | --- |
+| 10.7 MP · HDR | 18,779,678 B | 4,704,145 B | 3.99× | HDR ΔE ITP 0.0841 / 0.1837 |
+| 10.7 MP · SDR | 9,544,640 B | 4,690,221 B | 2.04× | SDR ΔE00 0.2095 / 0.7751 |
+| 29.8 MP · HDR | 57,406,105 B | 12,248,349 B | 4.69× | 0.0778 / 0.1793 |
+| 29.8 MP · SDR | 38,822,620 B | 14,078,481 B | 2.76× | 0.000004 / 0.000018 |
+| 42.2 MP · HDR | 110,173,101 B | 25,095,468 B | 4.39× | 0.0916 / 0.2141 |
+| 42.2 MP · SDR | 64,296,622 B | 28,325,669 B | 2.27× | 0.2051 / 0.7273 |
+
+All six high-fidelity helper cases pass the unchanged mean <1 / P99.9 ≤3,
+exact finished ceiling and encoded +1% allowance. Ordinary codec fidelity is
+report-only, not a new gate. At 10.7 MP, effort 3 costs **11.0% HDR / 7.8% SDR**
+versus the old effort-7 lossless files; quantized samples are unchanged.
+Standalone high-fidelity waits are HDR/SDR 5.27/6.77 s, 16.38/12.61 s,
+23.76/21.36 s for these three sizes. Native encode alone is 1.40/1.19 s,
+4.34/3.51 s and 6.30/6.54 s; validation/render/capture account for the rest.
+The ordinary 42.2 MP Q95 helper takes HDR 62.40 s / SDR 19.47 s after bounded
+preparation and ceiling decoding; its own-source analysis is not timed in those
+waits. Compressed payloads remain byte buffers in the existing API.
+
+Where RAM went: whole-frame CPU intermediates dominated generated SDR. The
+existing exact CPU strip renderer removes them for eligible native grades;
+spatial/unsupported graphs keep conservative admission. Chunked libjxl input
+removes the full quantized frame for integer lossless, and 128-row preparation
+bounds conversion scratch for ordinary JXL too. Scanline sample/ceiling checks
+avoid full decoded float images; Proof converts its unique CPU SDR output in
+place. 10.7 MP high-fidelity worker render/encode peaks fall from HDR 1.913 /
+SDR 4.435 GB to 0.432 / 0.382 GB. At 42.2 MP, ordinary Q95 HDR worker peak
+falls from the interrupted 4.949 GB run to 2.344 GB; final SDR worker peak,
+including high-fidelity and Q95, is 2.040 GB. Worker peaks exclude Electron.
+
+Evidence in the same folder: `native-bounded.json` (includes the interrupted
+pre-fix ordinary comparison), `native-sdr-bounded-final.json`, and
+`native-q95-hdr-42.json`. Eight focused export/Proof drivers pass in the bounded
+JXL follow-up, followed by the native 4 GB checks above; the final 4 GB Library
+and Settings checks pass below. The file-picker locator still exists: baseline
+passes alone, and waiting for initial browse completion closes a typed-path
+initialization race; patched driver passes all four outputs. This is not a
+concurrent-GPU experiment. Broader unrun matrices are listed in Export/Proof.
+Windows/packaged, 60 MP, native spatial graphs and sustained 42.2 MP acceptance
+remain open. No tolerance, encoded allowance or physical reserve changed.
+
 ## November 16: approved 4 GB minimum/default (MacBook Neo)
 
 Steve's November 16 decision makes 4 GB the minimum/default on macOS, Windows

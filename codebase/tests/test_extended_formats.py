@@ -1063,3 +1063,50 @@ def test_native_export_uses_existing_strips_without_changing_finished_samples(mo
     actual = exporters._render_unwatermarked_branch(session, settings, kind, adjustments)
     expected = apply_adjustments(image, adjustments, kind, color_context=session.color_context)
     np.testing.assert_array_equal(actual, expected)
+
+
+@pytest.mark.parametrize('dithering', ['off', 'subtle', 'auto'])
+def test_sdr_jxl_banded_dither_preserves_global_sample_coordinates(monkeypatch, dithering):
+    import imagecodecs
+    from hdr_finisher.jpegxl import _srgb_oetf, _dither_srgb_in_place
+    source = np.random.default_rng(392).uniform(0, 1, (271, 29, 3)).astype(np.float32)
+    srgb = _srgb_oetf(np.clip(source, 0, 1))
+    if dithering != 'off':
+        _dither_srgb_in_place(srgb, amplitude_lsb=.5 if dithering == 'subtle' else 1.)
+    expected = np.clip(np.round(srgb * np.float32(255)), 0, 255).astype(np.uint8)
+    def capture(samples, **kwargs):
+        np.testing.assert_array_equal(samples, expected)
+        return b''
+    monkeypatch.setattr(imagecodecs, 'jpegxl_encode', capture)
+    encode_sdr_jpegxl(source, 95, dithering=dithering)
+
+
+@pytest.mark.parametrize('precision', ['uint10', 'uint12', 'uint16'])
+def test_streamed_ordinary_jxl_ceiling_matches_import_decoder(tmp_path, precision):
+    from hdr_finisher.exporters import _decoded_jpegxl_channel_nits
+    from hdr_finisher.hdr_ceiling import decoded_channel_nits
+    image = np.random.default_rng(948).uniform(.001, 2, (31, 42, 3)).astype(np.float32)
+    payload = encode_hdr_jpegxl(image, 95, precision)
+    output = tmp_path/'ordinary.jxl'
+    output.write_bytes(payload)
+    np.testing.assert_array_equal(_decoded_jpegxl_channel_nits(payload), decoded_channel_nits(output, 'jpegxl_hdr'))
+
+
+def test_high_fidelity_physical_refusal_does_not_suggest_a_larger_app_budget(tmp_path, monkeypatch):
+    from hdr_finisher import exporters, app_memory
+    from hdr_finisher.resource_preflight import ResourceSnapshot
+    image = np.full((12, 16, 3), .18, np.float32)
+    session = SimpleNamespace(session_id='reserve', image=image, sdr_reference_image=None,
+        adjustments=AdjustmentState(), local_adjustments=[])
+    output = tmp_path/'kept.jxl'
+    output.write_bytes(b'previous delivery')
+    monkeypatch.setattr('hdr_finisher.resource_preflight.detect_memory_resources',
+        lambda: ResourceSnapshot(8*1024**3, 2*1024**3, 'test'))
+    monkeypatch.setattr(app_memory, 'admit', lambda *args, **kwargs: pytest.fail('Physical refusal must come first'))
+    monkeypatch.setattr(exporters, '_render_export_branch', lambda *args: pytest.fail('No pixels before admission'))
+    result = JPEGXLHDRExportBackend(CapabilityInfo(name='JXL', status=CapabilityStatus.AVAILABLE, detail='test')).export(
+        session, ExportSettings(format='jpegxl_hdr', jpegxl_high_fidelity=True, output_path=str(output), overwrite=True))
+    assert not result.accepted
+    assert 'free system memory' in result.message
+    assert 'raise' not in result.message
+    assert output.read_bytes() == b'previous delivery'

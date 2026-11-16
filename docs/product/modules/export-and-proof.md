@@ -48,27 +48,60 @@ sections. Both Default themes are captured at 1408×794, including a folded
 example, in `codebase/output/ui-polish-1114/`. Proof has review captures only;
 its rendering and delivery paths are untouched. Visual sign-off pending.
 
-## November 16: bounded native JPEG XL follow-up (qualification in progress)
+## November 16: bounded native JPEG XL follow-up (scoped result)
 
-Integer lossless export now feeds quantized chunks to the bundled libjxl at
-lossless effort 3 and validates by scanline decode. Every decoded sample must
-exactly equal its own quantized source; HDR checks the unchanged encoded ceiling
-without allocating full decoded float/nits images. The 12-bit HDR / 8-bit SDR
-samples, own-source mean <1 / P99.9 ≤3, exact finished ceiling, 1% encoding
-allowance and full Proof/export byte identity are unchanged. Native eligible CPU
-exports reuse the existing exact strip renderer, including generated SDR; GPU
-remains available when the complete working set fits. Unsupported spatial graphs
-retain their existing path and conservative admission. No Film/Match/shader edit.
-Full-size Proof reuses its uniquely owned CPU SDR output for banded endpoint
-conversion; shared GPU lanes remain immutable. Memory accounting: memory module.
+Integer lossless export feeds quantized chunks to bundled libjxl at lossless
+effort 3 and validates by scanline decode. Every decoded sample must exactly
+equal its own quantized source; HDR checks the unchanged encoded ceiling
+without full decoded float/nits images. The 12-bit HDR / 8-bit SDR samples,
+own-source mean <1 / P99.9 ≤3, exact finished ceiling, 1% encoded allowance
+and full Proof/export byte identity stay unchanged. Eligible native CPU exports
+reuse the existing exact strip renderer, including generated SDR. GPU stays
+available where its complete working set fits; large eligible graphs fall back
+to bounded CPU. Unsupported spatial graphs keep conservative admission. No
+Film/Match/shader edit. Full Proof converts its unique CPU SDR output in place
+in bands; cached GPU pixels are immutable. Memory: [memory module](memory-and-caches.md).
+The separate Steve-approved minimum/default change is 4 GB on every platform.
 
-On the initial native 4000×2666 photo both lanes now pass. HDR export is 5.27 s /
-18.78 MB, SDR 6.77 s / 9.54 MB (includes diagnostic finished capture and validation).
-Effort 3 costs 11.0% HDR / 7.8% SDR in size versus the prior effort-7 lossless
-files of the same photo; compression remains mathematically lossless. Q95 size
-ratios are 3.99× HDR and 2.04× SDR. Standalone peak including Q95 is 0.977 GB;
-whole-app, 24 MP-class/42.2 MP and native Proof results remain pending.
-The prior qualification below is historical until those runs complete.
+At that default, native 10.7 MP passes CPU/GPU HDR/SDR and full Proof (2.813 GB
+whole-app peak), and 29.8 MP passes both lanes and Proof on bounded CPU
+(2.782 GB; requested GPU correctly falls back). The 42.2 MP photo successfully
+exports both lanes and a byte-identical full Proof, but a later export is
+refused after available system memory drops to 1.212 GB. Its app peak is
+3.591 GB, below 4 GB; **sustained 42.2 MP session qualification remains open**.
+No photo has been proven to need only a 6 GB setting. The 192 MP panorama
+fails native source preflight even in a header-only 6 GB diagnostic, so no
+successful ordinary/native panorama export is claimed. 60 MP and heavy/spatial
+native graphs, Windows/packaged apps and external viewers remain unqualified.
+
+Native standalone CPU own-source checks pass all three 10.7 / 29.8 / 42.2 MP
+photos in both lanes, plus exact finished and encoded ceilings. Effort 3 costs
+11.0% HDR / 7.8% SDR in file size against the old effort-7 lossless files for
+the 10.7 MP photo; samples remain identical. Q95 size ratios are about
+3.99–4.69× HDR / 2.04–2.76× SDR across these three standalone inputs. The
+ordinary Q95 HDR route now bands preparation and streams its decoded ceiling
+map too: its 42.2 MP worker peak falls from 4.949 GB (interrupted) to 2.344 GB.
+Measured native times and interpretation conditions: performance table.
+
+Eight focused Electron drivers pass under the lock: high-fidelity UI/preset/
+Quick/batch/CPU/GPU/reduced/full Proof; file browser; Proof size; GPU smoke;
+GPU repeat; HDR ceiling; GPU delivery ceiling; and six-format framing. The
+picker passes unchanged in isolation; it now waits for initial browse completion
+before typing a path, closing the race where that response overwrote the typed
+folder. Its locator existed: this was not a proven missing-locator regression.
+Renderer/codec tests keep exact samples, dither coordinates, ordinary decoded
+nits, source independence and cached GPU pixels pinned. The subsequent physical
+refusal check preserves destinations and asks for free system memory, not a
+larger app setting that cannot remove that reserve gate. The full fast suite
+and memory-policy follow-ups are recorded in the memory module. The final
+90-second Library and Settings checks pass. Protected project hashes are unchanged.
+
+Not run: broad `proof_export_identity.py`, `proof-grade-diagnostic.js`,
+`performance/preview-export-compare.js`, `performance/export-parity.js` and the
+Retouch/HSL/Hue Mask/Tone Zones/colour-desaturation matrices. Feature-specific
+rendering there was not changed; no unrun check counts as a pass. Earlier
+2.5 GB qualification below is historical, superseded only by the scoped results
+above; the option is not fully qualified for every native photo/grade.
 
 ## November 16: opt-in high-fidelity JPEG XL (Steve)
 

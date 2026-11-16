@@ -66,7 +66,12 @@ def decoded_lanes(path, format_name, white):
 def streamed_jxl_fidelity(path, finished, lane, white):
     """All-pixel own-source gate with scanline decode and an exact upper tail."""
     from hdr_finisher.jpegxl_stream import decode
+    from hdr_finisher.jpegxl import inspect_jpegxl
     from hdr_finisher.color import normalize_to_acescg
+    info = inspect_jpegxl(Path(path))
+    bits = info["bits_per_sample"]
+    if info.get("exponent_bits_per_sample"):
+        return metric(finished, decoded_lanes(path, "jpegxl_hdr", white)[lane], lane, white)
     total = finished.shape[0] * finished.shape[1]
     index = .999 * (total - 1)
     retain = total - int(np.floor(index)) + 2
@@ -74,7 +79,8 @@ def streamed_jxl_fidelity(path, finished, lane, white):
     summed, observed = 0., 0
     def visit(x, y, pixels):
         nonlocal tail, summed, observed
-        actual = pixels[None].astype(np.float32) / np.float32(4095 if lane == "hdr" else 255)
+        actual = pixels[None].astype(np.float32)
+        actual *= np.float32(1.0 / ((1 << bits) - 1))
         expected = finished[y:y + 1, x:x + len(pixels)]
         if lane == "hdr":
             actual = normalize_to_acescg(actual, "BT.2020", "PQ") * np.float32(203 / white)
@@ -93,7 +99,7 @@ def streamed_jxl_fidelity(path, finished, lane, white):
         tail = np.concatenate((tail, errors))
         if tail.size > retain * 2:
             tail = np.partition(tail, tail.size - retain)[-retain:]
-    decode(Path(path).read_bytes(), visit, expected_shape=finished.shape[:2], bits=12 if lane == "hdr" else 8)
+    decode(Path(path).read_bytes(), visit, expected_shape=finished.shape[:2], bits=bits)
     assert observed == total
     tail.sort()
     lower, upper = int(np.floor(index)), int(np.ceil(index))
@@ -109,7 +115,8 @@ def own_fidelity(path):
     folder, metadata = finished_capture(path)
     white = metadata["reference_white_nits"]
     high = metadata.get("jpegxl_high_fidelity", False) and metadata["format"] in {"jpegxl_hdr", "sdr_jpegxl"}
-    if high:
+    streaming = metadata["format"] in {"jpegxl_hdr", "sdr_jpegxl"}
+    if streaming:
         lane = "sdr" if metadata["format"] == "sdr_jpegxl" else "hdr"
         decoded = {lane: None}
     else:
@@ -117,7 +124,7 @@ def own_fidelity(path):
     fidelity = {}
     for lane, pixels in decoded.items():
         finished = np.load(folder / f"{lane}.npy", mmap_mode="r")
-        fidelity[lane] = streamed_jxl_fidelity(path, finished, lane, white) if high else metric(finished, pixels, lane, white)
+        fidelity[lane] = streamed_jxl_fidelity(path, finished, lane, white) if streaming else metric(finished, pixels, lane, white)
         if lane == "hdr" and metadata["ceiling_nits"] is not None:
             peak = max(float(channel_nits(finished[row:row + 128], white).max())
                        for row in range(0, finished.shape[0], 128))

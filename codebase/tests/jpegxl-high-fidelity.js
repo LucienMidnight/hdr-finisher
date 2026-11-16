@@ -22,7 +22,9 @@ async function nativePhoto(page, post, root, name) {
   const photo = path.join(root, name);
   fs.linkSync(source, photo);
   const samples = [], errors = [], stages = [];
-  let phase = 'import', pending = '';
+  const proven = new Map();
+  let phase = 'import', pending = '', outcomeError = null, ceiling = 4000000000;
+  let summary;
   const sampler = spawn(python, [path.resolve('tools/measure-library-processes.py'), process.env.HDR_FINISHER_ELECTRON_MAIN_PID, '.2']);
   sampler.stderr.on('data', chunk => errors.push(String(chunk)));
   sampler.stdout.on('data', chunk => {
@@ -35,8 +37,16 @@ async function nativePhoto(page, post, root, name) {
   });
   try {
     await page.goto(process.env.HDR_FINISHER_URL);
+    const memoryResponse = await page.request.get(new URL('/api/library/memory-setting', page.url()).href);
+    const memorySetting = await memoryResponse.json();
+    assert.equal(memorySetting.minimumBytes, 4000000000);
+    assert.equal(memorySetting.defaultBytes, 4000000000);
+    const memoryFlag = process.argv.indexOf('--memory-gb');
+    if (memoryFlag >= 0) await post('/api/library/memory-setting', { bytes: Number(process.argv[memoryFlag + 1]) * 1e9 });
+    const configured = await (await page.request.get(new URL('/api/library/memory-setting', page.url()).href)).json();
+    ceiling = configured.ceilingBytes;
     await page.setInputFiles('#file-input', photo);
-    await resolveInterpretation(page);
+    await resolveInterpretation(page, { primaries: /\.avif$/i.test(name) ? "linear_bt2020" : "linear_srgb", transfer: /\.avif$/i.test(name) ? "pq" : "srgb" });
     await page.waitForFunction(() => state.session && !state.importInProgress, null, { timeout: 180000 });
     const session = await page.evaluate(async () => {
       state.adjustments.hdr.highlight_section_enabled = true;
@@ -59,30 +69,40 @@ async function nativePhoto(page, post, root, name) {
         stages.push({ phase, seconds: (Date.now() - started) / 1000, ...result, bytes: fs.existsSync(output) ? fs.statSync(output).size : null });
         assert(result.accepted, JSON.stringify(result));
         if (format === 'jpegxl_hdr') {
+          if (proven.has(result.renderer)) {
+            assert(fs.readFileSync(output).equals(proven.get(result.renderer)), 'Native fallback export matches the already-proven full-size Proof');
+            stages.push({ phase: phase + '-proof-full', renderer: result.renderer, reusedSameRendererProof: true });
+            continue;
+          }
           phase += '-proof-full';
           const began = Date.now();
           const proof = await post(`/api/session/${session.session_id}/proof/artifact`, { ...settings, full_size: true, force: true });
           const response = await page.request.get(new URL(`/api/proof/artifact/${proof.artifact_id}.jxl`, page.url()).href);
           assert(response.ok());
-          assert(fs.readFileSync(output).equals(await response.body()), 'Native full-size Proof/export byte identity');
+          const proofBytes = await response.body();
+          assert(fs.readFileSync(output).equals(proofBytes), 'Native full-size Proof/export byte identity');
+          proven.set(result.renderer, proofBytes);
           stages.push({ phase, seconds: (Date.now() - began) / 1000, ...proof });
         }
       }
     }
+  } catch (error) {
+    outcomeError = error;
+    throw error;
   } finally {
     sampler.kill();
     await new Promise(resolve => sampler.once('close', resolve));
-    const summary = { photo: name, stages, observerErrors: errors,
+    summary = { photo: name, ceilingBytes: ceiling, stages, error: outcomeError?.message || null, observerErrors: errors,
       peakBytes: Math.max(0, ...samples.map(s => s.totalBytes)),
       minimumAvailableBytes: Math.min(...samples.map(s => s.availableBytes)),
       stagePeaks: Object.fromEntries([...new Set(samples.map(s => s.phase))].map(p => [p, Math.max(...samples.filter(s => s.phase === p).map(s => s.totalBytes))])),
       samples: samples.length };
-    fs.writeFileSync(path.join(report, `app-native-${name}.json`), JSON.stringify(summary, null, 2));
+    fs.writeFileSync(path.join(report, `app-native-${ceiling}-${name}.json`), JSON.stringify(summary, null, 2));
     console.log(JSON.stringify(summary));
-    assert.equal(errors.length, 0, errors.join('\n'));
-    assert(summary.peakBytes <= 2500000000, `Default whole-app ceiling exceeded: ${summary.peakBytes}`);
-    assert(samples.every(s => s.availableBytes >= s.systemReserveBytes), 'Existing system reserve was breached');
   }
+  assert.equal(errors.length, 0, errors.join('\n'));
+  assert(summary.peakBytes <= ceiling, `Default whole-app ceiling exceeded: ${summary.peakBytes}`);
+  assert(samples.every(s => s.availableBytes >= s.systemReserveBytes), 'Existing system reserve was breached');
 }
 
 (async () => {
@@ -96,8 +116,9 @@ async function nativePhoto(page, post, root, name) {
   };
   try {
     const native = process.argv.indexOf('--native-photo');
-    if (native >= 0) {
-      await nativePhoto(page, post, root, process.argv[native + 1]);
+    const nativeValue = process.argv.find(arg => arg.startsWith('--native-photo='))?.slice('--native-photo='.length);
+    if (native >= 0 || nativeValue) {
+      await nativePhoto(page, post, root, nativeValue || process.argv[native + 1]);
       return;
     }
     const photo = path.join(root, 'fixture.tiff');

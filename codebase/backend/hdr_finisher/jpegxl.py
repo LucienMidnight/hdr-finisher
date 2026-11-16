@@ -166,10 +166,7 @@ def encode_hdr_jpegxl(
             bit_depth, hdr=True)
         return _marked_payload(payload, hdr=True, bit_depth=bit_depth,
             sample_type=sample_type, reference_white_nits=reference_white_nits, exif_payload=exif_payload)
-    if quality == 100:
-        encoded = _quantized_rectangle(image, samples, storage_type)
-    else:
-        encoded = samples(image)
+    encoded = _quantized_rectangle(image, samples, storage_type)
     distance = max(0.0, (100.0 - float(quality)) / 25.0)
     try:
         payload = imagecodecs.jpegxl_encode(
@@ -220,14 +217,12 @@ def encode_sdr_jpegxl(
         return _marked_payload(payload, hdr=False, bit_depth=8, sample_type="integer",
             reference_white_nits=100, exif_payload=exif_payload)
 
-    srgb = _srgb_oetf(np.clip(image[..., :3], 0.0, 1.0))
-    if dithering != "off":
-        _dither_srgb_in_place(srgb, amplitude_lsb=0.5 if dithering == "subtle" else 1.0)
-    encoded = np.clip(
-        np.round(srgb * np.float32(255.0)),
-        0.0,
-        255.0,
-    ).astype(np.uint8)
+    encoded = np.empty((*image.shape[:2], 3), dtype=np.uint8)
+    for row in range(0, image.shape[0], 128):
+        srgb = _srgb_oetf(np.clip(image[row:row + 128, :, :3], 0.0, 1.0))
+        if dithering != "off":
+            _dither_srgb_in_place(srgb, amplitude_lsb=0.5 if dithering == "subtle" else 1.0, row_offset=row)
+        encoded[row:row + 128] = np.clip(np.round(srgb * np.float32(255.0)), 0, 255).astype(np.uint8)
     del srgb
     distance = max(0.0, (100.0 - float(quality)) / 25.0)
     try:
@@ -404,13 +399,13 @@ def _srgb_oetf(linear: np.ndarray) -> np.ndarray:
 
 
 def _dither_srgb_in_place(
-    srgb: np.ndarray, *, amplitude_lsb: float, chunk_rows: int = 256
+    srgb: np.ndarray, *, amplitude_lsb: float, chunk_rows: int = 256, row_offset: int = 0
 ) -> None:
     height, width, channel_count = srgb.shape
     x = np.arange(width, dtype=np.uint32)[None, :]
     for row_start in range(0, height, chunk_rows):
         row_end = min(height, row_start + chunk_rows)
-        y = np.arange(row_start, row_end, dtype=np.uint32)[:, None]
+        y = np.arange(row_start + row_offset, row_end + row_offset, dtype=np.uint32)[:, None]
         for channel in range(channel_count):
             seed = np.uint32(((channel + 1) * 0x9E3779B9) & 0xFFFFFFFF)
             value = x * np.uint32(0x1F123BB5) ^ y * np.uint32(0x5F356495) ^ seed

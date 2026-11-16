@@ -49,32 +49,37 @@ allowed under Steve’s explicit compression-trade-off decision; renderer
 agreement and ceilings remain strict. Exact recipes, signed-gamut metric
 limits and experimental fixes are in the three encoding reports.
 
-High-fidelity JXL is built with memory admission, but **large native-photo
-qualification remains open** on the default 2.5 GB Neo. Three 2.3–3.0 MP
-whole native inputs pass both lanes; the 10.7 MP photo is refused before
-rendering, and 42.2/192 MP working-set diagnostics refuse before source decode.
-Before admission was added, generated SDR rendering reached 4.435 GB in the
-standalone 10.7 MP worker (HDR 1.913 GB), already beyond the default app ceiling
-before Electron. The option now reserves measured work plus 25% against the
-existing app ceiling and physical reserve, and lossless quantization uses
-bounded float scratch. No budget is raised. This protects delivery, but it
-means the requested largest-photo qualification is unfinished; native GPU and
-full-size Proof on those large photos are not passed. The three small-photo
-measurements are standalone CPU workers, not a whole-app memory certification.
-Evidence: `codebase/output/review/jpegxl-high-fidelity/native-final.json` and
-`memory-stages.json` / `oversized-preflight.json`; sizes/timings: performance table.
-The registered high-fidelity CPU/GPU/preset/Quick/batch/Proof driver passes,
-as do ten affected ordinary delivery drivers and the 90-second Library viewport
-check. In this run the unchanged file-picker driver times out at its old
-`#folder-picker .directory-browser-entry` source locator, before export,
-despite the earlier passing record below. This observation is not repaired or
-reclassified as a delivery failure. Full fast suites: Node 1,091 pass/one skip;
-Python 3,860 pass, 144 skip, one xpass, nine concurrent unrelated HSL-cache /
-Library native-source failures. Full names/logs are in
-`codebase/output/review/jpegxl-high-fidelity/python-final.log`; focused
-encoding/capture/model tests pass 72 cases (16 skips). The checks left unrun
-within the bounded slow-test budget are listed in the Export/Proof module.
+High-fidelity JXL now uses exact bounded CPU strips where eligible, chunked
+lossless effort-3 input and scanline verification. Steve separately approved
+4 GB minimum/default app memory on all platforms (November 16). At that setting,
+whole-app native 10.7 MP CPU/GPU and 29.8 MP bounded-CPU export/full Proof pass,
+with 2.813 / 2.782 GB app peaks. Native 42.2 MP HDR, SDR and byte-identical
+full Proof complete, but **sustained-session qualification remains open**:
+a later export is safely refused after system availability drops to 1.212 GB,
+despite app peak 3.591 GB being below 4 GB. No tested photo is proven to need
+only 6 GB; that setting cannot remove the physical-headroom gate. The 192 MP
+panorama is still refused before native source allocation, including in a
+6 GB header-only probe. 60 MP, native spatial/heavy graphs, Windows/packaged
+and external JXL viewers remain unqualified.
 
+Three same-source native CPU photos (10.7 / 29.8 / 42.2 MP) pass strict per-lane
+own-source fidelity, ceilings and exact quantized sample checks. Effort 3 costs
+11.0% HDR / 7.8% SDR in size against the old effort-7 lossless 10.7 MP result.
+Ordinary Q95 HDR preparation/ceiling decoding is bounded too: 42.2 MP worker
+peak falls from an interrupted 4.949 GB to 2.344 GB. Full conditions, differing
+LR source interpretations, times and file sizes are in the performance table
+and Export/Proof module; no size ratio mixes different finished inputs.
+
+Eight focused export/Proof drivers pass in the bounded JXL follow-up. The
+picker passes unchanged alone; patched it waits for initial browsing before
+typing, closing an overwrite race, and passes all four batch exports. This
+supersedes the old missing-locator explanation. Final 4 GB Settings and the
+90-second Library viewport pass: 3.220 GB peak, no reserve breach, 50 ms redraw
+gap, 9/9 visited pictures; unvisited photos are not whole-folder qualification.
+Compact evidence: `codebase/output/review/jpegxl-high-fidelity/` and
+`codebase/output/quick-library-check/memory-4gb-minimum/`. No image tolerance,
+physical reserve or encoded allowance was loosened. Remaining broad matrices
+are listed in Export/Proof, not counted as passed.
 
 `export-file-browser-interaction.js` now uses the intended L4 shared image
 picker, not the superseded source directory dialog. Confirm becomes enabled

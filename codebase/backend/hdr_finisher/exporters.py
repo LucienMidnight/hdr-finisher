@@ -172,7 +172,10 @@ def _render_unwatermarked_branch(
         from .finishing import geometry_output_dimensions
         output = geometry_output_dimensions(width, height, adjustments.shared.geometry)
         gpu_required = width * height * 12 + output[0] * output[1] * 76 + 288 * 1024**2
-        if app_memory.snapshot()["totalBytes"] + gpu_required > app_memory.CEILING:
+        # Ordinary delivery has no new census/lease side effects. The fixed
+        # starting footprint already proves these native GPU jobs cannot fit;
+        # high fidelity additionally owns its measured whole-app admission.
+        if app_memory.STARTING + gpu_required > app_memory.CEILING:
             object.__setattr__(settings, "_bounded_cpu_delivery", True)
     pair = render_pair(session, settings, adjustments)
     if pair is not None:
@@ -319,7 +322,8 @@ def _reserve_high_fidelity_jxl(session, settings):
     message = ("High fidelity JPEG XL needs more working memory for this photo. "
                "Free memory or raise the app memory setting before trying again.")
     if resources.available_ram_bytes is None or required > resources.available_ram_bytes - reserve:
-        raise ValueError(message)
+        raise ValueError("High fidelity JPEG XL needs more free system memory for this photo. "
+                         "Close other apps and try again.")
     key = "jxl-" + uuid4().hex
     if not app_memory.admit(key, required)["granted"]:
         raise ValueError(message)
@@ -841,6 +845,22 @@ def _peak_ceiling(settings: ExportSettings, adjustments: AdjustmentState) -> flo
 
 
 def _decoded_jpegxl_channel_nits(payload: bytes) -> np.ndarray:
+    from .jpegxl import _probe_basic_info
+    info = _probe_basic_info(payload)
+    bits = info.get("bits_per_sample")
+    if bits in (10, 12, 16) and not info.get("exponent_bits_per_sample"):
+        from .jpegxl_stream import decode
+        from .color import normalize_to_acescg
+        from .hdr_ceiling import channel_nits
+        shape = (info["height"], info["width"])
+        result = np.empty(shape, dtype=np.float32)
+        def visit(x, y, pixels):
+            samples = pixels[None].astype(np.float32)
+            samples *= np.float32(1.0 / ((1 << bits) - 1))
+            image = normalize_to_acescg(samples, "BT.2020", "PQ")
+            result[y, x:x + len(pixels)] = channel_nits(image)[0]
+        decode(payload, visit, expected_shape=shape, bits=bits)
+        return result
     with TemporaryDirectory(prefix="hdr_finisher_ceiling_") as temp_dir:
         path = Path(temp_dir) / "check.jxl"
         path.write_bytes(payload)

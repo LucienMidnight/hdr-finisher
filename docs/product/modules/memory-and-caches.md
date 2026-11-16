@@ -63,9 +63,10 @@ swap caused by a tested 6 GB workload; no 6 GB load/swap experiment was run.
 Evidence: `codebase/output/review/jpegxl-high-fidelity/memory-setting-headroom.json`
 and `panorama-6gb-preflight.json`.
 
-## November 16: bounded native high-fidelity JXL (qualification in progress)
+## November 16: bounded native high-fidelity JXL (scoped result)
 
-No RAM ceiling, GPU budget, cache share or physical reserve changes. Eligible
+The JXL buffer changes add no RAM ceiling, GPU budget, cache share or physical
+reserve; Steve’s separately committed 4 GB policy above now applies. Eligible
 native exports now reuse the existing exact CPU strip renderer (48 MiB scratch),
 including generated SDR, instead of building whole-frame grade intermediates.
 Resizing, output sharpening, framing, Denoise, local/spatial effects and the
@@ -94,12 +95,28 @@ full decoded RGB/nits frame. The test-only perceptual check also streams decoded
 pixels and retains only the exact upper 0.1% tail; every pixel is checked.
 Full Proof converts its uniquely owned CPU SDR endpoint in bands in place;
 GPU cached lanes are never modified. No new pixel cache or disk spool is added.
-Initial 10.7 MP standalone CPU qualification: both lanes pass, sampled worker
-peak 0.977 GB including Q95 comparisons; high-fidelity render/encode peaks
-0.432 GB HDR / 0.382 GB SDR, versus the prior 1.913 / 4.435 GB. Whole-app and
-larger native qualification is still pending; do not read standalone worker
-numbers as Electron acceptance. Final values belong in the performance table.
+Native CPU worker peaks for high fidelity are about 0.432 GB HDR / 0.382 GB
+SDR at 10.7 MP, 1.247 / 1.221 GB at 29.8 MP, and 1.725 GB HDR / 2.040 GB
+SDR at 42.2 MP (the last SDR figure includes its Q95 comparison). The previous
+10.7 MP whole-frame route reached 1.913 / 4.435 GB. Ordinary Q95 HDR preparation
+now also uses bands; its exact import-equivalent ceiling map is filled by
+scanline decode. Its 42.2 MP worker peak falls from the interrupted 4.949 GB
+run to 2.344 GB, retaining every quantized input and exact decoded nits sample.
+Compressed payloads are still returned as bytes by the existing encoder API;
+this is not a claim of constant-space encoded-file storage.
 
+At the approved 4 GB default, complete Electron native-photo runs pass at
+10.7 MP (2.813 GB peak; actual CPU and GPU) and 29.8 MP (2.782 GB peak;
+bounded CPU, including the requested-GPU fallback). Full-size Proof bytes match.
+The 42.2 MP run successfully exports HDR and SDR and produces identical full
+Proof bytes, but is **not sustained-session acceptance**: app peak is 3.591 GB,
+minimum system availability 1.212 GB, and the later requested-GPU export is
+safely refused before rendering. Native CPU HDR/Proof/SDR peaks are
+2.544 / 3.144 / 3.570 GB. That is a physical-headroom failure below the app cap;
+no reserve is loosened and 6 GB is not a demonstrated remedy. Windows/packaged,
+60 MP, native panorama, spatial-effect and heavy-graph qualification remain open.
+Full native times, size comparisons, source interpretation conditions and tests
+are in the performance table and export module.
 
 The current display's existing finished-thumbnail format is published before
 the acknowledgement. Other existing formats and the compressed screen finish

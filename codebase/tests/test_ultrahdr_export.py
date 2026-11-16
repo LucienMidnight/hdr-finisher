@@ -187,13 +187,11 @@ def test_ultrahdr_command_rejects_out_of_range_quality(tmp_path: Path, quality: 
 def test_export_uses_independent_hdr_and_sdr_branches_and_forces_jpg(monkeypatch, tmp_path: Path) -> None:
     binary = tmp_path / "ultrahdr_app.exe"
     binary.write_bytes(b"test")
-    observed: dict[str, object] = {"kinds": []}
-
-    def fake_adjustments(image, adjustments, kind, sdr_reference_image=None, **kwargs):
-        _ = image, adjustments, sdr_reference_image, kwargs
-        observed["kinds"].append(kind)
-        level = 1.8 if kind == PreviewKind.HDR else 0.2
-        return np.full((4, 6, 3), level, dtype=np.float32)
+    observed: dict[str, object] = {}
+    original_writer = exporter_module.write_jpeg_gainmap_renditions
+    def capture_inputs(output, hdr, sdr, *args, **kwargs):
+        observed["hdr"], observed["sdr"] = hdr.copy(), sdr.copy()
+        return original_writer(output, hdr, sdr, *args, **kwargs)
 
     def fake_run(command: list[str]):
         observed["command"] = command
@@ -202,7 +200,7 @@ def test_export_uses_independent_hdr_and_sdr_branches_and_forces_jpg(monkeypatch
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(exporter_module, "resolve_binary", lambda _name: binary)
-    monkeypatch.setattr(exporter_module, "apply_adjustments", fake_adjustments)
+    monkeypatch.setattr(exporter_module, "write_jpeg_gainmap_renditions", capture_inputs)
     monkeypatch.setattr(exporter_module, "_run_command", fake_run)
     # Fake codecs write placeholders that cannot be decoded; test_hdr_ceiling covers the peak check.
     monkeypatch.setattr(exporter_module, "encode_within_ceiling", lambda image, white, encode, decode, ceiling=None, notes=None, **kwargs: encode(image))
@@ -214,14 +212,23 @@ def test_export_uses_independent_hdr_and_sdr_branches_and_forces_jpg(monkeypatch
     monkeypatch.setattr(exporter_module, "_validate_ultrahdr_output", lambda *_args: "validated")
 
     requested = tmp_path / "custom-name.jpeg"
+    adjustments = AdjustmentState()
+    adjustments.hdr.exposure = 1.0
+    adjustments.sdr.exposure = -1.0
+    session = _session(adjustments=adjustments)
+    session.sdr_reference_image = np.full((4, 6, 3), .04, np.float32)
     result = JPEGUltraHDRExportBackend(_available_capability()).export(
-        _session(), ExportSettings(format="jpeg_ultrahdr", quality=73, output_path=str(requested))
+        session, ExportSettings(format="jpeg_ultrahdr", quality=73, output_path=str(requested))
     )
 
     assert result.accepted is True
     assert result.output_path == str((tmp_path / "custom-name.jpg").resolve())
     assert Path(result.output_path).read_bytes() == b"encoded"
-    assert observed["kinds"] == [PreviewKind.HDR, PreviewKind.SDR]
+    for lane, kind in [("hdr", PreviewKind.HDR), ("sdr", PreviewKind.SDR)]:
+        expected = exporter_module.apply_adjustments(session.image, adjustments, kind,
+            sdr_reference_image=session.sdr_reference_image)
+        np.testing.assert_array_equal(observed[lane], expected)
+    assert not np.array_equal(observed["hdr"], observed["sdr"])
     command = observed["command"]
     assert command[command.index("-q") + 1] == "73"
     assert command[command.index("-Q") + 1] == "100"
