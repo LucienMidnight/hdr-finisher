@@ -12,7 +12,6 @@
   let baselineRequest = null;
   let baselineFlight = null;
   let key = null;
-  let chart = null;
   let caption = null;
   let overlay = null;
   let lastChart = "";
@@ -48,12 +47,11 @@
     if (key) return;
     key = document.createElement("div");
     key.id = "tone-preview-key";
-    key.className = "tone-preview-key hidden";
+    // Screen-reader status only: the range trace is drawn on the histogram/waveform.
+    key.className = "tone-preview-key visually-hidden hidden";
     key.setAttribute("role", "status");
     caption = document.createElement("span");
-    chart = document.createElement("canvas");
-    chart.setAttribute("aria-label", "Effective pre-look Tone range on a neutral ray, in stops from photographic mid-grey");
-    key.append(caption, chart);
+    key.append(caption);
     els.previewPrimaryPane.append(key);
     overlay = document.createElement("canvas");
     overlay.id = "tone-clipping-overlay";
@@ -65,37 +63,6 @@
   function range(selected, luminance, maximum = luminance) {
     const result = model.influence(selected.branch, selected.lane === "hdr", selected.zone, luminance, maximum, projectReferenceWhiteNits());
     return { ...result, weight: result.weight * selected.opacity };
-  }
-
-  function drawChart(selected) {
-    const ratio = Math.max(1, window.devicePixelRatio || 1);
-    const width = Math.max(1, Math.round(chart.clientWidth));
-    const height = Math.max(1, Math.round(chart.clientHeight));
-    chart.width = width * ratio;
-    chart.height = height * ratio;
-    const context = chart.getContext("2d");
-    context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    context.clearRect(0, 0, width, height);
-    const grey = selected.lane === "hdr" ? 0.0324 : 0.18 * 100 / 203;
-    const plotHeight = height - 18;
-    context.strokeStyle = uiToken("--scope-guide-line-labeled");
-    context.beginPath(); context.moveTo(0, plotHeight); context.lineTo(width, plotHeight); context.stroke();
-    context.strokeStyle = uiToken("--accent-strong");
-    context.beginPath();
-    for (let index = 0; index <= width; index++) {
-      const weight = range(selected, grey * 2 ** (-10 + 18 * index / width)).weight;
-      const vertical = plotHeight - weight * (plotHeight - 2);
-      if (index) context.lineTo(index, vertical); else context.moveTo(index, vertical);
-    }
-    context.stroke();
-    context.font = HDRAppearance.font("min");
-    context.fillStyle = uiToken("--muted");
-    context.textBaseline = "bottom";
-    for (const stop of [-10, -5, 0, 5, 8]) {
-      const horizontal = (stop + 10) / 18 * width;
-      context.textAlign = stop === -10 ? "left" : stop === 8 ? "right" : "center";
-      context.fillText(`${stop > 0 ? "+" : ""}${stop}${stop === 0 ? " grey" : ""}`, horizontal, height);
-    }
   }
 
   function place() {
@@ -276,8 +243,8 @@
     if (!selected) { hide(); return; }
     surfaces();
     key.classList.remove("hidden");
-    const signature = JSON.stringify([selected.zone, selected.branch, selected.opacity, projectReferenceWhiteNits(), clipping, key.clientWidth, uiToken("--accent-strong")]);
-    if (signature !== lastChart) { drawChart(selected); lastChart = signature; drawHistogram(state.lastScope || []); }
+    const signature = JSON.stringify([selected.zone, selected.branch, selected.opacity, projectReferenceWhiteNits(), uiToken("--accent-strong")]);
+    if (signature !== lastChart) { lastChart = signature; drawHistogram(state.lastScope || []); }
     const limiter = range(selected, 0).limiter;
     const name = selected.zone[0].toUpperCase() + selected.zone.slice(1);
     const explanation = `${name} · Pre-look neutral-ray range${selected.local ? " before spatial mask" : ""} · limiter ${Math.round(limiter * 100)}%${selected.local ? ` · opacity ${Math.round(selected.opacity * 100)}%` : ""}`;
@@ -337,7 +304,7 @@
       const gesture = ["blacks", "whites"].includes(selected.zone) && selected.dimension === "amount"
         ? " Alt/Option-drag to inspect finished clipping. Pale dots mean endpoint only; RGB marks lost channels; dashed RGB marks channels newly reaching an endpoint."
         : "";
-      label.dataset.tooltip = `${label.dataset.tooltip || ""} Hover or drag to see the effective, endpoint-protected range and limiter.${gesture}`.trim();
+      label.dataset.tooltip = `${label.dataset.tooltip || ""} Hover or drag to see the effective, endpoint-protected range on the histogram.${gesture}`.trim();
       label.classList.add("tooltip-trigger");
     }
   }

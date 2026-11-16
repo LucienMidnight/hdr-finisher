@@ -70,7 +70,7 @@ assume equal Film input/highlight colour is solved.
 ## November 16: N3b Tone diagnostics (preview only)
 
 Hover or drag Blacks, Shadows, Midtones, Highlights, Whites, Center or Width
-to see a neutral-ray range trace in the viewer and histogram/waveform. It
+to see a neutral-ray range trace on the histogram/waveform. It
 uses the photographic-grey anchor, actual endpoint gates and combined limiter;
 local traces include layer opacity but are explicitly **before spatial mask**.
 This is pre-look qualification, not a selection map on the finished photo:
