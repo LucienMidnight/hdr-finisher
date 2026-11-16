@@ -97,7 +97,7 @@ class RawNIND:
             self.session.disable_fallback()
         return self.session
 
-    def prepare(self, image, metadata, *, destination=None):
+    def prepare(self, image, metadata, *, destination=None, camera_anchor_mean=None):
         start = time.perf_counter()
         height, width = image.shape[:2]
         if min(height, width) < 2:
@@ -129,11 +129,15 @@ class RawNIND:
             domain['clipped'] = minimum < 0 or maximum > 1
             domain['extrapolated'] = False
             domain['clipped_fraction'] = float(np.count_nonzero((image < 0) | (image > 1))) / image.size
-            camera_anchor = develop(image, {**metadata, 'white_balance': [1, 1, 1],
-                                           'camera_to_acescg': np.eye(3).tolist(), 'exposure_stops': 0})
-            anchor_mean = float(np.mean(camera_anchor, dtype=np.float64))
+            if camera_anchor_mean is None:
+                camera_anchor = develop(image, {**metadata, 'white_balance': [1, 1, 1],
+                                               'camera_to_acescg': np.eye(3).tolist(), 'exposure_stops': 0})
+                camera_anchor_mean = float(np.mean(camera_anchor, dtype=np.float64))
+                del camera_anchor
+            anchor_mean = float(camera_anchor_mean)
+            if not np.isfinite(anchor_mean) or anchor_mean <= 0:
+                raise ValueError('Invalid AHD camera anchor')
             domain['ahd_camera_anchor_mean'] = anchor_mean
-            del camera_anchor
         session_start = time.perf_counter()
         session = self._session()
         session_seconds = time.perf_counter() - session_start

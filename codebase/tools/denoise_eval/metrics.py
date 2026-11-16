@@ -154,6 +154,12 @@ def method_noise(output, noisy):
     return float(np.corrcoef(np.abs(residual).ravel(), edge.ravel())[0,1])
 
 
+def area_half(image):
+    height, width = image.shape[:2]
+    cropped = image[:height//2*2, :width//2*2, :3]
+    return cropped.reshape(height//2, 2, width//2, 2, 3).mean(axis=(1, 3))
+
+
 def evaluate(output, noisy, clean, masks, slanted=False):
     result = {'flat_residual_sdr': flat_residual(output, noisy, clean, masks['flat']),
               'method_noise_edge_correlation': method_noise(output, noisy)}
@@ -161,6 +167,11 @@ def evaluate(output, noisy, clean, masks, slanted=False):
         for lane in ('sdr', 'hdr'):
             a, b = display(output, lane), display(clean, lane)
             result[lane] = dict(psnr_db=psnr(a,b), ssim=ssim(a,b), colour_difference=summary(colour_error(output,clean,lane)))
+        half_output, half_clean = area_half(output), area_half(clean)
+        result['half_resolution'] = {
+            lane: dict(psnr_db=psnr(display(half_output, lane), display(half_clean, lane)),
+                       colour_difference=summary(colour_error(half_output, half_clean, lane)))
+            for lane in ('sdr', 'hdr')}
         result['texture'] = texture(output, clean, masks['texture']) if masks['texture'].any() else None
         result['colour_bleed'] = colour_bleed(output, clean)
         if slanted:
