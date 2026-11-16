@@ -818,3 +818,13 @@ registered `jpegxl-high-fidelity.js --native-photo NAME` measures the complete
 Electron tree and full Proof identity. Both use approved originals without
 per-run photo copies. Limits and final scoped results live in Memory and
 caches, Export/Proof and the performance table.
+## November 16: offline RawNIND Denoise prototypes
+
+`codebase/tools/denoise_eval/candidates/rawnind.py` contains optional CPU ONNX
+linear/Bayer adapters, bounded phase-aware tile gathering, one global gain and
+strength blends. `measure_rawnind.py` wraps the existing harness and native-frame
+measurements with a 2.5 GB RSS guard, disposable disk-backed arrays and isolated
+review output. `codebase/tests/test_denoise_rawnind.py` checks results and CFA
+packing; model-dependent cases skip without local weights. These modules are
+research only and are not imported by the editor. Findings:
+[RawNIND prototype](research/denoise-v1-2026-11-16/rawnind-prototype.md).

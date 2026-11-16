@@ -9,7 +9,14 @@ approved, and no proposed tolerance is relaxed. Calibration remains limited
 by single noisy frames and missing clean/dark pairs. See
 [the baseline](../../technical/research/denoise-v1-2026-11-16/harness-baseline.md)
 and [the active brief](../../technical/briefs/denoise-v1-quality-trial-2026-11-16.md).
-Candidate work and Steve's visual decision remain open.
+Phase 2 RawNIND linear/Bayer research adapters and strength comparisons are
+recorded in [the prototype report](../../technical/research/denoise-v1-2026-11-16/rawnind-prototype.md).
+Neither qualifies: linear improves high-ISO noise but fails low-ISO fidelity,
+detail/halo and HDR/exposure safeguards; Bayer changes clean fine detail and
+uses an explicit AHD fallback on out-of-domain real sensor inputs. The separate
+unclipped Bayer native timings are experimental extrapolation, not qualification.
+The current Denoise remains unchanged; classical comparison and Steve's visual
+decision remain open. No tolerance, cache allowance or shipping dependency changes.
 
 ## November 16: safe linked SDR built and scoped qualification
 
