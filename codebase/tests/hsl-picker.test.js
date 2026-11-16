@@ -111,3 +111,26 @@ for (const cancellation of ['stop', 'rearm', 'local']) test(`HSL discards a dela
   assert.equal(recipe.ranges.length, 0);
   assert.equal(ui.sampling, false);
 });
+
+test('photo cursor follows HSL and local range owners and clears on exit', () => {
+  const { context } = setup();
+  let armed = false, cursor = '', local = null;
+  const pane = context.els.previewPrimaryPane;
+  pane.classList = { toggle(_name, value) { armed = value; } };
+  pane.style = { setProperty(_name, value) { cursor = value; } };
+  context.getComputedStyle = () => ({getPropertyValue: name => ({'--compact-action-size':'26px','--text':'#f2f2f2','--inverse':'#0c0c0c'})[name]});
+  context.selectedLocal = () => local;
+  context.selectedMaskLeaf = () => local?.leaf;
+  context.localGizmoVisible = () => Boolean(local?.gizmo);
+  context.state.activeWorkflow = 'grade';context.state.gradeMode = 'global';
+  context.syncPhotoPickCursor();assert.equal(armed, true);
+  assert.match(cursor, /data:image\/svg\+xml/);assert.match(cursor, /4 22, crosshair$/);
+  context.ui.picker = null;context.syncPhotoPickCursor();assert.equal(armed, false);
+  local = {gizmo:true,leaf:{type:'hue_range'}};context.state.gradeMode = 'local';
+  context.syncPhotoPickCursor();assert.equal(armed, true);
+  local.gizmo = false;context.syncPhotoPickCursor();assert.equal(armed, false);
+  local.gizmo = true;local.leaf.type = 'luminance_range';context.syncPhotoPickCursor();assert.equal(armed, true);
+  local.leaf.type = 'brush';context.syncPhotoPickCursor();assert.equal(armed, false);
+  context.ui.picker = {};context.state.activeWorkflow = 'proof';context.syncPhotoPickCursor();assert.equal(armed, false);
+  context.state.activeWorkflow = 'grade';context.state.session = null;context.syncPhotoPickCursor();assert.equal(armed, false);
+});

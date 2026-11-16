@@ -7,8 +7,9 @@ function setup() {
   let local = { id: 'local', mask: { id: 'mask', leaf: { type: 'hue_range', hue_center: null } } };
   const calls = [];
   const context = vm.createContext({
-    state: { session: { session_id: 'photo' }, currentView: 'hdr', gradeMode: 'local', editRevision: 1 },
+    state: { session: { session_id: 'photo' }, currentView: 'hdr', activeWorkflow: 'grade', gradeMode: 'local', editRevision: 1, localHiddenGizmoIds: new Set() },
     selectedLocal: () => local,
+    localGizmoVisible: owner => Boolean(owner && !context.state.localHiddenGizmoIds.has(owner.id)),
     selectedMaskLeaf: owner => owner.mask.leaf,
     selectedMaskExpression: owner => owner.mask,
     syncGlobalEditState: async () => true,
@@ -48,7 +49,7 @@ test('range sampling waits for saved upstream edits and reacquires the acknowled
   assert.equal(calls[1], 'commit');
 });
 
-for (const changed of ['lane', 'mask', 'local']) test(`range sampling discards an in-flight result after changing ${changed}`, async () => {
+for (const changed of ['lane', 'mask', 'local', 'workflow', 'hidden gizmo']) test(`range sampling discards an in-flight result after changing ${changed}`, async () => {
   const fixture = setup();
   const { context, calls, gesture } = fixture;
   let finish;
@@ -58,6 +59,8 @@ for (const changed of ['lane', 'mask', 'local']) test(`range sampling discards a
   if (changed === 'lane') context.state.currentView = 'sdr';
   if (changed === 'mask') fixture.local().mask.id = 'different-mask';
   if (changed === 'local') fixture.local().id = 'different-local';
+  if (changed === 'workflow') context.state.activeWorkflow = 'proof';
+  if (changed === 'hidden gizmo') context.state.localHiddenGizmoIds.add('local');
   finish();
   await pending;
   assert.equal(fixture.local().mask.leaf.hue_center, null);

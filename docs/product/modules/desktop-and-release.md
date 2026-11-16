@@ -39,6 +39,17 @@ them. Electron 43.4.0 / Chromium 150 on the Mac supports `base-select` and
 `::picker(select)`; no replacement widget or `selectedcontent` is needed for
 the existing plain-text options. Windows visual acceptance remains Steve's.
 
+Mac verification: the focused UI driver passes picker lifecycle, shared tooltip
+placement/delay/Escape, select opening and native keyboard/change events in
+Grade, Scopes, Library, Proof, Export and Settings, including the 1100x720
+minimum and Library pop-out. All existing selects in the main and Library
+renderers compute to base-select. `tests/hsl-picking.js` also passes real-photo
+sampling, wheel gestures and cancellation in HDR and SDR. Fast suites pass
+(1,082 JavaScript; 3,577 Python, with their existing skips). Review captures:
+`codebase/output/review/picker-help-selects/`. Page captures omit the OS cursor;
+`pipette-artwork.png` shows the exact cursor artwork on light and dark wells.
+
+
 ## November 15: W7 tooltip/accent acceptance
 
 On the MacBook Neo / 8 GB, the locked real Electron review passes main,

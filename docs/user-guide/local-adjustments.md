@@ -111,6 +111,10 @@ Choose **Luma** to mask by how bright the scene is. The mask follows the image, 
 - Under **Refine range**, narrow the range further without changing the reference range. A short soft ramp is added on both sides, so the edge is gentle.
 - **Feather** smooths the mask in space. **Opacity** sets its strength.
 
+A pipette cursor over the photo shows that sampling is ready. Press **Escape**
+to stop sampling and hide the gizmo; **Show gizmo** makes sampling available
+again. The same applies to hue-range sampling.
+
 The range is based on the scene, not on your grade. Changing a local adjustment will never move the edge of a Luma mask.
 
 ## Draw a path
@@ -183,6 +187,9 @@ Masks belong to the photo, not to the frame. If you crop, rotate, straighten or 
 Hue selection masks are implemented: select by colour, then refine Edge,
 Feather and Edge detail. The note at the top of Local explains that masks
 are shared by HDR and SDR; their grading controls remain separate.
+
+HSL **Pick**, **Add** and **Subtract** also show the pipette over the photo.
+They remain ready for more samples until **Stop picking** or **Escape**.
 
 Retouch has Inpaint, Heal and Clone. Heal and Clone use two clicks: pick
 the source, then the destination; drag the second click to paint a stroke.

@@ -16,7 +16,7 @@ function syncPhotoPickCursor() {
   const style = getComputedStyle(pane);
   const size = parseFloat(style.getPropertyValue('--compact-action-size'));
   const ink = style.getPropertyValue('--text').trim(), edge = style.getPropertyValue('--inverse').trim();
-  const path = 'M 15 5 L 19 9 M 17 3 Q 19 1 21 3 Q 23 5 21 7 L 18 10 L 17 9 L 8 18 L 4 20 L 5 16 L 14 7 L 13 6 Z';
+  const path = 'M4 20 L5 16 L12 9 L10 7 L12 5 L14 7 L16 5 C15 3 17 1 19 2 C22 3 23 6 21 8 C20 9 19 9 18 8 L16 10 L18 12 L16 14 L14 12 L7 19 Z';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24"><path d="${path}" fill="${edge}" stroke="${edge}" stroke-width="4" stroke-linejoin="round"/><path d="${path}" fill="${edge}" stroke="${ink}" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
   pane.style.setProperty('--photo-pick-cursor', `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${Math.round(4*size/24)} ${Math.round(20*size/24)}, crosshair`);
 }
