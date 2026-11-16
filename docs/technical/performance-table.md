@@ -1,3 +1,34 @@
+## November 16: pilot-guided empirical Wiener (research only)
+
+MacBook Neo / Apple A18 Pro / 8 GB, one CPU thread, tooling `e35fc744`,
+adapters `e8335fd9`, masked public-pair merge `1951c081`; ORT 1.32.0 only
+in the worktree venv. Shared machine lock and unchanged 2.5 GB process-tree
+RSS guard. Single-run measurements; descriptive ±10% allowance, no regression
+comparison. Native whole waits end at resolved ACEScg, **not on screen**.
+Temporary full-frame/cache disk I/O is included and scratch is removed.
+No Electron, GPU, production cache/budget change or shipping speedup claim.
+
+| Research action | Whole wait / peak RSS | Pilot / bands+gains / resolve | Conditions / evidence |
+| --- | --- | --- | --- |
+| Canon 18.02 MP, tuned-both | 22.36 s / 0.943 GB | 5.05 / 10.56 / 2.82 s | Mac; IMG_0790.CR2, ISO3200, read-only approved corpus. Decode+AHD 1.97 s, noise fit 1.77 s. |
+| Canon 18.02 MP, Bayer-both | 22.27 s / 1.380 GB | 7.44 / 9.22 / 2.32 s | Same Mac/photo, later run after public-pair ranking; not a controlled speed comparison. Decode+AHD 1.62 s, fit 1.46 s. |
+| Canon 18.02 MP, Bayer-luma | 29.57 s / 1.380 GB | 9.92 / 11.72 / 3.93 s | Same Mac/photo; corrected full-strength neural pilot, precomputed unity-WB AHD exposure anchor. |
+| Sony 42.39 MP, tuned-both | 54.60 s / 1.536 GB | 12.31 / 28.86 / 7.40 s | Mac; 2025_0730_1331_3.arw, ISO4000, read-only corpus. Decode+AHD 3.97 s, noise fit 1.85 s. |
+| Sony 42.39 MP, Bayer-both | 57.27 s / 1.871 GB | 18.28 / 26.86 / 6.62 s | Same Mac/photo, later single run; 77 neural tiles. Decode+AHD 3.71 s, fit 1.62 s. |
+| Sony 42.39 MP, Bayer-luma | 66.13 s / 1.658 GB | 21.71 / 29.08 / 9.34 s | Same Mac/photo; native sensor orientation, 77 neural tiles. |
+| Full quality set, 11 adapters | 299.34 s / 1.609 GB | Not a UI action | Mac; 27 synthetic + eight real cases, full/half scores, zero adapter errors. |
+| Public pairs, 11 adapters | 402.03 s / 1.228 GB | Not a UI action | Mac; reused verified CC0 subset, 52 crops / 11 scenes / four cameras. Four held-out and seven seen-by-RawNIND scenes reported separately, full/half valid-mask scores, zero errors. |
+| Live controls, cached 512² | 15.38–63.15 ms, median 28.06 ms, p95 37.41 ms; bypass 0.08–0.42 ms | No pilot/decomposition | Mac; six variants × three ISOs × Amount/Color Noise 0/.5/1 on two scenes. Entire sweep 129.47 s / 1.200 GB guarded. |
+| Independent grids / detail review | 37.76 / 26.86 s | Not a UI action | Mac; worst sampled peaks 1.151 / 1.234 GB. |
+| Final merged fast checks | Python 275.96 s / 2.124 GB; Node 21.27 s | Not product performance | Mac; Python 3944 passed, 151 skipped, 1 xpassed; Node 1091 passed, 1 skipped. No failures. |
+
+Evidence: `codebase/output/denoise-v1/pilot-wiener/` JSON/guard receipts and
+`review/index.html`; scope, half-scale fairness, control/quality failures and
+explicitly **estimated** GPU traffic costs are in
+[pilot-wiener.md](research/denoise-v1-2026-11-16/pilot-wiener.md).
+The FP32 native cache used 3.24/7.63 GB of temporary disk, not retained RAM.
+No variant satisfies the complete quality contract; shipping Denoise is unchanged.
+
 ## November 16: RawNIND Bayer verification (research only)
 
 MacBook Neo / Apple A18 Pro / 8 GB; tooling `6fe14d32`, verified Bayer

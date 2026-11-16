@@ -162,6 +162,12 @@ def method_noise(output, noisy, valid=None):
     return float(np.corrcoef(np.abs(residual).ravel(), edge.ravel())[0,1])
 
 
+def area_half(image):
+    height, width = image.shape[:2]
+    cropped = image[:height//2*2, :width//2*2, :3]
+    return cropped.reshape(height//2, 2, width//2, 2, 3).mean(axis=(1, 3))
+
+
 def evaluate(output, noisy, clean, masks, slanted=False):
     valid = masks.get('valid')
     result = {'flat_residual_sdr': flat_residual(output, noisy, clean, masks['flat']),
@@ -172,6 +178,19 @@ def evaluate(output, noisy, clean, masks, slanted=False):
             difference = colour_error(output, clean, lane)
             result[lane] = dict(psnr_db=psnr(a,b,valid), ssim=ssim(a,b,valid),
                                 colour_difference=summary(difference if valid is None else difference[valid]))
+        half_output, half_clean = area_half(output), area_half(clean)
+        half_valid = None
+        if valid is not None:
+            height, width = half_output.shape[:2]
+            half_valid = valid[:height*2, :width*2].reshape(height, 2, width, 2).all(axis=(1, 3))
+            if not half_valid.any():
+                raise ValueError('No fully valid 2x2 block for half-resolution scoring')
+        result['half_resolution'] = {}
+        for lane in ('sdr', 'hdr'):
+            difference = colour_error(half_output, half_clean, lane)
+            result['half_resolution'][lane] = dict(
+                psnr_db=psnr(display(half_output, lane), display(half_clean, lane), half_valid),
+                colour_difference=summary(difference if half_valid is None else difference[half_valid]))
         result['texture'] = texture(output, clean, masks['texture']) if masks['texture'].any() else None
         result['colour_bleed'] = colour_bleed(output, clean, valid)
         if valid is not None:

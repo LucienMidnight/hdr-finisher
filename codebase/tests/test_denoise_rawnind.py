@@ -72,6 +72,10 @@ def test_bayer_global_gain_counts_camera_rgb_not_green_twice():
     candidate.session = ArbitraryGainCameraOutput()
     output = candidate.prepare(image, metadata).denoised
     assert np.allclose(output, develop(image, metadata), atol=2e-5)
+    unity_metadata = {**metadata, 'white_balance': [1, 1, 1]}
+    anchor = float(develop(image, unity_metadata).mean(dtype=np.float64))
+    streamed = candidate.prepare(image, metadata, camera_anchor_mean=anchor).denoised
+    np.testing.assert_array_equal(streamed, output)
 
 
 def test_bayer_sensor_clipping_matches_upstream_domain(candidate):
