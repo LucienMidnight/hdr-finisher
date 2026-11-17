@@ -30,6 +30,7 @@ from hdr_finisher.adjustments import apply_hdr_output_highlight_compression, cli
 from hdr_finisher.color import acescg_to_linear_bt2020
 from hdr_finisher.color_context import RenderColorContext
 from hdr_finisher.hdr_ceiling import channel_nits
+from hdr_finisher.import_defaults import RAW_CALIBRATION_EV
 from hdr_finisher.highlight_edge_colour import reconstruct_edge_colour
 from hdr_finisher.models import AdjustmentState
 from tools.denoise_eval import metrics
@@ -44,6 +45,7 @@ OUTPUT = ROOT / 'output/denoise-v1/ai-highlights'
 REVIEW = OUTPUT / 'review'
 PHOTOS = ('IMG_0790.CR2', 'IMG_3129.CR2', 'IMG_0114.CR2', '2025_0730_1331_3.arw')
 METHODS = ('opposed_color_v1', 'edge_colour_v1')
+VIEW_CALIBRATION = np.float32(2 ** RAW_CALIBRATION_EV)
 
 
 def write_json(path, data):
@@ -65,12 +67,13 @@ def provenance():
                 provisional_limits=dict(seam_delta_e_mean=1., seam_delta_e_p99=3.,
                     texture_noise_step_ratio=[.8, 1.25], timing_noise_fraction=.1,
                     support_linear_epsilon=1e-6, shipping_approval=False),
-                viewing='Common linear-sRGB clamp + sRGB OETF; no auto exposure. HDR uses actual 203-nit/.18 host units.')
+                viewing=f'Fixed RAW {RAW_CALIBRATION_EV:g} EV; common linear-sRGB clamp + sRGB OETF; no auto exposure. HDR uses 203-nit/.18 host units.')
 
 
-def record_image(name, image, exposure=0):
+def record_image(name, image, exposure=0, *, calibrated=True):
     REVIEW.mkdir(parents=True, exist_ok=True)
-    pixels = np.rint(np.clip(metrics.display(image * np.float32(2 ** exposure)), 0, 1) * 255).astype(np.uint8)
+    factor = np.float32(2 ** exposure) * (VIEW_CALIBRATION if calibrated else 1.)
+    pixels = np.rint(np.clip(metrics.display(image * factor), 0, 1) * 255).astype(np.uint8)
     buffer = io.BytesIO()
     Image.fromarray(pixels).save(buffer, format='PNG')
     payload = buffer.getvalue()
@@ -130,7 +133,7 @@ def safety(image):
 
 
 def colour_delta(image, reference, exposure=0, hdr=False):
-    factor = np.float32(2 ** exposure)
+    factor = np.float32(2 ** exposure) * VIEW_CALIBRATION
     if not hdr:
         return metrics.colour_error(image * factor, reference * factor)
     first = np.clip(acescg_to_linear_bt2020(image * factor) * np.float32(203 / .18), 0, 1000)
@@ -182,7 +185,7 @@ def seam_measure(image, normal, neural, weight, clip_ratio):
             view['cross_boundary_excess_delta_e'] = summary(np.empty(0))
         highpass = []
         for source in (image, normal):
-            luma = metrics.display(source * np.float32(2 ** exposure)) @ metrics.LUMA
+            luma = metrics.display(source * np.float32(2 ** exposure) * VIEW_CALIBRATION) @ metrics.LUMA
             highpass.append(luma - cv2.GaussianBlur(luma, (0, 0), 1.))
         energy = []
         for selected in (band & (weight >= .5), band & (weight < .5)):
@@ -342,7 +345,8 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
                                 delta_e_minus3=summary(colour_delta(after, normal_crop, -3)))
                         for exposure in (0, -3):
                             images = [(title, record_image(f'{label}-{index}-{exposure}', pixels[64:448, 64:448],
-                                                          0 if title == 'Protection mask' else exposure))
+                                                          0 if title == 'Protection mask' else exposure,
+                                                          calibrated=title != 'Protection mask'))
                                       for index, (title, pixels) in enumerate(columns)]
                             rows.append(dict(name=f'{name}: {method}, Expand {expand:g}%, {role}, {exposure:+} EV',
                                              sensor_origin=observations[role]['sensor_origin'], images=images))
@@ -495,8 +499,8 @@ def synthetic():
         highlight = sensor_clip_ratio(sensor, info) >= 1
         normal = to_scene(camera_develop(repaired, info, np.eye(3, dtype=np.float32)), info)
         outside = protect_weight(sensor_clip_ratio(sensor, info), feather=32) == 0
-        normal_error = metrics.display(off) - metrics.display(clean_scene)
-        neural_error = metrics.display(base.denoised) - metrics.display(clean_scene)
+        normal_error = metrics.display(off * VIEW_CALIBRATION) - metrics.display(clean_scene * VIEW_CALIBRATION)
+        neural_error = metrics.display(base.denoised * VIEW_CALIBRATION) - metrics.display(clean_scene * VIEW_CALIBRATION)
         record['synthetic'] = dict(
             headroom_scale=scale,
             repaired_then_clipped_changed_fraction=float(np.mean(np.clip(repaired_normalized, 0, 1)
@@ -539,6 +543,7 @@ img{display:block;image-rendering:auto}section{margin-block:var(--panel-header-h
 </style></head><body><h1>AI Denoise with highlights — not shipping approval</h1>
 <p>Sensor-coordinate crops at 1:1. Scroll sideways. Normal = signed AHD with the selected reconstruction;
 AI only deliberately has no reconstruction. Region blend protects the reconstruction and feathers to AI.
+The existing fixed −0.8 EV RAW calibration is applied to every photographic view.
 Compare normal and −3 EV rows for a brightness ridge, halo, colour step or a change in texture/noise.
 White in the mask = normal, black = AI. RGB Edge comparator uses the whole frame but lacks sensor Opposed repair;
 do not treat it as the production Edge pipeline. No automatic exposure or white-balance matching.</p>

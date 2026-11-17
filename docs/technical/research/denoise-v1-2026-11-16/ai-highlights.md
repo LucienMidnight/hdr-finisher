@@ -30,7 +30,8 @@ its older recommendation to disable reconstruction with AI.
   test smooth 32px and 128px feathers. The support epsilon suppresses float
   roundoff; it is not a perceptual tolerance or a proposed app control.
 - Provisional screening: mean boundary ΔE2000 below 1 and p99 below 3 on
-  finished SDR views; compare normal and −3 EV. Inspect HDR ΔE ITP too.
+  finished SDR views with the existing fixed −0.8 EV RAW calibration;
+  compare normal and −3 EV. Inspect HDR ΔE ITP too.
   Relative inside/outside highpass ratios of 0.8–1.25 are a warning screen,
   not proof of equal noise: real-picture highpass includes texture. Actual
   adjacent-edge jumps are compared against the same normal-reference jumps,
