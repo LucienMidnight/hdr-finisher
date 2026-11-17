@@ -225,6 +225,11 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: Steve on the shadow clipping: "we should almost certainly
+  preserve the noisy shadow data as darktable does and let the user crush
+  shadows to taste in editing." Direction agreed in principle, pending the
+  signed-shadows measurements and a downstream-stage plan.
+
 - 2026-11-17: Steve: no camera-specific defect maps or calibration captures
   for now; improve general processing. He asked for a single-photo hot pixel
   filter in Pixel cleanup with a checkbox for edge cases (stars, sparks),
