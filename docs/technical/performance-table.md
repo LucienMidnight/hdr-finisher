@@ -23,6 +23,27 @@ spreads are inside the declared allowance. Receipt:
 comparison. .005 reduces clean changed readings by 95.2% and total correction
 by 81.3%; noisy changed readings and total correction are exactly unchanged.
 
+Focused real-app timings for this control (`bb8c9b1e` plus qualification drivers
+in this commit; same Mac/date/window, disposable profiles, existing 4GB setting,
+serial shared lock):
+
+| Action | Observed range | Conditions |
+| --- | --- | --- |
+| Two-photo Edge Grade import →first picture, both cleanup options enabled | CPU 10.491–25.811 s; GPU 7.866–23.915 s | DSC00264.ARW and IMG_3129.CR2; complete request/display path, threshold2.5; Library saved-GPU scene 5.965–11.539 s |
+| Same two-photo Edge check, both options off | CPU 8.004–19.544 s; GPU 5.487–18.066 s | Separate regression invocation, same sources; Library 3.607–6.246 s. These are validation observations, not alternating whole-wait performance pairs or a new budget |
+| Five-photo default Library GPU RAW thumbnail request | .678–1.023 s, GPU development .158–.475 s | Existing five-source corpus, Off; CPU comparison development 2.66–9.88 s; different routes, no speedup claim |
+| Plain 90-second Library viewport check | First picture .6 s; total runner 93.93 s; 9/9 visited photos pass | Frozen library-mixed-v1, visible plain Electron, both cleanup options off; unvisited photos are outside this default check |
+| Ten-step plain-Electron Single check | Open .382 s; steps .099–10.518 s (median1.597); sequence32.826 s, total runner94.20 s; pass | Same frozen fixture, visible window, default cold/source routes; descriptive validation timings, no new responsiveness gate |
+
+
+Receipts: `codebase/output/raw-speck-cleanup/{gpu-delivery,edge-colour-raw,library-gpu-raw}.log`
+and `codebase/output/edge-colour-raw/1794927668959/comparison.json` (enabled),
+plus `codebase/output/quick-library-check/speck-{plain,single}/report.json`.
+
+Fast qualification on this same Mac: Node 15.56 s (1,108 pass / one skip),
+Python 319.30 s (4,236 pass / 155 skips / one xpass), focused sensor/state 2.44 s
+(53 pass). These are validation durations, not application-response timings.
+
 ## November 17: signed RAW validation follow-up (minimum Mac)
 
 MacBook Neo / A18 Pro / 8 GB, November 17, unpackaged 1408x794, baseline

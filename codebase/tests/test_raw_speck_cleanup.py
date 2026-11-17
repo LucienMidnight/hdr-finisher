@@ -20,7 +20,7 @@ def test_soft_clamp_tames_both_signs_without_replacing_median():
 
 def test_supported_gaussian_star_and_large_features_are_preserved():
     y, x = np.indices((64, 64))
-    star = (.15 * np.exp(-((x - 32)**2 + (y - 32)**2) / (2 * 4.0**2))).astype(np.float32)
+    star = (.15 * np.exp(-((x - 32)**2 + (y - 32)**2) / (2 * 1.8**2))).astype(np.float32)
     np.testing.assert_array_equal(specks.filter_sensor(star, config()), star)
     source = np.zeros((64, 64), np.float32)
     source[30, 20:32:2] = .2

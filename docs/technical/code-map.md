@@ -3,19 +3,28 @@
 ## November 17: optional RAW Pixel cleanup
 
 `backend/hdr_finisher/raw_pixel_cleanup.py` owns the provisional per-phase noise
-fit, fixed bright-only detection and bounded DN repair. `raw_import.py` and
-`library_cpu_bands.py` run it before highlight evidence/AHD; `library_gpu_raw.py`
-passes the shared profile/thresholds to the optional normalization shader in
-`frontend/library-gpu-raw.js`. `session-import.js` / `app-boot.js` own the
-existing-token checkbox and re-development, while `sessions.py` /
-`edit-commands.js` restore RAW source pixels on Undo/Redo. The saved
-`RawImportSettings.pixel_cleanup` participates in the existing recipe identities
-and selective Library paste. `test_raw_pixel_cleanup.py`,
-`test_raw_pixel_cleanup_state.py` and
-`raw-pixel-cleanup.test.js` exercise behavior; `raw-pixel-cleanup.js` /
-`helpers/raw_pixel_cleanup_fixture.py` await real-GPU parity validation.
-`raw-pixel-cleanup-delivery.js` reuses the real-RAW Edge colour/Library/delivery
-driver with cleanup enabled and checks that the checkbox restores on opening.
+fit, unchanged bright-only hot-pixel detection and cleanup ordering.
+`raw_speck_cleanup.py` owns the optional signed soft noise-envelope clamp,
+fixed absolute floor, component/similarity protection and bounded original-context
+strips. `raw_import.py` / `library_cpu_bands.py` run both before highlight
+evidence/AHD. `library_gpu_raw.py` runs the same CPU sensor step when speck
+cleanup is enabled, marking `pixel_cleanup_applied` to suppress a second hot
+filter; the hot-only path still passes its profile to GPU normalization in
+`frontend/library-gpu-raw.js`. No new shader, cache or budget.
+
+`session-import.js` / `app-boot.js` own the existing-token checkboxes, release-only
+threshold and re-development. `sessions.py` / `edit-commands.js` restore RAW
+source pixels on Undo/Redo. `RawImportSettings.pixel_cleanup` participates in
+saved recipes, development identities and selective paste. `test_raw_pixel_cleanup.py`,
+`test_raw_speck_cleanup.py`, `test_raw_pixel_cleanup_state.py` and
+`raw-pixel-cleanup.test.js` check sensor behavior, exact Off development,
+shared GPU sensor transport, state and saving. `raw-pixel-cleanup.js` /
+`helpers/raw_pixel_cleanup_fixture.py` cover GPU parity and byte-identical
+old/explicit-Off recipes. `raw-pixel-cleanup-delivery.js` reuses the real-RAW
+Edge colour/Library/Proof/export check, restored controls, no development on
+slider input, one on release and Reset. `tools/measure_raw_specks.py` measures
+native added development cost and absolute-floor comparisons read-only under
+the shared machine lock. Outcomes are in Import/RAW and the performance table.
 
 ## November 17: signed Bayer RAW integration
 

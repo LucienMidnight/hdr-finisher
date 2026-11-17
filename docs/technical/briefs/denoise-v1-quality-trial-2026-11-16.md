@@ -250,7 +250,24 @@ Off result tests compare both raw readings and signed developed pixels against
 the preceding hot-only path, including omitted saved fields. New result tests
 cover signed outliers, supported Gaussian stars, near saturation, component
 size/similarity, seams, floor and shared GPU sensor transport. State tests cover
-saved fields, paste and re-development Undo/Redo. Focused app checks pending.
+saved fields, paste and re-development Undo/Redo. Implementation committed as
+`bb8c9b1e` (no push). Full Node: 1,108 pass / one skip; full Python: 4,236 pass /
+155 skips / one xpass, existing deprecation warning only. Final focused set:
+53 pass; supported star fixture subsequently tightened to FWHM4.24 sensor pixels,
+23 sensor tests pass. GPU parity expanded to 128 cases / 768 finished checks,
+including 32 exact old/explicit-Off pairs: pass. Cleanup delivery passes both
+real photos, CPU/GPU Grade and Library, identical encoded Proof/export and UI
+input/release/Reset. Five-photo Library GPU RAW and default Edge colour pass.
+The shared machine was occupied by serial research phases, so the final group
+waited for the same lock. Only the waiting interval was shortened in a disposable
+launcher; repository lock, lifecycle, window, guards and limits were unchanged.
+The final grouped run remains serial at 1408×794. Plain Library passes 9/9
+viewport photos (93.93 s including launch/shutdown), and all ten Single steps
+pass (94.20 s total). Both windows remain visible, with no reported errors; disposable renders and pytest scratch removed, JSON receipts
+and logs retained under `output/raw-speck-cleanup` / `output/edge-colour-raw`.
+Final output-size check: **13.2 GB**, below 100 GB; about 871 MiB of disposable
+real-photo renders removed. No read-only projects overwritten, no push.
+
 
 
 - **November 17, Library quick checks after merging validation (ad2475cd, MacBook, 1408x794).** With the Library window visible, the plain 90-second check passes 9/9 viewport photos (peak 3.17 GB, no memory violation) and `--single` passes. An earlier timeout came from a hidden window behind a full-screen app; an earlier DJI DNG failure came from this worktree missing the built `signed_ahd.dylib` (fixed by rerunning setup). One cold first run after the build peaked at 4.33 GB against the 4.0 GB ceiling and hit the system reserve with one DJI `Failed to fetch`; the immediate rerun passed. Not reproduced, not investigated further.

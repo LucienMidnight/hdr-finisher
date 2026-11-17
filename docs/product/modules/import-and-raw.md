@@ -41,10 +41,24 @@ absolute DN correction, retaining 100% on both measures. Floors .001/.002
 were also measured; the brief records the predeclared selection rule. These
 are sensor-change proxies, not proof that every changed reading was noise.
 The existing research's star/text warnings still apply. Development timings
-are in the performance table. App/GPU qualification is pending the focused
-checks recorded in the brief log; no release qualification is claimed.
+are in the performance table.
 
-### November 17: Steve's Pixel cleanup decision; GPU qualification open
+**Focused minimum-Mac qualification:** full Node 1,108 pass / one skip;
+full Python 4,236 pass / 155 skips / one xpass, with the existing deprecation
+warning. The final sensor/state set passes 53 tests, with the Gaussian-star
+fixture subsequently tightened to FWHM4.24 sensor pixels (23 sensor tests pass).
+The GPU driver passes 128 cases / 768 finished SDR/HDR comparisons at unchanged
+limits, including 32 byte-identical old/explicit-Off GPU recipe pairs. Real
+DSC00264/IMG_3129 checks pass with both options enabled: CPU/GPU Grade and saved
+Library GPU agreement, identical encoded Proof/export, restored controls,
+input-only slider movement, exactly one development on release and Reset.
+The separate five-photo Library GPU RAW and default Edge colour checks pass.
+Plain 90-second Library passes 9/9 visible photos; all ten Single steps pass.
+Both run in visible plain Electron at 1408×794 under the same shared lock.
+This is focused qualification, not a release check.
+
+
+### November 17: Steve's initial hot-pixel decision and implementation
 
 **Steve, November 17, 2026:** add a RAW development section named **Pixel
 cleanup**, initially containing only **Remove hot pixels**, off by default.
@@ -78,7 +92,7 @@ the recipe. Changing the checkbox re-develops the source while preserving the
 grade, and Undo/Redo re-develops the previous/next recipe. Library, Grade,
 Proof, export and batch consume those same developed pixels/recipes.
 
-**Not GPU-qualified or release-ready.** Fast result tests cover detection,
+**Initial implementation before the focused qualification above.** Fast result tests cover detection,
 light/clipping/border preservation, Off equality, strip seams, placement before
 clipping evidence/AHD, saved identity, copy/paste and undo failure rollback.
 Full Node: 1,103 passed / one skipped; full Python: 4,125 passed / 155 skipped /
@@ -86,7 +100,7 @@ one xpassed, no failures. The existing Starlette/httpx deprecation warning stays
 Final focused filter/state checks pass 20/4 tests after the fixture additions and
 test-file split. The CPU fixture generator also passes all 32 cases.
 
-The new `raw-pixel-cleanup.js` driver is registered but deliberately not run:
+At that initial point, `raw-pixel-cleanup.js` was registered but not run:
 production GPU normalization/Opposed/AHD/WB on four Bayer layouts, both states
 and four orientations, with finished SDR ΔE2000 / HDR ΔE ITP mean <1 and
 p99 <3 at −6/0/+6 EV. `raw-pixel-cleanup-delivery.js` adds the enabled saved
