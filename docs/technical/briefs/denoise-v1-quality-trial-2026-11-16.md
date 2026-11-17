@@ -225,6 +225,15 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: signed RAW development merged (`8e84c12a`): Bayer only (X-Trans
+  and unsupported LibRaw fallbacks stay unsigned), CPU native signed AHD helper
+  built by setup/CI/PyInstaller/Flatpak, GPU signed path, import projection
+  bypassed, incidental clamps removed, identities bumped. Fast checks pass
+  (Node 1,091; Python 4,063). +0.16 s / +0.37 s development at 18 / 42 MP.
+  No GPU/Electron checks yet: the builder estimates 90–150+ minutes; proposed
+  to Steve as one combined validation after the calibration fix and hot-pixel
+  checkbox are built. Calibration fix build started.
+
 - 2026-11-17: demosaic research merged (`demosaic-noise.md`): bilinear, an
   own directional MMSE-style demosaic and light pre-demosaic RAW smoothing do
   not remove the Canon pits (RAW smoothing makes them worse after Denoise).
