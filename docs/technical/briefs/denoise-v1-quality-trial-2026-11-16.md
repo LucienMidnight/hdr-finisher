@@ -225,6 +225,15 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: dark-noise research merged (`dark-noise-strength.md`): two
+  separate failures. (1) A calibration bug: clipped featureless bright blocks
+  are counted as "quiet" noise samples, so beside the flame Denoise believes
+  there is almost no noise; the repair (ignore uninformative blocks) cleans
+  that area (signed flame tail .146 → .076) at no extra cost. Put to Steve as
+  a decision. (2) The signed dark-shadow pits are rare AHD demosaic clumps that
+  Denoise keeps as detail; not fixed. Next experiment started: noise-robust
+  demosaic and light pre-demosaic noise reduction (`demosaic-noise.md`).
+
 - 2026-11-17: Steve approved the Pixel cleanup **Remove hot pixels**
   checkbox, off by default (single-photo filter from `raw-pixel-cleanup.md`,
   no slider, no cold/dead mode). Build queued after signed RAW development,
