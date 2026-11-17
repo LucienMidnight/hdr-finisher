@@ -409,7 +409,8 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
                               checksum_mean=blend_sum / off.size, crops=observations)
                 results.append(result)
                 write_json(OUTPUT / f'partial-{name}.json', dict(name=name, shape=list(sensor.shape),
-                           clocks=clocks, gain=gain, completed=False, results=results, review_rows=rows))
+                           provenance=provenance(), clocks=clocks, gain=gain,
+                           completed=False, results=results, review_rows=rows))
                 print(json.dumps({key: value for key, value in result.items() if key not in ('crops', 'reconstruction', 'edge')}), flush=True)
                 del weight
                 off, normal, neural = release_pages(off, normal, neural)
