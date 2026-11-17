@@ -225,6 +225,10 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: next experiment started: why current Denoise barely reduces
+  very dark, very noisy areas next to bright ones (lifted flame edge), and
+  the smallest classical fix (`dark-noise-strength.md`).
+
 - 2026-11-17: Steve ruled out camera defect maps/calibration captures for now.
   The requested map-free hot-pixel prototype changes three unconfirmed Canon
   sites, preserves two reviewed airborne sparks, but changes sharp real-light
