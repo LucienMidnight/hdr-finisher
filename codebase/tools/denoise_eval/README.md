@@ -27,6 +27,27 @@ recipe, ISO, noise fits, clipping fractions and RNG seeds are recorded.
 
 ## Inputs
 
+### Signed shadows (research only)
+
+`candidates/signed_shadows.py:alone` and `:with_denoise` keep below-black
+samples through unpacked signed AHD, continuing Lab's linear toe below zero.
+The latter runs shipping Denoise unchanged. `signed_ahd.c` builds offline with
+Clang into ignored output on macOS/Linux/Windows; strips bound scratch space.
+The existing upper transport limit stays unchanged. A clipped-control mode
+checks the interpolation against the existing LibRaw harness. Pedestal AHD
+is a separate diagnostic, not assumed translation-invariant.
+
+Run `python -m tools.denoise_eval.candidates.signed_measure <phase>
+--baseline-root <original-speck-cleanup-folder>` through the shared machine
+lock and research guard. Phases: `quick`, `heldout`, `full`, `seen`, `safety`,
+`native --photo IMG_0790.CR2` (or the approved 42 MP Sony), and
+`decision --decision-source <existing-decision-folder>`. The latter copies
+only existing small review files, then overwrites the signed columns locally.
+Frozen baseline scores retain a receipt hash; signed synthetic readouts are
+reconstructed from the identical seed and checked against the original
+clipped input. Public Bayer bundles already retain signed readouts. No
+production code, GPU implementation, input cache or camera profile is changed.
+
 ### Pixel cleanup: independently mapped sensor defects (research only)
 
 `candidates/pixel_cleanup.py:alone` and `:with_denoise` repair only
