@@ -168,10 +168,11 @@ def area_half(image):
     return cropped.reshape(height//2, 2, width//2, 2, 3).mean(axis=(1, 3))
 
 
-def evaluate(output, noisy, clean, masks, slanted=False):
+def evaluate(output, noisy, clean, masks, slanted=False, *, exposure_stops=0):
     valid = masks.get('valid')
     result = {'flat_residual_sdr': flat_residual(output, noisy, clean, masks['flat']),
-              'method_noise_edge_correlation': method_noise(output, noisy, valid)}
+              'method_noise_edge_correlation': method_noise(output, noisy, valid),
+              'shadow_tails_sdr_lift4': shadow_tails(output, noisy, clean, masks, source_exposure_stops=exposure_stops)}
     if clean is not None:
         for lane in ('sdr', 'hdr'):
             a, b = display(output, lane), display(clean, lane)
@@ -206,3 +207,41 @@ def evaluate(output, noisy, clean, masks, slanted=False):
             result['edge'] = dict(mtf50=a, clean_mtf50=b, mtf50_ratio=ratio(a,b) if a is not None and b is not None else None,
                                   halo_extra_fraction=halo(output, clean))
     return result
+
+
+def shadow_tails(output, noisy, clean=None, masks=None, lift=4, *, source_exposure_stops=0):
+    """Fixed +4-stop SDR shadow error tail, on candidate-independent support.
+
+    No truth: local-median contrast is only a proxy; real details can count.
+    The .05 display-luma threshold is descriptive, not a new acceptance limit.
+    """
+    masks = masks or {}
+    reference = clean if clean is not None else noisy
+    linear_y = (reference[..., :3] @ np.array([.2722287, .6740818, .0536895])) / 2**source_exposure_stops
+    support = masks.get('valid', np.ones(linear_y.shape, bool)).copy()
+    support &= masks.get('flat', np.ones(linear_y.shape, bool))
+    if not support.any():
+        return None
+    boundary = min(.02, float(np.percentile(linear_y[support], 50)))
+    support &= linear_y <= boundary
+    support = cv2.erode(support.astype('uint8'), np.ones((5, 5), 'uint8')).astype(bool)
+    if not support.any():
+        return None
+    actual = luma_chroma(display(output * np.float32(2**(lift-source_exposure_stops))))
+    if clean is not None:
+        error = actual - luma_chroma(display(clean * np.float32(2**(lift-source_exposure_stops))))
+    else:
+        center = np.stack([cv2.medianBlur(actual[..., c].astype('float32'), 5) for c in range(3)], -1)
+        error = actual-center
+    yerr = abs(error[..., 0])
+    binary = ((yerr > .05) & support).astype('uint8')
+    _, _, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    areas = stats[1:, cv2.CC_STAT_AREA]
+    islands = int(np.sum((areas >= 1) & (areas <= 25)))
+    return dict(reference='clean residual' if clean is not None else 'local-median contrast proxy; real detail may count',
+                total_lift_stops=lift, additional_lift_stops=lift-source_exposure_stops, support_pixels=int(support.sum()), shadow_linear_boundary=boundary,
+                luma_abs_p999=float(np.percentile(yerr[support], 99.9)),
+                luma_tail_pixels=int(binary.sum()), luma_tail_fraction=float(binary.sum()/support.sum()),
+                small_islands=islands, small_islands_per_megapixel=float(islands*1e6/support.sum()),
+                chroma_abs_p999=float(np.percentile(np.linalg.norm(error[..., 1:], axis=-1)[support], 99.9)),
+                display_luma_threshold=.05, island_area_max=25)

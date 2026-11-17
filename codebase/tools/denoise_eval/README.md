@@ -370,3 +370,49 @@ and Monte Carlo inverse-of-mean bias within max(1%, 0.0002 sensor units) for
 four constant signals with 100,000 draws each. GALOSH checks skip if unbuilt.
 `source-provenance.json` records source hashes; the vendored LICENSE/NOTICE
 and repository GPL text preserve the licence obligations.
+
+## Residual speck / chroma cleanup trial (November 17)
+
+`candidates.speck_cleanup:{median,guarded,factory}` are own GPL-3 CPU research
+adapters, never imported by the app. `factory` is the conservative **shadow**
+variant. It caches the current adaptive bands/noise-energy ratios and two
+correction maps. `median` tests an unprotected 5×5 outlier clamp; `guarded`
+protects bright points/lines and uses joint luma/chroma range weights at 16px
+reach; `shadow` additionally gates by measured signal/noise and preserves
+ACEScg luminance during chroma repair. Neither truth nor camera/ISO-specific
+choices enter the runtime. Existing controls resolve from fixed evidence;
+zero Amount, bypass and alpha remain exact. Correction strength saturates
+at the default; stronger sliders still increase the underlying adaptive stage.
+This limitation and the substantial reference-cache size require a shipping
+redesign and approval, not an implicit app-memory allowance.
+
+`shadow_tails_sdr_lift4` adds a descriptive tail metric: fixed total +4-stop SDR,
+flat pixels with original scene-linear Y ≤ min(.02, flat-median Y), eroded
+2px support, absolute luma residual p99.9 and pixels >.05, and connected islands
+of 1–25 pixels. Truth uses clean residual; no-truth uses 5×5 local-median
+contrast and **can count real detail**. Island count can decrease as bad pixels
+merge into larger blotches, so always read it alongside tail fraction/p99.9.
+No threshold here is an agreed quality tolerance. Existing contract limits
+and ±10% descriptive timing allowance remain unchanged.
+
+Run each separately under `tools/gpu-run-lock.py` and `candidates/guard.py`:
+
+```sh
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure quick
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure heldout
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure full
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure seen
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure native --photo IMG_0790.CR2
+.venv/bin/python -m tools.denoise_eval.candidates.speck_measure native --photo 2025_0730_1331_3.arw
+```
+
+On Windows use the venv's `Scripts/python.exe`. Outputs go to the fixed
+`output/denoise-v1/speck-cleanup/` folder. Pair `--pair-split heldout|seen`
+is also available in the general runner. Native runs read actual 18/42 MP
+RAWs from the approved corpus, use bounded AHD windows and one global model,
+prepare/spool/resolve each 768px cache core, retain JSON only and remove all
+scratch on exit. Stage times include research overhead and are **not UI or
+GPU timings**. Independent haloed preparation is tested (86px margin), rather
+than treating cached-frame slicing as evidence of preparation-grid equality.
+`decision_crops` adds `speck_cleanup.png` and a fixed +4-stop flame-edge row;
+its existing current/RawNIND/clean columns and fixed display rules are retained.

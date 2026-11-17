@@ -56,6 +56,7 @@ COLUMNS = (
     ('off', 'off'),
     ('denoise_v2', 'denoise_v2'),
     ('denoise_v2_app', PREFIX + 'denoise_v2_appdefault:factory'),
+    ('speck_cleanup', PREFIX + 'speck_cleanup:factory'),
     ('denoise_v2_tuned', PREFIX + 'denoise_v2_tuned:factory'),
     ('pilot_wiener_bayer_both', PREFIX + 'pilot_wiener:bayer_both'),
     ('rawnind_bayer', PREFIX + 'rawnind:bayer'),
@@ -73,6 +74,8 @@ PUBLIC = (
 NATIVE = (
     ('canon-flame-edge', 'Private RAW, ISO 3200, outer flame edge',
      'IMG_0790.CR2', (2840, 0), (232, 66), 0.),
+    ('canon-flame-edge-lifted', 'Private RAW, ISO 3200, outer flame edge +4 stops',
+     'IMG_0790.CR2', (2840, 0), (232, 66), 4.),
     ('canon-dark-shadow', 'Private RAW, ISO 3200, dark shadow',
      'IMG_0790.CR2', (4000, 2100), (176, 176), 4.),
     ('sony-sign-lettering', 'Private RAW, ISO 4000, lit sign lettering',
