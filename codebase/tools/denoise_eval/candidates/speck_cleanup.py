@@ -164,7 +164,9 @@ def resolve(cache, controls=DEFAULT):
     coarse = .5*(controls.size_multiplier(2)+controls.size_multiplier(4))
     strength = np.array([luma/dl, chroma/dc, chroma/dc], 'float32')
     correction = cache.corrections[0] * np.clip(strength*fine, 0, 1)
-    correction += cache.corrections[1] * np.clip(strength*coarse, 0, 1)
+    # The projected colour map has an opponent-Y component to cancel ACEScg
+    # luminance. Scale the complete map by Color Noise, preserving that projection.
+    correction += cache.corrections[1] * np.float32(np.clip(chroma/dc*coarse, 0, 1))
     result[..., :3] += correction @ OPPONENT
     return result
 

@@ -132,3 +132,18 @@ def test_shadow_gate_reads_surround_not_dark_ink_centre():
     # A real dark dot on bright material is not a shadow noise candidate.
     correction,_=cleanup(image,model(),np.full((80,80),1e-6,'float32'),'shadow')
     assert np.max(abs(correction[:,40,40])) < 1e-8
+
+
+
+def test_live_colour_repair_keeps_acescg_luma_when_luminance_control_changes():
+    from hdr_finisher.denoise_adaptive import ACESCG_LUMINANCE
+    from tools.denoise_eval.candidates.speck_cleanup import adaptive
+    image=np.random.default_rng(9).normal(.002,.0005,(96,96,3)).astype('float32')
+    cache=make_cache(image,model(),'shadow')
+    cache.corrections[0].fill(0)  # isolate the projected chroma map
+    assert np.max(abs(cache.corrections[1])) > 1e-6
+    for luma in (0.,.5,1.):
+        for chroma in (.1,.75,1.):
+            controls=replace(DEFAULT,luminance=luma,color_noise=chroma)
+            delta=resolve(cache,controls)-adaptive(cache,controls)
+            assert np.max(abs(delta @ ACESCG_LUMINANCE)) < 1e-9

@@ -4,7 +4,6 @@ for key in ('OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','VECLIB_M
     os.environ[key] = '1'
 
 import argparse
-from dataclasses import asdict
 import gc
 import json
 from pathlib import Path
@@ -18,7 +17,7 @@ import rawpy
 from hdr_finisher.denoise_adaptive import estimate_adaptive_model_from_windows, _Edges
 from tools.denoise_eval.candidates.speck_cleanup import make_cache, resolve, MARGIN
 from tools.denoise_eval.candidates.pilot_wiener_measure import windows
-from tools.denoise_eval.inputs import develop, metadata_from_raw, normalise_crop
+from tools.denoise_eval.inputs import develop, metadata_from_raw
 from tools.denoise_eval.run import main as quality_main, peak_rss
 from tools.lib.test_photos import photo_root
 
@@ -94,12 +93,39 @@ def native(photo):
         print(json.dumps(result,indent=2),flush=True)
 
 
+def controls():
+    from dataclasses import fields, replace
+    from tools.denoise_eval.inputs import synthetic_samples
+    from hdr_finisher.denoise_adaptive import estimate_adaptive_model
+    from tools.denoise_eval.candidates.speck_cleanup import DEFAULT
+    cv2.setNumThreads(1)
+    # Reuse the measured inventory; no re-calibration or new photographic input.
+    entries=json.loads((OUTPUT/'full/results-full.json').read_text())['inventory']
+    sample=next(x for x in synthetic_samples(entries,False) if x.name=='synthetic-fabric-iso6400')
+    cache=make_cache(sample.rgb,estimate_adaptive_model(sample.rgb,workers=1))
+    records=[]
+    for field in fields(DEFAULT):
+        for value in (0.,.5,1.):
+            live=replace(DEFAULT,**{field.name:value})
+            start=time.perf_counter(); output=resolve(cache,live); seconds=time.perf_counter()-start
+            records.append(dict(control=field.name,value=value,seconds=seconds,finite=bool(np.isfinite(output).all())))
+    result=dict(shape=list(sample.rgb.shape),records=records,
+                median_ms=float(np.median([r['seconds'] for r in records]))*1000,
+                p95_ms=float(np.percentile([r['seconds'] for r in records],95))*1000,
+                limitations='one CPU thread, cached 512 squared algebra only; no UI or GPU; zero Amount includes bypass fast path')
+    (OUTPUT/'controls.json').write_text(json.dumps(result,indent=2)+'\n')
+    print(json.dumps(result,indent=2))
+
+
 def main():
     parser=argparse.ArgumentParser()
-    parser.add_argument('command', choices=('quick','full','heldout','seen','native'))
+    parser.add_argument('command', choices=('quick','full','heldout','seen','native','controls'))
     parser.add_argument('--photo',default='IMG_0790.CR2')
     args=parser.parse_args()
     OUTPUT.mkdir(exist_ok=True,parents=True)
+    if args.command=='controls':
+        controls()
+        return
     if args.command=='native':
         native(args.photo)
         return

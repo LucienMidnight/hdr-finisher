@@ -112,7 +112,7 @@ def cases(entries):
         sample = Sample(case_id, rgb, mosaic, metadata, None, masks_for(rgb))
         yield case_id, title, sample, offset, lift, 'Private test image; not licensed for redistribution'
     for sample in synthetic_samples(entries, False):
-        if sample.name not in ('synthetic-fabric-iso25600', 'synthetic-fine-text-iso25600'):
+        if sample.name not in ('synthetic-fabric-iso25600', 'synthetic-fine-text-iso25600', 'synthetic-star-field-iso25600'):
             continue
         name = sample.metadata['generated']
         offset = (66, 112) if name == 'fine-text' else (112, 112)
@@ -244,8 +244,9 @@ def main():
         ))
         del sample
         gc.collect()
-    if len(manifest['cases']) != 10:
-        raise ValueError('Expected exactly ten decision cases')
+    expected = len(PUBLIC) + len(NATIVE) + 3  # fabric, fine text, star field
+    if len(manifest['cases']) != expected:
+        raise ValueError(f'Expected {expected} decision cases')
     manifest['peak_rss_bytes'] = peak_rss()
     manifest_path.write_text(json.dumps(manifest, indent=2, allow_nan=False) + '\n')
     total = sum(path.stat().st_size for path in OUTPUT.rglob('*') if path.is_file())
