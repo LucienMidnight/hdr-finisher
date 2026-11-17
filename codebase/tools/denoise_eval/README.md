@@ -27,6 +27,37 @@ recipe, ISO, noise fits, clipping fractions and RNG seeds are recorded.
 
 ## Inputs
 
+### Dark-noise calibration and strength (signed-primary research)
+
+`candidates/dark_noise.py:factory` jointly repairs censored brightness fits
+and clipped-flat block calibration, keeping shipping controls/reconstruction.
+`:calibration_only`, `:perband`, `:independent`, `:detail_zero` and `:strong`
+are explicit ablations; `:signed` wraps signed Bayer development for decision
+columns. No app import or shipping-default change. This helps the flame
+calibration failure but **does not solve signed dark-shadow pits**.
+
+From `codebase`, with an existing frozen receipt containing `inventory`:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label dark-noise-quick -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/dark-noise/quick-guard.json --seconds 600 -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.dark_noise_measure \
+  --inventory <frozen-results.json> --phase quick --signed --rawnind
+```
+
+Phases: `quick`, `full`, `heldout`, `seen`, `probe`, `native`, `native-probe`,
+`decision`, `review`. Omit `--signed` for secondary clipped quality/native
+runs. `probe` always compares both, with/without import gamut projection.
+`native --photo IMG_0790.CR2` (or `2025_0730_1331_3.arw`) streams the complete
+frame; `native-probe` reads its saved model receipts. `decision` overwrites
+small fixed crops and its manifest, including RawNIND Bayer alone; `review`
+only rebuilds the HTML table from those crops. `--rawnind` adds the existing
+checkpoint to quality phases and requires the documented ONNX setup. Signed
+quality re-develops both noisy and clean Bayer, retaining the frozen masks.
+Use `datasets.summarize` on the public-pair receipts for equal-scene scores.
+All output stays in `output/denoise-v1/dark-noise/`, never in Git.
+
 ### Signed shadows (research only)
 
 `candidates/signed_shadows.py:alone` and `:with_denoise` keep below-black

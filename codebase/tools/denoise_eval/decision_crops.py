@@ -62,6 +62,8 @@ COLUMNS = (
     ('hot_pixel_denoise', PREFIX + 'hot_pixel:with_denoise'),
     ('speck_cleanup', PREFIX + 'speck_cleanup:factory'),
     ('noise_model_corrected', PREFIX + 'noise_model_specks:factory'),
+    ('dark_noise', PREFIX + 'dark_noise:factory'),
+    ('signed_dark_noise', PREFIX + 'dark_noise:signed'),
     ('native_model_current', PREFIX + 'noise_model_specks:native_current'),
     ('native_model_corrected', PREFIX + 'noise_model_specks:native_corrected'),
     ('denoise_v2_tuned', PREFIX + 'denoise_v2_tuned:factory'),
