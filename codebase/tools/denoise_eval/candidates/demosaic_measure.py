@@ -146,17 +146,33 @@ def decisions(args, entries):
 
 
 def review(columns):
-    records = json.loads((OUTPUT / 'decision/manifest.json').read_text())['cases']
+    manifest_path = OUTPUT / 'decision/manifest.json'
+    manifest = json.loads(manifest_path.read_text())
+    records = manifest['cases']
     columns = [*columns, 'clean']
     headings = ''.join('<th>' + escape(name.replace('_', ' ')) + '</th>' for name in columns)
     rows = []
     for record in records:
         cells = []
+        known = {}
+        images = {}
         for name in columns:
-            exists = (OUTPUT / 'decision' / record['id'] / (name + '.png')).exists()
-            cells.append('<td><img width="288" height="288" loading="lazy" src="' + record['id'] + '/' + name +
-                         '.png"></td>' if exists else '<td>No clean reference</td>')
+            filename = record.get('images', {}).get(name, name + '.png')
+            path = OUTPUT / 'decision' / record['id'] / filename
+            exists = path.exists()
+            if exists:
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                if digest in known and filename != known[digest]:
+                    path.unlink()
+                else:
+                    known[digest] = filename
+                filename = known[digest]
+                images[name] = filename
+            cells.append('<td><img width="288" height="288" loading="lazy" src="' + record['id'] + '/' + filename +
+                         '"></td>' if exists else '<td>No clean reference</td>')
+        record['images'] = images
         rows.append('<tr><th>' + escape(record['title']) + '</th>' + ''.join(cells) + '</tr>')
+    write(manifest_path, manifest)
     tokens = os.path.relpath(ROOT / 'frontend/visual-tokens.css', OUTPUT / 'decision')
     html = ('<!doctype html><meta charset="utf-8"><title>Signed demosaic noise decision crops</title>'
             '<link rel="stylesheet" href="' + tokens + '"><style>'
@@ -196,7 +212,7 @@ def clean_quality(args, entries):
             camera = analytic @ np.linalg.inv(np.asarray(sample.metadata['camera_to_acescg'])).T / np.asarray(
                 sample.metadata['white_balance'])
             from tools.denoise_eval.candidates.signed_shadows import to_aces
-            analytic = to_aces(np.clip(camera, 0, 1), sample.metadata)
+            analytic = to_aces(np.clip(camera, 0, 1).astype('float32'), sample.metadata)
         for name, method, strength in [('ahd', 'ahd', 0), ('bilinear', 'bilinear', 0),
                                         ('lmmse', 'lmmse', 0), ('raw_ahd', 'ahd', .65),
                                         ('raw_lmmse', 'lmmse', .65)]:
@@ -207,6 +223,26 @@ def clean_quality(args, entries):
         records.append(row)
         print('clean', key, flush=True)
     write(OUTPUT / 'clean.json', dict(cases=records, **provenance(args.inventory)))
+
+
+def clean_crops(args, entries):
+    records = []
+    for sample in inputs.synthetic_samples(entries, False):
+        if sample.metadata['iso'] != 1600:
+            continue
+        generated = sample.metadata.get('generated')
+        if generated not in ('siemens-star', 'fine-text', 'fabric', 'slanted-edge'):
+            continue
+        folder = OUTPUT / 'clean-crops' / generated
+        folder.mkdir(parents=True, exist_ok=True)
+        left, top = (66, 112) if generated == 'fine-text' else (112, 112)
+        for name, method, strength in [('ahd', 'ahd', 0), ('bilinear', 'bilinear', 0),
+                                        ('lmmse', 'lmmse', 0), ('raw_ahd', 'ahd', .65),
+                                        ('raw_lmmse', 'lmmse', .65)]:
+            result = trial.develop(sample.clean_bayer, sample.metadata, method, strength)
+            decision_crops.save_png(decision_crops.pixels(result[top:top+288, left:left+288]), folder / (name+'.png'))
+        records.append(dict(name=generated, offset=[left, top], size=288))
+    write(OUTPUT / 'clean-crops/manifest.json', dict(cases=records, **provenance(args.inventory)))
 
 
 def safety(args, entries):
@@ -341,7 +377,7 @@ def probe(args, entries):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inventory', type=Path, required=True)
-    parser.add_argument('--phase', choices=('quick', 'full', 'heldout', 'seen', 'decision', 'clean', 'safety', 'native', 'probe'), required=True)
+    parser.add_argument('--phase', choices=('quick', 'full', 'heldout', 'seen', 'decision', 'review', 'clean', 'clean-crops', 'safety', 'native', 'probe'), required=True)
     parser.add_argument('--photo', choices=('IMG_0790.CR2', '2025_0730_1331_3.arw'), default='IMG_0790.CR2')
     parser.add_argument('--no-rawnind', action='store_true')
     parser.add_argument('--canon-only', action='store_true')
@@ -349,8 +385,12 @@ def main():
     entries = json.loads(args.inventory.read_text())['inventory']
     if args.phase == 'decision':
         decisions(args, entries)
+    elif args.phase == 'review':
+        review(adapters(not args.no_rawnind).keys())
     elif args.phase == 'clean':
         clean_quality(args, entries)
+    elif args.phase == 'clean-crops':
+        clean_crops(args, entries)
     elif args.phase == 'safety':
         safety(args, entries)
     elif args.phase == 'native':

@@ -48,7 +48,7 @@ PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label demosaic-quick
   --inventory <frozen-results.json> --phase quick
 ```
 
-Phases: `quick`, `decision`, `heldout`, `clean`, `full`, `seen`, `safety`,
+Phases: `quick`, `decision`, `review`, `heldout`, `clean`, `clean-crops`, `full`, `seen`, `safety`,
 `native --photo IMG_0790.CR2` (also `2025_0730_1331_3.arw`), and `probe`.
 All run serially through the lock and guard. Reuse the documented dataset/model
 stores through local links; no automatic downloads or photo copies. Optional
@@ -60,6 +60,10 @@ overwrites twelve 288px rows in `output/denoise-v1/demosaic-noise/decision/`
 (13 MB maximum). Registered `demosaic_*` columns also work with the general
 `decision_crops` command, whose original Off/current columns remain clipped;
 do not mistake that mixed page for the signed-primary comparison.
+`review` rebuilds only the retained signed-primary page, losslessly sharing
+byte-identical PNGs within a row to keep the existing 13 MB budget. Its manifest
+maps each displayed column to its retained image. `clean-crops` writes four
+separate no-noise subjects for inspecting demosaic artifacts without Denoise.
 
 `clean` separately scores clean demosaic against signed AHD and the analytic
 chart (camera-gamut clipping retained). `safety` lifts exposure **after sensor

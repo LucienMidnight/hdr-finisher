@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import json
 
 from tools.denoise_eval.candidates import demosaic_noise as trial
 from tools.denoise_eval.candidates.denoise_v2_appdefault import AppDefault
@@ -94,3 +95,21 @@ def test_uncalibrated_raw_smoothing_is_refused():
 def test_invalid_sensor_input_is_rejected(sensor, pattern):
     with pytest.raises(ValueError):
         trial.camera_linear(sensor, pattern)
+
+
+def test_review_deduplicates_identical_pngs_without_changing_pixels(tmp_path, monkeypatch):
+    from tools.denoise_eval.candidates import demosaic_measure
+    monkeypatch.setattr(demosaic_measure, 'OUTPUT', tmp_path)
+    folder = tmp_path / 'decision' / 'test-row'
+    folder.mkdir(parents=True)
+    pixels = np.zeros((288, 288, 3), np.uint8)
+    for name in ('current', 'current_fix'):
+        demosaic_measure.decision_crops.save_png(pixels, folder / (name+'.png'))
+    manifest = dict(cases=[dict(id='test-row', title='Signed test')])
+    demosaic_measure.write(tmp_path / 'decision/manifest.json', manifest)
+    demosaic_measure.review(['current', 'current_fix'])
+    record = json.loads((tmp_path / 'decision/manifest.json').read_text())['cases'][0]
+    assert record['images']['current'] == record['images']['current_fix']
+    assert len(list(folder.glob('*.png'))) == 1
+    demosaic_measure.review(['current', 'current_fix'])
+    assert len(list(folder.glob('*.png'))) == 1
