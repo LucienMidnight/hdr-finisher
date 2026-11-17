@@ -140,3 +140,22 @@ def test_mapped_scratch_reopens_without_losing_pixels(tmp_path):
     reopened, = release_pages(stored)
     np.testing.assert_array_equal(reopened, image)
     assert not reopened.flags.writeable
+
+
+def test_review_keeps_guarded_partial_without_duplicating_completed_photo(tmp_path, monkeypatch):
+    import json
+    from tools.denoise_eval.candidates import ai_highlights_measure as measure
+    monkeypatch.setattr(measure, 'OUTPUT', tmp_path)
+    monkeypatch.setattr(measure, 'REVIEW', tmp_path / 'review')
+    measure.REVIEW.mkdir()
+    measure.record_image('preview', np.full((8, 8, 3), .18, np.float32))
+    filename = next(measure.REVIEW.glob('*.png')).name
+    row = dict(name='Guarded Opposed only', images=[['Normal', filename]])
+    measure.write_json(tmp_path / 'real-finished.json', dict(name='finished', review_rows=[row]))
+    measure.write_json(tmp_path / 'partial-finished.json', dict(name='finished', review_rows=[row]))
+    measure.write_json(tmp_path / 'partial-guarded.json', dict(name='guarded', review_rows=[row]))
+    measure.write_json(tmp_path / 'synthetic-guard.json', dict(returncode=0))
+    measure.review()
+    manifest = json.loads((measure.REVIEW / 'manifest.json').read_text())
+    assert manifest['records'] == ['finished', 'guarded']
+    assert len(manifest['rows']) == 2

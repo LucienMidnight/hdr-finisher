@@ -326,6 +326,8 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
                                if np.any(transition) else center // 8)
                 selections = dict(highlight=window(center, sensor.shape),
                                   seam=window(np.array(seam_center) * 8, sensor.shape))
+                if name == 'IMG_3129':
+                    selections['sun-sky'] = window((2144, 3264), sensor.shape)
                 observations = {}
                 started = time.perf_counter()
                 for role, selection in selections.items():
@@ -337,7 +339,7 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
                     observations[role] = seam_measure(combined, normal_crop, neural_crop, weight_crop, ratio[selection])
                     observations[role]['sensor_origin'] = [selection[0].start, selection[1].start]
                     displayed = (method == 'opposed_color_v1' or expand == 1.)
-                    if feather == 32 and displayed and (role == 'seam' or name == 'IMG_0790'):
+                    if feather == 32 and displayed and (role in ('seam', 'sun-sky') or name == 'IMG_0790'):
                         label = f'{name}-{method}-{expand:g}-{role}'
                         mask_rgb = np.repeat(weight_crop[..., None], 3, axis=-1)
                         columns = [('Normal reconstruction', normal_crop), ('AI only (no reconstruction)', neural_crop),
@@ -532,8 +534,11 @@ def synthetic():
 
 
 def review():
-    records = [json.loads(path.read_text()) for path in sorted(OUTPUT.glob('real-*.json'))]
-    records += [json.loads(path.read_text()) for path in sorted(OUTPUT.glob('synthetic-*.json'))]
+    paths = sorted(OUTPUT.glob('real-*.json')) + sorted(OUTPUT.glob('synthetic-*.json'))
+    records = [record for path in paths if 'review_rows' in (record := json.loads(path.read_text()))]
+    completed = {record['name'] for record in records}
+    records += [record for path in sorted(OUTPUT.glob('partial-*.json'))
+                if (record := json.loads(path.read_text()))['name'] not in completed]
     rows = [row for record in records for row in record.get('review_rows', [])]
     sections = []
     for row in rows:
@@ -555,6 +560,7 @@ Compare normal and −3 EV rows for a brightness ridge, halo, colour step or a c
 White in the mask = normal, black = AI. RGB Edge comparator uses the whole frame but lacks sensor Opposed repair;
 do not treat it as the production Edge pipeline. No automatic exposure or white-balance matching.</p>
 <p>Both feather widths and Expand 0/1/3% are scored in the JSON; displayed primary is 32px, Expand 0/1%.
+The 42 MP Sony run stopped at the memory guard after Opposed; its Edge result is unmeasured.
 Saturation is not a guarantee that all channels are noiseless. Synthetic captures have clean AHD truth;
 real-photo highpass measurements mix texture and noise. Visual sign-off is Steve's, not a metric pass.</p>
 ''' + ''.join(sections) + '</body></html>'
