@@ -650,6 +650,10 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   clamping, similarity/size and threshold sweeps, uniform-grain alternatives,
   fixed speck zooms, small-star/clean-detail failures, native CPU cost and
   bounded GPU-kernel agreement; research only, no automatic default approved.
+  `chroma-cleanup.md` records green-CFA matching, colour-difference medians
+  and luminance-preserving green–magenta repairs on approved 2.5σ taming,
+  fixed gallery/clean-colour risks, held-out/seen fidelity, native CPU cost
+  and the limits of colour-only cleanup; research only, no app changes.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.

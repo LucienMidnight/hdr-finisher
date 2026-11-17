@@ -1,3 +1,55 @@
+## November 17: green–magenta colour cleanup (research only)
+
+MacBook Neo / Apple A18 Pro / 8 GB / one CPU-native thread, November 17, 2026;
+adapter `cc48b535`, exact source/inventory hashes in each receipt. Shared machine
+lock, no overlapping heavy job, unchanged 2.5 GB research tree-RSS guard.
+Complete RAW open/normalization/signed research AHD, global corrected model,
+default Denoise and colour cleanup; every native pixel consumed. 768px cores,
+64px sensor-development and 66px Denoise context; larger context than earlier
+32px readers. Single observations, inherited ±10% descriptive allowance.
+**These are CPU research-pipeline costs, not action-to-screen or GPU timings.**
+No app code/default/budget changes and no shipping recommendation.
+
+| Same-Mac action | Canon 18.02 MP, s | Sony 42.39 MP, s |
+| --- | ---: | ---: |
+| Signed current Denoise, no taming | 9.56 | 19.11 |
+| Approved 2.5σ taming | 12.01 | 25.37 |
+| Taming + green balancing | 12.06 | 25.48 |
+| Taming + camera-G median1 | 14.03 | 27.15 |
+| Taming + camera-G median3 | 13.57 | 28.40 |
+| Taming + median1 preserving Y | 12.99 | 27.65 |
+| Taming + targeted GM2/area25 | 16.21 | 33.38 |
+| Taming + green + targeted GM | 15.41 | 33.13 |
+| Taming + GM + orange–blue | 18.73 | 40.20 |
+| Taming + local-MAD post5×5 | 13.77 | 30.67 |
+| Taming + guarded pre9×9 | 89.80 | 193.82 |
+| Taming + guarded post9×9 | 47.71 | 115.04 |
+| Taming + unguarded post9×9 | 25.01 | 61.39 |
+
+Retained measurement guards total 37.8 minutes excluding lock waits, withdrawn
+preliminaries and standard suites; maximum sampled tree RSS 2.244 GB. Strong
+post9×9 adds 13.0/36.0 seconds over taming and suppresses 61% of counted GM
+islands, but removes about 59% of real simulated-star GM signal. Protected
+pre9×9 has little extra cleanup for its much larger cost. No new GPU route or
+speed claim is justified; an accepted operation would need bounded CPU work
+and the existing GPU route, with end-to-end qualification.
+
+Evidence: `codebase/output/denoise-v1/chroma-cleanup/` native/phase JSON and
+logs; [research result](research/denoise-v1-2026-11-16/chroma-cleanup.md).
+
+Standard validation, same Mac: Node TAP body **14.88 s** (1,107 pass / one
+skip), Python pytest body **260.40 s** (4,227 pass / 155 skips / one xpass).
+Python guard including startup/shutdown 262.16s / 2.124 GB.
+Corrected normal-system-temp invocations; the initial output-tree/temp-name
+fixtures produced false failures, with no test/app changes. Standard Library
+90-second observation takes **93.86s** including launch/shutdown,
+no picture errors, 9/33 pictured in viewport scope, five valid stored pictures;
+first-picture observation .4s, longest gap 7s. This is not a full-collection or
+new responsiveness pass. The initial attempt mistakenly used the research
+2.5 GB CPU supervisor and stopped after 16.56s; standard app limits are unchanged.
+No broad GPU sweep, installer or push. Final output **13.3 GB**; review 16.215 MB.
+
+
 ## November 17: signed RAW validation follow-up (minimum Mac)
 
 MacBook Neo / A18 Pro / 8 GB, November 17, unpackaged 1408x794, baseline

@@ -135,6 +135,11 @@ Public RAW/pair stores are read-only local links, never downloaded by the runner
 `clean` adds noiseless coloured lights/text/weave/petals and first eligible
 texture reference from Pen-pile, Vaxt and Blombukett, retaining its public valid
 mask; ISO-scaled clean noise fits are provisional, not camera calibration.
+The first Vaxt texture crop is bark/fungi, not leaves. After `clean`, run
+`python -m tools.denoise_eval.candidates.chroma_foliage --inventory <receipt>`
+under the same lock/guard to append the already-frozen `heldout-foliage`
+green-leaf reference (pair `TEST_Vaxt-i-trad-0aa84691-3`). It selects by subject,
+not candidate scores, and records separate source provenance.
 
 The extra `post*_a*` placement ablation retains 10% propagated sensor sigma;
 `local*_a*` instead uses the final residual's local MAD with a 1e−7 numerical
