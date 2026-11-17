@@ -225,6 +225,13 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: Pixel cleanup "Remove hot pixels" merged (`9009cb9c`): off by
+  default, CPU and GPU, saved per photo, collapsed section before Highlight
+  Reconstruction; +0.32 s / +0.60 s CPU at 18 / 42 MP. Node 1,103 / Python
+  4,125 pass. All three builds now await one combined GPU validation
+  (proposed to Steve: about 25 targeted drivers, roughly 2 hours; the
+  release plan's 119-driver selection is not needed for this branch step).
+
 - 2026-11-17: Steve's further ideas, added to the early-outlier research:
   (1) the outlier threshold (×2/×3/×4 of local noise) as a user "uniformity"
   control before demosaicing; (2) aim for uniform fine luminance grain with
