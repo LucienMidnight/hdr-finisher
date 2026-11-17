@@ -225,6 +225,14 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: demosaic research merged (`demosaic-noise.md`): bilinear, an
+  own directional MMSE-style demosaic and light pre-demosaic RAW smoothing do
+  not remove the Canon pits (RAW smoothing makes them worse after Denoise).
+  Side finding: the MMSE-style trial gains +0.58 dB on held-out pairs
+  (35.48 vs 34.91, above RawNIND's 35.07) but shows clean fine-detail
+  artefacts. Faithful upstream LMMSE was not tested. Next direction put to
+  Steve: faithful LMMSE port vs AI + highlight reconstruction research.
+
 - 2026-11-17: Steve approved the Denoise noise-measurement fix (ignore
   clipped, featureless calibration blocks; `dark-noise-strength.md`), CPU and
   GPU measurement together. Build queued after signed RAW development, since
