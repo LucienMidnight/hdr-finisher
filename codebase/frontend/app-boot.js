@@ -620,6 +620,12 @@ function bindEvents() {
     lensSearchTimer = window.setTimeout(loadLensProfiles, 250);
   });
   els.applyRawSettings?.addEventListener("click", applyRawImportSettings);
+  els.rawRemoveHotPixels?.addEventListener("change", applyRawImportSettings);
+  els.rawPixelCleanupReset?.addEventListener("click", async () => {
+    if (!els.rawRemoveHotPixels?.checked) return;
+    els.rawRemoveHotPixels.checked = false;
+    await applyRawImportSettings();
+  });
   els.rawHighlightBypass?.addEventListener("click", async () => {
     const enabled = els.rawHighlightBypass.getAttribute("aria-pressed") !== "true";
     renderRawHighlightState({ enabled });

@@ -79,6 +79,77 @@
     if (li < 3u) { let n = atomicLoad(&wgCount[li]); if (n > 0u) { atomicAdd(&counts[li], n); } }
   }`;
 
+  const HOT_PIXEL = /* wgsl */ `
+  struct Cleanup {
+    shot: vec4<f32>, read: vec4<f32>, steps: vec4<f32>, limits: vec4<f32>,
+  };
+  @group(0) @binding(7) var<uniform> cleanup: Cleanup;
+  fn sensor_sample(row: i32, column: i32) -> f32 {
+    let index = u32(row * W() + column);
+    let raw = f32((mosaic[index >> 1u] >> ((index & 1u) * 16u)) & 0xffffu);
+    let channel = RAWCH(row, column);
+    return (raw - p.raw_black[channel]) * (1.0 / p.raw_range[channel]);
+  }
+  const offsets = array<vec2<i32>, 8>(
+    vec2(-2,-2), vec2(-2,0), vec2(-2,2), vec2(0,-2),
+    vec2(0,2), vec2(2,-2), vec2(2,0), vec2(2,2));
+  const directions = array<vec2<i32>, 4>(vec2(0,2),vec2(2,0),vec2(2,2),vec2(2,-2));
+  fn clean_sensor(row: i32, column: i32, original: f32) -> f32 {
+    if row < 4 || column < 4 || row >= H()-4 || column >= W()-4 { return original; }
+    let phase = u32((row & 1) * 2 + (column & 1));
+    let centre = sensor_sample(row, column);
+    var largest = -3.402823e38;
+    for (var neighbour=0u; neighbour<8u; neighbour++) {
+      largest = max(largest, sensor_sample(row+offsets[neighbour].x,column+offsets[neighbour].y));
+    }
+    let variance = cleanup.shot[phase]*max(centre,0.) + cleanup.read[phase] + cleanup.steps[phase]*cleanup.steps[phase]/12.;
+    if centre-largest <= max(cleanup.limits.x*sqrt(variance),cleanup.limits.y) { return original; }
+    for (var delta_row=-2; delta_row<=2; delta_row++) {
+      for (var delta_column=-2; delta_column<=2; delta_column++) {
+        if sensor_sample(row+delta_row,column+delta_column) >= cleanup.limits.w { return original; }
+      }
+    }
+    for (var delta_row=-1; delta_row<=1; delta_row++) {
+      for (var delta_column=-1; delta_column<=1; delta_column++) {
+        let support_row = row+delta_row;
+        let support_column = column+delta_column;
+        let support_phase = u32((support_row & 1)*2+(support_column & 1));
+        if FC(support_row,support_column) == FC(row,column) { continue; }
+        var values: array<f32,8>;
+        for (var neighbour=0u; neighbour<8u; neighbour++) {
+          values[neighbour] = sensor_sample(support_row+offsets[neighbour].x,support_column+offsets[neighbour].y);
+        }
+        for (var first=0u; first<8u; first++) {
+          for (var second=first+1u; second<8u; second++) {
+            if values[second] < values[first] {
+              let saved = values[first]; values[first] = values[second]; values[second] = saved;
+            }
+          }
+        }
+        let background = .5*(values[3]+values[4]);
+        let support = sensor_sample(support_row,support_column);
+        let sigma = sqrt(cleanup.shot[support_phase]*max(max(support,background),0.) + cleanup.read[support_phase] + cleanup.steps[support_phase]*cleanup.steps[support_phase]/12.);
+        if support-background > max(cleanup.limits.z*sigma,2.*cleanup.steps[support_phase]) { return original; }
+      }
+    }
+    var smallest_difference = 3.402823e38;
+    var replacement = centre;
+    for (var direction=0u; direction<4u; direction++) {
+      let offset = directions[direction];
+      let first = sensor_sample(row-offset.x,column-offset.y);
+      let second = sensor_sample(row+offset.x,column+offset.y);
+      if abs(first-second) < smallest_difference {
+        smallest_difference = abs(first-second); replacement = .5*(first+second);
+      }
+    }
+    let channel = RAWCH(row,column);
+    return clamp(round(replacement*p.raw_range[channel]+p.raw_black[channel]),0.,65535.);
+  }
+  `;
+  const NORMALIZE_CLEAN = NORMALIZE.replace("var<workgroup> wgCount", HOT_PIXEL + "var<workgroup> wgCount")
+    .replace("let raw = f32((mosaic[i >> 1u] >> ((i & 1u) * 16u)) & 0xffffu);",
+      "let raw = clean_sensor(r, c, f32((mosaic[i >> 1u] >> ((i & 1u) * 16u)) & 0xffffu));");
+
   const DILATE = COMMON + /* wgsl */ `
   @group(0) @binding(1) var<storage, read> coarse: array<u32>;
   @group(0) @binding(2) var<storage, read_write> dilated: array<u32>;
@@ -518,8 +589,8 @@
 
   async function preparePipelines(context, beforeNext = async () => {}, names = null) {
     const {device,pipelines,compilation}=context;
-    const codes={ NORMALIZE, DILATE, RESIDUAL, REPAIR, GREEN, HOMOGENEITY, COMBINE, EDGE_FINISH, REMAP, REDUCE };
-    for(const name of names || Object.keys(codes)) {
+    const codes={ NORMALIZE, NORMALIZE_CLEAN, DILATE, RESIDUAL, REPAIR, GREEN, HOMOGENEITY, COMBINE, EDGE_FINISH, REMAP, REDUCE };
+    for(const name of names || Object.keys(codes).filter(name => name !== "NORMALIZE_CLEAN")) {
       await beforeNext();
       if(pipelines[name])continue;
       if(!compilation.has(name))compilation.set(name,device.createComputePipelineAsync({layout:"auto",compute:{module:device.createShaderModule({code:codes[name]}),entryPoint:"main"}})
@@ -689,6 +760,8 @@
   async function developRaw({ mosaic, meta, lensData = null, edges = Object.keys(meta.reduced_sizes_sensor || {}).map(Number), syncStages = false, beforeSubmit = null, memoryBudget = Infinity, signal = null, context = null, keepNative = false }) {
     const sharedContext = context || await gpu();
     await preparePipelines(sharedContext);
+    const cleanup = meta.raw_import_settings?.pixel_cleanup?.remove_hot_pixels && meta.pixel_cleanup;
+    if (cleanup) await preparePipelines(sharedContext, undefined, ["NORMALIZE_CLEAN"]);
     const { device, pipelines, errors } = sharedContext;
     const errorStart = errors.length;
     const w = meta.width, h = meta.height, n = w * h;
@@ -731,6 +804,16 @@
       own(uniform);
       device.queue.writeBuffer(uniform, 0, params);
 
+      let cleanupUniform = null;
+      if (cleanup) {
+        const values = new Float32Array([
+          ...cleanup.noise.map(phase => phase.a), ...cleanup.noise.map(phase => phase.b),
+          ...cleanup.spans.map(span => Math.fround(1 / span)), ...cleanup.thresholds,
+        ]);
+        cleanupUniform = own(device.createBuffer({size: values.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST}));
+        device.queue.writeBuffer(cleanupUniform, 0, values);
+      }
+
       const mosaicBuf = make(n * 2);
       const whole = Math.floor(mosaic.byteLength / 4) * 4;
       await uploadBuffer(device,mosaicBuf,mosaic,whole,signal);
@@ -766,7 +849,8 @@
         await staging.mapAsync(GPUMapMode.READ); const copy = staging.getMappedRange().slice(0); release(staging); return copy;
       };
 
-      await run("NORMALIZE", [uniform, mosaicBuf, norm, ints, clip, coarse, counts], wgX, wgY);
+      await run(cleanup ? "NORMALIZE_CLEAN" : "NORMALIZE", [uniform, mosaicBuf, norm, ints, clip, coarse, counts, cleanupUniform], wgX, wgY);
+      if (cleanupUniform) { await device.queue.onSubmittedWorkDone(); release(cleanupUniform); }
       const clipped = new Uint32Array(await read(counts, 16)).slice(0, 3);
       let chroma = [0, 0, 0];
       if (clipped.some(v => v > 0)) {

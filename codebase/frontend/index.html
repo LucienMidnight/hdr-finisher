@@ -651,6 +651,16 @@
         </div>
       </section>
 
+      <section class="control-group collapsed module-unavailable" id="raw-pixel-cleanup-group" data-group="raw-pixel-cleanup" aria-disabled="true">
+        <div class="control-group-header">
+          <button class="group-toggle" type="button" aria-expanded="false" disabled>Pixel cleanup <span class="module-modified-marker" aria-hidden="true"></span></button>
+          <button id="raw-pixel-cleanup-reset" class="group-reset text-button" type="button" disabled>Reset</button>
+        </div>
+        <div class="control-group-body">
+          <label class="checkbox-row" data-tooltip="Fixes single stuck bright pixels from the sensor. Leave off unless you see them: it can occasionally remove a real tiny light, such as a star or a glint."><input id="raw-remove-hot-pixels" type="checkbox" disabled> Remove hot pixels</label>
+        </div>
+      </section>
+
       <section class="control-group raw-highlight-group collapsed module-unavailable" id="raw-highlight-group" data-group="raw-highlights" aria-disabled="true">
         <div class="control-group-header">
           <button class="group-toggle" type="button" aria-expanded="false" data-tooltip="Repairs clipped RAW color channels before AHD demosaic. Changing this module re-develops the source." disabled>Highlight Reconstruction <span class="module-modified-marker" aria-hidden="true"></span></button>

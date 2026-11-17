@@ -71,6 +71,25 @@ The application also calculates:
 
 The source is then normalized into the internal working representation when the interpretation is sufficiently known.
 
+## Pixel cleanup (Bayer RAW only)
+
+In the source/RAW controls, open **Pixel cleanup** and turn on **Remove hot
+pixels** only if you can see isolated stuck bright sensor pixels. It starts
+off. There is no strength slider; **Reset** turns it off again.
+
+The filter works before the RAW is demosaiced or highlights are reconstructed.
+It protects nearby signs of real light and clipped areas, but can occasionally
+remove a real tiny light, such as a star or a glint. Check those details at
+100% and leave it off when it is not needed. It does not fix cold/dead pixels
+or use a camera defect map. X-Trans, linear DNG and finished images show the
+section disabled with a short explanation.
+
+Changing it re-develops the RAW, so allow the photo to refresh. The setting is
+saved with this photo and applies to Library, Grade, Proof and exported files,
+including batch export. **Undo** and **Redo** restore the previous/next setting
+and re-develop the source. Selective grade copy/paste includes it under **RAW
+development**; saved recipes that contain RAW settings keep it too.
+
 ## Classifications
 
 | State | Meaning | Action |

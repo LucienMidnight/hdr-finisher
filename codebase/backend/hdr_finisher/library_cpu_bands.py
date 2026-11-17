@@ -77,6 +77,8 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first, 
             black = metadata.raw_black_level[cfa]
             # Highlight reconstruction runs once, so every band shares its global
             # opposed-colour estimate and identical repaired sensor samples.
+            from .raw_pixel_cleanup import apply_raw
+            apply_raw(source, metadata, settings, cancelled=cancelled)
             raw._apply_raw_highlight_reconstruction(source,metadata,settings,cancelled=cancelled)
             mosaic = source.raw_image_visible
             height,width = mosaic.shape

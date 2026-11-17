@@ -410,6 +410,18 @@ class SessionStore:
             developed.undo_history = current.undo_history
             developed.redo_history = current.redo_history
             developed.history_bytes = current.history_bytes
+            if developed.raw_import_settings.pixel_cleanup != current.raw_import_settings.pixel_cleanup:
+                forward = EditCommand(expected_revision=current.edit_revision, command_type="set_raw_import_settings",
+                    payload={"settings": developed.raw_import_settings.model_dump(mode="json")})
+                inverse = EditCommand(expected_revision=current.edit_revision, command_type="set_raw_import_settings",
+                    payload={"settings": current.raw_import_settings.model_dump(mode="json")})
+                entry = HistoryEntry(forward=forward, inverse=inverse,
+                    byte_size=len(json.dumps([forward.model_dump(mode="json"), inverse.model_dump(mode="json")]).encode()))
+                developed.undo_history = [*current.undo_history, entry]
+                developed.redo_history = []
+                developed.history_bytes += entry.byte_size
+                while len(developed.undo_history) > 100 or developed.history_bytes > 64 * 1024 * 1024:
+                    developed.history_bytes -= developed.undo_history.pop(0).byte_size
             developed.preview = current.preview
             from .retouch_source import restore_repairs
             restore_repairs(developed, _source_mip_identity(developed))
@@ -499,6 +511,15 @@ class SessionStore:
 
     def apply_edit_commands(self, session_id: str, commands: list[EditCommand]) -> EditStateResponse:
         """Prepare repair pixels before committing document/history atomically."""
+        with self._lock:
+            session = self.get(session_id)
+            history = session.undo_history if commands and commands[0].command_type == "undo" else session.redo_history
+            raw_history = bool(commands and commands[0].command_type in {"undo", "redo"} and history
+                and history[-1].forward.command_type == "set_raw_import_settings")
+        if raw_history:
+            if len(commands) != 1:
+                raise EditCommandError("RAW development history must be applied one step at a time.")
+            return self._commit_edit_commands(session_id, commands)
         if not any(c.command_type in {"set_repairs", "undo", "redo", "replace_document"} for c in commands):
             return self._commit_edit_commands(session_id, commands)
         from copy import copy
@@ -546,6 +567,7 @@ class SessionStore:
     def _commit_edit_commands(self, session_id: str, commands: list[EditCommand], *, repaired_pixels=None) -> EditStateResponse:
         with self._lock:
             session = self.get(session_id)
+            previous_image = session.image
             original = (
                 session.adjustments.model_copy(deep=True),
                 [item.model_copy(deep=True) for item in session.local_adjustments],
@@ -562,6 +584,13 @@ class SessionStore:
                 list(session.redo_history),
                 session.history_bytes,
                 session.image,
+                session.raw_import_settings,
+                session.source,
+                session.metadata,
+                session.analysis,
+                session.source_luminance,
+                session.retouch_original,
+                session.sdr_reference_image,
             )
             try:
                 for command in commands:
@@ -589,6 +618,13 @@ class SessionStore:
                     session.redo_history,
                     session.history_bytes,
                     session.image,
+                    session.raw_import_settings,
+                    session.source,
+                    session.metadata,
+                    session.analysis,
+                    session.source_luminance,
+                    session.retouch_original,
+                    session.sdr_reference_image,
                 ) = original
                 if session.render_cache.image is not session.image:
                     session.render_cache.replace_source(session.image, session.sdr_reference_image,
@@ -599,6 +635,8 @@ class SessionStore:
                 raise
             if getattr(self, "grade_recovery_observer", None):
                 self.grade_recovery_observer(session)
+            if session.image is not previous_image:
+                self._publish_retained_session_bytes()
             return session.edit_state()
 
     def apply_local_sdr_match_action(self, session_id: str, *, expected_revision: int, target_id: str):
@@ -815,6 +853,37 @@ class SessionStore:
         current_revision = session.edit_revision
         command_type = command.command_type
         payload = command.payload
+
+        if command_type == "set_raw_import_settings":
+            previous = session.raw_import_settings
+            settings = RawImportSettings.model_validate(payload.get("settings"))
+            image, source, metadata, analysis, reference = load_image(session.source_path,
+                overrides=session.interpretation_override.model_dump(mode="json"), raw_import_settings=settings,
+                retained_session_bytes=self._retained_session_bytes(), hdr_reference_white_nits=session.hdr_reference_white_nits)
+            from copy import copy
+            from .retouch_source import build_repaired_source
+            candidate = copy(session)
+            candidate.image = image
+            candidate.retouch_original = image
+            candidate.retouch_worker = None
+            candidate.raw_import_settings = settings
+            try:
+                repaired = build_repaired_source(candidate, session.repairs)
+            finally:
+                if candidate.retouch_worker is not None:
+                    candidate.retouch_worker.close()
+            source.filename = session.source.filename
+            session.image, session.retouch_original = repaired, image
+            session.source, session.metadata, session.analysis = source, metadata, analysis
+            session.sdr_reference_image = reference
+            session.raw_import_settings = settings
+            session.source_luminance = describe_source_luminance(source, metadata, has_authored_sdr=reference is not None)
+            session.render_cache.replace_source(repaired, reference, identity=_source_mip_identity(session),
+                sdr_identity=_source_mip_identity(session, lane="sdr") if reference is not None else None)
+            if session.adjustments.hdr.highlight_compression_peak_measurement != "manual":
+                session._sync_highlight_source_peaks()
+            return EditCommand(expected_revision=current_revision, command_type=command_type,
+                payload={"settings": previous.model_dump(mode="json")})
 
         if command_type == "replace_document":
             previous = session.edit_document()

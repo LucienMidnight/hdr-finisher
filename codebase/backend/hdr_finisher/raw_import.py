@@ -123,6 +123,7 @@ class _RawDecodeResult:
     legacy_fallback_reason: str | None = None
     bridge_transport_diagnostics: dict[str, list[int]] | None = None
     highlight_reconstruction_diagnostics: dict[str, Any] | None = None
+    pixel_cleanup_diagnostics: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -206,6 +207,7 @@ def _execute_raw_decode(
     legacy_fallback_reason: str | None = None
     bridge_transport_diagnostics: dict[str, list[int]] | None = None
     highlight_reconstruction_diagnostics: dict[str, Any] | None = None
+    pixel_cleanup_diagnostics: dict[str, Any] | None = None
     try:
         if progress:
             progress("developing_raw", "Developing RAW with AHD demosaic")
@@ -228,6 +230,8 @@ def _execute_raw_decode(
                 if camera.raw_pattern.shape != (2, 2):
                     raise RawImportError("Mandatory DNG opcode signed development requires a Bayer sensor.")
                 pattern = camera.raw_pattern
+                from .raw_pixel_cleanup import apply_raw
+                pixel_cleanup_diagnostics = apply_raw(raw, camera, settings, cancelled=cancelled)
                 developed = demosaic(raw.raw_image_visible, camera.raw_channel_to_rgb[pattern],
                     camera.raw_black_level[pattern], _ahd_lab_matrix(raw), cancelled=cancelled)
                 developed *= (65535.0 / (camera.white_level - camera.black_level)).astype(np.float32)
@@ -237,6 +241,8 @@ def _execute_raw_decode(
                 except _CameraLinearUnsupported as exc:
                     legacy_fallback_reason = str(exc)
                 if bridge_metadata is not None:
+                    from .raw_pixel_cleanup import apply_raw
+                    pixel_cleanup_diagnostics = apply_raw(raw, bridge_metadata, settings, cancelled=cancelled)
                     highlight_reconstruction_diagnostics = _apply_raw_highlight_reconstruction(
                         raw,
                         bridge_metadata,
@@ -272,6 +278,7 @@ def _execute_raw_decode(
         legacy_fallback_reason=legacy_fallback_reason,
         bridge_transport_diagnostics=bridge_transport_diagnostics,
         highlight_reconstruction_diagnostics=highlight_reconstruction_diagnostics,
+        pixel_cleanup_diagnostics=pixel_cleanup_diagnostics,
     )
 
 
@@ -491,6 +498,7 @@ def _build_raw_provenance(
         "dng_input": path.suffix.lower() == ".dng",
         "raw_convenience_beta": True,
         "raw_mosaiced": decoded.is_mosaiced,
+        "raw_pixel_cleanup": decoded.pixel_cleanup_diagnostics or {"supported": False, "enabled": settings.pixel_cleanup.remove_hot_pixels},
         "raw_development": raw_development,
         "camera_white_balance": decoded.camera_white_balance,
         "daylight_white_balance": decoded.daylight_white_balance,

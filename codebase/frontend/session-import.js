@@ -411,7 +411,7 @@ function renderRawImportControls(session) {
   const bridgeQualified = Boolean(
     visible &&
       session?.metadata?.extra?.raw_mosaiced !== false &&
-      String(session?.metadata?.extra?.raw_pipeline || "").startsWith("camera_linear_float_bridge"),
+      String(session?.metadata?.extra?.raw_pipeline || "").startsWith("camera_linear_"),
   );
   setSourceModuleAvailability(
     els.rawSettingsSection,
@@ -425,6 +425,13 @@ function renderRawImportControls(session) {
       ? "Highlight Reconstruction is unavailable for this RAW sensor or color pipeline."
       : "Highlight Reconstruction is available only for supported mosaiced RAW sources.",
   );
+  setSourceModuleAvailability(els.rawPixelCleanupGroup,
+    visible && session?.metadata?.extra?.raw_pixel_cleanup?.supported === true,
+    "Pixel cleanup is available only for supported Bayer RAW sensors, not X-Trans, linear DNG or finished images.");
+  if (els.rawRemoveHotPixels) {
+    els.rawRemoveHotPixels.checked = state.editDocument?.source?.raw_import_settings?.pixel_cleanup?.remove_hot_pixels === true;
+    els.rawPixelCleanupGroup?.classList.toggle("modified", els.rawRemoveHotPixels.checked);
+  }
   if (!visible) {
     state.rawSettingsOpen = false;
     els.rawSettingsPanel?.classList.add("hidden");
@@ -542,6 +549,7 @@ function rawImportSettingsPayload() {
   return {
     white_balance: "as_shot",
     demosaic: "ahd",
+    pixel_cleanup: { remove_hot_pixels: els.rawRemoveHotPixels?.checked === true },
     highlight_reconstruction: {
       enabled: els.rawHighlightBypass?.getAttribute("aria-pressed") === "true",
       method: els.rawHighlightMethod?.value || "opposed_color_v1",

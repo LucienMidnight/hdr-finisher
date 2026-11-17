@@ -1,3 +1,56 @@
+### November 17: Steve's Pixel cleanup decision; GPU qualification open
+
+**Steve, November 17, 2026:** add a RAW development section named **Pixel
+cleanup**, initially containing only **Remove hot pixels**, off by default.
+No strength, cold/dead-pixel mode or camera defect maps. Leave it off unless
+isolated stuck bright sensor pixels are visible: one photograph cannot always
+distinguish a defect from a tiny star or glint.
+
+The implementation in this commit follows the approved single-photo filter in
+`../../technical/research/denoise-v1-2026-11-16/raw-pixel-cleanup.md`:
+signed per-phase black/white normalization → optional cleanup → Opposed color
+highlight reconstruction → WB/AHD → camera/ACEScg → Edge colour → Denoise.
+Detection exceeds all eight same-phase neighbors by both 8σ and 0.02; an
+adjacent other-colour rise above 2.5σ and 2 DN vetoes repair. Context ≥0.98
+and the four-pixel border are preserved. Repair averages the most consistent
+opposite same-phase pair, always reading the original mosaic. Four provisional
+phase noise estimates come from bounded samples of this photograph, not a
+camera calibration; unavailable estimates leave the mosaic untouched.
+
+CPU import and Library band development share the bounded sensor filter. The
+existing GPU RAW route applies the same backend thresholds/profile during
+normalization, before clipping evidence, without another full-frame buffer.
+Off skips estimation/filtering and keeps the previous pixel path exactly.
+The checkbox is disabled with a reason for X-Trans, linear DNG and non-RAW
+sources. The UI uses the existing collapsed source-module and checkbox styles,
+with Reset and a modified marker; no design tokens or budgets change.
+
+The saved per-photo RAW recipe carries the setting through projects, sidecars,
+selective grade copy/paste and RAW-containing saved recipes; rendition-only
+grading presets remain rendition-only. Source/development identities include
+the recipe. Changing the checkbox re-develops the source while preserving the
+grade, and Undo/Redo re-develops the previous/next recipe. Library, Grade,
+Proof, export and batch consume those same developed pixels/recipes.
+
+**Not GPU-qualified or release-ready.** Fast result tests cover detection,
+light/clipping/border preservation, Off equality, strip seams, placement before
+clipping evidence/AHD, saved identity, copy/paste and undo failure rollback.
+Full Node: 1,103 passed / one skipped; full Python: 4,125 passed / 155 skipped /
+one xpassed, no failures. The existing Starlette/httpx deprecation warning stays.
+Final focused filter/state checks pass 20/4 tests after the fixture additions and
+test-file split. The CPU fixture generator also passes all 32 cases.
+
+The new `raw-pixel-cleanup.js` driver is registered but deliberately not run:
+production GPU normalization/Opposed/AHD/WB on four Bayer layouts, both states
+and four orientations, with finished SDR ΔE2000 / HDR ΔE ITP mean <1 and
+p99 <3 at −6/0/+6 EV. `raw-pixel-cleanup-delivery.js` adds the enabled saved
+recipe and restored checkbox to the existing real-RAW Edge colour/Library/
+Proof/export checks. Real-device UI/re-development, memory and delivery remain
+part of Steve's combined signed-RAW/noise-measurement/cleanup validation;
+no GPU/Electron check was run for this implementation.
+The production CPU step cost is recorded separately in the performance table;
+it is not a measurement of the whole UI wait.
+
 ### November 17: Steve's signed RAW development decision; qualification open
 
 **Steve, November 17, 2026:** preserve noisy sensor readings below black through
