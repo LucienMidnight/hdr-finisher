@@ -1023,6 +1023,12 @@ class RawHighlightReconstructionSettings(BaseModel):
     edge_colour_expand_percent: float = Field(default=0.5, ge=0.0, le=3.0, allow_inf_nan=False)
 
 
+class RawPixelCleanupSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    remove_hot_pixels: bool = False
+
+
 class RawImportSettings(BaseModel):
     """Small, deterministic RAW-development surface stored with the project."""
 
@@ -1030,6 +1036,7 @@ class RawImportSettings(BaseModel):
 
     white_balance: Literal["as_shot"] = "as_shot"
     demosaic: Literal["ahd"] = "ahd"
+    pixel_cleanup: RawPixelCleanupSettings = Field(default_factory=RawPixelCleanupSettings)
     highlight_reconstruction: RawHighlightReconstructionSettings = Field(
         default_factory=RawHighlightReconstructionSettings
     )
@@ -1110,6 +1117,7 @@ class EditCommand(BaseModel):
     expected_revision: int = Field(ge=0)
     command_type: Literal[
         "replace_document",
+        "set_raw_import_settings",
         "set_hdr_reference_white",
         "set_global_adjustments",
         "set_denoise_settings",

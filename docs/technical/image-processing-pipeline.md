@@ -151,6 +151,33 @@ The HDR source invariant is:
 
 PQ and HLG sources first become absolute luminance, then project-relative scene values, then ACEScg. This preserves absolute luminance when decoder and project reference whites differ. The generated SDR branch's creative `0.18 -> approximately 0.493` anchor is separate; it is not a physical 100-nit conversion.
 
+For supported Bayer RAWs, **Pixel cleanup → Remove hot pixels** is an optional
+per-photo source-development operation, off by default. The order is unpack →
+signed per-phase black/white normalization → cleanup → Opposed color highlight
+reconstruction → WB/AHD → camera/ACEScg → Edge colour → Denoise. It is not a
+post-demosaic RGB speck filter. X-Trans, linear DNG and non-RAW sources do not
+offer it.
+
+`raw_pixel_cleanup.py` owns the four per-CFA-phase single-frame noise fits and
+shared thresholds. Compare the center with all eight same-phase neighbors:
+excess >max(8σ, 0.02), with variance `a*max(center,0)+b+DN_step²/12`.
+An adjacent other-colour rise >max(2.5σ, 2 DN), relative to that site's
+same-phase median, preserves the candidate. Preserve 5×5 context ≥0.98 and
+the four-pixel border. Repair with the mean of the most consistent opposite
+pair, tie order horizontal, vertical, then diagonals; all decisions read the
+original mosaic. No camera defect maps, cold-pixel mode or adjustable strength.
+
+CPU sensor edits use 256-row normalized strips and preserved four-row original
+seam context, re-encoding only repaired sites into LibRaw's DN buffer. GPU
+normalization reads the immutable packed mosaic with the same profile/threshold
+uniform; no extra full-frame image is allocated. Both feed repaired samples to
+clipping evidence and signed AHD. Off skips profile estimation and selects the
+unchanged normalization shader. An unavailable noise fit is a no-op. The entire
+RAW recipe is saved and included in source/development identities; cleanup
+changes and their Undo/Redo re-develop the source rather than reusing old pixels.
+Finished CPU/GPU agreement remains mean <1, p99 <3 (SDR ΔE2000 / HDR ΔE ITP);
+the new parity driver awaits the combined real-GPU validation.
+
 RAW source conversion preserves finite negative channels instead of applying the
 import-time neutral-axis projection. Bayer black subtraction and AHD use signed
 sensor-DN intermediates; the upper DN transport limit remains 65,535. White

@@ -1,3 +1,39 @@
+### November 17: Steve's Pixel cleanup decision; GPU qualification open
+
+**Steve, November 17, 2026:** add a RAW development section named **Pixel
+cleanup**, initially containing only **Remove hot pixels**, off by default.
+No strength, cold/dead-pixel mode or camera defect maps. Leave it off unless
+isolated stuck bright sensor pixels are visible: one photograph cannot always
+distinguish a defect from a tiny star or glint.
+
+The implementation in this commit follows the approved single-photo filter in
+`../../technical/research/denoise-v1-2026-11-16/raw-pixel-cleanup.md`:
+signed per-phase black/white normalization → optional cleanup → Opposed color
+highlight reconstruction → WB/AHD → camera/ACEScg → Edge colour → Denoise.
+Detection exceeds all eight same-phase neighbors by both 8σ and 0.02; an
+adjacent other-colour rise above 2.5σ and 2 DN vetoes repair. Context ≥0.98
+and the four-pixel border are preserved. Repair averages the most consistent
+opposite same-phase pair, always reading the original mosaic. Four provisional
+phase noise estimates come from bounded samples of this photograph, not a
+camera calibration; unavailable estimates leave the mosaic untouched.
+
+CPU import and Library band development share the bounded sensor filter. The
+existing GPU RAW route applies the same backend thresholds/profile during
+normalization, before clipping evidence, without another full-frame buffer.
+Off skips estimation/filtering and keeps the previous pixel path exactly.
+The per-photo RAW recipe and its existing source/development identities carry
+the new setting. No memory budget changes. The source UI, history and focused
+GPU drivers follow in the next local implementation commit.
+
+**Not GPU-qualified or release-ready.** Fast result tests cover detection,
+light/clipping/border preservation, Off equality, strip seams and placement
+before clipping evidence/AHD. Finished SDR ΔE2000 / HDR ΔE ITP agreement must
+remain mean <1 and p99 <3. Real-device UI/re-development, memory and end-to-end
+delivery remain part of Steve's combined signed-RAW/noise-measurement/cleanup
+validation; no GPU/Electron check was run for this implementation.
+The production CPU step cost is recorded separately in the performance table;
+it is not a measurement of the whole UI wait.
+
 ### November 17: Steve's signed RAW development decision; qualification open
 
 **Steve, November 17, 2026:** preserve noisy sensor readings below black through
