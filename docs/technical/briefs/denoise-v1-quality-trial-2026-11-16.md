@@ -225,6 +225,12 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: post-demosaic speck/blotch cleanup failed (+0.06 dB held-out,
+  Canon specks remain, fine text regresses; 14–16 s extra at 18 MP); not
+  shipped. See `speck-cleanup.md`. Next experiment started: fix the degenerate
+  per-frame noise fit (IMG_0790) and try outlier repair on the RAW sensor
+  data before demosaic, where a speck is still one sample.
+
 - 2026-11-17: Steve replaced D2 (see section 7): classical Denoise
   (Experimental) first; AI Denoise (Experimental) only from the Denoise
   module by re-development, never on initial development, and only once it
