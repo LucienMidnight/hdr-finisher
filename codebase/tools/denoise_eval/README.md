@@ -103,6 +103,61 @@ stops, mean <1 / p99 <3. Remove the two bulky transport JSONs afterwards;
 retain `gpu-compare.json` and logs. This is not production RAW/highlight
 pipeline qualification, GPU native timing or evidence for a new GPU route.
 
+### Green/magenta colour cleanup (November 17 research)
+
+`candidates.chroma_cleanup` is own GPL-3 research code, not app integration.
+All variants use signed research AHD, approved 2.5σ RAW taming (envelope1.5,
+strength.75, area≤5, support on), repaired calibration and shipping Denoise
+controls. Factories: `green`, `median1`, `median3`, `median1_y`,
+`gm{2,3,4}_a{1,9,25}`, `green_gm`, `gm_ob`.
+The wider `wide_pre{2,3}` / `wide_post{2,3}` variants use full 9×9
+statistics and area25 or `_a81`; `wide_unguarded` is a .75-strength
+post-Denoise green–magenta median without detection/protection, a detail-risk
+control. Post wide variants estimate noise from local residual MAD. The independent median trial
+holds camera G, which is **not** ACEScg luminance; `_y` explicitly projects
+back to unchanged Y. Targeted GM keeps Y and R−B. No upstream source is ported.
+
+Run every heavy phase serially through the shared machine lock and existing
+2.5 GB tree guard, from `codebase`, with the venv Python and `PYTHONPATH=backend`:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label chroma-gallery -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/chroma-cleanup/gallery-guard.json --seconds 1500 -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.chroma_measure \
+  --inventory <frozen-signed-full-results.json> --phase gallery \
+  --gallery <original-speck-gallery-directory>
+```
+
+Other phases: `quick`, `full`, `heldout`, `seen`, `clean`, `diagnostic`,
+`native --photo IMG_0790.CR2` (also `2025_0730_1331_3.arw`), `review`.
+Public RAW/pair stores are read-only local links, never downloaded by the runner.
+`clean` adds noiseless coloured lights/text/weave/petals and first eligible
+texture reference from Pen-pile, Vaxt and Blombukett, retaining its public valid
+mask; ISO-scaled clean noise fits are provisional, not camera calibration.
+
+The extra `post*_a*` placement ablation retains 10% propagated sensor sigma;
+`local*_a*` instead uses the final residual's local MAD with a 1e−7 numerical
+linear floor (scaled with exposure). Both operate **after** Denoise. Run
+`gallery-post` (local-MAD) or `gallery-wide` (wider scale) after `gallery`
+to append only those columns when extending a receipt, retaining the
+pre-stage receipt provenance. `diagnostic` freezes taming's Denoise model on
+three fixed gallery windows to isolate the median/calibration interaction.
+These post-hoc diagnostics are explicitly separate from requested pre-Denoise
+candidates. Current source `gallery` includes all sweeps in one fresh run.
+
+All fourteen original windows and 48px/6× spots remain fixed, including Canon
+(4064,2164) and (600,1500). Output overwrites
+`output/denoise-v1/chroma-cleanup/`; review is `review/index.html`, ≤20 MB.
+The GM-specific finished-SDR local-contrast mask uses
+`abs(G−(R+B)/2 residual)>.08` and `>.75*abs(R−B residual)` against 5×5
+medians; area1–25, six-pixel border, separate signs and pixel/p99.9 counts.
+It is a contrast proxy and can count real detail. Existing fixed +4-stop
+shadow tails remain separate. Native jobs consume every pixel in bounded
+windows, retain JSON only and remove arrays; times include research overhead,
+not live UI waits. No GPU route, memory budget or quality limit changes.
+See `chroma-cleanup.md` for failures, recommendation and integration gaps.
+
 ### AI plus highlight reconstruction (November 17 research)
 
 `candidates/ai_highlights.py` combines the original-sensor Bayer RawNIND result
