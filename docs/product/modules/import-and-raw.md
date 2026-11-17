@@ -57,6 +57,16 @@ enabled flags. Previously generic metadata formatting converted this object to
 a string, leaving the real-app checkbox disabled even on supported Bayer RAWs.
 Other metadata formatting and all sensor/filter/output rules are unchanged.
 
+**Combined validation DNG repair, November 17:** mandatory-opcode Bayer DNGs
+now use LibRaw's already prepared camera-to-RGB coefficients for signed AHD
+and its sensor metadata gate. DJI DNGs can legitimately have no ordinary
+`rgb_xyz_matrix`; requiring that table stopped both frozen Library DJI photos.
+The prepared coefficients retain LibRaw's DNG demosaic colour basis. Mandatory
+opcodes, DNG metadata colour conversion, crop/orientation and BaselineExposure
+remain in their original order, with no unsigned demosaic fallback. Decoder
+identity v7 invalidates developed sources. A result test covers the missing
+table, signed samples and exactly-once mandatory operations.
+
 ### November 17: Steve's signed RAW development decision; qualification open
 
 **Steve, November 17, 2026:** preserve noisy sensor readings below black through

@@ -226,14 +226,18 @@ def _execute_raw_decode(
                         f"but bundled LibRaw {'.'.join(map(str, version))} has not been audited for exactly-once behavior."
                     )
                 from .signed_raw import demosaic
-                camera = _camera_linear_metadata_from_libraw(raw)
+                # DNGs may provide LibRaw's prepared camera-to-RGB coefficients
+                # without an ordinary camera XYZ table. Use that same AHD colour
+                # basis; DNG metadata still owns the later output conversion.
+                rgb_cam = np.asarray(raw.color_matrix, dtype=np.float32)[:, :3]
+                camera = _camera_linear_metadata_from_libraw(raw, camera_rgb_matrix=rgb_cam)
                 if camera.raw_pattern.shape != (2, 2):
                     raise RawImportError("Mandatory DNG opcode signed development requires a Bayer sensor.")
                 pattern = camera.raw_pattern
                 from .raw_pixel_cleanup import apply_raw
                 pixel_cleanup_diagnostics = apply_raw(raw, camera, settings, cancelled=cancelled)
                 developed = demosaic(raw.raw_image_visible, camera.raw_channel_to_rgb[pattern],
-                    camera.raw_black_level[pattern], _ahd_lab_matrix(raw), cancelled=cancelled)
+                    camera.raw_black_level[pattern], _ahd_lab_matrix(raw, camera_rgb_matrix=rgb_cam), cancelled=cancelled)
                 developed *= (65535.0 / (camera.white_level - camera.black_level)).astype(np.float32)
             else:
                 try:
@@ -544,12 +548,16 @@ def _build_raw_provenance(
     return metadata
 
 
-def _ahd_lab_matrix(raw: Any) -> np.ndarray:
+def _ahd_lab_matrix(raw: Any, *, camera_rgb_matrix: np.ndarray | None = None) -> np.ndarray:
     from .library_gpu_raw import XYZ_RGB, D65_WHITE
 
-    camera = np.asarray(raw.rgb_xyz_matrix, dtype=np.float64)[:3] @ XYZ_RGB
-    camera /= camera.sum(axis=1, keepdims=True)
-    inverse = np.linalg.inv(camera).astype(np.float32)
+    if camera_rgb_matrix is None:
+        camera = np.asarray(raw.rgb_xyz_matrix, dtype=np.float64)[:3] @ XYZ_RGB
+        camera /= camera.sum(axis=1, keepdims=True)
+        inverse = np.linalg.inv(camera).astype(np.float32)
+    else:
+        _validate_camera_matrix(camera_rgb_matrix, "LibRaw DNG camera-to-RGB matrix")
+        inverse = np.asarray(camera_rgb_matrix, dtype=np.float32)
     matrix = np.zeros((3, 3), dtype=np.float32)
     for channel in range(3):
         matrix += (XYZ_RGB[:, channel, None] * inverse[channel] / D65_WHITE[:, None]).astype(np.float32)
@@ -582,7 +590,7 @@ def _develop_libraw_camera_rgb(raw: Any, rawpy: Any, *, half_size=False, cancell
     )
 
 
-def _camera_linear_metadata_from_libraw(raw: Any) -> CameraLinearMetadata:
+def _camera_linear_metadata_from_libraw(raw: Any, *, camera_rgb_matrix: np.ndarray | None = None) -> CameraLinearMetadata:
     """Capability-gate an ordinary Bayer/X-Trans RAW using metadata only.
 
     rawpy exposes ``rgb_xyz_matrix`` as LibRaw's ``cam_xyz[4][3]``. Despite
@@ -591,7 +599,9 @@ def _camera_linear_metadata_from_libraw(raw: Any) -> CameraLinearMetadata:
     linear-sRGB -> XYZ(D65) matrix, normalizes each row against D65, then
     pseudoinverts it to obtain camera -> output RGB. Repeating those exact
     orientation/reference-white steps here produces a camera -> XYZ(D65)
-    matrix suitable for our own float32 development.
+    matrix suitable for our own float32 development. Mandatory-opcode DNG may
+    instead supply LibRaw's prepared camera-to-RGB matrix; DNG metadata still
+    owns the later colour conversion.
     """
     pattern_value = getattr(raw, "raw_pattern", None)
     if pattern_value is None:
@@ -663,38 +673,43 @@ def _camera_linear_metadata_from_libraw(raw: Any) -> CameraLinearMetadata:
         raise _CameraLinearUnsupported("as-shot white balance has no positive green reference")
     wb = wb / green
 
-    try:
-        raw_matrix = np.asarray(getattr(raw, "rgb_xyz_matrix", None), dtype=np.float64)
-    except (TypeError, ValueError, OverflowError):
-        raise _CameraLinearUnsupported("missing or invalid LibRaw camera matrix") from None
-    if raw_matrix.shape != (4, 3) or not np.all(np.isfinite(raw_matrix)):
-        raise _CameraLinearUnsupported("LibRaw camera matrix must be finite with shape 4x3")
-    xyz_to_camera = np.empty((3, 3), dtype=np.float64)
-    for output_index, color in enumerate("RGB"):
-        rows = [
-            raw_matrix[index]
-            for index, item in enumerate(color_description[:4])
-            if item == color and np.linalg.norm(raw_matrix[index]) > 1e-12
-        ]
-        if not rows:
-            raise _CameraLinearUnsupported(f"LibRaw camera matrix has no {color} row")
-        if len(rows) > 1 and any(
-            not np.allclose(rows[0], row, rtol=1e-3, atol=1e-6) for row in rows[1:]
-        ):
-            raise _CameraLinearUnsupported(
-                f"LibRaw camera matrix has materially different {color} channel rows"
-            )
-        xyz_to_camera[output_index] = np.mean(rows, axis=0)
-    _validate_camera_matrix(xyz_to_camera, "LibRaw XYZ-to-camera matrix")
-    d65_response = xyz_to_camera @ LIBRAW_MATRIX_REFERENCE_WHITE_D65
-    if not np.all(np.isfinite(d65_response)) or np.any(d65_response <= 1e-12):
-        raise _CameraLinearUnsupported("LibRaw camera matrix has an invalid D65 response")
-    normalized_xyz_to_camera = xyz_to_camera / d65_response[:, None]
-    _validate_camera_matrix(normalized_xyz_to_camera, "D65-normalized XYZ-to-camera matrix")
-    try:
-        camera_to_xyz_d65 = np.linalg.inv(normalized_xyz_to_camera)
-    except np.linalg.LinAlgError:
-        raise _CameraLinearUnsupported("D65-normalized XYZ-to-camera matrix is singular") from None
+    if camera_rgb_matrix is not None:
+        from .library_gpu_raw import XYZ_RGB
+        _validate_camera_matrix(camera_rgb_matrix, "LibRaw DNG camera-to-RGB matrix")
+        camera_to_xyz_d65 = XYZ_RGB @ np.asarray(camera_rgb_matrix, dtype=np.float64)
+    else:
+        try:
+            raw_matrix = np.asarray(getattr(raw, "rgb_xyz_matrix", None), dtype=np.float64)
+        except (TypeError, ValueError, OverflowError):
+            raise _CameraLinearUnsupported("missing or invalid LibRaw camera matrix") from None
+        if raw_matrix.shape != (4, 3) or not np.all(np.isfinite(raw_matrix)):
+            raise _CameraLinearUnsupported("LibRaw camera matrix must be finite with shape 4x3")
+        xyz_to_camera = np.empty((3, 3), dtype=np.float64)
+        for output_index, color in enumerate("RGB"):
+            rows = [
+                raw_matrix[index]
+                for index, item in enumerate(color_description[:4])
+                if item == color and np.linalg.norm(raw_matrix[index]) > 1e-12
+            ]
+            if not rows:
+                raise _CameraLinearUnsupported(f"LibRaw camera matrix has no {color} row")
+            if len(rows) > 1 and any(
+                not np.allclose(rows[0], row, rtol=1e-3, atol=1e-6) for row in rows[1:]
+            ):
+                raise _CameraLinearUnsupported(
+                    f"LibRaw camera matrix has materially different {color} channel rows"
+                )
+            xyz_to_camera[output_index] = np.mean(rows, axis=0)
+        _validate_camera_matrix(xyz_to_camera, "LibRaw XYZ-to-camera matrix")
+        d65_response = xyz_to_camera @ LIBRAW_MATRIX_REFERENCE_WHITE_D65
+        if not np.all(np.isfinite(d65_response)) or np.any(d65_response <= 1e-12):
+            raise _CameraLinearUnsupported("LibRaw camera matrix has an invalid D65 response")
+        normalized_xyz_to_camera = xyz_to_camera / d65_response[:, None]
+        _validate_camera_matrix(normalized_xyz_to_camera, "D65-normalized XYZ-to-camera matrix")
+        try:
+            camera_to_xyz_d65 = np.linalg.inv(normalized_xyz_to_camera)
+        except np.linalg.LinAlgError:
+            raise _CameraLinearUnsupported("D65-normalized XYZ-to-camera matrix is singular") from None
     d65_to_d60 = chromatic_adaptation_matrix(LIBRAW_MATRIX_REFERENCE_WHITE_D65, D60_XYZ)
     camera_to_acescg = XYZ_D60_TO_ACESCG @ d65_to_d60 @ camera_to_xyz_d65
     _validate_camera_matrix(camera_to_acescg, "camera-to-ACEScg matrix")
