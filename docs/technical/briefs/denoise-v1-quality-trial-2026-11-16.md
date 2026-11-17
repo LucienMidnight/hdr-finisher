@@ -225,6 +225,13 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: Steve's further ideas, added to the early-outlier research:
+  (1) the outlier threshold (×2/×3/×4 of local noise) as a user "uniformity"
+  control before demosaicing; (2) aim for uniform fine luminance grain with
+  strong colour-noise removal instead of a perfectly smooth gradient, since the
+  clean reference has fine even grain and luminance-only variation looks
+  benign, so remaining specks blend in.
+
 - 2026-11-17: faithful RawTherapee LMMSE (A) merged (`lmmse-demosaic.md`):
   better clean fine detail before Denoise, but only +0.25 dB held-out after
   Denoise, does not remove the Canon pits (dark tail rises with crop-local
