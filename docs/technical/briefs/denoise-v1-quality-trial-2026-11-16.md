@@ -225,6 +225,8 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- **November 17, Library quick checks after merging validation (ad2475cd, MacBook, 1408x794).** With the Library window visible, the plain 90-second check passes 9/9 viewport photos (peak 3.17 GB, no memory violation) and `--single` passes. An earlier timeout came from a hidden window behind a full-screen app; an earlier DJI DNG failure came from this worktree missing the built `signed_ahd.dylib` (fixed by rerunning setup). One cold first run after the build peaked at 4.33 GB against the 4.0 GB ceiling and hit the system reserve with one DJI `Failed to fetch`; the immediate rerun passed. Not reproduced, not investigated further.
+
 - 2026-11-17: `observe` timeout investigation from `2db4de36`: reproduced
   the 130-second stop, then localized it to the final animation-frame wait.
   Safari was fullscreen on the active Mac desktop; the Library document
