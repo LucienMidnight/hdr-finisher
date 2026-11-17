@@ -373,13 +373,15 @@ and repository GPL text preserve the licence obligations.
 
 ## Residual speck / chroma cleanup trial (November 17)
 
-`candidates.speck_cleanup:{median,guarded,factory}` are own GPL-3 CPU research
+`candidates.speck_cleanup:{median,guarded,center_shadow,factory}` are own GPL-3 CPU research
 adapters, never imported by the app. `factory` is the conservative **shadow**
 variant. It caches the current adaptive bands/noise-energy ratios and two
 correction maps. `median` tests an unprotected 5×5 outlier clamp; `guarded`
 protects bright points/lines and uses joint luma/chroma range weights at 16px
 reach; `shadow` additionally gates by measured signal/noise and preserves
-ACEScg luminance during chroma repair. Neither truth nor camera/ISO-specific
+ACEScg luminance during chroma repair. It reads the surrounding 5×5 median
+brightness; `center_shadow` retains the failed centre-brightness version,
+which mistakes dark printed strokes on bright material for shadows. Neither truth nor camera/ISO-specific
 choices enter the runtime. Existing controls resolve from fixed evidence;
 zero Amount, bypass and alpha remain exact. Correction strength saturates
 at the default; stronger sliders still increase the underlying adaptive stage.
@@ -414,5 +416,6 @@ prepare/spool/resolve each 768px cache core, retain JSON only and remove all
 scratch on exit. Stage times include research overhead and are **not UI or
 GPU timings**. Independent haloed preparation is tested (86px margin), rather
 than treating cached-frame slicing as evidence of preparation-grid equality.
-`decision_crops` adds `speck_cleanup.png` and a fixed +4-stop flame-edge row;
+`speck_report` aggregates the receipts (equal capture then scene weighting
+for public pairs). `decision_crops` adds `speck_cleanup.png` and a fixed +4-stop flame-edge row;
 its existing current/RawNIND/clean columns and fixed display rules are retained.

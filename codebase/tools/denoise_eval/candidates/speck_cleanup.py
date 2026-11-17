@@ -116,12 +116,13 @@ def cleanup(image, model, variance, variant='guarded'):
                 total += weight[..., None] * neighbour[..., 1:]
                 weights += weight
         chroma_delta[..., 1:] = .65*(total/weights[..., None] - opponent[..., 1:])
-    if variant == 'shadow':
+    if variant in ('shadow', 'center_shadow'):
         # Restrict intervention to signal/noise <12, with full treatment <4.
         # No absolute scene-linear brightness cutoff: exposure covariance stays.
         y = image[..., :3] @ ACESCG_LUMINANCE
         noise_y = np.maximum(sigma[..., 0] / np.sqrt(3.), 1e-12)
-        shadow = np.clip((12*noise_y-abs(y))/(8*noise_y), 0, 1)
+        surround = cv2.medianBlur(y, 5) if variant == 'shadow' else y
+        shadow = np.clip((12*noise_y-abs(surround))/(8*noise_y), 0, 1)
         # Bright point evidence protects colour as well as luma.
         point = np.clip((residual[..., 0]/residual_sigma[..., 0]-2)/2, 0, 1)
         chroma_delta *= (shadow*(1-point))[..., None]
@@ -136,11 +137,18 @@ def cleanup(image, model, variance, variant='guarded'):
                              mean_chroma_correction=float(np.mean(abs(chroma_delta[..., 1:]))))
 
 
-def make_cache(image, model, variant='guarded', edges=None):
+def make_cache(image, model, variant='shadow', edges=None):
+    start = time.perf_counter()
     bands, ratios, variance = decompose(image, model, edges)
+    decomposition_seconds = time.perf_counter()-start
     cache = Cache(image.copy(), bands, ratios, None, {})
+    start = time.perf_counter()
     baseline = adaptive(cache, DEFAULT)
+    baseline_seconds = time.perf_counter()-start
+    start = time.perf_counter()
     cache.corrections, cache.statistics = cleanup(baseline, model, variance, variant)
+    cache.statistics.update(decomposition_seconds=decomposition_seconds, baseline_seconds=baseline_seconds,
+                            cleanup_seconds=time.perf_counter()-start)
     return cache
 
 
@@ -210,3 +218,7 @@ def median():
 
 def guarded():
     return SpeckCleanup('guarded')
+
+
+def center_shadow():
+    return SpeckCleanup('center_shadow')

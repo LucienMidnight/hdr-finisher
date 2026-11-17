@@ -165,7 +165,11 @@ def render_case(folder, sample, offset, lift, size):
         save_png(encoded, folder / f'{column}.png')
         rows.append(dict(column=column, adapter=adapter_name,
                          settings=adapter.description(),
-                         metrics_vs_clean=scores(encoded, clean, valid) if clean is not None else None))
+                         metrics_vs_clean=scores(encoded, clean, valid) if clean is not None else None,
+                         shadow_tails_sdr_lift4=metrics.shadow_tails(
+                             output[region], rgb[region],
+                             sample.clean[region]*np.float32(2**lift) if sample.clean is not None else None,
+                             {'valid': valid}, source_exposure_stops=lift)))
         del adapter, state, output, encoded
         gc.collect()
         if peak_rss() > 2_500_000_000:
@@ -207,6 +211,7 @@ def main():
             '512/640px context, not full-frame adaptive estimates or whole-frame qualification.',
             'Public clean references retain inherited ISO100 noise, registration and per-capture gain limitations.',
             'Public metrics exclude inherited clipping/support/registration masks; PNGs show all crop pixels.',
+            'Decision shadow-tail scores use the fixed ROI and valid support, without the general harness automatic-flat mask; no-truth scores are contrast proxies.',
             'Print/dots deliberately exposes the reported neural-sensitive structure, not an exhaustive worst-case ranking.',
             'Synthetic ISO25600 reuses extrapolated harness noise, not a laboratory-calibrated real ISO25600 capture.',
         ], cases=[],

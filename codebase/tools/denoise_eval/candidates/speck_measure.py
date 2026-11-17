@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[3]
 OUTPUT = ROOT/'output/denoise-v1/speck-cleanup'
 PREFIX = 'tools.denoise_eval.candidates.'
 ADAPTERS = ['off', PREFIX+'denoise_v2_appdefault:factory', PREFIX+'speck_cleanup:median',
-            PREFIX+'speck_cleanup:guarded', PREFIX+'speck_cleanup:factory', PREFIX+'rawnind:bayer']
+            PREFIX+'speck_cleanup:guarded', PREFIX+'speck_cleanup:center_shadow', PREFIX+'speck_cleanup:factory', PREFIX+'rawnind:bayer']
 
 
 def native(photo):
@@ -58,7 +58,7 @@ def native(photo):
         then = time.perf_counter()
         model = estimate_adaptive_model_from_windows(height,width,read,workers=1)
         analysis = time.perf_counter()-then
-        clocks = dict(develop=0., prepare=0., resolve=0., cache_io=0.)
+        clocks = dict(develop=0., prepare=0., resolve=0., cache_io=0., decomposition=0., baseline=0., cleanup=0.)
         checksum = np.zeros(3, 'float64')
         # Bounded one-tile cache; spool/load so time includes full-frame cache I/O.
         with tempfile.TemporaryDirectory(prefix='speck-native-', dir=OUTPUT) as temp:
@@ -70,6 +70,8 @@ def native(photo):
                 edges=_Edges(sy==0,by==height,sx==0,bx==width,height,width)
                 then=time.perf_counter(); cache=make_cache(image,model,edges=edges)
                 clocks['prepare']+=time.perf_counter()-then
+                for stage in ('decomposition','baseline','cleanup'):
+                    clocks[stage]+=cache.statistics[stage+'_seconds']
                 region=np.s_[top-sy:ey-sy,left-sx:ex-sx]
                 cache.original=cache.original[region].copy()
                 cache.bands=cache.bands[:,region[0],region[1]].copy()

@@ -117,3 +117,18 @@ def test_all_live_controls_resolve_from_frozen_evidence():
             assert np.array_equal(result[...,3],image[...,3])
     for a,b in zip(frozen,(cache.bands,cache.noise_to_energy,cache.corrections)):
         assert np.array_equal(a,b)
+
+
+def test_shadow_gate_avoids_bright_high_snr_flat_chroma_changes():
+    image=np.full((80,80,3), .5, 'float32')
+    image[30:40,30:40,0]+=.0003
+    correction,_=cleanup(image,model(),np.full((80,80),1e-6,'float32'),'shadow')
+    assert np.array_equal(correction,np.zeros_like(correction))
+
+
+def test_shadow_gate_reads_surround_not_dark_ink_centre():
+    image=np.full((80,80,3), .1, 'float32')
+    image[40,40]=.001
+    # A real dark dot on bright material is not a shadow noise candidate.
+    correction,_=cleanup(image,model(),np.full((80,80),1e-6,'float32'),'shadow')
+    assert np.max(abs(correction[:,40,40])) < 1e-8
