@@ -58,6 +58,8 @@ COLUMNS = (
     ('denoise_v2_app', PREFIX + 'denoise_v2_appdefault:factory'),
     ('pixel_cleanup', PREFIX + 'pixel_cleanup:alone'),
     ('pixel_cleanup_denoise', PREFIX + 'pixel_cleanup:with_denoise'),
+    ('hot_pixel', PREFIX + 'hot_pixel:alone'),
+    ('hot_pixel_denoise', PREFIX + 'hot_pixel:with_denoise'),
     ('speck_cleanup', PREFIX + 'speck_cleanup:factory'),
     ('noise_model_corrected', PREFIX + 'noise_model_specks:factory'),
     ('native_model_current', PREFIX + 'noise_model_specks:native_current'),
@@ -189,13 +191,23 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inventory', type=Path, required=True)
     parser.add_argument('--size', type=int, choices=(256, 288), default=288)
+    parser.add_argument('--columns', help='Comma-separated decision columns; default is every method')
     args = parser.parse_args()
+    global COLUMNS
+    if args.columns:
+        selected = args.columns.split(',')
+        available = dict(COLUMNS)
+        if len(set(selected)) != len(selected) or any(name not in available for name in selected):
+            parser.error('Choose unique names from the declared decision columns')
+        COLUMNS = tuple((name, available[name]) for name in selected)
     cv2.setNumThreads(1)
     inventory_bytes = args.inventory.read_bytes()
     entries = json.loads(inventory_bytes)['inventory']
-    model_hash = hashlib.sha256((MODEL_ROOT / 'model_bayer.onnx').read_bytes()).hexdigest()
-    if model_hash != HASHES['bayer']:
-        raise ValueError('RawNIND model SHA-256 mismatch')
+    model_hash = None
+    if any('rawnind:' in adapter for _, adapter in COLUMNS):
+        model_hash = hashlib.sha256((MODEL_ROOT / 'model_bayer.onnx').read_bytes()).hexdigest()
+        if model_hash != HASHES['bayer']:
+            raise ValueError('RawNIND model SHA-256 mismatch')
     OUTPUT.mkdir(parents=True, exist_ok=True)
     manifest_path = OUTPUT / 'manifest.json'
     manifest_path.unlink(missing_ok=True)

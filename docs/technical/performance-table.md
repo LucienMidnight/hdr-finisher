@@ -1,3 +1,25 @@
+## November 17: single-photo hot pixel filter (research only)
+
+Research implementation `227dcaf6` / `b486999d`; no production integration.
+MacBook Neo A18 Pro / 8 GB, CPU one thread, shared machine lock and unchanged
+2.5 GB process-tree guard. Native RAW → normalisation → optional hot filter →
+bounded AHD/global adaptive model/shipping-default Denoise; no UI, geometry,
+lens or Opposed color. One observation per condition, inherited ±10%
+descriptive allowance. Whole-pipeline differences are noise, not speedups.
+
+| Research action, same Mac | Result | Conditions / evidence |
+| --- | --- | --- |
+| 18.02 MP Canon: filter disabled → enabled | Whole wait 8.361 → 8.144 s; added filter .190 s; process peak .720 → .811 GB | `output/denoise-v1/hot-pixel/native-IMG_0790.json`; 768px cores, 86px Denoise + 16px AHD halos, no RGB frame cache |
+| 42.39 MP Sony: filter disabled → enabled | Whole wait 17.045 → 16.933 s; added filter .471 s; process peak .892 → 1.098 GB | `native-2025_0730_1331_3.json`; identical native protocol |
+| Quick / full / supplementary point decisions | 7.831 / 62.489 / 5.844 s; peak process .549 / .753 / .554 GB | `quick.json`, `full.json`, `point-decisions.json`; fresh four-method runs, not app wait |
+| Frozen optics / corpus / public splits | Optics 29.450 s; corpus guard 15.040 s; held-out 43.357 s / seen 75.251 s | 3,456 point trials; 18 RAW entries / 15 supported; 19 held-out / 33 seen crops; descriptive harness throughput, not app wait |
+| Added-step GPU parity and expanded optics group | Guard 46.490 s / 1.538 GB tree RSS | `gpu-optics-guard.json`; 35 kernel cases pass, common CPU downstream; no native GPU speed claim |
+| Required fast checks | Node 12.912 s; Python 266.69 s | 1,091 passed / one skipped; 3,999 passed / 155 skipped / one xpassed; no failures; `node.log`, `python.log` |
+
+Decision and limitations: `research/denoise-v1-2026-11-16/raw-pixel-cleanup.md`,
+“Single-photo hot pixel filter (November 17)”. Earlier map-backed timings
+below describe a different historical algorithm and are not comparisons.
+
 ## November 17: signed RAW shadows (research only)
 
 MacBook Neo / A18 Pro / 8 GB, one CPU/native thread, signed AHD prototype

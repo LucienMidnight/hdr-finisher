@@ -626,10 +626,10 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   `noise-model-and-raw-specks.md` records the clipped-bright-bin noise-fit
   failure, stable model and held-out/seen comparisons, native CPU costs,
   GPU integration limits and the stopped RAW-adapter handoff.
-  `raw-pixel-cleanup.md` records calibration-backed Pixel cleanup before
-  AHD: sensor-defect prior art, unconfirmed Canon suspects, synthetic known
-  faults, held-out/seen preservation, native cost and CPU/GPU placement;
-  no automatic scene-outlier repair or production integration.
+  `raw-pixel-cleanup.md` records historical calibration-backed cleanup and
+  the November 17 map-free single-photo hot-pixel trial: real-light risks,
+  unconfirmed candidates, held-out/seen results, native cost and kernel
+  CPU/GPU agreement; optional default-off recommendation, no app integration.
   `signed-shadows.md` records signed AHD and unchanged-Denoise trials,
   neutral-bias gains but unresolved Canon specks, native CPU cost and the
   complete downstream signed-range shipping/changed-grade audit.

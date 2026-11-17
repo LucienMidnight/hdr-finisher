@@ -520,3 +520,32 @@ their crop-local baseline in those two columns; no native profile is borrowed.
 Historical RAW adapter diagnostics are not independent RAW+AHD tiling
 qualification. Bayer exposure probes keep the inherited clipped-DNG bridge
 and can fail; do not present them as HDR exposure qualification.
+
+### Single-photo hot pixels (November 17 research)
+
+`candidates.hot_pixel.alone` and `candidates.hot_pixel.with_denoise` are
+map-free, bright-only Bayer adapters, not shipping settings. They operate on
+signed normalised sensor samples before WB/AHD, using eight same-phase
+neighbours plus an immediate other-colour light veto and clipped-context
+guard. Cold discovery is refused. Noise metadata is the inherited provisional
+four-phase model, not camera calibration. Genuine undersampled point lights
+can still be removed: default-off is the research recommendation.
+
+`candidates.hot_pixel_measure` accepts `generated`, `quick`, `full`, `corpus`,
+`heldout`, `seen`, `native`, `gpu-fixtures`, `gpu-compare`, `point-decisions`;
+each requires `--inventory <prior-raw-pixel-cleanup/full.json>`. Native also
+takes `--photo IMG_0790.CR2` or `--photo 2025_0730_1331_3.arw`. Generated tests
+integrate Gaussian/Airy point PSFs over sensor apertures; public clean truth
+is scoring-only. All heavy commands use the shared GPU lock, venv Python,
+`PYTHONPATH=backend` and existing 2.5 GB `candidates.guard`, serially.
+
+Outputs overwrite `output/denoise-v1/hot-pixel/`. Run
+`python -m tools.denoise_eval.candidates.hot_pixel_report` to rebuild its small
+local four-column review from receipts. `decision_crops --columns
+off,denoise_v2_app,hot_pixel,hot_pixel_denoise --size 288` regenerates the
+existing decision page (also pass `--inventory <receipt.json>`) without
+requiring neural-model assets. Preserve the
+13 MB decision budget. `hot_pixel_gpu.cjs` runs through `run-in-electron.js`
+with generated `gpu-input.json` / `gpu-output.json`; compare and remove those
+bulk JSON files afterwards. Kernel parity uses common CPU downstream
+development and does not qualify production GPU RAW or highlight reconstruction.
