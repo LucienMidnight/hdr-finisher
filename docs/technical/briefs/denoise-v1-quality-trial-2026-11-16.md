@@ -225,6 +225,14 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: Pixel cleanup research: map-based repair of known sensor
+  defects before demosaic works and is cheap (~21/75 ms at 18/42 MP), but
+  IMG_0790 has no confirmed defects (1,011 unconfirmed suspects, almost all
+  below black); single-photo guessing is not recommended by default. It found
+  that both RAW paths clip below-black shadow samples to zero before AHD.
+  Next experiment started: keep signed shadow values through demosaic
+  (`signed-shadows.md`). Defect maps need Steve's lens-cap/flat captures (Q1).
+
 - 2026-11-17: noise-model trial finished: IMG_0790's degenerate fit comes
   from a clipped bright bin, already compensated by later band multipliers;
   a corrected fit predicts less shadow noise, leaves more ringed grain on the
