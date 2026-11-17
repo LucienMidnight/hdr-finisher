@@ -3,6 +3,11 @@
 November 17, 2026; prototype `78f93157`. Steve chose **Pixel cleanup**.
 No production integration, Denoise change, default change or module PRD edit.
 
+**November 17 update:** Steve has ruled out camera-specific defect maps and
+calibration captures for now. The map-based conclusion immediately below is
+historical, not the current proposal. The later **Single-photo hot pixel
+filter (November 17)** section records the requested map-free experiment.
+
 ## Plain-language conclusion
 
 **Repairing a known broken sensor pixel before demosaicing works, and is
@@ -392,6 +397,251 @@ research adapter; no broad GPU or Library UI run is substituted.
 `output_size.py`: 12.9 GB at start, **13.0 GB at end**, below the 100 GB
 limit. Owned downloaded-source scratch was removed. No decoded native-frame
 scratch or RAW copies remain; report-linked small crops/receipts remain local.
+
+## Single-photo hot pixel filter (November 17)
+
+### Plain-language summary
+
+**An optional bright-dot filter is cheap and useful for genuinely isolated
+faults, but this trial supports leaving it off by default.** Looking for light
+on neighbouring sensor colours helps protect real sparks. It cannot guarantee
+that a very sharp star, coloured light or reflection is safe: the lens spreads
+light, but that spread can fall below the sensor's noise or another colour's
+response. A single photograph cannot prove which sensor positions are broken.
+
+The filter changes **three hot-like sites in IMG_0790.CR2**, while two clearly
+visible airborne sparks remain unchanged. The three sites are **unconfirmed
+candidates**, not three established defects. Across 15 supported corpus RAWs,
+it changes 41 sites; the number of true defects among them remains unknown.
+Two inspected sunset glints and one tree/sky-hole site are concerning
+scene-located changes. Controlled near-diffraction-limited real-light models
+also demonstrate false positives. There is no meaningful overall Denoise gain
+on public pairs, and the widespread lifted Canon shadow specks remain.
+
+Research adapters and measurement tools are committed; **no shipping code,
+default, requirement, memory allowance or module PRD changes**. This experiment
+uses no camera defect map, dark frame or calibration capture. Earlier map-based
+prototype `78f93157` / `82083011` remains separate historical work.
+
+### Detection, repair and placement
+
+`codebase/tools/denoise_eval/candidates/hot_pixel.py` implements the following
+fixed policy, without tuning after seeing these results:
+
+- Work on signed black-subtracted, white-normalised Bayer samples, before
+  white balance or demosaicing. Treat all four CFA positions separately,
+  including the two green phases. Use each phase's sensor noise model
+  `variance = a × max(signal, 0) + b` and actual DN quantisation from its
+  black/white span. The inherited single-frame noise estimate is provisional,
+  not a measured laboratory sensor calibration.
+- A centre must exceed **every one of its eight same-phase neighbours** by
+  both **8 standard deviations and 0.02** of the black-to-white range.
+- Veto repair if any immediately adjacent other-colour site exceeds its own
+  phase's local background by both **2.5 standard deviations and two DN**.
+  Local background is the median of that site's same-phase neighbours.
+- Preserve the centre if any sample in its 5×5 context reaches **0.98**;
+  clipped centres and nearby clipped scene highlights stay untouched. Preserve
+  the four-pixel frame border. Unsupported CFA/noise/colour bridges do nothing.
+- Replace a surviving candidate with the mean of the most consistent opposite
+  same-phase pair, choosing horizontal, vertical or either diagonal. Always
+  read the original mosaic, never a previously repaired neighbour. Process in
+  256-row strips; a bounded tile needs a four-pixel halo and even sensor origin.
+
+Proposed shipping order: unpack → signed per-phase black/white normalisation
+→ optional hot-pixel filter → **Opposed color clipping evidence and highlight
+reconstruction** → WB/AHD → camera/ACEScg → Edge colour → Denoise. Running
+before reconstruction avoids feeding a repairable isolated outlier into its
+evidence. The clipping veto deliberately leaves saturated faults and faults
+next to clipped light for another solution. This harness does not run the
+production Opposed color reconstruction; that interaction still needs shipping
+qualification, not an assertion that this trial tested it.
+
+**Cold/dead mode stays separate and off.** Negative black-subtracted values are
+normal in deep shadows; an isolated dark measurement is not sufficient proof
+of a dead site. This adapter preserves negative samples and refuses a request
+for cold discovery. No symmetric low-outlier heuristic was enabled.
+
+### Known-light preservation and injected defects
+
+The point experiment integrates the PSF over each pixel aperture at 32×
+sampling before applying CFA responses. It includes a Gaussian lens blur and
+FFT circular-pupil Airy PSFs, without an anti-aliasing filter. Each table cell
+contains **216 trials**: three peaks (0.06/0.2/0.6), nine subpixel offsets,
+four CFA phases, clean/noisy. Each changed trial changes one known-light site.
+These are stress-case counts, **not estimates of real-world frequency**.
+
+| Optical spread in sensor pixels | White light changed | Warm spark changed | Narrow red changed | Narrow blue changed |
+| --- | ---: | ---: | ---: | ---: |
+| Gaussian sigma 0.8 | 0 / 216 | 0 / 216 | 43 / 216 | 25 / 216 |
+| Airy first-zero radius 1.2 | 0 / 216 | 0 / 216 | 53 / 216 | 35 / 216 |
+| Airy first-zero radius 0.65 | 1 / 216 | 7 / 216 | 47 / 216 | 45 / 216 |
+| Airy first-zero radius 0.35 | 23 / 216 | 13 / 216 | 50 / 216 | 46 / 216 |
+
+Total: **388 / 3,456** known-light trials changed. A 0.35-pixel first-zero
+radius approximates a near-diffraction-limited f/2-class lens at 550 nm and
+4–4.3 µm pitch: a realistic sharp/no-AA stress case, not a measured lens.
+The red/blue and warm channel ratios are declared sensor-response stress
+vectors, not claims of measured lamp spectra or camera spectral sensitivity.
+Four fine-text cases rendered at 8× through those PSFs cause **zero repairs**.
+The table demonstrates why “light is never exactly one photosite” is helpful
+evidence but not a reliable single-frame classification theorem.
+
+Positive controls inject four known isolated hot sites in each of three noisy
+backgrounds: **2/4** found at 0.002, **4/4** at 0.05, **4/4** at 0.3;
+**10/12 true injected defects found, zero other sites changed**. Incidental
+other-colour noise vetoes the two missed dark-background defects. Sparse
+defect repair is useful when its assumption is true; it is not general noise
+removal, and no threshold was relaxed to find the missing two.
+
+### Real-photo counts and decision crops
+
+The approved corpus has 18 RAW entries; 15 have a supported Bayer/colour
+bridge. DJI DNG, linear DxO DNG and Fuji X-Trans are excluded, not passes.
+Counts below are changed sensor sites; **confirmed true defects and confirmed
+real-point false positives cannot be counted from these single exposures**.
+No verified star-field RAW is present in the approved corpus.
+
+| Photo | Changed candidates |
+| --- | ---: |
+| 2025_0730_1331_3.arw | 0 |
+| A7R00619.ARW | 9 |
+| DSC00264.ARW | 0 |
+| DSC00950.ARW | 0 |
+| DSC01212.ARW | 1 |
+| DSC04375.ARW | 0 |
+| DSC06615.ARW | 0 |
+| DSC_3931.NEF | 5 |
+| IMG_0114.CR2 | 0 |
+| IMG_0790.CR2 | 3 |
+| IMG_3129.CR2 | 13 |
+| IMG_7723.CR3 | 0 |
+| Leica X2 DNG | 0 |
+| P1010004.ORF | 10 |
+| P1150601.RW2 | 0 |
+
+Canon candidate coordinates `(x,y)`: **(1583,1083), (4648,1493),
+(4325,2395)**. None is independently confirmed as persistent. The original
+fixed flame/shadow crops contain no repaired sites. Additional inspected
+192-pixel crops: two airborne sparks centred at (3219,1317)/(4026,1398),
+**zero changed sites**; Sony night bulb/sign, **zero**; sunset glints centred
+at (3205,2580), **two** at (3208,2610)/(3203,2552); Sony tree/sky-hole crop
+centred at (2066,1123), **one**. The last three are suspicious alterations in
+fine scene detail, not established physical faults. Do not relabel all 41
+changed candidates as defects or all as real light.
+
+Local review: `codebase/output/denoise-v1/hot-pixel/index.html`. Four columns
+show **Off / shipping-default Denoise / filter / filter + Denoise** for
+injected known faults, Canon hot-like sites, real sparks/glints/night lights,
+and preserved/damaged synthetic point sources. Corpus candidate crops are
+96 pixels, supplementary real-point crops 192; candidate display exposure is
+recorded per crop. `point-decisions.json` retains exact locations, sensor
+decisions and finished SDR/HDR differences. Crops are PNGs, not RAW copies.
+The existing twelve-row decision page was regenerated in place with the same
+four columns at 288 pixels, retaining its unchanged 13 MB image budget.
+
+### Effect on shipping Denoise and public pairs
+
+Fresh runs use Amount/Color Noise **0.75**, Detail Recovery **0.5**. The quick
+23-case and full 35-case sets produce zero repairs: filter equals Off, and
+filter + Denoise equals current Denoise exactly. Public pairs are evaluated
+separately by held-out/seen split; the filter never sees clean truth at runtime.
+Means below are arithmetic means of per-case SDR PSNR / per-case mean ΔE2000,
+not a mixture of median PSNR and mean colour difference.
+
+| Split | Off | Current Denoise | Filter | Filter + Denoise |
+| --- | --- | --- | --- | --- |
+| Held-out, 19 crops | 28.72696 dB / 6.355187 | 36.20669 / 2.671286 | 28.72579 / 6.355434 | 36.20335 / 2.671372 |
+| Seen, 33 crops | 30.26496 dB / 5.273104 | 34.45526 / 3.081596 | 30.26496 / 5.273104 | 34.45527 / 3.081595 |
+
+Held-out: 12 repairs in eight cases. Only four changed sensor positions have
+valid registered clean scoring support: one moves closer to clean, three
+farther. Seen: two repairs in two cases, neither within valid support. Clean
+pair consistency is not persistent-defect truth; registration, clean-frame
+noise and gain remain limitations. These small score changes do **not** show
+a meaningful denoising improvement or justify treating inside-tolerance drift
+as a regression. HDR metrics, masks and half-resolution results are retained
+in the receipts; no quality contract or HDR ceiling is relaxed.
+
+### Native cost and GPU agreement
+
+MacBook Neo A18 Pro / 8 GB, one CPU thread, shared lock; bounded 768-pixel
+AHD/Denoise cores, 86-pixel Denoise plus 16-pixel AHD halos. Native clocks
+cover unpack → normalise → optional filter → all developed/Denoised pixels;
+not UI/action-to-screen, lens/geometry or Opposed color. One observation per
+condition; inherited ±10% descriptive timing allowance. No speedup claim.
+
+| Input | Filter alone | Whole pipeline, disabled → enabled | Process peak RSS, disabled → enabled |
+| --- | ---: | ---: | ---: |
+| 18.02 MP IMG_0790.CR2 | 0.190 s | 8.361 → 8.144 s | 0.720 → 0.811 GB |
+| 42.39 MP Sony ARW | 0.471 s | 17.045 → 16.933 s | 0.892 → 1.098 GB |
+
+The whole-pipeline differences are normal timing noise. The additional step
+is about 2–3% of that wait; creating a new GPU route for this CPU cost is not
+justified. The **already-GPU** RAW path should keep the step on the GPU to
+avoid a readback. `frontend/library-gpu-raw.js` currently combines
+normalisation, zero-clamping, WB and clip bits: gather original packed DN
+neighbours and normalise by CFA inside that stage **before** WB and clipping
+evidence, writing a separate output. Do not read/write in place or add a
+full-frame float cache. Dispatch bounded tiles with four-pixel sensor halos;
+retain existing one-attempt/CPU-fallback policy and memory admissions.
+
+`hot_pixel_gpu.cjs` is an actual standalone WebGPU kernel, not a CPU mock.
+**35 fixtures pass** with identical changed masks and sensor values; finished
+SDR ΔE2000 and HDR ΔE ITP, before/after shipping Denoise, have **mean 0 / p99 0**,
+inside mean <1 / p99 <3. Both kernels feed the **same CPU** AHD/colour/display
+pipeline to isolate the new step. This is **not** full production GPU-RAW
+parity, native GPU speed, reconstructed-highlight, export or encoding
+qualification. Those remain prerequisites for shipping, not research passes.
+
+### Recommendation, validation and reproduction
+
+Recommend **default off**, one checkbox **Remove hot pixels** inside RAW
+development **Pixel cleanup**. Tooltip: **“Removes isolated bright sensor dots
+before the photo is developed. Turn off if it removes tiny stars, sparks or
+bright reflections. Very bright dots and dots near clipped highlights may
+remain.”** Start without a strength slider: more sensitivity trades missing
+faults against deleting genuine scene light, and this trial establishes no
+safe extra range. Cold/dead discovery remains a separate unqualified mode,
+off. No request for camera maps or calibration captures is made.
+
+Twelve focused behavioural tests cover Bayer phases/patterns, light/clipping
+vetoes, cold/negative values, borders, unsupported/disabled paths, direction
+repair, strip/tile seams, noise confidence and the genuine-point ambiguity.
+Fast suites under shared lock and unchanged 2.5 GB guard: Node **1,091 passed /
+one skipped**; Python **3,999 passed / 155 skipped / one xpassed**, no failures.
+The existing Starlette deprecation warning is unrelated. The focused WebGPU
+probe passes; no broad Library check substitutes for missing shipping
+integration. No read-only project or original photo is modified.
+
+From `codebase`, set `PYTHONPATH=backend`. Run each heavy command serially
+through `.venv/bin/python tools/gpu-run-lock.py --label hot-pixel-<job> --`
+and the existing `candidates.guard`. The inventory is the prior cleanup
+`full.json`, with its full path supplied explicitly, containing photo/model
+provenance; measurements record its SHA-256 and the source revision.
+
+```sh
+.venv/bin/python -m tools.denoise_eval.candidates.hot_pixel_measure generated --inventory "$inventory"
+.venv/bin/python -m tools.denoise_eval.candidates.hot_pixel_measure corpus --inventory "$inventory"
+.venv/bin/python -m tools.denoise_eval.candidates.hot_pixel_measure full --inventory "$inventory"
+.venv/bin/python -m tools.denoise_eval.candidates.hot_pixel_measure heldout --inventory "$inventory"
+.venv/bin/python -m tools.denoise_eval.candidates.hot_pixel_measure seen --inventory "$inventory"
+.venv/bin/python -m tools.denoise_eval.candidates.hot_pixel_measure native --photo IMG_0790.CR2 --inventory "$inventory"
+.venv/bin/python -m tools.denoise_eval.candidates.hot_pixel_measure native --photo 2025_0730_1331_3.arw --inventory "$inventory"
+.venv/bin/python -m tools.denoise_eval.candidates.hot_pixel_measure point-decisions --inventory "$inventory"
+.venv/bin/python -m tools.denoise_eval.candidates.hot_pixel_report
+```
+
+GPU reproduction: `gpu-fixtures --inventory "$inventory"`, then run
+`node tests/run-in-electron.js tools/denoise_eval/candidates/hot_pixel_gpu.cjs
+output/denoise-v1/hot-pixel/gpu-input.json output/denoise-v1/hot-pixel/gpu-output.json`
+under the same lock with window **1408x794**, then `gpu-compare --inventory
+"$inventory"`. Remove those two bulk JSON inputs/outputs afterwards; retain
+`gpu-fixtures.json`, `gpu-compare.json`, small PNGs and guard receipts. Public
+pairs reuse the existing read-only local dataset link; no datasets, photos,
+models or generated crops are committed. Start output was **12.9 GB**, final
+output **13.0 GB**, below the 100 GB limit. Owned bulk GPU JSON scratch was
+removed; retained hot-pixel receipts, logs and report-linked small crops total
+**27.27 MB**. Existing shared test-photo/dataset targets were not changed.
 
 [dt-manual]: https://docs.darktable.org/usermanual/development/en/module-reference/processing-modules/hot-pixels/
 [dt-code]: https://github.com/darktable-org/darktable/blob/master/src/iop/hotpixels.c

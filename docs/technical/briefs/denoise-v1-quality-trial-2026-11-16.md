@@ -225,6 +225,18 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: Steve ruled out camera defect maps/calibration captures for now.
+  The requested map-free hot-pixel prototype changes three unconfirmed Canon
+  sites, preserves two reviewed airborne sparks, but changes sharp real-light
+  models and three suspicious glint/sky-detail sites. Recommend one optional
+  **Remove hot pixels** checkbox, default off, cold mode off; no slider or
+  app/module PRD change. CPU filter .190/.471 s at 18/42 MP on the Mac;
+  public held-out/seen pairs show no meaningful Denoise gain. Twelve focused
+  tests and 35 isolated GPU parity cases pass; Node 1,091 passed, Python
+  3,999 passed. See the new single-photo section in `raw-pixel-cleanup.md`.
+  The older map-based recommendation below is historical, not a request for
+  captures. No thresholds/guards relaxed or production integration performed.
+
 - 2026-11-17: Pixel cleanup research: map-based repair of known sensor
   defects before demosaic works and is cheap (~21/75 ms at 18/42 MP), but
   IMG_0790 has no confirmed defects (1,011 unconfirmed suspects, almost all
