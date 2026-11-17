@@ -12,15 +12,19 @@ from hdr_finisher.projects import open_project, save_project
 from hdr_finisher.sessions import SessionStore
 
 
-def test_denoise_settings_are_versioned_undoable_and_project_persistent(tmp_path: Path) -> None:
+@pytest.mark.parametrize("amount,color,detail", [(0.73, 0.61, 0.63), (0.5, 0.5, 0.0)])
+def test_denoise_settings_are_versioned_undoable_and_project_persistent(
+    tmp_path: Path, amount: float, color: float, detail: float,
+) -> None:
     source = tmp_path / "denoise-source.png"
     Image.fromarray(np.full((16, 24, 3), 96, dtype=np.uint8)).save(source)
     store = SessionStore()
     payload = store.create_session(source, owns_source_path=False)
     settings = DenoiseDocumentSettings()
     settings.hdr.enabled = True
-    settings.hdr.controls.amount = 0.73
-    settings.hdr.controls.detail_recovery = 0.63
+    settings.hdr.controls.amount = amount
+    settings.hdr.controls.color_noise = color
+    settings.hdr.controls.detail_recovery = detail
 
     changed = store.apply_edit_commands(
         payload.session_id,
@@ -32,8 +36,9 @@ def test_denoise_settings_are_versioned_undoable_and_project_persistent(tmp_path
     )
     assert changed.document.denoise.schema_version == 1
     assert changed.document.denoise.hdr.enabled is True
-    assert changed.document.denoise.hdr.controls.amount == 0.73
-    assert changed.document.denoise.hdr.controls.detail_recovery == 0.63
+    assert changed.document.denoise.hdr.controls.amount == amount
+    assert changed.document.denoise.hdr.controls.color_noise == color
+    assert changed.document.denoise.hdr.controls.detail_recovery == detail
 
     undone = store.apply_edit_commands(
         payload.session_id,
@@ -52,14 +57,26 @@ def test_denoise_settings_are_versioned_undoable_and_project_persistent(tmp_path
     reopened = open_project(store, project_path)
     assert reopened.denoise.schema_version == 1
     assert reopened.denoise.hdr.enabled is True
-    assert reopened.denoise.hdr.controls.amount == 0.73
-    assert reopened.denoise.hdr.controls.detail_recovery == 0.63
+    assert reopened.denoise.hdr.controls.amount == amount
+    assert reopened.denoise.hdr.controls.color_noise == color
+    assert reopened.denoise.hdr.controls.detail_recovery == detail
 
 
-def test_new_denoise_settings_default_detail_recovery_to_zero() -> None:
+def test_new_denoise_settings_use_approved_d1_defaults() -> None:
+    from dataclasses import asdict
+    from hdr_finisher.denoise_adaptive import AdaptiveControls
+    from tools.denoise_eval.candidates.denoise_v2_appdefault import AppDefault
+
+    expected = dict(amount=0.75, luminance=0.5, color_noise=0.75,
+                    detail_recovery=0.5, finest_noise=0.5, fine_noise=0.5,
+                    medium_noise=0.5, coarse_noise=0.5)
+    assert DenoiseLiveControls().model_dump() == expected
+    assert asdict(AdaptiveControls()) == expected
+    assert asdict(AppDefault().controls) == expected
     settings = DenoiseDocumentSettings()
-    assert settings.hdr.controls.detail_recovery == 0.0
-    assert settings.sdr.controls.detail_recovery == 0.0
+    for lane in (settings.hdr, settings.sdr):
+        assert not lane.enabled
+        assert lane.controls.model_dump() == expected
 
 
 def test_a_live_edit_refuses_the_removed_wavelet_fields() -> None:

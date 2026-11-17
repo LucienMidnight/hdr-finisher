@@ -3798,7 +3798,7 @@
       );
       const denoiseSource = adaptiveDenoise ? proxy : null;
       const denoiseControls = denoiseSelector?.controls
-        || { amount: 0.5, luminance: 0.5, colorNoise: 0.5, detailRecovery: 0 };
+        || { amount: 0.75, luminance: 0.5, colorNoise: 0.75, detailRecovery: 0.5 };
       // Show noise differences the original against this generation's own
       // reconstruction, so whether anything was removed is decided here.
       const noiseView = params[NOISE_VIEW_INDEX] > 0;
@@ -5744,10 +5744,10 @@
       const geometrySignature = JSON.stringify(adjustments?.shared?.geometry || {});
       const frame = { identity: `${sessionId}:${lane}:${longEdge}:${geometrySignature}:${sourceIdentity}` };
       return this.analyzeAdaptiveDenoise(sessionId, lane, frame, longEdge, editRevision, geometrySignature, generation, {
-        amount: controls.amount ?? 0.5,
+        amount: controls.amount ?? 0.75,
         luminance: controls.luminance ?? 0.5,
-        colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.5,
-        detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0,
+        colorNoise: controls.colorNoise ?? controls.color_noise ?? 0.75,
+        detailRecovery: controls.detailRecovery ?? controls.detail_recovery ?? 0.5,
         finestNoise: controls.finestNoise ?? controls.finest_noise ?? 0.5,
         fineNoise: controls.fineNoise ?? controls.fine_noise ?? 0.5,
         mediumNoise: controls.mediumNoise ?? controls.medium_noise ?? 0.5,
@@ -6154,7 +6154,7 @@
       const selector = this.denoiseSourceSelector;
       if (!selector?.cache || selector.selected !== "resolved") return false;
       const weights = ["amount", "luminance", "colorNoise", "detailRecovery"].map((name) => {
-        const value = Number(controls[name] ?? 0.5);
+        const value = Number(controls[name] ?? (name === "amount" || name === "colorNoise" ? 0.75 : 0.5));
         if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
         return value;
       });
@@ -6184,7 +6184,7 @@
       const startedAt = performance.now();
       this.denoiseCounters.resolveCalls += 1;
       const weights = ["amount", "luminance", "colorNoise", "detailRecovery"].map((name) => {
-        const value = Number(controls[name] ?? 0.5);
+        const value = Number(controls[name] ?? (name === "amount" || name === "colorNoise" ? 0.75 : 0.5));
         if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error(`${name} must be between 0 and 1`);
         return value;
       });

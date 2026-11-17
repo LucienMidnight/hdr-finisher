@@ -21,12 +21,12 @@ Click the switch again to compare. Turning Denoise off shows the original pictur
 
 If you open another photo while Denoise is preparing or updating, the old work is discarded; it cannot change the new photo’s settings or status.
 
-**Reset** in the group header puts the Denoise sliders back to their defaults.
+**Reset** in the group header and the **Default** preset restore Amount and Color Noise to 75%, and Detail Recovery, Luminance and all four noise-size sliders to 50%. Double-click a slider to reset just that control. Saved grades keep their saved values; these defaults apply to new photos and resets. Denoise still starts off.
 
 ## Basic controls
 
-- **Amount** sets how much cleaning is applied overall. At 50% you get the amount the app measured. Raise it for stubborn noise. At 0% nothing changes.
-- **Detail Recovery** gives back fine detail that Denoise took out along with the noise. Raise it if textures such as hair, fabric or foliage look smooth. It starts at 0%.
+- **Amount** sets how much cleaning is applied overall. It starts at 75%. At 50% you get the amount the app measured. Raise it for stubborn noise. At 0% nothing changes.
+- **Detail Recovery** gives back fine detail that Denoise took out along with the noise. Raise it if textures such as hair, fabric or foliage look smooth. It starts at 50%.
 
 Both sliders update the picture as you drag.
 
@@ -34,8 +34,8 @@ Both sliders update the picture as you drag.
 
 Click **Advanced** to show more.
 
-- **Luminance** sets how much brightness noise is removed.
-- **Color Noise** sets how much colour speckle is removed. Colour noise is usually easy to remove without losing detail, so this often tolerates a high setting.
+- **Luminance** sets how much brightness noise is removed. It starts at 50%.
+- **Color Noise** sets how much colour speckle is removed. It starts at 75%. Colour noise is usually easy to remove without losing detail, so this often tolerates a high setting.
 - **Noise size** has four sliders. Each sets how strongly noise of that size is removed:
   - **Finest · 1–2 px:** pixel-level speckle.
   - **Fine · 2–4 px:** small grain.

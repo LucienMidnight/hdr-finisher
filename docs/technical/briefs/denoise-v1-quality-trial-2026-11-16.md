@@ -5,7 +5,7 @@
   `feat/watermark-and-library-polish`). Keep all work on this branch; another
   coordinator is working on Grade performance, Film Look and export in the
   main checkout, so do not touch those areas.
-- **Status:** Phase 3, waiting on Steve's decisions D1 and D2 (section 7).
+- **Status:** Phase 3, D1 approved and implemented November 17; waiting on D2 (section 7).
 
 ## 1. Goal (Steve, November 16, 2026)
 
@@ -185,8 +185,9 @@ the [technology watch](../denoising-technology-watch-2026.md):
 **Phase 3 decisions put to Steve (November 16, 2026)**, with the review page
 https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
-- **D1.** Retune the default to Amount 0.75, Color Noise 0.75, Detail Recovery
-  0.5 (shipping 0.5/0.5/0.0). Held-out real pairs 34.83 dB / ΔE 3.04 against
+- **D1. Approved by Steve; implemented November 17, 2026.** Retune the
+  default to Amount 0.75, Color Noise 0.75, Detail Recovery 0.5
+  (previously shipping 0.5/0.5/0.0). Held-out real pairs 34.83 dB / ΔE 3.04 against
   34.42 / 3.39 as shipped; same edge sharpness. Recommended: yes.
 - **D2.** Build the RawNIND-Bayer-guided Wiener stage (pilot-wiener
   `bayer_both`) for Bayer camera RAWs, as a Denoise switch on by default;
@@ -199,10 +200,22 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 - **Found:** shipping Denoise leaves dark specks with light rims in strongly
   lifted high-ISO shadows (`IMG_0790.CR2`, +4 stops); fix regardless of D2.
 - Correction: research `AdaptiveControls` default Detail Recovery 0.5, but the
-  app ships 0.0; Phase 2 "current default" columns used 0.5. The decision page
+  app shipped 0.0 before D1; Phase 2 "current default" columns used 0.5. The decision page
   and D1/D2 numbers use the shipping default.
 
 ## 8. Log
+
+- 2026-11-17: implemented Steve's D1 shipping defaults (Amount/Color Noise
+  0.75, Detail Recovery 0.5) across CPU/GPU defaults, new documents, reset and
+  Default preset paths; saved values retained, no migration or tolerance changes.
+  Mac validation: Node 1,091 passed / one skipped; Python 3,941 passed /
+  155 skipped / one xpass. `denoise-progressive-disclosure.js` passed new-photo
+  defaults, double-click/group reset and Default preset checks plus its existing
+  display checks. `denoise-adaptive-parity.js` stopped at the documented
+  pre-existing Mac failure, "The GPU result could not be read back"; no rerun
+  or tolerance change. Both GPU checks used the shared lock at 1408x794.
+  Output stayed 12.9 GB; generated temporary fixtures removed. All three
+  protected project hashes stayed unchanged; none changes appearance on open.
 
 - 2026-11-16: pilot-guided empirical Wiener CPU adapters implemented, with
   self/tuned/verified Bayer pilots, both-Wiener/direct-pilot-chroma variants,

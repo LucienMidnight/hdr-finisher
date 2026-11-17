@@ -67,8 +67,12 @@ function assert(condition, message) {
 
     assert(await shown("denoise-amount"), "Amount is not always visible.");
     assert(await shown("denoise-detail"), "Detail Recovery is not always visible.");
-    assert(await page.locator("#denoise-detail").inputValue() === "0", "A new project did not start Detail Recovery at 0%.");
-    assert(await page.locator("#denoise-detail-value").textContent() === "0%", "The new Detail Recovery default was not displayed as 0%.");
+    assert(await page.locator("#denoise-detail").inputValue() === "0.5", "A new project did not start Detail Recovery at 50%.");
+    assert(await page.locator("#denoise-detail-value").textContent() === "50%", "The new Detail Recovery default was not displayed as 50%.");
+    for (const key of ["amount", "color"]) {
+      assert(await page.locator(`#denoise-${key}`).inputValue() === "0.75", `${key} did not start at 75%.`);
+      assert(await page.locator(`#denoise-${key}-value`).textContent() === "75%", `${key} did not display 75%.`);
+    }
     for (const removed of ["denoise-algorithm", "denoise-method", "denoise-levels"]) {
       assert(await page.locator(`#${removed}`).count() === 0, `The removed control #${removed} is still in the panel.`);
     }
@@ -163,6 +167,29 @@ function assert(condition, message) {
     assert(digest(before) !== digest(afterHiddenEdit),
       "Luminance made no difference to the picture while hidden, so disclosure "
       + "has detached it from the render.");
+
+    // The reset routes must agree with the fresh-photo values, including
+    // Advanced controls. Dispatch the actual double-click handler.
+    const resetDefaults = await page.evaluate(() => {
+      const expected = { amount: 0.75, luminance: 0.5, color_noise: 0.75,
+        detail_recovery: 0.5, finest_noise: 0.5, fine_noise: 0.5,
+        medium_noise: 0.5, coarse_noise: 0.5 };
+      const lane = state.currentView;
+      for (const [id, key] of [["amount", "amount"], ["color", "color_noise"], ["detail", "detail_recovery"]]) {
+        const control = document.getElementById(`denoise-${id}`);
+        control.value = "0.1";
+        control.dispatchEvent(new Event("input", { bubbles: true }));
+        control.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+        if (state.denoise[lane].controls[key] !== expected[key]) return false;
+      }
+      state.denoise[lane].controls.amount = 0.1;
+      resetControlGroup("denoise");
+      const preset = builtInGroupPresets({ group: "denoise", lane })[0];
+      return Object.entries(expected).every(([key, value]) =>
+        state.denoise[lane].controls[key] === value
+        && preset.values[`denoise.${lane}.controls`][key] === value);
+    });
+    assert(resetDefaults, "Group reset, double-click reset and Default preset disagree with the approved defaults.");
 
     assert(pageErrors.length === 0, "Page errors: " + JSON.stringify(pageErrors));
     console.log("Denoise progressive disclosure matches 6.3, and changes no results: "
