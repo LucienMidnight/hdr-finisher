@@ -225,6 +225,16 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: early outlier taming merged (`early-outlier-taming.md`;
+  review https://claude.ai/artifact/Edqv4SaRSdtrNGYEbgkx89). Pre-demosaic soft
+  clamp with neighbour support: flat-gallery specks 547 → 141 (2.5σ, up to
+  5 samples) or 240 (4σ, one sample); AI 22. Harsh specks become soft dots.
+  Costs: small stars (~2 px) dimmed/colour-shifted at 2.5σ (gentle setting
+  much closer), thin lettering changes even on clean input, +2.2 s / +5 s at
+  18 / 42 MP CPU, no general fidelity gain. Threshold below 2.5σ adds little;
+  the less-luma/more-colour grain preset is not a default. Recommendation:
+  optional, default-off control in Pixel cleanup. Put to Steve.
+
 - 2026-11-17: Pixel cleanup "Remove hot pixels" merged (`9009cb9c`): off by
   default, CPU and GPU, saved per photo, collapsed section before Highlight
   Reconstruction; +0.32 s / +0.60 s CPU at 18 / 42 MP. Node 1,103 / Python
