@@ -630,6 +630,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   AHD: sensor-defect prior art, unconfirmed Canon suspects, synthetic known
   faults, held-out/seen preservation, native cost and CPU/GPU placement;
   no automatic scene-outlier repair or production integration.
+  `signed-shadows.md` records signed AHD and unchanged-Denoise trials,
+  neutral-bias gains but unresolved Canon specks, native CPU cost and the
+  complete downstream signed-range shipping/changed-grade audit.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.

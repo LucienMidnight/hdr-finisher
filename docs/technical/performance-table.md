@@ -1,3 +1,30 @@
+## November 17: signed RAW shadows (research only)
+
+MacBook Neo / A18 Pro / 8 GB, one CPU/native thread, signed AHD prototype
+`e44d75b3`; extra RawNIND decision baseline `0fcca1b1`. Shared machine lock,
+unchanged 2.5 GB sampled process-tree guard. Single runs, existing ±10%
+descriptive allowance; **no action-to-screen performance claim**. Native
+development sums include shared unpack, AHD and normalise/ACEScg subclocks,
+not Denoise, highlights, lens, final rendering or all harness overhead.
+Current rawpy also orients; signed native strips stay sensor-oriented.
+
+| Research action, same Mac | Time / sampled peak tree RSS | Conditions |
+| --- | --- | --- |
+| Canon 18.02 MP current / signed development | .840 / 1.088 s; .819 GB combined command | IMG_0790.CR2, ISO3200. Added .248 s. AHD .537 / .651 s; tail .288 / .393 s; signed sensor subtract .029 s. |
+| Sony 42.39 MP current / signed development | 1.976 / 2.518 s; 1.332 GB combined command | 2025_0730_1331_3.arw, ISO4000. Added .542 s. AHD 1.299 / 1.539 s; tail .661 / .919 s; signed sensor subtract .044 s. |
+| Quick / full quality | 14.04 / 80.34 s; .634 / .754 GB guard peaks | 23 / 35 cases; signed and clipped-control fresh, frozen Off/current/RawNIND scores reused with hashes; no errors. |
+| Public held-out / seen quality | 47.60 / 93.84 s; .583 / .579 GB | 19 / 33 crops, four / seven scenes, reported separately; equal-scene weighting. |
+| Final decision crops / neutral and exposure safety | 31.03 / 4.14 s guarded commands; 1.092 / .468 GB | Twelve decision rows, seven new columns plus fresh RawNIND baseline. Four neutral levels × eight seeds; 12 CPU-compression ±6 EV cases. |
+| Required Node / final ORT-enabled Python checks | 12.04 / 254.20 s | Node 1091 passed, one skipped; Python 4010 passed, 150 skipped, one xpassed. Final Python guard 255.73 s / 2.005 GB; no failures. |
+
+Signed development improves synthetic/neutral bias, not the real Canon speck
+problem; native costs are **development-only**, not whole-app changes. No
+GPU port, budget change or shipping integration. Full audit, limitations and
+receipt links: [signed-shadows.md](research/denoise-v1-2026-11-16/signed-shadows.md).
+Initial Python without ORT was 275.88 s (4005 passed / 155 skipped / one
+xpassed), not a controlled regression comparison. Optional ORT 1.32.0 was
+installed from the local package cache, enabling five additional tests.
+
 ## November 17: RAW Pixel cleanup (research only)
 
 MacBook Neo / A18 Pro / 8 GB, one CPU thread, prototype `78f93157`.
