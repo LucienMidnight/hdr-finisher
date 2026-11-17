@@ -15,7 +15,7 @@ from .library_copies import source
 from .library_live import quality
 from .library_pictures import picture_key, PICTURE_VERSION
 
-VERSION = 'stored-screen-preview-jxl-v6:' + PICTURE_VERSION
+VERSION = 'stored-screen-preview-jxl-v7:' + PICTURE_VERSION
 LIMIT_BYTES = 10 * 1024**3
 _lock = RLock()
 

@@ -2,7 +2,7 @@
  * Measurement is independent of finishing controls and rendition names.
  */
 (() => {
-  const VERSION = "adaptive-measure-gpu-v1";
+  const VERSION = "adaptive-measure-gpu-signed-source-v2";
   const shader = `
 struct Params { w:u32, h:u32, count:u32, op:u32, step:u32, axis:u32, stride:u32, pad:u32, a:f32, b:f32, c:f32, extra:f32 }
 @group(0) @binding(0) var<storage,read> src:array<vec4f>;

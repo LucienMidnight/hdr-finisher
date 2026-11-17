@@ -1,7 +1,7 @@
 """Full resolution Bayer development with bounded resident bands.
 
 The full scene lives in disposable planar files, never a resident RGB image.
-LibRaw AHD receives overlapping sensor bands; only their interior is retained.
+Signed AHD receives overlapping sensor bands; only their interior is retained.
 """
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -41,13 +41,14 @@ class _Reduction:
 
 
 def develop(root, path, document, edge, cancelled, cache, progress, draw_first, prepared=None):
-    import rawpy, tifffile
+    import rawpy
     from . import raw_import as raw
     from .library_live import quality, recipe
     from .library_pictures import check_cancelled
     from .library_gpu_raw import _lens_grid, _identity, developed
     from .models import RawImportSettings
-    from .color import map_negative_acescg, acescg_to_linear_bt2020
+    from .color import acescg_to_linear_bt2020
+    from .signed_raw import demosaic
     from .import_defaults import calibrate_camera_raw
     cache_epoch = cache.managed.publication_epoch(path)
     if prepared is not None:
@@ -70,6 +71,10 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first, 
                 raise ValueError('CPU band development requires a Bayer RAW.')
             exif = raw._merge_missing_metadata(exif,raw._read_libraw_metadata(source))
             flip = int(source.sizes.flip)
+            lab_matrix = raw._ahd_lab_matrix(source)
+            cfa = metadata.raw_pattern
+            pattern = metadata.raw_channel_to_rgb[cfa]
+            black = metadata.raw_black_level[cfa]
             # Highlight reconstruction runs once, so every band shares its global
             # opposed-colour estimate and identical repaired sensor samples.
             raw._apply_raw_highlight_reconstruction(source,metadata,settings,cancelled=cancelled)
@@ -83,26 +88,16 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first, 
         handles = [p.open('wb') for p in planes]
         try:
             if progress: progress('demosaic','Developing RAW in bands')
-            # AHD's neighbourhood and tile decisions have a 32-row halo.
+            # Eight rows retain every AHD homogeneity neighbour at a strip seam.
             for start in range(0,height,256):
                 check(); stop=min(height,start+256)
-                lo=max(0,start-32); hi=min(height,stop+32)
+                lo=max(0,start-8); hi=min(height,stop+8)
                 band=np.fromfile(sensor,dtype=np.uint16,count=(hi-lo)*width,offset=lo*width*2).reshape(hi-lo,width)
-                pattern = metadata.raw_channel_to_rgb[metadata.raw_pattern]
-                tags=[(50706,'B',4,(1,4,0,0),False),(50707,'B',4,(1,1,0,0),False),
-                    (50708,'s',0,'HDR Finisher sensor band',False),(33421,'H',2,(2,2),False),
-                    (33422,'B',4,tuple(int(x) for x in pattern.flat),False),
-                    (50713,'H',2,(2,2),False),
-                    (50714,'I',4,tuple(int(metadata.raw_black_level[c]) for c in metadata.raw_pattern.flat),False),
-                    (50717,'I',1,int(max(metadata.raw_white_level)),False)]
-                dng=folder/'band.dng'
-                tifffile.imwrite(dng,band,photometric=32803,metadata=None,extratags=tags)
-                with rawpy.imread(str(dng)) as decoder:
-                    rgb=raw._develop_libraw_camera_rgb(decoder,rawpy)[start-lo:stop-lo]
+                rgb=demosaic(band,pattern,black,lab_matrix,cancelled=cancelled)[start-lo:stop-lo]
                 pixels=raw._normalize_camera_rgb_float32(rgb,metadata,cancelled=cancelled)
                 pixels=raw._camera_rgb_to_acescg_float32(pixels,metadata,cancelled=cancelled)
                 for c,handle in enumerate(handles): np.ascontiguousarray(pixels[:,:,c]).tofile(handle)
-                del rgb,pixels,band,decoder
+                del rgb,pixels,band
         finally:
             for handle in handles: handle.close()
         sensor.unlink(); check()
@@ -140,7 +135,6 @@ def develop(root, path, document, edge, cancelled, cache, progress, draw_first, 
                 if gain is not None:
                     field=_bilinear(gain,sy*(gain.shape[0]-1)/max(1,out_h-1),sx*(gain.shape[1]-1)/max(1,out_w-1))
                     pixels[:,:,c]*=field
-            pixels=map_negative_acescg(pixels)
             brightness=calibrate_camera_raw(pixels,path)
             peaks['peak']=max(peaks['peak'],float(pixels.max()))
             peaks['peak_luma']=max(peaks['peak_luma'],float((pixels@np.array([.2722287,.6740818,.0536895],dtype=np.float32)).max()))

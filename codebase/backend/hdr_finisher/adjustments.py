@@ -909,7 +909,7 @@ def _sdr_before_black_and_white(image: np.ndarray, adjustments: AdjustmentState)
     sdr = adjustments.sdr
     result = image
     if sdr.tone_section_enabled:
-        result = np.clip(result * np.float32(2.0 ** sdr.exposure), 0.0, None)
+        result = result * np.float32(2.0 ** sdr.exposure)
     if _sdr_color_is_enabled(adjustments):
         result = _apply_hdr_color(result, adjustments.sdr, PreviewKind.SDR)
     return result
@@ -1814,7 +1814,7 @@ def _apply_film_look(
     if _structure_is_active(branch):
         result = _apply_image_structure(result, branch.detail, kind)
     # Keep SDR headroom through the strength mix; output gamut mapping runs last.
-    return np.maximum(result, 0.0).astype(np.float32)
+    return result.astype(np.float32)
 
 
 def _apply_color_grading(image: np.ndarray, grading: object, kind: PreviewKind) -> np.ndarray:
@@ -1890,7 +1890,7 @@ def _apply_vignette(
         highlight = _smoothstep(0.55, 0.95, _film_encode_luma(luma, kind))
         mask *= 1.0 - highlight * np.float32(vignette.highlight_protection / 100.0)
     gain = np.exp2(ev * mask)
-    return np.maximum(image.astype(np.float32, copy=False) * gain[..., None], 0.0).astype(np.float32)
+    return (image.astype(np.float32, copy=False) * gain[..., None]).astype(np.float32)
 
 
 def _film_luma(image: np.ndarray, kind: PreviewKind) -> np.ndarray:
@@ -2311,7 +2311,7 @@ def _apply_image_structure(
     low_pass = _film_detail_blur(source, radius)
     result = image + (low_pass - image) * softness * np.float32(0.65)
     result += (image - low_pass) * microcontrast * np.float32(0.5)
-    return np.maximum(result, 0.0).astype(np.float32)
+    return result.astype(np.float32)
 
 
 def _apply_film_resolution(

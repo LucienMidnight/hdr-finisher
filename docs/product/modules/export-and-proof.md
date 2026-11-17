@@ -1,3 +1,17 @@
+## November 17: signed working input; delivery qualification open
+
+Signed RAW integration removes the incidental RGB floor from shared CPU
+finishing and GPU delivery sharpening/pre-output copies. Final SDR/HDR gamut
+mapping, codec bounds and the exact pre-encode HDR target remain unchanged;
+the 1% allowance applies only to encoded rounding. Proof and export must still
+agree within the existing finished-pixel tolerance, including GPU Proof with
+CPU export fallback. No Denoise algorithm or delivery budget change.
+
+This is not a delivery qualification pass. All applicable real-device,
+framing/finishing, gain-map/codec and ceiling checks remain mandatory. The
+covering slow group exceeds 30 minutes and is stopped pending coordinator/
+Steve approval; the release plan has no usable timing history in this worktree.
+
 ## November 15: W6 Export progress alignment
 
 The progress message, finished count and result rows now use Destination's

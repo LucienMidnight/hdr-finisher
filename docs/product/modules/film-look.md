@@ -1,5 +1,16 @@
 # Module PRD: Film Look
 
+## November 17: signed RAW residual through Film mixing
+
+The signed RAW integration removes the incidental lower floor after Film's
+completed Look Strength mix and independent softness/microcontrast structure.
+It does not remove physical exposure/density/stock lookup bounds or redesign
+Film's response. Signed bypass and strength-zero keep the original source;
+partial strength keeps its signed original residual. Final output-gamut mapping
+and the exact HDR target still own finished legality. RAW Film grades may change
+when regenerated, with no migration or old-clipped renderer. Full GPU Film/local
+and delivery parity qualification remains open; existing tolerances stay fixed.
+
 ## November 16: safe linked SDR built and scoped qualification
 
 Whole-photo Match now tries the trial's body/colour-best output tail, then

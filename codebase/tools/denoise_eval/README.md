@@ -112,11 +112,13 @@ Missing photos/profiles fail visibly. No search in personal folders.
   Poisson shot/Gaussian read noise, optional banding. Both Bayer and RGB see
   the same 0–1 clipped, 16-bit quantised synthetic sensor readout; record the
   clipped fraction. This is not laboratory calibration of ISO 25600.
-* Development: small in-memory DNG, app `_develop_libraw_camera_rgb` (LibRaw
+* Frozen research-control development: small in-memory DNG, `unsigned_ahd_control` (LibRaw
   AHD, unity WB, linear uint16, no auto scaling/brightness), then app
   `_camera_rgb_to_acescg_float32` with original camera matrix/as-shot WB.
   Geometry, lens correction, highlight reconstruction and artistic grade are
-  consistently excluded. This reuses core development, not full import.
+  consistently excluded. The control deliberately retains the pre-signed research
+  baseline; it is not a production compatibility decoder. Production Bayer now
+  uses `signed_raw.py`; signed-shadow candidates still label their separate input.
 * Real: highest ISO supported Bayer file + darkest remaining file (fraction
   of nine median windows <.025; ISO/name break ties). Distinct flat/shadow/
   texture/edge crops from a 3×3 grid, scored with smoothed Laplacian/Sobel.

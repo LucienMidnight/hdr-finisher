@@ -1,3 +1,19 @@
+## November 17: signed RAW scene inputs; no Denoise algorithm change
+
+Steve's signed-development decision preserves below-black Bayer readings through
+source Denoise/model setup, HDR/generated-SDR exposure and local grading. Local
+zero-contrast exposure is an exact signed multiplication; local-stack, active
+Detail and vignette no longer floor working RGB incidentally. Statistical/log
+guides stay positive; negative Blacks deliberately crushes to zero. Authored SDR
+keeps its independent decoder contract. The adaptive algorithm and approved D1
+controls stay unchanged; only the signed-source model identity advances.
+
+Saved sliders stay unchanged, while rebuilt RAW shadows/Film/local grades and
+Match inputs can change. This is not an invisible bug fix or a speck-cleanup
+claim. CPU result-based identity, ±6 EV, signed stage and exact-cap cases are
+covered; real GPU/Denoise/Library/Proof/export qualification remains open under
+the slow-validation approval gate. X-Trans signed demosaicing remains open.
+
 ## November 17: residual-noise cleanup trial (research only)
 
 Committed CPU research adapters `994152ca` / `f8f6e22b` retain current Denoise

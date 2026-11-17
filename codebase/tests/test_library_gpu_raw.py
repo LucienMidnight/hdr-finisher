@@ -330,13 +330,11 @@ def test_reduced_raw_description_needs_no_pixel_upload(tmp_path):
 
 
 def test_half_float_handoff_stores_the_same_scene_as_float32(tmp_path):
-    # The page may send reduced scenes as half floats, clamping finite samples
-    # to the half range first; the stored scene must equal the float32 hand-off's.
-    values = np.array([0.0, 1e-8, 0.1234567, 3.3, -0.25, 65504.0, 70000.0, 1e6], dtype="<f4")
+    values = np.array([0.0, 1e-8, 0.1234567, 3.3, -0.25, 65504.0, -65504.0, -1e-8], dtype="<f4")
     planes = np.resize(values, 3 * 8 * 12).reshape(3, 8, 12).astype("<f4")
     stored = []
     for name, payload, header in (("full", planes.tobytes(), {}),
-                                  ("half", np.minimum(planes, 65504).astype("<f2").tobytes(), {"sample_bytes": 2})):
+                                  ("half", planes.astype("<f2").tobytes(), {"sample_bytes": 2})):
         photo = tmp_path / f"{name}.ARW"
         photo.write_bytes(b"read-only fixture")
         cache = LibraryPictureCache(tmp_path / f"cache-{name}")
@@ -345,11 +343,21 @@ def test_half_float_handoff_stores_the_same_scene_as_float32(tmp_path):
             stored.append(scene["pixels"])
     assert stored[0].dtype == stored[1].dtype == np.float16
     np.testing.assert_array_equal(stored[0], stored[1])
+    assert np.min(stored[0]) < 0
     photo = tmp_path / "bad.ARW"
     photo.write_bytes(b"read-only fixture")
     with pytest.raises(ValueError):
         gpu_raw.developed(LibraryPictureCache(tmp_path / "bad"), str(photo), {**_header(photo), "sample_bytes": 2},
                           np.full((3, 8, 12), np.nan, dtype="<f2").tobytes())
+
+
+@pytest.mark.parametrize("value", [-70000., 70000., np.inf, -np.inf, np.nan])
+def test_raw_scene_transport_rejects_overflow_instead_of_clipping(tmp_path, value):
+    photo = tmp_path / "signed.ARW"
+    photo.write_bytes(b"read-only fixture")
+    with pytest.raises(ValueError):
+        gpu_raw.developed(LibraryPictureCache(tmp_path / "cache"), str(photo), _header(photo),
+                          _payload(8, 12, (value, .1, .2)))
 
 
 @pytest.mark.parametrize("width,height", [(7952,5304),(9504,6336)])

@@ -41,8 +41,8 @@ EXR_COLOR_INTEROP_SPACES = {
 # Provenance for the persistent source mip cache (PRD 5.3). Bump either
 # constant when a change alters the decoded scene-linear pixels for the same
 # file; stale levels are then ignored and removed by version.
-SOURCE_DECODER_VERSION = "hdr-finisher-loader-jxl-metadata-v5"
-SOURCE_COLOR_TRANSFORM_VERSION = "acescg-source-primaries-v3"
+SOURCE_DECODER_VERSION = "hdr-finisher-loader-signed-raw-v6"
+SOURCE_COLOR_TRANSFORM_VERSION = "acescg-signed-raw-source-v4"
 
 # Display-P3 and sRGB share D65, so the hot-path linear conversion is a fixed
 # float32 matrix and does not require a general-purpose colour transform.
@@ -243,9 +243,9 @@ def load_image(
         metadata["sdr_file_rendition"] = True
     reference_ms = (perf_counter()-reference_started)*1000
     # Unknown/conflicting primaries must be resolved before an irreversible
-    # AP1 gamut operation. All resolved import routes share this boundary,
-    # including decoder-normalized RAW, DNG and JPEG Ultra HDR.
-    if not metadata.get("needs_color_override") and metadata.get("color_space") is not None:
+    # AP1 gamut operation. Resolved non-RAW routes share this boundary;
+    # RAW and DNG scenes remain signed through source analysis and Denoise.
+    if not metadata.get("raw_input") and not metadata.get("needs_color_override") and metadata.get("color_space") is not None:
         normalized = map_import_negative(
             normalized, map_negative_acescg, cancelled=cancelled
         )

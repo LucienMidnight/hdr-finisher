@@ -20,7 +20,7 @@ import numpy as np
 import rawpy
 
 from hdr_finisher.raw_import import (
-    _camera_linear_metadata_from_libraw, _develop_libraw_camera_rgb,
+    _camera_linear_metadata_from_libraw,
     _normalize_camera_rgb_float32, _camera_rgb_to_acescg_float32,
 )
 from hdr_finisher.color import map_negative_acescg
@@ -30,7 +30,7 @@ from tools.denoise_eval.candidates.signed_shadows import (
     ROOT, camera_ahd, develop_signed, develop_pedestal, to_aces,
 )
 from tools.denoise_eval.inputs import (
-    add_noise, develop, metadata_from_raw, paired_samples, real_samples, synthetic_samples,
+    add_noise, develop, metadata_from_raw, paired_samples, real_samples, synthetic_samples, unsigned_ahd_control,
 )
 from tools.denoise_eval.run import peak_rss
 from tools.denoise_eval.datasets.summarize import summarize
@@ -307,7 +307,7 @@ def native(photo, entries):
         unpack = time.perf_counter() - started
         metadata = _camera_linear_metadata_from_libraw(raw)
         tick = time.perf_counter()
-        transport = _develop_libraw_camera_rgb(raw, rawpy)
+        transport = unsigned_ahd_control(raw, rawpy)
         baseline_ahd = time.perf_counter() - tick
         tick = time.perf_counter()
         image = _camera_rgb_to_acescg_float32(_normalize_camera_rgb_float32(transport, metadata), metadata)

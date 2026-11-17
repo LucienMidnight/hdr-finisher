@@ -29,31 +29,39 @@ def decode(path, raw_name, size):
             camera = raw_import._camera_linear_metadata_from_libraw(raw)
         except raw_import._CameraLinearUnsupported:
             camera = None
-        pixels = raw.postprocess(half_size=True,
+        pixels = raw_import._develop_libraw_camera_rgb(raw, rawpy, half_size=True) if camera else raw.postprocess(half_size=True,
             demosaic_algorithm=rawpy.DemosaicAlgorithm.LINEAR,
             **({"user_wb": [1.] * 4, "no_auto_scale": True} if camera else {"use_camera_wb": True}),
             no_auto_bright=True, use_auto_wb=False,
             output_color=rawpy.ColorSpace.raw if camera else rawpy.ColorSpace.sRGB,
             gamma=(1., 1.), output_bps=16, highlight_mode=rawpy.HighlightMode.Clip)
         if camera:
+            source_height, source_width = raw.raw_image_visible.shape
+            if int(raw.sizes.flip) in (5, 6):
+                source_height, source_width = source_width, source_height
             matrix = camera.camera_to_acescg * (camera.as_shot_wb * 65535 /
                 (camera.white_level - camera.black_level))[None, :]
             threshold = (camera.white_level - camera.black_level) / 65535 * .999
         else:
+            source_height, source_width = pixels.shape[0] * 2, pixels.shape[1] * 2
             from .color import _LINEAR_SRGB_TO_ACESCG
             matrix = _LINEAR_SRGB_TO_ACESCG.T
             threshold = np.full(3, .999)
+        pixels = np.ascontiguousarray(pixels, dtype=np.float32)
         h, w = pixels.shape[:2]
         sample = pixels[::max(1, h // 128), ::max(1, w // 128)].astype(np.float32) / 65535
         clipped = np.any(sample >= threshold, axis=2)
-        sample = map_negative_acescg(np.einsum("...j,ij->...i", sample, matrix.astype(np.float32), optimize=False))
+        sample = np.einsum("...j,ij->...i", sample, matrix.astype(np.float32), optimize=False)
+        if camera is None:
+            sample = map_negative_acescg(sample)
         sample[clipped] = np.max(sample[clipped], axis=1)[:, None]
         grade = default_look(sample, None, True, Path(path).suffix.lower()).model_dump(mode="json")
         output = SharedMemory(create=True, size=(pixels.nbytes + 3) // 4 * 4)
         # Direct ndarray -> shared memory; no pickled picture crosses processes.
-        np.ndarray(pixels.shape, dtype=np.uint16, buffer=output.buf)[:] = pixels
+        np.ndarray(pixels.shape, dtype=np.float32, buffer=output.buf)[:] = pixels
         return output, {"route": "camera-raw-gpu", "raw_width": w, "raw_height": h,
-            "source_width": w * 2, "source_height": h * 2, "matrix": matrix.tolist(),
+            "signed_scene": camera is not None and camera.raw_pattern.shape == (2, 2),
+            "source_width": source_width, "source_height": source_height, "matrix": matrix.tolist(),
             "threshold": threshold.tolist(), "adjustments": grade, "white": 203,
             "has_reference": False, "unpack_ms": unpack,
             "decode_ms": (time.perf_counter() - started) * 1000, "transport_bytes": pixels.nbytes}

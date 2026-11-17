@@ -19,7 +19,7 @@ from fastapi.responses import Response
 from .models import PreviewKind
 from .library_diagnostics import log
 
-VERSION = "adaptive-measure-gpu-v1"
+VERSION = "adaptive-measure-signed-source-v2"
 _models = OrderedDict()
 _lock = RLock()
 

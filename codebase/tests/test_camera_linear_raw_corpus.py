@@ -44,7 +44,7 @@ def test_private_camera_linear_raw_corpus(tmp_path: Path) -> None:
     assert heic["pixels"]["contiguous"] is True
     assert heic["pixels"]["non_finite_count"] == 0
     for name, qualification in result["files"].items():
-        assert qualification["bridge"]["transport"]["pipeline"] == "camera_linear_float_bridge_opposed_v2", name
+        assert qualification["bridge"]["transport"]["pipeline"] == "camera_linear_signed_ahd_opposed_v3", name
         assert qualification["bridge"]["pixels"]["dtype"] == "float32", name
         assert qualification["bridge"]["pixels"]["contiguous"] is True, name
         assert qualification["bridge"]["pixels"]["non_finite_count"] == 0, name

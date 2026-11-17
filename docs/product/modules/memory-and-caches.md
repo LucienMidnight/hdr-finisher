@@ -1,3 +1,22 @@
+### November 17: signed RAW scratch accounting; no allowance changes
+
+Signed Bayer AHD uses eight bytes per green-candidate pixel rather than four.
+The two directions occupy separate four-byte-per-pixel buffers, retaining the
+existing per-buffer source-size ceiling rather than doubling one binding.
+GPU development estimates account for that actual allocation: 32 ordinary /
+48 complex bytes per pixel instead of 28/44, within the existing reservations.
+Storage-binding/device limits are checked before allocating. The CPU helper uses
+256-row strips/eight-row context; quick half-size development stores only the
+decimated result, not a second full-resolution float picture. Observed CFA tiles
+are copied without retaining a full raw-colour map through metadata.
+
+The older quick CPU-to-GPU camera transport uses float32 rather than uint16;
+per-lane admission counts 128 MiB rather than 64 MiB for that real doubled
+transport cost, without increasing the transport allowance or lane maximum.
+Signed half handoffs reject nonfinite/absolute overflow above 65,504; no silent
+shadow clamp, extra cache or larger budget. Real-device peak/residency checks
+remain required before release; these are accounting changes, not a memory pass.
+
 ### November 15: W2 P2 format-first publication within the same upload slot
 
 ## November 16: Steve's 4 GB minimum and default on every platform

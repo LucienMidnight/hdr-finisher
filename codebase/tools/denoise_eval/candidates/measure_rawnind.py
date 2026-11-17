@@ -96,7 +96,8 @@ def full_frame(filename, kind):
     from tools.denoise_eval.candidates.rawnind import RawNIND
     from tools.denoise_eval.inputs import metadata_from_raw, crop_choices, develop
     from tools.denoise_eval.run import peak_rss, save_image
-    from hdr_finisher.raw_import import (_develop_libraw_camera_rgb, _camera_rgb_to_acescg_float32,
+    from tools.denoise_eval.inputs import unsigned_ahd_control
+    from hdr_finisher.raw_import import (_camera_rgb_to_acescg_float32,
                                         _camera_linear_metadata_from_libraw, _normalize_camera_rgb_float32)
     start = time.perf_counter()
     entry = dict(file=filename, camera='from native metadata', iso=3200 if filename=='IMG_0790.CR2' else 4000,
@@ -112,7 +113,7 @@ def full_frame(filename, kind):
             orientation = int(raw.sizes.flip)
             choices = crop_choices(raw, 256)
             if kind == 'linear':
-                transport = _develop_libraw_camera_rgb(raw, rawpy)
+                transport = unsigned_ahd_control(raw, rawpy)
                 for crop in choices.values():
                     top, left, size = crop['y'], crop['x'], 256
                     if orientation == 3:

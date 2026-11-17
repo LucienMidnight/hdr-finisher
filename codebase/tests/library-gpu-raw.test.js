@@ -111,8 +111,8 @@ test('DNG reservation fits one-plane reduction without raising shared budgets',(
  const bytes=HDRLibraryGpuRaw.rawBudget(meta);
  assert.ok(bytes<320*1024*1024);
  assert.ok(bytes>=8000*6000*4+6000*2560*4+1920*2560*8);
- assert.equal(HDRLibraryGpuRaw.rawBudget({...meta,dng_warp:undefined}),8000*6000*28+64*1024*1024);
- assert.equal(HDRLibraryGpuRaw.rawBudget({...meta,dng_warp:undefined,repairs:[{}]}),8000*6000*44+64*1024*1024);
+ assert.equal(HDRLibraryGpuRaw.rawBudget({...meta,dng_warp:undefined}),8000*6000*32+64*1024*1024);
+ assert.equal(HDRLibraryGpuRaw.rawBudget({...meta,dng_warp:undefined,repairs:[{}]}),8000*6000*48+64*1024*1024);
 });
 
 test('DNG footprints enclose independent per-channel maps across off-centre and non-monotone warps',()=>{
