@@ -10,7 +10,7 @@ fs.mkdirSync(photoFolder,{recursive:true});
 const photos=['DSC00264','DSC04375','DSC06615'].map(name=>{
  const file=path.join(photoFolder,name+'.ARW');
  if(!fs.existsSync(file))fs.copyFileSync(require('./helpers/reuse-test-photo.cjs').source(name+'.ARW'),file);
- return file;
+ return fs.realpathSync(file);
 });
 const {spawn}=require('node:child_process');
 const {MemoryMonitor}=require('../tools/library-memory-monitor.cjs');
@@ -53,10 +53,17 @@ const memory=new MemoryMonitor(4e9);let observer;
   },{photos,uiOnly});
   fs.writeFileSync(path.join(folder,'result.json'),JSON.stringify(result,null,2));
   console.log('GPU grid, screen and native sources prepared for three RAWs.');
+  let report={photos:[],uiOnly:true};
+  if(!uiOnly){
+   const compared=await execFile(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tests/helpers/gpu_raw_single_compare.py'),path.join(folder,'result.json')],{cwd:root,maxBuffer:1<<24});
+   report=JSON.parse(compared.stdout.trim().split('\n').at(-1));
+  }
+  fs.writeFileSync(path.join(folder,'comparison.json'),JSON.stringify(report,null,2));
+  console.log(JSON.stringify({report}));
+  for(const row of report.photos)for(const check of row.comparisons)assert.ok(check.passed,JSON.stringify({photo:row.photo,...check}));
   await page.evaluate(()=>activateWorkflowTab('import'));
   await library.evaluate((element,folder)=>element.contentWindow.HDRLibrary.browse(folder),photoFolder);
-  await frame.locator('#grid-space .library-cell').first().waitFor();
-  await library.evaluate((element,photo)=>[...element.contentWindow.document.querySelectorAll('#grid-space .library-cell')].find(cell=>cell.dataset.path===photo).click(),photos[0]);
+  await frame.locator(`#grid-space .library-cell[data-path=${JSON.stringify(photos[0])}]`).click();
   await frame.locator('#single-view').click();
   await page.waitForFunction(()=>{
    const win=document.querySelector('#library-frame').contentWindow,c=win.document.querySelector('#single-picture');
@@ -85,16 +92,11 @@ const memory=new MemoryMonitor(4e9);let observer;
   assert.equal(await frame.locator('#single-view').getAttribute('aria-pressed'),'true');
   await page.keyboard.press('f');
   await frame.locator('#review-view').waitFor({state:'visible'});
-  let report={photos:[],uiOnly:true};
   if(!uiOnly){
   await new Promise(resolve=>setTimeout(resolve,10000));
   fs.writeFileSync(path.join(folder,'memory-summary.json'),JSON.stringify({...memory.report(),lastBytes:memory.last?.totalBytes},null,2));
   if(observer){assert.equal(memory.violation,null,'Native RAW exceeded the whole-app memory rule');assert.ok(memory.report().settledUnderTarget,'Native RAW did not settle below the target');}
-  const compared=await execFile(require('../tools/lib/platform.cjs').pythonExecutable(),[path.join(root,'tests/helpers/gpu_raw_single_compare.py'),path.join(folder,'result.json')],{cwd:root,maxBuffer:1<<24});
-  report=JSON.parse(compared.stdout.trim().split('\n').at(-1));
   }
-  fs.writeFileSync(path.join(folder,'comparison.json'),JSON.stringify(report,null,2));
   console.log(JSON.stringify({timings:result.rows.map(r=>({photo:path.basename(r.path),coldMs:r.coldMs,reuseMs:r.reuseMs,nativeMs:r.nativeMs,memory:r.screen.gpu_memory_peak_bytes})),neighbourMs,report}));
-  for(const row of report.photos)for(const check of row.comparisons)assert.ok(check.passed,JSON.stringify({photo:row.photo,...check}));
  }finally{observer?.kill();fs.writeFileSync(path.join(folder,'memory-summary.json'),JSON.stringify({...memory.report(),lastBytes:memory.last?.totalBytes},null,2));await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

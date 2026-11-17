@@ -225,6 +225,26 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: focused follow-up from `c3b7a3ed`, same minimum Mac and locked
+  1408x794 window. Corrected the earlier attribution: Lensfun CPU vignetting
+  discarded negative channels; it was not the sampled lens-coordinate error.
+  Preserve signs around its unchanged gain (`94cdece6`), with packed masks/bounded scratch
+  and decoder/Library cache invalidation. All five RAW photos now pass; A7
+  SDR/HDR P99.9 **4.1014/6.9366 -> 0.1881/0.7090**, limit still 3. Canonical
+  photo paths/exact-cell waiting repair Single setup (`9464839e`); all 18
+  comparisons run, **14 pass / four fail on both HEAD and pre-signed
+  `7e444686`**. Zoom Full borrowing works on a quieter HEAD run; both builds
+  then stall at straighten (1,291 processed / 7,968 required). Live Export's
+  deterministic 5.332 GB charge against 4 GB predates signed RAW, introduced
+  by the November 16 export gate. No accounting or output gate was relaxed.
+  The plain-Electron Library smoke times out in `observe`; not a pass.
+  Corrected details/crop/receipts: November 17 known-limitations follow-up and
+  `codebase/output/denoise-v1-followup/`. Final fast suites: Node **1,103 pass /
+  one skip**; Python **4,215 pass / 155 skips / one xpass**, existing warning
+  only. About **26 minutes** slow validation; final output **13.3 GB**, below
+  100 GB. Owned scratch/profiles removed; all three protected hashes unchanged.
+  No push, release or installer.
+
 - 2026-11-17: combined real-app validation from `949c8035`, minimum Mac
   (A18 Pro / 8 GB / 1408x794), shared GPU lock, serial runs. All 23 requested
   driver names matched the inventory: **16 pass, six known/tooling/fixture

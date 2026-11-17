@@ -1370,7 +1370,7 @@ def apply_lens_correction(
         if not consume_input or not corrected.flags.writeable:
             corrected = corrected.copy()
         if settings.vignetting and aperture > 0:
-            modifier.apply_color_modification(corrected)
+            _apply_signed_vignetting(modifier, corrected, cancelled=cancelled)
         _raise_if_cancelled(cancelled)
         if progress: progress("lens_coordinates", "Calculating exact Lensfun coordinates")
         coordinates = None
@@ -1460,6 +1460,23 @@ def _resolve_lens_profile(
         return None
 
 
+
+
+def _apply_signed_vignetting(modifier, image, *, cancelled=None):
+    signs = []
+    for start in range(0, len(image), 256):
+        _raise_if_cancelled(cancelled)
+        strip = image[start:start + 256]
+        signs.append(np.packbits(np.signbit(strip), axis=None))
+    try:
+        np.abs(image, out=image)
+        modifier.apply_color_modification(image)
+    finally:
+        for start, packed in zip(range(0, len(image), 256), signs):
+            strip = image[start:start + 256]
+            negative = np.unpackbits(packed, count=strip.size).reshape(strip.shape).astype(bool)
+            np.negative(strip, out=strip, where=negative)
+    _raise_if_cancelled(cancelled)
 
 
 def _remap_bilinear_strips(
