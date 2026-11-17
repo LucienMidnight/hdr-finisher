@@ -205,13 +205,14 @@ def candidate_crops(raw, metadata, diagnostic, folder):
             top = max(0, min(height-96, item['y']-48)) // 2 * 2
             left = max(0, min(width-96, item['x']-48)) // 2 * 2
             source = read_sensor(raw, top, left, top+96, left+96)
-            md = dict(metadata, tile_origin=[top, left], exposure_stops=4.)
+            lift = 4. if metadata['source'] in ('IMG_0790.CR2', 'DSC_3931.NEF', 'P1010004.ORF') else 0.
+            md = dict(metadata, tile_origin=[top, left], exposure_stops=lift)
             outputs, local = render_outputs(source, md)
             case = folder / f'{kind}-{index:02d}-x{item["x"]}-y{item["y"]}'
             for label, value in outputs.items():
                 save_png(pixels(value), folder_path(case, label+'.png'))
             records.append(dict(kind=kind, site=item, crop_xywh=[left, top, 96, 96],
-                                exposure_stops=4, path=str(case), local_repairs=local))
+                                exposure_stops=lift, path=str(case), local_repairs=local))
     return records
 
 
@@ -379,10 +380,86 @@ def gpu_compare():
                 qualification='Actual WebGPU filter, then common CPU AHD/colour/shipping Denoise and fixed SDR/PQ display. Isolates this added step; not end-to-end library-gpu-raw.js parity, native GPU timing, lens/Opposed-color or encoding qualification.')
 
 
+def point_decisions(entries):
+    generated = json.loads((OUTPUT / 'generated.json').read_text())
+    entry = next(item for item in entries if item['file'] == 'IMG_0790.CR2')
+    with rawpy.imread(str(photo_root() / entry['file'])) as raw:
+        metadata = metadata_from_raw(raw, entry)
+    parameters = [dict(a=.00003, b=.0000003)] * 4
+    metadata.update(noise_parameters=parameters, exposure_stops=0)
+    records = []
+    for key, group in itertools.groupby(generated['points'], key=lambda item: (item['psf'], item['width'], item['colour'])):
+        group = list(group)
+        selected = [group[0]]
+        damaged = next((item for item in group if item['any_point_changed']), None)
+        if damaged is not None:
+            selected.append(damaged)
+        for index, item in enumerate(selected):
+            point = point_psf(item['psf'], item['width'], item['offset_yx'])
+            response = dict(white=(1., 1., 1.), warm_spark=(1., .3, .05),
+                            narrow_red=(1., .01, .002), narrow_blue=(.003, .02, 1.))[item['colour']]
+            camera = np.full((64, 64, 3), .002, np.float32)
+            top, left = 16 + item['phase']//2, 16 + item['phase']%2
+            camera[top:top+32, left:left+32] += point[..., None] * np.asarray(response) * item['amplitude']
+            clean = remosaic(camera, metadata['cfa'])
+            source = add_noise(clean, parameters, item['seed']) if item['noise'] else clean
+            outputs, diagnostic = render_outputs(source, metadata)
+            folder = OUTPUT / 'point-decisions' / f'{key[0]}-{key[1]}-{key[2]}-{index}'
+            for label, value in outputs.items():
+                save_png(pixels(value), folder_path(folder, label+'.png'))
+            truth = develop(clean, metadata)
+            save_png(pixels(truth), folder / 'clean.png')
+            records.append(dict(case=folder.name, source_case=item, repairs=diagnostic,
+                                adapters=evaluate(outputs, truth, masks_for(truth), metadata),
+                                path=str(folder)))
+    scene_points = (
+        ('canon-airborne-spark-a', 'IMG_0790.CR2', 3219, 1317, 2.),
+        ('canon-airborne-spark-b', 'IMG_0790.CR2', 4026, 1398, 2.),
+        ('sony-night-bulb', '2025_0730_1331_3.arw', 7410, 4120, 0.),
+        ('sony-night-sign', '2025_0730_1331_3.arw', 4200, 4350, 0.),
+        ('canon-sunset-glints', 'IMG_3129.CR2', 3205, 2580, 0.),
+        ('sony-sky-hole', 'A7R00619.ARW', 2066, 1123, 0.),
+    )
+    real = []
+    for case, photo, centre_x, centre_y, lift in scene_points:
+        entry = next(item for item in entries if item['file'] == photo)
+        with rawpy.imread(str(photo_root() / photo)) as raw:
+            md = metadata_from_raw(raw, entry)
+            top, left = (centre_y-96)//2*2, (centre_x-96)//2*2
+            source = read_sensor(raw, top, left, top+192, left+192)
+        md.update(tile_origin=[top, left], exposure_stops=lift)
+        outputs, diagnostic = render_outputs(source, md)
+        folder = OUTPUT / 'real-points' / case
+        for label, value in outputs.items():
+            save_png(pixels(value), folder_path(folder, label+'.png'))
+        real.append(dict(case=case, photo=photo, crop_xywh=[left, top, 192, 192],
+                         exposure_stops=lift, repairs=diagnostic, path=str(folder),
+                         finished_difference={label: {lane: metrics.summary(metrics.colour_error(
+                             outputs[label], outputs[reference], lane)) for lane in ('sdr', 'hdr')}
+                             for label, reference in (('hot_pixel', 'off'), ('hot_pixel_denoise', 'current_denoise'))}))
+    truth = []
+    for phase in ('heldout', 'seen'):
+        scores = json.loads((OUTPUT / (phase+'.json')).read_text())
+        by_name = {item['name']: item for item in scores['cases']}
+        for sample in paired_samples(ROOT / 'output/denoise-v1/datasets/rawnind/pairs'):
+            if sample.name not in by_name:
+                continue
+            for item in by_name[sample.name]['repairs']['changed']:
+                row, column = item['y'], item['x']
+                reference = float(sample.clean_bayer[row, column])
+                before = abs(item['value']-reference)
+                after = abs(item['replacement']-reference)
+                truth.append(dict(phase=phase, sample=sample.name, site=item,
+                                  valid=bool(sample.masks['valid'][row, column]), clean_value=reference,
+                                  sensor_error_before=before, sensor_error_after=after,
+                                  interpretation='Registered clean-pair consistency, not persistent defect ground truth'))
+    return dict(synthetic=records, real=real, public_changed_site_truth=truth)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('generated', 'quick', 'full', 'heldout', 'seen', 'corpus', 'native',
-                                          'gpu-fixtures', 'gpu-compare'))
+                                          'gpu-fixtures', 'gpu-compare', 'point-decisions'))
     parser.add_argument('--inventory', type=Path, required=True)
     parser.add_argument('--photo')
     args = parser.parse_args()
@@ -400,6 +477,8 @@ def main():
         result = gpu_fixtures(entries)
     elif args.command == 'gpu-compare':
         result = gpu_compare()
+    elif args.command == 'point-decisions':
+        result = point_decisions(entries)
     else:
         result = quality(entries, args.command)
     result.update(inventory=entries, inventory_source=str(args.inventory.resolve()),
