@@ -65,6 +65,7 @@ def _install_rawpy(monkeypatch: pytest.MonkeyPatch, *, libraw_version: tuple[int
         camera_white_level_per_channel = [65535] * 4
         white_level = 65535
         rgb_xyz_matrix = np.vstack([np.eye(3), np.zeros(3)])
+        color_matrix = np.eye(3, 4, dtype=np.float32)
 
         def __enter__(self) -> FakeRaw:
             return self
@@ -143,3 +144,17 @@ def test_manual_lensfun_cannot_stack_with_mandatory_dng_operations(
     settings = RawImportSettings(lens=LensCorrectionSettings(mode="manual", profile_id="profile"))
     with pytest.raises(RawImportError, match="cannot be combined"):
         decode_raw(path, settings, dng_inspection=_inspection())
+
+
+def test_signed_mandatory_dng_uses_prepared_libraw_colour_without_camera_xyz_table(monkeypatch, tmp_path):
+    calls = _install_rawpy(monkeypatch)
+    raw_class = type(sys.modules["rawpy"].imread("unused"))
+    raw_class.rgb_xyz_matrix = np.zeros((4, 3), dtype=np.float32)
+    raw_class.raw_image_visible = np.full((4, 4), 96, dtype=np.uint16)
+    path = tmp_path / "dng-colour-metadata.dng"
+    path.write_bytes(b"DNG")
+    image, metadata = decode_raw(path, RawImportSettings(), dng_inspection=_inspection())
+    assert calls == {}
+    assert np.isfinite(image).all()
+    assert image.min() < 0
+    assert all(item["status"] == "applied" for item in metadata["dng_opcode_audit"]["operations"])

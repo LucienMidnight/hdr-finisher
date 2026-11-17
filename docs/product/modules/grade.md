@@ -17,6 +17,14 @@ fixture models remain within 0.1%; fast CPU/host-fit checks do not establish GPU
 finished-pixel parity. GPU validation remains open below; this is not a claim
 that all signed dark-shadow pits or demosaic specks are solved.
 
+Combined validation on November 17 found and fixed a GPU histogram boundary
+error: a constant clipped plateau could absorb the adjacent shadow bin before
+that bin was excluded. Exact plateau boundaries now retain those shadow
+observations, within the existing histogram and budget. Measurement identity
+advances to `adaptive-measure-informative-v4`. The three generated real-GPU
+cases pass all 12 finished-pixel comparisons; full-corpus qualification still
+needs the missing noise-free EXR. The algorithm, controls and limits stay fixed.
+
 Final fast checks on the 8 GB MacBook under the shared lock: Node **1,101 pass,
 one skip, zero failures**; Python **4,105 pass, 155 skips, one xpass, zero
 failures**, with the existing Starlette/httpx deprecation warning. The two

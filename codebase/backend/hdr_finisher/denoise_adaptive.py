@@ -41,7 +41,7 @@ _ESTIMATION_WORKERS = ContextVar("denoise_estimation_workers", default=None)
 import numpy as np
 
 ALGORITHM_VERSION = "adaptive-atrous-v1"
-MEASUREMENT_VERSION = "adaptive-measure-informative-v3"
+MEASUREMENT_VERSION = "adaptive-measure-informative-v4"
 CALIBRATION_RULES = {
     "zero_relative": float(32 * np.finfo(np.float32).eps),
     "zero_fraction": 0.25,

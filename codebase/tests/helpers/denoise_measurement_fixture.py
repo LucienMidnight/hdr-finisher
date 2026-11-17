@@ -24,11 +24,11 @@ def compare(a,b,lane):
 from hdr_finisher.models import AdjustmentState, PreviewKind
 
 root=Path(sys.argv[2])
-if sys.argv[1]=="make":
+if sys.argv[1] in {"make", "make-synthetic"}:
     import tifffile
     from tools.denoise_lab.corpus import cases
     entries=[]
-    for reference, case, clean, noisy in cases():
+    for reference, case, clean, noisy in (cases() if sys.argv[1] == "make" else ()):
         name=reference+"-"+case.name
         target=root/(name+".tiff")
         tifffile.imwrite(target,noisy,photometric="rgb")

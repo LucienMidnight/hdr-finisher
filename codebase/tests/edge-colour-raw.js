@@ -2,14 +2,16 @@
  * Work only on disposable copies; never save owner photos/projects.
  */
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const reusePhoto=require('./helpers/reuse-test-photo.cjs');
 const {execFileSync}=require('node:child_process'),{chromium}=require('playwright');
 const {photosPath}=require('./helpers/photos-root.cjs');
 const pixelCleanup=process.argv.includes('--pixel-cleanup');
 const root=path.resolve(__dirname,'..'),python=require('../tools/lib/platform.cjs').pythonExecutable();
 const folder=path.join(root,'output/edge-colour-raw',String(Date.now()));fs.mkdirSync(folder,{recursive:true});
 const samples=[require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/DSC00264.ARW'),require('./helpers/photos-root.cjs').photosPath('D:/Photos/HDR Test Images/IMG_3129.CR2')].map(file=>photosPath(file));
-const shared=path.join(root,'output/test-photos');fs.mkdirSync(shared,{recursive:true});
-const photos=samples.filter(p=>fs.existsSync(p)).map(p=>{const copy=path.join(shared,path.basename(p));if(!fs.existsSync(copy))fs.copyFileSync(p,copy);return copy;});
+// Reuse the RAW bytes, but hide any grade left by an earlier delivery run.
+// Opening a saved sidecar correctly takes precedence over import settings.
+const photos=samples.filter(p=>fs.existsSync(p)).map(p=>reusePhoto(p,path.join(folder,path.basename(p))));
 assert.equal(photos.length,2,'Both requested clipped-highlight photos must be available');
 (async()=>{
  const browser=await chromium.launch();const page=await browser.newPage(),rows=[];
@@ -94,5 +96,5 @@ assert.equal(photos.length,2,'Both requested clipped-highlight photos must be av
   }
   console.log(execFileSync(python,[path.join(__dirname,'helpers/edge_colour_raw_compare.py'),path.join(folder,'results.json')],{encoding:'utf8',maxBuffer:1<<24}));
   console.log('Results: '+folder);
- }finally{await page.request.post(new URL('/api/delivery/preferences',process.env.HDR_FINISHER_URL).href,{data:{force_cpu:false}}).catch(()=>{});await browser.close();}
-})().catch(error=>{console.error(error);process.exitCode=1;});
+ }finally{reusePhoto.cleanup();await page.request.post(new URL('/api/delivery/preferences',process.env.HDR_FINISHER_URL).href,{data:{force_cpu:false}}).catch(()=>{});await browser.close();}
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>reusePhoto.cleanup());
