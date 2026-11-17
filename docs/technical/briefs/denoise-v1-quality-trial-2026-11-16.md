@@ -225,6 +225,13 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: faithful RawTherapee LMMSE (A) merged (`lmmse-demosaic.md`):
+  better clean fine detail before Denoise, but only +0.25 dB held-out after
+  Denoise, does not remove the Canon pits (dark tail rises with crop-local
+  calibration), and roughly doubles CPU development + Denoise time. Keep
+  signed AHD; no automatic switch. AI + highlight reconstruction research (B)
+  started (`ai-highlights.md`).
+
 - 2026-11-17: speck origin trace (coordinator; page
   https://claude.ai/artifact/Kf757RFoVHiriHYtUw8mUN): of 547 specks left by
   signed + calibration-repaired Denoise in flat gallery shadows, 37% sit on
