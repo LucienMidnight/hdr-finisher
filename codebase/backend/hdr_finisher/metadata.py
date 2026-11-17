@@ -51,7 +51,9 @@ def extract_metadata(path: Path, raw_metadata: dict[str, Any] | None = None) -> 
         bit_depth=bit_depth,
         color_space=color_space,
         transfer_function=transfer_function,
-        extra={key: str(value) for key, value in raw_metadata.items() if key not in {"icc_profile"}},
+        # Pixel-cleanup controls consume typed eligibility and enabled flags.
+        extra={key: value if key == "raw_pixel_cleanup" else str(value)
+               for key, value in raw_metadata.items() if key not in {"icc_profile"}},
     )
 
 

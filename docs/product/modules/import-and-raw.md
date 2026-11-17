@@ -51,6 +51,12 @@ no GPU/Electron check was run for this implementation.
 The production CPU step cost is recorded separately in the performance table;
 it is not a measurement of the whole UI wait.
 
+**Combined validation repair, November 17:** session metadata now transports
+Pixel cleanup diagnostics as an object, retaining the boolean eligibility and
+enabled flags. Previously generic metadata formatting converted this object to
+a string, leaving the real-app checkbox disabled even on supported Bayer RAWs.
+Other metadata formatting and all sensor/filter/output rules are unchanged.
+
 ### November 17: Steve's signed RAW development decision; qualification open
 
 **Steve, November 17, 2026:** preserve noisy sensor readings below black through
