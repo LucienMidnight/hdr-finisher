@@ -59,6 +59,11 @@ Click **Show noise**. The picture turns grey and shows only what Denoise is taki
 
 The app measures your photo once, then reuses that measurement while you drag sliders. If the view changes after that measurement, the status shows **Dirty**. The last good result stays on screen until you click **Recalculate Denoise**.
 
+Featureless blown-out highlights, such as a clipped flame or lamp, are ignored
+when they cannot provide useful noise evidence. They no longer make Denoise
+underestimate noise in nearby shadows. If too little useful evidence remains,
+the app uses its usual fallback estimate; no extra control is needed.
+
 The status line also shows **Recalculating**, or **Error** if the measurement failed. After an error the original picture is still available. Click **Recalculate Denoise** to try again.
 
 ## HDR and SDR

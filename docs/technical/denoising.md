@@ -9,6 +9,65 @@
 **Pipeline baseline:** `95060fa`; see [Image Processing Pipeline](image-processing-pipeline.md).
 **Research archive:** [Denoising Technology Watch — August 2026](denoising-technology-watch-2026.md) is background only and is not an implementation plan.
 
+## November 17, 2026: informative noise calibration
+
+Steve approved the joint brightness-bin and calibration-block repair from
+[the dark-noise investigation](research/denoise-v1-2026-11-16/dark-noise-strength.md).
+Clipped, featureless highlights must not stand in for quiet shadow noise.
+The shipping algorithm remains `adaptive-atrous-v1`; controls, D1 defaults,
+compact model layout, reconstruction shaders and tail correction are unchanged.
+This is not the separate hot-pixel/remaining-speck cleanup.
+
+CPU and GPU measurement reject a 16×16 calibration block when at least 25%
+of its Immerkaer responses have magnitude at most
+`32 * float32 epsilon * max(abs(scene luminance), 1e-20)`.
+Among eligible blocks they retain the quietest 25% by fine Y-band spread
+(including ties), then take the calibrated 10th percentile per component/band.
+Brightness observations still use positive smoothed luminance, 12 bins between
+the 2nd and 98th percentiles, at least 1,000 positive pixels and 500 pixels per
+bin, the lowest-gradient 30%, and 25th-percentile absolute high-pass response.
+A bin with zero variance or at least 25% exactly zero responses is excluded.
+GPU histogram statistics retain their existing quantile approximation; its
+new zero counters are exact, and its small-filter window boundaries reflect
+like CPU measurement. No full-statistics readback or persistent pixel cache
+is added; existing measurement admission/budgets remain unchanged.
+
+Both hosts fit the same nonnegative subsets of relative/shot/read variance
+after scaling brightness by its maximum and variance by its median. Relative
+residual weights use sqrt(pixel count) / max(scaled variance, 0.02); the read
+term retains the 2%-of-minimum-informative-variance floor. New thresholds are
+owned by CPU `CALIBRATION_RULES` and sent in the measurement description.
+Subsets are tried as c, a, b, ca, cb, ab, cab; residual improvements at most
+1e-12 in scaled weighted units retain the first subset. This resolves
+underidentified/repeated-brightness fits consistently without accepting a
+looser CPU/host agreement test.
+If no informative brightness bin or fewer than eight informative blocks
+remain, **both** shape and band selection fall back to the previous estimator;
+there is no recursive retry or mix of repaired shape and censored calibration.
+`adaptive-measure-informative-v3` invalidates CPU model and managed GPU/source
+measurement caches without changing saved sliders or the returned model layout.
+
+Result-based fast regressions cover signed and positive flame reproductions,
+ordinary-photo model stability (0.1% relative), exact legacy fallback on clean
+flats/fewer than eight blocks, cache invalidation, and CPU/GPU-host fit and
+selection (1e-6 relative, 1e-12 absolute for zero coefficients). Synthetic
+shadow-only versus flame-context predicted finest-band sigma allows 10% for
+different finite sample counts; this is not a relaxed finished-image limit.
+Existing research tests now expect shipping output to match the approved
+adapter rather than to denoise less than it. No existing tolerance is loosened.
+
+**GPU validation pending:** do not infer parity from the unchanged resolve
+shaders. Include `gpu-denoise-measurement.js` (now also generates clipped flame,
+signed flame and noiseless-plateau cases), `denoise-adaptive-parity.js`, and
+`gpu-delivery-smoke.js` (GPU/CPU Denoise export and shared full-size Proof)
+in Steve's combined approved slow run
+with signed RAW development and the hot-pixel checkbox. Finished SDR ΔE2000
+and HDR ΔE ITP remain mean <1, p99 <3, with the exact unencoded HDR ceiling.
+The delivery smoke's opt-in fixture includes noise and a clipped plateau at 192×128,
+so informative calibration is exercised rather than the small-image fallback;
+the 72×48 delivery/Proof size and every comparison limit remain unchanged.
+Other callers retain the original 96×64 fixture.
+
 ## November 17, 2026: approved shipping defaults (D1)
 
 For `adaptive-atrous-v1`, Amount and Color Noise start at 0.75; Detail
