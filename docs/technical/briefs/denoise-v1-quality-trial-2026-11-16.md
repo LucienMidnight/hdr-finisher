@@ -225,6 +225,36 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: combined real-app validation from `949c8035`, minimum Mac
+  (A18 Pro / 8 GB / 1408x794), shared GPU lock, serial runs. All 23 requested
+  driver names matched the inventory: **16 pass, six known/tooling/fixture
+  blocks, one new picture-agreement block**. Both 90-second Library checks
+  pass after repair (grid 9/9 pictures; Single ten steps); extra DJI CPU/GPU
+  DNG comparison plus 59 geometry probes passes. Fixed supported-Bayer checkbox
+  metadata (`d0842dc2`), clipped-plateau GPU noise-bin boundaries (`3027c48f`,
+  revision v4; all 12 generated-case comparisons pass), and missing-camera-XYZ
+  mandatory DNG development (`7f49eb7d`, decoder v7). Test setup repairs are
+  `c73b86c5` (stale reusable sidecar) and `f3befddd` (enable the authored cap
+  for the brighter delivery fixture); expected outputs and limits stay fixed.
+  **Waiting for Steve:** A7R00619 Library RAW colour tails are 4.1014 SDR /
+  6.9366 HDR against <=3; v0.9.3 passes. Shared sampled lens coordinates
+  agree, implicating the existing approximation against exact Grade mapping.
+  No expected result was changed; retain the block for exact bounded mapping
+  and picture review. Full measurement corpus needs its noise-free EXR;
+  adaptive readback, zoomed reference memory, Single test-cell lookup, protected
+  project source linkage and live Export GPU admission remain incomplete.
+  Full details and per-driver verdicts: `docs/known-limitations.md`, November 17,
+  and `codebase/output/denoise-v1-validation/summary.json`; crop
+  `codebase/output/denoise-v1-validation/a7-lens-mismatch.png`. Final fast
+  suites: **1,103 Node pass / one skip; 4,213 Python pass / 155 skips / one
+  xpass**, existing warning only. One discarded Python run used scratch under
+  hidden `.t3`, producing 12 path-listing fixture failures; the exact standard
+  command passes in normal TEMP, with no code/test change for those failures.
+  Slow checks took **about 26 minutes** including reruns/comparison/probes
+  (23m17s individually recorded driver invocations). Output **12.9 -> 13.1 GB**;
+  scratch/profiles/comparison checkout removed, three protected project hashes
+  and all 38 existing working-copy sidecars unchanged. No push or installer.
+
 - 2026-11-17: AI + highlight reconstruction research merged
   (`ai-highlights.md`): no combination qualifies for both Opposed color and
   Edge colour. Region blends keep repaired highlights but leave visible

@@ -1,5 +1,61 @@
 # Known Limitations and Support Status
 
+## November 17: combined signed RAW, noise measurement and hot-pixel validation
+
+MacBook Neo / A18 Pro / 8 GB, unpackaged app, 1408x794, starting `949c8035`.
+All 23 requested drivers used their registered Electron launch under the shared
+GPU lock, serially. Latest results: **16 passed, seven incomplete/failed**; both
+90-second Library checks and an additional DJI CPU/GPU DNG comparison pass after
+repairs. The driver inventory and all three protected project hashes are intact.
+No expected pixel/file result, tolerance, limit or budget was relaxed.
+
+Repaired app faults: Pixel cleanup diagnostics were stringified, disabling its
+checkbox on supported Bayer RAW (`d0842dc2`); GPU histogram interpolation merged
+a shadow brightness bin with a clipped plateau before rejecting that bin
+(`3027c48f`, measurement revision v4); mandatory-opcode DJI DNG development
+incorrectly required an ordinary LibRaw camera XYZ table (`7f49eb7d`, decoder
+identity v7). Generated measurement cases now pass all 12 finished comparisons;
+the failing HDR Amount 0.85 tail falls from 5.319 to 0.226 against the unchanged
+<3 limit. The DNG repair passes signed/operation tests, 9/9 Library viewport
+pictures, ten Single steps, and DJI CPU/GPU whole/border colour comparisons plus
+59 geometry probes. Two check setups were also repaired: stale disposable
+sidecar isolation (`c73b86c5`) and enabling Highlights for the brighter Denoise
+ceiling fixture (`f3befddd`).
+
+**New blocker: `library-gpu-raw.js`, A7R00619.ARW.** Current SDR mean/P99.9
+Delta E 2000 is **0.1076/4.1014**; HDR Delta E ITP **0.2170/6.9366**, against
+mean <1 / P99.9 <=3. The same five-photo driver passes once on detached
+v0.9.3: this photo is **0.0234/0.2492 SDR**, **0.0700/0.7285 HDR**. With the
+same sampled lens coordinates on both CPU and GPU, current signed sources
+agree at **0.01196/0.04802 SDR**, **0.02403/0.06396 HDR**. This implicates
+the existing sampled-Lensfun-versus-exact-Grade mapping, previously documented
+for the stopped Grade GPU trial; signed development exposes a new Library
+qualification failure. The expectation is unchanged. Stop this item for Steve's
+review and exact bounded lens-mapping follow-up; it is not accepted output drift.
+Small comparison: `codebase/output/denoise-v1-validation/a7-lens-mismatch.png`.
+
+Other incomplete checks, not new app fixes in this group:
+
+- `gpu-denoise-measurement.js`: full corpus still needs the documented noise-free
+  linear EXR >=540x540. Its explicit `--synthetic-only` mode passes the three
+  generated cases and does not claim corpus or 42 MP timing coverage.
+- `denoise-adaptive-parity.js`: documented GPU result readback failure.
+- `denoise-zoomed-region.js`: documented Full-reference memory refusal; this run
+  needs 0.28 GiB with 0.00 GiB safely available.
+- `library-gpu-raw-single.js`: all three native RAW sources prepare, but the test
+  fails its Library-cell lookup (`undefined.click`) before picture comparison.
+  No native picture-accuracy pass is claimed.
+- `preview-export-compare`: documented `source_relink_required` for protected
+  DSC00950; the project remains untouched.
+- `library-export-live-tiles.js`: native GPU working set exceeds the existing
+  app ceiling. Bounded CPU export completes, but the required GPU route fails.
+
+Compact logs, receipts, before/after generated measurement results and the
+per-driver summary are in `codebase/output/denoise-v1-validation/`; final
+Library reports are there and under `codebase/output/quick-library-check/denoise-v1/`.
+Large renders, temporary profiles and the comparison checkout are removed.
+No push, merge, tag or installer; this group remains unqualified for shipping.
+
 ## November 16: encoding fidelity is not renderer agreement
 
 Steve approved the separate checks in the Export/Proof module. Actual finished
