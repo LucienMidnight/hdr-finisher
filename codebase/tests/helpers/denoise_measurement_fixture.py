@@ -33,6 +33,14 @@ if sys.argv[1]=="make":
         target=root/(name+".tiff")
         tifffile.imwrite(target,noisy,photometric="rgb")
         entries.append(str(target))
+    generator=np.random.default_rng(904)
+    for name,signal in (("clipped-flame",.01),("signed-clipped-flame",.0002),("noiseless-plateaus",0)):
+        image=generator.normal(signal,.005,(256,256,3)).astype(np.float32)
+        image[:,:112]=1.25
+        if name=="noiseless-plateaus":image[:,112:]=0
+        target=root/(name+".tiff")
+        tifffile.imwrite(target,image,photometric="rgb")
+        entries.append(str(target))
     (root/"corpus.json").write_text(json.dumps(entries))
 else:
     results=[]

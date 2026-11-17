@@ -1384,6 +1384,7 @@ _DENOISE_MODEL_PENDING: dict[tuple, Future] = {}
 
 def _cached_denoise_model(key: tuple, measure) -> dict:
     """Overlapping warm-up and foreground requests share one measurement."""
+    key = (denoise_adaptive.MEASUREMENT_VERSION, *key)
     with _DENOISE_MODEL_LOCK:
         cached = _DENOISE_MODEL_CACHE.pop(key, None)
         if cached is not None:

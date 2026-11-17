@@ -1,3 +1,32 @@
+## November 17, 2026: informative Denoise measurement (Steve's decision)
+
+Steve approved excluding uninformative brightness bins **and** quiet calibration
+blocks together, as recommended by the
+[dark-noise report](../../technical/research/denoise-v1-2026-11-16/dark-noise-strength.md).
+Clipped, featureless flame/lamp/sky areas no longer falsely report nearly zero
+noise beside noisy shadows. CPU and GPU share eligibility thresholds and a
+scaled nonnegative variance fit, with the complete previous-estimator fallback
+when too little informative evidence remains. Measurement revision
+`adaptive-measure-informative-v3` prevents old models from being reused.
+
+`adaptive-atrous-v1`, reconstruction, controls and D1 defaults remain unchanged.
+Existing saved grades with Denoise enabled may clean noisy shadows differently,
+including flame/highlight test fixtures and any such test projects; saved slider
+values do not change. No old-project compatibility route is added. Ordinary
+fixture models remain within 0.1%; fast CPU/host-fit checks do not establish GPU
+finished-pixel parity. GPU validation remains open below; this is not a claim
+that all signed dark-shadow pits or demosaic specks are solved.
+
+Final fast checks on the 8 GB MacBook under the shared lock: Node **1,101 pass,
+one skip, zero failures**; Python **4,105 pass, 155 skips, one xpass, zero
+failures**, with the existing Starlette/httpx deprecation warning. The two
+research flame expectations now require agreement with shipping instead of
+stronger cleaning than shipping; no tolerance was loosened. The protected
+`DSC00264-four-masks.hdrfinisher`, `DSC00264-fifty-locals.hdrfinisher` and
+`DSC00950.hdrfinisher` all have Denoise off in both lanes, so this measurement
+fix does not change their saved appearance unless Denoise is enabled. Their
+files were read only and were not rewritten.
+
 ## November 17: signed RAW scene inputs; no Denoise algorithm change
 
 Steve's signed-development decision preserves below-black Bayer readings through
@@ -2321,6 +2350,13 @@ plan (`docs/technical/briefs/prerelease-remediation-plan-2026-10-24.md`,
 groups U1 to U3), not here.
 
 ## 5. Open work, in order
+
+- **Informative Denoise measurement GPU validation pending (November 17).**
+  Combine measurement parity (including signed/positive flame and clean flats),
+  adaptive reconstruction and Proof/export Denoise parity with signed RAW
+  development and the hot-pixel checkbox in one Steve-approved slow validation.
+  Keep SDR ΔE2000 / HDR ΔE ITP mean <1, p99 <3 and the exact finished HDR ceiling.
+  Fast checks exercise the GPU path's host fit/selection only, not GPU dispatch.
 
 - **Retouch tool needs further work (Steve, November 2, 2026).**
   Steve's manual review finds that the tool itself still needs work. Keep this

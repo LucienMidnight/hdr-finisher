@@ -5,7 +5,7 @@ const python=require('../tools/lib/platform.cjs').pythonExecutable();
 const helper=path.join(__dirname,"helpers/gpu_delivery_fixture.py");
 const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
 (async()=>{
-  execFileSync(python,[helper,"make",path.join(root,"fixture.tiff")],{env});
+  execFileSync(python,[helper,"make",path.join(root,"fixture.tiff"),"denoise"],{env});
   const browser=await chromium.launch();
   const page=await browser.newPage();
   const base=process.env.HDR_FINISHER_URL||"http://127.0.0.1:8765";

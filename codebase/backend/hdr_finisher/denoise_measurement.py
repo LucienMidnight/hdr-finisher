@@ -18,8 +18,9 @@ from fastapi import APIRouter, HTTPException, Query, Body
 from fastapi.responses import Response
 from .models import PreviewKind
 from .library_diagnostics import log
+from .denoise_adaptive import CALIBRATION_RULES, MEASUREMENT_VERSION
 
-VERSION = "adaptive-measure-signed-source-v2"
+VERSION = MEASUREMENT_VERSION
 _models = OrderedDict()
 _lock = RLock()
 
@@ -238,7 +239,8 @@ def create_router(store):
             packed.append(rgba.tobytes())
             descriptions.append({"edges":[y0==0,y1==height,x0==0,x1==width]})
         description={"key":key,"width":rectangles[0][3]-rectangles[0][1],"height":rectangles[0][2]-rectangles[0][0],
-            "windows":descriptions,"source_width":width,"source_height":height,"version":VERSION}
+            "windows":descriptions,"source_width":width,"source_height":height,"version":VERSION,
+            "calibration":CALIBRATION_RULES}
         header=json.dumps(description).encode();header+=b" "*((-len(header))%4)
         return Response(struct.pack("<I",len(header))+header+b"".join(packed),media_type="application/octet-stream")
 

@@ -43,10 +43,20 @@ def save(client,url,description,**extra):
 def test_measurement_reads_original_pixels_and_survives_restart(context):
     client,frame=context
     url,description,body=source(client)
+    assert description["calibration"] == dm.CALIBRATION_RULES
     np.testing.assert_array_equal(np.frombuffer(body,dtype="<f4").reshape(64,96,4)[...,:3],frame.image)
     assert save(client,url,description).status_code==200
     dm._models.clear()  # model is now read from the managed disk cache
     assert client.get(url).json()==MODEL
+
+
+def test_old_measurement_revision_cannot_be_reused_or_published(context, monkeypatch):
+    client, _ = context
+    url, description, _ = source(client)
+    assert save(client, url, description).status_code == 200
+    monkeypatch.setattr(dm, "VERSION", "another-measurement-revision")
+    assert client.get(url).status_code == 204
+    assert save(client, url, description).status_code == 409
 
 
 def test_finishing_grade_and_native_geometry_reuse(context):

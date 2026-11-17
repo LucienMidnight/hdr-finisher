@@ -29,7 +29,7 @@ def test_censored_plateau_does_not_define_the_noise_of_its_dark_neighbour(signal
     after = np.std(repaired[interior] @ adaptive.OPPONENT.T, axis=(0, 1))
     assert state[1]['informative_blocks'] < state[1]['blocks']
     assert np.max(after / before) < .5
-    assert np.std(repaired[interior]) < np.std(current[interior])
+    np.testing.assert_allclose(repaired, current, rtol=1e-6, atol=1e-8)
     np.testing.assert_array_equal(image, original)
 
 

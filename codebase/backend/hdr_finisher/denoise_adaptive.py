@@ -41,6 +41,16 @@ _ESTIMATION_WORKERS = ContextVar("denoise_estimation_workers", default=None)
 import numpy as np
 
 ALGORITHM_VERSION = "adaptive-atrous-v1"
+MEASUREMENT_VERSION = "adaptive-measure-informative-v3"
+CALIBRATION_RULES = {
+    "zero_relative": float(32 * np.finfo(np.float32).eps),
+    "zero_fraction": 0.25,
+    "min_blocks": 8,
+    "variance_floor": 0.02,
+    "fit_tie_epsilon": 1e-12,
+    "flat_quantile": 0.25,
+    "band_quantile": 0.10,
+}
 ACESCG_LUMINANCE = np.asarray((0.2722287, 0.6740818, 0.0536895), dtype=np.float32)
 LEVELS = 5
 WIENER_RADIUS = 3
@@ -282,7 +292,7 @@ _IMMERKAER = np.asarray(((1, -2, 1), (-2, 4, -2), (1, -2, 1)), dtype=np.float32)
 _SOBEL_X = np.asarray(((-1, 0, 1), (-2, 0, 2), (-1, 0, 1)), dtype=np.float32)
 _BLOCK = 16
 # Blocks with the least fine luminance structure that noise is read from.
-FLAT_BLOCK_QUANTILE = 0.25
+FLAT_BLOCK_QUANTILE = CALIBRATION_RULES["flat_quantile"]
 
 
 def _conv3(values: np.ndarray, kernel: np.ndarray) -> np.ndarray:
@@ -371,6 +381,72 @@ def _estimate_variance_model(image: np.ndarray, windows) -> tuple[float, float, 
     if len(xs) < 2:
         return 0.0, float(vs[0]) if vs else 1e-8, 0.0
     return _fit_variance(np.asarray(xs), np.asarray(vs), np.asarray(ws))
+
+
+def _variance_observations(source, windows):
+    def measure(window):
+        top, left, bottom, right = window
+        luminance = source[top:bottom, left:right, :3] @ ACESCG_LUMINANCE
+        smooth = _conv3(luminance, np.full((3, 3), 1 / 9, dtype=np.float32))
+        residual = _conv3(luminance, _IMMERKAER)
+        gradient = np.hypot(_conv3(smooth, _SOBEL_X), _conv3(smooth, _SOBEL_X.T))
+        floor = CALIBRATION_RULES["zero_relative"] * np.maximum(np.abs(luminance), 1e-20)
+        informative = _block_means(np.abs(residual) <= floor) < CALIBRATION_RULES["zero_fraction"]
+        return smooth.ravel(), residual.ravel(), gradient.ravel(), informative
+    measurements = _map_estimation_windows(measure, windows)
+    brightness, residual, gradient, informative = (np.concatenate(parts) for parts in zip(*measurements))
+    positive = brightness > 0
+    brightness, residual, gradient = (values[positive] for values in (brightness, residual, gradient))
+    observations = []
+    if brightness.size >= 1000:
+        boundaries = np.quantile(brightness, np.linspace(.02, .98, 13))
+        calibration = NormalDist().inv_cdf(.625) * 6
+        for low, high in zip(boundaries[:-1], boundaries[1:]):
+            selected = (brightness >= low) & (brightness < high)
+            if selected.sum() < 500:
+                continue
+            flat = selected & (gradient <= np.quantile(gradient[selected], .3))
+            deviation = float(np.quantile(np.abs(residual[flat]), .25) / calibration)
+            observations.append(dict(signal=float(np.median(brightness[flat])), variance=deviation**2,
+                                     pixels=int(flat.sum()), zero_fraction=float(np.mean(residual[flat] == 0))))
+    return observations, informative
+
+
+def _fit_informative_variance(observations):
+    informative = [row for row in observations if row["variance"] > 0
+                   and row["zero_fraction"] < CALIBRATION_RULES["zero_fraction"]]
+    if not informative:
+        return None
+    signal = np.asarray([row["signal"] for row in informative], dtype=float)
+    variance = np.asarray([row["variance"] for row in informative], dtype=float)
+    weights = np.sqrt([row["pixels"] for row in informative])
+    signal_scale, variance_scale = max(float(signal.max()), 1e-20), float(np.median(variance))
+    signal, variance = signal / signal_scale, variance / variance_scale
+    weights /= np.maximum(variance, CALIBRATION_RULES["variance_floor"])
+    columns = dict(c=signal**2, a=signal, b=np.ones_like(signal))
+    best_error, terms = float("inf"), None
+    for names in ("c", "a", "b", "ca", "cb", "ab", "cab"):
+        design = np.column_stack([columns[name] for name in names])
+        coefficients = np.linalg.lstsq(design * weights[:, None], variance * weights, rcond=None)[0]
+        if np.any(coefficients < 0):
+            continue
+        error = float(np.sum(((design @ coefficients - variance) * weights)**2))
+        if error < best_error - CALIBRATION_RULES["fit_tie_epsilon"]:
+            best_error, terms = error, dict(zip(names, coefficients))
+    return (float(terms.get("a", 0) * variance_scale / signal_scale),
+            float(max(terms.get("b", 0) * variance_scale, min(row["variance"] for row in informative) * CALIBRATION_RULES["variance_floor"])),
+            float(terms.get("c", 0) * variance_scale / signal_scale**2))
+
+
+def _block_means(values):
+    height, width = values.shape
+    return values[:height // _BLOCK * _BLOCK, :width // _BLOCK * _BLOCK].reshape(
+        height // _BLOCK, _BLOCK, width // _BLOCK, _BLOCK).mean(axis=(1, 3)).ravel()
+
+
+def _calibration_blocks(spreads, informative):
+    candidates = spreads[informative]
+    return informative & (spreads <= np.quantile(candidates, CALIBRATION_RULES["flat_quantile"]))
 
 
 def _block_stds(values: np.ndarray) -> np.ndarray:
@@ -570,11 +646,20 @@ def _estimate(source) -> AdaptiveNoiseModel:
     return AdaptiveNoiseModel(a=model.a, b=model.b, c=model.c, band_sigmas=tuple(rows))
 
 
-def _measure_model(source: np.ndarray) -> tuple[AdaptiveNoiseModel, list[tuple[int, int, int, int]]]:
+def _measure_model(source: np.ndarray, *, informative=True) -> tuple[AdaptiveNoiseModel, list[tuple[int, int, int, int]]]:
     """The noise level and band factors, before the clumping correction."""
     height, width = source.shape[:2]
     windows = _sample_tiles(height, width)
-    a, b, c = _estimate_variance_model(source, windows)
+    eligible = None
+    shape = None
+    if informative:
+        observations, eligible = _variance_observations(source, windows)
+        if eligible.sum() >= CALIBRATION_RULES["min_blocks"]:
+            shape = _fit_informative_variance(observations)
+    if shape is None:
+        eligible = None
+        shape = _estimate_variance_model(source, windows)
+    a, b, c = shape
     partial = AdaptiveNoiseModel(a=a, b=b, c=c, band_sigmas=((0.0,) * LEVELS,) * 3)
     def measure(window):
         y0, x0, y1, x1 = window
@@ -594,8 +679,9 @@ def _measure_model(source: np.ndarray) -> tuple[AdaptiveNoiseModel, list[tuple[i
             fine[component].append(window_fine[component])
             coarse[component].append(window_coarse[component])
     luma0_all = np.concatenate(luma0)
-    flat = luma0_all <= np.quantile(luma0_all, FLAT_BLOCK_QUANTILE)
-    quantile = 0.10
+    flat = (_calibration_blocks(luma0_all, eligible) if eligible is not None
+            else luma0_all <= np.quantile(luma0_all, FLAT_BLOCK_QUANTILE))
+    quantile = CALIBRATION_RULES["band_quantile"]
     calibration = _quantile_calibration(quantile)
     rows = []
     for component in range(3):

@@ -2,7 +2,7 @@
  * Measurement is independent of finishing controls and rendition names.
  */
 (() => {
-  const VERSION = "adaptive-measure-gpu-signed-source-v2";
+  const VERSION = "adaptive-measure-informative-v3";
   const shader = `
 struct Params { w:u32, h:u32, count:u32, op:u32, step:u32, axis:u32, stride:u32, pad:u32, a:f32, b:f32, c:f32, extra:f32 }
 @group(0) @binding(0) var<storage,read> src:array<vec4f>;
@@ -19,6 +19,9 @@ fn coord(v:i32,n:u32,low:bool,high:bool,reach:u32)->u32 {
 fn at(x:i32,y:i32,t:u32,reach:u32)->vec4f {
  let e=edges[t]; return src[t*p.w*p.h+coord(y,p.h,e.x!=0u,e.y!=0u,reach)*p.w+coord(x,p.w,e.z!=0u,e.w!=0u,reach)];
 }
+fn statAt(x:i32,y:i32,t:u32)->vec4f {
+ return src[t*p.w*p.h+coord(y,p.h,true,true,1u)*p.w+coord(x,p.w,true,true,1u)];
+}
 @compute @workgroup_size(128) fn main(@builtin(global_invocation_id) id:vec3u){
  let i=id.x; let area=p.w*p.h;
  if(p.op==7u){
@@ -34,8 +37,8 @@ fn at(x:i32,y:i32,t:u32,reach:u32)->vec4f {
  if(p.op==0u){dst[i]=vec4f(dot(v.xyz,vec3f(.5773502692)),dot(v.xyz,vec3f(.7071067812,0,-.7071067812)),dot(v.xyz,vec3f(.4082482905,-.8164965809,.4082482905)),dot(v.xyz,vec3f(.2722287,.6740818,.0536895)));}
  if(p.op==1u){var total=vec4f(0);let weights=array<f32,5>(.0625,.25,.375,.25,.0625);for(var k=0u;k<5u;k++){let d=(i32(k)-2)*i32(p.step);total+=weights[k]*at(x+select(0,d,p.axis==0u),y+select(0,d,p.axis==1u),t,2u*p.step);}dst[i]=total;}
  if(p.op==2u){let lum=max(v.w,0.);dst[i]=vec4f(sqrt(max(p.c*lum*lum+p.a*lum+p.b,1e-20)));}
- if(p.op==3u){var mean=0.;var residual=0.;let k=array<f32,3>(1.,-2.,1.);for(var dy=0u;dy<3u;dy++){for(var dx=0u;dx<3u;dx++){let z=at(x+i32(dx)-1,y+i32(dy)-1,t,1u).w;mean+=z/9.;residual+=k[dy]*k[dx]*z;}}dst[i]=vec4f(mean,residual,0,0);}
- if(p.op==4u){var gx=0.;var gy=0.;let k=array<f32,3>(1.,2.,1.);for(var dy=0u;dy<3u;dy++){for(var dx=0u;dx<3u;dx++){let z=at(x+i32(dx)-1,y+i32(dy)-1,t,1u).x;gx+=f32(i32(dx)-1)*k[dy]*z;gy+=f32(i32(dy)-1)*k[dx]*z;}}dst[i]=vec4f(v.xy,length(vec2f(gx,gy)),0);}
+ if(p.op==3u){var mean=0.;var residual=0.;let k=array<f32,3>(1.,-2.,1.);for(var dy=0u;dy<3u;dy++){for(var dx=0u;dx<3u;dx++){let z=statAt(x+i32(dx)-1,y+i32(dy)-1,t).w;mean+=z/9.;residual+=k[dy]*k[dx]*z;}}dst[i]=vec4f(mean,residual,0,select(0.,1.,abs(residual)<=p.extra*max(abs(v.w),1e-20)));}
+ if(p.op==4u){var gx=0.;var gy=0.;let k=array<f32,3>(1.,2.,1.);for(var dy=0u;dy<3u;dy++){for(var dx=0u;dx<3u;dx++){let z=statAt(x+i32(dx)-1,y+i32(dy)-1,t).x;gx+=f32(i32(dx)-1)*k[dy]*z;gy+=f32(i32(dy)-1)*k[dx]*z;}}dst[i]=vec4f(v.xy,length(vec2f(gx,gy)),v.w);}
  if(p.op==6u){dst[i]=vec4f((v.xyz-other[i].xyz)/max(other[i].w,1e-10),0);}
  if(p.op==8u){dst[i]=v*v;}
  if(p.op==9u){var total=vec4f(0);for(var k=-3;k<=3;k++){// Wiener box always replicates at window boundaries.
@@ -45,6 +48,12 @@ fn at(x:i32,y:i32,t:u32,reach:u32)->vec4f {
  if(p.op==10u){dst[i]=vec4f(v.xyz-other[i].xyz,other[i].w);}
  if(p.op==11u){dst[i]=vec4f(v.xyz/max(other[i].x,1e-10),0);}
  if(p.op==12u){dst[i]=vec4f(v.xyz,other[i].x);}
+ if(p.op==13u){
+  let bw=p.w/16u;let blocks=bw*(p.h/16u);if(i>=blocks*p.count){return;}
+  let tile=i/blocks;let block=i%blocks;var zeros=0.;
+  for(var dy=0u;dy<16u;dy++){for(var dx=0u;dx<16u;dx++){zeros+=src[tile*area+((block/bw)*16u+dy)*p.w+(block%bw)*16u+dx].w;}}
+  dst[i]=vec4f(zeros/256.,0,0,0);
+ }
 }`;
   const pipelines = new WeakMap();
   async function pipeline(device) {
@@ -56,13 +65,13 @@ fn at(x:i32,y:i32,t:u32,reach:u32)->vec4f {
     const sorted=Float64Array.from(values).sort(), at=(sorted.length-1)*q, low=Math.floor(at);
     return sorted[low]+(sorted[Math.min(low+1,sorted.length-1)]-sorted[low])*(at-low);
   }
-  function fit(xs, vs, ws) {
+  function fit(xs, vs, ws, rules=null) {
     let best=Infinity, result=[0,0,0]; // c,a,b
-    for(let mask=1;mask<8;mask++){
+    for(const mask of rules?[1,2,4,3,5,6,7]:[1,2,3,4,5,6,7]){
       const terms=[0,1,2].filter(k=>mask&(1<<k)), n=terms.length;
       const matrix=Array.from({length:n},()=>Array(n+1).fill(0));
       for(let i=0;i<xs.length;i++){
-        const columns=[xs[i]**2,xs[i],1], weight=ws[i]/Math.max(vs[i],1e-20)**2;
+        const columns=[xs[i]**2,xs[i],1], weight=ws[i]/Math.max(vs[i],rules?.variance_floor??1e-20)**2;
         for(let j=0;j<n;j++){for(let k=0;k<n;k++)matrix[j][k]+=columns[terms[j]]*columns[terms[k]]*weight;matrix[j][n]+=columns[terms[j]]*vs[i]*weight;}
       }
       let valid=true;
@@ -75,10 +84,24 @@ fn at(x:i32,y:i32,t:u32,reach:u32)->vec4f {
       }
       const co=[0,0,0];for(let j=0;j<n;j++)co[terms[j]]=matrix[j][n];
       if(!valid||co.some(v=>v<0||!Number.isFinite(v)))continue;
-      let error=0;for(let i=0;i<xs.length;i++)error+=ws[i]*((co[0]*xs[i]**2+co[1]*xs[i]+co[2]-vs[i])/Math.max(vs[i],1e-20))**2;
-      if(error<best-1e-9){best=error;result=co;}
+      let error=0;for(let i=0;i<xs.length;i++)error+=ws[i]*((co[0]*xs[i]**2+co[1]*xs[i]+co[2]-vs[i])/Math.max(vs[i],rules?.variance_floor??1e-20))**2;
+      if(error<best-(rules?.fit_tie_epsilon??1e-9)){best=error;result=co;}
     }
-    return {a:result[1],b:Math.max(result[2],Math.min(...vs)*.02,1e-20),c:result[0]};
+    return {a:result[1],b:Math.max(result[2],Math.min(...vs)*(rules?.variance_floor??.02),rules?0:1e-20),c:result[0]};
+  }
+  function fitInformative(observations,rules) {
+    const rows=observations.filter(row=>row.variance>0&&row.zero_fraction<rules.zero_fraction);
+    if(!rows.length)return null;
+    const signalScale=Math.max(...rows.map(row=>row.signal),1e-20),varianceScale=quantile(rows.map(row=>row.variance),.5);
+    const model=fit(rows.map(row=>row.signal/signalScale),rows.map(row=>row.variance/varianceScale),rows.map(row=>row.pixels),rules);
+    return {a:model.a*varianceScale/signalScale,b:model.b*varianceScale,c:model.c*varianceScale/signalScale**2};
+  }
+  function calibrationBlocks(spreads,zeroFractions,rules) {
+    const eligible=spreads.map((_,index)=>index).filter(index=>zeroFractions[index]<rules.zero_fraction);
+    const informed=eligible.length>=rules.min_blocks;
+    const candidates=informed?eligible:spreads.map((_,index)=>index);
+    const limit=quantile(candidates.map(index=>spreads[index]),rules.flat_quantile);
+    return {informed,indices:candidates.filter(index=>spreads[index]<=limit)};
   }
   const histogramShader=`
 struct P {mode:u32,n:u32,sets:u32,pad:u32}
@@ -97,6 +120,7 @@ fn bucket(v:f32)->u32 {return min(bitcast<u32>(max(v,0.))>>16u,65535u);}
  if(v.z>thresholds[13u+bin]){return;}
  atomicAdd(&hist[bin*65536u+bucket(abs(v.y))],1u);
  atomicAdd(&hist[(12u+bin)*65536u+bucket(v.x)],1u);
+ if(v.y==0.){atomicAdd(&hist[24u*65536u+bin],1u);}
 }
 var<workgroup> sums:array<u32,256>;
 @compute @workgroup_size(256) fn quantiles(@builtin(local_invocation_id) lid:vec3u,@builtin(workgroup_id) group:vec3u){
@@ -111,17 +135,18 @@ var<workgroup> sums:array<u32,256>;
   for(var k=0u;k<256u;k++){let c=atomicLoad(&hist[base+k]);if(before+c>rank){let index=t*256u+k;
    let low=bitcast<f32>(index<<16u);let high=bitcast<f32>((index+1u)<<16u);
    let fraction=(f32(rank-before)+.5)/f32(c);
-   result[group.x]=vec4f(low+(high-low)*fraction,f32(count),0,0);break;}before+=c;}
+   var zeros=0.;if(p.mode==2u&&group.x<12u){zeros=f32(atomicLoad(&hist[24u*65536u+group.x]));}
+   result[group.x]=vec4f(low+(high-low)*fraction,f32(count),zeros,0);break;}before+=c;}
  }
 }`;
   const histogramPipelines=new WeakMap();
-  async function gpuVariance(device, stats, length, make, read) {
+  async function gpuVariance(device, stats, length, make, read, rules) {
     await warm(device);
     const pipes=await histogramPipelines.get(device);
-    let thresholds=Array(25).fill(0), last;
+    let thresholds=Array(25).fill(0), last, population, positiveCount;
     for(let mode=0;mode<3;mode++){
       const sets=[1,12,24][mode], groups=mode===0?13:sets;
-      const hist=make(sets*65536*4), input=make(25*4), output=make(groups*16), params=make(16,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST);
+      const hist=make((sets*65536+(mode===2?12:0))*4), input=make(25*4), output=make(groups*16), params=make(16,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST);
       device.queue.writeBuffer(input,0,new Float32Array(thresholds));device.queue.writeBuffer(params,0,new Uint32Array([mode,length,sets,0]));
       const encoder=device.createCommandEncoder();
       for(let stage=0;stage<2;stage++){
@@ -133,20 +158,23 @@ var<workgroup> sums:array<u32,256>;
         pass.setPipeline(pipe);pass.setBindGroup(0,bind);pass.dispatchWorkgroups(stage===0?Math.ceil(length/128):groups);pass.end();
       }
       device.queue.submit([encoder.finish()]);last=await read(output,groups*16);
-      if(mode===0)thresholds.splice(0,13,...Array.from({length:13},(_,i)=>last[i*4]));
-      if(mode===1)thresholds.splice(13,12,...Array.from({length:12},(_,i)=>last[i*4]));
+      if(mode===0){positiveCount=last[1];thresholds.splice(0,13,...Array.from({length:13},(_,i)=>last[i*4]));}
+      if(mode===1){population=Array.from({length:12},(_,i)=>last[i*4+1]);thresholds.splice(13,12,...Array.from({length:12},(_,i)=>last[i*4]));}
       hist.destroy();input.destroy();output.destroy();params.destroy();
     }
-    const xs=[],vs=[],ws=[];
+    const xs=[],vs=[],ws=[],observations=[];
     for(let i=0;i<12;i++){
       const count=last[i*4+1];if(count<150)continue;
       const std=last[i*4]/.31863936396437514/6;
       xs.push(last[(12+i)*4]);vs.push(std*std);ws.push(count);
+      if(positiveCount>=1000&&population[i]>=500)observations.push({signal:last[(12+i)*4],variance:std*std,pixels:count,zero_fraction:last[i*4+2]/count});
     }
-    return xs.length>=2?fit(xs,vs,ws):{a:0,b:vs[0]||1e-8,c:0};
+    return {legacy:xs.length>=2?fit(xs,vs,ws):{a:0,b:vs[0]||1e-8,c:0},informative:fitInformative(observations,rules)};
   }
   async function measure(device, description, pixels, budget=512*1024**2) {
     const start=performance.now(), {width:w,height:h,windows}=description, count=windows.length;
+    const rules=description.calibration;
+    if(description.version!==VERSION||!rules)throw Error("Stale Denoise measurement source.");
     const size=w*h*count*16, required=size*8+8*1024**2;
     if(required>budget||size>device.limits.maxStorageBufferBindingSize)throw Error("Denoise measurement exceeds available GPU memory.");
     const pipe=await pipeline(device), owned=[];
@@ -158,7 +186,7 @@ var<workgroup> sums:array<u32,256>;
       device.queue.writeBuffer(input,0,pixels);
       const dispatch=(op,src,dst,other=src,extra={}, length=w*h*count)=>{
         const data=new ArrayBuffer(48), u=new Uint32Array(data),f=new Float32Array(data);
-        u.set([w,h,count,op,extra.step||1,extra.axis||0,extra.stride||1,0]);f.set([extra.a||0,extra.b||0,extra.c||0,0],8);
+        u.set([w,h,count,op,extra.step||1,extra.axis||0,extra.stride||1,0]);f.set([extra.a||0,extra.b||0,extra.c||0,extra.extra||0],8);
         const params=make(48,GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST);device.queue.writeBuffer(params,0,data);
         const group=device.createBindGroup({layout:pipe.getBindGroupLayout(0),entries:[src,other,dst,params,flags].map((buffer,binding)=>({binding,resource:{buffer}}))});
         const encoder=device.createCommandEncoder(), pass=encoder.beginComputePass();pass.setPipeline(pipe);pass.setBindGroup(0,group);pass.dispatchWorkgroups(Math.ceil(length/128));pass.end();device.queue.submit([encoder.finish()]);
@@ -167,12 +195,17 @@ var<workgroup> sums:array<u32,256>;
       const sample=async(buffer,limit=16384)=>{const stride=Math.max(1,Math.ceil(w*h*count/limit)), length=Math.ceil(w*h*count/stride);dispatch(5,buffer,temp,buffer,{stride},length);return read(temp,length*16);};
       const blur=(src,dst,step)=>{dispatch(1,src,temp,src,{step,axis:0});dispatch(1,temp,dst,temp,{step,axis:1});};
       dispatch(0,input,original);
-      dispatch(3,original,band);dispatch(4,band,energy);
-      const model=await gpuVariance(device,energy,w*h*count,make,read);
+      const blockCount=Math.floor(w/16)*Math.floor(h/16)*count;
+      dispatch(3,original,band,original,{extra:rules.zero_relative});dispatch(4,band,energy);
+      dispatch(13,energy,band,energy,{},blockCount);
+      const zeroStats=await read(band,blockCount*16),zeroFractions=Array.from({length:blockCount},(_,index)=>zeroStats[index*4]);
+      const shapes=await gpuVariance(device,energy,w*h*count,make,read,rules);
+      const informed=shapes.informative&&zeroFractions.filter(value=>value<rules.zero_fraction).length>=rules.min_blocks;
+      const model=informed?shapes.informative:shapes.legacy;
       blur(original,current,1);blur(current,smooth,2);dispatch(2,smooth,sigma,smooth,model);
       // The opponent current keeps its luminance channel through the blur.
       let src=original, dst=current;
-      const blockCount=Math.floor(w/16)*Math.floor(h/16)*count, stdReads=[], energyReads=[];
+      const stdReads=[], energyReads=[];
       for(let level=0;level<4;level++){
         blur(src,dst,2**level);
         dispatch(10,src,band,dst);dispatch(11,band,energy,sigma);
@@ -182,11 +215,12 @@ var<workgroup> sums:array<u32,256>;
         src=dst;dst=dst===current?smooth:current;
       }
       const [stds,energies]=await Promise.all([Promise.all(stdReads),Promise.all(energyReads)]);
-      const luma=Array.from({length:blockCount},(_,i)=>stds[0][i*4]);const limit=quantile(luma,.25), flat=luma.map((v,i)=>v<=limit?i:-1).filter(i=>i>=0);
+      const luma=Array.from({length:blockCount},(_,i)=>stds[0][i*4]);
+      const flat=calibrationBlocks(luma,informed?zeroFractions:zeroFractions.map(()=>1),rules).indices;
       const rows=[];
       for(let k=0;k<3;k++){
-        const s0=quantile(flat.map(i=>stds[0][i*4+k]),.1)*1.096484132980239;
-        const s1=quantile(flat.map(i=>stds[1][i*4+k]),.1)*1.096484132980239;
+        const s0=quantile(flat.map(i=>stds[0][i*4+k]),rules.band_quantile)*1.096484132980239;
+        const s1=quantile(flat.map(i=>stds[1][i*4+k]),rules.band_quantile)*1.096484132980239;
         const ratio=Math.min(.6,Math.max(.15,s1/Math.max(s0,1e-12))),decay=Math.min(.65,Math.max(.45,ratio));
         rows.push([s0,...[1,2,3,4].map(level=>s0*ratio*decay**(level-1))]);
       }
@@ -232,5 +266,5 @@ var<workgroup> sums:array<u32,256>;
     const result = task().finally(()=>{if(pending.get(key)===result)pending.delete(key);});
     pending.set(key,result);return result;
   }
-  window.HDRDenoiseMeasurement={measure:serialMeasure,warm,acquire,version:VERSION};
+  window.HDRDenoiseMeasurement={measure:serialMeasure,warm,acquire,version:VERSION,fitInformative,calibrationBlocks};
 })();
