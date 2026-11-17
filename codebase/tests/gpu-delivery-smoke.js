@@ -19,6 +19,8 @@ const env={...process.env,PYTHONPATH:path.resolve(__dirname,"../backend")};
     const edits=await page.request.get(api(`/api/session/${session.session_id}/edit-state`));
     const editState=await edits.json();
     editState.document.denoise.hdr.enabled=true;editState.document.denoise.sdr.enabled=true;
+    // The clipped calibration fixture exceeds 1000 nits without an authored cap.
+    editState.document.global_adjustments.hdr.highlight_section_enabled=true;
     const changed=await page.request.put(api(`/api/session/${session.session_id}/edit-state?expected_revision=${editState.revision}`),{data:editState.document});
     if(!changed.ok())throw Error(await changed.text());
     for(const forced of [false,true]){
