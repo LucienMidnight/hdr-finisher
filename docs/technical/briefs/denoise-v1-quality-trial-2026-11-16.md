@@ -225,6 +225,11 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: Steve approved the Denoise noise-measurement fix (ignore
+  clipped, featureless calibration blocks; `dark-noise-strength.md`), CPU and
+  GPU measurement together. Build queued after signed RAW development, since
+  both change what Denoise receives; then the hot pixel checkbox.
+
 - 2026-11-17: dark-noise research merged (`dark-noise-strength.md`): two
   separate failures. (1) A calibration bug: clipped featureless bright blocks
   are counted as "quiet" noise samples, so beside the flame Denoise believes
