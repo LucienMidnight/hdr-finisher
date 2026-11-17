@@ -27,6 +27,37 @@ recipe, ISO, noise fits, clipping fractions and RNG seeds are recorded.
 
 ## Inputs
 
+### AI plus highlight reconstruction (November 17 research)
+
+`candidates/ai_highlights.py` combines the original-sensor Bayer RawNIND result
+with actual signed AHD Opposed/Edge reconstruction. The original unity-WB AHD
+camera mean anchors the model before any repair. A sensor near-clip map plus
+measured reconstruction support protects the normal result; 32/128px feathers
+are research alternatives, not approved product controls. No editor imports it.
+
+From `codebase`, after setup and local installation of pinned ORT 1.32.0 and
+the hash-verified existing Bayer weights:
+
+```sh
+PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label ai-highlights -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.guard \
+  --receipt output/denoise-v1/ai-highlights/native-guard.json --seconds 1800 -- \
+  .venv/bin/python -m tools.denoise_eval.candidates.ai_highlights_measure \
+  --phase real --photo IMG_0790.CR2
+```
+
+Other phases: `survey`, `synthetic`, `review`. Real sources are restricted to
+`IMG_0790.CR2`, `IMG_3129.CR2`, `IMG_0114.CR2` and `2025_0730_1331_3.arw` in
+the approved photo folder. Real phases infer whole native frames, not crop-local
+global gain. Temporary disk arrays are removed on ordinary completion/failure;
+guard-killed scratch must be identified and removed by the caller. The review
+retains only content-deduplicated 384px crops, at 1:1 and −3 EV, plus small JSON.
+Metrics distinguish true synthetic residuals from texture/noise proxies on
+real photos. RGB Edge-only is explicitly crop-local and omits sensor Opposed;
+it is not a faithful replacement for the normal Edge recipe. See
+`docs/technical/research/denoise-v1-2026-11-16/ai-highlights.md` for results and
+the signed-shadow, gain, memory, GPU and delivery qualifications.
+
 ### Signed demosaic/noise separation (November 17 research)
 
 `candidates/demosaic_noise.py` implements signed bilinear interpolation, an

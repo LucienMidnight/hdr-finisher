@@ -620,6 +620,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   `ai-experimental-design.md` proposes the standalone experimental Bayer
   RawNIND integration: shared RAW source, eligibility, live Strength, offline
   packaging, cache/memory choices, work packages and decisions for Steve.
+  `ai-highlights.md` evaluates original-sensor Bayer AI with Opposed/Edge
+  reconstruction, protected region blends, boundary/texture risks, signed
+  shadows, frame-global gain, native CPU costs and decision crops; research only.
   `speck-cleanup.md` records residual-outlier and shadow-colour classical
   cleanup variants, lifted-shadow tails, detail failures, native CPU costs
   and the GPU/CPU integration limits; current Denoise stays unchanged.
