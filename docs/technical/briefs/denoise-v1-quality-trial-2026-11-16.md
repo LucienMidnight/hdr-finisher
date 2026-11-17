@@ -225,6 +225,15 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: signed-shadows research merged (`signed-shadows.md`). Keeping
+  below-black samples through a native signed AHD removes the neutral-black
+  bias (pure black at +4 stops: SDR ΔE 24.5 today, 0 signed), adds ~0.25 s at
+  18 MP / 0.54 s at 42 MP, and gives a small held-out gain (34.91 vs 34.83 dB),
+  but does not remove the Canon specks with unchanged Denoise. The report maps
+  every downstream clamp. Put to Steve as a build decision with review page
+  https://claude.ai/artifact/Hk4W3gZakZez3W5hbPifrQ. Also seen: current
+  Denoise barely reduces the lifted flame-edge noise at all.
+
 - 2026-11-17: Steve on the shadow clipping: "we should almost certainly
   preserve the noisy shadow data as darktable does and let the user crush
   shadows to taste in editing." Direction agreed in principle, pending the
