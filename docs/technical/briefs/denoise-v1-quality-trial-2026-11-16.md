@@ -225,6 +225,12 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: Steve: no camera-specific defect maps or calibration captures
+  for now; improve general processing. He asked for a single-photo hot pixel
+  filter in Pixel cleanup with a checkbox for edge cases (stars, sparks),
+  since a real hot pixel is one photosite while real light spreads to
+  neighbouring photosites of other colours. Prototype research started.
+
 - 2026-11-17: Pixel cleanup research: map-based repair of known sensor
   defects before demosaic works and is cheap (~21/75 ms at 18/42 MP), but
   IMG_0790 has no confirmed defects (1,011 unconfirmed suspects, almost all
