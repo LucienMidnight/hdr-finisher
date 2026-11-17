@@ -643,6 +643,10 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   `signed-shadows.md` records signed AHD and unchanged-Denoise trials,
   neutral-bias gains but unresolved Canon specks, native CPU cost and the
   complete downstream signed-range shipping/changed-grade audit.
+  `early-outlier-taming.md` records signed pre/post-AHD soft noise-envelope
+  clamping, similarity/size and threshold sweeps, uniform-grain alternatives,
+  fixed speck zooms, small-star/clean-detail failures, native CPU cost and
+  bounded GPU-kernel agreement; research only, no automatic default approved.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.
