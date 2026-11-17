@@ -225,6 +225,14 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: speck origin trace (coordinator; page
+  https://claude.ai/artifact/Kf757RFoVHiriHYtUw8mUN): of 547 specks left by
+  signed + calibration-repaired Denoise in flat gallery shadows, 37% sit on
+  exactly one sensor sample beyond 4σ of its same-colour neighbours, 21% on
+  two or more, 43% on none (random 3×3 spots: 2–10%). Both signs matter; a
+  too-dark red/blue sample becomes a green blob. Passed to the early-outlier
+  agent with Steve's request to compare size limits 1 vs 2 samples.
+
 - 2026-11-17: noise-measurement fix merged (`e3e72205`, cache revision
   `adaptive-measure-informative-v3`): CPU and GPU exclude uninformative bins
   and blocks together. Node 1,101 / Python 4,105 pass. GPU drivers for the
