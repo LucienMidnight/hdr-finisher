@@ -97,6 +97,7 @@ PYTHONPATH=backend .venv/bin/python tools/gpu-run-lock.py --label lmmse-quick --
 ```
 
 Phases: `quick`, `clean`, `decision`, `heldout`, `full`, `seen`, `safety`,
+`sensitivity` (after `decision`; explicitly post-hoc iterations=0 diagnostic),
 `native --photo IMG_0790.CR2` (also `2025_0730_1331_3.arw`) and `review`.
 Outputs overwrite `output/denoise-v1/lmmse-demosaic/`; public pair/model stores
 must already be linked in their usual locations. No photographs/datasets enter
@@ -106,7 +107,9 @@ and evaluates with/without default Denoise. Exact strip equality is tested.
 All fixed shadow supports retain the earlier research signed-AHD reference,
 while picture scores and Off use the shipping signed AHD core. This isolates
 the changed implementation without moving the dark-pit measurement support.
-CPU-only: finished-pixel GPU parity and production HDR delivery remain untested.
+Requires `clang++` on PATH; setup supplies/reuses the signed AHD helper. CPU-only:
+the production CPU finished-renderer cap is checked in `safety`; GPU parity,
+encoded delivery and full camera import integration remain untested.
 
 ### Dark-noise calibration and strength (signed-primary research)
 

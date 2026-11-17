@@ -187,6 +187,8 @@ def write_page(path, title, columns, rows, note):
 def review(columns):
     manifest_path = OUTPUT / 'decision/manifest.json'
     manifest = json.loads(manifest_path.read_text())
+    if any('rt_lmmse_linear_fix' in record['adapters'] for record in manifest['cases']):
+        columns = [*columns, 'rt_lmmse_linear_fix']
     columns = [*columns, 'clean']
     rows = []
     for record in manifest['cases']:
@@ -205,7 +207,8 @@ def review(columns):
     write(manifest_path, manifest)
     write_page(OUTPUT / 'decision/index.html', 'Faithful RawTherapee LMMSE — signed sensor comparison', columns, rows,
         '12 fixed 288px rows; same lift within each row. All classical methods use the calibration repair and shipping Denoise controls. '
-        'Previous MMSE is not upstream LMMSE. RawNIND Bayer runs alone. Private crops have no clean truth. Research only.')
+        'Previous MMSE is not upstream LMMSE. RawNIND Bayer runs alone. Private crops have no clean truth. '
+        'Linear LMMSE, when shown, is a post-hoc diagnostic on these rows only, not a full-set qualification. Research only.')
     size = sum(path.stat().st_size for path in (OUTPUT / 'decision').rglob('*') if path.is_file())
     if size > 13_000_000:
         raise ValueError('Decision page exceeds inherited 13 MB budget')
@@ -328,10 +331,33 @@ def safety(args, entries):
             **provenance(args.inventory)))
 
 
+def sensitivity(args, entries):
+    manifest_path = OUTPUT / 'decision/manifest.json'
+    manifest = json.loads(manifest_path.read_text())
+    inherited = {row['id']: row for row in manifest['cases']}
+    records = []
+    for case_id, title, sample, offset, lift, licence in decision_crops.cases(entries):
+        sample = signed_primary(sample)
+        left, top = offset
+        region = np.s_[top:top+288, left:left+288]
+        folder = OUTPUT / 'decision' / case_id
+        record = measure_sample(sample, dict(rt_lmmse_linear_fix=trial.linear()), (region, lift, folder))
+        record.update(id=case_id, title=title)
+        records.append(record)
+        inherited[case_id]['adapters'].update(record['adapters'])
+        print('linear sensitivity', case_id, flush=True)
+    write(OUTPUT / 'linear-sensitivity.json', dict(cases=records, post_hoc=True,
+        qualification='Predeclared clean iterations=0 option extended to fixed noisy decision rows after primary results. No tuning or global threshold selection.',
+        **provenance(args.inventory)))
+    manifest['linear_sensitivity'] = dict(post_hoc=True, provenance=provenance(args.inventory))
+    write(manifest_path, manifest)
+    review(adapters().keys())
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--inventory', type=Path, required=True)
-    parser.add_argument('--phase', choices=('quick', 'full', 'heldout', 'seen', 'decision', 'clean', 'safety', 'native', 'review'), required=True)
+    parser.add_argument('--phase', choices=('quick', 'full', 'heldout', 'seen', 'decision', 'clean', 'safety', 'native', 'review', 'sensitivity'), required=True)
     parser.add_argument('--photo', choices=('IMG_0790.CR2', '2025_0730_1331_3.arw'), default='IMG_0790.CR2')
     parser.add_argument('--no-rawnind', action='store_true')
     parser.add_argument('--canon-only', action='store_true')
@@ -347,6 +373,8 @@ def main():
         shared.decisions(args, entries)
     elif args.phase == 'safety':
         safety(args, entries)
+    elif args.phase == 'sensitivity':
+        sensitivity(args, entries)
     elif args.phase == 'review':
         review(adapters(not args.no_rawnind).keys())
     else:

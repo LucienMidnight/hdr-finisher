@@ -43,7 +43,11 @@ def library(upstream_control=False):
                 raise RuntimeError('Pinned upstream boundary not found: ' + old)
             source = source.replace(old, new)
         entry = '''
-extern "C" int rt_lmmse(float* sensor, int height, int width, const int* cfa,
+extern "C"
+#ifdef _WIN32
+__declspec(dllexport)
+#endif
+int rt_lmmse(float* sensor, int height, int width, const int* cfa,
                          int iterations, int signed_mode, float* output) {
     try {
         rtengine::RawImageSource image(height, width, cfa, signed_mode != 0);

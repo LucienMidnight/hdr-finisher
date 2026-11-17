@@ -74,7 +74,10 @@ public:
             return curve == 1 ? 1.044445 * std::exp(std::log(value) / 2.4) - 0.044445
                 : 65535.0 * std::exp(std::log((value + 0.044445) / 1.044445) * 2.4);
         }
-        if (curve == 1 && !signed_domain) { index = std::clamp(index, 0.0f, 65535.0f); }
+        if (curve == 1 && !signed_domain) {
+            if (index > 65534.0f) { return values.back(); }
+            index = std::max(index, 0.0f);
+        }
         if (curve == 0 && !signed_domain) { index = std::max(index, 0.0f); }
         int lower = std::clamp(static_cast<int>(index), 0, 65534);
         return values[lower] + (values[lower + 1] - values[lower]) * (index - lower);
