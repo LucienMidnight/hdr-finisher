@@ -225,6 +225,17 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: speck gallery for Steve (14 lifted high-ISO windows with 6×
+  zooms; https://claude.ai/artifact/MqmCM9u6KMSJQ5eDd98HKy; script and window
+  list in `codebase/output/denoise-v1/speck-gallery/`). Specks are rare up to
+  ISO 4000 and common from ISO 6400. Steve's idea, now in research
+  (`early-outlier-taming.md`): the future specks are visible before
+  denoising as samples/clusters far outside the local noise in value or hue;
+  pull them back into the noise range before Denoise (preferably before
+  demosaicing), protect detail by a similarity/support test, and accept
+  strength/size controls for fabric and stars. LMMSE research (A) running;
+  AI + highlight reconstruction (B) follows.
+
 - 2026-11-17: signed RAW development merged (`8e84c12a`): Bayer only (X-Trans
   and unsupported LibRaw fallbacks stay unsigned), CPU native signed AHD helper
   built by setup/CI/PyInstaller/Flatpak, GPU signed path, import projection
