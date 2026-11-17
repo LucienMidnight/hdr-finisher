@@ -81,6 +81,28 @@ Focused tests: `tests/test_denoise_early_outlier.py`. Method, failures,
 controls and unmeasured CPU/GPU integration gates are in
 `docs/technical/research/denoise-v1-2026-11-16/early-outlier-taming.md`.
 
+`candidates.early_uniformity_measure` uses the same command/options for the
+threshold-only 2/2.5/3/4σ sweep (strength .75, envelope 1.5σ, max area 5,
+support on) and less-luma/more-colour Denoise (.75/.25/1/.5, sizes .5).
+Its `grain_only` control isolates the Denoise setting change without clamping.
+Additional `gaussian` and `grain` phases measure actual Gaussian touch rates
+and fixed-support grain level/evenness with clean comparisons. Output is
+overwritten in `early-outlier/threshold-grain/`; its review includes identical
+6× gallery spots, the same decision rows and held-out paired grain crops.
+The research runner configures the existing bounded harness rather than
+copying the RAW development/evaluation code. Run each phase under the lock.
+
+`candidates.early_outlier_gpu_measure --phase fixtures` prepares generated
+four-CFA and four fixed real-window clamp-kernel inputs. Under the same lock,
+`node tests/run-in-electron.js tools/denoise_eval/candidates/early_outlier_gpu.cjs
+output/denoise-v1/early-outlier/gpu-input.json
+output/denoise-v1/early-outlier/gpu-output.json` performs one WebGPU attempt.
+Then `early_outlier_gpu_measure --phase compare` (also with `--inventory`)
+checks common CPU signed-AHD/Denoise finished SDR/HDR agreement at −6/0/+6
+stops, mean <1 / p99 <3. Remove the two bulky transport JSONs afterwards;
+retain `gpu-compare.json` and logs. This is not production RAW/highlight
+pipeline qualification, GPU native timing or evidence for a new GPU route.
+
 ### Signed demosaic/noise separation (November 17 research)
 
 `candidates/demosaic_noise.py` implements signed bilinear interpolation, an

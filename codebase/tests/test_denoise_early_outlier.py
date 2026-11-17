@@ -105,3 +105,25 @@ def test_saturation_and_nearby_support_stay_unchanged():
 def test_invalid_controls_refused(kwargs):
     with pytest.raises(ValueError):
         Controls(**kwargs)
+
+
+def test_threshold_only_sweep_is_monotone_for_isolated_samples():
+    from tools.denoise_eval.candidates.early_uniformity import threshold
+    plane = np.zeros((64, 64), np.float32)
+    plane[12, 12], plane[24, 24], plane[36, 36], plane[48, 48] = .021, -.027, .035, -.06
+    previous = np.full_like(plane, np.inf)
+    for value in (2., 2.5, 3., 4.):
+        result = tame_plane(plane, 0, .0001, threshold(value).controls)[0]
+        correction = abs(result-plane)
+        assert np.all(correction <= previous)
+        assert np.all(abs(result) <= abs(plane))
+        previous = correction
+
+
+def test_grain_variant_changes_only_luma_and_chroma_controls():
+    from tools.denoise_eval.candidates.early_uniformity import threshold
+    baseline, grain = threshold(2.5), threshold(2.5, grain=True)
+    assert baseline.controls == grain.controls
+    assert grain.denoise.controls == replace(baseline.denoise.controls, luminance=.25, color_noise=1.)
+    assert grain.denoise.controls.strengths()[0] < baseline.denoise.controls.strengths()[0]
+    assert grain.denoise.controls.strengths()[1] > baseline.denoise.controls.strengths()[1]
