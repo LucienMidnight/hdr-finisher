@@ -17,7 +17,7 @@ from .cpu_budget import logical_cpus, photo_lanes, lower_thread_priority
 from .library_raw_reader import open_raw
 from .library_diagnostics import log
 
-VERSION = "library-camera-gpu-v1"
+VERSION = "library-camera-signed-gpu-v2"
 MIB = 1024 ** 2
 
 
@@ -51,7 +51,7 @@ def camera_raw(path):
 class RawBrowsing:
     def __init__(self, root, paused=lambda: False, ram=None, foreground_changed=lambda key, active: None):
         self.limits = allowances(ram or machine_memory())
-        self._decoder_lanes = min(photo_lanes(), max(1, self.limits["transport_bytes"] // (64 * MIB)))
+        self._decoder_lanes = min(photo_lanes(), max(1, self.limits["transport_bytes"] // (128 * MIB)))
         from .library_cache import LibraryCache
         self.managed = LibraryCache(root)
         self.cv = Condition()
@@ -83,8 +83,8 @@ class RawBrowsing:
             reader = Thread(target=self._read, name="library-raw-reader", daemon=True)
             self.threads.append(reader)
             reader.start()
-            # Memory bound: each in-flight 42 MP half-size uint16 transport is
-            # about 64 MiB; retain the existing transport allowance.
+            # Memory bound: each in-flight 42 MP half-size float32 transport is
+            # about 128 MiB; retain the existing transport allowance.
             for index in range(self._decoder_lanes):
                 thread = Thread(target=self._lane, args=(index,), name=f"library-raw-process-{index}", daemon=True)
                 self.threads.append(thread)

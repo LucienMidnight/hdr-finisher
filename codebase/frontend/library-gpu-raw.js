@@ -1,6 +1,6 @@
 /* Camera RAW development on the GPU (WebGPU), with the same maths as Grade's
  * CPU import: opposed-colour highlight repair, LibRaw 0.22.1 AHD demosaic,
- * camera RGB to ACEScg, import gamut projection, fixed calibration,
+ * camera RGB to signed ACEScg, fixed calibration,
  * full-source measurements and Pillow-equivalent bilinear reduction.
  * The Library uses it for camera RAW grid thumbnails (backend:
  * library_gpu_raw.py); tools/gpu_raw_prototype compares it with the CPU. */
@@ -49,7 +49,7 @@
   const NORMALIZE = COMMON + /* wgsl */ `
   @group(0) @binding(1) var<storage, read> mosaic: array<u32>;
   @group(0) @binding(2) var<storage, read_write> norm: array<f32>;
-  @group(0) @binding(3) var<storage, read_write> ints: array<u32>;
+  @group(0) @binding(3) var<storage, read_write> ints: array<i32>;
   @group(0) @binding(4) var<storage, read_write> clipbits: array<atomic<u32>>;
   @group(0) @binding(5) var<storage, read_write> coarse: array<atomic<u32>>;
   @group(0) @binding(6) var<storage, read_write> counts: array<atomic<u32>>;
@@ -65,10 +65,10 @@
       let raw = f32((mosaic[i >> 1u] >> ((i & 1u) * 16u)) & 0xffffu);
       let ch = RAWCH(r, c); let rgb = FC(r, c);
       let black = p.raw_black[ch];
-      var v = max(raw - black, 0.0) * (1.0 / p.raw_range[ch]);
+      var v = (raw - black) * (1.0 / p.raw_range[ch]);
       v = v * p.wb[rgb];
       norm[i] = v;
-      ints[i] = u32(max(raw - black, 0.0));
+      ints[i] = i32(raw - black);
       if (v >= p.thr[rgb]) {
         atomicOr(&clipbits[i >> 5u], 1u << (i & 31u));
         atomicOr(&coarse[u32(r / 3) * p.dims2.x + u32(c / 3)], 1u << rgb);
@@ -160,7 +160,7 @@
   const REPAIR = COMMON + /* wgsl */ `
   @group(0) @binding(1) var<storage, read> norm: array<f32>;
   @group(0) @binding(2) var<storage, read> clipbits: array<u32>;
-  @group(0) @binding(3) var<storage, read_write> ints: array<u32>;
+  @group(0) @binding(3) var<storage, read_write> ints: array<i32>;
   ${OPPOSED}
   @compute @workgroup_size(16, 16)
   fn main(@builtin(global_invocation_id) g0: vec3<u32>) {
@@ -173,13 +173,14 @@
     let v = norm[i];
     let repaired = max(v, opposed(r, c, rgb) + p.chroma[rgb]) / p.wb[rgb];
     let encoded = clamp(round(repaired * p.raw_range[ch] + p.raw_black[ch]), 0.0, 65535.0);
-    ints[i] = u32(max(encoded - p.raw_black[ch], 0.0));
+    ints[i] = i32(encoded - p.raw_black[ch]);
   }`;
 
   const GREEN = COMMON + /* wgsl */ `
-  @group(0) @binding(1) var<storage, read> ints: array<u32>;
-  @group(0) @binding(2) var<storage, read_write> gpack: array<u32>;
-  fn px(r: i32, c: i32) -> i32 { return i32(ints[u32(r * W() + c)]); }
+  @group(0) @binding(1) var<storage, read> ints: array<i32>;
+  @group(0) @binding(2) var<storage, read_write> greenHorizontal: array<i32>;
+  @group(0) @binding(3) var<storage, read_write> greenVertical: array<i32>;
+  fn px(r: i32, c: i32) -> i32 { return ints[u32(r * W() + c)]; }
   fn ulim(x: i32, y: i32, z: i32) -> i32 { return clamp(x, min(y, z), max(y, z)); }
   @compute @workgroup_size(16, 16)
   fn main(@builtin(global_invocation_id) g0: vec3<u32>) {
@@ -187,22 +188,26 @@
     let c = i32(g.x); let r = i32(g.y);
     if (c >= W() || r >= H()) { return; }
     let i = u32(r * W() + c);
-    if (FC(r, c) == 1u) { let v = u32(px(r, c)); gpack[i] = v | (v << 16u); return; }
-    if (r < 2 || c < 2 || r >= H() - 2 || c >= W() - 2) { gpack[i] = 0u; return; }
+    if (FC(r, c) == 1u) { let v = px(r, c); greenHorizontal[i] = v; greenVertical[i] = v; return; }
+    if (r < 2 || c < 2 || r >= H() - 2 || c >= W() - 2) { greenHorizontal[i] = 0; greenVertical[i] = 0; return; }
     let ctr = px(r, c);
     let L = px(r, c - 1); let R = px(r, c + 1);
     let gh = ulim(((L + ctr + R) * 2 - px(r, c - 2) - px(r, c + 2)) >> 2u, L, R);
     let U = px(r - 1, c); let D = px(r + 1, c);
     let gv = ulim(((U + ctr + D) * 2 - px(r - 2, c) - px(r + 2, c)) >> 2u, U, D);
-    gpack[i] = u32(gh) | (u32(gv) << 16u);
+    greenHorizontal[i] = gh; greenVertical[i] = gv;
   }`;
 
   const AHD_RGB = /* wgsl */ `
-  @group(0) @binding(1) var<storage, read> ints: array<u32>;
-  @group(0) @binding(2) var<storage, read> gpack: array<u32>;
-  fn px(r: i32, c: i32) -> i32 { return i32(ints[u32(r * W() + c)]); }
-  fn gd(r: i32, c: i32, d: u32) -> i32 { return i32((gpack[u32(r * W() + c)] >> (16u * d)) & 0xffffu); }
-  fn clip16(v: i32) -> i32 { return clamp(v, 0, 65535); }
+  @group(0) @binding(1) var<storage, read> ints: array<i32>;
+  @group(0) @binding(2) var<storage, read> greenHorizontal: array<i32>;
+  @group(0) @binding(10) var<storage, read> greenVertical: array<i32>;
+  fn px(r: i32, c: i32) -> i32 { return ints[u32(r * W() + c)]; }
+  fn gd(r: i32, c: i32, d: u32) -> i32 {
+    let index = u32(r * W() + c);
+    return select(greenHorizontal[index], greenVertical[index], d == 1u);
+  }
+  fn clip16(v: i32) -> i32 { return min(v, 65535); }
   // LibRaw ahd_interpolate_r_and_b_in_rgb: full camera RGB at (r, c) for direction d.
   fn rgbd(r: i32, c: i32, d: u32) -> vec3<i32> {
     var out = vec3<i32>(0);
@@ -225,7 +230,10 @@
 
   const AHD_LAB = /* wgsl */ `
   @group(0) @binding(4) var<storage, read> labTable: array<f32>;
-  fn cbrt_lab(i: i32) -> f32 { return labTable[u32(i)]; }
+  fn cbrt_lab(i: i32) -> f32 {
+    if (i < 0) { return 7.787 * (f32(i) / 65535.0) + 16.0 / 116.0; }
+    return labTable[u32(min(i, 65535))];
+  }
   fn lab(v: vec3<i32>) -> vec3<i32> {
     let f = vec3<f32>(v);
     let x = cbrt_lab(clip16(i32(((0.5 + p.x0.x * f.x) + p.x0.y * f.y) + p.x0.z * f.z)));
@@ -243,14 +251,14 @@
     if (c >= W() || r >= H()) { return; }
     let i = u32(r * W() + c);
     if (r < 4 || c < 4 || r >= H() - 4 || c >= W() - 4) { homo[i] = 0u; return; }
-    var ld: array<array<u32, 4>, 2>; var ab: array<array<u32, 4>, 2>;
+    var ld: array<array<u32, 4>, 2>; var ab: array<array<f32, 4>, 2>;
     let offs = array<vec2<i32>, 4>(vec2<i32>(0, -1), vec2<i32>(0, 1), vec2<i32>(-1, 0), vec2<i32>(1, 0));
     for (var d = 0u; d < 2u; d++) {
       let l0 = lab(rgbd(r, c, d));
       for (var k = 0u; k < 4u; k++) {
         let ln = lab(rgbd(r + offs[k].x, c + offs[k].y, d));
         ld[d][k] = u32(abs(l0.x - ln.x));
-        let da = u32(abs(l0.y - ln.y)); let db = u32(abs(l0.z - ln.z));
+        let da = f32(l0.y - ln.y); let db = f32(l0.z - ln.z);
         ab[d][k] = da * da + db * db;
       }
     }
@@ -304,7 +312,7 @@
   fn gain(fr: f32, fc: f32) -> f32 { return grid(0, 1, 0, fr, fc, i32(p.misc.z), i32(p.misc.w)); }
   fn coordinate(comp: i32, fr: f32, fc: f32) -> f32 { return grid(i32(p.lensc.z), 6, comp, fr, fc, i32(p.lensc.x), i32(p.lensc.y)); }`;
 
-  // After lens correction: the import gamut projection, the calibration, then
+  // After signed lens correction: the calibration, then
   // the full-source measurements Grade takes (exact peaks, strided sample).
   const FINISHING = /* wgsl */ `
   @group(0) @binding(4) var<storage, read_write> outR: array<f32>;
@@ -315,8 +323,6 @@
   var<workgroup> wgPeak: array<atomic<u32>, 3>;
   fn finish(value: vec3<f32>, r: i32, c: i32) {
     var aces = value;
-    let lo = min(aces.x, min(aces.y, aces.z)); let hi = max(aces.x, max(aces.y, aces.z));
-    if (lo < 0.0) { aces = select(vec3<f32>(0.0), hi * (aces - lo) / (hi - lo), hi > 0.0); }
     aces = aces * p.misc.x;
     let i = u32(r * W() + c);
     outR[i] = aces.x; outG[i] = aces.y; outB[i] = aces.z;
@@ -696,6 +702,7 @@
     const release = buffer => { if (owned.delete(buffer)) { liveBytes -= buffer.size; buffer.destroy(); } };
     const make = bytes => {
       const size = Math.max(4, Math.ceil(bytes / 4) * 4);
+      if (size > device.limits.maxStorageBufferBindingSize || size > device.limits.maxBufferSize) throw Error("GPU RAW buffer exceeds this device's storage limit.");
       if (liveBytes + size > memoryBudget) throw Error("GPU RAW development exceeds the reserved memory budget.");
       return own(device.createBuffer({ size, usage }));
     };
@@ -741,7 +748,7 @@
       // than the preemption deadline, so the permit is checked once, before it.
       const run = async (name, entries, x, y) => {
         const pipe = pipelines[name];
-        const group = device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: entries.map((buffer, binding) => ({ binding, resource: { buffer } })) });
+        const group = device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: entries.flatMap((buffer, binding) => buffer ? [{ binding, resource: { buffer } }] : []) });
         if (beforeSubmit) await beforeSubmit();
         if (name !== "REDUCE") device.queue.writeBuffer(uniform, 21 * 16, new Uint32Array([0, 0, 0, 0]));
         const encoder = device.createCommandEncoder(); const pass = encoder.beginComputePass();
@@ -777,8 +784,8 @@
       await device.queue.onSubmittedWorkDone();
       for (const buffer of [mosaicBuf, norm, clip, coarse, dilated, counts, partials]) release(buffer);
 
-      const gpack = make(n * 4);
-      await run("GREEN", [uniform, ints, gpack], wgX, wgY);
+      const greenHorizontal = make(n * 4), greenVertical = make(n * 4);
+      await run("GREEN", [uniform, ints, greenHorizontal, greenVertical], wgX, wgY);
       const homo = make(n * 4);
       // LibRaw builds this table once in float32. GPU pow approximations can
       // change the integer Lab votes and choose the other demosaic direction.
@@ -789,7 +796,7 @@
       }
       const labTable = make(table.byteLength);
       device.queue.writeBuffer(labTable, 0, table);
-      await run("HOMOGENEITY", [uniform, ints, gpack, homo, labTable], wgX, wgY);
+      await run("HOMOGENEITY", [uniform, ints, greenHorizontal, homo, labTable, null, null, null, null, null, greenVertical], wgX, wgY);
       await device.queue.onSubmittedWorkDone();
       release(labTable);
       await stage("demosaic");
@@ -797,9 +804,9 @@
       const peaks = make(16); let samples = make((edgeColour ? Math.max(n, sw * sh * 3) : sw * sh * 3) * 4);
       const grid = make(lens ? lensData.byteLength : 4);
       if (lens) device.queue.writeBuffer(grid, 0, lensData.buffer, lensData.byteOffset, lensData.byteLength);
-      await run("COMBINE", [uniform, ints, gpack, homo, ...planes, peaks, samples, grid], wgX, wgY);
+      await run("COMBINE", [uniform, ints, greenHorizontal, homo, ...planes, peaks, samples, grid, greenVertical], wgX, wgY);
       await device.queue.onSubmittedWorkDone();
-      for (const buffer of [ints, gpack, homo]) release(buffer);
+      for (const buffer of [ints, greenHorizontal, greenVertical, homo]) release(buffer);
       let edgeDiagnostics = null;
       if (edgeColour) {
         await stage("camera_colour");
@@ -1211,13 +1218,15 @@
       const parts=nativeMode && !describeOnly ? [handoffBody(header,[]),...picture.planes] : null;
       // Reduced scenes are stored as half floats. Converting here (round to
       // nearest even, as numpy does) halves the transfer and stores the same
-      // values; the backend still clamps and rejects non-finite samples.
+      // values; out-of-range and non-finite samples are refused, never clipped.
       const half=!parts && !describeOnly && (header.sample_bytes || 4)===4 && typeof Float16Array!=="undefined";
       const toHalf=plane=>{
-        // Finite samples above the half range clamp as the backend would;
-        // infinities and NaN stay invalid and are still refused.
         const source=new Float32Array(plane),out=new Float16Array(source.length);
-        for(let i=0;i<source.length;i++){const v=source[i];out[i]=v<Infinity?Math.min(v,65504):v;}
+        for(let i=0;i<source.length;i++){
+          const value=source[i];
+          if(!Number.isFinite(value)||Math.abs(value)>65504)throw Error("GPU RAW source exceeds finite half-float transport.");
+          out[i]=value;
+        }
         return out.buffer;
       };
       const planes=describeOnly ? [] : half ? picture.planes.map(toHalf) : picture.planes;
@@ -1469,12 +1478,12 @@
   }
   const rawBudget = (meta,edges=[640,2560]) => {
     if(meta.dng_warp)return dngBudget(meta,edges);
-    // Ordinary Bayer peaks at three demosaic buffers plus three colour
-    // planes (24 bytes/photosite); the later lens pass also holds six planes.
+    // Signed green candidates take eight bytes/photosite rather than four.
+    // Account for the extra scratch within the unchanged scheduler budgets.
     // RGB holds its input and three planes. Keep additional headroom for
     // samples, reductions and readback; complex graphs retain their estimate.
     const complex=meta.repairs?.length || meta.dng_linear || meta.raw_import_settings?.highlight_reconstruction?.method === "edge_colour_v1" || edges.includes(100000);
-    const perPixel=complex ? 44 : 28;
+    const perPixel=complex ? 48 : 32;
     let estimate=meta.width*meta.height*perPixel+64*1024*1024;
     if(meta.rgb){
       const lanes=meta.colour?.authored_sdr || meta.sdr_reference ? 6 : 3;

@@ -99,7 +99,7 @@ def apply_local_stack(
                 )
                 tile[...] = tile + (candidate - tile) * influence[..., None]
     # Local corrections precede Film Look; finishing owns the SDR white ceiling.
-    return np.maximum(result, 0.0).astype(np.float32)
+    return result.astype(np.float32)
 
 
 def _mask_needs_full_frame_evaluation(expression: MaskExpression) -> bool:
@@ -1523,7 +1523,7 @@ def _apply_local_grade(
     contrast_factor = np.float32(2.0 ** grade.contrast)
     target_stops = stops * contrast_factor + np.float32(grade.exposure)
     target_luma = np.float32(grade.contrast_pivot) * np.exp2(np.clip(target_stops, -32.0, 24.0))
-    gain = target_luma / luma
+    gain = target_luma / luma if grade.contrast != 0.0 else np.full_like(luma, np.float32(2.0 ** grade.exposure))
     result *= gain[..., None]
     from .tone import apply_tone
     result = apply_tone(result, grade, kind == PreviewKind.HDR, reference_white_nits, target_peak_nits)
@@ -1546,4 +1546,4 @@ def _apply_local_grade(
     result = _apply_color_grading(result, grade.color_grading, kind)
     result = apply_detail(result, grade.detail, kind, source_pixel_scale=source_pixel_scale)
     # Local corrections precede Film Look; finishing owns the SDR white ceiling.
-    return np.maximum(result, 0.0).astype(np.float32)
+    return result.astype(np.float32)

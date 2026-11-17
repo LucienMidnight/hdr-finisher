@@ -8,11 +8,11 @@ const { frontendSource } = require("./frontend-source.js");
 const { HDRWebGPUShaders } = require("../frontend/webgpu-shaders.js");
 
 // COLOR-DESAT-01 intentionally updates peak colour evaluation with the render.
-// N2 (Nov 16 2026) intentionally removes early Blacks from peak measurement.
+// Signed RAW (Nov 17 2026) retains signed generated-SDR exposure in peak measurement.
 // Byte pins for the shaders the viewport work must leave alone: the peak
 // measurement and Denoise. A change to one of them fails here.
 const EXPECTED_SHA256 = Object.freeze({
-  PEAK_REDUCTION_SHADER_SOURCE: "34cf0fb2c114d5fca3ddbb4ae6b86e029a79fc59b0d89cdd50c5f5cd2d04dc89",
+  PEAK_REDUCTION_SHADER_SOURCE: "89c02c48006aa8c1829db283f392687c049e59124978642afe2e2d58f72d0ebb",
   ADAPTIVE_DENOISE_SHADER_SOURCE: "818ec2ddb4523a1208eaa31f2a3bfe943e89d9ec6449e9866ff741bc49a3c807",
 });
 

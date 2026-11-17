@@ -194,7 +194,7 @@ fn peakSdrReferencePrefix(input: vec3f) -> vec3f {
   return rgb;
 }
 fn peakSdrScenePrefix(input: vec3f) -> vec3f {
-  let rgb = max(input * exp2(peakParams[${GPU_PARAMS.EXPOSURE}]), vec3f(0.0));
+  let rgb = input * exp2(peakParams[${GPU_PARAMS.EXPOSURE}]);
   return peakSceneColor(rgb);
 }
 fn peakSdrInput(input: vec3f, guideSource: vec3f) -> vec3f {
@@ -1252,7 +1252,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       return rgb;
     }
     fn sdrScenePrefix(source: vec3f) -> vec3f {
-      let rgb = max(source * exp2(p[${GPU_PARAMS.EXPOSURE}]), vec3f(0.0));
+      let rgb = source * exp2(p[${GPU_PARAMS.EXPOSURE}]);
       return sceneColor(rgb);
     }
     fn renderSdrBase(source: vec3f) -> vec3f {
@@ -1966,7 +1966,6 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         rgb = structureSource
           + (structureBlur - structureSource) * p[${GPU_PARAMS.STRUCTURE_SOFTNESS}] * 0.65
           + (structureSource - structureBlur) * p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}] * 0.5;
-        rgb = max(rgb, vec3f(0.0));
       }
       return applyVignette(rgb, coordinate);
     }
@@ -2090,9 +2089,6 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         rgb = mix(original, rgb, p[${GPU_PARAMS.FILM_LOOK_STRENGTH}]);
       }
       if (p[${GPU_PARAMS.STRUCTURE_ENABLED}] > 0.5 && (abs(p[${GPU_PARAMS.STRUCTURE_SOFTNESS}]) > 0.000001 || abs(p[${GPU_PARAMS.STRUCTURE_MICROCONTRAST}]) > 0.000001)) { return rgb; }
-      if (filmModuleActive()) {
-        rgb = max(rgb, vec3f(0.0));
-      }
       return applyVignette(rgb, coordinate);
     }
     fn applyVignette(rgb: vec3f, coordinate: vec2i) -> vec3f {
@@ -2109,7 +2105,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
         let highlight = smoothRange(0.55, 0.95, filmSignalFromLuma(max(filmLuma(rgb), 0.0)));
         mask *= 1.0 - highlight * p[${GPU_PARAMS.VIGNETTE_HIGHLIGHT_PROTECTION}];
       }
-      return max(rgb * exp2(p[${GPU_PARAMS.VIGNETTE_AMOUNT}] * mask), vec3f(0.0));
+      return rgb * exp2(p[${GPU_PARAMS.VIGNETTE_AMOUNT}] * mask);
     }
 
     fn localSaturation(input: vec3f) -> vec3f {
@@ -2131,7 +2127,9 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       let pivot = max(p[${MASK_PARAMS.LOCAL.CONTRAST_PIVOT}], 0.000001);
       let stops = log2(sourceY / pivot);
       let targetStops = stops * exp2(p[${MASK_PARAMS.LOCAL.CONTRAST}]) + p[${MASK_PARAMS.LOCAL.EXPOSURE}];
-      var rgb = input * (pivot * exp2(clamp(targetStops, -32.0, 24.0)) / sourceY);
+      var gain = pivot * exp2(clamp(targetStops, -32.0, 24.0)) / sourceY;
+      if (p[${MASK_PARAMS.LOCAL.CONTRAST}] == 0.0) { gain = exp2(p[${MASK_PARAMS.LOCAL.EXPOSURE}]); }
+      var rgb = input * gain;
       rgb = localToneZones(rgb, max(select(lumaSrgb(rgb), lumaAces(rgb), hdr), 0.0));
       if (hdr) {
         let offset = (p[${MASK_PARAMS.LOCAL.WHITE_BALANCE_KELVIN}] - 6500.0) / 6500.0;
@@ -2154,7 +2152,7 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       rgb = applyCurvesOffset(rgb,hdr,u32(p[${MASK_PARAMS.LOCAL.CURVE_FLAGS}]),u32(p[${MASK_PARAMS.LOCAL.CURVE_OFFSET}]));
       rgb = applyColorGrading(rgb,hdr);
       // Wheels retain headroom through Detail and the local mask blend.
-      return max(rgb, vec3f(0.0));
+      return rgb;
     }
 
     // Log luminance needs a floor well above zero. A floor at the edge of float
@@ -2524,7 +2522,6 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (abs(delta) <= 0.0000001) { return vec4f(source, 1.0); }
       var result = source * exp2(delta);
       // Preserve SDR headroom until Film Look and the final output ceiling.
-      result = max(result, vec3f(0.0));
       return vec4f(result, 1.0);
     }
 
@@ -2590,7 +2587,6 @@ fn adaptiveFinalMain(@builtin(global_invocation_id) id: vec3u) {
       if (abs(delta) <= 0.0000001) { return vec4f(source, 1.0); }
       var result = source * exp2(delta);
       // Preserve SDR headroom until Film Look and the final output ceiling.
-      result = max(result, vec3f(0.0));
       return vec4f(result, 1.0);
     }
 

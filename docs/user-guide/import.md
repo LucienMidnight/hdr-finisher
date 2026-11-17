@@ -149,5 +149,19 @@ Changing interpretation reloads the source and rebuilds the session; it is not a
 - Layered/multichannel EXRs where the intended beauty RGB is ambiguous
 - Lossy DWAA/DWAB compression for a finishing master
 - ICC profile assignment instead of conversion in the source editor
-- Negative scene values: the current normalization sanitizes/clips them rather than preserving them as a signed working range
+- Negative scene values in non-RAW files: their existing decoder/normalization policy still applies; signed RAW development is not a blanket change to every format
 - Sources above 10,000 nits: the PQ delivery path has a 10,000-nit ceiling
+
+### RAW shadows and existing edits
+
+Bayer RAW development retains noisy readings below the camera's black level
+through Denoise and ordinary editing. They are processing data, not negative
+light on screen: the final displayed/exported picture still has a black floor.
+Use **Blacks** toward negative values to crush the deepest shadows deliberately,
+or lift Blacks/Tone to taste. Exposure alone does not recreate the former clipped
+development. This does not promise to remove coloured specks or high-ISO noise.
+
+Reopening an existing RAW grade can make deep shadows darker or change their
+colour/noise even though its saved sliders are unchanged. Old clipped previews
+are regenerated. X-Trans demosaicing remains on the older unsigned decoder;
+signed development and its end-to-end delivery checks are not yet release-qualified.

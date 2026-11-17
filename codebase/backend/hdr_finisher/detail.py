@@ -97,7 +97,7 @@ def apply_detail(
     result = image.astype(np.float32, copy=False) * gain[..., None]
     # Detail precedes Film Look. Preserve SDR headroom for its shoulder;
     # the lane applies its display-white ceiling after finishing.
-    clipped = np.maximum(result, 0.0).astype(np.float32)
+    clipped = result.astype(np.float32)
     # Preserve exact source samples wherever all selected bands made no change;
     # merely enabling Detail must never alter or soften the image.
     return np.where((np.abs(delta) > 1e-7)[..., None], clipped, image).astype(np.float32)

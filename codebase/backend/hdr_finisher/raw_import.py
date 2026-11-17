@@ -37,7 +37,7 @@ VERIFIED_LIBRAW_IGNORES_OPCODE_LIST3 = {(0, 22, 1)}
 LIBRAW_MATRIX_REFERENCE_WHITE_D65 = np.asarray(
     [0.95047, 1.0, 1.08883], dtype=np.float64
 )
-CAMERA_LINEAR_PIPELINE = "camera_linear_float_bridge_opposed_v2"
+CAMERA_LINEAR_PIPELINE = "camera_linear_signed_ahd_opposed_v3"
 LEGACY_RAW_PIPELINE = "legacy_libraw_aces_fallback_v1"
 OPPOSED_COLOR_METHOD = "opposed_color_v1"
 # Prototype: opposed colour, then edge-colour recolouring of clipped areas.
@@ -58,9 +58,9 @@ class _CameraLinearUnsupported(ValueError):
 class CameraLinearMetadata:
     """Validated metadata needed after LibRaw's camera-RGB transport.
 
-    The black values are retained as provenance. LibRaw has already subtracted
-    them before the no_auto_scale gate, so normalization divides by the usable
-    white-minus-black range and deliberately does not subtract them again.
+    Development subtracts black before camera-RGB transport (signed native AHD
+    for Bayer, LibRaw for X-Trans). Normalization divides by the usable
+    white-minus-black range and deliberately does not subtract black again.
     """
 
     black_level: np.ndarray
@@ -223,17 +223,14 @@ def _execute_raw_decode(
                         "This mosaiced Experimental DNG requires mandatory OpcodeList3 corrections, "
                         f"but bundled LibRaw {'.'.join(map(str, version))} has not been audited for exactly-once behavior."
                     )
-                developed = raw.postprocess(
-                    demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
-                    use_camera_wb=False,
-                    user_wb=[1.0, 1.0, 1.0, 1.0],
-                    user_flip=0,
-                    no_auto_bright=True,
-                    output_color=rawpy.ColorSpace.raw,
-                    gamma=(1.0, 1.0),
-                    output_bps=16,
-                    highlight_mode=rawpy.HighlightMode.Clip,
-                )
+                from .signed_raw import demosaic
+                camera = _camera_linear_metadata_from_libraw(raw)
+                if camera.raw_pattern.shape != (2, 2):
+                    raise RawImportError("Mandatory DNG opcode signed development requires a Bayer sensor.")
+                pattern = camera.raw_pattern
+                developed = demosaic(raw.raw_image_visible, camera.raw_channel_to_rgb[pattern],
+                    camera.raw_black_level[pattern], _ahd_lab_matrix(raw), cancelled=cancelled)
+                developed *= (65535.0 / (camera.white_level - camera.black_level)).astype(np.float32)
             else:
                 try:
                     bridge_metadata = _camera_linear_metadata_from_libraw(raw)
@@ -246,7 +243,7 @@ def _execute_raw_decode(
                         settings,
                         cancelled=cancelled,
                     )
-                    developed = _develop_libraw_camera_rgb(raw, rawpy)
+                    developed = _develop_libraw_camera_rgb(raw, rawpy, cancelled=cancelled)
                     bridge_transport_diagnostics = _transport_diagnostics(
                         developed, cancelled=cancelled
                     )
@@ -299,7 +296,7 @@ def _apply_raw_corrections(
         dng_inspection = inspection.dng_inspection
         if dng_inspection is None:
             raise RawImportError("Mandatory DNG operation plan is missing its inspection metadata.")
-        camera_linear = np.asarray(decoded.developed).astype(np.float32)
+        camera_linear = np.asarray(decoded.developed, dtype=np.float32)
         camera_linear *= np.float32(1.0 / 65535.0)
         decoded.developed = np.empty((0,), dtype=np.uint16)
         if progress:
@@ -455,7 +452,7 @@ def _build_raw_provenance(
     libraw_version_value = getattr(rawpy, "libraw_version", ())
     libraw_version = ".".join(map(str, libraw_version_value)) if libraw_version_value else "unknown"
     if plan.opcode_plan:
-        bit_depth = "16-bit LibRaw linear development"
+        bit_depth = "signed float32 camera-RGB development"
         raw_development: dict[str, Any] = {
             "white_balance": settings.white_balance,
             "demosaic": settings.demosaic,
@@ -464,7 +461,7 @@ def _build_raw_provenance(
             "output_space": "ACES2065-1",
         }
     elif decoded.bridge_metadata is not None:
-        bit_depth = "16-bit LibRaw camera-RGB transport; float32 color development"
+        bit_depth = "signed float32 camera-RGB development" if decoded.bridge_metadata.raw_pattern.shape == (2, 2) else "16-bit LibRaw X-Trans development"
         raw_development = _bridge_provenance(
             decoded.bridge_metadata,
             rawpy_version=rawpy_version,
@@ -539,9 +536,31 @@ def _build_raw_provenance(
     return metadata
 
 
-def _develop_libraw_camera_rgb(raw: Any, rawpy: Any) -> np.ndarray:
-    """Use uint16 only to carry black-subtracted, unity-WB camera RGB."""
+def _ahd_lab_matrix(raw: Any) -> np.ndarray:
+    from .library_gpu_raw import XYZ_RGB, D65_WHITE
+
+    camera = np.asarray(raw.rgb_xyz_matrix, dtype=np.float64)[:3] @ XYZ_RGB
+    camera /= camera.sum(axis=1, keepdims=True)
+    inverse = np.linalg.inv(camera).astype(np.float32)
+    matrix = np.zeros((3, 3), dtype=np.float32)
+    for channel in range(3):
+        matrix += (XYZ_RGB[:, channel, None] * inverse[channel] / D65_WHITE[:, None]).astype(np.float32)
+    return matrix
+
+
+def _develop_libraw_camera_rgb(raw: Any, rawpy: Any, *, half_size=False, cancelled=None) -> np.ndarray:
+    from .signed_raw import demosaic, orient
+
+    metadata = _camera_linear_metadata_from_libraw(raw)
+    if metadata.raw_pattern.shape == (2, 2):
+        pattern = metadata.raw_pattern
+        developed = demosaic(
+            raw.raw_image_visible, metadata.raw_channel_to_rgb[pattern],
+            metadata.raw_black_level[pattern], _ahd_lab_matrix(raw), half_size=half_size, cancelled=cancelled,
+        )
+        return orient(developed, int(raw.sizes.flip))
     return raw.postprocess(
+        half_size=half_size,
         demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
         use_camera_wb=False,
         use_auto_wb=False,
@@ -579,6 +598,10 @@ def _camera_linear_metadata_from_libraw(raw: Any) -> CameraLinearMetadata:
         )
     if not np.issubdtype(pattern.dtype, np.integer):
         raise _CameraLinearUnsupported("CFA channel indices are not integral")
+    observed = np.asarray(raw.raw_colors_visible)[:pattern.shape[0], :pattern.shape[1]].copy()
+    if observed.shape != pattern.shape or not np.issubdtype(observed.dtype, np.integer):
+        raise _CameraLinearUnsupported("Invalid visible CFA topology")
+    pattern = observed
 
     try:
         color_description = bytes(getattr(raw, "color_desc", None)).decode("ascii").rstrip("\x00")
@@ -842,7 +865,6 @@ def _normalize_raw_mosaic_float32(
             source = mosaic[row_offset::pattern_height, column_offset::pattern_width]
             destination = output[row_offset::pattern_height, column_offset::pattern_width]
             np.subtract(source, black, out=destination, casting="unsafe")
-            np.maximum(destination, np.float32(0.0), out=destination)
             destination *= np.float32(1.0) / usable_range
     return output
 
@@ -999,16 +1021,12 @@ def _normalize_camera_rgb_float32(
     cancelled: Callable[[], bool] | None = None,
 ) -> np.ndarray:
     source = np.asarray(transport)
-    if source.dtype != np.uint16 or source.ndim != 3 or source.shape[2] != 3:
-        raise RawImportError("LibRaw camera-RGB transport must be a uint16 H×W×3 image.")
-    parallel = parallel_import_enabled()
-    output = np.empty(source.shape, dtype=np.float32) if parallel else source.astype(np.float32)
+    if source.dtype not in (np.dtype(np.uint16), np.dtype(np.float32)) or source.ndim != 3 or source.shape[2] != 3:
+        raise RawImportError("Camera-RGB transport must be a signed float32 H×W×3 image.")
+    output = source if source.dtype == np.float32 and source.flags.writeable else source.astype(np.float32)
     inverse_range = (1.0 / (metadata.white_level - metadata.black_level)).astype(np.float32)
     def band(start):
         _raise_if_cancelled(cancelled)
-        # Same uint16 -> float32 cast and multiply, in disjoint destinations.
-        if parallel:
-            output[start:start + rows] = source[start:start + rows]
         output[start:start + rows] *= inverse_range
     for _ in run_bands(band, range(0, output.shape[0], rows)):
         pass
@@ -1130,7 +1148,7 @@ def _transport_diagnostics(
     source = np.asarray(transport)
     if source.ndim != 3 or source.shape[2] != 3:
         return {}
-    maximum = np.zeros(3, dtype=np.uint16)
+    maximum = np.full(3, -np.inf, dtype=np.float32)
     ceiling_count = np.zeros(3, dtype=np.int64)
     def band(start):
         _raise_if_cancelled(cancelled)
@@ -1153,14 +1171,16 @@ def _bridge_provenance(
     transport_diagnostics: dict[str, list[int]],
     highlight_reconstruction: dict[str, Any],
 ) -> dict[str, Any]:
+    signed = metadata.raw_pattern.shape == (2, 2)
     return {
         "pipeline": CAMERA_LINEAR_PIPELINE,
+        "signed_sensor_samples": signed,
         "decoder": "LibRaw",
         "rawpy_version": rawpy_version,
         "libraw_version": libraw_version,
         "demosaic": "AHD",
         "libraw_output_space": "camera RGB",
-        "libraw_output_bps": 16,
+        "libraw_output_bps": None if signed else 16,
         "libraw_auto_scale": False,
         "white_balance_stage": "float32_after_libraw",
         "color_transform_stage": "float32_after_libraw",
@@ -1168,7 +1188,7 @@ def _bridge_provenance(
         "libraw_highlight_processing": "bypassed_by_no_auto_scale",
         "highlight_reconstruction": highlight_reconstruction,
         "normalization_basis": metadata.normalization_basis,
-        "black_subtraction_stage": "LibRaw_before_no_auto_scale",
+        "black_subtraction_stage": "signed_float_before_ahd" if signed else "LibRaw_before_no_auto_scale",
         "black_subtracted_exactly_once": True,
         "black_level_per_output_channel": metadata.black_level.tolist(),
         "camera_white_level_per_output_channel": metadata.white_level.tolist(),

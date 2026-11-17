@@ -866,7 +866,7 @@ def apply_output_finishing(
     if settings.sharpening != "off":
         result = _edge_aware_multiscale_sharpen(result, settings.sharpening, kind)
     # The caller's final HDR limiter / SDR gamut mapper owns the ceiling.
-    return np.nan_to_num(np.maximum(result, 0.0), nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+    return np.nan_to_num(result, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
 
 
 def _resize_lanczos(image: np.ndarray, width: int, height: int) -> np.ndarray:

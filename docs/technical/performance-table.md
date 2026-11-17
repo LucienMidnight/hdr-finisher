@@ -1,3 +1,26 @@
+## November 17: signed Bayer production-helper development cost
+
+MacBook Neo / A18 Pro / 8 GB, signed Bayer integration, same source and machine
+for both routes. Shared machine lock; LibRaw OpenMP team 3, BLAS 1, serial
+Grade row bands, signed native AHD one C thread/256-row strips. One observation
+per condition, inherited ±10% descriptive timing allowance (not a correctness
+gate or speed claim). Source open/unpack, demosaic/orientation and existing
+normalise/WB/ACEScg tail are included. EXIF, highlight reconstruction, lens,
+Denoise, rendering and action-to-screen waits are excluded.
+
+| Action, same Mac | Unsigned control → signed production helper | Conditions |
+| --- | --- | --- |
+| Canon 18.02 MP development | .895 → 1.054 s; added .158 s | IMG_0790.CR2; AHD .417 → .607 s; finite output, unchanged maximum 3.05624 |
+| Sony 42.39 MP development | 2.129 → 2.495 s; added .366 s | 2025_0730_1331_3.arw; AHD 1.225 → 1.879 s; finite output, unchanged maximum 2.91165 |
+
+The added whole development subclock is about 17–18%; faster float transport
+normalisation partly offsets the extra signed AHD work. This is an explained
+correctness cost, not an unexplained timing drift. No GPU cost, memory pass,
+parallel Library throughput or complete user-wait result is inferred. Production
+code and conditions are pinned by this entry's signed RAW integration commit;
+the unsigned comparison is the explicitly frozen research control, not a shipping
+compatibility path. No extra timing scratch is retained.
+
 ## November 17: single-photo hot pixel filter (research only)
 
 Research implementation `227dcaf6` / `b486999d`; no production integration.

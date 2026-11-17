@@ -68,6 +68,12 @@ follow Peak and Mode, with the same visibility rules as before.
 | Width | Sets the full breadth of a zone. | Smooth bump; black/white gates remain active at any width. | 0.5 to 12 EV | **0.5 to 24 EV** |
 | Whites | Adjusts the top stop below target. | Frozen maximum delivery channel; −100 → .775P, +100 → 2P alone, before Film Look and final HC. | -100 to +100 | Same as slider |
 
+Bayer RAW keeps noisy readings below sensor black internally. Zero Blacks/Tone
+does not discard them before Denoise; negative **Blacks** deliberately crushes
+the affected shadows to black. Lift Blacks or adjust Tone to taste. The final
+picture still has a legal black floor. Older RAW edits may render differently
+with the same saved sliders; changing Exposure alone is not an exact restoration.
+
 Start and Target Peak are kept at least 1 nit apart. If a typed edit would cross them, HDR Finisher moves the other value just enough to retain a valid shoulder.
 
 ## Exposure Bands

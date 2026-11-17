@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw
 from tools.lib.test_photos import photo_root, manifest_files
 from hdr_finisher.export_metadata import command as exiftool_command
 from hdr_finisher.raw_import import (_camera_linear_metadata_from_libraw,
-    _develop_libraw_camera_rgb, _camera_rgb_to_acescg_float32)
+    _camera_rgb_to_acescg_float32)
 
 SEED = 16112026
 RAW_EXT = {'.arw', '.cr2', '.cr3', '.nef', '.orf', '.rw2', '.raf', '.dng'}
@@ -156,6 +156,16 @@ def metadata_from_raw(raw, entry):
                 noise_fit_positions=entry['noise_fit_positions'], exposure_stops=0.)
 
 
+def unsigned_ahd_control(raw, rawpy):
+    """Frozen unsigned research control, not a production RAW decoder."""
+    return raw.postprocess(
+        demosaic_algorithm=rawpy.DemosaicAlgorithm.AHD,
+        use_camera_wb=False, use_auto_wb=False, user_wb=[1., 1., 1., 1.],
+        no_auto_bright=True, no_auto_scale=True, output_color=rawpy.ColorSpace.raw,
+        gamma=(1., 1.), output_bps=16, highlight_mode=rawpy.HighlightMode.Clip,
+    )
+
+
 def develop(mosaic, metadata):
     """Bounded in-memory DNG -> the app's LibRaw AHD unity-WB -> app camera/ACEScg conversion.
 
@@ -173,7 +183,7 @@ def develop(mosaic, metadata):
     tifffile.imwrite(buffer,np.rint(np.clip(mosaic,0,1)*65535).astype('uint16'),photometric=32803,metadata=None,extratags=tags)
     buffer.seek(0)
     with rawpy.imread(buffer) as raw:
-        transport=_develop_libraw_camera_rgb(raw,rawpy)
+        transport=unsigned_ahd_control(raw,rawpy)
     meta=SimpleNamespace(as_shot_wb=np.asarray(metadata['white_balance']),camera_to_acescg=np.asarray(metadata['camera_to_acescg']))
     rgb=_camera_rgb_to_acescg_float32(transport.astype('float32')/65535,meta)
     return rgb*np.float32(2**metadata.get('exposure_stops',0))

@@ -19,7 +19,8 @@ import numpy as np
 import rawpy
 import tifffile
 
-from hdr_finisher.raw_import import _camera_rgb_to_acescg_float32, _develop_libraw_camera_rgb
+from hdr_finisher.raw_import import _camera_rgb_to_acescg_float32
+from tools.denoise_eval.inputs import unsigned_ahd_control
 from tools.denoise_eval.candidates.denoise_v2_appdefault import AppDefault
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -104,7 +105,7 @@ def develop_pedestal(mosaic, metadata, pedestal=0.125):
                      photometric=32803, metadata=None, extratags=tags)
     buffer.seek(0)
     with rawpy.imread(buffer) as raw:
-        camera = _develop_libraw_camera_rgb(raw, rawpy).astype('float32')
+        camera = unsigned_ahd_control(raw, rawpy).astype('float32')
     camera *= np.float32((1 + pedestal) / 65535)
     camera -= np.float32(pedestal)
     return to_aces(camera, metadata)

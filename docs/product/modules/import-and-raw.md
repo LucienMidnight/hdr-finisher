@@ -1,3 +1,58 @@
+### November 17: Steve's signed RAW development decision; qualification open
+
+**Steve, November 17, 2026:** preserve noisy sensor readings below black through
+development and editing; let Blacks/Tone crush shadows to taste. This is a
+correctness/latitude change, not a demonstrated Canon-speck or Denoise fix.
+
+Bayer CPU development now uses a bounded native signed AHD helper, 256-row
+strips with eight-row context, observed visible CFA, per-phase black subtraction,
+signed Lab toe and the existing 65,535 upper DN bound. GPU AHD uses signed
+integer samples and unpacked green candidates. The linear WB/camera transform,
+white levels, highlight reconstruction selection, lens/order and orientation
+policies remain. RAW import projection is bypassed consistently at Grade,
+Library CPU bands/quick/full sources and GPU RAW/DNG entries. Denoise's filter
+and controls are unchanged. Incidental downstream floors are deferred to output;
+authored black crush, Film physical-domain floors, codec bounds and the exact
+HDR ceiling remain strict.
+
+The C helper is built during setup and PyInstaller packaging using setuptools
+compiler discovery (MSVC on Windows; system C compiler on macOS/Linux). Flatpak
+builds the same source with its SDK compiler. The app loads the bundled library;
+it never compiles on the user's computer. Mac compilation is checked; Windows,
+Linux and Flatpak build/package execution remain unqualified.
+
+**Not ready to ship.** X-Trans retains its existing unsigned LibRaw demosaic;
+preserving that decoder policy does not provide signed X-Trans. Its implementation
+needs a separate supported signed demosaic decision. Real-GPU parity/memory,
+highlight/lens, Denoise and every applicable Proof/export/ceiling driver remain
+gated pending approval of more than 30 minutes of slow validation. The new focused
+`signed-raw-parity.js` covers four Bayer phases/orientations and finished SDR/HDR
+agreement at −6/0/+6 EV, but does not substitute for those end-to-end checks.
+
+Source/development/source-colour, Denoise-model and finished-picture identities
+advance together. Existing RAW grades keep slider values and rerender rather
+than reuse clipped caches; no compatibility mode. All RAW projects can change
+appearance, especially lifted high-ISO shadows, Film/local grades and fitted
+Match results. Protected DSC00264 four-mask/fifty-local projects,
+DSC00950.hdrfinisher and DSC07060.ARW.hdrf are potentially affected; do not
+overwrite them. Denoise quality remains separate research.
+
+Same-Mac production-helper development-only costs are recorded in the performance
+table; no action-to-screen speed or GPU memory qualification is claimed. All
+cache/scheduler allowances, perceptual tolerances and delivery ceilings stay fixed.
+
+Fast checks: Node **1,091 passed / one skipped / zero failed**; Python
+**4,063 passed / 155 skipped / one xpassed / zero failed**. The existing
+Starlette/httpx deprecation warning remains. Result checks now expect signed RAW
+transport and no RAW import projection; the peak-prefix shader identity changes
+intentionally, while Denoise's filter/shader identity does not. After separating
+the two candidate GPU bindings to preserve the source-size limit, all 26 focused
+RAW/shader Node checks pass. This does not execute the shaders on a real GPU.
+Slow qualification
+is estimated at **90–150 minutes or more**, not a timed runner estimate: the
+release plan has no usable driver history and includes unrelated branch work.
+Do not run that group without approval or interpret fast passes as delivery sign-off.
+
 ### November 15: W2 P5 Lensfun stage measurement; no rewrite
 
 The existing RAW import phase history now separates Lensfun profile/modifier,
@@ -740,6 +795,13 @@ route. Matched photographic HDR/SDR comparisons passed the existing limits;
 Library loading results and remaining AVIF/queue costs are in the Photo Library PRD.
 
 ## 6. Open work, in order
+
+**November 17 signed-development gate:** Bayer integration is implemented but
+not qualified for shipping. Complete signed X-Trans/unsupported-RAW coverage
+without substituting decoder policy; run the focused real-GPU RAW, highlights,
+lens, Denoise, edited-stage and every applicable Proof/export/ceiling check;
+qualify Windows, macOS, Linux and Flatpak packages and review changed grades
+with Steve. Slow qualification needs approval first (more than 30 minutes).
 
 **V1 scope (Steve, October 26, 2026):** item 1 (Steve's review of the zero
 RAW start) is v1. Items 2 and 3 (Linux mounted drives; unrecognised TIFF

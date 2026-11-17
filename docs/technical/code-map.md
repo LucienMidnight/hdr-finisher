@@ -1,5 +1,18 @@
 # Code map
 
+## November 17: signed Bayer RAW integration
+
+`backend/hdr_finisher/signed_ahd.c` implements bounded signed AHD;
+`signed_raw.py` loads its native library and owns strip/half-size/orientation
+handling. `tools/build_signed_ahd.py` builds it for setup and both PyInstaller
+specs; Flatpak compiles it in the SDK. No runtime compiler is required.
+`raw_import.py`, `library_cpu_bands.py` and the Library quick transport consume
+it. `frontend/library-gpu-raw.js` shares the signed Bayer/Lab/linear tail;
+`library-rgb-gpu.js` bypasses source projection only for DNG, not ordinary RGB.
+`test_signed_ahd.py`, `test_signed_raw_development.py`, `test_library_gpu_raw.py` and the focused
+`signed-raw-parity.js` / `helpers/signed_raw_fixture.py` cover signed behavior.
+X-Trans and the full GPU/delivery/package qualification remain open.
+
 ## November 16: safe linked SDR after Match
 
 `backend/hdr_finisher/sdr_link.py` selects the trial output tail and checks

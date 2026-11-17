@@ -169,17 +169,12 @@ def sensor(path: Path, settings: RawImportSettings | None = None) -> tuple[dict,
         # LibRaw frees its own buffer when the file closes.
         mosaic = np.array(raw.raw_image_visible, dtype="<u2", order="C", copy=True)
         colors = np.asarray(raw.raw_colors_visible[:2, :2], dtype=np.int64)
-        cam_rgb = np.asarray(raw.rgb_xyz_matrix, dtype=np.float64)[:3] @ XYZ_RGB
+        xyz_cam = raw_import._ahd_lab_matrix(raw)
         flip = int(raw.sizes.flip)
     timings["mosaic_copy_metadata"] = (time.perf_counter()-mark)*1000
     # LibRaw cam_xyz_coeff: rows normalized to sum 1, then inverted (3 colours).
-    cam_rgb /= cam_rgb.sum(axis=1, keepdims=True)
     # LibRaw stores rgb_cam as float before accumulating each Lab matrix term.
     # Keep those rounding points: AHD's integer homogeneity votes depend on them.
-    rgb_cam = np.linalg.inv(cam_rgb).astype(np.float32)
-    xyz_cam = np.zeros((3, 3), dtype=np.float32)
-    for k in range(3):
-        xyz_cam += (XYZ_RGB[:, k, None] * rgb_cam[k] / D65_WHITE[:, None]).astype(np.float32)
     height, width = mosaic.shape
     out_h, out_w = (width, height) if flip in (5, 6) else (height, width)
     dr = fuji_dynamic_range(path)

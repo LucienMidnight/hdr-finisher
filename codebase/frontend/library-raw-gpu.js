@@ -1,10 +1,10 @@
 /* Library-only M9 triangular shrink and camera conversion. Grade shaders are unchanged. */
 window.HDRLibraryRawGPU = (() => {
   const code = `struct P {src:vec4u,dst:vec4u,r0:vec4f,r1:vec4f,r2:vec4f};
-    @group(0) @binding(0) var<storage,read> input:array<u32>;
+    @group(0) @binding(0) var<storage,read> input:array<f32>;
     @group(0) @binding(1) var<storage,read_write> middle:array<vec4f>;
     @group(0) @binding(2) var<uniform> p:P;
-    fn channel(i:u32)->f32 {let v=input[i/2];return f32(select(v&65535u,v>>16,(i&1u)==1u));}
+    fn channel(i:u32)->f32 {return input[i];}
     @compute @workgroup_size(8,8) fn horizontal(@builtin(global_invocation_id) id:vec3u){
      if(id.x>=p.dst.x||id.y>=p.src.y){return;}let scale=f32(p.src.x)/f32(p.dst.x);let support=max(1.,scale);let center=(f32(id.x)+.5)*scale;
      let first=max(0,i32(center-support+.5));let last=min(i32(p.src.x),i32(center+support+.5));var value=vec3f(0);var norm=0.;
@@ -14,14 +14,16 @@ window.HDRLibraryRawGPU = (() => {
     @group(1) @binding(0) var<storage,read> temporary:array<vec4f>;
     @group(1) @binding(1) var destination:texture_storage_2d<rgba16float,write>;
     @group(1) @binding(2) var<uniform> q:P;
+    @group(1) @binding(3) var<storage,read_write> invalid:atomic<u32>;
     @compute @workgroup_size(8,8) fn vertical(@builtin(global_invocation_id) id:vec3u){
      if(id.x>=q.dst.x||id.y>=q.dst.y){return;}let scale=f32(q.src.y)/f32(q.dst.y);let support=max(1.,scale);let center=(f32(id.y)+.5)*scale;
      let first=max(0,i32(center-support+.5));let last=min(i32(q.src.y),i32(center+support+.5));var value=vec3f(0);var norm=0.;
      for(var y=first;y<last;y++){let weight=max(0.,1.-abs((f32(y)+.5-center)/support));value+=temporary[u32(y)*q.dst.x+id.x].rgb*weight;norm+=weight;}
      let camera=value/norm/65535.;var rgb=vec3f(dot(q.r0.xyz,camera),dot(q.r1.xyz,camera),dot(q.r2.xyz,camera));
-     let lo=min(rgb.r,min(rgb.g,rgb.b));let hi=max(rgb.r,max(rgb.g,rgb.b));if(lo<0){rgb=select(vec3f(0),hi*(rgb-vec3f(lo))/max(hi-lo,1e-20),hi>0);}
+     if(q.src.z==0u){let lo=min(rgb.r,min(rgb.g,rgb.b));let hi=max(rgb.r,max(rgb.g,rgb.b));if(lo<0){rgb=select(vec3f(0),hi*(rgb-vec3f(lo))/max(hi-lo,1e-20),hi>0);}}
      if(any(camera>=vec3f(q.r0.w,q.r1.w,q.r2.w))){rgb=vec3f(max(rgb.r,max(rgb.g,rgb.b)));}
-     textureStore(destination,vec2i(id.xy),vec4f(clamp(rgb,vec3f(0),vec3f(65504)),1));
+     if(any(rgb!=rgb)||any(abs(rgb)>vec3f(65504))){atomicAdd(&invalid,1u);return;}
+     textureStore(destination,vec2i(id.xy),vec4f(rgb,1));
     }`;
   function create(gpu) {
     const cache = new Map();
@@ -84,6 +86,9 @@ window.HDRLibraryRawGPU = (() => {
       new Uint8Array(raw.getMappedRange()).set(new Uint8Array(body)); raw.unmap();
       HDRLibraryStopwatch('picture_raw_uploaded', {...window.HDRLibraryPictureLog?.(meta),key:meta.key,duration_ms:performance.now()-started});
       const resources = [raw], made = [], encoder = device.createCommandEncoder();
+      const invalid=device.createBuffer({size:4,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC});
+      const validation=device.createBuffer({size:4,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+      resources.push(invalid,validation);
       const sizes = [meta];
       if (meta.edge >= 1280) {
         const scale = Math.min(512 / Math.max(meta.raw_width, meta.raw_height), 1);
@@ -97,16 +102,20 @@ window.HDRLibraryRawGPU = (() => {
           const mid=device.createBuffer({size:midSize,usage:GPUBufferUsage.STORAGE});
           const params=device.createBuffer({size:80,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
           resources.push(mid,params);
-          const bytes=new ArrayBuffer(80); new Uint32Array(bytes).set([meta.raw_width,meta.raw_height,0,0,w,h,0,0]);
+          const bytes=new ArrayBuffer(80); new Uint32Array(bytes).set([meta.raw_width,meta.raw_height,Number(!!meta.signed_scene),0,w,h,0,0]);
           new Float32Array(bytes,32).set(meta.matrix.flatMap((r,i)=>[...r,meta.threshold[i]]));device.queue.writeBuffer(params,0,bytes);
           const texture=device.createTexture({size:[w,h],format:'rgba16float',usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.STORAGE_BINDING|GPUTextureUsage.COPY_SRC});
           const entry={texture,meta:size,byteSize:w*h*8}; made.push(entry);
           const b1=device.createBindGroup({layout:hp.getBindGroupLayout(0),entries:[{binding:0,resource:{buffer:raw}},{binding:1,resource:{buffer:mid}},{binding:2,resource:{buffer:params}}]});
-          const b2=device.createBindGroup({layout:vp.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:mid}},{binding:1,resource:texture.createView()},{binding:2,resource:{buffer:params}}]});
+          const b2=device.createBindGroup({layout:vp.getBindGroupLayout(1),entries:[{binding:0,resource:{buffer:mid}},{binding:1,resource:texture.createView()},{binding:2,resource:{buffer:params}},{binding:3,resource:{buffer:invalid}}]});
           let pass=encoder.beginComputePass(); pass.setPipeline(hp);pass.setBindGroup(0,b1);pass.dispatchWorkgroups(Math.ceil(w/8),Math.ceil(meta.raw_height/8));pass.end();
           pass=encoder.beginComputePass();pass.setPipeline(vp);pass.setBindGroup(1,b2);pass.dispatchWorkgroups(Math.ceil(w/8),Math.ceil(h/8));pass.end();
         }
-        device.queue.submit([encoder.finish()]); await device.queue.onSubmittedWorkDone();
+        encoder.copyBufferToBuffer(invalid,0,validation,0,4);
+        device.queue.submit([encoder.finish()]);
+        await validation.mapAsync(GPUMapMode.READ);
+        const invalidPixels=new Uint32Array(validation.getMappedRange())[0];validation.unmap();
+        if(invalidPixels)throw Error('The RAW preview produced invalid half-float pixels.');
         for (const entry of made) cache.set(entry.meta.key,entry);
         trim(new Set(sizes.map(size=>size.key)));
         // Only a tiny thumbnail is read back, after the full-size scene is ready.

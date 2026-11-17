@@ -113,7 +113,7 @@ def decoded(path, inputs, inspection, progress=None, cancelled=None, edge=640, m
         source_color_space=facts["source_color_space_label"],transfer_function="LINEAR")
     dng._raise_if_cancelled(cancelled)
     if _identity(path)!=identity:raise ValueError("Photo changed during linear DNG preparation")
-    return dict(rgb=True,adapter_version="library-dng-linear-v1",path=str(path),identity=identity,width=outw,height=outh,flip=0,
+    return dict(rgb=True,adapter_version="library-dng-linear-signed-v2",path=str(path),identity=identity,width=outw,height=outh,flip=0,
         mosaic_bytes=image.nbytes,sample_stride=max(1,int(np.ceil(np.sqrt(outw*outh/2_000_000)))),
         layout=dict(dtype="float32",order="HWC",channels=["R","G","B"],ownership="request-owned"),
         orientation=dict(original=int(metadata["orientation"]),applied=True),dng_linear=linear,sdr_reference=reference_header,

@@ -96,7 +96,7 @@ def decoded(path, inputs, progress=None, cancelled=None, edge=640, max_storage_b
     raw_inspection=raw_import._inspect_raw(path,dng_inspection=inspection,progress=progress,cancelled=cancelled)
     decode_plan=raw_import._build_raw_decode_plan(settings,raw_inspection)
     decoded=raw_import._execute_raw_decode(path,settings,raw_inspection,decode_plan,progress=progress,cancelled=cancelled)
-    image=decoded.developed.astype(np.float32);image*=np.float32(1/65535)
+    image=np.asarray(decoded.developed,dtype=np.float32);image*=np.float32(1/65535)
     decoded.developed=np.empty((0,),np.uint16)
     h,w=image.shape[:2]
     if (w,h)!=(inspection.fingerprint.width,inspection.fingerprint.height):
@@ -112,7 +112,7 @@ def decoded(path, inputs, progress=None, cancelled=None, edge=640, max_storage_b
     metadata["raw_start_brightness"]={"calibration_ev":RAW_CALIBRATION_EV,"recorded_brightness_ev":0.0,"fuji_dynamic_range_percent":None}
     descriptor=SourceImageDescriptor(filename=path.name,suffix=".dng",width=outw,height=outh,channels=3,dtype="float32",source_color_space="ACEScg",transfer_function="LINEAR")
     if _identity(path)!=identity: raise ValueError("Photo changed during DNG preparation")
-    return {"rgb":True,"adapter_version":"library-dng-v2","path":str(path),"identity":identity,
+    return {"rgb":True,"adapter_version":"library-dng-signed-v3","path":str(path),"identity":identity,
         "width":outw,"height":outh,"flip":0,"mosaic_bytes":image.nbytes,"sample_stride":max(1,int(np.ceil(np.sqrt(outw*outh/2_000_000)))),
         "layout":{"dtype":"float32","order":"HWC","channels":["R","G","B"],"ownership":"request-owned"},
         "orientation":{"original":int(inspection.metadata["orientation"]),"applied":True},

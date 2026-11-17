@@ -17,6 +17,7 @@
     "D:/Photos/HDR Test Images/Projects/DSC00950.hdrfinisher"
   ],
   "sourceAreas": [
+    {"pattern":"^codebase/(backend/hdr_finisher/signed_(raw\\.py|ahd\\.c)|tools/build_signed_ahd\\.py)$","areas":["library","preview","export-proof"]},
     {"pattern":"^codebase/frontend/(shortcut-labels|floating-surfaces)\\.(js|css)$","areas":["ui"]},
     {"pattern":"^codebase/(backend/hdr_finisher/tone\\.py|frontend/tone-engine\\.js)$","areas":["preview","export-proof","library"]},
     {"pattern":"^codebase/frontend/key-hints\\.js$","areas":["ui"]},
@@ -270,6 +271,8 @@
     }
   ],
   "drivers": [
+    {"path":"tests/signed-raw-parity.js","areas":["library","preview","export-proof"],"tier":"area",
+      "protects":"Signed Bayer AHD on all four CFA phases and orientations, finite negative scene values, and finished SDR/HDR CPU/GPU colour at -6/0/+6 EV.","launch":{"method":"electron"}},
     {
       "path": "tools/denoise_eval/candidates/hot_pixel_gpu.cjs",
       "areas": ["detail", "library"],
