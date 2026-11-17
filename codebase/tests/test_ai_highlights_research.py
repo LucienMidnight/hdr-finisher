@@ -112,3 +112,24 @@ def test_combination_uses_original_sensor_anchor_and_real_reconstruction(method)
         normal, _ = reconstruct_edge_colour(normal, ratio, 1.)
     np.testing.assert_array_equal(result.image[result.weight == 1], normal[result.weight == 1])
     assert result.diagnostics['reconstruction']['applied']
+
+
+def test_boundary_measure_does_not_miss_a_horizontal_join():
+    from tools.denoise_eval.candidates.ai_highlights_measure import seam_measure
+    normal = np.full((32, 32, 3), .18, np.float32)
+    neural = normal + .02
+    weight = np.broadcast_to(np.linspace(0, 1, 32, dtype=np.float32)[:, None], (32, 32))
+    combined = region_blend(neural, normal, weight)
+    result = seam_measure(combined, normal, neural, weight, np.zeros_like(weight))
+    assert result['views']['0']['cross_boundary_excess_delta_e']['count'] == 32
+    assert result['views']['0']['inside_band_delta_e']['count'] > 0
+    assert result['views']['0']['outside_band_delta_e']['count'] > 0
+
+
+def test_mapped_scratch_reopens_without_losing_pixels(tmp_path):
+    from tools.denoise_eval.candidates.ai_highlights_measure import disk_copy, release_pages
+    image = np.arange(96, dtype=np.float32).reshape(8, 4, 3)
+    stored = disk_copy(tmp_path, 'test', image)
+    reopened, = release_pages(stored)
+    np.testing.assert_array_equal(reopened, image)
+    assert not reopened.flags.writeable

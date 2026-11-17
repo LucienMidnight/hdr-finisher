@@ -89,12 +89,19 @@ def disk_copy(folder, name, image):
 
 
 def release_pages(*arrays):
-    import mmap
+    import ctypes
+    outputs = []
     for array in arrays:
-        mapping = getattr(array, '_mmap', None)
-        if mapping is not None and hasattr(mapping, 'madvise'):
-            mapping.madvise(mmap.MADV_DONTNEED)
+        filename, shape, dtype = array.filename, array.shape, array.dtype
+        array._mmap.close()
+        outputs.append(np.memmap(filename, mode='r', dtype=dtype, shape=shape))
     gc.collect()
+    if platform.system() == 'Darwin':
+        library = ctypes.CDLL(None)
+        library.malloc_zone_pressure_relief.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+        library.malloc_zone_pressure_relief.restype = ctypes.c_size_t
+        library.malloc_zone_pressure_relief(None, 0)
+    return outputs
 
 
 def summary(values, mask=None):
@@ -135,8 +142,17 @@ def colour_delta(image, reference, exposure=0, hdr=False):
 
 
 def seam_measure(image, normal, neural, weight, clip_ratio):
-    boundary = np.logical_xor(weight >= .5, np.roll(weight >= .5, 1, axis=1))
-    boundary[:, 0] = False
+    crossings = []
+    boundary = np.zeros(weight.shape, bool)
+    for axis in (0, 1):
+        crossing = np.logical_xor(weight >= .5, np.roll(weight >= .5, 1, axis=axis))
+        if axis == 0:
+            crossing[0, :] = False
+        else:
+            crossing[:, 0] = False
+        boundary |= crossing
+        rows, columns = np.nonzero(crossing)
+        crossings.append((rows, columns, rows - (axis == 0), columns - (axis == 1)))
     band = cv2.dilate(boundary.astype(np.uint8), np.ones((17, 17), np.uint8)) > 0
     high = weight == 1
     outside = weight == 0
@@ -153,11 +169,15 @@ def seam_measure(image, normal, neural, weight, clip_ratio):
                     transition_delta_e=summary(delta, (weight > 0) & (weight < 1)),
                     transition_delta_itp=summary(colour_delta(image, normal, exposure, hdr=True),
                                                 (weight > 0) & (weight < 1)))
-        rows, columns = np.nonzero(boundary)
-        if len(rows):
-            paired = colour_delta(image[rows, columns][:, None], image[rows, columns - 1][:, None], exposure)
-            reference = colour_delta(normal[rows, columns][:, None], normal[rows, columns - 1][:, None], exposure)
-            view['cross_boundary_excess_delta_e'] = summary(np.abs(paired - reference))
+        jumps = []
+        for rows, columns, other_rows, other_columns in crossings:
+            if not len(rows):
+                continue
+            paired = colour_delta(image[rows, columns][:, None], image[other_rows, other_columns][:, None], exposure)
+            reference = colour_delta(normal[rows, columns][:, None], normal[other_rows, other_columns][:, None], exposure)
+            jumps.append(np.abs(paired - reference).ravel())
+        if jumps:
+            view['cross_boundary_excess_delta_e'] = summary(np.concatenate(jumps))
         else:
             view['cross_boundary_excess_delta_e'] = summary(np.empty(0))
         highpass = []
@@ -239,7 +259,7 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
     md = dict(cfa=info.raw_channel_to_rgb[info.raw_pattern].tolist(),
               white_balance=info.as_shot_wb.tolist(), camera_to_acescg=info.camera_to_acescg.tolist(),
               exposure_stops=0.)
-    release_pages(off, normalized_store)
+    off, normalized_store = release_pages(off, normalized_store)
     neural = np.memmap(Path(folder) / 'neural.f32', mode='w+', dtype=np.float32, shape=off.shape)
     adapter = RawNIND('bayer')
     state = adapter.prepare(normalized_store, md, destination=neural, camera_anchor_mean=anchor)
@@ -247,7 +267,7 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
     gain = state.gain
     neural.flush()
     del state, adapter
-    release_pages(off, normalized_store, neural)
+    off, normalized_store, neural = release_pages(off, normalized_store, neural)
     rows = []
     results = []
     for method in METHODS:
@@ -272,13 +292,23 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
                 edge_seconds = time.perf_counter() - started
             normal = disk_copy(folder, 'normal', normal_array)
             del normal_array, camera, camera_ratio
-            release_pages(off, normal, neural)
+            off, normal, neural = release_pages(off, normal, neural)
             started = time.perf_counter()
             changed = np.empty(sensor.shape, bool)
             for top in range(0, sensor.shape[0], 128):
                 changed[top:top + 128] = reconstruction_support(normal[top:top + 128], off[top:top + 128])
             support_seconds = time.perf_counter() - started
-            release_pages(off, normal)
+            off, normal = release_pages(off, normal)
+            ai_first = None
+            ai_first_seconds = 0.
+            if method == 'edge_colour_v1':
+                off, normal, neural = release_pages(off, normal, neural)
+                started = time.perf_counter()
+                ai_first_array, _ = reconstruct_edge_colour(neural, ratio, expand)
+                ai_first_seconds = time.perf_counter() - started
+                ai_first = disk_copy(folder, 'ai-first', ai_first_array)
+                del ai_first_array
+                off, normal, neural, ai_first = release_pages(off, normal, neural, ai_first)
             for feather in (32, 128):
                 started = time.perf_counter()
                 weight = protect_weight(ratio, changed=changed, feather=feather)
@@ -305,8 +335,8 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
                         columns = [('Normal reconstruction', normal_crop), ('AI only (no reconstruction)', neural_crop),
                                    ('Region blend', combined), ('Protection mask', mask_rgb)]
                         if method == 'edge_colour_v1':
-                            after, _ = reconstruct_edge_colour(neural_crop.copy(), ratio[selection], expand)
-                            columns.append(('AI first, RGB Edge (crop-local)', after))
+                            after = ai_first[selection].copy()
+                            columns.append(('AI first, RGB Edge only', after))
                             observations[role]['ai_first_edge'] = dict(
                                 delta_e_normal=summary(colour_delta(after, normal_crop)),
                                 delta_e_minus3=summary(colour_delta(after, normal_crop, -3)))
@@ -355,6 +385,7 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
                               reconstruction=diagnostics, edge=edge_diagnostics,
                               repair_seconds=repair_seconds, ahd_tail_seconds=ahd_tail_seconds,
                               edge_seconds=edge_seconds, support_seconds=support_seconds,
+                              ai_first_edge_seconds=ai_first_seconds,
                               weight_seconds=weight_seconds, blend_seconds=blend_seconds,
                               whole_frame_limiter_seconds=finish_seconds, whole_frame_limiter_safety=full_safety,
                               crop_measure_seconds=sample_seconds,
@@ -370,8 +401,8 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
                 results.append(result)
                 print(json.dumps({key: value for key, value in result.items() if key not in ('crops', 'reconstruction', 'edge')}), flush=True)
                 del weight
-                release_pages(off, normal, neural)
-            del changed, normal
+                off, normal, neural = release_pages(off, normal, neural)
+            del changed, normal, ai_first
             gc.collect()
     inverse = np.linalg.inv(info.camera_to_acescg).astype(np.float32)
     safe = ratio[::8, ::8] < .5
@@ -405,7 +436,7 @@ def real(filename):
     record.update(provenance=provenance(), source=filename, source_sha256=sha256(source),
                   flip=orientation, decode_seconds=decode_seconds, wall_seconds=time.perf_counter() - started,
                   white_levels=info.raw_white_level.tolist(), global_white=float(global_white),
-                  qualification='Native sensor coordinates; no lens/rotation/grade/encoding/live UI. Extra RGB Edge comparator is crop-local.')
+                  qualification='Native sensor coordinates; no lens/rotation/grade/encoding/live UI. RGB Edge comparator uses the full original sensor clip map, without Opposed.')
     write_json(OUTPUT / f'real-{Path(filename).stem}.json', record)
 
 
@@ -509,7 +540,7 @@ img{display:block;image-rendering:auto}section{margin-block:var(--panel-header-h
 <p>Sensor-coordinate crops at 1:1. Scroll sideways. Normal = signed AHD with the selected reconstruction;
 AI only deliberately has no reconstruction. Region blend protects the reconstruction and feathers to AI.
 Compare normal and −3 EV rows for a brightness ridge, halo, colour step or a change in texture/noise.
-White in the mask = normal, black = AI. RGB Edge comparator is crop-local and lacks sensor Opposed repair;
+White in the mask = normal, black = AI. RGB Edge comparator uses the whole frame but lacks sensor Opposed repair;
 do not treat it as the production Edge pipeline. No automatic exposure or white-balance matching.</p>
 <p>Both feather widths and Expand 0/1/5% are scored in the JSON; displayed primary is 32px, Expand 0/1%.
 Saturation is not a guarantee that all channels are noiseless. Synthetic captures have clean AHD truth;

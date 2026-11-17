@@ -53,7 +53,7 @@ global gain. Temporary disk arrays are removed on ordinary completion/failure;
 guard-killed scratch must be identified and removed by the caller. The review
 retains only content-deduplicated 384px crops, at 1:1 and −3 EV, plus small JSON.
 Metrics distinguish true synthetic residuals from texture/noise proxies on
-real photos. RGB Edge-only is explicitly crop-local and omits sensor Opposed;
+real photos. RGB Edge-only uses the full original clip map and omits sensor Opposed;
 it is not a faithful replacement for the normal Edge recipe. See
 `docs/technical/research/denoise-v1-2026-11-16/ai-highlights.md` for results and
 the signed-shadow, gain, memory, GPU and delivery qualifications.
