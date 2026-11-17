@@ -271,6 +271,9 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
     gain = state.gain
     neural.flush()
     del state, adapter
+    print(json.dumps(dict(stage='AI complete', name=name, clocks=clocks, gain=gain)), flush=True)
+    write_json(OUTPUT / f'partial-{name}.json', dict(name=name, shape=list(sensor.shape),
+               provenance=provenance(), clocks=clocks, gain=gain, completed=False, results=[]))
     off, normalized_store, neural = release_pages(off, normalized_store, neural)
     rows = []
     results = []
@@ -319,7 +322,8 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
                 weight_seconds = time.perf_counter() - started
                 transition = (weight[::8, ::8] > .35) & (weight[::8, ::8] < .65)
                 difference = np.max(np.abs(neural[::8, ::8] - normal[::8, ::8]), axis=-1)
-                seam_center = np.unravel_index(np.argmax(np.where(transition, difference, -1)), transition.shape)
+                seam_center = (np.unravel_index(np.argmax(np.where(transition, difference, -1)), transition.shape)
+                               if np.any(transition) else center // 8)
                 selections = dict(highlight=window(center, sensor.shape),
                                   seam=window(np.array(seam_center) * 8, sensor.shape))
                 observations = {}
@@ -404,6 +408,8 @@ def evaluate_frame(sensor, info, matrix, global_white, name, folder):
                               whole_frame_protected_max_difference=protected_max,
                               checksum_mean=blend_sum / off.size, crops=observations)
                 results.append(result)
+                write_json(OUTPUT / f'partial-{name}.json', dict(name=name, shape=list(sensor.shape),
+                           clocks=clocks, gain=gain, completed=False, results=results, review_rows=rows))
                 print(json.dumps({key: value for key, value in result.items() if key not in ('crops', 'reconstruction', 'edge')}), flush=True)
                 del weight
                 off, normal, neural = release_pages(off, normal, neural)
