@@ -56,6 +56,7 @@ COLUMNS = (
     ('off', 'off'),
     ('denoise_v2', 'denoise_v2'),
     ('denoise_v2_app', PREFIX + 'denoise_v2_appdefault:factory'),
+    ('speck_cleanup', PREFIX + 'speck_cleanup:factory'),
     ('denoise_v2_tuned', PREFIX + 'denoise_v2_tuned:factory'),
     ('pilot_wiener_bayer_both', PREFIX + 'pilot_wiener:bayer_both'),
     ('rawnind_bayer', PREFIX + 'rawnind:bayer'),
@@ -73,6 +74,8 @@ PUBLIC = (
 NATIVE = (
     ('canon-flame-edge', 'Private RAW, ISO 3200, outer flame edge',
      'IMG_0790.CR2', (2840, 0), (232, 66), 0.),
+    ('canon-flame-edge-lifted', 'Private RAW, ISO 3200, outer flame edge +4 stops',
+     'IMG_0790.CR2', (2840, 0), (232, 66), 4.),
     ('canon-dark-shadow', 'Private RAW, ISO 3200, dark shadow',
      'IMG_0790.CR2', (4000, 2100), (176, 176), 4.),
     ('sony-sign-lettering', 'Private RAW, ISO 4000, lit sign lettering',
@@ -109,7 +112,7 @@ def cases(entries):
         sample = Sample(case_id, rgb, mosaic, metadata, None, masks_for(rgb))
         yield case_id, title, sample, offset, lift, 'Private test image; not licensed for redistribution'
     for sample in synthetic_samples(entries, False):
-        if sample.name not in ('synthetic-fabric-iso25600', 'synthetic-fine-text-iso25600'):
+        if sample.name not in ('synthetic-fabric-iso25600', 'synthetic-fine-text-iso25600', 'synthetic-star-field-iso25600'):
             continue
         name = sample.metadata['generated']
         offset = (66, 112) if name == 'fine-text' else (112, 112)
@@ -162,7 +165,11 @@ def render_case(folder, sample, offset, lift, size):
         save_png(encoded, folder / f'{column}.png')
         rows.append(dict(column=column, adapter=adapter_name,
                          settings=adapter.description(),
-                         metrics_vs_clean=scores(encoded, clean, valid) if clean is not None else None))
+                         metrics_vs_clean=scores(encoded, clean, valid) if clean is not None else None,
+                         shadow_tails_sdr_lift4=metrics.shadow_tails(
+                             output[region], rgb[region],
+                             sample.clean[region]*np.float32(2**lift) if sample.clean is not None else None,
+                             {'valid': valid}, source_exposure_stops=lift)))
         del adapter, state, output, encoded
         gc.collect()
         if peak_rss() > 2_500_000_000:
@@ -204,6 +211,7 @@ def main():
             '512/640px context, not full-frame adaptive estimates or whole-frame qualification.',
             'Public clean references retain inherited ISO100 noise, registration and per-capture gain limitations.',
             'Public metrics exclude inherited clipping/support/registration masks; PNGs show all crop pixels.',
+            'Decision shadow-tail scores use the fixed ROI and valid support, without the general harness automatic-flat mask; no-truth scores are contrast proxies.',
             'Print/dots deliberately exposes the reported neural-sensitive structure, not an exhaustive worst-case ranking.',
             'Synthetic ISO25600 reuses extrapolated harness noise, not a laboratory-calibrated real ISO25600 capture.',
         ], cases=[],
@@ -236,8 +244,9 @@ def main():
         ))
         del sample
         gc.collect()
-    if len(manifest['cases']) != 10:
-        raise ValueError('Expected exactly ten decision cases')
+    expected = len(PUBLIC) + len(NATIVE) + 3  # fabric, fine text, star field
+    if len(manifest['cases']) != expected:
+        raise ValueError(f'Expected {expected} decision cases')
     manifest['peak_rss_bytes'] = peak_rss()
     manifest_path.write_text(json.dumps(manifest, indent=2, allow_nan=False) + '\n')
     total = sum(path.stat().st_size for path in OUTPUT.rglob('*') if path.is_file())

@@ -158,6 +158,7 @@ def main(argv=None):
     parser.add_argument('--set',choices=('quick','full','pairs'),default='quick')
     parser.add_argument('--controls',default='{}',help='JSON controls for denoise_v2_custom')
     parser.add_argument('--pairs',type=Path,help='Optional approved folder with pairs.json, no downloads')
+    parser.add_argument('--pair-split', choices=('all', 'heldout', 'seen'), default='all', help='Keep training contamination explicit')
     parser.add_argument('--banding',type=float,default=0.,help='Added row and column sigma in normalised sensor units')
     parser.add_argument('--output-dir',type=Path,help='Separate research results/review destination')
     parser.add_argument('--review-size',type=int,choices=(128,256),default=256,help='Bound review size when comparing many adapters')
@@ -212,7 +213,9 @@ def execute(args):
             'Held-out and seen-by-RawNIND scenes are separately labelled; no RawNIND model is evaluated in this baseline.',
             'Fixed SDR/PQ display transforms and crop-local preparation are research measurements, not production HDR or whole-photo qualification.',
         ]
-        samples = paired_samples(args.pairs)
+        samples = (sample for sample in paired_samples(args.pairs)
+                   if args.pair_split == 'all' or bool(sample.metadata['held_out']) == (args.pair_split == 'heldout'))
+        results['pair_split'] = args.pair_split
     else:
         samples=itertools.chain(synthetic_samples(inv,args.set=='quick',args.banding),real_samples(inv,args.set=='quick'),paired_samples(args.pairs) if args.pairs else [])
     rows=[]
@@ -237,7 +240,7 @@ def execute(args):
                     raise ValueError('Adapter must return full-size ACEScg RGB(A)')
                 if not np.isfinite(output).all():
                     raise ValueError('Nonfinite adapter output')
-                measured=metrics.evaluate(output,sample.rgb,sample.clean,sample.masks,'slanted-edge' in sample.name)
+                measured=metrics.evaluate(output,sample.rgb,sample.clean,sample.masks,'slanted-edge' in sample.name, exposure_stops=sample.metadata.get('exposure_stops', 0))
                 measured.update(seconds=seconds,finite=True,negative_values=int(np.sum(output[...,:3]<0)),above_white_values=int(np.sum(output[...,:3]>1)))
                 if hasattr(adapter,'state_description'):
                     measured['adapter_state']=adapter.state_description(state)

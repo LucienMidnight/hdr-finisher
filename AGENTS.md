@@ -620,6 +620,9 @@ Completed UI polish round 3 (pending visual sign-off): `docs/technical/archive/b
   `ai-experimental-design.md` proposes the standalone experimental Bayer
   RawNIND integration: shared RAW source, eligibility, live Strength, offline
   packaging, cache/memory choices, work packages and decisions for Steve.
+  `speck-cleanup.md` records residual-outlier and shadow-colour classical
+  cleanup variants, lifted-shadow tails, detail failures, native CPU costs
+  and the GPU/CPU integration limits; current Denoise stays unchanged.
 - `docs/technical/briefs/tone-endpoints-design-2026-11-15.md`: proposed
   five-control Tone block (Blacks/Whites endpoints, broad zones, fixed
   Highlight Compression cap) with open decisions T1-b to T1-f.

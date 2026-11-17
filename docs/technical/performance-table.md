@@ -1,3 +1,34 @@
+## November 17: residual speck/chroma cleanup (research only)
+
+MacBook Neo / A18 Pro / 8 GB, one CPU thread, prototype `994152ca` /
+`f8f6e22b`, final surrounding-brightness variant. Shared lock, unchanged 2.5 GB
+process-tree guard, ±10% descriptive timing allowance. CPU standalone waits
+end at resolved linear pixels, not presentation; no controlled speedup or
+shipping GPU claim. App Denoise and memory allowances stay unchanged.
+
+| Research action | Whole wait / peak OS RSS | Relevant split | Conditions |
+| --- | --- | --- | --- |
+| 18.02 MP residual cleanup, cold native | 25.51 s / 1.174 GB | cleanup 14.15 s; bands 4.03 s; default resolve 1.13 s; cached resolve 1.14 s | Mac; IMG_0790.CR2; bounded 768px cores, 86px halo, original RAW read only. AHD/cache disk I/O included. |
+| 42.39 MP residual cleanup, cold native | 59.68 s / 1.221 GB | cleanup 34.94 s; bands 9.88 s; default resolve 2.85 s; cached resolve 2.75 s | Mac; 2025_0730_1331_3.arw; bounded 768px cores, 86px halo, original RAW read only. AHD/cache disk I/O included. |
+| quick research set | 38.43 s / 1.111 GB tree RSS | Not a product wait | Mac; seven adapters for quality sets, twelve rows/seven method columns for decision; no adapter errors. |
+| heldout research set | 91.14 s / 0.993 GB tree RSS | Not a product wait | Mac; seven adapters for quality sets, twelve rows/seven method columns for decision; no adapter errors. |
+| full research set | 166.23 s / 1.259 GB tree RSS | Not a product wait | Mac; seven adapters for quality sets, twelve rows/seven method columns for decision; no adapter errors. |
+| seen research set | 162.52 s / 1.050 GB tree RSS | Not a product wait | Mac; seven adapters for quality sets, twelve rows/seven method columns for decision; no adapter errors. |
+| decision research set | 30.20 s / 1.103 GB tree RSS | Not a product wait | Mac; seven adapters for quality sets, twelve rows/seven method columns for decision; no adapter errors. |
+| Cached 512² control resolve | median 13.82 ms; p95 15.02 ms; max 16.04 ms | zero Amount 0.12 ms | Mac; eight live controls × 0/.5/1; no analysis repeated. Full controls command 2.58 s / .630 GB tree RSS. |
+
+Same-kernel shipping estimate from measured cleanup/default subclocks: added
+CPU preparation 14–16 s at 18 MP / 35–38 s at 42 MP (roughly 19–22 s at
+24 MP), excluding source loading, existing wavelet work and presentation.
+Quality does not justify this cost or a GPU port. Report and receipts:
+[speck-cleanup.md](research/denoise-v1-2026-11-16/speck-cleanup.md),
+`codebase/output/denoise-v1/speck-cleanup/`.
+
+Final fast checks on Mac, `7690bb0e`: Node 11.94 s (1091 passed, one skipped);
+Python 246.77 s / 1.935 GB guarded tree RSS (3958 passed, 150 skipped, one
+xpassed). Focused 23 checks pass in 2.04 s after the live colour projection
+fix; the full Python suite was then rerun. Logs are in the same output folder.
+
 ## November 16: pilot-guided empirical Wiener (research only)
 
 MacBook Neo / Apple A18 Pro / 8 GB, one CPU thread, tooling `e35fc744`,
