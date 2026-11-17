@@ -225,6 +225,12 @@ https://claude.ai/artifact/4ZcqC4Ht2fJ67Nu6F2S4t9 (1:1 crops, blind mode):
 
 ## 8. Log
 
+- 2026-11-17: noise-model trial finished: IMG_0790's degenerate fit comes
+  from a clipped bright bin, already compensated by later band multipliers;
+  a corrected fit predicts less shadow noise, leaves more ringed grain on the
+  lifted Canon crops and barely changes public pairs. Not shipped; the
+  diagnostic and tests are kept. See `noise-model-and-raw-specks.md`.
+
 - 2026-11-17: Steve decided a separate RAW development step, **Pixel
   cleanup** (named so it can gain features later), that repairs genuine
   sensor defects (hot, stuck and dead pixels, sensor errors) on sensor data
