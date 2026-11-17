@@ -156,9 +156,9 @@ def sensor_parameters(mosaic, metadata):
     result = []
     for row, column in ((0, 0), (0, 1), (1, 0), (1, 1)):
         observations = flat_observations(mosaic[row::2, column::2])
-        if len(observations) < 2:
-            raise ValueError('Insufficient RAW flat samples; no sensor noise profile is guessed')
         fit = fit_observations(observations)
+        if fit is None:
+            raise ValueError('Insufficient RAW flat samples; no sensor noise profile is guessed')
         result.append(dict(a=fit['a'], b=fit['b']))
     return result
 
