@@ -269,6 +269,14 @@ Final output-size check: **13.2 GB**, below 100 GB; about 871 MiB of disposable
 real-photo renders removed. No read-only projects overwritten, no push.
 
 
+- 2026-11-17: colour-only green/magenta research completed on the approved
+  2.5σ taming chain. Strong post-Denoise 9×9 chroma median cuts flat-gallery
+  green/magenta islands 38→15, but retains only 41% of clean simulated-star
+  GM colour and 45% of fine coloured lettering. Guarded pre-Denoise repair
+  leaves 35; green matching/ordinary colour medians do not solve the blobs.
+  Full/held-out/seen fidelity, native CPU cost and clean/photo review are in
+  [chroma-cleanup.md](../research/denoise-v1-2026-11-16/chroma-cleanup.md).
+  No automatic cleanup recommended; research tools/docs only, no app changes.
 
 - **November 17, Library quick checks after merging validation (ad2475cd, MacBook, 1408x794).** With the Library window visible, the plain 90-second check passes 9/9 viewport photos (peak 3.17 GB, no memory violation) and `--single` passes. An earlier timeout came from a hidden window behind a full-screen app; an earlier DJI DNG failure came from this worktree missing the built `signed_ahd.dylib` (fixed by rerunning setup). One cold first run after the build peaked at 4.33 GB against the 4.0 GB ceiling and hit the system reserve with one DJI `Failed to fetch`; the immediate rerun passed. Not reproduced, not investigated further.
 
