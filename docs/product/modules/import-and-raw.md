@@ -69,6 +69,25 @@ table, signed samples and exactly-once mandatory operations.
 
 ### November 17: Steve's signed RAW development decision; qualification open
 
+**November 17 validation follow-up: signed Lensfun vignetting.** Lensfun's CPU
+colour-modification call clamps negative ACEScg channels, even though its gain
+is positive. The signed GPU route correctly retains them. This remaining CPU
+floor, not a new lens-coordinate error, caused A7R00619's Library comparison
+to fail in real foliage. CPU import now applies the same Lensfun operation to
+magnitudes and restores signs, using packed one-bit masks and 256-row scratch
+inside the existing working allowance, not another full-size float image.
+Decoder v8 / Library picture v14 invalidate affected cached CPU developments.
+Existing RAW projects with negative channels and vignetting can change as
+intended by the signed-development decision; protected projects are not saved.
+The five-photo GPU RAW driver passes: A7 P99.9 falls from 4.1014/6.9366 to
+0.1881/0.7090 (SDR/HDR), with the unchanged limit of 3. No lens mapping, shader,
+memory allowance or perceptual limit changes. The separate Single/native,
+zoom-straighten and pre-signed live-export admission failures remain open in
+the November 17 known-limitations follow-up; this is not release qualification.
+Final fast suites: Node 1,103 pass / one skip; Python 4,215 pass / 155 skips /
+one xpass, no failures. Two new result tests verify signed vignette gains over
+band boundaries and restoration when Lensfun raises an error.
+
 **Steve, November 17, 2026:** preserve noisy sensor readings below black through
 development and editing; let Blacks/Tone crush shadows to taste. This is a
 correctness/latitude change, not a demonstrated Canon-speck or Denoise fix.

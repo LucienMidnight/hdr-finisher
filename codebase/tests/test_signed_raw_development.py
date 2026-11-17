@@ -53,6 +53,27 @@ def test_signed_normalization_reuses_float_transport_and_applies_exposure_once()
     np.testing.assert_array_equal(converted, normalized)
 
 
+@pytest.mark.parametrize("fail", [False, True])
+def test_lens_vignetting_preserves_signed_samples_across_bands(fail):
+    image = np.linspace(-2, 3, 537 * 9 * 3, dtype=np.float32).reshape(537, 9, 3)
+    original = image.copy()
+    gain = np.linspace(1, 2, 537 * 9, dtype=np.float32).reshape(537, 9, 1)
+
+    class Modifier:
+        def apply_color_modification(self, pixels):
+            np.maximum(pixels, 0, out=pixels)
+            pixels *= gain
+            if fail:
+                raise RuntimeError("Lensfun failure")
+
+    if fail:
+        with pytest.raises(RuntimeError, match="Lensfun failure"):
+            raw_import._apply_signed_vignetting(Modifier(), image)
+    else:
+        raw_import._apply_signed_vignetting(Modifier(), image)
+    np.testing.assert_array_equal(image, original * gain)
+
+
 @pytest.mark.parametrize("exposure", [-6, 0, 6])
 def test_global_and_local_exposure_keep_signed_values(exposure):
     image = np.broadcast_to(np.asarray([-.002, -.001, .003], np.float32), (24, 32, 3)).copy()

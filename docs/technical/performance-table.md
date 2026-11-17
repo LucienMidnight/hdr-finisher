@@ -1,3 +1,30 @@
+## November 17: signed RAW validation follow-up (minimum Mac)
+
+MacBook Neo / A18 Pro / 8 GB, November 17, unpackaged 1408x794, baseline
+`7e444686`, current signed build `c3b7a3ed` plus the signed-vignetting correction
+in this record's commit. Shared GPU lock, one app check at a time, no heavy
+concurrent workload. These are observed validation durations, not a speed
+claim, changed budget or new performance gate. All picture gates stay fixed.
+
+| Action, same Mac | Observed duration / outcome | Conditions |
+| --- | --- | --- |
+| Five-photo Library GPU RAW qualification | 31.7 s final driver; all five pass | Includes CPU finished-picture oracle. A7 whole thumbnail request .872 s, GPU step .430 s; separate Grade CPU decode 7.89 s. Different paths, not a whole-user-wait comparison or speedup claim |
+| RAW Single comparisons | 141–151 s including launch/oracle/shutdown; 14/18 pass on both builds | Four older failures exposed before later UI/detail waits; no completed Single/native UI timing |
+| Zoomed Denoise | Initial refusal 23.8 s; quiet HEAD stopped at 103.6 s, baseline at 242.5 s | Both reach Full reference and the same straighten stall; stopped waits are not completion timings |
+| Live Export tile check | 43.6–49.6 s to required-GPU assertion failure | CPU export completes on both builds; 5.332 GB fixed charge exceeds 4 GB, so no seven-export timing comparison |
+| Plain-Electron 90-second Library check | Hard timeout in observe; 188.6 s including shutdown | 130-second deadline; no pictured-coverage or responsiveness pass claimed |
+
+Retained real-app invocation windows total **23m22s**, conservatively including
+launcher/shutdown and the earlier selector attempt; CPU isolation trials bring
+slow validation to **about 26 minutes**. Ledger/logs:
+`codebase/output/denoise-v1-followup/check-times.json`. This does not include
+setup, code inspection/editing or final fast suites. No timings are compared
+with PC baselines. The existing 5% live-tile allowance remains unchanged and
+was not reached in these failing runs.
+Final fast suites on the same Mac: Node **12.28 s**, 1,103 pass / one skip;
+Python **263.53 s**, 4,215 pass / 155 skips / one xpass, existing deprecation
+warning only. These are test durations, not application-response measurements.
+
 ## November 17: production Pixel cleanup CPU step
 
 MacBook Neo / A18 Pro / 8 GB, November 17, 2026, sensor implementation
