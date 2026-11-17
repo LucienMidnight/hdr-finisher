@@ -14,6 +14,7 @@ import io
 import json
 from pathlib import Path
 import platform
+import signal
 import subprocess
 import tempfile
 import time
@@ -563,6 +564,10 @@ real-photo highpass measurements mix texture and noise. Visual sign-off is Steve
 
 
 def main():
+    def interrupted(signum, frame):
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, interrupted)
     parser = argparse.ArgumentParser()
     parser.add_argument('--phase', required=True, choices=('survey', 'real', 'synthetic', 'review'))
     parser.add_argument('--photo', choices=PHOTOS)

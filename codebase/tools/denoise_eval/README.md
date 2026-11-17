@@ -50,7 +50,7 @@ Other phases: `survey`, `synthetic`, `review`. Real sources are restricted to
 `IMG_0790.CR2`, `IMG_3129.CR2`, `IMG_0114.CR2` and `2025_0730_1331_3.arw` in
 the approved photo folder. Real phases infer whole native frames, not crop-local
 global gain. Temporary disk arrays are removed on ordinary completion/failure;
-guard-killed scratch must be identified and removed by the caller. The review
+SIGTERM unwinds their cleanup too; a forced kill still needs caller cleanup. The review
 retains only content-deduplicated 384px crops, at 1:1 and −3 EV, plus small JSON.
 Metrics distinguish true synthetic residuals from texture/noise proxies on
 real photos. RGB Edge-only uses the full original clip map and omits sensor Opposed;
